@@ -118,6 +118,17 @@ if (official) {
   }
   await cp(resolve(hull,'SOURCES.md'),resolve(output,'assets/hull/SOURCES.md'));
   css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8');
+  // CKP-FAD-24 / CKP-FAD-17 (D115, D122, D196): the v4 top-down throttle on every fader travel, each file checked against the
+  // reserved-visuals registry. The community edition keeps the MIT flat fader.
+  const throttle=resolve(assets,'cockpit/throttle');
+  await mkdir(resolve(output,'assets/throttle'),{recursive:true});
+  for(const name of ['plate-night.png','plate-day.png','lever-night.png','lever-day.png','ghost-night.png','ghost-day.png']){
+    const bytes=await readFile(resolve(throttle,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/throttle/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved throttle resource: '+name);
+    await writeFile(resolve(output,'assets/throttle',name),bytes);
+  }
+  await cp(resolve(throttle,'SOURCES.md'),resolve(output,'assets/throttle/SOURCES.md'));
+  css+='\n'+await readFile(resolve(throttle,'throttle.css'),'utf8');
   // CKP-SHELL-33 (owner D160/D172/D187): the menu-bar launch rack art. The page never draws it; the native rack panel reads
   // it from the verified bundle, each file checked against the reserved-visuals registry.
   const rack=resolve(assets,'cockpit/rack');

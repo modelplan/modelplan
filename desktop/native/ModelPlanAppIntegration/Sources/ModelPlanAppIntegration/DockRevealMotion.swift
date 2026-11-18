@@ -58,6 +58,7 @@ enum DockRevealMotion {
     private var panel: NSPanel?
     private var generation: UInt64 = 0
     private(set) var animatingForChecks = false
+    var didStopForChecks: (() -> Void)?
 
     func play(snapshotOf content: NSView, frame: CGRect, level: NSWindow.Level, edge: DockEdge, reduceMotion: Bool) {
         guard frame.width > 0, frame.height > 0, content.bounds.width > 0, content.bounds.height > 0,
@@ -95,9 +96,11 @@ enum DockRevealMotion {
     }
 
     func stop() {
+        let wasAnimating = animatingForChecks
         generation &+= 1
         animatingForChecks = false
         panel?.contentView?.layer?.removeAllAnimations()
         panel?.orderOut(nil)
+        if wasAnimating { didStopForChecks?() }
     }
 }

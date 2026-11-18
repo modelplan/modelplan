@@ -140,17 +140,18 @@ test('G3-106 a pressed amber caution stays steady through a paused forecast and 
  set(50,reset+7*1440,3*1440);expect(await o.receive(o.send('display',{data}))).toBe(true);await expect(o.lamp).toHaveClass(flash);
 });
 
-test('G3-56 a fallback member (no verified subscription reference) is acknowledged in memory only',async({page})=>{
+test('G3-56 a fallback member (no verified subscription reference) is reported to the host, which keeps it for the session only',async({page})=>{
  const {data,windows}=zeroData();windows[0].remainingPercent=0;
  // No verified subscription: the member is keyed row#route, which names a different account after a restart.
  data.subscriptions=[];for(const a of data.projection.rows[0].accounts)a.subscriptionRef=null;
  let o=await open(page,data);await expect(o.lamp).toHaveClass(flash);await pressed(page,o.lamp);
- expect(await posted(page)).toEqual([]);
+ // G3-135: the page reports it (the page is rebuilt on every open); the host writes only verified references to disk.
+ const id=JSON.stringify([data.projection.rows[0].id+'#'+data.projection.rows[0].accounts[0].route,windows[0].id,'red']);
+ expect((await posted(page)).at(-1)).toEqual([id]);
  // This session: a refresh stays steady.
  expect(await o.receive(o.send('display',{data}))).toBe(true);await expect(o.lamp).not.toHaveClass(flash);
- // A host that was handed such an id anyway (an older build) cannot suppress a blink with it.
- const id=JSON.stringify([data.projection.rows[0].id+'#'+data.projection.rows[0].accounts[0].route,windows[0].id,'red']);
- o=await open(page,data,[id]);await expect(o.lamp).toHaveClass(flash);
+ // The next open, restored from the host's session memory, is steady too.
+ o=await open(page,data,[id]);await expect(o.lamp).not.toHaveClass(flash);
 });
 
 // glm-766-2: a store/consent barrier (a clear that adopts another epoch or generation) makes the page forget what was
@@ -166,7 +167,8 @@ test('G3-56 an epoch change forgets the acknowledged cautions, so the old store 
  await expect(lamp).toHaveClass(flash);
  for(const w of windows)w.remainingPercent=75;expect(await receive(send('display',{...next,viewRevision:'4',data}))).toBe(true);
  await expect(lamp).not.toHaveClass(/\blit\b/);
- for(const reports of (await posted(page)).slice(before))expect(reports).toEqual([]);
+ // Reports after the barrier: the new blink (one id), then the clear (empty). Nothing from the old store.
+ const after=(await posted(page)).slice(before);expect(after.length).toBeGreaterThan(0);expect(after[0]).toHaveLength(1);expect(after.at(-1)).toEqual([]);
 });
 
 test('G3-56 a generation change alone also forgets them',async({page})=>{

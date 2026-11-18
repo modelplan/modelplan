@@ -420,6 +420,18 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 			kept = append(kept, e)
 		}
 		s.Providers = kept
+		// A concurrent key change may have cleared GLM while this refresh was in
+		// flight. Carry forward only the current detected-key reference, never the
+		// reading from the old generation.
+		if current["zai"] != generations["zai"] {
+			if cached := loadNative(p.Cache); cached != nil {
+				for _, e := range cached.Providers {
+					if e.Provider == "zai" {
+						s.Providers = append(s.Providers, glmReferenceOnly(e))
+					}
+				}
+			}
+		}
 		if nativePublishHook != nil {
 			nativePublishHook()
 		}
