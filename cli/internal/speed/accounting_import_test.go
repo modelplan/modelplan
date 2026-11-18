@@ -172,3 +172,39 @@ func TestAccountingRemoveUnprovenPreviewOwnership(t *testing.T) {
 		t.Fatal("unproven preview ownership retained imported usage")
 	}
 }
+
+// After Forget (clear boundary, then accounting erase) a later history import or live scan of
+// the same logs must not bring the forgotten responses back.
+func TestAccountingForgetThenImportDoesNotRecreate(t *testing.T) {
+	for _, source := range []string{"codex", "claude-code"} {
+		t.Run(source, func(t *testing.T) {
+			f := newFixture(t)
+			_, out := accountingImportLog(t, f, source, -0.1)
+			seedPerf(t, f.cache, t0)
+			f.run(7, both())
+			if got := accountingImportedOutput(t, f, source); got != out {
+				t.Fatalf("import missing: %d", got)
+			}
+			if err := MarkCleared(f.cache, sourceTool(source), f.now); err != nil {
+				t.Fatal(err)
+			}
+			unlock, ok := LockLedgersForCleanup(f.cache)
+			if !ok {
+				t.Fatal("ledgers busy")
+			}
+			err := ForgetAccountingLocked(f.cache, sourceTool(source))
+			unlock()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := accountingImportedOutput(t, f, source); got != 0 {
+				t.Fatalf("Forget kept accounting: %d", got)
+			}
+			os.Remove(ImportPath(f.cache)) // Forget drops the coverage, so the import runs again
+			f.run(7, both())
+			if got := accountingImportedOutput(t, f, source); got != 0 {
+				t.Fatalf("later import re-created forgotten accounting: %d", got)
+			}
+		})
+	}
+}
