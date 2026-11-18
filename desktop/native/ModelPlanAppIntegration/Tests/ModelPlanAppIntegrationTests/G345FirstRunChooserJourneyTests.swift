@@ -355,6 +355,8 @@ private actor G345Engine: EngineClient {
         XCTAssertEqual(resets, 1)
         if case .idle = controller.phase {} else { XCTFail("visibility and order never ask for or change reading consent") }
         let grantsBefore = await engine.recorded(); XCTAssertTrue(grantsBefore.isEmpty)
+        // WP-16: the detected section renders under its heading, from the synthetic detected tools.
+        XCTAssertEqual(try label("subscriptions.detected.heading"), "Detected, not added yet")
         // Detected, not added: Cursor can be added; signed-out Claude Code and ZCode (account login) cannot yet.
         XCTAssertTrue(try button("subscriptions.add.cursor").isEnabled)
         XCTAssertFalse(try button("subscriptions.add.claude").isEnabled)
