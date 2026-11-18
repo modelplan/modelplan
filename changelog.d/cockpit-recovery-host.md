@@ -1,1 +1,0 @@
-When the cockpit page cannot draw one update, the app now keeps the page and its last readings instead of closing and rebuilding it; a page that has not finished loading is no longer timed out while it is hidden, and is checked again after the Mac wakes.
