@@ -161,9 +161,15 @@ import XCTest
     let (usable, anchor) = try XCTUnwrap(page.environment())
     XCTAssertEqual(usable, b.visibleFrame)
     XCTAssertEqual(anchor, CGRect(x: 3660, y: 1407, width: 28, height: 24))
-    let placed = try XCTUnwrap(page.placement()).frame
+    let placement = try XCTUnwrap(page.placement())
+    let placed = placement.frame
     XCTAssertTrue(b.visibleFrame.contains(placed))
-    XCTAssertEqual(placed.midX, anchor.midX, accuracy: 1, "centred under B's icon")
+    // CKP-SHELL-33 (D158, supersedes D88's centring): B's icon sits above the left canopy shoulder, shifted left only
+    // as far as B's right edge needs. B's icon is 398 pt from that edge, so here the cockpit meets the edge.
+    let shoulderUnderIcon = anchor.midX - CockpitShellLayout.shoulderX(placement.fit.profile) * placement.fit.scale
+    XCTAssertEqual(placed.minX, min(shoulderUnderIcon, b.visibleFrame.maxX - placed.width), accuracy: 1, "B's icon above the shoulder, clamped to B")
+    XCTAssertEqual(placed.maxX, b.visibleFrame.maxX, accuracy: 1, "shifted only as far as B's right edge needs")
+    XCTAssertTrue(placed.minX < anchor.midX && anchor.midX < placed.maxX, "the rack under B's icon lands on the cockpit")
   }
 
   func testAttachedOpenStaysOnTheMenuBarDisplayWithoutSeparateSpaces() throws {

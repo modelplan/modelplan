@@ -639,6 +639,8 @@ var clientDigestSchema = z3.object({
   // exact by the publication replay check.
   projectionVersion: z3.string().regex(/^client-v1\.[1-9]\d*$/).optional(),
   multipliers: z3.array(clientMultiplierSchema).optional(),
+  // client-v1.5: AA Intelligence Index version behind every effort aaScore.
+  aaIndexVersion: text3.optional(),
   // client-v1.2 (#347): Fast / Ultrafast and their billing multipliers per harness.
   speedTiers: z3.array(clientSpeedTierSchema).optional(),
   multiplierHorizon: z3.object({
@@ -697,7 +699,10 @@ var clientDigestSchema = z3.object({
           // Present only when true: the ability rests on evidence outside the range its
           // cross-source link was fitted on. Shown within its own model's ladder only;
           // the producer already leaves it out of every cross-model lineup.
-          provisional: z3.literal(true).optional()
+          provisional: z3.literal(true).optional(),
+          // client-v1.5: the raw AA Intelligence Index score for this model and effort.
+          // Absent when unscored; never null or 0. Provisional efforts still carry it.
+          aaScore: scalar.positive().optional()
         }).strict()
       )
     }).strict()
@@ -766,6 +771,10 @@ var clientDigestSchema = z3.object({
     fail("incomplete_multiplier_projection");
   if (d.projectionVersion === "client-v1.2" && d.speedTiers === void 0 || d.speedTiers !== void 0 && (d.projectionVersion === void 0 || d.projectionVersion === "client-v1.1"))
     fail("incomplete_speed_tier_projection");
+  const minor = d.projectionVersion ? Number(d.projectionVersion.slice("client-v1.".length)) : 0;
+  const aaScored = d.models.some((m) => m.efforts.some((e) => e.aaScore !== void 0));
+  if (d.aaIndexVersion !== void 0 !== aaScored || aaScored && minor < 5)
+    fail("invalid_client_aa_score");
   const models = new Map(d.models.map((m) => [m.id, m]));
   for (const t of d.speedTiers ?? [])
     for (const m of t.models)

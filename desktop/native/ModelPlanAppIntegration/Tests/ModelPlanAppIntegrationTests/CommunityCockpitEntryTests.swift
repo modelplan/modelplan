@@ -703,14 +703,14 @@ final class CommunityCockpitEntryTests:XCTestCase {
 
     /// glm-660-3: the cockpit's own close button ends in the page's onClosed, not in `hide()`; the field panel closes with it.
     /// D49 review (#695): the widget stays at `.floating` under the cockpit, and every window the cockpit
-    /// brings up is not hidden behind it. The snap guide shares its level so it can sit just below it.
+    /// brings up is not hidden behind it. (The snap guide is gone; the launch rack panel uses the cockpit's level.)
     @MainActor func testD49WindowsAroundTheCockpitStackInOrder() {
         let cockpit = CockpitWindowController.panelLevel.rawValue
         XCTAssertGreaterThan(cockpit, NSWindow.Level.floating.rawValue, "the cockpit opens above the widget")
         XCTAssertLessThan(cockpit, NSWindow.Level.statusBar.rawValue, "a widget being dragged still rises above it")
         XCTAssertGreaterThan(CockpitFieldPanel.level.rawValue, cockpit, "the launch field opens above the cockpit")
         XCTAssertGreaterThan(DockHelpPresenter.overlayLevel.rawValue, cockpit, "Help draws above the cockpit")
-        XCTAssertEqual(CockpitWindowController.snapGuideLevel.rawValue, cockpit, "the snap guide orders just below the cockpit")
+        XCTAssertEqual(CockpitWindowController.aboveCockpitLevel.rawValue, cockpit + 1, "the launch rack shares the cockpit level and the field and Help stack just above it")
     }
 
     @MainActor func testTheCockpitsOwnCloseAlsoClosesTheField() async throws {
@@ -946,9 +946,8 @@ final class CommunityCockpitEntryTests:XCTestCase {
         }
     }
 
-    /// CKP-SHELL-01 (D118): through the normal factory, the cockpit opens directly below the menu-bar icon: its top sits a
-    /// fixed 6 pt under the icon's bottom edge and it is centred on the icon (D88: the 636 px raster has the same 8 px
-    /// margin on both sides of the shell, so the frame's centre is the shell's), shifted only as far as the screen's edges require. Parameterised over the icon's position.
+    /// CKP-SHELL-33: the normal factory opens beneath the icon with the rack gap and shoulder alignment,
+    /// clamped to the screen at either edge.
     @MainActor func testNormalFactoryOpensDirectlyBelowTheMenuBarIcon() throws {
         let (owner,bundle,context,_)=try shellFixture()
         let usable=try XCTUnwrap(NSScreen.main).visibleFrame
@@ -959,10 +958,10 @@ final class CommunityCockpitEntryTests:XCTestCase {
             let page=owner.makePage(context:context,verified:bundle)
             page.open()
             let window=try XCTUnwrap(page.window,name)
-            XCTAssertEqual(window.frame.maxY,anchor.minY-6,accuracy:1,"\(name): top is 6 pt under the icon")
+            XCTAssertEqual(window.frame.maxY,anchor.minY-10,accuracy:1,"\(name): top is 10 pt under the icon")
             XCTAssertLessThanOrEqual(window.frame.maxY,anchor.minY,"\(name): never above the icon")
-            let expectedX=max(usable.minX,min(anchor.midX-window.frame.width/2,usable.maxX-window.frame.width))
-            XCTAssertEqual(window.frame.minX,expectedX,accuracy:1,"\(name): centred on the icon, clamped to the screen")
+            let expected = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: anchor, shutterClosed: false))
+            XCTAssertEqual(window.frame.minX,expected.frame.minX,accuracy:1,"\(name): shoulder aligned and clamped to the screen")
             XCTAssertGreaterThanOrEqual(window.frame.minX,usable.minX-1,name)
             XCTAssertLessThanOrEqual(window.frame.maxX,usable.maxX+1,name)
             page.discard()

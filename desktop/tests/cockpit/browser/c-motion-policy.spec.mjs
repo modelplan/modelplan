@@ -15,7 +15,9 @@ const ALLOWED_ANIMATIONS=new Set([
  'cockpit-mouth-shimmer', // CKP-ENG-19 base mouth light, working subscriptions only; same gates
 ]);
 // Selector fragment -> transitioned properties allowed on it (interaction feedback and fader glide).
-const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],[/\bshutter-(blind|thumb)\b/,['width','transform']]];
+const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top','--fd-frame']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],[/\bshutter-(blind|thumb)\b/,['width','transform']],
+ // CKP-SHELL-33 (D178/D186): the launch-rack ignition glow fades on the base bells (120 ms in, 220 ms out); off under Reduce Motion.
+ [/\bbz(-empty)?\b/,['opacity']]];
 
 async function open(page,data) {
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
@@ -51,7 +53,7 @@ test('MOT-2.3-01 only the allowed cockpit motions are live, and they run while t
  expect([...names].some(n=>n.includes('cockpit-caution-blink')||n.includes('strip-alert'))).toBe(true);
  // The fader cap transition (the CSS half of CKP-FAD-12; real caps need the publication path) is not switched off.
  expect(await page.evaluate(()=>document.body.classList.contains('reduced'))).toBe(false);
- expect(states[0].some(m=>/\bfd-cap\b/.test(m.element)&&m.transitions.includes('top'))).toBe(true);
+ expect(states[0].some(m=>/\bfd-cap\b/.test(m.element)&&(m.transitions.includes('top')||m.transitions.includes('--fd-frame')))).toBe(true);
 });
 
 for(const how of ['app setting','system setting'])test(`CKP-MOT-03 Reduce Motion (${how}) stops every cockpit animation`,async({page})=>{

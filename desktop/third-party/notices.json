@@ -722,11 +722,15 @@
       ],
       "source": "https://github.com/ccusage/ccusage/tree/58866ba681343634ab6e5add61f18f3b70aa98f7",
       "usedBy": [
-        "Local token accounting: Codex and Claude Code response accounting matched to the Rust adapters; shared tool-neutral Buckets and Windows. ModelPlan modifications in the named files."
+        "Local token accounting (input, cache read, cache write, output, reasoning; totals by local day): Codex and Claude Code response accounting matched to the Rust adapters, Go ports of the Gemini CLI, Qwen Code and OpenCode adapters, and shared tool-neutral Buckets and Windows, with ModelPlan modifications in the named files"
       ],
       "paths": [
         "cli/internal/tokenacct/buckets.go",
-        "cli/internal/speed/accounting.go"
+        "cli/internal/speed/accounting.go",
+        "cli/internal/tokenacct/json.go",
+        "cli/internal/tokenacct/gemini.go",
+        "cli/internal/tokenacct/qwen.go",
+        "cli/internal/tokenacct/opencode.go"
       ]
     },
     {

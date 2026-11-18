@@ -41,7 +41,7 @@ func g(v float64) string {
 	return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.2f", math.Round(v*100)/100), "0"), ".") // half away from zero
 }
 
-var planNames = map[string]string{"chatgpt-pro-500": "Pro $500", "enterprise-eligible": "Enterprise", "edu-eligible": "Edu"}
+var planNames = map[string]string{"chatgpt-pro-200": "Pro $200", "chatgpt-pro-500": "Pro $500", "enterprise-eligible": "Enterprise", "edu-eligible": "Edu"}
 
 // SpeedLine is one tier for one model: "⚡ Codex Fast  套餐额度 ×2.5 · 积分 ×2 · 提速未公布".
 func (s Style) SpeedLine(t digest.ModelTier) string {
