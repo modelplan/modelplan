@@ -100,6 +100,38 @@ import XCTest
     XCTAssertEqual(failures, [])
   }
 
+  /// Owner 11-18: a shutter toggle while attached moves the rack's mask line with the slab (the window's own frame
+  /// animation), not in one step: sampled every 4 ms, no sample moves the visible rack by more than a quarter of the
+  /// whole change, the line passes through intermediate values, and it ends at the closed top edge.
+  func testShutterToggleWhileAttachedMovesTheRackMaskLineSmoothly() async throws {
+    let fixture = try make()
+    defer { fixture.page.discard() }
+    let window = try open(fixture)
+    try await wait(900)
+    let openLayout = try XCTUnwrap(fixture.page.verificationLayout)
+    let total = openLayout.rackMaskDrop
+    XCTAssertGreaterThan(total, 0)
+    func line() -> CGFloat? {
+      guard let mask = fixture.page.verificationRackMask, let panel = fixture.page.verificationRack.panel else { return nil }
+      return window.frame.maxY - (panel.maxY - mask.minY)
+    }
+    var samples: [CGFloat] = []
+    fixture.page.toggleShutter()
+    for _ in 0..<100 {
+      if let value = line() { samples.append(value) }
+      try await wait(4)
+    }
+    XCTAssertGreaterThan(samples.count, 20)
+    var previous = total
+    for value in samples {
+      XCTAssertLessThanOrEqual(abs(value - previous), total / 4 + 0.5, "no single-step jump of the visible rack")
+      previous = value
+    }
+    XCTAssertTrue(samples.contains { $0 > 0.5 && $0 < total - 0.5 }, "the line passes through intermediate values")
+    XCTAssertEqual(try XCTUnwrap(samples.last), 0, accuracy: 0.5, "closed: the line ends at the slab's top edge")
+    XCTAssertEqual(failures, [])
+  }
+
   /// D186/D188: from the icon, the page is ordered in at the click (alpha 0, so it prepares) while the rack's visible part
   /// extends for 0.25 s; then the cockpit comes out from under the bar for 0.25 s. Attached: 10 pt under the bar, the rack
   /// hanging from the icon over the left shoulder. The close reverses it.
