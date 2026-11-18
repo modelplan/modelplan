@@ -29,6 +29,13 @@ extension ReaderCauseTable {
     /// for the key-based providers, after auto-detect found nothing.
     public static func rowEntry(code rawCode: String, tool: String? = nil, toolName: String? = nil,
                              keyEntryAvailable: Bool = false) -> RowFixEntry? {
+        guard let fix = rowFix(code: rawCode, tool: tool, toolName: toolName, keyEntryAvailable: keyEntryAvailable) else { return nil }
+        // WP-16 / SET-9-51: the cause sentence is the card's (`entry`); only the action and target are the row's own.
+        guard let card = entry(code: rawCode, tool: tool, toolName: toolName) else { return fix }
+        return .init(reason: card.reason, action: fix.action, target: fix.target)
+    }
+
+    private static func rowFix(code rawCode: String, tool: String?, toolName: String?, keyEntryAvailable: Bool) -> RowFixEntry? {
         let name = toolName.flatMap { $0.isEmpty ? nil : $0 }
         let canon = canonical(rawCode)
         if rowIsKiro(tool) {
