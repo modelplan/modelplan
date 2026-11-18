@@ -96,6 +96,8 @@ register('host', {
   updatedHour: ['line', '{n} 小时前更新', 'Updated {n} h ago'],
   updatedDay: ['line', '{n} 天前更新', 'Updated {n} d ago'],
   refresh: ['silk', '刷新', 'Refresh'],
+  noNewData: ['line', '读不到新数据', 'no new data'], // CKP-ENG-55: reads keep failing; values are held
+  retry: ['silk', '重试', 'Retry'],
   refreshAll: ['aria', '重新读取全部订阅', 'Read all subscriptions again'],
   refreshOne: ['aria', '重新读取 {name}', 'Read {name} again'],
 });

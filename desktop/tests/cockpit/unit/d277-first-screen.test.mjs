@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Owner decision D277 (2026-11-16), cockpit first screen batch A. Synthetic data only.
 // CKP-ENG-26: an unknown reset time no longer repeats "reset ?" in every cell; the cell that will run out says
-// "out in ~40m" in its alert's colour, also when its reset time is unknown.
+// "out ~40m" in its alert's colour, also when its reset time is unknown.
 // CKP-ENG-27: the subscription key carries the plan the reader knows; one quiet "updated" line has a refresh action
 // that crosses the bridge as a typed member key.
 import test from 'node:test';
@@ -32,7 +32,7 @@ for(const [lang,unknown] of [['en','reset ?'],['zh-CN','重置未知']])test(`CK
  assert.equal(html.split(`data-full="${unknown}"`).length,1);
 });
 
-for(const [lang,text] of [['en','out in ~40m'],['zh-CN','约40m后用完']])test(`CKP-ENG-26 the cell that will run out names it in its alert colour (${lang})`,()=>{
+for(const [lang,text] of [['en','out ~40m'],['zh-CN','约40m用完']])test(`CKP-ENG-26 the cell that will run out names it in its alert colour (${lang})`,()=>{
  const amber=view([account('a',[win('5h',60,null,{trend:-1,runOutMin:40}),win('week',80,null)],{runOutMin:40})],lang);
  const [first,second]=lines(amber);
  assert.equal(first.full,text);assert.match(first.cls,/\bwarn\b/);assert.doesNotMatch(first.cls,/\bcrit\b/);

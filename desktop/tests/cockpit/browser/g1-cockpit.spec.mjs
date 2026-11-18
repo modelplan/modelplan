@@ -110,8 +110,8 @@ test('CKP-ENG-06 named general windows and the tightest Other quota stay separat
  await expect(col.locator('.qcell[data-row="other"] .qvalue')).toHaveText('20');
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-more','1');
  const other=col.locator('.qcell[data-row="other"]'),label=other.locator('.qtxt');
- await expect(label).toBeVisible();await expect(label).toHaveText('5h·mo +1');
- await expect(other).toHaveAccessibleName(/5h·5h · 30% left[\s\S]*5h·mo · 20% left/);
+ await expect(label).toBeVisible();await expect(label).toHaveText('5h · mo +1');// CKP-ENG-51: "MCP · 月"
+ await expect(other).toHaveAccessibleName(/5h · 5h · 30% left[\s\S]*5h · mo · 20% left/);
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-kind','extra');
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-tag',/mo/i);
 });
@@ -144,8 +144,9 @@ test('CKP-ENG-09 reserve uses reported reset counts and credits, not a public co
  const {send,receive}=await open(page,data);const col=page.locator('.eng-cols .ec[data-col]').first();
  await expect(col.locator('.qrv-c,.qrv-p')).toHaveCount(0);
  detail.resetCounts=[{kind:'tokens',count:2,expiresAt:'2026-11-10T12:00:00Z'}];detail.credits={balance:19613.957,observedAt:'2026-11-04T12:00:00Z'};
- expect(await receive(send('display',{data}))).toBe(true);await expect(col.locator('.qrv-c')).toContainText('2');await expect(col.locator('.qrv-p')).toHaveText('19,614');
- for(const [value,expected] of [[0.2,'<1'],[0,'0']]){detail.credits.balance=value;expect(await receive(send('display',{data}))).toBe(true);await expect(col.locator('.qrv-p')).toHaveText(expected);}
+ expect(await receive(send('display',{data}))).toBe(true);await expect(col.locator('.qrv-c')).toContainText('2');await expect(col.locator('.qrv-p')).toHaveText('Credits 19,614');// CKP-ENG-52 names it
+ // CKP-ENG-52: the reserve names its credits and leaves out a zero.
+ for(const [value,expected] of [[0.2,'Credits <1'],[0,null]]){detail.credits.balance=value;expect(await receive(send('display',{data}))).toBe(true);if(expected===null)await expect(col.locator('.qrv-p')).toHaveCount(0);else await expect(col.locator('.qrv-p')).toHaveText(expected);}
 });
 
 test('D88 attached shows the detach key and detached shows put back in the same strip slot',async({page})=>{
