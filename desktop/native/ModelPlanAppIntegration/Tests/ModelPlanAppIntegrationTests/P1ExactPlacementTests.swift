@@ -11,7 +11,9 @@ import ModelPlanWire
 
 private actor P1SyntheticEngine: EngineClient {
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
-    let store: EngineStore, rows: WireRowsSnapshot
+    let store: EngineStore
+    private(set) var rows: WireRowsSnapshot
+    private var revision: UInt64 = 1
     let context = EngineDeliveryContext(sessionID: "p1-synthetic", floor: .init(storeEpoch: "p1-synthetic", generation: 1), revision: 1)
     init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
     func start() async throws -> EngineDeliveryContext {
@@ -20,6 +22,14 @@ private actor P1SyntheticEngine: EngineClient {
     }
     func retry() async throws -> EngineDeliveryContext { try await start() }
     func stop() async {}
+    /// Swaps the rows of a live app in place (same pattern as S4RowsClient.replaceRows), so one launch can serve several fixtures.
+    func replaceRows(_ next: WireRowsSnapshot) async throws {
+        rows = next; revision += 1
+        let delivery = EngineDeliveryContext(sessionID: context.sessionID, floor: context.floor, revision: revision)
+        await store.consume(.connection(.ready(delivery)))
+        await store.consume(.context(delivery))
+        await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch, consentGeneration: delivery.floor.generation, data: next), delivery: delivery), invalidRowCount: next.projection.invalidRowCount))
+    }
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion {
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: 0))
         return .init(requestID: .string("p1-rows"))
@@ -39,6 +49,8 @@ private actor P1SyntheticEngine: EngineClient {
     func show(paneID: String?) { XCTFail("Unexpected first-run presentation in no-window test") }
     func hide() {}
 }
+
+@MainActor private final class P1EngineBox { var engine: P1SyntheticEngine? }
 
 @MainActor final class P1ExactPlacementTests: XCTestCase {
     private func protect(_ app: EngineDockMenuApplication) {
@@ -644,7 +656,7 @@ extension P1ExactPlacementTests {
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
 
-    private func launch(_ rows: WireRowsSnapshot, size: SettingsSize, percentages: Bool, stations: Int, tag: String) async throws -> (EngineDockMenuApplication, DockInstrumentView) {
+    private func launch(_ rows: WireRowsSnapshot, size: SettingsSize, percentages: Bool, stations: Int, tag: String, engine: P1EngineBox? = nil) async throws -> (EngineDockMenuApplication, DockInstrumentView) {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("p1-\(tag)-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
@@ -655,15 +667,17 @@ extension P1ExactPlacementTests {
         let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795), backingScale: 2)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
             dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
-            makeClient: { _, target in P1SyntheticEngine(store: target, rows: rows) }, makeSettingsSurface: { _ in P1NoWindowSurface() }, activateSettings: {})
+            makeClient: { _, target in let made = P1SyntheticEngine(store: target, rows: rows); engine?.engine = made; return made }, makeSettingsSurface: { _ in P1NoWindowSurface() }, activateSettings: {})
         protect(app)
         await app.prepare()
         app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
         let view = app.composition.dock.dockView
+        var ready = false
         for _ in 0..<1000 {
-            if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == stations { break }
+            if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == stations { ready = true; break }
             try await Task.sleep(for: .milliseconds(10))
         }
+        if !ready { XCTFail("\(tag) \(size.rawValue): the window never showed \(stations) rings") }
         return (app, view)
     }
 
@@ -844,6 +858,9 @@ extension P1ExactPlacementTests {
             ("deepseek", "DeepSeek"), ("x", "X"), ("xiaomi", "Xiaomi"), ("droid", "Droid"), ("unknown-vendor", "Work Bench B")]
         let output = try visualOutput("g3-32")
         for size in SettingsSize.allCases {
+            // One app launch and one window per size; each batch swaps the rows of the live window in place.
+            var live: (app: EngineDockMenuApplication, view: DockInstrumentView)?
+            let box = P1EngineBox()
             for batch in stride(from: 0, to: vendors.count, by: 4) {
                 let slice = Array(vendors[batch..<min(batch + 4, vendors.count)])
                 // The last vendor of each batch has a second account, so its ring is named "<name> · 2".
@@ -851,7 +868,25 @@ extension P1ExactPlacementTests {
                     Station(id: "v\(batch + index)", vendorKey: vendor.0, name: vendor.1, accounts: index == slice.count - 1 ? 2 : 1)
                 }
                 let expected = stations.reduce(0) { $0 + $1.accounts }
-                let (app, view) = try await launch(try synthetic(stations), size: size, percentages: false, stations: expected, tag: "g332")
+                let rows = try synthetic(stations)
+                if live == nil {
+                    live = try await launch(rows, size: size, percentages: false, stations: expected, tag: "g332", engine: box)
+                } else {
+                    let engine = try XCTUnwrap(box.engine)
+                    try await engine.replaceRows(rows)
+                }
+                let app = try XCTUnwrap(live).app, view = try XCTUnwrap(live).view
+                // Wait on concrete state: the live window shows exactly this batch's rings and names.
+                var swapped = false
+                for _ in 0..<1000 {
+                    let shown = view.presentedReadingsForChecks.values.map { $0.name.replacingOccurrences(of: " · 2", with: "") }
+                    if !app.lifecyclePaused, shown.count == expected, Set(shown) == Set(slice.map(\.1)) { swapped = true; break }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                guard swapped else {
+                    XCTFail("\(size.rawValue) batch \(batch): the window never showed the rings for \(slice.map(\.0)); shown \(view.presentedReadingsForChecks.values.map(\.name))")
+                    continue
+                }
                 let label = "\(size.rawValue) batch \(batch)"
                 let skin = try XCTUnwrap(view.presentedSkinForChecks, label)
                 let glyphBox = try XCTUnwrap(skin.stations.first { $0.subscriptionID != nil }?.glyphRect, label)
@@ -876,8 +911,8 @@ extension P1ExactPlacementTests {
                     }
                     XCTAssertFalse(metrics.contains { $0.text == reading.name && reading.name.count > 2 }, "\(label) the full name \(reading.name) is never drawn in the ring")
                 }
-                await app.stopLifecycle(); app.composition.dock.close()
             }
+            if let live { await live.app.stopLifecycle(); live.app.composition.dock.close() }
         }
     }
 }
