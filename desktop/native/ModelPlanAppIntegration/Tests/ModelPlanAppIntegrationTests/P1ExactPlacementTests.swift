@@ -672,10 +672,12 @@ extension P1ExactPlacementTests {
         await app.prepare()
         app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
         let view = app.composition.dock.dockView
+        var ready = false
         for _ in 0..<1000 {
-            if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == stations { break }
+            if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == stations { ready = true; break }
             try await Task.sleep(for: .milliseconds(10))
         }
+        if !ready { XCTFail("\(tag) \(size.rawValue): the window never showed \(stations) rings") }
         return (app, view)
     }
 
@@ -875,10 +877,15 @@ extension P1ExactPlacementTests {
                 }
                 let app = try XCTUnwrap(live).app, view = try XCTUnwrap(live).view
                 // Wait on concrete state: the live window shows exactly this batch's rings and names.
+                var swapped = false
                 for _ in 0..<1000 {
                     let shown = view.presentedReadingsForChecks.values.map { $0.name.replacingOccurrences(of: " · 2", with: "") }
-                    if !app.lifecyclePaused, shown.count == expected, Set(shown) == Set(slice.map(\.1)) { break }
+                    if !app.lifecyclePaused, shown.count == expected, Set(shown) == Set(slice.map(\.1)) { swapped = true; break }
                     try await Task.sleep(for: .milliseconds(10))
+                }
+                guard swapped else {
+                    XCTFail("\(size.rawValue) batch \(batch): the window never showed the rings for \(slice.map(\.0)); shown \(view.presentedReadingsForChecks.values.map(\.name))")
+                    continue
                 }
                 let label = "\(size.rawValue) batch \(batch)"
                 let skin = try XCTUnwrap(view.presentedSkinForChecks, label)
