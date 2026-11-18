@@ -506,6 +506,10 @@ export function dataSyncProblem({ pr, files, items, sync }) {
   if (commit.parents[0].sha !== run.head_sha) return "head commit is not on the commit the data-sync run checked out";
   // The assigned reviewer (REVIEWER:) is the only lane whose merge counts here too.
   const sticky = reviewerLane(items);
+  if (sticky) {
+    const t = tierOverride(items) ?? pathTier(prPaths(files));
+    if (!(t === 2 ? SOL_LANES : [...SOL_LANES, ...TERRA_LANES]).includes(sticky)) return `assigned reviewer ${sticky} is not an eligible GPT lane for tier ${t}`;
+  }
   if (![...verdicts(items, pr.head.sha, [])].some(([l, v]) => v === "merge" && (!sticky || l === sticky))) return "needs a trusted VERDICT: merge @ the exact head";
   return null;
 }
@@ -542,7 +546,10 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   // head (or a verified carried head) stops every tier, tier 0 included. GLM, (sonnet) and other lanes are input.
   const allLanes = verdicts(items, head, carried);
   const gptLanes = tier === 2 ? [...SOL_LANES, "(unnamed)"] : [...SOL_LANES, ...TERRA_LANES, "(unnamed)"];
-  const sticky = reviewerLane(items);
+  const assigned = reviewerLane(items);
+  // An assignment naming a lane that cannot review this tier (Sonnet, unknown, Terra on tier 2) is invalid: it filters
+  // nothing, so no GPT block is hidden, and it holds the PR until the coordinator fixes it.
+  const sticky = assigned && [...SOL_LANES, ...TERRA_LANES].includes(assigned) && (tier !== 2 || SOL_LANES.includes(assigned)) ? assigned : null;
   const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l) && (!sticky || l === sticky)));
   // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
   const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);
@@ -569,6 +576,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (blocked.length) return res(FAILURE, say(`VERDICT block ${blocked.join(" ")}`), extra);
 
   const missing = [];
+  if (assigned && !sticky) missing.push(`a valid REVIEWER (${assigned} cannot review tier ${tier})`);
   const merged = (names) => names.some((n) => lanes.get(n) === "merge");
   if (tier === 2 && !merged(SOL_LANES)) missing.push(`VERDICT ${SOL_LANES.join(" or ")} merge`);
   if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES])) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} merge`);

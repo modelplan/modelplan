@@ -68,6 +68,13 @@ test("sticky REVIEWER: only the assigned lane's verdict counts; others are advis
   assert.equal(evalPr({ files: t2, comments: [comment(rv("macrev2")), comment(rv("macrevd")), ...mixed] }).state, R.SUCCESS, "latest REVIEWER wins");
   assert.equal(evalPr({ files: t2, comments: mixed, reviews: [review(rv("macrevd"))] }).state, R.FAILURE, "a REVIEWER line in a review never assigns");
   assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed], reviews: [review(rv("macrev2"))] }).state, R.SUCCESS, "a review cannot reassign");
+  for (const bad of ["sonnet", "nosuchlane"]) {
+    const r = evalPr({ files: [file("docs/a.md")], comments: [comment(rv(bad)), comment(v("block", H, "macrev2"))] });
+    assert.equal(r.state, R.FAILURE, `${bad} assignment hides no GPT block`);
+    assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(rv(bad))] }).state, R.PENDING, `${bad} assignment holds the PR`);
+    assert.equal(evalPr({ files: t2, comments: [comment(rv(bad)), comment(v("merge", H, bad)), comment(v("merge", H, "macrevd"))] }).state, R.PENDING, `${bad} cannot pass tier 2`);
+  }
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevc")), comment(v("merge", H, "macrevc")), comment(v("merge", H, "macrevd"))] }).state, R.PENDING, "Terra assignment is invalid on tier 2");
   const stranger = { login: "mallory", id: 5 };
   assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd"), stranger), ...mixed] }).state, R.FAILURE, "untrusted REVIEWER ignored");
 });
@@ -846,6 +853,11 @@ test("data-sync: with a REVIEWER assignment only the assigned lane's merge admit
   assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "unassigned lane's merge does not admit");
   assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrevd"))] }).state, R.SUCCESS);
   assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrevd")), comment(v("block", H, "macrevd"))] }).state, R.FAILURE, "assigned block fails");
+  for (const bad of ["sonnet", "nosuchlane"]) {
+    assert.equal(evalSync({ comments: [comment(`REVIEWER: ${bad}`), comment(v("merge", H, bad)), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, `assigned ${bad} does not admit`);
+  }
+  assert.equal(evalSync({ comments: [comment("REVIEWER: macrevc"), comment(v("merge", H, "macrevc"))] }).state, R.SUCCESS, "Terra is fine on tier 1");
+  assert.equal(evalSync({ files: [file("cli/internal/quota/x.go")], comments: [comment("REVIEWER: macrevc"), comment(v("merge", H, "macrevc"))] }).state, R.FAILURE, "Terra cannot admit a tier 2 data-sync PR");
   assert.equal(evalSync({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "no REVIEWER keeps old behaviour");
 });
 
