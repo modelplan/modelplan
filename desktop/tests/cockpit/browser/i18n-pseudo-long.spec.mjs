@@ -44,3 +44,23 @@ test(`pseudo-long English keeps key labels inside their boxes (${tier})`,async({
  expect(fresh.filter(x=>!known.includes(x.path)).map(x=>[x.view,x.path,x.text]),'a key label no longer fits the pseudo-long locale').toEqual([]);
  expect(known.filter(path=>!fresh.some(x=>x.path===path)),'a known gap is fixed: remove it from the list').toEqual([]);
 });
+
+// WP-12 (V1-FINAL §14): the overview's totals row ("since MM-DD", per day) and its three-line empty state keep every word
+// inside their boxes in the pseudo-long locale; numbers are never truncated.
+test('pseudo-long English keeps the overview totals row and empty state whole (WP-12)',async({page})=>{
+ await usePseudoLong(page);
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ const leaves=()=>page.locator('.pg-overview .ov-top *, .pg-overview .ov-empty *').evaluateAll(list=>list.filter(e=>!e.children.length&&e.textContent.trim()&&(e.scrollWidth>e.clientWidth+1||e.scrollHeight>e.clientHeight+1)).map(e=>e.textContent));
+ // Today's reading only: the row says Today.
+ expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ await expect(page.locator('.pg-overview .ov-top')).toHaveCount(1);expect(await leaves()).toEqual([]);
+ // No record at all: the three lines.
+ const none=visualFixture().data;none.details.subscriptions.forEach(s=>{s.today=[];});
+ expect(await receive(send('display',{data:none}))).toBe(true);
+ await expect(page.locator('.pg-overview .ov-empty')).toHaveCount(1);expect(await leaves()).toEqual([]);
+});

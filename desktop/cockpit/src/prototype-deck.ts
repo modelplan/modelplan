@@ -183,7 +183,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text})=>({level,text}));
   // Public model data for the frontier (owner D39/D-B): the shared selection for this scope, ten at most.
   const published=publishedFleet(data,scope,now);
-  return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),sessionRanking:(()=>{const live=lastSeen(members,ids);return [...live,...recentSeen(members,ids,new Set(live.map(x=>x.ref)))];})(),models:published,lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:published},empty:accounts.length===0,ids,members};
+  return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),recordStart:recordStart(),sessionRanking:(()=>{const live=lastSeen(members,ids);return [...live,...recentSeen(members,ids,new Set(live.map(x=>x.ref)))];})(),models:published,lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:published},empty:accounts.length===0,ids,members};
  }
  // The first local day of the recorded history (cockpitHistoryV1 dailyFrom), as a local midnight.
  function recordStart(){const from=data?.history?.coverage==='local-history'?data.history.dailyFrom:null;if(!from||!/^\d{4}-\d{2}-\d{2}$/.test(from))return null;const [y,m,day]=from.split('-').map(Number),at=new Date(y!,m!-1,day!);if(at.getFullYear()!==y||at.getMonth()!==m!-1||at.getDate()!==day)return null;return at.getTime();}
@@ -227,13 +227,12 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   for(const e of page.querySelectorAll<SVGElement|HTMLElement>('svg.ov-heat[style],.hm-since[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const decl of css.split(';')){const at=decl.indexOf(':');if(at<0)continue;const name=decl.slice(0,at).trim(),value=decl.slice(at+1).trim();if(/^(left|top|--hv)$/.test(name)&&/^(-?\d+(\.\d+)?px|#[0-9a-f]{3,8})$/i.test(value))e.style.setProperty(name,value);}}
   // Opened from the HUD: the same return rule as the alerts view.
   if(returnPage!==null){const back=node('button','mfd-back',t('mfd.back',{p:t(pages[returnPage]!.module.title)}));back.type='button';back.dataset.mfd='back';page.prepend(back);}
-  // v1 has today facts but no daily history; never turn a partial aggregate into a complete total.
-  if(selected===0&&d.daily.length){const top=page.querySelector('.ov-top');if(top)top.append(node('span','lbl ov-local',ht(locale,'host.onThisMac')));}
-  // D63: a total over a period longer than the local record says where the record starts, not "30 days".
+  // The overview draws its own totals row, "since" label and empty state (WP-12); the deck adds nothing to them.
+  // D-D: the totals are this device's records; the totals row carries that as its hover note (it has no room for a label).
+  if(selected===0&&d.daily.length){const top=page.querySelector<HTMLElement>('.ov-top');if(top)top.dataset.tip=ht(locale,'host.onThisMac');}
+  // D63: the subscription usage block says where a shorter local record starts.
   const since=recordStart();
-  if(since!==null&&selected===0&&d.daily.length){const sum=page.querySelector('.ov-top .ov-sum'),label=sum?.previousElementSibling;if(label&&since>dayStart(d.now,29))label.textContent=t('mfd.since',{d:md(since,{lang:locale})});}
   if(since!==null&&selected===1)for(const stats of page.querySelectorAll<HTMLElement>('.sp-stats[data-days]')){const days=Number(stats.dataset.days),head=stats.querySelector('.stat-h');if(head&&Number.isFinite(days)&&since>dayStart(d.now,days-1))head.textContent+=' · '+t('mfd.since',{d:md(since,{lang:locale})});}
-  if(selected===0&&!d.daily.length){const members=scope==='all'?d.members:d.members.filter(m=>m.key===scope),values=members.map(m=>prototypeEngineSupplement(m.account,data??undefined).todayTokens);if(values.length&&values.every((v):v is number=>v!==null)){const sum=values.reduce((a,v)=>a+v,0);if(Number.isSafeInteger(sum)){const total=node('div','ov-top');total.append(node('span','lbl',t('mfd.today')),node('b','ov-total',tok(sum)));const alerts=page.querySelector('.mfd-alerts');if(alerts)alerts.after(total);else page.prepend(total);}}}
   // G3-109: a subscription with a balance but no usage percentage (Grok Build on the X Subscription, D228) has no
   // chart; its Overview shows the balance and why there is no percentage instead of an empty "Quota only". Recorded
   // token history (macrev2-925-1) keeps its totals and chart: the balance then follows the totals instead of the empty state.
