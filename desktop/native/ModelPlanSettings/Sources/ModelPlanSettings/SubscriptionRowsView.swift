@@ -2,7 +2,7 @@
 import AppKit
 
 /// D87 slice 6/7: the Subscriptions rows. One row per subscription (mark, name, plan, a status line with one
-/// fix action, a display-only visibility switch, up and down), then "Detected, not added" with an Add button,
+/// fix action, a display-only visibility switch, up and down), then "Detected, not added yet" with an Add button,
 /// then a collapsed "Supported, not installed". It draws a `SubscriptionRowModel` and reports presses to the
 /// host; it never grants, revokes or saves anything itself.
 @MainActor final class SubscriptionRowsView: NSStackView {
@@ -113,7 +113,7 @@ import AppKit
         }
         if !model.detected.isEmpty {
             if let last = arrangedSubviews.last { setCustomSpacing(16, after: last) }
-            heading(.init("Detected, not added", "已检测到，尚未添加"), id: "subscriptions.detected.heading")
+            heading(.init("Detected, not added yet", "已检测到，尚未添加"), id: "subscriptions.detected.heading")
             note(.init("ModelPlan reads a tool only after you add it.", "添加之后，ModelPlan 才会读取这个工具。"), id: "subscriptions.detected.note")
             for row in model.detected { detectedRow(row) }
         }
@@ -172,7 +172,7 @@ import AppKit
     }
 
     private func fixButton(_ row: SubscriptionRow, prefix: String) -> ConnectionButton? {
-        guard let fix = row.fix else { return nil }
+        guard let fix = row.fix, !fix.isInformational else { return nil }
         let available = configuration.fixAvailable(row)
         // An action the app cannot perform is not offered (no dead buttons); the status line still says what to do.
         // Keychain and key entry stay visible while they wait for a moment when the engine can take the change.

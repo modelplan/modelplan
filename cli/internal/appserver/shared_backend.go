@@ -457,14 +457,13 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 			// default route off, so removing the manual key would leave GLM unread. The manual key still wins first.
 			// An existing explicit choice (an environment key, a profile or another backend) is never replaced: file
 			// presence is not evidence that ZCode was the selected source.
-			prior := consent.Capture().State().Tools["zai"]
-			chosen := prior.KeyEnv != "" || len(prior.Profiles) > 0 || (prior.Backend != "" && prior.Backend != "native")
-			if definition.Tool == "zai" && !chosen && b.config.ManualKeyPresent != nil && b.config.ManualKeyPresent("zai") {
-				if home, err := os.UserHomeDir(); err == nil {
-					if fi, err := os.Lstat(quota.ZCodeProviderConfig(home)); err == nil && fi.Mode().IsRegular() {
-						record.KeyEnv = ""
-					}
-				}
+			// G3-127: the first-run Done grant (no manual key) must not either. Before Done the page reads ZCode's
+			// provider file; recording an environment key that is not set (the app has none) switched that route off and
+			// left GLM unread after Done. An environment key that is actually set stays an explicit source (macrev2-993-2).
+			// macrevd-1037-1: only the GLM grant may consult ZCode's file or the GLM manual-key store; another
+			// provider's key grant never reaches either.
+			if definition.Tool == "zai" && b.zcodeKeepsDetectedSource(record.KeyEnv) {
+				record.KeyEnv = ""
 			}
 		}
 		return record, nil
@@ -485,6 +484,26 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 	b.notify()
 	return result, nil
 }
+
+// zcodeKeepsDetectedSource: the GLM key grant leaves ZCode's provider file as the source. Call it for the zai tool only.
+// The checks short-circuit in order: an earlier explicit choice, then the environment key, then the GLM manual-key
+// store, then ZCode's file, so nothing past the first deciding check is read.
+func (b *SharedBackend) zcodeKeepsDetectedSource(keyEnv string) bool {
+	prior := consent.Capture().State().Tools["zai"]
+	if prior.KeyEnv != "" || len(prior.Profiles) > 0 || (prior.Backend != "" && prior.Backend != "native") {
+		return false
+	}
+	if os.Getenv(keyEnv) != "" && (b.config.ManualKeyPresent == nil || !b.config.ManualKeyPresent("zai")) {
+		return false
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	fi, err := os.Lstat(quota.ZCodeProviderConfig(home))
+	return err == nil && fi.Mode().IsRegular()
+}
+
 func grantError(err error) error {
 	switch err.Error() {
 	case "consent_stale", "stale_generation":

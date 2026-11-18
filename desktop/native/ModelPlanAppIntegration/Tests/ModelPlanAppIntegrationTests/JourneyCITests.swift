@@ -82,7 +82,7 @@ import ModelPlanWire
                   active:true,contents:["synthetic":content])
         }
         defer{controller.stop()};controller.start()
-        XCTAssertNil(controller.presentation?.card.subscriptionID)
+        XCTAssertEqual(controller.presentation?.card.subscriptionID,"synthetic","no ring dwell (G3-120): the hovered ring's card opens on arrival")
         clock=0.30
         XCTAssertTrue(controller.advanceJourneyHoverDwell(for:"synthetic"))
         XCTAssertEqual(controller.presentation?.card.subscriptionID,"synthetic")

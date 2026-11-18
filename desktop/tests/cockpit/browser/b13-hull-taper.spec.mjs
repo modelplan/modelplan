@@ -51,10 +51,11 @@ for(const s of shapes)test(`B13 ${s.tier}${s.closed?' closed':''}: study hull wa
   return {upper:el('.hull-upper'),cone:el('.hull-cone'),lower:el('.hull-lower'),record:getComputedStyle(document.querySelector('.ck-shell .hull-record')).display,
    canopyMask:name(canopy.webkitMaskImage),canopySize:canopy.webkitMaskSize,body:getComputedStyle(document.querySelector('.ck-shell'),'::before').clipPath};});
  const v2=s.closed?'closed':s.plate,lowerMask=s.closed?890:s.plate;
- expect(v.upper).toMatchObject({display:'block',box:[-8,s.upper[0],636,s.upper[1]],pos:'50% 9px',
+ // G3-118: the upper wall reaches 1 px under the taper and the lower wall 1 px over the taper and under the aft plate.
+ expect(v.upper).toMatchObject({display:'block',box:[-8,s.upper[0],636,s.upper[1]+1],pos:'50% 9px',
   mask:`upper-walls-${v2}-1x.png,upper-skin-${v2}-1x.png`,size:`636px ${s.closed?283:s.plate===890?283:277}px, 636px 32px`});
  expect(v.cone).toMatchObject({display:'block',box:[-8,s.cone,636,31],pos:`50% ${s.phase-s.cone}px`,mask:'taper-890-1x.png',size:'636px 31px'});
- expect(v.lower).toMatchObject({display:'block',box:[-8,s.cone+31,636,s.lower],pos:`50% ${s.phase-s.cone-31}px`,
+ expect(v.lower).toMatchObject({display:'block',box:[-8,s.cone+30,636,s.lower+2],pos:`50% ${s.phase-s.cone-30}px`,
   mask:`lower-stage-${lowerMask}-1x.png,lower-skin-890-1x.png`,size:`636px ${s.closed?338:s.lower}px, 636px 32px`});
  for(const part of [v.upper,v.cone,v.lower])expect(part.bg).toBe('lower-skin-890-1x.png,lower-skin-890-2x.png');
  expect(v.record).toBe('none');

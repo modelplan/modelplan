@@ -75,7 +75,7 @@ public struct SubscriptionRowModel: Equatable, Sendable {
     private static let notPrerequisite: Set<String> = [
         "ok", "estimated", "stale_reading", "observation_time_unknown", "not_read_yet", "reader_busy", "consent_changed",
         "no_manual_reading", "no_usage_windows", "consent_required", "consent_denied", "consent_outdated", "readers_off",
-        "no_consent", "no_dock_rows", "other", "policy_pending",
+        "no_consent", "no_dock_rows", "policy_pending",
     ]
     private static func isKeychain(_ code: String) -> Bool { code.hasPrefix("keychain_") }
 
@@ -137,7 +137,10 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             let displayName = sub.name.english.isEmpty ? name(tool) : sub.name
             let fix = code.flatMap { ReaderCauseTable.rowEntry(code: $0, tool: tool, toolName: displayName.value(english), keyEntryAvailable: keyEntryAvailable) }
             let status: SettingsText
-            if let fix { status = fix.reason }
+            if let fix, stale {
+                status = .init("The last reading is old · cause: \(fix.reason.english)",
+                               "上次读数已过期 · 原因：\(fix.reason.chinese)")
+            } else if let fix { status = fix.reason }
             else {
                 switch sub.source {
                 case .fresh: status = SettingsText("Reading works", "读取正常")
@@ -150,7 +153,7 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             return SubscriptionRow(id: id, tool: tool, name: displayName, plan: sub.plan, section: .added,
                                    consent: toolFacts?.consent, state: toolFacts?.state, causeCode: code,
                                    visible: !hiddenIDs.contains(id), position: index, addedCount: ordered.count,
-                                   status: status, needsAttention: fix != nil, fix: fix, canAdd: false)
+                                   status: status, needsAttention: fix.map { !$0.isInformational } ?? false, fix: fix, canAdd: false)
         }
 
         var detected: [SubscriptionRow] = [], absent: [SubscriptionRow] = [], pending: [SubscriptionRow] = []

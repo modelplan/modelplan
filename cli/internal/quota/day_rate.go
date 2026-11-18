@@ -66,8 +66,6 @@ func (w Window) LastDayRunout(now time.Time) *int {
 	return projectedRunout(&w, rise/dayRateLook.Hours(), now)
 }
 
-// projectedRunout is shared by the short burst and full-day rates. Count from
-// the latest reading; a forecast at or after reset is not a run-out warning.
 // RunOutForecast is the window's outlook for a consumer that needs a stable moment rather
 // than a countdown: it is derived from the reading, so it does not move with the clock. A
 // recent rate wins over the cycle average, the same order evalWindow uses for its pace.
@@ -78,7 +76,7 @@ func (w Window) RunOutForecast() *rows.WindowForecast {
 		return nil
 	}
 	out := &rows.WindowForecast{Pace: w.Pace, Basis: "none"}
-	if w.Pace == "exhausted" || w.UsedPercent == nil || w.ResetsAt == nil || w.ObservedAt.IsZero() {
+	if w.Pace == "exhausted" || w.UsedPercent == nil || w.ObservedAt.IsZero() {
 		return out
 	}
 	left := 100 - *w.UsedPercent
@@ -86,7 +84,7 @@ func (w Window) RunOutForecast() *rows.WindowForecast {
 	switch {
 	case w.RunsOutInMinutes != nil && w.RecentPercentPerHour != nil && *w.RecentPercentPerHour > 0:
 		out.Basis, minutes = "recent-rate", left / *w.RecentPercentPerHour * 60
-	case w.Pace == "tight" && w.ProjectedPercent != nil && *w.ProjectedPercent > 100 && *w.UsedPercent > 0:
+	case w.Pace == "tight" && w.ResetsAt != nil && w.ProjectedPercent != nil && *w.ProjectedPercent > 100 && *w.UsedPercent > 0:
 		elapsed := float64(w.WindowMinutes) - w.ResetsAt.Sub(w.ObservedAt).Minutes()
 		if elapsed <= 0 {
 			return out
@@ -96,7 +94,7 @@ func (w Window) RunOutForecast() *rows.WindowForecast {
 		return out
 	}
 	at := w.ObservedAt.Add(time.Duration(minutes * float64(time.Minute)))
-	if !at.Before(*w.ResetsAt) {
+	if w.ResetsAt != nil && !at.Before(*w.ResetsAt) {
 		out.Basis = "none"
 		return out
 	}
@@ -104,15 +102,18 @@ func (w Window) RunOutForecast() *rows.WindowForecast {
 	return out
 }
 
+// projectedRunout is shared by the short burst and full-day rates. Count from
+// the latest reading; a forecast at or after reset is not a run-out warning.
+// With no reset time known (CKP-ENG-26), every run-out counts.
 func projectedRunout(w *Window, rate float64, now time.Time) *int {
-	if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) || w.ResetsInMinutes == nil {
+	if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) || (w.ResetsAt != nil && w.ResetsInMinutes == nil) {
 		return nil
 	}
 	out := int(math.Ceil((100-*w.UsedPercent)/rate*60 - now.Sub(w.ObservedAt).Minutes()))
 	if out < 1 {
 		out = 1
 	}
-	if out >= *w.ResetsInMinutes {
+	if w.ResetsInMinutes != nil && out >= *w.ResetsInMinutes {
 		return nil
 	}
 	return &out

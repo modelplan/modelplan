@@ -71,12 +71,21 @@ public struct DockEdgePresentation:Equatable,Sendable {
     private var primaryID:String?
     private var drag: PulsePanelDrag?
     private var dragStart: DockEdgePresentation?
+    /// Called once per press, when it is taken (Pulse rebuilds nothing during a carry): the host prepares every
+    /// edge's view for the press display here, never per move.
     public var prepareDragDisplay: ((DockDisplayArea) -> Void)?
+    /// A carry that had moved was cancelled. An unmoved press (a plain click) never calls it.
     public var onDragCancelled: (() -> Void)?
-    /// One fixed-wording line per drag start, end or cancel and per edge change, for the app's diagnostics log.
+    /// The press is over, after the release refresh.
+    public var onPressEnded: (() -> Void)?
+    /// One fixed-wording line per drag start, end or cancel and per edge change.
     public var onDiagnostic: ((String) -> Void)?
     public var isBackgroundMoving: Bool { presentation?.moving == true }
     public var isBackgroundPressed: Bool { drag != nil }
+    /// The press has moved past the click threshold: the widget is being carried (Pulse `isDragging`).
+    public var isCarrying: Bool { drag?.moved == true }
+    /// The placement the carry last showed: the drop lands there when the release cannot re-resolve it.
+    private var lastCarried: DockEdgePlacement?
     public private(set) var isPublishingRelease = false
     public init(preference:DockEdgePreference = .init(),policy:DockVisibilityPolicy = .init(),clock:@escaping ()->TimeInterval,scheduler:any DockEdgeScheduling,read:@escaping ()->DockEdgeEnvironment,position:@escaping (DockPlacementRequest)throws->DockEdgePlacement? = {try $0.resolveEligibleEdge()}){
         self.preference=preference;visibility = .init(policy:policy);self.clock=clock;self.scheduler=scheduler;self.read=read;self.position=position
@@ -166,7 +175,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
         }
     }
     private func publish(_ next:DockEdgePresentation){if next != presentation{presentation=next;onPresent?(next)}}
-    private func clearMove() { drag = nil; dragStart = nil }
+    private func clearMove() { drag = nil; dragStart = nil; lastCarried = nil }
     public func backgroundCanDrag(local:CGPoint)->Bool {
         guard dragLayout == presentation?.placement?.layout else { return false }
         return dragRegions?.contains(local) ?? false
@@ -176,8 +185,9 @@ public struct DockEdgePresentation:Equatable,Sendable {
               let current = presentation, current.state == .expanded, let placement = current.placement else { return false }
         dragStart = current
         drag = PulsePanelDrag(press: global, placement: placement)
-        onDiagnostic?("drag start kind=body edge=\(placement.edge)")
-        return true
+        preparePress(at: global)
+        if drag != nil { onDiagnostic?("drag start kind=body edge=\(placement.edge)") }
+        return drag != nil
     }
     /// D244: the ring is not a body drag region (its click stays a click); once its press moves, the same Pulse
     /// carry starts from the press point.
@@ -186,8 +196,14 @@ public struct DockEdgePresentation:Equatable,Sendable {
               let current = presentation, current.state == .expanded, let placement = current.placement else { return false }
         dragStart = current
         drag = PulsePanelDrag(press: global, placement: placement)
-        onDiagnostic?("drag start kind=carry edge=\(placement.edge)")
-        return true
+        preparePress(at: global)
+        if drag != nil { onDiagnostic?("drag start kind=carry edge=\(placement.edge)") }
+        return drag != nil
+    }
+    /// Every edge view is prepared once when the press is taken.
+    private func preparePress(at global: CGPoint) {
+        guard let display = PulsePanelDrag.display(at: global, in: environment().displays) else { return }
+        prepareDragDisplay?(display)
     }
     private func allowsDrag(_ presence: DockPresence) -> Bool {
         presence.lifecycleActive && presence.enabled && presence.allowedOverFullscreen
@@ -197,19 +213,15 @@ public struct DockEdgePresentation:Equatable,Sendable {
         guard running, var transaction = drag, transaction.beginMovement(at: global) else { return }
         drag = transaction
         let before = environment()
-        guard allowsDrag(before.presence) else { refresh(); return }
+        guard allowsDrag(before.presence) else { refresh(); if drag == nil { onPressEnded?() }; return }
+        // The display under the pointer (Pulse `PanelScreen.containing`). Nothing is re-rendered here: the edge
+        // views were prepared when the press was taken (`preparePress`), as Pulse rebuilds nothing mid-carry.
         guard let display = PulsePanelDrag.display(at: global, in: before.displays) else { return }
-        prepareDragDisplay?(display)
-        guard drag != nil, running else { return }
-        let env = environment()
-        guard allowsDrag(env.presence) else { refresh(); return }
-        // Topology can change while the destination artwork is prepared. Keep
-        // the verified carry until the next pointer event has a current target.
-        guard PulsePanelDrag.display(at: global, in: env.displays) == display else { return }
+        let env = before
         let carried = transaction.carry(pointer: global, display: display, layouts: env.layouts)
         do {
             guard let placement = try resolve(preference: carried.0, environment: env, pointer: global) else { return }
-            drag = transaction
+            drag = transaction; lastCarried = placement
             let frame = carried.attached ? placement.frame :
                 transaction.floatingFrame(pointer: global, size: placement.frame.size, visible: display.usableFrame)
             publish(.init(state: .expanded, placement: placement, carriedFrame: frame, moving: true))
@@ -225,59 +237,56 @@ public struct DockEdgePresentation:Equatable,Sendable {
         return try position(.init(preference: preference, environment: input, wakeDepth: visibility.policy.wakeDepth))
     }
 
+    /// Pulse persists the dock it showed, at mouse-up, with nothing able to veto it (`record(... persist:)`). The
+    /// release re-resolves the landing only to refine it; when it cannot (the edge was eliminated, the pointer left
+    /// every display), the drop keeps the placement the carry last showed instead of being silently cancelled.
+    /// The commit is reported before the release's own refresh, so nothing that refresh re-enters can skip it.
     public func endBackgroundMove(global: CGPoint) {
         guard running, let transaction = drag else { return }
-        let before = environment()
-        guard allowsDrag(before.presence) else { refresh(); return }
-        guard transaction.moved, let display = PulsePanelDrag.display(at: global, in: before.displays) else {
-            cancelBackgroundMove(); return
-        }
-        prepareDragDisplay?(display)
-        guard drag != nil, running else { return }
-        do {
-            let env = environment()
-            guard allowsDrag(env.presence) else { refresh(); return }
-            guard PulsePanelDrag.display(at: global, in: env.displays) == display else {
-                cancelBackgroundMove()
-                return
-            }
+        let env = environment()
+        guard allowsDrag(env.presence) else { refresh(); onPressEnded?(); return }
+        guard transaction.moved else { cancelBackgroundMove(); return }
+        // The last shown placement stands only while its display is still attached.
+        var destination = lastCarried.flatMap { shown in env.displays.contains { $0.id == shown.displayID } ? shown : nil }
+        if let display = PulsePanelDrag.display(at: global, in: env.displays) {
             let intent = transaction.release(pointer: global, display: display, layouts: env.layouts)
-            guard let destination = try resolve(preference: intent, environment: env, pointer: global) else {
-                cancelBackgroundMove(); return
-            }
-            let token = timerGeneration
-            let startEdge = dragStart?.placement?.edge
-            clearMove()
-            onClearRecordedLocks?(.drag)
-            onDiagnostic?("drag end edge=\(destination.preference.edge) was=\(startEdge.map { "\($0)" } ?? "none")")
-            if let startEdge, startEdge != destination.preference.edge {
-                onDiagnostic?("edge change edge=\(destination.preference.edge) was=\(startEdge) source=drag")
-            }
-            guard running, timerGeneration == token else { return }
-            preference = destination.preference
-            isPublishingRelease = true
-            defer { isPublishingRelease = false }
-            refresh(intent: .reveal)
-            guard running, preference == destination.preference else { return }
-            onCommittedPlacement?(destination.preference)
-        } catch {
-            cancelBackgroundMove()
-            onFailure?(error)
+            do { if let resolved = try resolve(preference: intent, environment: env, pointer: global) { destination = resolved } }
+            catch { onFailure?(error) }
         }
+        guard let destination else { cancelBackgroundMove(); return }
+        let token = timerGeneration
+        let startEdge = dragStart?.placement?.edge
+        clearMove()
+        onClearRecordedLocks?(.drag)
+        onDiagnostic?("drag end edge=\(destination.preference.edge) was=\(startEdge.map { "\($0)" } ?? "none")")
+        if let startEdge, startEdge != destination.preference.edge {
+            onDiagnostic?("edge change edge=\(destination.preference.edge) was=\(startEdge) source=drag")
+        }
+        guard running, timerGeneration == token else { onPressEnded?(); return }
+        preference = destination.preference
+        onCommittedPlacement?(destination.preference)
+        isPublishingRelease = true
+        refresh(intent: .reveal)
+        isPublishingRelease = false
+        onPressEnded?()
     }
 
     public func cancelBackgroundMove() {
-        guard drag != nil else { return }
+        guard let transaction = drag else { return }
         onDiagnostic?("drag cancelled")
         let previous = dragStart
         clearMove()
         onClearRecordedLocks?(.drag)
-        guard running else { return }
-        if let onDragCancelled {
-            onDragCancelled()
-        } else if let previous {
-            publish(previous)
+        guard running else { onPressEnded?(); return }
+        // An unmoved press is a click: nothing was carried, so nothing is restored or rebuilt (Pulse `finish`).
+        if transaction.moved {
+            if let onDragCancelled {
+                onDragCancelled()
+            } else if let previous {
+                publish(previous)
+            }
         }
         refresh()
+        onPressEnded?()
     }
 }

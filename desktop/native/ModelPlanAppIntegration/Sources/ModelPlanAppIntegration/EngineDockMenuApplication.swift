@@ -63,6 +63,8 @@ struct StatusNoticePresentation {
     public let cockpitEntryEnabled: Bool
     private var terminating = false
     private var lifecycleController: EngineLifecycleController?
+    /// Recovery step 6: the engine stopped on its own and the supervisor has not brought it back yet.
+    var lifecycleEngineStopped: Bool { lifecycleController?.engineStopped ?? false }
     private var activityPaused = false
     private(set) var lifecyclePaused = false
     private var accessibilityObserver: NSObjectProtocol?
@@ -398,10 +400,12 @@ struct StatusNoticePresentation {
         return rect
     }
     /// Build 14c (G3-79): the screen point the latest open came from (the widget's ignition click). Nil for the menu
-    /// bar icon, the status menu and shortcuts, which open on the icon's display as before.
+    /// bar icon, the status menu and shortcuts. Only a detached open uses it; attached, the cockpit always opens under
+    /// the menu bar icon's display (G3-128).
     var cockpitOpenPoint: CGPoint?
     /// D88: `fromStatusItem` is the menu bar icon's own click: the attached cockpit grows out of the icon.
-    /// `openPoint` is the click that opened it elsewhere (the widget's ignition): the cockpit opens on that display.
+    /// `openPoint` is the click that opened it elsewhere (the widget's ignition): a detached cockpit with no remembered
+    /// place opens on that display; an attached one still opens under the icon (G3-128).
     public func showConsole(fromStatusItem: Bool = false, openPoint: CGPoint? = nil) {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
         cockpitOpenPoint = fromStatusItem ? nil : openPoint
@@ -420,8 +424,8 @@ struct StatusNoticePresentation {
         refreshStatusTooltip()
         dockHelp?.refresh()
     }
-    /// D204 v3 (G3-94): attached to the menu bar, the ignition toggles the cockpit like a menu bar popover (it opens
-    /// under the icon of the display pressed on). Detached, it always brings the cockpit to the front like a Dock icon
+    /// D204 v3 (G3-94): attached to the menu bar, the ignition toggles the cockpit like a menu bar popover (G3-128: it
+    /// opens under the status item, on the status item's display, whichever display the widget is on). Detached, it always brings the cockpit to the front like a Dock icon
     /// (covered or on another Space: moved to the current Space; minimised: restored; closed: opened at its last
     /// position) and never closes it; the detached cockpit closes from its own title-strip close key.
     /// G3-94 was the attached case: the ignition's mouse-down closed the cockpit as an outside click, then its action

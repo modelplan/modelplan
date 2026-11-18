@@ -179,6 +179,22 @@ final class DiagnosticsBundleTests: XCTestCase {
     }
 
     /// glm-963-2: a reply that arrives in several pipe reads is kept whole, not just its first chunk.
+    /// #992 ruling: export projects every engine record again, so a pre-shaped line (one that imitates the
+    /// projected grammar, type slot included) carries no extra text into the bundle. The type and original length
+    /// of a projected record are not kept (provenance marker tracked in #989).
+    func testExportReprojectsEveryEngineRecordIncludingPreShapedOnes() {
+        let stamp = "2026-11-14T20:14:13.400-08:00 pid=4242 "
+        let types = ["synthetic.private", "*errors.errorString", "two words.here", "person@private.example",
+                     "https://private.example/path.x", String(repeating: "a", count: 90) + ".T"]
+        for type in types {
+            let message = "type=\(type) <message redacted, 3 bytes>"
+            let out = DiagnosticsBundleFilter.engineLog(stamp + "panic: " + message)
+            XCTAssertEqual(out, stamp + "panic: <message redacted, \(message.utf8.count) bytes>")
+            XCTAssertFalse(out.contains(type), out)
+        }
+        XCTAssertEqual(DiagnosticsBundleFilter.engineLog(stamp + "panic: secret words"), stamp + "panic: <message redacted, 12 bytes>")
+    }
+
     func testDoctorOutputWrittenInChunksIsKeptWhole() throws {
         let chunked = try script("""
         printf '{"readers":['
