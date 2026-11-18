@@ -123,6 +123,21 @@ test("clone probe: a failed first copy leaves no nested seed and still reuses th
   assert.ok(!fs.existsSync(path.join(sp, "partial")) && !fs.existsSync(path.join(sp, path.basename(sp))));
 });
 
+test("clone probe: a partial copy whose wipe fails is never reused or nested; the job builds cold", () => {
+  const d = setup();
+  publish(d);
+  const real = spawnSync("which", ["cp"], { encoding: "utf8" }).stdout.trim();
+  const realRm = spawnSync("which", ["rm"], { encoding: "utf8" }).stdout.trim();
+  fs.writeFileSync(path.join(d, "bin", "cp"), `#!/bin/bash\nif [ ! -e "${d}/cp-failed" ]; then touch "${d}/cp-failed"; for last; do :; done; mkdir -p "$last/partial"; exit 1; fi\nexec ${real} "$@"\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(d, "bin", "rm"), `#!/bin/bash\ncase "$*" in *.tmp.*) exit 1;; esac\nexec ${realRm} "$@"\n`, { mode: 0o755 });
+  const r = run(d, { SEED_ROOT: seedDir(d) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /seed clone failed/);
+  const sp = path.join(d, "scratch", "desktop_native_Pkg");
+  assert.equal(fs.readFileSync(path.join(sp, "product"), "utf8"), "built\n");
+  assert.ok(!fs.existsSync(path.join(sp, "c")) && !fs.existsSync(path.join(sp, "partial")) && !fs.existsSync(path.join(sp, "desktop_native_Pkg")));
+});
+
 test("an interrupted run releases its lock", async () => {
   const d = setup();
   fs.writeFileSync(path.join(d, "bin", "swift"), `#!/bin/bash\nif [ "$1" = --version ]; then echo s; exit 0; fi\nsleep 3\n`, { mode: 0o755 });

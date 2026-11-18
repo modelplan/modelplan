@@ -18,13 +18,22 @@ ok=1; rows=; failed_tests=; errors=
 SEED_ROOT=${SEED_ROOT:-}; SEED_WRITE=${SEED_WRITE:-0}
 sha256() { if command -v shasum >/dev/null; then shasum -a 256; else sha256sum; fi | cut -d' ' -f1; }
 wipe() { chmod -R u+w "$@" 2>/dev/null; rm -rf "$@"; }   # seeds are read-only: make them writable before removing
-# Copy $1 to $2 through a temp name next to it and rename on success (APFS clonefile first, plain copy as fallback).
-# A partial copy is removed, never renamed into place and never nested by a retry.
+# Copy $1 to $2 (must not exist): each attempt (APFS clonefile, then plain copy) gets a FRESH mktemp directory next to
+# it, copies to <tmp>/c, and renames on success. A failed attempt is wiped; if the wipe fails nothing is retried and the
+# caller builds cold. A path is never reused, so a partial copy can neither be renamed into place nor nested.
 clone() {
-  local tmp="$2.tmp.$$"
-  wipe "$tmp"; mkdir -p "$(dirname "$2")" || return 1
-  if ! cp -cR "$1" "$tmp" 2>/dev/null; then wipe "$tmp"; cp -R "$1" "$tmp" || { wipe "$tmp"; return 1; }; fi
-  mv "$tmp" "$2" || { wipe "$tmp"; return 1; }
+  local flag tmp
+  [ ! -e "$2" ] || return 1
+  mkdir -p "$(dirname "$2")" || return 1
+  for flag in -cR -R; do
+    tmp=$(mktemp -d "$2.tmp.XXXXXX") || return 1
+    if cp "$flag" "$1" "$tmp/c" 2>/dev/null; then
+      if [ ! -e "$2" ] && chmod -R u+w "$tmp/c" && mv "$tmp/c" "$2"; then rmdir "$tmp" 2>/dev/null; return 0; fi
+      wipe "$tmp"; return 1
+    fi
+    wipe "$tmp"; [ ! -e "$tmp" ] || return 1
+  done
+  return 1
 }
 # Hash of every entry of a directory: type, size, nanosecond mtime, symlink target. Any error fails (cold build).
 manifest() (
