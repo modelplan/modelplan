@@ -30,10 +30,10 @@ export function fieldFleet(models:readonly FieldModel[],chosen:ReadonlySet<strin
 /** WP-22 (D298): one effort in the launch-field component's tuple shape: label, ability, cost ratio, time ratio (null =
  * unknown), time estimated. */
 export type WindowEffort=[string,number,number,number|null,boolean];
-/** WP-22 (D298): a published model in the launch-field component's model shape (component 1.1.0 FieldModel). The component
- * computes verdicts itself; the host sends public data only. `fuel` and `racer` need index diagnostics the app's publication
- * does not carry, so every rocket flies the neutral "mid" fuel and no racer; the vehicle is the component's own pick. */
-export interface WindowModel {readonly id:string;readonly name:string;readonly dev:string;readonly colour:string;readonly rec:string|null;readonly e:WindowEffort[];readonly sel:WindowEffort|null;readonly fuel:'hi'|'mid'|'lo';readonly racer:boolean}
+/** WP-22 (D298): a published model in the launch-field component's WindowModel shape (component 1.2.0). Public data only:
+ * the component computes verdicts, grades fuel and picks the vehicle itself, and derives the site slug from the name, so
+ * no slug, fuel, racer or shape is sent. */
+export interface WindowModel {readonly id:string;readonly name:string;readonly dev:string;readonly colour:string;readonly rec:string|null;readonly e:WindowEffort[];readonly sel:WindowEffort|null}
 export function windowModel(m:PublishedModel):WindowModel|null {
  const e:WindowEffort[]=[];let star:WindowEffort|null=null;
  for(const x of m.efforts){
@@ -42,7 +42,7 @@ export function windowModel(m:PublishedModel):WindowModel|null {
   if(x.star||x.effort===m.recommended)star=star??row;
  }
  const sel=star??e[0]??null;if(!sel)return null;
- return {id:m.id,name:m.name,dev:m.developerId,colour:rocketColour(m.developerId),rec:star?star[0]:null,e,sel,fuel:'mid',racer:false};
+ return {id:m.id,name:m.name,dev:m.developerId,colour:rocketColour(m.developerId),rec:star?star[0]:null,e,sel};
 }
 /** The ids whose standing (★) effort is provisional: the component marks their index "provisional". */
 export function provisionalIds(models:readonly PublishedModel[]):string[] {

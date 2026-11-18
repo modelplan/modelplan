@@ -76,7 +76,7 @@ test('both editions have reproducible bounded manifests; community excludes rese
     assert.equal(provenance.fixtureAudit.copied,false);
     for(const name of Object.keys(manifest.files)){
       assert.doesNotMatch(name,/workbench-data|three[.]/i);
-      const brands=['openai-white','claude-rounded','claude','cursor','copilot','opencode','zai-white','zhipu','x-white','qwen','deepseek','kimi-white','minimax','gemini','xiaomi'].map(mark=>`assets/brands/${mark}.svg`);
+      const brands=['openai-white','claude-rounded','claude','cursor','copilot','opencode','zai-white','zhipu','x-white','qwen','alibaba','deepseek','kimi-white','minimax','gemini','xiaomi'].map(mark=>`assets/brands/${mark}.svg`);
       if(name.endsWith('.svg'))assert.ok(edition==='official'&&['assets/detach.svg','assets/put-back.svg','assets/hull/cap-slab.svg','assets/logo.svg',...brands].includes(name),`unapproved SVG: ${name}`);
       // Published U12 PNGs may join the verified pack; no runtime scene code but the component's script and its stylesheet.
       if(name.startsWith('runtime/')&&name!==scene&&name!=='runtime/field-scene/launch-field.css')assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);

@@ -13231,24 +13231,24 @@
     {
       "file": "field-scene/README.md",
       "kind": "notice",
-      "sha256": "cd8eade80d0e01879f3837b5cf76828b1a0baede05734bfed5ef02ecc78c0bef",
-      "bytes": 3067,
+      "sha256": "105c89c851ebdf4dd2ec491e47ebfca143301362d0307c8d661e8896b86ea90b",
+      "bytes": 3018,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
     },
     {
       "file": "field-scene/launch-field.js",
       "kind": "field-scene",
-      "sha256": "922b2de5debd65161475e6899cb67d37e0ad25aca76c481bbe7c0d550d9cc4f9",
-      "bytes": 805164,
+      "sha256": "83d59dee436e1f7cd619b37b46d5c14c2aeefdc5ec8ca968d7a76dfe1129cecb",
+      "bytes": 808354,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
     },
     {
       "file": "field-scene/launch-field.css",
       "kind": "field-scene",
-      "sha256": "a8ee7dac15cd0f5b43c333d953c1ca8f91114ef71d3780607633f13955ce0be6",
-      "bytes": 30339,
+      "sha256": "29a9ea529d6231defc54adfbf8be0133af5267e021044ce8d575c039796c8e63",
+      "bytes": 30498,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
     },

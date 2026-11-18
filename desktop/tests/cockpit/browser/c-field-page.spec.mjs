@@ -25,7 +25,7 @@ test('WP-22 the field is the launch-field window: native dims, so the component\
  await open(page);expect(await show(page,payload())).toBe(true);await ready(page);
  const s=await state(page);
  expect(s.shown).toEqual(['m1','m2']);
- test.skip(s.mode!=='window','no WebGL in this browser: the 2D fallback test covers it');
+ test.skip(s.flat,'no WebGL in this browser: the 2D fallback test covers it');
  await expect(page.locator('#field.lfw')).toHaveCount(1);
  await expect(page.locator('#field .lfw-dim')).toBeHidden();
  await expect(page.locator('#field .lfw-menu')).toHaveCount(1);
@@ -33,15 +33,13 @@ test('WP-22 the field is the launch-field window: native dims, so the component\
 });
 test('WP-22 Esc on an idle field and the × key ask the host to close, with their reasons',async({page})=>{
  await open(page);await show(page,payload());await ready(page);
- const mode=(await state(page)).mode;
- await page.locator(mode==='window'?'#field .lfw-x':'#field .field-close').click();
+ await page.locator('#field .lfw-x').click();
  await page.keyboard.press('Escape');
  await expect.poll(()=>closes(page)).toEqual(['key','esc']);
  expect(await page.evaluate(()=>window.posted)).toContain('activity');
 });
 test('WP-22 the site key asks the host to open the website; the page never opens a URL itself',async({page})=>{
  await open(page);await show(page,payload());await ready(page);
- test.skip((await state(page)).mode!=='window','no WebGL in this browser');
  await page.locator('#field .lfw-site').click();
  await expect.poll(()=>page.evaluate(()=>window.messages.filter(m=>m.type==='openSite'))).toEqual([{type:'openSite',target:'fleet',params:{}}]);
  expect(page.url()).toMatch(/\/field\.html$/);
@@ -57,13 +55,18 @@ test('WP-22 Increase Contrast, Reduce Motion and Low Power Mode reach the compon
  expect((await state(page)).reducedMotion).toBe(true);
  expect(await page.evaluate(()=>window.modelPlanField.options('nope'))).toBe(false);
 });
-test('WP-22 without WebGL the same fleet lands on the 2D field, which keeps × and Esc',async({page})=>{
+// Component 1.2.0 (reference: its embed-window.html?nogl=1): without WebGL the window swaps in its own 2D field, keeps its
+// menu and keys, and reports onFail, which is informational: the field stays open.
+test('WP-22 without WebGL the window keeps its menu and keys on the 2D field, and onFail does not close it',async({page})=>{
  await open(page,{noWebGL:true});await show(page,payload());await ready(page);
- expect((await state(page)).mode).toBe('flat');
- await expect(page.locator('#field svg.lf-flat')).toHaveCount(1);
- await expect(page.locator('#field.lfw')).toHaveCount(0);
- await page.locator('#field .field-close').click();
- await expect.poll(()=>closes(page)).toContain('key');
+ expect(await state(page)).toMatchObject({mode:'window',flat:true,shown:['m1','m2']});
+ await expect(page.locator('#field.lfw .lfw-flat svg.lf-flat')).toHaveCount(1);
+ await expect(page.locator('#field .lfw-menu')).toHaveCount(1);
+ await expect(page.locator('#field .lf-scene canvas')).toHaveCount(0);
+ await page.waitForTimeout(500);
+ expect(await page.evaluate(()=>window.posted.filter(t=>t==='close'||t==='failed'))).toEqual([]);
+ await page.locator('#field .lfw-x').click();
+ await expect.poll(()=>closes(page)).toEqual(['key']);
 });
 test('WP-22 a focused rocket outside my models joins the field',async({page})=>{
  await open(page);await show(page,payload(12,{focus:'m7'}));await ready(page);
@@ -122,7 +125,7 @@ test('build 14c: a click and Escape on the porthole leave no ring on the port or
 test('D43 every vendor mark the scene asks for loads under the page CSP, close to square',async({page})=>{
  await open(page);
  const sizes=await page.evaluate(async names=>Promise.all(names.map(name=>new Promise(done=>{const image=new Image();image.onload=()=>done([name,image.naturalWidth>0,Math.abs(image.naturalWidth/image.naturalHeight-1)<=.05]);image.onerror=()=>done([name,false,false]);image.src='./assets/brands/'+name;}))),
-  ['openai-white.svg','claude-rounded.svg','claude.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
+  ['openai-white.svg','claude-rounded.svg','claude.svg','alibaba.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
  for(const [name,loaded,square] of sizes){expect(loaded,name).toBe(true);expect(square,name).toBe(true);}
 });
 // D63 / CKP-PORT-11/12: the ⤢ key, a double-click and a click on a still rocket open the field; a rocket focuses it.

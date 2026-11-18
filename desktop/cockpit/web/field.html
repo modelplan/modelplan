@@ -11,11 +11,7 @@
 <link rel="stylesheet" href="runtime/field-scene/launch-field.css">
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:transparent}
-/* The rectangle fills the panel. Width and height are explicit: component 1.1.0's .lfw-mini (its small-window modifier)
-   shares a name with its 16 px logo chip rule, which would otherwise size the root. */
-#field{position:absolute;left:0;top:0;width:100vw;height:100vh;margin:0}
-.field-close{position:absolute;right:12px;top:12px;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:#14151799;color:#e9eaeb;font-size:21px;line-height:1;cursor:pointer;z-index:7}
-.field-close:focus-visible{outline:1px solid #f6d38a;outline-offset:2px}
+#field{position:absolute;inset:0}
 </style>
 <script type="module" src="src/field-page.js"></script>
 </head>
