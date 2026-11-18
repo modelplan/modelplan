@@ -122,3 +122,26 @@ test('sampling-930 every subscription developer adds its published models, in pu
  const subs=[{key:'s1',developer:'openai',colour:'#fff'},{key:'s2',developer:'anthropic',colour:'#fff'},{key:'s3',developer:null,colour:'#fff'}];
  assert.deepEqual(moreFaderModels(published,[{model:'c'}],[],subs).map(m=>m.id),['c','a','b','d']);
 });
+
+// G3-133 (owner test build 15): "in use" came only from live sessions and the 7-day session ledger, so a model the owner
+// uses every day (history ranking, imported or recorded) sat behind an unused starred one. The history ranking
+// (cockpitHistoryV1 models.recent7d / recent30d) orders models that no session shows: 7-day tokens, then 30-day tokens.
+test('G3-133 history usage orders the faders: 7-day then 30-day tokens, before unused recommendations',()=>{
+ const model=(id,ability)=>({id,name:id,developerId:'openai',recommended:'medium',efforts:[{effort:'medium',star:true,ability,cost:1,time:null}]});
+ const publication={contractVersion:1,models:[model('astra',90),model('terra',80),model('sol',70)]};
+ const usage=new Map([['sol',{d7:500,d30:900}],['terra',{d7:0,d30:50}]]);
+ const {faders}=publicationFaders(publication,[],[],[],{now:Date.parse('2026-11-18T00:00:00Z'),usage});
+ assert.deepEqual(faders.map(f=>f.id),['sol','terra','astra']);
+ // A session seen in the last 7 days still leads the history order.
+ const live=[{sessionRef:'0123456789abcdef',subscriptionRef:null,model:'astra',lastObservedAt:'2026-11-17T23:00:00Z'}];
+ assert.deepEqual(publicationFaders(publication,live,[],[],{now:Date.parse('2026-11-18T00:00:00Z'),usage}).faders.map(f=>f.id),['astra','sol','terra']);
+});
+test('G3-133 a model used only in history stays in the own-plans set and in the extra candidates',()=>{
+ const model=(id,developerId)=>({id,name:id,developerId,recommended:'medium',efforts:[{effort:'medium',star:true,ability:1,cost:1,time:null}]});
+ const publication={contractVersion:1,models:[model('a','openai')]};
+ const subs=[{key:'s1',developer:'openai',colour:'#fff'}];
+ const published=[model('a','openai'),model('g','google')];
+ assert.deepEqual(moreFaderModels(published,[],[],subs,new Set(['g'])).map(m=>m.id),['g','a']);
+ const {faders}=publicationFaders(publication,[],published.slice(1),subs,{now:1,ownPlansOnly:true,usage:new Map([['g',{d7:1,d30:1}]])});
+ assert.deepEqual(faders.map(f=>f.id),['g','a']);
+});
