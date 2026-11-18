@@ -64,3 +64,9 @@ test('a press on an unverified (fallback-keyed) account survives the next open w
  page=entry(host);
  assert.equal(show(page,r(19)),false,'reopen is steady');
 });
+
+test('activating the page re-syncs the lamp, so a caution that arrived while inactive blinks on activation',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const view=readFileSync(new URL('../../../cockpit/src/view.ts',import.meta.url),'utf8');
+ assert.match(view,/active\(value\)\{const was=active;[^}]*\}else if\(!was&&lastData\)syncCaution\(lastData,lastRenderedAt\);\}/);
+});
