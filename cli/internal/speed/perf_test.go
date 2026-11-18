@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"os"
 	"path/filepath"
 	"testing"
@@ -348,5 +349,29 @@ func TestSessionRanking(t *testing.T) {
 	l.prune(t0)
 	if len(l.Sessions) != 2 {
 		t.Errorf("sessions after pruning = %d", len(l.Sessions))
+	}
+}
+
+// grantLocalHistory points the consent store at a private HOME that allows the Codex and Claude
+// local-history scopes, so accounting tests do not depend on the developer's own consent file.
+func grantLocalHistory(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+	state := consent.Empty()
+	state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+	for _, s := range []string{consent.ScopeClaudeLocalHistory, consent.ScopeCodexLocalHistory} {
+		state.Scopes[s] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion}
+	}
+	b, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := consent.Path()
+	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, b, 0600); err != nil {
+		t.Fatal(err)
 	}
 }

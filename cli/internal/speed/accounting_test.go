@@ -15,6 +15,7 @@ import (
 
 func TestAccountingUnfinishedResponsesNotSpeedSamples(t *testing.T) {
 	utc(t)
+	grantLocalHistory(t)
 	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
 	cache := t.TempDir()
 	seedPerf(t, cache, now.Add(-12*time.Hour))
@@ -98,6 +99,7 @@ func TestAccountingReferenceLocalLogs(t *testing.T) {
 
 func TestAccountingClaudeStreamingAndCopiedResponses(t *testing.T) {
 	utc(t)
+	grantLocalHistory(t)
 	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
 	cache := t.TempDir()
 	path, err := filepath.Abs(filepath.Join("testdata", "accounting", "claude", "projects", "redacted", "session.jsonl"))
@@ -213,6 +215,7 @@ func TestAccountingCodexCopiesAndSameTimestampOccurrences(t *testing.T) {
 
 func TestAccountingClearEraseAndPrivateCache(t *testing.T) {
 	utc(t)
+	grantLocalHistory(t)
 	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
 	cache := t.TempDir()
 	path := filepath.Join("testdata", "accounting", "sessions", "2026", "11", "16", "rollout-redacted.jsonl")
