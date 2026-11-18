@@ -318,6 +318,121 @@
       ],
       "type": "object"
     },
+    "CockpitCost": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "daily": {
+          "items": {
+            "$ref": "#/$defs/CockpitCostBucket"
+          },
+          "maxItems": 480,
+          "type": "array"
+        },
+        "hourly": {
+          "items": {
+            "$ref": "#/$defs/CockpitCostBucket"
+          },
+          "maxItems": 384,
+          "type": "array"
+        },
+        "models": {
+          "$ref": "#/$defs/CockpitCostModels"
+        },
+        "pricesAsOf": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maxLength": 10
+        }
+      },
+      "required": [
+        "basis",
+        "currency",
+        "pricesAsOf",
+        "daily",
+        "hourly",
+        "models"
+      ],
+      "type": "object"
+    },
+    "CockpitCostBucket": {
+      "additionalProperties": false,
+      "properties": {
+        "approximate": {
+          "type": "boolean"
+        },
+        "at": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "estimatedUsd": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "pricedTokens": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "unpricedTokens": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "at",
+        "source",
+        "estimatedUsd",
+        "pricedTokens",
+        "unpricedTokens"
+      ],
+      "type": "object"
+    },
+    "CockpitCostModels": {
+      "additionalProperties": false,
+      "properties": {
+        "recent30d": {
+          "items": {
+            "$ref": "#/$defs/CockpitModelCost"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "recent7d": {
+          "items": {
+            "$ref": "#/$defs/CockpitModelCost"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "today": {
+          "items": {
+            "$ref": "#/$defs/CockpitModelCost"
+          },
+          "maxItems": 64,
+          "type": "array"
+        }
+      },
+      "required": [
+        "today",
+        "recent7d",
+        "recent30d"
+      ],
+      "type": "object"
+    },
     "CockpitCredits": {
       "additionalProperties": false,
       "properties": {
@@ -727,6 +842,16 @@
     "CockpitHistory": {
       "additionalProperties": false,
       "properties": {
+        "cost": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CockpitCost"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "coverage": {
           "type": "string"
         },
@@ -910,6 +1035,49 @@
         "generationTps",
         "observedRequests",
         "eligibleRequests"
+      ],
+      "type": "object"
+    },
+    "CockpitModelCost": {
+      "additionalProperties": false,
+      "properties": {
+        "approximate": {
+          "type": "boolean"
+        },
+        "estimatedUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 0
+        },
+        "model": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "pricedTokens": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "unpricedTokens": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "model",
+        "source",
+        "estimatedUsd",
+        "pricedTokens",
+        "unpricedTokens"
       ],
       "type": "object"
     },

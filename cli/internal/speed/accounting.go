@@ -45,6 +45,9 @@ type usageRecord struct {
 	Replay      string `json:"replay,omitempty"`
 	Requestless bool   `json:"requestless,omitempty"`
 	Response    bool   `json:"response,omitempty"`
+	// Tier is the response's recorded speed tier ("" standard, or fast | ultrafast | flex |
+	// unknown). It selects a published API price multiplier; it is not a timing sample.
+	Tier string `json:"tier,omitempty"`
 }
 type usageFile struct {
 	LiveObserved bool          `json:"liveObserved,omitempty"` // Size/Modified describe a real live scan, not an import
@@ -287,6 +290,7 @@ func accountingRows(cache string) ([]PerfRow, map[string]bool) {
 			rows[key] = r
 		}
 		r.TokenKinds.add(usageKinds(v.usageBuckets), r.ObservedRequests == 0)
+		r.Responses = append(r.Responses, Response{At: v.At, Tier: v.Tier, Buckets: v.usageBuckets})
 		r.ObservedRequests++
 		r.ObservedOutputTokens += v.Output + v.Reasoning
 	}
@@ -333,6 +337,7 @@ type accountingParser struct {
 	latest                       string
 	compacted, emitted           map[string]bool
 	source, file, session, model string
+	tier                         string // Codex: the latest thread_settings_applied service tier
 	previous                     map[string]int64
 	records                      []usageRecord
 	occurrences                  map[string]int
@@ -350,6 +355,9 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 		SessionID string    `json:"sessionId"`
 		Sidechain bool      `json:"isSidechain"`
 		Payload   struct {
+			ThreadSettings *struct {
+				ServiceTier *string `json:"service_tier"`
+			} `json:"thread_settings"`
 			ForkedFrom           string           `json:"forked_from_id"`
 			Source               json.RawMessage  `json:"source"`
 			Type                 string           `json:"type"`
@@ -370,7 +378,7 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 			Usage json.RawMessage `json:"usage"`
 		} `json:"message"`
 	}
-	if p.source == "codex" && !bytes.Contains(b, []byte("token_count")) && !bytes.Contains(b, []byte("token_usage_record")) && !bytes.Contains(b, []byte("turn_context")) && !bytes.Contains(b, []byte("session_meta")) && !bytes.Contains(b, []byte("compacted")) {
+	if p.source == "codex" && !bytes.Contains(b, []byte("token_count")) && !bytes.Contains(b, []byte("token_usage_record")) && !bytes.Contains(b, []byte("turn_context")) && !bytes.Contains(b, []byte("session_meta")) && !bytes.Contains(b, []byte("compacted")) && !bytes.Contains(b, []byte("thread_settings_applied")) {
 		return
 	}
 	if json.Unmarshal(b, &e) != nil {
@@ -393,6 +401,7 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 			return
 		}
 		var u struct {
+			Speed  string `json:"speed"`
 			Input  *int64 `json:"input_tokens"`
 			Read   int64  `json:"cache_read_input_tokens"`
 			Write  int64  `json:"cache_creation_input_tokens"`
@@ -425,7 +434,7 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 		if e.Message.ID != "" {
 			replay = usageHash(session, "\x00", e.Message.ID)
 		}
-		p.records = append(p.records, usageRecord{Key: key, At: e.Timestamp, Model: e.Message.Model, usageBuckets: buckets, Sidechain: e.Sidechain, Replay: replay, Requestless: e.RequestID == ""})
+		p.records = append(p.records, usageRecord{Key: key, At: e.Timestamp, Model: e.Message.Model, usageBuckets: buckets, Sidechain: e.Sidechain, Replay: replay, Requestless: e.RequestID == "", Tier: claudeTier(u.Speed)})
 		return
 	}
 	if e.Type == "session_meta" {
@@ -446,6 +455,13 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 		}
 		if parent != "" {
 			p.parent = usageHash(parent)
+		}
+		return
+	}
+	if e.Type == "event_msg" && e.Payload.Type == "thread_settings_applied" {
+		// ccusage codex/src/parser.rs: an event without service_tier says nothing about the tier.
+		if s := e.Payload.ThreadSettings; s != nil && s.ServiceTier != nil {
+			p.tier = codexTier(*s.ServiceTier)
 		}
 		return
 	}
@@ -500,7 +516,7 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 	if e.Payload.ResponseID != "" {
 		key = usageHash("response:", e.Payload.ResponseID)
 	}
-	record := usageRecord{Key: key, At: e.Timestamp, Model: model, usageBuckets: buckets, Response: e.Type == "token_usage_record" || e.Payload.Type == "token_usage_record"}
+	record := usageRecord{Key: key, At: e.Timestamp, Model: model, usageBuckets: buckets, Response: e.Type == "token_usage_record" || e.Payload.Type == "token_usage_record", Tier: p.tier}
 	if e.Type == "token_usage_record" || e.Payload.Type == "token_usage_record" {
 		id := e.Payload.ResponseID
 		if id == "" || p.emitted[id] {

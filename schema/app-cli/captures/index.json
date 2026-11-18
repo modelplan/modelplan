@@ -675,6 +675,58 @@
       ]
     },
     {
+      "file": "WireCockpitCost.json",
+      "type": "WireCockpitCost",
+      "optional": [
+        {
+          "field": "pricesAsOf",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "basis",
+        "currency",
+        "daily",
+        "hourly",
+        "models"
+      ]
+    },
+    {
+      "file": "WireCockpitCostBucket.json",
+      "type": "WireCockpitCostBucket",
+      "optional": [
+        {
+          "field": "approximate",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "at",
+        "source",
+        "estimatedUsd",
+        "pricedTokens",
+        "unpricedTokens"
+      ]
+    },
+    {
+      "file": "WireCockpitCostModels.json",
+      "type": "WireCockpitCostModels",
+      "optional": [],
+      "required": [
+        "today",
+        "recent7d",
+        "recent30d"
+      ]
+    },
+    {
       "file": "WireCockpitCredits.json",
       "type": "WireCockpitCredits",
       "optional": [
@@ -891,6 +943,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "cost",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -971,6 +1031,34 @@
         "outputTokens",
         "observedRequests",
         "eligibleRequests"
+      ]
+    },
+    {
+      "file": "WireCockpitModelCost.json",
+      "type": "WireCockpitModelCost",
+      "optional": [
+        {
+          "field": "estimatedUsd",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "approximate",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "model",
+        "source",
+        "pricedTokens",
+        "unpricedTokens"
       ]
     },
     {
