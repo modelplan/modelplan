@@ -198,11 +198,11 @@ import XCTest
     XCTAssertEqual(failures, [])
   }
 
-  /// G3-130 (owner, build 15): on a put back the rack is already fully out to catch the cockpit before it arrives.
-  /// Before, it unfolded only once the cockpit was in the catch zone and finished after the cockpit had landed. Sampled
-  /// on the real window and rack: no sample shows the cockpit home (within 1 pt) while the rack is still extending.
-  /// The open's rack-first order (#872) is unchanged (`testIconOpenExtendsTheRackFirstThenTheCockpitAndTheCloseReverses`).
-  func testThePutBackRackIsFullyOutBeforeTheCockpitArrives() async throws {
+  /// G3-130 (owner, 11-18): the put back starts the rack and the flight together, both at their normal speeds; the
+  /// cockpit never waits. Before, the rack started only once the cockpit was in the catch zone. Sampled on the real
+  /// window and rack: the cockpit lands at its motion time; after a long key flight the rack is fully out at the
+  /// landing, after a ride home released at once it is partly out and carries on smoothly to fully out; it never jumps.
+  func testThePutBackStartsTheRackWithTheFlightAndNeverWaits() async throws {
     let fixture = try make()
     defer { fixture.page.discard() }
     let window = try open(fixture)
@@ -210,15 +210,16 @@ import XCTest
     let home = try XCTUnwrap(fixture.home)
     XCTAssertEqual(window.frame, home)
 
-    // The strip key: detach, land, then put back.
+    // Long: the strip key's put back after a key detach (a flight of 0.82 s or more).
     fixture.page.setAttached(false)
     try await wait(1_000)
     XCTAssertEqual(fixture.page.verificationRack.ext, 0, "retracted after the detach")
     fixture.page.setAttached(true)
     XCTAssertEqual(fixture.page.verificationRack.target, 1, "the rack starts unfolding at the press, not when the cockpit nears")
-    try await assertRackOutBeforeHome(fixture, window, home, "key put back")
+    let long = try await samplePutBack(fixture, window, home, "key put back", within: 1.3)
+    XCTAssertEqual(long.extAtLanding, 1, "long flight: the rack is fully out when the cockpit lands")
 
-    // A drag torn off, brought back into the catch zone and released at once: the rack had only just started.
+    // Short: a drag torn off, brought back into the catch zone and released at once (a 0.3 s ride home).
     let grab = CGPoint(x: home.minX + 120, y: home.maxY - 16)
     fixture.page.titleDrag(.began, point: grab)
     fixture.page.titleDrag(.moved, point: CGPoint(x: grab.x, y: grab.y - 200))
@@ -228,27 +229,38 @@ import XCTest
     let near = CGPoint(x: grab.x + 10, y: grab.y - 20)
     fixture.page.titleDrag(.moved, point: near)
     fixture.page.titleDrag(.ended, point: near)
-    XCTAssertLessThan(fixture.page.verificationRack.ext, 1, "released before the rack is out")
-    try await assertRackOutBeforeHome(fixture, window, home, "drag released in the zone")
+    let short = try await samplePutBack(fixture, window, home, "drag released in the zone", within: CockpitLaunchRackTiming.rideHome)
+    XCTAssertLessThan(short.extAtLanding, 1, "short ride: the rack is still coming down when the cockpit lands")
     XCTAssertEqual(failures, [])
   }
-  private func assertRackOutBeforeHome(_ fixture: Fixture, _ window: NSWindow, _ home: CGRect, _ label: String,
-                                       file: StaticString = #filePath, line: UInt = #line) async throws {
-    var homeSamples = 0
-    let deadline = ContinuousClock.now + .milliseconds(2_600)
+  /// Samples the window and rack every 4 ms until the cockpit is latched. `within`: the motion's own time; the landing
+  /// (the window exactly at home) may be up to 150 ms of timer and sampling latency later. The rack never moves back and
+  /// never advances faster than its full-travel pace (with that same latency).
+  private func samplePutBack(_ fixture: Fixture, _ window: NSWindow, _ home: CGRect, _ label: String, within: TimeInterval,
+                             file: StaticString = #filePath, line: UInt = #line) async throws -> (landed: Duration, extAtLanding: CGFloat) {
+    let started = ContinuousClock.now, deadline = started + .milliseconds(2_600)
+    var landed: Duration?, extAtLanding: CGFloat = -1
+    var last = (time: started, ext: fixture.page.verificationRack.ext)
     while ContinuousClock.now < deadline {
-      let ext = fixture.page.verificationRack.ext
-      if hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) <= 1 {
-        homeSamples += 1
-        XCTAssertEqual(ext, 1, "\(label): the cockpit is home while the rack is at \(ext)", file: file, line: line)
+      let now = ContinuousClock.now, ext = fixture.page.verificationRack.ext
+      XCTAssertGreaterThanOrEqual(ext, last.ext, "\(label): the rack never moves back", file: file, line: line)
+      let seconds = Double((now - last.time).components.attoseconds) / 1e18 + Double((now - last.time).components.seconds)
+      XCTAssertLessThanOrEqual(ext - last.ext, CGFloat((seconds + 0.05) / CockpitLaunchRackTiming.fullTravel),
+                               "\(label): no jump in the rack", file: file, line: line)
+      last = (now, ext)
+      if landed == nil, abs(window.frame.minX - home.minX) < 0.01, abs(window.frame.minY - home.minY) < 0.01 {
+        landed = now - started; extAtLanding = ext
       }
       if fixture.page.isAttached { break }
       try await Task.sleep(for: .milliseconds(4))
     }
     XCTAssertTrue(fixture.page.isAttached, "\(label): caught and latched", file: file, line: line)
-    XCTAssertGreaterThan(homeSamples, 0, "\(label): sampled at home", file: file, line: line)
+    let landing = try XCTUnwrap(landed, "\(label): landed", file: file, line: line)
+    XCTAssertLessThanOrEqual(landing, .milliseconds(Int(within * 1_000) + 150), "\(label): the cockpit did not wait for the rack",
+                             file: file, line: line)
     XCTAssertEqual(window.frame, home, file: file, line: line)
-    XCTAssertEqual(fixture.page.verificationRack.ext, 1, file: file, line: line)
+    XCTAssertEqual(fixture.page.verificationRack.ext, 1, "\(label): the rack ends fully out", file: file, line: line)
+    return (landing, extAtLanding)
   }
 }
 #endif
