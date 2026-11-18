@@ -3,7 +3,7 @@
 # Mac compile check (mac-compile.yml), run on the compile Mac in a checkout of the PR merge commit.
 # Usage: run.sh <plan.tsv> <scratch root> <sha>
 # For each plan row (from plan.mjs): swift build, then swift test on the selected classes (or the whole package
-# minus the never-run classes, or only --build-tests). Each package gets at most PACKAGE_MINUTES (default 25) for
+# minus the never-run classes, or only --build-tests; ModelPlanAppIntegration is never run whole, see plan.mjs). Each package gets at most PACKAGE_MINUTES (default 25) for
 # build and test together. Writes the summary to $GITHUB_STEP_SUMMARY (first line "COMPILE ok|fail @ <sha8>")
 # and exits non-zero on any failure.
 set -u

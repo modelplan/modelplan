@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FILTER_MAX, NEVER_RUN, ownerPackage, plan, testClasses, toTsv } from "../mac-compile/plan.mjs";
+import { APP_INTEGRATION_MAX_CLASSES, FILTER_MAX, NEVER_RUN, ownerPackage, plan, testClasses, toTsv } from "../mac-compile/plan.mjs";
 
 const files = {
   "desktop/native/Package.swift": "",
@@ -57,4 +57,34 @@ test("a long class list runs the whole package minus the never-run classes", () 
   assert.ok(many.length > FILTER_MAX);
   assert.deepEqual([rows[0].mode, rows[0].filter], ["skip", ""]);
   assert.equal(toTsv(rows), `desktop/native/Sub\tdesktop_native_Sub\tskip\t-\t${NEVER_RUN.join("|")}`);
+});
+
+const AI = "desktop/native/ModelPlanAppIntegration";
+const aiFiles = {
+  [`${AI}/Package.swift`]: "",
+  [`${AI}/Sources/X/X.swift`]: "struct X {}",
+  [`${AI}/Tests/AAATests.swift`]: "final class AAATests: XCTestCase {}\nfinal class DockBehaviourTests: XCTestCase {}",
+  [`${AI}/Tests/BBBTests.swift`]: "final class BBBTests: XCTestCase {}",
+};
+const aiRead = (f) => aiFiles[f];
+
+test("AppIntegration broad source change builds tests only", () => {
+  const rows = plan([`${AI}/Sources/X/X.swift`], Object.keys(aiFiles), aiRead);
+  assert.deepEqual(rows.map((r) => [r.mode, r.filter]), [["build-tests", ""]]);
+});
+
+test("AppIntegration touched test file filters on its own classes", () => {
+  const rows = plan([`${AI}/Tests/AAATests.swift`, `${AI}/Sources/X/X.swift`], Object.keys(aiFiles), aiRead);
+  assert.deepEqual(rows.map((r) => [r.mode, r.filter]), [["filter", "AAATests"]]);
+});
+
+test("AppIntegration touching too many classes falls back to build-tests", () => {
+  const many = Array.from({ length: APP_INTEGRATION_MAX_CLASSES + 1 }, (_, i) => `final class C${i}Tests: XCTestCase {}`).join("\n");
+  const rows = plan([`${AI}/Tests/AAATests.swift`], Object.keys(aiFiles), (f) => (f.endsWith("AAATests.swift") ? many : aiRead(f)));
+  assert.equal(rows[0].mode, "build-tests");
+});
+
+test("AppIntegration deleted test file is not read", () => {
+  const rows = plan([`${AI}/Tests/GoneTests.swift`], Object.keys(aiFiles), aiRead);
+  assert.equal(rows[0].mode, "build-tests");
 });
