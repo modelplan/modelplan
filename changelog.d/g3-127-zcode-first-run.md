@@ -1,0 +1,1 @@
+ZCode / GLM keeps reading after the first-run Done: allowing it no longer switches the read from ZCode's own key file to an environment variable the app does not have, so its widget ring and cockpit column appear.
