@@ -165,7 +165,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
-    /// Build 14c (G3-79): where the latest open was clicked; nil opens on the menu bar icon's display.
+    /// Build 14c (G3-79): where the latest open was clicked; only a detached open uses it (G3-128: attached is always
+    /// the menu bar icon's display).
     var openPoint: (() -> CGPoint?)?
     /// D204 (G3-94): the widget ignition's frame on screen; its press is not an outside click.
     var ignitionFrame: (() -> CGRect?)?
