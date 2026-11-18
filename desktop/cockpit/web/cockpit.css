@@ -7,6 +7,8 @@
    Reduce Motion and hidden/closed gates. Transitions share one gate: an inactive (hidden, occluded or non-key) page
    starts none and cancels any in flight. c-motion-policy.spec.mjs audits the rendered page against this list. */
 #cockpit:not([data-active="true"]) :is(*,*::before,*::after){transition:none!important}
+/* :is() drops a pseudo-element argument, so the pseudo-elements need their own selector (WP-10 fades the switch art on ::before/::after). */
+#cockpit:not([data-active="true"]) *::before,#cockpit:not([data-active="true"]) *::after{transition:none!important}
 #cockpit.ck{transition:none;display:grid!important;position:relative!important;inset:auto!important;transform:none!important;opacity:1!important;width:620px;height:var(--body-h,890px);margin:0 auto;max-height:100vh;grid-template-rows:minmax(24px,1fr) 26px var(--eng-h,226px) var(--console-h,257px) var(--tape-h,94px);gap:9px;padding:12px 16px 22px;--pad-x:16px;isolation:isolate;overflow:visible}
 .ck-head{grid-row:2;grid-column:1;z-index:3}.ck-portrow{grid-row:1;grid-column:1;min-height:0}.ck-eng{grid-row:3;grid-column:1;overflow:auto;min-width:0;min-height:0}.ck-deck{grid-row:4;grid-column:1;min-height:0}.ck-tape{grid-row:5;grid-column:1;min-height:0;overflow:auto}.ck-brand{margin-right:auto}.ck-head .key{min-width:54px}.wordmark{white-space:nowrap}
 .ck-portrow::after{display:none}.ck-port{height:100%;background:var(--port-bg);min-height:0}.ck-field{display:none!important}.hud:not(.wide){position:absolute;left:28px;right:28px;top:auto;bottom:18px;max-width:none;width:auto;min-height:0;display:block;padding:8px 12px;background:var(--lcd-glass);box-shadow:var(--well);border-radius:5px}.u11-summary{font:11px var(--f-silk);color:var(--lcd-ink)}

@@ -2,13 +2,15 @@
 // Copyright (c) 2026 ModelPlan.
 // Prototype buildCockpit markup; the fixed brand image is a CSS background so
 // the private-content subtree retains its no-image privacy invariant.
+import {headerRangeMarkup} from './header-range.js';
 export function prototypeFrame(root:HTMLElement) {
   root.className='ck private-content';
   const t=(key:string):string=>({'port.shutterAria':'Porthole shutter','ck.settingsAria':'Settings','ck.detachAria':'Detach','ck.closeAria':'Close','ck.tapeAria':'Record strip'}[key]??'');
   root.innerHTML=`<div class="ck-shell" aria-hidden="true"><i class="hull-crown"></i><i class="hull-upper"></i><i class="hull-cone"></i><i class="hull-lower"></i><i class="hull-record"></i><i class="ck-booster l"></i><i class="ck-booster r"></i></div>
   <header class="ck-head">
     <span class="ck-brand"><span class="s6-brand-mark brand-mark" role="img" aria-label="ModelPlan"></span><span class="silk wordmark">Model<b>Plan</b></span></span>
-    <button type="button" class="shutter-slider" data-shutter data-mat="part" aria-label="${t('port.shutterAria')}" aria-pressed="false"><span class="shutter-blind" aria-hidden="true"></span><i class="shutter-thumb" aria-hidden="true"></i></button>
+    <button type="button" class="shutter-slider" data-shutter data-mat="part" aria-label="${t('port.shutterAria')}" aria-pressed="false"></button>
+    ${headerRangeMarkup()}
     <span class="ck-lamp"></span>
     <button type="button" class="key" data-settings data-mat="part" aria-label="${t('ck.settingsAria')}"></button>
     <button type="button" class="key detach-toggle" data-detach data-mat="part" aria-label="${t('ck.detachAria')}" aria-pressed="false"><span class="detach-glyph" aria-hidden="true"></span></button>

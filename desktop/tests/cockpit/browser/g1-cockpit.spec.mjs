@@ -169,11 +169,11 @@ test('CKP-SHELL-03 gear, detach and close share a strip key geometry and order',
 });
 
 test('CKP-STRIP-01 cockpit strip exposes one ordered row of its required controls',async({page})=>{
- await open(page);const selectors=['.ck-brand','[data-shutter]','[data-caution]','[data-settings]','[data-detach]','[data-close]'];const rects=[];
+ await open(page);const selectors=['.ck-brand','[data-caution]','[data-shutter]','[data-range]','[data-settings]','[data-detach]','[data-close]'];const rects=[];
  for(const selector of selectors){const element=page.locator('.ck-head '+selector);await expect(element).toBeVisible();rects.push(await element.boundingBox());}
  for(let i=1;i<rects.length;i++)expect(rects[i].x).toBeGreaterThan(rects[i-1].x);
  expect(Math.max(...rects.map(r=>r.y))-Math.min(...rects.map(r=>r.y))).toBeLessThan(26);
- const header=await page.locator('.ck-head').boundingBox();expect(rects[1].x+rects[1].width/2).toBeCloseTo(header.x+header.width/2,0);
+ const header=await page.locator('.ck-head').boundingBox();expect(rects[2].x+rects[2].width/2).toBeCloseTo(header.x+header.width/2,0); // WP-10: ALERT sits left of the centred porthole switch
  await expect(page.locator('.ck-head .wordmark')).toHaveText('ModelPlan');
  await expect(page.locator('.ck-head [data-help],.ck-head button[aria-label="Help"]')).toHaveCount(0);
 });
