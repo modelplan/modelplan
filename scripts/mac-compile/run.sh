@@ -17,31 +17,46 @@ ok=1; rows=; failed_tests=; errors=
 
 SEED_ROOT=${SEED_ROOT:-}; SEED_WRITE=${SEED_WRITE:-0}
 sha256() { if command -v shasum >/dev/null; then shasum -a 256; else sha256sum; fi | cut -d' ' -f1; }
-clone() { cp -cR "$1" "$2" 2>/dev/null || cp -R "$1" "$2"; }   # APFS clonefile on macOS, plain copy elsewhere
-# Metadata manifest of a seed directory (path, size, mtime); verified before every clone.
-manifest() {
-  ( cd "$1" && find . -type f -print0 | sort -z | if [ "$(uname)" = Darwin ]; then xargs -0 stat -f '%N %z %m'; else xargs -0 stat -c '%n %s %Y'; fi ) | sha256
+wipe() { chmod -R u+w "$@" 2>/dev/null; rm -rf "$@"; }   # seeds are read-only: make them writable before removing
+# Copy $1 to $2 through a temp name next to it and rename on success (APFS clonefile first, plain copy as fallback).
+# A partial copy is removed, never renamed into place and never nested by a retry.
+clone() {
+  local tmp="$2.tmp.$$"
+  wipe "$tmp"; mkdir -p "$(dirname "$2")" || return 1
+  if ! cp -cR "$1" "$tmp" 2>/dev/null; then wipe "$tmp"; cp -R "$1" "$tmp" || { wipe "$tmp"; return 1; }; fi
+  mv "$tmp" "$2" || { wipe "$tmp"; return 1; }
 }
+# Hash of every entry of a directory: type, size, nanosecond mtime, symlink target. Any error fails (cold build).
+manifest() (
+  set -o pipefail
+  cd "$1" || exit 1
+  find . -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' f; do
+    if [ "$(uname)" = Darwin ]; then st=$(stat -f '%HT %z %Fm' -- "$f"); else st=$(stat -c '%F %s %.9Y' -- "$f"); fi || exit 1
+    t=; if [ -L "$f" ]; then t=$(readlink -- "$f") || exit 1; fi
+    printf '%s\t%s\t%s\n' "$f" "$st" "$t"
+  done | sha256
+)
 # Seed key: toolchain plus the package's Package.resolved.
 seedkey() { { swift --version 2>&1; cat "$1/Package.resolved" 2>/dev/null; } | sha256; }
 
-# Only a seed WRITE needs exclusivity (a symlink holds the owner's pid and is created atomically). The trap is installed
-# before acquiring and removes the lock only if it is still ours. Unreadable or dead owners are reclaimed after a timeout.
+# Only a seed WRITE needs exclusivity: mkdir is atomic and the pid goes into the directory right after; the trap is
+# installed first and removes the lock only if the pid is ours. A dead owner, or a missing pid file on a lock older
+# than a minute (an interrupted acquisition, or a plain directory in the way), is reclaimed.
 lock="${SEED_ROOT:-/nonexistent}.lock"
-release() { [ -L "$lock" ] && [ "$(readlink "$lock" 2>/dev/null)" = "$$" ] && rm -f "$lock"; return 0; }
+release() { [ -f "$lock/pid" ] && [ "$(cat "$lock/pid" 2>/dev/null)" = "$$" ] && rm -rf "$lock"; return 0; }
 trap release EXIT
 if [ "$SEED_WRITE" = 1 ]; then
   [ -n "$SEED_ROOT" ] || { echo "::error::SEED_WRITE needs SEED_ROOT"; exit 1; }
-  mkdir -p "$(dirname "$SEED_ROOT")" "$SEED_ROOT" || exit 1
-  bad=0
+  mkdir -p "$SEED_ROOT" || exit 1
   for _ in $(seq 1 120); do
-    ln -s "$$" "$lock" 2>/dev/null && break
-    p=$(readlink "$lock" 2>/dev/null || true)
-    if [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; then rm -rf "$lock"; continue; fi
-    if [ -z "$p" ]; then bad=$((bad+1)); [ "$bad" -ge 12 ] && rm -rf "$lock"; fi
+    if mkdir "$lock" 2>/dev/null; then echo $$ >"$lock/pid"; break; fi
+    p=$(cat "$lock/pid" 2>/dev/null || true)
+    if [ -n "$p" ]; then
+      kill -0 "$p" 2>/dev/null || { rm -rf "$lock"; continue; }
+    elif [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rm -rf "$lock"; continue; fi
     sleep 5
   done
-  [ "$(readlink "$lock" 2>/dev/null)" = "$$" ] || { echo "::error::could not lock $SEED_ROOT"; exit 1; }
+  [ -f "$lock/pid" ] && [ "$(cat "$lock/pid")" = "$$" ] || { echo "::error::could not lock $SEED_ROOT"; exit 1; }
 fi
 
 # Run "$@" until it exits or the package deadline passes (macOS has no timeout(1)); SwiftPM stops its children on TERM.
@@ -60,12 +75,13 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
   [ -n "$dir" ] || continue
   sp="$SCRATCH_ROOT/$scratch"; blog="$LOGS/$scratch-build.log"; tlog="$LOGS/$scratch-test.log"
   deadline=$(( $(date +%s) + LIMIT ))
-  rm -rf "$sp" || { echo "::error::could not clear $sp"; exit 1; }
+  wipe "$sp"; [ ! -e "$sp" ] || { echo "::error::could not clear $sp"; exit 1; }
   key=; seed=
   if [ -n "$SEED_ROOT" ]; then
     key=$(seedkey "$dir"); seed="$SEED_ROOT/$scratch/$key"
-    if [ "$SEED_WRITE" != 1 ] && [ -d "$seed" ] && [ "$(cat "$seed.manifest" 2>/dev/null)" = "$(manifest "$seed")" ]; then
-      echo "seed hit for $dir: cloning"; clone "$seed" "$sp" || { rm -rf "$sp"; echo "seed clone failed: cold build"; }
+    if [ "$SEED_WRITE" != 1 ] && [ -d "$seed" ] && m=$(manifest "$seed") && [ "$(cat "$seed.manifest" 2>/dev/null)" = "$m" ]; then
+      echo "seed hit for $dir: cloning"
+      if clone "$seed" "$sp" && chmod -R u+w "$sp"; then :; else wipe "$sp"; echo "seed clone failed: cold build"; fi
     else echo "no usable seed for $dir: cold build"; fi
   fi
   echo "::group::$dir: swift build"
@@ -97,8 +113,8 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
   fi
   if [ "$SEED_WRITE" = 1 ] && [ "$build" = ok ] && [ "$test" != "not run" ] && [ "$trc" = 0 ]; then
     # Publish: remove every older key of this package (hidden entries included), then the new seed and its manifest.
-    rm -rf "${SEED_ROOT:?}/$scratch" || { echo "::error::could not clear seed for $scratch"; exit 1; }
-    mkdir -p "$SEED_ROOT/$scratch" && clone "$sp" "$seed.tmp" && mv "$seed.tmp" "$seed" && manifest "$seed" >"$seed.manifest" || { echo "::error::could not publish seed for $scratch"; exit 1; }
+    wipe "${SEED_ROOT:?}/$scratch"; [ ! -e "$SEED_ROOT/$scratch" ] || { echo "::error::could not clear seed for $scratch"; exit 1; }
+    { clone "$sp" "$seed" && chmod -R a-w "$seed" && m=$(manifest "$seed") && printf '%s' "$m" >"$seed.manifest"; } || { echo "::error::could not publish seed for $scratch"; exit 1; }
   fi
   rows="$rows- \`$dir\`: build $build; test $test"$'\n'
   errors="$errors$(cat "$blog" "$tlog" | grep -E '^[^ :]+:[0-9]+:[0-9]+: error:' | sed "s#^$PWD/##")"$'\n'
