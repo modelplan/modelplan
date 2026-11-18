@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Owner build 13 (CKP-MFD, study views.js round D1): trying an effort on a fader shows "Compare · <model>" on the
+// Owner build 13 (CKP-MFD, study views.js round D1): trying an effort on a fader shows "Effort · <model>" (v1 final; was "Compare · <model>") on the
 // MFD: the ability / cost share bars and the share chart (CKP-MFD-33, v8), the effort keys, the website links,
 // "‹ back" and the fast key. The built page through its normal bridge; synthetic profile only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
@@ -39,7 +39,7 @@ test('CKP-MFD compare: a fader trial opens the comparison with the two share bar
  await expect(page.locator('.mfd-page')).not.toHaveClass(/pg-compare/);
  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
  const screen=page.locator('.mfd-page.pg-compare');await expect(screen).toBeVisible();
- await expect(screen.locator('.mfd-title')).toHaveText('Compare · Sol 6.1');
+ await expect(screen.locator('.mfd-title')).toHaveText('Effort · Sol 6.1');
  // Sol: current High, trial XHigh, top effort Max (ability 47.5, cost 1.056).
  expect(await cells(page)).toEqual([[['current','90%'],['trial','97%']],[['current','36%'],['trial','60%']]]);
  await expect(screen.locator('svg.cmp-bars .pc-label')).toHaveText(['Ability','Cost']);
@@ -48,8 +48,10 @@ test('CKP-MFD compare: a fader trial opens the comparison with the two share bar
  await expect(screen.locator('.cmp-lad .lad.try')).toHaveText('XHigh');
  // The keys sit under the chart's columns: the shared left edge after the English bar labels (demo v8: 50 px).
  expect(await screen.locator('.cmp-lad').evaluate(e=>getComputedStyle(e).paddingLeft)).toBe('50px');
- // The study drops "How it's worked out" when the English header has no room for it; the compare link always shows.
- await expect(screen.locator('.cmp-header-links a').first()).toHaveText('Compare on the website ↗');
+ // V1-FINAL §8.5/§14 (WP-05): the website link moved to the bottom row, left of the hint; in English the full words do not
+ // fit beside the hint, so the one guaranteed link is a bare ↗ named by its tooltip.
+ await expect(screen.locator('.cmp-foot .cmp-links a')).toHaveCount(1);
+ await expect(screen.locator('.cmp-foot .cmp-links a')).toHaveAttribute('title','Compare on the website');
  await expect(page.locator('.mfd-ok.mfd-vk .vk-back')).toHaveText('‹ Overview');
  await expect(page.locator('.mfd-ok.mfd-vk .vk-fast')).toHaveCount(1);
  await expect(page.locator('.mfd-pk')).toHaveClass(/dark/);await expect(page.locator('.mfd-pk .pk.on')).toHaveCount(0);
@@ -66,7 +68,7 @@ test('CKP-MFD compare: the effort keys move the trial, one trial at a time, and 
  // Trying another fader replaces this trial.
  const second=page.locator('.fd-ch:not(.empty)').nth(1);
  await second.locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
- await expect(page.locator('.mfd-title')).toHaveText('Compare · Astra');
+ await expect(page.locator('.mfd-title')).toHaveText('Effort · Astra');
  await expect(page.locator('.fd-indicator[data-state="try"]')).toHaveCount(1);
  await page.locator('.mfd-vk .vk-back').click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);await expect(page.locator('.mfd-pk .pk.on')).toHaveCount(1);
@@ -133,8 +135,8 @@ test('CKP-FAD-18 the note still shows when the screen is measured before it is l
 test('CKP-MFD compare: Chinese labels match the study',async({page})=>{
  await open(page,'zh-CN');
  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
- await expect(page.locator('.mfd-title')).toHaveText('比较 · Sol 6.1');
- await expect(page.locator('.cmp-header-links a')).toHaveText(['在网站上对比 ↗','怎么算的 ↗']);
+ await expect(page.locator('.mfd-title')).toHaveText('档位 · Sol 6.1');
+ await expect(page.locator('.cmp-foot .cmp-links a')).toHaveText(['在网站上对比 ↗','怎么算的 ↗']);
  await expect(page.locator('.mfd-vk .vk-back')).toHaveText('‹ 返回 总览');
 });
 
@@ -153,7 +155,7 @@ test('CKP-MFD compare: the back key is named "Back …" for assistive tech, and 
 test('CKP-MFD compare: the title stays whole when the current effort is unknown',async({page})=>{
  await open(page);
  const astra=page.locator('.fd-ch:not(.empty)').nth(1);await astra.locator('.fd-strip').click();
- const title=page.locator('.mfd-title');await expect(title).toHaveText('Compare · Astra');
+ const title=page.locator('.mfd-title');await expect(title).toHaveText('Effort · Astra');
  expect(await title.evaluate(e=>e.scrollWidth<=e.clientWidth+.5)).toBe(true);
 });
 
@@ -322,7 +324,7 @@ test('CKP-MFD-33 fast lines: a real fast session draws the fast lines too',async
 
 // Owner 11-12: the chart columns are two layers only, a pale white haze (current) and a pale blue haze (trial), no border; no ★ wash.
 // When the trial equals the current effort the blue tint and border sit over the white.
-test('CKP-MFD-33 chart columns: trial = current keeps both layers, no gold ★ band, no border',async({page})=>{
+test('CKP-MFD-33 chart columns: trial = current keeps both layers, no gold ★ band; the trial column has its blue border',async({page})=>{
  await open(page,'en',true);
  await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
  const chart=page.locator('.mfd-page svg.cmp-chart');
@@ -332,11 +334,11 @@ test('CKP-MFD-33 chart columns: trial = current keeps both layers, no gold ★ b
  await expect(cur).toHaveCount(1);await expect(tri).toHaveCount(1);await expect(chart.locator('.pc-band-rec')).toHaveCount(0);
  expect(await cur.getAttribute('data-effort')).toBe(await tri.getAttribute('data-effort'));
  expect(await alpha('.pc-band-trial')).toBeGreaterThan(await alpha('.pc-band-current'));
- // the trial column has no border any more (the labels tell the layers apart)
- expect(await tri.evaluate(e=>getComputedStyle(e).stroke)).toBe('none');
+ // V1-FINAL §8.5 (WP-05, board r6): the trial column is a light blue haze WITH a blue border
+ const [r,g,b]=(await tri.evaluate(e=>getComputedStyle(e).stroke)).match(/\d+/g).map(Number);expect(b).toBeGreaterThan(r+60);
 });
 
-// Owner 11-12: the chart column layers, bottom to top: current white haze, trial blue haze + 1 px border. Every overlap keeps its layers.
+// Owner 11-12 / V1-FINAL §8.5: the chart column layers, bottom to top: current white haze, trial blue haze + 1 px border. Every overlap keeps its layers.
 test('CKP-MFD-33 chart column layers: current and trial layers in every overlap, trial blue on top, no gold band',async({page})=>{
  const cases=[
   {name:'current = ★',edit:d=>{d.details.sessions[0].effort='medium';},act:null,want:['current']},

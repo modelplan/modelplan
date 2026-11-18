@@ -77,7 +77,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  function faderInput(){
   const input=record(details.publication);if(!input||!Array.isArray(input.faders)||!Array.isArray(input.accounts))return {accounts:[],faders:[]};
   const accountIds=new Map<string,string>(),scopeBindings=new Map<string,string[]>();const accounts=input.accounts.slice(0,100).flatMap((v,i)=>{const a=record(v);if(!a||typeof a.id!=='string')return [];const id='a'+i;accountIds.set(a.id,id);return [{id,colour:typeof a.colour==='string'&&/^#[a-f0-9]{6}$/i.test(a.colour)?a.colour:null}];});
-  const faders=input.faders.slice(0,100).flatMap((v,i)=>{const f=record(v),rec=effort(f?.rec);if(!f||!rec||!Array.isArray(f.e))return [];const rows=f.e.slice(0,5).flatMap(v=>{if(!Array.isArray(v))return [];const label=effort(v[0]),ability=number(v[1]),cost=number(v[2]);return !label?[]:[[label,ability,cost,number(v[3])]];});if(!rows.some(r=>r[0]===rec))return [];
+  const faders=input.faders.slice(0,100).flatMap((v,i)=>{const f=record(v),rec=effort(f?.rec);if(!f||!rec||!Array.isArray(f.e))return [];const rows=f.e.slice(0,5).flatMap(v=>{if(!Array.isArray(v))return [];const label=effort(v[0]),ability=number(v[1]),cost=number(v[2]),aa=number(v[4]);return !label?[]:[aa!==null&&aa>0?[label,ability,cost,number(v[3]),aa]:[label,ability,cost,number(v[3])]];});if(!rows.some(r=>r[0]===rec))return [];
    const live=Array.isArray(details.liveSessions)?details.liveSessions.slice(0,500).flatMap(v=>{const x=record(v),ref=x&&(typeof x.sessionRef==='string'?x.sessionRef:typeof x.ref==='string'?x.ref:null);return x&&ref?[{ref,value:x}]:[]}):[];
    // One session's verified binding: the publication's subscription, confirmed by the observed live session.
    const binding=(v:unknown)=>{const x=record(v),match=x&&typeof x.ref==='string'?live.find(y=>y.ref===x.ref):null;if(!x||!match)return null;const observed=match.value,bound=typeof x.sub==='string'&&typeof observed.subscriptionRef==='string'&&x.sub===observed.subscriptionRef&&accountIds.has(x.sub);return {x,observed,bound};};
@@ -87,12 +87,19 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const current=sessions[0]?.effort??null,fast=sessions[0]?.fast??null,tier=record(f.tier),speed=number(tier?.speed),cost=number(tier?.cost),harness=safeText(tier?.harness),otherEntries:Record<string,number>={};for(const x of sessions.slice(1))if(x.effort)otherEntries[x.effort]=(otherEntries[x.effort]??0)+1;
    const links=Array.isArray(f.accounts)?f.accounts.flatMap(v=>typeof v==='string'&&accountIds.has(v)?[accountIds.get(v)!]:[]):[];
    scopeBindings.set('model'+i,boundAccounts);
-   return [{id:'model'+i,sourceId:safeText(f.id),name:safeText(f.name)||safeText(f.short),short:safeText(f.name)?shortLabel(safeText(f.name)):safeText(f.short),rec,e:rows,pinned:pins.includes(safeText(f.id))||(f.pinned===true&&!unpinned.has(safeText(f.id))),live:sessions.length>0,current,currentFast:fast===true,others:otherEntries,tier:speed!==null&&harness?{harness,speed,cost,...(tier?.taskTimeUnknown===true?{taskTimeUnknown:true as const}:{})}:null,accounts:links,sessions}];});
+   return [{id:'model'+i,sourceId:safeText(f.id),...use7(safeText(f.id)),name:safeText(f.name)||safeText(f.short),short:safeText(f.name)?shortLabel(safeText(f.name)):safeText(f.short),rec,e:rows,pinned:pins.includes(safeText(f.id))||(f.pinned===true&&!unpinned.has(safeText(f.id))),live:sessions.length>0,current,currentFast:fast===true,others:otherEntries,tier:speed!==null&&harness?{harness,speed,cost,...(tier?.taskTimeUnknown===true?{taskTimeUnknown:true as const}:{})}:null,accounts:links,sessions}];});
   // G3-110: a subscription scope keeps that subscription's faders (study core.js faders()/scopePools); before the D123 cap.
   const scopeMember=scope==='all'||!data?null:cockpitMembers(data).find(m=>m.key===scope)??null,scopeAccount=scopeMember?accountIds.get(scopeMember.key)??null:null;
   const members=new Set(scopedFaders(faders.map(f=>({id:f.id,accounts:f.accounts,sessions:(scopeBindings.get(f.id)??[]).map(sub=>({sub}))})),scopeAccount,!!scopeMember&&Object.hasOwn(toolDevelopers,scopeMember.row.id)).map(f=>f.id));
   const shown=faders.filter(f=>members.has(f.id));
   const rank=new Map(pins.map((id,i)=>[id,i]));shown.sort((a,b)=>(rank.get(a.sourceId)??Infinity)-(rank.get(b.sourceId)??Infinity));return {accounts,faders:showAllModels?shown:shown.slice(0,FADER_SET_LIMIT)};
+ }
+ // CKP-MFD-50: a model's own 7-day use for the effort page title: its tokens and its share of everything recorded in those
+ // seven days (local history only). Absent when the history does not rank the model. ≈$ joins with estimated cost (WP-06).
+ function use7(id:string):{u7?:{tokens:number;share:number}}{
+  const w=data?.history?.coverage==='local-history'?data.history.models?.recent7d:null,total=w?.totalObservedOutputTokens??0;
+  const tokens=(w?.top??[]).filter(e=>e.name===id).reduce((n,e)=>n+(number(e.observedOutputTokens)??0),0);
+  return w&&tokens>0&&total>=tokens?{u7:{tokens,share:tokens/total}}:{};
  }
  type Channel={id:string;current:string|null;base:string;currentFast:boolean};
  function openCompare(c:Channel,trial?:string,fast?:boolean){
@@ -273,8 +280,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const args:CompareArgs=input;
   const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=comparison(view,{...ui,scope:null,trialNote:true,compact:root.dataset.layout==='640',starMode:root.dataset.starMode||undefined,laneMode:root.dataset.laneMode||undefined,fill:cmpFill?{cmp:cmpFill}:{}},args);};
   bar.classList.add('dark');for(const {b} of buttons){b.classList.remove('on');b.setAttribute('aria-pressed','false');}
-  // CSP (style-src 'self') drops the ladder's inline geometry; apply it through CSSOM after every draw.
-  const ladder=()=>{for(const e of page.querySelectorAll<HTMLElement>('.cmp-lad[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const m of css.matchAll(/(--c[lr]):(\d+(?:\.\d+)?px)/g))e.style.setProperty(m[1]!,m[2]!);}};
+  // CSP (style-src 'self') drops the key block's inline geometry (the ladder and the numbers under it inherit it); apply it through CSSOM after every draw.
+  const ladder=()=>{for(const e of page.querySelectorAll<HTMLElement>('.cmp-keys[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const m of css.matchAll(/(--c[lr]):(\d+(?:\.\d+)?px)/g))e.style.setProperty(m[1]!,m[2]!);}};
   page.className='mfd-page pg-compare is-view own-title';draw();
   // The chart is drawn at its measured size (mfd.js renderMfd), again once if that size changed.
   const measure=()=>{const area=page.querySelector<HTMLElement>('[data-fill="cmp"]');return area?{w:Math.floor(area.clientWidth),h:Math.floor(area.clientHeight)}:null;};

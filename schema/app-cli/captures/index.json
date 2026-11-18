@@ -1061,6 +1061,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "forbidden"
+        },
+        {
+          "field": "aaScore",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [

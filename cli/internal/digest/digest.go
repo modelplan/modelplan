@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/detect"
 	"github.com/modelplan/modelplan/cli/internal/lineup"
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -38,6 +40,9 @@ type Effort struct {
 	// fitted on. Published only when true; show it within the model's own ladder, never compare
 	// it across models.
 	Provisional bool `json:"provisional,omitempty"`
+	// AAScore (client-v1.5, D292): the raw Artificial Analysis Intelligence Index score for this effort. A reference
+	// shown beside our own ability score, never in its place. Parse drops it below client-v1.5 or when not positive.
+	AAScore *float64 `json:"aaScore,omitempty"`
 }
 
 type HarnessEvidence struct {
@@ -128,8 +133,9 @@ type Digest struct {
 	Models            []Model            `json:"models"`
 	Lineups           []PublishedLineup  `json:"lineups"`
 	Speed             []SpeedTier        `json:"speedTiers,omitempty"`
-	PlanMetering      *PlanMetering      `json:"planMetering,omitempty"` // client-v1.3
-	PlanModels        *PlanModels        `json:"planModels,omitempty"`   // client-v1.4
+	PlanMetering      *PlanMetering      `json:"planMetering,omitempty"`   // client-v1.3
+	PlanModels        *PlanModels        `json:"planModels,omitempty"`     // client-v1.4
+	AAIndexVersion    string             `json:"aaIndexVersion,omitempty"` // client-v1.5: the AA index version behind aaScore
 	Resets            []json.RawMessage  `json:"resets"`
 	Windows           []json.RawMessage  `json:"windows"`
 }
@@ -263,6 +269,7 @@ func Parse(component string, b []byte) (*Digest, error) {
 			return nil, errors.New("client: incomplete multiplier contract")
 		}
 	}
+	dropInvalidAAScores(&d)
 	if d.PlanMetering != nil && !validMetering(d.PlanMetering) {
 		d.PlanMetering = nil
 	}
@@ -274,4 +281,28 @@ func Parse(component string, b []byte) (*Digest, error) {
 	}
 	d.Source = ComponentClient
 	return &d, nil
+}
+
+// dropInvalidAAScores keeps an effort's aaScore only where the public reader accepts it: a positive finite number in a
+// client-v1.5 or later projection. A bad reference value is dropped, never the publication or our own ability score.
+func dropInvalidAAScores(d *Digest) {
+	minor := -1
+	if v, ok := strings.CutPrefix(d.ProjectionVersion, "client-v1."); ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			minor = n
+		}
+	}
+	scored := false
+	for i := range d.Models {
+		for j := range d.Models[i].Efforts {
+			e := &d.Models[i].Efforts[j]
+			if e.AAScore != nil && (minor < 5 || !(*e.AAScore > 0) || math.IsInf(*e.AAScore, 0)) {
+				e.AAScore = nil
+			}
+			scored = scored || e.AAScore != nil
+		}
+	}
+	if !scored {
+		d.AAIndexVersion = ""
+	}
 }

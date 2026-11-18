@@ -120,8 +120,10 @@ test('CKP-MFD-33 trial higher: the tube splits into two lanes from 0, real on to
  await expect(chart.locator('.pc-band-trial')).toHaveAttribute('data-effort','XHigh');
  await expect(chart.locator('.pc-ring[data-role="trial"]')).toHaveCount(2);
  // rendered pixels: the trial column is a light blue haze (hue 200-215 degrees, visible saturation), lighter than the empty chart
+ // sampled just below the 0 % baseline, inside the column, where no series line can pass (the chart is shorter since
+ // the key numbers joined the page, so 9 px up now lands on Low's cost line)
  {const tb=await chart.locator('.pc-band-trial').boundingBox(),eb=await chart.locator('.pc-hit[data-hover="Low"]').boundingBox();
-  const px=async(bb,dx)=>firstPixel(await page.screenshot({clip:{x:bb.x+bb.width/2+dx,y:bb.y+bb.height-9,width:1,height:1}}));
+  const px=async(bb,dx)=>firstPixel(await page.screenshot({clip:{x:bb.x+bb.width/2+dx,y:bb.y+bb.height-3,width:1,height:1}}));
   const [r,g,b]=await px(tb,-8),e=await px(eb,6),mx=Math.max(r,g,b),mn=Math.min(r,g,b),hue=60*(4+(r-g)/(mx-mn)),sat=(mx-mn)/mx;
   expect(hue,`trial ${r},${g},${b}`).toBeGreaterThan(200);expect(hue,`trial ${r},${g},${b}`).toBeLessThan(220);expect(sat).toBeGreaterThan(.3);
   expect(.3*r+.59*g+.11*b-(.3*e[0]+.59*e[1]+.11*e[2])).toBeGreaterThanOrEqual(35);}
@@ -177,7 +179,9 @@ test('CKP-MFD-33 A1: the small cockpit keeps both bars (9 px tube, 3.5 + 1.5 + 2
  b=await bars(page);expect(b.abl.fill.h).toBe(3.5);expect(b.abl.lane.h).toBe(2);
  const sizes=await screen.evaluate(s=>({bars:s.querySelector('svg.cmp-bars').getBoundingClientRect().height,
   chart:s.querySelector('svg.cmp-chart')?.getBoundingClientRect().height??0,lines:s.querySelectorAll('svg.cmp-chart .pc-line').length}));
- expect(sizes.bars).toBe(58);expect(sizes.chart).toBeGreaterThanOrEqual(50);expect(sizes.lines).toBe(3);
+ // V1-FINAL §13.3 (WP-05): the short cockpit keeps the bars and the keys WITH their two numbers; the chart gets shorter but stays
+ // (34 px is the view's own floor for drawing it).
+ expect(sizes.bars).toBe(58);expect(sizes.chart).toBeGreaterThanOrEqual(34);expect(sizes.lines).toBe(3);
 });
 
 test('CKP-MFD-33 chart link: a bar row sets its chart line apart; a bar segment draws the dashed box on the chart column; a chart column or effort key draws the dashed line on both bars; a click tries the effort',async({page})=>{
@@ -231,11 +235,178 @@ test('CKP-MFD-33 chart link: a bar row sets its chart line apart; a bar segment 
 // macrevc-885-1: the reference is the published top effort even when its ability is missing: cost is still a share of that
 // effort's cost; ability stays unknown (no bar, no number) instead of reading 100 % against a lower effort.
 test('CKP-MFD-33 top effort without a published ability: cost keeps the top effort as its reference, ability is unknown',async({page})=>{
- const dropMaxAbility=data=>{for(const list of [data.details.publishedModels,data.details.publication.models])for(const m of list)if(m.id==='gpt-6.1-sol')for(const e of m.efforts)if(e.effort==='max')e.ability=null;};
+ const dropMaxAbility=data=>{const drop=list=>list.map(m=>{if(m.id!=='gpt-6.1-sol')return m;const c=structuredClone(m);for(const e of c.efforts)if(e.effort==='max')e.ability=null;return c;});data.details.publishedModels=drop(data.details.publishedModels);data.details.publication.models=drop(data.details.publication.models);};
  await open(page,{edit:dropMaxAbility});
  const screen=await openSol(page);
  const b=await bars(page);
  near(b.cost.fill.w,SOL.High.cost);expect(b.cost.numbers.map(n=>n.text)).toEqual([pct(SOL.High.cost)]);
  expect(b.abl.fill).toBeNull();expect(b.abl.numbers).toEqual([]);
  await expect(screen.locator('svg.cmp-chart')).toBeVisible();
+});
+
+/* ---------- WP-05 bar version, v1 final (V1-FINAL §8.5; CKP-MFD-33 amended, CKP-MFD-50…54; board r6-effort-final) ---------- */
+// Sol at Standard, every effort as a share of the top effort (Max): ability from OUR published score, cost with a $.
+const SOL_KEYS=[['Low','71%','$13%'],['Med','84%','$23%'],['High','90%','$36%'],['XHigh','97%','$60%'],['Max','100%','$100%']];
+const keyNums=screen=>screen.locator('.cmp-nums .lad-n').evaluateAll(cells=>cells.map(c=>({e:c.dataset.effort,a:c.querySelector('.lad-a').textContent,c:c.querySelector('.lad-c').textContent,
+ role:c.classList.contains('try')?'trial':c.classList.contains('cur')?'current':'other',colour:getComputedStyle(c.querySelector('.lad-a')).color,title:c.closest('[title]')?.getAttribute('title')??c.getAttribute('title')??''})));
+// build13Models (and its array) are shared module objects: every edit works on copies so nothing leaks into the next test.
+const solEfforts=(data,fn)=>{const edit=list=>list.map(m=>{if(m.id!=='gpt-6.1-sol')return m;const c=structuredClone(m);fn(c);return c;});
+ data.details.publishedModels=edit(data.details.publishedModels);data.details.publication.models=edit(data.details.publication.models);};
+const rgb=s=>s.match(/\d+(\.\d+)?/g).slice(0,3).map(Number);
+
+test('CKP-MFD-50 the cost bar and cost line are mid-grey #8d97a1, ability stays white; the title reads "Effort · <model>"',async({page})=>{
+ await open(page);
+ const screen=await openSol(page);
+ await expect(screen.locator('.mfd-title')).toHaveText('Effort · Sol 6.1');
+ const fill=sel=>screen.locator(sel).first().evaluate(e=>getComputedStyle(e).fill),stroke=sel=>screen.locator(sel).first().evaluate(e=>getComputedStyle(e).stroke);
+ for(const sel of ['svg.cmp-bars .pc-cost .pc-chip','svg.cmp-bars .pc-cost .pc-cap,svg.cmp-bars .pc-cost .pc-end'])expect(rgb(await fill(sel)),sel).toEqual([141,151,161]);
+ expect(rgb(await stroke('svg.cmp-chart .pc-line.pc-cost polyline'))).toEqual([141,151,161]);
+ // the fill gradient of the cost bar is the same grey (no violet left anywhere on the page)
+ const stops=await screen.locator('svg.cmp-bars [class^="pc-g-cost"]').evaluateAll(s=>s.map(e=>getComputedStyle(e).stopColor));
+ expect(stops.length).toBeGreaterThan(0);for(const s of stops)expect(rgb(s)).toEqual([141,151,161]);
+ expect(await screen.evaluate(s=>[...s.querySelectorAll('*')].some(e=>{const c=getComputedStyle(e);return [c.fill,c.stroke,c.color,c.stopColor].some(v=>/180,\s*142,\s*224/.test(v||''));}))).toBe(false);
+ await open(page,{locale:'zh-CN'});
+ await expect((await openSol(page)).locator('.mfd-title')).toHaveText('档位 · Sol 6.1');
+});
+
+test('CKP-MFD-51 two numbers under every effort key: ability %, then cost % with a $; white = current, blue = trial, grey = others',async({page})=>{
+ await open(page);
+ const screen=await openSol(page);
+ let n=await keyNums(screen);
+ expect(n.map(x=>[x.e,x.a,x.c])).toEqual(SOL_KEYS);
+ expect(n.map(x=>x.role)).toEqual(['other','other','current','other','other']);
+ // the numbers sit under their keys
+ const keys=await screen.locator('.cmp-lad .lad').evaluateAll(b=>b.map(e=>{const r=e.getBoundingClientRect();return {x:r.left+r.width/2,b:r.bottom};}));
+ const cells=await screen.locator('.cmp-nums .lad-n').evaluateAll(c=>c.map(e=>{const r=e.getBoundingClientRect();return {x:r.left+r.width/2,t:r.top};}));
+ keys.forEach((k,i)=>{expect(Math.abs(k.x-cells[i].x)).toBeLessThan(2);expect(cells[i].t).toBeGreaterThanOrEqual(k.b-.5);});
+ const cur=rgb(n[2].colour),other=rgb(n[0].colour);
+ expect(Math.min(...cur)).toBeGreaterThan(200);expect(Math.max(...other)).toBeLessThan(Math.min(...cur));
+ // every text is at least 10 px
+ for(const px of await screen.locator('.cmp-nums .lad-n b').evaluateAll(b=>b.map(e=>parseFloat(getComputedStyle(e).fontSize))))expect(px).toBeGreaterThanOrEqual(10);
+ await screen.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
+ n=await keyNums(screen);
+ expect(n.map(x=>[x.e,x.a,x.c])).toEqual(SOL_KEYS);
+ expect(n.map(x=>x.role)).toEqual(['other','other','current','trial','other']);
+ const [r,g,b]=rgb(n[3].colour);expect(b).toBeGreaterThan(r+60);expect(b).toBeGreaterThan(g);
+ // trying the current effort itself adds nothing: no blue
+ await screen.locator('.cmp-lad [data-mfd="try:High"]').click();
+ expect((await keyNums(screen)).map(x=>x.role)).toEqual(['other','other','current','other','other']);
+});
+
+test('CKP-MFD-52 ability % is OUR score ÷ the top effort; a published aaScore is only an "AA official" reference; no score = "—"',async({page})=>{
+ // aaScore deliberately far from our scores: if it drove the share, High would read 51 % instead of 90 %.
+ const aa={low:20,medium:25,high:31,xhigh:58,max:61};
+ await open(page,{edit:data=>solEfforts(data,m=>{for(const e of m.efforts)e.aaScore=aa[e.effort];})});
+ let screen=await openSol(page);
+ let n=await keyNums(screen);
+ expect(n.map(x=>[x.e,x.a,x.c])).toEqual(SOL_KEYS);
+ expect((await bars(page)).abl.numbers.map(x=>x.text)).toEqual(['90%']);
+ expect(n.find(x=>x.e==='High').title).toContain('AA official 31');
+ // zh: AA 官方分
+ await open(page,{locale:'zh-CN',edit:data=>solEfforts(data,m=>{for(const e of m.efforts)e.aaScore=aa[e.effort];})});
+ screen=await openSol(page);
+ expect((await keyNums(screen)).find(x=>x.e==='Max').title).toContain('AA 官方分 61');
+ // aaScore absent: no AA reference anywhere; an unscored effort and an unpriced one show "—"
+ await open(page,{edit:data=>solEfforts(data,m=>{for(const e of m.efforts){if(e.effort==='low')e.ability=null;if(e.effort==='medium')e.cost=null;}})});
+ screen=await openSol(page);
+ n=await keyNums(screen);
+ expect(n.map(x=>[x.e,x.a,x.c])).toEqual([['Low','—','$13%'],['Med','84%','—'],...SOL_KEYS.slice(2)]);
+ for(const x of n)expect(x.title).not.toContain('AA');
+ expect(await screen.innerText()).not.toContain('AA');
+});
+
+test('CKP-MFD-53 there is no Enter-to-apply: the keys are only ‹ back and fast, and Enter on an effort key only tries it',async({page})=>{
+ await page.addInitScript(()=>{window.__posted=[];});
+ await open(page);
+ await page.evaluate(()=>{window.webkit.messageHandlers.cockpit.postMessage=m=>window.__posted.push(JSON.stringify(m));});
+ const screen=await openSol(page);
+ expect(await screen.innerText()).not.toMatch(/Enter|回车|apply|应用/i);
+ // the bottom keys are ‹ back and the fast key (dark when the tool has no fast mode); nothing else, no apply key
+ await expect(page.locator('.mfd-ok.mfd-vk .vk-back')).toHaveCount(1);await expect(page.locator('.mfd-ok.mfd-vk .vk-fast')).toHaveCount(1);
+ await expect(page.locator('.mfd-ok.mfd-vk > *:not(.vk-back):not(.vk-fast)')).toHaveCount(0);
+ const before=await page.evaluate(()=>window.__posted.length);
+ await screen.locator('.cmp-lad [data-mfd="try:XHigh"]').focus();await page.keyboard.press('Enter');
+ await expect(screen.locator('.cmp-lad .lad.try')).toHaveText('XHigh');
+ await page.keyboard.press('Enter');
+ // the tool setting is never changed: nothing leaves the page naming the tried effort, the real effort stays High
+ expect((await page.evaluate(()=>window.__posted)).slice(before).filter(m=>/xhigh/i.test(m))).toEqual([]);
+ await expect(screen.locator('.cmp-lad .lad.cur')).toHaveText('High');
+ expect(await page.locator('.mfd-page').innerText()).not.toMatch(/Enter|回车|apply|应用/i);
+});
+
+test('CKP-MFD-54 hint line bottom right: "click an effort or drag the fader to try it" idle, "trial only" while trying; the website link sits to its left',async({page})=>{
+ for(const [locale,idle,trying] of [['en','Click an effort or drag the fader to try it','Trial only — your tool settings stay unchanged'],['zh-CN','点一个档位或拖推杆来试','试算，不会改工具设置']]){
+  await open(page,{locale});
+  const screen=await openSol(page);
+  const hint=screen.locator('.cmp-foot .cmp-hint'),link=screen.locator('.cmp-foot .cmp-links a');
+  await expect(hint).toHaveText(idle);await expect(link.first()).toBeVisible();
+  await expect(screen.locator('.cmp-h .website-link')).toHaveCount(0);
+  const hb=await hint.boundingBox(),lb=await link.first().boundingBox(),pb=await screen.boundingBox(),nb=await screen.locator('.cmp-nums').boundingBox();
+  expect(lb.x+lb.width).toBeLessThanOrEqual(hb.x+.5);expect(hb.x+hb.width).toBeGreaterThan(pb.x+pb.width-20);expect(hb.y).toBeGreaterThanOrEqual(nb.y+nb.height-1);
+  expect(await hint.evaluate(e=>parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(10);
+  expect(await screen.evaluate(e=>e.scrollWidth<=e.clientWidth+.5)).toBe(true);
+  await screen.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
+  await expect(hint).toHaveText(trying);
+ }
+});
+
+test('CKP-MFD-54 short cockpit: the hint becomes an ⓘ outside the effort-key row; the keys and both bars stay',async({page})=>{
+ await open(page,{tier:'compact',height:640});
+ const screen=await openSol(page);
+ const mark=screen.locator('.cmp-trial-i');
+ await expect(mark).toBeVisible();await expect(mark).toHaveAttribute('aria-label','Click an effort or drag the fader to try it');
+ expect(await mark.evaluate(e=>!!e.closest('.cmp-lad'))).toBe(false);
+ const mb=await mark.boundingBox(),keys=await screen.locator('.cmp-lad .lad').evaluateAll(b=>b.map(e=>{const r=e.getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom};}));
+ for(const k of keys)expect(mb.x>=k.r-.5||mb.x+mb.width<=k.l+.5||mb.y>=k.b-.5||mb.y+mb.height<=k.t+.5,'ⓘ overlaps a key').toBe(true);
+ await expect(screen.locator('.cmp-lad .lad')).toHaveCount(5);await expect(screen.locator('.cmp-nums .lad-n')).toHaveCount(5);
+ expect(await screen.evaluate(e=>e.scrollWidth<=e.clientWidth+.5&&e.scrollHeight<=e.clientHeight+.5)).toBe(true);
+});
+
+test('CKP-MFD-54 a model with a single effort shows "Only one effort" and no chart; an unreported current draws only the ★ line',async({page})=>{
+ await open(page,{edit:data=>solEfforts(data,m=>{m.efforts=m.efforts.filter(e=>e.effort==='medium');})});
+ let screen=await openSol(page);
+ await expect(screen.locator('.cmp-single')).toHaveText('Only one effort');
+ await expect(screen.locator('svg.cmp-chart')).toHaveCount(0);
+ await open(page,{locale:'zh-CN',edit:data=>solEfforts(data,m=>{m.efforts=m.efforts.filter(e=>e.effort==='medium');})});
+ await expect((await openSol(page)).locator('.cmp-single')).toHaveText('只有一档');
+ await open(page,{edit:data=>{data.details.sessions[0].effort=null;}});
+ screen=await openSol(page);
+ const b=await bars(page);
+ expect(b.abl.fill).toBeNull();expect(b.cost.fill).toBeNull();expect(b.abl.rec).not.toBeNull();
+ await expect(screen.locator('.cmp-note')).toContainText('current unknown');
+});
+
+test('CKP-MFD-50 the title carries the model\'s 7-day use: "7d 212M · 17%" (no ≈$ until estimated cost exists); nothing without history',async({page})=>{
+ const ranking=(top,total)=>({measure:'observed-output-tokens',attribution:'unattributed',recent7d:{entities:top.length,totalObservedOutputTokens:total,top},recent30d:{entities:0,totalObservedOutputTokens:0,top:[]}});
+ const withHistory=data=>{data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:null,subscriptions:[],
+  models:ranking([{name:'gpt-6.1-sol',observedOutputTokens:212e6,observedRequests:900,share:212/1247}],1247e6),tools:ranking([],0),daily:[],hourly:[],projects:{recent7d:[],recent30d:[]},cycles:[]};};
+ await open(page,{edit:withHistory});
+ let screen=await openSol(page);
+ await expect(screen.locator('.cmp-h .cmp-use')).toHaveText('7d 212M · 17%');
+ await open(page,{locale:'zh-CN',edit:withHistory});
+ screen=await openSol(page);
+ await expect(screen.locator('.cmp-h .cmp-use')).toHaveText('7天 212M · 占 17%');
+ await open(page);
+ screen=await openSol(page);
+ await expect(screen.locator('.cmp-h .cmp-use')).toHaveCount(0);
+});
+
+// V1-FINAL §14 (WP-05): every new string passes the pseudo-long check: long form, then short, then left out; numbers never cut.
+test('CKP-MFD-50…54 pseudo-long English: the effort page keeps its numbers whole and nothing runs out of the screen',async({page})=>{
+ const {usePseudoLong}=await import('../pseudo-long.mjs');
+ for(const [tier,height] of [['tall',890],['compact',640]]){
+  await usePseudoLong(page);
+  await open(page,{tier,height});
+  const screen=await openSol(page);
+  for(const step of ['idle','trial']){
+   if(step==='trial')await screen.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
+   const fit=await screen.evaluate(s=>{const out=[],box=s.getBoundingClientRect();
+    for(const e of s.querySelectorAll('.cmp-h > *, .cmp-foot > *, .cmp-foot a, .cmp-hint, .lad-n b, .lad')){const r=e.getBoundingClientRect();if(!r.width)continue;
+     if(r.left<box.left-.5||r.right>box.right+.5)out.push(['outside',e.className,e.textContent]);
+     if(e.scrollWidth>e.clientWidth+1&&!e.classList.contains('mfd-title'))out.push(['clipped',e.className,e.textContent]);}
+    return out;});
+   expect(fit,`${tier} ${step}`).toEqual([]);
+   expect((await keyNums(screen)).map(x=>[x.a,x.c])).toEqual(SOL_KEYS.map(k=>[k[1],k[2]]));
+  }
+ }
 });

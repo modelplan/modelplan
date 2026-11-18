@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Ported from the opus-r7 study (rocket-r1/mfd-pages/views.js, round D1): the comparison view a fader trial opens
 // (spec 6.4). Only the comparison is ported; the alert list and the session view live in prototype-deck.ts.
-// Pure view (v8, CKP-MFD-33): ability and cost bars as shares of the top effort, the share line chart and the effort
-// ladder; its own bottom keys (‹ back, ⚡ fast). Nothing is applied to a session.
+// Pure view (v8, CKP-MFD-33; v1 final bar version, CKP-MFD-50…54): ability and cost bars as shares of the top effort, the
+// share line chart, the effort keys with two numbers under each, the hint row; its own bottom keys (‹ back, ⚡ fast).
+// Nothing is applied to a session: there is no Enter-to-apply.
 import {websiteWords,modelUrl,methodologyUrl,secondaryLink} from './public-helpers.js';
 import {t} from '../i18n.js';
 import '../strings/review49.js';
@@ -38,6 +39,9 @@ const colOf = (m, tier, label, fast) => { const r = rowOf(m, label), f = !!(fast
 // v8 (CKP-MFD-33; D165, D177, D190, D201, demo v8): every number is a share of the model's own top effort, the
 // published top effort of the ladder (= 100 %, "Max"), whatever its ability. Cost and time are shares of that effort's cost and
 // time; a fast configuration multiplies its own cost and time, so a fast trial may go past 100 %.
+// Ability is ModelPlan's own published score (row[1]), never the AA score (row[4], a tooltip reference only; D292 as amended
+// by the owner 11-17). Only ratios are used: no threshold, axis top or "average" text depends on the score's scale, so the
+// planned AA-aligned display scale (34.185 + 8.150·q) changes the numbers, not the page.
 const ORDER = ['Low', 'Med', 'High', 'XHigh', 'Max'];
 const topRow = m => m.e.reduce((a, b) => !a || ORDER.indexOf(b[0]) >= ORDER.indexOf(a[0]) ? b : a, null);
 export function shareOfTop(m, c) {
@@ -59,7 +63,7 @@ const star = (x, y, r, extra = '') => { let d = ''; for (let i = 0; i < 10; i++)
   return `<path class="pc-star" d="${d}Z"${extra}/>`; };
 const BAR_H = 58;
 
-// Two stereo-lane bars, ability (white) and cost (violet); full length = top effort (100 %). The whole 0-100 % track is
+// Two stereo-lane bars, ability (white) and cost (mid-grey #8d97a1); full length = top effort (100 %). The whole 0-100 % track is
 // always drawn (a faint tint of the bar colour inside a 1 px outline) and ends in a bright 100 % stop; notches every
 // 10 % are cut into the tube, the one at 50 % at full height. No trial: one solid bar to the current effort. A trial
 // splits the tube into two lanes from 0: real on top (solid, the bar's colour), trial below (solid blue). ★ is a thin
@@ -147,7 +151,7 @@ function barsSvg(m, s, cols, W, ui) {
   return `<svg class="cmp-bars lane-${laneMode}" viewBox="0 0 ${W} ${BAR_H}" width="${W}" height="${BAR_H}" role="img" aria-label="${esc(aria)}"><defs>${defs}</defs>${g}${hit}</svg>`;
 }
 
-// The line chart under the bars: ability (white), cost (violet) and time (grey dotted) across the published efforts,
+// The line chart under the bars: ability (white), cost (mid-grey) and time (grey dotted) across the published efforts,
 // each as a share of the top effort. Current column tinted white, trial column blue; ★ on the ability line.
 function lineSvg(m, s, cols, {w: W, h: H}, ui) {
   const {L, E} = edges(ui, W), T0 = 13, B0 = 4, efforts = m.e.map(r => r[0]), bw = (E - L) / efforts.length;
@@ -168,7 +172,12 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
   let g = (ci >= 0 ? band(ci, 'pc-band pc-band-current') : '') + (ti >= 0 ? band(ti, 'pc-band pc-band-trial') : '');
   // hover preview: a dashed blue box on the column of the effort under the pointer (any other effort than the trial)
   g += efforts.map((l, i) => l === s.trial ? '' : band(i, 'pc-band pc-band-hover')).join('');
-  for (const v of span > 1 ? [span, 1, .5, 0] : [1, .5, 0]) { const y = Y(v); g += `<line class="pc-grid${v === 1 ? ' unit' : ''}" x1="${L}" x2="${n1(E)}" y1="${n1(y)}" y2="${n1(y)}"/>` + label(L - 5, Math.max(8, Math.min(H - 1, y + 3)), v ? pctText(v) : '0', 'pc-tick-l', 'end'); }
+  // Gridlines at every step; a tick label only where it keeps 10 px from the labels already placed (0 first, then 100 %,
+  // then the fast top, then 50 %), so a short chart (the compact shell, V1-FINAL §13.3) never stacks them.
+  const tickYs = [], tickY = v => Math.max(8, Math.min(H - 1, Y(v) + 3));
+  for (const v of [0, 1, ...(span > 1 ? [span] : []), .5]) if (tickYs.every(y => Math.abs(y - tickY(v)) >= 10)) tickYs.push(tickY(v));
+  for (const v of span > 1 ? [span, 1, .5, 0] : [1, .5, 0]) { const y = Y(v); g += `<line class="pc-grid${v === 1 ? ' unit' : ''}" x1="${L}" x2="${n1(E)}" y1="${n1(y)}" y2="${n1(y)}"/>` + (tickYs.includes(tickY(v)) ? label(L - 5, tickY(v), v ? pctText(v) : '0', 'pc-tick-l', 'end') : ''); }
+  const upBoxes = [];
   const dot = (cls, x, y, r, extra = '') => `<circle class="${cls}" cx="${n1(x)}" cy="${n1(y)}" r="${r}"${extra}/>`;
   const path = (vs, runs) => runs.filter(r => r.length > 1).map(r => `<polyline points="${r.map(i => n1(X(i)) + ',' + n1(Y(vs[i]))).join(' ')}"/>`).join('');
   const runsOf = vs => { const runs = []; vs.forEach((v, i) => { if (!numeric(v)) return; if (!runs.length || !numeric(vs[i - 1])) runs.push([]); runs.at(-1).push(i); }); return runs; };
@@ -189,7 +198,8 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
       const own = at[i]?.[k], y = numeric(own) ? Y(own) : numeric(v) ? Y(v) : null;
       if (y == null) return;
       const val = numeric(own) ? own : v;
-      if (val > span + 1e-9) p += `<path class="pc-up" d="M${n1(X(i) - 2.6)} ${n1(T0 + 5.6)}l2.6-4.2 2.6 4.2Z"/>` + (X(i) + 5 + 24 > W ? label(X(i) - 5, T0 + 6.5, pctText(val), 'pc-up-l', 'end') : label(X(i) + 5, T0 + 6.5, pctText(val), 'pc-up-l'));
+      if (val > span + 1e-9) { const right = X(i) + 5 + 24 > W; upBoxes.push(right ? [X(i) - 29, X(i) - 5] : [X(i) + 5, X(i) + 29]);
+        p += `<path class="pc-up" d="M${n1(X(i) - 2.6)} ${n1(T0 + 5.6)}l2.6-4.2 2.6 4.2Z"/>` + (right ? label(X(i) - 5, T0 + 6.5, pctText(val), 'pc-up-l', 'end') : label(X(i) + 5, T0 + 6.5, pctText(val), 'pc-up-l')); }
       if (k === 'abl' && i === ri) { if (i === ti) p += dot('pc-ring pc-ring-rec', X(i), y, 5.6, ' data-role="trial"'); p += star(X(i), y, 4, ' data-role="rec"'); }
       else if (i === ti) p += dot('pc-ring', X(i), y, 2.6, ' data-role="trial"');
       else if (i === ci) p += dot('pc-dot pc-dot-current', X(i), y, 2.5, ' data-role="current"');
@@ -198,9 +208,10 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
     g += `<g class="pc-line pc-${k}" data-series="${k}">${p}</g>`;
   }
   // Time is the one series the bars do not name: its legend sits bottom right inside the plot.
+  // On a short chart it would meet a ▲ value label at the top right; then the legend is left out (the dotted time line itself stays).
   if (rows.some(r => numeric(r.time))) {
     const word = t('mfd.pctTime'), lw = [...word].reduce((w, ch) => w + (/[　-鿿]/.test(ch) ? 8.5 : 4.8), 0) + 14, lx = E - lw, ly = H - B0 - 4;
-    g += `<g class="pc-legend"><line class="pc-legend-time" x1="${n1(lx)}" x2="${n1(lx + 9)}" y1="${n1(ly - 3)}" y2="${n1(ly - 3)}"/>${label(lx + 12, ly, word, 'pc-legend-l')}</g>`;
+    if (!(ly - 10 < T0 + 8.5 && upBoxes.some(([a, z]) => a < E && z > lx))) g += `<g class="pc-legend"><line class="pc-legend-time" x1="${n1(lx)}" x2="${n1(lx + 9)}" y1="${n1(ly - 3)}" y2="${n1(ly - 3)}"/>${label(lx + 12, ly, word, 'pc-legend-l')}</g>`;
   }
   // a small label at the top of each highlighted column names it (the same effort carries one label for both); the plot starts below it
   const colLabel = (i, role, key) => `<text class="pc-col-l pc-col-${role}" data-role="${role}" data-effort="${esc(efforts[i])}" x="${n1(X(i))}" y="8.6" text-anchor="middle">${esc(t(key))}${i === ri ? '<tspan class="pc-col-star"> ★</tspan>' : ''}</text>`;
@@ -217,18 +228,50 @@ export function comparison(d, ui, args) {
   const cols = {C: colOf(m, tier, base, s.curFast), T: colOf(m, tier, trial, s.trialFast), R: colOf(m, tier, m.rec, false)};
   const note = [!cur ? `<em>${t('mfd.currentUnknown')}</em>` : ''].filter(Boolean).join('');
   const words = websiteWords(ui.lang), size = fill(ui, 'cmp', {w: 300, h: 60}), title = t('mfd.cmpTitle', {m: m.short});
-  const howFits = textW(title) * 1.2 + textW(words.compare + ' ↗') + textW(words.how + ' ↗') + 36 <= size.w;
-  const links = `<span class="cmp-header-links">${secondaryLink(modelUrl(m.publishedId ?? m.id), words.compare)}${howFits ? secondaryLink(methodologyUrl('cost-basis'), words.how) : ''}</span>`;
+  // CKP-MFD-50 (V1-FINAL §8.5, §14): right of the title, the model's own 7-day use; the ≈$ part only when an estimated
+  // cost exists. The website links moved to the hint row at the bottom right (at least one is always kept).
+  const use = useText(m.u7);
   const {L, E} = edges(ui, size.w), levels = m.e.map(r => r[0]);
-  // CKP-FAD-18 (D151): one quiet line, bottom right, while a trial detent is shown. The compact shell has no height for it, so
-  // it collapses to an info mark inside the ladder row (CSS picks one by the profile); the full text is its accessible name.
-  const trialNote = s.trying && ui.trialNote !== false ? `<p class="cmp-trial-note">${esc(t('mfd.cmpTrialNote'))}</p>` : '';
-  const trialMark = trialNote ? `<button type="button" class="cmp-trial-i" aria-label="${esc(t('mfd.cmpTrialNote'))}">ⓘ</button>` : '';
-  const ladder = `<div class="cmp-lad" style="--cl:${L}px;--cr:${size.w - E}px">${levels.map(l => `<button class="lad ${l === base && cur ? 'cur' : ''} ${l === trial && s.trying ? 'try' : ''} ${l === m.rec ? 'rec' : ''}" data-mfd="try:${esc(l)}" data-hover="${esc(l)}" aria-label="${esc(t('mfd.ladderAria', {e: l}))}">${l === m.rec ? '★' : ''}${l}</button>`).join('')}${trialMark}</div>`;
+  // CKP-FAD-18 / CKP-MFD-54: one quiet hint, bottom right: how to try while idle, "trial only" while trying. The compact
+  // shell has no height for it, so it collapses to an info mark outside the key row (CSS picks one by the profile); the
+  // full text is its accessible name.
+  // §14: the long form first, then the short one, then none (the bare ↗ link stays); the ⓘ always names the long form.
+  const hintText = s.trying ? (ui.trialNote !== false ? t('mfd.cmpTrialNote') : '') : t('mfd.cmpHintIdle');
+  const hintShown = !hintText ? '' : [hintText, t(s.trying ? 'mfd.cmpTrialNoteShort' : 'mfd.cmpHintIdleShort')].find(x => textW(x) * 1.05 + 26 <= size.w) ?? '';
+  const hint = hintShown ? `<p class="cmp-hint${s.trying ? ' cmp-trial-note' : ''}"${hintShown !== hintText ? ` title="${esc(hintText)}"` : ''}>${esc(hintShown)}</p>` : '';
+  const hintMark = hintText ? `<button type="button" class="cmp-trial-i" aria-label="${esc(hintText)}">ⓘ</button>` : '';
+  // The website link sits left of the hint (§14: one link is always kept). When the full words do not fit beside the hint
+  // (English, compact) the link is a bare ↗ named by its tooltip; "how it's worked out" joins only when everything fits.
+  const href = modelUrl(m.publishedId ?? m.id), room = size.w - textW(hintShown) * 1.05 - 12;
+  const full = !ui.compact && textW(words.compare + ' ↗') <= room, how = full && textW(words.compare + ' ↗') + textW(words.how + ' ↗') + 8 <= room;
+  const links = `<span class="cmp-links">${full ? secondaryLink(href, words.compare) + (how ? secondaryLink(methodologyUrl('cost-basis'), words.how) : '')
+    : `<a class="website-link cmp-link-i" href="${href}" target="_blank" rel="noopener noreferrer" title="${esc(words.compare)}" aria-label="${esc(words.compare)}">↗</a>`}</span>`;
+  const keyCls = l => `${l === base && cur ? 'cur' : ''} ${l === trial && s.trying ? 'try' : ''}`.trim();
+  const ladder = `<div class="cmp-lad">${levels.map(l => `<button class="lad ${keyCls(l)} ${l === m.rec ? 'rec' : ''}" data-mfd="try:${esc(l)}" data-hover="${esc(l)}" aria-label="${esc(t('mfd.ladderAria', {e: l}))}">${l === m.rec ? '★' : ''}${esc(l)}</button>`).join('')}</div>`;
+  // CKP-MFD-51/52: two numbers under every key, ability then cost with a $, at the speed the page shows (fast raises the
+  // cost). Ability is OUR published score as a share of the top effort's; a published aaScore (row[4], D292) is only an
+  // "AA official" reference in the cell's tooltip. Unknown = "—". White = current, blue = trial, grey = the others.
+  const fastShown = !!tier && (s.trying ? s.trialFast : s.curFast);
+  const nums = `<div class="cmp-nums">${levels.map(l => {
+    const v = shareOfTop(m, colOf(m, tier, l, fastShown)), a = pctOrDash(v.abl), c = v.cost == null ? '—' : '$' + pctText(v.cost), aa = rowOf(m, l)[4];
+    const tip = t('mfd.ladNumsAria', {e: l, a, c}) + (numeric(aa) && aa > 0 ? ' · ' + t('mfd.aaRef', {v: aaText(aa)}) : '');
+    return `<span class="lad-n ${keyCls(l)}" data-effort="${esc(l)}" title="${esc(tip)}"><b class="lad-a">${a}</b><b class="lad-c">${esc(c)}</b></span>`;
+  }).join('')}</div>`;
   // polish A: on a short screen the chart is left out instead of being clipped (the bars and the keys still compare).
-  const chart = size.h >= 34 && size.w >= 160 ? lineSvg(m, s, cols, size, ui) : '';
-  return `<div class="cmp-h"><b class="mfd-title">${esc(title)}</b>${note ? `<span class="cmp-note">${note}</span>` : ''}${links}</div>
-    <div class="cmp-bars-row" data-trying="${s.trying}">${barsSvg(m, s, cols, size.w, ui)}</div><div class="mfd-fill" data-fill="cmp">${chart}</div>${ladder}${trialNote}`;
+  // CKP-MFD-54: a model with a single effort has nothing to chart: "only one effort".
+  const chart = levels.length < 2 ? `<p class="cmp-single">${esc(t('mfd.cmpSingle'))}</p>` : size.h >= 34 && size.w >= 160 ? lineSvg(m, s, cols, size, ui) : '';
+  return `<div class="cmp-h"><b class="mfd-title">${esc(title)}</b>${note ? `<span class="cmp-note">${note}</span>` : ''}${use ? `<span class="cmp-use">${esc(use)}</span>` : ''}</div>
+    <div class="cmp-bars-row" data-trying="${s.trying}">${barsSvg(m, s, cols, size.w, ui)}</div><div class="mfd-fill" data-fill="cmp">${chart}</div><div class="cmp-keys" style="--cl:${L}px;--cr:${size.w - E}px">${ladder}${nums}<div class="cmp-foot">${links}${hint}${hintMark}</div></div>`;
+}
+const pctOrDash = v => v == null ? '—' : pctText(v);
+const aaText = v => Number.isInteger(v) ? String(v) : v.toFixed(1);
+// Tokens as on the model cards: 212M, 4.2M, 830k.
+const tokShort = n => n >= 1e8 ? Math.round(n / 1e6) + 'M' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(Math.round(n));
+// u7 = {tokens, share (0-1), cost? (an already formatted ≈ amount)}; nothing when the model has no 7-day use.
+function useText(u) {
+  if (!u || !numeric(u.tokens) || !(u.tokens > 0) || !numeric(u.share)) return '';
+  const p = Math.max(u.share > 0 ? 1 : 0, Math.round(u.share * 100));
+  return typeof u.cost === 'string' && u.cost ? t('mfd.cmpUseCost', {t: tokShort(u.tokens), c: u.cost, p}) : t('mfd.cmpUse', {t: tokShort(u.tokens), p});
 }
 // The bottom key row while the comparison is shown (round D1): back to the page underneath, fast mode in the trial
 // (both states printed, only for a tool with a fast mode; otherwise a dark key) only. The two keys share the footer width.
@@ -245,6 +288,6 @@ const cmpClick = (act, val, ui, d, args) => {
   return null;
 };
 
-const textW = s => [...s].reduce((w, ch) => w + (/[　-鿿＀-￯]/.test(ch) ? 10 : 5.6), 0);
+const textW = s => [...String(s)].reduce((w, ch) => w + (/[　-鿿＀-￯]/.test(ch) ? 10 : 5.6), 0);
 
 export const compareView = {render: comparison, keys: compareKeys, pageless: true, ownTitle: true, onClick: cmpClick};

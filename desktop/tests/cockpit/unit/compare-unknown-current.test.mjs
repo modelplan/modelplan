@@ -59,3 +59,15 @@ test('CKP-MFD-33: the top effort is the top of the published ladder; a missing r
  const noCost={id:'nc',rec:'High',e:[['Low',40,1,1],['High',60,2,2],['Max',70,null,4]]};
  assert.deepEqual(configShare(noCost,null,'High'),{abl:60/70,cost:null,time:.5});
 });
+
+// WP-05 (owner 11-18): the ability scale will move (AA-aligned 34.185 + 8.150·q); the page uses ratios only, so any positive
+// scale gives score ÷ top-effort score, and no threshold, axis top or "50 = average" text depends on it.
+test('WP-05 the ability share is scale-free: the same model on another ability scale reads score ÷ top score',()=>{
+ const q=[-1.2,0.1,0.6,1,1.9],rescaled={...terra,e:terra.e.map((r,i)=>[r[0],34.185+8.150*q[i],r[2],r[3]])};
+ for(const [i,l] of ['Low','Med','High','XHigh','Max'].entries())assert.ok(Math.abs(configShare(rescaled,null,l).abl-(34.185+8.150*q[i])/(34.185+8.150*q[4]))<1e-12,l);
+ setLanguage('en');
+ const html=comparison({...view,models:[rescaled]},ui,{modelId:'model0',current:'High'});
+ assert.match(html,/<b class="lad-a">\d+%<\/b>/);assert.doesNotMatch(html,/average|平均|50 =/i);
+ // a scale centred elsewhere moves only the numbers, never the axis: still 0 / 50% / 100% of the top effort
+ assert.match(html,/>100%<\/text>/);assert.match(html,/>0<\/text>/);
+});
