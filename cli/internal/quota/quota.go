@@ -575,6 +575,9 @@ func thin(ss []Sample, w Window) []Sample {
 		}
 	}
 	sort.SliceStable(in, func(i, j int) bool { return in[i].At.Before(in[j].At) })
+	if w.ResetsAt == nil {
+		in = afterLastDrop(in, w)
+	}
 	var out []Sample
 	for _, s := range in {
 		spacing := sampleEvery
@@ -586,6 +589,22 @@ func thin(ss []Sample, w Window) []Sample {
 		}
 	}
 	return out
+}
+
+// afterLastDrop: with no reset time, a drop in the readings (the latest included) stands for an
+// unseen reset. Readings before it are of an earlier cycle; cut them before the sparse sampling
+// can thin the peak that marks the drop and leave a rate spanning two cycles.
+func afterLastDrop(in []Sample, w Window) []Sample {
+	cut := 0
+	for i := 1; i < len(in); i++ {
+		if in[i].Used < in[i-1].Used {
+			cut = i
+		}
+	}
+	if n := len(in); n > 0 && w.UsedPercent != nil && *w.UsedPercent < in[n-1].Used {
+		cut = n
+	}
+	return in[cut:]
 }
 
 // addSample appends a reading to a window's history: the readers attach what they kept.

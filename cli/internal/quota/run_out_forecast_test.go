@@ -111,3 +111,28 @@ func TestRunOutWithoutAResetTimeIgnoresReadingsBeforeADrop(t *testing.T) {
 		t.Fatalf("forecast = %+v", f)
 	}
 }
+
+// The history merge must not thin away the peak just before an unseen reset: merging readings one
+// by one (some under two minutes apart), only the rise after the drop counts.
+func TestRunOutWithoutAResetTimeDropSurvivesHistoryThinning(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	reads := []struct {
+		at   time.Duration
+		used float64
+	}{{-40 * time.Minute, 0}, {-39 * time.Minute, 90}, {-38 * time.Minute, 60}, {0, 62}}
+	var w Window
+	for i, r := range reads {
+		cur := Window{Kind: "five_hour", UsedPercent: ptr(r.used), ObservedAt: now.Add(r.at)}
+		if i > 0 {
+			cur = withHistory(cur, w)
+		}
+		w = cur
+	}
+	evalWindow(&w, now)
+	if w.Pace == "tight" || (w.RunsOutInMinutes != nil && *w.RunsOutInMinutes <= RunsOutTight) {
+		t.Fatalf("run-out across a lost drop: %v, pace %s", deref(w.RunsOutInMinutes), w.Pace)
+	}
+	if f := w.RunOutForecast(); f != nil {
+		t.Fatalf("forecast across a lost drop: %+v", f)
+	}
+}
