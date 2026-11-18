@@ -1055,8 +1055,9 @@ final class CommunityCockpitEntryTests:XCTestCase {
     }
 
 #if MODELPLAN_TEST_ONLY_SPI
-    /// CKP-FAD-04 (D118): on the real official page opened by the normal factory, a published model's fader shows its
-    /// effort bars and the recommended-effort star marker. Needs the canonical official cockpit and the synthetic CLI.
+    /// CKP-FAD-50 (WP-08; was CKP-FAD-04, D118): on the real official page opened by the normal factory, a published model's
+    /// fader shows its model card (the five effort bars are gone) and the recommended-effort star marker. Needs the
+    /// canonical official cockpit and the synthetic CLI.
     @MainActor func testFaderBarsAndStarShowOnTheRealPageThroughTheNormalEntry() async throws {
         let official=Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
         guard let path=ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],FileManager.default.isExecutableFile(atPath:path),
@@ -1095,7 +1096,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let web=try XCTUnwrap(page.verificationWebView)
         let script="""
         (()=>{const ch=document.querySelector('.fd-ch:not(.empty)');if(!ch)return 'no-fader';
-        const bars=[...ch.querySelectorAll('.fd-strip .eb')].filter(e=>/px$/.test(e.style.getPropertyValue('--h'))).length;
+        const strip=ch.querySelector('.fd-strip');const bars=strip&&strip.dataset.card&&(strip.querySelector('.st-name')?.textContent??'').trim()?1:0;
         const rec=ch.querySelector('.fd-marks .fd-rec');const k=rec?rec.style.getPropertyValue('--k'):'';
         return bars+'|'+(rec?'rec':'norec')+'|'+(k!==''&&Number.isFinite(Number(k))?'k':'nok');})()
         """
@@ -1115,7 +1116,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let diagnostics="trace=\(trace) dom={\(dom)} windowVisible=\(page.window?.isVisible ?? false) occlusion=\(page.window?.occlusionState.contains(.visible) ?? false) appActive=\(NSApp.isActive) key=\(page.window?.isKeyWindow ?? false)"
         let parts=result.split(separator:"|").map(String.init)
         XCTAssertEqual(parts.count,3,"the fader painted: \(result) \(diagnostics)")
-        XCTAssertGreaterThan(Int(parts.first ?? "0") ?? 0,0,"the fader shows effort bars (\(result))")
+        XCTAssertGreaterThan(Int(parts.first ?? "0") ?? 0,0,"the fader shows its model card (WP-08 replaced the effort bars, CKP-FAD-04) (\(result))")
         XCTAssertEqual(parts.dropFirst().first,"rec","the recommended-effort star marker is on the fader (\(result))")
         XCTAssertEqual(parts.last,"k","and sits at a numeric travel position (\(result))")
     }

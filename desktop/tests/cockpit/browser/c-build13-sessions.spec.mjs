@@ -15,8 +15,9 @@ async function open(page,data,locale='en'){
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
 }
+// WP-08: the current effort is read from the card's effort line (the five ability bars are gone, CKP-FAD-04 superseded).
 const channels=page=>page.locator('.fd-ch:not(.empty)').evaluateAll(list=>list.map(ch=>({name:ch.querySelector('.st-name')?.textContent,
- clipped:(e=>e.scrollWidth>e.clientWidth+.5)(ch.querySelector('.st-name')),current:ch.querySelector('.eb.cur')?.dataset.l??null,
+ clipped:(e=>e.scrollWidth>e.clientWidth+.5)(ch.querySelector('.st-name')),current:ch.querySelector('.cd-cur')?.textContent??null,
  strip:[...ch.querySelectorAll('.st-vend b')].map(b=>getComputedStyle(b).getPropertyValue('--v').trim())})));
 
 test('B13 the model in use leads the faders with its short name, its brand strip and its current effort lit',async({page})=>{

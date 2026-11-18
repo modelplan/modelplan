@@ -7,7 +7,7 @@
 import {websiteWords,modelUrl,methodologyUrl,secondaryLink} from './public-helpers.js';
 import {t} from '../i18n.js';
 import '../strings/review49.js';
-import {esc, fill, bolt} from './fmt.js';
+import {esc, fill, bolt, tokShort} from './fmt.js';
 import {modelOf, rowOf, currentOf} from './scope.js';
 
 const POOL_TOOL = {codex: 'Codex', claude: 'Claude Code'};
@@ -270,8 +270,6 @@ export function comparison(d, ui, args) {
 }
 const pctOrDash = v => v == null ? '—' : pctText(v);
 const aaText = v => Number.isInteger(v) ? String(v) : v.toFixed(1);
-// Tokens as on the model cards: 212M, 4.2M, 830k.
-const tokShort = n => n >= 1e8 ? Math.round(n / 1e6) + 'M' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(Math.round(n));
 // u7 = {tokens, share (0-1), cost? (an already formatted ≈ amount)}; nothing when the model has no 7-day use.
 function useText(u) {
   if (!u || !numeric(u.tokens) || !(u.tokens > 0) || !numeric(u.share)) return '';

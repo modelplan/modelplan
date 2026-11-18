@@ -8,6 +8,12 @@ export const LADDER = ['Low', 'Med', 'High', 'XHigh', 'Max'];
 // 41m, 2h00, 5d3h (owner's d/h/m form, spec 2.2)
 export const dhm = m => m == null ? '--' : m < 60 ? `${Math.round(m)}m` : m < 1440 ? `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, '0')}` : `${Math.floor(m / 1440)}d${Math.floor(m % 1440 / 60)}h`;
 export const tok = n => n == null ? '--' : n < 1000 ? String(Math.round(n)) : n < 1e6 ? `${Math.round(n / 1000)}k` : `${(n / 1e6).toFixed(1)}M`;
+// Tokens as on the model cards and the effort page title (V1-FINAL §0): 212M, 4.2M, 830k, 1.2B.
+export const tokShort = n => n >= 1e10 ? Math.round(n / 1e9) + 'B' : n >= 1e9 ? (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B' : n >= 1e8 ? Math.round(n / 1e6) + 'M' : n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(Math.round(n));
+// Estimated cost (V1-FINAL §0, LBL-2.2-51): "≈$64": two significant digits under $100, whole dollars from $100,
+// "≈$1.2k" from $1000 (two significant digits again). Never red or yellow; the caller picks white or grey.
+const sig2 = new Intl.NumberFormat('en-US', {maximumSignificantDigits: 2, useGrouping: false});
+export const approxCost = usd => usd >= 999.5 ? '≈$' + sig2.format(usd / 1000) + 'k' : usd >= 99.5 ? '≈$' + Math.round(usd) : '≈$' + sig2.format(usd);
 export const grouped = n => n == null ? '--' : Math.round(n).toLocaleString('en-US');
 export const unit = n => n >= 1e6 ? [(n / 1e6).toFixed(1), 'M'] : n >= 1e3 ? [String(Math.round(n / 1e3)), 'k'] : [String(Math.round(n)), ''];
 export const sign = v => v > 0.05 ? '+' + v.toFixed(1) : v < -0.05 ? '−' + Math.abs(v).toFixed(1) : '±0';
