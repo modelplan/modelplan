@@ -80,7 +80,12 @@ public struct CockpitShellLayout: Equatable, Sendable {
     /// How far below the window top the hull/canopy edge is at the shoulder, in page px (same measurement). The rack
     /// is visible above this line only; nothing of it is drawn below it inside the cockpit's frame (D175: nothing
     /// shows through the window).
-    public static func shoulderDrop(_ profile: CockpitAppearance.Profile) -> CGFloat { profile == .full ? 32 : 6 }
+    /// Closed (shutter closed or forced closed): the window's top edge IS the slab's top edge (G3-108 cuts the porthole
+    /// band above it), so the hull edge at the shoulder is 0 px below the top; the open hull's 32 px / 6 px would let
+    /// the rack hang that far into empty space until the cockpit covers it.
+    public static func shoulderDrop(_ profile: CockpitAppearance.Profile, closed: Bool) -> CGFloat {
+        closed ? 0 : (profile == .full ? 32 : 6)
+    }
     /// `screenWidth` is the full width of the screen the cockpit opens on; it defaults to the usable width.
     /// `forceCompact` (CKP-SHELL-33 key-detach landing, D187): the short version even where the full one fits.
     /// `basis` (G3-132): the size basis of all connected displays; without it, this display alone (as before G3-132).
@@ -154,8 +159,10 @@ public struct CockpitShellLayout: Equatable, Sendable {
     }
     /// The shoulder point in screen coordinates for this layout's frame: where the rack meets the cockpit.
     public var shoulder: CGPoint {
-        CGPoint(x: frame.minX + Self.shoulderX(profile) * scale, y: frame.maxY - Self.shoulderDrop(profile) * scale)
+        CGPoint(x: frame.minX + Self.shoulderX(profile) * scale, y: frame.maxY - rackMaskDrop)
     }
+    /// How far below the window top the launch rack's mask line is, in points: follows the shutter state.
+    public var rackMaskDrop: CGFloat { Self.shoulderDrop(profile, closed: shutterClosed) * scale }
     /// The page canvas in CSS px: the open root plus the base reserve, open or closed (G3-108).
     public var pageSize: CGSize { .init(width: Self.width, height: canvasRootHeight + Self.baseReserve) }
     /// The web view's frame in the window: the open canvas, bottom-anchored, so the body keeps its place in the window

@@ -65,13 +65,38 @@ import XCTest
     let layout = try XCTUnwrap(fixture.page.verificationLayout)
     let panel = try XCTUnwrap(fixture.page.verificationRack.panel)
     let actual = try XCTUnwrap(fixture.page.verificationRackMask)
-    let drop = CockpitShellLayout.shoulderDrop(layout.profile) * layout.scale
+    let drop = layout.rackMaskDrop
     let hidden = CGRect(x: window.frame.minX, y: window.frame.minY, width: window.frame.width,
                         height: max(0, window.frame.height - drop))
     let expected = CGRect(x: hidden.minX - panel.minX, y: panel.maxY - hidden.maxY,
                           width: hidden.width, height: hidden.height)
     XCTAssertNotEqual(actual, before, "the old mask must not survive a size change")
     XCTAssertEqual(actual, expected, "the rack clips against the resized cockpit")
+    XCTAssertEqual(failures, [])
+  }
+
+  /// Owner 11-18: with the shutter closed, the rack must not show below the closed cockpit's top edge at any frame of the
+  /// open (it used to hang 27-32 pt into empty space from ~83 ms until the cockpit covered it at ~364 ms).
+  func testClosedShutterIconOpenNeverShowsRackBelowTheClosedTopEdge() async throws {
+    let fixture = try make()
+    defer { fixture.page.discard() }
+    fixture.session.shutterClosed = true
+    let window = try open(fixture)
+    let home = try XCTUnwrap(CockpitShellLayout.fit(usable: fixture.usable, anchor: fixture.icon, shutterClosed: true, screenWidth: fixture.screenWidth)?.frame)
+    var sampled = 0
+    for _ in 0..<30 {
+      if let mask = fixture.page.verificationRackMask, let panel = fixture.page.verificationRack.panel {
+        let maskTop = panel.maxY - mask.minY
+        XCTAssertEqual(maskTop, home.maxY, accuracy: 0.5, "rack mask line is the closed slab's top edge")
+        sampled += 1
+      }
+      try await wait(20)
+    }
+    XCTAssertGreaterThan(sampled, 5, "the rack was on screen while sampled")
+    try await wait(300)
+    XCTAssertEqual(window.frame, home)
+    let layout = try XCTUnwrap(fixture.page.verificationLayout)
+    XCTAssertEqual(layout.rackMaskDrop, 0)
     XCTAssertEqual(failures, [])
   }
 

@@ -2140,7 +2140,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     var hidden: CGRect?
     if let layout {
       let frame = rackHidesInHome ? layout.frame : window.frame
-      let drop = CockpitShellLayout.shoulderDrop(layout.profile) * layout.scale
+      let drop = layout.rackMaskDrop
       hidden = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: max(0, frame.height - drop))
     }
     // A prewarmed (never shown) page has no rack on screen.
