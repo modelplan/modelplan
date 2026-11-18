@@ -117,6 +117,7 @@ type Account struct {
 
 // AccountToday contains only observed values; omission means unknown.
 type AccountToday struct {
+	ObservedTotalTokens  *int64            `json:"observedTotalTokens,omitempty" null:"forbidden" schema:"minimum=0"`
 	ObservedOutputTokens *int64            `json:"observedOutputTokens,omitempty" null:"forbidden" schema:"minimum=1"`
 	GenerationTps        *float64          `json:"generationTps,omitempty" null:"forbidden" schema:"minimum=0"`
 	RunningSessions      *int              `json:"runningSessions,omitempty" null:"forbidden" schema:"minimum=1"`

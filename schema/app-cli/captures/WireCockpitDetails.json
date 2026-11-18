@@ -62,6 +62,7 @@
       },
       "today": [
         {
+          "observedTotalTokens": 1,
           "source": "synthetic",
           "observedOutputTokens": 1,
           "generationTps": 42.5,
