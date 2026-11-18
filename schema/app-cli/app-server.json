@@ -232,6 +232,17 @@
           ],
           "minimum": 1
         },
+        "observedTotalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 0
+        },
         "runningSessions": {
           "anyOf": [
             {
@@ -868,6 +879,26 @@
         },
         "outputTokens": {
           "type": "integer"
+        },
+        "reasoningTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -1770,6 +1801,17 @@
         },
         "observedOutputTokens": {
           "type": "integer"
+        },
+        "observedTotalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 0
         },
         "source": {
           "type": "string"

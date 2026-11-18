@@ -214,7 +214,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	for _, today := range appserver.CockpitTodayTotals(view.QuotaReport.Accounts, perf) {
 		out := byRef[today.SubscriptionRef]
 		if out != nil && allowed[sourceScope[today.Source]] && len(out.Today) < 4 {
-			out.Today = append(out.Today, wire.CockpitToday{Source: today.Source, ObservedOutputTokens: today.OutputTokens, GenerationTps: today.GenerationTPS, BindingBasis: today.BindingBasis})
+			out.Today = append(out.Today, wire.CockpitToday{Source: today.Source, ObservedTotalTokens: today.TotalTokens, ObservedOutputTokens: today.OutputTokens, GenerationTps: today.GenerationTPS, BindingBasis: today.BindingBasis})
 		}
 	}
 	labels := projectLabels()
