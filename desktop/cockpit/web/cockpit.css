@@ -163,11 +163,12 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 /* Working (CKP-ENG-17/18): a soft mouth light below the line in the quota-status colour; nothing when idle. */
 .bz-sheet{position:absolute;left:50%;top:2px;width:var(--w,22px);height:8px;transform:translateX(-50%);transform-origin:50% 0;pointer-events:none;opacity:.6}
 .bz-sheet::before{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(ellipse 50% 70% at 50% 25%,color-mix(in srgb,var(--fuel) 55%,white) 0%,color-mix(in srgb,var(--fuel) 85%,transparent) 38%,color-mix(in srgb,var(--fuel) 35%,transparent) 70%,transparent 100%)}
-/* Mouth shimmer (CKP-ENG-19, MOT-2.3-05): stepped at a low rate, small uneven opacity and height jitter, X fixed;
-   only on an active, open page and never under the host's or the system's Reduce Motion. */
-@keyframes cockpit-mouth-shimmer{0%{opacity:.6;transform:translateX(-50%) scaleY(1)}17%{opacity:.58;transform:translateX(-50%) scaleY(1.04)}36%{opacity:.62;transform:translateX(-50%) scaleY(.95)}49%{opacity:.59;transform:translateX(-50%) scaleY(1.06)}73%{opacity:.61;transform:translateX(-50%) scaleY(.97)}88%{opacity:.57;transform:translateX(-50%) scaleY(1.02)}100%{opacity:.6;transform:translateX(-50%) scaleY(1)}}
+/* Working light breathing (CKP-ENG-19, MOT-2.3-05, D294): a slow opacity swell on the sheet's two pseudo-elements only
+   (never on the sheet itself, whose opacity yields to the landing burn); only on an active, open page and never under
+   the host's or the system's Reduce Motion. */
+@keyframes cockpit-light-breathe{from{opacity:.72}to{opacity:1}}
 @media (prefers-reduced-motion:no-preference){
-html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet{animation:cockpit-mouth-shimmer 1.73s steps(10,end) var(--fo,0s) infinite!important}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet::before,html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet::after{animation:cockpit-light-breathe 2.6s ease-in-out var(--fo,0s) infinite alternate!important}
 }
 /* Hover (CKP-ENG-20): the light brightens, its column lights and the subscription name shows above it. */
 .ck[data-active="true"] .bz:hover .bz-line{filter:brightness(1.35)}
@@ -240,19 +241,32 @@ html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{ani
 .ck-eng .ek .ek-identity .lamp[src$="openai-white.svg"]{--fit:1.75}
 .ck-eng .ek .ek-identity .lamp[src$="claude-rounded.svg"],.ck-eng .ek .ek-identity .lamp[src$="cursor.svg"],.ck-eng .ek .ek-identity .lamp[src$="copilot.svg"],.ck-eng .ek .ek-identity .lamp[src$="opencode.svg"]{--fit:.875}
 .ck-eng .ek .ek-identity .lamp[src$="kimi-white.svg"]{--fit:.91}
-/* CKP-SHELL-33 (owner D178/D186/D188): rack put-back and key-detach ignition. The host's `ignition` message lights every
-   base bell, working or empty, with the cockpit's own mouth-glow geometry (bells.css, CKP-ENG-17) in the demo v8 amber
-   (#ffa02e), fading in over 120 ms and out over 220 ms; a working bell's quota-colour glow steps aside meanwhile. */
-.ck-base :is(.bz,.bz-empty)::after{content:"";position:absolute;left:50%;transform:translateX(-50%);pointer-events:none;z-index:3;opacity:0;transition:opacity .22s linear;
-  --ig-w:var(--bell-w,var(--w,calc(var(--cw,40px) - 8px)));--ig-h:var(--bell-h,calc(var(--ig-w) * 10 / 81));
-  top:calc(var(--ig-w) * .05574);width:calc(var(--ig-w) * .9033 * 1.08);height:calc(var(--ig-h) - var(--ig-w) * .05574 + 5px);
-  border-radius:50% 50% 0 0/calc(var(--ig-w) * .0226) calc(var(--ig-w) * .0226) 0 0;
-  background:linear-gradient(180deg,rgba(255,181,92,.95),rgba(255,160,46,.78) 22%,rgba(255,160,46,.4) 65%,rgba(0,0,0,0));
-  -webkit-mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%);mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%)}
-#cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{opacity:.6;transition-duration:.12s}
-#cockpit[data-ignite="true"] .ck-base .bz .bz-sheet{opacity:0}
-html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::after{transition:none}
-@media(prefers-reduced-motion:reduce){.ck-base :is(.bz,.bz-empty)::after{transition:none}}
+/* CKP-SHELL-33 (owner D178/D186/D188, D294): rack put-back and key-detach ignition. The host's `ignition` message lights every
+   base bell, working or empty, with a landing burn in the demo v8 amber (#ffa02e): ::after is the plume reaching about 20 px
+   below the lower lip (thrown out in 220 ms, a stepped flutter while burning, pulled back into the mouth in 280 ms) and
+   ::before the ember in the mouth (cools over .9 s). The host puts it out when the cockpit is home AND the rack is in place.
+   A working bell's light steps aside meanwhile (the .bz-sheet container yields; its breathing runs on its pseudo-elements,
+   so no animation can hold it lit). Vertical positions come from the bell height. */
+.ck-base :is(.bz,.bz-empty){--ig-w:var(--bell-w,var(--w,calc(var(--cw,40px) - 8px)));--ig-h:var(--bell-h,calc(var(--ig-w) * 10 / 81));--ig-m:var(--bell-m,calc(var(--ig-h) * .4515))}
+.ck-base :is(.bz,.bz-empty)::after{content:"";position:absolute;left:50%;top:var(--ig-m);width:calc(var(--ig-w) * .86);height:calc(var(--ig-h) - var(--ig-m) + 20px);
+  transform:translateX(-50%) scaleY(.15);transform-origin:50% 0;pointer-events:none;z-index:3;opacity:0;transition:opacity .28s linear,transform .28s ease-in;
+  background-repeat:no-repeat;
+  background-image:radial-gradient(ellipse 18% 92% at 50% 0,#fff6e6 0%,rgba(255,214,150,.95) 22%,rgba(255,160,46,.7) 55%,transparent 100%),
+    radial-gradient(ellipse 34% 100% at 50% 0,rgba(255,184,96,.75) 0%,rgba(255,150,40,.45) 50%,transparent 100%),
+    radial-gradient(ellipse 50% 70% at 50% 0,rgba(255,160,46,.45) 0%,rgba(255,120,30,.18) 60%,transparent 100%)}
+.ck-base :is(.bz,.bz-empty)::before{content:"";position:absolute;left:50%;top:calc(var(--ig-m) - 1px);width:calc(var(--ig-w) * .9);height:calc(var(--ig-h) - var(--ig-m) + 3px);
+  transform:translateX(-50%);pointer-events:none;z-index:3;opacity:0;transition:opacity .9s cubic-bezier(.2,.6,.3,1) .15s;
+  background:radial-gradient(ellipse 50% 70% at 50% 35%,rgba(255,186,110,.9) 0%,rgba(255,120,40,.45) 55%,transparent 100%) no-repeat}
+#cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{opacity:.9;transform:translateX(-50%) scaleY(1);transition:opacity .09s ease-out,transform 0s}
+#cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::before{opacity:.7;transition:opacity .12s ease-out}
+@keyframes cockpit-bell-flare{from{scale:1 .25}45%{scale:1 1.12}to{scale:1 1}}
+@keyframes cockpit-bell-burn{0%,100%{scale:1 1}30%{scale:1 1.08}55%{scale:1 .92}80%{scale:1 1.04}}
+@media (prefers-reduced-motion:no-preference){
+html:not([data-reduce-motion="true"]) #cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .84s steps(7,end) .22s infinite}
+}
+#cockpit[data-ignite="true"] .ck-base .bz .bz-sheet{opacity:0;transition:opacity .06s}
+html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::after,html[data-reduce-motion="true"] .ck-base .bz .bz-sheet{transition:none!important;animation:none!important}
+@media(prefers-reduced-motion:reduce){.ck-base :is(.bz,.bz-empty)::before,.ck-base :is(.bz,.bz-empty)::after,.ck-base .bz .bz-sheet{transition:none!important;animation:none!important}}
 /* CKP-SHELL-39: empty engine screen, one line and one button */
 .ck-eng .ec-empty-box{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:10px}
 .ck-eng .ec-empty-box .ec-empty{font-size:12px;text-align:center;padding:0;color:var(--lcd-muted)}
@@ -274,3 +288,5 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::after{transition:no
 .ck-eng .eng-upd-t{overflow:hidden;text-overflow:ellipsis}
 .ck-eng .eng-upd-r{font:inherit;color:var(--silk);background:none;border:0;padding:0 2px;cursor:pointer;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 35%,transparent);text-underline-offset:2px}
 .ck-eng .eng-upd-r:hover{color:var(--silk-hi)}.ck-eng .eng-upd-r:focus-visible{outline:2px solid var(--gold-lcd,#f6d38a);outline-offset:2px}
+/* CKP-FAD-17: the thin blue trial line belongs to the official throttle art; the community flat fader keeps its ghost cap only. */
+.dk-fad .fd-tline{display:none}

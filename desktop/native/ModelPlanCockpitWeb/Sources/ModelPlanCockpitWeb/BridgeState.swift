@@ -243,6 +243,14 @@ public enum CockpitCautionIdentities {
   public static func valid(_ ids: [String]) -> Bool {
     ids.count <= maxCount && ids.allSatisfy { !$0.isEmpty && $0.utf8.count <= maxBytes && $0.utf8.allSatisfy { $0 >= 32 && $0 != 127 } }
   }
+  /// G3-135: only an identity led by a verified subscription reference (16 hex) names the same account after a restart.
+  /// A fallback member's identity is kept in memory for the session and never written to disk.
+  public static func durable(_ ids: [String]) -> [String] {
+    ids.filter { id in
+      guard let data = id.data(using: .utf8), let array = (try? JSONSerialization.jsonObject(with: data)) as? [Any], let first = array.first as? String else { return false }
+      return first.utf8.count == 16 && first.utf8.allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }
+    }
+  }
 }
 
 public final class CockpitBridgeState {

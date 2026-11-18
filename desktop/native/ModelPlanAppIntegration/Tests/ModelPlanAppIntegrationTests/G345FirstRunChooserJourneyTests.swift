@@ -355,6 +355,8 @@ private actor G345Engine: EngineClient {
         XCTAssertEqual(resets, 1)
         if case .idle = controller.phase {} else { XCTFail("visibility and order never ask for or change reading consent") }
         let grantsBefore = await engine.recorded(); XCTAssertTrue(grantsBefore.isEmpty)
+        // WP-16: the detected section renders under its heading, from the synthetic detected tools.
+        XCTAssertEqual(try label("subscriptions.detected.heading"), "Detected, not added yet")
         // Detected, not added: Cursor can be added; signed-out Claude Code and ZCode (account login) cannot yet.
         XCTAssertTrue(try button("subscriptions.add.cursor").isEnabled)
         XCTAssertFalse(try button("subscriptions.add.claude").isEnabled)
@@ -403,7 +405,7 @@ private actor G345Engine: EngineClient {
             subscriptions: [SettingsSubscription(id: "codex", name: .init("Codex", "Codex"), vendor: "codex", source: .unavailable, causeCode: "not_found")],
             orderedIDs: ["codex"], hiddenIDs: [], canSave: true))
         let status = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.status.codex" } as? NSTextField)
-        XCTAssertEqual(status.stringValue, "Install the Codex CLI, or make sure Codex runs from a terminal")
+        XCTAssertEqual(status.stringValue, "Can't find the Codex command")
         let fix = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.fix.codex" } as? NSButton)
         XCTAssertEqual(fix.title, "Open install page"); XCTAssertTrue(fix.isEnabled, "the link is live, not a disabled button")
     }

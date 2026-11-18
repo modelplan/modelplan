@@ -1,0 +1,36 @@
+/* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
+/* Copyright (c) 2026 ModelPlan. CKP-FAD-24 / CKP-FAD-17 (D115, D122, D196): the v4 top-down throttle on each fader travel.
+   The baked art is drawn at a scale u = one design point, (travel height - 2 x pad) / 97, so the five detents (97/4 apart)
+   land on the same rows as the Max..Low labels: u = 1 on the A3 travel (113 px) and 0.825 on the A1 travel (96 px).
+   Tile 64x134 u, Max detent 16.5 u below its top; the plate is the middle 38 u. Lever = sprite frame (Low 0 .. Max 32),
+   chosen by the page through --fd-frame; trial = blue ghost grip + thin blue slot line; ★ = small gold tick + star.
+   The art never takes pointer events (the travel does; the tile reaches past it), and the slot carries the ghost grip as a
+   1 px off-box layer so a first trial makes no request. */
+@property --fd-frame{syntax:'<integer>';inherits:false;initial-value:16}
+.dk-fad .fd-travel{container-type:size}
+.dk-fad .fd-travel>*{--u:calc((100cqh - 2 * var(--fd-pad)) / 97);--fd-tile-top:calc(var(--fd-pad) - 16.5 * var(--u))}
+.dk-fad .fd-slot{top:var(--fd-tile-top);bottom:auto;left:50%;width:calc(38 * var(--u));height:calc(134 * var(--u));margin-left:calc(-19 * var(--u));
+  border-radius:0;box-shadow:none;pointer-events:none;
+  background:url('./assets/throttle/plate-night.png') 0 0/100% 100% no-repeat,url('./assets/throttle/ghost-night.png') -999px 0/1px 1px no-repeat}
+.dk-fad .fd-tick{visibility:hidden}
+.dk-fad .fd-cap{top:var(--fd-tile-top);left:50%;width:calc(64 * var(--u));height:calc(134 * var(--u));margin:0 0 0 calc(-32 * var(--u));border-radius:0;box-shadow:none;pointer-events:none;transition:--fd-frame .28s cubic-bezier(.3,.7,.2,1);
+  background:url('./assets/throttle/lever-night.png') 0 calc(var(--fd-frame,16) * -134 * var(--u))/calc(64 * var(--u)) calc(33 * 134 * var(--u)) no-repeat}
+.dk-fad .fd-cap::after{content:none}
+.dk-fad .fd-cap.parked{filter:brightness(.55) saturate(0)}
+.dk-fad .fd-tline{--rod:var(--trial);display:block;position:absolute;z-index:2;left:50%;width:calc(5 * var(--u));margin-left:calc(-2.5 * var(--u));border-radius:1px;background:color-mix(in srgb,var(--rod) 25%,transparent);box-shadow:0 0 3px color-mix(in srgb,var(--rod) 15%,transparent);pointer-events:none;
+  top:calc(var(--fd-pad) + (100% - 2 * var(--fd-pad)) * min(var(--k0,0),var(--k1,0)));height:calc((100% - 2 * var(--fd-pad)) * max(var(--k0,0) - var(--k1,0),var(--k1,0) - var(--k0,0)))}
+.dk-fad .fd-tline[hidden]{display:none}
+/* G3-92 (owner 11-12): the ghost rod is as wide as the real lever's rod (5 u = 10 px of the baked arm) and only more transparent. The lever pivots about the slot centre (k .5), so the ghost's rod runs from that pivot to the ghost grip, like the real lever's own stick; drawn over the baked stick. */
+.dk-fad .fd-ghost{left:50%;width:calc(26 * var(--u));height:calc(10.5 * var(--u));margin:calc(-5.25 * var(--u)) 0 0 calc(-13 * var(--u));border:0;border-radius:0;box-shadow:none;
+  background:url('./assets/throttle/ghost-night.png') 0 0/100% 100% no-repeat;filter:drop-shadow(0 0 1px var(--trial)) drop-shadow(0 0 4px color-mix(in srgb,var(--trial) 55%,transparent))}
+.dk-fad .fd-ghost::after{content:none}
+.dk-fad .fd-peek{left:50%;width:calc(26 * var(--u));height:calc(10.5 * var(--u));margin:calc(-5.25 * var(--u)) 0 0 calc(-13 * var(--u));border-radius:calc(5 * var(--u))}
+.dk-fad .fd-rec{left:calc(50% + 19 * var(--u));width:calc(3 * var(--u));height:max(1px,var(--u));margin-top:calc(-.5 * var(--u));border-radius:.5px;background:var(--gold-metal);box-shadow:none}
+.dk-fad .fd-rec .g-star{left:calc(4 * var(--u));top:calc(.5 * var(--u) - 4.25 * var(--u));width:calc(8.5 * var(--u));height:calc(8.5 * var(--u));fill:var(--gold-metal)}
+:root[data-theme="day"] .dk-fad .fd-slot{background-image:url('./assets/throttle/plate-day.png'),url('./assets/throttle/ghost-day.png')}
+:root[data-theme="day"] .dk-fad .fd-cap{background-image:url('./assets/throttle/lever-day.png')}
+:root[data-theme="day"] .dk-fad .fd-ghost{height:calc(10.25 * var(--u));margin-top:calc(-5.125 * var(--u));background-image:url('./assets/throttle/ghost-day.png')}
+body.reduced #cockpit .dk-fad .fd-cap{transition:none}
+@media(prefers-reduced-motion:reduce){#cockpit .dk-fad .fd-cap{transition:none}}
+:root[data-theme="day"] .dk-fad .fd-tline{--rod:#2a6fbf;background:color-mix(in srgb,var(--rod) 55%,transparent);box-shadow:0 0 3px color-mix(in srgb,var(--rod) 25%,transparent)} /* the day slot is dark: a dark blue needs more opacity to read */
+:root[data-theme="day"] .dk-fad .fd-ghost{filter:brightness(.5) saturate(1.5) drop-shadow(0 0 1px #1f5f9f) drop-shadow(0 0 3px #1f5f9f66)}

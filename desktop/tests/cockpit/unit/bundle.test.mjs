@@ -27,10 +27,12 @@ test('both editions have reproducible bounded manifests; community excludes rese
       const cursor='#cockpit[data-active="true"][data-shell="open"] .ck-tape .t-cur{animation:cockpit-running-cursor 1.06s steps(1,end) infinite!important}';
       // Owner D39/D-H: the porthole flicker is the one other infinite animation, gated like the cursor and on Reduce Motion.
       const flicker='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker{animation:cockpit-porthole-flicker .43s ease-in-out 0s infinite alternate!important}';
-      // CKP-ENG-19 / MOT-2.3-05: the working base mouth shimmer, stepped and gated the same way.
-      const shimmer='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet{animation:cockpit-mouth-shimmer 1.73s steps(10,end) var(--fo,0s) infinite!important}\n}';
-      if(name==='cockpit.css'){assert.equal(css.split(cursor).length-1,1,'one scoped running-cursor animation');assert.equal(css.split(flicker).length-1,1,'one gated porthole flicker');assert.equal(css.split(shimmer).length-1,1,'one gated base mouth shimmer');}
-      assert.doesNotMatch(css.replace(cursor,'').replace(flicker,'').replace(shimmer,''),/\binfinite\b/i,name);
+      // CKP-ENG-19 / MOT-2.3-05 (D294): the working light's slow breathing and the landing burn's flutter, gated the same way.
+      const sel='html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet';
+      const breathe='@media (prefers-reduced-motion:no-preference){\n'+sel+'::before,'+sel+'::after{animation:cockpit-light-breathe 2.6s ease-in-out var(--fo,0s) infinite alternate!important}\n}';
+      const burn='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .84s steps(7,end) .22s infinite}\n}';
+      if(name==='cockpit.css'){assert.equal(css.split(cursor).length-1,1,'one scoped running-cursor animation');assert.equal(css.split(flicker).length-1,1,'one gated porthole flicker');assert.equal(css.split(breathe).length-1,1,'one gated working-light breathing');assert.equal(css.split(burn).length-1,1,'one gated landing-burn flutter');}
+      assert.doesNotMatch(css.replace(cursor,'').replace(flicker,'').replace(breathe,'').replace(burn,''),/\binfinite\b/i,name);
     }
     const html=readFileSync(root+'index.html','utf8');
     for(const rule of ["connect-src 'none'","frame-src 'none'","object-src 'none'","base-uri 'none'","form-action 'none'"])assert.ok(html.includes(rule));

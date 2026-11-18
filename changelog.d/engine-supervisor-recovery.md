@@ -1,1 +1,0 @@
-When the reading service crashes repeatedly, the app now waits two minutes and starts it again by itself instead of staying stopped until Refresh; a lost consent check, a busy start-up and a stuck screen update also recover on their own.

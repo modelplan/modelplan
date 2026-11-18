@@ -176,7 +176,8 @@ type Window struct {
 }
 
 // WindowForecast is the quota engine's outlook for one window. RunsOutAt is set only
-// when the window is forecast to be used up before its reset.
+// when the window is forecast to be used up before its reset (or, with no reset time
+// known, from its recent burn rate).
 type WindowForecast struct {
 	RunsOutAt *time.Time `null:"coalesced"`
 	Pace      string     // tight | on_track | surplus | exhausted

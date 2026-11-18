@@ -24,6 +24,32 @@ public enum CockpitLaunchRackTiming {
   public static let landingStep: CGFloat = 56
   /// Key put-back flight time, from the demo: 520 ms + 0.9 ms per point of path, kept within 0.82-1.3 s.
   public static func flight(length: CGFloat) -> TimeInterval { min(1.3, max(0.82, 0.52 + Double(length) * 0.0009)) }
+  /// G3-130 (owner, 11-18): a put back starts the rack's unfold and the cockpit's motion (key flight, near-home move,
+  /// ride home) at the same moment, both at their normal speeds; neither waits for or speeds up the other. Where the rack
+  /// is when the cockpit lands, from `rackExtension` (0-1) after `motion` seconds: fully out after a long flight, partly
+  /// out after a short move, from where it then carries on at the same pace to its attached end state.
+  public static func rackAtLanding(motion: TimeInterval, rackExtension: CGFloat) -> CGFloat {
+    min(1, max(0, rackExtension) + CGFloat(max(0, motion) / fullTravel))
+  }
+}
+
+/// CKP-SHELL-33 / G3-130: where a put back's motion has the cockpit's origin at progress `t` (0-1), eased out cubically.
+/// The key flight is one quadratic Bezier whose control point sits under home, so its last part runs straight up the
+/// rack; the near-home move and the drag's ride home are straight. Every path starts exactly where the cockpit is and
+/// is continuous: macrevb/macrev2-1038-1, a start above home (a detached cockpit on a display stacked above, or a drag
+/// released just above home) was clamped to home's height on its first frame, a jump of up to a display's height.
+public enum CockpitPutBackPath {
+  public static func ease(_ t: CGFloat) -> CGFloat { 1 - pow(1 - max(0, min(1, t)), 3) }
+  /// The flight's control point: under home by the catch zone, or at the start's height when that is lower still.
+  public static func control(from p0: CGPoint, to d: CGPoint, zone: CGFloat) -> CGPoint { CGPoint(x: d.x, y: min(d.y - zone, p0.y)) }
+  public static func flight(from p0: CGPoint, to d: CGPoint, zone: CGFloat, at t: CGFloat) -> CGPoint {
+    let c = control(from: p0, to: d, zone: zone), k = ease(t), u = 1 - k
+    return CGPoint(x: u * u * p0.x + 2 * u * k * c.x + k * k * d.x, y: u * u * p0.y + 2 * u * k * c.y + k * k * d.y)
+  }
+  public static func straight(from p0: CGPoint, to d: CGPoint, at t: CGFloat) -> CGPoint {
+    let e = ease(t)
+    return CGPoint(x: p0.x + (d.x - p0.x) * e, y: p0.y + (d.y - p0.y) * e)
+  }
 }
 
 /// D187: where a key detach puts the cockpit. The first candidate that keeps the WHOLE cockpit inside the visible
