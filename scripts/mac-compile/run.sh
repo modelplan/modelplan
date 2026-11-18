@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: MIT
 # Mac compile check (mac-compile.yml), run on the compile Mac in a checkout of the PR merge commit.
 # Usage: run.sh <plan.tsv> <scratch root> <sha>
+# Optional SEED_ROOT: a per-runner build seed. PR jobs only READ it (a clone of the matching seed becomes the job's own
+# scratch, thrown away with the job); with SEED_WRITE=1 (trusted main runs only) a successful build is published to it.
 # For each plan row (from plan.mjs): swift build, then swift test on the selected classes (or the whole package
 # minus the never-run classes, or only --build-tests; ModelPlanAppIntegration is never run whole, see plan.mjs). Each package gets at most PACKAGE_MINUTES (default 25) for
 # build and test together. Writes the summary to $GITHUB_STEP_SUMMARY (first line "COMPILE ok|fail @ <sha8>")
@@ -13,21 +15,33 @@ LOGS=${RUNNER_TEMP:-/tmp}/mac-compile-logs; rm -rf "$LOGS"; mkdir -p "$LOGS" "$S
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 ok=1; rows=; failed_tests=; errors=
 
-# The scratch root persists between jobs (warm SwiftPM builds). One job at a time per root: a mkdir lock with a pid file;
-# a lock whose owner is gone is taken over. The cache is dropped when the Swift toolchain changes, so stale products
-# built by another compiler are never reused.
-lock="$SCRATCH_ROOT.lock"
-for _ in $(seq 1 720); do
-  if mkdir "$lock" 2>/dev/null; then echo $$ >"$lock/pid"; break; fi
-  p=$(cat "$lock/pid" 2>/dev/null || true)
-  if [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; then rm -rf "$lock"; continue; fi
-  sleep 5
-done
-[ -d "$lock" ] && [ "$(cat "$lock/pid" 2>/dev/null)" = "$$" ] || { echo "::error::could not lock $SCRATCH_ROOT"; exit 1; }
-trap 'rm -rf "$lock"' EXIT
-stamp=$(swift --version 2>&1 | tr '\n' ' ')
-if [ "$(cat "$SCRATCH_ROOT/.toolchain" 2>/dev/null)" != "$stamp" ]; then
-  echo "toolchain changed or cache empty: starting a cold cache"; rm -rf "${SCRATCH_ROOT:?}"/*; mkdir -p "$SCRATCH_ROOT"; printf '%s' "$stamp" >"$SCRATCH_ROOT/.toolchain"
+SEED_ROOT=${SEED_ROOT:-}; SEED_WRITE=${SEED_WRITE:-0}
+sha256() { if command -v shasum >/dev/null; then shasum -a 256; else sha256sum; fi | cut -d' ' -f1; }
+clone() { cp -cR "$1" "$2" 2>/dev/null || cp -R "$1" "$2"; }   # APFS clonefile on macOS, plain copy elsewhere
+# Metadata manifest of a seed directory (path, size, mtime); verified before every clone.
+manifest() {
+  ( cd "$1" && find . -type f -print0 | sort -z | if [ "$(uname)" = Darwin ]; then xargs -0 stat -f '%N %z %m'; else xargs -0 stat -c '%n %s %Y'; fi ) | sha256
+}
+# Seed key: toolchain plus the package's Package.resolved.
+seedkey() { { swift --version 2>&1; cat "$1/Package.resolved" 2>/dev/null; } | sha256; }
+
+# Only a seed WRITE needs exclusivity (a symlink holds the owner's pid and is created atomically). The trap is installed
+# before acquiring and removes the lock only if it is still ours. Unreadable or dead owners are reclaimed after a timeout.
+lock="${SEED_ROOT:-/nonexistent}.lock"
+release() { [ -L "$lock" ] && [ "$(readlink "$lock" 2>/dev/null)" = "$$" ] && rm -f "$lock"; return 0; }
+trap release EXIT
+if [ "$SEED_WRITE" = 1 ]; then
+  [ -n "$SEED_ROOT" ] || { echo "::error::SEED_WRITE needs SEED_ROOT"; exit 1; }
+  mkdir -p "$(dirname "$SEED_ROOT")" "$SEED_ROOT" || exit 1
+  bad=0
+  for _ in $(seq 1 120); do
+    ln -s "$$" "$lock" 2>/dev/null && break
+    p=$(readlink "$lock" 2>/dev/null || true)
+    if [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; then rm -rf "$lock"; continue; fi
+    if [ -z "$p" ]; then bad=$((bad+1)); [ "$bad" -ge 12 ] && rm -rf "$lock"; fi
+    sleep 5
+  done
+  [ "$(readlink "$lock" 2>/dev/null)" = "$$" ] || { echo "::error::could not lock $SEED_ROOT"; exit 1; }
 fi
 
 # Run "$@" until it exits or the package deadline passes (macOS has no timeout(1)); SwiftPM stops its children on TERM.
@@ -46,6 +60,14 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
   [ -n "$dir" ] || continue
   sp="$SCRATCH_ROOT/$scratch"; blog="$LOGS/$scratch-build.log"; tlog="$LOGS/$scratch-test.log"
   deadline=$(( $(date +%s) + LIMIT ))
+  rm -rf "$sp" || { echo "::error::could not clear $sp"; exit 1; }
+  key=; seed=
+  if [ -n "$SEED_ROOT" ]; then
+    key=$(seedkey "$dir"); seed="$SEED_ROOT/$scratch/$key"
+    if [ "$SEED_WRITE" != 1 ] && [ -d "$seed" ] && [ "$(cat "$seed.manifest" 2>/dev/null)" = "$(manifest "$seed")" ]; then
+      echo "seed hit for $dir: cloning"; clone "$seed" "$sp" || { rm -rf "$sp"; echo "seed clone failed: cold build"; }
+    else echo "no usable seed for $dir: cold build"; fi
+  fi
   echo "::group::$dir: swift build"
   limited swift build --package-path "$dir" --scratch-path "$sp" >"$blog" 2>&1; brc=$?
   tail -40 "$blog"; echo "::endgroup::"
@@ -72,6 +94,11 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
       line=$(grep -F -m1 "error: $name" "$tlog")
       failed_tests="$failed_tests- \`$name\`${line:+: \`${line#"$PWD/"}\`}"$'\n'
     done < <(sed -nE "s/^Test Case '(.*)' failed.*/\1/p" "$tlog")
+  fi
+  if [ "$SEED_WRITE" = 1 ] && [ "$build" = ok ] && [ "$test" != "not run" ] && [ "$trc" = 0 ]; then
+    # Publish: remove every older key of this package (hidden entries included), then the new seed and its manifest.
+    rm -rf "${SEED_ROOT:?}/$scratch" || { echo "::error::could not clear seed for $scratch"; exit 1; }
+    mkdir -p "$SEED_ROOT/$scratch" && clone "$sp" "$seed.tmp" && mv "$seed.tmp" "$seed" && manifest "$seed" >"$seed.manifest" || { echo "::error::could not publish seed for $scratch"; exit 1; }
   fi
   rows="$rows- \`$dir\`: build $build; test $test"$'\n'
   errors="$errors$(cat "$blog" "$tlog" | grep -E '^[^ :]+:[0-9]+:[0-9]+: error:' | sed "s#^$PWD/##")"$'\n'
