@@ -175,4 +175,47 @@ final class CockpitLaunchRackTests: XCTestCase {
       }
     }
   }
+
+  /// macrevb/macrev2-1038-1: every put-back path starts exactly where the cockpit is and moves without a jump, also from
+  /// above home: a detached cockpit on a display stacked above (home (0, 0), start (0, 1080), aligned x) and a drag
+  /// released just above home. Before, the flight and the ride clamped y to home's height, so the first frame was home.
+  func testPutBackPathsStartWhereTheCockpitIsAndNeverJump() {
+    let zone = CockpitLaunchRackTiming.catchZone, home = CGPoint.zero
+    func assertContinuous(_ name: String, _ p0: CGPoint, duration: TimeInterval, _ path: (CGFloat) -> CGPoint,
+                          file: StaticString = #filePath, line: UInt = #line) {
+      XCTAssertEqual(path(0), p0, "\(name): the first frame is where the cockpit is", file: file, line: line)
+      XCTAssertEqual(path(1).x, home.x, accuracy: 1e-9, file: file, line: line)
+      XCTAssertEqual(path(1).y, home.y, accuracy: 1e-9, "\(name): it ends at home", file: file, line: line)
+      // At 60 Hz no frame moves more than a fifth of the whole path, plus 1 pt (the old clamp jumped all of it at once).
+      let frames = max(1, Int((duration * 60).rounded(.up)))
+      var travel: CGFloat = 0, previous = path(0)
+      for n in 1...frames { let next = path(CGFloat(n) / CGFloat(frames)); travel += hypot(next.x - previous.x, next.y - previous.y); previous = next }
+      previous = path(0)
+      for n in 1...frames {
+        let next = path(CGFloat(n) / CGFloat(frames))
+        XCTAssertLessThanOrEqual(hypot(next.x - previous.x, next.y - previous.y), travel / 5 + 1,
+                                 "\(name): frame \(n) jumps", file: file, line: line)
+        previous = next
+      }
+    }
+    for p0 in [CGPoint(x: 0, y: 1080), CGPoint(x: 0, y: 5), CGPoint(x: 900, y: 1200), CGPoint(x: -300, y: -56), CGPoint(x: 1500, y: -700)] {
+      let c = CockpitPutBackPath.control(from: p0, to: home, zone: zone)
+      let length = hypot(c.x - p0.x, c.y - p0.y) + hypot(home.x - c.x, home.y - c.y)
+      assertContinuous("key flight from \(p0)", p0, duration: CockpitLaunchRackTiming.flight(length: length)) {
+        CockpitPutBackPath.flight(from: p0, to: home, zone: zone, at: $0)
+      }
+      // The last part runs straight up the rack: just before the landing the cockpit is under home, on its x.
+      let late = CockpitPutBackPath.flight(from: p0, to: home, zone: zone, at: 0.98)
+      XCTAssertLessThanOrEqual(late.y, home.y + 1e-9, "from \(p0): it comes up into home")
+      if p0.y <= home.y {
+        for n in 0...100 { XCTAssertLessThanOrEqual(CockpitPutBackPath.flight(from: p0, to: home, zone: zone, at: CGFloat(n) / 100).y, home.y + 1e-9,
+                                                    "from below it never rises above home") }
+      }
+    }
+    for p0 in [CGPoint(x: 0, y: 5), CGPoint(x: 12, y: -30), CGPoint(x: -20, y: 25)] {
+      assertContinuous("ride home from \(p0)", p0, duration: CockpitLaunchRackTiming.rideHome) {
+        CockpitPutBackPath.straight(from: p0, to: home, at: $0)
+      }
+    }
+  }
 }

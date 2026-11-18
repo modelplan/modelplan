@@ -33,6 +33,25 @@ public enum CockpitLaunchRackTiming {
   }
 }
 
+/// CKP-SHELL-33 / G3-130: where a put back's motion has the cockpit's origin at progress `t` (0-1), eased out cubically.
+/// The key flight is one quadratic Bezier whose control point sits under home, so its last part runs straight up the
+/// rack; the near-home move and the drag's ride home are straight. Every path starts exactly where the cockpit is and
+/// is continuous: macrevb/macrev2-1038-1, a start above home (a detached cockpit on a display stacked above, or a drag
+/// released just above home) was clamped to home's height on its first frame, a jump of up to a display's height.
+public enum CockpitPutBackPath {
+  public static func ease(_ t: CGFloat) -> CGFloat { 1 - pow(1 - max(0, min(1, t)), 3) }
+  /// The flight's control point: under home by the catch zone, or at the start's height when that is lower still.
+  public static func control(from p0: CGPoint, to d: CGPoint, zone: CGFloat) -> CGPoint { CGPoint(x: d.x, y: min(d.y - zone, p0.y)) }
+  public static func flight(from p0: CGPoint, to d: CGPoint, zone: CGFloat, at t: CGFloat) -> CGPoint {
+    let c = control(from: p0, to: d, zone: zone), k = ease(t), u = 1 - k
+    return CGPoint(x: u * u * p0.x + 2 * u * k * c.x + k * k * d.x, y: u * u * p0.y + 2 * u * k * c.y + k * k * d.y)
+  }
+  public static func straight(from p0: CGPoint, to d: CGPoint, at t: CGFloat) -> CGPoint {
+    let e = ease(t)
+    return CGPoint(x: p0.x + (d.x - p0.x) * e, y: p0.y + (d.y - p0.y) * e)
+  }
+}
+
 /// D187: where a key detach puts the cockpit. The first candidate that keeps the WHOLE cockpit inside the visible
 /// frame (below the menu bar, above the Dock) and at least 56 pt from home: (1) straight down, (2) sideways toward the
 /// screen centre; if neither fits, the short version is tried the same way; failing that, sideways toward the centre by

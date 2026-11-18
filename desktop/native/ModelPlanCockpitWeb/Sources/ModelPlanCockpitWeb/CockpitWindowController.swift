@@ -1776,22 +1776,20 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let duration = max(0.01, 0.36 * Double(distance / zone))
       extendRack()
       runMotion(duration, step: { [weak self] t in
-        let e = 1 - pow(1 - t, 3)
-        self?.window?.setFrameOrigin(CGPoint(x: p0.x + (d.x - p0.x) * e, y: p0.y + (d.y - p0.y) * e))
+        self?.window?.setFrameOrigin(CockpitPutBackPath.straight(from: p0, to: d, at: t))
       }, done: { [weak self] in self?.window?.setFrame(home, display: true); self?.whenRackSettled { self?.latch() } })
       return
     }
     // One continuous flight whose last part runs straight up the rack: the control point sits under home. The rack
     // unfolds alongside it.
-    let c = CGPoint(x: d.x, y: min(d.y - zone, p0.y))
+    let c = CockpitPutBackPath.control(from: p0, to: d, zone: zone)
     let length = hypot(c.x - p0.x, c.y - p0.y) + hypot(d.x - c.x, d.y - c.y)
     let duration = CockpitLaunchRackTiming.flight(length: length)
     extendRack()
+    // macrev2-1038-1: no clamp to home's height; from below the curve never rises above home, and from above (a display
+    // stacked above) it comes down past the control point and up the rack, starting exactly where the cockpit is.
     runMotion(duration, step: { [weak self] t in
-      guard let self else { return }
-      let k = 1 - pow(1 - t, 3), u = 1 - k
-      let x = u * u * p0.x + 2 * u * k * c.x + k * k * d.x, y = u * u * p0.y + 2 * u * k * c.y + k * k * d.y
-      self.window?.setFrameOrigin(CGPoint(x: x, y: min(d.y, y)))
+      self?.window?.setFrameOrigin(CockpitPutBackPath.flight(from: p0, to: d, zone: zone, at: t))
     }, done: { [weak self] in
       guard let self else { return }
       self.window?.setFrame(home, display: true)
@@ -1903,10 +1901,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         let start = window.frame
         // G3-130: the rack (extending since the cockpit entered the zone) carries on at its pace during the ride home.
         extendRack(); ignite(true); flying = true
+        // macrev2-1038-1: straight from where it was released, above or below home, with no first-frame jump.
         runMotion(CockpitLaunchRackTiming.rideHome, step: { [weak self] t in
-          let e = 1 - pow(1 - t, 3)
-          let frame = Self.lerp(start, home, e)
-          self?.window?.setFrameOrigin(CGPoint(x: frame.minX, y: min(home.minY, frame.minY)))
+          self?.window?.setFrameOrigin(CockpitPutBackPath.straight(from: start.origin, to: home.origin, at: t))
         }, done: { [weak self] in
           self?.window?.setFrame(home, display: true)
           self?.whenRackSettled { [weak self] in self?.latch() }

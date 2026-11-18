@@ -178,13 +178,16 @@ import ModelPlanWire
     page.verificationLayoutAnimationCompleted = { settled.fulfill() }
     page.setAttached(true) // the put-back key starts the rack flight
     XCTAssertEqual(page.verificationLayout?.profile, home.profile, "the icon's display's profile, committed at the press")
-    XCTAssertEqual(page.verificationLayout?.frame, home.frame)
+    // G3-132: the drop kept the common size, so the press has no new layout to commit; the attached place (the layout's
+    // origin) comes with the latch, below (macrevb-1038-4).
+    XCTAssertEqual(page.verificationLayout?.frame.size, home.frame.size)
     XCTAssertEqual(page.verificationWebView?.pageZoom ?? 0, home.scale, accuracy: 0.0001, "and its zoom")
     XCTAssertEqual(page.verificationDragRegion?.frame, home.scaledTitleDragFrame, "and its drag strip")
     // Wait for the actual flight and rack latch; a fixed delay can observe an intermediate frame on a busy Mac.
     await fulfillment(of: [settled], timeout: 5)
     XCTAssertTrue(page.isAttached, "caught by the rack and latched")
     XCTAssertEqual(window.frame, home.frame, "the window settles under the icon")
+    XCTAssertEqual(page.verificationLayout?.frame, home.frame, "and the layout is the attached one")
     XCTAssertEqual(window.contentView?.bounds.size, home.frame.size, "with the page canvas of that layout")
     XCTAssertEqual(failures, [])
   }
@@ -315,7 +318,12 @@ import ModelPlanWire
       XCTAssertEqual(window.level, .normal, "\(resign): the detach key gives a normal window too")
       XCTAssertEqual(app.activations, 1, "\(resign): the detach key's flip is answered once")
       XCTAssertEqual(app.lastKey(), true, "\(resign): and the page is key")
-      XCTAssertLessThan(window.orderedIndex, cover.orderedIndex, "\(resign): in front of the other window")
+      // macrevb-1038-4: `orderedIndex` gave NSNotFound for the cockpit panel on the hosted Mac, so the front-to-back order comes from the window
+      // server's list of this app's on-screen windows.
+      let order = NSWindow.windowNumbers(options: [])?.map(\.intValue) ?? []
+      let mine = try XCTUnwrap(order.firstIndex(of: window.windowNumber), "\(resign): the cockpit is on screen")
+      let theirs = try XCTUnwrap(order.firstIndex(of: cover.windowNumber), "\(resign): the cover is on screen")
+      XCTAssertLessThan(mine, theirs, "\(resign): in front of the other window")
       XCTAssertNotNil(page.window, "\(resign): nothing closed it")
     }
   }
