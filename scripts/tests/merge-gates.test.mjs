@@ -55,6 +55,21 @@ test("trust needs the login and the numeric id; deleted authors and drafts never
   assert.deepEqual(items.map((x) => x.body), ["z"]);
 });
 
+test("sticky REVIEWER: only the assigned lane's verdict counts; others are advisory", () => {
+  const t2 = [file("cli/internal/quota/x.go")];
+  const rv = (lane) => `REVIEWER: ${lane}`;
+  const mixed = [comment(v("block", H, "macrev2")), comment(v("block", H, "macrevb")), comment(v("merge", H, "macrevd"))];
+  assert.equal(evalPr({ files: t2, comments: mixed }).state, R.FAILURE, "no REVIEWER: old behaviour, any block stops it");
+  const ok = evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed] });
+  assert.equal(ok.state, R.SUCCESS, "sticky merge passes over other lanes' blocks");
+  assert.match(ok.why, /info: .*\(macrev2\) block/);
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("block", H, "macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "sticky block fails");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.PENDING, "other lane merge does not satisfy");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrev2")), comment(rv("macrevd")), ...mixed] }).state, R.SUCCESS, "latest REVIEWER wins");
+  const stranger = { login: "mallory", id: 5 };
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd"), stranger), ...mixed] }).state, R.FAILURE, "untrusted REVIEWER ignored");
+});
+
 test("tier: path rules, test-only rule, override and gate self-protection", () => {
   assert.equal(R.pathTier(["docs/a.md", ".github/workflows/ci.yml", "x.png"]), 0);
   assert.equal(R.pathTier(["cli/main.go"]), 1);

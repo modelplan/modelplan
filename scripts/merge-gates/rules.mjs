@@ -190,6 +190,18 @@ export function verdicts(items, head, carried) {
   return lanes;
 }
 
+// Sticky reviewer (owner 2026-11-18): "REVIEWER: <lane>" on its own line in a trusted comment names the one GPT lane
+// whose VERDICT counts for the PR; the latest such line wins. Other lanes become advisory notes. Null = no sticky.
+export function reviewerLane(items) {
+  let lane = null;
+  for (const x of items)
+    for (const l of lines(x.body)) {
+      const m = /^REVIEWER: \(?([a-z0-9]+(?:-[a-z0-9]+)*)\)?\s*$/i.exec(l);
+      if (m) lane = `(${m[1].toLowerCase()})`;
+    }
+  return lane;
+}
+
 // ---- GLM-out fallback (owner 2026-11-09: "GLM fails -> there must be a fallback; mix them") ----
 // D243: GLMREV and DESIGN no longer gate. The rules below still decide which marker the description reports.
 // While the GLM quota is out, a Claude Sonnet reviewer stands in for GLM under its own label:
@@ -526,9 +538,11 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   // head (or a verified carried head) stops every tier, tier 0 included. GLM, (sonnet) and other lanes are input.
   const allLanes = verdicts(items, head, carried);
   const gptLanes = tier === 2 ? [...SOL_LANES, "(unnamed)"] : [...SOL_LANES, ...TERRA_LANES, "(unnamed)"];
-  const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l)));
+  const sticky = reviewerLane(items);
+  const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l) && (!sticky || l === sticky)));
   // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
   const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);
+  if (sticky) notes.unshift(`reviewer ${sticky}`);
   if (tier !== 0 && glmInScope(paths)) {
     const g = glmVerdict(items, head, fb);
     if (g) notes.push(`GLMREV ${g}`);
