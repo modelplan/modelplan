@@ -325,6 +325,7 @@ func tps(tokens, ms int64) float64 {
 // Daily: per local day of the last 30 and model, summed from the ledger's rows. Days without rows
 // are left out, not zero: the ledger cannot tell no activity from no coverage.
 func (v PerfView) Daily() []Daily {
+	v = v.accounted()
 	if !v.OK {
 		return []Daily{}
 	}
