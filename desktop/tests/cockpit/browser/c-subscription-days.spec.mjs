@@ -30,16 +30,17 @@ function fixture(){
 }
 const subscription=async page=>{await page.keyboard.press('1');await page.getByRole('button',{name:'Subscription',exact:true}).click();};
 
-test('D59 the 7 | 30 key switches the usage block between the 7- and 30-day records',async({page})=>{
+test('D59 / CKP-SHELL-50 the range key switches the usage block between the 7- and 30-day records',async({page})=>{
  await open(page,fixture());await subscription(page);
- const stats=page.locator('.sp-stats'),key=page.locator('[data-opt="usage"]');
+ const stats=page.locator('.sp-stats'),key=page.locator('[data-opt="range"]');
  await expect(stats).toHaveAttribute('data-days','7');await expect(stats).toContainText('1k');await expect(stats).toContainText('40 t/s');
- await expect(key.locator('b.on')).toHaveText('7');
- await key.locator('b',{hasText:/^30$/}).click();
+ await expect(key.locator('b.on')).toHaveText('7d');
+ await key.locator('b',{hasText:/^30d$/}).click();
  await expect(stats).toHaveAttribute('data-days','30');await expect(stats).toContainText('48k');await expect(stats).toContainText('35 t/s');
- await expect(key.locator('b.on')).toHaveText('30');
- // A press on the key itself flips it back.
- await key.click({position:{x:2,y:2}});await expect(stats).toHaveAttribute('data-days','7');
+ await expect(key.locator('b.on')).toHaveText('30d');
+ // A press on the key itself steps on: 30d → Today, which has no statistics yet and says so (never another range's numbers).
+ await key.click({position:{x:2,y:2}});await expect(stats).toHaveAttribute('data-days','today');
+ await expect(stats).toContainText('No statistics for today yet');
 });
 
 test('D59 the cycle key switches the history between the 5h and weekly windows',async({page})=>{

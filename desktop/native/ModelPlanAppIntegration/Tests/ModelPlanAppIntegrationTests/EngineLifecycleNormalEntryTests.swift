@@ -150,7 +150,8 @@ private actor LifecycleEngine: EngineClient {
         let count = await engine.consentCount(); XCTAssertEqual(count, 1)
         try await Task.sleep(for: .milliseconds(30))
         XCTAssertTrue(app.lifecyclePaused, "A real consent failure must withdraw the normal presentation")
-        XCTAssertEqual(app.liveStatusMenu?.items.first?.title, "Waiting for current readings. Refresh to retry.")
+        // MENU-50: the paused state is the menu's one problem line, under the range selector.
+        XCTAssertEqual(app.liveStatusMenu?.items.first { !$0.isSeparatorItem && $0.view == nil }?.title, "Waiting for current readings. Refresh to retry.")
         await app.stopLifecycle()
     }
 
@@ -286,10 +287,11 @@ private actor LifecycleEngine: EngineClient {
         for _ in 0..<100 where app.lifecyclePaused { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(app.lifecyclePaused)
         XCTAssertEqual(app.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
-        let oldStatus = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Refresh" })
+        // MENU-50 (WP-09): the status menu has no Refresh item; any live row shows the scrub.
+        let oldStatus = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Find Quota Widget" })
         // A second normal presentation can retire the item before sleep gets to scrub the current menu.
         app.renderMenu()
-        let currentStatus = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Refresh" })
+        let currentStatus = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Find Quota Widget" })
         XCTAssertFalse(currentStatus === oldStatus)
         let oldDock = app.composition.dock.menu()
         let retainedDockItems = oldDock.items
@@ -321,7 +323,8 @@ private actor LifecycleEngine: EngineClient {
         XCTAssertTrue(app.lifecyclePaused, "A new process without fresh rows must not reveal stale content")
         try await engine.publishOld()
         XCTAssertTrue(app.lifecyclePaused, "Late rows from the old session cannot reopen the Dock")
-        XCTAssertEqual(app.liveStatusMenu?.items.first?.title, "Waiting for current readings. Refresh to retry.")
+        // MENU-50: the paused state is the menu's one problem line, under the range selector.
+        XCTAssertEqual(app.liveStatusMenu?.items.first { !$0.isSeparatorItem && $0.view == nil }?.title, "Waiting for current readings. Refresh to retry.")
         XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title.contains("synthetic") }, "A paused Dock menu must not reconstruct the stale row")
         try await engine.publishFresh()
         for _ in 0..<100 where app.lifecyclePaused { try await Task.sleep(for: .milliseconds(10)) }
@@ -334,7 +337,7 @@ private actor LifecycleEngine: EngineClient {
         lockEvents.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
         try await Task.sleep(for: .milliseconds(30))
         XCTAssertTrue(app.lifecyclePaused, "Unlock must not clear the no-display reason")
-        let blockedRefresh = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Refresh" })
+        let blockedRefresh = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Readings paused" })
         XCTAssertFalse(blockedRefresh.isEnabled, "An OS pause must not offer a no-op refresh")
         let whileNoDisplay = await engine.counts()
         XCTAssertEqual(whileNoDisplay.0, 2)
@@ -342,7 +345,7 @@ private actor LifecycleEngine: EngineClient {
         local.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
         for _ in 0..<100 { if await engine.counts().0 >= 3 { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertTrue(app.lifecyclePaused, "A restored display still waits for current rows")
-        let retry = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Refresh" })
+        let retry = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Waiting for current readings. Refresh to retry." })
         XCTAssertTrue(retry.isEnabled, "A foreground retry must be available while waiting for fresh data")
         _ = (try XCTUnwrap(retry.target as? NSObject)).perform(try XCTUnwrap(retry.action), with: retry)
         for _ in 0..<100 { if await engine.counts().0 >= 4 { break }; try await Task.sleep(for: .milliseconds(10)) }

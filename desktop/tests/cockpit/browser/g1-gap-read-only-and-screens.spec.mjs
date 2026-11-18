@@ -66,8 +66,10 @@ test('CKP-SHELL-21 every try control stays local: zero requests and only whiteli
  const types=new Set(after.posts.map(m=>m.type));
  for(const type of types)expect(['ready','rendered','nextDeadline','cleared','action'],`bridge message ${type}`).toContain(type);
  const sent=after.posts.slice(before).filter(m=>m.type==='action');
- // Trying an effort or a model is not an action native could apply: no try control produces any action at all.
- expect(sent.map(m=>m.action),'actions sent while trying').toEqual([]);
+ // Trying an effort or a model is not an action native could apply: no try control produces any action at all. The
+ // range key is not a try control: it asks the app for its one range (CKP-SHELL-50), a fixed key and nothing else.
+ for(const m of sent.filter(m=>m.action==='rangeSelect'))expect(['today','7d','30d']).toContain(m.key);
+ expect(sent.filter(m=>m.action!=='rangeSelect').map(m=>m.action),'actions sent while trying').toEqual([]);
  for(const m of after.posts)expect(JSON.stringify(m),'no model, effort, credential or path leaves the page').not.toMatch(/"(model|effort|setModel|setEffort|token|credential|password|apiKey|path|file)"\s*:/i);
 });
 
