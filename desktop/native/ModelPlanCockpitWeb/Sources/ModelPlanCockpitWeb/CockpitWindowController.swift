@@ -168,12 +168,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var appearance: CockpitAppearance
   private let shellSession: CockpitShellSession
   private let anchor: () -> CGRect?
-  /// Build 14c (G3-79): the screen point an open came from (the widget's ignition click); nil opens on the icon's display.
+  /// Build 14c (G3-79): the screen point an open came from (the widget's ignition click). Only a detached open uses it;
+  /// an attached cockpit always belongs to the menu bar icon's display (G3-128).
   private let openPoint: () -> CGPoint?
   /// The displays placement and drags use; tests replace it with a fixed arrangement.
   var screens: @MainActor () -> [CockpitScreen] = { CockpitScreenSelection.system() }
-  /// D204: whether each display has its own Spaces (and so its own menu bar); tests replace it.
-  var separateSpaces: @MainActor () -> Bool = { NSScreen.screensHaveSeparateSpaces }
   /// D204 (G3-94): the widget ignition's frame on screen. A press on it is the ignition's own toggle, decided on
   /// mouse-up; its mouse-down is not an outside click that closes the attached cockpit first.
   public var ignitionFrame: (@MainActor () -> CGRect?)?
@@ -1509,10 +1508,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let window, !window.frame.isEmpty else { return nil }
     return window.frame.origin
   }
-  /// The usable frame and icon rect the layout is fitted to. Build 14c (G3-79): a detached cockpit stays on the
-  /// display its remembered origin is on while that is still a display; otherwise the open goes to the display the
-  /// user clicked on (the widget's), and only without a click to the menu bar icon's display. The icon rect is the
-  /// real icon only on its own display; elsewhere the cockpit opens at that display's top right, as with no icon.
+  /// The usable frame and icon rect the layout is fitted to. G3-128 (owner, build 15): attached (an open, the rack, the
+  /// catch zone and a put back) it is always the menu bar icon's display, whatever opened it. Build 14c (G3-79): a
+  /// detached cockpit stays on the display its remembered origin is on while that is still a display; otherwise a
+  /// detached open goes to the display the user clicked on (the widget's), and only without a click to the icon's
+  /// display. The icon rect is the real icon only on its own display; elsewhere the cockpit opens at that display's
+  /// top right, as with no icon.
   func environment() -> (CGRect, CGRect)? {
     #if MODELPLAN_TEST_ONLY_SPI
     if let verificationPlacement { return (verificationPlacement.usable, verificationPlacement.anchor) }
@@ -1523,15 +1524,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
        let replayed = CockpitScreenSelection.replayFrame(origin: origin, size: layout?.frame.size ?? CGSize(width: 1, height: 1), screens: displays) {
       remembered = CockpitScreenSelection.overlapping(replayed, in: displays)
     }
-    // D204: an attached open follows the menu bar the user can see (`attachedScreen`); a detached one, the click's display.
+    // G3-128: attached, the status item's display; the click point (the widget's ignition, possibly on another display
+    // and kept from an earlier open) only places a detached open.
     let asked = shellSession.detached
       ? CockpitScreenSelection.openScreen(point: openPoint(), anchor: requested, screens: displays)
-      : CockpitScreenSelection.attachedScreen(point: openPoint(), anchor: requested, screens: displays, separateSpaces: separateSpaces())
+      : CockpitScreenSelection.attachedScreen(anchor: requested, screens: displays)
     guard let screen = remembered ?? asked else { return nil }
-    let onScreen = shellSession.detached
-      ? requested.flatMap { screen.frame.intersects($0) ? $0 : nil }
-      : CockpitScreenSelection.icon(requested, on: screen, screens: displays)
-    let icon = onScreen ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
+    let icon = requested.flatMap { screen.frame.intersects($0) ? $0 : nil } ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
   /// Where Put back takes the cockpit: the attached fit on the display an attached open uses. The catch zone, the
@@ -1559,7 +1558,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// The fit and the window frame an open or a relayout uses. Build 14c (G3-79): a detached cockpit's remembered
   /// origin is replayed only while it is still on some display; otherwise the cockpit takes its attached place on
-  /// the display `environment()` chose (the click's).
+  /// the display `environment()` chose (attached: the icon's, G3-128; detached: the click's).
   func placement() -> (fit: CockpitShellLayout, frame: CGRect)? {
     guard let (usable, icon) = environment(),
           let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable),
@@ -1676,8 +1675,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var isAttached: Bool { !shellSession.detached }
   /// The detach key (attached) or the put-back key (detached) in the same strip slot, and the right-click item.
   /// CKP-SHELL-33 (D181/D187): a detach burns the nozzles briefly and moves the cockpit out of the catch zone to the
-  /// first spot fully on screen while the rack retracts into the icon; a put back lights the nozzles at the press, flies
-  /// home, the rack extends and catches it, and the nozzles go out once it is latched.
+  /// first spot fully on screen while the rack retracts into the icon; a put back lights the nozzles at the press, the
+  /// rack extends while the cockpit flies home and is fully out before it arrives (G3-130), catches it, and the nozzles
+  /// go out once it is latched.
   func setAttached(_ attached: Bool) {
     guard let window, shellSession.detached == attached else { return }
     finishEntrance()
@@ -1736,32 +1736,41 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     guard !appearance.reduceMotion else { latch(); return }
     ignite(true); flying = true
+    // G3-130 (owner, build 15): the rack unfolds from the press and is fully out before the cockpit arrives: a long
+    // flight runs alongside it, a short move waits for it first (`putBackPlan`).
+    extendRack()
     let p0 = window.frame.origin, d = home.origin, zone = CockpitLaunchRackTiming.catchZone
     let distance = hypot(p0.x - d.x, p0.y - d.y)
     if distance < zone {
-      extendRack()
-      runMotion(max(0.01, 0.36 * Double(distance / zone)), step: { [weak self] t in
-        let e = 1 - pow(1 - t, 3)
+      let plan = putBackPlan(motion: max(0.01, 0.36 * Double(distance / zone)), distance: distance)
+      runMotion(plan.total, step: { [weak self] t in
+        let e = 1 - pow(1 - plan.progress(t), 3)
         self?.window?.setFrameOrigin(CGPoint(x: p0.x + (d.x - p0.x) * e, y: p0.y + (d.y - p0.y) * e))
       }, done: { [weak self] in self?.window?.setFrame(home, display: true); self?.whenRackSettled { self?.latch() } })
       return
     }
-    // One continuous flight whose last part runs straight up the rack: the control point sits under home. The rack
-    // starts to extend once the cockpit is inside the catch zone.
+    // One continuous flight whose last part runs straight up the rack: the control point sits under home. The rack is
+    // already extending (above), so it waits fully out when the cockpit reaches it. The curve's distance from home is
+    // at most u * (|p0 - d| + 2|c - d|).
     let c = CGPoint(x: d.x, y: min(d.y - zone, p0.y))
     let length = hypot(c.x - p0.x, c.y - p0.y) + hypot(d.x - c.x, d.y - c.y)
-    runMotion(CockpitLaunchRackTiming.flight(length: length), step: { [weak self] t in
+    let plan = putBackPlan(motion: CockpitLaunchRackTiming.flight(length: length), distance: distance + 2 * hypot(c.x - d.x, c.y - d.y))
+    runMotion(plan.total, step: { [weak self] t in
       guard let self else { return }
-      let k = 1 - pow(1 - t, 3), u = 1 - k
+      let k = 1 - pow(1 - plan.progress(t), 3), u = 1 - k
       let x = u * u * p0.x + 2 * u * k * c.x + k * k * d.x, y = u * u * p0.y + 2 * u * k * c.y + k * k * d.y
       self.window?.setFrameOrigin(CGPoint(x: x, y: min(d.y, y)))
-      if hypot(x - d.x, min(d.y, y) - d.y) < zone, self.rackTarget != 1 { self.extendRack() }
     }, done: { [weak self] in
       guard let self else { return }
       self.window?.setFrame(home, display: true)
-      self.extendRack()
       self.whenRackSettled { [weak self] in self?.latch() }
     })
+  }
+  /// G3-130: a put back's timing, so it never lands before the rack (heading out, `rackTarget` 1) is fully extended.
+  /// Without a rack to extend (no icon on the attached display) the motion runs at once.
+  private func putBackPlan(motion: TimeInterval, distance: CGFloat) -> PutBackPlan {
+    rackTarget == 1 ? CockpitLaunchRackTiming.putBack(motion: motion, distance: distance, rackExtension: rackExtension)
+      : PutBackPlan(delay: 0, motion: motion)
   }
   /// The cockpit is caught: attached again under the icon, nozzles out.
   private func latch() {
@@ -1867,8 +1876,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         guard !appearance.reduceMotion else { latch(); return }
         let start = window.frame
         extendRack(); ignite(true); flying = true
-        runMotion(CockpitLaunchRackTiming.rideHome, step: { [weak self] t in
-          let e = 1 - pow(1 - t, 3)
+        // G3-130: the rack (extending since the cockpit entered the zone) is fully out before the ride reaches home.
+        let plan = putBackPlan(motion: CockpitLaunchRackTiming.rideHome, distance: hypot(start.minX - home.minX, start.minY - home.minY))
+        runMotion(plan.total, step: { [weak self] t in
+          let e = 1 - pow(1 - plan.progress(t), 3)
           let frame = Self.lerp(start, home, e)
           self?.window?.setFrameOrigin(CGPoint(x: frame.minX, y: min(home.minY, frame.minY)))
         }, done: { [weak self] in

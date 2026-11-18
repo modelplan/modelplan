@@ -5,9 +5,10 @@ import XCTest
 
 @testable import ModelPlanCockpitWeb
 
-/// Build 14c, G3-79: with two displays the cockpit opens on the display the user clicked (the widget's ignition),
-/// not on the menu bar icon's; a drag takes it to any display; a remembered detached origin is replayed only while it
-/// is still on a display. Uses a fixed two-display arrangement through the controller's `screens` seam.
+/// Build 14c, G3-79: with two displays a detached open goes to the display the user clicked (the widget's ignition);
+/// a drag takes it to any display; a remembered detached origin is replayed only while it is still on a display.
+/// Build 15, G3-128: attached (open, rack, catch zone, put back) it always belongs to the status item's display.
+/// Uses a fixed two-display arrangement through the controller's `screens` seam.
 @MainActor final class CockpitScreenSelectionTests: XCTestCase {
   /// A: the built-in 1512 x 982 display with the menu bar (33 pt) and the status item. B: a 2560 x 1440 display to its right.
   private let a = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 949))
@@ -27,14 +28,13 @@ import XCTest
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
   /// The production controller with the app's anchor and open-point closures, on the fixed arrangement.
-  private func page(session: CockpitShellSession? = nil, click: CGPoint?) throws -> CockpitWindowController {
+  private func page(session: CockpitShellSession? = nil, click: CGPoint?, reduceMotion: Bool = false) throws -> CockpitWindowController {
     let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
     let icon = self.icon
-    let page = CockpitWindowController(bundle: try bundle(), context: context, appearance: .init(theme: .night, locale: .en, profile: .full),
+    let page = CockpitWindowController(bundle: try bundle(), context: context, appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: reduceMotion),
                                        shellSession: session ?? CockpitShellSession(), anchor: { icon }, openPoint: { click })
     let displays = [a, b]
     page.screens = { displays }
-    page.separateSpaces = { true } // the macOS default: every display has its own menu bar
     return page
   }
   private func assertInside(_ frame: CGRect, _ usable: CGRect, _ message: String, file: StaticString = #filePath, line: UInt = #line) {
@@ -50,16 +50,64 @@ import XCTest
     XCTAssertEqual(CockpitScreenSelection.containing(CGPoint(x: 4072, y: 1440), in: [a, b]), b, "B's top-right corner is on B")
   }
 
-  /// The owner's 14c report: the ignition on B opened the cockpit on A, under the icon.
-  func testIgnitionOnTheSecondDisplayOpensTheCockpitThere() throws {
+  /// G3-128 (a), owner build 15: the ignition on B opened the attached cockpit on B, under a computed icon on B's menu
+  /// bar, and the rack had no real icon there. Attached, it belongs to the status item's display (A), under the icon.
+  func testAnAttachedOpenFromTheSecondDisplayGoesUnderTheStatusItem() throws {
     let page = try page(click: clickOnB)
     let (usable, anchor) = try XCTUnwrap(page.environment())
-    XCTAssertEqual(usable, b.visibleFrame, "the cockpit lays out on B")
-    // D204: B's own menu bar shows the icon at the same distance from its top-right corner as A's.
-    XCTAssertEqual(anchor, CGRect(x: 3660, y: 1407, width: 28, height: 24), "under the icon on B's menu bar")
+    XCTAssertEqual(usable, a.visibleFrame, "the cockpit lays out on the status item's display")
+    XCTAssertEqual(anchor, icon, "under the status item itself")
     let placed = try XCTUnwrap(page.placement())
-    assertInside(placed.frame, b.visibleFrame, "attached open from B")
+    assertInside(placed.frame, a.visibleFrame, "attached open from B")
+    XCTAssertEqual(page.rackIcon(), icon, "the rack hangs from the status item")
+    XCTAssertEqual(page.attachedHome(), placed.frame, "home is that same place")
   }
+
+  /// G3-128 (b): a cockpit opened from B, detached and left on B, goes home to the status item's display. Before, the
+  /// put back target was computed with the open's click point and so stayed on B.
+  func testPutBackHomeIsOnTheStatusItemsDisplayAfterADetachToTheOtherDisplay() throws {
+    let session = CockpitShellSession()
+    let page = try page(session: session, click: clickOnB)
+    session.detached = true
+    session.remember(CGPoint(x: 2600, y: 300), arrangement: page.arrangement)
+    let (usable, _) = try XCTUnwrap(page.environment())
+    XCTAssertEqual(usable, b.visibleFrame, "detached it stays where it was left, on B")
+    let home = try XCTUnwrap(page.attachedHome())
+    let attached = try XCTUnwrap(CockpitShellLayout.fit(usable: a.visibleFrame, anchor: icon, shutterClosed: false, screenWidth: a.frame.width))
+    XCTAssertEqual(home, attached.frame, "home is under the status item on A")
+    XCTAssertEqual(page.rackIcon(), icon, "and the rack that catches it hangs from the status item")
+    XCTAssertTrue(page.inCatchZone(home), "the catch zone is around that home")
+    let bHome = try XCTUnwrap(CockpitShellLayout.fit(usable: b.visibleFrame, anchor: CockpitShellLayout.hiddenIconAnchor(usable: b.visibleFrame),
+                                                     shutterClosed: false, screenWidth: b.frame.width))
+    XCTAssertFalse(page.inCatchZone(bHome.frame), "B's top-right is not home")
+    XCTAssertTrue(session.detached, "asking for home does not change the session")
+  }
+
+  #if MODELPLAN_TEST_ONLY_SPI
+  /// G3-128 (a)+(b) through the real window: prewarmed from a press on B it sits on A; dragged onto B and put back with
+  /// the strip key it returns to A under the icon, attached. Window server: GUI leg.
+  func testTheStripKeyPutBackReturnsToTheStatusItemsDisplay() throws {
+    let session = CockpitShellSession()
+    let page = try page(session: session, click: clickOnB, reduceMotion: true)
+    page.prewarm()
+    page.verificationWebView?.navigationDelegate = nil // the headless synthetic load must not discard the window
+    defer { page.discard() }
+    let window = try XCTUnwrap(page.window)
+    let home = try XCTUnwrap(CockpitShellLayout.fit(usable: a.visibleFrame, anchor: icon, shutterClosed: false, screenWidth: a.frame.width)).frame
+    assertInside(window.frame, a.visibleFrame, "opened from B, attached under the status item on A")
+    let from = CGPoint(x: window.frame.minX + 60, y: window.frame.maxY - 30)
+    page.titleDrag(.began, point: from)
+    page.titleDrag(.moved, point: CGPoint(x: from.x + 40, y: from.y))
+    page.titleDrag(.moved, point: CGPoint(x: 2800, y: 900))
+    page.titleDrag(.ended, point: CGPoint(x: 2800, y: 900))
+    XCTAssertFalse(page.isAttached)
+    assertInside(window.frame, b.visibleFrame, "detached on B")
+    page.setAttached(true) // the strip's put-back key
+    XCTAssertTrue(page.isAttached, "Reduce Motion: latched at once")
+    XCTAssertEqual(window.frame, home, "back under the status item on A, not B's top right")
+    XCTAssertEqual(page.verificationRack.target, 1, "the rack holds it from the status item")
+  }
+  #endif
 
   /// C-24 stays as it was: the menu bar icon (no click point) opens attached under the icon on A.
   func testTheIconStillOpensUnderTheIcon() throws {

@@ -1,0 +1,1 @@
+With two displays, the attached cockpit and its launch rack always open under the menu bar icon's display, even when the widget's ignition is on the other display, and Put back returns a cockpit dragged to another display home under the icon. On a put back the rack is fully unfolded before the cockpit reaches it.

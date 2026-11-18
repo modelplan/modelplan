@@ -130,4 +130,52 @@ final class CockpitLaunchRackTests: XCTestCase {
     XCTAssertFalse(CockpitWindowController.opensRackFirst(.fromIcon, reduceMotion: false, detached: false, icon: nil))
     XCTAssertEqual(CockpitLaunchRackTiming.flight(length: 0), 0.82); XCTAssertEqual(CockpitLaunchRackTiming.flight(length: 5000), 1.3)
   }
+
+  /// G3-130 (owner, build 15): a put back is caught by a rack that is already fully out. The rack (full travel 0.56 s)
+  /// starts at the put back; a key flight (0.82 s or more) runs alongside it, a short ride waits for it first, and a rack
+  /// already out never delays anything. The motion keeps its own time and easing.
+  func testAPutBackWaitsOnlyAsLongAsTheRackNeeds() {
+    let full = CockpitLaunchRackTiming.fullTravel, tick = CockpitLaunchRackTiming.tick
+    let flight = CockpitLaunchRackTiming.flight(length: 600)
+    let far = CockpitLaunchRackTiming.putBack(motion: flight, distance: 600, rackExtension: 0)
+    XCTAssertEqual(far, PutBackPlan(delay: 0, motion: flight), "a long flight: concurrent, no wait")
+    let ride = CockpitLaunchRackTiming.putBack(motion: CockpitLaunchRackTiming.rideHome, distance: 30, rackExtension: 0)
+    XCTAssertEqual(ride.motion, CockpitLaunchRackTiming.rideHome, "the ride keeps its time")
+    XCTAssertEqual(ride.delay + ride.motion * CockpitLaunchRackTiming.arrival(distance: 30), full + tick, accuracy: 1e-9,
+                   "released at once: it reaches home one tick after the whole rack is out")
+    XCTAssertEqual(CockpitLaunchRackTiming.putBack(motion: 0.3, distance: 30, rackExtension: 1), PutBackPlan(delay: 0, motion: 0.3), "already out")
+    XCTAssertEqual(CockpitLaunchRackTiming.putBack(motion: 0.3, distance: 30, rackExtension: 0.95).delay, 0, "nearly out: the ride covers it")
+    XCTAssertEqual(CockpitLaunchRackTiming.arrival(distance: 1), 0); XCTAssertEqual(CockpitLaunchRackTiming.arrival(distance: 8), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(ride.progress(0), 0); XCTAssertEqual(ride.progress(1), 1)
+    XCTAssertEqual(ride.progress(CGFloat(ride.delay / ride.total)), 0, accuracy: 1e-9, "the cockpit holds while the rack comes down")
+  }
+
+  /// G3-130: the controller's 60 Hz driver advances the rack first and the motion second in each tick (`rackTick`), the
+  /// motion eased out cubically. For every put back (ride home, near-home move, key flight), from any rack position and
+  /// with late, uneven ticks, no tick shows the cockpit within 1 pt of home before the rack is fully out.
+  func testNoTickShowsTheCockpitHomeBeforeTheRackIsOut() {
+    let cases: [(motion: TimeInterval, distance: CGFloat)] = [(CockpitLaunchRackTiming.rideHome, 39), (CockpitLaunchRackTiming.rideHome, 3),
+      (0.05, 6), (0.36, 40), (CockpitLaunchRackTiming.flight(length: 900), 1400), (CockpitLaunchRackTiming.flight(length: 0), 41)]
+    for (motion, distance) in cases {
+      for start in [CGFloat(0), 0.2, 0.75, 1] {
+        for jitter in [0.0, 0.004, 0.011] {
+          let plan = CockpitLaunchRackTiming.putBack(motion: motion, distance: distance, rackExtension: start)
+          var ext = start, elapsed = 0.0, n = 0, done = false
+          while !done && n < 10_000 {
+            n += 1
+            let dt = 1.0 / 60 + (n % 3 == 0 ? jitter : -jitter / 2)
+            elapsed += dt
+            ext = min(1, ext + CGFloat(dt / CockpitLaunchRackTiming.fullTravel)) // the rack first
+            let t = CGFloat(min(1, elapsed / plan.total)) // then the motion
+            let left = pow(1 - plan.progress(t), 3) * distance
+            if left <= 1 {
+              XCTAssertEqual(ext, 1, "motion \(motion) s over \(distance) pt from rack \(start), jitter \(jitter): home before the rack is out")
+            }
+            done = t >= 1
+          }
+          XCTAssertTrue(done)
+        }
+      }
+    }
+  }
 }

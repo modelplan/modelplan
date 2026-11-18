@@ -24,6 +24,34 @@ public enum CockpitLaunchRackTiming {
   public static let landingStep: CGFloat = 56
   /// Key put-back flight time, from the demo: 520 ms + 0.9 ms per point of path, kept within 0.82-1.3 s.
   public static func flight(length: CGFloat) -> TimeInterval { min(1.3, max(0.82, 0.52 + Double(length) * 0.0009)) }
+  /// One display frame at the rack driver's 60 Hz.
+  public static let tick: TimeInterval = 1.0 / 60
+  /// G3-130 (owner, build 15): a put back is caught by a rack that is already fully extended. The rack starts extending
+  /// at the put back (key, menu or a drag released in the catch zone); the cockpit's own motion (key flight, near-home
+  /// move, ride home) keeps its time and easing, and starts only so late that it comes within 1 pt of home no earlier
+  /// than one tick after the rack is fully out. `distance` bounds how far the motion still is from home at progress 0
+  /// (its ease-out cubic leaves at most `(1 - t)^3 * distance`). A rack already out never delays it.
+  public static func putBack(motion: TimeInterval, distance: CGFloat, rackExtension: CGFloat) -> PutBackPlan {
+    let remaining = Double(max(0, min(1, 1 - rackExtension))) * fullTravel
+    guard remaining > 0 else { return PutBackPlan(delay: 0, motion: motion) }
+    return PutBackPlan(delay: max(0, remaining + tick - motion * arrival(distance: distance)), motion: motion)
+  }
+  /// The share of an ease-out cubic motion over `distance` points after which it is within 1 pt of its end.
+  public static func arrival(distance: CGFloat) -> Double {
+    guard distance.isFinite, distance > 1 else { return 0 }
+    return 1 - pow(1 / Double(distance), 1.0 / 3)
+  }
+}
+
+/// G3-130: a put back's timing: the rack extends during `delay` (the cockpit holds, nozzles lit), then the motion runs.
+public struct PutBackPlan: Equatable, Sendable {
+  public let delay: TimeInterval, motion: TimeInterval
+  public var total: TimeInterval { delay + motion }
+  /// The motion's own progress (0-1) at overall progress `t` (0-1).
+  public func progress(_ t: CGFloat) -> CGFloat {
+    guard total > 0, motion > 0 else { return 1 }
+    return CGFloat(max(0, min(1, (Double(t) * total - delay) / motion)))
+  }
 }
 
 /// D187: where a key detach puts the cockpit. The first candidate that keeps the WHOLE cockpit inside the visible

@@ -197,5 +197,58 @@ import XCTest
     XCTAssertEqual(ignition.last, false, "out once latched")
     XCTAssertEqual(failures, [])
   }
+
+  /// G3-130 (owner, build 15): on a put back the rack is already fully out to catch the cockpit before it arrives.
+  /// Before, it unfolded only once the cockpit was in the catch zone and finished after the cockpit had landed. Sampled
+  /// on the real window and rack: no sample shows the cockpit home (within 1 pt) while the rack is still extending.
+  /// The open's rack-first order (#872) is unchanged (`testIconOpenExtendsTheRackFirstThenTheCockpitAndTheCloseReverses`).
+  func testThePutBackRackIsFullyOutBeforeTheCockpitArrives() async throws {
+    let fixture = try make()
+    defer { fixture.page.discard() }
+    let window = try open(fixture)
+    try await wait(800)
+    let home = try XCTUnwrap(fixture.home)
+    XCTAssertEqual(window.frame, home)
+
+    // The strip key: detach, land, then put back.
+    fixture.page.setAttached(false)
+    try await wait(1_000)
+    XCTAssertEqual(fixture.page.verificationRack.ext, 0, "retracted after the detach")
+    fixture.page.setAttached(true)
+    XCTAssertEqual(fixture.page.verificationRack.target, 1, "the rack starts unfolding at the press, not when the cockpit nears")
+    try await assertRackOutBeforeHome(fixture, window, home, "key put back")
+
+    // A drag torn off, brought back into the catch zone and released at once: the rack had only just started.
+    let grab = CGPoint(x: home.minX + 120, y: home.maxY - 16)
+    fixture.page.titleDrag(.began, point: grab)
+    fixture.page.titleDrag(.moved, point: CGPoint(x: grab.x, y: grab.y - 200))
+    XCTAssertFalse(fixture.page.isAttached)
+    try await wait(700)
+    XCTAssertEqual(fixture.page.verificationRack.ext, 0, "retracted after the tear-off")
+    let near = CGPoint(x: grab.x + 10, y: grab.y - 20)
+    fixture.page.titleDrag(.moved, point: near)
+    fixture.page.titleDrag(.ended, point: near)
+    XCTAssertLessThan(fixture.page.verificationRack.ext, 1, "released before the rack is out")
+    try await assertRackOutBeforeHome(fixture, window, home, "drag released in the zone")
+    XCTAssertEqual(failures, [])
+  }
+  private func assertRackOutBeforeHome(_ fixture: Fixture, _ window: NSWindow, _ home: CGRect, _ label: String,
+                                       file: StaticString = #filePath, line: UInt = #line) async throws {
+    var homeSamples = 0
+    let deadline = ContinuousClock.now + .milliseconds(2_600)
+    while ContinuousClock.now < deadline {
+      let ext = fixture.page.verificationRack.ext
+      if hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) <= 1 {
+        homeSamples += 1
+        XCTAssertEqual(ext, 1, "\(label): the cockpit is home while the rack is at \(ext)", file: file, line: line)
+      }
+      if fixture.page.isAttached { break }
+      try await Task.sleep(for: .milliseconds(4))
+    }
+    XCTAssertTrue(fixture.page.isAttached, "\(label): caught and latched", file: file, line: line)
+    XCTAssertGreaterThan(homeSamples, 0, "\(label): sampled at home", file: file, line: line)
+    XCTAssertEqual(window.frame, home, file: file, line: line)
+    XCTAssertEqual(fixture.page.verificationRack.ext, 1, file: file, line: line)
+  }
 }
 #endif
