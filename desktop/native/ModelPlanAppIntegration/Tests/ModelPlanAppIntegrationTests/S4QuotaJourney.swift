@@ -618,7 +618,8 @@ actor S4RowsClient: EngineClient {
         guard let firstCard=try entry.composition.dock.cardContent(for:"0123456789abcdef"),
               let secondCard=try entry.composition.dock.cardContent(for:"fedcba9876543210") else { throw Failure(description:"normal Dock must expose the actual member card content") }
         try require(firstCard.plan == "synthetic","card must carry the reported plan name")
-        try require(firstCard.sourceAndAge.hasPrefix("Local history · "),"card header must use the admitted window source, even when the account route differs")
+        // WP-15 (DOCK-3.8-50, amends DOCK-3.8-05): the header is only the reading's age; the source moved to Settings.
+        try require(firstCard.sourceAndAge.hasPrefix("Updated "),"card header must state the admitted reading's age")
         func reserveParts(_ row:DockCardRow)->[String]{row.value.components(separatedBy:" · ")}
         try require(firstCard.rows.contains{$0.kind == .reserve && reserveParts($0).contains("Credits 43")},"first card needs its own rounded credits")
         try require(secondCard.rows.contains{$0.kind == .reserve && reserveParts($0).contains("Credits 7")},"second card needs its own reported credits")
@@ -660,9 +661,8 @@ actor S4RowsClient: EngineClient {
               let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"unknown-facts member/card missing") }
         try require(card.plan.isEmpty && !card.rows.contains{$0.kind == .reserve},"unavailable plan/reserve must stay absent, not become zero or an inferred current value")
         try require(card.rows.first(where:{$0.kind == .quota})?.value == "--","unknown quota must not become zero fuel")
-        try require(card.rows.first(where:{$0.kind == .quota})?.detail == "--","unknown reset time must stay unknown")
-        try require(card.sourceAndAge == "Unknown source · Reading time unknown","unproved provenance must stay unknown in the header")
-        try require(card.sourceAndAge.contains("Reading time unknown"),"missing reading time must not use rendering time")
+        try require(card.rows.first(where:{$0.kind == .quota})?.detail == "","unknown reset time stays blank, never invented (board-3)")
+        try require(card.sourceAndAge == "Not read yet","missing reading time must not use rendering time")
         await entry.composition.stop()
     }
     static func collisions(capture:URL) async throws {

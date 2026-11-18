@@ -82,7 +82,7 @@ import ModelPlanOfficialDock
         let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }; await coordinator.reload(); host.setPresentationAllowed(true)
         guard host.lastAppearanceError == nil, let image = host.dockView.presentedImageForChecks,
               let skin = host.dockView.presentedSkinForChecks, skin.stations.count == 1,
-              skin.stations[0].placeholderLabel == "?", skin.stations[0].overflowCount == nil,
+              skin.stations[0].emptyRing == true, skin.stations[0].placeholderLabel?.isEmpty == true, skin.stations[0].overflowCount == nil,
               skin.stations[0].placeholderStyle != nil, host.dockView.emptyStationRectForChecks != nil,
               let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { throw Failure.appearance("empty station") }
         return (png, [skin.bounds.minX, skin.bounds.minY, skin.bounds.width, skin.bounds.height].map(Double.init))

@@ -1323,7 +1323,9 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(surface.pane, "diagnostics")
         let id = "aaaaaaaaaaaaaaaa"
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account")
-        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · over 30 days ago")
+        // WP-15 (DOCK-3.8-50): no stale badge; the header carries the reading's age.
+        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "")
+        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.sourceAndAge, "Updated over 30 days ago")
         let dockView = app.composition.dock.dockView
         let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
         let anchor = try XCTUnwrap(dockView.interactionAnchor(id))
@@ -1338,7 +1340,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertFalse(app.composition.dock.card.isHidden, "A same-delivery language change preserves the hovered card")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
         XCTAssertEqual(card.name, "合成账户")
-        XCTAssertEqual(card.stateLabel, "过期 · 超过 30 天前", "The stale badge follows the Chinese prototype while preserving the original observation age")
+        XCTAssertEqual(card.sourceAndAge, "超过 30 天前更新", "The header keeps the original observation age in Chinese")
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("合成账户"))
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))

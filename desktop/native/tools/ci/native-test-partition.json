@@ -98,7 +98,8 @@
         "StaticDockPresentationTests",
         "SubscriptionCatalogueOwnershipTests",
         "T2MaterialSeamTests",
-        "U8ConsentJourneyTests"
+        "U8ConsentJourneyTests",
+        "WP15WidgetCardStateTests"
       ],
       "ownerGui": [
         "D41KeychainJourneyTests",

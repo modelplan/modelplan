@@ -31,7 +31,9 @@ private actor D41Engine: EngineClient {
     func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion {
         grants.append(request); actions.append(userAction); return .init(requestID: .string(request.requestId))
     }
-    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    private var refreshes = 0
+    func refreshCount() -> Int { refreshes }
+    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { refreshes += 1; throw EngineClientError.unsupportedCapability }
     func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
@@ -218,32 +220,25 @@ private actor D41Engine: EngineClient {
         XCTAssertEqual(after.first?.keychain?[Self.scope], .allow)
     }
 
-    /// D87 slice 9: a card whose reading failed for a named cause no longer says only "Settings": its action links to
-    /// that subscription's row, which shows the same reason from the shared table. Only the Keychain card asks for the Keychain.
-    func testACardCauseLinksToItsSubscriptionsRow() async throws {
+    /// DOCK-3.8-53 (WP-15, replaces D87 slice 9's Settings link on the card): a card whose reading failed for a named cause
+    /// says the cause and its one step, and its one button is "Read again": one foreground refresh. Only the Keychain card
+    /// asks for the Keychain. The Settings row keeps the same reason from the shared table.
+    func testACardCauseOffersReadAgain() async throws {
         let (app, engine) = try await launch(keychain: "allow", rowState: "failed", code: "timeout")
-        XCTAssertEqual(try card(app).actionLabel, "Open in Settings")
+        XCTAssertEqual(try card(app).actionLabel, "Read again")
         XCTAssertFalse(app.scopeConsentEntry.controller.needsKeychainAccess, "this card is not the Keychain card")
-        XCTAssertNotNil(app.composition.dock.cardActionRequested, "the card action is wired")
         let member = try XCTUnwrap(app.composition.accountMembers.members.first?.id)
-        // SET-9-34 / SET-9-42: press the card's own action (the production closure the Dock calls) and observe the real
-        // Settings window; the row and its reason come from the app's own rows projection, not an injected context.
-        let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
         let requested = try XCTUnwrap(app.composition.dock.cardActionRequested, "the card action is wired")
         requested(member)
-        var found: NSWindow?
-        for _ in 0..<500 {
-            found = NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible }
-            if let found, view("subscriptions.row." + member, in: try XCTUnwrap(found.contentView)) != nil { break }
+        var refreshes = 0
+        for _ in 0..<300 {
+            refreshes = await engine.refreshCount()
+            if refreshes > 0 { break }
             try await Task.sleep(for: .milliseconds(10))
         }
-        let window = try XCTUnwrap(found, "the card action opens Settings")
-        addTeardownBlock { @MainActor in window.close() }
-        let root = try XCTUnwrap(window.contentView)
-        XCTAssertNotNil(view("subscriptions.row." + member, in: root), "the row the card links to exists in the Settings window")
-        XCTAssertEqual((view("subscriptions.status." + member, in: root) as? NSTextField)?.stringValue, "The reading timed out; it will retry on its own")
+        XCTAssertEqual(refreshes, 1, "Read again asks the engine for one refresh")
         let grants = await engine.recorded()
-        XCTAssertTrue(grants.isEmpty, "linking to a row asks the system for nothing")
+        XCTAssertTrue(grants.isEmpty, "reading again asks the system for nothing")
     }
 
     func testALoginThatAlreadyReadsAsksNothing() async throws {
