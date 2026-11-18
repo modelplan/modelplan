@@ -369,7 +369,7 @@ public enum EngineDeadlineFacts {
         func tokens(_ n: Int64) -> String {
             n < 1000 ? String(n) : n < 1_000_000 ? "\(Int((Double(n) / 1000).rounded()))k" : String(format: "%.1fM", Double(n) / 1_000_000)
         }
-        var parts = [today?.observedOutputTokens.map(tokens) ?? "--", today?.generationTps.map { "\(Int($0.rounded())) t/s" } ?? "-- t/s"]
+        var parts = [(today?.observedTotalTokens ?? today?.observedOutputTokens).map(tokens) ?? "--", today?.generationTps.map { "\(Int($0.rounded())) t/s" } ?? "-- t/s"]
         if let running = today?.runningSessions, running > 0 { parts.append(english ? "\(running) running" : "\(running) 个运行中") }
         return .init(id: "today", kind: .statistic, label: english ? "Today" : "今日", value: parts.joined(separator: " · "))
     }

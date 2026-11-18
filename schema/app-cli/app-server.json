@@ -204,6 +204,10 @@
           "minimum": 1,
           "type": "integer"
         },
+        "observedTotalTokens": {
+          "minimum": 0,
+          "type": "integer"
+        },
         "runningSessions": {
           "minimum": 1,
           "type": "integer"
@@ -825,6 +829,12 @@
           "type": "integer"
         },
         "outputTokens": {
+          "type": "integer"
+        },
+        "reasoningTokens": {
+          "type": "integer"
+        },
+        "totalTokens": {
           "type": "integer"
         }
       },
@@ -1719,6 +1729,10 @@
           ]
         },
         "observedOutputTokens": {
+          "type": "integer"
+        },
+        "observedTotalTokens": {
+          "minimum": 0,
           "type": "integer"
         },
         "source": {

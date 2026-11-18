@@ -112,6 +112,14 @@
       "type": "RowsAccountToday",
       "optional": [
         {
+          "field": "observedTotalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "observedOutputTokens",
           "omission": true,
           "null": false,
@@ -903,6 +911,22 @@
       "type": "WireCockpitHistorySums",
       "optional": [
         {
+          "field": "totalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "reasoningTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "inputTokens",
           "omission": true,
           "null": true,
@@ -1455,6 +1479,14 @@
       "file": "WireCockpitToday.json",
       "type": "WireCockpitToday",
       "optional": [
+        {
+          "field": "observedTotalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
         {
           "field": "generationTps",
           "omission": true,

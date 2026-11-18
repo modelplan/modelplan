@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 4bd0e88a767e00911dbf387bef77341335487ed83ca15f0c01d6aac78cb50be0
+// Schema SHA-256: 743441762643bf5228c7127bf2fa0a6c476e32dd71dcf313e3c6a3f6acd44a45
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -34,6 +34,7 @@ export type WireAccountToday = {
   readonly "bindingBasis": "source-wide-current-binding" | "session-binding";
   readonly "generationTps"?: number;
   readonly "observedOutputTokens"?: number;
+  readonly "observedTotalTokens"?: number;
   readonly "runningSessions"?: number;
 };
 
@@ -147,6 +148,8 @@ export type WireCockpitHistorySums = {
   readonly "inputTokens": number | null;
   readonly "observedRequests": number;
   readonly "outputTokens": number;
+  readonly "reasoningTokens"?: number;
+  readonly "totalTokens"?: number;
 };
 
 export type WireCockpitPeak = {
@@ -325,6 +328,7 @@ export type WireCockpitToday = {
   readonly "bindingBasis": string;
   readonly "generationTps": number | null;
   readonly "observedOutputTokens": number;
+  readonly "observedTotalTokens"?: number;
   readonly "source": string;
 };
 
@@ -690,6 +694,10 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "observedOutputTokens": {
         "minimum": 1,
+        "type": "integer"
+      },
+      "observedTotalTokens": {
+        "minimum": 0,
         "type": "integer"
       },
       "runningSessions": {
@@ -1270,6 +1278,12 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "integer"
       },
       "outputTokens": {
+        "type": "integer"
+      },
+      "reasoningTokens": {
+        "type": "integer"
+      },
+      "totalTokens": {
         "type": "integer"
       }
     },
@@ -2164,6 +2178,10 @@ export const definitions: Readonly<Record<string, Schema>> = {
         ]
       },
       "observedOutputTokens": {
+        "type": "integer"
+      },
+      "observedTotalTokens": {
+        "minimum": 0,
         "type": "integer"
       },
       "source": {

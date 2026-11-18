@@ -2401,6 +2401,26 @@
         },
         "outputTokens": {
           "type": "integer"
+        },
+        "reasoningTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -2694,8 +2714,28 @@
         "observedRequests": {
           "type": "integer"
         },
+        "reasoningTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "source": {
           "type": "string"
+        },
+        "totalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -2881,8 +2921,28 @@
         "observedRequests": {
           "type": "integer"
         },
+        "reasoningTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "source": {
           "type": "string"
+        },
+        "totalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -3175,6 +3235,26 @@
         },
         "observedRequests": {
           "type": "integer"
+        },
+        "reasoningTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "turnMs": {
           "type": "integer"
@@ -4051,6 +4131,15 @@
       },
       "type": [
         "array",
+        "null"
+      ]
+    },
+    "tokenAccounting": {
+      "additionalProperties": {
+        "$ref": "#/$defs/tokenacct-Windows"
+      },
+      "type": [
+        "object",
         "null"
       ]
     },

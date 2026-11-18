@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/profile"
 	"os"
 	"path/filepath"
 	"testing"
@@ -394,5 +396,67 @@ func TestSessionDayCompleteTotalNeedsEveryPart(t *testing.T) {
 		if got, ok := day.CompleteTotal(); ok {
 			t.Errorf("%s: total %d should be unknown", name, got)
 		}
+	}
+}
+
+// grantLocalHistory points the consent store at a private HOME that allows the Codex and Claude
+// local-history scopes, so accounting tests do not depend on the developer's own consent file.
+func grantLocalHistory(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv(profile.RootEnv, t.TempDir()) // the resolver's highest-priority root: never a real profile
+	state := consent.Empty()
+	state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+	for _, s := range []string{consent.ScopeClaudeLocalHistory, consent.ScopeCodexLocalHistory} {
+		state.Scopes[s] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion}
+	}
+	b, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := consent.Path()
+	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The helper must write its grant only inside its own profile root, never into an existing
+// profile override that denies the scopes.
+func TestGrantLocalHistoryLeavesProfileOverrideAlone(t *testing.T) {
+	override := t.TempDir()
+	t.Setenv(profile.RootEnv, override)
+	denied := consent.Empty()
+	denied.StoreEpoch = "fedcba9876543210fedcba9876543210"
+	for _, s := range []string{consent.ScopeClaudeLocalHistory, consent.ScopeCodexLocalHistory} {
+		denied.Scopes[s] = consent.Record{Allowed: false, ConsentTextVersion: consent.TextVersion}
+	}
+	b, err := json.Marshal(denied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := consent.Path()
+	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("helper", func(t *testing.T) { grantLocalHistory(t) })
+	after, err := os.ReadFile(p)
+	if err != nil || !bytes.Equal(after, b) {
+		t.Fatalf("profile override consent changed: %v", err)
+	}
+}
+
+// A day that carries the accounting total reports it as it is, not a sum of its parts.
+func TestSessionDayCompleteTotalPrefersTheAccountingTotal(t *testing.T) {
+	n := func(v int64) *int64 { return &v }
+	day := SessionDay{Kinds: &TokenKinds{TotalTokens: n(3030)}, ObservedOutputTokens: 30}
+	if got, ok := day.CompleteTotal(); !ok || got != 3030 {
+		t.Fatalf("CompleteTotal = %d, %v", got, ok)
 	}
 }

@@ -32,6 +32,7 @@ const (
 
 // PerfLedger is perf.json's content.
 type PerfLedger struct {
+	UsageRows     []PerfRow         `json:"-"` // response accounting, loaded independently of timing samples
 	SchemaVersion int               `json:"schemaVersion"`
 	Since         time.Time         `json:"since"` // UTC, when the file was created
 	Hourly        []Hourly          `json:"hourly,omitempty"`
@@ -135,7 +136,14 @@ func PerfPath(cache string) string { return filepath.Join(cache, "observed", "pe
 // LoadPerf reads the ledger. A missing file is a new, empty ledger (zero Since). ok is false when
 // the file is there but cannot be used (unreadable, too large, another schema or no Since); it is
 // then left as it is and nothing is reported from it.
-func LoadPerf(cache string) (l PerfLedger, ok bool) {
+func LoadPerf(cache string) (PerfLedger, bool) {
+	l, ok := loadPerf(cache)
+	if ok {
+		l = accountingOverlay(cache, l)
+	}
+	return l, ok
+}
+func loadPerf(cache string) (l PerfLedger, ok bool) {
 	b, err := os.ReadFile(PerfPath(cache))
 	if errors.Is(err, os.ErrNotExist) {
 		return PerfLedger{SchemaVersion: 1}, true
@@ -161,7 +169,7 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 		return nil
 	}
 	defer unlock()
-	l, ok := LoadPerf(cache)
+	l, ok := loadPerf(cache)
 	if !ok {
 		return nil // not ours to overwrite
 	}
@@ -468,6 +476,10 @@ func (d SessionDay) CompleteTotal() (int64, bool) {
 	}
 	if d.Kinds == nil {
 		return 0, false
+	}
+	// The accounting total of every recorded request (TOK-50, ccusage-aligned) wins when it is known.
+	if t := d.Kinds.TotalTokens; t != nil && *t >= 0 {
+		return *t, true
 	}
 	for _, part := range []*int64{d.Kinds.InputTokens, d.Kinds.CacheReadTokens, d.Kinds.CacheWriteTokens} {
 		if part == nil || *part < 0 || *part > math.MaxInt64-total {
