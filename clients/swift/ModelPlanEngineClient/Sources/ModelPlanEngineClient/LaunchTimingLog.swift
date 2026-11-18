@@ -27,8 +27,8 @@ public final class LaunchTimingLog: @unchecked Sendable {
         self.init(now: { ProcessInfo.processInfo.systemUptime }, processStart: LaunchTimingLog.processStartUptime,
                   sink: { DiagnosticsLog.shared.record("lifecycle", .notice, $0) })
     }
-    /// Test seam: an injected monotonic clock, process start and line sink.
-    init(now: @escaping () -> TimeInterval, processStart: @escaping () -> TimeInterval?, sink: @escaping (String) -> Void) {
+    /// Test seam (also for other packages' tests): an injected monotonic clock, process start and line sink.
+    public init(now: @escaping () -> TimeInterval, processStart: @escaping () -> TimeInterval?, sink: @escaping (String) -> Void) {
         self.now = now; self.processStart = processStart; self.sink = sink
     }
 

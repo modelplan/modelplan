@@ -300,6 +300,9 @@ extension CommunityCockpitEntryTests {
                     XCTAssertLessThanOrEqual(try milliseconds("open stage=window-visible"), 400)
                     XCTAssertLessThanOrEqual(try milliseconds("open stage=animation-complete"), 800)
                     XCTAssertGreaterThanOrEqual(try milliseconds("open stage=page-rendered"), 0)
+                    // Measured boundary: the close clock starts in closeAnimated (here reached through requestClose), so
+                    // it covers the close motion and window removal, not the hop from a menu-bar click to closeAnimated.
+                    // Real clicks on MacCI (wp17-measure-plan.md) carry that hop in the `close requested` log line.
                     XCTAssertLessThanOrEqual(try milliseconds("close stage=gone"), 800)
                 }
                 closedAt = .now

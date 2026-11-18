@@ -70,7 +70,18 @@ class SummarizeTimingTests(unittest.TestCase):
         result = summarize_timing.cpu([samples.name], cores=10)
         self.assertEqual(result["samples"], 2)
         self.assertEqual(result["totalMeanPercent"], 6.0)
-        self.assertEqual(result["processes"][0], {"command": "ModelPlan", "meanPercent": 5.0, "maxPercent": 6.0})
+        self.assertEqual(result["processes"][0], {"pid": "10", "command": "ModelPlan", "meanPercent": 5.0, "maxPercent": 6.0})
+
+    def test_cpu_keeps_two_processes_of_one_command_apart(self):
+        samples = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False)
+        samples.write("1 20 4.0 com.apple.WebKit.WebContent\n1 21 6.0 com.apple.WebKit.WebContent\n"
+                      "2 20 4.0 com.apple.WebKit.WebContent\n2 21 6.0 com.apple.WebKit.WebContent\n")
+        samples.close()
+        self.addCleanup(os.unlink, samples.name)
+        result = summarize_timing.cpu([samples.name], cores=0)
+        self.assertEqual([(p["pid"], p["meanPercent"]) for p in result["processes"]], [("20", 4.0), ("21", 6.0)])
+        self.assertEqual(result["commands"], [{"command": "com.apple.WebKit.WebContent", "meanPercent": 10.0, "maxPercent": 10.0}])
+        self.assertEqual(result["totalMeanPercent"], 10.0)
 
 
 if __name__ == "__main__":

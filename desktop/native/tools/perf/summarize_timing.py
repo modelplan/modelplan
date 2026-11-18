@@ -19,7 +19,8 @@ or page line become their own rows (`bundle-verified ms`, `page-navigation-finis
 
 The cpu mode reads `ps` samples written by the WP-17 plan, one line per process per sample:
   <epoch-seconds> <pid> <%cpu> <command...>
-and prints the mean %CPU per command name and in total (100 = one core).
+and prints the mean %CPU per process (pid), per command (its processes added up per sample) and in total
+(100 = one core).
 """
 from __future__ import annotations
 
@@ -122,8 +123,9 @@ def summarize(paths: list[str]) -> "OrderedDict[str, list[dict]]":
 
 
 def cpu(paths: list[str], cores: int) -> dict:
-    per: "OrderedDict[str, list[float]]" = OrderedDict()
-    totals: "OrderedDict[str, float]" = OrderedDict()
+    """Per process (pid + command), per command (all its processes added up in each sample) and in total."""
+    per_process: "OrderedDict[tuple[str, str], list[float]]" = OrderedDict()
+    per_sample: "OrderedDict[str, OrderedDict[str, float]]" = OrderedDict()
     for path in paths:
         with open(path, encoding="utf-8", errors="replace") as handle:
             for raw in handle:
@@ -131,20 +133,30 @@ def cpu(paths: list[str], cores: int) -> dict:
                 if len(parts) < 4:
                     continue
                 try:
-                    stamp, value = parts[0], float(parts[2])
+                    stamp, pid, value = parts[0], parts[1], float(parts[2])
                 except ValueError:
                     continue
                 name = parts[3].strip().rsplit("/", 1)[-1]
-                per.setdefault(name, []).append(value)
-                totals[stamp] = totals.get(stamp, 0.0) + value
-    samples = list(totals.values())
+                per_process.setdefault((pid, name), []).append(value)
+                sample = per_sample.setdefault(stamp, OrderedDict())
+                sample[name] = sample.get(name, 0.0) + value
+    count = len(per_sample)
+    names: list[str] = []
+    for sample in per_sample.values():
+        names.extend(n for n in sample if n not in names)
+    totals = [sum(sample.values()) for sample in per_sample.values()]
     return {
-        "samples": len(samples),
-        "processes": [{"command": name, "meanPercent": round(statistics.mean(v), 2), "maxPercent": round(max(v), 2)}
-                      for name, v in per.items()],
-        "totalMeanPercent": round(statistics.mean(samples), 2) if samples else None,
-        "totalMaxPercent": round(max(samples), 2) if samples else None,
-        "totalMeanPercentOfAllCores": round(statistics.mean(samples) / cores, 2) if samples and cores else None,
+        "samples": count,
+        # A process absent from a sample (not yet started, or gone) is not counted as 0 in its own mean.
+        "processes": [{"pid": pid, "command": name, "meanPercent": round(statistics.mean(v), 2), "maxPercent": round(max(v), 2)}
+                      for (pid, name), v in per_process.items()],
+        # Per command: the sum over its processes in each sample, averaged over every sample (absent = 0).
+        "commands": [{"command": name,
+                      "meanPercent": round(sum(s.get(name, 0.0) for s in per_sample.values()) / count, 2),
+                      "maxPercent": round(max(s.get(name, 0.0) for s in per_sample.values()), 2)} for name in names],
+        "totalMeanPercent": round(statistics.mean(totals), 2) if totals else None,
+        "totalMaxPercent": round(max(totals), 2) if totals else None,
+        "totalMeanPercentOfAllCores": round(statistics.mean(totals) / cores, 2) if totals and cores else None,
     }
 
 
@@ -178,8 +190,10 @@ def main(argv: list[str]) -> int:
         else:
             print(f"samples={result['samples']} total mean={result['totalMeanPercent']}% max={result['totalMaxPercent']}% "
                   f"(100% = one core; budget CKP-SHELL-19: mean <= 10%)")
+            for c in result["commands"]:
+                print(f"  {c['command']} (all its processes): mean={c['meanPercent']}% max={c['maxPercent']}%")
             for p in result["processes"]:
-                print(f"  {p['command']}: mean={p['meanPercent']}% max={p['maxPercent']}%")
+                print(f"    pid {p['pid']} {p['command']}: mean={p['meanPercent']}% max={p['maxPercent']}%")
         return 0
     table = summarize(args.paths)
     if args.json:
