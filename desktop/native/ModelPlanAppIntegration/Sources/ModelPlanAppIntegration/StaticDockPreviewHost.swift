@@ -880,7 +880,7 @@ struct DockHelpInteraction: Equatable {
         updateNozzleMagnification()
         if let id = value.card.subscriptionID, let content = value.content {
             showCard(id, supplied: content)
-        } else {
+        } else if cardID != Self.emptyCardID {
             dismissCard()
         }
         guard !value.overflowIDs.isEmpty, let model else {
@@ -1106,7 +1106,13 @@ struct DockHelpInteraction: Equatable {
         view.onEmptyAction = { [weak self, weak view] in
             guard let self, let view, self.permitted, !self.retired, !self.rendering,
                   view.emptyStationRectForChecks != nil, let showSettings = self.showSettings else { return false }
+            // G3-136: a click (or press) also says why there is no data, next to the ring, while Settings opens.
+            if self.interactionView === view { self.showEmptyCard() }
             showSettings(); return true
+        }
+        view.onEmptyHover = { [weak self, weak view] over in
+            guard let self, let view, self.interactionView === view else { return }
+            if over { self.showEmptyCard() } else if self.cardID == Self.emptyCardID { self.dismissCard() }
         }
         view.permitsEmptyAction = { [weak self, weak view] source in
             guard let self, let view else { return false }
@@ -1510,7 +1516,9 @@ struct DockHelpInteraction: Equatable {
         let preference = DockEdgePreference(displayID: selectedID, edge: selected, alongFraction: passPreferences.dockAlongFraction)
         if edge.preference != preference { edge.setPreference(preference) }
         guard passIsCurrent(generation) else { return }
-        if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
+        if let cardID, cardID == Self.emptyCardID { showEmptyCard() }
+        else if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
+        else if interactionView.emptyStationHovered { showEmptyCard() } // G3-136: a replacement keeps the hovered reason
         if permitted {
             edge.start(); edge.refresh()
             // Pixel/material changes can leave the geometric presentation equal. Flush that
@@ -2285,7 +2293,7 @@ struct DockHelpInteraction: Equatable {
     /// G3-136: the empty ring's card, one line saying why there is no data. Only while no subscription has a ring.
     public func emptyCardContent() throws -> DockCardContent? {
         guard !retired, model?.inputs.isEmpty ?? true, let reason = emptyStationReason?(), !reason.isEmpty else { return nil }
-        let content = DockCardContent(subscriptionID: "dock.empty", revision: application?.snapshot.revision ?? 0, name: "ModelPlan",
+        let content = DockCardContent(subscriptionID: Self.emptyCardID, revision: application?.snapshot.revision ?? 0, name: "ModelPlan",
             rows: [DockCardRow(id: "empty-reason", kind: .event, label: "", value: reason)],
             enterLabel: EngineRowsText.contextSettings.value(preferences.language), dismissLabel: EngineRowsText.contextClose.value(preferences.language))
         try content.validate()
@@ -2307,6 +2315,42 @@ struct DockHelpInteraction: Equatable {
         guard let expiry = attentionSignals.first(where: { $0.id == id })?.reset?.expiresAt, now < expiry else { return [] }
         return model?.presentationRows[id]?.links ?? []
     }
+    /// G3-136: the reason card's id; never a subscription id (those are 16 hex digits).
+    static let emptyCardID = "dock.empty"
+    /// G3-136: shows the empty ring's reason card (hover or click on the empty station). The card says why there is
+    /// no data; in production it has no buttons (D37), elsewhere its enter button opens Settings.
+    private func showEmptyCard() {
+        guard permitted, !retired, preferences.showDock, let content = try? emptyCardContent() else {
+            if cardID == Self.emptyCardID { dismissCard() }
+            return
+        }
+        cardGeneration &+= 1
+        let token = cardGeneration
+        cardID = Self.emptyCardID; cardPresentedRevision = content.revision; cardPresentedGeneration = inputGeneration; card.isHidden = false
+        card.appearance = NSAppearance(named: (application?.effective.darkAppearance ?? true) ? .darkAqua : .aqua)
+        card.permitsAction = { [weak self] id, _ in
+            guard let self else { return false }
+            return id == Self.emptyCardID && self.cardID == Self.emptyCardID && self.cardGeneration == token && !self.card.isHidden
+        }
+        card.onOpenURL = nil
+        card.onEnter = { [weak self] id, _ in
+            guard let self, id == Self.emptyCardID, self.cardID == Self.emptyCardID, self.cardGeneration == token else { return }
+            self.dismissCard(); self.openSettings()
+        }
+        card.onDismiss = { [weak self] in
+            guard let self, self.cardGeneration == token else { return }
+            self.dismissCard()
+        }
+        card.onAction = nil
+        card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
+        var style = Self.prototypeCardStyle
+        style.showsActions = purpose != .production
+        do { try card.apply(content, style: style) } catch { dismissCard(); return }
+        guard createsNativePanels else { return }
+        placeCardPanel(Self.emptyCardID)
+    }
+    /// G3-136: the empty reason card is open now (for checks).
+    @_spi(DockResourceChecks) public var emptyCardShownForChecks: Bool { cardID == Self.emptyCardID && !card.isHidden }
     private func interactionCardContent(_ id: String) -> DockCardContent? { try? cardContent(for:id) }
     private func showCard(_ id: String, supplied: DockCardContent? = nil) {
         guard permitted, !retired, preferences.showDock,
@@ -2371,7 +2415,8 @@ struct DockHelpInteraction: Equatable {
         guard let cardPanel, let panelFrame = panel?.frame,
               let screen = topology(of: sampleEnvironment()).display(edge.presentation?.placement?.displayID) else { dismissCard(); return }
         let view = interactionView
-        guard let local = view.cardRingAnchor(id), let window = view.window else { dismissCard(); return }
+        guard let local = id == Self.emptyCardID ? view.emptyStationAnchor : view.cardRingAnchor(id),
+              let window = view.window else { dismissCard(); return }
         let anchor = window.convertToScreen(view.convert(local, to: nil))
         let hull = view.registeredHullBounds.map { window.convertToScreen(view.convert($0, to: nil)) }
         let actualEdge = edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)

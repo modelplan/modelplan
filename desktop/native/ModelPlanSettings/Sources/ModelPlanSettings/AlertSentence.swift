@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+// TODO(WP-15 #1051): temporary copy of #1045's AlertSentence.swift (head e4a887c) so WP-15 compiles before WP-11 lands.
+// When WP-15 merges main after #1045, delete this copy and keep #1045's file (take theirs); it must never land as a second source.
 import Foundation
 
 /// ALR-50 (WP-11, V1-FINAL §0, §8.1, §11): the one sentence an alert has, for the native surfaces (the menu line and the

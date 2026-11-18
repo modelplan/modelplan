@@ -64,6 +64,10 @@ enum DockGripInk {
     /// Separate empty-state action; never routed through subscription/overflow interaction.
     public var onEmptyAction: (() -> Bool)? { didSet { refreshNodes() } }
     public var permitsEmptyAction: ((DockActionSource) -> Bool)?
+    /// G3-136: true when the pointer comes onto the painted empty station, false when it leaves, so the host can show
+    /// the one-line reason card on hover (as a ring's card shows on hover).
+    public var onEmptyHover: ((Bool) -> Void)?
+    private var emptyHovered = false
     public weak var backgroundDragDelegate:(any DockBackgroundDragHandling)?
     public weak var nozzleEventDelegate:(any DockNozzleEventHandling)?
     public var keyboardNavigationEnabled=false
@@ -521,7 +525,7 @@ enum DockGripInk {
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){ringPress=nil;readoutHolds=[:];refreshSweepRing=nil;onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){ringPress=nil;readoutHolds=[:];refreshSweepRing=nil;onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onEmptyHover=nil;emptyHovered=false;onVisualReset=nil}
     private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
@@ -751,6 +755,17 @@ enum DockGripInk {
                       y: station.centre.y-station.diameter/2-layoutOrigin.y, width: station.diameter, height: station.diameter)
     }
     @_spi(DockResourceChecks) public var emptyStationRectForChecks: CGRect? { emptyStationRect }
+    /// G3-136: where the empty station's reason card points (view-local), nil when no empty station is painted.
+    public var emptyStationAnchor: CGRect? { emptyStationRect }
+    /// G3-136: the pointer is over the painted empty station now (last mouseMoved/mouseExited).
+    public var emptyStationHovered: Bool { emptyHovered && emptyStationRect != nil }
+    private func updateEmptyHover(atLocal p: NSPoint?) {
+        let over = p.map { isPainted(atLocal: $0) && emptyStationRect?.contains($0) == true } ?? false
+        guard over != emptyHovered else { return }
+        emptyHovered = over; onEmptyHover?(over)
+    }
+    /// The same hover path mouseMoved/mouseExited take, for checks without a window event source.
+    @_spi(DockResourceChecks) public func hoverEmptyStationForChecks(atLocal p: NSPoint?) { updateEmptyHover(atLocal: p) }
     /// AppKit adds a node's parent-space frame to the parent's lower-left corner, whatever the
     /// parent's isFlipped says, so the top-down rects this view works in have to be turned over.
     private func accessibilityParentRect(_ rect:CGRect)->CGRect {
@@ -879,10 +894,11 @@ enum DockGripInk {
         let grip = isPainted(atLocal: p) ? registeredGripRects.firstIndex { $0.contains(p) } : nil
         if hoveredGripIndex != grip { hoveredGripIndex = grip; updateGripEmphasis() }
         nozzleEventDelegate?.hoverNozzle(hoverUnitID(atLocal:p))
+        updateEmptyHover(atLocal: p)
         onHelpPointerMoved?()
     }
     public override func mouseEntered(with event:NSEvent){mouseMoved(with:event)}
-    public override func mouseExited(with event:NSEvent){hoveredGripIndex=nil;updateGripEmphasis();nozzleEventDelegate?.hoverNozzle(nil);onHelpPointerMoved?()}
+    public override func mouseExited(with event:NSEvent){hoveredGripIndex=nil;updateGripEmphasis();nozzleEventDelegate?.hoverNozzle(nil);updateEmptyHover(atLocal:nil);onHelpPointerMoved?()}
     public override func mouseDragged(with event:NSEvent){
         if ringPress != nil || nozzleEventDelegate?.hasCapture == true{
             pointerDragged(local:convert(event.locationInWindow,from:nil),global:window?.convertPoint(toScreen:event.locationInWindow));return

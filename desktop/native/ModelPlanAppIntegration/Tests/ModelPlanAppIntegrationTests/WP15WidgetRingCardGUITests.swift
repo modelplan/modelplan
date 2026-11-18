@@ -149,5 +149,22 @@ import ModelPlanWire
         XCTAssertEqual(card.rows.map(\.value), ["No subscriptions yet"])
         XCTAssertFalse(card.rows.contains { $0.value.contains("?") })
         try write(image, "after-widget-empty-M.png")
+        // Hover (the view's own mouseMoved/mouseExited path): the pointer on the empty ring shows the reason card; leaving hides it.
+        let rect = try XCTUnwrap(view.emptyStationRectForChecks)
+        XCTAssertFalse(host.emptyCardShownForChecks)
+        view.hoverEmptyStationForChecks(atLocal: CGPoint(x: rect.midX, y: rect.midY))
+        XCTAssertTrue(host.emptyCardShownForChecks, "hovering the empty widget explains why there is no data")
+        let shown = host.card.subviews.flatMap { [$0] + $0.subviews }.compactMap { ($0 as? NSTextField)?.stringValue }
+        XCTAssertTrue(shown.contains("No subscriptions yet"), "the hovered card shows the cause line: \(shown)")
+        XCTAssertFalse(shown.contains { $0.contains("?") })
+        try write(card: host.card, "after-card-empty-en.png")
+        view.hoverEmptyStationForChecks(atLocal: nil)
+        XCTAssertFalse(host.emptyCardShownForChecks, "leaving the empty widget hides the reason card")
+        // Click: the real pointer dispatcher shows the same reason card while Settings opens.
+        var opened = 0; host.showSettings = { opened += 1 }
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertTrue(view.performPointerPress(atLocal: CGPoint(x: rect.midX, y: rect.midY)))
+        XCTAssertEqual(opened, 1)
+        XCTAssertTrue(host.emptyCardShownForChecks, "clicking the empty widget also explains why there is no data")
     }
 }
