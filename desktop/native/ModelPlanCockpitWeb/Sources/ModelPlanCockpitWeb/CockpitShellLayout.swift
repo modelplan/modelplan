@@ -2,9 +2,10 @@
 import Foundation
 
 /// Settings "Cockpit size" (owner D51, D60, D66). The cockpit is drawn at this size, the study layout scaled as one
-/// page; on a screen too short for it, smaller, down to the readable floor. Auto is the default (D66): 85 % on
-/// laptop-width screens, 100 % on wider ones. G3-132: judged on the smallest connected display, so it is one size on
-/// every display (`CockpitSizeBasis`).
+/// page; on a screen too short for it, smaller, down to the readable floor. Auto is the default. D66, amended by the
+/// owner 11-18 (G3-132): Auto is judged on the SET of connected displays, not the display the cockpit is on: 85 % when
+/// any of them is laptop-width (up to 1512 pt), 100 % only when all are wider. Every choice, Auto or a fixed %, is then
+/// capped by the smallest connected display (`CockpitSizeBasis`), so the size is the same on every display.
 public enum CockpitSize: String, CaseIterable, Sendable {
     case automatic, percent80 = "80", percent85 = "85", percent90 = "90", percent100 = "100"
     public static let standard = CockpitSize.automatic
@@ -20,14 +21,13 @@ public enum CockpitSize: String, CaseIterable, Sendable {
     }
 }
 
-/// G3-132 (owner, 11-18): one cockpit size on every display. The size is fitted to the smallest connected display (the
-/// smallest visible height, visible width and full width among them) and to 85 % of that visible height, keeping the
-/// page's aspect. It depends only on the set of displays, so it never changes while the cockpit is dragged between
-/// them and changes only with the display configuration (the controller reads it from the current displays at each
-/// layout; a relayout follows `NSApplication.didChangeScreenParametersNotification`).
+/// G3-132 (owner, 11-18): one cockpit size on every display. Of all connected displays: the smallest visible height
+/// and visible width (the cap: the largest scale at which the full cockpit fits the smallest display, D51 floor and short
+/// version as before) and the smallest full width (Auto: laptop-width if any display is). It depends only on the set of
+/// displays, so it never changes while the cockpit is dragged between them; it changes when the setting changes or a
+/// display is added or removed (the controller reads it at each layout; a relayout follows
+/// `NSApplication.didChangeScreenParametersNotification`).
 public struct CockpitSizeBasis: Equatable, Sendable {
-    /// The share of the smallest visible height the open cockpit (root plus base reserve) may take.
-    public static let heightShare: CGFloat = 0.85
     public let visibleHeight: CGFloat, visibleWidth: CGFloat, screenWidth: CGFloat
     public init(visibleHeight: CGFloat, visibleWidth: CGFloat, screenWidth: CGFloat) {
         self.visibleHeight = visibleHeight; self.visibleWidth = visibleWidth; self.screenWidth = screenWidth
@@ -83,7 +83,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public static func shoulderDrop(_ profile: CockpitAppearance.Profile) -> CGFloat { profile == .full ? 32 : 6 }
     /// `screenWidth` is the full width of the screen the cockpit opens on; it defaults to the usable width.
     /// `forceCompact` (CKP-SHELL-33 key-detach landing, D187): the short version even where the full one fits.
-    /// `basis` (G3-132): the size basis of all connected displays; without it, this display alone.
+    /// `basis` (G3-132): the size basis of all connected displays; without it, this display alone (as before G3-132).
     public static func fit(usable: CGRect, anchor: CGRect, shutterClosed: Bool, size: CockpitSize = .standard, screenWidth: CGFloat? = nil,
                            forceCompact: Bool = false, basis: CockpitSizeBasis? = nil) -> Self? {
         guard !usable.isNull, !usable.isInfinite, usable.width.isFinite, usable.height.isFinite, usable.width > 0, usable.height > 40,
@@ -93,28 +93,23 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let top = (min(usable.maxY, anchor.minY) - Self.menuBarGap).rounded(.down)
         let available = top - usable.minY
         guard available > 0 else { return nil }
-        // G3-132: one size for every display, judged on the smallest one (`basis`), at most 85 % of its visible height.
-        let basis = basis ?? CockpitSizeBasis(visibleHeight: usable.height, visibleWidth: usable.width, screenWidth: screenWidth ?? usable.width)
-        let share = basis.visibleHeight * CockpitSizeBasis.heightShare
-        // The chosen size (Auto judged on the smallest display's width), or less when the displays are too short or narrow.
-        let chosen = size.scale(screenWidth: basis.screenWidth)
-        let narrowest = min(basis.visibleWidth, usable.width) / Self.width
-        func fitting(_ root: CGFloat, _ room: CGFloat) -> CGFloat { min(chosen, narrowest, room / (root + Self.baseReserve)) }
-        // This display's own room is only a safety bound: the basis is never larger than any display.
-        func fitted(_ root: CGFloat, _ scale: CGFloat) -> CGFloat { min(scale, available / (root + Self.baseReserve)) }
+        // G3-132: with a `basis`, Auto is judged on the set of displays and the room is the smallest display's, so every
+        // display gets the same size. This display's own room stays a bound (it is never smaller than the basis).
+        let tierAvailable = (min(usable.maxY, anchor.minY) - Self.tierGap).rounded(.down) - usable.minY
+        let room = basis.map { min(available, ($0.visibleHeight - Self.menuBarGap).rounded(.down)) } ?? available
+        let tierRoom = basis.map { min(tierAvailable, ($0.visibleHeight - Self.tierGap).rounded(.down)) } ?? tierAvailable
+        let narrowest = basis.map { min(usable.width, $0.visibleWidth) } ?? usable.width
+        let shortest = basis.map { min(usable.height, $0.visibleHeight) } ?? usable.height
+        // The chosen size, or less when the (smallest) display is too short or narrow for it.
+        let chosen = size.scale(screenWidth: basis?.screenWidth ?? screenWidth ?? usable.width)
+        func fitting(_ root: CGFloat, _ room: CGFloat) -> CGFloat { min(chosen, narrowest / Self.width, room / (root + Self.baseReserve)) }
         var profile = CockpitAppearance.Profile.full, forcedClosed = false
-        // D51 (CKP-SHELL-07) kept: the full cockpit shows down to the 75 % readable floor. Where 85 % of the height would
-        // take it under the floor but the smallest display still has room for it at the floor (the tier test as before,
-        // the pre-rack 6 pt gap), it is drawn at the floor rather than switching to the short version.
-        let byShare = fitting(905, share)
-        let tierRoom = basis.visibleHeight - Self.tierGap
-        var scale = fitted(905, byShare >= Self.minimumFullScale ? byShare : min(Self.minimumFullScale, fitting(905, tierRoom)))
-        if (byShare < Self.minimumFullScale && fitting(905, tierRoom) < Self.minimumFullScale) || forceCompact {
+        var scale = fitting(905, room)
+        if fitting(905, tierRoom) < Self.minimumFullScale || forceCompact {
             // The short version, as before D51: open when its root fits, otherwise forced closed.
             profile = .compact
-            forcedClosed = basis.visibleHeight - Self.tierGap - Self.baseReserve < 635
-            let root: CGFloat = forcedClosed ? 609 : 635
-            scale = fitted(root, fitting(root, share))
+            forcedClosed = shortest - Self.tierGap - Self.baseReserve < 635
+            scale = fitting(forcedClosed ? 609 : 635, room)
         }
         let fellBack = scale < chosen
         let closed = shutterClosed || forcedClosed
