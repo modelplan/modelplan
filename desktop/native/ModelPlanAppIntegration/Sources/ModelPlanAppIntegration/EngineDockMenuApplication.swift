@@ -1098,9 +1098,9 @@ struct StatusNoticePresentation {
         }
         statusRangeSelector = selector
         menuItems.append(.init(title: EngineRowsText.rangeSelector.value(language), accessibilityID: "status.range", view: selector.view))
-        if let total = rangeTotalLine(range, language: language) {
-            menuItems.append(.init(title: total, accessibilityID: "status.rangeTotal"))
-        }
+        // Always present, hidden when the range has no figure, so an open menu can show or clear it (MENU-52).
+        let total = rangeTotalLine(range, language: language)
+        menuItems.append(.init(title: total ?? "", accessibilityID: "status.rangeTotal", hidden: total == nil))
         let admitted = composition.presentedContent.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
         // Some reader failures publish an admitted provider row without any
@@ -1202,7 +1202,7 @@ struct StatusNoticePresentation {
         guard statusMenuComponent?.isActuallyOpen == true, let menu = liveStatusMenu,
               let item = menu.items.first(where: { $0.accessibilityIdentifier() == "status.rangeTotal" }) else { return }
         let language = composition.latestSettings?.effective.language ?? .fallback
-        if let line = rangeTotalLine(range, language: language) { item.title = line }
+        MenuRangeSummary.apply(rangeTotalLine(range, language: language), to: item)
     }
     private func applyMenuNotice(_ notice: DockNotice?, first: Bool) {
         let pulse: CABasicAnimation? = first ? CABasicAnimation(keyPath: "opacity") : nil

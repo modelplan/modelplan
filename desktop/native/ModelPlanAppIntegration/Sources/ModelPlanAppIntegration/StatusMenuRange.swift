@@ -27,6 +27,12 @@ enum MenuRangeSummary {
         guard let tokens else { return head }
         return head + " · " + Self.tokens(tokens)
     }
+    /// MENU-52: the total row always shows the chosen range. No figure for it hides the row; the previous
+    /// range's text is never kept.
+    @MainActor static func apply(_ line: String?, to item: NSMenuItem) {
+        item.title = line ?? ""
+        item.isHidden = line == nil
+    }
 }
 
 /// The selector row: three equal segments, the app's range selected. Choosing one asks the app; the menu stays open.

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 import XCTest
+import AppKit
+import ModelPlanDock
 import ModelPlanCockpitWeb
 import ModelPlanSettings
 @testable import ModelPlanAppIntegration
@@ -27,5 +29,21 @@ final class MenuRangeSummaryTests: XCTestCase {
         XCTAssertEqual(CockpitRange.allCases.map { EngineRowsText.range($0).value(.english) }, ["Today", "7d", "30d"])
         XCTAssertEqual(CockpitRange.allCases.map(\.rawValue), ["today", "7d", "30d"], "the page's range keys")
         XCTAssertEqual(EngineRowsText.subscriptionProblems(2).value(.chinese), "2 个订阅读不到 · 查看…")
+    }
+    /// MENU-52: switching an open menu to a range with no total must drop the old range's total.
+    @MainActor func testOpenMenuTotalFollowsTheRangeAndClearsWhenItHasNoFigure() {
+        let item = NSMenuItem(title: "全部订阅 · 788M", action: nil, keyEquivalent: "")
+        MenuRangeSummary.apply(MenuRangeSummary.line(tokens: 212_000_000, cost: nil, language: .chinese), to: item)
+        XCTAssertEqual(item.title, "全部订阅 · 212M"); XCTAssertFalse(item.isHidden)
+        MenuRangeSummary.apply(MenuRangeSummary.line(tokens: nil, cost: nil, language: .chinese), to: item)
+        XCTAssertTrue(item.isHidden); XCTAssertFalse(item.title.contains("212M"), "the old total must be gone")
+        MenuRangeSummary.apply("全部订阅 · 1.2B", to: item)
+        XCTAssertFalse(item.isHidden); XCTAssertEqual(item.title, "全部订阅 · 1.2B")
+    }
+    @MainActor func testMenuReplaceKeepsAHiddenTotalRowForAnOpenMenuToFill() {
+        let menu = DockStatusMenu(labels: [:], handlers: [:])
+        menu.replace(with: [.init(title: "", accessibilityID: "status.rangeTotal", hidden: true)])
+        let item = menu.menu.items.first { $0.accessibilityIdentifier() == "status.rangeTotal" }
+        XCTAssertNotNil(item); XCTAssertEqual(item?.isHidden, true)
     }
 }
