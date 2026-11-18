@@ -58,6 +58,7 @@ public typealias EngineStoreFeatureFailure = ModelPlanEngineStoreCore.EngineStor
         switch event {
         case .rowsChanged, .clearPrivateViews:
             for line in readerLog.changes(core.snapshot.rows) { DiagnosticsLog.shared.info("readers", line) }
+            LaunchReadingStages.mark(core.snapshot.rows)
         default: break
         }
         if case .response(let requestID,.refresh(let reply))=event {
@@ -75,6 +76,21 @@ public typealias EngineStoreFeatureFailure = ModelPlanEngineStoreCore.EngineStor
     private func liveSinks() -> [any EngineStoreSink] {
         sinks = sinks.filter { $0.value.value != nil }
         return sinks.values.compactMap(\.value)
+    }
+}
+
+/// WP-17 (G3-123): the cold-start stages per tool, once per process: the first reading the app holds (`stale`, the
+/// cached one, or `fresh`) and the first fresh one. Tool ids only; measurement, nothing waits on it.
+enum LaunchReadingStages {
+    static func mark(_ rows: WireRowsSnapshot?, log: LaunchTimingLog = .shared) {
+        guard let rows else { return }
+        for row in rows.projection.rows where row.kind == .tool && !row.invalid {
+            switch row.state {
+            case .fresh: log.mark("first-reading", tool: row.id); log.mark("first-fresh", tool: row.id)
+            case .stale: log.mark("first-reading", tool: row.id)
+            default: break
+            }
+        }
     }
 }
 

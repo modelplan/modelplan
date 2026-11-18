@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanEngineClient
 import ModelPlanWire
 import WebKit
 import QuartzCore
@@ -672,6 +673,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   required init?(coder: NSCoder) { nil }
   private var transitionTiming = CockpitTransitionTiming()
+  /// WP-17 (G3-123): when this page's navigation started, and the bundle's served-file counters then.
+  private var pageLoadStarted: (at: TimeInterval, served: VerifiedCockpitBundle.ServedStats)?
   private func timing(_ line: String?) { if let line { CockpitTimingLog.record(line) } }
   public func prewarm() {
     guard web == nil, !bridge.disposed, !ending else { return }
@@ -715,6 +718,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           self.rackExtension = t / 3; self.rackTarget = self.rackExtension
         }, done: { [weak self] in
           guard let self, self.window != nil else { return }
+          // G3-123: the rack is out; the cockpit itself starts to show from here (window-visible is its alpha-0 order-in).
+          self.timing(self.transitionTiming.openStage("cockpit-motion-start"))
           self.runMotion(CockpitLaunchRackTiming.cockpitOpen, step: { [weak self] t in
             guard let self, let panel = self.window, let home = self.layout?.frame else { return }
             let eased = 1 - pow(1 - t, 3)
@@ -906,6 +911,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       installOwnSystemObservers(center: center)
     }
     panel.alphaValue = 0
+    pageLoadStarted = (CockpitTimingLog.now, bundle.servedStats)
+    LaunchTimingLog.shared.mark("page-load-start")
     view.load(URLRequest(url: pageURL))
   }
   /// Spec item 2: one signal per OS edge from the app's source. The immediate display pass keeps the cockpit from
@@ -1153,6 +1160,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let receipt = acceptBridgeReply(raw, source: source) else { return }
       switch receipt {
       case .ready:
+        LaunchTimingLog.shared.mark("page-bridge-ready")
         bootstrapCheck?(); bootstrapCheck = nil
         web?.isHidden = false
         publishAppearance()
@@ -1182,6 +1190,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         }
       case .rendered:
         if shown { timing(transitionTiming.openStage("page-rendered")) }
+        // WP-17: a rendered receipt answers a display, so the first one is the first paint with data.
+        LaunchTimingLog.shared.mark("first-rendered-with-data", detail: "shown=\(shown)")
         setReadingDelayed(false, cause: "rendered")
         if !bridge.hasPendingDisplay { renderWatchdog.cancel() }
         if let id = receiptWatchdog.currentID, !bridge.awaitsDeadlineReceipt(id) {
@@ -1413,6 +1423,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard webView.url == pageURL else {
       fail(.navigationFailed)
       return
+    }
+    if let started = pageLoadStarted {
+      pageLoadStarted = nil
+      let served = bundle.servedStats
+      let detail = "files=\(served.files - started.served.files) "
+        + "verifyMs=\(Int((Double(served.nanoseconds &- started.served.nanoseconds) / 1_000_000).rounded()))"
+      CockpitTimingLog.record("page stage=navigation-finish loadMs=\(CockpitTimingLog.ms(since: started.at)) " + detail)
+      LaunchTimingLog.shared.mark("page-navigation-finish", detail: detail)
     }
     guard let shell = currentShell else { fail(.localEncoding); return }
     do { send(try bridge.load(appearance, shell: shell), bootstrap: true) } catch { fail(.localEncoding, error: error) }
