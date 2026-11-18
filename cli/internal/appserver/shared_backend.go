@@ -457,9 +457,13 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 			// default route off, so removing the manual key would leave GLM unread. The manual key still wins first.
 			// An existing explicit choice (an environment key, a profile or another backend) is never replaced: file
 			// presence is not evidence that ZCode was the selected source.
+			// G3-127: the first-run Done grant (no manual key) must not either. Before Done the page reads ZCode's
+			// provider file; recording an environment key that is not set (the app has none) switched that route off and
+			// left GLM unread after Done. An environment key that is actually set stays an explicit source (macrev2-993-2).
 			prior := consent.Capture().State().Tools["zai"]
 			chosen := prior.KeyEnv != "" || len(prior.Profiles) > 0 || (prior.Backend != "" && prior.Backend != "native")
-			if definition.Tool == "zai" && !chosen && b.config.ManualKeyPresent != nil && b.config.ManualKeyPresent("zai") {
+			manual := b.config.ManualKeyPresent != nil && b.config.ManualKeyPresent("zai")
+			if definition.Tool == "zai" && !chosen && (manual || os.Getenv(record.KeyEnv) == "") {
 				if home, err := os.UserHomeDir(); err == nil {
 					if fi, err := os.Lstat(quota.ZCodeProviderConfig(home)); err == nil && fi.Mode().IsRegular() {
 						record.KeyEnv = ""
