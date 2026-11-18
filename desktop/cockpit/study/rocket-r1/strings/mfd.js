@@ -101,6 +101,8 @@ register('mfd', {
   pctCost: ['lcd', '花费', 'Cost'],
   pctTime: ['lcd', '耗时', 'Time'],
   pctMax: ['lcd', '100%', '100%'],
+  pctMaxAt: ['lcd', '100% = {e}', '100% = {e}'], // the best-scoring effort is not the top one
+  noAbility: ['line', '没有能力分', 'no ability scores'],
   colCurrent: ['lcd', '当前', 'Current'],
   colTrial: ['lcd', '试', 'Try'],
   colBoth: ['lcd', '当前·试', 'Current · Try'],

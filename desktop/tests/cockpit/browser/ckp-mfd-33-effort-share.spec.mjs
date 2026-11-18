@@ -232,15 +232,19 @@ test('CKP-MFD-33 chart link: a bar row sets its chart line apart; a bar segment 
  near(segs[0].x0,0,.01);near(segs.at(-1).x1,1,.02);
 });
 
-// macrevc-885-1: the reference is the published top effort even when its ability is missing: cost is still a share of that
-// effort's cost; ability stays unknown (no bar, no number) instead of reading 100 % against a lower effort.
-test('CKP-MFD-33 top effort without a published ability: cost keeps the top effort as its reference, ability is unknown',async({page})=>{
+// CKP-MFD-52 as ruled for v1 final (V1-FINAL §8.5, LATER; supersedes the macrevc-885-1 rule for ABILITY only): ability is a
+// share of the model's highest-scoring effort, so a top effort without a score no longer blanks every ability number. Cost
+// keeps the top effort as its reference (macrevc-885-1 still holds for cost and time, each metric independently).
+test('CKP-MFD-52 top effort without a published ability: ability is a share of the best-scoring effort, which is named; cost keeps the top effort',async({page})=>{
  const dropMaxAbility=data=>{const drop=list=>list.map(m=>{if(m.id!=='gpt-6.1-sol')return m;const c=structuredClone(m);for(const e of c.efforts)if(e.effort==='max')e.ability=null;return c;});data.details.publishedModels=drop(data.details.publishedModels);data.details.publication.models=drop(data.details.publication.models);};
  await open(page,{edit:dropMaxAbility});
  const screen=await openSol(page);
  const b=await bars(page);
  near(b.cost.fill.w,SOL.High.cost);expect(b.cost.numbers.map(n=>n.text)).toEqual([pct(SOL.High.cost)]);
- expect(b.abl.fill).toBeNull();expect(b.abl.numbers).toEqual([]);
+ near(b.abl.fill.w,42.8/46);expect(b.abl.numbers.map(n=>n.text)).toEqual([pct(42.8/46)]);
+ expect(b.abl.max.map(m=>m.text)).toEqual(['100% = XHigh']);
+ await expect(screen.locator('.cmp-nums .lad-n[data-effort="Max"] .lad-a')).toHaveText('—');
+ await expect(screen.locator('.cmp-nums .lad-n[data-effort="XHigh"] .lad-a')).toHaveText('100%');
  await expect(screen.locator('svg.cmp-chart')).toBeVisible();
 });
 
@@ -409,4 +413,20 @@ test('CKP-MFD-50…54 pseudo-long English: the effort page keeps its numbers who
    expect((await keyNums(screen)).map(x=>[x.a,x.c])).toEqual(SOL_KEYS.map(k=>[k[1],k[2]]));
   }
  }
+});
+
+test('CKP-MFD-52 the best-scoring effort need not be the top one; a model with no ability scores says so',async({page})=>{
+ // XHigh scores above Max: XHigh is 100 % and named, Max reads below 100 %; cost still a share of Max
+ await open(page,{edit:data=>solEfforts(data,m=>{for(const e of m.efforts)if(e.effort==='xhigh')e.ability=50;})});
+ let screen=await openSol(page);
+ let n=await keyNums(screen);
+ expect(n.map(x=>[x.e,x.a,x.c])).toEqual([['Low',pct(33.9/50),'$13%'],['Med',pct(39.8/50),'$23%'],['High',pct(42.8/50),'$36%'],['XHigh','100%','$60%'],['Max',pct(47.5/50),'$100%']]);
+ expect((await bars(page)).abl.max.map(m=>m.text)).toEqual(['100% = XHigh']);
+ // no ability score at all: every ability number is "—", no ability fill, and the header says why
+ await open(page,{locale:'zh-CN',edit:data=>solEfforts(data,m=>{for(const e of m.efforts)e.ability=null;})});
+ screen=await openSol(page);
+ n=await keyNums(screen);
+ expect(n.map(x=>x.a)).toEqual(['—','—','—','—','—']);expect(n.map(x=>x.c)).toEqual(SOL_KEYS.map(k=>k[2]));
+ expect((await bars(page)).abl.fill).toBeNull();
+ await expect(screen.locator('.cmp-note .cmp-no-abl')).toHaveText('没有能力分');
 });

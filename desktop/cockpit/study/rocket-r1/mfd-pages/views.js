@@ -36,17 +36,20 @@ const ratio = (value, reference) => numeric(value) && numeric(reference) && refe
 const colOf = (m, tier, label, fast) => { const r = rowOf(m, label), f = !!(fast && tier); return {label, r, fast: f, cost: numeric(r[2]) && (!f || numeric(tier.cost)) ? r[2] * (f ? tier.cost : 1) : null,
   time: r[3] == null || (f && tier.taskTimeUnknown) ? null : r[3] / (f ? tier.speed : 1)}; };
 
-// v8 (CKP-MFD-33; D165, D177, D190, D201, demo v8): every number is a share of the model's own top effort, the
-// published top effort of the ladder (= 100 %, "Max"), whatever its ability. Cost and time are shares of that effort's cost and
-// time; a fast configuration multiplies its own cost and time, so a fast trial may go past 100 %.
+// v8 (CKP-MFD-33; D165, D177, D190, D201, demo v8) as amended for v1 final (V1-FINAL §8.5, LATER, CKP-MFD-52): cost and
+// time are shares of the model's top effort (the published top of the ladder, = 100 %, "Max"); a fast configuration
+// multiplies its own cost and time, so a fast trial may go past 100 %. Ability is a share of the model's HIGHEST-SCORING
+// effort (which need not be the top one; the page then names it), each metric's reference independent of the others.
 // Ability is ModelPlan's own published score (row[1]), never the AA score (row[4], a tooltip reference only; D292 as amended
 // by the owner 11-17). Only ratios are used: no threshold, axis top or "average" text depends on the score's scale, so the
 // planned AA-aligned display scale (34.185 + 8.150·q) changes the numbers, not the page.
 const ORDER = ['Low', 'Med', 'High', 'XHigh', 'Max'];
 const topRow = m => m.e.reduce((a, b) => !a || ORDER.indexOf(b[0]) >= ORDER.indexOf(a[0]) ? b : a, null);
+// The highest published ability score of the model (ties: the higher effort); null when no effort has a score.
+export const bestRow = m => m.e.reduce((a, b) => numeric(b[1]) && b[1] > 0 && (!a || b[1] > a[1] || (b[1] === a[1] && ORDER.indexOf(b[0]) > ORDER.indexOf(a[0]))) ? b : a, null);
 export function shareOfTop(m, c) {
-  const top = topRow(m);
-  return top ? {abl: ratio(c.r[1], top[1]), cost: ratio(c.cost, top[2]), time: ratio(c.time, top[3])} : {abl: null, cost: null, time: null};
+  const top = topRow(m), best = bestRow(m);
+  return top ? {abl: best ? ratio(c.r[1], best[1]) : null, cost: ratio(c.cost, top[2]), time: ratio(c.time, top[3])} : {abl: null, cost: null, time: null};
 }
 // One configuration (effort + fast mode) as shares of the top effort: the helper the bars, the chart and a later
 // fast-mode view read. Fast multiplies cost by the tier's cost ratio and divides time by its speed (unknown when the
@@ -122,7 +125,9 @@ function barsSvg(m, s, cols, W, ui) {
     b += box(E - 2, y0 - 1.5, 2, TH + 3, 'pc-end', ' rx=".5" data-v="1"');
     // ★ (standard speed; the recommendation never includes fast): the gold line through the bar and a small ★ above it
     const xr = vr != null ? X(vr) : null;
-    if (i === 0 && (xr == null || (E - xr > 30 && !over))) b += label(E, top + (cmp ? 5.5 : 6), t('mfd.pctMax'), 'pc-max', 'end');
+    // "100%" above the ability bar's end; when the best-scoring effort is not the top one it is named: "100% = XHigh"
+    const best = i === 0 ? bestRow(m) : null, named = best && best[0] !== topRow(m)?.[0];
+    if (i === 0 && (named || xr == null || (E - xr > 30 && !over))) b += label(E, top + (cmp ? 5.5 : 6), named ? t('mfd.pctMaxAt', {e: best[0]}) : t('mfd.pctMax'), 'pc-max', 'end');
     if (xr != null) {
       // ★ placement is switchable (ui.starMode): a = above the tube on the tick, b = tick through the tube and ★ below it, c = ★ centred on the tube at the tick
       const sy0 = starMode === 'a' ? top + 6.5 : y0 - 2, tick = (a, z) => box(xr - 1.5, a, 3, z - a, 'pc-halo') + box(xr - .5, a, 1, z - a - .5, 'pc-rec', ` data-role="rec" data-v="${vr}"`);
@@ -226,7 +231,7 @@ export function comparison(d, ui, args) {
   if (!s) return `<p class="mp-empty">${t('mfd.noModels')}</p>`;
   const {m, cur, base, tier, trial} = s;
   const cols = {C: colOf(m, tier, base, s.curFast), T: colOf(m, tier, trial, s.trialFast), R: colOf(m, tier, m.rec, false)};
-  const note = [!cur ? `<em>${t('mfd.currentUnknown')}</em>` : ''].filter(Boolean).join('');
+  const note = [!cur ? `<em>${t('mfd.currentUnknown')}</em>` : '', !bestRow(m) ? `<em class="cmp-no-abl">${t('mfd.noAbility')}</em>` : ''].filter(Boolean).join('');
   const words = websiteWords(ui.lang), size = fill(ui, 'cmp', {w: 300, h: 60}), title = t('mfd.cmpTitle', {m: m.short});
   // CKP-MFD-50 (V1-FINAL §8.5, §14): right of the title, the model's own 7-day use; the ≈$ part only when an estimated
   // cost exists. The website links moved to the hint row at the bottom right (at least one is always kept).

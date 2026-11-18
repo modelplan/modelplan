@@ -48,21 +48,25 @@ test('configShare: shares of the top effort, for a standard or a fast configurat
 
 // macrevc-885-1: the reference is the model's published top effort (the top of the ladder), whatever its ability; each
 // metric is measured against its own reference value and stays unknown when that value is missing.
-test('CKP-MFD-33: the top effort is the top of the published ladder; a missing reference metric gives that metric only as unknown',()=>{
+// Cost and time: shares of the top of the published ladder, each reference metric independent (macrevc-885-1). Ability,
+// as ruled for v1 final (CKP-MFD-52, V1-FINAL §8.5, LATER): a share of the model's highest-scoring effort.
+test('CKP-MFD-33/52: cost and time are shares of the top effort; ability is a share of the best-scoring effort; a missing metric is unknown on its own',()=>{
  const m={id:'synthetic',rec:'High',e:[['Low',40,1,1],['High',60,2,2],['Max',null,4,4]]};
- assert.deepEqual(configShare(m,null,'High'),{abl:null,cost:.5,time:.5}); // Max has no ability: High's ability is not "100%"
+ assert.deepEqual(configShare(m,null,'High'),{abl:1,cost:.5,time:.5}); // Max has no ability: High is the best score
  assert.deepEqual(configShare(m,null,'Max'),{abl:null,cost:1,time:1});
  const odd={id:'odd',rec:'High',e:[['Low',40,1,1],['High',60,2,2],['Max',50,4,4]]}; // Max is less able than High
- assert.deepEqual(configShare(odd,null,'Max'),{abl:1,cost:1,time:1});
- assert.equal(configShare(odd,null,'High').abl,1.2);
+ assert.deepEqual(configShare(odd,null,'Max'),{abl:50/60,cost:1,time:1});
+ assert.equal(configShare(odd,null,'High').abl,1);
  assert.equal(configShare(odd,null,'High').cost,.5);
  const noCost={id:'nc',rec:'High',e:[['Low',40,1,1],['High',60,2,2],['Max',70,null,4]]};
  assert.deepEqual(configShare(noCost,null,'High'),{abl:60/70,cost:null,time:.5});
+ const noScores={id:'ns',rec:'High',e:[['Low',null,1,1],['High',null,2,2],['Max',null,4,4]]};
+ assert.deepEqual(configShare(noScores,null,'High'),{abl:null,cost:.5,time:.5});
 });
 
 // WP-05 (owner 11-18): the ability scale will move (AA-aligned 34.185 + 8.150·q); the page uses ratios only, so any positive
-// scale gives score ÷ top-effort score, and no threshold, axis top or "50 = average" text depends on it.
-test('WP-05 the ability share is scale-free: the same model on another ability scale reads score ÷ top score',()=>{
+// scale gives score ÷ best score, and no threshold, axis top or "50 = average" text depends on it.
+test('WP-05 the ability share is scale-free: the same model on another ability scale reads score ÷ best score',()=>{
  const q=[-1.2,0.1,0.6,1,1.9],rescaled={...terra,e:terra.e.map((r,i)=>[r[0],34.185+8.150*q[i],r[2],r[3]])};
  for(const [i,l] of ['Low','Med','High','XHigh','Max'].entries())assert.ok(Math.abs(configShare(rescaled,null,l).abl-(34.185+8.150*q[i])/(34.185+8.150*q[4]))<1e-12,l);
  setLanguage('en');
