@@ -504,7 +504,9 @@ export function dataSyncProblem({ pr, files, items, sync }) {
   // The commit sits directly on the main commit the run checked out (this also rules out a tag or branch that merely
   // shares the name "main").
   if (commit.parents[0].sha !== run.head_sha) return "head commit is not on the commit the data-sync run checked out";
-  if (![...verdicts(items, pr.head.sha, []).values()].includes("merge")) return "needs a trusted VERDICT: merge @ the exact head";
+  // The assigned reviewer (REVIEWER:) is the only lane whose merge counts here too.
+  const sticky = reviewerLane(items);
+  if (![...verdicts(items, pr.head.sha, [])].some(([l, v]) => v === "merge" && (!sticky || l === sticky))) return "needs a trusted VERDICT: merge @ the exact head";
   return null;
 }
 

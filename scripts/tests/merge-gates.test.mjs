@@ -841,6 +841,14 @@ test("data-sync: a bot PR from a data-sync.yml run with a trusted exact-head ver
   assert.equal(evalSync({ run: syncRun({ event: "workflow_dispatch" }) }).state, R.SUCCESS);
 });
 
+test("data-sync: with a REVIEWER assignment only the assigned lane's merge admits the PR", () => {
+  const rv = comment("REVIEWER: macrevd");
+  assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "unassigned lane's merge does not admit");
+  assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrevd"))] }).state, R.SUCCESS);
+  assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrevd")), comment(v("block", H, "macrevd"))] }).state, R.FAILURE, "assigned block fails");
+  assert.equal(evalSync({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "no REVIEWER keeps old behaviour");
+});
+
 test("data-sync: ci.yml and repo-checks.yml stay required; dispatched runs on the branch count, a fork's or another branch's do not", () => {
   assert.equal(evalSync({ runs: [] }).state, R.PENDING, "no checks yet");
   assert.equal(evalSync({ runs: syncChecks(".github/workflows/ci.yml") }).state, R.PENDING, "repo-checks missing");
