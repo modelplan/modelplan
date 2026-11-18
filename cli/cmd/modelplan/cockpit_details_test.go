@@ -267,6 +267,7 @@ func TestCockpitDetailsCarriesSessionStartAndTotalTokens(t *testing.T) {
 	ledger := speed.PerfLedger{SchemaVersion: 1, Since: now.Add(-3 * time.Hour), Rows: []speed.PerfRow{}, Live: []speed.LiveRecord{
 		{Ref: "1111111111111111", Source: "codex", Model: "synthetic-alias", StartedAt: now.Add(-42 * time.Minute), LastAt: now.Add(-time.Second), GrantEpoch: epoch},
 		{Ref: "5555555555555555", Source: "codex", Model: "synthetic-alias", StartedAt: now.Add(-8 * time.Minute), LastAt: now.Add(-time.Second), GrantEpoch: epoch, Running: true},
+		{Ref: "6666666666666666", Source: "codex", Model: "synthetic-alias", StartedAt: now.Add(-8 * time.Minute), LastAt: now.Add(-time.Second), GrantEpoch: epoch, Running: true, Activity: &speed.TurnActivity{Phase: "running", RecordAt: now.Add(-time.Minute), ExpiresAt: now.Add(-time.Second)}},
 		{Ref: "2222222222222222", Source: "codex", Model: "synthetic-alias", StartedAt: now.Add(-5 * time.Minute), LastAt: now.Add(-2 * time.Second), GrantEpoch: epoch},
 		{Ref: "3333333333333333", Source: "codex", Model: "synthetic-alias", LastAt: now.Add(-3 * time.Second), GrantEpoch: epoch},
 		{Ref: "4444444444444444", Source: "codex", Model: "synthetic-alias", StartedAt: now.Add(-9 * time.Minute), LastAt: now.Add(-4 * time.Second), GrantEpoch: epoch},
@@ -274,6 +275,7 @@ func TestCockpitDetailsCarriesSessionStartAndTotalTokens(t *testing.T) {
 		{Ref: "1111111111111111", Source: "codex", GrantEpoch: epoch, Days: []speed.SessionDay{{Kinds: &speed.TokenKinds{InputTokens: ptr64(1000), CacheReadTokens: ptr64(2000), CacheWriteTokens: ptr64(0)}, Day: "2026-11-15", Model: "synthetic-alias", ObservedOutputTokens: 30}, {Kinds: &speed.TokenKinds{InputTokens: ptr64(10), CacheReadTokens: ptr64(20), CacheWriteTokens: ptr64(5)}, Day: "2026-11-16", Model: "synthetic-alias", ObservedOutputTokens: 7}}},
 		{Ref: "3333333333333333", Source: "codex", GrantEpoch: epoch, Days: []speed.SessionDay{{Kinds: &speed.TokenKinds{InputTokens: ptr64(9223372036854775807), CacheReadTokens: ptr64(0), CacheWriteTokens: ptr64(0)}, Day: "2026-11-16", Model: "synthetic-alias", ObservedOutputTokens: 1}}},
 		{Ref: "4444444444444444", Source: "codex", GrantEpoch: epoch, Days: []speed.SessionDay{{Day: "2026-11-16", Model: "synthetic-alias", ObservedOutputTokens: 500}}},
+		{Ref: "6666666666666666", Source: "codex", GrantEpoch: epoch, Days: []speed.SessionDay{{Kinds: &speed.TokenKinds{InputTokens: ptr64(1000), CacheReadTokens: ptr64(2000), CacheWriteTokens: ptr64(0)}, Day: "2026-11-16", Model: "synthetic-alias", ObservedOutputTokens: 30}}},
 		{Ref: "5555555555555555", Source: "codex", GrantEpoch: epoch, Days: []speed.SessionDay{{Kinds: &speed.TokenKinds{InputTokens: ptr64(1000), CacheReadTokens: ptr64(2000), CacheWriteTokens: ptr64(0)}, Day: "2026-11-16", Model: "synthetic-alias", ObservedOutputTokens: 30}}},
 	}}
 	if err := os.MkdirAll(filepath.Dir(speed.PerfPath(cache)), 0700); err != nil {
@@ -289,7 +291,7 @@ func TestCockpitDetailsCarriesSessionStartAndTotalTokens(t *testing.T) {
 	view := appserver.View{PublicModels: []digest.Model{{ID: "public-model", HarnessIDs: map[string][]string{"codex": {"synthetic-alias"}}}}}
 	admission := queries.CockpitAdmission{Stamp: appserver.Stamp{Epoch: state.StoreEpoch, Generation: state.Generation}, Scopes: []string{consent.ScopeCodexLocalHistory}}
 	got, err := (sharedCockpit{cache: cache}).cockpitDetails(context.Background(), view, admission, nil)
-	if err != nil || len(got.Sessions) != 5 {
+	if err != nil || len(got.Sessions) != 6 {
 		t.Fatalf("sessions: %#v, %v", got.Sessions, err)
 	}
 	byRef := map[string]wire.CockpitSession{}
@@ -313,11 +315,16 @@ func TestCockpitDetailsCarriesSessionStartAndTotalTokens(t *testing.T) {
 	if running := byRef["5555555555555555"]; running.ObservedTotalTokens != nil || running.StartedAt == nil {
 		t.Fatalf("a running session shows no total yet: %#v", running)
 	}
+	// An activity record that expired with no completion event reads idle, but the parser still reports an open turn:
+	// the total stays withheld until the turn is recorded (ref 1111 is the completed counterpart).
+	if expired := byRef["6666666666666666"]; expired.State != "idle" || expired.ObservedTotalTokens != nil {
+		t.Fatalf("an expired activity with an open turn shows no total: %#v", expired)
+	}
 	if fourth.ObservedTotalTokens != nil {
 		t.Fatalf("a recorded day without input and cache sums has no total, and output is not substituted: %#v", fourth)
 	}
 	encoded, err := json.Marshal(got.Sessions)
-	if err != nil || strings.Count(string(encoded), `"startedAt"`) != 4 || strings.Count(string(encoded), `"observedTotalTokens"`) != 1 || strings.Contains(string(encoded), `"observedOutputTokens"`) || strings.Contains(string(encoded), `"startedAt":null`) || strings.Contains(string(encoded), `"observedTotalTokens":null`) {
+	if err != nil || strings.Count(string(encoded), `"startedAt"`) != 5 || strings.Count(string(encoded), `"observedTotalTokens"`) != 1 || strings.Contains(string(encoded), `"observedOutputTokens"`) || strings.Contains(string(encoded), `"startedAt":null`) || strings.Contains(string(encoded), `"observedTotalTokens":null`) {
 		t.Fatalf("extent on the wire: %s, %v", encoded, err)
 	}
 }

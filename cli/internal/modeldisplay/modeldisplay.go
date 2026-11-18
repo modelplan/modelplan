@@ -9,6 +9,7 @@ package modeldisplay
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 var (
@@ -48,6 +49,8 @@ func Display(raw string) (string, bool) {
 				at = len(words)
 			}
 			version = append(version, part)
+		case !hasAlnum(part):
+			// punctuation only is not a word
 		default:
 			words = append(words, strings.ToUpper(part[:1])+part[1:])
 		}
@@ -56,20 +59,38 @@ func Display(raw string) (string, bool) {
 		return "", false
 	}
 	if len(version) == 0 {
-		return bound(strings.Join(words, " ")), true
+		name := bound(strings.Join(words, " "))
+		return name, name != ""
 	}
 	v := strings.Join(version, ".")
 	// A vendor lead word or a leading version puts the version after the name; otherwise it stays where it was.
 	if vendor || at == 0 {
 		at = len(words)
 	}
-	return bound(strings.Join(append(append(append([]string{}, words[:at]...), v), words[at:]...), " ")), true
+	name := bound(strings.Join(append(append(append([]string{}, words[:at]...), v), words[at:]...), " "))
+	return name, name != ""
 }
 
-// bound cuts a name to MaxDisplay (the name is ASCII by construction) so the wire field is never refused for length.
+// bound cuts a name to MaxDisplay runes (the name is ASCII by construction, but it counts runes anyway) and trims
+// trailing separators. It returns "" when nothing readable is left, which the callers treat as unreadable.
 func bound(name string) string {
-	if len(name) <= MaxDisplay {
-		return name
+	if r := []rune(name); len(r) > MaxDisplay {
+		name = string(r[:MaxDisplay])
 	}
-	return strings.TrimRight(name[:MaxDisplay], " .")
+	name = strings.TrimRight(name, " .")
+	for _, r := range name {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return name
+		}
+	}
+	return ""
+}
+
+func hasAlnum(s string) bool {
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return true
+		}
+	}
+	return false
 }

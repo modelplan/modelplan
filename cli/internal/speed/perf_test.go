@@ -460,3 +460,41 @@ func TestSessionDayCompleteTotalPrefersTheAccountingTotal(t *testing.T) {
 		t.Fatalf("CompleteTotal = %d, %v", got, ok)
 	}
 }
+
+// macrevb-1024-1: "a turn is in progress" is defined once (LiveRecord.turnOpen) and the live projection carries it,
+// so a consumer never infers it from the display status. Every state the projection can produce is covered.
+func TestLiveSessionInProgressCoversEveryProjectedState(t *testing.T) {
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	act := func(phase string, expires time.Duration) *TurnActivity {
+		return &TurnActivity{Phase: phase, RecordAt: now.Add(-30 * time.Second), ExpiresAt: now.Add(expires)}
+	}
+	cases := []struct {
+		name       string
+		rec        LiveRecord
+		wantStatus string
+		inProgress bool
+		listed     bool
+	}{
+		{"running turn", LiveRecord{Running: true, LastAt: now.Add(-time.Second)}, "running", true, true},
+		{"completed turn", LiveRecord{LastAt: now.Add(-time.Second)}, "idle", false, true},
+		{"running turn whose activity expired without a completion event", LiveRecord{Running: true, LastAt: now.Add(-time.Second), Activity: act("running", -time.Second)}, "idle", true, true},
+		{"waiting activity, not expired", LiveRecord{LastAt: now.Add(-time.Second), Activity: act("waiting", time.Minute)}, "running", true, true},
+		{"activity expired, parser sees no open turn", LiveRecord{LastAt: now.Add(-time.Second), Activity: act("running", -time.Second)}, "idle", false, true},
+		{"just ended (finished activity)", LiveRecord{LastAt: now.Add(-time.Second), Activity: act("finished", time.Minute)}, "idle", false, true},
+		{"stale record is not projected", LiveRecord{Running: true, LastAt: now.Add(-2 * LiveWithin)}, "", true, false},
+	}
+	for _, c := range cases {
+		c.rec.Ref, c.rec.Source = "1111111111111111", "codex"
+		v := PerfView{OK: true, Recording: true, Now: now, Ledger: PerfLedger{Live: []LiveRecord{c.rec}}}
+		got := v.LiveSessions()
+		if !c.listed {
+			if len(got) != 0 {
+				t.Errorf("%s: projected %+v", c.name, got)
+			}
+			continue
+		}
+		if len(got) != 1 || got[0].Status != c.wantStatus || got[0].InProgress != c.inProgress {
+			t.Errorf("%s: %+v, want status %s in progress %v", c.name, got, c.wantStatus, c.inProgress)
+		}
+	}
+}

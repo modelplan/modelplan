@@ -58,3 +58,41 @@ func TestDisplayNeverExceedsTheWireBound(t *testing.T) {
 		t.Errorf("the longest single word is cut to the bound: %q %v", got, ok)
 	}
 }
+
+// Truncation never leaves an empty or punctuation-only name with ok=true (macrevb-1024-6, round 2): such a name is
+// unreadable, and what is returned always fits the wire bounds (1 to 48 characters).
+func TestDisplayTruncationTable(t *testing.T) {
+	long := func(n int) string { return strings.Repeat("a", n) }
+	for name, raw := range map[string]string{
+		"dots only":               "...",
+		"vendor dots then a":      "vendor/" + strings.Repeat(".", 48) + "a",
+		"dots at the boundary":    strings.Repeat("a", 47) + "." + strings.Repeat(".", 10),
+		"empty tail":              "vendor/",
+		"emoji":                   "gpt-6-\U0001F600",
+		"multibyte at boundary":   strings.Repeat("a", 47) + "\u00e9" + "b",
+		"punctuation after words": "x-" + strings.Repeat("-.", 20),
+		"exactly 48":              long(48),
+		"49":                      long(49),
+		"64":                      long(64),
+		"65":                      long(65),
+	} {
+		got, ok := Display(raw)
+		if !ok {
+			if got != "" {
+				t.Errorf("%s: unreadable but returned %q", name, got)
+			}
+			continue
+		}
+		if n := len([]rune(got)); n < 1 || n > MaxDisplay || strings.Trim(got, " .") == "" {
+			t.Errorf("%s: Display(%q) = %q (%d runes)", name, raw, got, n)
+		}
+	}
+	for raw, want := range map[string]bool{"...": false, "vendor/": false, "gpt-6-\U0001F600": false, strings.Repeat("a", 47) + "\u00e9" + "b": false, strings.Repeat("a", 48): true, strings.Repeat("a", 49): true, strings.Repeat("a", 65): false} {
+		if _, ok := Display(raw); ok != want {
+			t.Errorf("Display(%q) ok = %v, want %v", raw, ok, want)
+		}
+	}
+	if got, _ := Display(strings.Repeat("a", 48)); len(got) != 48 {
+		t.Errorf("exactly 48 is kept whole: %q", got)
+	}
+}
