@@ -2025,7 +2025,7 @@ Licence: `MIT`.
 
 Copyright (c) 2025 ryoppippi
 
-Used in: Local token accounting (input, cache read, cache write, output, reasoning; totals by local day): Go ports of the Gemini CLI, Qwen Code and OpenCode adapters under rust/adapters/, with ModelPlan modifications in the named files.
+Used in: Local token accounting (input, cache read, cache write, output, reasoning; totals by local day): Codex and Claude Code response accounting matched to the Rust adapters, Go ports of the Gemini CLI, Qwen Code and OpenCode adapters, and shared tool-neutral Buckets and Windows, with ModelPlan modifications in the named files.
 
 Source: https://github.com/ccusage/ccusage/tree/58866ba681343634ab6e5add61f18f3b70aa98f7
 
