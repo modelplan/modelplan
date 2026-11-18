@@ -12,12 +12,15 @@ const ALLOWED_ANIMATIONS=new Set([
  'cockpit-running-cursor', // CKP-STRIP-10 running-row cursor
  'cockpit-state-pulse',   // two finite lamp-dot pulses on a state change (no idle loop)
  'cockpit-porthole-flicker', // owner D39/D-H flame flicker; active, open and no Reduce Motion only
- 'cockpit-mouth-shimmer', // CKP-ENG-19 base mouth light, working subscriptions only; same gates
+ 'cockpit-light-breathe', // CKP-ENG-19 (D294) base working light, working subscriptions only; same gates
+ 'cockpit-bell-flare',    // CKP-SHELL-33 (D294) landing burn thrown out of the mouth, only while the host ignites
+ 'cockpit-bell-burn',     // the burn's stepped flutter, same gate
 ]);
 // Selector fragment -> transitioned properties allowed on it (interaction feedback and fader glide).
 const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top','--fd-frame']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],[/\bshutter-(blind|thumb)\b/,['width','transform']],
  // CKP-SHELL-33 (D178/D186): the launch-rack ignition glow fades on the base bells (120 ms in, 220 ms out); off under Reduce Motion.
- [/\bbz(-empty)?\b/,['opacity']]];
+ // D294: the burn's plume also retracts by transform; the working light yields by opacity.
+ [/\bbz(-empty)?\b/,['opacity','transform']],[/\bbz-sheet\b/,['opacity']]];
 
 async function open(page,data) {
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
