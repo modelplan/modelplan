@@ -202,7 +202,8 @@ final class RowFixTableTests: XCTestCase {
             XCTAssertFalse(fix.action.chinese.isEmpty, code)
         }
         let runtime = try XCTUnwrap(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex"))
-        XCTAssertFalse(runtime.reason.chinese.contains("Node.js"))
+        // WP-16: the reason is the card's sentence ("需要 Node.js"); the row's own action keeps the plain wording.
+        XCTAssertEqual(runtime.reason, ReaderCauseTable.entry(code: "runtime_missing")?.reason)
         XCTAssertFalse(runtime.action.chinese.contains("Node.js"))
     }
 }
