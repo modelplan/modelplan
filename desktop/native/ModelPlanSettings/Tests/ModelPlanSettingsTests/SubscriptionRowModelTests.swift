@@ -49,6 +49,25 @@ final class SubscriptionRowModelTests: XCTestCase {
         XCTAssertEqual(plain.added[0].fix?.target, .openTool)
     }
 
+    /// WP-16 / SET-9-51: the Subscriptions page has the three sections (added, detected, supported-not-installed),
+    /// and an unreadable cause is the card's sentence from ReaderCauseTable (region_refused is worded identically in both tables).
+    func testWP16ThreeSectionsAndSharedCauseSentence() {
+        let model = build([sub("claude", vendor: "claude", source: .unavailable, cause: "region_refused")],
+                          order: ["claude"], tools: [tool("cursor"), tool("kiro", detected: false)])
+        XCTAssertEqual(model.added.map(\.id), ["claude"])
+        XCTAssertEqual(model.detected.map(\.id), ["cursor"])
+        XCTAssertEqual(model.notInstalled.map(\.id), ["kiro"])
+        XCTAssertEqual(model.added[0].status, ReaderCauseTable.entry(code: "region_refused", tool: "claude")?.reason)
+    }
+
+    /// WP-16 / SET-9-52, SET-9-53: size options in the owner's order, red line 25 by default, show-all-models off.
+    func testWP16CockpitSizeOrderAndRedLineDefault() throws {
+        XCTAssertEqual(SettingsCockpitSize.allCases.map(\.rawValue), ["automatic", "100", "90", "85", "80"])
+        let p = try JSONDecoder().decode(SettingsPreferences.self, from: Data("{}".utf8))
+        XCTAssertEqual(p.redBelow, 25); XCTAssertEqual(p.effectiveRedBelow, 25)
+        XCTAssertFalse(p.showAllModels); XCTAssertEqual(p.cockpitSize, .automatic)
+    }
+
     func testEngineRowStateFillsInWhenTheSubscriptionHasNoCause() {
         let facts = ["claude": ToolRowFacts(consent: .allowed, state: .needsKeychain, code: "ok")]
         let model = build([sub("claude", vendor: "claude", source: .unavailable)], order: ["claude"], tools: [], facts: facts)
