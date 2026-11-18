@@ -13,6 +13,23 @@ LOGS=${RUNNER_TEMP:-/tmp}/mac-compile-logs; rm -rf "$LOGS"; mkdir -p "$LOGS" "$S
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 ok=1; rows=; failed_tests=; errors=
 
+# The scratch root persists between jobs (warm SwiftPM builds). One job at a time per root: a mkdir lock with a pid file;
+# a lock whose owner is gone is taken over. The cache is dropped when the Swift toolchain changes, so stale products
+# built by another compiler are never reused.
+lock="$SCRATCH_ROOT.lock"
+for _ in $(seq 1 720); do
+  if mkdir "$lock" 2>/dev/null; then echo $$ >"$lock/pid"; break; fi
+  p=$(cat "$lock/pid" 2>/dev/null || true)
+  if [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; then rm -rf "$lock"; continue; fi
+  sleep 5
+done
+[ -d "$lock" ] && [ "$(cat "$lock/pid" 2>/dev/null)" = "$$" ] || { echo "::error::could not lock $SCRATCH_ROOT"; exit 1; }
+trap 'rm -rf "$lock"' EXIT
+stamp=$(swift --version 2>&1 | tr '\n' ' ')
+if [ "$(cat "$SCRATCH_ROOT/.toolchain" 2>/dev/null)" != "$stamp" ]; then
+  echo "toolchain changed or cache empty: starting a cold cache"; rm -rf "${SCRATCH_ROOT:?}"/*; mkdir -p "$SCRATCH_ROOT"; printf '%s' "$stamp" >"$SCRATCH_ROOT/.toolchain"
+fi
+
 # Run "$@" until it exits or the package deadline passes (macOS has no timeout(1)); SwiftPM stops its children on TERM.
 limited() {
   local left=$(( deadline - $(date +%s) ))

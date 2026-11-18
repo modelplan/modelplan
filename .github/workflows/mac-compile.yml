@@ -13,7 +13,8 @@
 #   Mac job runs PR code; it holds a read-only token, no secrets, and checkouts keep no credentials.
 # - The result is posted as the commit status "mac-compile" on the PR head by a separate hosted job, the only one with
 #   statuses: write, which runs no repository code.
-# Follow-up (not done): remove /Volumes/MacBuildCache/compile/pr-<N> when the PR closes.
+# Build cache: persistent per runner and package (see the Compile step); the build output is never trusted as a result,
+# SwiftPM rebuilds whatever a PR changed and the tests always run fresh.
 name: mac-compile
 run-name: "${{ inputs.pr && format('mac-compile PR #{0}', inputs.pr) || '' }}"
 on:
@@ -115,15 +116,19 @@ jobs:
           PR: ${{ needs.plan.outputs.pr }}
           SHA: ${{ needs.plan.outputs.sha }}
           PLAN: ${{ needs.plan.outputs.plan }}
-          # A cold per-PR scratch build of ModelPlanAppIntegration alone took 12.7 min on these runners (11-15), which
+          # A cold scratch build of ModelPlanAppIntegration alone took 12.7 min on these runners (11-15), which
           # left too little of a 25-minute budget for its ~930 tests (#981/#795 stopped at exit 143 with 0 failures).
           PACKAGE_MINUTES: "45"
         run: |
           set -eu
           [ "$(git rev-parse HEAD)" = "$SHA" ] || { echo "::error::checked out $(git rev-parse HEAD), expected $SHA"; exit 1; }
           case $PR in ''|*[!0-9]*) echo "::error::bad PR number '$PR'"; exit 1;; esac
-          # Build products go to the cache disk when it is mounted, one directory per PR (one per package inside).
-          if [ -d /Volumes/MacBuildCache ]; then root=/Volumes/MacBuildCache/compile/pr-$PR; else root=$RUNNER_TEMP/mac-compile/pr-$PR; fi
+          # SwiftPM scratch (.build) is kept between jobs: one directory per runner (a runner runs one job at a time, so
+          # two jobs never share it), one per package inside. $RUNNER_TEMP is emptied around every job, so it only serves
+          # as a last resort. run.sh locks the directory and wipes it when the toolchain or a Package.resolved changes.
+          if [ -d /Volumes/MacBuildCache ]; then root=/Volumes/MacBuildCache/compile/${RUNNER_NAME:-runner}
+          elif [ -n "${HOME:-}" ] && [ -w "$HOME" ]; then root=$HOME/mac-compile-cache/${RUNNER_NAME:-runner}
+          else root=$RUNNER_TEMP/mac-compile; fi
           printf '%s\n' "$PLAN" > "$RUNNER_TEMP/mac-compile-plan.tsv"
           swift --version
           bash "$GITHUB_WORKSPACE/.mac-compile-main/scripts/mac-compile/run.sh" "$RUNNER_TEMP/mac-compile-plan.tsv" "$root" "$SHA"
