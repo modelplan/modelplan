@@ -1,0 +1,5 @@
+{"sessionId":"redacted-session-b","projectHash":"redacted-project-hash","startTime":"2026-11-16T09:59:00.000Z","lastUpdated":"2026-11-16T10:00:00.000Z","kind":"main"}
+{"id":"m-u","timestamp":"2026-11-16T09:59:30.000Z","type":"user","content":[{"text":"[redacted]"}]}
+{"id":"m-4","timestamp":"2026-11-16T10:00:00.000Z","type":"gemini","content":"","model":"gemini-2.5-flash","tokens":{"input":1000,"output":50,"cached":600,"thoughts":0,"tool":0,"total":1050}}
+{"id":"m-4","timestamp":"2026-11-16T10:00:00.000Z","type":"gemini","content":"[redacted]","model":"gemini-2.5-flash","tokens":{"input":1000,"output":80,"cached":600,"thoughts":20,"tool":0,"total":1100}}
+{"$set":{"lastUpdated":"2026-11-16T10:00:02.000Z"}}
