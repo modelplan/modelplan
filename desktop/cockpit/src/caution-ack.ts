@@ -14,6 +14,10 @@
 // moment to the minute), so a new cycle seen only after a restart still blinks.
 import type {CautionItem,ReadWindow} from './caution.js';
 
+// ALR-51: only red and amber are lit; blue and grey are list-only, so they never blink and are never acknowledged.
+// (The same rule as caution.ts `lights`, kept here so this module loads without the page's string tables.)
+const lights=(x:CautionItem)=>x.level==='red'||x.level==='amber';
+
 const MAX=64;
 /** The host bounds an identity in UTF-8 bytes (BridgeState.swift), so the page counts bytes too. */
 export const MAX_ID_BYTES=200;
@@ -56,7 +60,7 @@ export function createCautionMemory(onChange:(ids:string[])=>void=()=>{}):Cautio
   forget(){acked.clear();shown.clear();current=[];newest=null;},
   restore(ids){for(const id of ids.slice(0,MAX)){if(typeof id!=='string'||!keepable(id))continue;const r=fromPersisted(id);if(r)acked.set(r[0],r[1]);}},
   update(items,read,canBlink=true){
-   const lit=items.filter(x=>x.level!=='blue'),litIds=lit.map(x=>x.stable);
+   const lit=items.filter(lights),litIds=lit.map(x=>x.stable);
    // Recurrence: a condition is over only when its window has a real reading and no longer qualifies, or, for one held
    // by its cycle, when the window is read in another cycle.
    let changed=false;
