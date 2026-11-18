@@ -221,6 +221,14 @@ ledger and does not discover or record new sessions.
 `perfStats[].windows.today` has the same `sums`, `hist` and `metrics` shape and sample gates as
 `recent7d`, restricted to the current local calendar day. It follows the existing performance
 ledger's **turn-start day** attribution; a turn spanning midnight remains assigned to its start day.
+Codex and Claude Code now use response timestamps for their usage sums in `todayTotals[]`
+and the 7/30-day source windows; configuration-level `perfStats[]` timing samples retain the
+turn-start rule above. `totalTokens` includes uncached input, cache read, cache write and output,
+with Codex reasoning counted once inside output. The shared optional `tokenAccounting` map
+exposes disjoint `tokenacct.Buckets` and local `today`, `last7Days`, `last30Days` windows per source;
+its ordinary output excludes the separately reported reasoning bucket. See
+[token accounting](readers/token-accounting.md) for the reference and validation.
+
 `todayTotals[]` supplies `{source, sums}` across configurations for that day. Generation speed is
 `sum(eligibleOutputTokens) / (sum(genMs) / 1000)`, never an average of configuration speeds. Preserve
 `eligibleRequests` and the normal five-sample display gate; zero eligible time does not mean 0 t/s.
