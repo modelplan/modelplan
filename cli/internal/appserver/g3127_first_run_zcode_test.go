@@ -67,3 +67,74 @@ func TestFirstRunDoneKeepsZCodesDetectedGLMSource(t *testing.T) {
 		t.Fatalf("after Done ZCode's detected source must still be read: %+v", g)
 	}
 }
+
+// macrevd-1037-1: another provider's key grant never consults the GLM manual-key store (nor ZCode's file). Every
+// explicit-key scope other than GLM's is granted with a GLM manual key stored and GLM's key path refused.
+func TestOtherProvidersKeyGrantDoesNotReadTheGLMKeyStore(t *testing.T) {
+	granted := 0
+	for _, d := range consent.Definitions() {
+		if d.Class != consent.ExplicitKey || d.Tool == "zai" {
+			continue
+		}
+		t.Run(d.ID, func(t *testing.T) {
+			testenv.IsolateHome(t)
+			t.Setenv("MODELPLAN_READERS", "")
+			t.Setenv("Z_AI_API_KEY", "")
+			home, _ := os.UserHomeDir()
+			provider := quota.ZCodeProviderConfig(home)
+			if err := os.MkdirAll(filepath.Dir(provider), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(provider, []byte("{}"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cache := t.TempDir()
+			if err := quota.SetManualKey(cache, "zai", "fake-zai-key-0001", "global"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := consent.EnsureStore(consent.Path()); err != nil {
+				t.Fatal(err)
+			}
+			glmLookups := 0
+			paths := func(a consent.Admission) quota.Paths { return quota.ProductionPathsWithAdmission(cache, "1.0.0", a) }
+			b, err := NewSharedBackend(SharedConfig{
+				Detect: func() detect.Report {
+					return detect.Report{Tools: []detect.Tool{
+						{Entry: detect.Entry{ProviderID: "zai", Preferred: "native", ReaderID: "native:zai"}, Detected: true},
+						{Entry: detect.Entry{ProviderID: d.Tool, Preferred: "native", ReaderID: "native:" + d.Tool}, Detected: true},
+					}}
+				},
+				ManualKeyPresent: func(p string) bool {
+					if p == "zai" {
+						glmLookups++
+					}
+					return quota.ManualKeyPresent(cache, p)
+				},
+				Paths: paths, Cleanup: func(string, bool) error { return nil },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := consent.Capture().State()
+			if _, err := b.Grant(context.Background(), wire.ConsentGrantParams{RequestID: "deny-glm", ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation,
+				TextVersion: consent.TextVersion, Allow: []string{}, Deny: []string{consent.ScopeZaiAccountUsageAPIKey}}); err != nil {
+				t.Fatal(err)
+			}
+			glmLookups = 0
+			state = consent.Capture().State()
+			_, err = b.Grant(context.Background(), wire.ConsentGrantParams{RequestID: "allow-" + d.Tool, ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation,
+				TextVersion: consent.TextVersion, Allow: []string{d.ID}, Deny: []string{}})
+			if err == nil {
+				granted++
+			} else {
+				t.Logf("%s not admitted here (%v); the lookup count is still checked", d.ID, err)
+			}
+			if glmLookups != 0 {
+				t.Fatalf("granting %s consulted the GLM manual-key store %d time(s)", d.ID, glmLookups)
+			}
+		})
+	}
+	if granted == 0 {
+		t.Fatal("no other explicit-key grant was admitted, so the boundary was not exercised")
+	}
+}
