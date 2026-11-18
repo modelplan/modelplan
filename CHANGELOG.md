@@ -6,6 +6,90 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.64 (2026-11-17)
+
+- The cockpit's effort faders are now the top-down throttle the owner chose: each model's real lever sits in a chamfered slot plate, day and night, and dragging it moves a translucent blue ghost grip with a thin blue line along the slot that snaps to the nearest effort the model has when released, while the real lever stays on the current effort. The recommended effort is a small gold ★ tick on the slot scale, and every lever is drawn exactly on its column's centre (it looked off-centre on the GLM column before). The community edition keeps the flat fader.
+
+- Clear stale GLM quota readings when a saved key is replaced or removed, while retaining the detected-key indication.
+
+- Quota Widget: a ring's card now opens the moment the pointer reaches the ring and closes promptly once the pointer leaves the ring and its card, a click outside closes it at once, and a plain click on the widget body no longer makes the widget redraw under the pointer.
+
+## CLI v0.5.63, Codex plugin 0.15.50 and Claude Code plugin 0.7.49 (2026-11-17)
+
+- The cockpit "All" scope, the porthole HUD ranking and the Models page now list only models your own subscriptions can use, not the whole published field, and the page key formerly called Effort is now Models. When the publication lists which models each plan can use (planModels), the cockpit uses that list for a subscription whose plan it can match, and falls back to the developer match otherwise.
+
+- While the cockpit is busy, it no longer queues every reading that arrives: one update is drawn at a time, with only the newest one waiting behind it, so a burst of readings or a slow page cannot fill the queue, hold back a settings change or cause a rebuild.
+
+- When the cockpit page cannot draw one update, the app now keeps the page and its last readings instead of closing and rebuilding it; a page that has not finished loading is no longer timed out while it is hidden, and is checked again after the Mac wakes.
+
+- The cockpit no longer closes and rebuilds itself when its page is only slow or refuses one update: it keeps the last readings on screen, marks the reading as delayed after two seconds and checks whether the page still answers. Only a page whose process ended, or that stays silent for 30 seconds through two checks, is rebuilt, at most twice in ten minutes (after one and then four seconds), and only then does the "Cockpit unavailable" notice appear; a damaged install asks for a reinstall at once.
+
+- When the cockpit is already showing readings and one read fails or returns bad data, it now keeps showing them and asks again a moment later instead of reporting the cockpit unavailable.
+
+- When Codex can list the models the signed-in account may use (its own model list), the cockpit now uses that list first for that subscription's model filter, then the published plan list, then the developer match. Only model ids are read, with the same refresh as the quota reading.
+
+- The cockpit's per-subscription model filter now also uses the models the tool itself reports for Gemini CLI, Antigravity, Grok Build, GitHub Copilot, Kimi and Claude Code, read with the existing quota read (no higher frequency, 3 second cap, failures never affect the quota). Only model slugs are read, and they map to published models only once harness aliases for that tool are published.
+
+- A subscription row model merges the engine's consent facts, row state, cause code and visibility, and the first-run list shows one prerequisite line per tool from the same next-step table (kiro-cli install and sign-in, manual key entry).
+
+- Settings > Subscriptions now lists one row per subscription with its status, one fix action, a display-only visibility switch and up/down; detected tools that are not added get an Add button, and tools this Mac does not have are listed under a collapsed section. A widget card's reason opens its Subscriptions row.
+
+- Saving a manual GLM key no longer switches off ZCode's own detected key (removing the manual key reads it again), and replacing or removing an OpenCode Go key drops its previously cached reading.
+
+- GLM (z.ai) and OpenCode Go can now be read with a key you enter in Settings (kept only on this Mac, sent only to the provider's official host), used instead of a detected key (Settings says when another key was also found; OpenCode's own saved login is never read, D230), and a GLM key that belongs to a relay is refused with a plain reason instead of being sent anywhere.
+
+- The macOS app now keeps its own diagnostics: a rotating `~/Library/Logs/ModelPlan/ModelPlan.log` (cockpit, lifecycle, Quota Widget drag and edge, reader state and consent events, with timestamps) and `engine.log`, which keeps the engine helper's stderr, start and exit status or signal, so a crash of the reader leaves a trace. Settings → Diagnostics → Export diagnostics… first lists what is included, then saves a zip you choose the place for: both logs, ModelPlan's crash reports from the last 14 days, `modelplan doctor readers --json` and the app, engine and macOS versions. Logs hold event names, scope ids, cause codes, counts and durations only; every line and every bundled file passes a redaction step for keys, tokens, cookies, emails and the user folder name, and nothing is uploaded.
+
+- When the reading service crashes repeatedly, the app now waits two minutes and starts it again by itself instead of staying stopped until Refresh; a lost consent check, a busy start-up and a stuck screen update also recover on their own.
+
+- The cockpit page now reads all of its remaining labels, accessibility names, help captions, alert lines and relative times from its string tables in both languages instead of choosing between English and Chinese inline, so a screen in one language never shows text from the other. A test-only pseudo-long English locale (every string about 40 percent longer) now checks that key labels stay inside their boxes; it found three labels that are sized only for today's two languages and are listed for the v1.1 layout work.
+
+- When the reading service comes back by itself after a crash, the menu bar and widget now show its fresh readings again without a Refresh, and a wake or unlock during its cool-down restarts it at once.
+
+- The attached cockpit now hangs 10 pt below the menu bar with the menu bar icon above its left canopy shoulder, joined to it by a slim launch rack that shows only in the gap. Opening from the icon extends the rack first and then brings the cockpit out from under the menu bar; closing reverses it. The title-strip key shows what it will do (a launch tower with the arm swung down to detach, or holding the rocket to put back). Detaching with the key fires a short amber nozzle burn and moves the cockpit just out of the catch zone to a spot fully on screen while the rack retracts into the icon; putting it back lights the nozzles until the rack has caught it. Dragging the cockpit back near its place makes the rack reach for it, and releasing there snaps it straight up; the grey dashed snap outline is gone. The cockpit also asks for fresh data at the click, while the rack extends.
+
+- The attached cockpit now opens over another app's full-screen window and on the current Space, and it no longer shows up in Cmd-` or Mission Control. It closes once when you click elsewhere or switch apps, and stays open while you drag its title strip, while one of our menus is open (including the status menu from the icon) and while an alert is showing. A detached cockpit gets a Dock icon and a Cmd-Tab entry, as Settings already does, so it is easy to find behind other windows. Closing Settings no longer removes that icon while the cockpit is still detached. The Help map no longer closes on the click that opened it. After waking, unlocking, a clock change or a display change, the cockpit is refreshed and laid out once, from a single source.
+
+- A reader that fails before any account or reading exists (not signed in, waiting for permission, app server closed or errored) now shows its cause and a fix on that tool's own row in Settings > Tools, instead of the row disappearing.
+
+## CLI v0.5.62, Codex plugin 0.15.49 and Claude Code plugin 0.7.48 (2026-11-14)
+
+- Upgrading now revokes the runtime and account scopes that the earlier automatic local-history grant opened for tools installed after the first run: they stay off until you allow them in Settings › Subscriptions, and unrepaired grants are kept out of refresh until the repair commits (#971).
+
+- Clearing a tool's history now also removes that tool's speed and performance ledger entries, keeps other tools' data and erased request ids, and later reads move past rows written before the clear, also when the history database file is replaced (#941).
+
+- The cockpit fader row now shows only models from your own plans: models used in the last 7 days first (even when no plan of yours offers them), then the recommended ones, then the rest by ability, at most 12. A new Settings switch, "Show all models", lifts the plan filter and the limit. Favourite models you pin with a long press are now kept across app restarts.
+
+- Readers now say why more tools cannot be read, and name the command that fixes it (D232, parity with CodexBar). Codex set to Amazon Bedrock or another custom model provider reports `codex_custom_provider` ("Codex uses another model provider, so there are no ChatGPT plan limits to read") instead of a generic service error; the check reads Codex's `config.toml` read-only and keeps none of its values. A Grok team login whose usage the billing endpoint does not report shows `team_unsupported`. For a signed-out or missing Codex, Claude Code, Gemini CLI, Grok Build or Kiro, each desktop row's `nextStep.hint` now carries that tool's own sign-in command (`codex login`, `claude`, `gemini`, `grok login`, `kiro-cli login`) or install command/URL, so the app can offer a Copy control. ModelPlan never runs these commands.
+
+- Closing a detached cockpit right after closing its porthole no longer reopens it lower than where it was left.
+
+- Choosing a subscription tab in the cockpit now shows only that subscription's models on the fader banks (starting at bank 1, the faders glide to the new models); the All tab keeps the full fader set.
+
+- The past-usage import now also reads Codex's archived threads (`archived_sessions`), so archiving a thread no longer hides its usage; Codex history imported by an earlier version is read again once from both folders. After the first-run import was requested, a Claude Code or Codex history that is still not imported (the run failed, was interrupted or its permission was withdrawn, or its history was cleared and then allowed again) is imported in the background a few seconds after the engine starts or after the next permission change: quietly (a failure is never shown), pausing between logs, and at most five times per permission with growing waits between attempts (1, 2, 4 and 8 hours apart while the app runs). Cancelling an import (or a waiting retry) stops every automatic retry until that permission is granted again. Automatic imports read only tools whose history you allowed explicitly, history you removed with "Remove imported history" stays removed until that permission is revoked and granted again, and a fresh profile still waits for the first-run consent (G3-112). `modelplan doctor readers` lists `codex:history` and `claude:history` with the import's coverage, reports a GLM key-file reader that has never read as `unavailable:not_read` instead of `stale`, and a signed-in Cursor account on the free or hobby plan as `no_plan` instead of `schema_changed` (G3-117). ZCode installed only as the CLI community package (`~/.local/share/zcode-community`, `~/.local/share/zcode-cli`) or the macOS support folder without a provider file now shows "This saved sign-in is not supported" instead of waiting for a first reading forever, also under a bare legacy GLM permission. The public `readerErrorCode` schema now lists `codex_custom_provider`, `team_unsupported` and `policy_pending`, which the CLI already emits.
+
+- A cockpit left open for a while no longer flickers closed and open and then reports "Cockpit unavailable" when a settings or layout change arrives while it is busy rendering new readings. After the reading service stops on its own, Refresh and the next wake or unlock start it again instead of leaving the widget at "?" until the app is quit.
+
+- The menu-bar percentage no longer blinks on and off: while new readings come in, the icon keeps showing the last number until the next one is ready. The status menu no longer changes under the pointer while it is open; it updates once it closes. After a display change the icon is checked again once the displays have settled, and a menu-bar position saved for a display that no longer exists is reset at launch (a position you dragged is kept).
+
+- Mac app: the Help map now always closes with Esc or a click outside it, even when macOS does not bring ModelPlan to the front after Help is chosen from the menu bar.
+
+- The app now follows your Mac's language list: the first Chinese or English entry wins (Traditional Chinese opens the Chinese interface) and English is the single fallback. Settings, General, Language gains Follow System beside Chinese and English; Follow System re-reads the macOS list at every launch. Menu items, the status window, the field view buttons, the model picker label, Dock guidance text and the empty menu-bar reading now appear in the chosen language only instead of both languages at once, and the app bundle declares English and Simplified Chinese localizations.
+
+- The cockpit's small porthole now shows the website's fleet round-four rockets in their maker liveries at night (official edition), rendered from the same 3D models with the porthole's own camera; the approved background and glow are unchanged.
+
+- Readers match five recent CodexBar fixes. A Claude plan that reports no measured five-hour window (weekly-only) no longer fails or shows a session window; its weekly and per-model windows stay, and a model entry without a percentage no longer hides the others. Grok local history counts each turn once from its own `totalTokens`, including turns without a per-model breakdown, and history recorded by earlier versions is re-read once so unchanged session files are corrected too. Kiro plans keep their plus: `KIRO PRO+` shows as Kiro Pro+ and is no longer an unknown plan. Local day boundaries hold across daylight saving, so on a day whose midnight is skipped the day no longer starts an hour early inside the previous day and the midnight refresh is not missed.
+
+- Settings: upgrading from a build before Follow System no longer switches a Chinese interface to English; a saved file without a language now reads as the Chinese it meant, and every save writes the language. A tool switch now shows On whenever any of that tool's paths is read, so after the OpenCode Go key comes back still refused, the switch no longer shows Off while the history is read, and the next click stops reading instead of allowing the key.
+
+- Settings: switching a tool off now refuses every saved or default-on reading path of that tool, including paths not detected at that moment, so an OpenCode Go key that comes back later is not read against your Off. When an OpenCode Go sign-in is found but no key is set in OPENCODE_API_KEY, the OpenCode Go row now says why no quota is shown.
+
+- Quota Widget: while you drag the widget, its quota rings stay on it even when new readings arrive mid-drag, and an open ring card now moves with its ring instead of staying behind where the widget was.
+
+- Quota Widget: dragging the widget onto another screen edge now always saves the new position, so it is still there after the app restarts.
+
+- A ZCode install whose data folder keeps no `provider_config.json` (the ZCode Desktop layout, or a sign-in that stores no plaintext Coding Plan key) now shows "This saved sign-in is not supported" instead of waiting for a first reading that can never come, and `modelplan doctor readers` reports it as `unavailable:no_provider_file` (G3-21). Nothing inside the folder is opened.
+
 ## CLI v0.5.61, Codex plugin 0.15.48 and Claude Code plugin 0.7.47 (2026-11-14)
 
 - A supported tool installed after the first run no longer gets runtime or account reads from the automatic local-history grant: the grant enables local session or history log reading only. Anything that needs the tool's saved sign-in, its runtime or a network call stays off until you allow it in Settings › Subscriptions (G3, #924).

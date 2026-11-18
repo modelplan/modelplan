@@ -73,32 +73,25 @@ extension CommunityCockpitEntryTests {
         await app.composition.stop()
     }
 
-    /// G3-95, content process terminated: the page is rebuilt silently; only a failure that lasts is announced, and the
-    /// notice names the cause in the log and is not a reinstall prompt.
+    /// G3-95, content process terminated, under the recovery contract: the page is rebuilt silently after 1 s; a rebuild
+    /// that opens is the recovery, and a rebuild whose own open fails is announced once its grace period ends, naming the
+    /// failed open in the log. Never a reinstall prompt. Deterministic: the console runs on the fake scheduler.
     @MainActor func testG395ContentProcessTerminationRecoversSilentlyOrNamesItsCauseAndDoesNotAskForReinstall() async throws {
         for recovers in [true,false] {
-            let root=FileManager.default.temporaryDirectory.appendingPathComponent("g395-term-"+UUID().uuidString)
-            defer{try? FileManager.default.removeItem(at:root)}
-            let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
-            let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in RouteClient()})
-            let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
-            let coordinator=EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
-            owner.coordinator=coordinator
-            var notices:[CockpitUnavailableNotice]=[],lines:[String]=[]
-            CockpitFailureLog.verificationLine={ lines.append($0) }
-            defer{CockpitFailureLog.verificationLine=nil}
-            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(300))
-            surface.show()
-            try await Self.untilTheConsoleOpenStepRan(coordinator,surface)
-            owner.pageFailure?(.contentTerminated)
-            if recovers { coordinator.onOpened?() }
-            try await Task.sleep(for:.milliseconds(900))
-            XCTAssertEqual(notices.count,recovers ? 0 : 1)
+            let rig=try RecoveryConsoleRig()
+            rig.surface.wantsVisible=true
+            rig.pageDied(.contentTerminated)
+            XCTAssertTrue(rig.lines.contains { $0.hasPrefix("unavailable path=page.contentTerminated") && $0.contains("recovery=rebuild") },rig.lines.joined(separator:"\n"))
+            rig.clock.advance(by:1_000)
+            XCTAssertEqual(rig.rebuildOpens,1)
+            if recovers { rig.coordinator.onOpened?() }
+            rig.clock.advance(by:10_000)
+            XCTAssertEqual(rig.notices.count,recovers ? 0 : 1)
             if !recovers {
-                XCTAssertFalse(notices[0].bundleProblem,"a terminated content process is not a missing bundle: no reinstall copy")
-                XCTAssertTrue(lines.contains { $0.hasPrefix("notice-shown cause=page.contentTerminated bundleProblem=false") },lines.joined(separator:"\n"))
+                XCTAssertFalse(rig.notices[0].bundleProblem,"a terminated content process is not a missing bundle: no reinstall copy")
+                XCTAssertTrue(rig.lines.contains { $0.hasPrefix("notice-shown cause=open.noClient bundleProblem=false") },rig.lines.joined(separator:"\n"))
             }
-            surface.hide();await coordinator.shutdown();await composition.stop()
+            await rig.finish()
         }
     }
     /// G3-95, engine or client not ready: the open is tried once more after a short wait, inside the grace period, and
@@ -223,8 +216,8 @@ extension CommunityCockpitEntryTests {
         XCTAssertTrue(lines.contains { $0.hasPrefix("notice-shown cause=page.bundleResource bundleProblem=true") },lines.joined(separator:"\n"))
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
-    /// macrev-900-1: a bundle cause belongs to its own failure episode. After a rebuild opens (recovery), a later query
-    /// failure names itself and does not send the user to reinstall.
+    /// macrev-900-1: a bundle cause belongs to its own failure episode. The repair notice comes at once (recovery
+    /// contract); after a later open works, a query failure names itself and does not send the user to reinstall.
     @MainActor func testG395RecoveredBundleFailureDoesNotPoisonALaterQueryNotice() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent("g395-bundle-recovered-"+UUID().uuidString)
         defer{try? FileManager.default.removeItem(at:root)}
@@ -239,12 +232,13 @@ extension CommunityCockpitEntryTests {
         let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(300))
         surface.show()
         try await Self.untilTheConsoleOpenStepRan(coordinator,surface)
-        owner.pageFailure?(.bundleResource)
-        coordinator.onOpened?()                          // the rebuild opened: recovered
+        owner.pageFailure?(.bundleResource)              // recovery contract: the repair notice comes at once
+        XCTAssertEqual(notices.count,1); XCTAssertTrue(notices.first?.bundleProblem ?? false)
+        coordinator.onOpened?()                          // a later open worked: the episode is over
         coordinator.onUnavailable?(.query("timeout"))    // an independent later failure
-        try await Task.sleep(for:.milliseconds(900))
-        XCTAssertEqual(notices.count,1)
-        XCTAssertFalse(notices.first?.bundleProblem ?? true,"the working bundle is not a reinstall problem")
+        for _ in 0..<300 where notices.count < 2 { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertEqual(notices.count,2)
+        XCTAssertFalse(notices.last?.bundleProblem ?? true,"the working bundle is not a reinstall problem")
         XCTAssertTrue(lines.contains { $0.hasPrefix("notice-shown cause=query.timeout bundleProblem=false") },lines.joined(separator:"\n"))
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
@@ -334,7 +328,7 @@ extension CommunityCockpitEntryTests {
             try await Self.untilTheConsoleOpenStepRan(coordinator,surface)
             coordinator.onOpened?()                          // the cockpit is up
             coordinator.onUnavailable?(.query("timeout"))     // a query on it fails ...
-            if recovers { coordinator.onDisplayed?() }        // ... and the next one shows fresh data
+            if recovers { coordinator.onRenderVerified?() }   // ... and the next one shows fresh data
             try await Task.sleep(for:.milliseconds(900))
             XCTAssertEqual(notices.count,recovers ? 0 : 1,recovers ? "Fresh data on the same page is a recovery: no notice" : "A query failure that lasts is announced")
             XCTAssertTrue(surface.wantsVisible,"the cockpit stays up either way")

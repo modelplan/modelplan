@@ -995,6 +995,9 @@ enum DockGripInk {
         return orderedIDs.first{stationRect($0)?.contains(p)==true}
     }
     @_spi(DockResourceChecks) public func hoverUnitIDForChecks(atLocal p:NSPoint)->String?{hoverUnitID(atLocal:p)}
+    /// G3-120: the ring unit under a sampled pointer (view-local), so card hover is read from the
+    /// same pointer sample that decides leaving (Pulse `pointerMoved`), not only from tracking events.
+    public func ringUnitID(atLocal p:NSPoint)->String?{hoverUnitID(atLocal:p)}
     private func pointerAction(atLocal p:NSPoint)->DockInstrumentAction?{
         if let skin,!community {
             let global=CGPoint(x:p.x+layoutOrigin.x,y:p.y+layoutOrigin.y)

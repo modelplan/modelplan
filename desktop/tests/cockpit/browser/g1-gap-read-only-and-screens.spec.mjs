@@ -112,7 +112,7 @@ for(const [tier,height] of [['tall',890],['compact',640]]){
 // by the page, no canvas exists in it, and the reveal animates no clip-path or mask.
 test('CKP-ENT-02 opening the cockpit page creates no GL context, no canvas and no clip or mask animation',async({page})=>{
  await open(page);
- await page.getByRole('button',{name:'Effort',exact:true}).click();
+ await page.getByRole('button',{name:'Models',exact:true}).click();
  const {gl}=await probe(page);expect(gl,'getContext(webgl*) calls').toEqual([]);
  expect(await page.locator('canvas').count(),'canvas elements in the cockpit page').toBe(0);
  expect(await page.locator('iframe,webview,embed,object').count()).toBe(0);

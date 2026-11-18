@@ -97,7 +97,7 @@ func Validate(in Input, out Projection) error {
 				return fail("unpermitted values")
 			}
 		}
-		if err := validateOutcome(row.State, row.Reason, row.NextStep, in.Now); err != nil {
+		if err := validateOutcome(row.ID, &row.Name, row.State, row.Reason, row.NextStep, in.Now); err != nil {
 			return err
 		}
 		var expiry *time.Time
@@ -125,7 +125,7 @@ func Validate(in Input, out Projection) error {
 			if row.StateAfterExpiry == nil || row.StateAfterExpiry.State == StateFresh {
 				return fail("missing/conservative latch")
 			}
-			if err := validateOutcome(row.StateAfterExpiry.State, row.StateAfterExpiry.Reason, row.StateAfterExpiry.NextStep, in.Now); err != nil {
+			if err := validateOutcome(row.ID, nil, row.StateAfterExpiry.State, row.StateAfterExpiry.Reason, row.StateAfterExpiry.NextStep, in.Now); err != nil {
 				return err
 			}
 		}
@@ -154,7 +154,9 @@ func Validate(in Input, out Projection) error {
 	return nil
 }
 
-func validateOutcome(state State, reason Reason, step *NextStep, now time.Time) error {
+// name: the row's name, whose not-signed-in sentence names the tool (G3-38); nil for the expiry
+// latch, which keeps the generic action text.
+func validateOutcome(tool string, name *Name, state State, reason Reason, step *NextStep, now time.Time) error {
 	expected, ok := outcomes[reason.Code]
 	if !ok || expected.State != state || expected.Text != reason.Text {
 		return fmt.Errorf("invalid rows field: state/reason message table")
@@ -175,8 +177,14 @@ func validateOutcome(state State, reason Reason, step *NextStep, now time.Time) 
 	if reason.Code == CodeNoManualReading {
 		text = Text{EN: "Add a manual reading in Settings", ZH: "在设置中填写手动读数"}
 	}
+	if reason.Code == CodeNotSignedIn && name != nil {
+		text = NotSignedInText(name.EN, name.ZH)
+	}
 	if step.Text != text {
 		return fmt.Errorf("invalid rows field: action message table")
+	}
+	if !reflect.DeepEqual(step.Hint, toolHint(tool, reason.Code)) {
+		return fmt.Errorf("invalid rows field: tool hint table")
 	}
 	if step.DisabledReason != nil {
 		if step.Action != ActionRefresh {
@@ -236,6 +244,8 @@ func validateAccount(in Input, tool string, a Account, declared string, refs map
 		raw := a.Plan.ID
 		if strings.HasPrefix(raw, "cursor-") {
 			raw = "cursor " + strings.TrimPrefix(raw, "cursor-")
+		} else if tool == "kiro" && strings.HasPrefix(raw, "kiro-") {
+			raw = "kiro " + strings.TrimPrefix(raw, "kiro-")
 		}
 		expected := planValue(tool, raw, "")
 		if expected.ID == "unknown" || !reflect.DeepEqual(a.Plan, expected) {

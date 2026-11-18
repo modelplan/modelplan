@@ -31,7 +31,7 @@ export function renderLineup(data,lang="zh") {
   return out.join("\n")+"\n";
 }
 // Speed tiers for one model, as in `modelplan effort`: "⚡ Codex Fast  plan quota ×2.5 · credits ×2 · about ×1.5 faster · generation time about ×0.67".
-const g2=v=>String(Math.round(v*100)/100),PLANS={"chatgpt-pro-500":"Pro $500","enterprise-eligible":"Enterprise","edu-eligible":"Edu"};
+const g2=v=>String(Math.round(v*100)/100),PLANS={"chatgpt-pro-200":"Pro $200","chatgpt-pro-500":"Pro $500","enterprise-eligible":"Enterprise","edu-eligible":"Edu"};
 export function renderSpeed(m,tiers=[],lang="zh") {
   const zh=lang==="zh",out=[];
   for(const t of tiers){const x=t.models.find(v=>v.modelId===m.id);if(!x)continue;

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import {ht} from './host-text.js';
 import type { WireCockpitData } from '../generated/wire.js';
 import {websiteAction} from './website-link.js';
 import type { Appearance,CockpitView,LiveAppearance,ShellState,PageAction } from './bridge.js';
@@ -15,25 +16,24 @@ import { mountPrototypeBase } from './prototype-base.js';
 import { cautionItems,readWindows } from './caution.js';
 import { createCautionMemory } from './caution-ack.js';
 import {currentWindow,withoutProjectNames} from './prototype-data-adapter.js';
-const words={en:{all:'All',settings:'Settings',waiting:'Waiting for readings',cleared:'Readings cleared',empty:'No quota read yet. Sign in to a coding tool and it shows up here.',emptyOpen:'Open Settings › Subscriptions',rows:['5h','Weekly','Other'],page:'Page',resets:'resets in',now:'now'},'zh-CN':{all:'全部',settings:'设置',waiting:'等待读数',cleared:'读数已清除',empty:'还没读到订阅额度。登录一个编程工具后，这里会自动显示。',emptyOpen:'打开 设置 › 订阅',rows:['5小时','每周','其他'],page:'第',resets:'后重置',now:'现在'}};
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
-export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void,reportAcked:(ids:string[])=>void=()=>{}):CockpitView {
+export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void,reportAcked:(ids:string[])=>void=()=>{},reportPins:(ids:string[])=>void=()=>{}):CockpitView {
  let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
  let nativeShell:ShellState|null=null,tier:ShellState['tier']='tall';
  let applyScope:((scope:string)=>void)|null=null,refreshEngine:((now?:number)=>void)|null=null,localiseEngine:((value:Appearance['locale'],now:number)=>void)|null=null,quotaFocusIdentity:((element:HTMLElement)=>string|null)|null=null,lastData:WireCockpitData|null=null;
  let lastRenderedAt=0;const retiredUnstableScopes=new Set<string>();
  let hudSelected:string|null=null;const hudOptions=()=>({scope:nativeShell?.scope??'all',now:lastRenderedAt,selected:hudSelected,closed:nativeShell?.profile==='closed'});
  let selectedRedBelow=effectiveRedBelow(undefined);const redBelow=()=>selectedRedBelow;let showUsedPercent=false;const showUsed=()=>showUsedPercent;
- const frame=prototypeFrame(root);const help=mountPrototypeHelp(root,()=>locale,()=>active,()=>nativeShell?.attached??true);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;},undefined,redBelow);const tape=mountPrototypeTape(root,{knows:ref=>deck.knowsSession(ref),hover(session){deck.highlightSession(session?.sessionRef??null);const key=session?.subscriptionRef??null;for(const el of root.querySelectorAll<HTMLElement>('[data-col]'))el.classList.toggle('xhl',!!key&&el.dataset.col===key);},select(session){if(!active)return;const key=session.subscriptionRef;if(key&&[...root.querySelectorAll<HTMLElement>('.ek[data-sub]')].some(el=>el.dataset.sub===key)){retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);deck.scope(key);}deck.selectSession(session.sessionRef);}});
+ const frame=prototypeFrame(root);const help=mountPrototypeHelp(root,()=>locale,()=>active,()=>nativeShell?.attached??true);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;},undefined,redBelow,reportPins);const tape=mountPrototypeTape(root,{knows:ref=>deck.knowsSession(ref),hover(session){deck.highlightSession(session?.sessionRef??null);const key=session?.subscriptionRef??null;for(const el of root.querySelectorAll<HTMLElement>('[data-col]'))el.classList.toggle('xhl',!!key&&el.dataset.col===key);},select(session){if(!active)return;const key=session.subscriptionRef;if(key&&[...root.querySelectorAll<HTMLElement>('.ek[data-sub]')].some(el=>el.dataset.sub===key)){retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);deck.scope(key);}deck.selectSession(session.sessionRef);}});
  // G3-47: base bells under the engine columns; repainted from the drawn engine table.
  const base=mountPrototypeBase(root,()=>lastData,z=>{
   const member=lastData?cockpitMembers(lastData).find(m=>m.key===z.key):undefined,name=member?(locale==='en'?member.row.name.en:member.row.name.zh):'';
-  const what=z.state==='work'?(locale==='en'?'working now':'正在用')+(z.rate===null?'':` · ${Math.round(z.rate)} t/s`):z.state==='stale'?(locale==='en'?'reading is not current':'读数不是最新'):(locale==='en'?'idle':'空闲');
+  const what=z.state==='work'?(ht(locale,'host.workingNow'))+(z.rate===null?'':` · ${Math.round(z.rate)} t/s`):z.state==='stale'?(ht(locale,'host.readingIsNotCurrent')):(ht(locale,'host.idle'));
   return name?`${name} · ${what}`:what;});
  const scopeShortcut=(event:KeyboardEvent)=>{if(!event.isTrusted||!active||disposed||!nativeShell||nativeShell.profile!=='open'||nativeShell.forcedClosed||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||event.repeat||!/^[0-6]$/.test(event.key))return;const target=event.target;if(target instanceof Element&&(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')))return;const button=event.key==='0'?frame.engine.querySelector<HTMLButtonElement>('.ek[data-all]'):[...frame.engine.querySelectorAll<HTMLButtonElement>('.eng-keys .ek[data-sub]')][Number(event.key)-1];if(!button||!applyScope)return;const key=button.dataset.scope;if(key===undefined)return;const scope=key||'all';event.preventDefault();retiredUnstableScopes.delete(scope);action('scopeSelect',scope);nativeShell={...nativeShell,scope};deck.scope(scope);applyScope(scope);};
  window.addEventListener('keydown',scopeShortcut);
  const caution=root.querySelector<HTMLButtonElement>('[data-caution]')!;const cautions=createCautionMemory(reportAcked);const motionQuery=matchMedia('(prefers-reduced-motion: reduce)');const finishCaution=(e:AnimationEvent)=>{if(e.animationName==='cockpit-caution-blink')caution.classList.remove('flash');};const syncReduced=()=>document.body.classList.toggle('reduced',reduceMotion||motionQuery.matches);/* body.reduced is the carried prototype CSS's Reduce Motion switch: app setting or OS preference. */const motionChanged=()=>{syncReduced();if(motionQuery.matches)caution.classList.remove('flash');};caution.addEventListener('animationend',finishCaution);motionQuery.addEventListener('change',motionChanged);
- function syncCaution(data:WireCockpitData,now:number){const items=cautionItems(data,now,redBelow()),fresh=cautions.update(items,readWindows(data,now));if(!items.some(x=>x.level!=='blue'))caution.classList.remove('flash');else if(fresh&&active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches){caution.classList.remove('flash');void caution.offsetWidth;caution.classList.add('flash');}}
+ function syncCaution(data:WireCockpitData,now:number){const items=cautionItems(data,now,redBelow()),fresh=cautions.update(items,readWindows(data,now),active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches);if(!items.some(x=>x.level!=='blue'))caution.classList.remove('flash');else if(fresh&&active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches){caution.classList.remove('flash');void caution.offsetWidth;caution.classList.add('flash');}}
  caution.onclick=e=>{if(!e.isTrusted||!active||(!caution.classList.contains('lit')&&!deck.alertsOpen()))return;caution.classList.remove('flash');deck.showAlerts(deck.alertsOpen()?undefined:cautions.acknowledge());};
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
  const shutter=root.querySelector<HTMLButtonElement>('[data-shutter]')!;
@@ -58,10 +58,10 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  const paintRecords=(data:WireCockpitData,at:number)=>{const shown=showProjectNames?data:withoutProjectNames(data);deck.render(shown,at);tape.render(shown,showProjectNames);};
  function shellControls(){
   const zh=locale==='zh-CN', closed=nativeShell?.profile==='closed', forced=!!nativeShell?.forcedClosed;
-  const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.setAttribute('aria-label',alert.classList.contains('lit')?(zh?'告警激活':'Alert active'):(zh?'告警未激活':'Alert inactive'));
-  attach.setAttribute('aria-pressed',String(!nativeShell?.attached));attach.setAttribute('aria-label',nativeShell?.attached?(zh?'分离':'Detach'):(zh?'放回':'Put back'));close.setAttribute('aria-label',zh?'关闭':'Close');
-  reason.textContent=forced?(zh?'窗口高度不足，无法打开':'Not enough window height to open'):'';
-  shutter.setAttribute('aria-label',zh?'舷窗快门':'Porthole shutter');shutter.setAttribute('aria-pressed',String(closed));shutter.setAttribute('aria-describedby',reason.id);shutter.title=reason.textContent;shutter.disabled=!active||!nativeShell||forced;
+  const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.setAttribute('aria-label',alert.classList.contains('lit')?(ht(locale,'host.alertActive')):(ht(locale,'host.alertInactive')));
+  attach.setAttribute('aria-pressed',String(!nativeShell?.attached));attach.setAttribute('aria-label',nativeShell?.attached?(ht(locale,'host.detachAria')):(ht(locale,'host.attach')));close.setAttribute('aria-label',ht(locale,'host.closeAria'));
+  reason.textContent=forced?(ht(locale,'host.forcedClosedReason')):'';
+  shutter.setAttribute('aria-label',ht(locale,'host.shutterAria'));shutter.setAttribute('aria-pressed',String(closed));shutter.setAttribute('aria-describedby',reason.id);shutter.title=reason.textContent;shutter.disabled=!active||!nativeShell||forced;
   attach.hidden=!nativeShell;close.hidden=!nativeShell;
   attach.disabled=!active||!nativeShell;close.disabled=!active||!nativeShell;
   shutterLayout(closed);
@@ -107,9 +107,9 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   delete root.dataset.shutterMotion;drawShell(nativeShell?.profile==='closed');
  }
  function localise(now?:number){
-  document.documentElement.lang=locale;deck.locale(locale,now);tape.locale(locale);frame.settings.setAttribute('aria-label',words[locale].settings);
+  document.documentElement.lang=locale;deck.locale(locale,now);tape.locale(locale);frame.settings.setAttribute('aria-label',ht(locale,'host.settingsAria'));
   for(const e of root.querySelectorAll<HTMLElement>('[data-en][data-zh]')){e.textContent=locale==='en'?e.dataset.en!:e.dataset.zh!;if(e.tagName==='BUTTON')e.setAttribute('aria-label',e.textContent);else if(e.classList.contains('ek-name'))e.parentElement?.setAttribute('aria-label',e.textContent);}
-  for(const e of root.querySelectorAll<HTMLButtonElement>('.eng-led[data-page]')){const n=Number(e.dataset.page)+1;e.setAttribute('aria-label',locale==='en'?`Page ${n}`:`第 ${n} 页`);}
+  for(const e of root.querySelectorAll<HTMLButtonElement>('.eng-led[data-page]')){const n=Number(e.dataset.page)+1;e.setAttribute('aria-label',ht(locale,'host.pageN',{n}));}
   shellControls();help.refresh();
  }
  const bilingual=(e:HTMLElement,en:string,zh:string)=>{e.dataset.en=en;e.dataset.zh=zh;return e;};
@@ -121,9 +121,9 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  frame.lamp.addEventListener('animationend',settled);frame.lamp.addEventListener('animationcancel',settled);
  const displayedState=()=>[frame.engine.innerHTML,frame.hud.innerHTML,frame.mfd.innerHTML].join('\0');
  const pulse=()=>{stop();if(!active||nativeShell?.profile==='closed'||reduceMotion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;void frame.lamp.offsetWidth;frame.lamp.classList.add('state-pulse');};
- const setEmpty=(key:'waiting'|'cleared'|'empty')=>{base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',locale==='en'?'Alert inactive':'告警未激活');applyScope=null;const line=bilingual(element('p',words[locale][key],'ec-empty'),words.en[key],words['zh-CN'][key]);
+ const setEmpty=(key:'waiting'|'cleared'|'empty')=>{base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
   // CKP-SHELL-39: with no subscription read yet the screen says so in one line and offers one way in, Settings > Subscriptions.
-  if(key==='empty'){const open=element('button',words[locale].emptyOpen,'ec-empty-open');bilingual(open,words.en.emptyOpen,words['zh-CN'].emptyOpen);open.type='button';open.setAttribute('aria-label',words[locale].emptyOpen);open.onclick=e=>{if(e.isTrusted)action('openSettingsSubscriptions');};const box=element('div',undefined,'ec-empty-box');box.append(line,open);frame.engine.replaceChildren(box);}
+  if(key==='empty'){const open=element('button',ht(locale,'host.emptyOpen'),'ec-empty-open');bilingual(open,ht('en','host.emptyOpen'),ht('zh-CN','host.emptyOpen'));open.type='button';open.setAttribute('aria-label',ht(locale,'host.emptyOpen'));open.onclick=e=>{if(e.isTrusted)action('openSettingsSubscriptions');};const box=element('div',undefined,'ec-empty-box');box.append(line,open);frame.engine.replaceChildren(box);}
   else frame.engine.replaceChildren(line);frame.hud.replaceChildren();deck.clear();tape.clear();};
  function nextDeadline(data:WireCockpitData,now:number):number|null {
   let next=Infinity;
@@ -170,7 +170,51 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   target?.focus({preventScroll:true});
  }
  function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);syncCaution(lastData!,now);});}
+ // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
+ // returns to its waiting state when there was none) and the error goes back to the bridge, which refuses the display
+ // and keeps the page. If that repaint fails too (glm-990-1, macrevb-990-1, macrev2-990-1), the whole cockpit view is
+ // put back as it was before the render: every element under the root gets its own child nodes, attributes, handler
+ // properties and form values back, so the engine, HUD, MFD, records and lamp keep their committed nodes and controls;
+ // the view's own state (engine closures, shell scope, last data) is restored with them. Nothing is repainted then, so
+ // a failure that persists cannot erase the view again. lastData never points at data that did not render.
+ let restoring=false;
+ const HANDLERS=['onclick','onchange','oninput','onkeydown','onlostpointercapture','onpointercancel','onpointerdown','onpointerleave','onpointermove','onpointerover','onpointerup'] as const;
+ type Handlers=Partial<Record<typeof HANDLERS[number],unknown>>;
+ function snapshot(){
+  const elements=[root,...root.querySelectorAll<HTMLElement>('*')].map(element=>{
+   const handlers:Handlers={};for(const key of HANDLERS){const value=(element as unknown as Record<string,unknown>)[key];if(value)handlers[key]=value;}
+   const form=element instanceof HTMLInputElement?{value:element.value,checked:element.checked}:null;
+   return {element,children:[...element.childNodes],attributes:[...element.attributes].map(a=>[a.name,a.value] as const),handlers,form};
+  });
+  const saved={applyScope,refreshEngine,localiseEngine,quotaFocusIdentity,nativeShell,lastData,lastRenderedAt};
+  // The deck, tape and lamp keep render state of their own (glm-990-1): it is put back with the view.
+  const modules=[deck.checkpoint(),tape.checkpoint(),cautions.checkpoint()];
+  return ()=>{
+   for(const {element,children,attributes,handlers,form} of elements){
+    element.replaceChildren(...children);
+    for(const name of element.getAttributeNames())if(!attributes.some(([kept])=>kept===name))element.removeAttribute(name);
+    for(const [name,value] of attributes)if(element.getAttribute(name)!==value)element.setAttribute(name,value);
+    for(const key of HANDLERS)(element as unknown as Record<string,unknown>)[key]=handlers[key]??null;
+    if(form&&element instanceof HTMLInputElement){element.value=form.value;element.checked=form.checked;}
+   }
+   ({applyScope,refreshEngine,localiseEngine,quotaFocusIdentity,nativeShell,lastData,lastRenderedAt}=saved);
+   for(const restore of modules)restore();
+  };
+ }
  function renderData(data:WireCockpitData,now:number){
+  const previous=lastData,previousAt=lastRenderedAt,restore=snapshot();
+  try{renderInto(data,now);}
+  catch(error){
+   if(!restoring&&!disposed){
+    restoring=true;
+    try{if(previous)renderInto(previous,previousAt);else{lastData=null;frame.engine.replaceChildren();setEmpty('waiting');}}
+    catch{restore();}
+    finally{restoring=false;}
+   }
+   throw error;
+  }
+ }
+ function renderInto(data:WireCockpitData,now:number){
   preserveFocus(()=>{
    const previousData=lastData;lastData=data;lastRenderedAt=now;
    if(disposed)throw Error('closed');const before=displayedState();const priorPage=Number(frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??0);const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const selectedScope=nativeShell?.scope??priorButton?.dataset.scope??'all';const unstable=(previousData?cockpitMembers(previousData):[]).some(m=>m.key===selectedScope&&m.unstable)||cockpitMembers(data).some(m=>m.key===selectedScope&&m.unstable);const priorScope=unstable?'':selectedScope==='all'?'':selectedScope;if(unstable){retiredUnstableScopes.add(selectedScope);if(nativeShell)nativeShell={...nativeShell,scope:'all'};}applyScope=null;frame.engine.replaceChildren();
@@ -184,15 +228,17 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  setEmpty('waiting');
  return {
   restoreAcked(ids){cautions.restore(ids);},
+  restorePins(ids){deck.restorePins(ids);},
   forgetAcked(){cautions.forget();},
-  configure(value,threshold,used=false,order=[]){setMemberOrder(order);selectedRedBelow=threshold;showUsedPercent=used;locale=value.locale;showProjectNames=value.showProjectNames;reduceMotion=value.reduceMotion;syncReduced();document.documentElement.lang=locale;document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);deck.locale(locale);tape.locale(locale);frame.settings.setAttribute('aria-label',words[locale].settings);setEmpty('waiting');},
-  updateAppearance(value:LiveAppearance,now:number,threshold,used=false,order=[]){const orderChanged=setMemberOrder(order);showUsedPercent=used;const namesChanged=showProjectNames!==value.showProjectNames;showProjectNames=value.showProjectNames;selectedRedBelow=threshold;locale=value.locale;reduceMotion=value.reduceMotion;syncReduced();document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion){stop();caution.classList.remove('flash');}if(lastData){lastRenderedAt=now;preserveFocus(()=>{localise(lastRenderedAt);localiseEngine?.(locale,lastRenderedAt);paintHud(frame.hud,lastData!,tier!=='tall',locale,hudOptions());if(namesChanged)paintRecords(lastData!,lastRenderedAt);syncCaution(lastData!,lastRenderedAt);});if(orderChanged)renderData(lastData,now);}else localise();},
+  configure(value,threshold,used=false,allModels=false,order=[]){setMemberOrder(order);selectedRedBelow=threshold;showUsedPercent=used;deck.showAllModels(allModels);locale=value.locale;showProjectNames=value.showProjectNames;reduceMotion=value.reduceMotion;syncReduced();document.documentElement.lang=locale;document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);deck.locale(locale);tape.locale(locale);frame.settings.setAttribute('aria-label',ht(locale,'host.settingsAria'));setEmpty('waiting');},
+  updateAppearance(value:LiveAppearance,now:number,threshold,used=false,allModels=false,order=[]){const orderChanged=setMemberOrder(order);showUsedPercent=used;deck.showAllModels(allModels);const namesChanged=showProjectNames!==value.showProjectNames;showProjectNames=value.showProjectNames;selectedRedBelow=threshold;locale=value.locale;reduceMotion=value.reduceMotion;syncReduced();document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion){stop();caution.classList.remove('flash');}if(lastData){lastRenderedAt=now;preserveFocus(()=>{localise(lastRenderedAt);localiseEngine?.(locale,lastRenderedAt);paintHud(frame.hud,lastData!,tier!=='tall',locale,hudOptions());if(namesChanged)paintRecords(lastData!,lastRenderedAt);syncCaution(lastData!,lastRenderedAt);});if(orderChanged)renderData(lastData,now);}else localise();},
   shell(value:ShellState){if(retiredUnstableScopes.has(value.scope))value={...value,scope:'all'};const changed=(nativeShell?.scope??'all')!==value.scope;nativeShell=value;preserveFocus(()=>{tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');tape.layout(layout.tapeLines);shellControls();if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());if(changed){applyScope?.(value.scope);deck.scope(value.scope);}});},
+  ignite(on){if(on)root.dataset.ignite='true';else delete root.dataset.ignite;},
   render:renderData,
   nextDeadline(){return lastData?nextDeadline(lastData,lastRenderedAt):null;},
   tick(now){refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
-  active(value){active=value;root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}},
+  active(value){const was=active;active=value;root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}else if(!was&&lastData)syncCaution(lastData,lastRenderedAt);},
   dispose(){if(disposed)return;disposed=true;shutterRun=null;base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }

@@ -162,7 +162,7 @@ private actor G1BEngine: EngineClient {
         let rows = try SettingsCatalogue.rows(preferences: initial.preferences, context: editor.context, paneID: nil)
         let language = try XCTUnwrap(rows.first { $0.key == .language })
         guard case .choice(_, let options) = language.value else { return XCTFail("Language must offer choices") }
-        XCTAssertEqual(Set(options), Set(["en", "zh-CN"]))
+        XCTAssertEqual(Set(options), Set(["system", "en", "zh-CN"]), "Follow System sits beside Chinese and English (SET-9-39)")
         for choice in [SettingsLanguage.chinese, .english] {
             _ = try await editor.commit(SettingsB21Edit.language(choice))
             let persisted = await app.foundationStore.snapshot()

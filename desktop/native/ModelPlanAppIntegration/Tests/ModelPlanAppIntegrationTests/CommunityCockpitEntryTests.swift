@@ -58,7 +58,7 @@ actor RouteClient: EngineClient { // internal: the real-page size test (OwnerTes
     func open(){
         let raw=try! state.load(.init(theme:.day,locale:.en,profile:.full),shell:.init(closed:false,attached:true,forcedClosed:false,tier:.tall))
         var value=try! JSONSerialization.jsonObject(with:Data(raw.utf8)) as! [String:Any]
-        value["appearance"]=nil;value["shell"]=nil;value["redBelow"] = nil; value["showUsedPercent"] = nil;value["type"]="ready";value["sequence"]="1"
+        value["appearance"]=nil;value["shell"]=nil;value["redBelow"] = nil; value["showUsedPercent"] = nil; value["showAllModels"] = nil;value["type"]="ready";value["sequence"]="1"
         value["appearanceVersion"]=2;value["capabilities"]=["appearanceUpdates","shellState","shellActions"]
         _=try! state.accept(String(decoding:try! JSONSerialization.data(withJSONObject:value),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"));onReady?()
     }
@@ -703,14 +703,14 @@ final class CommunityCockpitEntryTests:XCTestCase {
 
     /// glm-660-3: the cockpit's own close button ends in the page's onClosed, not in `hide()`; the field panel closes with it.
     /// D49 review (#695): the widget stays at `.floating` under the cockpit, and every window the cockpit
-    /// brings up is not hidden behind it. The snap guide shares its level so it can sit just below it.
+    /// brings up is not hidden behind it. (The snap guide is gone; the launch rack panel uses the cockpit's level.)
     @MainActor func testD49WindowsAroundTheCockpitStackInOrder() {
         let cockpit = CockpitWindowController.panelLevel.rawValue
         XCTAssertGreaterThan(cockpit, NSWindow.Level.floating.rawValue, "the cockpit opens above the widget")
         XCTAssertLessThan(cockpit, NSWindow.Level.statusBar.rawValue, "a widget being dragged still rises above it")
         XCTAssertGreaterThan(CockpitFieldPanel.level.rawValue, cockpit, "the launch field opens above the cockpit")
         XCTAssertGreaterThan(DockHelpPresenter.overlayLevel.rawValue, cockpit, "Help draws above the cockpit")
-        XCTAssertEqual(CockpitWindowController.snapGuideLevel.rawValue, cockpit, "the snap guide orders just below the cockpit")
+        XCTAssertEqual(CockpitWindowController.aboveCockpitLevel.rawValue, cockpit + 1, "the launch rack shares the cockpit level and the field and Help stack just above it")
     }
 
     @MainActor func testTheCockpitsOwnCloseAlsoClosesTheField() async throws {
@@ -946,9 +946,8 @@ final class CommunityCockpitEntryTests:XCTestCase {
         }
     }
 
-    /// CKP-SHELL-01 (D118): through the normal factory, the cockpit opens directly below the menu-bar icon: its top sits a
-    /// fixed 6 pt under the icon's bottom edge and it is centred on the icon (D88: the 636 px raster has the same 8 px
-    /// margin on both sides of the shell, so the frame's centre is the shell's), shifted only as far as the screen's edges require. Parameterised over the icon's position.
+    /// CKP-SHELL-33: the normal factory opens beneath the icon with the rack gap and shoulder alignment,
+    /// clamped to the screen at either edge.
     @MainActor func testNormalFactoryOpensDirectlyBelowTheMenuBarIcon() throws {
         let (owner,bundle,context,_)=try shellFixture()
         let usable=try XCTUnwrap(NSScreen.main).visibleFrame
@@ -959,10 +958,10 @@ final class CommunityCockpitEntryTests:XCTestCase {
             let page=owner.makePage(context:context,verified:bundle)
             page.open()
             let window=try XCTUnwrap(page.window,name)
-            XCTAssertEqual(window.frame.maxY,anchor.minY-6,accuracy:1,"\(name): top is 6 pt under the icon")
+            XCTAssertEqual(window.frame.maxY,anchor.minY-10,accuracy:1,"\(name): top is 10 pt under the icon")
             XCTAssertLessThanOrEqual(window.frame.maxY,anchor.minY,"\(name): never above the icon")
-            let expectedX=max(usable.minX,min(anchor.midX-window.frame.width/2,usable.maxX-window.frame.width))
-            XCTAssertEqual(window.frame.minX,expectedX,accuracy:1,"\(name): centred on the icon, clamped to the screen")
+            let expected = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: anchor, shutterClosed: false))
+            XCTAssertEqual(window.frame.minX,expected.frame.minX,accuracy:1,"\(name): shoulder aligned and clamped to the screen")
             XCTAssertGreaterThanOrEqual(window.frame.minX,usable.minX-1,name)
             XCTAssertLessThanOrEqual(window.frame.maxX,usable.maxX+1,name)
             page.discard()
@@ -1119,6 +1118,126 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertGreaterThan(Int(parts.first ?? "0") ?? 0,0,"the fader shows effort bars (\(result))")
         XCTAssertEqual(parts.dropFirst().first,"rec","the recommended-effort star marker is on the fader (\(result))")
         XCTAssertEqual(parts.last,"k","and sits at a numeric travel position (\(result))")
+    }
+    /// Cockpit recovery step 1 (G3-96, G3-116; CKP-SHELL-27, #470 staging) through the normal entry: the Dock's console
+    /// button opens the cockpit through the real composition with the cockpit entry enabled, and the coordinator presents
+    /// real CockpitWindowController pages. A late render receipt keeps the presented page and marks the reading delayed;
+    /// a page whose content process ends is rebuilt after 1 s, then 4 s, silently; only the third dead page inside the
+    /// budget brings the generic notice, never the repair one. The console runs on a fake scheduler, so no rebuild waits.
+    @MainActor func testRecoveryThroughTheNormalEntryKeepsASlowPageAndRebuildsADeadOneWithinTheBudget() async throws {
+        let (owner,bundle,context,_)=try shellFixture()
+        let client=RouteClient(),clock=FakeRecoveryClock()
+        var pages:[CockpitWindowController]=[],notices:[CockpitUnavailableNotice]=[],lines:[String]=[]
+        CockpitFailureLog.verificationLine={ lines.append($0) }
+        defer{CockpitFailureLog.verificationLine=nil}
+        let coordinator=EngineCockpitCoordinator { context in
+            let page=owner.makePage(context:context,verified:bundle);pages.append(page);return page
+        }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let delivery=EngineDeliveryContext(sessionID:"s-"+context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:context.storeEpoch,generation:context.generation),revision:1)
+        await coordinator.consume(.context(delivery))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:owner.settingsStore,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},
+                    now:{clock.now},schedule:{clock.arm($0,$1)})
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 1 { break }; await Task.yield() }
+        let first=try XCTUnwrap(pages.first)
+        XCTAssertTrue(coordinator.presented,"the normal entry presented the real page")
+        // The presented page, driven through its own bridge with a held delivery and fake receipt timers.
+        var sent:[(String,(CockpitDeliveryResult)->Void)]=[],timers:[(UInt64,@MainActor ()->Void)]=[]
+        first.verificationNoWindowDelivery={ raw,complete in sent.append((raw,complete)) }
+        first.verificationNoWindowArm={ delay,fire in timers.append((delay,fire));return {} }
+        first.verificationNoWindowClock={ 1_000 }
+        let shell=CockpitShellState(closed:false,attached:true,forcedClosed:false,tier:.tall)
+        first.verificationNoWindowShell=shell
+        var ready=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(first.bridge.load(owner.appearance,shell:shell).utf8)) as? [String:Any])
+        for key in ["appearance","shell","redBelow","showUsedPercent","showAllModels","ackedCautions","pinnedModels","memberOrder"] { ready[key]=nil }
+        ready["type"]="ready";ready["sequence"]="1";ready["appearanceVersion"]=2;ready["capabilities"]=["appearanceUpdates","shellState","shellActions"]
+        _=try first.bridge.accept(String(decoding:JSONSerialization.data(withJSONObject:ready),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"))
+        try first.verificationConfirmVisible()
+        let capture=Self.repoRoot().appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        first.display(try WireDecoder.decode(WireCockpitData.self,from:Data(contentsOf:capture)),ticket:try XCTUnwrap(first.queryTicket))
+        try XCTUnwrap(sent.last).1(.accepted) // the page took the call; its rendered receipt is late
+        try XCTUnwrap(timers.last { $0.0 == CockpitPageHealth.delayedAfterMs }).1()
+        XCTAssertTrue(first.readingDelayed,"a late receipt marks the reading delayed")
+        XCTAssertFalse(first.bridge.disposed,"and keeps the presented page")
+        XCTAssertTrue(coordinator.presented)
+        // The content process ends: a dead page, rebuilt after 1 s, then 4 s, without a notice.
+        first.webViewWebContentProcessDidTerminate(try XCTUnwrap(first.verificationWebView))
+        XCTAssertTrue(first.bridge.disposed)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("page-rebuild attempt=1 delayMs=1000 after=page.contentTerminated") },lines.joined(separator:"\n"))
+        clock.advance(by:999);XCTAssertEqual(pages.count,1)
+        clock.advance(by:1);XCTAssertEqual(pages.count,2,"the first rebuild opens a new real page after 1 s")
+        let second=try XCTUnwrap(pages.last)
+        second.webViewWebContentProcessDidTerminate(try XCTUnwrap(second.verificationWebView))
+        clock.advance(by:3_999);XCTAssertEqual(pages.count,2)
+        clock.advance(by:1);XCTAssertEqual(pages.count,3,"the second after 4 s")
+        XCTAssertTrue(notices.isEmpty,"rebuilds inside the budget are silent")
+        let third=try XCTUnwrap(pages.last)
+        third.webViewWebContentProcessDidTerminate(try XCTUnwrap(third.verificationWebView))
+        XCTAssertEqual(notices.count,1,"the third dead page in 10 minutes is announced")
+        XCTAssertFalse(notices.first?.bundleProblem ?? true,"with the generic notice, never the repair one")
+        XCTAssertFalse(lines.contains { $0.contains("page-failure failure=bundleResource") },lines.joined(separator:"\n"))
+        app.toggleConsole();await coordinator.shutdown();await app.composition.stop()
+    }
+    /// Cockpit recovery step 3 (G3-96, G3-116; CKP-SHELL-27, #470 staging) through the normal entry: the Dock's console
+    /// button opens the cockpit on the real composition with the cockpit entry enabled and the coordinator presents a
+    /// real CockpitWindowController. Behind one call that never completes, a stream of replies keeps one display in
+    /// flight and only the newest waiting; nothing is refused, the page is never failed or rebuilt, and when the held
+    /// call completes only the newest display is delivered.
+    @MainActor func testDeliveryThroughTheNormalEntryKeepsOneActiveAndTheNewestDisplay() async throws {
+        let (owner,bundle,context,_)=try shellFixture()
+        let client=RouteClient()
+        var pages:[CockpitWindowController]=[],lines:[String]=[]
+        CockpitFailureLog.verificationLine={ lines.append($0) }
+        defer{CockpitFailureLog.verificationLine=nil}
+        let coordinator=EngineCockpitCoordinator { context in
+            let page=owner.makePage(context:context,verified:bundle);pages.append(page);return page
+        }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let delivery=EngineDeliveryContext(sessionID:"s-"+context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:context.storeEpoch,generation:context.generation),revision:1)
+        await coordinator.consume(.context(delivery))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:owner.settingsStore,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{ _ in XCTFail("no notice") })
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 1 { break }; await Task.yield() }
+        let page=try XCTUnwrap(pages.first)
+        XCTAssertTrue(coordinator.presented,"the normal entry presented the real page")
+        var sent:[(String,(CockpitDeliveryResult)->Void)]=[],failures:[CockpitWindowFailure]=[]
+        page.verificationNoWindowDelivery={ raw,complete in sent.append((raw,complete)) }
+        page.verificationNoWindowArm={ _,_ in {} }
+        page.verificationNoWindowClock={ 1_000 }
+        let previousFailure=page.onFailure
+        page.onFailure={ failures.append($0); previousFailure?($0) }
+        let shell=CockpitShellState(closed:false,attached:true,forcedClosed:false,tier:.tall)
+        page.verificationNoWindowShell=shell
+        var ready=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(page.bridge.load(owner.appearance,shell:shell).utf8)) as? [String:Any])
+        for key in ["appearance","shell","redBelow","showUsedPercent","showAllModels","ackedCautions","pinnedModels","memberOrder"] { ready[key]=nil }
+        ready["type"]="ready";ready["sequence"]="1";ready["appearanceVersion"]=2;ready["capabilities"]=["appearanceUpdates","shellState","shellActions"]
+        _=try page.bridge.accept(String(decoding:JSONSerialization.data(withJSONObject:ready),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"))
+        try page.verificationConfirmVisible()
+        let capture=Self.repoRoot().appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        let data=try WireDecoder.decode(WireCockpitData.self,from:Data(contentsOf:capture))
+        page.display(data,ticket:try XCTUnwrap(page.queryTicket))
+        XCTAssertEqual(sent.count,1,"one display in flight; its call never completes")
+        for _ in 0..<40 { page.display(data,ticket:try XCTUnwrap(page.queryTicket)) }
+        XCTAssertLessThanOrEqual(page.verificationOutstanding,2,"one active display and the newest replacement")
+        XCTAssertEqual(sent.count,1)
+        XCTAssertFalse(lines.contains { $0.hasPrefix("delivery-skipped") },"nothing is refused")
+        XCTAssertEqual(failures,[]);XCTAssertFalse(page.bridge.disposed);XCTAssertTrue(coordinator.presented)
+        sent[0].1(.accepted)
+        XCTAssertEqual(sent.count,2,"the held call completes; only the newest display follows")
+        sent[1].1(.accepted)
+        XCTAssertEqual(sent.count,2)
+        XCTAssertEqual(failures,[]);XCTAssertEqual(pages.count,1,"never rebuilt")
+        XCTAssertFalse(lines.contains { $0.hasPrefix("page-failure") },lines.joined(separator:"\n"))
+        app.toggleConsole();await coordinator.shutdown();await app.composition.stop()
     }
 #endif
 }

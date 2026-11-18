@@ -16,10 +16,9 @@ import ModelPlanEngineClient
     /// One foundation document backs the normal Settings and Core entry.
     public static func makeSettingsStore(applicationSupport: URL, rowIDMap: [String: String] = [:],
                                          preferredLanguages: [String] = Locale.preferredLanguages) throws -> SettingsStore {
-        let tag = (preferredLanguages.first ?? "").lowercased().replacingOccurrences(of: "_", with: "-")
-        let language: SettingsLanguage = tag == "zh" || tag.hasPrefix("zh-") ? .chinese : .english
+        let language = SettingsLanguage.resolve(preferredLanguages: preferredLanguages)
         return try SettingsStore(foundationAt: applicationSupport, product: .community,
-                                 rowIDMap: rowIDMap, defaultLanguage: language)
+                                 rowIDMap: rowIDMap, defaultLanguage: language, preferredLanguages: preferredLanguages)
     }
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
