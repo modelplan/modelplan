@@ -338,5 +338,16 @@ func Cases() ([]Case, error) {
 			}
 		})
 	}
+	add("F24-token-accounting", "response token buckets and local calendar windows", "data", 1, 0, func(in *snapshot.Input, d *digest.Digest) {
+		for _, days := range []int{0, 6, 29, 30} {
+			kinds := speed.TokenKinds{InputTokens: ptr(int64(2)), CacheReadTokens: ptr(int64(3)), CacheWriteTokens: ptr(int64(4)), ReasoningTokens: ptr(int64(1)), TotalTokens: ptr(int64(14))}
+			output := int64(5)
+			if days == 0 {
+				kinds = speed.TokenKinds{InputTokens: ptr(int64(1000)), CacheReadTokens: ptr(int64(9000)), CacheWriteTokens: ptr(int64(50)), ReasoningTokens: ptr(int64(10)), TotalTokens: ptr(int64(10075))}
+				output = 25
+			}
+			in.Perf.Ledger.UsageRows = append(in.Perf.Ledger.UsageRows, speed.PerfRow{Day: Now.AddDate(0, 0, -days).Format("2006-01-02"), Source: "codex", Model: "native-z", TokenKinds: kinds, ObservedRequests: 1, ObservedOutputTokens: output})
+		}
+	})
 	return out, nil
 }

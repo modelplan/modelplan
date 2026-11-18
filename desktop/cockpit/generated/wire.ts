@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 242b8f3117d6ff5a2972d4e91b18f4b01479bf273ddec229a089acf1dd03169e
+// Schema SHA-256: f986b03c92ef508a23648d368051010ceee36e771cc0862329e3356f07418fd9
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -34,6 +34,7 @@ export type WireAccountToday = {
   readonly "bindingBasis": "source-wide-current-binding" | "session-binding";
   readonly "generationTps"?: number | null;
   readonly "observedOutputTokens"?: number | null;
+  readonly "observedTotalTokens"?: number | null;
   readonly "runningSessions"?: number | null;
 };
 
@@ -147,6 +148,8 @@ export type WireCockpitHistorySums = {
   readonly "inputTokens": number | null;
   readonly "observedRequests": number;
   readonly "outputTokens": number;
+  readonly "reasoningTokens"?: number | null;
+  readonly "totalTokens"?: number | null;
 };
 
 export type WireCockpitPeak = {
@@ -322,6 +325,7 @@ export type WireCockpitToday = {
   readonly "bindingBasis": string;
   readonly "generationTps": number | null;
   readonly "observedOutputTokens": number;
+  readonly "observedTotalTokens"?: number | null;
   readonly "source": string;
 };
 
@@ -716,6 +720,17 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ],
         "minimum": 1
+      },
+      "observedTotalTokens": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "minimum": 0
       },
       "runningSessions": {
         "anyOf": [
@@ -1310,6 +1325,26 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "outputTokens": {
         "type": "integer"
+      },
+      "reasoningTokens": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "totalTokens": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
@@ -2212,6 +2247,17 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "observedOutputTokens": {
         "type": "integer"
+      },
+      "observedTotalTokens": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "minimum": 0
       },
       "source": {
         "type": "string"

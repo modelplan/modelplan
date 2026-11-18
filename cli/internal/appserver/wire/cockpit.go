@@ -217,6 +217,7 @@ type CockpitCredits struct {
 	ObservedAt time.Time `json:"observedAt"`
 }
 type CockpitToday struct {
+	ObservedTotalTokens  *int64   `json:"observedTotalTokens,omitempty" null:"forbidden" schema:"minimum=0"`
 	Source               string   `json:"source"`
 	ObservedOutputTokens int64    `json:"observedOutputTokens"`
 	GenerationTps        *float64 `json:"generationTps" null:"coalesced"`

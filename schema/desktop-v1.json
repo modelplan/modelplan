@@ -3419,6 +3419,66 @@
         "sums"
       ],
       "type": "object"
+    },
+    "tokenacct-Buckets": {
+      "additionalProperties": true,
+      "properties": {
+        "cacheReadTokens": {
+          "type": "integer"
+        },
+        "cacheWriteTokens": {
+          "type": "integer"
+        },
+        "inputTokens": {
+          "type": "integer"
+        },
+        "outputTokens": {
+          "type": "integer"
+        },
+        "reasoningTokens": {
+          "type": "integer"
+        },
+        "totalTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "inputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "outputTokens",
+        "reasoningTokens",
+        "totalTokens"
+      ],
+      "type": "object"
+    },
+    "tokenacct-Windows": {
+      "additionalProperties": true,
+      "properties": {
+        "entries": {
+          "type": "integer"
+        },
+        "last30Days": {
+          "$ref": "#/$defs/tokenacct-Buckets"
+        },
+        "last7Days": {
+          "$ref": "#/$defs/tokenacct-Buckets"
+        },
+        "reference": {
+          "type": "string"
+        },
+        "today": {
+          "$ref": "#/$defs/tokenacct-Buckets"
+        }
+      },
+      "required": [
+        "reference",
+        "today",
+        "last7Days",
+        "last30Days",
+        "entries"
+      ],
+      "type": "object"
     }
   },
   "$id": "https://modelplan.ai/schema/desktop-v1.json",
@@ -3651,6 +3711,15 @@
       },
       "type": [
         "array",
+        "null"
+      ]
+    },
+    "tokenAccounting": {
+      "additionalProperties": {
+        "$ref": "#/$defs/tokenacct-Windows"
+      },
+      "type": [
+        "object",
         "null"
       ]
     },
