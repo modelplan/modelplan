@@ -194,7 +194,9 @@ export function verdicts(items, head, carried) {
 // whose VERDICT counts for the PR; the latest such line wins. Other lanes become advisory notes. Null = no sticky.
 export function reviewerLane(items) {
   let lane = null;
-  for (const x of items)
+  // Comments only: the workflow re-evaluates on issue_comment events, not on review submit/edit/dismiss, so a
+  // review-borne assignment could leave a stale gate status.
+  for (const x of items.filter((i) => i.kind === "comment"))
     for (const l of lines(x.body)) {
       const m = /^REVIEWER: \(?([a-z0-9]+(?:-[a-z0-9]+)*)\)?\s*$/i.exec(l);
       if (m) lane = `(${m[1].toLowerCase()})`;
