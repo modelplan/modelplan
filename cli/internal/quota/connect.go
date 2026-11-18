@@ -375,7 +375,7 @@ func ReadDeclared(p Paths, now time.Time) Report {
 func ForgetTool(p Paths, tool string) error { return forgetTool(p, tool, true, false, "") }
 
 func forgetTool(p Paths, tool string, history, identity bool, scopeClass string) error {
-	admission, err := consent.ReaderLock()
+	admission, err := consent.ReaderLockWait()
 	if err != nil {
 		return err
 	}

@@ -20,6 +20,7 @@ import (
 	"unicode"
 
 	"github.com/modelplan/modelplan/cli/internal/profile"
+	"github.com/modelplan/modelplan/cli/internal/tokenacct"
 )
 
 const (
@@ -160,6 +161,10 @@ type Report struct {
 	Coverage       Coverage   `json:"coverage"`
 	Rows           []Row      `json:"rows"`
 	Sessions       []Session  `json:"sessions"`
+	// Accounting is ccusage's accounting of the same files (tokenacct): input
+	// without cache, cache read, output and reasoning, by local day; totals are
+	// the sum of the buckets. Rows and Sessions keep the tool's native counts.
+	Accounting *tokenacct.Windows `json:"accounting,omitempty"`
 }
 
 // GeminiStatus reads only modelplan's own consent setting, never Gemini data.
@@ -269,6 +274,7 @@ func readHistory(home string, now time.Time, tool historyTool) Report {
 		return files[i].at.After(files[j].at)
 	})
 	observations := map[string]observation{}
+	acct := accounting{root: tool.home(home), source: tool.source}
 	readBytes := int64(0)
 	localNow := now.Local()
 	cutoff := localday.Start(localNow.Year(), localNow.Month(), localNow.Day()-HistoryDays+1, localNow.Location())
@@ -287,6 +293,7 @@ func readHistory(home string, now time.Time, tool historyTool) Report {
 			r.Coverage.FilesSkipped++
 			continue
 		}
+		acct.read(f, b)
 		records, err := tool.parse(b, strings.HasSuffix(f.path, ".jsonl"))
 		if err != nil {
 			r.Coverage.FilesSkipped++
@@ -407,6 +414,7 @@ func readHistory(home string, now time.Time, tool historyTool) Report {
 		}
 		return r.Sessions[i].LastAt.After(r.Sessions[j].LastAt)
 	})
+	r.Accounting = acct.windows(now)
 	r.Status, r.Reason = "ok", ""
 	if len(r.Rows) == 0 {
 		r.Status, r.Reason = "empty", "no-supported-local-usage"

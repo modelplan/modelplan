@@ -2,8 +2,10 @@
 import Foundation
 
 /// Settings "Cockpit size" (owner D51, D60, D66). The cockpit is drawn at this size, the study layout scaled as one
-/// page; on a screen too short for it, smaller, down to the readable floor. Auto is the default (D66): 85 % on
-/// laptop-width screens, 100 % on wider ones, judged on the screen the cockpit opens on (the menu bar icon's).
+/// page; on a screen too short for it, smaller, down to the readable floor. Auto is the default. D66, amended by the
+/// owner 11-18 (G3-132): Auto is judged on the SET of connected displays, not the display the cockpit is on: 85 % when
+/// any of them is laptop-width (up to 1512 pt), 100 % only when all are wider. Every choice, Auto or a fixed %, is then
+/// capped by the smallest connected display (`CockpitSizeBasis`), so the size is the same on every display.
 public enum CockpitSize: String, CaseIterable, Sendable {
     case automatic, percent80 = "80", percent85 = "85", percent90 = "90", percent100 = "100"
     public static let standard = CockpitSize.automatic
@@ -16,6 +18,26 @@ public enum CockpitSize: String, CaseIterable, Sendable {
         case .automatic: return screenWidth <= Self.automaticLaptopScreenWidth ? Self.automaticLaptopScale : 1
         case .percent80: return 0.8; case .percent85: return 0.85; case .percent90: return 0.9; case .percent100: return 1
         }
+    }
+}
+
+/// G3-132 (owner, 11-18): one cockpit size on every display. Of all connected displays: the smallest visible height
+/// and visible width (the cap: the largest scale at which the full cockpit fits the smallest display, D51 floor and short
+/// version as before) and the smallest full width (Auto: laptop-width if any display is). It depends only on the set of
+/// displays, so it never changes while the cockpit is dragged between them; it changes when the setting changes or a
+/// display is added or removed (the controller reads it at each layout; a relayout follows
+/// `NSApplication.didChangeScreenParametersNotification`).
+public struct CockpitSizeBasis: Equatable, Sendable {
+    public let visibleHeight: CGFloat, visibleWidth: CGFloat, screenWidth: CGFloat
+    public init(visibleHeight: CGFloat, visibleWidth: CGFloat, screenWidth: CGFloat) {
+        self.visibleHeight = visibleHeight; self.visibleWidth = visibleWidth; self.screenWidth = screenWidth
+    }
+    /// The basis of a set of displays; nil without a usable display.
+    public init?(screens: [CockpitScreen]) {
+        let usable = screens.filter { $0.visibleFrame.width > 0 && $0.visibleFrame.height > 0 && $0.frame.width > 0 }
+        guard let height = usable.map(\.visibleFrame.height).min(), let width = usable.map(\.visibleFrame.width).min(),
+              let full = usable.map(\.frame.width).min(), height.isFinite, width.isFinite, full.isFinite else { return nil }
+        self.init(visibleHeight: height, visibleWidth: width, screenWidth: full)
     }
 }
 
@@ -45,25 +67,49 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public let frame: CGRect
     /// The chosen size did not fit this screen, so the cockpit is drawn smaller.
     public let sizeFellBack: Bool
+    /// CKP-SHELL-33 (owner D175/D178): the attached cockpit hangs this far below the menu bar; only the launch rack
+    /// shows in the gap.
+    public static let menuBarGap: CGFloat = 10
+    /// The gap the size tier (full / short / forced closed) is judged with: the pre-rack 6 pt, so the 10 pt gap comes out
+    /// of free space (a slightly smaller scale) and never changes which tier a screen gets (D51 thresholds unchanged).
+    static let tierGap: CGFloat = 6
+    /// CKP-SHELL-33 (D158): the menu bar icon sits above the cockpit's LEFT canopy shoulder. The shoulder's x in page
+    /// px (636 px canvas, 8 px margin), measured on the accepted rack demo's hull art (v7/v8: 40 pt and 16 pt of the
+    /// 480 pt-wide 620 px shell, full and short versions).
+    public static func shoulderX(_ profile: CockpitAppearance.Profile) -> CGFloat { profile == .full ? 60 : 29 }
+    /// How far below the window top the hull/canopy edge is at the shoulder, in page px (same measurement). The rack
+    /// is visible above this line only; nothing of it is drawn below it inside the cockpit's frame (D175: nothing
+    /// shows through the window).
+    public static func shoulderDrop(_ profile: CockpitAppearance.Profile) -> CGFloat { profile == .full ? 32 : 6 }
     /// `screenWidth` is the full width of the screen the cockpit opens on; it defaults to the usable width.
-    public static func fit(usable: CGRect, anchor: CGRect, shutterClosed: Bool, size: CockpitSize = .standard, screenWidth: CGFloat? = nil) -> Self? {
+    /// `forceCompact` (CKP-SHELL-33 key-detach landing, D187): the short version even where the full one fits.
+    /// `basis` (G3-132): the size basis of all connected displays; without it, this display alone (as before G3-132).
+    public static func fit(usable: CGRect, anchor: CGRect, shutterClosed: Bool, size: CockpitSize = .standard, screenWidth: CGFloat? = nil,
+                           forceCompact: Bool = false, basis: CockpitSizeBasis? = nil) -> Self? {
         guard !usable.isNull, !usable.isInfinite, usable.width.isFinite, usable.height.isFinite, usable.width > 0, usable.height > 40,
               usable.origin.x.isFinite, usable.origin.y.isFinite,
               anchor.origin.x.isFinite, anchor.origin.y.isFinite else { return nil }
-        // `usable` already excludes the menu bar; the top gap is 6 pt below the menu bar icon, on a whole point.
-        let top = (min(usable.maxY, anchor.minY) - 6).rounded(.down)
+        // `usable` already excludes the menu bar; the top gap is 10 pt below the menu bar (D178), on a whole point.
+        let top = (min(usable.maxY, anchor.minY) - Self.menuBarGap).rounded(.down)
         let available = top - usable.minY
         guard available > 0 else { return nil }
-        // The chosen size, or less when the screen is too short or narrow for it.
-        let chosen = size.scale(screenWidth: screenWidth ?? usable.width)
-        func fitting(_ root: CGFloat) -> CGFloat { min(chosen, usable.width / Self.width, available / (root + Self.baseReserve)) }
+        // G3-132: with a `basis`, Auto is judged on the set of displays and the room is the smallest display's, so every
+        // display gets the same size. This display's own room stays a bound (it is never smaller than the basis).
+        let tierAvailable = (min(usable.maxY, anchor.minY) - Self.tierGap).rounded(.down) - usable.minY
+        let room = basis.map { min(available, ($0.visibleHeight - Self.menuBarGap).rounded(.down)) } ?? available
+        let tierRoom = basis.map { min(tierAvailable, ($0.visibleHeight - Self.tierGap).rounded(.down)) } ?? tierAvailable
+        let narrowest = basis.map { min(usable.width, $0.visibleWidth) } ?? usable.width
+        let shortest = basis.map { min(usable.height, $0.visibleHeight) } ?? usable.height
+        // The chosen size, or less when the (smallest) display is too short or narrow for it.
+        let chosen = size.scale(screenWidth: basis?.screenWidth ?? screenWidth ?? usable.width)
+        func fitting(_ root: CGFloat, _ room: CGFloat) -> CGFloat { min(chosen, narrowest / Self.width, room / (root + Self.baseReserve)) }
         var profile = CockpitAppearance.Profile.full, forcedClosed = false
-        var scale = fitting(905)
-        if scale < Self.minimumFullScale {
+        var scale = fitting(905, room)
+        if fitting(905, tierRoom) < Self.minimumFullScale || forceCompact {
             // The short version, as before D51: open when its root fits, otherwise forced closed.
             profile = .compact
-            forcedClosed = usable.height - 6 - Self.baseReserve < 635
-            scale = fitting(forcedClosed ? 609 : 635)
+            forcedClosed = shortest - Self.tierGap - Self.baseReserve < 635
+            scale = fitting(forcedClosed ? 609 : 635, room)
         }
         let fellBack = scale < chosen
         let closed = shutterClosed || forcedClosed
@@ -81,7 +127,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let porthole = closed ? ((Self.stripTop(profile) - Self.closedSlabBand) * scale).rounded(.down) : 0
         let canvas = CGSize(width: min(Self.wholePoints(Self.width * scale), usable.width.rounded(.down)),
                             height: min(canvasHeight - porthole, available.rounded(.down)))
-        let x = max(usable.minX.rounded(.up), min(attachedX(anchor: anchor, width: canvas.width, scale: scale, usable: usable).rounded(),
+        let x = max(usable.minX.rounded(.up), min(attachedX(anchor: anchor, width: canvas.width, scale: scale, usable: usable, profile: profile).rounded(),
                                                   (usable.maxX - canvas.width).rounded(.down)))
         return Self(profile: profile, shutterClosed: closed, forcedClosed: forcedClosed, scale: scale, rootHeight: height,
                     canvasRootHeight: openRoot, canvasHeight: canvasHeight,
@@ -100,11 +146,15 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public static func hiddenIconAnchor(usable: CGRect) -> CGRect {
         CGRect(x: usable.maxX, y: usable.maxY, width: 0, height: 0)
     }
-    /// Owner D88 (supersedes D53): the attached cockpit sits centred under the menu bar icon. The 636 px
-    /// raster has the same 8 px transparent margin on both sides of the 620 px shell, so the frame's centre is
-    /// the shell's centre. Near a screen edge it shifts just enough to stay on the screen.
-    public static func attachedX(anchor: CGRect, width: CGFloat, scale: CGFloat, usable: CGRect) -> CGFloat {
-        max(usable.minX, min(anchor.midX - width / 2, usable.maxX - width))
+    /// CKP-SHELL-33 (D158, supersedes D88's centring): the menu bar icon sits above the cockpit's left canopy shoulder.
+    /// Near a screen edge it shifts just enough to stay on the screen.
+    public static func attachedX(anchor: CGRect, width: CGFloat, scale: CGFloat, usable: CGRect,
+                                 profile: CockpitAppearance.Profile = .full) -> CGFloat {
+        max(usable.minX, min(anchor.midX - shoulderX(profile) * scale, usable.maxX - width))
+    }
+    /// The shoulder point in screen coordinates for this layout's frame: where the rack meets the cockpit.
+    public var shoulder: CGPoint {
+        CGPoint(x: frame.minX + Self.shoulderX(profile) * scale, y: frame.maxY - Self.shoulderDrop(profile) * scale)
     }
     /// The page canvas in CSS px: the open root plus the base reserve, open or closed (G3-108).
     public var pageSize: CGSize { .init(width: Self.width, height: canvasRootHeight + Self.baseReserve) }
@@ -139,7 +189,10 @@ public struct CockpitShellLayout: Equatable, Sendable {
 @MainActor public final class CockpitShellSession {
     public var detached = false
     public var shutterClosed = false
-    /// D88: set by the console just before an open and consumed by it; the menu bar icon grows the cockpit.
+    /// CKP-SHELL-33 (D187): a key detach that found no room for the full cockpit switched to the short version; it
+    /// stays short while detached and is cleared by a put back.
+    public var compactWhileDetached = false
+    /// Set by the console just before an open and consumed by it; the menu bar icon opens rack-first (CKP-SHELL-33).
     public var nextEntrance: CockpitEntrance = .fade
     private var origins: [(String, CGPoint)] = []
     public init() {}

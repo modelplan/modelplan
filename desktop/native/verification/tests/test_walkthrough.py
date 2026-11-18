@@ -4,6 +4,7 @@ import datetime
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -22,6 +23,33 @@ def widget(grip_y, ring_ys):
     children = [ring(str(i), y) for i, y in enumerate(ring_ys)]
     children.append({"id": "dock.grip.0", "frame": [12.0, grip_y, 30.0, 20.0]})
     return {"role": "AXWindow", "frame": [0.0, 100.0, 90.0, 300.0], "children": children}
+
+
+class DragStripTests(unittest.TestCase):
+    """G3-43: the drag starts inside the app's title drag region, whatever the window scale and shape."""
+    def start(self, frame):
+        window = {"role": "AXWindow", "title": "ModelPlan Cockpit", "frame": frame, "children": []}
+        host = FakeHost(tree={"windows": [window]})
+        walk = w.Walkthrough.__new__(w.Walkthrough)
+        walk.host = host
+        walk.need = lambda target: window
+        walk.op_dragStrip({"window": "x", "by": [-320, 40]})
+        return next(call for call in host.calls if call[0] == "down")[1:]
+
+    def test_point_is_inside_the_drag_region_at_any_scale(self):
+        # Real CockpitShellLayout windows (page 636 wide): window height in page px -> strip top inside the window.
+        # open full 905+34, closed full 939-(253-25), open short 635+34, closed short 669-(65-25); the title drag region
+        # spans strip top - 3 .. strip top + 29 from the window top.
+        for scale, height, strip_top in ((1.0, 939, 253), (0.85, 939, 253), (0.75, 939, 253), (1.0, 711, 25),
+                                         (1.0, 669, 65), (0.85, 669, 65), (1.0, 629, 25), (0.8, 629, 25)):
+            x0, y0 = 300.0, 120.0
+            x, y = self.start([x0, y0, 636 * scale, height * scale])
+            self.assertGreaterEqual((x - x0) / scale, 24); self.assertLessEqual((x - x0) / scale, 24 + 216)
+            self.assertGreaterEqual((y - y0) / scale, strip_top - 3); self.assertLessEqual((y - y0) / scale, strip_top + 29)
+
+    def test_detached_full_cockpit_at_100_percent_hits_the_drag_region(self):
+        x, y = self.start([0.0, 0.0, 636.0, 939.0])
+        self.assertEqual((x, y), (132.0, 266.0))  # region is y 250..282 from the window top, not the old 238
 
 
 class FakeHost:
@@ -76,6 +104,24 @@ class Targets(unittest.TestCase):
         self.assertEqual(w.resolve(self.TREE, "label:Close")["id"], "a")
         self.assertEqual(w.resolve(self.TREE, "status-item")["frame"], [700, 0, 60, 24])
         self.assertEqual(w.resolve(self.TREE, "window-of:ax:a")["role"], "AXWindow")
+
+    def test_label_prefix_and_contains(self):
+        self.assertEqual(w.resolve(self.TREE, "label^:Clo")["id"], "a")
+        self.assertEqual(w.resolve(self.TREE, "label~:los")["id"], "a")
+        self.assertIsNone(w.resolve(self.TREE, "label^:los"))
+
+    def test_prefix_and_contains_also_match_the_title(self):
+        tree = {"windows": [{"role": "AXWindow", "frame": [0, 0, 100, 100], "children": [
+            {"id": "all", "label": "All · Shortcut key 0", "title": "Shortcut key 0", "frame": [1, 2, 3, 4]}]}]}
+        for target in ("label:Shortcut key 0", "label^:Shortcut", "label~:key 0", "label^:All", "label~:Shortcut key 0"):
+            self.assertEqual(w.resolve(tree, target)["id"], "all", target)
+
+    def test_click_first_takes_the_first_target_on_screen_and_fails_when_none_is(self):
+        run = w.Walkthrough(FakeHost(tree=self.TREE), "App.app", "out", [], {}, (1000, 800))
+        run.op_clickFirst({"targets": ["label:Nope", "label:Close"]})
+        self.assertEqual(run.host.calls[-1][0], "click")
+        with self.assertRaises(w.WalkthroughError):
+            run.op_clickFirst({"targets": ["label:Nope"]})
 
     def test_a_closed_menu_item_exists_but_is_not_on_screen(self):
         self.assertIsNone(w.resolve(self.TREE, "ax:closed"))
@@ -212,8 +258,12 @@ class Steps(unittest.TestCase):
         source = (ROOT.parents[2] / "cockpit/src/porthole-still.ts")
         if not source.exists():
             self.skipTest("cockpit sources not in this checkout")
-        label = "Open the 3D launch field \u00b7 Or click anywhere on the field"
-        self.assertIn(label, source.read_text(encoding="utf-8"))
+        strings = ROOT.parents[2] / "cockpit/study/rocket-r1/strings/host.js"
+        entry = re.search(r"^\s*portBig:\s*\['aria',\s*'[^']*',\s*'([^']*)'\]", strings.read_text(encoding="utf-8"), re.MULTILINE)
+        self.assertIsNotNone(entry, "the field opener's accessibility label exists in the host string table")
+        label = entry.group(1)
+        self.assertEqual(label, "Open the 3D launch field \u00b7 Or click anywhere on the field")
+        self.assertRegex(source.read_text(encoding="utf-8"), r"setAttribute\('aria-label',\s*ht\([^;\n]*'host\.portBig'\)\)")
         text = json.dumps(self.STEPS, ensure_ascii=False)
         self.assertIn("label:" + label, text)
         self.assertNotIn("label:Open the 3D view", text)
@@ -241,6 +291,15 @@ class Steps(unittest.TestCase):
         walk.walk_steps()
         self.assertEqual(len(seen), 1)
         self.assertIsNotNone(seen[0])
+
+    def test_comparison_steps_do_not_run_when_the_strip_press_fails(self):
+        steps = {s["id"]: s for s in json.loads((ROOT / "steps.json").read_text())["steps"]}
+        for later in ("j-compare-back", "j-esc-compare"):
+            self.assertEqual(steps[later]["requires"], ["j-press-strip"])
+        press = dict(steps["j-press-strip"], requires=[])
+        records = walker(FakeHost(), self.out, [press, dict(steps["j-compare-back"], requires=["j-press-strip"])]).walk_steps()
+        self.assertEqual(records[0]["status"], "fail")
+        self.assertEqual((records[1]["status"], records[1]["reason"]), ("not-run", "needs j-press-strip"))
 
     def test_a_failed_action_is_still_photographed_and_blocks_dependents(self):
         steps = [{"id": "a", "title": "t", "expected": "e", "actions": [{"op": "click", "target": "ax:gone"}]},
@@ -277,6 +336,21 @@ class Steps(unittest.TestCase):
         walk.op_awaitAbsent({"target": "ax:gone"})
         with self.assertRaises(w.WalkthroughError):
             walk.op_awaitAbsent({"target": "ax:looking", "timeout": 2})
+
+    def test_await_stable_waits_for_the_fader_bank_and_fails_while_it_keeps_changing(self):
+        host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "bank", "title": "Astra", "frame": [1, 1, 2, 2]}]}]})
+        walk = walker(host, self.out, [])
+        walk.op_awaitStable({"target": "ax:bank", "quiet": 1})
+        counter = iter(range(10 ** 6))
+        walk.tree = lambda: {"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "bank", "title": str(next(counter)), "frame": [1, 1, 2, 2]}]}]}
+        with self.assertRaises(w.WalkthroughError):
+            walk.op_awaitStable({"target": "ax:bank", "quiet": 1, "timeout": 2})
+
+    def test_press_strip_waits_for_a_stable_bank_and_pages_use_the_models_label(self):
+        steps = {s["id"]: s for s in json.loads((ROOT / "steps.json").read_text())["steps"]}
+        ops = [a["op"] for a in steps["j-press-strip"]["actions"]]
+        self.assertLess(ops.index("awaitStable"), ops.index("click", ops.index("awaitStable")))
+        self.assertNotIn("label:Effort", json.dumps([steps["hud-select"], steps["j-page-effort"]]))
 
     def test_blank_render_fails(self):
         host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "id": "x"}]}, stats={"colours": 2, "dominantShare": 0.99})

@@ -153,7 +153,7 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             return SubscriptionRow(id: id, tool: tool, name: displayName, plan: sub.plan, section: .added,
                                    consent: toolFacts?.consent, state: toolFacts?.state, causeCode: code,
                                    visible: !hiddenIDs.contains(id), position: index, addedCount: ordered.count,
-                                   status: status, needsAttention: fix != nil, fix: fix, canAdd: false)
+                                   status: status, needsAttention: fix.map { !$0.isInformational } ?? false, fix: fix, canAdd: false)
         }
 
         var detected: [SubscriptionRow] = [], absent: [SubscriptionRow] = [], pending: [SubscriptionRow] = []

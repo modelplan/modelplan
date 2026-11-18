@@ -165,7 +165,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
-    /// Build 14c (G3-79): where the latest open was clicked; nil opens on the menu bar icon's display.
+    /// Build 14c (G3-79): where the latest open was clicked; only a detached open uses it (G3-128: attached is always
+    /// the menu bar icon's display).
     var openPoint: (() -> CGPoint?)?
     /// D204 (G3-94): the widget ignition's frame on screen; its press is not an outside click.
     var ignitionFrame: (() -> CGRect?)?
@@ -520,8 +521,8 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     var attachmentHintAnchor: CockpitAttachmentHintAnchor? { wantsVisible ? owner.coordinator?.attachmentHintAnchor : nil }
     func show() { show(fromStatusItem: false) }
     func show(fromStatusItem: Bool) {
-        // D88: only the menu bar icon grows the cockpit out of itself; the ignition keeps its own entrance.
-        entrance = fromStatusItem ? .growFromIcon : .fade
+        // CKP-SHELL-33 (D186): the menu bar icon opens rack-first; the ignition keeps its own fade.
+        entrance = fromStatusItem ? .fromIcon : .fade
         wantsVisible=true
         attempt += 1
         // A new click starts its own grace period and opens at once. Recovery contract: it does not reset the rebuild

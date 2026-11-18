@@ -63,7 +63,9 @@ test('G3-110 a scope switch starts at bank 1 and the same caps glide to the new 
  expect(await cap.getAttribute('data-g3110')).toBe('kept');
  const after=await cap.evaluate(e=>({k:getComputedStyle(e).getPropertyValue('--k').trim(),transition:getComputedStyle(e).transitionProperty+' '+getComputedStyle(e).transitionDuration}));
  expect(after.k).not.toBe(before);
- expect(after.transition).toContain('top');expect(after.transition).toContain('0.28s');
+ // The flat edition glides `top`; the official v4 throttle glides its sprite frame (--fd-frame), still over 0.28 s.
+ const prop=after.transition.split(' ')[0];
+ expect(prop.includes('top')||prop.includes('--fd-frame')).toBe(true);expect(after.transition).toContain('0.28s');
 });
 
 // macrevb-930-1: scope membership counts every bound session, not only the six a fader displays. gpt-a has six
