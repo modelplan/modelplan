@@ -610,8 +610,12 @@ final class CommunityCockpitEntryTests:XCTestCase {
         capture=capture.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
         var data=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
         var details=try XCTUnwrap(data["details"] as? [String:Any])
+        // WP-22: the capture's Codex account reports the model "synthetic" (D98), so that one is "mine"; the publication's
+        // lineup model is not, since the tool did not report it.
         details["publishedModels"]=[["id":"synthetic-model","name":"Synthetic","developerId":"openai","recommended":"medium",
-            "efforts":[["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]]]]
+            "efforts":[["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]]],
+            ["id":"synthetic","name":"Synthetic reported","developerId":"google","recommended":"medium",
+            "efforts":[["effort":"medium","label":"Med","star":true,"ability":42.0,"cost":0.3,"time":30.0]]]]
         data["details"]=details
         let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
         let context=EngineDeliveryContext(sessionID:"s-field",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
@@ -627,10 +631,19 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertFalse(try XCTUnwrap(surface.fieldPayload(focusName:"Not published")).contains("Not published"),"An unknown name focuses nothing")
         // CKP-PORT-11D: the payload is exactly presentation plus published models; no account or local field is in it.
         let object=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(payload.utf8)) as? [String:Any])
-        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","lowPower","models","mine","focus"]),"only presentation and published models: \(object.keys.sorted())")
+        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","lowPower","models","mine","focus","asOf"]),"only presentation and published models: \(object.keys.sorted())")
+        XCTAssertEqual(object["mine"] as? [String],["synthetic"],"WP-22: mine is what the connected tools can run, not the publication's lineup")
+        XCTAssertEqual(object["asOf"] as? String,"2026-10-29","the publication's date for the menu header")
         for forbidden in ["account","email","subscriptionRef","usedPercent","remaining","projectName","token"] { XCTAssertFalse(payload.contains(forbidden),"no \(forbidden) in the field payload") }
+        var opened:[URL]=[]
+        owner.openWebsite={ opened.append($0) }
         surface.handle(.openField)
         XCTAssertTrue(surface.fieldIsOpen)
+        // WP-22: the component's site keys reach the default browser through the console, allowlisted only.
+        let panel=try XCTUnwrap(surface.fieldPanel)
+        panel.receive(#"{"type":"openSite","target":"effort","params":{"m":"synthetic-model"}}"#)
+        panel.receive(#"{"type":"openSite","target":"effort","params":{"m":"Synthetic Model"}}"#)
+        XCTAssertEqual(opened.map(\.absoluteString),["https://modelplan.ai/models/synthetic-model"],"a bad slug is ignored")
         surface.hide()
         XCTAssertFalse(surface.fieldIsOpen,"Closing the cockpit closes the field")
         await composition.stop()
@@ -689,6 +702,8 @@ final class CommunityCockpitEntryTests:XCTestCase {
         // Keyboard: cockpit on B, pointer resting on A.
         var frame=try open()
         XCTAssertTrue(b.visibleFrame.contains(frame),"a keyboard open lands on the cockpit's display B, not the pointer's A: \(NSStringFromRect(frame))")
+        // WP-22 (D298): 88% of B's visible frame, capped at 1600×1000, centred.
+        XCTAssertEqual(frame,CGRect(x:1992,y:207,width:1600,height:1000))
         // Click on the cockpit on B.
         pointer=CGPoint(x:3100,y:800)
         frame=try open()
@@ -698,7 +713,35 @@ final class CommunityCockpitEntryTests:XCTestCase {
         pointer=CGPoint(x:1400,y:600)
         frame=try open()
         XCTAssertTrue(a.visibleFrame.contains(frame),"a click on the cockpit's A part opens on A: \(NSStringFromRect(frame))")
+        XCTAssertEqual(frame.size,CGSize(width:1331,height:835),"88% of A's 1512×949 visible frame")
         await composition.stop()
+    }
+
+    /// WP-22 (D298): the field's "Mine" follows the cockpit's subscription rule: the models the tool reports, else the
+    /// published plan's list, else the tool's developer; a row the widget does not show is not a member.
+    func testTheFieldsMineIsTheModelsTheConnectedToolsCanRun() throws {
+        var capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent()
+        while !FileManager.default.fileExists(atPath:capture.appendingPathComponent("schema/app-cli/captures").path) { capture.deleteLastPathComponent() }
+        let base=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))) as? [String:Any])
+        let effort:[String:Any]=["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]
+        func wire(reported:[String]?,plans:[[String:Any]]?,surfaces:[String]=["dock"]) throws -> WireCockpitData {
+            var data=base,details=try XCTUnwrap(data["details"] as? [String:Any])
+            details["publishedModels"]=[["id":"gpt","name":"GPT","developerId":"openai","recommended":"medium","efforts":[effort]],
+                ["id":"claude","name":"Claude","developerId":"anthropic","recommended":"medium","efforts":[effort]],
+                ["id":"synthetic","name":"Synthetic","developerId":"google","recommended":"medium","efforts":[effort]]]
+            var subscriptions=try XCTUnwrap(details["subscriptions"] as? [[String:Any]])
+            if let reported { subscriptions[0]["reportedModels"]=reported } else { subscriptions[0].removeValue(forKey:"reportedModels") }
+            details["subscriptions"]=subscriptions
+            if let plans { details["planModels"]=plans } else { details.removeValue(forKey:"planModels") }
+            data["details"]=details
+            var projection=try XCTUnwrap(data["projection"] as? [String:Any]),rows=try XCTUnwrap(projection["rows"] as? [[String:Any]])
+            rows[0]["surfaces"]=surfaces;projection["rows"]=rows;data["projection"]=projection
+            return try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
+        }
+        XCTAssertEqual(CockpitFieldFleet.runnable(try wire(reported:["synthetic"],plans:nil)),["synthetic"],"the tool's own report decides")
+        XCTAssertEqual(CockpitFieldFleet.runnable(try wire(reported:nil,plans:[["planId":"openai-codex","basis":"published","modelIds":["claude"]]])),["claude"],"then the published plan's list")
+        XCTAssertEqual(CockpitFieldFleet.runnable(try wire(reported:nil,plans:nil)),["gpt"],"then the tool's developer: Codex runs OpenAI models")
+        XCTAssertEqual(CockpitFieldFleet.runnable(try wire(reported:["synthetic"],plans:nil,surfaces:["menu"])),[],"a row the widget does not show is not connected")
     }
 
     /// glm-660-3: the cockpit's own close button ends in the page's onClosed, not in `hide()`; the field panel closes with it.

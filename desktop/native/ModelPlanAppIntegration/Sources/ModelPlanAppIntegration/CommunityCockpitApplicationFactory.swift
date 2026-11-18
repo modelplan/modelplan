@@ -465,10 +465,12 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     }
     /// Public model data only: the launch field never receives personal readings. The official page is
     /// the only one that asks; a community bundle has no field page, so the panel is not offered.
+    /// WP-22 (D298): `mine` is the published models the connected tools can run (CockpitFieldFleet), `asOf` the
+    /// publication's date for the menu header.
     private struct FieldPayload:Encodable {
-        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
+        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?,asOf:String?
     }
-    private var fieldPanel:CockpitFieldPanel?
+    private(set) var fieldPanel:CockpitFieldPanel? // read by tests (WP-22 site keys)
     /// G3-80 seams: where the pointer is, the cockpit's frame and the displays the field is placed on.
     var pointerLocation: @MainActor () -> CGPoint = { NSEvent.mouseLocation }
     var cockpitFrameForField: (@MainActor () -> CGRect?)?
@@ -479,10 +481,11 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     /// focuses nothing. Only the matching public model ID crosses.
     /// `lowPower` is the Low Power Mode state at open (D63): the scene mounts quiet and on demand when it is on.
     func fieldPayload(focusName:String?=nil,lowPower:Bool=ProcessInfo.processInfo.isLowPowerModeEnabled) -> String? {
-        guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
-        let mine=details.publication?.models.map(\.id) ?? []
+        guard let data=composition.store.snapshot.cockpit,let details=data.details,let models=details.publishedModels,!models.isEmpty else { return nil }
+        let mine=CockpitFieldFleet.runnable(data)
         let focus=focusName.flatMap { name in models.first { $0.name == name }?.id }
-        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:focus)
+        let asOf=details.publication.map { String($0.publishedAt.rawValue.prefix(10)) }
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:focus,asOf:asOf)
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {
@@ -506,6 +509,8 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
         guard let payload=fieldPayload(focusName:focusName,lowPower:panel.isLowPower) else { return }
         if let fieldScreens { panel.screens=fieldScreens }
+        // WP-22: the field's site keys open the allowlisted modelplan.ai pages in the default browser (CockpitFieldPanel.siteURL).
+        panel.openURL={ [weak self] url in self?.owner.openWebsite(url) }
         // Build 14c (G3-80): on the cockpit's display. The intent does not say whether a click or a key opened it, so
         // the pointer counts only while it is over the cockpit (macrev2-845-2).
         let cockpit=cockpitFrameForField?() ?? owner.coordinator?.cockpitFrame

@@ -7,8 +7,8 @@
     {
       "file": "README.md",
       "kind": "notice",
-      "sha256": "7078cdbe1921fea5e73455012613e83864c2a02e594e924b71f69b37fed7ea7d",
-      "bytes": 3164,
+      "sha256": "ea7cc1aa733c9a3494b208f99aadc236ce85577ffbc81cd438f0b26f547e3ce9",
+      "bytes": 3262,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
     },
@@ -13231,16 +13231,24 @@
     {
       "file": "field-scene/README.md",
       "kind": "notice",
-      "sha256": "a6faf1fdec5f9a941511f2d107e4073314f01b02d0c66775b13269593173e653",
-      "bytes": 2920,
+      "sha256": "cd8eade80d0e01879f3837b5cf76828b1a0baede05734bfed5ef02ecc78c0bef",
+      "bytes": 3067,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
     },
     {
-      "file": "field-scene/cockpit-scene.bundle.js",
+      "file": "field-scene/launch-field.js",
       "kind": "field-scene",
-      "sha256": "40293d72c0f77108a0809eae108428dba7b5d4dafa933c2c4c02c86b3de50222",
-      "bytes": 769562,
+      "sha256": "922b2de5debd65161475e6899cb67d37e0ad25aca76c481bbe7c0d550d9cc4f9",
+      "bytes": 805164,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": null
+    },
+    {
+      "file": "field-scene/launch-field.css",
+      "kind": "field-scene",
+      "sha256": "a8ee7dac15cd0f5b43c333d953c1ca8f91114ef71d3780607633f13955ce0be6",
+      "bytes": 30339,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
     },
@@ -13507,6 +13515,1374 @@
         "width": 232,
         "height": 256
       }
+    },
+    {
+      "file": "field-scene/rockets/flat/falcon9-anthropic@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "86d966ef1762b44df92370c9aa329dfd46f2fb7f744aa703827e4688d7496d96",
+      "bytes": 1364,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 24,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/falcon9-anthropic@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "610e6f1c69a128c6a3e3f2273e2e19be8899ed34b7d2bc8caf1ac23979b839a7",
+      "bytes": 2294,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/falcon9-google@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "83a3ce0d9e4a6bb6dff100e0404b66e3d7d3b802839e2d3835efefc98a9c00a3",
+      "bytes": 1362,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 24,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/falcon9-google@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "f2fecc1b729a91ed3abb27dcb37abcd462890a9bc9c5e103a2b178b5e01dbcac",
+      "bytes": 2340,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/falcon9-meta@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "51ef41951122eb03105708c6f1696b0a76c1125486635fe3b6f3e286627d232d",
+      "bytes": 1376,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 24,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/falcon9-meta@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "dc551ba5e38d64d4162aee6432f7cbb17aa1d1fe1d34e882661f1076015a6282",
+      "bytes": 2426,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/falcon9-openai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "98ff63f8577ac3c51eff6c48c1b77fbeea079803040cfdc046e7fa3cc597b70b",
+      "bytes": 1288,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 24,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/falcon9-openai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "75775f513e1adc0a1d5ed144e3d0333ff3b8105cd6c734d475ecc72413163b23",
+      "bytes": 2206,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/falcon9-xai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "197dbabcc3225a125e8c54ba8f8f35b2a677210578dcb4c5825f241fa1f88bd2",
+      "bytes": 1312,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 24,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/falcon9-xai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "d18dbe0015a5d3f54788e89130a237df5aa0c23e32179d310994eceecb3a151e",
+      "bytes": 2282,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/falconHeavy-anthropic@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "2be9a06ffccc9ff73a4b7fcb4ac4ea811aa4cd40e9c8e2cc4fe4f5795c7728eb",
+      "bytes": 2282,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 44,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/falconHeavy-anthropic@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "31c30e751a497c930f6e5466c02a1178de5ed2667a3f4bf960da049d342bfb33",
+      "bytes": 3904,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 66,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/falconHeavy-google@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "a892af9381d16440562b450461ddac7465a3767907a50b01e6054d44504bdadf",
+      "bytes": 2310,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 44,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/falconHeavy-google@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "50817f1a724cc4b5e6e05d2cd843330daeb7e8fc8157c85b5b9e27cbf122d5af",
+      "bytes": 3940,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 66,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/falconHeavy-meta@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "846166393d37bf65a2542f42908f0e47a8226a517869b998a799081cea411791",
+      "bytes": 2344,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 44,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/falconHeavy-meta@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "690a1d50dc636317f46070fe399b78db7ff651315074ad1624820b9112f2df77",
+      "bytes": 3998,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 66,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/falconHeavy-openai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "2907761726a7ff9e05e8aac524ddf663fe3cd72833d644a3ceec14b545e8e433",
+      "bytes": 2264,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 44,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/falconHeavy-openai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "542e23389a772cc051e701aafea8e8d6c7858c15dc9e6e44d3046f58d678014a",
+      "bytes": 3860,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 66,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/falconHeavy-xai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "50f1b2faf1db7eb5c37432ee145ce5c44c47acf25946357c819f0974347b31ef",
+      "bytes": 2258,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 44,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/falconHeavy-xai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "5b953d7ec5cd772e234fc5394245d5649bc80d96d67d12b60c9bae4f6f7d7814",
+      "bytes": 3868,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 66,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/newGlenn-anthropic@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "c8d2052374d1c7d5048986e8b93e525d3276713f49eac6919d120dc618ec71e6",
+      "bytes": 1592,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 28,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/newGlenn-anthropic@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "d3e81f7315f97c7941e17de7298794473b60b204038a38bcb2befe4c5a04af9f",
+      "bytes": 2604,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 42,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/newGlenn-google@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "4e1932675964eb8be1a62d2180ede759b943b2a3f4f5807bae722ab0e8b682f7",
+      "bytes": 1604,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 28,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/newGlenn-google@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "d08d16026441944a5605348af4e72122e72f1c862814b49f4b6009621b7242bf",
+      "bytes": 2582,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 42,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/newGlenn-meta@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "0e2acb57d1311a69c6e1e284142c98e9946be895a19e0751e7fd78a3f47eb591",
+      "bytes": 1624,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 28,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/newGlenn-meta@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "33793f93412b13cd048f59bc70b68f1b093c917e6b8951eb2a556faa21b72ac5",
+      "bytes": 2634,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 42,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/newGlenn-openai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "389ee92f4909c7b1e073a8cad751f837f32d93af5b6b0ff777d21d7228127f2e",
+      "bytes": 1552,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 28,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/newGlenn-openai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "cd5af5b2681eb92baa0c4aca0eb49543a64850ac5431277d63b5f48c1f0a4289",
+      "bytes": 2462,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 42,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/newGlenn-xai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "18a2630107ea127217173b017ee6dd154ec627e13dcfcccd4358cd2482fd5cf4",
+      "bytes": 1576,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 28,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/newGlenn-xai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "280362fa0f4e0858ba5527611c636718a85da0b5fd0ab0a01c4546a4af32437b",
+      "bytes": 2544,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 42,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/vulcan-anthropic@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "eda094699170bea2517aa256313eea8a56d6db349c814072af1278550e76295a",
+      "bytes": 1700,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 32,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/vulcan-anthropic@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "b7677e7462dff54c35b347095ebaa25a787be587c71c7cc5eb487f3e6d35d907",
+      "bytes": 3026,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/vulcan-google@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "844d417a27eb4bb83728561a01550f49c250cb466b39dba6d2231a611ee52d25",
+      "bytes": 1704,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 32,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/vulcan-google@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "7892b295c05153b75702976b79e46fe331f2ad07310504bb39305234a5d80de3",
+      "bytes": 3014,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/vulcan-meta@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "d51482269864428f3d928b1d295e8061634edc1ad6da0ed88c217257a95eaa35",
+      "bytes": 1760,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 32,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/vulcan-meta@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "1a94ee3e725a4449670a6682875229e43dadb4490da78eb6e4d8354ec16ed0a2",
+      "bytes": 3096,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/vulcan-openai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "94415152497051edbb92e62f14187f082e516cfbd3db35efb1d14756cd1355be",
+      "bytes": 1658,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 32,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/vulcan-openai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "65b78cd88e9dc8d323d8988e885e8fcad26c37809b3b849068ad48093cd8518f",
+      "bytes": 2930,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/vulcan-xai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "918fa54ca018f169cfc392789952d47a7393e875c7d3805bf015d84db7608d31",
+      "bytes": 1666,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 32,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/vulcan-xai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "77e9d852aa88e4a712c25420feef5d38ea40544376e92ef277e45eb20d755c77",
+      "bytes": 3006,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-alibaba@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "8c4ac06e8a3016c96c25ec42e3c77abb78f9649cf98f02ae6c437096d9d8fe3d",
+      "bytes": 1670,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-alibaba@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "75397f20c649e03bc6f3e7298d38e95e0510b6df06295a80b1fcceb3e77d2868",
+      "bytes": 2746,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 54,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-deepseek@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "865afd217a1e72efe6e7c95fac5084eeb599f49e435a19ce527f1efc8c36b2ae",
+      "bytes": 1668,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-deepseek@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "0df34d02427cd3c5f68ff3bd43abe9226cf753d06a23814ea227f8d397c27c8c",
+      "bytes": 2752,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 54,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-kimi@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "fee56f5cf4019409f65d3ff5a062d3e9b19f6dd5dd4478e7fb24966497128202",
+      "bytes": 1642,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-kimi@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "ff1ee00d1cbb43842924d8077caf6d37938b2e5e8493ec2ce66a6fbe13d8ab1b",
+      "bytes": 2746,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 54,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-minimax@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "10eba5d22dc2c77b03fe7de07c5651a84e897634b8223df8b555a2186381b115",
+      "bytes": 1632,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-minimax@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "6aa876b59a5373de9cd6216ddec3d0c720014f5c2df2e165d1dca881ea78fa36",
+      "bytes": 2710,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 54,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-tencent@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "b13560d227fc6cc26539d1efc71a74a86c82032190a5ac1cb69d6ab8840b4be7",
+      "bytes": 1600,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-tencent@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "884ff5e5ed38e04997e59771cf3cf1ec522ec94a8362fead44330f4b07f971f8",
+      "bytes": 2622,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 54,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-volcengine@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "3e63f7cd64d3d0b7e3e2e81d612e8a4dce98946a2cf53236bfb172745f9790a4",
+      "bytes": 1574,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-volcengine@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "8a5f183f8870417c17a5ea43e7a8cfbecafc85ab0bd4fad13728c021604ff438",
+      "bytes": 2656,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 54,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-xiaomi@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "59e75987444ea9ac183310dadc32fd6268b41190175305c13d65fa6c2b85bdaf",
+      "bytes": 1636,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-xiaomi@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "d038b3acb92f4b546b74aab39a363f3ce27c01eb75a9a50f2f07735aa64697d0",
+      "bytes": 2702,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 54,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-zhipuai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "010110a185e4992a04b9661a71bfafca07621bbfed3d1c64741a03eeb95dc8de",
+      "bytes": 1602,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 36,
+        "height": 98
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz2f-zhipuai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "001a41ce822762c5e1731dbd2ee4d77027a71eb85656113aa7fb0cea112ef725",
+      "bytes": 2698,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 54,
+        "height": 147
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-alibaba@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "a30c8ba02676ec300e7172c0a339334a8b69c83e4fad86acf5a3df6ecd4fb55a",
+      "bytes": 1954,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-alibaba@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "798715820a8b657caa19492f444b5933829e90868bcbc693e500c5ffc967763f",
+      "bytes": 3072,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-deepseek@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "fae20e8c8cdb3a07b7468cb8da5ba52d006fa9232f9ad28e397682e197222230",
+      "bytes": 1954,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-deepseek@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "64f918610f4b2ce76df65aeddf8bb3eddd7a6e4caf89abc3a3c5b36339514e4c",
+      "bytes": 3062,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-kimi@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "ca37095ba0362580612f279ebbcc14f7839fb60e9a3944f070c1dd25e02ed074",
+      "bytes": 1982,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-kimi@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "8074770a97b02a86657833ddc79e2b2b8ab06cbbabb4acdfe2177d134a32cda9",
+      "bytes": 3078,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-minimax@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "c6bbe7f785bf385523b1f9aa6d35e75bfe47eb0d0d7ab8075e7c277dbb99eb22",
+      "bytes": 1902,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-minimax@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "667d17d93ae679b3cca6a89e84a34b86fb9c9fcbb02a49955483c373e07363f3",
+      "bytes": 2984,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-tencent@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "d5882e381a74cd9205408c45cd4d8a101e06fe3bebfd0a3f2b6a86e511bafb53",
+      "bytes": 1850,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-tencent@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "b72905f89f911f439d4de4b597d74c757ae31f33c4b56c1c5ae2cc56c8163248",
+      "bytes": 2896,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-volcengine@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "cecc5c5193951af22387fab284edb2be0a7730d491c0b021fa28df89ad77711f",
+      "bytes": 1802,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-volcengine@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "19bbc8935f4d06f65964a14b8d09c363d674b79bafbf93e599c78b86a6091bb7",
+      "bytes": 2810,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-xiaomi@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "a677aede8470207a39e6559adf2f183c9d318fa516b375fa7ac100ef769219e7",
+      "bytes": 1882,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-xiaomi@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "949ecbf08e87b0dff797583ef4e20b9a5c5ecd05157eeff798566c218b3bc3c1",
+      "bytes": 3018,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-zhipuai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "1faa351572adcf2e98f17a853527edf7e2b90ab7af111b786ed2a48b8ca4faef",
+      "bytes": 1874,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz3b-zhipuai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "9b50f44068bdadc786a2ca98f87aa7d19382165d7a00cae802374e83a4bfc218",
+      "bytes": 2948,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-alibaba@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "f522f69b4fc419b4adba060b51f8fa4e7d602a63c2fe2f686f62af7174c7896b",
+      "bytes": 2078,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-alibaba@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "09cee76ec4fa5e20cc0eee56683cdc2a3d057d276dc8d00767d338a870a5ad73",
+      "bytes": 3594,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 72,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-deepseek@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "720206a0edc759d55e48340f4f867986ad8a6c72bb6466e866b394feebb1279f",
+      "bytes": 2086,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-deepseek@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "a80ceb524f5cf6313c4c403c8894a74b82d38f11d0857f5aac341dcf2d7005d9",
+      "bytes": 3598,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 72,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-kimi@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "37e0e9b264c3bc11cf791c5f14597124062631299b8cdda21085e0b72dfe01f0",
+      "bytes": 2090,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-kimi@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "604574612bdad2146c3cdaead2ea28757c516168a8ce28ef839fcfe84563be8b",
+      "bytes": 3576,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 72,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-minimax@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "4861050a91483a5cf60ff7c8013ccd881adb01b89442c7e42f9908c6ddb2ef79",
+      "bytes": 2052,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-minimax@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "8081981dbc097e78be9996ec88a711a4a812b5a635b9df21745fa14a118a0248",
+      "bytes": 3558,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 72,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-tencent@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "f12371b0eaa9ea2d96c90afce63142853b2850c4ac89a8755ca56f17da7b2800",
+      "bytes": 1966,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-tencent@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "82fd4b32726a5d1454eae37187af46341b81b9bfa325b66938227b8dbe03169c",
+      "bytes": 3474,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 72,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-volcengine@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "c31a23f33bd9d8c74ff908bca0060dfe8c1947465b984247b0ab7c56331bd88e",
+      "bytes": 1948,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-volcengine@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "dce9bd52d4abe0640e86f28fecd8b80716bad4931d6a59b986015e82e1f987d8",
+      "bytes": 3464,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 72,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-xiaomi@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "cb339ab2368248f67c4cd0177f8671083535da6fa8c4696a2d53116593c69fe0",
+      "bytes": 2102,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-xiaomi@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "3abfcf50b6d4ec72371ff60ec91b1a68b4b5f4aedec120e7e423b0ce9f5bfd5b",
+      "bytes": 3612,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 72,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-zhipuai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "456b5142ad2f3e7ba4c10c5a2eb3446412fcdb60e37567e1393149a1d4ec9983",
+      "bytes": 2042,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 48,
+        "height": 100
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/cz5-zhipuai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "d509628b985fab60d19253887068d1de5c5d89ca9689b3f7df32c93335c9384a",
+      "bytes": 3604,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 72,
+        "height": 150
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-anthropic@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "0728e53347b3f5dda59500151e9215b72707245e2d2b0fd04aa1da553829478f",
+      "bytes": 1938,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-anthropic@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "46c968ef93ec83c3773155750aba4bee91652770b7f5801220e4dcdec6a61eb4",
+      "bytes": 3122,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-google@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "1f8de62272d0281adee9131d439186b28f4fa4e09a4bce577c13e80d291da643",
+      "bytes": 1944,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-google@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "9577fa060a084cfa1ce3c97120b344c4984e16690fba4ce2e9d73d362fef5f01",
+      "bytes": 3062,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-meta@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "3faaceee19e23b291f05677bac06ab589ac47ef41d69f0a0e3e3d739ada7d51e",
+      "bytes": 1964,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-meta@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "93dddd1bfe3bd4f2f7b27712ace429dda5d4d0553a99d6af4baae6bf3b643484",
+      "bytes": 3166,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-openai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "7dd2402ce51965576911983170891bd2ddea039cab22130e9f34a46c510c9ae7",
+      "bytes": 1944,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-openai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "57f3ae1a5309bde61595c67c743ab9bf437c98bda2f7af684934c95de1102c6b",
+      "bytes": 3082,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-xai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "d32ce7cc2203a249cc8f23a6b0a59de1320308c644b2e0d2292a9c3c4097f30c",
+      "bytes": 1930,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-xai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "7435d87778ffce25f6bdce18b554a87a540fd10fbfbe677b597b40fe8f23997b",
+      "bytes": 3098,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-alibaba@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "ccb437492d20250c6bd6fd7e1b54d151128695bbf52d37e9ff754ca310e50669",
+      "bytes": 1972,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-alibaba@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "de54fdb29c325af0d4e5c56762c5c2eac7f6f5bd5d4d878cd89b8d1a0bbc6a71",
+      "bytes": 3170,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-deepseek@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "fde1349259c2a544851b6bae7f1b79ca67a19b103b127f956045f10d75ce557c",
+      "bytes": 1974,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-deepseek@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "19eae6dfcd8493074b7d96e32c8d4088a5ae422ea413981c13325fcf7ca06a55",
+      "bytes": 3168,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-kimi@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "0f92a273c6ff1f3ef034450792d7954a1cd7c24af9aefee146f93ddb9475177c",
+      "bytes": 1950,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-kimi@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "1c7ee1ba2ef8274240ae4b8fc8eb166acb0c31c75b7799750b20c0b9027024bd",
+      "bytes": 3118,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-minimax@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "6930b195da022022485bdef97b5bc8bdcd88b6195860bc33962f9fc772857fae",
+      "bytes": 1944,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-minimax@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "2aa6fe681903db7bc080dfa214db2a9646325bbb0d17012b53e257da7276a057",
+      "bytes": 3170,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-tencent@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "63b4dade7e5bd547809ba92164a57248504b767ab203c9255adc0ae65c2a8531",
+      "bytes": 1910,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-tencent@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "3937d8d495c0a14d4781d7545fa640abc39487f54c9219c74cbf6d8fe0be0da1",
+      "bytes": 3048,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-volcengine@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "6610bac233bcd9a23f4ce117ffe2b8e070c0adb242d4e500d7e0b9e0e7a3a91b",
+      "bytes": 1882,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-volcengine@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "3d6281397108e9e1d59b8712bb73e8712efb0afa16e0a2a7ffbe9bdfe86aa3e8",
+      "bytes": 3084,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-xiaomi@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "fecc4c8e748792fe78f48ac757023460afc0d473966190ebe8b87dc3272bdda2",
+      "bytes": 1924,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-xiaomi@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "29d1be76b57fd0d4100c1fbc41b13e6a470d017d34bc20fb3860d248a355e1eb",
+      "bytes": 3104,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-zhipuai@2x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "d5fb4360ae34be391913e5c80b2e63f8c516c9f90f6a8970fec7e8c092f1138b",
+      "bytes": 1932,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 40,
+        "height": 96
+      },
+      "scale": 2
+    },
+    {
+      "file": "field-scene/rockets/flat/heavy-zhipuai@3x.webp",
+      "kind": "field-rocket-sprite",
+      "sha256": "520ba53f3b314c62fb434f796856f2eac94cf4bbbb9cbecf6c01f8976b26cef2",
+      "bytes": 3034,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": {
+        "width": 60,
+        "height": 144
+      },
+      "scale": 3
     }
   ],
   "baselines": [

@@ -38,14 +38,20 @@ test('both editions have reproducible bounded manifests; community excludes rese
     for(const rule of ["connect-src 'none'","frame-src 'none'","object-src 'none'","base-uri 'none'","form-action 'none'"])assert.ok(html.includes(rule));
     const script=readFileSync(root+'src/main.js','utf8')+readFileSync(root+'src/view.js','utf8');
     assert.doesNotMatch(script,/\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/);
-    // Owner D39/D-A: the reserved launch-field scene is the one runtime script; it schedules its own (on-demand,
-    // 30 fps capped) frames and is loaded only when the enlarged view opens, never by the page's module graph.
-    const scene='runtime/field-scene/cockpit-scene.bundle.js';
+    // WP-22 (D298, was D39/D-A): the reserved launch-field component is the one runtime script; it schedules its own
+    // frames and is loaded only when the enlarged view opens, never by the page's module graph.
+    const scene='runtime/field-scene/launch-field.js';
     assert.equal(Object.hasOwn(manifest.files,scene),edition==='official',scene);
-    // Only the field's own page names the scene, and it imports it dynamically (glm-618-2: the ban covers every other file).
-    for(const name of Object.keys(manifest.files).filter(name=>/\.(?:js|html|css)$/.test(name)&&name!==scene&&name!=='src/field-page.js'&&!name.startsWith('runtime/')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/field-scene|cockpit-scene/,name);
+    assert.equal(Object.hasOwn(manifest.files,'runtime/field-scene/cockpit-scene.bundle.js'),false,'the D39 scene is gone');
+    // Only the field's own page (script and stylesheet link) names the component, and the script imports it dynamically
+    // (glm-618-2: the ban covers every other file).
+    for(const name of Object.keys(manifest.files).filter(name=>/\.(?:js|html|css)$/.test(name)&&name!==scene&&name!=='src/field-page.js'&&name!=='field.html'&&!name.startsWith('runtime/')))assert.doesNotMatch(readFileSync(root+name,"utf8"),/field-scene|cockpit-scene/,name);
     assert.equal(Object.hasOwn(manifest.files,'field.html'),edition==='official','field.html');
-    if(edition==='official')assert.match(readFileSync(root+'src/field-page.js','utf8'),/await import\(url\)/);
+    if(edition==='official'){
+      assert.match(readFileSync(root+'src/field-page.js','utf8'),/await import\(url\)/);
+      assert.match(readFileSync(root+'src/field-page.js','utf8'),/dim:false/,'native paints the dim (D298)');
+      assert.match(readFileSync(root+'field.html','utf8'),/href="runtime\/field-scene\/launch-field\.css"/);
+    }
     else for(const gone of ['src/field-page.js','src/field-shape.js'])assert.equal(Object.hasOwn(manifest.files,gone),false);
     for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.js')&&name!==scene))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/,name);
     if(edition==='official'){assert.ok(Object.hasOwn(manifest.files,'assets/brands/SOURCES.md'));assert.match(readFileSync(root+'NOTICES.txt','utf8'),/Vendor marks: third-party trademarks.*assets\/brands\/SOURCES[.]md/);}
@@ -56,10 +62,14 @@ test('both editions have reproducible bounded manifests; community excludes rese
     if(edition==='official'){
       const policy=JSON.parse(readFileSync(project+'../../source-policy.json','utf8')).reservedVisuals.binaries;
       const vehicles=['falcon9','falcon-heavy','new-glenn','vulcan','long-march-2f','long-march-5','long-march-3b','starship'];
-      assert.deepEqual(atlases.sort(),vehicles.flatMap(v=>['512','256','mat'].map(p=>`assets/art/rockets/${v}-${p}.webp`)).sort());
+      const sprites=atlases.filter(name=>name.startsWith('assets/art/rockets/flat/'));
+      assert.deepEqual(atlases.filter(name=>!sprites.includes(name)).sort(),vehicles.flatMap(v=>['512','256','mat'].map(p=>`assets/art/rockets/${v}-${p}.webp`)).sort());
+      assert.equal(sprites.length,114,'WP-22: the 2D fallback sprites ship with the official edition');
       for(const name of atlases)assert.equal(manifest.files[name],policy['desktop/official-visuals/runtime/field-scene/rockets/'+name.slice(19)],name);
       assert.ok(!Object.keys(manifest.files).some(name=>name.startsWith('runtime/field-scene/rockets/')),'atlases ship once');
-      const code=readFileSync(root+scene,'utf8');assert.match(code,/art\/rockets\//);for(const v of vehicles)assert.ok(code.includes(`"${v}"`),v);
+      const code=readFileSync(root+scene,'utf8');assert.match(code,/art\/rockets\//);assert.match(code,/art\/rockets\/flat\//);
+      // Offline only: the component names no network host but the three.js shader citation and the SVG/XHTML namespaces.
+      assert.deepEqual([...new Set(code.match(/https?:\/\/[a-z0-9.-]+/gi))].sort(),['http://www.w3.org','https://jcgt.org']);
     } else assert.deepEqual(atlases,[]);
     const provenance=JSON.parse(readFileSync(root+'prototype/source.json'));
     assert.equal(provenance.sourceCommit,'1d3f82429f1b853314ee120d4bd0007f84fc051d');
@@ -68,8 +78,8 @@ test('both editions have reproducible bounded manifests; community excludes rese
       assert.doesNotMatch(name,/workbench-data|three[.]/i);
       const brands=['openai-white','claude-rounded','claude','cursor','copilot','opencode','zai-white','zhipu','x-white','qwen','deepseek','kimi-white','minimax','gemini','xiaomi'].map(mark=>`assets/brands/${mark}.svg`);
       if(name.endsWith('.svg'))assert.ok(edition==='official'&&['assets/detach.svg','assets/put-back.svg','assets/hull/cap-slab.svg','assets/logo.svg',...brands].includes(name),`unapproved SVG: ${name}`);
-      // Published U12 PNGs may join the verified pack; no runtime scene code.
-      if(name.startsWith('runtime/')&&name!==scene)assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
+      // Published U12 PNGs may join the verified pack; no runtime scene code but the component's script and its stylesheet.
+      if(name.startsWith('runtime/')&&name!==scene&&name!=='runtime/field-scene/launch-field.css')assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
       if(name.endsWith('.webp'))assert.ok(edition==='official'&&name.startsWith('assets/art/rockets/'),`unapproved WebP: ${name}`);
     }
     execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});

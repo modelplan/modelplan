@@ -750,10 +750,10 @@
       ],
       "source": "https://www.npmjs.com/package/three/v/0.186.1",
       "usedBy": [
-        "Official edition only: minified into the launch-field scene bundle, loaded on demand by the enlarged porthole"
+        "Official edition only: minified into the launch-field component bundle, loaded on demand by the enlarged porthole"
       ],
       "paths": [
-        "desktop/official-visuals/runtime/field-scene/cockpit-scene.bundle.js"
+        "desktop/official-visuals/runtime/field-scene/launch-field.js"
       ]
     }
   ]

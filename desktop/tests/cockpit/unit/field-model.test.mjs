@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fieldFleet,fieldModel,FIELD_LIMIT} from '../../../cockpit/.tmp/compiled/src/field-model.js';
+import {fieldFleet,fieldModel,FIELD_LIMIT,windowModel,provisionalIds} from '../../../cockpit/.tmp/compiled/src/field-model.js';
 
 const model=(id,efforts,developerId='openai')=>({id,name:'Synthetic '+id,developerId,recommended:'medium',efforts});
 test('a published model becomes the scene shape, on its starred effort',()=>{
@@ -19,4 +19,12 @@ test('developers map to the scene keys, others stay neutral',()=>{
 test('the fleet keeps publication order and the limit',()=>{
  const all=Array.from({length:14},(_,i)=>fieldModel(model('m'+i,[{effort:'low',label:'Low',ability:30,cost:.1}])));
  const fleet=fieldFleet(all,new Set(all.map(m=>m.id).reverse()));assert.equal(fleet.length,FIELD_LIMIT);assert.equal(fleet[0].id,'m0');
+});
+test('WP-22 a published model becomes the launch-field component\'s model, on its starred effort, with public data only',()=>{
+ const m=windowModel(model('a',[{effort:'low',label:'Low',ability:30,cost:.1,time:null},{effort:'medium',label:'Med',star:true,ability:40,cost:.2,time:1.5,provisional:true}],'google'));
+ assert.deepEqual(m,{id:'a',name:'Synthetic a',dev:'google',colour:m.colour,rec:'Med',e:[['Low',30,.1,null,false],['Med',40,.2,1.5,false]],sel:['Med',40,.2,1.5,false],fuel:'mid',racer:false});
+ assert.match(m.colour,/^#[0-9a-f]{6}$/i);
+ assert.equal(windowModel(model('b',[{effort:'low',label:'Low',ability:null,cost:.1}])),null,'nothing plotted, no rocket');
+ assert.equal(windowModel(model('c',[{effort:'low',label:'Low',ability:30,cost:.1}])).rec,null,'no ★ effort published');
+ assert.deepEqual(provisionalIds([model('p',[{effort:'medium',label:'Med',star:true,ability:40,cost:.2,provisional:true}]),model('q',[{effort:'medium',label:'Med',star:true,ability:40,cost:.2}])]),['p']);
 });

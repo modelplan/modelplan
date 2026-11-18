@@ -1,41 +1,39 @@
 <!-- SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 -->
-# Launch-field scene (enlarged porthole)
+# Launch-field window (enlarged porthole)
 
 Copyright (c) 2026 ModelPlan. All rights reserved.
 ModelPlan and Model Plan are marks of ModelPlan. No trademark rights are granted.
 
-`cockpit-scene.bundle.js` is the owner-approved 3D launch-field scene shown when the
-official cockpit's porthole is enlarged (owner decision D39/D-A, 2026-11-06). It is a
-minified build output only: the scene, rocket and planet sources stay private and are
-not part of this repository, so it cannot be rebuilt from public sources. The
-[reserved visuals licence](../../LICENSE.md) applies to the scene code; the root MIT
-licence does not cover it. It bundles three.js 0.186.1 (MIT, Copyright 2010-2026
-Three.js Authors); that notice is kept at the end of the file.
+`launch-field.js` and `launch-field.css` are the website's shared launch-field component, version 1.1.0,
+in its window mode (owner decision D298, 2026-11-18): the official cockpit's enlarged field. They replace
+the earlier `cockpit-scene.bundle.js` (D39/D-A, D207). The component draws the cockpit window (soft canopy,
+feathered edge, inside sky), the in-field menu, the corner keys and the fly-in card, and frames the 3D field
+into the window. It is a minified build output only: its sources stay private and are not part of this
+repository, so it cannot be rebuilt from public sources. The [reserved visuals licence](../../LICENSE.md)
+applies to its code and styles; the root MIT licence does not cover them. It bundles three.js 0.186.1 (MIT,
+Copyright 2010-2026 three.js authors); that notice is kept at the end of `launch-field.js`.
 
-Rockets (owner decision D207, 2026-11-12): the scene flies the website's fleet round-four
-vehicles (Falcon 9, Falcon Heavy, New Glenn, Vulcan, Long March 2F/5/3B and the Starship),
-rebuilt in 3D from owner-commissioned, owner-approved renders. Their geometry is inside the
-bundle; `rockets/<vehicle>-512.webp` / `-256.webp` are the albedo atlases and
-`rockets/<vehicle>-mat.webp` the material atlases (roughness, metalness, heat-shield tiles).
-The renders were generated for ModelPlan with an image model from written prompts, from
-earlier ModelPlan concept rounds, with no stock art or downloaded references; the atlases
-carry no maker marks. Maker head colours, patterns, bands and roundels are painted at runtime
-from the shared maker livery table (D131) and the vendor marks the official cockpit already
-ships under `assets/brands/` (third-party trademarks, nominative use). The official cockpit
-build serves the atlases at `assets/art/rockets/`, the scene's base URL.
+Provenance: built with `npm run build:launch-field` at component version 1.1.0. The build's own manifest
+recorded these SHA-256 values before the licence header (and, for the script, the three.js notice at the
+end) were added:
 
-Rocket paint is exactly the website's (owner, 2026-11-12): the scene hands its factory the
-website's own maker colours compiled into the bundle, never the cockpit's UI accents. Name chips
-and orbit names follow the website's layout and style (owner, 2026-11-12): chips price spots
-against every rocket hull and fold to a tighter chip or the rank badge when crowded, and orbit
-names sit by their planet or ride the far end of their own line. Cockpit differences: an orbit
-name keeps its index on one line and also avoids names already placed, because the porthole's
-camera stacks the lines closer; chips keep the cockpit's tap target, labels and keyboard access.
+- `launch-field.js` 76038ed448d5a8e300f615c1d70c691ae21526abf6a643fe0b438573c13c298f (803594 bytes)
+- `launch-field.css` 307401500354454b0b6c0d4e634d8ec4dec8790dee268afdda7d08dd8d247d87 (30059 bytes)
 
-Build: esbuild 0.28.1, `--bundle --format=esm --minify --legal-comments=eof`, three
-0.186.1; the four-line licence header is prepended. Export: `mountWorkbenchField`.
+Rockets (D207): the field flies the website's fleet round-four vehicles (Falcon 9, Falcon Heavy, New Glenn,
+Vulcan, Long March 2F/5/3B and the Starship). Their geometry is inside the script;
+`rockets/<vehicle>-512.webp` / `-256.webp` are the albedo atlases and `rockets/<vehicle>-mat.webp` the
+material atlases (roughness, metalness, heat-shield tiles), byte-identical to the component build's own.
+The renders were generated for ModelPlan with an image model from written prompts, with no stock art or
+downloaded references; the atlases carry no maker marks.
 
-Loading rule: only `node desktop/cockpit/build.mjs --official` includes it, and the
-cockpit page may load it only on demand when the enlarged view opens. The community
-edition never contains it. Vendor marks the scene can draw on its plates are not
-included here; without them the plates fall back to text.
+The 2D fallback's sprites (`rockets/flat/<vehicle>-<maker>@2x.webp` / `@3x.webp`) are side views rendered
+from the same 3D rockets with each maker's livery (their embedded sRGB colour profile, a 456-byte ICCP
+chunk, is removed here, as the pack admits no WebP metadata; the pixels are unchanged), so their roundels may carry vendor marks, as the night
+porthole stills do. Vendor marks are third-party trademarks of their owners, used only to identify each maker;
+they are not covered by the reserved visuals licence. The 3D field paints the marks at runtime from the
+official cockpit's `assets/brands/` (sources in its `SOURCES.md`); a mark that does not load is left off.
+
+Loading rule: only `node desktop/cockpit/build.mjs --official` includes it. The build moves the atlases and
+sprites to `assets/art/rockets/` (the component's asset base is `./assets/`), and the field's own page
+(`field.html`) imports the script only when the enlarged view opens. The community edition never contains it.

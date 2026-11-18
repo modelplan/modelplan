@@ -1,40 +1,89 @@
 // SPDX-License-Identifier: MIT
-// The enlarged field's page, with synthetic public model data. WebGL may be absent here, which exercises the fallback.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
-const model=i=>({id:'m'+i,name:'Synthetic '+i,developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:40+i,cost:.2,time:30}]});
-const payload=(n=12,extra={})=>JSON.stringify({language:'en',reduceMotion:true,models:Array.from({length:n},(_,i)=>model(i)),mine:['m1','m2'],focus:null,...extra});
-async function open(page) {
- await page.addInitScript(()=>{window.posted=[];window.webkit={messageHandlers:{field:{postMessage(m){window.posted.push(JSON.parse(m).type);}}}};});
+// WP-22 (D298): the field page hosts the launch-field component (1.1.0, window mode) in the native panel's rectangle.
+// Synthetic public model data only. WebGL may be absent here, which exercises the 2D fallback.
+const model=i=>({id:'m'+i,name:'Synthetic '+i,developerId:['openai','anthropic','google'][i%3],recommended:'medium',efforts:[{effort:'low',label:'Low',star:false,ability:35+i,cost:.1,time:1},{effort:'medium',label:'Med',star:true,ability:40+i,cost:.2,time:1.4,provisional:i===3}]});
+const payload=(n=12,extra={})=>JSON.stringify({language:'en',reduceMotion:true,lowPower:false,contrast:false,models:Array.from({length:n},(_,i)=>model(i)),mine:['m1','m2'],focus:null,asOf:'2026-11-18',...extra});
+async function open(page,{noWebGL=false}={}) {
+ await page.addInitScript(noWebGL=>{
+  window.posted=[];window.messages=[];window.webkit={messageHandlers:{field:{postMessage(m){const v=JSON.parse(m);window.messages.push(v);window.posted.push(v.type);}}}};
+  if(noWebGL){const get=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(type,...rest){return /webgl/.test(String(type))?null:get.call(this,type,...rest);};}
+ },noWebGL);
+ await page.setViewportSize({width:1280,height:800});
  await page.goto('/field.html');await page.waitForFunction(()=>!!window.modelPlanField);
  expect(await page.evaluate(()=>window.posted)).toContain('loaded');
 }
 const show=(page,raw)=>page.evaluate(raw=>window.modelPlanField.show(raw),raw);
+const ready=page=>expect.poll(()=>page.evaluate(()=>window.posted.includes('ready')),{timeout:20000}).toBe(true);
+const state=page=>page.evaluate(()=>window.modelPlanField.state());
+const closes=page=>page.evaluate(()=>window.messages.filter(m=>m.type==='close').map(m=>m.reason));
 
-test('the picker starts on my models and the presets change the fleet within the limit',async({page})=>{
- await open(page);expect(await show(page,payload())).toBe(true);
- await expect(page.locator('.field-count')).toHaveText('2/10');
- await page.locator('.field-preset',{hasText:'All'}).click();await expect(page.locator('.field-count')).toHaveText('10/10');
- await expect(page.locator('.field-row input:not(:checked)').first()).toBeDisabled();
- await page.locator('.field-search').fill('Synthetic 11');await expect(page.locator('.field-row')).toHaveCount(1);
+test('WP-22 the field is the launch-field window: native dims, so the component\'s dim is off, and my models fly first',async({page})=>{
+ await open(page);expect(await show(page,payload())).toBe(true);await ready(page);
+ const s=await state(page);
+ expect(s.shown).toEqual(['m1','m2']);
+ test.skip(s.mode!=='window','no WebGL in this browser: the 2D fallback test covers it');
+ await expect(page.locator('#field.lfw')).toHaveCount(1);
+ await expect(page.locator('#field .lfw-dim')).toBeHidden();
+ await expect(page.locator('#field .lfw-menu')).toHaveCount(1);
+ expect(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
 });
-test('Esc and the close key ask the host to close, and interaction renews the idle timer',async({page})=>{
- await open(page);await show(page,payload());await expect(page.locator('.field-close')).toHaveText('×');
- await page.locator('.field-close').click();await page.keyboard.press('Escape');
- const posted=await page.evaluate(()=>window.posted);
- expect(posted.filter(x=>x==='close').length).toBe(2);expect(posted).toContain('activity');
+test('WP-22 Esc on an idle field and the × key ask the host to close, with their reasons',async({page})=>{
+ await open(page);await show(page,payload());await ready(page);
+ const mode=(await state(page)).mode;
+ await page.locator(mode==='window'?'#field .lfw-x':'#field .field-close').click();
+ await page.keyboard.press('Escape');
+ await expect.poll(()=>closes(page)).toEqual(['key','esc']);
+ expect(await page.evaluate(()=>window.posted)).toContain('activity');
 });
-test('Chinese words, and nothing published says so',async({page})=>{
- await open(page);await show(page,payload(0,{language:'zh'}));
- await expect(page.locator('.nogl')).toHaveText('暂无已发布模型。');await expect(page.locator('.field-preset').first()).toHaveText('我的');
- await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+test('WP-22 the site key asks the host to open the website; the page never opens a URL itself',async({page})=>{
+ await open(page);await show(page,payload());await ready(page);
+ test.skip((await state(page)).mode!=='window','no WebGL in this browser');
+ await page.locator('#field .lfw-site').click();
+ await expect.poll(()=>page.evaluate(()=>window.messages.filter(m=>m.type==='openSite'))).toEqual([{type:'openSite',target:'fleet',params:{}}]);
+ expect(page.url()).toMatch(/\/field\.html$/);
 });
-test('dispose clears the page',async({page})=>{
- await open(page);await show(page,payload());await page.evaluate(()=>window.modelPlanField.dispose());
+test('WP-22 Increase Contrast, Reduce Motion and Low Power Mode reach the component live',async({page})=>{
+ await open(page);await show(page,payload(4,{reduceMotion:false}));await ready(page);
+ expect(await state(page)).toMatchObject({contrast:'normal',reducedMotion:false});
+ expect(await page.evaluate(()=>window.modelPlanField.options(JSON.stringify({contrast:true,reduceMotion:true})))).toBe(true);
+ expect(await state(page)).toMatchObject({contrast:'more',reducedMotion:true});
+ expect(await page.evaluate(()=>window.modelPlanField.options(JSON.stringify({contrast:false,reduceMotion:false})))).toBe(true);
+ expect(await state(page)).toMatchObject({contrast:'normal',reducedMotion:false});
+ expect(await page.evaluate(()=>window.modelPlanField.power(true))).toBe(true);
+ expect((await state(page)).reducedMotion).toBe(true);
+ expect(await page.evaluate(()=>window.modelPlanField.options('nope'))).toBe(false);
+});
+test('WP-22 without WebGL the same fleet lands on the 2D field, which keeps × and Esc',async({page})=>{
+ await open(page,{noWebGL:true});await show(page,payload());await ready(page);
+ expect((await state(page)).mode).toBe('flat');
+ await expect(page.locator('#field svg.lf-flat')).toHaveCount(1);
+ await expect(page.locator('#field.lfw')).toHaveCount(0);
+ await page.locator('#field .field-close').click();
+ await expect.poll(()=>closes(page)).toContain('key');
+});
+test('WP-22 a focused rocket outside my models joins the field',async({page})=>{
+ await open(page);await show(page,payload(12,{focus:'m7'}));await ready(page);
+ expect((await state(page)).shown).toEqual(['m1','m2','m7']);
+});
+test('WP-22 dispose clears the page',async({page})=>{
+ await open(page);await show(page,payload());await ready(page);await page.evaluate(()=>window.modelPlanField.dispose());
  await expect(page.locator('#field > *')).toHaveCount(0);expect(await page.evaluate(()=>window.modelPlanField)).toBeUndefined();
 });
+// CKP-PORT-11D: only public data enters the field. The host's payload carries presentation and published models; the page
+// keeps nothing else and never asks the host for account or local readings.
+test('CKP-PORT-11D the field page takes only public model data and posts only its fixed events',async({page})=>{
+ await open(page);
+ const withPrivate=JSON.stringify({...JSON.parse(payload(4)),account:'someone@example.invalid',subscriptionRef:'secret-ref',usedPercent:73,projectName:'private'});
+ expect(await show(page,withPrivate)).toBe(true);await ready(page);
+ const text=await page.evaluate(()=>document.documentElement.innerText+document.documentElement.outerHTML);
+ for(const secret of ['someone@example.invalid','secret-ref','private'])expect(text).not.toContain(secret);
+ for(const type of await page.evaluate(()=>window.posted))expect(['loaded','ready','activity','close','failed','openSite']).toContain(type);
+});
+
 test('the official porthole opens the field by click and keyboard',async({page})=>{
  await page.addInitScript(()=>{window.posted=[];window.webkit={messageHandlers:{cockpit:{postMessage(m){window.posted.push(typeof m==='string'?JSON.parse(m):m);}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
@@ -75,31 +124,6 @@ test('D43 every vendor mark the scene asks for loads under the page CSP, close t
  const sizes=await page.evaluate(async names=>Promise.all(names.map(name=>new Promise(done=>{const image=new Image();image.onload=()=>done([name,image.naturalWidth>0,Math.abs(image.naturalWidth/image.naturalHeight-1)<=.05]);image.onerror=()=>done([name,false,false]);image.src='./assets/brands/'+name;}))),
   ['openai-white.svg','claude-rounded.svg','claude.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
  for(const [name,loaded,square] of sizes){expect(loaded,name).toBe(true);expect(square,name).toBe(true);}
-});
-// Spike 11-08 / D63: the page cannot read Low Power Mode, so native passes it in the payload and on every change.
-// Low power renders on demand only with the scene's quiet motion (no camera sway or fly-ins): idle means no frames.
-test('D63 low power: the field mounts quiet, draws no frames while idle, and follows a live change',async({page})=>{
- await open(page);await show(page,payload(4,{reduceMotion:false,lowPower:true}));
- await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
- test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
- const stats=()=>page.evaluate(()=>window.modelPlanField.stats());
- await expect.poll(async()=>(await stats())?.quiet).toBe(true);
- await page.waitForTimeout(2500);const settled=await stats();expect(settled.lowPower).toBe(true);expect(settled.scheduled).toBe(false);
- await page.waitForTimeout(2000);expect((await stats()).frames).toBe(settled.frames);
- expect(await page.evaluate(()=>window.modelPlanField.power(false))).toBe(true);
- await expect.poll(async()=>(await stats())?.quiet).toBe(false);expect((await stats()).lowPower).toBe(false);
- expect(await page.evaluate(()=>window.modelPlanField.power(true))).toBe(true);
- await expect.poll(async()=>(await stats())?.quiet).toBe(true);
- // A disposed scene's late context-loss report must not replace the new scene with the fallback.
- await page.waitForTimeout(1500);await expect(page.locator('.field-stage .nogl')).toHaveCount(0);
- await expect(page.locator('.field-stage canvas')).toHaveCount(1);expect((await stats())?.quiet).toBe(true);
-});
-test('D63 Reduce Motion alone also keeps the scene quiet, and the payload without lowPower is not low power',async({page})=>{
- await open(page);await show(page,payload(4));
- await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
- test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
- await expect.poll(()=>page.evaluate(()=>window.modelPlanField.stats()?.quiet)).toBe(true);
- expect(await page.evaluate(()=>window.modelPlanField.stats().lowPower)).toBe(false);
 });
 // D63 / CKP-PORT-11/12: the ⤢ key, a double-click and a click on a still rocket open the field; a rocket focuses it.
 // Prototype rocket-r1/porthole.js placeBigKey / bindPorthole (task 91); hud-selection/still.js hitStillRocket (28 px).
@@ -158,125 +182,4 @@ test('D63 a click on a rocket in the still opens the field focused on that rocke
  const rocket=await page.locator('.ck-still-body[data-model-name]').evaluateAll(es=>{const e=es.find(e=>{const r=e.getBoundingClientRect(),p=document.querySelector('.ck-port').getBoundingClientRect(),hud=document.querySelector('.hud')?.getBoundingClientRect();const x=r.x+r.width/2,y=r.y+r.height/2;return r.width>0&&x>p.x&&x<p.right&&y>p.y&&y<p.bottom&&!(hud&&x>=hud.x&&x<=hud.right&&y>=hud.y&&y<=hud.bottom)&&document.elementFromPoint(x,y)?.closest('.ck-port')&&!document.elementFromPoint(x,y)?.closest('.hud,[data-bigfield]');});const r=e.getBoundingClientRect();return {name:e.dataset.modelName,x:r.x+r.width/2,y:r.y+r.height/2};});
  await page.mouse.click(rocket.x,rocket.y);
  expect(await opens(page)).toEqual([rocket.name]);
-});
-test('D63 a focused rocket outside my models joins the field and takes the focus',async({page})=>{
- await open(page);await show(page,payload(12,{focus:'m7'}));
- await expect(page.locator('.field-count')).toHaveText('3/10');
- await expect(page.locator('.field-row',{hasText:'Synthetic 7'}).locator('input')).toBeChecked();
- });
-// CKP-PORT-11 (D63): the c01 porthole silhouette feathered ~10% into the desktop, derived from the published
-// window-890-1x.png at open. Reference: alpha samples of the prototype's approved mask (task 91 round 5,
-// feather-masks/A.png, 1000x650), read on the design branch; the mask image itself is not in this repository.
-// D110 (#801): the owner-approved redrawn c01 canopy changed window-890-1x.png, so these samples (same points, same tolerance) and the
-// matte pin below were re-measured from the published new mask with the same derivation.
-const featherReference=[[500,325,255],[0,0,0],[999,649,0],[500,0,0],[500,20,48],[500,40,160],[500,65,254],[500,100,255],[0,325,0],[20,325,3],[40,325,79],[65,325,216],[100,325,255],[500,649,0],[500,610,171],[500,585,255],[150,60,0],[850,60,0],[120,600,136],[60,120,0]];
-test('CKP-PORT-11 the feathered silhouette matches the approved mask',async({page})=>{
- await page.goto('/field.html');
- const got=await page.evaluate(async points=>{const {featherShape}=await import('./src/field-shape.js');const shape=await featherShape('runtime/canopy-c01/window-890-1x.png');
-  return shape&&{w:shape.width,h:shape.height,url:shape.maskUrl.slice(0,5),samples:points.map(([x,y])=>shape.alpha[y*shape.width+x])};},featherReference);
- expect(got).not.toBeNull();expect([got.w,got.h,got.url]).toEqual([1000,650,'blob:']);
- for(const [i,[x,y,want]] of featherReference.entries())expect(Math.abs(got.samples[i]-want),`(${x},${y}) ${got.samples[i]} vs ${want}`).toBeLessThanOrEqual(24);
-});
-// 91 A pins (owner 11-09). The approved matte is 1000x650 with a 65 px smooth inward ramp. Grid: its alpha every 25 px.
-// The page derives the matte from window-890-1x.png; it stays within 6/255 of the approved one (the resize kernel
-// differs from the study's), and its own bytes are pinned by hash so any change to the matte is a visible one.
-const matteGrid=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,39,48,58,63,73,73,73,73,73,63,58,48,39,11,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,48,119,176,187,197,202,212,212,212,212,212,202,197,187,176,117,43,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,21,41,95,169,233,255,255,255,255,255,255,255,255,255,255,255,255,255,230,166,92,39,21,3,0,0,0,0,0,0,0,0,0,0,0,0,1,24,63,107,150,179,228,254,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,253,226,176,150,107,63,23,1,0,0,0,0,0,0,0,3,41,99,156,202,236,253,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,253,236,202,154,99,39,2,0,0,0,0,10,84,166,228,254,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,253,227,164,84,8,0,0,0,39,176,251,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,251,171,34,0,0,0,63,202,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,197,58,0,0,0,79,216,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,216,78,0,0,1,95,228,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,225,90,0,0,3,107,236,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,232,101,2,0,8,124,244,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,242,119,6,0,13,136,249,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,247,130,11,0,19,148,252,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,251,145,18,0,30,165,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,254,160,27,0,39,176,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,171,34,0,52,191,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,187,48,0,63,202,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,197,58,0,73,212,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,209,70,0,90,225,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,221,84,0,79,216,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,216,79,0,65,204,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,202,62,0,28,144,228,243,251,253,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,253,250,242,227,142,25,0,0,46,94,121,142,154,165,176,182,192,192,197,202,207,207,207,212,212,221,221,221,212,212,207,207,207,202,197,192,191,182,176,165,154,141,119,93,46,0,0,0,0,1,7,16,23,30,39,43,53,53,58,63,68,68,68,73,73,84,84,84,73,73,68,68,68,63,58,53,52,43,39,30,23,16,6,1,0,0];
-const MATTE_SHA256='2acb9f8d65d79e44cd6760b14412ebbe028c458ad34f086d00f6066b5f15b070';
-test('91 A the matte is 1000x650, its ramp stays within 6/255 of the approved mask on a 25 px grid, and its bytes are pinned',async({page})=>{
- await page.goto('/field.html');
- const got=await page.evaluate(async()=>{const {featherShape}=await import('./src/field-shape.js');const shape=await featherShape('runtime/canopy-c01/window-890-1x.png');
-  const sha=[...new Uint8Array(await crypto.subtle.digest('SHA-256',shape.alpha))].map(b=>b.toString(16).padStart(2,'0')).join('');
-  const grid=[];for(let y=0;y<650;y+=25)for(let x=0;x<1000;x+=25)grid.push(shape.alpha[y*1000+x]);return {w:shape.width,h:shape.height,sha,grid};});
- expect([got.w,got.h]).toEqual([1000,650]);expect(got.grid).toHaveLength(matteGrid.length);
- const worst=Math.max(...got.grid.map((v,i)=>Math.abs(v-matteGrid[i])));expect(worst).toBeLessThanOrEqual(6);
- expect(got.sha).toBe(MATTE_SHA256);
-});
-for(const [desktop,width,field] of [['1470x956',1323,[865,562.25]],['1440x900',1296,[838,544.69]]])test(`91 A geometry at ${desktop}: the field is ${field.join('x')} and the card is 430x664 at its left`,async({page})=>{
- await page.setViewportSize({width,height:Math.round(+desktop.split('x')[1]*.8)});await open(page);await show(page,payload());
- await expect(page.locator('.field-stage')).toHaveAttribute('data-shape','feathered');
- const stage=await page.locator('.field-stage').boundingBox(),card=await page.locator('.field-card').boundingBox();
- expect(stage.width).toBeCloseTo(field[0],1);expect(stage.height).toBeCloseTo(field[1],1);
- expect([card.x,card.width,card.height]).toEqual([0,430,664]);
-});
-test('CKP-PORT-11 the scene is masked by the silhouette; bare desktop and the feathered rim close, the porthole does not',async({page})=>{
- await page.setViewportSize({width:1323,height:735});await open(page);await show(page,payload());
- await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
- await expect(page.locator('.field-stage')).toHaveAttribute('data-shape','feathered');
- expect(await page.locator('.field-stage').evaluate(e=>getComputedStyle(e).webkitMaskImage||getComputedStyle(e).maskImage)).toMatch(/^url\("blob:/);
- expect(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
- const closes=()=>page.evaluate(()=>window.posted.filter(x=>x==='close').length);
- const stage=await page.locator('.field-stage').boundingBox(),card=await page.locator('.field-card').boundingBox();
- expect(card.x).toBe(0);expect(card.width).toBe(430);expect(stage.x).toBe(458);expect(stage.width/stage.height).toBeCloseTo(1000/650,1);
- await page.mouse.click(stage.x+stage.width/2,stage.y+stage.height/2);expect(await closes()).toBe(0);
- await page.mouse.click(card.x+card.width/2,card.y+card.height-8);expect(await closes()).toBe(0);
- await page.mouse.click(stage.x+3,stage.y+3);expect(await closes()).toBe(1);
- await page.mouse.click(440,4);expect(await closes()).toBe(2);
-});
-// CKP-PORT-11 in the native panel: a transparent WKWebView cannot blur the desktop with backdrop-filter, so the page
-// reports where the frosted card is and the panel puts a behind-window blur there. The scene's plates use the
-// prototype's LCD face (rocket.css .ov-porthole .wb-plates .plate), whose variables live on #cockpit and #overlay.
-test('CKP-PORT-11 the page reports the frosted card rect to the native panel, and the plates have the LCD face',async({page})=>{
- await page.addInitScript(()=>{window.posted=[];window.messages=[];window.webkit={messageHandlers:{field:{postMessage(m){window.messages.push(JSON.parse(m));window.posted.push(JSON.parse(m).type);}}}};});
- await page.setViewportSize({width:1323,height:735});await page.goto('/field.html');await page.waitForFunction(()=>!!window.modelPlanField);await show(page,payload());
- await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
- const card=await page.locator('.field-card').boundingBox();
- await expect.poll(()=>page.evaluate(()=>window.messages.filter(m=>m.type==='card').at(-1)??null)).toEqual({type:'card',x:card.x,y:card.y,width:card.width,height:card.height,radius:12});
- await page.setViewportSize({width:1100,height:640});
- const moved=await page.locator('.field-card').boundingBox();
- await expect.poll(()=>page.evaluate(()=>window.messages.filter(m=>m.type==='card').at(-1)?.y)).toBe(moved.y);
- expect(await page.evaluate(()=>getComputedStyle(document.getElementById('field')).getPropertyValue('--f-lcd'))).toMatch(/JetBrains Mono/);
- const plate=page.locator('.wb-plates .plate').first();
- if(await plate.count())expect(await plate.evaluate(e=>getComputedStyle(e).fontFamily)).toMatch(/JetBrains Mono/);
-});
-// QA 11-08: the enlarged field's axis labels overlapped (price ticks under the front-row caption, time ticks stacked).
-// Prototype field-picker-tags/axis-layout.js: screen-space lanes in the page; the scene's ticks and values are unchanged.
-const spread=(i,dev)=>({id:'s'+i,name:'Synthetic '+i,developerId:dev,recommended:'medium',efforts:[{effort:'low',label:'Low',star:false,ability:30+i*2,cost:.05*(i+1),time:20},{effort:'medium',label:'Med',star:true,ability:40+i*2,cost:.1*(i+1),time:30},{effort:'high',label:'High',star:false,ability:45+i*2,cost:.3*(i+1),time:60}]});
-test('QA 11-08 the axis labels of the enlarged field never overlap and stay inside the view',async({page})=>{
- await page.setViewportSize({width:1280,height:800});await open(page);
- const devs=['openai','anthropic','zhipuai'];
- await show(page,JSON.stringify({language:'en',reduceMotion:true,models:Array.from({length:10},(_,i)=>spread(i,devs[i%3])),mine:[],focus:null}));
- await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready')),{timeout:20000}).toBe(true);// the scene bundle can take a while on a busy software-GL box
- test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
- await expect.poll(()=>page.locator('.tick3.field-axis-placed').count()).toBeGreaterThan(4);
- await page.waitForTimeout(1500);
- const {boxes,stage}=await page.evaluate(()=>{
-  const box=e=>{const r=e.getBoundingClientRect();return {text:e.textContent,x:r.x,y:r.y,r:r.right,b:r.bottom};};
-  return {stage:box(document.querySelector('.field-stage')),boxes:[...document.querySelectorAll('.tick3')].filter(e=>getComputedStyle(e).visibility!=='hidden'&&Number(getComputedStyle(e).opacity)>.02&&e.getBoundingClientRect().width>0).map(box)};
- });
- expect(boxes.length).toBeGreaterThan(4);
- for(const a of boxes){
-  expect(a.x>=stage.x&&a.r<=stage.r&&a.y>=stage.y&&a.b<=stage.b,a.text+' inside').toBe(true);
-  for(const b of boxes)if(a!==b)expect(a.r<=b.x||b.r<=a.x||a.b<=b.y||b.b<=a.y,a.text+' / '+b.text).toBe(true);
- }
-});
-
-// CKP-PORT-11G: while the field is open there is one WebGL context. The page's capability probe releases its own, so only
-// the scene's remains. A counting stand-in for getContext makes this checkable whether or not the browser has WebGL.
-test('CKP-PORT-11G the capability probe releases its WebGL context, leaving at most the scene\'s while the field is open',async({page})=>{
- await page.addInitScript(()=>{
-  window.glContexts=[];
-  HTMLCanvasElement.prototype.getContext=function(type){
-   if(!/webgl/.test(String(type)))return null;
-   const gl={lost:false,isContextLost(){return this.lost;},getExtension(name){return name==='WEBGL_lose_context'?{loseContext:()=>{gl.lost=true;}}:null;}};
-   window.glContexts.push(gl);return gl;
-  };
- });
- await open(page);expect(await show(page,payload(12))).toBe(true);
- await page.waitForFunction(()=>window.glContexts.length>=1);
- await page.waitForTimeout(500);
- const live=await page.evaluate(()=>window.glContexts.filter(g=>!g.isContextLost()).length);
- expect(live).toBeLessThanOrEqual(1);
-});
-
-// CKP-PORT-11D: only public data enters the field. The host's payload carries presentation and published models; the page
-// keeps nothing else and never asks the host for account or local readings.
-test('CKP-PORT-11D the field page takes only public model data and posts only its fixed events',async({page})=>{
- await open(page);
- const withPrivate=JSON.stringify({...JSON.parse(payload(4)),account:'someone@example.invalid',subscriptionRef:'secret-ref',usedPercent:73,projectName:'private'});
- expect(await show(page,withPrivate)).toBe(true);
- await page.waitForTimeout(300);
- const text=await page.evaluate(()=>document.documentElement.innerText+document.documentElement.outerHTML);
- for(const secret of ['someone@example.invalid','secret-ref','private'])expect(text).not.toContain(secret);
- const posted=await page.evaluate(()=>window.posted);
- for(const type of posted)expect(['loaded','ready','activity','card','close','failed']).toContain(type);
 });

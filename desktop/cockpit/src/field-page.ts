@@ -1,110 +1,102 @@
 // SPDX-License-Identifier: MIT
-// The enlarged launch field: a page of its own in a separate native panel, official edition only. The reserved
-// scene loads with a dynamic import when the view opens, and the panel destroys this page on close, which
-// releases the WebGL context. The 180 s idle close and the outside-click close live in the native panel.
-// Low Power Mode (spike 11-08, D63): the page cannot read it, so native passes it in the payload and through `power`
-// on every change. Low power or Reduce Motion mounts the scene quiet; it always renders on demand only.
-// Composition (task 91 round 5, CKP-PORT-11): a transparent panel on the desktop with a frosted card at the left and
-// the scene at the right, masked by the c01 porthole silhouette feathered into the desktop (src/field-shape.ts).
-// A click on bare desktop, including the feathered rim, closes the field.
-// Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) and study website-updates/style.css round 5 for
-// behaviour; the code is written here.
+// The enlarged launch field (WP-22, owner D298): a page of its own in a separate native panel, official edition only.
+// The panel is one transparent rectangle (88% of the cockpit screen's visible frame) over the native dim. The reserved
+// launch-field component (runtime/field-scene/launch-field.js, version 1.1.0, window mode) draws everything inside it: the
+// soft-canopy window, the in-field menu, the × and site keys and the 3D field. It loads with a dynamic import when the view
+// opens, and the panel destroys this page on close, which releases the WebGL context and resets a tried effort.
+// Native paints the dim, so the component's own is off (dim:false). Esc belongs to the component (clear search, leave the
+// fly-in, then close); a click outside the rectangle, the 180 s idle close and losing key are native's.
+// Low Power Mode (spike 11-08, D63): the page cannot read it, so native passes it in the payload and through `power`;
+// it quiets the field like Reduce Motion. Increase Contrast and Reduce Motion arrive live through `options`.
+// Spec: the component's INTEGRATION-SPEC 1.1.0 and the r7 FINAL SPEC (confirm 2026-11-18/03).
 import {ht} from './host-text.js';
-import {featherShape,type FieldShape} from './field-shape.js';
-import {layoutFieldAxes} from './field-axes.js';
-import {FIELD_LIMIT,fieldFleet,fieldModel,type FieldModel,type PublishedModel} from './field-model.js';
-import {shortLabel} from '../study/rocket-r1/short-label.js';
+import {FIELD_LIMIT,provisionalIds,windowModel,type PublishedModel,type WindowModel} from './field-model.js';
 
-interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly lowPower?:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null}
-interface Scene {update(models:readonly FieldModel[],focus:string|null,path?:boolean):void;renderFor?(ms:number):void;stats?():{frames?:number;scheduled?:boolean};dispose():void}
-export interface FieldStats {readonly lowPower:boolean;readonly quiet:boolean;readonly frames:number;readonly scheduled:boolean}
-declare global {interface Window {modelPlanField?:{show(raw:string):boolean;power(lowPower:boolean):boolean;stats():FieldStats|null;dispose():void}}}
+interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly lowPower?:boolean;readonly contrast?:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null;readonly asOf?:string|null}
+interface Live {readonly contrast?:boolean;readonly reduceMotion?:boolean}
+type Language='en'|'zh';
+interface LaunchWindow {update(next:Record<string,unknown>):void;setOptions(next:{contrast?:'more'|'normal';reducedMotion?:boolean|null;language?:Language}):void;setSelection(id:string|null):void;dispose():void}
+interface FlatLaunch {update(next:Record<string,unknown>):void;dispose():void}
+interface Component {
+ createLaunchWindow(options:Record<string,unknown>):LaunchWindow;
+ createFlatLaunch(options:Record<string,unknown>):FlatLaunch;
+}
+export interface FieldState {readonly mode:'loading'|'window'|'flat'|'none';readonly contrast:'more'|'normal';readonly reducedMotion:boolean;readonly shown:readonly string[]}
+declare global {interface Window {modelPlanField?:{show(raw:string):boolean;power(lowPower:boolean):boolean;options(raw:string):boolean;state():FieldState|null;dispose():void}}}
 
 const post=(message:Record<string,unknown>)=>(window.webkit?.messageHandlers as Record<string,{postMessage(m:string):void}>|undefined)?.field?.postMessage(JSON.stringify(message));
-const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
-// CKP-PORT-11G: the probe's context is released at once, so the scene's is the only live WebGL context while the field is open.
-const webgl=()=>{try{const gl=document.createElement('canvas').getContext('webgl2');if(!gl)return false;gl.getExtension('WEBGL_lose_context')?.loseContext();return true;}catch{return false;}};
+/** The component's maker logos, from the official cockpit's own vendor marks (assets/brands/, D43); others show an initial. */
+const marks:Readonly<Record<string,string>>={openai:'openai-white.svg',anthropic:'claude.svg',zhipuai:'zai-white.svg',google:'gemini.svg',kimi:'kimi-white.svg',xai:'x-white.svg',alibaba:'qwen.svg',deepseek:'deepseek.svg',xiaomi:'xiaomi.svg',minimax:'minimax.svg'};
+const escape=(s:string)=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]!);
 
 function mount(root:HTMLElement) {
- let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,shape:FieldShape|null=null,reduceMotion=false,lowPower=false,quiet=false,launches=0,stopAxes=()=>{};
- const bar=el('header','field-bar'),stage=el('div','ov-porthole field-stage'),list=el('div','field-list');
- const close=el('button','field-close');close.type='button';close.onclick=()=>post({type:'close'});
- const mineKey=el('button','field-preset'),allKey=el('button','field-preset'),count=el('span','field-count');mineKey.type=allKey.type='button';
- const search=el('input','field-search');search.type='search';
- const card=el('section','field-card');card.append(bar,list);
- bar.append(mineKey,allKey,search,count);root.append(card,stage,close);
- const shaped=featherShape(new URL('runtime/canopy-c01/window-890-1x.png',document.baseURI).href).then(value=>{
-  if(disposed){value?.dispose();return;}shape=value;if(value)stage.style.setProperty('--field-mask',`url("${value.maskUrl}")`);stage.dataset.shape=value?'feathered':'none';
- });
- // A transparent WKWebView cannot blur the desktop behind it, so the native panel puts a behind-window blur under the
- // card; it learns where the card is (CSS px = points) on every layout change.
- let reported='';
- const reportCard=()=>{
-  const r=card.getBoundingClientRect(),message={type:'card',x:r.x,y:r.y,width:r.width,height:r.height,radius:12},key=JSON.stringify(message);
-  if(r.width&&key!==reported){reported=key;post(message);}
- };
- const cardWatch=new ResizeObserver(reportCard);cardWatch.observe(card);cardWatch.observe(root);
- // Bare desktop closes: the transparent page around the card and scene, and the scene's own feathered rim.
- root.addEventListener('click',e=>{
-  if(!e.isTrusted)return;
-  const t=e.target as Element;
-  if(t===root||(stage.contains(t)&&shape?.bare(stage.getBoundingClientRect(),e.clientX,e.clientY)))post({type:'close'});
- });
- const fleet=()=>fieldFleet(models,chosen);
- const refresh=()=>{
-  const flown=fleet();if(focus===null||!flown.some(m=>m.id===focus))focus=flown[0]?.id??null;
-  count.textContent=`${flown.length}/${FIELD_LIMIT}`;scene?.update(flown,focus,true);scene?.renderFor?.(700);
-  const q=search.value.trim().toLowerCase();list.replaceChildren(...models.filter(m=>!q||m.name.toLowerCase().includes(q)).map(m=>{
-   const label=el('label','field-row'),box=el('input');box.type='checkbox';box.checked=chosen.has(m.id);box.disabled=!box.checked&&chosen.size>=FIELD_LIMIT;
-   box.onchange=()=>{if(box.checked)chosen.add(m.id);else chosen.delete(m.id);refresh();};label.append(box,el('span',undefined,m.name));return label;
-  }));
- };
- const preset=(ids:readonly string[])=>{chosen=new Set(ids.slice(0,FIELD_LIMIT));refresh();};
- mineKey.onclick=()=>preset(mine.length?mine:models.map(m=>m.id));allKey.onclick=()=>preset(models.map(m=>m.id));search.oninput=refresh;
- const fallback=(text:string)=>{stopAxes();stage.replaceChildren(el('p','nogl',text));};
+ let view:LaunchWindow|null=null,flat:FlatLaunch|null=null,mode:FieldState['mode']='none',disposed=false,language:Language='en';
+ let models:WindowModel[]=[],shown:string[]=[],mine:string[]=[],focus:string|null=null,provisional:string[]=[],asOf:string|null=null;
+ let appReduce=false,systemReduce=false,lowPower=false,contrast=false,stopFlat=()=>{};
+ const assets=new URL('assets/',document.baseURI).href;
+ const logo=(dev:string)=>Object.hasOwn(marks,dev)?`<img src="${assets}brands/${marks[dev]}" alt="">`:`<span>${escape(dev.slice(0,1).toUpperCase())}</span>`;
+ const reducedMotion=()=>appReduce||systemReduce||lowPower;
+ const live=()=>({contrast:contrast?'more' as const:'normal' as const,reducedMotion:reducedMotion()});
  for(const type of ['pointerdown','keydown','wheel'])root.addEventListener(type,()=>post({type:'activity'}),{passive:true});
- window.addEventListener('keydown',e=>{if(e.key==='Escape')post({type:'close'});});
 
- // Builds a fresh scene host and mounts the reserved scene into it; a newer launch or dispose wins. Disposing a scene
- // forces its context loss, and the scene reports that loss as a failure afterwards: only the current launch may fall back.
- async function launch() {
-  stopAxes();const noGl=ht(language==='en'?'en':'zh-CN','host.fieldNoWebGL'),launch=++launches;
-  const host=el('div','r1-field p2-field'),canvas=el('div','wb-canvas'),plates=el('div','wb-plates'),voyage=el('div','wb-voyage');
-  host.append(canvas,document.createElementNS('http://www.w3.org/2000/svg','svg'),plates,voyage);host.children[1]!.setAttribute('class','wb-leaders');stage.replaceChildren(host);
-  const url='../runtime/field-scene/cockpit-scene.bundle.js';
-  const {mountWorkbenchField}=await import(url) as {mountWorkbenchField(host:HTMLElement,options:Record<string,unknown>):Scene};
-  await shaped;// the silhouette is in place before the first frame, so the scene never shows as a rectangle
-  if(disposed||launch!==launches)return;
-  const flown=fleet();focus=focus&&flown.some(m=>m.id===focus)?focus:flown[0]?.id??null;quiet=reduceMotion||lowPower;
-  scene=mountWorkbenchField(host,{models:flown,focus,quiet,showPath:true,language,onDemand:true,noIntro:true,
-   onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{if(disposed||launch!==launches)return;scene=null;fallback(noGl);}});
-  if(scene)stopAxes=layoutFieldAxes(host,shape?.span);
-  scene.renderFor?.(1400);refresh();
+ // The 2D fallback (WebGL missing or too slow): the same fleet as a flat field, with its own × and Esc, since the
+ // window's menu and keys go with the 3D view.
+ function fallback(component:Component) {
+  if(disposed||mode==='flat')return;
+  view?.dispose();view=null;mode='flat';root.replaceChildren();root.className='';
+  flat=component.createFlatLaunch({container:root,language,assetBase:assets,className:'field-flat'});
+  flat.update({models,shown,focus,language});
+  const close=document.createElement('button');close.type='button';close.className='field-close';close.textContent='×';
+  close.setAttribute('aria-label',ht(language==='en'?'en':'zh-CN','host.fieldClose'));close.onclick=()=>post({type:'close',reason:'key'});
+  root.append(close);
+  const key=(e:KeyboardEvent)=>{if(e.key==='Escape')post({type:'close',reason:'esc'});};
+  window.addEventListener('keydown',key);stopFlat=()=>window.removeEventListener('keydown',key);
  }
  return {
   async show(value:Show) {
-   language=value.language;const loc=language==='en'?'en':'zh-CN',w={close:ht(loc,'host.fieldClose'),mine:ht(loc,'host.fieldMine'),all:ht(loc,'host.fieldAll'),search:ht(loc,'host.fieldSearch'),noGl:ht(loc,'host.fieldNoWebGL'),empty:ht(loc,'host.fieldEmpty')};document.documentElement.lang=language==='en'?'en':'zh-CN';
-   close.textContent='×';close.setAttribute('aria-label',w.close);mineKey.textContent=w.mine;allKey.textContent=w.all;search.placeholder=w.search;search.setAttribute('aria-label',w.search);
-   reduceMotion=value.reduceMotion;lowPower=value.lowPower===true;
-   models=value.models.flatMap(m=>{const f=fieldModel(m,shortLabel);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
-   chosen=new Set((mine.length?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT));
-   // A rocket clicked in the porthole joins the field (the last of a full fleet makes room) and takes the focus.
-   if(focus!==null&&!models.some(m=>m.id===focus))focus=null;
-   if(focus!==null&&!chosen.has(focus))chosen=new Set([...[...chosen].slice(0,FIELD_LIMIT-1),focus]);
-   refresh();// the picker and its count show at once; the scene joins when it has loaded
-   if(!models.length){fallback(w.empty);refresh();post({type:'ready'});return;}
-   if(!webgl()){fallback(w.noGl);refresh();post({type:'ready'});return;}
-   await launch();post({type:'ready'});
+   language=value.language==='zh'?'zh':'en';document.documentElement.lang=language==='en'?'en':'zh-CN';
+   appReduce=value.reduceMotion===true;lowPower=value.lowPower===true;contrast=value.contrast===true;
+   models=value.models.flatMap(m=>{const w=windowModel(m);return w?[w]:[];});
+   const known=new Set(models.map(m=>m.id));
+   mine=value.mine.filter(id=>known.has(id));provisional=provisionalIds(value.models).filter(id=>known.has(id));
+   asOf=typeof value.asOf==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value.asOf)?value.asOf:null;
+   focus=value.focus!==null&&known.has(value.focus)?value.focus:null;
+   // My models first, else the publication's order; a rocket clicked in the porthole joins (the last of a full fleet makes room).
+   shown=(mine.length?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT);
+   if(focus!==null&&!shown.includes(focus))shown=[...shown.slice(0,FIELD_LIMIT-1),focus];
+   if(!models.length){post({type:'failed'});return;}
+   mode='loading';
+   const url='../runtime/field-scene/launch-field.js';
+   const component=await import(url) as Component;
+   if(disposed)return;
+   try {
+    const created=component.createLaunchWindow({container:root,language,assetBase:assets,logo,dim:false,limit:FIELD_LIMIT,...live(),
+     onClose:(reason:string)=>post({type:'close',reason}),
+     onOpenSite:(target:unknown,params:unknown)=>post({type:'openSite',target,params}),
+     onShownChange:(ids:string[])=>{shown=[...ids];},
+     onSelect:(id:string|null)=>{focus=id;},
+     onFail:()=>fallback(component),onSlow:()=>fallback(component)});
+    // A failure reported while the window was being made has already switched to the 2D field.
+    if(mode==='loading'){
+     view=created;mode='window';
+     view.update({models,shown,focus,mine,provisional,language,...(asOf?{asOf}:{})});
+    } else created.dispose();
+   } catch {fallback(component);}
+   post({type:'ready'});
   },
-  /** A Low Power Mode change: remount the scene with the matching motion (one WebGL context at a time). */
+  /** A Low Power Mode change: the field goes quiet like Reduce Motion, live. */
   power(next:boolean) {
-   if(next===lowPower||disposed)return;lowPower=next;
-   if(scene){scene.dispose();scene=null;void launch();}
+   if(disposed||next===lowPower)return;lowPower=next;view?.setOptions({reducedMotion:reducedMotion()});
   },
-  stats():FieldStats|null {
-   const s=scene?.stats?.();return scene?{lowPower,quiet,frames:s?.frames??0,scheduled:!!s?.scheduled}:null;
+  /** Increase Contrast and Reduce Motion from macOS, live (component setOptions). */
+  options(next:Live) {
+   if(disposed)return;
+   if(typeof next.contrast==='boolean')contrast=next.contrast;
+   if(typeof next.reduceMotion==='boolean')systemReduce=next.reduceMotion;
+   view?.setOptions(live());
   },
-  dispose(){disposed=true;stopAxes();cardWatch.disconnect();shape?.dispose();shape=null;scene?.dispose();scene=null;root.replaceChildren();},
+  state():FieldState {return {mode,...live(),shown:[...shown]};},
+  dispose(){disposed=true;stopFlat();view?.dispose();view=null;flat?.dispose();flat=null;mode='none';root.replaceChildren();},
  };
 }
 const root=document.getElementById('field');
@@ -113,7 +105,8 @@ if(root&&window.top===window){
  window.modelPlanField=Object.freeze({
   show(raw:string){try{void page.show(JSON.parse(raw) as Show).catch(()=>post({type:'failed'}));return true;}catch{return false;}},
   power(lowPower:boolean){if(typeof lowPower!=='boolean')return false;page.power(lowPower);return true;},
-  stats(){return page.stats();},
+  options(raw:string){try{const value=JSON.parse(raw) as unknown;if(!value||typeof value!=='object')return false;page.options(value as Live);return true;}catch{return false;}},
+  state(){return page.state();},
   dispose(){page.dispose();delete window.modelPlanField;},
  });
  post({type:'loaded'});
