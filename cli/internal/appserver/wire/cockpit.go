@@ -193,6 +193,9 @@ type CockpitPublicationEffort struct {
 	Cost        *float64 `json:"cost" null:"coalesced"`
 	Time        *float64 `json:"time" null:"coalesced"`
 	Provisional bool     `json:"provisional,omitempty" null:"forbidden"`
+	// AAScore (D292, client-v1.5): the published AA Intelligence Index score, a reference beside Ability ("AA official"
+	// in a detail or tooltip). The effort page's ability share always reads Ability. Absent when unscored.
+	AAScore *float64 `json:"aaScore,omitempty" null:"forbidden"`
 }
 
 type CockpitSubscriptionDetails struct {

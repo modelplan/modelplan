@@ -2818,6 +2818,7 @@ public struct WireCockpitPublicationEffort: Codable, Sendable {
     public let `cost`: Double?
     public let `time`: Double?
     public let `provisional`: Bool?
+    public let `aaScore`: Double?
     private enum CodingKeys: String, CodingKey {
         case `effort`
         case `label`
@@ -2827,8 +2828,9 @@ public struct WireCockpitPublicationEffort: Codable, Sendable {
         case `cost`
         case `time`
         case `provisional`
+        case `aaScore`
     }
-    public init(`effort`: String, `label`: String, `star`: Bool, `multiplier`: Double? = nil, `ability`: Double? = nil, `cost`: Double? = nil, `time`: Double? = nil, `provisional`: Bool? = nil) throws {
+    public init(`effort`: String, `label`: String, `star`: Bool, `multiplier`: Double? = nil, `ability`: Double? = nil, `cost`: Double? = nil, `time`: Double? = nil, `provisional`: Bool? = nil, `aaScore`: Double? = nil) throws {
         self.`effort` = `effort`
         self.`label` = `label`
         self.`star` = `star`
@@ -2837,6 +2839,7 @@ public struct WireCockpitPublicationEffort: Codable, Sendable {
         self.`cost` = `cost`
         self.`time` = `time`
         self.`provisional` = `provisional`
+        self.`aaScore` = `aaScore`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -2851,6 +2854,8 @@ public struct WireCockpitPublicationEffort: Codable, Sendable {
         self.`time` = try c.decodeIfPresent(Double.self, forKey: .`time`)
         if c.contains(.`provisional`), try c.decodeNil(forKey: .`provisional`) { throw WireDecodeError.invalidIdentity }
         self.`provisional` = try c.decodeIfPresent(Bool.self, forKey: .`provisional`)
+        if c.contains(.`aaScore`), try c.decodeNil(forKey: .`aaScore`) { throw WireDecodeError.invalidIdentity }
+        self.`aaScore` = try c.decodeIfPresent(Double.self, forKey: .`aaScore`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -2864,6 +2869,7 @@ public struct WireCockpitPublicationEffort: Codable, Sendable {
         try c.encode(`cost`, forKey: .`cost`)
         try c.encode(`time`, forKey: .`time`)
         try c.encodeIfPresent(`provisional`, forKey: .`provisional`)
+        try c.encodeIfPresent(`aaScore`, forKey: .`aaScore`)
     }
     private func validate() throws {
     }
