@@ -2169,7 +2169,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if appearance.reduceMotion { rackExtension = 0 }
     startRackTimer()
   }
-  private func reportLanded() { verificationLanded?(rackExtension) }
+  private func reportLanded() {
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationLanded?(rackExtension)
+    #endif
+  }
   private func whenRackSettled(_ body: @escaping @MainActor () -> Void) {
     if rackExtension == rackTarget { body(); return }
     rackSettledWaiters.append(body); startRackTimer()
