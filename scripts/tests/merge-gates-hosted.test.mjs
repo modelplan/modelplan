@@ -299,3 +299,42 @@ test("post-merge report: picks main's newest real run, lists red hosted legs wit
   assert.equal(P.plan({ body }, [{ ...rows[0], job_id: 1 }]).fresh.length, 1, "a new red job is announced");
   assert.equal(P.plan({ body }, []).action, "close");
 });
+
+// S10 (post-merge sampling 2026-11-19): every hosted leg #1067 moved post-merge must actually run on main after a merge.
+// PATHS (workflow: how its hosted leg reaches main). Every one is `push: branches: [main]` with the leg's own `if:`
+// letting push through (the if-guard test above); post-merge-hosted.yml then follows the workflow by name.
+//   ci, desktop, dock-host-port, e2e-journey*, macos-distribution, official-dock, repo-checks, u10-candidate, u11-native,
+//   u14-engine-drive, u14-macos (was MISSING), u4-swift-wire, u4b-engine-client, u6-engine-store-core, u7-credential-agent,
+//   u7-helper-producer, verification-pointer-helper.   * e2e-journey is dispatch-only by design (legacy app, frozen).
+test("every hosted leg's workflow runs on pushes to main (or is dispatch-only by design)", () => {
+  for (const leg of Hs.HOSTED_MAC_LEGS) {
+    const ifLine = (jobBlocks(wfText(leg.workflow)).get(leg.key) ?? []).find((l) => /^    if:/.test(l)) ?? "";
+    if (/^    if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}$/.test(ifLine)) continue;
+    const text = wfText(leg.workflow);
+    assert.ok(onEvents(text).includes("push"), `${leg.workflow}: no push trigger, so ${leg.key} never runs on main after a merge`);
+    const wl = text.split("\n"), at = wl.findIndex((l) => /^on:/.test(l));
+    const on = wl.slice(at, at + 1 + wl.slice(at + 1).findIndex((l) => /^\S/.test(l))).join("\n");
+    assert.match(on, /^ {2}push:\n {4}branches: \[main\]/m, `${leg.workflow}: push is limited to main`);
+  }
+});
+
+// S9: a skipped, cancelled or unfinished hosted leg says nothing about main, so it must not close the failure issue.
+// PATHS over the issue state (rows = open issue's red legs): per workflow, newest counted main run ->
+//   leg failed/timed_out -> row (new or kept) | leg success/neutral -> row dropped (green) |
+//   leg skipped/cancelled/running -> previous row KEPT | leg absent from the run -> row dropped (leg gone) |
+//   workflow has no counted run on main -> previous rows KEPT.  Issue: no rows & none open -> none; rows & none open ->
+//   create; rows & open -> update (+comment on a new job); no rows & open -> close (only when every leg above is green/gone).
+test("post-merge report: a skipped leg leaves the failure issue as it was", () => {
+  const run = { id: 20, path: DESKTOP, name: "desktop", head_sha: H, html_url: "https://x/run/20" };
+  const prev = [{ job_id: 7, job: "app-smoke", conclusion: "failure", workflow: "desktop", run_id: 10, sha: BASE, url: "https://x/job/7", test: "t1" },
+    { job_id: 8, job: "cockpit-spi-tests", conclusion: "failure", workflow: "desktop", run_id: 10, sha: BASE, url: "https://x/job/8", test: "t2" },
+    { job_id: 9, job: "Dock", conclusion: "failure", workflow: "other", run_id: 11, sha: BASE, url: "https://x/job/9", test: "t3" }];
+  const names = (rows) => rows.map((r) => r.job).sort();
+  const skipped = P.reconcile(prev, run, [job("app-smoke", "skipped"), job("cockpit-spi-tests", "skipped")]);
+  assert.deepEqual(names(skipped), ["app-smoke", "cockpit-spi-tests"], "skipped: unchanged");
+  assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "cancelled"), job("cockpit-spi-tests", "success")])), ["app-smoke"], "cancelled keeps, success clears");
+  assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), [], "green clears");
+  assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "failure"), linux("shell")])), ["app-smoke"], "red stays, an absent leg is dropped");
+  assert.deepEqual(names(P.carryOver(prev, new Set(["desktop"]))), ["Dock"], "a workflow with no counted run keeps its rows");
+  assert.equal(P.plan({ body: P.renderBody(prev, "modelplan/modelplan") }, skipped).action, "update", "never close");
+});

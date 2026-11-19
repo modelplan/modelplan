@@ -17,6 +17,7 @@ export const LABEL = "post-merge-red";
 export const TITLE = "Post-merge: hosted macOS leg red on main";
 const STATE_RE = /<!-- post-merge-red-state (.*?) -->/s;
 const RED = new Set(["failure", "timed_out"]);
+const GREEN = new Set(["success", "neutral"]);
 const COUNTED = new Set(["success", "failure", "timed_out", "neutral"]);
 
 // The run that speaks for a workflow on main: the newest finished push run that was not cancelled or skipped.
@@ -32,6 +33,21 @@ export function redRows(run, jobs) {
     sha: run.head_sha, url: j.html_url ?? run.html_url, test: null,
   }));
 }
+
+// The rows one workflow contributes, given the previous rows (from the open issue) and its newest counted main run.
+// A hosted leg is green only when its job there SUCCEEDED; red when it failed or timed out. A leg that is skipped,
+// cancelled or still running says nothing, so its previous row stays (S9: a skipped leg must leave the issue state
+// unchanged, never close it as green). A leg that has no job in the run any more is gone and its row is dropped.
+export function reconcile(prevRows, run, jobs) {
+  const red = redRows(run, jobs);
+  const redNames = new Set(red.map((r) => r.job));
+  const legs = jobs.filter((j) => isHostedMacLeg(run.path, j));
+  const kept = prevRows.filter((r) => r.workflow === run.name && !redNames.has(r.job) && legs.some((j) => j.name === r.job && !(j.status === "completed" && GREEN.has(j.conclusion))));
+  return [...red, ...kept];
+}
+
+// Previous rows of workflows that had no counted run on main this time: unknown, so unchanged.
+export const carryOver = (prevRows, seenRunNames) => prevRows.filter((r) => !seenRunNames.has(r.workflow));
 
 // The first failing test in a job log (the same patterns as the coordinator's main-red.sh), else the failed step.
 export function firstFailure(log, job) {
@@ -84,14 +100,16 @@ async function main() {
 
   const issues = (await gh.all(`/issues?state=open&labels=${LABEL}&sort=created&direction=asc`)).filter((i) => !i.pull_request);
   const open = issues[0] ?? null;
-  const known = new Map(parseState(open?.body).map((r) => [r.job_id, r.test]));
-  const rows = [];
+  const prev = parseState(open?.body);
+  const known = new Map(prev.map((r) => [r.job_id, r.test]));
+  const rows = [], seen = new Set();
   for (const wf of HOSTED_WORKFLOWS) {
     const file = wf.split("/").pop();
     const run = pickRun(await gh.all(`/actions/workflows/${file}/runs?branch=main&event=push&status=completed`, "workflow_runs", 50));
     if (!run) { say({ workflow: wf, run: "none on main" }); continue; }
     const jobs = await gh.all(`/actions/runs/${run.id}/jobs?filter=latest`, "jobs", 500);
-    for (const row of redRows(run, jobs)) {
+    seen.add(run.name);
+    for (const row of reconcile(prev, run, jobs)) {
       row.test = known.get(row.job_id) ?? null;
       if (!row.test) {
         let log = "";
@@ -102,6 +120,7 @@ async function main() {
     }
     say({ workflow: wf, run: run.id, sha: run.head_sha, red: rows.filter((r) => r.run_id === run.id).map((r) => r.job) });
   }
+  rows.push(...carryOver(prev, seen));
   const p = plan(open, rows);
   say({ issue: open?.number ?? null, action: p.action, red: rows.length, fresh: p.fresh.map((r) => r.job), dryRun });
   if (dryRun) return;
