@@ -367,7 +367,7 @@ private actor CardDismissalClient: EngineClient {
         click()
         XCTAssertTrue(view.refreshSweepAnimatingForChecks)
         try await settle()
-        XCTAssertLessThan(clock.now - started, .milliseconds(2500), "a failed refresh releases the number before the cap")
+        HostedRunnerTiming.enforce("a failed refresh releases the number before the cap (ms)", measured: Double((clock.now - started) / .milliseconds(1)), atMost: 2500)
         XCTAssertEqual(refresh.requests, [memberID, memberID])
         seen = frames()
         XCTAssertTrue(seen.contains { $0.alpha == 0 }, "the number was hidden during the failed refresh")

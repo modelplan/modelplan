@@ -266,8 +266,8 @@ import XCTest
     }
     XCTAssertTrue(fixture.page.isAttached, "\(label): caught and latched", file: file, line: line)
     let landing = try XCTUnwrap(landed, "\(label): landed", file: file, line: line)
-    XCTAssertLessThanOrEqual(landing, .milliseconds(Int(within * 1_000) + 150), "\(label): the cockpit did not wait for the rack",
-                             file: file, line: line)
+    HostedRunnerTiming.enforce("\(label): the cockpit did not wait for the rack (landing ms)", measured: Double(landing / .milliseconds(1)), atMost: within * 1_000 + 150,
+                               file: file, line: line)
     XCTAssertEqual(window.frame, home, file: file, line: line)
     XCTAssertEqual(fixture.page.verificationRack.ext, 1, "\(label): the rack ends fully out", file: file, line: line)
     return (landing, extAtLanding)
