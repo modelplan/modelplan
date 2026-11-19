@@ -847,6 +847,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
     let view = CockpitWebView(frame: .zero, configuration: config)
     view.menuProvider = { [weak self] in self?.contextMenu() }
+    // Owner 11-19 (#1062): the first click on an inactive cockpit in the porthole band only activates it; the porthole
+    // opens the enlarged field on a click, so an activation click must not reach it. The rest of the page keeps first-click.
+    view.declinesActivationClick = { [weak self] point in
+      guard let layout = self?.layout else { return false }
+      return point.y < layout.portholeActivationBand
+    }
     menuTarget.fire = { [weak self] in self?.toggleAttachment() }
     // Owner review 11-08 / CKP-SHELL-25: only the hull and canopy are drawn; the web view paints no backing of its
     // own, so the clear panel shows the desktop around the transparent page. `CockpitWebView.isOpaque` being false is

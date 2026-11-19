@@ -223,3 +223,23 @@ test('WP-22 the field\'s selection shows the selected fader\'s bank and the effo
  expect(await receive(send('select',{model:'m0'}))).toBe(true);
  expect(await visible()).toEqual(first);expect(await selected()).toEqual(['Synthetic m0']);
 });
+// Owner 11-19 (#1062): the enlarged field opens on a click on the port, not on a drag across it, and not on the click
+// that bounces off the field's close (the cockpit, inactive while the field held key, becomes active again).
+test('WP-22 a drag across the porthole does not open the field; a press that stays within 4 px still does',async({page})=>{
+ await open(page);const box=await page.locator('.ck-port').boundingBox(),x=box.x+520,y=box.y+120;
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+12,y+3,{steps:4});await page.mouse.up();
+ await page.waitForTimeout(100);expect(await fieldOpens(page)).toBe(0);
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+3,y+2,{steps:2});await page.mouse.up();
+ await expect.poll(()=>fieldOpens(page)).toBe(1);
+});
+test('WP-22 a porthole click within 300 ms of the field closing is ignored; a later one opens it',async({page})=>{
+ const {send,receive}=await open(page);const port=page.locator('.ck-port');
+ await port.click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(1);
+ // The field takes key (the cockpit goes inactive), then closes (the cockpit is key again).
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:false}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ await port.click({position:{x:520,y:120}});
+ await page.waitForTimeout(50);expect(await fieldOpens(page)).toBe(1);
+ await page.waitForTimeout(320);
+ await port.click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(2);
+});
