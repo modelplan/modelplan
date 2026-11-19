@@ -585,6 +585,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         reply.envelope.consentGeneration == delivery.floor.generation
       {
         lastReply = (delivery, reply.envelope.data); readRetryAttempt = 0
+        LaunchTimingLog.shared.mark("first-cockpit-reply", detail: "presented=\(presented)")
         trace(presented ? "query.reply" : "warm.reply")
         if !presented { CockpitTimingLog.record("prewarm last-reply buildMs=\(warmBuiltAt.map { CockpitTimingLog.ms(since: $0) } ?? -1)") }
         else if !freshLogged { freshLogged = true; CockpitTimingLog.record("open display=fresh clickMs=\(CockpitTimingLog.sinceClick())") }

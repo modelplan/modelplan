@@ -32,6 +32,8 @@ public typealias EngineStoreFeatureFailure = ModelPlanEngineStoreCore.EngineStor
     public var snapshot: EngineStoreSnapshot { core.snapshot }
     private var sinks: [UUID: WeakSink] = [:]
     private var readerLog = ReaderStateLog()
+    /// WP-17 cold-start stages; tests inject their own clock and sink.
+    var launchTiming: LaunchTimingLog = .shared
     private var refreshObservers: [UUID:(WireRequestID,[WireRefreshScheduled])->Void] = [:]
 
     public func observeRefreshReplies(_ observer:@escaping (WireRequestID,[WireRefreshScheduled])->Void) -> UUID {
@@ -60,6 +62,8 @@ public typealias EngineStoreFeatureFailure = ModelPlanEngineStoreCore.EngineStor
             for line in readerLog.changes(core.snapshot.rows) { DiagnosticsLog.shared.info("readers", line) }
         default: break
         }
+        // WP-17: every event that can hand the store rows, the bootstrap `rows/subscribe` reply included.
+        if LaunchReadingStages.delivers(event) { LaunchReadingStages.mark(core.snapshot.rows, log: launchTiming) }
         if case .response(let requestID,.refresh(let reply))=event {
             for observer in Array(refreshObservers.values) { observer(requestID,reply.envelope.data) }
         }
@@ -75,6 +79,30 @@ public typealias EngineStoreFeatureFailure = ModelPlanEngineStoreCore.EngineStor
     private func liveSinks() -> [any EngineStoreSink] {
         sinks = sinks.filter { $0.value.value != nil }
         return sinks.values.compactMap(\.value)
+    }
+}
+
+/// WP-17 (G3-123): the cold-start stages per tool, once per process: the first reading the app holds (`stale`, the
+/// cached one, or `fresh`) and the first fresh one. Tool ids only; measurement, nothing waits on it.
+enum LaunchReadingStages {
+    /// The events after which `EngineStoreCore` holds rows it did not hold before: a `rows/changed` notification and an
+    /// accepted rows reply (the bootstrap `rows/subscribe`). Every other event leaves `snapshot.rows` as it was or clears it.
+    static func delivers(_ event: EngineClientEvent) -> Bool {
+        switch event {
+        case .rowsChanged: return true
+        case .response(_, .rows): return true
+        default: return false
+        }
+    }
+    static func mark(_ rows: WireRowsSnapshot?, log: LaunchTimingLog = .shared) {
+        guard let rows else { return }
+        for row in rows.projection.rows where row.kind == .tool && !row.invalid {
+            switch row.state {
+            case .fresh: log.mark("first-reading", tool: row.id); log.mark("first-fresh", tool: row.id)
+            case .stale: log.mark("first-reading", tool: row.id)
+            default: break
+            }
+        }
     }
 }
 

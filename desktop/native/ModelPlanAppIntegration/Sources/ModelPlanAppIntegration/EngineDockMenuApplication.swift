@@ -783,6 +783,7 @@ struct StatusNoticePresentation {
     /// The same restore used by the real launch; it never grants access itself.
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        LaunchTimingLog.shared.mark("did-finish-launching")
         // Spec 5.3 D: off unless MODELPLAN_MAIN_THREAD_HANG_WATCHDOG=1 (or the debug default); never in test runs.
         MainThreadHangWatchdog.shared.startIfEnabled()
         NSApp.setActivationPolicy(.accessory)
@@ -819,13 +820,16 @@ struct StatusNoticePresentation {
            actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
         renderMenu()
+        LaunchTimingLog.shared.mark("status-item")
         watchStatusItemVisibility()
         Task {
             await prepare(); guard !terminating else { return }
+            LaunchTimingLog.shared.mark("prepared")
             // Owner 11-12 (E1): the guide window comes first, from the local mark; the reader starts behind it.
             await beginSetupAtLaunch()
             guard !terminating else { return }
             startLifecycle(); renderMenu()
+            LaunchTimingLog.shared.mark("lifecycle-started")
         }
     }
     /// G3-22: a full menu bar hides the item behind the notch (the owner's Mac: occluded at
