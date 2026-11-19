@@ -9,6 +9,7 @@ on:
       - 'clients/swift/ModelPlanEngineClient/**'
       - 'clients/swift/ModelPlanWire/**'
       - '.github/workflows/u11-native.yml'
+      - '!**/*.md'
   push:
     branches: [main]
     paths:
