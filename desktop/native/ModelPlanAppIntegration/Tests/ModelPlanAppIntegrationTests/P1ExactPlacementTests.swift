@@ -656,7 +656,24 @@ extension P1ExactPlacementTests {
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
 
-    private func launch(_ rows: WireRowsSnapshot, size: SettingsSize, percentages: Bool, stations: Int, tag: String, engine: P1EngineBox? = nil) async throws -> (EngineDockMenuApplication, DockInstrumentView) {
+    /// Ring names a batch must present: the station name, then "<name> · 2" for a second account.
+    private static func expectedRingNames(_ stations: [Station]) -> [String] {
+        stations.flatMap { station in (0..<station.accounts).map { $0 == 0 ? station.name : "\(station.name) · \($0 + 1)" } }
+    }
+
+    /// Exact multiset equality of the presented and expected names: nothing stripped, duplicates kept.
+    private static func ringNamesMatch(shown: [String], expected: [String]) -> Bool { shown.sorted() == expected.sorted() }
+
+    func testRingNamePredicateKeepsDuplicatesAndSuffixes() {
+        let expected = Self.expectedRingNames([Station(id: "a", vendorKey: "grok", name: "Grok", accounts: 2)])
+        XCTAssertEqual(expected, ["Grok", "Grok · 2"])
+        XCTAssertTrue(Self.ringNamesMatch(shown: ["Grok · 2", "Grok"], expected: expected))
+        XCTAssertFalse(Self.ringNamesMatch(shown: ["Grok", "Grok"], expected: expected), "two rings both named Grok are not Grok and Grok · 2")
+        XCTAssertFalse(Self.ringNamesMatch(shown: ["Grok"], expected: expected))
+        XCTAssertFalse(Self.ringNamesMatch(shown: ["Grok", "Grok · 2", "Grok · 2"], expected: expected))
+    }
+
+    private func launch(_ rows: WireRowsSnapshot, size: SettingsSize, percentages: Bool, stations: Int, tag: String, engine: P1EngineBox? = nil, ringNames: [String]? = nil) async throws -> (EngineDockMenuApplication, DockInstrumentView) {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("p1-\(tag)-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
@@ -674,7 +691,8 @@ extension P1ExactPlacementTests {
         let view = app.composition.dock.dockView
         var ready = false
         for _ in 0..<1000 {
-            if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == stations { ready = true; break }
+            if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == stations,
+               ringNames.map({ Self.ringNamesMatch(shown: view.presentedReadingsForChecks.values.map(\.name), expected: $0) }) ?? true { ready = true; break }
             try await Task.sleep(for: .milliseconds(10))
         }
         if !ready { XCTFail("\(tag) \(size.rawValue): the window never showed \(stations) rings") }
@@ -869,8 +887,9 @@ extension P1ExactPlacementTests {
                 }
                 let expected = stations.reduce(0) { $0 + $1.accounts }
                 let rows = try synthetic(stations)
+                let names = Self.expectedRingNames(stations)
                 if live == nil {
-                    live = try await launch(rows, size: size, percentages: false, stations: expected, tag: "g332", engine: box)
+                    live = try await launch(rows, size: size, percentages: false, stations: expected, tag: "g332", engine: box, ringNames: names)
                 } else {
                     let engine = try XCTUnwrap(box.engine)
                     try await engine.replaceRows(rows)
@@ -879,8 +898,7 @@ extension P1ExactPlacementTests {
                 // Wait on concrete state: the live window shows exactly this batch's rings and names.
                 var swapped = false
                 for _ in 0..<1000 {
-                    let shown = view.presentedReadingsForChecks.values.map { $0.name.replacingOccurrences(of: " · 2", with: "") }
-                    if !app.lifecyclePaused, shown.count == expected, Set(shown) == Set(slice.map(\.1)) { swapped = true; break }
+                    if !app.lifecyclePaused, Self.ringNamesMatch(shown: view.presentedReadingsForChecks.values.map(\.name), expected: names) { swapped = true; break }
                     try await Task.sleep(for: .milliseconds(10))
                 }
                 guard swapped else {
