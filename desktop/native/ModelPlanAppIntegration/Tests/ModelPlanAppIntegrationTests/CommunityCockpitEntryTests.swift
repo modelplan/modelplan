@@ -1120,6 +1120,65 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(parts.dropFirst().first,"rec","the recommended-effort star marker is on the fader (\(result))")
         XCTAssertEqual(parts.last,"k","and sits at a numeric travel position (\(result))")
     }
+    /// CKP-FAD-54 step 2 (WP-08): on the real official page opened by the normal factory, a real pointer click on a model
+    /// card (a trusted mouse down and up delivered to the web view through its window) selects that model and opens the
+    /// effort page. Page JS cannot make a trusted click, so this is the one place the whole path is proved. Needs the
+    /// canonical official cockpit and the synthetic CLI.
+    @MainActor func testClickingAModelCardOpensTheEffortPageThroughTheNormalEntry() async throws {
+        let official=Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path=ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],FileManager.default.isExecutableFile(atPath:path),
+              FileManager.default.fileExists(atPath:official.appendingPathComponent("bundle-manifest.json").path),
+              !CommunityCockpitApplicationFactory.manifestPins.isEmpty else {
+            throw XCTSkip("The real page needs the canonical official cockpit, its pins and the synthetic-test CLI")
+        }
+        _ = NSApplication.shared
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("fad54-"+UUID().uuidString).resolvingSymlinksInPath()
+        defer{try? FileManager.default.removeItem(at:root)}
+        let app=try Self.ownerTestShapedApp(at:root,helper:URL(fileURLWithPath:path),ownerTest:true,official:official)
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root.appendingPathComponent("support"),preferredLanguages:["en"])
+        let owner=CockpitConsoleOwner(bundle:app,settingsStore:settings)
+        let capture=Self.repoRoot().appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        let wire=try WireDecoder.decode(WireCockpitData.self,from:Data(contentsOf:capture))
+        let context=try CockpitEngineContext(sessionID:UUID(),storeEpoch:"synthetic-fad54",generation:1)
+        let page=try owner.makePage(context:context,executable:app.appendingPathComponent("Contents/Helpers/modelplan"))
+        defer{page.discard()}
+        var ready=false;page.onReady={ready=true}
+        page.onShown={ if let ticket=page.queryTicket { page.display(wire,ticket:ticket) } }
+        page.open()
+        let deadline=ContinuousClock.now + .seconds(30)
+        while !ready && ContinuousClock.now<deadline { try await Task.sleep(for:.milliseconds(20)) }
+        XCTAssertTrue(ready,"the real page becomes ready")
+        let web=try XCTUnwrap(page.verificationWebView)
+        let window=try XCTUnwrap(page.window)
+        // The centre of the first filled card, in page (CSS pixel) coordinates; wait for the first paint.
+        let centre="""
+        (()=>{const s=document.querySelector('.fd-ch:not(.empty) .fd-strip');if(!s)return '';const r=s.getBoundingClientRect();return (r.left+r.width/2)+','+(r.top+r.height/2);})()
+        """
+        var point=""
+        let paint=ContinuousClock.now + .seconds(30)
+        while point.isEmpty && ContinuousClock.now<paint {
+            try await Task.sleep(for:.milliseconds(200))
+            point=((try? await web.evaluateJavaScript(centre)) as? String) ?? ""
+        }
+        let xy=point.split(separator:",").compactMap{Double($0)}
+        XCTAssertEqual(xy.count,2,"a model card painted")
+        let before=((try? await web.evaluateJavaScript("document.querySelectorAll('.fd-ch.sel').length+'|'+document.querySelectorAll('.mfd-page.pg-compare').length")) as? String) ?? "?"
+        XCTAssertEqual(before,"0|0","no model is selected before the click")
+        let location=web.convert(NSPoint(x:xy[0],y:xy[1]),to:nil)
+        func event(_ type:NSEvent.EventType)throws->NSEvent{
+            try XCTUnwrap(NSEvent.mouseEvent(with:type,location:location,modifierFlags:[],timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:window.windowNumber,context:nil,eventNumber:0,clickCount:1,pressure:1))
+        }
+        window.sendEvent(try event(.leftMouseDown))
+        try await Task.sleep(for:.milliseconds(60))
+        window.sendEvent(try event(.leftMouseUp))
+        var after="?"
+        let opened=ContinuousClock.now + .seconds(10)
+        while after != "1|1" && ContinuousClock.now<opened {
+            try await Task.sleep(for:.milliseconds(100))
+            after=((try? await web.evaluateJavaScript("document.querySelectorAll('.fd-ch.sel').length+'|'+document.querySelectorAll('.mfd-page.pg-compare').length")) as? String) ?? "?"
+        }
+        XCTAssertEqual(after,"1|1","a real click on the card selects its model and opens the effort page")
+    }
     /// Cockpit recovery step 1 (G3-96, G3-116; CKP-SHELL-27, #470 staging) through the normal entry: the Dock's console
     /// button opens the cockpit through the real composition with the cockpit entry enabled, and the coordinator presents
     /// real CockpitWindowController pages. A late render receipt keeps the presented page and marks the reading delayed;

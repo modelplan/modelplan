@@ -162,3 +162,30 @@ test('CKP-FAD-54 Reduce Motion: the effort page switches without the fade and th
  expect(await sol.locator('.fd-ghost').evaluate(e=>getComputedStyle(e).transitionProperty)).not.toContain('top');
  await expect(sol.locator('.fd-ghost')).toBeHidden({timeout:2000});
 });
+
+test('CKP-FAD-14 hovering a fader shows the blue dashed what-if box at the level under the pointer; leaving hides it',async({page})=>{
+ await open(page);
+ const sol=card(page,'Sol 6.1'),travel=sol.locator('[role=slider]'),peek=sol.locator('.fd-peek');
+ await expect(peek).not.toHaveClass(/\bon\b/);
+ const box=await travel.boundingBox(),xhigh=box.y+8+(box.height-16)*.25; // XHigh is a quarter of the way down from Max
+ await page.mouse.move(box.x+box.width/2,xhigh);
+ await expect(peek).toHaveClass(/\bon\b/);
+ await expect(peek).toHaveCSS('opacity','1'); // after its 100 ms fade
+ const p=await peek.evaluate(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return {style:s.borderTopStyle,y:r.top+r.height/2,opacity:s.opacity};});
+ expect(p.style).toBe('dashed');
+ expect(Math.abs(p.y-xhigh)).toBeLessThan(3);
+ // A hover is not a trial: the card still reads its normal lines and nothing is selected.
+ await expect(sol.locator('.fd-strip')).not.toHaveAttribute('data-card','try');
+ await expect(page.locator('.fd-ch.sel')).toHaveCount(0);
+ await page.mouse.move(box.x+box.width/2+200,xhigh);
+ await expect(peek).not.toHaveClass(/\bon\b/);
+});
+
+test('CKP-FAD-57 short cockpit: the fader lever scales to 0.825 of the tall one',async({page})=>{
+ await open(page);
+ const tall=await card(page,'Sol 6.1').locator('.fd-cap').boundingBox();
+ await open(page,{tier:'compact'});
+ const short=await card(page,'Sol 6.1').locator('.fd-cap').boundingBox();
+ expect(short.width/tall.width).toBeGreaterThan(.8);expect(short.width/tall.width).toBeLessThan(.85);
+ expect(short.height/tall.height).toBeGreaterThan(.8);expect(short.height/tall.height).toBeLessThan(.85);
+});
