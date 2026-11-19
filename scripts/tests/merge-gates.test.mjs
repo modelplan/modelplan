@@ -1210,3 +1210,32 @@ test("no carry without tree equality: hand-resolved conflicts, tree tweaks, octo
     assert.notEqual(gate(evil).state, R.SUCCESS);
   } finally { r.done(); }
 });
+
+test("auto-carry: the latest posted verdict head is the only candidate; when it is the current head nothing carries, whatever the lane (macrevb-946-1)", () => {
+  const t2 = [file("scripts/merge-gates/rules.mjs")];
+  const ok = () => ({ ok: true, between: [H] });
+  const oldSol = comment(v("merge", OLD, "macrev2"));
+  // An old Sol merge, then a current-head verdict from a lane that cannot pass tier 2: no carry, tier 2 stays unpassed.
+  for (const lane of ["macrevc", "glm", "sonnet"]) {
+    const items = R.feed([oldSol, comment(v("merge", H, lane))], []);
+    assert.equal(R.autoCarry(items, H, ok), null, lane);
+    const out = evalPr({ files: t2, comments: [oldSol, comment(v("merge", H, lane))], prove: ok });
+    assert.notEqual(out.state, R.SUCCESS, `${lane}: ${out.why}`);
+    assert.doesNotMatch(out.why, /carried/);
+  }
+  // The same with a sticky reviewer assignment, before or after the verdicts.
+  for (const order of ["before", "after"]) {
+    const rv = comment("REVIEWER: macrev2"), cur = comment(v("merge", H, "macrevc"));
+    const comments = order === "before" ? [rv, oldSol, cur] : [oldSol, cur, rv];
+    const out = evalPr({ files: t2, comments, prove: ok });
+    assert.notEqual(out.state, R.SUCCESS, `${order}: ${out.why}`);
+    assert.doesNotMatch(out.why, /carried/);
+  }
+  // A current-head verdict in a review counts as posted too.
+  assert.notEqual(evalPr({ files: t2, comments: [oldSol], reviews: [review(v("merge", H, "macrevc"))], prove: ok }).state, R.SUCCESS);
+  // Control: when the old head is the latest, the proven carry still applies, with or without the sticky reviewer.
+  assert.equal(evalPr({ files: t2, comments: [oldSol], prove: ok }).state, R.SUCCESS);
+  assert.equal(evalPr({ files: t2, comments: [comment("REVIEWER: macrev2"), oldSol], prove: ok }).state, R.SUCCESS);
+  const cur = comment(v("merge", H, "macrevc")), later = comment(v("merge", OLD, "macrev2"));
+  assert.equal(R.autoCarry(R.feed([cur, later], []), H, ok)?.from, OLD, "an old-head verdict posted after the current-head one is the candidate");
+});

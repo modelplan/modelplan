@@ -197,7 +197,7 @@ export function verdicts(items, head, carried) {
 
 // ---- Auto-carry (D243 G6, owner 2026-11-14) ----
 // A PR that only merged main keeps its review without a VERDICT-CARRY comment. The candidate is the head named by
-// the most recently posted VERDICT line (any lane, merge or block) that is not the current head. It carries when
+// the most recently posted VERDICT line (any lane, merge or block); when that names the current head, nothing carries. It carries when
 // prove(old, head) (evaluate.mjs: git.verifyMainMerges) shows only main merges since it and an identical own diff,
 // and no VERDICT line names a commit between it and the head. Only the newest candidate is tried, so a later review
 // of another head is never skipped over. The carried head's verdicts then count under the same tier rules; a block
@@ -209,8 +209,10 @@ export function autoCarry(items, head, prove = () => ({ ok: false })) {
       const m = /^VERDICT: (?:merge|block) @ ([0-9a-f]{40})\b/i.exec(l);
       if (m) named.push(m[1].toLowerCase());
     }
-  const old = named.filter((s) => s !== head).at(-1);
-  if (!old) return null;
+  // The latest posted head across all lanes is the only candidate. When it is the current head, the PR was reviewed
+  // here and nothing carries, so an older verdict of another lane never stands in for it (macrevb-946-1).
+  const old = named.at(-1);
+  if (!old || old === head) return null;
   const proof = prove(old, head);
   if (!proof?.ok) return null;
   const after = new Set((proof.between ?? []).filter((s) => s !== head));
