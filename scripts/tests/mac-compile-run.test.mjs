@@ -162,3 +162,55 @@ test("an interrupted run releases its lock", async () => {
   await new Promise((r) => p.on("exit", r));
   assert.ok(!fs.existsSync(seedDir(d) + ".lock"), "lock released after TERM");
 });
+
+const leftover = (root) => {
+  fs.mkdirSync(path.join(root, "a", "b"), { recursive: true });
+  fs.writeFileSync(path.join(root, "a", "b", "f"), "x");
+  fs.chmodSync(path.join(root, "a", "b", "f"), 0o444);
+  for (const p of [path.join(root, "a", "b"), path.join(root, "a"), root]) fs.chmodSync(p, 0o555);
+};
+const unlock = (root) => spawnSync("chmod", ["-R", "u+rwx", root]);
+
+test("a read-only leftover scratch from an earlier job is cleaned before the build", () => {
+  const d = setup();
+  const sp = path.join(d, "scratch", "desktop_native_Pkg");
+  fs.mkdirSync(sp, { recursive: true }); leftover(sp);
+  const r = run(d);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(sp, "a")));
+  assert.equal(fs.readFileSync(path.join(sp, "product"), "utf8"), "built\n");
+});
+
+test("a read-only leftover in the temp logs directory is cleaned", () => {
+  const d = setup();
+  const logs = path.join(d, "mac-compile-logs");
+  fs.mkdirSync(logs); leftover(logs);
+  const r = run(d);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(logs, "a")));
+});
+
+test("a read-only seed clone from a previous job is cleaned by the next job", () => {
+  const d = setup();
+  publish(d);
+  run(d, { SEED_ROOT: seedDir(d) });
+  const sp = path.join(d, "scratch", "desktop_native_Pkg");
+  leftover(sp);
+  const r = run(d, { SEED_ROOT: seedDir(d) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(sp, "a")));
+});
+
+test("when the scratch cannot be deleted it is moved aside and the job builds cold without failing", () => {
+  const d = setup();
+  const sp = path.join(d, "scratch", "desktop_native_Pkg");
+  fs.mkdirSync(sp, { recursive: true }); fs.writeFileSync(path.join(sp, "stale"), "x");
+  const realRm = spawnSync("which", ["rm"], { encoding: "utf8" }).stdout.trim();
+  fs.writeFileSync(path.join(d, "bin", "rm"), `#!/bin/bash\ncase "$*" in *desktop_native_Pkg) exit 1;; esac\nexec ${realRm} "$@"\n`, { mode: 0o755 });
+  const r = run(d);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /moved aside/);
+  assert.ok(!fs.existsSync(path.join(sp, "stale")));
+  assert.equal(fs.readFileSync(path.join(sp, "product"), "utf8"), "built\n");
+  unlock(path.join(d, "scratch"));
+});
