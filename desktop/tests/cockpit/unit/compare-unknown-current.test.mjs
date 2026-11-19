@@ -75,3 +75,26 @@ test('WP-05 the ability share is scale-free: the same model on another ability s
  // a scale centred elsewhere moves only the numbers, never the axis: still 0 / 50% / 100% of the top effort
  assert.match(html,/>100%<\/text>/);assert.match(html,/>0<\/text>/);
 });
+
+// macrevb-885-2: with fast on, the band between the Standard and fast line covers only runs of consecutive efforts that
+// have both values; an interior effort with no cost (or no time) is a gap in the band, as it is in the lines.
+test('CKP-MFD-33 fast band: an interior missing cost or time splits the band; it never bridges the missing effort',()=>{
+ setLanguage('en');
+ const tiers={'Codex|model0':{speed:1.5,cost:2.5}};
+ const pieces=(html,k)=>{const d=html.match(new RegExp(`<path class="pc-fastband pc-${k}"[^>]*d="([^"]+)"`))?.[1];assert.ok(d,`${k}: a band is drawn`);
+  return d.split('Z').map(p=>p.trim()).filter(Boolean).map(p=>[...p.matchAll(/[ML]([\d.]+) ([\d.]+)/g)].map(m=>Number(m[1])));};
+ // the x of every effort column, from the full model's band (one piece over all five efforts: 5 top + 5 bottom points)
+ const full=pieces(comparison({...view,models:[{...terra,pool:'codex'}],speedTiers:tiers},ui,{modelId:'model0',current:'High',currentFast:true}),'cost');
+ assert.equal(full.length,1);const X=full[0].slice(0,5);
+ for(const [k,col] of [['cost',2],['time',3]]){
+  // High missing: Low+Med and XHigh+Max are two pieces; no piece has a point at High's x or spans it
+  const gap={...terra,pool:'codex',e:terra.e.map(r=>r[0]==='High'?Object.assign([...r],{[col]:null}):r)};
+  const ps=pieces(comparison({...view,models:[gap],speedTiers:tiers},ui,{modelId:'model0',current:'Low',currentFast:true}),k);
+  assert.equal(ps.length,2,`${k}: two runs`);
+  for(const p of ps)assert.ok(Math.max(...p)<X[2]||Math.min(...p)>X[2],`${k}: a piece spans the missing High column`);
+  // Med missing: Low stands alone (no piece), High..Max is one piece
+  const lone={...terra,pool:'codex',e:terra.e.map(r=>r[0]==='Med'?Object.assign([...r],{[col]:null}):r)};
+  const ql=pieces(comparison({...view,models:[lone],speedTiers:tiers},ui,{modelId:'model0',current:'High',currentFast:true}),k);
+  assert.equal(ql.length,1,`${k}: one run`);assert.ok(Math.min(...ql[0])>X[1],`${k}: the band starts after the missing Med column`);
+ }
+});

@@ -187,10 +187,14 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
   const path = (vs, runs) => runs.filter(r => r.length > 1).map(r => `<polyline points="${r.map(i => n1(X(i)) + ',' + n1(Y(vs[i]))).join(' ')}"/>`).join('');
   const runsOf = vs => { const runs = []; vs.forEach((v, i) => { if (!numeric(v)) return; if (!runs.length || !numeric(vs[i - 1])) runs.push([]); runs.at(-1).push(i); }); return runs; };
   if (fastOn) for (const k of ['time', 'cost']) {
-    const pairs = efforts.map((_, i) => [standard[i][k], rows[i][k]]).map(([a, b], i) => numeric(a) && numeric(b) ? {i, a, b} : null).filter(Boolean);
-    if (pairs.length < 2 || pairs.every(q => Math.abs(q.a - q.b) < 1e-9)) continue;
-    const d = pairs.map((q, j) => `${j ? 'L' : 'M'}${n1(X(q.i))} ${n1(Y(q.b))}`).join(' ') + [...pairs].reverse().map(q => ` L${n1(X(q.i))} ${n1(Y(q.a))}`).join('') + ' Z';
-    g += `<path class="pc-fastband pc-${k}" data-series="${k}" d="${d}"/>`;
+    const pairs = efforts.map((_, i) => [standard[i][k], rows[i][k]]).map(([a, b], i) => numeric(a) && numeric(b) ? {i, a, b} : null);
+    const known = pairs.filter(Boolean);
+    if (known.length < 2 || known.every(q => Math.abs(q.a - q.b) < 1e-9)) continue;
+    // one band per run of consecutive known efforts: a missing effort is a gap, never bridged (like the lines)
+    const runs = [];
+    pairs.forEach((q, i) => { if (!q) return; if (!runs.length || !pairs[i - 1]) runs.push([]); runs.at(-1).push(q); });
+    const d = runs.filter(r => r.length > 1).map(r => r.map((q, j) => `${j ? 'L' : 'M'}${n1(X(q.i))} ${n1(Y(q.b))}`).join(' ') + [...r].reverse().map(q => ` L${n1(X(q.i))} ${n1(Y(q.a))}`).join('') + ' Z').join(' ');
+    if (d) g += `<path class="pc-fastband pc-${k}" data-series="${k}" d="${d}"/>`;
     g += `<g class="pc-line pc-${k} pc-std" data-series="${k}" data-fast="standard">${path(standard.map(r => r[k]), runsOf(standard.map(r => r[k])))}</g>`;
   }
   for (const k of ['time', 'cost', 'abl']) {
