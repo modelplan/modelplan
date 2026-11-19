@@ -607,20 +607,32 @@ private actor G1RowsClient: EngineClient {
         let dock = app.composition.dock
         XCTAssertTrue(dock.card.isHidden)
         // D166 (EngineResetNotifier): a forecast (announced) never notifies; exactly one notification follows its confirmation.
-        var episodes: [String] = []
+        var deliveries: [(episode: String, title: String)] = []
         let delivered = expectation(description: "the confirmation's reset notification was delivered")
         delivered.assertForOverFulfill = true
-        app.composition.setResetNotificationDelivery { episode in episodes.append(episode); delivered.fulfill() }
+        // Record every delivery; only a delivery carrying the EngineResetEventWording confirmation title fulfils the
+        // expectation, so a wrongly queued announcement delivery can never satisfy it.
+        app.composition.setResetNotificationDelivery { episode, title in
+            deliveries.append((episode, title))
+            if title == "Codex limit reset confirmed" || title == "Codex 额度重置已确认" { delivered.fulfill() }
+        }
         let client = try XCTUnwrap(app.composition.client as? G1RowsClient)
         // While the announcement is presented: the hollow event dot only, no card and no delivery. The notifier
         // handles an announcement synchronously in store.apply (no task is spawned), so this check is deterministic.
         try await client.replaceRows(fixture(resetStatus: "announced", eventNow: now))
         XCTAssertTrue(dock.card.isHidden, "An announced reset must not open a card")
         XCTAssertEqual(dock.dockView.presentedNoticesForChecks["0123456789abcdef"]?.key.kind, .resetAnnounced)
-        XCTAssertTrue(episodes.isEmpty, "An announced reset must not notify")
+        XCTAssertTrue(deliveries.isEmpty, "An announced reset must not notify")
+        // Let any wrongly queued main-queue delivery task run while the announcement is current.
+        for _ in 0..<5 { await Task.yield() }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(deliveries.isEmpty, "An announced reset must not notify, even after the queue drains")
         try await client.replaceRows(fixture(resetStatus: "confirmed", eventNow: now))
         await fulfillment(of: [delivered], timeout: 3)
-        XCTAssertEqual(episodes.count, 1, "Exactly one notification follows the confirmation")
+        XCTAssertEqual(deliveries.count, 1, "Exactly one notification follows the confirmation")
+        XCTAssertEqual(deliveries.map(\.title), [deliveries.first?.title ?? ""])
+        XCTAssertTrue(["Codex limit reset confirmed", "Codex 额度重置已确认"].contains(deliveries.first?.title ?? ""),
+                      "The only recorded delivery is the confirmation, never an announcement")
         XCTAssertTrue(dock.card.isHidden, "A confirmed reset notification must not open a card")
         XCTAssertEqual(dock.dockView.presentedNoticesForChecks["0123456789abcdef"]?.key.kind, .resetConfirmed)
         await app.composition.stop()
