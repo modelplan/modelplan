@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: MIT
+# Smoke for scripts/mac-compile/run.sh on a GitHub-hosted Mac. The compile Macs run main's trusted copy of the script
+# (mac-compile.yml), so a PR that edits it is never exercised there; this job runs the PR's own copy against one small
+# real SwiftPM package and asserts the build-once path: one `swift build --build-tests`, then `swift test --skip-build`
+# that executes tests without compiling again. It has no secrets and never touches the compile Macs.
+name: mac-compile runner smoke
+on:
+  pull_request:
+    branches: [main]
+    paths: ["scripts/mac-compile/**", "scripts/tests/mac-compile-run.test.mjs", ".github/workflows/mac-compile-runner-smoke.yml", "!**/*.md"]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mac-compile-smoke-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  smoke:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run the patched run.sh on ModelPlanSelection
+        run: |
+          set -eu
+          PKG=desktop/native/ModelPlanSelection
+          CLASSES=$(grep -rhoE '^(final )?class [A-Za-z0-9_]+: XCTestCase' "$PKG/Tests" | sed -E 's/^(final )?class ([A-Za-z0-9_]+):.*/\2/' | sort -u | paste -sd'|' -)
+          [ -n "$CLASSES" ]
+          mkdir -p "$RUNNER_TEMP/shim"
+          REAL=$(command -v swift)
+          printf '#!/bin/bash\necho "$*" >> "%s/calls"\nexec "%s" "$@"\n' "$RUNNER_TEMP" "$REAL" > "$RUNNER_TEMP/shim/swift"
+          chmod +x "$RUNNER_TEMP/shim/swift"
+          printf '%s\tsmoke_selection\tfilter\t%s\tNoSuchClass\n' "$PKG" "$CLASSES" > "$RUNNER_TEMP/plan.tsv"
+          PATH="$RUNNER_TEMP/shim:$PATH" bash scripts/mac-compile/run.sh "$RUNNER_TEMP/plan.tsv" "$RUNNER_TEMP/scratch" "$GITHUB_SHA"
+          cat "$RUNNER_TEMP/calls"
+          [ "$(grep -c '^build ' "$RUNNER_TEMP/calls")" = 1 ]
+          grep -qx "build --build-tests --package-path $PKG --scratch-path $RUNNER_TEMP/scratch/smoke_selection" "$RUNNER_TEMP/calls"
+          [ "$(grep -c '^test ' "$RUNNER_TEMP/calls")" = 1 ]
+          grep -q '^test --skip-build ' "$RUNNER_TEMP/calls"
+          TLOG="$RUNNER_TEMP/mac-compile-logs/smoke_selection-test.log"
+          ! grep -qE '^\[[0-9]+/[0-9]+\] Compiling' "$TLOG"
+          [ "$(grep -cE "^Test Case '.*' passed" "$TLOG")" -gt 0 ]
