@@ -267,7 +267,7 @@ html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{ani
 @keyframes cockpit-bell-flare{from{scale:1 .25}45%{scale:1 1.12}to{scale:1 1}}
 @keyframes cockpit-bell-burn{0%,100%{scale:1 1}30%{scale:1 1.08}55%{scale:1 .92}80%{scale:1 1.04}}
 @media (prefers-reduced-motion:no-preference){
-html:not([data-reduce-motion="true"]) #cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .84s steps(7,end) .22s infinite}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"][data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .84s steps(7,end) .22s infinite}
 }
 #cockpit[data-ignite="true"] .ck-base .bz .bz-sheet{opacity:0;transition:opacity .06s}
 html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::after,html[data-reduce-motion="true"] .ck-base .bz .bz-sheet{transition:none!important;animation:none!important}
