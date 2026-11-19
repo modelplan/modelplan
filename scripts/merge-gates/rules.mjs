@@ -179,16 +179,46 @@ export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)", "(gh-terra)"]
 // reviews. Counts for the head or a carried head; per lane the latest wins. A lane name is lower-case letters,
 // digits and inner hyphens; any other parenthesised suffix leaves the verdict unnamed.
 export function verdicts(items, head, carried) {
+  // A verdict on the current head always beats a carried one from the same lane, whatever the posting order: a
+  // delayed review of an older head must not override an explicit block of this head (macrevc-946-1).
   const at = new Set([head, ...carried]);
-  const lanes = new Map();
+  const lanes = new Map(), own = new Map();
   for (const x of items)
     for (const l of lines(x.body)) {
       const m = /^VERDICT: (merge|block) @ ([0-9a-f]{40})\b(?: \(([a-z0-9]+(?:-[a-z0-9]+)*)\))?/i.exec(l);
       if (!m) continue;
       const sha = m[2].toLowerCase();
-      if (at.has(sha)) lanes.set(m[3] ? `(${m[3].toLowerCase()})` : "(unnamed)", m[1].toLowerCase());
+      if (!at.has(sha)) continue;
+      const lane = m[3] ? `(${m[3].toLowerCase()})` : "(unnamed)";
+      (sha === head ? own : lanes).set(lane, m[1].toLowerCase());
     }
+  for (const [lane, v] of own) lanes.set(lane, v);
   return lanes;
+}
+
+// ---- Auto-carry (D243 G6, owner 2026-11-14) ----
+// A PR that only merged main keeps its review without a VERDICT-CARRY comment. The candidate is the head named by
+// the most recently posted VERDICT line (any lane, merge or block); when that names the current head, nothing carries. It carries when
+// prove(old, head) (evaluate.mjs: git.verifyMainMerges) shows only main merges since it and an identical own diff,
+// and no VERDICT line names a commit between it and the head. Only the newest candidate is tried, so a later review
+// of another head is never skipped over. The carried head's verdicts then count under the same tier rules; a block
+// carries too. Returns { from, why } or null.
+export function autoCarry(items, head, prove = () => ({ ok: false })) {
+  const named = [];
+  for (const x of items)
+    for (const l of lines(x.body)) {
+      const m = /^VERDICT: (?:merge|block) @ ([0-9a-f]{40})\b/i.exec(l);
+      if (m) named.push(m[1].toLowerCase());
+    }
+  // The latest posted head across all lanes is the only candidate. When it is the current head, the PR was reviewed
+  // here and nothing carries, so an older verdict of another lane never stands in for it (macrevb-946-1).
+  const old = named.at(-1);
+  if (!old || old === head) return null;
+  const proof = prove(old, head);
+  if (!proof?.ok) return null;
+  const after = new Set((proof.between ?? []).filter((s) => s !== head));
+  if (named.some((s) => after.has(s))) return null;
+  return { from: old, why: `verdict carried from ${old.slice(0, 8)} (main merges only, diff unchanged)` };
 }
 
 // Sticky reviewer (owner 2026-11-18): "REVIEWER: <lane>" on its own line in a trusted comment names the one GPT lane
@@ -583,10 +613,10 @@ export function dataSyncProblem({ pr, files, items, sync }) {
 
 // ---- One PR head ----
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
-// verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs;
+// verifiedEdge(old, new): carry proof; proveMainMerges(old, new): auto-carry proof (autoCarry); conf: parsed design-paths.conf; members: a train's member PRs;
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -604,7 +634,9 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   const paths = prPaths(files);
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
-  const carried = carryChain(carryEdges(items), head, verifiedEdge);
+  const chain = carryChain(carryEdges(items), head, verifiedEdge);
+  const auto = chain.length ? null : autoCarry(items, head, proveMainMerges);
+  const carried = auto ? [auto.from] : chain;
   const fb = { until: glmFallbackUntil, now, used: [] };
 
   // One review gate (D243 step 5; amends R1/R4/R13/R14/R16 and the D161/D235 lifts). Tier 2 needs a Sol verdict
@@ -637,8 +669,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (gap) notes.push(gap);
   const refNote = referenceProblem(pr, paths);
   if (refNote) notes.push(refNote);
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried, glmFallback: fb.used, notes };
-  const say = (why) => (notes.length ? `${why}; info: ${notes.join("; ")}` : why);
+  const extra = { tier, design: design.touching ? design.surfaces : [], carried, ...(auto ? { autoCarried: auto.from } : {}), glmFallback: fb.used, notes };
+  const say = (why) => [why, ...(auto ? [auto.why] : []), ...(notes.length ? [`info: ${notes.join("; ")}`] : [])].join("; ");
   if (pr.draft) return res(PENDING, say("draft"), extra);
 
   const blocked = [...lanes].filter(([, v]) => v === "block").map(([l]) => l);
@@ -660,7 +692,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
   if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
   if (ci.state === PENDING) return res(PENDING, say(ci.why), extra);
-  return res(SUCCESS, say(`tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}`), extra);
+  return res(SUCCESS, say(`tier ${tier}: gates pass${chain.length ? ` (carried ${chain.length})` : ""}`), extra);
 }
 
 // ---- One merge-group commit ----

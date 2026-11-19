@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
-# Publishes the `modelplan-gates` commit status: the review gate (tier, one GPT VERDICT, VERDICT-CARRY)
+# Publishes the `modelplan-gates` commit status: the review gate (tier, one GPT VERDICT, VERDICT-CARRY, auto-carry
+# across main merges with an unchanged own diff, D243 G6)
 # plus green CI for a PR head, with GLMREV, DESIGN and scenario evidence reported as advisory (D243), and for a
 # merge-queue group the same for every PR in it plus
 # a clean-merge proof and the group's own CI. Rules: scripts/merge-gates/rules.mjs.
