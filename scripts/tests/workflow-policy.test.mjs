@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
-import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, prCancelProblems, workflowProblems } from "../workflow-policy.mjs";
 import { spawnSync } from "node:child_process";
 
 test("trusted Mac route is confined to the reviewed reusable workflow path", () => {
@@ -320,7 +320,7 @@ test("desktop.yml pr=<N> dispatch builds refs/pull/<N>/merge in every job it own
   assert.match(resolver, /grep -qx "\$head"/, "the merge must contain the PR's current head");
   for (const name of ["app", "shell", "native-partition", "cockpit-pins", "app-smoke"]) {
     const body = job(name);
-    assert.match(body, /needs: \[queue-scope, pr-ref\]/, `${name} needs pr-ref`);
+    assert.match(body, /needs: \[queue-scope, pr-ref(?:, pr-scope)?\]/, `${name} needs pr-ref`);
     assert.match(body, /if: \$\{\{ !cancelled\(\) && \(!inputs\.pr \|\| needs\.pr-ref\.result == 'success'\) && /, `${name} never falls back to the dispatched ref`);
     assert.match(body, /- uses: actions\/checkout@v4\n        with:\n(?:          .*\n)*?          ref: \$\{\{ inputs\.pr && needs\.pr-ref\.outputs\.sha \|\| /, `${name} checks out the merge`);
   }
@@ -413,7 +413,7 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
   fs.writeFileSync(`${dir}/gh`, '#!/bin/bash\n[ -n "${GH_FAIL:-}" ] && exit 1\nurl="$2"\nwhile [ $# -gt 0 ]; do [ "$1" = --jq ] && f="$2"; shift; done\n' +
     'if [[ $url =~ /runs/([0-9]+)/jobs ]]; then [ -n "${JOBS_FAIL:-}" ] && exit 1; v="JOBS_${BASH_REMATCH[1]}"; d="${!v:-null}"; else d="${RUNS:-null}"; fi\n' +
     'printf "%s" "$d" | jq -r "$f"\n', { mode: 0o755 });
-  fs.writeFileSync(`${dir}/git`, '#!/bin/bash\ncase "$1" in fetch) [ -z "${NO_BASE:-}" ];; merge-base) echo base;; diff) echo desktop/native/x.swift;; esac\n', { mode: 0o755 });
+  fs.writeFileSync(`${dir}/git`, '#!/bin/bash\ncase "$1" in fetch) [ -z "${NO_BASE:-}" ];; merge-base) echo base;; diff) printf %s desktop/native/x.swift; printf "\\\\0";; esac\n', { mode: 0o755 });
   fs.writeFileSync(`${dir}/python3`, '#!/bin/bash\n[ -n "${SEL_FAIL:-}" ] && exit 1\nprintf "%s\\n" "${SELECTED:-WidgetTests}"\n', { mode: 0o755 });
   const go = (env) => {
     const out = `${dir}/out`; fs.writeFileSync(out, "");
@@ -515,4 +515,89 @@ test("desktop.yml queue-scope declares 'GUI share not needed' for the merge gate
   assert.ok(m, "the step rules.mjs guiLegState relies on must exist in queue-scope, gated on gui != 'true'");
   assert.ok(text.indexOf(m[0]) > text.indexOf("\n  queue-scope:") && text.indexOf(m[0]) < text.indexOf("\n  gui-scope:"), "inside queue-scope");
   assert.ok(!/: /.test(m[1]) && !/ #/.test(m[1]), "a plain scalar with ': ' is a YAML error (this broke desktop.yml at 7df3cedc)");
+});
+
+const WF_DIR = new URL("../../.github/workflows/", import.meta.url);
+const workflows = () => fs.readdirSync(WF_DIR).filter((f) => /\.ya?ml$/.test(f)).map((f) => [f, fs.readFileSync(new URL(f, WF_DIR), "utf8")]);
+
+test("D254: every macOS PR leg has a path gate (workflow-level list excluding markdown, or a scope-output if)", () => {
+  for (const [f, text] of workflows()) assert.deepEqual(macPathGateProblems(text, `.github/workflows/${f}`), [], f);
+  const pr = "on:\n  pull_request:\n  push:\n  workflow_dispatch:\n";
+  const job = (iff) => `jobs:\n  a:\n${iff}    runs-on: macos-latest\n`;
+  assert.ok(macPathGateProblems(pr + job("")).some((p) => p.includes("macOS job a")), "ungated job");
+  assert.ok(macPathGateProblems(pr + job("    if: github.event_name != 'pull_request' || !github.event.pull_request.draft\n")).length > 0, "draft guard is not a path gate");
+  assert.deepEqual(macPathGateProblems(pr + job("    if: ${{ github.event_name != 'pull_request' || needs.checks.outputs.mac == 'true' }}\n")), []);
+  assert.deepEqual(macPathGateProblems("on:\n  pull_request:\n    paths:\n      - 'a/**'\n      - '!**/*.md'\n  push:\n" + job("")), []);
+  assert.ok(macPathGateProblems("on:\n  pull_request:\n    paths:\n      - 'a/**'\n  push:\n" + job("")).length > 0, "paths list without the markdown exclusion");
+  assert.deepEqual(macPathGateProblems("on:\n  workflow_dispatch:\n" + job("")), []);
+});
+
+test("D254: desktop.yml Mac jobs are narrowed by pr-scope; the GUI leg stays label/dispatch only", () => {
+  const text = fs.readFileSync(new URL("desktop.yml", WF_DIR), "utf8");
+  for (const name of ["cockpit-spi-tests", "app-smoke", "native-headless"]) {
+    const block = text.slice(text.indexOf(`\n  ${name}:\n`)).split(/\n  [a-z][\w-]*:\n/)[1] ?? "";
+    assert.match(block, /needs\.pr-scope\.outputs\.mac == 'true'/, name);
+    assert.match(block, /github\.event_name != 'pull_request' \|\|/, `${name} keeps merge_group, push and dispatch unfiltered`);
+  }
+});
+
+test("D254: merge_group, push, schedule and dispatch are never path-filtered or cancelled", () => {
+  for (const [f, text] of workflows()) {
+    assert.deepEqual(nonPrFilterProblems(text), [], f);
+    assert.deepEqual(prCancelProblems(text), [], f);
+    const conc = text.match(/^concurrency:\n(?:[ \t]+.*\n)+/m)?.[0] ?? "";
+    if (/^\s+cancel-in-progress:\s*\$\{\{.*pull_request/m.test(conc)) assert.doesNotMatch(conc, /github\.sha/, f);
+  }
+  assert.deepEqual(prCancelProblems("on:\n  pull_request:\nconcurrency:\n  group: g-${{ github.event.pull_request.number }}\n  cancel-in-progress: true\n"), [], "pull_request-only workflow");
+  assert.ok(prCancelProblems("on:\n  pull_request:\n  push:\nconcurrency:\n  group: g-${{ github.event.pull_request.number || github.sha }}\n  cancel-in-progress: true\n").length > 0);
+  assert.ok(nonPrFilterProblems("on:\n  merge_group:\n    paths: [a]\n").length > 0);
+  assert.ok(nonPrFilterProblems("on:\n  push:\n    paths: ['a', '!**/*.md']\n").length > 0);
+});
+
+test("D254: the PR-triggered Mac workflows carry the PR-only cancel and the shared-Mac legs call the pinned trusted-mac", () => {
+  for (const f of ["desktop.yml", "u6-engine-store-core.yml", "u11-cockpit.yml", "official-visuals.yml", "transport-fuzz.yml", "u11a-aggregate.yml", "u14-harness.yml"]) {
+    const text = fs.readFileSync(new URL(f, WF_DIR), "utf8");
+    assert.match(text, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request'/, f);
+  }
+});
+
+test("D254: trusted-mac.yml is untouched (its SHA is pinned by callers and the runner group)", () => {
+  const r = spawnSync("git", ["diff", "--quiet", "origin/main", "--", ".github/workflows/trusted-mac.yml"], { encoding: "utf8" });
+  // Outside a checkout with origin/main the diff cannot run; a status of 128 is not a failure of this rule.
+  assert.notEqual(r.status, 1, "trusted-mac.yml differs from origin/main");
+  const callers = workflows().flatMap(([, t]) => [...t.matchAll(/workflows\/trusted-mac\.yml@([0-9a-f]{40})/g)].map((m) => m[1]));
+  assert.ok(callers.length > 0 && callers.every((s) => /^[0-9a-f]{40}$/.test(s)), "every caller pins trusted-mac.yml by full SHA");
+});
+
+test("D254 pr-scope reads NUL-separated paths: tab, quote, newline and unicode names under desktop/native still run the Macs; failures fail closed", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  const block = text.slice(text.indexOf("\n  pr-scope:\n"));
+  const sh = /run: \|\n((?:          .*\n|\n)+)/.exec(block.slice(block.indexOf("- id: scope")))[1].replace(/^          /gm, "");
+  const macPaths = /MAC_PATHS: (.*)\n/.exec(block)[1];
+  assert.doesNotMatch(text, /tr '\\0' '\\n'/, "no NUL-to-newline conversion of a path list");
+  assert.match(text, /gui_test_selection\.py select --nul --changed/, "the GUI selector splits the NUL list itself");
+  assert.doesNotMatch(sh, /name-only(?![^\n]*-z)/, "every name-only list is NUL-separated");
+  const dir = fs.mkdtempSync("/tmp/d254-scope-"), tmp = fs.mkdtempSync("/tmp/d254-tmp-");
+  const git = (...a) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", ...a], { cwd: dir, encoding: "utf8" });
+  try {
+    git("init", "-q", "-b", "main");
+    fs.writeFileSync(`${dir}/README.md`, "x\n"); git("add", "-A"); git("commit", "-qm", "base");
+    const scope = (files, extraEnv = {}) => {
+      git("checkout", "-q", "-B", "pr", "main");
+      for (const f of files) { fs.mkdirSync(`${dir}/${f.split("/").slice(0, -1).join("/")}`, { recursive: true }); fs.writeFileSync(`${dir}/${f}`, "y\n"); }
+      git("add", "-A"); git("commit", "-qm", "pr");
+      git("checkout", "-q", "-B", "merge", "main"); git("merge", "-q", "--no-ff", "-m", "m", "pr");
+      const out = `${dir}.out`; fs.writeFileSync(out, "");
+      const r = spawnSync("bash", ["-c", sh], { cwd: dir, env: { PATH: process.env.PATH, MAC_PATHS: macPaths, RUNNER_TEMP: tmp, GITHUB_OUTPUT: out, ...extraEnv }, encoding: "utf8" });
+      return { status: r.status, out: fs.readFileSync(out, "utf8").trim() };
+    };
+    for (const name of ["desktop/native/with\ttab.swift", 'desktop/native/with"quote.swift', "desktop/native/with\nnewline.swift", "desktop/native/\u00fcn\u00efcode-\u4e2d.swift"])
+      assert.deepEqual(scope([name]), { status: 0, out: "mac=true" }, JSON.stringify(name));
+    assert.deepEqual(scope(["docs/a.txt", "desktop/native/only.md"]), { status: 0, out: "mac=false" }, "no Mac path, markdown only");
+    assert.deepEqual(scope(["docs/with\ttab.txt"]), { status: 0, out: "mac=false" });
+    // A failing diff stops the step instead of emitting mac=false.
+    const bad = scope(["desktop/native/a.swift"], { GIT_DIR: `${dir}/nowhere` });
+    assert.notEqual(bad.status, 0);
+    assert.doesNotMatch(bad.out, /mac=false/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(`${dir}.out`, { force: true }); fs.rmSync(tmp, { recursive: true, force: true }); }
 });

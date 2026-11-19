@@ -76,6 +76,30 @@ class SelectTests(unittest.TestCase):
         # One full trigger anywhere in the change wins over a narrow selection.
         self.assertEqual(self.pick(f"{TESTS}/WidgetTests.swift", ".github/workflows/ci.yml"), "full")
 
+    def test_a_control_character_in_any_path_selects_the_full_suite(self):
+        narrow = f"{TESTS}/WidgetTests.swift"
+        self.assertEqual(self.pick(narrow), "WidgetTests")
+        for bad in ["Probe.md\rToken.swift", "Probe.md\nToken.swift", "a\tb.swift", "x\x00y", "x\x7fy"]:
+            self.assertEqual(self.pick(narrow, bad), "full", repr(bad))
+
+    def test_nul_separated_input_is_split_on_nul_only(self):
+        narrow = f"{TESTS}/WidgetTests.swift"
+        cases = {"ok": (f"{narrow}\0".encode(), "WidgetTests"),
+                 "cr": (f"{narrow}\0Probe.md\rToken.swift\0".encode(), "full"),
+                 "lf": (f"{narrow}\0Probe.md\nToken.swift\0".encode(), "full")}
+        for name, (raw, want) in cases.items():
+            f = self.root / f"changed-{name}.z"
+            f.write_bytes(raw)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                orig = selection.partition.load_manifest
+                selection.partition.load_manifest = lambda: MANIFEST
+                try:
+                    selection.main(["select", "--nul", "--changed", str(f), "--root", str(self.root)])
+                finally:
+                    selection.partition.load_manifest = orig
+            self.assertEqual(out.getvalue().strip(), want, name)
+
     def test_changed_test_file_selects_its_own_classes_and_classes_it_extends(self):
         self.assertEqual(self.pick(f"{TESTS}/WidgetTests.swift"), "WidgetTests")
         self.assertEqual(self.pick(f"{TESTS}/WidgetTests+More.swift"), "WidgetTests")
