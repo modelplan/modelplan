@@ -50,7 +50,7 @@ for(const [locale,unreadable,usedUp,quotaOnly] of [['en','no reading','used up',
   await expect(page.locator('.eng-cols > .ec[data-col]').nth(1).locator('.qph')).toHaveCount(3);
   await expect(page.locator('.eng-cols > .ec[data-col]').nth(1).locator('.qvalue,.qtxt')).toHaveCount(0);
   await expect(cell(page,2).locator('.qvalue')).toHaveText('--');await expect(cell(page,2).locator('.qtxt.dim')).toHaveText(unreadable);
-  await expect(cell(page,3).locator('.qtxt')).toHaveText('3h20');
+  await expect(cell(page,3).locator('.qtxt')).toHaveText(locale==='en'?'3h 1h ago':'3h 1h前');// stale: drawn like current, plus its reading age (CKP-ENG-22)
   await expect(page.locator('.eng-cols > .ec[data-col]').nth(3)).not.toHaveClass(/\bgrey\b/);
   await expect(cell(page,4).locator('.qvalue')).toHaveText('0');await expect(cell(page,4).locator('.qtxt.crit')).toHaveText(usedUp);
   const [ink,low]=await cell(page,4).evaluate(e=>{const p=document.createElement('i');p.style.color='var(--st-low)';e.append(p);const r=[getComputedStyle(e.querySelector('.qnum')).color,getComputedStyle(p).color];p.remove();return r;});
@@ -131,7 +131,7 @@ for(const n of [1,2])test(`CKP-ENG-56 ${n} subscription(s): one quiet add afford
  await page.locator('.eng-cols > .ec-bay').first().hover();
  expect(Number(await add.evaluate(e=>getComputedStyle(e).opacity))).toBeGreaterThan(rest);
  await page.locator('.eng-cols > .ec-bay').first().click();
- expect(await page.evaluate(()=>window.sent.filter(m=>m.type==='action').at(-1)?.action)).toBe('openSettings');
+ expect(await page.evaluate(()=>window.sent.filter(m=>m.type==='action').at(-1)?.action)).toBe('openSettingsSubscriptions');
 });
 
 test('CKP-ENG-56 three or more subscriptions show no add affordance',async({page})=>{

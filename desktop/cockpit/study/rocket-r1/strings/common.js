@@ -8,6 +8,7 @@ register('time', {
 register('age', {
   hours: ['lcd', '{h} 小时前', '{h} h ago'],
   hoursShort: ['lcd', '{h}h前', '{h}h ago'],
+  minutesShort: ['lcd', '{m}m前', '{m}m ago'],
 });
 // One line each in the public-screen alert list (ellipsised on one LCD line).
 register('alert', {

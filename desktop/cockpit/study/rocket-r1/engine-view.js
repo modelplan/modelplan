@@ -19,6 +19,7 @@ const extraName = c => c.name || t('eng.other');
 const extraPer = c => has('extra.per.'+c.period) ? t('extra.per.'+c.period) : null;
 const periodTag = c => c.extra ? (extraPer(c) ? t('extra.name',{n:extraName(c),p:extraPer(c)}) : extraName(c)) : t(TAG[c.period]||'eng.other');
 const extraShort = c => [...extraName(c)].length <= 3 ? extraName(c) : extraPer(c) ? t('extra.nameShort',{n:[...extraName(c)][0],p:extraPer(c)}) : t('eng.other');
+const ageText = m => m >= 60 ? t('age.hoursShort',{h:Math.floor(m/60)}) : t('age.minutesShort',{m:Math.floor(m)});
 function note(col,c,ui) {
   if(col.state==='loading') return {text:t('eng.loading'),short:t('eng.loadingShort')};
   // CKP-ENG-50: an unreadable subscription is a dim "--" with a grey "no reading"; the cause lives in the card and Settings.
@@ -45,9 +46,11 @@ function title(col,c,ui){return [col.name,periodTag(c),c.value==null?t('eng.noRe
 function cell(col,c,row,m,ui,fresh){
   const n=note(col,c,ui), different=c.extra||c.period!==m.rowPeriods[row];
   const tag=different?periodTag(c):'', shortTag=c.extra?extraShort(c):tag;
-  const meta=(txt,tg)=>[tg,txt,c.more?`+${c.more}`:''].filter(Boolean).join(' ');
+  // CKP-ENG-22: a stale reading says how old it is, once per column, from the row's own reading time; none known = no age.
+  const age=col.state==='stale'&&col.ageMin!=null&&row==='first'?ageText(col.ageMin):'';
+  const meta=(txt,tg)=>[tg,txt,age,c.more?`+${c.more}`:''].filter(Boolean).join(' ');
   const full=meta(n.warn&&m.cls==='narrow'?(n.short||n.text):n.text,tag), short=meta(n.event&&ui.lang==='zh-CN'?(n.short||n.text).replaceAll(' ',''):(n.short||n.text),shortTag);
-  const smallest=[c.extra?[...extraName(c)][0]:tag,n.small||n.short||n.text].filter(Boolean).join(' ')+(c.more?`+${c.more}`:'');
+  const smallest=[c.extra?[...extraName(c)][0]:tag,n.small||n.short||n.text,age].filter(Boolean).join(' ')+(c.more?`+${c.more}`:'');
   const tip=c.all?c.all.map(x=>title(col,x,ui)).join('\n'):title(col,c,ui);
   // Extras are focusable and carry their details; a reading whose reset time is unknown says so on hover (the line
   // itself stays empty, CKP-ENG-26), as its accessible name does.
