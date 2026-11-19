@@ -52,11 +52,15 @@ export const HOSTED_WORKFLOWS = Object.freeze([...new Set(HOSTED_MAC_LEGS.map((l
 const WORKFLOW_RE = /^\.github\/workflows\//;
 export const touchesWorkflows = (paths) => paths.some((p) => WORKFLOW_RE.test(p));
 
-// GitHub's record of where a job runs. A started job carries its runner group; a queued one only the requested labels.
+// GitHub's record of where a job runs. A started job carries its runner group; a job that never got a runner (queued,
+// or cancelled while waiting: run 44387199596) carries only the requested labels, and GitHub then reports the group as
+// null, missing or "" (with runner_group_id 0, runner_name ""). Every such "no runner assigned" form counts as unassigned
+// and is decided by the labels; any named group other than GitHub's hosted one, and any self-hosted label, is required.
+export const unassignedGroup = (g) => g === null || g === undefined || g === "";
 export function onHostedMac(job) {
   const labels = (job?.labels ?? []).map(String);
   if (!labels.length || labels.some((l) => /^self-hosted$/i.test(l))) return false;
-  if (job.runner_group_name != null && job.runner_group_name !== HOSTED_RUNNER_GROUP) return false;
+  if (!unassignedGroup(job.runner_group_name) && job.runner_group_name !== HOSTED_RUNNER_GROUP) return false;
   return labels.some((l) => /^macos-/i.test(l));
 }
 
@@ -95,6 +99,14 @@ export function hostedInfo(hosted) {
   if (!hosted.length) return null;
   const shown = hosted.slice(0, 2).map((h) => `${h.name.split(" / ").pop()} ${h.state}`);
   return `post-merge only: ${shown.join(", ")}${hosted.length > 2 ? ` +${hosted.length - 2}` : ""}`;
+}
+
+// merge-gates.yml's workflow_job path: a required job finished while its run may still wait for a hosted Mac.
+// "completed": the run's own workflow_run evaluates; "hosted": a hosted leg finishing changes nothing; else "evaluate".
+export function workflowJobAction(run, job) {
+  if (run?.status === "completed") return "completed";
+  if (isHostedMacLeg(run?.path, job)) return "hosted";
+  return "evaluate";
 }
 
 // Check-run ids (= job ids) of the hosted legs among runs whose jobs were read; queueCheckState skips them.

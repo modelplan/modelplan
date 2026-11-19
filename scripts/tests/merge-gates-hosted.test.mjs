@@ -60,6 +60,20 @@ test("hosted leg red, cancelled, timed out, pending or missing: the PR gate pass
   assert.equal(evalPr([greenCi(), u11, drive]).state, R.SUCCESS);
 });
 
+test("a hosted job cancelled before it got a runner (GitHub's real record) is set aside", () => {
+  // Run 44387199596, claude-code-macos: cancelled while waiting; GitHub reports the group as "" with id 0.
+  const unassigned = { labels: ["macos-latest"], runner_group_id: 0, runner_group_name: "", runner_id: 0, runner_name: "" };
+  const ci = run(CI, "cancelled", [linux("queue-reuse"), linux("checks"), linux("cli"), job("claude-code-macos", "cancelled", unassigned)], { id: 1 });
+  const r = evalPr([ci]);
+  assert.equal(r.state, R.SUCCESS);
+  assert.match(r.why, /post-merge only: claude-code-macos cancelled/);
+  // Every "no runner" form counts as unassigned; a named non-hosted group or a self-hosted label stays required.
+  for (const g of [null, undefined, ""]) assert.equal(Hs.onHostedMac({ labels: ["macos-15"], runner_group_name: g }), true, String(g));
+  assert.equal(Hs.onHostedMac({ labels: ["macos-latest"], runner_group_name: "Default" }), false);
+  assert.equal(Hs.onHostedMac({ labels: ["self-hosted", "macos-latest"], runner_group_name: "" }), false);
+  assert.equal(evalPr([run(CI, "cancelled", [linux("checks"), job("claude-code-macos", "cancelled", { ...unassigned, labels: ["self-hosted", "macOS"] })], { id: 1 })]).state, R.FAILURE);
+});
+
 test("a self-hosted leg red or pending still decides the PR", () => {
   const nh = (c, s) => job("native-headless (macos-latest) / native-headless (macos-latest)", c, SELF, s);
   const red = evalPr([greenCi(), desktop(job("app-smoke", "failure"), nh("failure"))]);
@@ -127,6 +141,22 @@ test("merge group: hosted legs never gate; self-hosted legs and workflow changes
   // The real PR result carries the flag through.
   const head = evalPr([greenCi(), desktop(smoke("failure"))]);
   assert.equal(group(smoke("failure"), nh("success"), head).state, R.SUCCESS);
+});
+
+test("a required job finishing while its run waits for a hosted Mac re-evaluates the gate (merge-gates.yml workflow_job)", () => {
+  const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
+  assert.match(gates, /^  workflow_job:\n    types: \[completed\]$/m);
+  const names = JSON.parse(/contains\(fromJSON\('(\[[^']*\])'\), github\.event\.workflow_job\.workflow_name\)/.exec(gates)[1]).sort();
+  const want = Hs.HOSTED_WORKFLOWS.map((p) => /^name: (.+)$/m.exec(readFileSync(join(root, p), "utf8"))[1].trim()).sort();
+  assert.deepEqual(names, want, "every workflow with a hosted leg");
+  assert.match(gates, /github\.event\.workflow_job\.head_branch != 'main'/, "main pushes carry no gate");
+  assert.match(gates, /!startsWith\(join\(github\.event\.workflow_job\.labels, ','\), 'macos-'\)/, "a hosted leg finishing starts no job");
+  assert.match(gates, /github\.event\.workflow_run\.head_sha \|\| github\.event\.workflow_job\.head_sha \|\|/, "one evaluation per head at a time");
+  assert.match(readFileSync(join(root, "scripts/merge-gates/evaluate.mjs"), "utf8"), /workflowJobAction\(run, wj\)/);
+  const queued = (status) => ({ id: 2, path: DESKTOP, status });
+  assert.equal(Hs.workflowJobAction(queued("in_progress"), job("native-headless (macos-latest) / native-headless (macos-latest)", "success", SELF)), "evaluate");
+  assert.equal(Hs.workflowJobAction(queued("in_progress"), job("app-smoke", "failure")), "hosted");
+  assert.equal(Hs.workflowJobAction(queued("completed"), linux("app")), "completed");
 });
 
 // ---- The table against main's workflows ----
