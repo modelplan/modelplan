@@ -13,6 +13,12 @@ import XCTest
 }
 
 @MainActor final class DockCodexRuntimeRealServerTests: XCTestCase {
+    /// The test's own bound on one real-server request. The product calls these with its own request limit
+    /// (`timeout: nil`); 4 s is kept on our runners, while a shared hosted Mac gets the product's limit, since a
+    /// 4 s miss there (run 44395830015, deadlineExceeded at 40.5 s) is machine load, not a product wait.
+    static var requestWait: Duration? { HostedRunnerTiming.isHosted ? nil : .seconds(4) }
+    /// How long a test waits for a concrete state to appear before its assertions check it.
+    static var stateWait: Duration { HostedRunnerTiming.isHosted ? .seconds(30) : .seconds(10) }
     private func quote(_ path: String) -> String { "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
     private func script(_ name: String, in root: URL, _ text: String) throws -> URL {
@@ -154,7 +160,7 @@ import XCTest
             var replies: [(WireRequestID, [WireRefreshScheduled])] = []
             let observer = store.observeRefreshReplies { replies.append(($0, $1)) }
             defer { store.removeRefreshReplyObserver(observer) }
-            let result = try await app.composition.client.refresh(.init(scopes: [scope]), timeout: .seconds(4))
+            let result = try await app.composition.client.refresh(.init(scopes: [scope]), timeout: Self.requestWait)
             let reply = try XCTUnwrap(replies.first { $0.0 == result.requestID }?.1.first)
             XCTAssertEqual(reply.disabledReason, reason)
             XCTAssertFalse(FileManager.default.fileExists(atPath: requested.path),
@@ -163,7 +169,7 @@ import XCTest
 
         let offline = await makeApplication(offline: true)
         _ = try await offline.composition.client.start()
-        _ = try await offline.composition.client.subscribeRows(timeout: .seconds(4))
+        _ = try await offline.composition.client.subscribeRows(timeout: Self.requestWait)
         XCTAssertEqual(account(in: offline)?.valueState, .retained)
         XCTAssertEqual(account(in: offline)?.observedAt?.rawValue, old)
         try await blockedRefresh(in: offline, reason: .offline)
@@ -173,7 +179,7 @@ import XCTest
         let app = await makeApplication()
         let delivery = try await app.composition.client.start()
         func wait(until predicate: () -> Bool) async throws {
-            let deadline = ContinuousClock.now + .seconds(10)
+            let deadline = ContinuousClock.now + Self.stateWait
             while !predicate() && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         }
         try await wait { account(in: app)?.valueState == .retained }
@@ -231,7 +237,7 @@ import XCTest
         XCTAssertLessThan(revokeStarted.duration(to: .now), .seconds(20), "Consent withdrawal must not creep toward the 30 s limit")
         XCTAssertNil(dock.detachedCardForChecks, "Consent withdrawal must close the card before the grant returns")
         XCTAssertNil(text(weekly + ".value", in: currentCard))
-        _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
+        _ = try await app.composition.client.subscribeRows(timeout: Self.requestWait)
         XCTAssertNil(account(in: app), "A revoked subscription must not reappear on the next real rows reply")
         XCTAssertNil(try dock.cardContent(for: ref))
         await app.composition.stop()
@@ -240,7 +246,7 @@ import XCTest
         try Data().write(to: hold)
         let denied = await makeApplication()
         _ = try await denied.composition.client.start()
-        _ = try await denied.composition.client.subscribeRows(timeout: .seconds(4))
+        _ = try await denied.composition.client.subscribeRows(timeout: Self.requestWait)
         XCTAssertNil(account(in: denied), "A new launch must honor the persisted denial")
         try await blockedRefresh(in: denied, reason: .readOnly)
         XCTAssertNil(try denied.composition.dock.cardContent(for: ref))
@@ -303,7 +309,7 @@ import XCTest
         await app.prepare()
         app.allowDockPresentation()
         let delivery = try await app.composition.client.start()
-        _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
+        _ = try await app.composition.client.subscribeRows(timeout: Self.requestWait)
         func localAccount() -> RowsAccount? {
             app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "codex" }?.accounts.first { $0.route == .localLog }
         }

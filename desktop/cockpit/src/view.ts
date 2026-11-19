@@ -28,7 +28,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  let lastRenderedAt=0;const retiredUnstableScopes=new Set<string>();
  let hudSelected:string|null=null;const hudOptions=()=>({scope:nativeShell?.scope??'all',now:lastRenderedAt,selected:hudSelected,closed:nativeShell?.profile==='closed'});
  let selectedRedBelow=effectiveRedBelow(undefined);const redBelow=()=>selectedRedBelow;let showUsedPercent=false;const showUsed=()=>showUsedPercent;
- const frame=prototypeFrame(root);const help=mountPrototypeHelp(root,()=>locale,()=>active,()=>nativeShell?.attached??true);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;},undefined,redBelow,reportPins,requestRange);const tape=mountPrototypeTape(root,{knows:ref=>deck.knowsSession(ref),hover(session){deck.highlightSession(session?.sessionRef??null);const key=session?.subscriptionRef??null;for(const el of root.querySelectorAll<HTMLElement>('[data-col]'))el.classList.toggle('xhl',!!key&&el.dataset.col===key);},select(session){if(!active)return;const key=session.subscriptionRef;if(key&&[...root.querySelectorAll<HTMLElement>('.ek[data-sub]')].some(el=>el.dataset.sub===key)){retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);deck.scope(key);}deck.selectSession(session.sessionRef);}});
+ let stripSelected:string|null=null;
+ const frame=prototypeFrame(root);const help=mountPrototypeHelp(root,()=>locale,()=>active,()=>nativeShell?.attached??true);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;},undefined,redBelow,reportPins,requestRange);const tape=mountPrototypeTape(root,{knows:ref=>deck.knowsSession(ref),hover(session){deck.highlightSession(session?.sessionRef??null);const key=session?.subscriptionRef??null;for(const el of root.querySelectorAll<HTMLElement>('[data-col]'))el.classList.toggle('xhl',!!key&&el.dataset.col===key);},select(session){if(!active)return;if(stripSelected===session.sessionRef&&deck.sessionSelected(session.sessionRef)){stripSelected=null;deck.clearSession();return;}stripSelected=session.sessionRef;const key=session.subscriptionRef;if(key&&[...root.querySelectorAll<HTMLElement>('.ek[data-sub]')].some(el=>el.dataset.sub===key)){retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);deck.scope(key);}deck.selectSession(session.sessionRef);},more(){if(active)deck.showWhere();},clear(){if(!active||stripSelected===null)return;const ref=stripSelected;stripSelected=null;if(deck.sessionSelected(ref))deck.clearSession();}});
  // G3-47: base bells under the engine columns; repainted from the drawn engine table.
  const base=mountPrototypeBase(root,()=>lastData,z=>{
   const member=lastData?cockpitMembers(lastData).find(m=>m.key===z.key):undefined,name=member?(locale==='en'?member.row.name.en:member.row.name.zh):'';
@@ -61,7 +62,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  close.onclick=e=>{if(e.isTrusted)action('close');};
  const unwireHud=wireHud(frame.hud,id=>{hudSelected=id;deck.showTune(id);if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());});
  let showProjectNames=true;
- const paintRecords=(data:WireCockpitData,at:number)=>{const shown=showProjectNames?data:withoutProjectNames(data);deck.render(shown,at);tape.render(shown,showProjectNames);};
+ const paintRecords=(data:WireCockpitData,at:number)=>{const shown=showProjectNames?data:withoutProjectNames(data);deck.render(shown,at);tape.render(shown,showProjectNames,at);};
  function shellControls(){
   const zh=locale==='zh-CN', closed=nativeShell?.profile==='closed', forced=!!nativeShell?.forcedClosed;
   const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.setAttribute('aria-label',alert.classList.contains('lit')?(ht(locale,'host.alertActive')):(ht(locale,'host.alertInactive')));
@@ -140,6 +141,9 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   for(const event of data.details?.resetEvents??[]){const at=Date.parse(event.expiresAt);if(Number.isFinite(at)&&at>now)next=Math.min(next,at);}
   // A run-out stops being a forecast when it passes; the amber lamp, row and cell must clear then, with no new reading.
   for(const forecast of data.details?.forecasts??[]){const at=forecast.runsOutAt?Date.parse(forecast.runsOutAt):NaN;if(Number.isFinite(at)&&at>now)next=Math.min(next,at);}
+  // D277 (CKP-STRIP-16): the session strip's elapsed time and "6m ago" are "now"; while it lists a session, the next
+  // whole minute is a deadline so they move without a new reading.
+  const details=data.details;if(details?.sessionCoverage==='local-last-seen'&&details.sessions.some(s=>s.state==='running'||s.state==='idle'))next=Math.min(next,(Math.floor(now/60000)+1)*60000);
   return Number.isFinite(next)?next:null;
  }
  function preserveFocus(update:()=>void,replacing=false){
@@ -175,7 +179,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   if(!target&&path){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
   target?.focus({preventScroll:true});
  }
- function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);syncCaution(lastData!,now);});}
+ function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);});}
  // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
  // returns to its waiting state when there was none) and the error goes back to the bridge, which refuses the display
  // and keeps the page. If that repaint fails too (glm-990-1, macrevb-990-1, macrev2-990-1), the whole cockpit view is

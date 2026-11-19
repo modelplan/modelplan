@@ -78,6 +78,8 @@ test('D38 a retained reading never forecasts',async({page})=>{
 // macrev2-631-1: a passed run-out needs a repaint at that moment, not at the next reading.
 test('D38 the page asks for a tick at the run-out, and the amber clears there with no new reading',async({page})=>{
  const {data,w}=fixture({runsOutAt:iso(20)});w.validUntil=iso(60);
+ // D277: a listed session adds a minute tick for the strip's elapsed time; this check is about the run-out alone.
+ data.details.sessions=[];
  const {send,receive}=await open(page,data);
  await expect(lamp(page)).toHaveClass(/\bamber\b/);
  expect(await lastDeadline(page)).toBe(String(NOW+20*60000));
