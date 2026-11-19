@@ -7,7 +7,9 @@ const SHA = /^[0-9a-f]{40}$/;
 
 export function git(cwd, args, { allowFail = false } = {}) {
   try {
-    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20 });
+    // Replace refs and grafts would let a fetched ref rewrite a commit's parents or tree under every proof below.
+    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20,
+      env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1", GIT_GRAFT_FILE: "/dev/null" } });
   } catch (e) {
     if (allowFail) return null;
     throw e;
@@ -56,6 +58,8 @@ export function verifyCarry(cwd, oldSha, newSha, mainRef) {
   const reviewed = contribution(cwd, mb, oldSha);
   if (!reviewed) return { ok: false, why: "reviewed head has no contribution" };
   if (reviewed !== contribution(cwd, p[1], newSha)) return { ok: false, why: "contribution changed by the merge" };
+  const clean = verifyCleanMerge(cwd, newSha);
+  if (!clean.ok) return { ok: false, why: clean.why };
   return { ok: true, why: "object-identical contribution" };
 }
 

@@ -1157,3 +1157,56 @@ test("a verdict on the current head beats a carried older-head verdict from the 
     prove: () => ({ ok: true, between: [H] }) });
   assert.equal(sup.state, R.SUCCESS, sup.why);
 });
+
+test("no carry without tree equality: hand-resolved conflicts, tree tweaks, octopus merges and replace refs (macrevd-946 class)", () => {
+  const r = repo();
+  try {
+    r.g("checkout", "-qb", "pr");
+    r.put("a.txt", "pr\n"); r.g("commit", "-qam", "pr change");
+    const reviewed = r.sha();
+    r.g("checkout", "-q", "main"); r.put("b.txt", "b2\n"); r.g("commit", "-qam", "main change"); r.g("update-ref", MAINREF, "HEAD");
+    const main1 = r.sha();
+    const both = (sha, re) => {
+      for (const res of [G.verifyMainMerges(r.dir, reviewed, sha, MAINREF), G.verifyCarry(r.dir, reviewed, sha, MAINREF)]) {
+        assert.equal(res.ok, false, res.why);
+        if (re) assert.match(res.why, re);
+      }
+    };
+    // Clean merge: both carry paths hold.
+    r.g("checkout", "-q", "-b", "clean", reviewed); r.g("merge", "-q", "--no-edit", "main");
+    const clean = r.sha();
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, clean, MAINREF).ok, true);
+    assert.equal(G.verifyCarry(r.dir, reviewed, clean, MAINREF).ok, true);
+    // The gate maps the synthetic head H to a real commit: a clean merge carries the verdict, a refused proof never does.
+    const gate = (sha) => evalPr({ comments: [comment(v("merge", reviewed, "macrev2"))], prove: (o, n) => G.verifyMainMerges(r.dir, o, n === H ? sha : n, MAINREF) });
+    assert.equal(gate(clean).state, R.SUCCESS, gate(clean).why);
+    assert.match(gate(clean).why, /verdict carried from/);
+
+    // Tree tweak inside the merge (main's own change reverted in the merge): no carry.
+    r.g("checkout", "-q", "-b", "tweak", reviewed); r.g("merge", "-q", "--no-commit", "main");
+    r.put("b.txt", "b\n"); r.g("add", "b.txt"); r.g("commit", "-qm", "merge");
+    both(r.sha());
+    assert.match(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).why, /differs from a clean merge of its parents/);
+
+    // Main conflicts with the PR; the merge is resolved by hand, even back to exactly the reviewed text: no carry.
+    r.g("checkout", "-q", "main"); r.put("a.txt", "main\n"); r.g("commit", "-qam", "main edits a"); r.g("update-ref", MAINREF, "HEAD");
+    r.g("checkout", "-q", "-b", "conflict", reviewed);
+    assert.equal(spawnSync("git", ["merge", "-q", "--no-edit", "main"], { cwd: r.dir, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } }).status !== 0, true, "merge conflicts");
+    r.put("a.txt", "pr\n"); r.g("add", "a.txt"); r.g("commit", "-qm", "resolved");
+    both(r.sha());
+    assert.match(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).why, /do not merge cleanly/);
+    assert.notEqual(gate(r.sha()).state, R.SUCCESS);
+
+    // Octopus merge of main commits: no carry.
+    const octo = r.g("commit-tree", `${clean}^{tree}`, "-p", reviewed, "-p", main1, "-p", "main~2", "-m", "octopus");
+    both(octo);
+
+    // A replace ref that makes the evil merge look like the clean one is ignored.
+    r.g("checkout", "-q", "-b", "evil", reviewed); r.g("merge", "-q", "--no-commit", main1);
+    r.put("c.txt", "evil\n"); r.g("add", "c.txt"); r.g("commit", "-qm", "merge");
+    const evil = r.sha();
+    r.g("replace", evil, clean);
+    both(evil);
+    assert.notEqual(gate(evil).state, R.SUCCESS);
+  } finally { r.done(); }
+});
