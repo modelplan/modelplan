@@ -71,6 +71,9 @@ func legacyNativeNext(cache, provider string, e codexbarEntry) (time.Time, error
 	if err != nil || !next.IsZero() {
 		return next, err
 	}
+	if e.NativeNextAttemptAt != nil {
+		return *e.NativeNextAttemptAt, nil
+	}
 	if e.ObservedAt.IsZero() {
 		return time.Time{}, nil
 	}
@@ -79,4 +82,26 @@ func legacyNativeNext(cache, provider string, e codexbarEntry) (time.Time, error
 		wait = nativeRetryAfter
 	}
 	return e.ObservedAt.Add(wait), nil
+}
+
+// replaceReaderAttempt is for a read admitted early after a new sign-in or grant (G3-103). The
+// caller holds the provider lock. It may move the reservation back only from that reader's own
+// failure deadline; a later reservation from anything else still holds.
+func replaceReaderAttempt(cache, provider string, failureDeadline, next time.Time) error {
+	previous, err := loadReaderAttempt(cache, provider)
+	if err != nil {
+		return err
+	}
+	if previous.After(next) && !previous.Equal(failureDeadline) {
+		next = previous
+	}
+	path := readerAttemptPath(cache, provider)
+	if os.MkdirAll(filepath.Dir(path), 0700) != nil {
+		return errors.New("reader budget unavailable")
+	}
+	b, _ := json.Marshal(readerAttempt{SchemaVersion: 1, NextAttemptAt: next.UTC()})
+	if writeAtomic(path, append(b, '\n')) != nil {
+		return errors.New("reader budget unavailable")
+	}
+	return nil
 }

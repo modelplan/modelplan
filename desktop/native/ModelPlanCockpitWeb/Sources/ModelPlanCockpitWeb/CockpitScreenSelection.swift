@@ -9,9 +9,9 @@ public struct CockpitScreen: Equatable, Sendable {
   public init(frame: CGRect, visibleFrame: CGRect) { self.frame = frame; self.visibleFrame = visibleFrame }
 }
 
-/// Build 14c (G3-79, G3-80): which display the cockpit and the launch field use. The screen the user clicked on
-/// wins over the menu bar icon's screen, a drag follows the pointer to any display, and a remembered position is
-/// replayed only while it is still on some display.
+/// Build 14c (G3-79, G3-80) and build 15 (G3-128): which display the cockpit and the launch field use. Attached, it is
+/// always the menu bar icon's display; a detached open goes to the screen the user clicked on, a drag follows the
+/// pointer to any display, and a remembered position is replayed only while it is still on some display.
 public enum CockpitScreenSelection {
   /// The system's displays, the main one (the key window's) first so it is the fallback.
   @MainActor public static func system() -> [CockpitScreen] {
@@ -38,29 +38,22 @@ public enum CockpitScreenSelection {
     }
     return best?.0
   }
-  /// Where an open goes: the display the user clicked on (`point`), else the menu bar icon's display, else the first.
+  /// Where a detached open goes: the display the user clicked on (`point`), else the menu bar icon's display, else the first.
   public static func openScreen(point: CGPoint?, anchor: CGRect?, screens: [CockpitScreen]) -> CockpitScreen? {
     if let point, let screen = containing(point, in: screens) { return screen }
     if let anchor, let screen = overlapping(anchor, in: screens) { return screen }
     return screens.first
   }
-  /// D204: where an attached cockpit opens. When each display has its own Spaces (and so its own menu bar with the
-  /// icon), it is the display the ignition was pressed on (`point`); otherwise only the main display has a menu bar,
-  /// so it is the icon's display, then the display at the global origin (the menu bar's), whatever was clicked.
-  public static func attachedScreen(point: CGPoint?, anchor: CGRect?, screens: [CockpitScreen], separateSpaces: Bool) -> CockpitScreen? {
-    if separateSpaces { return openScreen(point: point, anchor: anchor, screens: screens) }
+  /// G3-128 (owner, build 15; supersedes D204's "display pressed on"): where an attached cockpit, its launch rack and a
+  /// put back go: always the display of the menu bar status item (the screen of the status item button's window, which
+  /// `anchor` is measured in), whatever opened it. The widget's ignition on another display, a stale click point or the
+  /// display a detached cockpit was dragged to never moves home. Without a known icon (G3-46: hidden by a full menu
+  /// bar) it is the display at the global origin, which carries the menu bar, else the first.
+  /// Reference: CodexBar and Pulse anchor their status item's panel to the status item button, so on several displays
+  /// it always drops from the menu bar that holds the item.
+  public static func attachedScreen(anchor: CGRect?, screens: [CockpitScreen]) -> CockpitScreen? {
     if let anchor, let screen = overlapping(anchor, in: screens) { return screen }
     return screens.first { $0.frame.origin == .zero } ?? screens.first
-  }
-  /// D204: the menu bar icon as it sits on `screen`. Menu bar items keep their distance from a display's top-right
-  /// corner, so with a menu bar on every display the icon on another display is the known one moved by that offset.
-  /// Nil when the icon is unknown or the moved rect is not on `screen`.
-  public static func icon(_ anchor: CGRect?, on screen: CockpitScreen, screens: [CockpitScreen]) -> CGRect? {
-    guard let anchor, let home = overlapping(anchor, in: screens) else { return nil }
-    if home == screen { return anchor }
-    let moved = CGRect(x: screen.frame.maxX - (home.frame.maxX - anchor.minX), y: screen.frame.maxY - (home.frame.maxY - anchor.minY),
-                       width: anchor.width, height: anchor.height)
-    return screen.frame.contains(moved) ? moved : nil
   }
   /// `rect` moved just enough to lie inside `usable` (its left and bottom edges win when it is larger).
   public static func clamp(_ rect: CGRect, into usable: CGRect) -> CGRect {

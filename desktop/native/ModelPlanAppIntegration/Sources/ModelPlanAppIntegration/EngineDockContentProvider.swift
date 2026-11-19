@@ -310,6 +310,8 @@ public enum EngineDeadlineFacts {
                 windowObservations: observations, cardReadingState: cardState)
             reasons[member.id] = presentation
             if needsKeychain { reasons[member.id]?.actionLabel = english ? "Allow reading" : "允许读取" }
+            // D87 slice 9: any other named cause links to that subscription's row in Settings.
+            else if cause != nil { reasons[member.id]?.actionLabel = english ? "Open in Settings" : "在设置中处理" }
         }
         let status: String
         switch value.status {
@@ -326,10 +328,14 @@ public enum EngineDeadlineFacts {
             return member.name(english:english) + number + " · " + text(message(row, now: context.now).0.text)
         }
         let subscriptions: [SettingsSubscription] = members.map { member -> SettingsSubscription in
+            let retainedFailure = (member.row.state == .stale || member.account.valueState == .retained)
+                ? member.account.lastFailure?.code.rawValue : nil
             let failing = member.row.state == .failed || member.row.state == .needsAction
             let causeCode: String?
             // Only a member that is failing carries a cause; a stale but live row keeps its own status.
-            if failing {
+            if let retainedFailure {
+                causeCode = retainedFailure
+            } else if failing {
                 causeCode = message(member.row, now: context.now).0.code.rawValue
             } else {
                 causeCode = nil
@@ -339,9 +345,19 @@ public enum EngineDeadlineFacts {
                 name: .init(member.name(english: true), member.name(english: false)),
                 plan: planName, vendor: member.row.vendorKey ?? "",
                 source: sourceState(member, now: context.now), isUnstable: !member.isStable,
-                causeCode: causeCode)
+                causeCode: causeCode, tool: member.row.id)
         }
-        let content = DockContent(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
+        // SET-9-42: a reader that failed before any account or reading exists has no Dock member, yet its tool
+        // still owns a Settings row carrying the cause. Build those rows from the Settings surface, not the Dock.
+        let memberRows = Set(members.map(\.rowID))
+        let accountless: [SettingsSubscription] = value.settingsRows.compactMap { row in
+            guard row.accounts.isEmpty, !memberRows.contains(row.id),
+                  row.state == .failed || row.state == .needsAction || row.state == .needsKeychain else { return nil }
+            let authorized = row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired
+            return SettingsSubscription(id: row.id, name: .init(row.name.en, row.name.zh), vendor: row.vendorKey ?? row.id,
+                source: authorized ? .unavailable : .denied, isUnstable: true, causeCode: message(row, now: context.now).0.code.rawValue)
+        }
+        let content = DockContent(snapshot: .init(inputs: inputs, subscriptions: subscriptions + accountless,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
         verifiedWindows = passWindows; recomputeDeadline = passDeadline
         memberInstability = passInstability; signals = passSignals

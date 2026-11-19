@@ -45,6 +45,9 @@ type CockpitDetails struct {
 	// PublishedModels is present only for a client that negotiated cockpitModelsV1: public
 	// data of every published model, in publication order, with no personal selection.
 	PublishedModels []CockpitPublicationModel `json:"publishedModels,omitempty" schema:"maxItems=256" null:"forbidden"`
+	// PlanModels is the published client data.planModels (D86), present with PublishedModels: which published
+	// models each published plan lets its subscriber use. A plan without an entry is unknown, not empty.
+	PlanModels []CockpitPlanModels `json:"planModels,omitempty" schema:"maxItems=128" null:"forbidden"`
 	// Forecasts is present only for a client that negotiated cockpitForecastV1.
 	Forecasts []CockpitForecast `json:"forecasts,omitempty" schema:"maxItems=128" null:"forbidden"`
 	// RecentSessions is present only for a client that negotiated cockpitSessionsV1: the sessions this
@@ -175,6 +178,12 @@ type CockpitPublicationModel struct {
 	Recommended string                     `json:"recommended" schema:"maxLength=64"`
 	Efforts     []CockpitPublicationEffort `json:"efforts" schema:"maxItems=32"`
 }
+type CockpitPlanModels struct {
+	PlanID     string   `json:"planId" schema:"minLength=1,maxLength=128"`
+	Generation string   `json:"generation,omitempty" null:"forbidden" schema:"maxLength=128"`
+	Basis      string   `json:"basis" schema:"maxLength=16"`
+	ModelIDs   []string `json:"modelIds" schema:"minItems=1,maxItems=256"`
+}
 type CockpitPublicationEffort struct {
 	Effort      string   `json:"effort" schema:"minLength=1,maxLength=64"`
 	Label       string   `json:"label" schema:"maxLength=64"`
@@ -193,6 +202,10 @@ type CockpitSubscriptionDetails struct {
 	ResetCounts          []CockpitResetCount `json:"resetCounts" schema:"maxItems=64"`
 	Credits              *CockpitCredits     `json:"credits" null:"coalesced"`
 	Today                []CockpitToday      `json:"today" schema:"maxItems=4"`
+	// ReportedModels (D98) are the published model ids the tool itself lists for this subscription's signed-in
+	// account (Codex model/list), mapped through the published harnessIds. Ids only. Absent when the tool did not
+	// report; the client then uses PlanModels, then the developer match. Present with PublishedModels.
+	ReportedModels []string `json:"reportedModels,omitempty" schema:"maxItems=256" null:"forbidden"`
 }
 type CockpitResetCount struct {
 	Kind      string     `json:"kind"`

@@ -40,7 +40,7 @@
 
 /* Bounded caution blink; hidden, closed and reduced-motion surfaces stay still. */
 @keyframes cockpit-caution-blink{50%{filter:brightness(.45)}}
-#cockpit[data-active="true"][data-shell="open"] .caution.flash{animation:cockpit-caution-blink 1s steps(1,end) 10!important}
+#cockpit[data-active="true"][data-shell="open"] .caution.flash{animation:cockpit-caution-blink 1s steps(1,end) 3!important}
 html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .caution.flash{animation:none!important}
 /* G3-56: the row of the newest acknowledged caution is highlighted when the lamp opens the list: one flash, then a steady tint
    for as long as the list is open. Reduce Motion keeps the steady tint and drops the flash. */
@@ -163,11 +163,12 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 /* Working (CKP-ENG-17/18): a soft mouth light below the line in the quota-status colour; nothing when idle. */
 .bz-sheet{position:absolute;left:50%;top:2px;width:var(--w,22px);height:8px;transform:translateX(-50%);transform-origin:50% 0;pointer-events:none;opacity:.6}
 .bz-sheet::before{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(ellipse 50% 70% at 50% 25%,color-mix(in srgb,var(--fuel) 55%,white) 0%,color-mix(in srgb,var(--fuel) 85%,transparent) 38%,color-mix(in srgb,var(--fuel) 35%,transparent) 70%,transparent 100%)}
-/* Mouth shimmer (CKP-ENG-19, MOT-2.3-05): stepped at a low rate, small uneven opacity and height jitter, X fixed;
-   only on an active, open page and never under the host's or the system's Reduce Motion. */
-@keyframes cockpit-mouth-shimmer{0%{opacity:.6;transform:translateX(-50%) scaleY(1)}17%{opacity:.58;transform:translateX(-50%) scaleY(1.04)}36%{opacity:.62;transform:translateX(-50%) scaleY(.95)}49%{opacity:.59;transform:translateX(-50%) scaleY(1.06)}73%{opacity:.61;transform:translateX(-50%) scaleY(.97)}88%{opacity:.57;transform:translateX(-50%) scaleY(1.02)}100%{opacity:.6;transform:translateX(-50%) scaleY(1)}}
+/* Working light breathing (CKP-ENG-19, MOT-2.3-05, D294): a slow opacity swell on the sheet's two pseudo-elements only
+   (never on the sheet itself, whose opacity yields to the landing burn); only on an active, open page and never under
+   the host's or the system's Reduce Motion. */
+@keyframes cockpit-light-breathe{from{opacity:.72}to{opacity:1}}
 @media (prefers-reduced-motion:no-preference){
-html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet{animation:cockpit-mouth-shimmer 1.73s steps(10,end) var(--fo,0s) infinite!important}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet::before,html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet::after{animation:cockpit-light-breathe 2.6s ease-in-out var(--fo,0s) infinite alternate!important}
 }
 /* Hover (CKP-ENG-20): the light brightens, its column lights and the subscription name shows above it. */
 .ck[data-active="true"] .bz:hover .bz-line{filter:brightness(1.35)}
@@ -195,9 +196,15 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 #cockpit[data-shell="closed"][data-layout="640"]{--hull-taper-top:294px}
 :root[data-theme="night"] #cockpit .ck-shell :is(.hull-crown,.hull-record){display:none}
 :root[data-theme="night"] #cockpit .ck-shell :is(.hull-upper,.hull-cone,.hull-lower){display:block;bottom:auto;background-image:var(--hull-wall);background-size:636px 32px;background-repeat:repeat-y;-webkit-mask-composite:source-over;mask-composite:add;mask-mode:alpha}
-:root[data-theme="night"] #cockpit .ck-shell .hull-upper{top:var(--hull-cap-h);height:calc(var(--hull-taper-top) - var(--hull-cap-h));background-position:50% 9px;-webkit-mask-image:var(--hull-upper-mask),var(--hull-upper-skin-mask);mask-image:var(--hull-upper-mask),var(--hull-upper-skin-mask);-webkit-mask-size:636px var(--hull-upper-h),636px 32px;mask-size:636px var(--hull-upper-h),636px 32px;-webkit-mask-repeat:no-repeat,repeat-y;mask-repeat:no-repeat,repeat-y;-webkit-mask-position:50% 100%,50% 0;mask-position:50% 100%,50% 0}
+/* G3-118 (owner, build 14f at the Auto 85 % zoom: a light line across both side walls): the walls are stacked layers
+   that met on one edge, which a scaled page rasterises as two half-covered rows with the desktop showing through (the
+   G3-108 fault, at the wall joints). Each joint now overlaps by 1 px: the upper wall reaches 1 px under the taper,
+   the lower wall 1 px over the taper's last row and 1 px under the aft plate. The overlap rows are covered by the
+   walls' own repeat-y skin masks, which match the neighbouring rows' columns (upper skin = taper row 0, lower skin =
+   taper row 30), and the stage masks and tile phase keep their places, so nothing visible moves. */
+:root[data-theme="night"] #cockpit .ck-shell .hull-upper{top:var(--hull-cap-h);height:calc(var(--hull-taper-top) - var(--hull-cap-h) + 1px);background-position:50% 9px;-webkit-mask-image:var(--hull-upper-mask),var(--hull-upper-skin-mask);mask-image:var(--hull-upper-mask),var(--hull-upper-skin-mask);-webkit-mask-size:636px var(--hull-upper-h),636px 32px;mask-size:636px var(--hull-upper-h),636px 32px;-webkit-mask-repeat:no-repeat,repeat-y;mask-repeat:no-repeat,repeat-y;-webkit-mask-position:50% calc(100% - 1px),50% 0;mask-position:50% calc(100% - 1px),50% 0}
 :root[data-theme="night"] #cockpit .ck-shell .hull-cone{top:var(--hull-taper-top);height:31px;background-position:50% calc(var(--hull-cap-h) + 9px - var(--hull-taper-top));-webkit-mask-image:var(--hull-taper-mask);mask-image:var(--hull-taper-mask);-webkit-mask-size:636px 31px;mask-size:636px 31px;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:0 0;mask-position:0 0}
-:root[data-theme="night"] #cockpit .ck-shell .hull-lower{top:calc(var(--hull-taper-top) + 31px);bottom:22px;height:auto;background-position:50% calc(var(--hull-cap-h) - 22px - var(--hull-taper-top));-webkit-mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);-webkit-mask-size:636px var(--hull-lower-h),636px 32px;mask-size:636px var(--hull-lower-h),636px 32px;-webkit-mask-repeat:no-repeat,repeat-y;mask-repeat:no-repeat,repeat-y;-webkit-mask-position:50% 100%,50% 0;mask-position:50% 100%,50% 0}
+:root[data-theme="night"] #cockpit .ck-shell .hull-lower{top:calc(var(--hull-taper-top) + 30px);bottom:21px;height:auto;background-position:50% calc(var(--hull-cap-h) - 21px - var(--hull-taper-top));-webkit-mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);-webkit-mask-size:636px var(--hull-lower-h),636px 32px;mask-size:636px var(--hull-lower-h),636px 32px;-webkit-mask-repeat:no-repeat,repeat-y;mask-repeat:no-repeat,repeat-y;-webkit-mask-position:50% calc(100% - 1px),50% 0;mask-position:50% calc(100% - 1px),50% 0}
 :root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(var(--hull-cap-h) 16px 22px)}
 /* G3-108 (owner, build 14e): the closed root stands on the open root's floor, so the strip, the panels and the base are
    at the same page place open or closed (strip at 253 tall, 65 compact) and the shutter never moves the body on the
@@ -234,6 +241,32 @@ html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{ani
 .ck-eng .ek .ek-identity .lamp[src$="openai-white.svg"]{--fit:1.75}
 .ck-eng .ek .ek-identity .lamp[src$="claude-rounded.svg"],.ck-eng .ek .ek-identity .lamp[src$="cursor.svg"],.ck-eng .ek .ek-identity .lamp[src$="copilot.svg"],.ck-eng .ek .ek-identity .lamp[src$="opencode.svg"]{--fit:.875}
 .ck-eng .ek .ek-identity .lamp[src$="kimi-white.svg"]{--fit:.91}
+/* CKP-SHELL-33 (owner D178/D186/D188, D294): rack put-back and key-detach ignition. The host's `ignition` message lights every
+   base bell, working or empty, with a landing burn in the demo v8 amber (#ffa02e): ::after is the plume reaching about 20 px
+   below the lower lip (thrown out in 220 ms, a stepped flutter while burning, pulled back into the mouth in 280 ms) and
+   ::before the ember in the mouth (cools over .9 s). The host puts it out when the cockpit is home AND the rack is in place.
+   A working bell's light steps aside meanwhile (the .bz-sheet container yields; its breathing runs on its pseudo-elements,
+   so no animation can hold it lit). Vertical positions come from the bell height. */
+.ck-base :is(.bz,.bz-empty){--ig-w:var(--bell-w,var(--w,calc(var(--cw,40px) - 8px)));--ig-h:var(--bell-h,calc(var(--ig-w) * 10 / 81));--ig-m:var(--bell-m,calc(var(--ig-h) * .4515))}
+.ck-base :is(.bz,.bz-empty)::after{content:"";position:absolute;left:50%;top:var(--ig-m);width:calc(var(--ig-w) * .86);height:calc(var(--ig-h) - var(--ig-m) + 20px);
+  transform:translateX(-50%) scaleY(.15);transform-origin:50% 0;pointer-events:none;z-index:3;opacity:0;transition:opacity .28s linear,transform .28s ease-in;
+  background-repeat:no-repeat;
+  background-image:radial-gradient(ellipse 18% 92% at 50% 0,#fff6e6 0%,rgba(255,214,150,.95) 22%,rgba(255,160,46,.7) 55%,transparent 100%),
+    radial-gradient(ellipse 34% 100% at 50% 0,rgba(255,184,96,.75) 0%,rgba(255,150,40,.45) 50%,transparent 100%),
+    radial-gradient(ellipse 50% 70% at 50% 0,rgba(255,160,46,.45) 0%,rgba(255,120,30,.18) 60%,transparent 100%)}
+.ck-base :is(.bz,.bz-empty)::before{content:"";position:absolute;left:50%;top:calc(var(--ig-m) - 1px);width:calc(var(--ig-w) * .9);height:calc(var(--ig-h) - var(--ig-m) + 3px);
+  transform:translateX(-50%);pointer-events:none;z-index:3;opacity:0;transition:opacity .9s cubic-bezier(.2,.6,.3,1) .15s;
+  background:radial-gradient(ellipse 50% 70% at 50% 35%,rgba(255,186,110,.9) 0%,rgba(255,120,40,.45) 55%,transparent 100%) no-repeat}
+#cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{opacity:.9;transform:translateX(-50%) scaleY(1);transition:opacity .09s ease-out,transform 0s}
+#cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::before{opacity:.7;transition:opacity .12s ease-out}
+@keyframes cockpit-bell-flare{from{scale:1 .25}45%{scale:1 1.12}to{scale:1 1}}
+@keyframes cockpit-bell-burn{0%,100%{scale:1 1}30%{scale:1 1.08}55%{scale:1 .92}80%{scale:1 1.04}}
+@media (prefers-reduced-motion:no-preference){
+html:not([data-reduce-motion="true"]) #cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .84s steps(7,end) .22s infinite}
+}
+#cockpit[data-ignite="true"] .ck-base .bz .bz-sheet{opacity:0;transition:opacity .06s}
+html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::after,html[data-reduce-motion="true"] .ck-base .bz .bz-sheet{transition:none!important;animation:none!important}
+@media(prefers-reduced-motion:reduce){.ck-base :is(.bz,.bz-empty)::before,.ck-base :is(.bz,.bz-empty)::after,.ck-base .bz .bz-sheet{transition:none!important;animation:none!important}}
 /* CKP-SHELL-39: empty engine screen, one line and one button */
 .ck-eng .ec-empty-box{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:10px}
 .ck-eng .ec-empty-box .ec-empty{font-size:12px;text-align:center;padding:0;color:var(--lcd-muted)}
@@ -250,3 +283,5 @@ html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{ani
 #cockpit .ck-head [data-close]::before{inset:.85px;background:var(--close-fill);border-radius:4px;filter:none;box-shadow:inset 0 1px 0 #ffffff26,inset 0 -1px 0 #0000004d,0 1px 2px #000a,0 0 0 1px var(--close-edge)}
 #cockpit .ck-head [data-close]::after{content:"";position:absolute;inset:10px;pointer-events:none;background:linear-gradient(45deg,transparent 43%,var(--close-ink) 43% 57%,transparent 57%),linear-gradient(-45deg,transparent 43%,var(--close-ink) 43% 57%,transparent 57%)}
 #cockpit .ck-head [data-close]:focus-visible{outline:2px solid var(--gold-lcd,#f6d38a);outline-offset:2px}
+/* CKP-FAD-17: the thin blue trial line belongs to the official throttle art; the community flat fader keeps its ghost cap only. */
+.dk-fad .fd-tline{display:none}

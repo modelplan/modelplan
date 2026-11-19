@@ -84,7 +84,7 @@ export function ownPatch(cwd, from, to) {
 
 // D243 G6 auto-carry: an earlier review of `oldSha` holds for `newSha` without any carry comment when
 //   1. following first parents from newSha reaches oldSha within 20 commits, and every commit on that path is a
-//      two-parent merge whose second parent is on main (so every other commit in old..new came from main), and
+//      two-parent merge, equal to Git's clean merge of its parents (verifyCleanMerge), whose second parent is on main (so every other commit in old..new came from main), and
 //   2. the PR's own change is identical: ownPatch(merge-base(main, old), old) == ownPatch(merge-base(main, new), new).
 // A conflict resolution or a regenerated file that alters the PR's own hunks breaks (2) and needs a fresh review.
 // `between` lists the first-parent commits after oldSha up to newSha, so the rules can refuse a carry over a head
@@ -102,6 +102,10 @@ export function verifyMainMerges(cwd, oldSha, newSha, mainRef) {
     if (p.length !== 2) return no(`${c.slice(0, 8)} is not a merge of main`);
     if (!isAncestor(cwd, p[1], mainRef)) return no(`${c.slice(0, 8)}: second parent is not on main`);
     if (!isAncestor(cwd, oldSha, p[0])) return no(`${c.slice(0, 8)}: first parent does not descend from the reviewed head`);
+    // Each merge must be exactly Git's own clean merge of its parents: a hand-edited merge tree can move the
+    // PR's code while leaving the own-diff text identical (macrevd-946 relocated-hunk bypass).
+    const clean = verifyCleanMerge(cwd, c);
+    if (!clean.ok) return no(`${c.slice(0, 8)}: ${clean.why}`);
     between.push(c);
     c = p[0];
   }

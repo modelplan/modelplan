@@ -1,27 +1,26 @@
 /* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
 /* Copyright (c) 2026 ModelPlan. G3-47 base bells in the 34 px reserve, written for this page from the base-bells
    notes (see SOURCES.md); the images are the released, unchanged base-bell rasters. */
-/* Bell width follows the measured column: min(120 px, column x 121/133), the old (cw - 8)/cw proportion at six
-   columns; height is width x 10/81. 162x20 is drawn at 1x and 243x30 at 2x, never a stretched feature. */
-.ck-base :is(.bz,.bz-empty){--bell-w:min(120px,calc(var(--cw) * 121 / 133));--bell-h:calc(var(--bell-w) * 10 / 81)}
-.ck-base :is(.bz,.bz-empty) .bz-line{top:0;width:var(--bell-w);height:var(--bell-h);border-radius:0;background:transparent url('./assets/bells/bell-night-2x.png') center/100% 100% no-repeat;opacity:1}
-@media (min-resolution:2dppx){.ck-base :is(.bz,.bz-empty) .bz-line{background-image:url('./assets/bells/bell-night-3x.png')}}
-/* Subscribed bells take the silver finish through the shared gunmetal transfer (CKP-SHELL-15, CKP-ENG-16), the same
-   for idle, working and stale bells, so an idle bell reads dark, close to the hull; only a working bell lights its
-   mouth. Measured on the opus-r7 study: saturate(.12) brightness(.78). The silver 2x source is the largest that
-   exists, so it serves both densities. */
-.ck-base .bz .bz-line{background-image:url('./assets/bells/bell-silver-2x.png');filter:saturate(.12) brightness(.78)}
-/* Empty bays: the black/graphite bell, quietly dimmed, unfiltered by the gunmetal transfer. */
-.ck-base .bz-empty .bz-line{filter:brightness(.9)}
+/* G3-131 (owner D294, 2026-11-18): the bell is a fixed 10 px high; its width is the column x 0.7 clamped to 81-101 px,
+   so the whole raster is stretched horizontally by at most 1.25x (natural shape 81:10, drawn center/100% 100%).
+   Every vertical position derives from the height (--bell-m = height x 0.4515, the lower-lip offset), never the width. */
+.ck-base :is(.bz,.bz-empty){--bell-w:clamp(81px,calc(var(--cw) * .7),101px);--bell-h:10px;--bell-m:calc(var(--bell-h) * .4515)}
+.ck-base :is(.bz,.bz-empty) .bz-line{top:0;width:var(--bell-w);height:var(--bell-h);border-radius:0;background:transparent url('./assets/bells/bell-silver-2x.png') center/100% 100% no-repeat;opacity:1}
+/* One dark finish for every bell, subscribed or empty (D294): the silver raster through the gunmetal transfer. The
+   silver 2x source is the largest that exists, so it serves both densities. Hover keeps it (D70). */
+.ck-base :is(.bz,.bz-empty) .bz-line{filter:saturate(.12) brightness(.36)}
 .ck-base .bz-glow{display:none}
-/* Hover keeps the transfer, as on the study, where the shared finish outranks its hover brightening (D70); the
-   column light and the name show the hover (CKP-ENG-20). */
-.ck[data-active="true"] .ck-base .bz:hover .bz-line{filter:saturate(.12) brightness(.78)}
-/* Working (CKP-ENG-17/18): one soft glow fills the inner mouth from the opening down, whiter at the core, fading
-   about 3 px past the outer lower rim, in the quota-status colour; no plume body. Geometry measured on the study:
-   it starts at bell width x 0.0557, spans the inner mouth (bell width x 0.9033) x 1.08, and runs 5 px past the
-   bell's foot at 60 % opacity. */
-.ck-base .bz .bz-sheet{top:calc(var(--bell-w) * .05574);width:calc(var(--bell-w) * .9033 * 1.08);height:calc(var(--bell-h) - var(--bell-w) * .05574 + 5px);opacity:.6;z-index:2}
-.ck-base .bz .bz-sheet::before{border-radius:50% 50% 0 0/calc(var(--bell-w) * .0226) calc(var(--bell-w) * .0226) 0 0;
-  background:linear-gradient(180deg,color-mix(in srgb,color-mix(in srgb,var(--fuel) 78%,white) 95%,transparent),color-mix(in srgb,var(--fuel) 78%,transparent) 22%,color-mix(in srgb,var(--fuel) 40%,transparent) 65%,transparent);
-  -webkit-mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%);mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%)}
+.ck[data-active="true"] .ck-base .bz:hover .bz-line{filter:saturate(.12) brightness(.36)}
+/* Working light (CKP-ENG-17/18, D294): no flame. The sheet is only a container; the idle/empty bells have none.
+   Its own opacity yields to the landing burn (cockpit.css), the breathing runs on the two pseudo-elements, so the
+   animation can never override that yield. The colour is the subscription's vendor colour (--v, the livery table). */
+.ck-base .bz .bz-sheet{top:0;width:calc(var(--bell-w) * 1.2);height:34px;opacity:1;z-index:2;transition:opacity .3s ease-out .45s}
+/* In-mouth wash. */
+.ck-base .bz .bz-sheet::before{border-radius:0;inset:auto;left:50%;top:calc(var(--bell-m) - .5px);width:calc(var(--bell-w) * .9);height:calc(var(--bell-h) - var(--bell-m) + 1.5px);transform:translateX(-50%);opacity:.85;
+  background:radial-gradient(ellipse 50% 70% at 50% 40%,color-mix(in srgb,var(--v) 55%,white) 0%,color-mix(in srgb,var(--v) 80%,transparent) 40%,color-mix(in srgb,var(--v) 30%,transparent) 75%,transparent 100%) no-repeat}
+/* Faint downward cone from the lower lip to the window edge, no tip. */
+.ck-base .bz .bz-sheet::after{content:"";position:absolute;left:0;right:0;top:calc(var(--bell-h) - 1px);bottom:0;opacity:.9;
+  clip-path:polygon(12.5% 0,87.5% 0,100% 100%,0 100%);
+  background:radial-gradient(ellipse 45% 100% at 50% 0,color-mix(in srgb,var(--v) 30%,transparent) 0%,color-mix(in srgb,var(--v) 12%,transparent) 55%,transparent 100%) no-repeat,
+    linear-gradient(180deg,color-mix(in srgb,var(--v) 16%,transparent),transparent 85%) no-repeat;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent)}

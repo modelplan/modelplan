@@ -18,7 +18,12 @@ public enum EngineInvalidationReason: Sendable, Equatable {
 }
 
 public enum EngineFeature: Sendable, Equatable {
-    case rows, consent, history, cockpit, publication, pluginInstall, diagnostics, historyImport
+    case rows, consent, history, cockpit, publication, pluginInstall, diagnostics, historyImport, readerKey
+}
+
+/// D90: the three manual-key methods. The key travels only in the request params.
+public enum EngineReaderKeyMethod: String, Sendable, Equatable {
+    case set = "readerkey/set", test = "readerkey/test", remove = "readerkey/remove", status = "readerkey/status"
 }
 
 public enum EngineRequestDisposition: Sendable, Equatable {
@@ -51,6 +56,7 @@ public enum EngineResponse: Sendable {
     case pluginInstall(EngineReply<WirePluginInstallResult>)
     case publication(EngineReply<WirePublicationResult>)
     case diagnostics(EngineReply<WireDiagnostics>)
+    case readerKey(EngineReply<WireReaderKeyResult>)
     case historyImport(EngineReply<WireHistoryImportStatus>)
 }
 
@@ -124,6 +130,8 @@ public protocol EngineClient: Actor {
                        timeout: Duration?) async throws -> EngineRequestCompletion
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion
+    func readerKey(_ method: EngineReaderKeyMethod, _ params: WireReaderKeyParams,
+                   timeout: Duration?) async throws -> EngineRequestCompletion
     /// Local usage-history import (metadata only). Start answers at once with the running status;
     /// poll `historyImportStatus`; cancel stops it without writing; remove deletes exactly the
     /// imported rows. Each reply is a `.historyImport` response.
@@ -134,6 +142,11 @@ public protocol EngineClient: Actor {
 }
 
 extension EngineClient {
+    /// A client without the manual-key methods reports them unsupported.
+    public func readerKey(_ method: EngineReaderKeyMethod, _ params: WireReaderKeyParams,
+                          timeout: Duration?) async throws -> EngineRequestCompletion {
+        throw EngineClientError.unsupportedCapability
+    }
     public func supportsCapability(_ capability: String) async -> Bool { false }
     public func acceptedServerVersion() async -> String? { nil }
     public func historyImportStart(_ request: WireHistoryImportStartParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }

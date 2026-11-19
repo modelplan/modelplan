@@ -1,1 +1,0 @@
-The enlarged launch field now flies the website's fleet round-four rockets (Falcon 9, Falcon Heavy, New Glenn, Vulcan, Long March 2F/5/3B and the Starship) in the shared maker colours, the same vehicles the website shows. Official edition only.

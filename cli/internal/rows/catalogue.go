@@ -99,7 +99,28 @@ func PlanLabel(tool, raw string) string {
 			return codexPlanNames[canonical]
 		}
 	}
+	if CanonicalTool(tool) == "kiro" {
+		if _, name, ok := kiroPlan(raw); ok {
+			return name
+		}
+	}
 	return raw
+}
+
+// kiroPlans: the Kiro CLI reports its tier in capitals ("KIRO PRO+"). The plus is part of the tier
+// name, so Pro+ stays apart from Pro (CodexBar 1ebab5e46, behaviour only).
+var kiroPlans = map[string]string{"free": "Free", "pro": "Pro", "pro+": "Pro+", "power": "Power"}
+
+func kiroPlan(raw string) (id, name string, ok bool) {
+	words := strings.Fields(strings.ToLower(raw))
+	if len(words) != 2 || words[0] != "kiro" {
+		return "", "", false
+	}
+	tier, ok := kiroPlans[words[1]]
+	if !ok {
+		return "", "", false
+	}
+	return "kiro-" + words[1], "Kiro " + tier, true
 }
 
 func planValue(tool, raw, declared string) Plan {
@@ -116,6 +137,11 @@ func planValue(tool, raw, declared string) Plan {
 	}
 	if name, ok := plans[id]; ok {
 		return Plan{ID: id, Name: &name}
+	}
+	if tool == "kiro" {
+		if id, label, ok := kiroPlan(raw); ok {
+			return Plan{ID: id, Name: &Name{EN: label, ZH: label}}
+		}
 	}
 	// Cursor's reader has its own fixed vocabulary, not arbitrary plan suffixes.
 	if strings.HasPrefix(id, "cursor ") {

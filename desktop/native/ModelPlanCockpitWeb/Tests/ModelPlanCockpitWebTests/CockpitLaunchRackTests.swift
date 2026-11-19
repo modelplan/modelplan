@@ -1,0 +1,221 @@
+// SPDX-License-Identifier: MIT
+import XCTest
+@testable import ModelPlanCockpitWeb
+
+/// CKP-SHELL-33 logic (owner D158, D175, D178, D181, D186-D188): the attached place under the icon, the key-detach
+/// landing rule on the accepted demo's three screens (menubar-rack-v8.html), the rack's telescoping and the open order.
+/// Pure geometry; no window.
+final class CockpitLaunchRackTests: XCTestCase {
+  // The demo's cockpit art: 480 pt wide, tall 693 pt (shoulder 40 pt), short 489 pt (shoulder 16 pt), 10 pt under the bar.
+  private func home(screen: CGSize, icon: CGFloat, height: CGFloat = 693, shoulder: CGFloat = 40) -> CGRect {
+    let x = max(0, min(icon - shoulder, screen.width - 480))
+    return CGRect(x: x, y: screen.height - 10 - height, width: 480, height: height)
+  }
+  private func assertOnScreen(_ frame: CGRect, _ visible: CGRect, _ label: String, file: StaticString = #filePath, line: UInt = #line) {
+    XCTAssertTrue(visible.insetBy(dx: -0.01, dy: -0.01).contains(frame), "\(label): the whole cockpit stays on screen (\(frame))", file: file, line: line)
+  }
+  private func assertClearsTheZone(_ frame: CGRect, _ home: CGRect, _ label: String, file: StaticString = #filePath, line: UInt = #line) {
+    XCTAssertGreaterThanOrEqual(hypot(frame.minX - home.minX, frame.maxY - home.maxY), CockpitLaunchRackTiming.catchZone + 16 - 0.01,
+                                "\(label): out of the 40 pt catch zone with the 16 pt margin", file: file, line: line)
+  }
+
+  /// Demo screen "big desk" 1512 x 982, icon at 360: rule 1, straight down 56 pt.
+  func testLandingOnTheBigDeskGoesStraightDown() {
+    let screen = CGSize(width: 1512, height: 982), visible = CGRect(origin: .zero, size: screen)
+    let start = home(screen: screen, icon: 360)
+    let plan = CockpitDetachLanding.plan(home: start, compactHome: home(screen: screen, icon: 360, height: 489, shoulder: 16), visible: visible)
+    XCTAssertEqual(plan.rule, .down); XCTAssertFalse(plan.compact)
+    XCTAssertEqual(plan.frame, start.offsetBy(dx: 0, dy: -56))
+    assertOnScreen(plan.frame, visible, "big desk"); assertClearsTheZone(plan.frame, start, "big desk")
+  }
+
+  /// Demo screen "small laptop" 1280 x 720, icon at 360: the tall cockpit cannot go down, so 56 pt toward the centre (right).
+  func testLandingOnTheSmallLaptopMovesTowardTheCentre() {
+    let screen = CGSize(width: 1280, height: 720), visible = CGRect(origin: .zero, size: screen)
+    let start = home(screen: screen, icon: 360)
+    let plan = CockpitDetachLanding.plan(home: start, compactHome: home(screen: screen, icon: 360, height: 489, shoulder: 16), visible: visible)
+    XCTAssertEqual(plan.rule, .towardCentre); XCTAssertFalse(plan.compact)
+    XCTAssertEqual(plan.frame, start.offsetBy(dx: 56, dy: 0), "right, toward the screen centre")
+    assertOnScreen(plan.frame, visible, "small laptop"); assertClearsTheZone(plan.frame, start, "small laptop")
+  }
+
+  /// Demo screen "icon near the right edge" 1280 x 720, icon at 840: 56 pt toward the centre, which is left.
+  func testLandingWithTheIconNearTheRightEdgeMovesLeft() {
+    let screen = CGSize(width: 1280, height: 720), visible = CGRect(origin: .zero, size: screen)
+    let start = home(screen: screen, icon: 840)
+    XCTAssertEqual(start.maxX, 1280, "the cockpit already touches the right edge")
+    let plan = CockpitDetachLanding.plan(home: start, compactHome: home(screen: screen, icon: 840, height: 489, shoulder: 16), visible: visible)
+    XCTAssertEqual(plan.rule, .towardCentre)
+    XCTAssertEqual(plan.frame, start.offsetBy(dx: -56, dy: 0), "left, toward the screen centre")
+    assertOnScreen(plan.frame, visible, "right edge"); assertClearsTheZone(plan.frame, start, "right edge")
+  }
+
+  /// D187: no diagonal. When neither step fits the full cockpit, the short version tries them again.
+  func testLandingSwitchesToTheShortVersionWhenTheFullOneHasNoRoom() {
+    let screen = CGSize(width: 500, height: 720), visible = CGRect(origin: .zero, size: screen)
+    let start = home(screen: screen, icon: 260), short = home(screen: screen, icon: 260, height: 489, shoulder: 16)
+    let plan = CockpitDetachLanding.plan(home: start, compactHome: short, visible: visible)
+    XCTAssertEqual(plan.rule, .compactDown); XCTAssertTrue(plan.compact)
+    XCTAssertEqual(plan.frame, short.offsetBy(dx: 0, dy: -56))
+    assertOnScreen(plan.frame, visible, "narrow screen")
+  }
+
+  /// Nothing fits: the least sideways step that clears the catch zone, still never partly off-screen.
+  func testLandingNeverEndsPartlyOffScreen() {
+    let visible = CGRect(x: 0, y: 0, width: 500, height: 520)
+    let short = CGRect(x: 10, y: 21, width: 480, height: 489)
+    let plan = CockpitDetachLanding.plan(home: short, compactHome: nil, visible: visible)
+    XCTAssertEqual(plan.rule, .minimum)
+    assertOnScreen(plan.frame, visible, "tiny screen")
+    XCTAssertEqual(plan.frame.maxY, short.maxY, "it stays at the same height")
+    // glm-872-2/3: on a visible frame too narrow to clear the catch zone, staying on screen wins (D187); the frame is
+    // clamped to the visible edge, so it may sit inside the zone. Nothing auto-latches: the zone arms only after leaving it.
+    XCTAssertEqual(plan.frame.minX, visible.minX, "clamped to the visible edge (10 pt from home), not pushed off screen")
+    for (w, h, icon) in [(1512, 982, 360), (1280, 720, 360), (1280, 720, 840), (640, 700, 600), (500, 560, 10)] as [(CGFloat, CGFloat, CGFloat)] {
+      let screen = CGSize(width: w, height: h), visible = CGRect(origin: .zero, size: screen)
+      let tall = home(screen: screen, icon: icon), shortHome = home(screen: screen, icon: icon, height: 489, shoulder: 16)
+      let start = visible.contains(tall) ? tall : shortHome
+      let result = CockpitDetachLanding.plan(home: start, compactHome: start == tall ? shortHome : nil, visible: visible)
+      assertOnScreen(result.frame, visible, "\(Int(w))x\(Int(h)) icon \(Int(icon))")
+    }
+  }
+
+  /// D158/D178: attached, the window top is 10 pt under the menu bar and the icon sits above the left canopy shoulder.
+  func testTheAttachedCockpitHangsTenPointsUnderTheBarWithTheIconOverItsLeftShoulder() throws {
+    let usable = CGRect(x: 0, y: 0, width: 1728, height: 1080)
+    let icon = CGRect(x: 900, y: 1080, width: 28, height: 37)
+    let full = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false, screenWidth: 1728))
+    XCTAssertEqual(full.profile, .full)
+    XCTAssertEqual(full.frame.maxY, 1080 - CockpitShellLayout.menuBarGap)
+    XCTAssertEqual(CockpitShellLayout.menuBarGap, 10)
+    XCTAssertEqual(full.shoulder.x, icon.midX, accuracy: 0.5, "the icon is above the left shoulder")
+    XCTAssertLessThan(full.shoulder.x, full.frame.minX + full.frame.width / 4, "the LEFT shoulder")
+    let short = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false, screenWidth: 1728, forceCompact: true))
+    XCTAssertEqual(short.profile, .compact, "a key-detach landing can force the short version")
+    XCTAssertEqual(short.shoulder.x, icon.midX, accuracy: 0.5)
+    XCTAssertEqual(short.frame.maxY, full.frame.maxY)
+    // Near the right edge the cockpit shifts just enough to stay on the screen.
+    let edge = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: CGRect(x: 1700, y: 1080, width: 28, height: 37), shutterClosed: false, screenWidth: 1728))
+    XCTAssertEqual(edge.frame.maxX, 1728)
+  }
+
+  /// The rack telescopes from the icon: nothing below the bar when in, the top section (the part visible in the gap and at
+  /// the shoulder) fully out at one third, all three sections out at one.
+  func testTheRackTelescopesTopSectionFirst() {
+    for mast in [CockpitRackMast.night, .day] {
+      let folded = mast.geometry(at: 0)
+      XCTAssertTrue(folded.sections.allSatisfy { $0.bottom - $0.top <= 0.001 }, "retracted into the icon")
+      let third = mast.geometry(at: 1.0 / 3)
+      XCTAssertEqual(third.sections[0].top, 0, accuracy: 0.001)
+      XCTAssertEqual(third.sections[0].bottom, (mast.collar1 - mast.cap) * 0.1, accuracy: 0.001, "the top section is out")
+      XCTAssertEqual(third.sections[1].bottom - third.sections[1].top, 0, accuracy: 0.001, "the hidden sections are still in")
+      XCTAssertEqual(third.sections[2].bottom - third.sections[2].top, 0, accuracy: 0.001)
+      let out = mast.geometry(at: 1)
+      XCTAssertEqual(out.sections[2].bottom, (mast.foot - mast.cap) * 0.1, accuracy: 0.001, "fully out")
+      XCTAssertLessThanOrEqual(out.sections[2].bottom, CockpitRackMast.length)
+      XCTAssertTrue(out.beacons.allSatisfy { $0.out })
+    }
+  }
+
+  /// D186/D188: the visible rack first (0.25 s), then the cockpit (0.25 s); only an attached open from a real icon, with motion.
+  func testTheIconOpenExtendsTheRackFirstOnlyWhenItCan() {
+    XCTAssertEqual(CockpitLaunchRackTiming.rackOpen, 0.25); XCTAssertEqual(CockpitLaunchRackTiming.cockpitOpen, 0.25)
+    XCTAssertEqual(CockpitLaunchRackTiming.keyDetachBurn, 0.6); XCTAssertEqual(CockpitLaunchRackTiming.catchZone, 40)
+    XCTAssertEqual(CockpitLaunchRackTiming.landingStep, 56)
+    let icon = CGRect(x: 900, y: 1080, width: 28, height: 37)
+    XCTAssertTrue(CockpitWindowController.opensRackFirst(.fromIcon, reduceMotion: false, detached: false, icon: icon))
+    XCTAssertFalse(CockpitWindowController.opensRackFirst(.fade, reduceMotion: false, detached: false, icon: icon), "the ignition keeps its fade")
+    XCTAssertFalse(CockpitWindowController.opensRackFirst(.fromIcon, reduceMotion: true, detached: false, icon: icon))
+    XCTAssertFalse(CockpitWindowController.opensRackFirst(.fromIcon, reduceMotion: false, detached: true, icon: icon))
+    XCTAssertFalse(CockpitWindowController.opensRackFirst(.fromIcon, reduceMotion: false, detached: false, icon: nil))
+    XCTAssertEqual(CockpitLaunchRackTiming.flight(length: 0), 0.82); XCTAssertEqual(CockpitLaunchRackTiming.flight(length: 5000), 1.3)
+  }
+
+  /// G3-130 (owner, 11-18): the rack and the put back start together at their normal speeds. A long flight (0.82 s or
+  /// more) lands on a full rack (0.56 s); a short move or a ride home lands while the rack is still coming down.
+  func testWhereTheRackIsWhenTheCockpitLands() {
+    let full = CockpitLaunchRackTiming.fullTravel
+    XCTAssertEqual(CockpitLaunchRackTiming.rackAtLanding(motion: CockpitLaunchRackTiming.flight(length: 0), rackExtension: 0), 1, "long: full")
+    XCTAssertEqual(CockpitLaunchRackTiming.rackAtLanding(motion: CockpitLaunchRackTiming.flight(length: 900), rackExtension: 0), 1)
+    XCTAssertEqual(CockpitLaunchRackTiming.rackAtLanding(motion: CockpitLaunchRackTiming.rideHome, rackExtension: 0), CGFloat(0.3 / full),
+                   accuracy: 1e-9, "a ride home released at once: partly out")
+    XCTAssertEqual(CockpitLaunchRackTiming.rackAtLanding(motion: 0.1, rackExtension: 0.2), CGFloat(0.2 + 0.1 / full), accuracy: 1e-9, "short")
+    XCTAssertEqual(CockpitLaunchRackTiming.rackAtLanding(motion: CockpitLaunchRackTiming.rideHome, rackExtension: 0.6), 1, "already mostly out")
+  }
+
+  /// G3-130: the controller's 60 Hz driver (`rackTick`): the rack advances at the full-travel pace, the motion runs on
+  /// its own clock. For short, medium and long put backs, from any rack position and with uneven ticks: the cockpit lands
+  /// at its own motion time (never delayed), the rack there is where `rackAtLanding` says (< 1 short, 1 long), and after
+  /// the landing it carries on at the same pace to 1 with no jump.
+  func testTheCockpitLandsOnTimeAndTheRackCarriesOnSmoothly() {
+    let full = CockpitLaunchRackTiming.fullTravel
+    let motions: [TimeInterval] = [0.01, 0.1, CockpitLaunchRackTiming.rideHome, CockpitLaunchRackTiming.flight(length: 0),
+                                   CockpitLaunchRackTiming.flight(length: 900)]
+    for motion in motions {
+      for start in [CGFloat(0), 0.2, 0.75, 1] {
+        for jitter in [0.0, 0.004, 0.011] {
+          var ext = start, elapsed = 0.0, n = 0, landedAt: Double?, extAtLanding: CGFloat?
+          while ext < 1 || landedAt == nil {
+            n += 1; if n > 10_000 { XCTFail("never settled"); break }
+            let dt = 1.0 / 60 + (n % 3 == 0 ? jitter : -jitter / 2)
+            elapsed += dt
+            let before = ext
+            ext = min(1, ext + CGFloat(dt / full))
+            XCTAssertLessThanOrEqual(ext - before, CGFloat(dt / full) + 1e-9, "no jump in the rack")
+            XCTAssertGreaterThanOrEqual(ext, before, "the rack never goes back")
+            if landedAt == nil, elapsed >= motion { landedAt = elapsed; extAtLanding = ext }
+          }
+          let label = "motion \(motion) s from rack \(start), jitter \(jitter)"
+          XCTAssertLessThan((landedAt ?? .infinity) - motion, 1.0 / 60 + jitter + 1e-9, "\(label): the landing is not delayed")
+          let expected = CockpitLaunchRackTiming.rackAtLanding(motion: landedAt ?? motion, rackExtension: start)
+          XCTAssertEqual(extAtLanding ?? -1, expected, accuracy: 1e-6, label)
+          if start == 0, motion < full - 0.05 { XCTAssertLessThan(extAtLanding ?? 1, 1, "\(label): short, partly out") }
+          if motion >= full + 0.05 { XCTAssertEqual(extAtLanding, 1, "\(label): long, fully out") }
+        }
+      }
+    }
+  }
+
+  /// macrevb/macrev2-1038-1: every put-back path starts exactly where the cockpit is and moves without a jump, also from
+  /// above home: a detached cockpit on a display stacked above (home (0, 0), start (0, 1080), aligned x) and a drag
+  /// released just above home. Before, the flight and the ride clamped y to home's height, so the first frame was home.
+  func testPutBackPathsStartWhereTheCockpitIsAndNeverJump() {
+    let zone = CockpitLaunchRackTiming.catchZone, home = CGPoint.zero
+    func assertContinuous(_ name: String, _ p0: CGPoint, duration: TimeInterval, _ path: (CGFloat) -> CGPoint,
+                          file: StaticString = #filePath, line: UInt = #line) {
+      XCTAssertEqual(path(0), p0, "\(name): the first frame is where the cockpit is", file: file, line: line)
+      XCTAssertEqual(path(1).x, home.x, accuracy: 1e-9, file: file, line: line)
+      XCTAssertEqual(path(1).y, home.y, accuracy: 1e-9, "\(name): it ends at home", file: file, line: line)
+      // At 60 Hz no frame moves more than a fifth of the whole path, plus 1 pt (the old clamp jumped all of it at once).
+      let frames = max(1, Int((duration * 60).rounded(.up)))
+      var travel: CGFloat = 0, previous = path(0)
+      for n in 1...frames { let next = path(CGFloat(n) / CGFloat(frames)); travel += hypot(next.x - previous.x, next.y - previous.y); previous = next }
+      previous = path(0)
+      for n in 1...frames {
+        let next = path(CGFloat(n) / CGFloat(frames))
+        XCTAssertLessThanOrEqual(hypot(next.x - previous.x, next.y - previous.y), travel / 5 + 1,
+                                 "\(name): frame \(n) jumps", file: file, line: line)
+        previous = next
+      }
+    }
+    for p0 in [CGPoint(x: 0, y: 1080), CGPoint(x: 0, y: 5), CGPoint(x: 900, y: 1200), CGPoint(x: -300, y: -56), CGPoint(x: 1500, y: -700)] {
+      let c = CockpitPutBackPath.control(from: p0, to: home, zone: zone)
+      let length = hypot(c.x - p0.x, c.y - p0.y) + hypot(home.x - c.x, home.y - c.y)
+      assertContinuous("key flight from \(p0)", p0, duration: CockpitLaunchRackTiming.flight(length: length)) {
+        CockpitPutBackPath.flight(from: p0, to: home, zone: zone, at: $0)
+      }
+      // The last part runs straight up the rack: just before the landing the cockpit is under home, on its x.
+      let late = CockpitPutBackPath.flight(from: p0, to: home, zone: zone, at: 0.98)
+      XCTAssertLessThanOrEqual(late.y, home.y + 1e-9, "from \(p0): it comes up into home")
+      if p0.y <= home.y {
+        for n in 0...100 { XCTAssertLessThanOrEqual(CockpitPutBackPath.flight(from: p0, to: home, zone: zone, at: CGFloat(n) / 100).y, home.y + 1e-9,
+                                                    "from below it never rises above home") }
+      }
+    }
+    for p0 in [CGPoint(x: 0, y: 5), CGPoint(x: 12, y: -30), CGPoint(x: -20, y: 25)] {
+      assertContinuous("ride home from \(p0)", p0, duration: CockpitLaunchRackTiming.rideHome) {
+        CockpitPutBackPath.straight(from: p0, to: home, at: $0)
+      }
+    }
+  }
+}

@@ -11,7 +11,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
-import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
+import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -145,11 +145,14 @@ async function evaluateGroupAndPost(groupSha) {
     c = p[0];
   }
   if (!G.isAncestor(cwd, c, MAIN)) return post(groupSha, { state: FAILURE, why: "group does not start on main within 10 PRs" });
-  const [queueRuns, combined] = await Promise.all([
+  const [queueRuns, combined, queueCheckRuns] = await Promise.all([
     gh.all(`/actions/runs?head_sha=${groupSha}`, "workflow_runs", 500),
     gh.get(`/commits/${groupSha}/status`),
+    gh.all(`/commits/${groupSha}/check-runs`, "check_runs", 1000),
   ]);
-  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], repo });
+  const desktop = queueRuns.filter(queueRunScope(repo)).filter((r) => r.path === ".github/workflows/desktop.yml").sort((x, y) => y.id - x.id)[0];
+  const desktopJobs = desktop ? await gh.all(`/actions/runs/${desktop.id}/jobs`, "jobs", 500) : null;
+  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, desktopJobs, repo });
   await post(groupSha, { group: steps.map((s) => s.pr), ...result });
 }
 

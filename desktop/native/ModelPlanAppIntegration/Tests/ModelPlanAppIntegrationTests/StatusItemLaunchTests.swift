@@ -44,6 +44,23 @@ import XCTest
             windowNumber: button.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     }
 
+    /// A11Y (14e MacCI): AX clients must find the status item as a labelled button; an icon-only item had no label.
+    func testStatusItemButtonIsALabelledAccessibilityButton() async throws {
+        let app = try await application(cockpitEntryEnabled: true, console: StatusClickConsole())
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertTrue(button.isAccessibilityElement())
+        XCTAssertEqual(button.accessibilityRole(), .button)
+        XCTAssertTrue(try XCTUnwrap(button.accessibilityLabel()).hasPrefix("ModelPlan"))
+        XCTAssertEqual(button.accessibilityIdentifier(), "status.item")
+        XCTAssertNotNil(app.statusMenuForTesting, "the menu stays attached so an AX press shows it natively")
+    }
+    func testStatusAccessibilityLabelCarriesTheQuota() {
+        XCTAssertEqual(EngineDockMenuApplication.statusAccessibilityLabel(title: ""), "ModelPlan")
+        XCTAssertEqual(EngineDockMenuApplication.statusAccessibilityLabel(title: "42%"), "ModelPlan 42%")
+    }
+
     /// D44: both halves of a click are claimed, so AppKit never starts menu tracking for a left click.
     func testLeftClickOpensTheCockpitWithoutTheMenu() async throws {
         let console = StatusClickConsole()

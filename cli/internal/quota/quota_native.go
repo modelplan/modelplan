@@ -46,6 +46,9 @@ type nativeReader struct {
 	Managed  func(context.Context, *http.Client, readerContext) readerOutcome
 	Profiles func() []ReaderProfile
 	Budget   *nativeReadBudget
+	// LoginFiles: the profile's sign-in files besides its AccountFile, stamped (never opened) so
+	// a new sign-in can end a failure back-off (G3-103). They are not part of the profile key.
+	LoginFiles func(ReaderProfile) []string
 }
 
 // Shared by saved-login and existing explicitly configured key routes. Callers
@@ -267,12 +270,23 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		return refreshErr
 	}
 	home, _ := os.UserHomeDir()
+	// The key generations before anything is read or carried over from the cache. A key replaced or removed after this
+	// (manualkey.go bumps its provider's generation under the short snapshot-write lock) invalidates every reading of
+	// that provider in this refresh, fresh or carried; the publish below compares under the same lock.
+	// The generations and the cache are read together under lockManualKeys (short, no network), so they come from one
+	// consistent state: a key change in progress holds the same lock for its whole cache removal and generation bump.
+	unlockSnapshot, lockErr := lockManualKeys(p.Cache)
+	if lockErr != nil {
+		return lockErr
+	}
+	generations := manualKeyGenerations(p.Cache)
 	previous := map[string]codexbarEntry{}
 	if old := loadNative(p.Cache); old != nil {
 		for _, entry := range old.Providers {
 			previous[entry.Provider] = entry
 		}
 	}
+	unlockSnapshot()
 	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
 	if selected != nil {
 		ids := []string{}
@@ -318,12 +332,29 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		key := os.Getenv(x.KeyEnv)
 		readerCtx := productionReaderContext(ctx, p, x.Provider)
-		if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
+		mk, hasManual, manualErr := loadManualKeyChecked(p.Cache, x.Provider)
+		if manualErr != nil {
+			// The saved key file is unsafe or unreadable: fail this provider closed. Neither the saved key
+			// nor a detected key is sent anywhere, so a different account's usage cannot be shown.
+			e = codexbarEntry{Status: "error", ErrorCode: "file_unreadable", ObservedAt: now.UTC()}
+		} else if hasManual {
+			// D90, owner decision 2026-11-14: a key the user entered wins over any detected key and is
+			// the only one used; it goes only to the compiled official host of its region.
+			e, key = fetchManualKey(ctx, nativeClient, x.Provider, mk, now), mk.Key
+		} else if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
 			e = collectZaiConfig(readerCtx, nativeClient, p.Cache, now)
 		} else if n.Collect != nil {
 			e = n.Collect(readerCtx, nativeClient, p.Cache, now)
 		} else {
+			// D230: for OpenCode Go only OPENCODE_API_KEY is a detected key; OpenCode's own saved
+			// login is checked for existence by detection and never read here.
 			e = n.Fetch(ctx, nativeClient, x.Region, key, now)
+		}
+		// D90: the entered key can be replaced or removed while this read is in flight. The reading belongs to the key it
+		// was made with (possibly another account's), so when the saved key changed, drop it instead of caching it; the
+		// provider's request-budget reservation stays, and the next due read uses the new key.
+		if mk2, has2, err2 := loadManualKeyChecked(p.Cache, x.Provider); (err2 != nil) != (manualErr != nil) || has2 != hasManual || mk2 != mk {
+			continue
 		}
 		if e.Status == "ok" {
 			e.ErrorCode = ""
@@ -340,6 +371,12 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		if x.Provider == "copilot" {
 			e.Source = "runtime"
+		}
+		if x.Provider == "zai" && !IdentityOff() {
+			// One row (owner 2026-11-14): Settings says when the entered key differs from a detected one.
+			// Only the detected key's local reference is kept (the keyed-hash identity map, as for every
+			// subscription); the key itself is read on this Mac, never sent, logged or stored.
+			e.DetectedKeyRef = assignSubscription(p.Cache, zaiKeyBasis, detectedZaiKey(p, x), now)
 		}
 		if e.Status == "ok" && key != "" && !IdentityOff() {
 			e.SubscriptionRef = assignSubscription(p.Cache, nativeIdentityBasis(x), key, now) // a key is one subscription
@@ -362,15 +399,52 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		s.Providers = append(s.Providers, e)
 	}
-	b, _ := json.MarshalIndent(s, "", "  ")
 	if err := os.MkdirAll(filepath.Dir(nativePath(p.Cache)), 0o700); err != nil {
 		return err
 	}
-	if err := consent.Publish(state.Fence(), func() error { return writeAtomic(nativePath(p.Cache), append(b, '\n')) }); err != nil {
+	if err := consent.Publish(state.Fence(), func() error {
+		// D90: the short snapshot-write lock (the one SetManualKey / RemoveManualKey take while they bump a generation).
+		// A reading of a manual-key provider whose key changed since this refresh began is dropped, so the previous
+		// account's quota is never published after a successful key change. Save waits here for at most one write.
+		unlockKeys, err := lockManualKeys(p.Cache)
+		if err != nil {
+			return err
+		}
+		defer unlockKeys()
+		current := manualKeyGenerations(p.Cache)
+		kept := s.Providers[:0]
+		for _, e := range s.Providers {
+			if ManualKeyProvider(e.Provider) && current[e.Provider] != generations[e.Provider] {
+				continue
+			}
+			kept = append(kept, e)
+		}
+		s.Providers = kept
+		// A concurrent key change may have cleared GLM while this refresh was in
+		// flight. Carry forward only the current detected-key reference, never the
+		// reading from the old generation.
+		if current["zai"] != generations["zai"] {
+			if cached := loadNative(p.Cache); cached != nil {
+				for _, e := range cached.Providers {
+					if e.Provider == "zai" {
+						s.Providers = append(s.Providers, glmReferenceOnly(e))
+					}
+				}
+			}
+		}
+		if nativePublishHook != nil {
+			nativePublishHook()
+		}
+		b, _ := json.MarshalIndent(s, "", "  ")
+		return writeAtomic(nativePath(p.Cache), append(b, '\n'))
+	}); err != nil {
 		return err
 	}
 	return refreshErr
 }
+
+// nativePublishHook is a test seam: it runs inside the publish write, after the generations were compared.
+var nativePublishHook func()
 
 // getJSON: one GET with the key as a bearer token, bounded, decoded into v. The error names the
 // HTTP status, never the key or the body.
@@ -420,6 +494,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 	// Apply local state after native accounts, including early-return paths.
 	// Both Read and the production ReadPermitted flow pass through this hook.
 	defer applyClaudeSessions(r, p, now)
+	defer applyZCodeNoProviderFile(r, p)
 	ss, err := Selections(p)
 	if err != nil {
 		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: errorCode(err), ErrorCode: errorCode(err)})
@@ -517,7 +592,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			if x.Provider == "cursor" {
 				basis = "cursor-auth"
 			}
-			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: windows, Via: "native", Subscription: e.binding(basis)})
+			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: windows, Via: "native", Subscription: e.binding(basis), ReportedModels: e.ReportedModels})
 		}
 		r.Sources = append(r.Sources, st)
 	}
@@ -663,4 +738,24 @@ func claudeBackoffIsLocal(cache string) bool {
 
 func credentialStageFailure(e readerEntry) bool {
 	return e.CredentialReadState != "" || e.ErrorCode == "file_missing"
+}
+
+// applyZCodeNoProviderFile reports ZCode's unreadable layout as a fixed reason, never a
+// pending first reading, unless another ZCode/GLM source already reported (G3-21).
+func applyZCodeNoProviderFile(r *Report, p Paths) {
+	if !p.ZCodeNoProviderFile {
+		return
+	}
+	cause := SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"}
+	for i, s := range r.Sources {
+		if s.Source == "native:zai" {
+			// A bare legacy GLM allow reports its absent environment key; ZCode's missing
+			// provider file is the actual cause (post-merge #711 (2)). Any other status stands.
+			if s.Status == "missing" {
+				r.Sources[i] = cause
+			}
+			return
+		}
+	}
+	r.Sources = append(r.Sources, cause)
 }

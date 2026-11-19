@@ -1,1 +1,0 @@
-Dragging a ring on the quota widget now moves the whole widget, like dragging its body, instead of trying to reorder subscriptions (the reordered ring used to snap back). A click on a ring still refreshes it, and Option-arrow keys still move a ring one place. The cockpit's subscription tabs and columns now follow the same saved order as the widget.

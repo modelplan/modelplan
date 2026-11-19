@@ -3,6 +3,7 @@ package speed
 import (
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/localday"
 	"os"
 	"path/filepath"
 	"sort"
@@ -217,8 +218,7 @@ func sortDaily(ds []Daily) {
 
 // dayStart: the start of t's local day, in UTC.
 func dayStart(t time.Time) time.Time {
-	l := t.Local()
-	return time.Date(l.Year(), l.Month(), l.Day(), 0, 0, 0, 0, time.Local).UTC()
+	return localday.StartOf(t.In(time.Local)).UTC()
 }
 
 // nextDay: the local day after d (YYYY-MM-DD).
