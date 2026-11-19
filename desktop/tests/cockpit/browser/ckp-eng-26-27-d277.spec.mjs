@@ -77,7 +77,7 @@ test('CKP-ENG-27 Refresh asks native for all, or for the selected subscription; 
  await open(page,data);
  const button=page.locator('.ck-eng button.eng-upd-r');
  await button.evaluate(b=>b.click());
- expect(await actions(page)).toEqual([]);
+ expect((await actions(page)).filter(a=>a.action!=='cautionAck'),'a scripted click asks for nothing (the lamp acknowledgement is the host\'s own report, not a request)').toEqual([]);
  await button.click();
  expect((await actions(page)).at(-1)).toEqual({action:'refreshMember',key:'all'});
  await page.keyboard.press('1');

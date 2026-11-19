@@ -46,9 +46,10 @@ test('CKP-ENG-26 a forecast run-out counts when the window has no reset time; a 
  const data=capture(),row=data.projection.rows[0],acct=row.accounts[0],w=acct.windows[0],iso=m=>new Date(NOW+m*60000).toISOString();
  acct.valueState='current';Object.assign(w,{current:true,remainingPercent:60,validUntil:iso(30),resetsAt:null});
  data.details={...(data.details??{}),forecasts:[{source:row.id,subscriptionRef:acct.subscriptionRef,windowId:w.id,runsOutAt:iso(40),pace:'tight',basis:'recent-rate',observedAt:iso(-1)}]};
- assert.equal(runOutMinutes(data,row.id,acct,w,NOW),40);
- w.resetsAt=iso(30);assert.equal(runOutMinutes(data,row.id,acct,w,NOW),null);
- w.resetsAt=iso(300);assert.equal(runOutMinutes(data,row.id,acct,w,NOW),40);
+ // WP-03 merge: the table passes unknownReset=true (the alert model does too); the default stays strict for other callers.
+ assert.equal(runOutMinutes(data,row.id,acct,w,NOW,true),40);
+ w.resetsAt=iso(30);assert.equal(runOutMinutes(data,row.id,acct,w,NOW,true),null);
+ w.resetsAt=iso(300);assert.equal(runOutMinutes(data,row.id,acct,w,NOW,true),40);
 });
 
 test('CKP-ENG-27 the key label carries the plan the reader knows',()=>{
