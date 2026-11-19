@@ -159,6 +159,18 @@ final class SubscriptionRowModelTests: XCTestCase {
         }
     }
 
+    /// Found-by post-merge sampling 2026-11-19 S1: Kiro's runtime_missing is a missing kiro-cli, never Node.js (row and card).
+    func testKiroRuntimeMissingNamesKiroCliNotNodeJS() {
+        let row = ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "kiro", toolName: "Kiro")
+        XCTAssertEqual(row?.reason.english, "kiro-cli was not found")
+        XCTAssertEqual(row?.action.english, "Install kiro-cli")
+        let card = ReaderCauseTable.entry(code: "runtime_missing", tool: "kiro", toolName: "Kiro")
+        XCTAssertEqual(card?.reason.english, "kiro-cli was not found")
+        XCTAssertFalse(card?.action.english.contains("Node") ?? true)
+        // Other tools keep the Node.js cause.
+        XCTAssertEqual(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex")?.reason.english, "Node.js is required")
+    }
+
     func testFirstRunPrerequisiteLineUsesTheSameTable() {
         func line(_ t: FirstRunTool, _ facts: ToolRowFacts? = nil) -> (SettingsText, Bool) {
             let r = SubscriptionRowModel.prerequisite(tool: t, name: t.tool.capitalized, facts: facts); return (r.text, r.needsAttention)
