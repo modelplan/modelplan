@@ -1,0 +1,1 @@
+Kiro's missing command now reads "kiro-cli was not found" on the Settings card instead of "Node.js is required", and a drag during the cockpit's opening still logs the open's animation-complete stage.
