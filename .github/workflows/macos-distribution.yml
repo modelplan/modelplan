@@ -4,7 +4,7 @@ on:
     branches: [main]
     paths: ["desktop/native/**", "clients/swift/**", "cli/internal/releaseguard/**", "codex/cli-pin.json", ".github/workflows/macos-distribution.yml"]
   pull_request:
-    paths: ["desktop/native/**", "clients/swift/**", "cli/internal/releaseguard/**", ".github/workflows/macos-distribution.yml"]
+    paths: ["desktop/native/**", "clients/swift/**", "cli/internal/releaseguard/**", ".github/workflows/macos-distribution.yml", "!**/*.md"]
   workflow_dispatch:
 
 permissions:
