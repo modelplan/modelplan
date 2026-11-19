@@ -113,9 +113,9 @@ struct ScenarioIndex: Decodable {
             ids.insert(String(entry.id.prefix(3)))
             decoded += 2
         }
-        try require(ids == Set((1...20).map { String(format: "F%02d", $0) }).union(["F23"]), "F01-F20/F23 inventory incomplete")
+        try require(ids == Set((1...20).map { String(format: "F%02d", $0) }).union(["F23", "F24"]), "F01-F20/F23/F24 inventory incomplete")
         try require(effortCases == Set(["up", "down", "absent"]), "effort suggestion cases incomplete")
-        print("PASS desktop contract v1: \(decoded) Go-produced golden documents decoded, all F01-F20/F23 data scenarios")
+        print("PASS desktop contract v1: \(decoded) Go-produced golden documents decoded, all F01-F20/F23/F24 data scenarios")
         print("PASS additive/legacy compatibility, version rejection, exact values, attribution and published metadata")
         print("UI-only scenarios cover data prerequisites; no physical, visual, geometry or OS-event acceptance claim")
     }

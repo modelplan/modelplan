@@ -18,3 +18,12 @@ test('details fixture keeps unavailable sources unknown rather than empty',async
  const {unavailablePrototypeDetailsFixture}=await import('../../../cockpit/.tmp/compiled/src/prototype-details-fixture-adapter.js');
  assert.deepEqual(unavailablePrototypeDetailsFixture(),{liveSessions:null,publication:null,resetEvents:null,history:null});
 });
+
+test('today displays total usage while keeping output and generation rate distinct',()=>{
+ const account=sample().projection.rows[0].accounts[0];
+ const ref=account.subscriptionRef='0123456789abcdef';
+ const data={subscriptions:[{subscriptionRef:ref}],details:{subscriptions:[{subscriptionRef:ref,today:[{bindingBasis:'source-wide-current-binding',observedOutputTokens:45000,observedTotalTokens:33900000,generationTps:66}],resetCounts:null}]}};
+ const got=prototypeEngineSupplement(account,data);
+ assert.equal(got.todayTokens,33900000);
+ assert.equal(got.todayAverageGenerationTps,66);
+});
