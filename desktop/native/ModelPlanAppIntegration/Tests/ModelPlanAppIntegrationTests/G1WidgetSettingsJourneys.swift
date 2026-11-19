@@ -514,7 +514,7 @@ private actor G1RowsClient: EngineClient {
         XCTAssertNil(station.inner.unknownDash)
         let client = try XCTUnwrap(app.composition.client as? G1RowsClient)
         for (five, week, outerStatus, innerStatus) in [(25.0, 72.0, DockQuotaStatus.critical, DockQuotaStatus.normal),
-                                                       (41.0, 25.0, .warning, .critical)]  // remaining <= 50 is warning (DockInstrumentModel.evaluate) {
+                                                       (41.0, 25.0, .warning, .critical)] {  // remaining <= 50 is warning (DockInstrumentModel.evaluate)
             try await client.replaceRows(fixture(five: five, week: week))
             let reading = try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"])
             let outer = try XCTUnwrap(reading.outer), inner = try XCTUnwrap(reading.inner)
