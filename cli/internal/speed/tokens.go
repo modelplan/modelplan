@@ -72,11 +72,27 @@ func (u *cxUsage) kinds() TokenKinds {
 	k.CacheWriteTokens = nonnegative(u.Write)
 	if u.Input != nil && u.Cached != nil && *u.Input >= *u.Cached && *u.Cached >= 0 {
 		n := *u.Input - *u.Cached
+		// input_tokens also includes cache writes (ccusage normalize_codex_raw_usage):
+		// bound them by the uncached input and take them out, so each token counts once.
+		if k.CacheWriteTokens != nil {
+			w := min(*k.CacheWriteTokens, n)
+			k.CacheWriteTokens = &w
+			n -= w
+		}
 		k.InputTokens = &n
 	} else if u.Input != nil && u.Cached != nil && *u.Cached > *u.Input {
 		k.CacheReadTokens = nil
 	}
 	return k
+}
+
+// enrichCodex is enrich for Codex usage, whose input includes cache writes: when src is
+// the first to report the writes, its input is the disjoint one and replaces the inclusive one.
+func (k *TokenKinds) enrichCodex(src TokenKinds) {
+	if k.CacheWriteTokens == nil && src.CacheWriteTokens != nil && src.InputTokens != nil {
+		k.InputTokens = nil
+	}
+	k.enrich(src)
 }
 func usageDelta(cur, prev *cxUsage) *cxUsage {
 	if cur == nil || prev == nil {

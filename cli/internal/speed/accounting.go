@@ -60,6 +60,16 @@ type usageFile struct {
 type accountingLedger struct {
 	Version int                  `json:"version"`
 	Files   map[string]usageFile `json:"files"`
+	// LiveFrom: per source, the first local day whose live usage this ledger fully covers.
+	// Live usage on earlier days stays with the timing ledger's rows (S2/S6).
+	LiveFrom map[string]liveCoverage `json:"liveFrom,omitempty"`
+}
+
+// liveCoverage is proven from its Day on: no live timing row of the source and epoch existed on
+// that day or later when accounting began, and every later live scan reads accounting first.
+type liveCoverage struct {
+	Epoch *GrantEpoch `json:"epoch"`
+	Day   string      `json:"day"`
 }
 
 func accountingPath(cache string) string {
@@ -135,6 +145,13 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 	floor := LoadCleared(cache).floor(source)
 	start := accountingLiveStart(cache, now)
 	changed := false
+	if c, ok := l.LiveFrom[source]; !ok || !sameEpoch(c.Epoch, epoch) {
+		if l.LiveFrom == nil {
+			l.LiveFrom = map[string]liveCoverage{}
+		}
+		l.LiveFrom[source] = liveCoverage{Epoch: epoch, Day: firstLiveCoveredDay(cache, source, epoch, start, now)}
+		changed = true
+	}
 	for _, path := range paths {
 		fi, err := os.Stat(path)
 		if err != nil || !fi.Mode().IsRegular() {
@@ -171,6 +188,12 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 	}
 	// Retain no expired or revoked observations, even from files no longer present.
 	a = consent.Capture()
+	for s, c := range l.LiveFrom {
+		if !sameEpoch(c.Epoch, currentEpoch(a, s)) {
+			delete(l.LiveFrom, s)
+			changed = true
+		}
+	}
 	for key, f := range l.Files {
 		if !sameEpoch(f.Epoch, currentEpoch(a, f.Source)) {
 			delete(l.Files, key)
@@ -203,6 +226,73 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 	return saveAccounting(cache, l)
 }
 
+// firstLiveCoveredDay: the live start's day, or the day after the newest live timing row of
+// this source and epoch, whichever is later. Days before it keep their timing rows' usage.
+func firstLiveCoveredDay(cache, source string, epoch *GrantEpoch, start, now time.Time) string {
+	from := day(start)
+	perf, ok := loadPerf(cache)
+	if !ok {
+		// An unreadable timing ledger proves nothing: cover nothing before tomorrow.
+		perf.Rows = []PerfRow{{Source: source, GrantEpoch: epoch, Day: day(now)}}
+	}
+	for _, r := range perf.Rows {
+		if r.Source != source || r.Origin == OriginImport || !sameEpoch(r.GrantEpoch, epoch) || r.Day < from {
+			continue
+		}
+		d, err := time.ParseInLocation("2006-01-02", r.Day, time.Local)
+		if err != nil {
+			continue
+		}
+		if next := day(d.AddDate(0, 0, 1).Add(12 * time.Hour)); next > from {
+			from = next
+		}
+	}
+	return from
+}
+
+// usageCoverage says which timing rows accounting replaces. Live rows are replaced from the
+// source's LiveFrom day on; imported rows on the days an accounting import recorded.
+type usageCoverage struct {
+	live     map[string]string
+	imported map[string]bool
+}
+
+func coverageKey(source string, epoch *GrantEpoch) string {
+	if epoch == nil {
+		return source + "\x00-"
+	}
+	return fmt.Sprint(source, "\x00", epoch.StoreEpoch, "\x00", epoch.RevokedGeneration)
+}
+func (c *usageCoverage) covers(r PerfRow) bool {
+	key := coverageKey(r.Source, r.GrantEpoch)
+	if r.Origin == OriginImport {
+		return c.imported[key+"\x00"+r.Day]
+	}
+	from, ok := c.live[key]
+	return ok && r.Day >= from
+}
+func (c *usageCoverage) keeps(f usageFile, r usageRecord) bool {
+	if r.Imported {
+		return true
+	}
+	from, ok := c.live[coverageKey(f.Source, f.Epoch)]
+	return ok && day(r.At) >= from
+}
+func newUsageCoverage(l accountingLedger, clear Cleared) *usageCoverage {
+	c := &usageCoverage{live: map[string]string{}, imported: map[string]bool{}}
+	for source, lc := range l.LiveFrom {
+		c.live[coverageKey(source, lc.Epoch)] = lc.Day
+	}
+	for _, f := range l.Files {
+		for _, r := range f.Records {
+			if r.Imported && !r.At.Before(clear.floor(f.Source)) {
+				c.imported[coverageKey(f.Source, f.Epoch)+"\x00"+day(r.At)] = true
+			}
+		}
+	}
+	return c
+}
+
 // accountingRows merges copies across files. Identical Codex events within one
 // file retain an occurrence ordinal; copied files repeat the same ordinal.
 func accountingRows(cache string) ([]PerfRow, map[string]bool) {
@@ -210,7 +300,12 @@ func accountingRows(cache string) ([]PerfRow, map[string]bool) {
 	if !ok {
 		return nil, nil
 	}
-	clear := LoadCleared(cache)
+	return usageRows(l, LoadCleared(cache), nil)
+}
+
+// usageRows: keep (nil keeps all) drops records before deduplication, so a dropped live
+// copy never hides the imported copy of the same response.
+func usageRows(l accountingLedger, clear Cleared, keep func(usageFile, usageRecord) bool) ([]PerfRow, map[string]bool) {
 	type stamped struct {
 		usageRecord
 		source string
@@ -228,7 +323,7 @@ func accountingRows(cache string) ([]PerfRow, map[string]bool) {
 		f := l.Files[key]
 		sources[f.Source] = true
 		for _, r := range withoutForkReplay(f, l) {
-			if r.At.Before(clear.floor(f.Source)) {
+			if r.At.Before(clear.floor(f.Source)) || keep != nil && !keep(f, r) {
 				continue
 			}
 			id := usageHash(f.Source, "\x00", f.Epoch, "\x00", r.Key)
@@ -298,7 +393,14 @@ func accountingRows(cache string) ([]PerfRow, map[string]bool) {
 	return out, sources
 }
 func accountingOverlay(cache string, l PerfLedger) PerfLedger {
-	l.UsageRows, _ = accountingRows(cache)
+	acct, ok := loadAccounting(cache)
+	if !ok {
+		l.UsageRows, l.usageCover = nil, nil
+		return l
+	}
+	clear := LoadCleared(cache)
+	l.usageCover = newUsageCoverage(acct, clear)
+	l.UsageRows, _ = usageRows(acct, clear, l.usageCover.keeps)
 	return l
 }
 
@@ -315,7 +417,8 @@ func (v PerfView) accounted() PerfView {
 	rows := append([]PerfRow(nil), v.Ledger.Rows...)
 	for i := range rows {
 		r := &rows[i]
-		if sources[r.Source] {
+		// Only inside proven coverage: a day accounting never read keeps its timing usage.
+		if sources[r.Source] && (v.Ledger.usageCover == nil || v.Ledger.usageCover.covers(*r)) {
 			r.TokenKinds = TokenKinds{}
 			r.ObservedRequests = 0
 			r.ObservedOutputTokens = 0
@@ -552,6 +655,12 @@ func ForgetAccountingLocked(cache, tool string) error {
 			changed = true
 		}
 	}
+	for source := range l.LiveFrom {
+		if sourceTool(source) == tool {
+			delete(l.LiveFrom, source)
+			changed = true
+		}
+	}
 	if !changed {
 		return nil
 	}
@@ -572,6 +681,8 @@ func (p *accountingTee) finish() ([]turn, int64) { p.usage.finish(); return p.pa
 
 // Forks replay a parent prefix. If the parent is unavailable, ccusage recognizes
 // the leading usage burst rewritten to the fork instant (at most 1 s between events).
+// As in ccusage's CodexReplayFilter, compaction responses (Response records) carry their
+// own identity: they neither consume nor end the prefix, and are deduplicated by key.
 func withoutForkReplay(f usageFile, l accountingLedger) []usageRecord {
 	if f.Source != "codex" || f.Parent == "" || f.Parent == f.Session {
 		return f.Records
@@ -579,30 +690,48 @@ func withoutForkReplay(f usageFile, l accountingLedger) []usageRecord {
 	var parent []usageRecord
 	for _, candidate := range l.Files {
 		if candidate.Session == f.Parent {
-			parent = candidate.Records
+			for _, r := range candidate.Records {
+				if !r.Response {
+					parent = append(parent, r)
+				}
+			}
 			break
 		}
 	}
+	var own []int // indexes of the child's ordinary records
+	for i, r := range f.Records {
+		if !r.Response {
+			own = append(own, i)
+		}
+	}
 	n := 0
-	for n < len(f.Records) && n < len(parent) && !f.Records[n].Response && f.Records[n].usageBuckets == parent[n].usageBuckets {
+	for n < len(own) && n < len(parent) && f.Records[own[n]].usageBuckets == parent[n].usageBuckets {
 		n++
 	}
-	if n > 0 {
-		return f.Records[n:]
+	if n == 0 && len(own) >= 2 {
+		first, second := f.Records[own[0]].At, f.Records[own[1]].At
+		dense := !second.Before(first) && second.Sub(first) <= time.Second
+		if dense && (f.Started.IsZero() || absDuration(first.Sub(f.Started)) <= time.Second) {
+			n = 1
+			for n < len(own) && !f.Records[own[n]].At.Before(f.Records[own[n-1]].At) && f.Records[own[n]].At.Sub(f.Records[own[n-1]].At) <= time.Second {
+				n++
+			}
+		}
 	}
-	if len(f.Records) < 2 || f.Records[0].Response || f.Records[1].Response {
+	if n == 0 {
 		return f.Records
 	}
-	first, second := f.Records[0].At, f.Records[1].At
-	dense := !second.Before(first) && second.Sub(first) <= time.Second
-	if !dense || !f.Started.IsZero() && absDuration(first.Sub(f.Started)) > time.Second {
-		return f.Records
+	replayed := map[int]bool{}
+	for _, i := range own[:n] {
+		replayed[i] = true
 	}
-	n = 1
-	for n < len(f.Records) && !f.Records[n].Response && !f.Records[n].At.Before(f.Records[n-1].At) && f.Records[n].At.Sub(f.Records[n-1].At) <= time.Second {
-		n++
+	out := make([]usageRecord, 0, len(f.Records)-n)
+	for i, r := range f.Records {
+		if !replayed[i] {
+			out = append(out, r)
+		}
 	}
-	return f.Records[n:]
+	return out
 }
 func absDuration(d time.Duration) time.Duration {
 	if d < 0 {
