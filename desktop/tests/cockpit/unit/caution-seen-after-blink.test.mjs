@@ -99,14 +99,14 @@ test('an unknown-reset forecast acknowledged before a restart stays steady acros
  assert.equal(show(page,unknownReset({remaining:46,level:'amber'})),false);
 });
 
-test('a restored or manually acknowledged unknown-reset forecast still detects a refill',()=>{
- // Restored after a restart: the stored identity has no cycle and was never shown on this page.
- const host={ids:[]};let page=entry(host);show(page,unknownReset({remaining:48,level:'amber'}));
- page=entry({ids:[...host.ids]});
+test('macrev2 repro: a restored unknown-reset forecast (stored null cycle, nothing shown on this page) detects a refill',()=>{
+ const host={ids:[]};show(entry(host),unknownReset({remaining:48,level:'amber'}));
+ const page=entry({ids:[...host.ids]});
  assert.equal(show(page,unknownReset({remaining:47,level:null})),false);
  assert.equal(show(page,unknownReset({remaining:95,level:null})),false,'refill');
- assert.equal(show(page,unknownReset({remaining:90,level:'amber'})),true,'recurrence after restore');
- // Acknowledged by a press before it ever blinked (page could not blink).
+ assert.equal(show(page,unknownReset({remaining:90,level:'amber'})),true,'recurrence after restore blinks');
+});
+test('macrev2 repro: an unknown-reset forecast acknowledged by a press before it blinked detects a refill',()=>{
  const p2=entry({ids:[]});
  show(p2,unknownReset({remaining:48,level:'amber'}),false);p2.acknowledge();
  assert.equal(show(p2,unknownReset({remaining:47,level:null}),true),false);
