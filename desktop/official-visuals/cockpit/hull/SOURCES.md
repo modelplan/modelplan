@@ -52,3 +52,26 @@ Closed state (owner D72, 2026-11-08): `aft-closed-1x.png` and `aft-closed-2x.png
 | assets/aft-closed-1x.png | 18277 B | 636x22 | `37dc3630e0964db538b09c7a66be3062a30200667dd2c3493b508600ff9015d1` |
 | assets/aft-closed-2x.png | 62939 B | 1272x44 | `00426f0fcec00636c9b12fb324275266ddc602fa7365f1f3d181048dd644faff` |
 | assets/cap-slab.svg | 1190 B | 620x16 (SVG) | `b42be81e9bed80298f7fdb8f7069d0640b1e860c68c4967d727eaef9118a07a8` |
+
+Hull shape (owner build 13, D72: publishing study art needs no separate approval): the study cuts the lower-skin wall tile with the alpha of these canopy-h1 parts, so the hull is narrow under the canopy and wide below the instruments: an upper wall 8 px inside the 636 px hull, a 31 px taper and the full-width lower wall. They are copied unchanged from the private study `design-handoffs/opus-r7/src/assets/canopy-h1/` at design commit `ae0245ec6d043a96f6d8fd7423f5cb7dc7716166`. The study's taper is byte-identical in its 890, 640 and closed copies and its closed lower stage is the 890 one, so only those names are published.
+
+| File | Size | Pixels | SHA-256 |
+| --- | --- | --- | --- |
+| assets/upper-walls-890-1x.png | 20658 B | 636x283 | `595431f278ce7b880443d55dc65c251b152905457198244e0bdbe132b5454163` |
+| assets/upper-walls-890-2x.png | 70402 B | 1272x566 | `9b5b8d4e32708a93398fffa329ef2084c569eb7019247eb15d7087a40eb7e0f1` |
+| assets/upper-walls-640-1x.png | 20740 B | 636x277 | `1d5ab25a1d4068c0a3b4bbc1a5f0aeede15a1795c0b661848b21538d488a4222` |
+| assets/upper-walls-640-2x.png | 71534 B | 1272x554 | `de98a15f258cffe1f2b990f5b9b045187c1b649a3fac57958d8d1dd1ce57d3b4` |
+| assets/upper-walls-closed-1x.png | 21713 B | 636x283 | `bbf258da8af9775832aa8d22c8d05b7004c96b2a587bae0f10cfcbb09564aca2` |
+| assets/upper-walls-closed-2x.png | 73554 B | 1272x566 | `4ef5c1121b74c7cbc9b634d7dbf67c1100c27e32d2c1288dad6ce74a20e1ddf8` |
+| assets/upper-skin-890-1x.png | 2318 B | 636x32 | `1c13f3daf110a262024c792360ef6c2822865a92bf1868baff271d11798db0a0` |
+| assets/upper-skin-890-2x.png | 7771 B | 1272x64 | `438d313ce7512b415540925dd2572877792ccdf936da9415ad4247104ccd38a3` |
+| assets/upper-skin-640-1x.png | 2304 B | 636x32 | `d8d03b2b251e0a1bf0ad302cf856c370862aac6d0aefbbbd357e01e2d573f3ec` |
+| assets/upper-skin-640-2x.png | 7872 B | 1272x64 | `3bdc5be27fe35ba3b865fa6cf14a74931ddf6ffc6e086b84e6d8ad6c710af015` |
+| assets/upper-skin-closed-1x.png | 2388 B | 636x32 | `b741dc0754f440b62544318fd104b802ab1280b727cc7f87197610df4d6034bd` |
+| assets/upper-skin-closed-2x.png | 7939 B | 1272x64 | `301f66042be31e24049b502378fde19cc565e9c0997d7e13b3ef866674635bd7` |
+| assets/taper-890-1x.png | 3472 B | 636x31 | `7b47121f68363411a95be9f89a2b4a1df4b4d4dd6ee0845ea35e63e5cb2b7169` |
+| assets/taper-890-2x.png | 12216 B | 1272x62 | `062979102cf58b01f6a464759938221be960a9684b857e08348440aa505c4d90` |
+| assets/lower-stage-890-1x.png | 33608 B | 636x338 | `7e2dbf2d0a6f9132b8d02b2d19d4c03e25ecfaf2f722938f36dfd234fecb1eea` |
+| assets/lower-stage-890-2x.png | 137200 B | 1272x676 | `97b1ffa26621f48d87919ce2b21188e5cc1b2c828956da573b35570e1a193519` |
+| assets/lower-stage-640-1x.png | 26333 B | 636x262 | `ebed6d7e02fe359dd3126eab10f9d4d334681d8aed293af9b32a9ec7f59a8433` |
+| assets/lower-stage-640-2x.png | 106048 B | 1272x524 | `5c56b01c3f5425018528346940d68353e86ff29ee4a415d1e5f0e2f39d8f2c38` |

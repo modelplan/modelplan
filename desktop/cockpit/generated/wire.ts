@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: d52eaee58281d8dcd5e072ac25f4ad442acfab18c70b2d4a1457f35b74facdae
+// Schema SHA-256: 743441762643bf5228c7127bf2fa0a6c476e32dd71dcf313e3c6a3f6acd44a45
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -13,10 +13,10 @@ export type WireAccount = {
   readonly "observedAt": string | null;
   readonly "plan": WirePlan;
   readonly "refreshNotBefore"?: string | null | null;
-  readonly "resetCards"?: WireResetCards | null;
+  readonly "resetCards"?: WireResetCards;
   readonly "route": "saved_login_api" | "runtime_rpc" | "local_log" | "api_key_api" | "local_sqlite" | "status_line" | "browser_session" | "manual" | "unknown";
   readonly "subscriptionRef": string | null;
-  readonly "today"?: WireAccountToday | null;
+  readonly "today"?: WireAccountToday;
   readonly "valueState": "current" | "retained" | "none";
   readonly "windows": ReadonlyArray<WireWindow>;
 };
@@ -32,9 +32,10 @@ export type WireAccountActivity = {
 
 export type WireAccountToday = {
   readonly "bindingBasis": "source-wide-current-binding" | "session-binding";
-  readonly "generationTps"?: number | null;
-  readonly "observedOutputTokens"?: number | null;
-  readonly "runningSessions"?: number | null;
+  readonly "generationTps"?: number;
+  readonly "observedOutputTokens"?: number;
+  readonly "observedTotalTokens"?: number;
+  readonly "runningSessions"?: number;
 };
 
 export type WireCockpitAccount = {
@@ -87,7 +88,9 @@ export type WireCockpitData = {
 export type WireCockpitDetails = {
   readonly "alerts": ReadonlyArray<WireCockpitAlert>;
   readonly "forecasts"?: ReadonlyArray<WireCockpitForecast>;
-  readonly "publication"?: WireCockpitPublication | null;
+  readonly "peaks"?: ReadonlyArray<WireCockpitPeak>;
+  readonly "planModels"?: ReadonlyArray<WireCockpitPlanModels>;
+  readonly "publication"?: WireCockpitPublication;
   readonly "publishedModels"?: ReadonlyArray<WireCockpitPublicationModel>;
   readonly "recentSessions"?: ReadonlyArray<WireCockpitRecentSession>;
   readonly "resetEvents": ReadonlyArray<WireResetEvent>;
@@ -145,6 +148,22 @@ export type WireCockpitHistorySums = {
   readonly "inputTokens": number | null;
   readonly "observedRequests": number;
   readonly "outputTokens": number;
+  readonly "reasoningTokens"?: number;
+  readonly "totalTokens"?: number;
+};
+
+export type WireCockpitPeak = {
+  readonly "endsAt": string | null;
+  readonly "rowId": string;
+  readonly "startsAt": string;
+  readonly "status": string;
+};
+
+export type WireCockpitPlanModels = {
+  readonly "basis": string;
+  readonly "generation"?: string;
+  readonly "modelIds": ReadonlyArray<string>;
+  readonly "planId": string;
 };
 
 export type WireCockpitProjectRanking = {
@@ -167,7 +186,7 @@ export type WireCockpitPublicationEffort = {
   readonly "cost": number | null;
   readonly "effort": string;
   readonly "label": string;
-  readonly "multiplier"?: number | null;
+  readonly "multiplier"?: number;
   readonly "provisional"?: boolean;
   readonly "star": boolean;
   readonly "time": number | null;
@@ -206,6 +225,7 @@ export type WireCockpitRecentSession = {
   readonly "lastObservedAt": string;
   readonly "model": string;
   readonly "projectLabel": string | null;
+  readonly "projectState"?: "named" | "unnamed" | "hidden" | "none";
   readonly "sessionRef": string;
   readonly "source": string;
   readonly "subscriptionRef": string | null;
@@ -219,12 +239,17 @@ export type WireCockpitResetCount = {
 
 export type WireCockpitSession = {
   readonly "effort": string | null;
+  readonly "fast"?: boolean;
   readonly "lastObservedAt": string;
   readonly "model": string;
+  readonly "modelDisplay"?: string;
+  readonly "observedTotalTokens"?: number;
   readonly "projectLabel": string | null;
+  readonly "projectState"?: "named" | "unnamed" | "hidden" | "none";
   readonly "rate": number | null;
   readonly "sessionRef": string;
   readonly "source": string;
+  readonly "startedAt"?: string;
   readonly "state": string;
   readonly "subscriptionRef": string | null;
 };
@@ -286,7 +311,8 @@ export type WireCockpitSubscription = {
 
 export type WireCockpitSubscriptionDetails = {
   readonly "credits": WireCockpitCredits | null;
-  readonly "resetCards"?: WireResetCards | null;
+  readonly "reportedModels"?: ReadonlyArray<string>;
+  readonly "resetCards"?: WireResetCards;
   readonly "resetCounts": ReadonlyArray<WireCockpitResetCount>;
   readonly "resetCountsTruncated"?: boolean;
   readonly "subscriptionRef": string;
@@ -302,11 +328,13 @@ export type WireCockpitToday = {
   readonly "bindingBasis": string;
   readonly "generationTps": number | null;
   readonly "observedOutputTokens": number;
+  readonly "observedTotalTokens"?: number;
   readonly "source": string;
 };
 
 export type WireCredits = {
   readonly "balance": number | null;
+  readonly "currency"?: string;
   readonly "unit": string;
 };
 
@@ -318,7 +346,14 @@ export type WireExpiryState = {
 
 export type WireFailure = {
   readonly "at": string;
-  readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
+  readonly "code": "ok" | "estimated" | "usage_not_reported" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "codex_custom_provider" | "team_unsupported" | "no_plan" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
+};
+
+export type WireHint = {
+  readonly "installCommand"?: string;
+  readonly "installUrl"?: string;
+  readonly "signInCommand"?: string;
+  readonly "text": WireText;
 };
 
 export type WireModelScope = {
@@ -335,6 +370,7 @@ export type WireNextStep = {
   readonly "action": "open_settings_consent" | "open_settings_keychain" | "open_tool" | "install_runtime" | "refresh" | "update_cli" | "none";
   readonly "availableAt"?: string | null;
   readonly "disabledReason"?: "cooldown" | "read_only" | "offline" | null;
+  readonly "hint"?: WireHint;
   readonly "text": WireText;
 };
 
@@ -362,7 +398,7 @@ export type WireProposedResetSource = {
 };
 
 export type WireReason = {
-  readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
+  readonly "code": "ok" | "estimated" | "usage_not_reported" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "codex_custom_provider" | "team_unsupported" | "no_plan" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
   readonly "text": WireText;
 };
 
@@ -378,7 +414,7 @@ export type WireResetCardSource = {
 
 export type WireResetCards = {
   readonly "count": number | null;
-  readonly "earliestExpiresAt"?: string | null;
+  readonly "earliestExpiresAt"?: string;
   readonly "items"?: ReadonlyArray<WireResetCardItem>;
   readonly "sources": ReadonlyArray<WireResetCardSource>;
   readonly "state": string;
@@ -386,9 +422,12 @@ export type WireResetCards = {
 };
 
 export type WireResetEvent = {
+  readonly "confirmedAt"?: string;
+  readonly "confirmedAtBasis"?: "published" | "observed" | "firstSeen";
   readonly "confirms"?: string;
   readonly "expiresAt": string;
   readonly "id": string;
+  readonly "kind"?: "reset_credit" | "direct_reset";
   readonly "planIds"?: ReadonlyArray<string>;
   readonly "provider": string;
   readonly "publishedAt": string;
@@ -417,7 +456,7 @@ export type WireRow = {
 };
 
 export type WireRowsProjection = {
-  readonly "forecasts"?: ReadonlyArray<WireCockpitForecast> | null;
+  readonly "forecasts"?: ReadonlyArray<WireCockpitForecast>;
   readonly "resetEvents"?: ReadonlyArray<WireResetEvent>;
   readonly "rows": ReadonlyArray<WireRow>;
   readonly "rowsSummary": WireRowsSummary;
@@ -449,7 +488,7 @@ export type WireWindow = {
   readonly "resetMode": "fixed" | "rolling" | "unknown";
   readonly "resetsAt": string | null;
   readonly "role": "session" | "daily" | "weekly" | "monthly" | "other";
-  readonly "source"?: "local_history" | "runtime" | "saved_login" | "api_key" | "other" | null;
+  readonly "source"?: "local_history" | "runtime" | "saved_login" | "api_key" | "other";
   readonly "validUntil": string | null;
 };
 
@@ -540,14 +579,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         ]
       },
       "resetCards": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/ResetCards"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "$ref": "#/$defs/ResetCards"
       },
       "route": {
         "enum": [
@@ -574,14 +606,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         ]
       },
       "today": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/AccountToday"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "$ref": "#/$defs/AccountToday"
       },
       "valueState": {
         "enum": [
@@ -664,37 +689,20 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "string"
       },
       "generationTps": {
-        "anyOf": [
-          {
-            "type": "number"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "minimum": 0
+        "minimum": 0,
+        "type": "number"
       },
       "observedOutputTokens": {
-        "anyOf": [
-          {
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "minimum": 1
+        "minimum": 1,
+        "type": "integer"
+      },
+      "observedTotalTokens": {
+        "minimum": 0,
+        "type": "integer"
       },
       "runningSessions": {
-        "anyOf": [
-          {
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "minimum": 1
+        "minimum": 1,
+        "type": "integer"
       }
     },
     "required": [
@@ -930,15 +938,22 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "maxItems": 128,
         "type": "array"
       },
+      "peaks": {
+        "items": {
+          "$ref": "#/$defs/CockpitPeak"
+        },
+        "maxItems": 32,
+        "type": "array"
+      },
+      "planModels": {
+        "items": {
+          "$ref": "#/$defs/CockpitPlanModels"
+        },
+        "maxItems": 128,
+        "type": "array"
+      },
       "publication": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/CockpitPublication"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "$ref": "#/$defs/CockpitPublication"
       },
       "publishedModels": {
         "items": {
@@ -1264,6 +1279,12 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "outputTokens": {
         "type": "integer"
+      },
+      "reasoningTokens": {
+        "type": "integer"
+      },
+      "totalTokens": {
+        "type": "integer"
       }
     },
     "required": [
@@ -1275,6 +1296,73 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "generationTps",
       "observedRequests",
       "eligibleRequests"
+    ],
+    "type": "object"
+  },
+  "CockpitPeak": {
+    "additionalProperties": false,
+    "properties": {
+      "endsAt": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "rowId": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "startsAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "rowId",
+      "startsAt",
+      "endsAt",
+      "status"
+    ],
+    "type": "object"
+  },
+  "CockpitPlanModels": {
+    "additionalProperties": false,
+    "properties": {
+      "basis": {
+        "maxLength": 16,
+        "type": "string"
+      },
+      "generation": {
+        "maxLength": 128,
+        "type": "string"
+      },
+      "modelIds": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 256,
+        "minItems": 1,
+        "type": "array"
+      },
+      "planId": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "planId",
+      "basis",
+      "modelIds"
     ],
     "type": "object"
   },
@@ -1385,14 +1473,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "string"
       },
       "multiplier": {
-        "anyOf": [
-          {
-            "type": "number"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "type": "number"
       },
       "provisional": {
         "type": "boolean"
@@ -1586,6 +1667,15 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "projectState": {
+        "enum": [
+          "named",
+          "unnamed",
+          "hidden",
+          "none"
+        ],
+        "type": "string"
+      },
       "sessionRef": {
         "maxLength": 16,
         "pattern": "^[a-f0-9]{16}$",
@@ -1666,12 +1756,24 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "fast": {
+        "type": "boolean"
+      },
       "lastObservedAt": {
         "format": "date-time",
         "type": "string"
       },
       "model": {
         "type": "string"
+      },
+      "modelDisplay": {
+        "maxLength": 48,
+        "minLength": 1,
+        "type": "string"
+      },
+      "observedTotalTokens": {
+        "minimum": 0,
+        "type": "integer"
       },
       "projectLabel": {
         "anyOf": [
@@ -1682,6 +1784,15 @@ export const definitions: Readonly<Record<string, Schema>> = {
             "type": "null"
           }
         ]
+      },
+      "projectState": {
+        "enum": [
+          "named",
+          "unnamed",
+          "hidden",
+          "none"
+        ],
+        "type": "string"
       },
       "rate": {
         "anyOf": [
@@ -1699,6 +1810,10 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "string"
       },
       "source": {
+        "type": "string"
+      },
+      "startedAt": {
+        "format": "date-time",
         "type": "string"
       },
       "state": {
@@ -1983,15 +2098,15 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "reportedModels": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 256,
+        "type": "array"
+      },
       "resetCards": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/ResetCards"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "$ref": "#/$defs/ResetCards"
       },
       "resetCounts": {
         "items": {
@@ -2065,6 +2180,10 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "observedOutputTokens": {
         "type": "integer"
       },
+      "observedTotalTokens": {
+        "minimum": 0,
+        "type": "integer"
+      },
       "source": {
         "type": "string"
       }
@@ -2089,6 +2208,10 @@ export const definitions: Readonly<Record<string, Schema>> = {
             "type": "null"
           }
         ]
+      },
+      "currency": {
+        "pattern": "^[A-Z]{3}$",
+        "type": "string"
       },
       "unit": {
         "type": "string"
@@ -2150,6 +2273,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "enum": [
           "ok",
           "estimated",
+          "usage_not_reported",
           "stale_reading",
           "observation_time_unknown",
           "not_read_yet",
@@ -2194,6 +2318,13 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "http_5xx",
           "network",
           "timeout",
+          "not_found",
+          "rpc_error",
+          "closed",
+          "region_refused",
+          "codex_custom_provider",
+          "team_unsupported",
+          "no_plan",
           "other",
           "readers_off",
           "no_consent",
@@ -2205,6 +2336,31 @@ export const definitions: Readonly<Record<string, Schema>> = {
     "required": [
       "code",
       "at"
+    ],
+    "type": "object"
+  },
+  "Hint": {
+    "additionalProperties": false,
+    "properties": {
+      "installCommand": {
+        "maxLength": 128,
+        "type": "string"
+      },
+      "installUrl": {
+        "maxLength": 128,
+        "pattern": "^https://",
+        "type": "string"
+      },
+      "signInCommand": {
+        "maxLength": 64,
+        "type": "string"
+      },
+      "text": {
+        "$ref": "#/$defs/Text"
+      }
+    },
+    "required": [
+      "text"
     ],
     "type": "object"
   },
@@ -2292,6 +2448,9 @@ export const definitions: Readonly<Record<string, Schema>> = {
             "type": "null"
           }
         ]
+      },
+      "hint": {
+        "$ref": "#/$defs/Hint"
       },
       "text": {
         "$ref": "#/$defs/Text"
@@ -2417,6 +2576,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "enum": [
           "ok",
           "estimated",
+          "usage_not_reported",
           "stale_reading",
           "observation_time_unknown",
           "not_read_yet",
@@ -2461,6 +2621,13 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "http_5xx",
           "network",
           "timeout",
+          "not_found",
+          "rpc_error",
+          "closed",
+          "region_refused",
+          "codex_custom_provider",
+          "team_unsupported",
+          "no_plan",
           "other",
           "readers_off",
           "no_consent",
@@ -2537,15 +2704,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "minimum": 0
       },
       "earliestExpiresAt": {
-        "anyOf": [
-          {
-            "format": "date-time",
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "format": "date-time",
+        "type": "string"
       },
       "items": {
         "items": {
@@ -2579,6 +2739,19 @@ export const definitions: Readonly<Record<string, Schema>> = {
   "ResetEvent": {
     "additionalProperties": false,
     "properties": {
+      "confirmedAt": {
+        "description": "Confirmed events only: the publication's confirmation time, or when the CLI first read the confirmation (see confirmedAtBasis).",
+        "format": "date-time",
+        "type": "string"
+      },
+      "confirmedAtBasis": {
+        "enum": [
+          "published",
+          "observed",
+          "firstSeen"
+        ],
+        "type": "string"
+      },
       "confirms": {
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
         "type": "string"
@@ -2589,6 +2762,14 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "id": {
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "type": "string"
+      },
+      "kind": {
+        "description": "reset_credit: extra resets were issued (news, not a window restart); direct_reset: usage limits reset. Absent from older producers, read as direct_reset.",
+        "enum": [
+          "reset_credit",
+          "direct_reset"
+        ],
         "type": "string"
       },
       "planIds": {
@@ -2791,18 +2972,11 @@ export const definitions: Readonly<Record<string, Schema>> = {
     "additionalProperties": false,
     "properties": {
       "forecasts": {
-        "anyOf": [
-          {
-            "items": {
-              "$ref": "#/$defs/CockpitForecast"
-            },
-            "type": "array"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "maxItems": 128
+        "items": {
+          "$ref": "#/$defs/CockpitForecast"
+        },
+        "maxItems": 128,
+        "type": "array"
       },
       "resetEvents": {
         "items": {
@@ -2968,21 +3142,14 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "string"
       },
       "source": {
-        "anyOf": [
-          {
-            "enum": [
-              "local_history",
-              "runtime",
-              "saved_login",
-              "api_key",
-              "other"
-            ],
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "enum": [
+          "local_history",
+          "runtime",
+          "saved_login",
+          "api_key",
+          "other"
+        ],
+        "type": "string"
       },
       "validUntil": {
         "anyOf": [

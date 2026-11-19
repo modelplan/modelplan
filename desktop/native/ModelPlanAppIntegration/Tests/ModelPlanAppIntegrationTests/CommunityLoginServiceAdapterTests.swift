@@ -8,10 +8,22 @@ import ModelPlanSettings
 @MainActor private final class AdapterLoginService: PulseLoginService {
     var value: PulseLoginState = .off, reads = 0, registers = 0, unregisters = 0
     var state: PulseLoginState { reads += 1; return value }
+    var notFound = false
+    var isNotFound: Bool { notFound }
     func register() throws { registers += 1; value = .needsApproval }
     func unregister() throws { unregisters += 1; value = .off }
 }
 @MainActor final class CommunityLoginServiceAdapterTests: XCTestCase {
+    /// G3-69: only SMAppService `.notFound` (service reports it) is "not in Applications"; other unavailable causes stay generic.
+    func testNotFoundIsDistinguishedFromOtherUnavailableCauses() {
+        let service = AdapterLoginService(); service.value = .unavailable
+        let adapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: service))
+        XCTAssertEqual(adapter.observedState, .unavailable); XCTAssertFalse(adapter.observedNotInApplications)
+        service.notFound = true; XCTAssertTrue(adapter.observedNotInApplications)
+        service.value = .off; XCTAssertFalse(adapter.observedNotInApplications)
+        let bare = CommunityLoginServiceAdapter(item: .init(isAppBundle: false, service: service))
+        XCTAssertFalse(bare.observedNotInApplications)
+    }
     private func editor() async throws -> (SettingsEditor, URL) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("login-adapter-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }

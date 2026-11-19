@@ -82,6 +82,7 @@ final class CatalogueTests: XCTestCase {
     func testDiagnosticsNeverIncludePersonalInputsOrRawErrors() throws {
         var c = context(), p = SettingsPreferences()
         p.subscriptionSettings["one"] = .init(alias: "private-project")
+        p.language = .chinese // the default is English now (SET-9-39); this test reads the Chinese note
         c.about = .init(appVersion: "/Users/private/account@example.com", cliVersion: "error: secret", cliState: .denied, architecture: .intelUntested)
         let text = c.about.diagnosticText
         XCTAssertEqual(text, "app=unknown\ncli=unknown\nmacOS=unknown\nreaders=\nerrors=")

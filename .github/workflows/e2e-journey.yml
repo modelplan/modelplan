@@ -1,7 +1,7 @@
 name: e2e-journey
 on:
   pull_request:
-    paths: ["cli/**", "desktop/native/**", ".github/workflows/e2e-journey.yml"]
+    paths: ["cli/**", "desktop/native/**", ".github/workflows/e2e-journey.yml", "!**/*.md"]
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]

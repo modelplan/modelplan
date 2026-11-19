@@ -10,6 +10,7 @@ on:
       - clients/swift/ModelPlanWire/**
       - schema/app-cli/captures/**
       - .github/workflows/u6-engine-store-core.yml
+      - '!**/*.md'
   push:
     branches: [main]
     paths:
@@ -30,7 +31,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@01340deab2a433e748ac1d1c13bde553bde7065c
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@ee807dae7258813bac4bb58a66f7beea8eac9edd
     with:
       task: sequences
       os: ${{ matrix.os }}

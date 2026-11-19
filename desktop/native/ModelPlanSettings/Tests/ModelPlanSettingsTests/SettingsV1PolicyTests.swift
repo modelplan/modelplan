@@ -82,7 +82,7 @@ final class SettingsV1PolicyTests: XCTestCase {
             XCTAssertTrue(row.subtitle.english.contains("Unavailable"), "Provide an English visible reason: \(key)")
             XCTAssertTrue(row.subtitle.chinese.contains("不可用"), "Provide a Chinese visible reason: \(key)")
         }
-        for key in [SettingKey.size, .dockEdge, .dockDisplay, .dockPosition, .percentageMode, .showPercentages, .redBelow, .language] {
+        for key in [SettingKey.size, .dockEdge, .dockDisplay, .dockPosition, .percentageMode, .showPercentages, .redBelow, .language, .showAllModels] {
             XCTAssertEqual(try XCTUnwrap(rows.first { $0.key == key }).availability, .available)
         }
     }

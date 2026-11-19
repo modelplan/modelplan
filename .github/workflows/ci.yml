@@ -122,9 +122,9 @@ jobs:
       - name: "claude-code: plugin tests"
         if: ${{ !cancelled() }}
         run: node --test claude-code/tests/*.test.mjs
-      - name: "claude-code: native and cockpit strings follow the label rules"
+      - name: "claude-code: native and cockpit strings follow the label rules; the Swift handshake matches the server capabilities"
         if: ${{ !cancelled() }}
-        run: node --test scripts/tests/lbl-coverage.test.mjs
+        run: node --test scripts/tests/lbl-coverage.test.mjs scripts/tests/capability-handshake.test.mjs
       - name: "claude-code: the plugins pin a published CLI release, checksums matching"
         if: ${{ !cancelled() }}
         run: node scripts/pin-cli.mjs --check
@@ -144,7 +144,7 @@ jobs:
   # when mac-scope finds a relevant change (macOS runners are scarce); pushes to main always run it.
   claude-code-macos:
     needs: checks
-    if: ${{ !cancelled() && github.event_name != 'merge_group' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'pull_request' || needs.checks.outputs.mac == 'true') }}
+    if: ${{ !cancelled() && github.event_name != 'merge_group' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'pull_request' || needs.checks.outputs.mac == 'true') && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

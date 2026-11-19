@@ -26,32 +26,84 @@ import ModelPlanWire
     /// diagnostics, plugins and revoke/forget stay in Settings.
     public let firstRun: Bool
     /// G3-45: the vendor mark for a tool id, supplied by the app (the same checked marks as the Dock).
-    private let markImage: (@MainActor (String) -> NSImage?)?
+    private var markImage: (@MainActor (String) -> NSImage?)?
+    /// Settings (owner build 13): one row per tool, like the first-run list; the per-path rows (and their
+    /// revoke / forget buttons) are behind a disclosure instead of filling the page.
+    private let compactTools: Bool
+    private var pathDetailsExpanded = false
+    private var notFoundExpanded = false
+    private var scanTimer: Timer?
     private var observer: UUID?
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
-    public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese,
+    private var keySection: ReaderKeySection?
+    /// D87 slice 6/7: the Subscriptions rows. Nil context keeps the plain per-tool list (first run, direct drives).
+    private var rowsContext: SubscriptionRowsContext?
+    private var rowsSignature: String?
+    private var rowsView: SubscriptionRowsView?
+    private var notInstalledExpanded = false
+    private var fixNotices: [String: SettingsText] = [:]
+    private var highlightedRowID: String?
+    /// Key-only tools whose "Add key" fix was pressed: their key entry stays open on the row.
+    private var keyEntryOpen: Set<String> = []
+    /// Providers whose entry is already on a row in the current render (one view can sit in one place).
+    private var mountedKeyEntries: Set<ReaderKeyProvider> = []
+    /// What the app can do for a row: visibility, order and the two fixes that need the engine.
+    public var rowActions = SubscriptionRowActions()
+    /// The accepted rows the key entries last refreshed their status for.
+    private var keyStatusRowsRevision = 0
+    /// D90: the optional manual key area. Set by the app when the engine supports it.
+    public var readerKeys: ReaderKeyBackend? {
+        didSet { if keySection != nil { keySection?.dismiss(); keySection = nil }; render() }
+    }
+    public init(controller: ScopeConsentController, language: SettingsLanguage = .fallback,
                 buildSigning:ScopeConsentBuildSigning = .current, firstRun: Bool = false,
-                markImage: (@MainActor (String) -> NSImage?)? = nil) {
+                markImage: (@MainActor (String) -> NSImage?)? = nil, compactTools: Bool = false) {
         self.controller = controller; self.language = language;self.buildSigning=buildSigning; self.firstRun = firstRun
-        self.markImage = markImage
+        self.markImage = markImage; self.compactTools = compactTools
         super.init(frame: .zero)
         orientation = .vertical; alignment = .leading; spacing = 8
         setAccessibilityIdentifier("settings.scopeConsent")
         observer = controller.observe { [weak self] in self?.render() }; render()
     }
+    /// The app supplies its checked marks after the view exists; draw them as soon as they arrive.
+    public func setMarkImage(_ value: (@MainActor (String) -> NSImage?)?) { markImage = value; render() }
+    /// The host pushes the subscriptions, their shared order and hidden set whenever they change.
+    public func setSubscriptionRows(_ context: SubscriptionRowsContext?) {
+        guard compactTools, context?.signature != rowsSignature else { return }
+        rowsSignature = context?.signature; rowsContext = context; render()
+    }
+    /// D87 slice 9: a widget card's reason links here. Mark the subscription's row for a few seconds and scroll to it.
+    public func revealSubscriptionRow(_ id: String) {
+        guard compactTools else { return }
+        highlightedRowID = id; render()
+        layoutSubtreeIfNeeded(); rowsView?.scrollToRow(id)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self, self.highlightedRowID == id else { return }
+            self.highlightedRowID = nil; self.render()
+        }
+    }
+    /// Show or hide the per-path rows of the compact Settings page.
+    public func setPathDetailsExpanded(_ expanded: Bool) {
+        guard pathDetailsExpanded != expanded else { return }
+        pathDetailsExpanded = expanded; render()
+    }
     /// Follow the shared Settings editor language without changing any draft.
     public func apply(language: SettingsLanguage) {
         guard self.language != language else { return }
-        self.language = language; render()
+        self.language = language; keySection?.apply(language: language); render()
     }
     /// Retire this presentation before detaching it from the accepted-event sink.
     public func retirePresentation() {
+        scanTimer?.invalidate(); scanTimer = nil
         if let observer { controller.removeObserver(observer); self.observer = nil }
         for button in buttons {
             (button as? ScopeConsentButton)?.retire(); (button as? ConnectionButton)?.retire()
         }
         buttons = []
+        rowsView?.retire(); rowsView = nil
+        keySection?.dismiss()
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
     }
     public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
@@ -68,6 +120,18 @@ import ModelPlanWire
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     deinit {
         if let observer { let controller = controller; Task { @MainActor in controller.removeObserver(observer) } }
+    }
+    /// The status line follows the same reading state as the switch (G3-67): "On by default" is only said while the
+    /// engine is actually reading the path; a compiled default the engine does not admit says so and how to turn it on.
+    static func pathStatus(_ controller: ScopeConsentController, id: String, denied: Bool) -> SettingsText {
+        if controller.isAllowed(id) { return .init("On", "已开启") }
+        if controller.isOnByDefault(id) {
+            return controller.isReading(id)
+                ? .init("On by default. Turn it off to stop reading this path.", "默认开启；关闭后不再读取此路径。")
+                : .init("Not being read right now: the engine has no permission for this path. Allow this path to start reading it.", "目前未读取：引擎尚无此路径的权限。授权此读取路径后才会开始读取。")
+        }
+        if denied { return .init("Off. Turn it on to read this path.", "已关闭；打开后才会读取此路径。") }
+        return .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。")
     }
     private func label(_ text: SettingsText, secondary: Bool = false, heading: Bool = false) {
         let field = NSTextField(wrappingLabelWithString: text.value(language))
@@ -114,38 +178,186 @@ import ModelPlanWire
     /// Activity reading is separate from usage reading and is always disclosed (D27).
     private static let activityDisclosure = SettingsText("Local session files are read to show tool activity. Their contents are not uploaded.",
                                                          "读取本地会话文件以显示工具活动状态，文件内容不会上传。")
-    /// G3-45 (owner 2026-11-08, Pulse reference): the first-run page lists each tool found on this
-    /// Mac with a checkbox, says what is read and whether macOS may ask for the Keychain, and shows
-    /// why a tool cannot be read. Done sends the choices as the one first-run consent.
+    /// G3-45 (owner 2026-11-08, Pulse reference) and FR-9-11 (owner-approved mock, D189): the first-run page lists
+    /// each tool found on this Mac as a card with a checkbox, what it reads out now (D61) and, for a Keychain login,
+    /// Allow and Later (D41). Done sends the choices as the one first-run consent.
     private func renderFirstRunChooser() {
-        label(.init("Choose which tools ModelPlan reads", "选择要读取的工具"), heading: true)
-        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.heading")
-        label(.init("Your choice is saved when you press Done; you can change it later in Settings › Data & Privacy.",
-                    "点“完成”后保存选择，之后可在 设置 › 数据与隐私 中更改。"), secondary: true)
-        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.notice")
-        let tools = controller.firstRunTools
-        if controller.facts == nil {
-            label(.init("Looking for tools on this Mac…", "正在查找本机的工具…"), secondary: true)
+        let heading = NSTextField(labelWithString: FirstRunCopy.toolsHeading.value(language).uppercased())
+        heading.font = .systemFont(ofSize: 11, weight: .semibold); heading.textColor = .secondaryLabelColor
+        heading.setAccessibilityIdentifier("scope.firstRun.heading")
+        let hint = NSTextField(labelWithString: FirstRunCopy.toolsHint.value(language))
+        hint.font = .systemFont(ofSize: 11); hint.textColor = .tertiaryLabelColor
+        hint.setAccessibilityIdentifier("scope.firstRun.notice")
+        let header = NSStackView(); header.orientation = .horizontal; header.alignment = .firstBaseline
+        header.setViews([heading], in: .leading); header.setViews([hint], in: .trailing)
+        addArrangedSubview(header); header.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+        let tools = controller.firstRunListTools
+        let engine = controller.firstRunEngine
+        // Owner 11-12: the real count while the reader works, never a made-up bar.
+        if engine == .ready, !tools.isEmpty {
+            let progress = controller.firstRunProgress
+            hint.stringValue = (progress.done < progress.total ? FirstRunCopy.progress(done: progress.done, total: progress.total)
+                                                               : FirstRunCopy.found(tools.count)).value(language)
+        }
+        switch engine {
+        case .ready: break
+        case .starting: label(FirstRunCopy.engineStarting, secondary: true)
+        case .waiting(let seconds): label(FirstRunCopy.engineWaiting(seconds), secondary: true)
+        case .slow(let seconds): label(FirstRunCopy.engineSlow(seconds), secondary: true)
+        case .failed:
+            label(FirstRunCopy.engineFailed)
+            arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.engine")
+            line([synchronousButton(FirstRunCopy.retry, id: "scope.firstRun.engine.retry") { [weak self] in self?.controller.retryFirstRunEngine() }])
+        }
+        if engine != .ready, engine != .failed { arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.engine") }
+        if !controller.firstRunPresenceDone, controller.facts == nil {
+            label(FirstRunCopy.looking, secondary: true)
             arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.looking")
         } else if tools.isEmpty {
-            label(.init("No supported tools were found on this Mac. You can finish now.", "本机没有找到支持的工具，可以直接完成。"), secondary: true)
+            label(FirstRunCopy.emptyTitle)
             arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.none")
+            label(FirstRunCopy.emptyBody, secondary: true)
+            arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.none.detail")
+            line([synchronousButton(FirstRunCopy.lookAgain, id: "scope.firstRun.lookAgain") { [weak self] in self?.controller.lookAgainForTools() }])
         }
-        for (index, tool) in tools.enumerated() {
-            if index > 0 { separator() }
-            toolRow(tool)
+        for tool in tools { firstRunCard(tool) }
+        let missing = controller.firstRunNotFound
+        if !missing.isEmpty, !tools.isEmpty || controller.firstRunPresenceDone {
+            let names = missing.map { Self.toolName($0).value(language) }
+            let summary = synchronousButton(FirstRunCopy.notFound(names: names), id: "scope.firstRun.notFound") { [weak self] in
+                guard let self else { return }
+                self.notFoundExpanded.toggle(); self.render()
+            }
+            summary.isBordered = false; summary.alignment = .left
+            summary.attributedTitle = NSAttributedString(string: summary.title, attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor])
+            line([summary])
+            if notFoundExpanded {
+                label(FirstRunCopy.notFoundOpen, secondary: true)
+                label(.init(names.joined(separator: ", "), names.joined(separator: "、")), secondary: true)
+                arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.notFound.names")
+            }
         }
-        if !controller.firstRunChoiceSatisfied {
-            label(.init("Tick at least one tool to continue.", "请至少勾选一个工具。"))
+        if let block = controller.firstRunDoneBlock, block == .chooseOne {
+            label(FirstRunCopy.needOne)
             arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.pickOne")
         }
-        gap()
-        label(.init("Tools you install later are read by default. Turn any of them off in Settings › Data & Privacy.",
-                    "之后安装的工具默认会读取，可在 设置 › 数据与隐私 中关闭。"), secondary: true)
-        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.later")
-        label(Self.activityDisclosure, secondary: true)
-        label(HistoryImportText.firstRunLine, secondary: true)
+        // The three former small-print paragraphs in one (FR-9-11).
+        label(FirstRunCopy.smallPrint, secondary: true)
         arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.import")
+        updateScanTimer()
+    }
+    /// The page counts seconds (the reader's wait, each tool's 15) while the scan is not settled; one timer step re-renders it.
+    private func updateScanTimer() {
+        let running = !controller.firstRunScanSettled
+        if running, scanTimer == nil {
+            scanTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
+                MainActor.assumeIsolated {
+                    guard let self, self.observer != nil else { timer.invalidate(); return }
+                    self.controller.firstRunTick()
+                }
+            }
+        } else if !running {
+            scanTimer?.invalidate(); scanTimer = nil
+        }
+    }
+    /// Width of the right-hand column of a card: the readings, or Allow and Later.
+    private static let cardRightWidth: CGFloat = 136, cardInset: CGFloat = 12, cardSpacing: CGFloat = 10
+    private static func readingColour(_ percent: Int) -> NSColor {
+        if percent >= 50 { return NSColor(srgbRed: 0.50, green: 0.83, blue: 0.72, alpha: 1) }
+        if percent >= 25 { return NSColor(srgbRed: 0.91, green: 0.78, blue: 0.35, alpha: 1) }
+        return NSColor(srgbRed: 0.95, green: 0.45, blue: 0.40, alpha: 1)
+    }
+    private func readingField(_ reading: FirstRunReading, tool: String) -> NSTextField {
+        let name = FirstRunCopy.window(reading.kind).value(language), value = FirstRunCopy.left(reading.percent).value(language)
+        let text = NSMutableAttributedString(string: name + "  ", attributes: [.font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor])
+        text.append(NSAttributedString(string: value, attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold), .foregroundColor: Self.readingColour(reading.percent)]))
+        let field = NSTextField(labelWithAttributedString: text)
+        field.alignment = .right
+        field.setAccessibilityIdentifier("scope.firstRun.reading." + tool + "." + (reading.kind == .fiveHour ? "fiveHour" : "weekly"))
+        field.setAccessibilityLabel(name + " " + value)
+        return field
+    }
+    /// One tool as a first-run card (FR-9-11). Settings keeps its own compact row (`toolRow`).
+    private func firstRunCard(_ tool: FirstRunTool) {
+        let id = tool.tool, prefix = "scope.firstRun."
+        let box = synchronousButton(.init("", ""), id: prefix + "tool." + id, enabled: controller.canMutate && tool.canRead) { [weak self] in
+            guard let self else { return }
+            self.controller.chooseFirstRunTool(id, chosen: !self.controller.isFirstRunToolChosen(id))
+        }
+        // Before the reader's rows exist the row is the local presence check: ticked as it will be, but not yet changeable.
+        box.setButtonType(.switch); box.title = ""; box.state = controller.isFirstRunToolChosen(id) || controller.facts == nil ? .on : .off
+        box.setAccessibilityLabel(Self.toolName(id).value(language))
+        box.translatesAutoresizingMaskIntoConstraints = false
+        box.widthAnchor.constraint(equalToConstant: Self.boxWidth).isActive = true
+        let mark = markView(id)
+        let name = NSTextField(labelWithString: Self.toolName(id).value(language))
+        name.font = .systemFont(ofSize: 14, weight: .semibold)
+        name.setAccessibilityIdentifier(prefix + "name." + id)
+        let column = NSStackView(views: [name]); column.orientation = .vertical; column.alignment = .leading; column.spacing = 3
+        func line(_ text: SettingsText, id lineID: String, color: NSColor = .secondaryLabelColor) {
+            let field = NSTextField(wrappingLabelWithString: text.value(language))
+            field.font = .systemFont(ofSize: 12); field.textColor = color
+            field.lineBreakMode = .byWordWrapping; field.maximumNumberOfLines = 0
+            field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            field.setAccessibilityIdentifier(lineID)
+            column.addArrangedSubview(field); wrappingLabels.append(field)
+            field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
+        }
+        // Owner 11-12: each row shows its own step, so a slow tool never holds the others back.
+        let status = controller.firstRunToolStatus(id)
+        switch status {
+        case .finding: line(FirstRunCopy.finding, id: prefix + "reads." + id)
+        case .waitingForEngine: line(FirstRunCopy.waitingForReader, id: prefix + "reads." + id)
+        case .reading: line(FirstRunCopy.reading, id: prefix + "reads." + id)
+        case .slowReading(let seconds): line(FirstRunCopy.readingSlow(seconds), id: prefix + "reads." + id)
+        case .couldNotRead: line(FirstRunCopy.couldNotRead, id: prefix + "status." + id, color: .systemOrange)
+        case .notRead: line(FirstRunCopy.notRead, id: prefix + "reads." + id)
+        case .read, .readAfterDone, .signInNeeded, .unsupportedLogin, .notReadable:
+            // An unsupported login is not read at all, so its card says only why (D52). A supported tool
+            // that is merely signed out still says what happens once the user signs in.
+            if tool.detected, tool.block != .unsupportedLogin, !tool.scopes.isEmpty {
+                line(tool.promptsKeychain ? FirstRunCopy.keychainLine : FirstRunCopy.detected, id: prefix + "reads." + id)
+            }
+            if let block = tool.block {
+                line(Self.blockLine(block, tool: id), id: prefix + "status." + id, color: .systemOrange)
+            } else if tool.detected, !tool.canRead {
+                // Only browser-session or unrecognised paths: never describe a read that will not happen.
+                line(Self.unreadableLine, id: prefix + "status." + id)
+            }
+        }
+        // D90 / FR-9-05: first run keeps its single consent; a detected key-only tool says where a key can be added later.
+        if ReaderKeyProvider(rawValue: id) != nil, tool.detected { line(Self.firstRunKeyLine, id: prefix + "keylater." + id) }
+        // D87 slice 8: what the tool still needs, from the same table as the Subscriptions rows (the card replaced toolRow here).
+        if tool.detected, tool.block == nil {
+            let pre = SubscriptionRowModel.prerequisite(tool: tool, name: Self.toolName(id).english,
+                                                        facts: controller.toolRowFacts[id], keyEntryAvailable: readerKeys != nil)
+            line(pre.text, id: prefix + "prereq." + id, color: pre.needsAttention ? .systemOrange : .secondaryLabelColor)
+        }
+        let right = NSStackView(); right.orientation = .vertical; right.alignment = .trailing; right.spacing = 2
+        right.translatesAutoresizingMaskIntoConstraints = false
+        right.widthAnchor.constraint(equalToConstant: Self.cardRightWidth).isActive = true
+        if id == "claude", controller.firstRunKeychainChoiceOpen {
+            // D41: Allow is the consent (the engine's foreground read follows it); Later asks nothing now.
+            let allow = button(FirstRunCopy.allow, id: prefix + "keychain.allow", enabled: controller.canMutate) { [weak self] in await self?.controller.allowKeychain() }
+            let later = synchronousButton(FirstRunCopy.later, id: prefix + "keychain.later", enabled: controller.canMutate) { [weak self] in self?.controller.chooseKeychainLater() }
+            let choice = NSStackView(views: [allow, later]); choice.orientation = .horizontal; choice.spacing = 6
+            right.addArrangedSubview(choice)
+        } else if status == .couldNotRead {
+            right.addArrangedSubview(synchronousButton(FirstRunCopy.retry, id: prefix + "tryAgain." + id) { [weak self] in self?.controller.retryFirstRunTool(id) })
+        } else {
+            for reading in controller.firstRunReadings(forTool: id) { right.addArrangedSubview(readingField(reading, tool: id)) }
+        }
+        let card = NSStackView(views: [box, mark, column, right])
+        card.orientation = .horizontal; card.alignment = .centerY; card.spacing = Self.cardSpacing
+        card.edgeInsets = NSEdgeInsets(top: Self.cardInset, left: Self.cardInset, bottom: Self.cardInset, right: Self.cardInset)
+        card.wantsLayer = true; card.layer?.cornerRadius = 10; card.layer?.borderWidth = 1
+        card.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
+        card.layer?.borderColor = NSColor.white.withAlphaComponent(0.09).cgColor
+        card.setAccessibilityIdentifier(prefix + "row." + id)
+        addArrangedSubview(card)
+        card.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+        column.widthAnchor.constraint(equalTo: card.widthAnchor,
+            constant: -(2 * Self.cardInset + Self.boxWidth + Self.markSize + Self.cardRightWidth + 3 * Self.cardSpacing)).isActive = true
     }
     private func separator() {
         let line = NSBox(); line.boxType = .separator
@@ -153,21 +365,26 @@ import ModelPlanWire
         line.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
     }
     private static let markSize: CGFloat = 20, boxWidth: CGFloat = 18
-    private func toolRow(_ tool: FirstRunTool) {
+    /// One tool, as the first-run list shows it. In Settings (`settings`) the box is the tool's current reading
+    /// state, and changing it asks for the same confirmation a path change does; the row ids differ only by prefix.
+    private func toolRow(_ tool: FirstRunTool, settings: Bool = false) {
         let id = tool.tool
-        let box = synchronousButton(.init("", ""), id: "scope.firstRun.tool." + id, enabled: controller.canMutate && tool.canRead) { [weak self] in
+        let prefix = settings ? "scope.settings." : "scope.firstRun."
+        let isOn = settings ? controller.isToolReading(id) : controller.isFirstRunToolChosen(id)
+        let box = synchronousButton(.init("", ""), id: prefix + "tool." + id, enabled: controller.canMutate && tool.canRead) { [weak self] in
             guard let self else { return }
-            self.controller.chooseFirstRunTool(id, chosen: !self.controller.isFirstRunToolChosen(id))
+            if settings { self.controller.requestToolChoice(id, on: !self.controller.isToolReading(id)) }
+            else { self.controller.chooseFirstRunTool(id, chosen: !self.controller.isFirstRunToolChosen(id)) }
         }
-        box.setButtonType(.switch); box.title = ""; box.state = controller.isFirstRunToolChosen(id) ? .on : .off
+        box.setButtonType(.switch); box.title = ""; box.state = isOn ? .on : .off
         box.setAccessibilityLabel(Self.toolName(id).value(language))
         box.translatesAutoresizingMaskIntoConstraints = false
         box.widthAnchor.constraint(equalToConstant: Self.boxWidth).isActive = true
         let mark = markView(id)
         let name = NSTextField(labelWithString: Self.toolName(id).value(language))
         name.font = .systemFont(ofSize: 14, weight: .semibold)
-        name.setAccessibilityIdentifier("scope.firstRun.name." + id)
-        let tag = NSTextField(labelWithString: SettingsText("Detected on this Mac", "本机已检测到").value(language))
+        name.setAccessibilityIdentifier(prefix + "name." + id)
+        let tag = NSTextField(labelWithString: Self.presenceTag(tool).value(language))
         tag.font = .systemFont(ofSize: 11); tag.textColor = .secondaryLabelColor
         let title = NSStackView(views: [name, tag]); title.orientation = .horizontal; title.alignment = .firstBaseline; title.spacing = 8
         let column = NSStackView(views: [title]); column.orientation = .vertical; column.alignment = .leading; column.spacing = 3
@@ -182,15 +399,50 @@ import ModelPlanWire
         }
         // An unsupported login is not read at all, so its row says only why (D52). A supported tool
         // that is merely signed out still says what will be read once the user signs in.
-        if tool.block != .unsupportedLogin && !tool.scopes.isEmpty { line(Self.readLine(tool), id: "scope.firstRun.reads." + id) }
+        if tool.detected, tool.block != .unsupportedLogin, !tool.scopes.isEmpty { line(Self.readLine(tool), id: prefix + "reads." + id) }
+        if !tool.detected {
+            line(SettingsText("Not installed. ModelPlan reads it once it is installed on this Mac and you turn it on here.",
+                              "未安装。安装到这台 Mac 后，可在这里打开，ModelPlan 才会读取。"), id: prefix + "status." + id, color: .systemOrange)
+        }
+        // D90: in Settings a detected key-only tool carries the optional key entry on its own row.
+        let keyEntry: ReaderKeyEntryView? = {
+            guard settings, tool.detected, let provider = ReaderKeyProvider(rawValue: id), let section = readerKeySection() else { return nil }
+            return section.inlineEntry(for: provider)
+        }()
+        var keyMissingShown = false
         if let block = tool.block {
-            line(Self.blockLine(block, tool: id), id: "scope.firstRun.status." + id, color: .systemOrange)
-        } else if !tool.canRead {
+            line(Self.blockLine(block, tool: id), id: prefix + "status." + id, color: .systemOrange)
+        } else if tool.detected, tool.keyMissing, let missing = Self.keyMissingLine(tool, keyEntry: keyEntry != nil) {
+            line(missing, id: prefix + "status." + id, color: .systemOrange); keyMissingShown = true
+        } else if tool.detected, !tool.canRead {
             // Only browser-session or unrecognised paths: never describe a read that will not happen.
-            line(Self.unreadableLine, id: "scope.firstRun.status." + id)
+            line(Self.unreadableLine, id: prefix + "status." + id)
+        }
+        if let provider = ReaderKeyProvider(rawValue: id), tool.detected {
+            if let keyEntry {
+                // D90 / SET-9-41: a detected key-only tool that is not being read says why and offers the one
+                // optional key entry right here; an entered key wins over a detected one (owner 2026-11-14).
+                // A saved key with reading off is not "no key found" (GLMREV Q2): say reading is off instead.
+                if !controller.isToolReading(id) {
+                    if keyEntry.entry.status.present {
+                        line(Self.keySavedReadingOffLine(id), id: prefix + "nokey." + id, color: .systemOrange)
+                    } else if !keyMissingShown {
+                        line(Self.noKeyLine(provider), id: prefix + "nokey." + id, color: .systemOrange)
+                    }
+                }
+                column.addArrangedSubview(keyEntry)
+            } else if !settings {
+                line(Self.firstRunKeyLine, id: prefix + "keylater." + id)
+            }
+        }
+        // D87 slice 8: what the tool still needs, from the same table as the Subscriptions rows.
+        if !settings, tool.detected, tool.block == nil {
+            let pre = SubscriptionRowModel.prerequisite(tool: tool, name: Self.toolName(id).english,
+                                                        facts: controller.toolRowFacts[id], keyEntryAvailable: readerKeys != nil)
+            line(pre.text, id: prefix + "prereq." + id, color: pre.needsAttention ? .systemOrange : .secondaryLabelColor)
         }
         let row = NSStackView(views: [box, mark, column]); row.orientation = .horizontal; row.alignment = .top; row.spacing = 10
-        row.setAccessibilityIdentifier("scope.firstRun.row." + id)
+        row.setAccessibilityIdentifier(prefix + "row." + id)
         addArrangedSubview(row)
         row.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
         column.widthAnchor.constraint(equalTo: row.widthAnchor, constant: -(Self.boxWidth + Self.markSize + 2 * row.spacing)).isActive = true
@@ -200,9 +452,9 @@ import ModelPlanWire
     private func markView(_ tool: String) -> NSView {
         let view: NSView
         if let image = markImage?(tool) {
-            image.isTemplate = true
+            // A template mark follows the label colour; a coloured one keeps its own colours.
             let imageView = NSImageView(image: image); imageView.imageScaling = .scaleProportionallyUpOrDown
-            imageView.contentTintColor = .labelColor
+            imageView.contentTintColor = image.isTemplate ? .labelColor : nil
             view = imageView
         } else {
             let letters = NSTextField(labelWithString: String(Self.toolName(tool).english.prefix(2)))
@@ -210,7 +462,7 @@ import ModelPlanWire
             letters.textColor = .secondaryLabelColor
             view = letters
         }
-        view.setAccessibilityElement(false)
+        view.setAccessibilityElement(false); view.setAccessibilityIdentifier("scope.mark." + tool)
         view.translatesAutoresizingMaskIntoConstraints = false
         view.widthAnchor.constraint(equalToConstant: Self.markSize).isActive = true
         view.heightAnchor.constraint(equalToConstant: Self.markSize).isActive = true
@@ -223,6 +475,19 @@ import ModelPlanWire
                      "opencode": "OpenCode", "kiro": "Kiro", "amp": "Amp", "droid": "Droid", "antigravity": "Antigravity", "minimax": "MiniMax"]
         return names[tool].map { SettingsText($0, $0) } ?? .init("Other tool", "其他工具")
     }
+    /// G3-105: presence is what the engine detects, so say what was found. OpenCode installed is not an
+    /// OpenCode Go subscription; D230: the engine reports the OpenCode Go account path as detected only when
+    /// OpenCode's key store has an opencode-go entry (or OPENCODE_API_KEY is set).
+    static func presenceTag(_ tool: FirstRunTool) -> SettingsText {
+        guard tool.detected else { return .init("Not detected on this Mac", "本机未检测到") }
+        if tool.tool == "opencodego", !hasOpenCodeGoSubscription(tool) {
+            return .init("OpenCode installed · no OpenCode Go subscription found", "OpenCode 已安装 · 未找到 OpenCode Go 订阅")
+        }
+        return .init("Detected on this Mac", "本机已检测到")
+    }
+    static func hasOpenCodeGoSubscription(_ tool: FirstRunTool) -> Bool { ToolKeyLines.hasOpenCodeGoSubscription(tool) }
+    /// G3-105 / #954 / D90: see `ToolKeyLines.keyMissingLine` (nonisolated, so the row model can use it too).
+    static func keyMissingLine(_ tool: FirstRunTool, keyEntry: Bool = false) -> SettingsText? { ToolKeyLines.keyMissingLine(tool, keyEntry: keyEntry) }
     static let unreadableLine = SettingsText("ModelPlan can't read this tool's sign-in on this Mac yet.", "暂不支持读取这个工具在本机的登录。")
     private static let noKeychain = SettingsText(" No Keychain prompt.", "不会弹出钥匙串授权。")
     private static let mayAskKeychain = SettingsText(" macOS may ask once for Keychain access; choose \u{201C}Always Allow\u{201D}.",
@@ -247,6 +512,9 @@ import ModelPlanWire
         case "kiro":
             base = .init("Asks the Kiro CLI for usage with the sign-in Kiro saved. ModelPlan does not read or keep Kiro's credentials.",
                          "调用 Kiro 命令行工具查询用量，沿用它已保存的登录。ModelPlan 不读取也不保存 Kiro 的凭据。")
+        case "opencodego":
+            base = .init("Reads OpenCode's local history, and OpenCode Go usage with the OpenCode Go API key you set (OPENCODE_API_KEY).",
+                         "读取 OpenCode 的本机历史记录；设置了 OpenCode Go 的接口密钥环境变量时，也读取 OpenCode Go 额度。")
         case "zai":
             base = .init("Reads the GLM Coding Plan key you saved in ZCode, and its local history.",
                          "读取你在 ZCode 里保存的 GLM 编程套餐密钥，以及本机历史记录。")
@@ -263,6 +531,23 @@ import ModelPlanWire
         let keychain = tool.promptsKeychain ? mayAskKeychain : noKeychain
         return .init(base.english + keychain.english, base.chinese + keychain.chinese)
     }
+    /// Honest status for a detected key-only tool that is not being read: no key was found.
+    static func noKeyLine(_ provider: ReaderKeyProvider) -> SettingsText {
+        switch provider {
+        case .zai: return .init("No GLM key found, so it is not read yet. Sign in to ZCode, or add a key below.",
+                                "没有找到 GLM 密钥，所以暂未读取。请在 ZCode 里登录，或在下面添加密钥。")
+        case .opencodego: return .init("No OpenCode Go key found, so it is not read yet. Set OPENCODE_API_KEY, or add a key below.",
+                                       "没有找到 OpenCode Go 密钥，所以暂未读取。请设置 OPENCODE_API_KEY 环境变量，或在下面添加密钥。")
+        }
+    }
+    /// A key is saved but the tool's reading is off (switched off, or the grant after Save failed).
+    static func keySavedReadingOffLine(_ tool: String) -> SettingsText {
+        let name = toolName(tool)
+        return .init("A key is saved, but reading " + name.english + " is off. Turn it on to read it.",
+                     "已保存密钥，但 " + name.chinese + " 的读取已关闭。打开后才会读取。")
+    }
+    static let firstRunKeyLine = SettingsText("If no key is found on this Mac, you can add one later in Settings › Subscriptions.",
+                                              "如果本机上没有找到密钥，之后可在 设置 › 订阅 中添加。")
     static func blockLine(_ block: ScopeToolBlock, tool: String) -> SettingsText {
         let name = toolName(tool)
         switch block {
@@ -283,9 +568,15 @@ import ModelPlanWire
             (button as? ScopeConsentButton)?.retire(); (button as? ConnectionButton)?.retire()
         }
         buttons = []
+        rowsView?.retire(); rowsView = nil
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
         wrappingLabels = []
+        if let keySection, controller.rowsRevision != keyStatusRowsRevision {
+            keyStatusRowsRevision = controller.rowsRevision; keySection.refreshStatus()
+        }
         if firstRun { renderFirstRunChooser(); return }
+        let rowsMode = compactTools && rowsContext != nil
+        if rowsMode, let context = rowsContext { renderSubscriptionRows(context); gap() }
         label(.init("Reading permissions", "读取权限"), heading: true)
         label(Self.activityDisclosure, secondary: true)
         if controller.needsKeychainAccess {
@@ -333,6 +624,13 @@ import ModelPlanWire
                 }
             }
         }
+        if !firstRun, !compactTools, let backend = readerKeys {
+            gap()
+            let section = keySection ?? ReaderKeySection(backend: backend, language: language)
+            keySection = section
+            addArrangedSubview(section)
+            section.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+        }
         gap()
         guard let facts = controller.facts else {
             label(.init("Permission details are not ready. Check the engine connection.", "权限信息尚未就绪，请检查引擎连接。")); return
@@ -348,7 +646,20 @@ import ModelPlanWire
         if facts.scopes.isEmpty {
             label(.init("No saved or detected reading paths are available. Choose Check current permissions after connecting the engine.", "暂无已保存或已检测的读取路径，连接引擎后可点“检查当前权限”。"))
         }
-        for scope in facts.scopes {
+        if compactTools {
+            if !rowsMode {
+                for (index, tool) in controller.settingsTools.enumerated() {
+                    if index > 0 { separator() }
+                    toolRow(tool, settings: true)
+                }
+                gap()
+            }
+            if !facts.scopes.isEmpty { line([synchronousButton(pathDetailsExpanded ? .init("Hide reading paths", "收起读取路径") : .init("Show reading paths and saved permissions", "展开读取路径与已保存权限"),
+                                    id: "scope.details.toggle") { [weak self] in
+                guard let self else { return }; self.setPathDetailsExpanded(!self.pathDetailsExpanded)
+            }]) }
+        }
+        for scope in facts.scopes where !compactTools || pathDetailsExpanded {
             let id = scope.scope
             let title = scopeTitle(scope)
             if let last = arrangedSubviews.last { setCustomSpacing(14, after: last) }
@@ -358,6 +669,9 @@ import ModelPlanWire
             }
             if !scope.route.isKnown || scope.route == .knownUnknown {
                 label(.init("This reading path is not recognized. Update the app or check the tool connection; Revoke and Forget remain available.", "尚不识别此读取路径。请更新应用或检查工具连接；仍可撤销或忘记已保存权限。"))
+            } else if !scope.retired, !scope.detected, facts.scopes.contains(where: { $0.tool == scope.tool && $0.detected && !$0.retired }) {
+                // The tool is on this Mac but this path has nothing to read (for example no OpenCode Go subscription key).
+                label(.init("Nothing to read on this path: the tool is installed but no key for it was found. Saved permissions can still be revoked or forgotten.", "此读取路径暂无可读内容：已安装该工具，但没有找到对应的密钥；仍可撤销或忘记已保存权限。"))
             } else if scope.retired || !scope.detected {
                 label(.init("This tool is no longer detected. Saved permissions can still be revoked or forgotten.", "未检测到该工具；仍可撤销或忘记已保存权限。"))
             } else if scope.disabledReason != nil {
@@ -369,11 +683,7 @@ import ModelPlanWire
                 arrangedSubviews.last?.setAccessibilityIdentifier("scope.status." + id)
             }
             // D27: a standard reader is on by default; its row says so and its switch is on.
-            let status: SettingsText
-            if controller.isAllowed(id) { status = .init("On", "已开启") }
-            else if controller.isOnByDefault(id) { status = .init("On by default. Turn it off to stop reading this path.", "默认开启；关闭后不再读取此路径。") }
-            else if scope.state == .denied { status = .init("Off. Turn it on to read this path.", "已关闭；打开后才会读取此路径。") }
-            else { status = .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。") }
+            let status = Self.pathStatus(controller, id: id, denied: scope.state == .denied)
             label(status, secondary: true)
             let box: ConnectionButton
             if controller.isReading(id) {
@@ -399,11 +709,23 @@ import ModelPlanWire
             }
         }
         gap()
-        line([synchronousButton(.init("Select all available paths", "全选可授权路径"), id: "scope.selectAll", enabled: controller.canMutate) { [weak self] in self?.controller.selectAll() },
-              synchronousButton(.init("Allow selected paths…", "授权所选路径…"), id: "scope.allowSelected", enabled: controller.canRequestAllow) { [weak self] in self?.controller.requestAllow() }])
+        if !compactTools || pathDetailsExpanded {
+            line([synchronousButton(.init("Select all available paths", "全选可授权路径"), id: "scope.selectAll", enabled: controller.canMutate) { [weak self] in self?.controller.selectAll() },
+                  synchronousButton(.init("Allow selected paths…", "授权所选路径…"), id: "scope.allowSelected", enabled: controller.canRequestAllow) { [weak self] in self?.controller.requestAllow() }])
+        }
+        if !rowsMode { renderConfirmation(facts) }
+    }
+    /// The existing confirmation for a pending change (Add, a tool choice, revoke, forget).
+    private func renderConfirmation(_ facts: WireConsentFacts) {
         if case .confirmation(let confirmation) = controller.phase {
             let ids = Set(confirmation.intent.allowIDs + confirmation.intent.denyIDs + confirmation.intent.forgetIDs)
-            for scope in facts.scopes where ids.contains(scope.scope) { label(scopeTitle(scope)) }
+            if compactTools, case .choose = confirmation.intent.mutation {
+                // A tool choice names the tool once, not each of its reading paths.
+                var seen = Set<String>()
+                for scope in facts.scopes where ids.contains(scope.scope) && seen.insert(scope.tool).inserted { label(Self.toolName(scope.tool)) }
+            } else {
+                for scope in facts.scopes where ids.contains(scope.scope) { label(scopeTitle(scope)) }
+            }
             switch confirmation.intent.mutation {
             case .allow: label(.init("Confirm the selected reading paths?", "确认授权所选读取路径？"))
             case .revoke: label(.init("Revoke this specific reading permission?", "撤销这一项读取授权？"))
@@ -413,5 +735,151 @@ import ModelPlanWire
             line([button(.init("Confirm", "确认"), id: "scope.confirm") { [weak self] in await self?.controller.confirm(confirmation.id) },
                   synchronousButton(.init("Cancel", "取消"), id: "scope.cancel") { [weak self] in self?.controller.cancelConfirmation() }])
         }
+    }
+    /// The one optional key area (created once and reused, so a re-render never clears what is being typed).
+    private func readerKeySection() -> ReaderKeySection? {
+        guard let backend = readerKeys else { return nil }
+        let section = keySection ?? ReaderKeySection(backend: backend, language: language)
+        section.onPresenceChange = { [weak self] in self?.render() }
+        keySection = section
+        return section
+    }
+    /// D90 / SET-9-41 in the rows layout (macrev2-804-1): a key-only tool's row carries its key entry once
+    /// "Add key" was pressed, or while a key is saved (so Test and Remove stay reachable). One row per provider.
+    private func rowKeyEntry(_ row: SubscriptionRow) -> NSView? {
+        guard row.section != .notInstalled, let provider = ReaderKeyProvider(rawValue: row.tool), !mountedKeyEntries.contains(provider),
+              let section = readerKeySection() else { return nil }
+        let entry = section.inlineEntry(for: provider)
+        guard keyEntryOpen.contains(row.tool) || entry.entry.status.present else { return nil }
+        mountedKeyEntries.insert(provider)
+        return entry
+    }
+    /// D87 slice 6/7: build the row model from the host's context and the controller's accepted facts, and show it.
+    private func renderSubscriptionRows(_ context: SubscriptionRowsContext) {
+        if let facts = controller.facts { renderConfirmation(facts) }
+        let model = SubscriptionRowModel.build(
+            subscriptions: context.subscriptions, orderedIDs: context.orderedIDs, hiddenIDs: context.hiddenIDs,
+            tools: controller.settingsTools, facts: controller.toolRowFacts, isReading: { [controller] in controller.isToolReading($0) },
+            keyEntryAvailable: readerKeys != nil, name: { Self.toolName($0) })
+        mountedKeyEntries = []
+        var handlers = SubscriptionRowsView.Handlers()
+        handlers.setVisible = { [weak self] id, visible in self?.rowActions.setVisible?(id, visible) }
+        handlers.move = { [weak self] id, delta in self?.rowActions.move?(id, delta) }
+        handlers.resetOrder = { [weak self] in self?.rowActions.resetOrder?() }
+        handlers.fix = { [weak self] row in self?.performFix(row) }
+        handlers.add = { [weak self] tool in _ = self?.controller.requestToolChoice(tool, on: true) }
+        handlers.toggleNotInstalled = { [weak self] in
+            guard let self else { return }; self.notInstalledExpanded.toggle(); self.render()
+        }
+        let view = SubscriptionRowsView(.init(
+            model: model, language: language, mark: { [weak self] in self?.markView($0) ?? NSView() }, toolName: { Self.toolName($0) },
+            lockedReason: { id in context.subscriptions.first { $0.id == id }?.persistenceDisabledReason },
+            canMutate: controller.canMutate, canSave: context.canSave, canResetOrder: context.canResetOrder && rowActions.resetOrder != nil,
+            fixAvailable: { [weak self] row in self?.canPerformFix(row) ?? false },
+            notInstalledExpanded: notInstalledExpanded, notices: fixNotices, handlers: handlers, highlightedID: highlightedRowID,
+            keyEntry: { [weak self] row in self?.rowKeyEntry(row) }))
+        rowsView = view
+        addArrangedSubview(view)
+        view.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+    }
+    private func canPerformFix(_ row: SubscriptionRow) -> Bool {
+        guard let fix = row.fix else { return false }
+        switch fix.target {
+        case .allowKeychain: return controller.canMutate
+        case .retry: return rowActions.retry != nil
+        case .addKey: return readerKeys != nil && ReaderKeyProvider(rawValue: row.tool) != nil
+        case .installTool, .installNode, .explain: return SubscriptionFixLauncher.url(for: fix.target, tool: row.tool) != nil
+        case .openTool: return true
+        case .openSettings: return true
+        }
+    }
+    /// One press, one fix. Every target is either handled here, by the host, or shown disabled.
+    private func performFix(_ row: SubscriptionRow) {
+        guard let fix = row.fix, canPerformFix(row) else { return }
+        fixNotices[row.id] = nil
+        switch fix.target {
+        case .allowKeychain: Task { await controller.allowKeychain() }
+        case .retry: rowActions.retry?(row.tool)
+        case .addKey:
+            // Open the entry on this row, then put the cursor in its field.
+            keyEntryOpen.insert(row.tool); render()
+            if let provider = ReaderKeyProvider(rawValue: row.tool), let entry = readerKeySection()?.inlineEntry(for: provider) { entry.focusField() }
+        case .installTool, .installNode, .explain:
+            if let url = SubscriptionFixLauncher.url(for: fix.target, tool: row.tool) { NSWorkspace.shared.open(url) }
+        case .openTool:
+            if !SubscriptionFixLauncher.openApplication(for: row.tool) {
+                fixNotices[row.id] = .init("Could not find the app on this Mac.", "在这台 Mac 上找不到这个应用。"); render()
+            }
+        case .openSettings: pathDetailsExpanded = true; render()
+        }
+    }
+}
+
+/// The subscriptions, their shared order and the hidden set, as the Settings window knows them.
+public struct SubscriptionRowsContext {
+    public let subscriptions: [SettingsSubscription]
+    public let orderedIDs: [String]
+    public let hiddenIDs: Set<String>
+    /// False while another change is still saving.
+    public let canSave: Bool
+    /// A saved order exists, so "Reset order" has something to do.
+    public let canResetOrder: Bool
+    public init(subscriptions: [SettingsSubscription], orderedIDs: [String], hiddenIDs: Set<String>, canSave: Bool, canResetOrder: Bool = false) {
+        self.subscriptions = subscriptions; self.orderedIDs = orderedIDs; self.hiddenIDs = hiddenIDs; self.canSave = canSave; self.canResetOrder = canResetOrder
+    }
+    var signature: String {
+        let fieldSeparator: String = "\u{1F}", rowSeparator: String = "\u{1E}"
+        var rows: [String] = []
+        for sub in subscriptions {
+            let cause: String = sub.causeCode ?? ""
+            let stability: String = sub.isUnstable ? "u" : "s"
+            let fields: [String] = [sub.id, sub.name.english, sub.plan, sub.vendor, sub.tool, sub.source.rawValue, cause, stability]
+            rows.append(fields.joined(separator: fieldSeparator))
+        }
+        let subscriptionPart: String = rows.joined(separator: rowSeparator)
+        let orderPart: String = orderedIDs.joined(separator: ",")
+        let hiddenPart: String = hiddenIDs.sorted().joined(separator: ",")
+        let saveFlag: String = canSave ? "1" : "0"
+        let resetFlag: String = canResetOrder ? "r" : ""
+        let parts: [String] = [subscriptionPart, orderPart, hiddenPart, saveFlag + resetFlag]
+        return parts.joined(separator: "|")
+    }
+}
+
+/// What the host does for the rows. A nil closure shows that action disabled.
+public struct SubscriptionRowActions {
+    public var setVisible: (@MainActor (String, Bool) -> Void)?
+    /// A subscription id and -1 (up) or +1 (down).
+    public var move: (@MainActor (String, Int) -> Void)?
+    public var retry: (@MainActor (String) -> Void)?
+    public var resetOrder: (@MainActor () -> Void)?
+    public init() {}
+}
+
+/// Opening a tool or a help page for a fix action. Nothing here reads or writes a credential.
+@MainActor enum SubscriptionFixLauncher {
+    static func url(for target: RowFixTarget, tool: String) -> URL? {
+        switch target {
+        case .installNode: return URL(string: "https://nodejs.org/en/download")
+        case .installTool:
+            switch tool {
+            case "kiro": return URL(string: "https://kiro.dev/cli/")
+            case "codex": return URL(string: "https://developers.openai.com/codex/cli")
+            default: return nil
+            }
+        case .explain: return tool == "kiro" ? URL(string: "https://kiro.dev/docs/cli/") : SettingsAbout.consentHelpURL
+        default: return nil
+        }
+    }
+    private static let appNames = ["zai": "ZCode", "opencodego": "OpenCode", "opencode": "OpenCode", "claude": "Claude", "codex": "Codex",
+                                   "cursor": "Cursor", "kimi": "Kimi", "grok": "Grok", "gemini": "Gemini"]
+    static func openApplication(for tool: String) -> Bool {
+        guard let name = appNames[tool] else { return false }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        for folder in ["/Applications", home + "/Applications"] {
+            let path = folder + "/" + name + ".app"
+            if FileManager.default.fileExists(atPath: path) { return NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+        }
+        return false
     }
 }

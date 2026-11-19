@@ -558,7 +558,11 @@ func TestClaudeSessionReducerUncertaintyAndBounds(t *testing.T) {
 	a := sessionAccess(t)
 	batch := sessionBatch("session-main", "cli", claudeSessionNow.Add(-time.Minute), "claude-opus-5-5")
 	ref := strings.Repeat("c", 64)
-	for _, uncertainty := range []string{"prefix", "ancestry", "filename", "discovery", "recovery", "bound"} {
+	// Engine-level gaps (discovery, recovery) withhold the whole snapshot. A
+	// transcript the reducer cannot decide keeps every other session usable but
+	// leaves the most recent session unknown. Ancestry above the newest complete
+	// reply, including an omitted prefix, cannot change the selection.
+	for _, uncertainty := range []string{"prefix", "ancestry", "orphan", "filename", "discovery", "recovery", "bound"} {
 		t.Run(uncertainty, func(t *testing.T) {
 			reduce := ClaudeSessionReducer(a, claudeSessionNow)
 			b := localusage.ProjectionBatch{FileRef: ref, SessionID: "session-main", Reset: "initial", Lines: batch.Records}
@@ -567,6 +571,10 @@ func TestClaudeSessionReducerUncertaintyAndBounds(t *testing.T) {
 				b.PrefixOmitted = true
 			case "ancestry":
 				b.Lines = batch.Records[1:]
+			case "orphan":
+				// The newest leaf hangs off a record that was never seen.
+				orphan, _ := json.Marshal(map[string]any{"type": "user", "uuid": "raw-orphan", "parentUuid": "raw-missing", "sessionId": "session-main", "timestamp": claudeSessionNow.Format(time.RFC3339Nano), "entrypoint": "cli"})
+				b.Lines = append(append([][]byte(nil), batch.Records...), orphan)
 			case "filename":
 				b.SessionID = "different-session"
 			case "bound":
@@ -585,12 +593,72 @@ func TestClaudeSessionReducerUncertaintyAndBounds(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			state, err = reduce(context.Background(), state, localusage.ProjectionBatch{Final: true, DiscoveryComplete: uncertainty != "discovery", RecoveryComplete: uncertainty != "recovery", LiveFileRefs: []string{ref}})
-			if err != nil || !state.Incomplete || len(state.Decoder) > 2<<20 || len(state.Snapshot) != 0 {
-				t.Fatalf("uncertainty published: incomplete=%v decoder=%d err=%v", state.Incomplete, len(state.Decoder), err)
+			state, err = reduce(context.Background(), state, localusage.ProjectionBatch{FileRef: ref, SessionID: b.SessionID, EndFile: true, Modified: claudeSessionNow})
+			if err != nil {
+				t.Fatal(err)
 			}
-			if bytes.Contains(state.Decoder, []byte("PRIVATE-")) || bytes.Contains(state.Decoder, []byte("raw-node")) {
+			state, err = reduce(context.Background(), state, localusage.ProjectionBatch{Final: true, DiscoveryComplete: uncertainty != "discovery", RecoveryComplete: uncertainty != "recovery", LiveFileRefs: []string{ref}})
+			if err != nil || len(state.Decoder) > 2<<20 {
+				t.Fatalf("decoder: %d err=%v", len(state.Decoder), err)
+			}
+			if bytes.Contains(state.Decoder, []byte("PRIVATE-")) || bytes.Contains(state.Decoder, []byte("raw-node")) || bytes.Contains(state.Decoder, []byte("raw-orphan")) {
 				t.Fatal("raw frontier escaped")
+			}
+			// Records without an entrypoint are not interactive, so decidable
+			// cases are checked through the caller's own session.
+			selected := selectClaudeSessions(state.Snapshot, a, "")
+			own := selectClaudeSessions(state.Snapshot, a, "session-main")
+			switch uncertainty {
+			case "discovery", "recovery":
+				if !state.Incomplete || len(state.Snapshot) != 0 {
+					t.Fatalf("uncertainty published: incomplete=%v", state.Incomplete)
+				}
+			case "orphan", "filename":
+				if state.Incomplete || !state.Partial || selected.Selected != nil {
+					t.Fatalf("undecidable transcript claimed recency: %+v %+v", state, selected)
+				}
+			case "bound":
+				// Only the newest nodes are kept; the newest reply still selects.
+				if state.Incomplete || state.Partial || own.Selected == nil || own.Selected.Model != "claude-sonnet-4-6" || len(state.Decoder) > 64<<10 {
+					t.Fatalf("bounded frontier: decoder=%d %+v", len(state.Decoder), own.Selected)
+				}
+			default:
+				if state.Incomplete || state.Partial || own.Selected == nil || own.Selected.Model != "claude-opus-5-5" {
+					t.Fatalf("decidable selection withheld: partial=%v %+v", state.Partial, own.Selected)
+				}
+			}
+		})
+	}
+}
+
+// Records newer than UnknownAfter cannot be missing: the most recent session is
+// known exactly when it is at least that new, and the caller's own session is
+// selectable either way.
+func TestClaudeSessionUnknownAfterBoundsRecency(t *testing.T) {
+	a := sessionAccess(t)
+	ref := strings.Repeat("d", 64)
+	batch := sessionBatch("session-main", "cli", claudeSessionNow.Add(-time.Minute), "claude-opus-5-5")
+	for _, tc := range []struct {
+		name    string
+		unknown time.Time
+		known   bool
+	}{{"covered", time.Time{}, true}, {"older-unread", claudeSessionNow.Add(-time.Hour), true}, {"newer-unread", claudeSessionNow.Add(-time.Second), false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			reduce := ClaudeSessionReducer(a, claudeSessionNow)
+			state, err := reduce(context.Background(), localusage.ProjectionState{}, localusage.ProjectionBatch{FileRef: ref, SessionID: "session-main", Reset: "initial", Lines: batch.Records})
+			if err == nil {
+				state, err = reduce(context.Background(), state, localusage.ProjectionBatch{Final: true, DiscoveryComplete: true, RecoveryComplete: true, LiveFileRefs: []string{ref}, UnknownAfter: tc.unknown})
+			}
+			if err != nil || state.Incomplete || state.Partial == tc.known {
+				t.Fatalf("state: %+v err=%v", state, err)
+			}
+			recent := selectClaudeSessions(state.Snapshot, a, "")
+			if (recent.Selected != nil) != tc.known {
+				t.Fatalf("recent: %+v", recent)
+			}
+			own := selectClaudeSessions(state.Snapshot, a, "session-main")
+			if own.Selected == nil || own.Selected.Attribution != "current-thread" {
+				t.Fatalf("caller: %+v", own)
 			}
 		})
 	}

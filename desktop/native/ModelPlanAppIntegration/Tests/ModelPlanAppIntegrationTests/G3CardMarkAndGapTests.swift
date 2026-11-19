@@ -40,6 +40,20 @@ private actor G350Engine: EngineClient {
     func hide() {}
 }
 
+/// Waits on concrete state: yields first so a state that is already true costs nothing, then polls every 2 ms.
+/// On timeout it fails with what was awaited and stops the test; it never falls through to the next step.
+private struct G3WaitTimedOut: Error {}
+@MainActor private func g3Wait(_ what: String, seconds: Double = 5, file: StaticString = #filePath, line: UInt = #line,
+                          _ ready: () async -> Bool) async throws {
+    let end = ContinuousClock.now + .seconds(seconds)
+    var spins = 0
+    while !(await ready()) {
+        if ContinuousClock.now >= end { XCTFail("Timed out after \(seconds) s waiting for \(what)", file: file, line: line); throw G3WaitTimedOut() }
+        spins += 1
+        if spins < 50 { await Task.yield() } else { try await Task.sleep(for: .milliseconds(2)) }
+    }
+}
+
 @MainActor private final class G350Clock { var elapsed = 10.0, wall = Date() }
 
 /// G3-50 (owner, build 12): the card's vendor mark is the wrong size, the card sits closer to the
@@ -225,9 +239,8 @@ private actor G350Engine: EngineClient {
             app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
             app.allowDockPresentation()
             let dock = app.composition.dock, view = dock.dockView
-            for _ in 0..<1000 {
-                if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == 3, view.window != nil { break }
-                try await Task.sleep(for: .milliseconds(10))
+            try await g3Wait("the widget to present three subscription stations in a window", seconds: 10) {
+                !app.lifecyclePaused && (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == 3 && view.window != nil
             }
             let label = size.rawValue, unit = size.nozzleDiameter / 52
             let id = try XCTUnwrap(view.presentedSkinForChecks?.stations.compactMap(\.subscriptionID).dropFirst().first, label)
@@ -239,7 +252,7 @@ private actor G350Engine: EngineClient {
             let events = try XCTUnwrap(view.nozzleEventDelegate, label)
             events.hoverNozzle(nil); events.hoverNozzle(id)
             clock.elapsed += 0.6; clock.wall.addTimeInterval(0.6); dock.interactionControllerForChecks?.refresh()
-            for _ in 0..<200 where dock.cardPlateForChecks == nil { try await Task.sleep(for: .milliseconds(10)); dock.interactionControllerForChecks?.refresh() }
+            try await g3Wait("the card plate to be shown for \(label)") { dock.interactionControllerForChecks?.refresh(); return dock.cardPlateForChecks != nil }
             let pose = try XCTUnwrap(view.nozzlePosesForChecks[id], "\(label): subtle magnification is on the hovered ring")
             XCTAssertEqual(pose.scale, 1.15, accuracy: 0.001, label)
             let ring = screenRect(try XCTUnwrap(view.cardRingAnchor(id), label))
@@ -297,9 +310,8 @@ private actor G350Engine: EngineClient {
             app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
             app.allowDockPresentation()
             let dock = app.composition.dock, view = dock.dockView, label = size.rawValue
-            for _ in 0..<1000 {
-                if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == 3, view.window != nil { break }
-                try await Task.sleep(for: .milliseconds(10))
+            try await g3Wait("the widget to present three subscription stations in a window", seconds: 10) {
+                !app.lifecyclePaused && (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == 3 && view.window != nil
             }
             let window = try XCTUnwrap(view.window, label)
             let skin = try XCTUnwrap(view.presentedSkinForChecks, label)
@@ -339,8 +351,15 @@ private actor G350Engine: EngineClient {
     /// G3-74 (owner, deviation from DOCK-3.8-01): subtle magnification is concentric. The ring centre stays
     /// fixed at 1.15x, and at S, M and L on every allowed edge the grown ring stays inside the
     /// panel, and clear of the neighbouring rings and labels. The label does not magnify: its frame and font size are unchanged.
-    func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighbours() async throws {
-        for edge in [SettingsDockEdge.left, .right, .bottom, .top] {
+    // G3-74, one test per edge: the same edge × size matrix as the former single test (116-210 s on the GUI runner),
+    // split so each part stays well under the per-test budget and a failure names its edge.
+    func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighboursLeft() async throws { try await checkConcentricMagnification(edge: .left) }
+    func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighboursRight() async throws { try await checkConcentricMagnification(edge: .right) }
+    func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighboursBottom() async throws { try await checkConcentricMagnification(edge: .bottom) }
+    func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighboursTop() async throws { try await checkConcentricMagnification(edge: .top) }
+
+    private func checkConcentricMagnification(edge: SettingsDockEdge) async throws {
+        do {
             for size in SettingsSize.allCases {
                 let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g374-" + UUID().uuidString)
                 addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
@@ -363,9 +382,8 @@ private actor G350Engine: EngineClient {
                 app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
                 app.allowDockPresentation()
                 let dock = app.composition.dock, view = dock.dockView, label = "\(edge) \(size.rawValue)"
-                for _ in 0..<1000 {
-                    if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == 3, view.window != nil { break }
-                    try await Task.sleep(for: .milliseconds(10))
+                try await g3Wait("the widget to present three subscription stations in a window", seconds: 10) {
+                    !app.lifecyclePaused && (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == 3 && view.window != nil
                 }
                 let skin = try XCTUnwrap(view.presentedSkinForChecks, label), origin = view.layoutOriginForChecks
                 let units = skin.stations.filter { $0.subscriptionID != nil }

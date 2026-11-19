@@ -6,26 +6,34 @@
 // - AMBER: a quota forecast to run out before its reset while still above T (cockpitForecastV1). An engine
 //   that does not negotiate it creates no amber condition.
 // - Public reset announcements/confirmations, lower-effort advice, extra resets expiring within 48 hours and stale
-//   (retained) readings are list-only (blue); they never light the lamp. Credits being drawn, peak hours and
+//   (retained) readings are list-only (blue); they never light the lamp. Credits being drawn and
 //   non-reset official notices have no producer field yet, so they are not listed.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
 import {currentWindow,runOutMinutes} from './prototype-data-adapter.js';
 import {tables} from '../study/rocket-r1/i18n.js';
-import {relativeMoment} from '../study/rocket-r1/mfd-pages/fmt.js';
+import {relativeMoment,dhm} from '../study/rocket-r1/mfd-pages/fmt.js';
 import '../study/rocket-r1/strings/common.js';
 import '../study/rocket-r1/strings/mfd.js';
+import '../study/rocket-r1/strings/host.js';
 
 export type CautionLevel='red'|'amber';
 export interface CautionItem {
  /** Stable per condition and window cycle: a reset or a cleared-then-returning condition is a new condition. */
  readonly id:string; /** Identity of the caution itself: tool, window and severity. Unlike `id` it survives a refresh that moves the reset time. */ readonly stable:string; readonly level:CautionLevel|'blue'; readonly member:string;
  readonly text:{readonly en:string;readonly zh:string};
+ /** G3-106: the reset moment of the window cycle an amber forecast caution belongs to. The forecast comes and goes with
+  *  the recent usage rate, so for amber only a new cycle (or a red escalation) is a recurrence, never a paused forecast. */
+ readonly cycle?:number;
 }
+/** A window with a real current reading, with what tells its cycles apart. */
+export interface ReadWindow {readonly resetAt:number|null;readonly span:number|null}
 const span=(minutes:number)=>minutes<60?`${Math.max(0,Math.round(minutes))}m`:minutes<1440?`${Math.floor(minutes/60)}h${String(Math.round(minutes%60)).padStart(2,'0')}`:`${Math.floor(minutes/1440)}d${Math.floor(minutes%1440/60)}h`;
 const rank={red:0,amber:1,blue:2} as const;
 // Both languages from the study's string tables (strings/common.js, strings/mfd.js), so the copy stays the study's.
 const both=(key:string,vars:(lang:'en'|'zh-CN')=>Record<string,string>)=>{const one=(lang:'en'|'zh-CN')=>{const v=vars(lang);return String(tables[lang][key]??key).replace(/\{(\w+)\}/g,(m,n)=>v[n]??m);};return {en:one('en'),zh:one('zh-CN')};};
+const nameOf=(row:{name:{en:string;zh:string}},lang:'en'|'zh-CN')=>lang==='en'?row.name.en:row.name.zh;
+const labelOf=(w:{label:{en:string;zh:string}},lang:'en'|'zh-CN')=>lang==='en'?w.label.en:w.label.zh;
 const LADDER=['Low','Med','High','XHigh','Max'] as const;
 const ladderLevel=(v:unknown)=>{if(typeof v!=='string')return -1;const aliases:Readonly<Record<string,number>>={low:0,med:1,medium:1,high:2,xhigh:3,max:4};return aliases[v.toLowerCase()]??-1;};
 const finite=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v);
@@ -35,19 +43,19 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
  for(const {key,row,account} of cockpitMembers(data)){
   if(account.valueState==='retained'){
    const at=account.observedAt?Date.parse(account.observedAt):NaN,age=Number.isFinite(at)?span((now-at)/60000):null;
-   list.push({id:JSON.stringify(['stale',key]),stable:JSON.stringify(['stale',key]),level:'blue',member:key,text:{en:`${row.name.en} · Last reading${age?` ${age} ago`:''}`,zh:`${row.name.zh} · 上次读数${age?` ${age}前`:''}`}});
+   list.push({id:JSON.stringify(['stale',key]),stable:JSON.stringify(['stale',key]),level:'blue',member:key,text:age?both('host.alStaleAge',lang=>({s:nameOf(row,lang),age})):both('host.alStale',lang=>({s:nameOf(row,lang)}))});
    continue;
   }
   for(const w of account.windows){
    if(!currentWindow(account,w,now)||w.remainingPercent===null)continue;
    const r=Math.round(w.remainingPercent),resetAt=w.resetsAt?Date.parse(w.resetsAt):NaN,left=Number.isFinite(resetAt)&&resetAt>now?span((resetAt-now)/60000):null;
    if(w.remainingPercent>redBelow){
-    if(left&&runOutMinutes(data,row.id,account,w,now)!==null)lamp.push({remaining:w.remainingPercent,resetAt,item:{id:JSON.stringify([key,w.id,w.resetsAt,'forecast']),stable:JSON.stringify([key,w.id,'amber']),level:'amber',member:key,
-     text:{en:`${row.name.en} ${w.label.en} ${r}% · won't last ${left}`,zh:`${row.name.zh} ${w.label.zh} ${r}% · 撑不到 ${left} 后重置`}}});
+    if(left&&runOutMinutes(data,row.id,account,w,now)!==null)lamp.push({remaining:w.remainingPercent,resetAt,item:{id:JSON.stringify([key,w.id,w.resetsAt,'forecast']),stable:JSON.stringify([key,w.id,'amber']),level:'amber',member:key,cycle:resetAt,
+     text:both('alert.wontLast',lang=>({s:nameOf(row,lang),w:labelOf(w,lang),r:String(r),reset:left}))}});
     continue;
    }
    lamp.push({remaining:w.remainingPercent,resetAt:Number.isFinite(resetAt)?resetAt:Infinity,item:{id:JSON.stringify([key,w.id,w.resetsAt]),stable:JSON.stringify([key,w.id,'red']),level:'red',member:key,
-    text:{en:`${row.name.en} ${w.label.en} ${r}% left${left?` · resets in ${left}`:''}`,zh:`${row.name.zh} ${w.label.zh} 剩 ${r}%${left?` · ${left}后重置`:''}`}}});
+    text:left?both('host.alLowReset',lang=>({s:nameOf(row,lang),w:labelOf(w,lang),r:String(r),left})):both('alert.low',lang=>({s:nameOf(row,lang),w:labelOf(w,lang),r:String(r)}))}});
   }
  }
  const members=cockpitMembers(data);
@@ -71,7 +79,19 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   if(!cards||cards.state==='unknown')continue;
   const n=(cards.items??[]).filter(c=>{const at=c.expiresAt?Date.parse(c.expiresAt):NaN;return Number.isFinite(at)&&at>now&&at-now<=48*3600e3;}).length;
   if(!n)continue;
-  list.push({id:JSON.stringify(['cards',m.key,n]),stable:JSON.stringify(['cards',m.key]),level:'blue',member:m.key,text:{en:`${m.row.name.en} · ${n} ${n===1?'reset expires':'resets expire'} within 48 hours`,zh:`${m.row.name.zh} · 重置次数中有 ${n} 次将在 48 小时内到期`}});
+  list.push({id:JSON.stringify(['cards',m.key,n]),stable:JSON.stringify(['cards',m.key]),level:'blue',member:m.key,text:both(n===1?'host.alCardsOne':'host.alCardsMany',lang=>({s:nameOf(m.row,lang),n:String(n)}))});
+ }
+ // D63: a declared plan's published peak-rate window (cockpitPeaksV1), from the same time-of-day windows the CLI's
+ // advice reads. Blue and list-only; a peak already over is not listed. Unlike the reset-card loop above, unstable members
+ // are not skipped: a peak window is publication data, not a personal reading that may be wrong.
+ for(const peak of data.details?.peaks??[]){
+  const m=members.find(x=>x.row.id===peak.rowId),start=Date.parse(peak.startsAt),end=peak.endsAt?Date.parse(peak.endsAt):NaN;
+  if(!m||!Number.isFinite(start)||(Number.isFinite(end)&&end<=now))continue;
+  const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['peak',peak.rowId,peak.startsAt]),stable=JSON.stringify(['peak',peak.rowId]);
+  if(start<=now){list.push({id,stable,level:'blue',member:m.key,text:{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
+  const wait=(start-now)/60000;
+  if(Number.isFinite(end))list.push({id,stable,level:'blue',member:m.key,text:both('alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)}))});
+  else list.push({id,stable,level:'blue',member:m.key,text:both('host.alPeakOpen',lang=>({s:s(lang),in:dhm(wait)}))});
  }
  lamp.sort((a,b)=>a.remaining-b.remaining||a.resetAt-b.resetAt);
  // CKP-MFD-27 (study core.js alerts): on a red quota, each running session of that subscription above its model's
@@ -94,13 +114,16 @@ export function cautionLevel(items:readonly CautionItem[],member?:string):Cautio
  return own.some(x=>x.level==='red')?'red':own.some(x=>x.level==='amber')?'amber':null;
 }
 
-/** Windows that have a real current reading right now, as `[member, window]`. A condition is cleared only for these:
+/** Windows that have a real current reading right now, keyed `[member, window]`. A condition is cleared only for these:
  *  a pending, stale or missing read says nothing about whether the caution is over. */
-export function readWindows(data:WireCockpitData,now:number):Set<string> {
- const out=new Set<string>();
+export function readWindows(data:WireCockpitData,now:number):Map<string,ReadWindow> {
+ const out=new Map<string,ReadWindow>();
  for(const {key,account} of cockpitMembers(data)){
   if(account.valueState==='retained')continue;
-  for(const w of account.windows)if(currentWindow(account,w,now)&&w.remainingPercent!==null)out.add(JSON.stringify([key,w.id]));
+  for(const w of account.windows)if(currentWindow(account,w,now)&&w.remainingPercent!==null){
+   const at=w.resetsAt?Date.parse(w.resetsAt):NaN;
+   out.set(JSON.stringify([key,w.id]),{resetAt:Number.isFinite(at)?at:null,span:finite(w.durationSeconds)&&w.durationSeconds>0?w.durationSeconds*1000:null});
+  }
  }
  return out;
 }

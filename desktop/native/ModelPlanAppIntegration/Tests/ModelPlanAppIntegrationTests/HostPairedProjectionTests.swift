@@ -998,7 +998,10 @@ actor EntrySyntheticClient: EngineClient {
             XCTAssertFalse(dock.card.isHidden)
         }
         try await render(Self.rows(weekly: 75, sequence: 8, resetCardClock: wall, resetConfirmed: true))
-        XCTAssertTrue(text(dock.card).contains("已重置 · 等读数"))
+        // D166: a confirmation shows its time; the balance stays the local reading.
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("已确认 · ") })
+        XCTAssertTrue(text(dock.card).contains("余量以本机读数为准"))
+        XCTAssertTrue(text(dock.card).contains("↺ 额度重置"))
         XCTAssertFalse(text(dock.card).contains("预告 17:00 重置"))
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
         try await render(Self.rows(weekly: 75, sequence: 9, resetCardClock: wall, resetConfirmed: true,
@@ -1007,7 +1010,8 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertTrue(text(dock.card).contains("exp in 12m · Reported subset · Details truncated · Last known reading"))
         try await render(Self.rows(weekly: 75, sequence: 10, resetCardClock: wall, resetConfirmed: true,
             resetFacts: .init(count: 1, expiresIn: -60, restarted: true)))
-        XCTAssertTrue(text(dock.card).contains("Reset confirmed"))
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Confirmed · ") })
+        XCTAssertTrue(text(dock.card).contains("Local reading rose · your balance is the local reading"), "a restarted local reading is shown as an observation")
         XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Resets 1") })
         XCTAssertTrue(text(dock.card).contains("expired"))
         let confirmedAction = try XCTUnwrap(dock.card.onOpenURL)
@@ -1443,6 +1447,36 @@ actor EntrySyntheticClient: EngineClient {
         assertStatus("")
     }
 
+    /// G3-93 / MENU-05: a fresh profile shows the tightest number beside the icon without anyone choosing it
+    /// (the other entry tests commit the choice first), and a profile that saved "icon" keeps it.
+    func testG3_93FreshProfileShowsTheTightestNumberAndAnExistingChoiceStays() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g393-default-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let fixture = try Self.rows(weekly: 15)
+        func launch() async throws -> (EngineDockMenuApplication, NSButton) {
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+                dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+                makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+            await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+            let button = NSButton()
+            EngineDockMenuApplication.configureStatusButton(button, image: NSImage(size: .init(width: 16, height: 16)), barThickness: 22)
+            app.applyStatusContent(to: button, detail: "")
+            return (app, button)
+        }
+        let (fresh, freshButton) = try await launch()
+        XCTAssertEqual(freshButton.title, "15%", "a fresh profile shows the tightest number by default")
+        XCTAssertEqual(freshButton.imagePosition, .imageLeading)
+        _ = try await fresh.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.icon))
+        await fresh.composition.stop()
+        let (kept, keptButton) = try await launch()
+        XCTAssertEqual(keptButton.title, "", "an existing profile keeps its icon-only choice")
+        XCTAssertEqual(keptButton.imagePosition, .imageOnly)
+        await kept.composition.stop()
+    }
+
     /// Build 13 owner review (ledger: none): with the pointer on the menu-bar item the "0%" kept turning into "0".
     /// Every refresh re-set the title, image and position, and the reset dot was then placed from the button's
     /// previous bounds, so it landed on the "%" and moved back on the next refresh. A refresh that changes nothing
@@ -1481,6 +1515,43 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(button.imageWrites, image, "an unchanged image is not replaced")
         XCTAssertEqual(button.positionWrites, position, "an unchanged image position is not written again")
         XCTAssertEqual(button.title, "15%")
+    }
+
+    /// G3-57 (owner build 14b): the percentage vanished from the menu bar next to the icon. The path of a refresh
+    /// after the #756 change (configure, apply, place the dot) must leave "15%" in the title, the icon leading it, and
+    /// must show it again when the item first rendered icon-only (no reading yet) and a reading arrives afterwards.
+    func testPercentageTextStaysAfterTheStablePathAndAfterAnIconOnlyStart() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-percent-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let fixture = try Self.rows(weekly: 15)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let button = NSButton(frame: .zero), dot = DockNoticeIndicatorView(frame: .zero)
+        let icon = NSImage(size: .init(width: 16, height: 16))
+        func render() {
+            EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+            app.applyStatusContent(to: button, detail: "detail")
+            dot.attach(to: button)
+        }
+        // First render: the display style shows no percentage yet, so the item is icon only.
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.icon))
+        render()
+        XCTAssertEqual(button.title, ""); XCTAssertEqual(button.imagePosition, .imageOnly)
+        // A reading style arrives: the title comes back with the icon leading it.
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.tightest))
+        render()
+        XCTAssertEqual(button.title, "15%", "the percentage shows after an icon-only start")
+        XCTAssertEqual(button.imagePosition, .imageLeading)
+        for _ in 0..<3 { render() }
+        XCTAssertEqual(button.title, "15%", "unchanged refreshes keep the percentage")
+        XCTAssertEqual(button.imagePosition, .imageLeading)
+        XCTAssertNotNil(button.image)
     }
 
     /// The reset dot stays on the icon's top right whatever size the button still holds from before a refresh.

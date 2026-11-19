@@ -1,1 +1,0 @@
-The cockpit engine table now follows the Settings remaining or used choice: in used mode the percentages and the segmented bars both show what is used, while the colours stay tied to what is remaining.

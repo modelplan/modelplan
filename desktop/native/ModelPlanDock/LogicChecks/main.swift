@@ -189,9 +189,10 @@ do {
         s.forecast=DockForecastSignal(windowID:"5h",validUntil:now.addingTimeInterval(600))
         try expect(DockNoticeProjection.candidates(for:s,at:now).map(\.key.kind)==[.forecast,.resetAnnounced,.cardsExpiring,.credits],"priority order")
         s.forecast=nil;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"card expiry precedes announced reset")
-        let cards=s.cards;s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.shape == .hollow,"announced hollow blue")
+        let cards=s.cards;s.cards=[];let announced=DockNoticeProjection.selected(for:s,at:now)
+        try expect(announced?.shape == .hollow && announced?.tone == DockNotice.resetAnnouncedTone,"announced hollow, palette tone")
         s.reset=reset(confirmed:true);let confirmed=DockNoticeProjection.selected(for:s,at:now)
-        try expect(confirmed?.tone == .blue && confirmed?.shape == .solid,"confirmed solid blue, never credits white")
+        try expect(confirmed?.tone == DockNotice.resetConfirmedTone && confirmed?.shape == .solid && confirmed?.tone != .white,"confirmed solid, palette tone, never credits white")
         s.cards=cards;s.reset?.restartedReading=true;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"reading clears confirmed reset only")
         s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.tone == .white,"credits are white")
         s.creditsKnown=false;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"unknown credits not fabricated")
@@ -202,6 +203,9 @@ do {
         s.reset=DockResetSignal(id:"scheduled",status:.announced,scheduledThrough:now.addingTimeInterval(10))
         try expect(DockNoticeProjection.selected(for:s,at:now) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(10)) == nil,"scheduled end, not nominal 48h")
         s.reset=reset(confirmed:true);try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600))==nil,"confirmed 24h")
+        try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(3*3600-1)) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(3*3600))==nil,"D166: confirmed dot 3h")
+        s.reset?.confirmedDotUntil=now.addingTimeInterval(30*3600);try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600-1)) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600))==nil,"D166: a later dot bound is capped at 24h")
+        s.reset?.confirmedDotUntil=nil
         s.reset?.confirmedAt=now.addingTimeInterval(1);try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"future confirmation withheld")
         s.reset=nil;s.cards=[DockResetCardSignal(id:"expired",expiresAt:now),DockResetCardSignal(id:"boundary",expiresAt:now.addingTimeInterval(48*3600)),DockResetCardSignal(id:"late",expiresAt:now.addingTimeInterval(48*3600+1))]
         try expect(DockNoticeProjection.selected(for:s,at:now)?.key.sourceIDs == ["boundary"],"card 48h inclusive, zero excluded")
@@ -500,20 +504,20 @@ do {
         presence.lifecycleActive=false;let paused=try v.step(presence,at:0.4)
         try expect(paused.state == .suppressed(.lifecycle) && paused.nextDeadline==nil,"lifecycle is an explicit suppression")
     }
-    try test("B08 card:250ms entry, shared corridor ownership and true pins"){
+    try test("B08 card: opens on arrival (no ring dwell, Pulse select), shared corridor ownership and true pins"){
         var card=DockCardInteraction()
         try card.step(catalogue:["a","b"],hoveredID:"a",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:0)
-        try expect(card.visibility == .hidden && card.nextDeadline==0.25,"card entry is250ms")
-        try card.step(catalogue:["a","b"],hoveredID:"a",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:0.249)
-        try expect(card.visibility == .hidden,"no early card")
-        try card.step(catalogue:["a","b"],hoveredID:"a",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:0.25)
-        try expect(card.visibility == .hover("a"),"entry deadline shows scoped card")
+        try expect(card.visibility == .hover("a") && card.nextDeadline==nil,"a ring's card opens on arrival, no dwell")
         try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:1)
-        try expect(card.visibility == .hover("a") && card.nextDeadline==1.25,"card owns its bounded leave grace even with an expanded widget")
+        try expect(card.visibility == .hover("a") && abs((card.nextDeadline ?? 0)-1.15)<1e-9,"the first outside sample arms the 150 ms leave sample")
         try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:20)
         try expect(card.visibility == .hidden,"parent suppression closes the hover card")
         try card.step(catalogue:["b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:21)
         try expect(card.visibility == .hidden,"removed subscription cannot retain a card")
+        try card.step(catalogue:["a","b"],hoveredID:"b",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,carrying:true,at:22)
+        try expect(card.visibility == .hidden,"nothing opens while the widget is carried")
+        try card.step(catalogue:["a","b"],hoveredID:"b",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:23)
+        try expect(card.visibility == .hidden,"the drop alone reopens nothing under the carried pointer")
     }
     try test("refresh sweep preserves the admitted endpoint and honors Reduce Motion") {
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: 0.75, reduceMotion: false) == 0, "starts empty")
@@ -521,6 +525,17 @@ do {
         try expect(DockRefreshSweep.fraction(elapsed: 0.6, target: 0.75, reduceMotion: false) == 0.75, "ends at admitted value")
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: 0.75, reduceMotion: true) == 0.75, "Reduce Motion is static")
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: .nan, reduceMotion: false) == nil, "invalid values are rejected")
+        // G3-98: fade out, hidden until the result lands (cap 3 s), fade in; never counts; Reduce Motion never dims.
+        func al(_ e: Double, _ r: Double? = nil) -> Double { DockRefreshSweep.readoutAlpha(elapsed: e, resolvedAt: r, reduceMotion: false) }
+        try expect(al(0) == 1 && al(0.15) == 0, "fades out in 0.15 s")
+        try expect(al(1.2) == 0 && al(2.9) == 0, "stays hidden past the sweep while no result has landed")
+        try expect(abs(al(1.0, 0.8) - 1) < 0.000001, "fades in from the moment the result landed")
+        try expect(al(0.5, 0.3) > 0.999, "a quick result returns the number promptly")
+        try expect(al(0.15, 0.05) == 0 && abs(al(0.2, 0.05) - 1.0 / 3) < 0.000001 && al(0.4, 0.05) > 0.999, "an instant failure still completes the fade-out first")
+        try expect(al(3.0) == 0 && al(3.15) > 0.999, "timeout fades the number back in at 3 s")
+        try expect(abs(DockRefreshSweep.readoutEnd(resolvedAt: nil) - 3.15) < 0.000001 && DockRefreshSweep.readoutEnd(resolvedAt: 0.2) == 0.6, "loop end follows the result")
+        try expect(stride(from: 0.0, through: 3.2, by: 0.01).allSatisfy { (0...1).contains(al($0)) }, "alpha stays in range")
+        try expect(DockRefreshSweep.readoutAlpha(elapsed: 0.3, resolvedAt: nil, reduceMotion: true) == 1, "Reduce Motion swaps instantly, no fade")
     }
     try test("B08 independent card:leave and menu protection without a repeat loop"){
         var card=DockCardInteraction()
@@ -529,8 +544,8 @@ do {
         try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:true,at:5)
         try expect(card.visibility == .hover("a") && card.nextDeadline==nil,"actual menu stays protected beyond2s")
         try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:6)
-        try expect(card.nextDeadline==6.25,"standalone retains existing250ms leave grace")
-        try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:6.25)
+        try expect(abs((card.nextDeadline ?? 0)-6.15)<1e-9,"standalone leave is one 150 ms sample")
+        try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:6.2)
         try expect(card.visibility == .hidden,"standalone leave hides")
         card.dismiss();try expect(card.visibility == .hidden,"dismiss closes the card")
         try rejects(.invalidTime){try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:1)}

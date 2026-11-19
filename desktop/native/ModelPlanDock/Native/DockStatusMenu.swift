@@ -108,7 +108,7 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
 /// Template-independent notice marker. The appearance owner supplies its registered rect/colors.
 @MainActor public final class DockNoticeIndicatorView:NSView {
     public var notice:DockNotice?{didSet{needsDisplay=true}}
-    public var colors:[DockNotice.Tone:NSColor]=[.amber:.systemOrange,.blue:.systemBlue,.white:.white]{didSet{needsDisplay=true}}
+    public var colors:[DockNotice.Tone:NSColor]=[.amber:.systemOrange,.blue:.systemBlue,.green:.systemGreen,.white:.white]{didSet{needsDisplay=true}}
     public func apply(_ value:DockNotice?,firstAppearanceAnimation:CAAnimation?=nil,reducedMotion:Bool){
         wantsLayer=true;layer?.removeAnimation(forKey:"dock-notice-once");notice=value
         guard value != nil,!reducedMotion,let animation=firstAppearanceAnimation?.copy() as? CAAnimation,animation.duration.isFinite,(0...2).contains(animation.duration) else{return}

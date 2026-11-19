@@ -74,6 +74,9 @@ jobs:
       - name: "source-policy: workflow policy tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/workflow-policy.test.mjs
+      - name: "source-policy: mac-compile plan tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/mac-compile-plan.test.mjs
       - name: "source-policy: changelog tests and fragment check"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/changelog.test.mjs && node scripts/changelog.mjs --check
@@ -86,6 +89,15 @@ jobs:
       - name: "source-policy: merge-gates tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/merge-gates.test.mjs
+      - name: "source-policy: merge-gates hosted-leg tests (D314)"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/merge-gates-hosted.test.mjs
+      - name: "source-policy: workflow reviewer tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/pr-review.test.mjs
+      - name: "source-policy: no sound or haptics (MOT-2.3-12)"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/no-sound-haptics.test.mjs
       - name: "source-policy: reader tests"
         if: ${{ !cancelled() }}
         run: npm ci --ignore-scripts --no-audit --no-fund --prefix reader && npm test --prefix reader
@@ -132,7 +144,7 @@ jobs:
   # the notices inputs changed; main pushes and manual runs always do.
   notices-macos:
     needs: checks
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'pull_request' || needs.checks.outputs.notices-mac == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'pull_request' || needs.checks.outputs.notices-mac == 'true') && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     runs-on: macos-latest
     timeout-minutes: 10
     steps:

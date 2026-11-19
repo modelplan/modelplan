@@ -1,6 +1,7 @@
 package speed
 
 import (
+	"github.com/modelplan/modelplan/cli/internal/localday"
 	"math"
 	"sort"
 	"strings"
@@ -324,6 +325,7 @@ func tps(tokens, ms int64) float64 {
 // Daily: per local day of the last 30 and model, summed from the ledger's rows. Days without rows
 // are left out, not zero: the ledger cannot tell no activity from no coverage.
 func (v PerfView) Daily() []Daily {
+	v = v.accounted()
 	if !v.OK {
 		return []Daily{}
 	}
@@ -491,7 +493,7 @@ func (v PerfView) Boundaries() []time.Time {
 	l := v.Now.Local()
 	out := []time.Time{}
 	if len(v.Ledger.Rows) > 0 || len(v.Ledger.Hourly) > 0 || (v.longUsable() && len(v.Long.Rows) > 0) {
-		out = append(out, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, time.Local))
+		out = append(out, localday.Next(l))
 	}
 	for _, r := range v.Ledger.Live {
 		out = append(out, r.LastAt.Add(LiveWithin))

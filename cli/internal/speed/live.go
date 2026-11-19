@@ -26,6 +26,7 @@ type liveProbe struct {
 	running     bool
 	requests    []request
 	cwd         string
+	np          nativeProject
 }
 type liveSample struct {
 	At       time.Time `json:"at"`
@@ -69,6 +70,18 @@ type LiveSession struct {
 	LastAt          time.Time     `json:"lastAt"`
 	Status          string        `json:"status"`
 	Rate            Rate          `json:"rate"`
+	// InProgress is true while a turn is open: the parser reports one running, or an unexpired activity record says
+	// so. It can stay true after Status reads "idle" (activity expiry without a completion event). Totals read from
+	// the completed-turn ledger would undercount then, so consumers use this, never the Status word.
+	InProgress bool `json:"-"`
+}
+
+// turnOpen is the one definition of "a turn is in progress" for a live record at now (macrevb-1024-1).
+func (r LiveRecord) turnOpen(now time.Time) bool {
+	if r.Running {
+		return true
+	}
+	return r.Activity != nil && r.Activity.Phase != "finished" && now.Before(r.Activity.ExpiresAt)
 }
 
 func (p *claudeParser) liveProbe() liveProbe {
@@ -204,19 +217,19 @@ func ObserveLive(cache string, logs []LiveLog, labels bool, subscriptions map[st
 			case "claude-code":
 				p := newClaude(now)
 				p.sidechains = log.Sidechain
-				scanLog(files, log.Path, p, now)
+				scanLog(files, log.Path, log.Source, p, now)
 				x = p.probe
 			case "codex":
 				p := newCodex()
 				p.liveOnly = true
-				scanLog(files, log.Path, p, now)
+				scanLog(files, log.Path, log.Source, p, now)
 				x = p.probe
 			default:
 				continue
 			}
 			changed = l.setLive(fileKey(log.Path), log.Source, x, subscriptions[log.Source], now) || changed
 			// Reuse the decisive lifecycle parser without changing token/rate eligibility.
-			if verdicts, err := readActivityTail(log, fi, now); err == nil && len(verdicts) == 1 && !verdicts[0].RecordAt.Before(grantStart(l.admission, log.Source)) {
+			if verdicts, err := readActivityTail(log, fi, now); err == nil && len(verdicts) == 1 && !verdicts[0].RecordAt.Before(l.start(log.Source)) {
 				for j := range l.Live {
 					if l.Live[j].Key == fileKey(log.Path) && l.Live[j].Source == log.Source && sameEpoch(l.Live[j].GrantEpoch, currentEpoch(l.admission, log.Source)) {
 						v := verdicts[0].TurnActivity
@@ -229,13 +242,15 @@ func ObserveLive(cache string, logs []LiveLog, labels bool, subscriptions map[st
 	})
 }
 func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription string, now time.Time) bool {
-	start := grantStart(l.admission, source)
+	start := l.start(source)
 	if x.cfg.model == "" || x.last.IsZero() || x.last.Before(start) || !x.last.After(now.Add(-LiveWithin)) || x.last.After(now) || x.start.IsZero() {
 		return false
 	}
 	r := LiveRecord{GrantEpoch: currentEpoch(l.admission, source), Key: key, Ref: newRef(), Source: source, Model: clip(x.cfg.model), Effort: clip(x.cfg.effort), Speed: speedMode(x.cfg.speed), StartedAt: x.start.UTC(), LastAt: x.last.UTC(), Running: x.running, SubscriptionRef: subscription}
+	recorded := false // the recorded session is the authority on its project, even when it has none
 	for _, s := range l.Sessions {
 		if s.Key == key && s.Source == source && sameEpoch(s.GrantEpoch, r.GrantEpoch) {
+			recorded = true
 			r.Ref = s.Ref
 			r.ProjectRef = s.ProjectRef
 			r.SubscriptionRef = s.SubscriptionRef
@@ -253,7 +268,9 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 			if old.StartedAt.Before(r.StartedAt) {
 				r.StartedAt = old.StartedAt
 			}
-			if r.ProjectRef == "" {
+			// macrevb-909-1: a session the tool's own rule moved to no project must not get back the old
+			// live record's guess; only a live record with no recorded session keeps its earlier project.
+			if r.ProjectRef == "" && !recorded {
 				r.ProjectRef = old.ProjectRef
 			}
 			if r.SubscriptionRef == "" {
@@ -262,8 +279,8 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 			break
 		}
 	}
-	if x.cwd != "" && l.project != nil {
-		ref, label := l.project(x.cwd)
+	if (x.cwd != "" || x.np.ID != "") && l.project != nil {
+		ref, label := l.project(source, x.cwd, x.np)
 		if r.ProjectRef == "" {
 			r.ProjectRef = ref
 		}
@@ -316,7 +333,7 @@ func (v PerfView) LiveSessions() []LiveSession {
 		if !r.LastAt.After(v.Now.Add(-LiveWithin)) || r.LastAt.After(v.Now) {
 			continue
 		}
-		x := LiveSession{Ref: r.Ref, Source: r.Source, Model: r.Model, Effort: r.Effort, EffortStatus: "unreported", Speed: r.Speed, StartedAt: r.StartedAt, LastAt: r.LastAt, Status: "idle", ProjectRef: refOrNil(r.ProjectRef), ProjectLabel: r.ProjectLabel, SubscriptionRef: refOrNil(r.SubscriptionRef)}
+		x := LiveSession{Ref: r.Ref, Source: r.Source, Model: r.Model, Effort: r.Effort, EffortStatus: "unreported", Speed: r.Speed, StartedAt: r.StartedAt, LastAt: r.LastAt, Status: "idle", ProjectRef: refOrNil(r.ProjectRef), ProjectLabel: r.ProjectLabel, SubscriptionRef: refOrNil(r.SubscriptionRef), InProgress: r.turnOpen(v.Now)}
 		if r.Effort != "" {
 			x.EffortStatus = "reported"
 		}

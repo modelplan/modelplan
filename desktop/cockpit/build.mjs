@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import { cp,readFile,writeFile,mkdir,rm } from 'node:fs/promises';
+import { cp,readFile,writeFile,mkdir,rm,readdir } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve,relative,dirname,sep } from 'node:path';
@@ -31,8 +31,8 @@ const studyModules=[
   'chart-colours.js','colour-mode.js','empty-bays.js','engine-model.js','engine-view.js','fader-view.js','help-routing.js','i18n.js',
   'mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
   'mfd-pages/public-helpers.js','mfd-pages/scope.js','mfd-pages/tune.js','mfd-pages/views.js','mfd-pages/where.js',
-  'project-attribution.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
-  'strings/mfd.js','strings/review49.js','window-time.js',
+  'project-attribution.js','session-line.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
+  'strings/mfd.js','strings/review49.js','strings/host.js','window-time.js',
 ];
 for(const name of studyModules){
   const target=resolve(output,'study/rocket-r1',name);await mkdir(dirname(target),{recursive:true});
@@ -47,6 +47,16 @@ if (official) {
   verifyVisualPack(repo);
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
   await cp(resolve(here,'web/field.html'),resolve(output,'field.html'));
+  // D207: the field scene's fleet r4 rockets read their albedo/material atlases under its base URL, ./assets/art/rockets/.
+  // They move there from the copied pack (no second copy), each checked against the reserved-visuals registry.
+  const rocketPack=resolve(output,'runtime/field-scene/rockets'),rocketOut=resolve(output,'assets/art/rockets');await mkdir(rocketOut,{recursive:true});
+  const visualPolicy=JSON.parse(await readFile(resolve(repo,'source-policy.json'),'utf8'));
+  for(const name of await readdir(rocketPack)){
+    const bytes=await readFile(resolve(rocketPack,name)),expected=visualPolicy.reservedVisuals.binaries['desktop/official-visuals/runtime/field-scene/rockets/'+name];
+    if(!name.endsWith('.webp')||!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved launch-field rocket atlas: '+name);
+    await writeFile(resolve(rocketOut,name),bytes);
+  }
+  await rm(rocketPack,{recursive:true});
   // D43: the field scene draws vendor marks on its plates and asks for them by these names under ./assets/brands/;
   // the engine keys use the same folder (G3-47 review: the key marks pointed at a folder that never shipped).
   const marks=resolve(repo,'desktop/third-party/dock-resources/Resources/Marks'),brands=resolve(output,'assets/brands');await mkdir(brands,{recursive:true});
@@ -97,6 +107,9 @@ if (official) {
   for(const part of ['crown','upper','lower','cone','aft','engine-gutter','console-gutter','record-gutter'])for(const h of [890,640])for(const d of ['1x','2x'])hullFiles.push(`${part}-${h}-${d}.png`);
   hullFiles.push('lower-skin-890-1x.png','lower-skin-890-2x.png'); // side walls: the study's canopy-h1 lower skin
   hullFiles.push('aft-closed-1x.png','aft-closed-2x.png','cap-slab.svg'); // closed shell (D72): aft plate and cap slab
+  // Hull shape (owner build 13): the study's alpha masks for the narrow upper wall, the taper and the wide lower wall.
+  for(const v of [890,640,'closed'])for(const d of ['1x','2x'])hullFiles.push(`upper-walls-${v}-${d}.png`,`upper-skin-${v}-${d}.png`);
+  for(const d of ['1x','2x'])hullFiles.push(`taper-890-${d}.png`,`lower-stage-890-${d}.png`,`lower-stage-640-${d}.png`);
   await mkdir(resolve(output,'assets/hull'),{recursive:true});
   for(const name of hullFiles){
     const bytes=await readFile(resolve(hull,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/hull/assets/'+name];
@@ -105,6 +118,31 @@ if (official) {
   }
   await cp(resolve(hull,'SOURCES.md'),resolve(output,'assets/hull/SOURCES.md'));
   css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8');
+  // CKP-FAD-24 / CKP-FAD-17 (D115, D122, D196): the v4 top-down throttle on every fader travel, each file checked against the
+  // reserved-visuals registry. The community edition keeps the MIT flat fader.
+  const throttle=resolve(assets,'cockpit/throttle');
+  await mkdir(resolve(output,'assets/throttle'),{recursive:true});
+  for(const name of ['plate-night.png','plate-day.png','lever-night.png','lever-day.png','ghost-night.png','ghost-day.png']){
+    const bytes=await readFile(resolve(throttle,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/throttle/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved throttle resource: '+name);
+    await writeFile(resolve(output,'assets/throttle',name),bytes);
+  }
+  await cp(resolve(throttle,'SOURCES.md'),resolve(output,'assets/throttle/SOURCES.md'));
+  css+='\n'+await readFile(resolve(throttle,'throttle.css'),'utf8');
+  // CKP-SHELL-33 (owner D160/D172/D187): the menu-bar launch rack art. The page never draws it; the native rack panel reads
+  // it from the verified bundle, each file checked against the reserved-visuals registry.
+  const rack=resolve(assets,'cockpit/rack');
+  await mkdir(resolve(output,'assets/rack'),{recursive:true});
+  for(const name of ['mast-day.png','mast-night.png']){
+    const bytes=await readFile(resolve(rack,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/rack/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved launch rack resource: '+name);
+    await writeFile(resolve(output,'assets/rack',name),bytes);
+  }
+  await cp(resolve(rack,'SOURCES.md'),resolve(output,'assets/rack/SOURCES.md'));
+  // Strip logo (owner build 13): the study's rocket mark (shell6/logo.svg) is the repository logo, the same drawing.
+  const logo=await readFile(resolve(assets,'logo.svg'));
+  if(createHash('sha256').update(logo).digest('hex')!==policy.reservedVisuals.historicalMit['desktop/official-visuals/logo.svg'])throw Error('Unapproved logo');
+  await writeFile(resolve(output,'assets/logo.svg'),logo);
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));
   // Fonts are independently public OFL assets; keep their notices beside them.
   await cp(resolve(repo,'desktop/third-party/fonts'),resolve(output,'fonts'),{recursive:true});

@@ -1,0 +1,473 @@
+{
+  "revision": "2026-11-13.1",
+  "checkedAt": "2026-11-13",
+  "matching": "Trim and lower-case both sides; an alias applies when every match field equals the reader value; the alias with the most fields wins, then the first listed. exact: use planId and its price without asking. needs-pick: pre-select planId (may be null) among candidates and ask once.",
+  "tools": [
+    {
+      "tool": "codex",
+      "readerFields": [
+        "planType"
+      ],
+      "planIds": [
+        "openai-plus",
+        "openai-pro-100",
+        "openai-pro-200",
+        "openai-pro-500",
+        "openai-pro-5x",
+        "openai-pro-20x"
+      ],
+      "aliases": [
+        {
+          "match": {
+            "planType": "plus"
+          },
+          "planId": "openai-plus",
+          "confidence": "exact",
+          "evidence": "codex-rs tui/src/subscription.rs names the Pro tiers by monthly price (Token Monitor b6b5548 src/shared/providers/codex/limits.js:58); public reader cli/internal/quota/codexaccount.go:625"
+        },
+        {
+          "match": {
+            "planType": "prolite"
+          },
+          "planId": "openai-pro-100",
+          "confidence": "exact",
+          "evidence": "codex-rs tui/src/subscription.rs names the Pro tiers by monthly price (Token Monitor b6b5548 src/shared/providers/codex/limits.js:58); public reader cli/internal/quota/codexaccount.go:625"
+        },
+        {
+          "match": {
+            "planType": "pro"
+          },
+          "planId": "openai-pro-200",
+          "confidence": "exact",
+          "evidence": "codex-rs tui/src/subscription.rs names the Pro tiers by monthly price (Token Monitor b6b5548 src/shared/providers/codex/limits.js:58); public reader cli/internal/quota/codexaccount.go:625",
+          "note": "Before the three-tier split, pro was the $200 plan too."
+        },
+        {
+          "match": {
+            "planType": "promax"
+          },
+          "planId": "openai-pro-500",
+          "confidence": "exact",
+          "evidence": "codex-rs tui/src/subscription.rs names the Pro tiers by monthly price (Token Monitor b6b5548 src/shared/providers/codex/limits.js:58); public reader cli/internal/quota/codexaccount.go:625"
+        }
+      ]
+    },
+    {
+      "tool": "claude",
+      "readerFields": [
+        "subscriptionType",
+        "rateLimitTier"
+      ],
+      "planIds": [
+        "claude-pro",
+        "claude-max-5x",
+        "claude-max-20x"
+      ],
+      "aliases": [
+        {
+          "match": {
+            "subscriptionType": "pro"
+          },
+          "planId": "claude-pro",
+          "confidence": "exact",
+          "evidence": "Claude OAuth subscriptionType + rateLimitTier (Token Monitor b6b5548 src/shared/providers/claude/limits.js:167; CodexBar ClaudePlan.swift); public reader cli/internal/quota/claudeaccount.go:273"
+        },
+        {
+          "match": {
+            "subscriptionType": "max",
+            "rateLimitTier": "default_claude_max_5x"
+          },
+          "planId": "claude-max-5x",
+          "confidence": "exact",
+          "evidence": "Claude OAuth subscriptionType + rateLimitTier (Token Monitor b6b5548 src/shared/providers/claude/limits.js:167; CodexBar ClaudePlan.swift); public reader cli/internal/quota/claudeaccount.go:273"
+        },
+        {
+          "match": {
+            "subscriptionType": "max",
+            "rateLimitTier": "default_claude_max_20x"
+          },
+          "planId": "claude-max-20x",
+          "confidence": "exact",
+          "evidence": "Claude OAuth subscriptionType + rateLimitTier (Token Monitor b6b5548 src/shared/providers/claude/limits.js:167; CodexBar ClaudePlan.swift); public reader cli/internal/quota/claudeaccount.go:273",
+          "note": "Anthropic now sells Max 20x as Claude Ultra (#691); the tier id is unchanged."
+        },
+        {
+          "match": {
+            "subscriptionType": "max"
+          },
+          "planId": null,
+          "candidates": [
+            "claude-max-5x",
+            "claude-max-20x"
+          ],
+          "confidence": "needs-pick",
+          "evidence": "Claude OAuth subscriptionType + rateLimitTier (Token Monitor b6b5548 src/shared/providers/claude/limits.js:167; CodexBar ClaudePlan.swift); public reader cli/internal/quota/claudeaccount.go:273",
+          "note": "Without rateLimitTier, Max 5x and 20x are indistinguishable."
+        }
+      ]
+    },
+    {
+      "tool": "cursor",
+      "readerFields": [
+        "planName"
+      ],
+      "planIds": [
+        "cursor-hobby",
+        "cursor-pro",
+        "cursor-pro-plus",
+        "cursor-ultra",
+        "cursor-teams-standard",
+        "cursor-teams-premium",
+        "cursor-enterprise",
+        "cursor-start-india"
+      ],
+      "aliases": [
+        {
+          "match": {
+            "planName": "hobby"
+          },
+          "planId": "cursor-hobby",
+          "confidence": "exact",
+          "evidence": "Cursor get-plan-info planInfo.planName, fixed set in public reader cli/internal/quota/cursor.go:255"
+        },
+        {
+          "match": {
+            "planName": "pro"
+          },
+          "planId": "cursor-pro",
+          "confidence": "exact",
+          "evidence": "Cursor get-plan-info planInfo.planName, fixed set in public reader cli/internal/quota/cursor.go:255"
+        },
+        {
+          "match": {
+            "planName": "pro+"
+          },
+          "planId": "cursor-pro-plus",
+          "confidence": "exact",
+          "evidence": "Cursor get-plan-info planInfo.planName, fixed set in public reader cli/internal/quota/cursor.go:255"
+        },
+        {
+          "match": {
+            "planName": "pro-plus"
+          },
+          "planId": "cursor-pro-plus",
+          "confidence": "exact",
+          "evidence": "Cursor get-plan-info planInfo.planName, fixed set in public reader cli/internal/quota/cursor.go:255"
+        },
+        {
+          "match": {
+            "planName": "ultra"
+          },
+          "planId": "cursor-ultra",
+          "confidence": "exact",
+          "evidence": "Cursor get-plan-info planInfo.planName, fixed set in public reader cli/internal/quota/cursor.go:255"
+        },
+        {
+          "match": {
+            "planName": "teams"
+          },
+          "planId": null,
+          "candidates": [
+            "cursor-teams-standard",
+            "cursor-teams-premium"
+          ],
+          "confidence": "needs-pick",
+          "evidence": "Cursor get-plan-info planInfo.planName, fixed set in public reader cli/internal/quota/cursor.go:255",
+          "note": "Teams has a Standard and a Premium seat."
+        },
+        {
+          "match": {
+            "planName": "business"
+          },
+          "planId": null,
+          "candidates": [
+            "cursor-teams-standard",
+            "cursor-teams-premium"
+          ],
+          "confidence": "needs-pick",
+          "evidence": "Cursor get-plan-info planInfo.planName, fixed set in public reader cli/internal/quota/cursor.go:255",
+          "note": "Business is the former name of Teams."
+        }
+      ]
+    },
+    {
+      "tool": "kiro",
+      "readerFields": [
+        "planName"
+      ],
+      "planIds": [
+        "kiro-free",
+        "kiro-pro",
+        "kiro-pro-plus",
+        "kiro-pro-max",
+        "kiro-power"
+      ],
+      "aliases": [
+        {
+          "match": {
+            "planName": "KIRO PRO"
+          },
+          "planId": "kiro-pro",
+          "confidence": "exact",
+          "evidence": "kiro-cli usage planName (public reader cli/internal/quota/kiro.go:203, fixture kiro_test.go:13)",
+          "note": "Other Kiro tier names are not observed yet; they fall back to the pick."
+        }
+      ]
+    },
+    {
+      "tool": "zai",
+      "readerFields": [
+        "planName",
+        "region"
+      ],
+      "planIds": [
+        "zhipu-global-lite",
+        "zhipu-global-pro",
+        "zhipu-global-max",
+        "zhipu-global-legacy",
+        "zhipu-cn-lite",
+        "zhipu-cn-pro",
+        "zhipu-cn-max",
+        "zhipu-cn-legacy"
+      ],
+      "aliases": [
+        {
+          "match": {
+            "planName": "GLM Coding Lite",
+            "region": "global"
+          },
+          "planId": "zhipu-global-lite",
+          "candidates": [
+            "zhipu-global-lite",
+            "zhipu-global-legacy"
+          ],
+          "confidence": "needs-pick",
+          "evidence": "z.ai / bigmodel quota planName (public reader cli/internal/quota/zai.go:178; CodexBar loginMethod 'GLM Coding Pro'); region from the API host",
+          "note": "Current and legacy (V2) subscribers share the tier name; pre-select the current plan."
+        },
+        {
+          "match": {
+            "planName": "GLM Coding Lite",
+            "region": "cn"
+          },
+          "planId": "zhipu-cn-lite",
+          "candidates": [
+            "zhipu-cn-lite",
+            "zhipu-cn-legacy"
+          ],
+          "confidence": "needs-pick",
+          "evidence": "z.ai / bigmodel quota planName (public reader cli/internal/quota/zai.go:178; CodexBar loginMethod 'GLM Coding Pro'); region from the API host",
+          "note": "Current and legacy (V2) subscribers share the tier name; pre-select the current plan."
+        },
+        {
+          "match": {
+            "planName": "GLM Coding Pro",
+            "region": "global"
+          },
+          "planId": "zhipu-global-pro",
+          "candidates": [
+            "zhipu-global-pro",
+            "zhipu-global-legacy"
+          ],
+          "confidence": "needs-pick",
+          "evidence": "z.ai / bigmodel quota planName (public reader cli/internal/quota/zai.go:178; CodexBar loginMethod 'GLM Coding Pro'); region from the API host",
+          "note": "Current and legacy (V2) subscribers share the tier name; pre-select the current plan."
+        },
+        {
+          "match": {
+            "planName": "GLM Coding Pro",
+            "region": "cn"
+          },
+          "planId": "zhipu-cn-pro",
+          "candidates": [
+            "zhipu-cn-pro",
+            "zhipu-cn-legacy"
+          ],
+          "confidence": "needs-pick",
+          "evidence": "z.ai / bigmodel quota planName (public reader cli/internal/quota/zai.go:178; CodexBar loginMethod 'GLM Coding Pro'); region from the API host",
+          "note": "Current and legacy (V2) subscribers share the tier name; pre-select the current plan."
+        },
+        {
+          "match": {
+            "planName": "GLM Coding Max",
+            "region": "global"
+          },
+          "planId": "zhipu-global-max",
+          "candidates": [
+            "zhipu-global-max",
+            "zhipu-global-legacy"
+          ],
+          "confidence": "needs-pick",
+          "evidence": "z.ai / bigmodel quota planName (public reader cli/internal/quota/zai.go:178; CodexBar loginMethod 'GLM Coding Pro'); region from the API host",
+          "note": "Current and legacy (V2) subscribers share the tier name; pre-select the current plan."
+        },
+        {
+          "match": {
+            "planName": "GLM Coding Max",
+            "region": "cn"
+          },
+          "planId": "zhipu-cn-max",
+          "candidates": [
+            "zhipu-cn-max",
+            "zhipu-cn-legacy"
+          ],
+          "confidence": "needs-pick",
+          "evidence": "z.ai / bigmodel quota planName (public reader cli/internal/quota/zai.go:178; CodexBar loginMethod 'GLM Coding Pro'); region from the API host",
+          "note": "Current and legacy (V2) subscribers share the tier name; pre-select the current plan."
+        }
+      ]
+    },
+    {
+      "tool": "grok",
+      "readerFields": [
+        "plan"
+      ],
+      "planIds": [
+        "grok-supergrok",
+        "grok-supergrok-plus",
+        "grok-supergrok-heavy",
+        "x-subscription-free",
+        "x-subscription-plus",
+        "x-subscription-plus-annual",
+        "x-subscription-premium",
+        "x-subscription-premium-annual",
+        "x-subscription-super",
+        "x-subscription-super-annual",
+        "x-subscription-ultra",
+        "x-subscription-ultra-annual",
+        "x-subscription-team-premium",
+        "x-subscription-team-super",
+        "x-subscription-team-ultra"
+      ],
+      "aliases": [
+        {
+          "match": {
+            "plan": "The X Subscription"
+          },
+          "planId": null,
+          "candidates": [
+            "x-subscription-free",
+            "x-subscription-plus",
+            "x-subscription-plus-annual",
+            "x-subscription-premium",
+            "x-subscription-premium-annual",
+            "x-subscription-super",
+            "x-subscription-super-annual",
+            "x-subscription-ultra",
+            "x-subscription-ultra-annual",
+            "x-subscription-team-premium",
+            "x-subscription-team-super",
+            "x-subscription-team-ultra"
+          ],
+          "confidence": "needs-pick",
+          "evidence": "Grok billing isUnifiedBillingUser (public reader cli/internal/quota/grok.go:373)",
+          "note": "Unified X billing; the reader does not see the tier."
+        },
+        {
+          "match": {
+            "plan": "Grok Build"
+          },
+          "planId": null,
+          "candidates": [
+            "grok-supergrok",
+            "grok-supergrok-plus",
+            "grok-supergrok-heavy"
+          ],
+          "confidence": "needs-pick",
+          "evidence": "public reader cli/internal/quota/grok.go:373",
+          "note": "SuperGrok tier is not read."
+        }
+      ]
+    },
+    {
+      "tool": "copilot",
+      "readerFields": [],
+      "planIds": [
+        "github-copilot-free",
+        "github-copilot-student",
+        "github-copilot-pro",
+        "github-copilot-pro-plus",
+        "github-copilot-max",
+        "github-copilot-business",
+        "github-copilot-enterprise"
+      ],
+      "aliases": [],
+      "note": "The reader reads no SKU; pick only."
+    },
+    {
+      "tool": "antigravity",
+      "readerFields": [],
+      "planIds": [
+        "google-antigravity-free",
+        "google-antigravity-pro",
+        "google-antigravity-ultra-5x",
+        "google-antigravity-ultra-20x"
+      ],
+      "aliases": [],
+      "note": "The reader binds no plan; pick only."
+    },
+    {
+      "tool": "kimi",
+      "readerFields": [],
+      "planIds": [
+        "kimi-plus",
+        "kimi-plus-annual",
+        "kimi-pro",
+        "kimi-pro-annual",
+        "kimi-max",
+        "kimi-max-annual",
+        "kimi-ultra",
+        "kimi-ultra-annual",
+        "kimi-legacy-andante",
+        "kimi-legacy-moderato",
+        "kimi-legacy-allegretto"
+      ],
+      "aliases": [],
+      "note": "The reader reads no tier and logs in to the China site; catalogue prices are the overseas USD list. Kimi Go has no Kimi Code quota and is not offered."
+    },
+    {
+      "tool": "minimax",
+      "readerFields": [],
+      "planIds": [
+        "minimax-m-go",
+        "minimax-m-explore",
+        "minimax-m-build",
+        "minimax-cn-m-go",
+        "minimax-cn-m-explore",
+        "minimax-cn-m-build",
+        "minimax-int-plus",
+        "minimax-int-max",
+        "minimax-int-ultra",
+        "minimax-cn-plus",
+        "minimax-cn-max",
+        "minimax-cn-ultra"
+      ],
+      "aliases": [],
+      "note": "The reader reads no tier; pick only."
+    },
+    {
+      "tool": "opencodego",
+      "readerFields": [],
+      "planIds": [
+        "opencode-go",
+        "opencode-go-plus"
+      ],
+      "aliases": [],
+      "note": "No reader plan field; pick only."
+    },
+    {
+      "tool": "gemini",
+      "readerFields": [],
+      "planIds": [],
+      "aliases": [],
+      "note": "No catalogue plan for Gemini CLI; a typed price only."
+    },
+    {
+      "tool": "amp",
+      "readerFields": [],
+      "planIds": [],
+      "aliases": [],
+      "note": "Amp is not catalogued; a typed price only."
+    }
+  ]
+}
