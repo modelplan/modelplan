@@ -96,7 +96,9 @@ enum ProductionDockPalette {
 
         // Failure: released early, the OLD value fades back in.
         XCTAssertTrue(view.playRefreshSweep("synthetic", reduceMotion: false))
-        try await Task.sleep(for: .milliseconds(300))
+        // Wait for the frame loop to draw the fully faded frame instead of sleeping a fixed 300 ms: on a loaded
+        // runner the 50 ms loop can still be mid fade-out then (runs 44252425491 and 44281593094: alpha 0.0044, 0.082).
+        try await waitFrames(view, until: { view.refreshSweepReadoutFramesForChecks.last?.alpha == 0 }, seconds: 2)
         XCTAssertEqual(view.refreshSweepReadoutFramesForChecks.last?.alpha, 0)
         view.resolveRefreshReadout("synthetic")
         try await waitFrames(view, until: { !view.refreshSweepAnimatingForChecks }, seconds: 2)
