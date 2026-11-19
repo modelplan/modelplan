@@ -185,11 +185,12 @@ func TestConcurrentLiveSessionsAndShortRate(t *testing.T) {
 func TestCodexOptionalCacheWritesAndResets(t *testing.T) {
 	u := &cxUsage{Input: count(100), Cached: count(40), Write: count(10), Output: count(200)}
 	k := u.kinds()
-	if *k.InputTokens != 60 || *k.CacheReadTokens != 40 || *k.CacheWriteTokens != 10 {
+	// Codex input includes cache reads and cache writes (ccusage): 100 - 40 - 10 = 50 uncached input.
+	if *k.InputTokens != 50 || *k.CacheReadTokens != 40 || *k.CacheWriteTokens != 10 {
 		t.Fatal(k)
 	}
 	d := usageDelta(u, &cxUsage{Input: count(80), Cached: count(30), Write: count(8), Output: count(100)})
-	if d == nil || *d.Write != 2 || *d.kinds().InputTokens != 10 {
+	if d == nil || *d.Write != 2 || *d.kinds().InputTokens != 8 {
 		t.Fatal(d)
 	}
 	if usageDelta(&cxUsage{Output: count(1)}, u) != nil {

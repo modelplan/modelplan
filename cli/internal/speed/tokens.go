@@ -72,11 +72,42 @@ func (u *cxUsage) kinds() TokenKinds {
 	k.CacheWriteTokens = nonnegative(u.Write)
 	if u.Input != nil && u.Cached != nil && *u.Input >= *u.Cached && *u.Cached >= 0 {
 		n := *u.Input - *u.Cached
+		// input_tokens also includes cache writes (ccusage normalize_codex_raw_usage):
+		// bound them by the uncached input and take them out, so each token counts once.
+		if k.CacheWriteTokens != nil {
+			w := min(*k.CacheWriteTokens, n)
+			k.CacheWriteTokens = &w
+			n -= w
+		}
 		k.InputTokens = &n
 	} else if u.Input != nil && u.Cached != nil && *u.Cached > *u.Input {
 		k.CacheReadTokens = nil
 	}
 	return k
+}
+
+// enrichCodex merges two reports of one Codex response. Codex input includes cache reads and
+// writes, so the disjoint input is only coherent with the reads and writes of the same report:
+// keep one report's three buckets as a whole, never a mix. The more complete report wins
+// (more known buckets; on a tie, the one that reports more cache writes, its input then
+// already excludes them). Fewer known buckets leave the total unknown, never summed.
+func (k *TokenKinds) enrichCodex(src TokenKinds) {
+	known := func(t TokenKinds) (n int, writes int64) {
+		for _, p := range []*int64{t.InputTokens, t.CacheReadTokens, t.CacheWriteTokens} {
+			if p != nil {
+				n++
+			}
+		}
+		if t.CacheWriteTokens != nil {
+			writes = *t.CacheWriteTokens
+		}
+		return n, writes
+	}
+	kn, kw := known(*k)
+	sn, sw := known(src)
+	if sn > kn || sn == kn && sw > kw {
+		k.InputTokens, k.CacheReadTokens, k.CacheWriteTokens = src.InputTokens, src.CacheReadTokens, src.CacheWriteTokens
+	}
 }
 func usageDelta(cur, prev *cxUsage) *cxUsage {
 	if cur == nil || prev == nil {

@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 
+/// ALR-52 (WP-11, V1-FINAL §11; supersedes SET-9-18 and SET-9-29): v1 sends only two kinds of system notification,
+/// a reset happened (`.reset`) and an official extra reset (`.official`). Forecasts, expiring resets and stale data are
+/// shown in the app (the ALERT lamp and its list) but never notified. Saved preferences keep every kind, so nothing is
+/// lost if a later version offers more. Notifications carry no reading and nothing is uploaded; delivery always goes
+/// through the opt-in and the macOS authorization checked by `NotificationPolicy`.
+public extension NotificationKind {
+    static let delivered: Set<NotificationKind> = [.reset, .official]
+}
 public enum NotificationAuthorization: String, Sendable { case notDetermined, authorized, provisional, denied, unavailable }
 public enum NotificationPermissionEffect: Equatable, Sendable { case none, requestAuthorization(UUID) }
 public struct SettingsNotice: Sendable {

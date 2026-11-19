@@ -22,6 +22,7 @@ import {plans} from '../study/rocket-r1/mfd-pages/plans.js';
 import {relativeMoment,tok,until,md} from '../study/rocket-r1/mfd-pages/fmt.js';
 import {tune} from '../study/rocket-r1/mfd-pages/tune.js';
 import {where} from '../study/rocket-r1/mfd-pages/where.js';
+import {alertsPage} from '../study/rocket-r1/mfd-pages/alerts.js';
 import {shortLabel} from '../study/rocket-r1/short-label.js';
 import {compareSpeedTiers} from './speed-tiers.js';
 import {comparison,compareKeys,compareView,type CompareArgs} from '../study/rocket-r1/mfd-pages/views.js';
@@ -30,7 +31,7 @@ type Locale='en'|'zh-CN';
 const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
 const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,key:'host.pageOverview'}),Object.freeze({module:plans,key:'host.pageSubscription'}),Object.freeze({module:tune,key:'host.pageEffort'}),Object.freeze({module:where,key:'host.pageBreakdown'})]);
 export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
-export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{}){
+export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false){
  const scale=root.querySelector<HTMLElement>('.fd-scale')!,channels=root.querySelector<HTMLElement>('.fd-chs')!,mfd=root.querySelector<HTMLElement>('.dk-mfd')!;
  let details=fixture;const fixturePublication=fixture.publication!==null;fixture=unavailablePrototypeDetailsFixture();
  let publicationKey:string|null=null;
@@ -179,7 +180,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const accounts=members.map(({key,row,account})=>({id:ids.get(key)!,name:titleOf(row,account),short:locale==='en'?row.name.en:row.name.zh,plan:planOf(account),vendor:row.vendorKey&&Object.hasOwn(vendorPalette,row.vendorKey)?row.vendorKey:'unknown',colour:colours.get(key)!,logo:row.vendorKey&&Object.hasOwn(subscriptionMarks,row.vendorKey)?subscriptionMarks[row.vendorKey]!:'',source:'native',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:ageOf(account),support:'quota-only',pool:null,windows:account.valueState==='none'?[]:account.windows.filter(w=>!scopedWindow(w)).map(w=>({kind:w.role==='session'?'5h':w.role==='weekly'?'week':w.role==='monthly'?'month':w.role==='daily'?'day':'other',label:locale==='en'?w.label.en:w.label.zh,remaining:displayWindow(account,w,now)?w.remainingPercent:null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))&&Date.parse(w.resetsAt)>=now?(Date.parse(w.resetsAt)-now)/60000:null,resetAt:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Date.parse(w.resetsAt):null,...runOutFields(runOutMinutes(data,row.id,account,w,now)),elapsed:null})),extras:account.valueState==='none'?[]:account.windows.filter(scopedWindow).map(w=>({kind:'other',label:locale==='en'?w.label.en:w.label.zh,remaining:displayWindow(account,w,now)?w.remainingPercent:null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))&&Date.parse(w.resetsAt)>=now?(Date.parse(w.resetsAt)-now)/60000:null,resetAt:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Date.parse(w.resetsAt):null,...runOutFields(runOutMinutes(data,row.id,account,w,now)),elapsed:null})),cards:[],credits:scope==='all'&&prototypeEngineSupplement(account,data??undefined).reserveCredits?.balance!=null&&['credits','points'].includes(prototypeEngineSupplement(account,data??undefined).reserveCredits?.unit??'')?{balance:prototypeEngineSupplement(account,data??undefined).reserveCredits!.balance,drawing:null}:null,todayTokens:prototypeEngineSupplement(account,data??undefined).todayTokens,forecast:forecastOf(account.windows.filter(w=>!scopedWindow(w)).map(w=>runOutFields(runOutMinutes(data,row.id,account,w,now)))),peak:null,resets:resetHistory(data,account.subscriptionRef,row.id,now),usageStats:usageStats(data,account.subscriptionRef)}));
   // Owner D38: urgency order, subscription and time left; resets and stale readings are list-only (blue).
   // The overview follows the selected scope; the full list (the global lamp's destination) never does.
-  const allAlerts=data?cautionItems(data,now,redBelow()).map(x=>({member:x.member,level:x.level,stable:x.stable,text:locale==='en'?x.text.en:x.text.zh})):[];
+  const allAlerts=data?cautionItems(data,now,redBelow()).map(x=>({member:x.member,level:x.level,stable:x.stable,text:locale==='en'?x.text.en:x.text.zh,detail:x.detail?locale==='en'?x.detail.en:x.detail.zh:null,settings:x.settings===true})):[];
   const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text})=>({level,text}));
   // Public model data for the frontier (owner D39/D-B): the shared selection for this scope, ten at most.
   const published=publishedFleet(data,scope,now);
@@ -205,14 +206,19 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   bar.classList.remove('dark');footer.className='mfd-ok';footer.onclick=null;
   if(compare&&!alertsView&&paintCompare(d,ui))return;
   if(alertsView){
-   const back=t(pages[selected].module.title),list=node('ul','mfd-alerts all'+(alertsView.from==='caution'?' ack':'')),button=node('button','mfd-back',t('mfd.back',{p:back}));
-   button.type='button';button.dataset.mfd='back';button.setAttribute('aria-label',t('mfd.backAria',{p:back}));
-   const mark=alertsView.from==='caution'?alertsView.mark??null:null,flashRow=alertsView.flash===true;alertsView.flash=false;
-   for(const x of d.allAlerts){const li=node('li','al-'+x.level+(mark!==null&&x.stable===mark?' al-mark'+(flashRow?' al-flash':''):''));li.append(node('i','','●'),node('span','',x.text));list.append(li);}
-   if(!d.allAlerts.length)list.append(node('li','al-none',t('mfd.noAlerts')));
-   page.className='mfd-page pg-alerts is-view';page.replaceChildren(button,list);
+   // CKP-MFD-55/56 (WP-11): the list view (mfd-pages/alerts.js). A row selects its subscription and returns to the
+   // page the list was opened from, now scoped; a grey (unreadable) row opens Settings › Subscriptions instead.
+   const back=t(pages[selected].module.title),mark=alertsView.from==='caution'?alertsView.mark??null:null,flashRow=alertsView.flash===true;alertsView.flash=false;
+   page.className='mfd-page pg-alerts is-view';
+   page.innerHTML=alertsPage(d.allAlerts,{back:{label:t('mfd.back',{p:back}),aria:t('mfd.backAria',{p:back})},mark,flash:flashRow,ack:alertsView.from==='caution'});
    footer.replaceChildren(...Array.from({length:3},()=>{const e=node('span','ok soft off');e.dataset.mat='part';e.setAttribute('aria-hidden','true');return e;}));
-   page.onclick=e=>{if(e.isTrusted&&(e.target as HTMLElement).closest('[data-mfd="back"]'))closeAlerts();};
+   page.onclick=e=>{
+    if(!e.isTrusted)return;const target=e.target as HTMLElement;
+    if(target.closest('[data-mfd="back"]')){closeAlerts();return;}
+    const row=target.closest<HTMLElement>('[data-al]'),x=row?d.allAlerts.find(a=>a.stable===row.dataset.alId):undefined;if(!x)return;
+    if(x.settings){onSettings();return;}
+    if(d.members.some(m=>m.key===x.member)&&onScope?.(x.member)){setScope(x.member);closeAlerts();}
+   };
    return;
   }
   page.className='mfd-page pg-'+modules[selected].id;

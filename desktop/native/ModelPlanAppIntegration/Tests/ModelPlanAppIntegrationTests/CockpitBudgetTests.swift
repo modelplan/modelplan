@@ -182,17 +182,15 @@ extension CommunityCockpitEntryTests {
             closedFootprints.append(footprint)
             print(String(format: "CKP-SHELL-19 cycle=%d openCPU=%.2f%% closedCPU=%.2f%% webContentEnded=%@ gpu=%@ baselineMiB=%.1f closedMiB=%.1f",
                          cycle, open, closed, ended ? "yes" : "no", processes.gpuBasis, Double(baseline) / mebibyte, Double(footprint) / mebibyte))
-            XCTAssertLessThanOrEqual(open, budget, "cycle \(cycle): App + WebContent + GPU average at most 10% of one core while open")
-            XCTAssertLessThanOrEqual(closed, budget, "cycle \(cycle): closed, the cockpit costs nothing near the open budget")
+            HostedRunnerTiming.enforce("cycle \(cycle): App + WebContent + GPU average at most 10% of one core while open", measured: open, atMost: budget)
+            HostedRunnerTiming.enforce("cycle \(cycle): closed, the cockpit costs nothing near the open budget", measured: closed, atMost: budget)
         }
         // Memory returns to its pre-open level. The first open loads WebKit's shared code into the App once; that
         // allowance is the only one, and later cycles may not grow.
         let firstLoad = 32.0, growth = 8.0
         let last = try XCTUnwrap(closedFootprints.last), second = closedFootprints[1]
-        XCTAssertLessThanOrEqual((Double(last) - Double(baseline)) / mebibyte, firstLoad,
-                                 "after close the App's memory is back near its pre-open level")
-        XCTAssertLessThanOrEqual((Double(last) - Double(second)) / mebibyte, growth,
-                                 "memory does not grow across repeated open and close cycles")
+        HostedRunnerTiming.enforce("after close the App's memory is back near its pre-open level", measured: (Double(last) - Double(baseline)) / mebibyte, atMost: firstLoad)
+        HostedRunnerTiming.enforce("memory does not grow across repeated open and close cycles", measured: (Double(last) - Double(second)) / mebibyte, atMost: growth)
     }
 }
 #endif

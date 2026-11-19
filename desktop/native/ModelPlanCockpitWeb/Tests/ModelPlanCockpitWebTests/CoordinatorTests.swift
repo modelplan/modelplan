@@ -130,7 +130,7 @@ final class CoordinatorTests: XCTestCase {
     await coordinator.consume(.context(EngineDeliveryContext(
       sessionID: "s-" + UUID().uuidString.lowercased(),
       floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)))
-    XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(300))
+    HostedRunnerTiming.enforce("pending open builds the page within 300 ms of the context", measured: Double((ContinuousClock.now - start) / .milliseconds(1)), atMost: 300)
     XCTAssertEqual(pages.count, 1, "The pending open builds the page as soon as the context exists")
     XCTAssertTrue(coordinator.presented)
     XCTAssertEqual(opened, 1)
