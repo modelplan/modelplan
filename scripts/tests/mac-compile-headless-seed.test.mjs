@@ -223,3 +223,49 @@ test("killed before the swap or after it: the slot holds a complete seed (old or
   assert.deepEqual(fs.readdirSync(s.seed).filter((n) => !n.endsWith(".lock")), ["headless_build"], "the stale backup is cleared");
   assert.equal(restoredProduct(s), "newest");
 });
+
+// A stale backup that cleanup cannot remove (rm and the move-aside both fail on it).
+const pinBackup = (s) => {
+  fs.mkdirSync(path.join(s.seed, ".headless_build.old", "stale"), { recursive: true });
+  const real = spawnSync("which", ["rm"], { encoding: "utf8" }).stdout.trim();
+  fs.writeFileSync(path.join(s.d, "bin", "rm"), `#!/bin/bash\ncase "$*" in *"/.headless_build.old"*) exit 1;; esac\nexec ${real} "$@"\n`, { mode: 0o755 });
+};
+const failStageRename = (s) => {
+  const real = spawnSync("which", ["mv"], { encoding: "utf8" }).stdout.trim();
+  fs.writeFileSync(path.join(s.d, "bin", "mv"), `#!/bin/bash\ncase "$*" in *"/.headless_build.stage."*" "*"/headless_build") exit 1;; esac\nexec ${real} "$@"\n`, { mode: 0o755 });
+};
+const unshim = (s) => { for (const t of ["rm", "mv"]) fs.rmSync(path.join(s.d, "bin", t), { force: true }); };
+
+test("a backup that cleanup cannot clear aborts the publish: the slot is kept as it was and never nested into the backup", () => {
+  const s = setup(); build(s, "previous"); run(s, "publish");
+  pinBackup(s);
+  build(s, "next");
+  const r = run(s, "publish");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /not published/);
+  assert.ok(!fs.existsSync(path.join(s.seed, ".headless_build.old", "headless_build")), "the slot was not moved into the backup");
+  unshim(s);
+  assert.equal(restoredProduct(s), "previous");
+});
+
+test("a stage rename that fails rolls the previous seed back into the slot", () => {
+  const s = setup(); build(s, "previous"); run(s, "publish");
+  failStageRename(s);
+  build(s, "next");
+  const r = run(s, "publish");
+  assert.match(r.stdout, /not published/);
+  unshim(s);
+  assert.ok(!fs.existsSync(path.join(s.seed, ".headless_build.old")), "no backup left behind");
+  assert.equal(restoredProduct(s), "previous");
+});
+
+test("an uncleared backup plus a failing stage rename still leaves the reader the previous seed", () => {
+  const s = setup(); build(s, "previous"); run(s, "publish");
+  pinBackup(s); failStageRename(s);
+  build(s, "next");
+  const r = run(s, "publish");
+  assert.match(r.stdout, /not published/);
+  unshim(s);
+  assert.ok(!fs.existsSync(path.join(s.seed, "headless_build", "headless_build")), "no slot nested in the slot");
+  assert.equal(restoredProduct(s), "previous");
+});

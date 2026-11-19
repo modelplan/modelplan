@@ -118,7 +118,8 @@ seed_recover() {
   local slot="${SEED_ROOT:?}/$1" old="$SEED_ROOT/.$1.old"
   if [ ! -e "$slot" ] && [ -d "$old" ]; then mv "$old" "$slot" || return 1; echo "recovered the previous seed for $1"; fi
   wipe "$old" "$SEED_ROOT/.$1.stage."*
-  return 0
+  # A swap needs the backup path ABSENT: mv onto an existing directory would nest the slot inside it.
+  [ ! -e "$old" ] && [ ! -L "$old" ]
 }
 # seed_publish <package dir> <scratch name> <built scratch>: replace every older key of the package by the new seed.
 # The new seed and its manifest are built in a staging directory first. The swap is rename-only and safe to interrupt
@@ -127,10 +128,13 @@ seed_recover() {
 seed_publish() {
   local key stage m slot="${SEED_ROOT:?}/$2" old="$SEED_ROOT/.$2.old"
   key=$(seedkey "$1")
-  seed_recover "$2" || { echo "::error::could not recover seed for $2"; return 1; }
+  # Abort (keeping the current slot) unless recovery left the backup path absent.
+  seed_recover "$2" || { echo "::error::could not clear the seed backup for $2: current seed kept"; return 1; }
   stage=$(mktemp -d "$SEED_ROOT/.$2.stage.XXXXXX") && chmod 755 "$stage" || { echo "::error::could not stage seed for $2"; return 1; }
   { clone "$3" "$stage/$key" && chmod -R a-w "$stage/$key" && m=$(manifest "$stage/$key") && printf '%s' "$m" >"$stage/$key.manifest"; } \
     || { wipe "$stage"; echo "::error::could not publish seed for $2"; return 1; }
+  # Re-checked right before the swap (the lock is held, so nothing recreates it in between).
+  [ ! -e "$old" ] && [ ! -L "$old" ] || { wipe "$stage"; echo "::error::seed backup for $2 present: current seed kept"; return 1; }
   if [ -e "$slot" ]; then mv "$slot" "$old" || { wipe "$stage"; echo "::error::could not set the old seed for $2 aside"; return 1; }; fi
   if ! mv "$stage" "$slot"; then
     [ -e "$slot" ] || [ ! -d "$old" ] || mv "$old" "$slot"
