@@ -50,10 +50,14 @@ export const HOSTED_WORKFLOWS = Object.freeze([...new Set(HOSTED_MAC_LEGS.map((l
 // Every table leg's `if:` (or its matrix `os:` list) carries this guard, so it never starts on pull_request or
 // merge_group: a PR or group run then finishes without waiting for a hosted runner and its workflow_run re-evaluates
 // the gate (merge-gates.yml has no job-level trigger: workflow_job is a webhook, not an Actions event). The legs keep
-// running on every main push (post-merge-hosted.yml reports them) and by workflow_dispatch on any branch. The three
-// trusted-mac.yml callers keep their macOS leg before merge only when the owner's variables route it to a self-hosted
-// Mac (u11-native: MAC_CI_NONGUI; transport, sequences: MAC_CI_RUNNER_V2); if routing still lands it on a hosted Mac,
-// the rules below set it aside. Checked against main's workflows by tests/merge-gates-hosted.test.mjs.
+// running on every main push (post-merge-hosted.yml reports them) and by workflow_dispatch on any branch.
+// Exceptions, all callers of the pinned trusted-mac.yml, which alone decides the runner (workflow-policy.mjs forbids
+// any other workflow line that names the self-hosted route or its variable value):
+//  - u11-native keeps its leg before merge only while MAC_CI_NONGUI routes it to the owner Macs.
+//  - transport and sequences (u4b, u6) keep their macOS matrix leg on PRs: with MAC_CI_RUNNER_V2 it runs on the owner
+//    Macs and is required. Neither workflow runs in merge groups, so no group waits for them; if routing falls back to
+//    a hosted Mac on a PR, the rules below set it aside (it can delay that PR's evaluation, never fail it).
+// Checked against main's workflows by tests/merge-gates-hosted.test.mjs.
 export const PRE_MERGE_SKIP = "!contains(fromJSON('[\"pull_request\",\"merge_group\"]'), github.event_name)";
 
 // A path that can change job names, runner labels or needs: edges. Any workflow, not only the table's: reusable

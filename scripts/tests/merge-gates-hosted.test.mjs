@@ -180,13 +180,15 @@ test("every workflow triggers only on events GitHub Actions supports (no webhook
 
 test("hosted legs never start on pull_request or merge_group, so no PR or group run waits for a hosted Mac", () => {
   // Any run the gate reads then completes when its required jobs do, and its workflow_run re-evaluates the gate.
-  const NOT_SKIP = Hs.PRE_MERGE_SKIP.slice(1);
   // Callers of trusted-mac.yml keep a pre-merge macOS leg only where the owner's variable routes it to a self-hosted Mac.
   const routed = {
     "u11-native": `(${Hs.PRE_MERGE_SKIP} || vars.MAC_CI_NONGUI == 'enabled')`,
-    transport: `(${NOT_SKIP} && vars.MAC_CI_RUNNER_V2 != 'self-hosted')) && '["ubuntu-latest"]'`,
-    sequences: `(${NOT_SKIP} && vars.MAC_CI_RUNNER_V2 != 'self-hosted')) && '["ubuntu-latest"]'`,
+    // trusted-mac.yml routes these by MAC_CI_RUNNER_V2; the caller keeps main's draft-only matrix and runs in no merge group.
+    transport: `os: \${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}`,
+    sequences: `os: \${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}`,
   };
+  for (const f of ["u4b-engine-client.yml", "u6-engine-store-core.yml"])
+    assert.ok(!onEvents(wfText(`.github/workflows/${f}`)).includes("merge_group"), `${f}: a routed PR leg must not join merge groups`);
   for (const leg of Hs.HOSTED_MAC_LEGS) {
     const lines = jobBlocks(wfText(leg.workflow)).get(leg.key);
     assert.ok(lines, `${leg.workflow}: job ${leg.key}`);
@@ -207,6 +209,8 @@ test("hosted legs never start on pull_request or merge_group, so no PR or group 
     for (let k = 0; k < body.length; k++) { const c = body[k]; if (c === "(") depth++; else if (c === ")") depth--; else if (!depth && body.startsWith("||", k)) topOr = true; }
     assert.equal(topOr, false, `${leg.workflow} ${leg.key}: no top-level || before the guard`);
   }
+  // Every guarded workflow still passes the source policy (no caller may name the self-hosted route: check-source-policy).
+  for (const p of [...Hs.HOSTED_WORKFLOWS, ".github/workflows/merge-gates.yml"]) assert.deepEqual(workflowProblems(wfText(p), p), [], p);
   // merge-gates.yml re-evaluates on workflow_run only; nothing job-level.
   const gates = wfText(".github/workflows/merge-gates.yml");
   assert.deepEqual(onEvents(gates), ["issue_comment", "workflow_run", "workflow_dispatch"]);
