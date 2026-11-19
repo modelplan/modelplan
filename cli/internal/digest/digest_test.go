@@ -137,3 +137,42 @@ func TestEffortProvisionalRoundTripsOnlyWhenSet(t *testing.T) {
 		t.Fatalf("encoded %s", got)
 	}
 }
+
+// D292 / client-v1.5: an effort may carry aaScore (the raw AA Intelligence Index score), a reference only. It is kept
+// when the publication is client-v1.5 or later and the value is a positive number; otherwise it is dropped, not the
+// publication. Absent stays absent.
+func TestEffortAAScoreKeptFromClientV15AndDroppedOtherwise(t *testing.T) {
+	doc := func(version, efforts string) []byte {
+		return []byte(`{"schemaVersion":1,"kind":"client","data":{"projectionVersion":"` + version + `","multipliers":[],"multiplierHorizon":{"from":"2026-10-16T00:00:00Z","to":"2026-10-18T00:00:00Z","selection":"highest-priority-no-stacking"},"speedTiers":[],` +
+			`"units":{"ability":"websiteAbility","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"},"aaIndexVersion":"4.3",` +
+			`"models":[{"id":"sol","name":"Sol","developerId":"openai","recommended":"high","harnessIds":{"api":[]},"efforts":` + efforts + `}],"lineups":[],"resets":[],"windows":[]}}`)
+	}
+	scored := `[{"effort":"high","label":"High","ability":42.8,"cost":0.375,"time":104,"aaScore":61.5},{"effort":"max","label":"Max","ability":47.5,"cost":1.056,"time":221}]`
+	d, err := Parse("client", doc("client-v1.5", scored))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := d.Models[0].Efforts; e[0].AAScore == nil || *e[0].AAScore != 61.5 || e[1].AAScore != nil || *e[0].Ability != 42.8 {
+		t.Fatalf("v1.5 efforts: %+v", e)
+	}
+	if d.AAIndexVersion != "4.3" {
+		t.Fatalf("aaIndexVersion = %q", d.AAIndexVersion)
+	}
+	for name, raw := range map[string][]byte{
+		"below v1.5": doc("client-v1.4", scored),
+		"zero":       doc("client-v1.5", strings.Replace(scored, `61.5`, `0`, 1)),
+		"negative":   doc("client-v1.5", strings.Replace(scored, `61.5`, `-3`, 1)),
+	} {
+		d, err := Parse("client", raw)
+		if err != nil {
+			t.Fatalf("%s: the publication must survive: %v", name, err)
+		}
+		if e := d.Models[0].Efforts[0]; e.AAScore != nil || e.Ability == nil || *e.Ability != 42.8 {
+			t.Fatalf("%s: %+v", name, e)
+		}
+	}
+	out, err := json.Marshal(Effort{Effort: "high", Label: "High"})
+	if err != nil || strings.Contains(string(out), "aaScore") {
+		t.Fatalf("absent aaScore encoded: %s %v", out, err)
+	}
+}
