@@ -120,6 +120,18 @@ def terminate(process):
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+    except PermissionError:
+        # Darwin returns EPERM for a group whose only members are dead/zombies.
+        # That happens when TERM lands before the worker installed its TERM
+        # handler (it then dies before spawning anything). Reap the leader, then
+        # require positive proof that the group is empty; never assume it.
+        process.wait(timeout=3)
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            process.stdin.close()
+            return
+        raise
     process.wait(timeout=3)
     process.stdin.close()
 

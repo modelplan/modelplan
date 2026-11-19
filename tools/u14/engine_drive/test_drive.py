@@ -41,9 +41,9 @@ class DriverClock:
 
     def sleep(self, seconds):
         self.sleeps += 1
-        if self.on_sleep:
-            self.on_sleep(self)
-        self.advance(seconds)
+        # on_sleep may return False to hold virtual time until an event happens.
+        if not self.on_sleep or self.on_sleep(self) is not False:
+            self.advance(seconds)
         time.sleep(min(seconds, .01))
 
     def advance(self, seconds):
@@ -161,16 +161,64 @@ class DriveTests(unittest.TestCase):
 
     def test_stop_during_case_ends_owned_process_and_keeps_remaining_not_run(self):
         self.args.stop_file = self.root / 'stop-during'
-        # Stop on the first driver sleep, which is inside the active case's wait loop:
-        # event ordering, not a timer racing the 1s scenario timeout.
-        clock = DriverClock(on_sleep=lambda c: c.sleeps == 1 and self.args.stop_file.touch())
+        # Event ordering, not a timer racing the scenario timeout: the driver's clock
+        # is held until the worker is running its case (it has built the synthetic
+        # home, so its TERM handler is installed), and only then is the stop given.
+        home = self.args.output / '.work' / 'U2-migration-home' / 'bin'
+        def stop_when_case_runs(clock):
+            if not home.exists():
+                return False
+            self.args.stop_file.touch()
+        clock = DriverClock(on_sleep=stop_when_case_runs)
         with patch.object(drive, 'IDS', ['U2-migration', 'U2-two-writers']):
             status, result = self.execute(clock)
         self.assertEqual(status, 1)
-        self.assertGreater(clock.sleeps, 0)
+        self.assertTrue(self.args.stop_file.exists())
         self.assertTrue(all(s['outcome'] == 'not-run' and s['reason'] == 'caller-stop'
                             for s in result['scenarios']))
         self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
+
+    def test_stop_before_worker_is_ready_still_confirms_cleanup(self):
+        # Stop on the first wait-loop sleep, usually before the worker has
+        # installed its TERM handler. Darwin then answers the group KILL with
+        # EPERM (only a zombie leader is left). Give that answer on every host,
+        # after delivering the KILL, so the outcome does not depend on how far
+        # the worker got: cleanup must be proven by the empty-group probe.
+        real_killpg = os.killpg
+        def darwin_killpg(pgid, sig):
+            if sig == drive.signal.SIGKILL:
+                with contextlib.suppress(OSError):
+                    real_killpg(pgid, sig)
+                raise PermissionError(1, 'Operation not permitted')
+            return real_killpg(pgid, sig)
+        self.args.stop_file = self.root / 'stop-early'
+        clock = DriverClock(on_sleep=lambda c: self.args.stop_file.touch())
+        with patch.object(drive, 'IDS', ['U2-migration', 'U2-two-writers']), \
+             patch.object(drive.os, 'killpg', darwin_killpg):
+            status, result = self.execute(clock)
+        self.assertEqual(status, 1)
+        self.assertGreater(clock.sleeps, 0)  # the stop came while the first case was active
+        self.assertTrue(all(s['outcome'] == 'not-run' and s['reason'] == 'caller-stop'
+                            for s in result['scenarios']))
+        self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
+
+    def test_eperm_on_group_kill_with_live_member_stays_unconfirmed(self):
+        # The EPERM path must prove the group empty; a surviving member is a failure.
+        process = subprocess.Popen([sys.executable, '-c',
+            'import os,signal,time; signal.signal(signal.SIGTERM, lambda *_: os._exit(0)); '
+            'os.fork() == 0 and signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)'],
+            start_new_session=True, stdin=subprocess.PIPE)
+        self.addCleanup(process.stdin.close)
+        self.addCleanup(lambda: subprocess.run(['kill', '-9', '--', '-%d' % process.pid], capture_output=True))
+        time.sleep(.5)
+        real_killpg = os.killpg
+        def darwin_killpg(pgid, sig):
+            if sig == drive.signal.SIGKILL:
+                raise PermissionError(1, 'Operation not permitted')
+            return real_killpg(pgid, sig)
+        with patch.object(drive.os, 'killpg', darwin_killpg), self.assertRaises(PermissionError):
+            drive.terminate(process)
+        self.assertIsNotNone(process.returncode)  # leader reaped; a member survived
 
     def test_cleanup_failure_keeps_original_results_and_durable_evidence(self):
         def finish(args, output, scratch, manifest, *rest):
