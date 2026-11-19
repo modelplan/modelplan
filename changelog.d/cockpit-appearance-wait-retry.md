@@ -1,1 +1,0 @@
-The cockpit no longer disappears and reopens by itself after a display change such as a screen-size change. A settings update that had to wait for the page could time out even though the page was ready again, which rebuilt the cockpit mid-use and could leave it on screen after close (G3-97).

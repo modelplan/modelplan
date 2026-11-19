@@ -59,6 +59,9 @@ def matcher(target):
         "ax": lambda n: n.get("id") == value,
         "ax^": lambda n: str(n.get("id", "")).startswith(value),
         "label": lambda n: value in (n.get("label"), n.get("title")),
+        "label^": lambda n: any(str(n.get(k) or "").startswith(value) for k in ("label", "title")),
+        "label~": lambda n: any(value in str(n.get(k) or "") for k in ("label", "title")),
+        "title^": lambda n: str(n.get("title", "")).startswith(value),
         "value": lambda n: n.get("value") == value,
         "dom^": lambda n: str(n.get("dom", "")).startswith(value),
         "role": lambda n: n.get("role") == value,
@@ -199,6 +202,7 @@ class Walkthrough:
         self.remembered = None
         self.window_baseline = set()
         self.results, self.statuses = [], {}
+        self.after_step = {}  # step id -> callable run once that step has been walked
         self.frames_mirrored = False
         self.mirror_evidence = {}
         self.crops = {}
@@ -248,6 +252,23 @@ class Walkthrough:
                 raise WalkthroughError("still on screen after %ss: %s" % (action.get("timeout", 15), action["target"]))
             self.host.sleep(0.5)
 
+    def op_awaitStable(self, action):
+        """Wait until every match of a target keeps the same title and frame for "quiet" seconds. A data refresh
+        (a seeded reading going stale) rebuilds the fader bank and would clear a view opened meanwhile."""
+        quiet, deadline = action.get("quiet", 3), self.host.now() + action.get("timeout", 30)
+        last, since = None, self.host.now()
+        while True:
+            now = self.host.now()
+            seen = [(n.get("title"), n.get("label"), n.get("value"), tuple(n.get("frame") or ()))
+                    for n in resolve_all(self.tree(), action["target"])]
+            if seen != last:
+                last, since = seen, now
+            elif now - since >= quiet:
+                return
+            if now >= deadline:
+                raise WalkthroughError("not stable after %ss: %s" % (action.get("timeout", 30), action["target"]))
+            self.host.sleep(0.5)
+
     def op_when(self, action):
         """Run nested actions only when a target is on screen ("present"), is not ("absent"), or shows a value
         ("equals": {"target", "value"}), so one walk fits a build with the flow and a build without it (the
@@ -269,12 +290,23 @@ class Walkthrough:
         self.host.helper("move", *self.point(PARK))
 
     def op_press(self, action):
-        if not self.host.helper("press", self.pid, action["by"], action["value"]).get("pressed"):
+        scope = [action["within"]] if action.get("within") else []
+        if not self.host.helper("press", self.pid, action["by"], action["value"], *scope).get("pressed"):
             raise WalkthroughError("could not press " + action["value"])
 
     def op_click(self, action):
         verb = "rightclick" if action.get("button") == "right" else "click"
         self.host.helper(verb, *centre(self.need(action["target"])["frame"]))
+
+    def op_clickFirst(self, action):
+        """Click the first of several targets that is on screen; the step fails when none is."""
+        tree = self.tree()
+        for target in action["targets"]:
+            node = resolve(tree, target)
+            if node is not None:
+                self.host.helper("click", *centre(node["frame"]))
+                return
+        raise WalkthroughError("none of the targets is on screen: " + ", ".join(action["targets"]))
 
     def op_hover(self, action):
         self.host.helper("move", *centre(self.need(action["target"])["frame"]), 0.5)
@@ -302,10 +334,19 @@ class Walkthrough:
         self.host.helper("click", *centre(ring["frame"]))
 
     def op_dragStrip(self, action):
-        """Drag the cockpit by its title strip: left of the strip buttons, at their height."""
+        """Drag the cockpit by the middle of its title-strip drag region (G3-43).
+
+        The region is the app's `titleDragFrame`: page x 24..240 and, from the top of the page, the strip top
+        (253 full, 65 short, from the top of the open canvas; CockpitShellLayout.stripTop) minus 3 down to plus 29. It
+        scales with the window, so the point comes from the reported window frame: page width 636 and a height of
+        939 (full open), 711 (full, shutter closed: the window drops the 228 px porthole band above the strip), 669
+        (short open) or 629 (short closed: 40 px dropped). Closed, the strip therefore sits 25 px from the window top.
+        """
         window = self.need(action["window"])["frame"]
-        button = self.need(action["strip"])["frame"]
-        start = (window[0] + window[2] * action.get("x", 0.12), centre(button)[1])
+        scale = window[2] / 636.0
+        height = window[3] / scale
+        strip_top = {939: 253, 711: 25, 669: 65, 629: 25}[min((939, 711, 669, 629), key=lambda h: abs(h - height))]
+        start = (window[0] + 132 * scale, window[1] + (strip_top + 13) * scale)
         self.host.helper("down", *start)
         self.host.helper("held", start[0] + action["by"][0], start[1] + action["by"][1], action.get("seconds", 1.0))
         self.host.helper("up")
@@ -615,6 +656,8 @@ class Walkthrough:
             record = self.run_step(index, step)
             self.results.append(record)
             self.statuses[step["id"]] = record["status"]
+            if step["id"] in self.after_step:
+                self.after_step[step["id"]]()
             print("%-20s %s %s" % (step["id"], record["status"], record.get("reason") or ""), flush=True)
         return self.results
 
@@ -725,17 +768,28 @@ def wait_for_quit(host, process, seconds=QUIT_SECONDS):
     return process.poll()
 
 
-def launch_app(host, walkthrough, exe, env, log):
-    """Start the app and time the first status item and the first reading on the widget."""
+def await_reading(host, walkthrough, since, process=None, seconds=45):
+    """Seconds from `since` until a dock ring shows a reading, or None."""
+    deadline = since + seconds
+    while True:
+        if resolve(walkthrough.tree(), "ax^:dock.subscription.") is not None:
+            return round(host.now() - since, 2)
+        if host.now() >= deadline or (process is not None and process.poll() is not None):
+            return None
+        host.sleep(0.25)
+
+
+def launch_app(host, walkthrough, exe, env, log, wait_reading=True):
+    """Start the app and time the first status item and, unless a first run comes first, the first reading on the widget."""
     started = host.now()
     process = host.launch([str(exe)], env, log)
     walkthrough.pid = process.pid
     first_window = first_reading = None
     deadline = started + 45
-    while host.now() < deadline and process.poll() is None and first_reading is None:
+    while host.now() < deadline and process.poll() is None and (first_reading is None and wait_reading or first_window is None):
         if first_window is None and window_ids(walkthrough.windows()):
             first_window = round(host.now() - started, 2)
-        if resolve(walkthrough.tree(), "ax^:dock.subscription.") is not None:
+        if wait_reading and resolve(walkthrough.tree(), "ax^:dock.subscription.") is not None:
             first_reading = round(host.now() - started, 2)
         host.sleep(0.25)
     return process, first_window, first_reading
@@ -997,11 +1051,17 @@ def failures(manifest):
 def walk_app(host, walkthrough, exe, cli, env, out):
     checks = []
     with (out / "app.log").open("w", encoding="utf-8") as log:
-        process, first_window, first_reading = launch_app(host, walkthrough, exe, env, log)
+        # A fresh profile opens the first-run window and shows no widget until Done (#881), so the first
+        # reading is timed from the end of the first-run Done step, not from launch.
+        process, first_window, _ = launch_app(host, walkthrough, exe, env, log, wait_reading=False)
         checks.append(outcome("launch", first_window is not None and process.poll() is None,
                               {"firstWindowSeconds": first_window}))
-        checks.append(outcome("reader-first-reading", first_reading is not None, {"seconds": first_reading}))
+        reading = {}
+        def time_first_reading():
+            reading["seconds"] = await_reading(host, walkthrough, host.now(), process)
+        walkthrough.after_step["first-run-done"] = time_first_reading
         walkthrough.walk_steps()
+        checks.append(outcome("reader-first-reading", reading.get("seconds") is not None, {"seconds": reading.get("seconds")}))
         checks.append(outcome("alive-after-walk", process.poll() is None, {"exit": process.poll()}))
         checks.append(outcome("widget-ax-frames", not walkthrough.frames_mirrored, {"mirrored": walkthrough.frames_mirrored, **walkthrough.mirror_evidence}))
         code, report, seconds = doctor(host, cli, env)

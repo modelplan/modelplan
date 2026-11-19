@@ -126,8 +126,8 @@ import ModelPlanSettings
         XCTAssertTrue(console.isShowing)
     }
 
-    /// Two displays: the open carries the point the ignition was pressed at, so an attached cockpit opens under the
-    /// icon of that display (placement: `CockpitIgnitionVisibilityTests` in ModelPlanCockpitWeb).
+    /// Two displays: the open carries the point the ignition was pressed at, for a detached open's display; an
+    /// attached cockpit ignores it and opens under the status item (G3-128; placement: `CockpitScreenSelectionTests`).
     func testThePressPointGoesWithTheOpen() async throws {
         _ = NSApplication.shared
         let app = try await makeApp()

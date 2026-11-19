@@ -42,6 +42,12 @@ public struct ProfileRoot: Sendable, Equatable {
     public let caches: URL
 
     public var isFresh: Bool { root != nil }
+    /// The app's diagnostics logs (ModelPlan.log, engine.log): ~/Library/Logs/ModelPlan, or app/Logs/ModelPlan
+    /// under a fresh profile.
+    public var logs: URL {
+        if let root { return root.appendingPathComponent("app/Logs/ModelPlan", isDirectory: true) }
+        return applicationSupport.deletingLastPathComponent().appendingPathComponent("Logs/ModelPlan", isDirectory: true)
+    }
     /// ModelPlan's folder in Application Support: settings.json and the notification ledgers.
     public var modelPlanSupport: URL { applicationSupport.appendingPathComponent("ModelPlan", isDirectory: true) }
     /// A fresh profile never persists the status-item position (it lives in the standard defaults domain).
@@ -64,6 +70,7 @@ public struct ProfileRoot: Sendable, Equatable {
             ("legacy core preferences", applicationSupport.appendingPathComponent("ModelPlan/Native/community-v1.json")),
             ("self-test settings", applicationSupport.appendingPathComponent("ModelPlan/DockSelfTest/settings-v1.json")),
             ("app cache", caches.appendingPathComponent(bundleIdentifier, isDirectory: true)),
+            ("diagnostics logs", logs),
         ]
         if let urlCacheDirectory { value.append(("URL cache", urlCacheDirectory)) }
         if let engineConfig, let engineCache { value += [("engine config", engineConfig), ("engine cache", engineCache)] }

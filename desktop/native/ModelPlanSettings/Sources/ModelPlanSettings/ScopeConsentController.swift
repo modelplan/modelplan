@@ -249,7 +249,10 @@ public struct FirstRunReading: Sendable, Equatable {
         guard diagnosticsToken == token else { return }
         diagnosticsToken = nil; changed()
     }
+    /// Counts accepted row snapshots (each is a new reading), so Settings can refresh what depends on one.
+    public private(set) var rowsRevision = 0
     public func receiveAcceptedRows(_ value: WireRowsSnapshot) {
+        rowsRevision &+= 1
         rowsSummary = value.projection.rowsSummary
         claudeRowState = value.projection.rows.first { $0.id == "claude" }?.state
         var consents: [String: RowsConsent] = [:]
@@ -397,6 +400,14 @@ public struct FirstRunReading: Sendable, Equatable {
             return attempt
         }
     }
+    /// D87 slice 5: the engine's accepted row facts (consent, state, reason code) per tool id.
+    public var toolRowFacts: [String: ToolRowFacts] {
+        var ids = Set(rowCodes.keys).union(rowStates.keys)
+        if let rowConsent { ids.formUnion(rowConsent.keys) }
+        var result: [String: ToolRowFacts] = [:]
+        for id in ids { result[id] = ToolRowFacts(consent: rowConsent?[id], state: rowStates[id], code: rowCodes[id]?.rawValue) }
+        return result
+    }
     /// Not committed: refused before dispatch, not sent, or answered by the engine with an error.
     private static func attempt(after error: Error) -> ScopeConsentAttempt {
         if let error = error as? EngineClientError {
@@ -454,18 +465,30 @@ public struct FirstRunReading: Sendable, Equatable {
         let states = entry.scopes.compactMap { id in facts?.scopes.first { $0.scope == id }?.state }
         return !states.allSatisfy { $0 == .denied }
     }
-    /// Settings: a tool reads when every standard path of it is read (explicitly allowed or on by default).
+    /// Settings: a tool reads when any standard path of it is read (explicitly allowed or on by default).
+    /// Sampling #954: requiring every path showed Off while the history was still read (Off, then On while the
+    /// OpenCode Go key was absent, then the key returns still refused), and the next click sent Allow instead of a stop.
+    /// Off refuses every path (`requestToolChoice`), so On here always means one click stops all reading.
     public func isToolReading(_ tool: String) -> Bool {
         guard let entry = firstRunTools.first(where: { $0.tool == tool }), entry.canRead else { return false }
-        return entry.scopes.allSatisfy { isReading($0) }
+        return entry.scopes.contains { isReading($0) }
     }
     /// Settings: turn a whole tool on or off with one confirmed choice (the same grant the first-run Done sends).
+    /// #910-1: Off refuses every saved or default-on path of the tool, not only the paths detected now. A path
+    /// that is undetected at this moment (an OpenCode Go key that is absent) would otherwise resume reading
+    /// against the user's Off once it is detected again. On still allows only the paths shown on the row.
     @discardableResult public func requestToolChoice(_ tool: String, on: Bool) -> ScopeConsentConfirmation? {
         guard canMutate, let facts, let entry = firstRunTools.first(where: { $0.tool == tool && $0.canRead }) else { return nil }
         var allow: [String] = [], deny: [String] = []
-        for id in entry.scopes {
-            guard let scope = facts.scopes.first(where: { $0.scope == id }) else { continue }
-            if on { if scope.state != .allowed { allow.append(id) } } else if scope.state != .denied { deny.append(id) }
+        if on {
+            for id in entry.scopes {
+                guard let scope = facts.scopes.first(where: { $0.scope == id }) else { continue }
+                if scope.state != .allowed { allow.append(id) }
+            }
+        } else {
+            for scope in facts.scopes where scope.tool == tool && !scope.retired && scope.state != .denied {
+                if entry.scopes.contains(scope.scope) || scope.state == .allowed || isOnByDefault(scope.scope) { deny.append(scope.scope) }
+            }
         }
         guard !allow.isEmpty || !deny.isEmpty else { return nil }
         let value = ScopeConsentConfirmation(id: UUID(), intent: .init(mutation: .choose(allow: allow, deny: deny, keychain: [])))

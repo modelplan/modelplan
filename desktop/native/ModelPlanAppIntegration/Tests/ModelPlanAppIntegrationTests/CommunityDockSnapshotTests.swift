@@ -69,6 +69,23 @@ import ModelPlanSettings
         XCTAssertEqual(status.input.dataState, .unavailable)
     }
 
+    /// SET-9-38: with the language known, the guidance is one language, never "English / 中文" at once.
+    func testGuidanceRendersInTheChosenLanguageOnly() throws {
+        let joined = try snapshot(accounts: [], extras: ["connections": [
+            ["id": "claude", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "consent_required"]]]])
+        var ready = StoreDiagnostics(); ready.personal = nil
+        let consent = try canonicalConsent(["claude"])
+        for language in SettingsLanguage.allCases {
+            let result = CommunityDockSnapshot(snapshot: joined, diagnostics: ready, now: now, canonicalConsent: consent, language: language)
+            let status = try XCTUnwrap(result.presentationRows.values.first)
+            for text in [status.reason, status.nextStep] {
+                XCTAssertFalse(text.contains(" / "), text)
+                XCTAssertEqual(text.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }, language == .chinese, text)
+            }
+        }
+        let legacy = try XCTUnwrap(adapt(joined, canonicalConsent: consent).presentationRows.values.first)
+        XCTAssertTrue(legacy.reason.contains(" / "), "callers that do not know the language keep the paired text")
+    }
     func testAccountAgePreservesOriginalObservationAndNeverUsesRenderTime() throws {
         let joined = try snapshot(accounts: [account(nil, source: "codex", windows: [window()])])
         let row = try XCTUnwrap(adapt(joined).presentationRows.values.first)
@@ -476,6 +493,7 @@ import ModelPlanSettings
                 var settings = 0, console = 0
                 host.showSettings = { settings += 1 }; host.showConsole = { console += 1 }
                 await coordinator.reload()
+                _ = try await coordinator.editor.commit(.language(.chinese))  // explicit: the default now follows the macOS list
                 var ready = StoreDiagnostics(); ready.personal = nil
                 host.updateDockConsent(readback)
                 host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
@@ -555,7 +573,7 @@ import ModelPlanSettings
             var opens = 0; host.showConsole = { opens += 1 }
             let coordinator = SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("settings.json")), context: context) { host.apply($0) }
             await coordinator.reload()
-            if !hide { _ = try await coordinator.editor.commit(.language(.english)) }
+            _ = try await coordinator.editor.commit(.language(hide ? .chinese : .english))  // explicit: the default now follows the macOS list
             var ready = StoreDiagnostics(); ready.personal = nil
             host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
             try presentSyntheticHostCard(host, id: "a")

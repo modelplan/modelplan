@@ -62,7 +62,7 @@ import ModelPlanWire
     let load = try state.load(.init(theme: .night, locale: .en, profile: .full),
                               shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
     var ready = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
-    for key in ["appearance", "shell", "redBelow", "showUsedPercent", "ackedCautions"] { ready[key] = nil }
+    for key in ["appearance", "shell", "redBelow", "showUsedPercent", "showAllModels", "pinnedModels", "ackedCautions"] { ready[key] = nil }
     ready["type"] = "ready"; ready["sequence"] = "1"; ready["appearanceVersion"] = 2
     ready["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     let source = CockpitMessageSource(mainFrame: true, origin: "modelplan-cockpit://bundle")
@@ -96,7 +96,7 @@ import ModelPlanWire
   private let source = CockpitMessageSource(mainFrame: true, origin: "modelplan-cockpit://bundle")
   private func reply(_ raw: String, type: String, sequence: Int, extra: [String: Any] = [:]) throws -> String {
     var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
-    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "ackedCautions", "nowUnixMs", "reason"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels", "pinnedModels", "ackedCautions", "nowUnixMs", "reason"] { value[key] = nil }
     value["type"] = type; value["sequence"] = String(sequence)
     if type == "ready" { value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"] }
     for (key, field) in extra { value[key] = field }
@@ -193,17 +193,22 @@ import ModelPlanWire
     h.page.discard()
   }
 
-  func testAQueueThatStaysStuckStillEndsThePageWithItsOwnFailure() throws {
+  /// Recovery contract: a queue that stays stuck no longer ends the page after a count of refusals (the old
+  /// `deliveryBacklog`). It is a page that is not answering, so it is probed (CockpitRecoveryControllerTests covers the
+  /// probe outcome); the page is kept and the skipped display is refreshed once the queue moves.
+  func testAQueueThatStaysStuckIsProbedInsteadOfEndingThePage() throws {
     let h = try renderedPage()
-    h.page.verificationRefuseSubmissions = CockpitWindowController.maximumDeliveryRefusals
-    for _ in 0..<(CockpitWindowController.maximumDeliveryRefusals - 1) {
-      h.page.display(try fixture(), ticket: try XCTUnwrap(h.page.queryTicket))
-    }
-    XCTAssertEqual(h.box.failures, [])
-    h.page.display(try fixture(), ticket: try XCTUnwrap(h.page.queryTicket))
-    XCTAssertEqual(h.box.failures, [.deliveryBacklog], "Repeated refusals end the page, named for what happened")
-    XCTAssertTrue(h.box.lines.contains { $0.contains("page-failure failure=deliveryBacklog") })
-    XCTAssertFalse(h.box.failures.contains(.localEncoding))
+    h.page.verificationRefuseSubmissions = 20
+    for _ in 0..<20 { h.page.display(try fixture(), ticket: try XCTUnwrap(h.page.queryTicket)) }
+    XCTAssertEqual(h.box.failures, [], "No count of refusals ends the page")
+    XCTAssertFalse(h.page.bridge.disposed)
+    XCTAssertEqual(h.box.lines.filter { $0.hasPrefix("page-late cause=deliveryBacklog") }.count, 1, "One wait starts, however many refusals")
+    XCTAssertTrue(h.box.lines.contains { $0.hasPrefix("delivery-skipped type=display") && $0.contains("consecutive=20") })
+    XCTAssertFalse(h.box.lines.contains { $0.contains("page-failure") })
+    h.page.updateAppearance(.init(theme: .night, locale: .zhCN, profile: .full))
+    XCTAssertEqual(type(h.sent[2].0), "appearance"); h.sent[2].1(.accepted)
+    XCTAssertEqual(h.box.ready, 1, "The skipped display is refreshed once the queue moves")
+    h.page.discard()
   }
 
   func testNonFiniteSnapshotKeepsTheCockpitAndLogsTheFieldPath() throws {

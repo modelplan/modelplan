@@ -267,10 +267,21 @@ def run(scenario, h, old=None):
             engine.shutdown()
             details['rpc'] = transcript(engine)
         h.mutate(deny=['retired.old_path'])
+        # A prior revoke may still have durable cleanup pending when the first engine stops. Force that
+        # ordinary case so startup's RetryCleanup is exercised before measuring replay's own writes.
+        with Path(str(h.store) + '.readers.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            pending = h.mutate(deny=['copilot.runtime_usage'])
+            require(pending['code'] == 'cleanup_pending', 'startup-cleanup-not-pending')
         current = h.state()
-        before_replay = h.store.read_bytes()
+        pending_key = current['storeEpoch'] + '/' + pending['requestId']
+        require(bool(current['requests'][pending_key].get('pendingForget')), 'startup-cleanup-not-durable')
         with h.engine('drive-replay') as engine:
             engine.initialize()
+            initialized = h.state()
+            require(not initialized['requests'][pending_key].get('pendingForget'), 'startup-cleanup-not-retried')
+            require(initialized['generation'] == current['generation'], 'startup-cleanup-changed-generation')
+            before_replay = h.store.read_bytes()
             response = engine.request('consent/grant', request)['result']
             replay = response['data']
             require(engine.floor == current['generation'], 'historical-receipt-lowered-current-floor')

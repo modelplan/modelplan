@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.22.152",
+  "version": "0.23.18",
   "license": {
     "id": "CC-BY-SA-4.0",
     "url": "https://creativecommons.org/licenses/by-sa/4.0/",
@@ -20,7 +20,7 @@
       "path": "data/client-harness-aliases.json",
       "description": "Model names as Claude Code, Codex and other clients report them",
       "license": "CC-BY-SA-4.0",
-      "sha256": "d83ba6d107c331d925b96fa67142ef9b3d8413e538a1dde273917df1c5b1c771"
+      "sha256": "8390868d5bf47523f73547885086c0295f66c4d6f0e737f9f8e0cd358a365623"
     },
     {
       "path": "data/model-developers.json",
@@ -32,7 +32,13 @@
       "path": "data/model-identities.json",
       "description": "Reviewed model identities and names",
       "license": "CC-BY-SA-4.0",
-      "sha256": "52ce478618b1f7f2a7d60f493f99f8f56d86d4db8df5d3767e0208e7f1bf037e"
+      "sha256": "f926511f82ae8a3427ba62f8445a07c5e99ff827335ec39bbf13e8e377cef6de"
+    },
+    {
+      "path": "data/plan-reader-aliases.json",
+      "description": "Plan names as coding-tool readers report them, mapped to catalogue plans",
+      "license": "CC-BY-SA-4.0",
+      "sha256": "df5ca2f116c8d79fcb1613abdcb9b8ea0e552c3146212d0dafab76525e3d606e"
     },
     {
       "path": "data/real-api-pricing/LICENSE",

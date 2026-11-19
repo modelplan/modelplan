@@ -1,6 +1,7 @@
 // Pure formatting helpers for the public-screen views (r7 P4, spec 2.6). No state, no fixtures, no DOM: the views
 // import these instead of core.js so they port to the desktop app as they are. Synthetic study.
-import {t} from '../i18n.js';
+import {t, tables} from '../i18n.js';
+import '../strings/host.js';
 
 export const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 export const LADDER = ['Low', 'Med', 'High', 'XHigh', 'Max'];
@@ -15,16 +16,22 @@ export const times = v => v == null || !isFinite(v) ? '—' : '×' + (v >= 10 ? 
 export const level = (r, redAt = 25) => r == null ? 'none' : r <= redAt ? 'low' : r <= 50 ? 'mid' : 'ok';
 
 const loc = ui => ui.lang === 'en' ? 'en' : 'zh-CN';
+// Text from the shared string tables (strings/host.js) for the locale the caller passes, with plural selection.
+const rules = {en: new Intl.PluralRules('en'), 'zh-CN': new Intl.PluralRules('zh-CN')};
+const tx = (ui, key, vars) => {
+  let s = tables[loc(ui)][key];
+  if (typeof s === 'object') s = s[rules[loc(ui)].select(Number(vars?.n))] ?? s.other;
+  return vars ? s.replace(/\{(\w+)\}/g, (m, n) => vars[n] ?? m) : s;
+};
 // Reset/expiry text is always relative to the supplied reading clock, never the host clock.
 export function relativeMoment(ms,ui,full=false) {
   if(!Number.isFinite(ms)||!Number.isFinite(ui.now))return '--';
   const future=ms>ui.now,minutes=Math.max(0,Math.round(Math.abs(ms-ui.now)/60000));
-  if(!minutes)return ui.lang==='en'?'now':'现在';
+  if(!minutes)return tx(ui,'host.relNow');
   let duration=dhm(minutes);
   if(full){const d=Math.floor(minutes/1440),h=Math.floor(minutes%1440/60),m=minutes%60;
-    duration=ui.lang==='en'?[d?`${d} ${d===1?'day':'days'}`:'',h?`${h} ${h===1?'hour':'hours'}`:'',m?`${m} ${m===1?'minute':'minutes'}`:''].filter(Boolean).join(' ')
-      :[d?`${d} 天`:'',h?`${h} 小时`:'',m?`${m} 分`:''].filter(Boolean).join(' ');}
-  return ui.lang==='en'?(future?'in '+duration:duration+' ago'):duration+(future?'后':'前');
+    duration=[d?tx(ui,'host.durDay',{n:d}):'',h?tx(ui,'host.durHour',{n:h}):'',m?tx(ui,'host.durMinute',{n:m}):''].filter(Boolean).join(' ');}
+  return tx(ui,future?'host.relFuture':'host.relPast',{d:duration});
 }
 export const resetMoment=(w,ui,full=false)=>relativeMoment(Number.isFinite(w.resetIn)?ui.now+w.resetIn*60000:w.resetAt,ui,full);
 const pad = n => String(n).padStart(2, '0');

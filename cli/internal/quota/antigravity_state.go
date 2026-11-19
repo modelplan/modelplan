@@ -163,7 +163,7 @@ func ReadAntigravityCache(ctx context.Context, cache string, now time.Time) Anti
 	r.NextStep = antigravityNext(r.Availability)
 	if s.Good != nil && !s.Good.ObservedAt.IsZero() && !s.Good.ObservedAt.After(now) {
 		r.ObservedAt = s.Good.ObservedAt
-		a := Account{Source: "native:antigravity", ObservedAt: r.ObservedAt, Via: "native", Windows: []Window{}}
+		a := Account{Source: "native:antigravity", ObservedAt: r.ObservedAt, Via: "native", Windows: []Window{}, ReportedModels: s.Good.ReportedModels}
 		for _, w := range s.Good.Windows {
 			if w.ResetsAt == nil || w.ResetsAt.After(now) {
 				a.Windows = append(a.Windows, w)

@@ -70,6 +70,7 @@ actor EventProbe: EngineClientEventConsumer {
         return nil
     } }
     func crashDelays() -> [Double] { events.compactMap { if case .connection(.restarting(_, let delay)) = $0 { return durationSeconds(delay) }; return nil } }
+    func consentFailures() -> Int { events.filter { if case .featureFailure(.consent, _) = $0 { return true }; return false }.count }
     func stopped(_ reason: EngineStopReason) -> Bool { events.contains { if case .connection(.stopped(let value)) = $0 { return value == reason }; return false } }
 }
 
@@ -420,7 +421,9 @@ extension RealBinaryTests {
         XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - began, 3)
         let rows = await probe.rowCount(); XCTAssertEqual(rows, 0)
     }
-    func testRealStalledConsumerIsBoundedAndCannotRestartItself() async throws {
+    /// Recovery contract (step 5): a stalled consumer still stops its session (no second callback overlaps it), and once
+    /// the stalled consume returns, a fresh session starts by itself through the supervisor.
+    func testRealStalledConsumerIsBoundedAndRecoversOnceItReturns() async throws {
         let binary = try binary(); let home = try home(); let probe = EventProbe()
         try cli(binary, home: home, arguments: ["consent", "init", "--json"])
         var runtime = ClientRuntime(); runtime.consumerTimeout = .milliseconds(200)
@@ -437,7 +440,107 @@ extension RealBinaryTests {
         do { _ = try await client.retry(); XCTFail("stalled consumer admitted another session") } catch {}
         await probe.resumeClear()
         try await eventually { await probe.stopped(.consumerUnavailable) }
-        XCTAssertFalse(client.isCurrent(original), "a late clear acknowledgement cannot restore a stopped client")
+        XCTAssertFalse(client.isCurrent(original), "a late clear acknowledgement cannot restore the stalled session")
+        try await eventually({ await probe.readyContexts().contains { $0.sessionID != original.sessionID } }, timeout: 15)
+        let contexts = await probe.readyContexts()
+        let fresh = try XCTUnwrap(contexts.last)
+        XCTAssertNotEqual(fresh.sessionID, original.sessionID, "a fresh session, never the stalled one")
+        XCTAssertTrue(client.isCurrent(fresh))
+    }
+    /// macrev2-994-2: the cooldown chosen at the fifth crash still holds when the first reap of that child fails. The
+    /// re-reap succeeds after 5 s, and the sixth child spawns only after the rest of the cooldown, never at once.
+    func testRealCooldownChosenBeforeAFailedReapStillHolds() async throws {
+        let binary = try binary(); let home = try home(); let probe = EventProbe()
+        try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+        let gate = ReapGate(), sleeps = SleepLog()
+        var runtime = ClientRuntime(); runtime.sleep = { await sleeps.record($0); await Task.yield() }; runtime.reap = { await gate.reap($0) }
+        let client = ProcessEngineClient(configuration: configuration(binary, home: home), consumer: probe, runtime: runtime)
+        addTeardownBlock { await client.stop() }
+        _ = try await client.start()
+        for index in 0..<5 {
+            if index == 4 { await gate.failNext() }
+            let ownedPID = await client.processIdentifier
+            let pid = try XCTUnwrap(ownedPID)
+            XCTAssertEqual(kill(pid, SIGKILL), 0)
+            if index < 4 { try await eventually({ await probe.readyContexts().count >= index + 2 }, timeout: 15) }
+        }
+        try await eventually({ await probe.readyContexts().count >= 6 }, timeout: 15)
+        let failed = await gate.failures(); XCTAssertEqual(failed, 1, "the fifth child's first reap failed")
+        let log = await sleeps.seconds()
+        let reReap = try XCTUnwrap(log.firstIndex(of: 5), "the re-reap waited 5 s: \(log)")
+        let next = try XCTUnwrap(log.dropFirst(reReap + 1).first, "\(log)")
+        XCTAssertGreaterThan(next, 100, "after the re-reap the rest of the 120 s cooldown is waited before the sixth spawn: \(log)")
+    }
+    /// macrev2-994-1: a stalled consumer whose child fails its first reap, and whose consume returns while the re-reap
+    /// waits, still recovers: once the child is reaped, exactly one fresh session starts.
+    func testRealStallRecoverySurvivesAFailedFirstReap() async throws {
+        let binary = try binary(); let home = try home(); let probe = EventProbe()
+        try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+        let gate = ReapGate(), barrier = Barrier()
+        var runtime = ClientRuntime(); runtime.consumerTimeout = .milliseconds(200)
+        runtime.sleep = { if $0 == .seconds(5) { await barrier.wait() } else { await Task.yield() } }
+        runtime.reap = { await gate.reap($0) }
+        let client = ProcessEngineClient(configuration: configuration(binary, home: home), consumer: probe, runtime: runtime)
+        addTeardownBlock { await probe.resumeClear(); await barrier.release(); await client.stop() }
+        let original = try await client.start()
+        try await eventually { await probe.rowCount() > 0 }
+        await gate.failNext()
+        await probe.suspendNextClear()
+        try externalGrant(binary, home: home, deny: ["codex.local_history"])
+        try await eventually { await probe.clearIsPaused() }
+        try await eventually { await client.consumerHasStopped() }
+        try await eventually { await gate.failures() == 1 } // the first reap failed; the re-reap waits at the barrier
+        await probe.resumeClear()                             // the stalled consume returns while the re-reap waits
+        try await eventually { await probe.stopped(.consumerUnavailable) }
+        await barrier.release()                               // the re-reap succeeds
+        try await eventually({ await probe.readyContexts().contains { $0.sessionID != original.sessionID } }, timeout: 15)
+        let fresh = await probe.readyContexts().filter { $0.sessionID != original.sessionID }
+        XCTAssertEqual(Set(fresh.map(\.sessionID)).count, 1, "exactly one fresh session")
+    }
+    /// Recovery contract (step 5): five crashes inside the window no longer stop the engine for good. After the cooldown
+    /// one half-open attempt runs by itself and a fresh session becomes ready. Sleeps are injected, so nothing waits.
+    func testRealCrashLimitCoolsDownAndRecoversByItself() async throws {
+        let binary = try binary(); let home = try home(); let probe = EventProbe()
+        try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+        var runtime = ClientRuntime(); runtime.sleep = { _ in await Task.yield() }
+        let client = ProcessEngineClient(configuration: configuration(binary, home: home), consumer: probe, runtime: runtime)
+        addTeardownBlock { await client.stop() }
+        _ = try await client.start()
+        for index in 0..<5 {
+            let ownedPID = await client.processIdentifier
+            let pid = try XCTUnwrap(ownedPID)
+            XCTAssertEqual(kill(pid, SIGKILL), 0)
+            try await eventually({ await probe.readyContexts().count >= index + 2 }, timeout: 15)
+        }
+        let cooled = await probe.stopped(.crashLimit); XCTAssertTrue(cooled, "the fifth crash starts the cooldown")
+        let delays = await probe.crashDelays(); XCTAssertEqual(delays, [1, 2, 4, 8])
+        let sessions = await probe.readyContexts().map(\.sessionID)
+        XCTAssertEqual(Set(sessions).count, 6, "the half-open attempt after the cooldown is a fresh session")
+        let current = try await client.start()
+        XCTAssertTrue(client.isCurrent(current), "start() works again once the half-open attempt is ready")
+    }
+    /// Recovery contract (step 5): a lost epoch probe no longer leaves the delivery gate closed for good; it is asked
+    /// again with backoff and the confirmed epoch opens the gate. The proxy reports a foreign epoch in one diagnostics
+    /// reply and loses the reply to exactly the probe that follows it; the store's real epoch never changes, so the
+    /// retried probe confirms the original epoch on a new delivery revision.
+    func testRealLostEpochProbeIsRetriedAndTheGateReopens() async throws {
+        let binary = try binary(); let home = try home(); let probe = EventProbe()
+        try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+        var runtime = ClientRuntime(); runtime.requestTimeout = .seconds(2); runtime.sleep = { _ in await Task.yield() }
+        let client = ProcessEngineClient(configuration: configuration(try proxy(home, binary: binary, mode: "probe-fails-once"), home: home), consumer: probe, runtime: runtime)
+        addTeardownBlock { await client.stop() }
+        let original = try await client.start()
+        let began = ProcessInfo.processInfo.systemUptime
+        do { _ = try await client.diagnostics(); XCTFail("unconfirmed epoch was delivered") } catch {}
+        XCTAssertFalse(client.isCurrent(original))
+        try await eventually({ await probe.consentFailures() >= 1 }, timeout: 15) // the lost probe timed out
+        XCTAssertGreaterThanOrEqual(ProcessInfo.processInfo.systemUptime - began, 1.9, "the probe's own 2 s timeout passed: it was really lost")
+        try await eventually({ !(await client.gateClosed) }, timeout: 15) // the retried probe is answered
+        let current = await client.context
+        let confirmed = try XCTUnwrap(current)
+        XCTAssertEqual(confirmed.floor.storeEpoch, original.floor.storeEpoch, "the store's real epoch is confirmed")
+        XCTAssertGreaterThan(confirmed.revision, original.revision, "on a new delivery revision")
+        XCTAssertTrue(client.isCurrent(confirmed))
     }
 }
 
@@ -644,4 +747,28 @@ extension RealBinaryTests {
         XCTAssertEqual(trace.split(separator: "\n").filter { $0.contains("\"method\":\"initialize\"") }.count, 2)
         try await eventually { await probe.rowCount() > 0 }
     }
+}
+
+/// Recovery step 5 test seams: a reap that fails once on request, a log of the supervisor's waits, and a barrier.
+actor ReapGate {
+    private var failing = false, failed = 0
+    func failNext() { failing = true }
+    func failures() -> Int { failed }
+    func reap(_ process: EngineProcess) async -> Bool {
+        if failing { failing = false; failed += 1; return false }
+        return await process.finish()
+    }
+}
+actor SleepLog {
+    private var values: [Double] = []
+    func record(_ duration: Duration) { values.append(durationSeconds(duration)) }
+    func seconds() -> [Double] { values }
+}
+actor Barrier {
+    private var released = false, waiters: [CheckedContinuation<Void, Never>] = []
+    func wait() async {
+        if released { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func release() { released = true; for waiter in waiters { waiter.resume() }; waiters.removeAll() }
 }
