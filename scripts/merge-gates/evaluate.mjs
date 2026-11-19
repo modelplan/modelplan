@@ -11,6 +11,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
+import { HOSTED_WORKFLOWS } from "./hosted.mjs";
 import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
@@ -75,6 +76,16 @@ async function readDataSync(pr) {
   return { run, commit };
 }
 
+// D314: the jobs of runs that may hold a GitHub-hosted macOS leg (hosted.mjs), attached as run.jobs so the rules can set
+// those legs aside. Only runs that are not already green are read. An unreadable list leaves run.jobs unset, and the
+// rules then judge the whole run as before (fail closed).
+async function readJobs(runs) {
+  await Promise.all(runs.filter((r) => HOSTED_WORKFLOWS.includes(String(r.path).split("@")[0])).map(async (r) => {
+    try { r.jobs = await gh.all(`/actions/runs/${r.id}/jobs?filter=latest`, "jobs", 500); }
+    catch (e) { log({ run: r.id, jobs: `unreadable: ${String(e).slice(0, 120)}` }); }
+  }));
+}
+
 async function prResult(number) {
   const pr = await gh.get(`/pulls/${number}`);
   const head = pr.head.sha;
@@ -86,6 +97,7 @@ async function prResult(number) {
     gh.get(`/commits/${head}/status`),
     readTrainMembers(pr),
   ]);
+  await readJobs(runs.filter((r) => !(r.status === "completed" && ["success", "skipped", "neutral"].includes(r.conclusion))));
   // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
   const now = Date.now();
   const glmFallbackUntil = parseFallbackUntil(env.GLM_FALLBACK_UNTIL || "", now);
@@ -130,6 +142,8 @@ async function evaluateGroupAndPost(groupSha) {
   ]);
   const desktop = queueRuns.filter(queueRunScope(repo)).filter((r) => r.path === ".github/workflows/desktop.yml").sort((x, y) => y.id - x.id)[0];
   const desktopJobs = desktop ? await gh.all(`/actions/runs/${desktop.id}/jobs`, "jobs", 500) : null;
+  if (desktop) desktop.jobs = desktopJobs;
+  await readJobs(queueRuns.filter(queueRunScope(repo)).filter((r) => r !== desktop));
   const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, desktopJobs, repo });
   await post(groupSha, { group: steps.map((s) => s.pr), ...result });
 }
