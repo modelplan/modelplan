@@ -134,7 +134,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   if(b.hasAttribute('data-add-subscription')){onAdd();return;}
   if(b.hasAttribute('data-refresh')){onRefresh(scope||'all');return;}
   if(b.hasAttribute('data-all')){if(onSelect('all')){scope='';paint();}return;}
-  if(b.hasAttribute('data-sub')){const key=b.dataset.sub??'';if(seen.has(key)&&onSelect(key)){scope=key;paint();}return;}
+  if(b.hasAttribute('data-sub')){const key=b.dataset.sub??'';if(!seen.has(key))return;if(key===scope){if(onSelect('all')){scope='';paint();}return;}if(onSelect(key)){scope=key;paint();}return;}
   if(b.hasAttribute('data-bpage')){const step=b.dataset.bpage==='1'?1:b.dataset.bpage==='-1'?-1:0;page=Math.max(0,Math.min(Math.ceil(members.length/6)-1,page+step));paint();}
  };
  const applyScope=(next:string)=>{scope=next!=='all'&&seen.has(next)?next:'';if(scope){const index=members.findIndex(m=>m.key===scope);page=Math.floor(index/6);}paint();};
