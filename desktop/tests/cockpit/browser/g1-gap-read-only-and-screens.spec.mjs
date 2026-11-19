@@ -103,7 +103,7 @@ for(const [tier,height] of [['tall',890],['compact',640]]){
   await page.locator('.fd-strip[aria-label^="Synthetic lineup-1:"]').click();
   const screen=page.locator('.mfd-page.pg-compare');await expect(screen).toBeVisible();
   const key=screen.locator('.cmp-lad [data-mfd="try:Low"]');await key.click();
-  await expect(screen.locator('svg.cmp-chart .cfg-trial')).not.toHaveCount(0);
+  await expect(screen.locator('svg.cmp-chart .pc-band-trial')).toHaveCount(1);
   await expect.poll(()=>page.evaluate(()=>{const area=document.querySelector('[data-fill="cmp"]'),svg=area?.querySelector('svg.cmp-chart');if(!svg||!area.clientWidth)return null;return {width:Math.abs(svg.getBoundingClientRect().width-area.clientWidth)<=1,height:svg.getBoundingClientRect().height<=area.clientHeight+1};})).toEqual({width:true,height:true});
  });
 }
