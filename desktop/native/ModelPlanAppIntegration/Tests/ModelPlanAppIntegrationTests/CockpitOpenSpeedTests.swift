@@ -86,7 +86,8 @@ extension CommunityCockpitEntryTests {
     /// Click to first data on a hosted runner. The PR measured 26 to 88 ms there on most runs, but a loaded
     /// runner once took 1040 ms (the query alone took 1045 ms in that run), and a cold start is about 3.3 s.
     /// This hosted gate only catches a lost prewarm. The product target on a real Mac stays under 800 ms,
-    /// and that is checked by device evidence (C-01, C-36, tracked in #470), not by this bound.
+    /// and that is checked by device evidence (C-01, C-36, tracked in #470), not by this bound. On a GitHub-hosted
+    /// runner (`HostedRunnerTiming.isHosted`) the bound holds for the median of the runs; elsewhere for every run.
     static let hostedClickToDataBoundMs = 1500
     /// WebKit footprint while the cockpit is shown, by launch label ("prewarm", "baseline"), for the comparison
     /// printed after both launches of one test run.
@@ -116,6 +117,8 @@ extension CommunityCockpitEntryTests {
     @MainActor private func measureLaunch(prewarm: Bool, root: URL, official: URL, cli: URL, speedBudget: Bool = false) async throws {
         let label = prewarm ? "prewarm" : "baseline"
         let app = try Self.ownerTestShapedApp(at: root.appendingPathComponent("package"), helper: cli, ownerTest: true, official: official)
+        // Click-to-data samples of the prewarmed launch on a hosted runner, enforced as a median after the runs.
+        var hostedClickToDataMs: [Int] = []
         let helper = app.appendingPathComponent("Contents/Helpers/modelplan")
         let environment = try await Self.syntheticHome(root, helper: helper)
         let probe = OpenProbe()
@@ -260,9 +263,19 @@ extension CommunityCockpitEntryTests {
                     // The packaged build's own record of the same open, measured from the click in the console.
                     XCTAssertNotNil(probe.timed("open page=warm-ready", after: click), "run \(run): \(probe.timing.map(\.line))")
                     let rendered = try XCTUnwrap(probe.timed("open rendered n=1 clickMs=", after: click), "run \(run)")
-                    XCTAssertLessThan(try XCTUnwrap(Int(rendered.split(separator: "=").last ?? "")), Self.hostedClickToDataBoundMs, "run \(run): \(rendered)")
+                    let renderedMs = try XCTUnwrap(Int(rendered.split(separator: "=").last ?? ""), "run \(run): \(rendered)")
                     let first = try XCTUnwrap(renders.first?.at, "run \(run): the shown page renders data")
-                    XCTAssertLessThan(Self.ms(click, first), Self.hostedClickToDataBoundMs, "run \(run): a click shows the cockpit with data without a WebKit cold start")
+                    let firstDataMs = Self.ms(click, first)
+                    if HostedRunnerTiming.isHosted {
+                        // A shared hosted Mac measured 1523 ms once (run 44395830015) on an otherwise warm open; the
+                        // bound holds for the median of the runs, and one run may not reach a cold start's 2x.
+                        hostedClickToDataMs.append(max(renderedMs, firstDataMs))
+                        print("G3-42-HOSTED run=\(run) renderedClickMs=\(renderedMs) firstDataMs=\(firstDataMs) boundMs=\(Self.hostedClickToDataBoundMs) (median enforced)")
+                        XCTAssertLessThan(max(renderedMs, firstDataMs), 2 * Self.hostedClickToDataBoundMs, "run \(run): \(rendered)")
+                    } else {
+                        XCTAssertLessThan(renderedMs, Self.hostedClickToDataBoundMs, "run \(run): \(rendered)")
+                        XCTAssertLessThan(firstDataMs, Self.hostedClickToDataBoundMs, "run \(run): a click shows the cockpit with data without a WebKit cold start")
+                    }
                     let shownLast = try XCTUnwrap(lastShown, "run \(run): the last reply is shown first")
                     let freshReply = try XCTUnwrap(fresh, "run \(run): a fresh reply follows")
                     XCTAssertLessThan(shownLast, freshReply, "run \(run)")
@@ -333,6 +346,11 @@ extension CommunityCockpitEntryTests {
             throw error
         }
         await entry.composition.stop()
+        if !hostedClickToDataMs.isEmpty {
+            let median = HostedRunnerTiming.median(hostedClickToDataMs)
+            print("G3-42-HOSTED median clickToDataMs=\(median) samples=\(hostedClickToDataMs) boundMs=\(Self.hostedClickToDataBoundMs)")
+            XCTAssertLessThan(median, Self.hostedClickToDataBoundMs, "the median click shows the cockpit with data without a WebKit cold start: \(hostedClickToDataMs)")
+        }
     }
 
     /// CKP-SHELL-20 (owner D50): after launch the app loads one hidden, empty page and fills the last reply;
