@@ -276,6 +276,9 @@ enum DockGripInk {
     @_spi(DockResourceChecks) public private(set) var refreshSweepCountForChecks = 0
     /// G3-98: (member, readout alpha, readout text) of every held number in every sweep frame, for checks.
     @_spi(DockResourceChecks) public private(set) var refreshSweepReadoutFramesForChecks: [(id: String, alpha: Double, text: String)] = []
+    /// The elapsed time (since the hold began) at which the host reported a refresh result or failure, per member.
+    /// Only `resolveRefreshReadout` sets it, so a number released by the independent hold cap leaves it nil.
+    @_spi(DockResourceChecks) public private(set) var refreshSweepResolvedAtForChecks: [String: TimeInterval] = [:]
     @_spi(DockResourceChecks) public var refreshSweepAnimatingForChecks: Bool { refreshSweepTask != nil }
     /// The effect driver only receives a currently successful official skin.
     var workingEffectSkin: DockInstrumentSkin? { failed || community ? nil : skin }
@@ -608,7 +611,7 @@ enum DockGripInk {
     /// The host reports that the refresh failed or never started; the number may return now.
     public func resolveRefreshReadout(_ id: String) {
         guard var hold = readoutHolds[id], hold.resolvedAt == nil else { return }
-        hold.resolvedAt = now - hold.started; readoutHolds[id] = hold
+        hold.resolvedAt = now - hold.started; readoutHolds[id] = hold; refreshSweepResolvedAtForChecks[id] = hold.resolvedAt
     }
 
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
@@ -620,6 +623,7 @@ enum DockGripInk {
               original.width * original.height <= 4_194_304 else { readoutHolds = [:]; refreshSweepRing = nil; return false }
         refreshSweepCountForChecks += 1
         refreshSweepReadoutFramesForChecks.removeAll { $0.id == id }
+        refreshSweepResolvedAtForChecks[id] = nil
         let time = now
         if reduceMotion { readoutHolds[id] = nil; refreshSweepRing = nil }
         else {

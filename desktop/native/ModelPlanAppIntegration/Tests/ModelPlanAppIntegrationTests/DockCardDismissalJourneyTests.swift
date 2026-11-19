@@ -367,7 +367,11 @@ private actor CardDismissalClient: EngineClient {
         click()
         XCTAssertTrue(view.refreshSweepAnimatingForChecks)
         try await settle()
-        HostedRunnerTiming.enforce("a failed refresh releases the number before the cap (ms)", measured: Double((clock.now - started) / .milliseconds(1)), atMost: 2500)
+        // Functional on every runner: the failure itself resolved the hold. The independent 3 s cap never sets this,
+        // so a regression that only released the number through the cap fails here, however slow the runner.
+        let resolvedAt = try XCTUnwrap(view.refreshSweepResolvedAtForChecks[memberID], "a failed refresh resolves the hold; the number is not left to the 3 s cap")
+        HostedRunnerTiming.enforce("a failed refresh releases the number before the cap (s since the click)", measured: resolvedAt, atMost: DockRefreshSweep.readoutHoldCap)
+        HostedRunnerTiming.enforce("a failed refresh settles before the cap (ms)", measured: Double((clock.now - started) / .milliseconds(1)), atMost: 2500)
         XCTAssertEqual(refresh.requests, [memberID, memberID])
         seen = frames()
         XCTAssertTrue(seen.contains { $0.alpha == 0 }, "the number was hidden during the failed refresh")
