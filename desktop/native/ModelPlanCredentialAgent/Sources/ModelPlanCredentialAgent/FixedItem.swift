@@ -53,9 +53,9 @@ public protocol ItemMatching: Sendable {
 public struct SystemItemMatcher: ItemMatching {
     public init() {}
     public func copyMatching(_ attributes: [String: Any]) -> ItemMatch {
-        var value: CFTypeRef?
-        let status = SecItemCopyMatching(attributes as CFDictionary, &value)
-        return .init(status: status, value: value)
+        // Permanent security hold: the retired token handoff must never query the OS.
+        // Only the future quota-only helper may own a real Keychain backend.
+        return .init(status: errSecUnimplemented)
     }
 }
 /// Explicit backend. Construction never queries. Tests inject matching at this seam.
