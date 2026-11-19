@@ -86,18 +86,28 @@ func (u *cxUsage) kinds() TokenKinds {
 	return k
 }
 
-// enrichCodex is enrich for Codex usage, whose input includes cache writes. The input is
-// disjoint only beside known writes: a report with writes replaces an input without them, and
-// a report without writes has the known writes taken out of its input first (either order).
+// enrichCodex merges two reports of one Codex response. Codex input includes cache reads and
+// writes, so the disjoint input is only coherent with the reads and writes of the same report:
+// keep one report's three buckets as a whole, never a mix. The more complete report wins
+// (more known buckets; on a tie, the one that reports more cache writes, its input then
+// already excludes them). Fewer known buckets leave the total unknown, never summed.
 func (k *TokenKinds) enrichCodex(src TokenKinds) {
-	switch {
-	case k.CacheWriteTokens == nil && src.CacheWriteTokens != nil && src.InputTokens != nil:
-		k.InputTokens = nil
-	case k.CacheWriteTokens != nil && src.CacheWriteTokens == nil && src.InputTokens != nil:
-		n := *src.InputTokens - min(*k.CacheWriteTokens, *src.InputTokens)
-		src.InputTokens = &n
+	known := func(t TokenKinds) (n int, writes int64) {
+		for _, p := range []*int64{t.InputTokens, t.CacheReadTokens, t.CacheWriteTokens} {
+			if p != nil {
+				n++
+			}
+		}
+		if t.CacheWriteTokens != nil {
+			writes = *t.CacheWriteTokens
+		}
+		return n, writes
 	}
-	k.enrich(src)
+	kn, kw := known(*k)
+	sn, sw := known(src)
+	if sn > kn || sn == kn && sw > kw {
+		k.InputTokens, k.CacheReadTokens, k.CacheWriteTokens = src.InputTokens, src.CacheReadTokens, src.CacheWriteTokens
+	}
 }
 func usageDelta(cur, prev *cxUsage) *cxUsage {
 	if cur == nil || prev == nil {
