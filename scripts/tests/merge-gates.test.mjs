@@ -774,18 +774,18 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
   // merge_group has no paths filter: queue-scope must decide with the same list as pull_request, or a
   // group could skip a Mac check its PR run would have needed. native-headless must wait for that decision.
   const desktop = readFileSync(join(root, ".github/workflows/desktop.yml"), "utf8");
-  const prPathList = JSON.parse(/^  pull_request:\n    paths: (\[.*\])$/m.exec(desktop)[1]);
+  const prPathList = JSON.parse(/^  pull_request:\n    paths: (\[.*\])$/m.exec(desktop)[1]).filter((p) => !p.startsWith("!"));
   const scope = new RegExp(/^\s+QUEUE_PATHS: (.+)$/m.exec(desktop)[1]);
   for (const p of prPathList) assert.match(p.replace(/\*\*$/, "x"), scope, `queue-scope misses ${p}`);
   assert.doesNotMatch("docs/mac-ci.md", scope);
-  assert.match(/^  native-headless:\n(?:.*\n){1,3}/m.exec(desktop)[0], /needs: queue-scope/);
+  assert.match(/^  native-headless:\n(?:.*\n){1,3}/m.exec(desktop)[0], /needs: (queue-scope|\[queue-scope, pr-scope\])/);
   // D112: every other queue workflow is Linux-only and decides with its own pull_request path list.
   for (const path of R.QUEUE_WORKFLOWS.filter((p) => !/\/(ci|desktop)\.yml$/.test(p))) {
     const text = readFileSync(join(root, path), "utf8");
     assert.doesNotMatch(text, /macos|trusted-mac\.yml/i, `${path}: no Mac time in the merge queue`);
     const block = /^  pull_request:\n    paths:\n((?:      - .*\n)+)/m.exec(text);
     assert.ok(block, `${path}: pull_request paths list`);
-    const list = block[1].trim().split("\n").map((l) => l.replace(/^\s*- /, "").replace(/^['"]|['"]$/g, ""));
+    const list = block[1].trim().split("\n").map((l) => l.replace(/^\s*- /, "").replace(/^['"]|['"]$/g, "")).filter((p) => !p.startsWith("!"));
     const re = new RegExp(/^\s+QUEUE_PATHS: (.+)$/m.exec(text)[1]);
     for (const p of list) assert.match(p.replace(/\*\*$/, "x"), re, `${path}: queue-scope misses ${p}`);
     assert.doesNotMatch("docs/unrelated.md", re, `${path}: queue-scope is too wide`);
@@ -955,6 +955,161 @@ test("an action_required run never ran: it is skipped when picking the latest ru
   assert.equal(failed.state, R.FAILURE, failed.why);
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "failure", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.FAILURE);
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "success", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.SUCCESS);
+});
+
+test("D239: reader, detection and metric PRs name the reference app they follow, or none with a reason (advisory, D243)", () => {
+  const ok = (body, files) => evalPr({ p: pr({ body }), files, comments: [comment(v("merge", H, "macrev2")), comment(`GLMREV: OK @ ${H}`)], verified: () => true });
+  // Scope: the reader packages and the reader-cause copy table; everything else is untouched by the rule.
+  for (const p of ["cli/internal/quota/claude.go", "cli/internal/detect/catalogue.go", "cli/internal/localusage/codex.go",
+    "cli/internal/speed/summary.go", "cli/internal/consent/consent.go", "cli/internal/quota/claude_test.go",
+    "desktop/native/ModelPlanSettings/Sources/ModelPlanSettings/ReaderCauseTable.swift", "desktop/cockpit/src/reader-causes.ts"])
+    assert.equal(R.referenceTouch([p]), true, p);
+  for (const p of ["cli/internal/quotafix/a.go", "cli/internal/rows/rows.go", "docs/readers/integration-standard.md",
+    "desktop/native/ModelPlanSettings/Sources/ModelPlanSettings/Catalogue.swift", "scripts/merge-gates/rules.mjs"])
+    assert.equal(R.referenceTouch([p]), false, p);
+
+  const reader = [file("cli/internal/quota/claude.go")];
+  // D243 step 3: a missing or malformed line is reported in the description, never a FAILURE.
+  const missing = ok("Scenarios: none", reader);
+  assert.equal(missing.state, R.SUCCESS);
+  assert.match(missing.why, /info: .*reader PR: no Reference: line \(D239\)$/);
+  const draft = evalPr({ p: pr({ draft: true, body: "Scenarios: none" }), files: reader });
+  assert.equal(draft.state, R.PENDING, "a draft only waits");
+  assert.match(draft.why, /^draft; info: .*no Reference: line/, "and sees the note at once");
+  // A renamed-away reader file counts too.
+  const renamed = ok("Scenarios: none", [file("cli/internal/old/a.go", { previous_filename: "cli/internal/detect/a.go" })]);
+  assert.equal(renamed.state, R.SUCCESS);
+  assert.match(renamed.why, /info: .*no Reference: line/);
+  // Out of scope: no line needed.
+  assert.equal(ok("Scenarios: none", [file("cli/internal/rows/rows.go")]).state, R.SUCCESS);
+  assert.doesNotMatch(ok("Scenarios: none", [file("cli/internal/rows/rows.go")]).why, /Reference/);
+
+  const good = {
+    "Reference: CodexBar@0827f30 Sources/CodexBarCore/Providers/Claude/ClaudeUsageFetcher.swift": [["CodexBar", "0827f30"]],
+    "Reference: Pulse@v1.12.4 Sources/Pulse/Providers/Kiro.swift; ccusage@e42e1b4 src/data-loader.ts": [["Pulse", "v1.12.4"], ["ccusage", "e42e1b4"]],
+    "**Reference:** Token Monitor@0c7dd85 docs/providers/codex.md": [["TokenMonitor", "0c7dd85"]],
+    "Reference: token-monitor@0c7dd85 src/providers/codex.js, src/providers/shared.js": [["TokenMonitor", "0c7dd85"]],
+    "Reference: tokei@1.2.0 README.md": [["Tokei", "1.2.0"]],
+    "Reference: none (process reasons here, long enough)": [],
+    "Reference: None (test-only refactor; behaviour unchanged)": [],
+  };
+  for (const [line, refs] of Object.entries(good)) {
+    const parsed = R.parseReference(`Intro\n${line}\nReference: nonsense`);
+    assert.equal(parsed.malformed, null, line);
+    assert.deepEqual(parsed.refs.map((r) => [r.app, r.ref]), refs, line);
+    const r = ok(`Scenarios: none\n${line}`, reader);
+    assert.equal(r.state, R.SUCCESS, `${line}: ${r.why}`);
+    assert.doesNotMatch(r.why, /Reference/, line);
+  }
+  for (const line of [
+    "Reference:",
+    "Reference: none",
+    "Reference: none ()",
+    "Reference: none, CodexBar is close",
+    "Reference: CodexBar",
+    "Reference: CodexBar@0827f30",
+    "Reference: CodexBar 0827f30 Sources/a.swift",
+    "Reference: CodexBar@main Sources/a.swift",
+    "Reference: Tokscale@abc1234 src/a.ts",
+    "Reference: OpenUsage@abc1234 src/a.ts",
+    "Reference: CodexBar@0827f30 the Claude fetcher",
+    "Reference: CodexBar@0827f30 Sources/a.swift; Pulse",
+    "References: CodexBar@0827f30 Sources/a.swift",
+  ]) {
+    const r = ok(`Scenarios: none\n${line}`, reader);
+    assert.equal(r.state, R.SUCCESS, line);
+    assert.match(r.why, /info: .*(Reference: line (malformed|none needs)|no Reference: line)/, line);
+  }
+  // none needs a reason of 20+ characters.
+  for (const line of ["Reference: none (process)", "Reference: none (too short)"]) {
+    const r = ok(`Scenarios: none\n${line}`, reader);
+    assert.match(r.why, /Reference: line none needs a reason of at least 20 characters \(D239\)/, line);
+  }
+  assert.equal(R.parseReference("Reference: none (nineteen chars!!!)").malformed !== null, true);
+  assert.equal(R.parseReference("Reference: none (exactly twenty chars)").malformed, null);
+  assert.equal(R.parseReference("no line").declared, false);
+  assert.equal(R.parseReference("References: #12").declared, false, "a References line is not the declaration");
+});
+
+test("D239: widget, menu-bar and native-shell PRs name an allowed reference (reference-map.json)", () => {
+  const ok = (body, files) => evalPr({ p: pr({ body }), files, comments: [comment(v("merge", H, "macrev2")), comment(`GLMREV: OK @ ${H}`)], verified: () => true });
+  const AI = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/";
+  const widget = [file("desktop/native/ModelPlanDock/Native/DockCardView.swift")];
+  const widgetHost = [file(`${AI}StaticDockPreviewHost.swift`)];
+  const shell = [file(`${AI}EngineLifecycleController.swift`)];
+  const names = (p) => R.referenceGroups([p]).map((g) => g.name);
+  for (const p of ["desktop/native/ModelPlanDock/Logic/DockEdgeGeometry.swift", `${AI}DockEdgeControllerBinding.swift`, `${AI}DockInteractionHostPort.swift`,
+    `${AI}CommunityPlacementBinding.swift`, `${AI}StaticDockPreviewApplication.swift`,
+    "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPanel.swift"]) assert.deepEqual(names(p), ["widget"], p);
+  for (const p of [`${AI}CommunityMenuBar.swift`, `${AI}U6StatusItemFrameSampler.swift`, `${AI}HelpOverlayRouter.swift`, `${AI}DockHelpPresenter.swift`,
+    "desktop/native/ModelPlanCockpitShell/Sources/ModelPlanCockpitShell/CockpitWindowState.swift",
+    "desktop/native/ModelPlanCockpitWeb/Sources/ModelPlanCockpitWeb/CockpitWindowController.swift",
+    "desktop/native/Sources/ModelPlanShell/SystemEvents.swift", "desktop/native/Sources/ModelPlanShell/StatusItemPlacement.swift",
+    "desktop/native/Sources/ModelPlanCommunityHost/CommunityDelegate.swift", "desktop/native/Sources/ModelPlanCommunityHost/CommunityMenuBarPresentation.swift"]) assert.deepEqual(names(p), ["menu-bar and native shell"], p);
+  for (const p of [`${AI}CommunityCockpitFactory.swift`, "desktop/native/ModelPlanSelection/Sources/a.swift", "docs/readers/integration-standard.md"]) assert.deepEqual(names(p), [], p);
+
+  for (const files of [widget, widgetHost, shell]) {
+    // missing
+    assert.match(ok("Scenarios: none", files).why, /PR: no Reference: line/);
+    // none with and without a reason
+    assert.doesNotMatch(ok("Scenarios: none\nReference: none (no Pulse equivalent exists)", files).why, /Reference/);
+    assert.match(ok("Scenarios: none\nReference: none (n/a)", files).why, /at least 20 characters/);
+    assert.match(ok("Scenarios: none\nReference: none", files).why, /needs a reason in brackets/);
+  }
+  // widget: Pulse only
+  assert.doesNotMatch(ok("Scenarios: none\nReference: Pulse@v1.12.4 Sources/Pulse/Dock.swift", widget).why, /Reference/);
+  assert.match(ok("Scenarios: none\nReference: CodexBar@0827f30 Sources/a.swift", widget).why, /widget PR must follow one of Pulse/);
+  // shell: CodexBar, Stats, Maccy or Pulse; ccusage is not a shell reference
+  for (const l of ["Stats@v2.11.0 Stats/Modules/a.swift", "Maccy@2.0.0 Maccy/Menu.swift", "CodexBar@0827f30 Sources/a.swift", "Pulse@v1.12.4 a/b.swift"])
+    assert.doesNotMatch(ok(`Scenarios: none\nReference: ${l}`, shell).why, /Reference/, l);
+  assert.match(ok("Scenarios: none\nReference: ccusage@e42e1b4 src/a.ts", shell).why, /menu-bar and native shell PR must follow one of CodexBar, Stats, Maccy, Pulse/);
+  // reader group unchanged: Stats is not a reader reference
+  assert.match(ok("Scenarios: none\nReference: Stats@v2.11.0 a/b.swift", [file("cli/internal/quota/claude.go")]).why, /reader PR must follow/);
+  // a PR across two groups needs an allowed app for each
+  assert.match(ok("Scenarios: none\nReference: Stats@v2.11.0 a/b.swift", [...widget, ...shell]).why, /widget PR must follow/);
+  assert.doesNotMatch(ok("Scenarios: none\nReference: Stats@v2.11.0 a/b.swift; Pulse@v1.12.4 c/d.swift", [...widget, ...shell]).why, /Reference/);
+});
+
+test("D239: every mapped area carries the generated AGENTS.md and CLAUDE.md for exactly the apps in reference-map.json", async () => {
+  const { readFileSync, existsSync } = await import("node:fs");
+  const { expectedFiles, mappedDirs } = await import("../merge-gates/reference-docs.mjs");
+  const map = JSON.parse(readFileSync(new URL("../merge-gates/reference-map.json", import.meta.url), "utf8"));
+  assert.ok(mappedDirs(map).size > 0);
+  for (const g of map.groups) {
+    assert.ok(g.dirs?.length && g.hint, `${g.name} needs dirs and hint`);
+    for (const a of g.apps) assert.ok(map.repos[a], `${a} needs a repos entry`);
+  }
+  for (const [path, text] of expectedFiles(map)) {
+    const full = new URL(`../../${path}`, import.meta.url);
+    assert.ok(existsSync(full), `${path} is missing: run node scripts/merge-gates/reference-docs.mjs --write`);
+    assert.equal(readFileSync(full, "utf8"), text, `${path} is stale: run node scripts/merge-gates/reference-docs.mjs --write`);
+  }
+  for (const g of map.groups) for (const d of g.dirs) {
+    const text = readFileSync(new URL(`../../${d}/AGENTS.md`, import.meta.url), "utf8");
+    for (const a of g.apps) assert.ok(text.includes(a), `${d}/AGENTS.md omits ${a}`);
+  }
+});
+
+test("D239: check-reference.mjs runs the gate rule on a local diff", async () => {
+  const { execFileSync, spawnSync } = await import("node:child_process");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "refcheck-"));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, encoding: "utf8" });
+  git("init", "-q"); git("config", "user.email", "a@b.c"); git("config", "user.name", "t");
+  writeFileSync(join(dir, "x"), "1"); git("add", "."); git("commit", "-qm", "base");
+  git("checkout", "-qb", "work");
+  execFileSync("mkdir", ["-p", join(dir, "desktop/native/ModelPlanDock/Native")]);
+  writeFileSync(join(dir, "desktop/native/ModelPlanDock/Native/DockCardView.swift"), "x"); git("add", "."); git("commit", "-qm", "dock");
+  const script = new URL("../merge-gates/check-reference.mjs", import.meta.url).pathname;
+  const run = (body) => { const f = join(dir, "body.txt"); writeFileSync(f, body); return spawnSync(process.execPath, [script, "--diff", "HEAD~1", "--body", f], { cwd: dir, encoding: "utf8" }); };
+  assert.equal(run("Reference: Pulse@v1.12.4 Sources/Dock.swift").status, 0);
+  assert.equal(run("Reference: none (no Pulse equivalent for this)").status, 0);
+  const bad = run("Reference: none (n/a)");
+  assert.equal(bad.status, 1); assert.match(bad.stderr, /at least 20 characters/);
+  assert.equal(run("nothing").status, 1);
+  assert.equal(run("Reference: CodexBar@0827f30 a/b.swift").status, 1);
 });
 
 test("merge-group gate waits for the group's GUI job, fails closed, times out", () => {

@@ -82,15 +82,43 @@ export function plan(changed, files, read) {
   });
 }
 
+// Packages that cannot be built standalone by a PR run (it passes no extra flags): the U11 verification host needs
+// -DMODELPLAN_TEST_ONLY_SPI on its dependencies, which only trusted-mac.yml passes.
+export const NOT_STANDALONE = Object.freeze(["desktop/native/verification"]);
+
+// Seed run (owner dispatch on main): every package a PR run can build, each built with its tests (never run) in its own
+// scratch. Left out: NOT_STANDALONE, and sub-packages whose sources the root package already declares as its own targets
+// (declared by the root and depending on it, so a standalone build fails with "conflicting name": ModelPlanCockpitShell,
+// ModelPlanField; run 44422368763).
+export function seedPlan(files, read) {
+  const swift = files.filter((f) => f.startsWith(ROOT + "/") && f.endsWith(".swift"));
+  const rootPaths = [...read(`${ROOT}/Package.swift`).matchAll(/path:\s*"([^"]+)"/g)].map((m) => m[1]);
+  const embedded = (dir) => {
+    if (dir === ROOT) return false;
+    const rel = dir.slice(ROOT.length + 1);
+    // Both: the root declares this directory's sources as its own targets, and the package depends on the root.
+    return rootPaths.some((p) => p.startsWith(rel + "/")) && /\.package\([^)]*path:\s*"\.\."/.test(read(`${dir}/Package.swift`));
+  };
+  return plan(swift, files, read)
+    .filter((r) => !NOT_STANDALONE.includes(r.dir) && !embedded(r.dir))
+    .map((r) => ({ ...r, mode: "build-tests", filter: "" }));
+}
+
 export function toTsv(rows) {
   return rows.map((r) => [r.dir, r.scratch, r.mode, r.filter || "-", r.skip].join("\t")).join("\n");
 }
 
 function main(argv) {
-  const [base, head] = argv;
-  if (!base || !head) throw new Error("usage: plan.mjs <base> <head>");
+  const seed = argv[0] === "--seed";
+  const [base, head] = seed ? [null, argv[1]] : argv;
+  if (!head || (!seed && !base)) throw new Error("usage: plan.mjs <base> <head> | plan.mjs --seed <head>");
   const git = (...a) => execFileSync("git", a, { encoding: "utf8", maxBuffer: 64 << 20 });
   const list = (...a) => git(...a).split("\0").filter(Boolean);
+  if (seed) {
+    const all = list("ls-tree", "-r", "-z", "--name-only", head, "--", ROOT);
+    process.stdout.write(toTsv(seedPlan(all, (f) => git("show", `${head}:${f}`))) + "\n");
+    return;
+  }
   const changed = list("diff", "--no-renames", "--name-only", "-z", "--diff-filter=ACMRD", base, head, "--", ROOT);
   const files = list("ls-tree", "-r", "-z", "--name-only", head, "--", ROOT);
   // PR files are only read as text (git show), never checked out or run here.

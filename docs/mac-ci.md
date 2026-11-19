@@ -190,6 +190,16 @@ head (D169 item 3 was dropped): those lanes run on agent-operated machines, and 
 (a comment, a file, or a signature made with a key on that machine) can be verified as untampered
 by CI. Only GitHub-produced results count.
 
+### macOS legs on pull requests (D254)
+
+Hosted macOS gives 5 concurrent jobs, so a pull request starts a Mac job only when it changes something that job
+tests. Every PR-triggered Mac workflow either has a `pull_request` `paths` list that ends in `'!**/*.md'`, or gates
+each Mac job on a scope output (`desktop.yml` `pr-scope`, `ci.yml` and `repo-checks.yml` `mac-scope` and `notices-mac`).
+`merge_group`, `push`, `schedule` and `workflow_dispatch` are never filtered and keep the full suite. A workflow or
+job a PR does not trigger needs no stub: `merge-gates` counts only runs that exist (plus the `ci` anchor) and a skipped
+job is green. `trusted-mac.yml` stays untouched; the filters live in its callers. Concurrency cancels only
+`pull_request` runs of the same PR (`workflow-policy.test.mjs` enforces both rules).
+
 ## Migration
 
 Keep the legacy `MAC_CI_RUNNER` unset or `hosted`. The versioned switch prevents

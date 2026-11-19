@@ -138,6 +138,20 @@ test("clone probe: a partial copy whose wipe fails is never reused or nested; th
   assert.ok(!fs.existsSync(path.join(sp, "c")) && !fs.existsSync(path.join(sp, "partial")) && !fs.existsSync(path.join(sp, "desktop_native_Pkg")));
 });
 
+test("seed publish is per package: a failing package does not block another, and scratches are separate", () => {
+  const d = setup();
+  fs.writeFileSync(path.join(d, "plan.tsv"), "desktop/native/Bad\tdesktop_native_Bad\tbuild-tests\t-\tNone\ndesktop/native/Good\tdesktop_native_Good\tbuild-tests\t-\tNone\n");
+  fs.writeFileSync(path.join(d, "bin", "swift"), `#!/bin/bash\nif [ "$1" = --version ]; then echo s; exit 0; fi\ncase "$*" in *Bad*) echo "error: boom"; exit 1;; esac\nfor a in "$@"; do case $a in --scratch-path) n=1;; *) [ "\${n:-}" = 1 ] && { mkdir -p "$a"; echo "$a" > "$a/product"; n=0; };; esac; done\nexit 0\n`, { mode: 0o755 });
+  const r = run(d, { SEED_ROOT: seedDir(d), SEED_WRITE: "1" });
+  assert.notEqual(r.status, 0);
+  assert.match(fs.readFileSync(path.join(d, "sum"), "utf8"), /Bad`: build fail[\s\S]*Good`: build ok/);
+  assert.ok(!fs.existsSync(path.join(seedDir(d), "desktop_native_Bad")));
+  const [key] = fs.readdirSync(path.join(seedDir(d), "desktop_native_Good")).filter((n) => !n.includes("."));
+  const product = fs.readFileSync(path.join(seedDir(d), "desktop_native_Good", key, "product"), "utf8");
+  assert.match(product, /scratch\/desktop_native_Good$/m);
+  assert.doesNotMatch(product, /Bad/);
+});
+
 test("an interrupted run releases its lock", async () => {
   const d = setup();
   fs.writeFileSync(path.join(d, "bin", "swift"), `#!/bin/bash\nif [ "$1" = --version ]; then echo s; exit 0; fi\nsleep 3\n`, { mode: 0o755 });
@@ -147,4 +161,56 @@ test("an interrupted run releases its lock", async () => {
   p.kill("SIGTERM");
   await new Promise((r) => p.on("exit", r));
   assert.ok(!fs.existsSync(seedDir(d) + ".lock"), "lock released after TERM");
+});
+
+const leftover = (root) => {
+  fs.mkdirSync(path.join(root, "a", "b"), { recursive: true });
+  fs.writeFileSync(path.join(root, "a", "b", "f"), "x");
+  fs.chmodSync(path.join(root, "a", "b", "f"), 0o444);
+  for (const p of [path.join(root, "a", "b"), path.join(root, "a"), root]) fs.chmodSync(p, 0o555);
+};
+const unlock = (root) => spawnSync("chmod", ["-R", "u+rwx", root]);
+
+test("a read-only leftover scratch from an earlier job is cleaned before the build", () => {
+  const d = setup();
+  const sp = path.join(d, "scratch", "desktop_native_Pkg");
+  fs.mkdirSync(sp, { recursive: true }); leftover(sp);
+  const r = run(d);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(sp, "a")));
+  assert.equal(fs.readFileSync(path.join(sp, "product"), "utf8"), "built\n");
+});
+
+test("a read-only leftover in the temp logs directory is cleaned", () => {
+  const d = setup();
+  const logs = path.join(d, "mac-compile-logs");
+  fs.mkdirSync(logs); leftover(logs);
+  const r = run(d);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(logs, "a")));
+});
+
+test("a read-only seed clone from a previous job is cleaned by the next job", () => {
+  const d = setup();
+  publish(d);
+  run(d, { SEED_ROOT: seedDir(d) });
+  const sp = path.join(d, "scratch", "desktop_native_Pkg");
+  leftover(sp);
+  const r = run(d, { SEED_ROOT: seedDir(d) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(sp, "a")));
+});
+
+test("when the scratch cannot be deleted it is moved aside and the job builds cold without failing", () => {
+  const d = setup();
+  const sp = path.join(d, "scratch", "desktop_native_Pkg");
+  fs.mkdirSync(sp, { recursive: true }); fs.writeFileSync(path.join(sp, "stale"), "x");
+  const realRm = spawnSync("which", ["rm"], { encoding: "utf8" }).stdout.trim();
+  fs.writeFileSync(path.join(d, "bin", "rm"), `#!/bin/bash\ncase "$*" in *desktop_native_Pkg) exit 1;; esac\nexec ${realRm} "$@"\n`, { mode: 0o755 });
+  const r = run(d);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /moved aside/);
+  assert.ok(!fs.existsSync(path.join(sp, "stale")));
+  assert.equal(fs.readFileSync(path.join(sp, "product"), "utf8"), "built\n");
+  unlock(path.join(d, "scratch"));
 });

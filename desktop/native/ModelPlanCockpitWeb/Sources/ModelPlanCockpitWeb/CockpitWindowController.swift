@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanEngineClient
 import ModelPlanWire
 import WebKit
 import QuartzCore
@@ -671,11 +672,24 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     super.init(window: nil)
   }
   required init?(coder: NSCoder) { nil }
+  private var transitionTiming = CockpitTransitionTiming()
+  /// WP-17 (G3-123): when this page's navigation started, and the bundle's served-file counters then.
+  private var pageLoadTiming: (at: TimeInterval, served: VerifiedCockpitBundle.ServedStats)?
+  /// G3-123 timing only: the fade-in entrance still running (its number), so a second open during it keeps measuring
+  /// from the first click instead of starting a new transition. Read by nothing but the timing calls.
+  private var fadeEntranceTiming: Int?
+  private var fadeEntranceTimingCount = 0
+  private func timing(_ line: String?) { if let line { CockpitTimingLog.record(line) } }
   public func prewarm() {
     guard web == nil, !bridge.disposed, !ending else { return }
     build()
   }
   public func open() {
+    // G3-123: an open during a running entrance (rack-first or fade) continues that transition's clock.
+    if closeTask != nil || !(entering || fadeEntranceTiming != nil) {
+      transitionTiming.beginOpen(requestedAt: CockpitTimingLog.clickAt)
+      timing(transitionTiming.openStage("window-start"))
+    }
     let wasVisible = isVisibleToUser
     let wasClosing = closeTask != nil
     closeTask?.cancel(); closeTask = nil
@@ -711,6 +725,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           self.rackExtension = t / 3; self.rackTarget = self.rackExtension
         }, done: { [weak self] in
           guard let self, self.window != nil else { return }
+          // G3-123: the rack is out; the cockpit itself starts to show from here (window-visible is its alpha-0 order-in).
+          self.timing(self.transitionTiming.openStage("cockpit-motion-start"))
           self.runMotion(CockpitLaunchRackTiming.cockpitOpen, step: { [weak self] t in
             guard let self, let panel = self.window, let home = self.layout?.frame else { return }
             let eased = 1 - pow(1 - t, 3)
@@ -720,6 +736,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           }, done: { [weak self] in
             guard let self, let panel = self.window else { return }
             self.entering = false; self.rackHidesInHome = false
+            self.timing(self.transitionTiming.openStage("animation-complete"))
             self.rackExtension = 1; self.rackTarget = 1
             panel.alphaValue = 1
             if let frame = self.layout?.frame { panel.setFrame(frame, display: true) }
@@ -733,9 +750,22 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         panel.alphaValue = appearance.reduceMotion ? 1 : 0
         panel.makeKeyAndOrderFront(nil)
         if !appearance.reduceMotion {
-          NSAnimationContext.runAnimationGroup { context in context.duration = Self.openFade; panel.animator().alphaValue = 1 }
+          fadeEntranceTimingCount += 1
+          let fade = fadeEntranceTimingCount
+          fadeEntranceTiming = fade
+          NSAnimationContext.runAnimationGroup({ context in context.duration = Self.openFade; panel.animator().alphaValue = 1 }, completionHandler: { [weak self] in
+            Task { @MainActor in
+              guard let self else { return }
+              if self.fadeEntranceTiming == fade { self.fadeEntranceTiming = nil }
+              guard self.closeTask == nil, !self.ending else { return }
+              self.timing(self.transitionTiming.openStage("animation-complete"))
+            }
+          })
+        } else {
+          timing(transitionTiming.openStage("animation-complete"))
         }
       }
+      timing(transitionTiming.openStage("window-visible"))
       #if MODELPLAN_TEST_ONLY_SPI
         verificationEntrance?(rackFirst ? "rack" : appearance.reduceMotion ? "instant" : "fade")
       #endif
@@ -766,6 +796,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if !wasVisible, !wasClosing, !shellSession.detached { applyLayout() }
     panel.alphaValue = 1
     bringToFront(panel)
+    timing(transitionTiming.openStage("window-visible"))
+    // A re-open during the fade-in sets full alpha above, which ends that entrance now (its own completion is then a
+    // duplicate and dropped); the stage still counts from the first click.
+    fadeEntranceTiming = nil
+    timing(transitionTiming.openStage("animation-complete"))
     applyPresentationTraits()
     if shellSession.detached { onPresenceChanged?(true) }
     lastVisibility = nil; visibilityChanged()
@@ -896,6 +931,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       installOwnSystemObservers(center: center)
     }
     panel.alphaValue = 0
+    pageLoadTiming = (CockpitTimingLog.now, bundle.servedStats)
+    LaunchTimingLog.shared.mark("page-load-start")
     view.load(URLRequest(url: pageURL))
   }
   /// Spec item 2: one signal per OS edge from the app's source. The immediate display pass keeps the cockpit from
@@ -1143,6 +1180,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let receipt = acceptBridgeReply(raw, source: source) else { return }
       switch receipt {
       case .ready:
+        LaunchTimingLog.shared.mark("page-bridge-ready")
         bootstrapCheck?(); bootstrapCheck = nil
         web?.isHidden = false
         publishAppearance()
@@ -1171,6 +1209,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         default: onIntent?(intent)
         }
       case .rendered:
+        if shown { timing(transitionTiming.openStage("page-rendered")) }
+        // WP-17: a rendered receipt answers a display, so the first one is the first paint with data.
+        LaunchTimingLog.shared.mark("first-rendered-with-data", detail: "shown=\(shown)")
         setReadingDelayed(false, cause: "rendered")
         if !bridge.hasPendingDisplay { renderWatchdog.cancel() }
         if let id = receiptWatchdog.currentID, !bridge.awaitsDeadlineReceipt(id) {
@@ -1402,6 +1443,17 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard webView.url == pageURL else {
       fail(.navigationFailed)
       return
+    }
+    if let started = pageLoadTiming {
+      pageLoadTiming = nil
+      let served: VerifiedCockpitBundle.ServedStats = bundle.servedStats
+      let files: Int = served.files - started.served.files
+      let nanoseconds: UInt64 = served.nanoseconds &- started.served.nanoseconds
+      let verifyMs: Int = Int((Double(nanoseconds) / 1_000_000).rounded())
+      let loadMs: Int = CockpitTimingLog.ms(since: started.at)
+      let detail: String = "files=\(files) verifyMs=\(verifyMs)"
+      CockpitTimingLog.record("page stage=navigation-finish loadMs=\(loadMs) " + detail)
+      LaunchTimingLog.shared.mark("page-navigation-finish", detail: detail)
     }
     guard let shell = currentShell else { fail(.localEncoding); return }
     do { send(try bridge.load(appearance, shell: shell), bootstrap: true) } catch { fail(.localEncoding, error: error) }
@@ -2018,6 +2070,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func closeAnimated() {
     guard !ending, closeTask == nil else { return }
+    timing(transitionTiming.beginClose())
+    fadeEntranceTiming = nil
     freshnessDriver.hide(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
     // Audit A-2: the invalidation drops a display still queued behind an in-flight call. A re-open during the fade
     // confirms visibility on the same page, so it must ask for fresh data then, as a hidden page does.
@@ -2225,6 +2279,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     window?.delegate = nil
     window?.contentView = nil
     window?.close()
+    timing(transitionTiming.gone())
+    fadeEntranceTiming = nil
     window = nil
     web = nil
     proxy.owner = nil
