@@ -328,12 +328,9 @@ public enum SettingsCatalogue {
                     if c.v1NormalEntry && [.theme, .opening, .countdown].contains(key) { return nil }
                     if c.v1NormalEntry && key == .loginSystemSettings && !c.systemSettingsFallbacks.contains(.loginItems) { return nil }
                     if c.v1NormalEntry && key == .notificationSystemSettings && !c.systemSettingsFallbacks.contains(.notifications) { return nil }
-                    // SET-9-18 (owner 11-06, D36): "Resets expiring" and "Data stopped arriving" are
-                    // v1.1; v1 offers the forecast, reset and official-announcement kinds.
-                    if c.v1NormalEntry && [.expiring, .stale].contains(key) { return nil }
-                    // No dead controls in v1 (SET-9-29): the forecast kind appears once the
-                    // engine reports its forecast producer, and is hidden until then.
-                    if c.v1NormalEntry && key == .forecast && !c.capabilities.forecastProducerAvailable { return nil }
+                    // ALR-52 (WP-11; supersedes SET-9-18/SET-9-29): v1 offers only the kinds it sends,
+                    // "Quota reset" and "Official extra reset"; the forecast shows on the ALERT lamp instead.
+                    if c.v1NormalEntry, let kind = NotificationKind(rawValue: key.rawValue), !NotificationKind.delivered.contains(kind) { return nil }
                     if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) && (!c.capabilities.updateServiceAvailable || c.unavailableControls[key] != nil) { return nil }
                     // No dead control: the export row appears once the app can write the file.
                     if c.v1NormalEntry && key == .exportDiagnostics && !c.capabilities.diagnosticsExportAvailable { return nil }

@@ -328,14 +328,14 @@ test("post-merge report: a skipped leg leaves the failure issue as it was", () =
   const run = { id: 20, path: DESKTOP, name: "desktop", head_sha: H, html_url: "https://x/run/20" };
   const prev = [{ job_id: 7, job: "app-smoke", conclusion: "failure", workflow: "desktop", run_id: 10, sha: BASE, url: "https://x/job/7", test: "t1" },
     { job_id: 8, job: "cockpit-spi-tests", conclusion: "failure", workflow: "desktop", run_id: 10, sha: BASE, url: "https://x/job/8", test: "t2" },
-    { job_id: 9, job: "Dock", conclusion: "failure", workflow: "other", run_id: 11, sha: BASE, url: "https://x/job/9", test: "t3" }];
+    { job_id: 9, job: "contracts", conclusion: "failure", workflow: "Dock host port seam", run_id: 11, sha: BASE, url: "https://x/job/9", test: "t3" }];
   const names = (rows) => rows.map((r) => r.job).sort();
   const skipped = P.reconcile(prev, run, [job("app-smoke", "skipped"), job("cockpit-spi-tests", "skipped")]);
   assert.deepEqual(names(skipped), ["app-smoke", "cockpit-spi-tests"], "skipped: unchanged");
   assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "cancelled"), job("cockpit-spi-tests", "success")])), ["app-smoke"], "cancelled keeps, success clears");
   assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), [], "green clears");
   assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "failure"), linux("shell")])), ["app-smoke", "cockpit-spi-tests"], "red stays, an absent trusted leg keeps its row");
-  assert.deepEqual(names(P.carryOver(prev, new Set(["desktop"]))), ["Dock"], "a workflow with no counted run keeps its rows");
+  assert.deepEqual(names(P.carryOver(prev, [run])), ["contracts"], "a workflow with no counted run keeps its rows");
   assert.equal(P.plan({ body: P.renderBody(prev, "modelplan/modelplan") }, skipped).action, "update", "never close");
 });
 
@@ -355,4 +355,17 @@ test("post-merge report: only a qualifying success of the same or a newer run cl
   assert.deepEqual(names(P.reconcile(prev, mk(50), [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), [], "the same run's retry clears");
   assert.deepEqual(names(P.reconcile(prev, mk(70), [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), [], "a newer success clears");
   assert.deepEqual(names(P.reconcile([row("retired-leg", 50, DESKTOP)], mk(60), [])), [], "a leg retired from the trusted table is dropped");
+});
+
+// macrevd P2 on #1083: rows group by workflow path; retired workflows are not carried forward.
+test("post-merge report: rows reconcile by workflow path and retired workflows drop", () => {
+  const run = { id: 60, path: DESKTOP, name: "desktop renamed", head_sha: H, html_url: "https://x/run/60" };
+  const row = (job_, path, workflow = "desktop") => ({ job_id: 5, job: job_, conclusion: "failure", workflow, path, run_id: 50, sha: BASE, url: "u", test: "t" });
+  const names = (rows) => rows.map((r) => r.job).sort();
+  assert.deepEqual(names(P.reconcile([row("app-smoke", DESKTOP)], run, [job("app-smoke", "success")])), [], "old display name, same path: a success clears");
+  assert.deepEqual(names(P.reconcile([row("claude-code-macos", CI, "desktop renamed")], run, [job("app-smoke", "success")])), [], "another path's row is not this run's");
+  assert.deepEqual(names(P.carryOver([row("app-smoke", DESKTOP)], [run])), [], "carried only when its workflow had no run");
+  assert.deepEqual(names(P.carryOver([row("app-smoke", DESKTOP), row("app-smoke", ".github/workflows/gone.yml")], [])), ["app-smoke"], "a retired workflow's row is dropped from carry-over");
+  assert.deepEqual(names(P.carryOver([row("retired-leg", DESKTOP)], [])), [], "a retired leg is dropped from carry-over");
+  assert.deepEqual(names(P.carryOver([{ ...row("app-smoke", undefined), path: undefined }], [{ ...run, name: "desktop" }])), [], "legacy row without path groups by name");
 });

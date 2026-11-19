@@ -54,7 +54,9 @@ register('mfd', {
   alResetSoon: ['alert', '{s} 官方额外重置 · 待定', '{s} official extra reset · time TBA'],
   alResetConf: ['alert', '{s} 官方额外重置已确认', '{s} official extra reset confirmed'],
   alertsTitle: ['silk', '告警', 'Alerts'],
-  noAlerts: ['line', '没有告警', 'No alerts'],
+  // CKP-MFD-55 (WP-11, V1-FINAL §8.6): the alert list's title and its empty line.
+  alertsCount: ['line', '提醒 · {n}', 'Alerts · {n}'],
+  noAlerts: ['line', '没有提醒', 'No alerts'],
   // 订阅
   viaNative: ['lcd', 'modelplan', 'modelplan'],
   viaCodexbar: ['lcd', 'CodexBar', 'CodexBar'],

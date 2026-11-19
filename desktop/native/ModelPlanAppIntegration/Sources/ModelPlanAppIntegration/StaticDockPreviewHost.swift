@@ -585,6 +585,9 @@ struct DockHelpInteraction: Equatable {
     private var withdrawHeldForPress = false
     /// The placement the last drop committed, kept as the host's own until a Settings snapshot carries it.
     private var heldDrop: HeldDockDrop?
+    /// T4: mouse-down monitors installed while a card is shown, and a press seen by them for the sample it starts.
+    private var outsidePressMonitors: [Any] = []
+    private var pressObservedSinceSample = false
     private var inputGeneration: UInt64 = 0, cardGeneration: UInt64 = 0
     private var panel: NSPanel?, cardPanel: NSPanel?
     private var lastDisplayChoices: [SettingsDisplayChoice] = []
@@ -694,7 +697,9 @@ struct DockHelpInteraction: Equatable {
             // A carry closes the card instead (`carrying`, G3-114).
             if hover != nil || edge.isBackgroundPressed || interactionController?.hasCapture == true { inside = true }
         }
-        let pressedOutside = env.presence.mouseButtonDown && inside == false
+        // T4: a press that the 150 ms sample would miss (pressed and released between two samples) is reported by
+        // the mouse-down monitors for the sample it triggers.
+        let pressedOutside = (env.presence.mouseButtonDown || pressObservedSinceSample) && inside == false
         let focusedID = view.keyboardTargetID.flatMap { catalogue.contains($0) ? $0 : nil }
         if cardHasKeyboardFocus || focusedID != nil { inside = true }
         let safePreferences = memberSafePreferences
@@ -1148,8 +1153,8 @@ struct DockHelpInteraction: Equatable {
                 let before = HeldDockDrop.Fields(self.preferences)
                 let dropped = HeldDockDrop.Fields(displayID: value.displayID ?? before.displayID, edge: next,
                                                   alongFraction: value.alongFraction)
-                self.heldDrop = dropped == before ? nil : HeldDockDrop(dropped: dropped, before: before,
-                                                                       until: ContinuousClock.now + HeldDockDrop.limit)
+                // T3: drops A -> B -> C before any save lands keep every earlier placement held, not only the last.
+                self.heldDrop = HeldDockDrop.after(drop: dropped, showing: before, previous: self.heldDrop, now: .now)
                 dropped.write(to: &self.preferences)
             }
             if let id = value.displayID, let commit = self.commitDisplayPlacement {
@@ -1167,11 +1172,11 @@ struct DockHelpInteraction: Equatable {
         let oldReveal = preferences.revealMilliseconds
         preferences = value.snapshot.preferences
         if let held = heldDrop {
-            // Still the pre-drop placement: this snapshot predates the drop's save, so the drop stands. Any other
-            // placement (the save itself, or a later choice) ends the hold.
-            if HeldDockDrop.Fields(preferences) == held.before, ContinuousClock.now < held.until {
-                held.dropped.write(to: &preferences)
-            } else { heldDrop = nil }
+            // A placement from before the latest drop (the pre-drop one, or an earlier drop whose save lands late):
+            // this snapshot predates the latest drop's save, so that drop stands. Any other placement (the latest
+            // drop's own save, or a later choice) ends the hold.
+            let admitted = held.admit(HeldDockDrop.Fields(preferences), now: .now)
+            admitted.show.write(to: &preferences); heldDrop = admitted.hold
         }
         // A panel keeps its Spaces behaviour until told otherwise, and the edge may not re-present.
         for window in [panel, cardPanel, overflowPanel] { window?.collectionBehavior = panelCollectionBehavior }
@@ -2360,6 +2365,7 @@ struct DockHelpInteraction: Equatable {
         cardGeneration &+= 1
         let token = cardGeneration, feed = inputGeneration
         cardID = id; cardPresentedRevision = content.revision; cardPresentedGeneration = feed; card.isHidden = false
+        installOutsidePressMonitors()
         card.appearance = NSAppearance(named: (application?.effective.darkAppearance ?? true) ? .darkAqua : .aqua)
         card.permitsAction = { [weak self] id, revision in self?.cardIsCurrent(id, revision: revision, token: token, feed: feed) == true }
         card.onOpenURL = { [weak self] url in
@@ -2478,8 +2484,36 @@ struct DockHelpInteraction: Equatable {
         edge.refresh()
         return true
     }
+    /// T4 (post-merge sampling 11-17): an open card closed on an outside press only when a 150 ms sample happened to
+    /// see the button down, so a quick click waited out the leave deadline. Mouse-down events are now observed while
+    /// a card is shown and sampled at once; the poll still decides pointer departure. Native panels only: a
+    /// detached synthetic host is driven through `observeMouseDown()`.
+    private func installOutsidePressMonitors() {
+        guard createsNativePanels, outsidePressMonitors.isEmpty else { return }
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.observeMouseDown() }
+        }) { outsidePressMonitors.append(global) }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.observeMouseDown() }
+            return event
+        }) { outsidePressMonitors.append(local) }
+    }
+    private func removeOutsidePressMonitors() {
+        for monitor in outsidePressMonitors { NSEvent.removeMonitor(monitor) }
+        outsidePressMonitors = []
+    }
+    /// A mouse button went down somewhere. With a card open the interaction is sampled now, with the press
+    /// reported even if the button is up again by then; whether it was outside the card's hold is decided there.
+    func observeMouseDown() {
+        guard !retired, cardID != nil, !card.isHidden, let controller = interactionController, controller.isRunning else { return }
+        pressObservedSinceSample = true
+        defer { pressObservedSinceSample = false }
+        controller.refresh()
+    }
     private func dismissCard() {
         fallbackCardLeaveTask?.cancel(); fallbackCardLeaveTask = nil
+        removeOutsidePressMonitors()
         cardGeneration &+= 1; cardID = nil; cardPresentedRevision = nil; cardPresentedGeneration = nil
         card.isHidden = true
         card.dispose(); cardPanel?.orderOut(nil)
@@ -2552,7 +2586,13 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
 
 /// The placement a drop committed, held by the host until a Settings snapshot carries it (see `onCommittedPlacement`).
 /// Bounded in time, so a save that never lands cannot override a later choice of the old placement for long.
-private struct HeldDockDrop {
+/// The placement a drop committed, held as the host's own until its asynchronous Settings save is reported.
+/// T3 (post-merge sampling 11-17): drops A -> B -> C can all be made before any save lands, and each save's
+/// snapshot (or one another writer saved in between) can arrive late. Every placement such a snapshot can still
+/// carry, the one shown before the first unacknowledged drop and each drop superseded since, is held back, so a
+/// delayed A cannot put the widget back after C. Only the latest drop's own save, a placement that was never
+/// dropped (a choice in Settings) or the time limit ends the hold.
+struct HeldDockDrop {
     struct Fields: Equatable {
         var displayID: String?, edge: SettingsDockEdge, alongFraction: Double
         init(displayID: String?, edge: SettingsDockEdge, alongFraction: Double) {
@@ -2562,5 +2602,20 @@ private struct HeldDockDrop {
         func write(to p: inout SettingsPreferences) { p.dockDisplayID = displayID; p.dockEdge = edge; p.dockAlongFraction = alongFraction }
     }
     static let limit: Duration = .seconds(10)
-    let dropped: Fields, before: Fields, until: ContinuousClock.Instant
+    let dropped: Fields, superseded: [Fields], until: ContinuousClock.Instant
+
+    /// The hold after a drop onto `dropped` while the host shows `showing`; nil when no earlier placement is pending.
+    static func after(drop dropped: Fields, showing: Fields, previous: HeldDockDrop?,
+                      now: ContinuousClock.Instant) -> HeldDockDrop? {
+        var superseded = previous.flatMap { now < $0.until ? $0.superseded : nil } ?? []
+        if !superseded.contains(showing) { superseded.append(showing) }
+        superseded.removeAll { $0 == dropped }
+        return superseded.isEmpty ? nil : HeldDockDrop(dropped: dropped, superseded: superseded, until: now + limit)
+    }
+
+    /// A Settings snapshot carries `placed`: the placement to show, and the hold that remains.
+    func admit(_ placed: Fields, now: ContinuousClock.Instant) -> (show: Fields, hold: HeldDockDrop?) {
+        if now < until, superseded.contains(placed) { return (dropped, self) }
+        return (placed, nil)
+    }
 }
