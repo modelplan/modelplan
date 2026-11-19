@@ -60,3 +60,23 @@ test('pseudo-long English keeps the strip badge, overflow and empty lines inside
  const none=visualFixture().data;none.details.sessions=[];
  expect(await stripClipped(none),'the empty line clips').toEqual([]);
 });
+
+// WP-18 (CKP-PLG-50/51/53): the plugin key, its column, its right-click menu and its big screen fit the pseudo-long
+// locale, taking their short forms where the long ones do not fit. Nothing is clipped or ellipsised.
+test('pseudo-long English keeps the plugin key, column, menu and big screen inside their boxes',async({page})=>{
+ const context=await page.context().browser().newContext({viewport:{width:636,height:890},reducedMotion:'reduce'}),p=await context.newPage();
+ const {data}=visualFixture();data.projection.rows=data.projection.rows.slice(0,2);
+ const {send,receive}=await open(p,{pseudo:true,data});
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'placeholder',enabled:true,pinned:false}],settings:{placeholder:{intervalSeconds:30}}}}))).toBe(true);
+ expect(await receive(send('display',{data}))).toBe(true);
+ expect(await receive(send('pluginData',{id:'placeholder',data:{value:100}}))).toBe(true);
+ const over=sel=>p.evaluate(sel=>[...document.querySelectorAll(sel)].filter(e=>!e.children.length&&e.textContent.trim()&&e.getClientRects().length&&(e.scrollWidth>e.clientWidth+1||e.scrollHeight>e.clientHeight+1)).map(e=>e.className+':'+e.textContent.trim()),sel);
+ await expect(p.locator('.pl-key .ek-name')).toBeVisible();
+ expect(await over('.pl-key *,.pl-col *'),'plugin key or column clips').toEqual([]);
+ await p.locator('.pl-key').click({button:'right'});await expect(p.locator('.pl-menu')).toBeVisible();
+ expect(await over('.pl-menu *'),'plugin menu clips').toEqual([]);
+ await p.keyboard.press('Escape');
+ await p.locator('.pl-key').click();await expect(p.locator('.pl-screen')).toBeVisible();
+ expect(await over('.pl-screen *'),'plugin screen clips').toEqual([]);
+ await context.close();
+});

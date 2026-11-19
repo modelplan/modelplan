@@ -54,7 +54,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(ht(locale,'host.alertActive')):(ht(locale,'host.alertInactive')));}
  return {now,accounts,alerts,caution:{level,key:''}};
  }
- // v1.1 plugin columns (D124): with a plugin host, pages and widths follow the plugin layout; the study model still
+ // Plugin columns (D124, D293): with a plugin host, pages and widths follow the plugin layout; the study model still
  // draws each page's subscriptions, and the host turns the page's first empty slots into its plugin columns.
  const plugins=pluginHostOf(root);
  const pageCount=()=>plugins?plugins.layout(members.length).pages.length:Math.ceil(members.length/6);
@@ -106,7 +106,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  // CSS ellipsis is the last resort. Measured again whenever the table's width changes (not laid out yet: skipped).
  let watch:ResizeObserver|null=null;
  // The width watch starts once the table is in the page: WebKit reports nothing for a target observed while detached.
- function fit(){if(!watch&&host.isConnected&&typeof ResizeObserver!=='undefined'){watch=new ResizeObserver(fit);watch.observe(host);}for(const e of host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full]')){if(!e.isConnected||e.clientWidth<=0)continue;const forms=[e.dataset.full,e.dataset.short,e.dataset.small].filter((v):v is string=>!!v);e.textContent=forms[0]??'';for(const form of forms.slice(1)){if(e.scrollWidth<=e.clientWidth)break;e.textContent=form;}}}
+ function fit(){if(!watch&&host.isConnected&&typeof ResizeObserver!=='undefined'){watch=new ResizeObserver(fit);watch.observe(host);}for(const e of host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full],.pl-fit[data-full]')){if(!e.isConnected||e.clientWidth<=0)continue;const forms=[e.dataset.full,e.dataset.short,e.dataset.small].filter((v):v is string=>!!v);e.textContent=forms[0]??'';for(const form of forms.slice(1)){if(e.scrollWidth<=e.clientWidth)break;e.textContent=form;}}}
 
  const choosePage=(element:Element)=>{const led=element.closest<HTMLElement>('.eng-led[data-page]');if(!led||!host.contains(led))return false;const requested=Number(led.dataset.page);if(Number.isInteger(requested)&&requested>=0&&requested<pageCount()){page=requested;paint();}return true;};
  host.onkeydown=e=>{if(e.isTrusted&&(e.key==='Enter'||e.key===' ')&&choosePage(e.target as Element))e.preventDefault();};
@@ -123,7 +123,6 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  host.addEventListener('focusin',e=>showHint(e.target));host.addEventListener('focusout',hideHint);
  host.onclick=e=>{if(!e.isTrusted)return;if(choosePage(e.target as Element))return;const b=(e.target as Element).closest<HTMLButtonElement>('button');if(!b||!host.contains(b))return;
   if(b.hasAttribute('data-add-subscription')){if(plugins){plugins.openMenu(b,{data,locale,mark:vendorKey=>vendorKey&&Object.hasOwn(logos,vendorKey)?'assets/brands/'+logos[vendorKey]:null,connect:onAdd});return;}onAdd();return;}
-  if(b.hasAttribute('data-plugin-remove')){plugins?.remove(b.dataset.pluginRemove??'');return;}
   if(b.hasAttribute('data-all')){if(onSelect('all')){scope='';paint();}return;}
   if(b.hasAttribute('data-sub')){const key=b.dataset.sub??'';if(seen.has(key)&&onSelect(key)){scope=key;paint();}return;}
   if(b.hasAttribute('data-bpage')){const step=b.dataset.bpage==='1'?1:b.dataset.bpage==='-1'?-1:0;page=Math.max(0,Math.min(pageCount()-1,page+step));paint();}

@@ -128,7 +128,7 @@ enum SettingsWords {
     private lazy var connectionsView = SettingsConnectionsView(editor: editor)
     private let scopeConsentEntry: ScopeConsentEntry?
     private var historyImportView: SettingsHistoryImportView?
-    /// v1.1 "Cockpit plugins" section on the Cockpit pane, attached by the app once its plugin store is open.
+    /// The "Plugins" section on the Subscriptions pane (CKP-PLG-54), attached by the app once its plugin store is open.
     public private(set) var cockpitPluginsView: SettingsCockpitPluginsView?
     private let heading = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
@@ -213,8 +213,8 @@ enum SettingsWords {
         refresh()
     }
     public func refreshEnvironment() { editor.update(environment: environmentProvider()) }
-    /// v1.1 (D121/D124): shows the "Cockpit plugins" section. It sits after the catalogue rows, so row insertion
-    /// indices are unchanged.
+    /// CKP-PLG-54 (D293): shows the "Plugins" section on the Subscriptions pane. It sits after the catalogue rows and
+    /// the subscription rows, so row insertion indices are unchanged.
     public func attachCockpitPlugins(_ model: CockpitPluginSettingsModel) {
         guard cockpitPluginsView == nil else { return }
         let view = SettingsCockpitPluginsView(model: model, language: language)

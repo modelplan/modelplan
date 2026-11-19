@@ -24,9 +24,9 @@ export type HostMessage = Header & (
   {readonly type:'visibility'; readonly visible:boolean; readonly occluded:boolean; readonly key:boolean} |
   {readonly type:'tick'; readonly nowUnixMs:string; readonly reason:'deadline'|'show'|'wake'|'unlock'|'clockChange'} |
   {readonly type:'clear'} | {readonly type:'unload'} |
-  /** v1.1 plugin columns: the host's saved plugin choices (CockpitPluginPreferences). */
+  /** Plugin columns (D293): the host's saved plugin choices (CockpitPluginPreferences). */
   {readonly type:'plugins'; readonly plugins:PluginState} |
-  /** v1.1: a reading the host sampled for a running plugin. */
+  /** Plugin columns: a reading the host sampled for a running plugin. */
   {readonly type:'pluginData'; readonly id:string; readonly data:unknown});
 export interface CockpitView {
   /** G3-56: caution identities the host remembered as acknowledged; sent before `configure`. */
@@ -302,12 +302,12 @@ export class CockpitBridge {
     this.emit('action',this.requestId(),{action,...(tool?{tool}:{})});return true;
   }
   private pluginsNegotiated=false;
-  /** v1.1: a plugin edit made on the page (× or the + menu). Posted only to a host that sent its plugin state. */
+  /** Plugin columns: a plugin edit made on the page (right-click Remove or the + menu). Posted only to a host that sent its plugin state. */
   pluginsEdit(state:PluginState):boolean {
     if(!this.pluginsNegotiated||!this.isActive()||!parsePluginState(state))return false;
     this.emit('action',this.requestId(),{action:'pluginsEdit',plugins:state});return true;
   }
-  /** v1.1: the plugins now running (open cockpit, column shown); the host samples exactly these. */
+  /** Plugin columns: the plugins now running (open cockpit, column shown); the host samples exactly these. */
   pluginsRunning(ids:string[]):boolean {
     if(!this.pluginsNegotiated||this.ended||!this.context||ids.length>16||!ids.every(id=>PLUGIN_ID.test(id)))return false;
     this.emit('action',this.requestId(),{action:'pluginsRunning',ids});return true;

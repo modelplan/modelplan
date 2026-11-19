@@ -3,7 +3,7 @@ import AppKit
 import XCTest
 @testable import ModelPlanSettings
 
-/// v1.1 cockpit plugin columns (D121, D124, D126, D127): the Settings side of the plugin framework.
+/// Cockpit plugin columns (D121, D124, D293): the Settings side of the plugin framework.
 final class CockpitPluginPreferencesTests: XCTestCase {
     private func directory() throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-plugins-" + UUID().uuidString)
@@ -119,12 +119,15 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         XCTAssertEqual(sent.count, 2)
     }
 
-    @MainActor func testSettingsSectionShowsOnTheCockpitPaneAndEditsThroughTheModel() async throws {
+    /// CKP-PLG-54: the "Plugins" section of Settings › Subscriptions: icon, one sentence, toggle, options, pin to page 1.
+    @MainActor func testSettingsSectionShowsOnTheSubscriptionsPaneAndEditsThroughTheModel() async throws {
         let model = CockpitPluginSettingsModel(store: CockpitPluginStore(directory: try directory()))
         let view = SettingsCockpitPluginsView(model: model, language: .english)
         XCTAssertTrue(view.isHidden, "hidden until the window places it")
-        view.apply(language: .english, paneID: "cockpit", query: "")
+        view.apply(language: .english, paneID: "subscriptions", query: "")
         XCTAssertFalse(view.isHidden)
+        view.apply(language: .english, paneID: "cockpit", query: "")
+        XCTAssertTrue(view.isHidden, "no longer a separate section on the Cockpit pane")
         view.apply(language: .english, paneID: "general", query: "")
         XCTAssertTrue(view.isHidden)
         view.apply(language: .chinese, paneID: "general", query: "插件")
@@ -134,6 +137,11 @@ final class CockpitPluginPreferencesTests: XCTestCase {
             while let next = queue.first { queue.removeFirst(); if next.accessibilityIdentifier() == id, let hit = next as? T { return hit }; queue += next.subviews }
             return nil
         }
+        view.apply(language: .english, paneID: "subscriptions", query: "")
+        XCTAssertNotNil(find("settings.cockpitPlugins.placeholder.icon", NSImageView.self)?.image, "the plugin's line icon")
+        XCTAssertEqual(find("settings.cockpitPlugins.placeholder.summary", NSTextField.self)?.stringValue,
+                       "Shows the last number the app sent; for trying plugins.")
+        XCTAssertEqual(find("settings.cockpitPlugins.placeholder.pinned", NSButton.self)?.title, "Pin to page 1")
         let enabled = try XCTUnwrap(find("settings.cockpitPlugins.placeholder.enabled", NSButton.self))
         let pin = try XCTUnwrap(find("settings.cockpitPlugins.placeholder.pinned", NSButton.self))
         let stepper = try XCTUnwrap(find("settings.cockpitPlugins.placeholder.intervalSeconds", NSStepper.self))
@@ -149,14 +157,15 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(find("settings.cockpitPlugins.placeholder.pinned", NSButton.self)).isEnabled)
     }
 
-    @MainActor func testWindowAttachesTheSectionToTheCockpitPane() async throws {
+    @MainActor func testWindowAttachesTheSectionToTheSubscriptionsPane() async throws {
         let dir = try directory()
         let editor = SettingsEditor(store: try SettingsStore(url: dir.appendingPathComponent("preferences.json")))
         let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
         await controller.prepare()
         controller.attachCockpitPlugins(CockpitPluginSettingsModel(store: CockpitPluginStore(directory: dir)))
         let section = try XCTUnwrap(controller.cockpitPluginsView)
-        controller.selectPane("cockpit"); XCTAssertFalse(section.isHidden)
+        controller.selectPane("subscriptions"); XCTAssertFalse(section.isHidden)
+        controller.selectPane("cockpit"); XCTAssertTrue(section.isHidden)
         controller.selectPane("appearance"); XCTAssertTrue(section.isHidden)
         controller.close()
     }

@@ -111,13 +111,21 @@ Page responses include `ready`, `rendered`, `cleared`, `nextDeadline` and `actio
 maps these to typed UI intents, never to a command/URL interpreter. No credential,
 consent mutation or plugin-install message exists in this protocol.
 
-## Plugin columns (v1.1 framework, D121/D124/D126/D127)
+## Plugin columns (D121/D124, D293; CKP-PLG-50…54)
 
-Plugins are bundled modules in `src/plugin-registry.ts` (id, bilingual title, trusted 16 px icon, settings specs,
-`render`, `start`/`stop`, `update`). `src/plugin-layout.ts` is the pure page rule: columns = max(3, subscriptions +
-plugins), at most six per page, subscriptions first; unpinned plugins only fill free slots of the last page; up to two
-pinned plugins stay on page 1. `src/plugin-host.ts` keeps one panel per plugin across repaints, turns empty slots into
-plugin columns and runs the empty-slot "+" menu (detected unconnected tools, then plugins).
+Plugins are bundled modules in `src/plugin-registry.ts`: id, string-table keys for the title (long and short) and the
+one-sentence Settings summary, a trusted white line-art icon at the vendor-mark size, the dashed underline colour and
+bar ink (only `#87939e`, `#e9edf0` or `#b9c7d6`), settings specs, and three pure functions: `accept` folds a host reading
+into the plugin's state (kept across repaints), `column` describes up to three cells in the subscription columns'
+Other-cell grammar (small tag · large number · side value · continuous bar with a thin trend line) plus a bottom line,
+and `screen` gives the lines of its big screen. Plugin strings live in `study/rocket-r1/strings/plugins.js`, each drawn
+one with a `<key>Short` form. `src/plugin-layout.ts` is the pure page rule: columns = max(3, subscriptions + plugins),
+at most six per page, subscriptions first; unpinned plugins only fill free slots of the last page; up to two pinned
+plugins stay on page 1. `src/plugin-host.ts` turns empty slots into plugin keys and columns drawn like subscription keys
+and columns (no inner frame, no ×), opens a plugin's big screen inside the big-screen well when its key is clicked
+(faders and page keys stay uncovered; a page key closes it), offers Remove on the key's right-click menu, and runs the
+empty-slot "+" menu (detected unconnected tools, then plugins). Settings keeps the durable choices in the "Plugins"
+section of Settings › Subscriptions.
 
 Lifecycle: a plugin runs only while the page is visible and not occluded (key or not) and its column is on the shown
 page. The page has no timers; the host samples. Messages, all with the common header:
@@ -126,7 +134,7 @@ page. The page has no timers; the host samples. Messages, all with the common he
   the saved choices (Settings, `CockpitPluginPreferences.swift`). Sending it also tells the page the host accepts the
   two actions below; without it the page posts neither and keeps page edits to itself.
 - host → page `{"type":"pluginData","id":…,"data":…}`: a reading for a running plugin; refused otherwise.
-- page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's × or the "+" menu.
+- page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's right-click Remove or the "+" menu.
 - page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
 
 ## Animation budget and evidence
