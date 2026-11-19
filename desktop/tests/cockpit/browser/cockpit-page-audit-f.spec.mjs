@@ -69,8 +69,11 @@ test('audit F 7 (CKP-FAD-17): an empty slot never keeps a trial\'s ghost cap',as
  await fader(page,'also-used').locator('.fd-strip').click();
  await screen(page).locator('.cmp-lad [data-mfd="try:Low"]').click();
  const ghost=page.locator('.fd-ch[data-slot="1"] .fd-ghost');
+ // the trial renders asynchronously on a loaded runner: wait for the ghost cap before switching banks
+ await expect(ghost).toBeVisible();
  expect(await ghost.evaluate(e=>e.hidden)).toBe(false);
- await page.keyboard.press(']');await page.keyboard.press(']');
+ await page.keyboard.press(']');await expect(page.locator('.bank-lcd')).toHaveText('Bank 2/3');
+ await page.keyboard.press(']');
  await expect(page.locator('.bank-lcd')).toHaveText('Bank 3/3');
  await expect(page.locator('.fd-ch[data-slot="1"]')).toHaveClass(/\bempty\b/);
  expect(await ghost.evaluate(e=>e.hidden)).toBe(true);
