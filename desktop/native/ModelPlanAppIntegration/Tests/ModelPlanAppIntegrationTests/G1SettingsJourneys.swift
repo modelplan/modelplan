@@ -36,6 +36,20 @@ private actor G1SettingsEngine: EngineClient {
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
 }
 
+/// Waits on concrete state: yields first so a state that is already true costs nothing, then polls every 2 ms.
+/// On timeout it fails with what was awaited and stops the test; it never falls through to the next step.
+private struct G1WaitTimedOut: Error {}
+@MainActor private func g1Wait(_ what: String, seconds: Double = 5, file: StaticString = #filePath, line: UInt = #line,
+                          _ ready: () async -> Bool) async throws {
+    let end = ContinuousClock.now + .seconds(seconds)
+    var spins = 0
+    while !(await ready()) {
+        if ContinuousClock.now >= end { XCTFail("Timed out after \(seconds) s waiting for \(what)", file: file, line: line); throw G1WaitTimedOut() }
+        spins += 1
+        if spins < 50 { await Task.yield() } else { try await Task.sleep(for: .milliseconds(2)) }
+    }
+}
+
 /// Window journeys are compiled locally; execution requires an admitted GUI CI runner.
 @MainActor final class G1SettingsJourneys: XCTestCase {
     private func entry(locale: String, discoveredMembers: Int? = nil, profileURL: URL? = nil,
@@ -81,8 +95,7 @@ private actor G1SettingsEngine: EngineClient {
     private func flatten(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(flatten) }
     /// First run v1 (#881, owner 11-12 answer 3): Done opens with the reader's handshake. Wait for that state change.
     private func waitUntilEnabled(_ button: NSButton, file: StaticString = #filePath, line: UInt = #line) async throws {
-        let end = ContinuousClock.now + .seconds(5)
-        while !button.isEnabled, ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(10)) }
+        try await g1Wait("the first-run Done button to enable (reader handshake answered)", file: file, line: line) { button.isEnabled }
         XCTAssertTrue(button.isEnabled, "Done opens once the reader answered the handshake", file: file, line: line)
     }
     private func firstRun(_ app: EngineDockMenuApplication) async throws -> NSWindow {
@@ -174,10 +187,8 @@ private actor G1SettingsEngine: EngineClient {
             XCTAssertLessThan(abs(login.convert(login.bounds, to: nil).midY - done.convert(done.bounds, to: nil).midY), 40)
             if !enabled { XCTAssertTrue(login.isEnabled); login.performClick(nil) }
             done.performClick(nil)
-            var saved = await app.foundationStore.snapshot()
-            for _ in 0..<1000 where !saved.preferences.onboarding.completed {
-                await Task.yield(); saved = await app.foundationStore.snapshot()
-            }
+            try await g1Wait("onboarding to be saved as completed") { await app.foundationStore.snapshot().preferences.onboarding.completed }
+            let saved = await app.foundationStore.snapshot()
             XCTAssertTrue(saved.preferences.onboarding.completed)
             XCTAssertEqual(saved.preferences.openAtLogin, enabled)
         }
@@ -191,13 +202,17 @@ private actor G1SettingsEngine: EngineClient {
         app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(),
                            displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
     }
+    private func firstRunWindowNow(after before: Set<ObjectIdentifier>) -> NSWindow? {
+        NSApplication.shared.windows.first(where: { window in
+            !before.contains(ObjectIdentifier(window)) && window.isVisible &&
+                (window.contentView.map { flatten($0).contains { $0.accessibilityIdentifier() == "firstRun.done" } } ?? false)
+        })
+    }
+    /// Absence check: the relaunch is already at its ready step, and the sheet must still not appear within 1.5 s.
     private func firstRunWindow(after before: Set<ObjectIdentifier>, seconds: Double) async throws -> NSWindow? {
         let end = ContinuousClock.now + .seconds(seconds)
         repeat {
-            if let window = NSApplication.shared.windows.first(where: { window in
-                !before.contains(ObjectIdentifier(window)) && window.isVisible &&
-                    (window.contentView.map { flatten($0).contains { $0.accessibilityIdentifier() == "firstRun.done" } } ?? false)
-            }) { return window }
+            if let window = firstRunWindowNow(after: before) { return window }
             try await Task.sleep(for: .milliseconds(20))
         } while ContinuousClock.now < end
         return nil
@@ -209,24 +224,21 @@ private actor G1SettingsEngine: EngineClient {
         let app = try await entry(locale: "en-US", profileURL: profile, startsComposition: false, handshake: true)
         XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.onboarding.completed, false)
         launch(app)
-        let presented = try await firstRunWindow(after: before, seconds: 5)
-        let window = try XCTUnwrap(presented, "The normal launch must present the first-run sheet on a fresh profile")
+        try await g1Wait("the normal launch to present the first-run sheet on a fresh profile") { firstRunWindowNow(after: before) != nil }
+        let window = try XCTUnwrap(firstRunWindowNow(after: before), "The normal launch must present the first-run sheet on a fresh profile")
         addTeardownBlock { @MainActor in window.close() }
         XCTAssertFalse(app.lifecyclePaused)
         let done = try control("firstRun.done", in: window, as: NSButton.self)
         try await waitUntilEnabled(done); done.performClick(nil)
-        var saved = await app.foundationStore.snapshot()
-        for _ in 0..<1000 where !saved.preferences.onboarding.completed {
-            await Task.yield(); saved = await app.foundationStore.snapshot()
-        }
+        try await g1Wait("onboarding to be saved as completed") { await app.foundationStore.snapshot().preferences.onboarding.completed }
+        let saved = await app.foundationStore.snapshot()
         XCTAssertTrue(saved.preferences.onboarding.completed)
         window.close(); await app.stopLifecycle(); await app.composition.stop()
 
         let relaunchBefore = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
         let reopened = try await entry(locale: "en-US", profileURL: profile, startsComposition: false, handshake: true)
         launch(reopened)
-        let end = ContinuousClock.now + .seconds(5)
-        while reopened.lifecyclePaused && ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(20)) }
+        try await g1Wait("the relaunch to reach the ready step") { !reopened.lifecyclePaused }
         XCTAssertFalse(reopened.lifecyclePaused, "Precondition: the relaunch reached the ready step that restores first run")
         let again = try await firstRunWindow(after: relaunchBefore, seconds: 1.5)
         XCTAssertNil(again, "A completed profile must not get the first-run sheet again")
@@ -432,10 +444,9 @@ private actor G1SettingsEngine: EngineClient {
         let window = try await settings(app, pane: "subscriptions")
         let editor = app.settingsHost.application.editor
         var ids: [String] = []
-        for _ in 0..<500 {
+        try await g1Wait("two verified subscriptions and the first Down button", seconds: 5) {
             ids = editor.context.subscriptions.filter { !$0.isUnstable }.map(\.id)
-            if ids.count >= 2, flatten(try XCTUnwrap(window.contentView)).contains(where: { $0.accessibilityIdentifier() == "subscriptions.down." + ids[0] }) { break }
-            try await Task.sleep(for: .milliseconds(10))
+            return ids.count >= 2 && (window.contentView.map { flatten($0).contains { $0.accessibilityIdentifier() == "subscriptions.down." + ids[0] } } ?? false)
         }
         XCTAssertGreaterThanOrEqual(ids.count, 2, "the app's own rows give at least two verified subscriptions")
         guard ids.count >= 2 else { return }

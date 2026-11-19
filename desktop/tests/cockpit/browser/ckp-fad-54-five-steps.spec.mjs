@@ -30,8 +30,9 @@ const NOW='2026-10-20T14:05:00Z';
 const ranking=(top,total)=>({measure:'observed-output-tokens',attribution:'unattributed',recent7d:{entities:top.length,totalObservedOutputTokens:total,top},recent30d:{entities:0,totalObservedOutputTokens:0,top:[]}});
 // The ≈cost (estCost, WP-06) is not in the wire yet, so the bridge refuses it: until then every card shows tokens large and
 // shares by tokens (V1-FINAL §7 "no public price"); the ≈$ form is covered by the unit test model-card.test.mjs.
-function cardData({opusUnused=false}={}){
+function cardData({opusUnused=false,unlisted=false}={}){
  const data=throttleData();
+ if(unlisted)Object.assign(data.details.sessions[2],{model:'unknown',modelDisplay:'Sol 6.2'});
  // Sol 212M (17 %), Opus 480M (38 %), GLM 96M (8 %): shares of the 7-day total.
  data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:null,subscriptions:[],
   models:ranking([{name:'sol',observedOutputTokens:212e6,observedRequests:900,share:.17},...(opusUnused?[]:[{name:'opus',observedOutputTokens:480e6,observedRequests:900,share:.38}]),
@@ -188,4 +189,20 @@ test('CKP-FAD-57 short cockpit: the fader lever scales to 0.825 of the tall one'
  const short=await card(page,'Sol 6.1').locator('.fd-cap').boundingBox();
  expect(short.width/tall.width).toBeGreaterThan(.8);expect(short.width/tall.width).toBeLessThan(.85);
  expect(short.height/tall.height).toBeGreaterThan(.8);expect(short.height/tall.height).toBeLessThan(.85);
+});
+
+test('G3-134 an unlisted model with a readable name gets a card: its name, "Unlisted", no lever, and clicking it opens nothing',async({page})=>{
+ await open(page,{unlisted:true});
+ const card3=card(page,'Sol 6.2');
+ await expect(card3).toHaveCount(1);
+ await expect(card3.locator('.fd-strip')).toHaveAttribute('data-card','unlisted');
+ expect(await lines(card3)).toEqual(['Sol 6.2','Unlisted']);
+ await expect(card3.locator('.fd-cap')).toBeHidden();
+ await expect(card3.locator('.fd-indicator')).toHaveAttribute('data-state','used'); // its session is idle
+ expect(await card3.locator('.fd-strip').getAttribute('aria-label')).toBe('Sol 6.2: Unlisted');
+ await card3.locator('.fd-strip').click();
+ await expect(page.locator('.mfd-page.pg-compare')).toHaveCount(0);
+ await expect(page.locator('.fd-ch.sel')).toHaveCount(0);
+ // The published models keep their cards.
+ await expect(card(page,'Sol 6.1')).toHaveCount(1);
 });

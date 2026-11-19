@@ -63,7 +63,7 @@ func TestHistoryScopeCleanupLeavesTheClearedSourceOwed(t *testing.T) {
 			}
 			adm := consent.NewAdmission(state, consent.Automatic)
 			epoch := `{"storeEpoch":"0123456789abcdef0123456789abcdef","revokedGeneration":0}`
-			span := `{"from":"2026-10-15T00:00:00Z","through":"2026-11-14T00:00:00Z","epoch":` + epoch
+			span := `{"accountingVersion":1,"from":"2026-10-15T00:00:00Z","through":"2026-11-14T00:00:00Z","epoch":` + epoch
 			b := []byte(`{"schemaVersion":1,"autoRan":"2026-11-14T15:29:54Z","coverage":{"codex":` + span + `,"archived":true},"claude-code":` + span + `}},"rows":[{"source":"codex","day":"2026-10-02"}]}`)
 			if err := os.WriteFile(speed.ImportPath(cache), b, 0600); err != nil {
 				t.Fatal(err)

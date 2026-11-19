@@ -11,6 +11,7 @@ register('fad', {
   sessionNone: ['aria', '没有会话', 'no sessions'],
   // Model card lines (V1-FINAL §7, CKP-FAD-50…52): each line is at most 9 characters in both languages.
   cardUnused: ['lcd', '未使用', 'Unused'],
+  cardUnlisted: ['lcd', '未收录', 'Unlisted'],
   cardNoRecord: ['lcd', '无用量记录', 'No record'],
   cardUnreported: ['lcd', '档位未报告', 'Effort ?'],
   cardTry: ['lcd', '试 {e}', 'Try {e}'],

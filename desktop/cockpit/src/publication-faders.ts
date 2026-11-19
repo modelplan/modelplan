@@ -3,7 +3,7 @@
 // missing values. D123 order: models in use (last 7 days, even when no own plan offers them, D135), then the
 // publication's starred recommendations, then the others by ability.
 import {speedTierFor,type FastTier} from './speed-tiers.js';
-type Fader = {id:string;name:string;short:string;rec:string;e:([string,number|null,number|null,number|null]|[string,number|null,number|null,number|null,number])[];accounts:string[];sessions:{ref:string;sub:string|null}[];tier?:FastTier};
+type Fader = {id:string;name:string;short:string;rec:string;e:([string,number|null,number|null,number|null]|[string,number|null,number|null,number|null,number])[];accounts:string[];sessions:{ref:string;sub:string|null}[];tier?:FastTier;unlisted?:true};
 const object=(value:unknown):Record<string,unknown>|null=>value!==null&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:null;
 const text=(value:unknown):string|null=>typeof value==='string'&&value.length>0&&value.length<=200?value:null;
 const number=(value:unknown):number|null=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=1e12?value:null;
@@ -92,7 +92,17 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
  const inUse=faders.filter(used).sort((a,b)=>(lastUsed.get(b.id)??0)-(lastUsed.get(a.id)??0));
  const history=faders.filter(past).sort((a,b)=>(usage!.get(b.id)!.d7-usage!.get(a.id)!.d7)||(usage!.get(b.id)!.d30-usage!.get(a.id)!.d30));
  const rest=faders.filter(f=>!used(f)&&!past(f)),starred=rest.filter(f=>tierOf.get(f.id)===1),others=rest.filter(f=>tierOf.get(f.id)!==1).sort((a,b)=>ability(b)-ability(a));
- return {accounts,faders:[...inUse,...history,...starred,...others]};
+ // G3-134: a live session of a model the publication does not list, whose raw ID the producer could read
+ // (`modelDisplay`, from modeldisplay.Display), gets a card by that name: no efforts, no lever. One card per name.
+ const unlisted:Fader[]=[];
+ for(const value of Array.isArray(live)?live:[]){
+  const session=object(value),display=text(session?.modelDisplay),ref=text(session?.sessionRef);
+  if(!session||session.model!=='unknown'||!display||!ref||display.length>48)continue;
+  const id='unlisted:'+display,found=unlisted.find(f=>f.id===id);
+  if(found)found.sessions.push({ref,sub:text(session.subscriptionRef)});
+  else if(faders.length+unlisted.length<FADER_LIMIT)unlisted.push({id,name:display,short:display,rec:'',e:[],accounts:[],sessions:[{ref,sub:text(session.subscriptionRef)}],unlisted:true});
+ }
+ return {accounts,faders:[...inUse,...unlisted,...history,...starred,...others]};
 }
 
 /** CKP-FAD-32 proposed (G3-110): a subscription scope shows only the faders of that subscription, as the opus-r7 study's faders()

@@ -4,11 +4,13 @@ package main
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
 	"sync"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/publication"
+	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -19,12 +21,91 @@ const (
 	appPublicationBusyRetry = 15 * time.Second
 	// The foreground sync command's limit; each request also has its own timeout.
 	appPublicationSyncLimit = 2 * time.Minute
+	// DOCK-3.8-30 (D148): announced reset notices travel in the publication, so while the user
+	// has an enabled subscription the app re-checks the pointer (a conditional ETag request, a
+	// 304 when nothing changed) every 15-30 minutes instead of every six hours. Each client
+	// draws its own point in that range so clients do not sync in lockstep.
+	resetNoticeMin    = 15 * time.Minute
+	resetNoticeSpread = 15 * time.Minute
+	resetNoticeMax    = resetNoticeMin + resetNoticeSpread
 )
 
 // publicationSyncDue is the shared background rule: a missing or stale publication, and no
 // attempt by any client in the last ten minutes.
 func publicationSyncDue(d *digest.Digest, s store.State, now time.Time) bool {
 	return (d == nil || now.Sub(s.CheckedAt) > staleAfter) && now.Sub(s.LastAttemptAt) > backgroundEvery
+}
+
+// hasTrackedSubscription is the DOCK-3.8-30 gate: an account that a permitted (enabled) reader of a tracked provider
+// bound to a subscription it saw. A user declaration or an unbound reading does not count (macrevc-895-2).
+func hasTrackedSubscription(accounts []quota.Account) bool {
+	for _, a := range accounts {
+		if a.Subscription != nil && a.Subscription.Status == "verified" && a.Subscription.Ref != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// resetNoticeDue is the faster rule for reset notices only; everything else keeps staleAfter.
+func (a *appPublication) resetNoticeDue(s store.State, now time.Time) bool {
+	if a.subscribed == nil || !a.subscribed() {
+		return false
+	}
+	if a.resetAfter <= 0 {
+		a.resetAfter = a.drawResetAfter()
+	}
+	return now.Sub(s.CheckedAt) > a.resetAfter && now.Sub(s.LastAttemptAt) > a.every()
+}
+
+// every is the wake-up and the minimum gap between two attempts (ten minutes unless a test build says otherwise).
+func (a *appPublication) every() time.Duration {
+	if a.testCadence > 0 {
+		return a.testCadence
+	}
+	return backgroundEvery
+}
+
+// untilDue is the time to the earliest moment a check becomes due (the six-hour rule, or the reset-notice interval for
+// a subscriber), never past the regular wake-up so a changed subscription is noticed.
+func (a *appPublication) untilDue(s store.State, now time.Time) time.Duration {
+	wake := a.every()
+	if s.CheckedAt.IsZero() {
+		return wake
+	}
+	gap := s.LastAttemptAt.Add(a.every())
+	consider := func(t time.Time) {
+		if t.Before(gap) {
+			t = gap
+		}
+		if w := t.Sub(now) + time.Second; w < wake {
+			wake = w
+		}
+	}
+	consider(s.CheckedAt.Add(staleAfter))
+	if a.subscribed != nil && a.subscribed() {
+		if a.resetAfter <= 0 {
+			a.resetAfter = a.drawResetAfter()
+		}
+		consider(s.CheckedAt.Add(a.resetAfter))
+		if !a.retryAt.IsZero() {
+			consider(a.retryAt)
+		}
+	}
+	return max(wake, time.Second)
+}
+
+func (a *appPublication) drawResetAfter() time.Duration {
+	if a.testCadence > 0 {
+		return a.testCadence // test builds only, see app_publication_testcadence.go
+	}
+	j := time.Duration(0)
+	if a.jitter != nil {
+		j = a.jitter()
+	} else {
+		j = time.Duration(rand.Int64N(int64(resetNoticeSpread) + 1))
+	}
+	return resetNoticeMin + min(max(j, 0), resetNoticeSpread)
 }
 
 func appPublicationBase() string { return env("MODELPLAN_BASE", publication.DefaultBase) }
@@ -40,6 +121,18 @@ type appPublication struct {
 	sync func(context.Context) (publication.Result, error)
 	now  func() time.Time
 	wait func(context.Context, time.Duration) error
+	// subscribed reports whether the user has at least one enabled subscription; nil means no.
+	subscribed func() bool
+	// jitter returns a duration in [0, resetNoticeSpread]; tests may inject it.
+	jitter func() time.Duration
+	// resetAfter is this client's current reset-notice interval, redrawn after each check.
+	resetAfter time.Duration
+	// retryAt is the deadline of a failed reset-notice check's 10/20/30-minute backoff. It is kept apart from
+	// resetAfter so the next normal draw cannot defer the retry; zero when no retry is pending.
+	retryAt time.Time
+	// testCadence is set only by a binary built with the modelplan_test_cadence tag (never in a release): it replaces
+	// the 10-minute wake-up and the 15-30 minute reset-notice interval.
+	testCadence time.Duration
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -72,6 +165,10 @@ func newAppPublication(ctx context.Context, st *store.Store, base string) *appPu
 		client, err := publication.New(base, opened, version)
 		if err != nil {
 			return publication.Result{}, err
+		}
+		if testCadenceOn() { // test builds only
+			client.NoCheckDelay = true
+			client.Jitter = func() time.Duration { return 0 }
 		}
 		ctx, cancel := context.WithTimeout(ctx, appPublicationSyncLimit)
 		defer cancel()
@@ -111,20 +208,40 @@ func (a *appPublication) run(ctx context.Context) {
 // retries are spaced here.
 func (a *appPublication) pass(ctx context.Context, failures *int) time.Duration {
 	d, s, _ := publication.Load(a.st)
-	if d != nil && !publicationSyncDue(d, s, a.now()) {
-		*failures = 0
-		return backgroundEvery
+	retryDue := !a.retryAt.IsZero() && !a.now().Before(a.retryAt) && a.subscribed != nil && a.subscribed()
+	if d != nil && !retryDue && !publicationSyncDue(d, s, a.now()) && !a.resetNoticeDue(s, a.now()) {
+		// Not due: sleep to the real deadline (not a fixed ten minutes, which would stretch 15-30 min to 39). A failed
+		// check's backoff count is kept until a check succeeds.
+		return a.untilDue(s, a.now())
 	}
+	// A busy lock means no check was made: keep the drawn interval and any pending retry deadline, so a due retry is
+	// tried again after the short busy wait instead of being deferred to a redrawn normal deadline (macrevc-895-1).
+	keptAfter, keptRetry := a.resetAfter, a.retryAt
+	a.resetAfter = 0 // redraw after every check
+	a.retryAt = time.Time{}
 	_, err := a.sync(ctx)
 	if errors.Is(err, store.ErrBusy) {
+		a.resetAfter, a.retryAt = keptAfter, keptRetry
 		return appPublicationBusyRetry
 	}
 	if err == nil {
 		d, _, _ = publication.Load(a.st)
 	}
 	if d != nil {
+		if err != nil && a.subscribed != nil && a.subscribed() {
+			// A failed reset-notice check backs off 10, 20, then 30 minutes.
+			delay := min(a.every()<<min(*failures, 2), resetNoticeMax)
+			*failures++
+			a.retryAt = a.now().Add(delay)
+			return delay
+		}
 		*failures = 0
-		return backgroundEvery
+		if err == nil {
+			if _, after, _ := publication.Load(a.st); true {
+				return a.untilDue(after, a.now())
+			}
+		}
+		return a.every()
 	}
 	delay := min(appPublicationRetry<<min(*failures, 5), backgroundEvery)
 	*failures++

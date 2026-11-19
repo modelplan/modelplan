@@ -63,7 +63,7 @@ function channel(f, ui, colour) {
   const others = Object.entries(f.others).filter(([e]) => row(e)).sort((a, b) => b[1] - a[1] || LADDER.indexOf(b[0]) - LADDER.indexOf(a[0]));
   const from = v ? v.from : null; // the source of this model's comparison view, lit (spec 2.5)
   const name = f.name || f.short, segments = f.accounts.map(id => colour.get(id)).filter(Boolean);
-  const ch = {id: f.id, name, label: cardLabel(name), levels, current: f.current, cur, rec: f.rec, base, live: f.live, pinned: f.pinned, used: f.sessions.length > 0,
+  const ch = {id: f.id, unlisted: !!f.unlisted, name, label: cardLabel(name), levels, current: f.current, cur, rec: f.rec, base, live: f.live, pinned: f.pinned, used: f.sessions.length > 0,
     currentFast: f.currentFast, tier, follows: !!cur && cur === f.rec && !f.currentFast,
     recX: cur ? costRatio(costOf(cur, f.currentFast), costOf(f.rec, false)) : null, // the current cost against ★ (fast included); aria only
     others, segments,
@@ -106,6 +106,8 @@ const pctOf = share => Math.max(share > 0 ? 1 : 0, Math.round(share * 100));
 export function card(c, f = {}) {
   const use = f.use && f.use.tokens > 0 ? f.use : null;
   const lines = {name: c.label, state: 'normal', big: '', bigKind: '', bar: null, use: null, eff: null, tryLine: '', nowLine: ''};
+  // G3-134: a model the publication does not list has no efforts, no ★ and no lever; the card says so.
+  if (c.unlisted) { lines.state = 'unlisted'; lines.big = t('fad.cardUnlisted'); lines.bigKind = 'note'; return lines; }
   if (c.trial) {
     const tr = c.trial, fastOnly = tr.fast != null && tr.effort === c.base;
     lines.state = 'try';
@@ -154,6 +156,7 @@ export function lcdView(c) {
 }
 
 export function stripAria(c) {
+  if (c.unlisted) return `${c.name}: ${t('fad.cardUnlisted')}`;
   const current = t('fad.stripAria', {m: c.name, cur: c.cur || t('fad.unreportedAria'), rec: c.rec, x: c.recX != null ? t('fad.stripAriaX', {x: times(c.recX)}) : '',
     more: c.others.length ? t('fad.stripAriaMore', {more: c.others.map(([e, n]) => `${e}×${n}`).join(' ')}) : '',
     use: c.card && c.card.use ? t('fad.stripAriaUse', {u: [c.card.bigKind === 'cost' ? c.card.big : '', c.card.use.join(' ')].filter(Boolean).join(' · ')}) : ''});
@@ -181,7 +184,7 @@ export function indicatorView(c) {
 // The travel's fixed marks: a tick per level the model has, the ★ detent (round D1: this fader's own ★ level, a short
 // gold notch beside the cap's lane and a tiny gold ★, because the shared scale cannot show each model's ★), and white
 // dots for another effort with a notable share of the last 15 minutes (CKP-FAD-53).
-export const marksView = c => !c ? '' : `${c.ticks.map(k => `<i class="fd-tick" style="--k:${k}"></i>`).join('')}<i class="fd-rec" data-l="${esc(c.rec)}" style="--k:${c.recK}">${STAR}</i>${c.dots.map(d => `<i class="fd-dot" data-l="${esc(d.e)}" style="--k:${d.k}"></i>`).join('')}`;
+export const marksView = c => !c ? '' : `${c.ticks.map(k => `<i class="fd-tick" style="--k:${k}"></i>`).join('')}${c.unlisted ? '' : `<i class="fd-rec" data-l="${esc(c.rec)}" style="--k:${c.recK}">${STAR}</i>`}${c.dots.map(d => `<i class="fd-dot" data-l="${esc(d.e)}" style="--k:${d.k}"></i>`).join('')}`;
 // Round D1: the ⚡ lit push button above the travel is gone (the owner could not tell what it was); fast mode is tried
 // with the comparison view's own ⚡ key; its state shares the indicator above the LCD.
 // The scale beside the travels: 状态 over the indicators, and the level labels (Max … Low), which set the trial.
