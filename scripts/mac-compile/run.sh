@@ -4,7 +4,7 @@
 # Usage: run.sh <plan.tsv> <scratch root> <sha>
 # Optional SEED_ROOT: a per-runner build seed. PR jobs only READ it (a clone of the matching seed becomes the job's own
 # scratch, thrown away with the job); with SEED_WRITE=1 (trusted main runs only) a successful build is published to it.
-# For each plan row (from plan.mjs): swift build, then swift test on the selected classes (or the whole package
+# For each plan row (from plan.mjs): one `swift build --build-tests` (product and test targets, one compile), then `swift test --skip-build` on the selected classes (or the whole package
 # minus the never-run classes, or only --build-tests; ModelPlanAppIntegration is never run whole, see plan.mjs). Each package gets at most PACKAGE_MINUTES (default 25) for
 # build and test together. Writes the summary to $GITHUB_STEP_SUMMARY (first line "COMPILE ok|fail @ <sha8>")
 # and exits non-zero on any failure.
@@ -38,8 +38,8 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
   deadline=$(( $(date +%s) + LIMIT ))
   clear_path "$sp" || { echo "::error::could not clear or move aside $sp"; exit 1; }
   if [ -n "$SEED_ROOT" ]; then seed_restore "$dir" "$scratch" "$sp"; [ $? != 2 ] || { echo "::error::could not clear or move aside $sp"; exit 1; }; fi
-  echo "::group::$dir: swift build"
-  limited swift build --package-path "$dir" --scratch-path "$sp" >"$blog" 2>&1; brc=$?
+  echo "::group::$dir: swift build --build-tests"
+  limited swift build --build-tests --package-path "$dir" --scratch-path "$sp" >"$blog" 2>&1; brc=$?
   tail -40 "$blog"; echo "::endgroup::"
   build=ok; test="not run"; : >"$tlog"
   if [ "$brc" != 0 ]; then
@@ -47,9 +47,9 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
   else
     echo "::group::$dir: tests ($mode)"
     case $mode in
-      filter) limited swift test --package-path "$dir" --scratch-path "$sp" --filter "$filter" --skip "$skip" >"$tlog" 2>&1; trc=$? ;;
-      skip) limited swift test --package-path "$dir" --scratch-path "$sp" --skip "$skip" >"$tlog" 2>&1; trc=$? ;;
-      *) limited swift build --build-tests --package-path "$dir" --scratch-path "$sp" >"$tlog" 2>&1; trc=$? ;;
+      filter) limited swift test --skip-build --package-path "$dir" --scratch-path "$sp" --filter "$filter" --skip "$skip" >"$tlog" 2>&1; trc=$? ;;
+      skip) limited swift test --skip-build --package-path "$dir" --scratch-path "$sp" --skip "$skip" >"$tlog" 2>&1; trc=$? ;;
+      *) trc=0 ;; # the one build above already built the test targets
     esac
     tail -60 "$tlog"; echo "::endgroup::"
     if [ "$mode" = build-tests ]; then

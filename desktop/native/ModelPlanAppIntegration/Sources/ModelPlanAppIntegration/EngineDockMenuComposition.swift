@@ -227,10 +227,14 @@ public struct EngineMenuRefreshResult {
         } catch {
             Logger(subsystem:"ai.modelplan.notifications",category:"reset-ledger").error("Reset notification service could not be started.")
         }
-        let forecasts=EngineForecastNotifier(settings:settings,cacheURL:base.appendingPathComponent("forecast-notifications.json"),deliverToSystem:live,now:{ [weak self] in self?.currentDate() ?? Date() })
-        forecastNotifier=forecasts;_=store.attach(forecasts)
+        // ALR-52 (WP-11): v1 sends only reset and official-extra-reset notifications. A forecast is shown on the ALERT
+        // lamp and in its list, never as a system notification, so no forecast notifier is attached.
+        if NotificationKind.delivered.contains(.forecast) {
+            let forecasts=EngineForecastNotifier(settings:settings,cacheURL:base.appendingPathComponent("forecast-notifications.json"),deliverToSystem:live,now:{ [weak self] in self?.currentDate() ?? Date() })
+            forecastNotifier=forecasts;_=store.attach(forecasts)
+        }
     }
-    /// The same seam for forecast notices.
+    /// The same seam for forecast notices (unused while ALR-52 sends no forecast notifications).
     public func setForecastNotificationDelivery(_ delivery:@escaping @MainActor (String) async throws -> Void) {
         forecastNotifier?.deliveryOverride=delivery
         forecastNotifier?.apply(store.snapshot)

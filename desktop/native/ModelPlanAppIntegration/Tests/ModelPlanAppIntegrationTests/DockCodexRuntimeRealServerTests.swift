@@ -234,7 +234,7 @@ import XCTest
         // The product's limit, with a loose bound: withdrawal took about 7 s on the hosted runner.
         let revokeStarted = ContinuousClock.now
         _ = try await app.composition.client.grant(deny, userAction: .init(id: UUID()), timeout: nil)
-        XCTAssertLessThan(revokeStarted.duration(to: .now), .seconds(20), "Consent withdrawal must not creep toward the 30 s limit")
+        HostedRunnerTiming.enforce("Consent withdrawal must not creep toward the 30 s limit (s)", measured: Double(revokeStarted.duration(to: .now) / .seconds(1)), atMost: 20)
         XCTAssertNil(dock.detachedCardForChecks, "Consent withdrawal must close the card before the grant returns")
         XCTAssertNil(text(weekly + ".value", in: currentCard))
         _ = try await app.composition.client.subscribeRows(timeout: Self.requestWait)

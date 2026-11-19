@@ -44,7 +44,7 @@ export interface CockpitView {
   clear():void;
   nextDeadline():number|null;
   tick(now:number):void;
-  active(active:boolean):void;
+  active(active:boolean,now?:number):void;
   /** Open = visible and not occluded (key or not); plugins sample only while this is true (D124). */
   visible?(visible:boolean):void;
   /** Host plugin state; false when it does not fit this page's registry rules. */
@@ -261,7 +261,7 @@ export class CockpitBridge {
   private pendingAck:string[]|null=null;
   private pendingPins:string[]|null=null;
   private syncActive():void {
-    this.view.active(this.isActive());this.view.visible?.(this.isVisible());
+    this.view.active(this.isActive(),this.clock());this.view.visible?.(this.isVisible());
     if(this.pendingAck&&this.isActive()) {const ids=this.pendingAck;this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});}
     if(this.pendingPins&&this.isActive()) {const ids=this.pendingPins;this.pendingPins=null;this.emit('action',this.requestId(),{action:'pinnedModels',ids});}
   }

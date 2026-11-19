@@ -208,6 +208,8 @@ enum SettingsWords {
     }
     public func selectPane(_ id: String) {
         guard let index = SettingsStructure.task65.panes.firstIndex(where: { $0.id == id }) else { return }
+        // Explicit pane targets (including a widget card's Subscriptions link) must be visible in a reused window.
+        searchField.stringValue = ""
         selectedPaneID = id
         sidebar.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         refresh()
