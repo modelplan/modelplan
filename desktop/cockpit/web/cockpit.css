@@ -295,3 +295,54 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 #cockpit .ck-head [data-close]:focus-visible{outline:2px solid var(--gold-lcd,#f6d38a);outline-offset:2px}
 /* CKP-FAD-17: the thin blue trial line belongs to the official throttle art; the community flat fader keeps its ghost cap only. */
 .dk-fad .fd-tline{display:none}
+/* Cockpit plugin columns (D121, D124, D293; CKP-PLG-50…53). A plugin key is a subscription key: same box, same white
+   name, a white line-art icon in the vendor-mark box, a dashed underline in the plugin's declared colour, no digit, no ×.
+   A plugin column is a subscription column: no inner frame; each row is one cell in the Other-cell grammar (small tag ·
+   large number · side value · continuous bar with a thin trend line). Only a warning level colours the number. */
+.ck-eng .eng-keys .pl-key{cursor:pointer}
+.ck-eng .ek .pl-icon{display:inline-grid;place-items:center;color:var(--silk-hi)}
+.ck-eng .ek .pl-icon svg{width:16px;height:16px;display:block}
+.ck-eng .ek .bl.pl-dash{background:repeating-linear-gradient(90deg,var(--v) 0 3px,transparent 3px 6px);box-shadow:none;opacity:.8}
+.ck-eng .pl-cell{row-gap:2px}
+.ck-eng .pl-cell .pl-tag{display:block;min-width:0;font:400 10px/11px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ck-eng .pl-cell .qline{justify-content:space-between}
+.ck-eng .pl-cell.pl-mid .qnum{color:var(--st-mid)}.ck-eng .pl-cell.pl-low .qnum{color:var(--st-low)}
+.ck-eng .pl-meter{display:grid;row-gap:2px;min-width:0}
+.ck-eng .pl-bar{position:relative;display:block;height:5px;border-radius:1px;background:var(--lcd-ghost);overflow:hidden}
+.ck-eng .pl-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:1px;background:var(--pl-ink,var(--lcd-ink))}
+.ck-eng .pl-trend{display:block;width:100%;height:6px;overflow:visible}
+.ck-eng .pl-trend path{fill:none;stroke:var(--pl-ink,var(--lcd-ink));stroke-width:1;opacity:.7;vector-effect:non-scaling-stroke}
+.ck-eng .pl-foot{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 4px;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;min-width:0}
+.ck-eng .pl-foot .pl-fit{min-width:0;overflow:hidden;text-overflow:ellipsis}.ck-eng .pl-foot .pl-foot-v{color:var(--lcd-ink)}
+.ck-eng .eng-keys .ek-bay .bay-dash{font-size:0}
+.ck-eng .eng-keys .ek-bay .bay-dash::before{content:"+";font:400 13px/1 var(--f-silk);color:var(--silk-dim)}
+.ck-eng .eng-keys .ek-bay.on{box-shadow:var(--pressed);background:linear-gradient(180deg,var(--key-p1),var(--key-p2))}
+/* CKP-PLG-53: a plugin's big screen fills the big-screen well only; the page keys above and the faders beside it stay
+   uncovered and live (pressing a page key closes it). */
+.mfd-screen .pl-screen{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;gap:8px;padding:10px 12px;background:var(--lcd-glass);color:var(--lcd-ink);overflow:hidden}
+.mfd-screen .pl-screen-h{display:flex;align-items:center;gap:6px;min-width:0;font:500 12px/16px var(--f-silk);color:var(--silk-hi)}
+.mfd-screen .pl-screen-h .pl-icon{display:inline-grid;flex:none;width:16px;height:16px}.mfd-screen .pl-screen-h .pl-icon svg{width:16px;height:16px}
+.mfd-screen .pl-screen-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mfd-screen .pl-screen-x{flex:none;padding:2px 8px;border:0;border-radius:4px;background:linear-gradient(180deg,var(--key-1),var(--key-2));box-shadow:var(--raised);font:500 10px/14px var(--f-silk);color:var(--silk-hi)}
+.mfd-screen .pl-screen-l{margin:0;display:grid;row-gap:6px}
+.mfd-screen .pl-screen-l div{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--lcd-rule);padding-top:5px;font:400 11px/14px var(--f-lcd)}
+.mfd-screen .pl-screen-l dt{color:var(--lcd-muted)}.mfd-screen .pl-screen-l dd{margin:0;color:var(--lcd-ink);font-variant-numeric:tabular-nums}
+.pl-menu{position:fixed;z-index:10020;width:238px;padding:5px;border-radius:8px;background:var(--pop-solid);box-shadow:var(--pop-shadow),inset 0 0 0 1px var(--pop-line);font:400 11px/1 var(--f-silk);color:var(--pop-ink);pointer-events:auto}
+.pl-menu .pm-h{display:block;padding:5px 7px 4px;font:500 9.5px/1 var(--f-silk);letter-spacing:.06em;color:var(--pop-ink3)}
+.pl-menu .pm-i{display:grid;grid-template-columns:16px minmax(0,1fr) auto auto;align-items:center;column-gap:7px;width:100%;height:26px;padding:0 7px;border:0;border-radius:5px;background:none;color:inherit;text-align:left;font:inherit}
+.pl-menu .pm-i:hover:not([disabled]),.pl-menu .pm-i:focus-visible{background:var(--mb-hover);outline:none}
+.pl-menu .pm-i[disabled]{opacity:1;cursor:default}
+.pl-menu .pm-n{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-menu .pm-remove{grid-template-columns:minmax(0,1fr)}
+.pl-menu .pm-mark{display:grid;place-items:center;width:16px;height:16px}
+.pl-menu .pm-mark img{width:14px;height:14px;object-fit:contain}
+.pl-menu .pm-st{font-size:9.5px;color:var(--pop-ink3);white-space:nowrap}
+.pl-menu .pm-st.pm-det{color:var(--st-ok)}
+.pl-menu .pm-go{font:500 10px/1 var(--f-silk);padding:3px 6px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--pop-btn-line);color:var(--pop-ink)}
+.pl-menu .pm-go.dim{color:var(--pop-ink3)}
+.pl-menu .pm-ok{font:500 10px/1 var(--f-silk);color:var(--pop-ink3)}
+.pl-menu .pm-more{grid-template-columns:1fr;padding-left:30px;color:var(--pop-ink2);font-size:10.5px}
+.pl-menu .pm-plugin{grid-template-columns:16px minmax(0,1fr) auto}
+.pl-menu .pm-ic{display:grid;place-items:center;width:16px;height:16px;color:var(--pop-ink2)}
+.pl-menu .pm-ic svg{width:14px;height:14px}
+.pl-menu .pm-sep{height:1px;margin:4px 6px;background:var(--pop-line)}

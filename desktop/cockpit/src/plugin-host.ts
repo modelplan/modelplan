@@ -1,0 +1,269 @@
+// SPDX-License-Identifier: MIT
+// The page side of the cockpit plugin columns (D121/D124, D293): lays plugins into the engine table in the subscription
+// columns' own grammar, runs the lifecycle, the plugin key (click = its big screen, right-click = Remove) and the
+// empty-slot "+" menu.
+//
+// Lifecycle (owner D124): a plugin runs only while the cockpit is open (the page is visible and not occluded) AND its
+// column is on the shown page (placed by the latest drawn table; a new table is drawn before it is attached, so
+// placement, not DOM connection, is the test). Every repaint, page change, visibility change, removal or teardown
+// re-checks that, so nothing samples in the background. A plugin's state (e.g. its trend history) survives repaints.
+//
+// The page has no timers (bundle rule). The host samples: the page reports the plugins that are running
+// (`pluginsRunning`, on every change) and the host pushes readings for them (`pluginData`), which reach a plugin only
+// while it runs.
+//
+// State: the host (Settings › Subscriptions › Plugins) owns the durable copy and sends it as a `plugins` message. Until
+// the host has sent one, page edits stay in this page only and nothing is posted, so an older host never sees an action
+// it does not know.
+import type {WireCockpitData,WireRow} from '../generated/wire.js';
+import {PluginRegistry,builtinPlugins,type CockpitPlugin,type PluginCell,type PluginContext,type PluginLocale,type PluginWords} from './plugin-registry.js';
+import {pluginLayout,type LayoutPage,type PluginLayout} from './plugin-layout.js';
+import {disablePlugin,emptyPluginState,enablePlugin,enabledPlugins,parsePluginState,pluginSettings,type PluginState} from './plugin-state.js';
+import {ht} from './host-text.js';
+import '../study/rocket-r1/strings/plugins.js';
+/** Long and short forms of a `plugin.*` string-table key in one locale (`<key>Short` when it exists). */
+export function pluginWords(locale:PluginLocale,key:string,vars?:Readonly<Record<string,string|number>>):PluginWords {
+  const full=ht(locale,key,vars),shortKey=key+'Short',short=ht(locale,shortKey,vars);
+  return {full,short:short===shortKey?full:short};
+}
+const DETECTED=new Set<WireRow['state']>(['needs_action','needs_consent','needs_keychain']);
+const NOT_CONNECTED=new Set<WireRow['state']>(['off']);
+const MENU_ROWS=5;
+/** '+' menu rows: tools the engine found but that have no connected account, detected ones first. */
+export function connectableRows(data:WireCockpitData|null):{row:WireRow;detected:boolean}[] {
+  const rows=(data?.projection.rows??[]).filter(row=>row.kind==='tool'&&row.accounts.length===0);
+  return [...rows.filter(r=>DETECTED.has(r.state)).map(row=>({row,detected:true})),...rows.filter(r=>NOT_CONNECTED.has(r.state)).map(row=>({row,detected:false}))].slice(0,MENU_ROWS);
+}
+const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
+/** A text box that takes its short form when the long one does not fit (prototype-engine fit()). */
+const fitted=(className:string,words:PluginWords)=>{const e=el('span',className+' pl-fit',words.full);e.dataset.full=words.full;e.dataset.short=words.short;return e;};
+/** Menus and the big screen sit outside the engine table's fit(): the same long-then-short rule, once they are laid out. */
+const fitIn=(box:HTMLElement)=>{for(const e of box.querySelectorAll<HTMLElement>('.pl-fit[data-short]')){e.textContent=e.dataset.full??'';if(e.clientWidth>0&&e.scrollWidth>e.clientWidth)e.textContent=e.dataset.short??'';}};
+const icon=(plugin:CockpitPlugin,className:string)=>{const span=el('span',className);span.setAttribute('aria-hidden','true');span.innerHTML=plugin.icon;return span;};
+const clamp01=(v:number)=>Math.max(0,Math.min(1,v));
+const SVG='http://www.w3.org/2000/svg';
+function trendLine(points:readonly number[]):SVGSVGElement|null {
+  const values=points.filter(Number.isFinite).slice(-48);if(values.length<2)return null;
+  const svg=document.createElementNS(SVG,'svg');svg.setAttribute('class','pl-trend');svg.setAttribute('viewBox','0 0 100 8');svg.setAttribute('preserveAspectRatio','none');svg.setAttribute('aria-hidden','true');
+  const path=document.createElementNS(SVG,'path');
+  path.setAttribute('d',values.map((v,i)=>`${i?'L':'M'}${(i*100/(values.length-1)).toFixed(1)} ${(7-6*clamp01(v)).toFixed(1)}`).join(''));
+  svg.append(path);return svg;
+}
+function drawCell(cell:PluginCell|undefined,row:number):HTMLElement {
+  if(!cell){const empty=el('div','qcell none');empty.dataset.row=String(row);return empty;}
+  const box=el('div','qcell pl-cell'+(cell.level?' pl-'+cell.level:''));box.dataset.row=String(row);
+  box.append(fitted('pl-tag',cell.tag));
+  const line=el('span','qline');
+  if(typeof cell.value==='number'&&Number.isFinite(cell.value)){const num=el('b','qnum'),value=el('span','qvalue',String(Math.round(cell.value)));num.append(value);if(cell.unit)num.append(el('small','',cell.unit));line.append(num);}
+  if(cell.side){const side=fitted('qtxt',cell.side);side.dataset.small=cell.side.short;line.append(side);}
+  box.append(line);
+  if(typeof cell.bar==='number'&&Number.isFinite(cell.bar)){
+    const meter=el('span','pl-meter'),bar=el('span','pl-bar'),fill=el('i');fill.style.width=(clamp01(cell.bar)*100).toFixed(1)+'%';bar.append(fill);meter.append(bar);
+    const trend=trendLine(cell.trend??[]);if(trend)meter.append(trend);box.append(meter);
+  }
+  const words=[cell.tag.full,typeof cell.value==='number'?String(Math.round(cell.value))+(cell.unit??''):'',cell.side?.full??''].filter(Boolean).join(' · ');
+  box.setAttribute('aria-label',words);return box;
+}
+export interface MenuOptions {readonly data:WireCockpitData|null;readonly locale:PluginLocale;readonly mark:(vendorKey:string|null)=>string|null;readonly connect:()=>boolean}
+export interface PluginHost {
+  readonly registry:PluginRegistry;
+  state():PluginState;
+  layout(subscriptions:number):PluginLayout;
+  /** The engine's repaint; replaced by each new engine table. */
+  bindEngine(repaint:(()=>void)|null):void;
+  /** Turn the first empty slots of a drawn page into this page's plugin columns, then re-check the lifecycle. */
+  decorate(table:HTMLElement,page:LayoutPage,locale:PluginLocale):void;
+  /** Nothing is placed (empty or cleared table). */
+  clearPlacement():void;
+  setVisible(visible:boolean):void;
+  setInteractive(interactive:boolean):void;
+  applyHostState(raw:unknown):boolean;
+  /** A host reading for a running plugin; false when the plugin is not running or refuses the data. */
+  deliver(id:string,data:unknown):boolean;
+  remove(id:string):boolean;
+  add(id:string):boolean;
+  openMenu(anchor:HTMLElement,options:MenuOptions):boolean;
+  closeMenu():void;
+  /** CKP-PLG-53: the plugin's big screen inside the big-screen area; null closes it. */
+  openScreen(id:string|null):boolean;
+  /** Plugins currently running (for tests and diagnostics). */
+  running():string[];
+  dispose():void;
+}
+const hosts=new WeakMap<HTMLElement,PluginHost>();
+export const pluginHostOf=(root:HTMLElement)=>hosts.get(root)??null;
+export interface PluginReports {
+  /** The page changed the plugin choices (right-click Remove, "Add" in the + menu). */
+  readonly state:(state:PluginState)=>void;
+  /** The plugins now running, in user order; the host samples exactly these. */
+  readonly running:(ids:string[])=>void;
+}
+export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=new PluginRegistry(builtinPlugins)):PluginHost {
+  let state:PluginState=emptyPluginState,negotiated=false,visible=false,interactive=false,disposed=false,locale:PluginLocale='en';
+  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement}|null=null;
+  const readings=new Map<string,unknown>(),columns=new Map<string,HTMLElement>(),running=new Set<string>(),placed=new Set<string>();
+  const guard=<T>(fn:()=>T,fallback:T):T=>{try{return fn();}catch{return fallback;/* A plugin failure never takes the cockpit down. */}};
+  const context=(id:string):PluginContext=>({locale,settings:pluginSettings(state,registry,id),words:(key,vars)=>pluginWords(locale,key,vars)});
+  const enabled=(id:string)=>enabledPlugins(state,registry).some(p=>p.id===id);
+  const shouldRun=(id:string)=>!disposed&&visible&&placed.has(id)&&enabled(id);
+  /** (Re)draws one plugin column's rows in place: one cell per table row, the bottom line, and the reserve row when the table has one. */
+  function fill(column:HTMLElement,plugin:CockpitPlugin,rows:number,reserve:boolean) {
+    const drawn=guard(()=>plugin.column(readings.get(plugin.id),context(plugin.id)),{cells:[]});
+    const parts:HTMLElement[]=Array.from({length:rows},(_,i)=>drawCell(drawn.cells[i],i));
+    const foot=el('div','qrow qrow-t pl-foot');
+    if(drawn.foot){foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value)foot.append(fitted('pl-foot-v',drawn.foot.value));}
+    parts.push(foot);if(reserve)parts.push(el('div','qrow qrow-r'));
+    column.replaceChildren(...parts);column.dataset.rows=String(rows);column.dataset.reserve=String(reserve);
+    const ink=plugin.ink;if(ink)column.style.setProperty('--pl-ink',ink);else column.style.removeProperty('--pl-ink');
+  }
+  function redrawColumn(id:string) {
+    const column=columns.get(id),plugin=registry.get(id);
+    if(column?.isConnected&&plugin)fill(column,plugin,Number(column.dataset.rows)||0,column.dataset.reserve==='true');
+  }
+  function reconcile() {
+    for(const id of [...running])if(!shouldRun(id))running.delete(id);
+    for(const id of placed)if(shouldRun(id))running.add(id);
+    for(const [id,column] of columns)column.dataset.running=String(running.has(id));
+    if(screen&&!enabled(screen.id))closeScreen();
+    if(negotiated&&!disposed){const ids=enabledPlugins(state,registry).map(p=>p.id).filter(id=>running.has(id)),key=ids.join();if(key!==reported){reported=key;report.running(ids);}}
+  }
+  function changed(next:PluginState|null) {
+    if(!next||disposed)return false;
+    state=next;if(negotiated)report.state(state);
+    for(const id of [...placed])if(!enabled(id))placed.delete(id);
+    reconcile();repaint?.();return true;
+  }
+  // ---- the big screen (CKP-PLG-53): drawn inside the big-screen well only, so faders and page keys stay uncovered.
+  const pageKeys=(e:Event)=>{if(screen&&(e.target as Element|null)?.closest?.('.mfd-pk'))closeScreen();};
+  function drawScreen() {
+    if(!screen)return;const plugin=registry.get(screen.id);if(!plugin){closeScreen();return;}
+    const title=pluginWords(locale,plugin.title),head=el('div','pl-screen-h');
+    head.append(icon(plugin,'pl-icon'),fitted('pl-screen-t',title));
+    const close=el('button','pl-screen-x',pluginWords(locale,'plugin.close').full);close.type='button';close.dataset.mat='part';close.onclick=e=>{if(e.isTrusted)closeScreen(true);};head.append(close);
+    const list=el('dl','pl-screen-l');
+    for(const line of guard(()=>plugin.screen(readings.get(plugin.id),context(plugin.id)).lines,[]).slice(0,12)){const row=el('div');row.append(el('dt','',line.label),el('dd','',line.value));list.append(row);}
+    screen.box.setAttribute('aria-label',ht(locale,'plugin.screenAria',{name:title.full}));screen.box.replaceChildren(head,list);fitIn(screen.box);
+  }
+  function closeScreen(restoreFocus=false) {
+    if(!screen)return;const id=screen.id;screen.box.remove();screen=null;
+    document.removeEventListener('pointerdown',pageKeys,true);
+    for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))key.setAttribute('aria-expanded','false');
+    if(restoreFocus)root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`)?.focus();
+  }
+  function openScreen(id:string|null):boolean {
+    if(id===null){closeScreen();return true;}
+    if(disposed||!enabled(id)||!registry.get(id))return false;
+    if(screen?.id===id){closeScreen();return true;}
+    const well=root.querySelector<HTMLElement>('.dk-mfd .mfd-screen');if(!well)return false;
+    closeScreen();const box=el('section','pl-screen');box.dataset.plugin=id;box.setAttribute('role','region');box.tabIndex=-1;
+    well.append(box);screen={id,box};drawScreen();
+    document.addEventListener('pointerdown',pageKeys,true);
+    root.querySelector(`.eng-keys .pl-key[data-plugin="${id}"]`)?.setAttribute('aria-expanded','true');
+    return true;
+  }
+  // ---- menus: the empty-slot "+" menu and the plugin key's right-click menu share one popup.
+  function closeMenu(restoreFocus=false) {
+    if(!menu)return;menu.remove();menu=null;
+    document.removeEventListener('pointerdown',outside,true);
+    menuAnchor?.classList.remove('on');if(menuAnchor?.hasAttribute('data-add-subscription'))menuAnchor.setAttribute('aria-expanded','false');if(restoreFocus&&menuAnchor?.isConnected)menuAnchor.focus();menuAnchor=null;
+  }
+  const outside=(e:Event)=>{if(menu&&!menu.contains(e.target as Node)&&!menuAnchor?.contains(e.target as Node))closeMenu();};
+  const escape=(e:KeyboardEvent)=>{
+    if(e.key!=='Escape')return;
+    if(menu){e.preventDefault();e.stopPropagation();closeMenu(true);}
+    else if(screen){e.preventDefault();e.stopPropagation();closeScreen(true);}
+  };
+  document.addEventListener('keydown',escape,true);
+  function popup(anchor:HTMLElement,label:string):HTMLElement {
+    const m=el('div','pl-menu');m.setAttribute('role','menu');m.setAttribute('aria-label',label);m.dataset.mat='glass';return m;
+  }
+  function place(m:HTMLElement,anchor:HTMLElement,at?:{x:number;y:number}) {
+    root.append(m);menu=m;menuAnchor=anchor;anchor.classList.add('on');
+    const r=anchor.getBoundingClientRect(),x=at?.x??r.left,y=at?.y??r.bottom+6;
+    m.style.left=Math.max(8,Math.min(window.innerWidth-m.offsetWidth-8,x))+'px';
+    m.style.top=(y+m.offsetHeight>window.innerHeight-4?Math.max(4,(at?.y??r.top)-m.offsetHeight-6):y)+'px';
+    document.addEventListener('pointerdown',outside,true);fitIn(m);
+    m.querySelector<HTMLButtonElement>('.pm-i:not([disabled])')?.focus();
+  }
+  const item=(className:string,onPick:()=>void,disabled=false)=>{const b=el('button','pm-i'+(className?' '+className:''));b.type='button';b.setAttribute('role','menuitem');if(disabled){b.disabled=true;b.setAttribute('aria-disabled','true');}b.onclick=e=>{if(!e.isTrusted||disabled)return;closeMenu();onPick();};return b;};
+  function openKeyMenu(key:HTMLElement,id:string,at?:{x:number;y:number}) {
+    const plugin=registry.get(id);if(disposed||!interactive||!plugin)return false;
+    closeMenu();const name=pluginWords(locale,plugin.title).full,m=popup(key,ht(locale,'plugin.menuAria',{name}));
+    const remove=item('pm-remove',()=>{host.remove(id);});remove.dataset.pmRemove=id;remove.append(fitted('pm-n',pluginWords(locale,'plugin.remove')));m.append(remove);
+    place(m,key,at);return true;
+  }
+  const host:PluginHost={
+    registry,
+    state:()=>state,
+    layout:subscriptions=>pluginLayout(subscriptions,enabledPlugins(state,registry)),
+    bindEngine(next){repaint=next;},
+    decorate(table,page,value){
+      locale=value;placed.clear();columns.clear();
+      const keys=[...table.querySelectorAll<HTMLElement>('.eng-keys > .ek-bay')],bays=[...table.querySelectorAll<HTMLElement>('.eng-cols > .ec-bay')];
+      page.plugins.forEach((id,i)=>{
+        const plugin=registry.get(id),bay=bays[i];if(!plugin||!keys[i]||!bay)return;
+        const title=pluginWords(locale,plugin.title);
+        // CKP-PLG-50: the subscription key's box and type, a white line-art icon in the vendor-mark box, a dashed
+        // underline in the plugin's colour, no digit and no ×.
+        const key=el('button','ek bd-r pl-key');key.type='button';key.dataset.plugin=id;key.dataset.mat='part';
+        key.setAttribute('aria-label',ht(locale,'plugin.keyAria',{name:title.full}));key.setAttribute('aria-expanded',String(screen?.id===id));key.title=title.full;
+        const identity=el('span','ek-identity');identity.append(icon(plugin,'lamp pl-icon'),fitted('ek-name',title));
+        const line=el('i','bl pl-dash');line.setAttribute('aria-hidden','true');line.style.setProperty('--v',plugin.underline);
+        key.append(identity,line);
+        key.onclick=e=>{if(e.isTrusted)openScreen(id);};
+        key.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();if(e.isTrusted)openKeyMenu(key,id,{x:e.clientX,y:e.clientY});};
+        key.onkeydown=e=>{if(e.isTrusted&&(e.key==='ContextMenu'||e.key==='F10'&&e.shiftKey)){e.preventDefault();openKeyMenu(key,id);}};
+        keys[i].replaceWith(key);
+        // CKP-PLG-51: the subscription column itself, no inner frame; each row is one cell in the Other-cell grammar.
+        const col=el('div','ec pl-col');col.dataset.plugin=id;col.setAttribute('role','group');col.setAttribute('aria-label',title.full);
+        fill(col,plugin,bay.querySelectorAll('.qcell').length,bay.querySelectorAll('.qrow').length>1);
+        bay.replaceWith(col);columns.set(id,col);placed.add(id);
+      });
+      reconcile();if(screen)drawScreen();
+    },
+    clearPlacement(){placed.clear();columns.clear();closeMenu();closeScreen();reconcile();},
+    setVisible(value){visible=value;reconcile();},
+    setInteractive(value){interactive=value;if(!value)closeMenu();},
+    applyHostState(raw){
+      const next=parsePluginState(raw);if(!next||disposed)return false;
+      if(!negotiated)reported=null;negotiated=true;state=next;
+      for(const id of [...placed])if(!enabled(id))placed.delete(id);
+      reconcile();repaint?.();return true;
+    },
+    deliver(id,data){
+      const plugin=registry.get(id);
+      if(!plugin||!running.has(id))return false;
+      const next=guard(()=>plugin.accept(data,readings.get(id)),undefined);if(next===undefined)return false;
+      readings.set(id,next);redrawColumn(id);if(screen?.id===id)drawScreen();return true;
+    },
+    remove:id=>changed(disablePlugin(state,registry,id)),
+    add:id=>changed(enablePlugin(state,registry,id)),
+    openMenu(anchor,options){
+      if(disposed||!interactive)return false;
+      if(menu&&menuAnchor===anchor){closeMenu();return true;}closeMenu();
+      const w=(key:string)=>pluginWords(options.locale,key),m=popup(anchor,ht(options.locale,'plugin.addMenu'));
+      m.append(fitted('pm-h',w('plugin.connect')));
+      for(const {row,detected} of connectableRows(options.data)){
+        const b=item('pm-connect',()=>{options.connect();});b.dataset.pmRow=row.id;
+        const src=options.mark(row.vendorKey),mark=el('span','pm-mark');mark.setAttribute('aria-hidden','true');
+        if(src){const img=el('img');img.src=src;img.alt='';mark.append(img);}
+        const state=fitted('pm-st'+(detected?' pm-det':''),w(detected?'plugin.detected':'plugin.notConnected'));
+        b.append(mark,el('span','pm-n',options.locale==='en'?row.name.en:row.name.zh),state,el('b','pm-go'+(detected?'':' dim'),w('plugin.connectGo').full));m.append(b);
+      }
+      const more=item('pm-more',()=>{options.connect();});more.dataset.pmAll='';more.append(fitted('pm-n',w('plugin.allSubscriptions')));m.append(more);
+      m.append(el('div','pm-sep'),fitted('pm-h',w('plugin.addPlugin')));
+      for(const plugin of registry.list()){
+        const added=enabled(plugin.id),b=item('pm-plugin'+(added?' on':''),()=>{host.add(plugin.id);},added);b.dataset.pmPlugin=plugin.id;
+        b.append(icon(plugin,'pm-ic'),fitted('pm-n',pluginWords(options.locale,plugin.title)),added?fitted('pm-ok',w('plugin.added')):el('b','pm-go',w('plugin.addGo').full));m.append(b);
+      }
+      anchor.setAttribute('aria-expanded','true');place(m,anchor);
+      return true;
+    },
+    closeMenu:()=>closeMenu(),
+    openScreen,
+    running:()=>[...running],
+    dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();document.removeEventListener('keydown',escape,true);hosts.delete(root);},
+  };
+  hosts.set(root,host);
+  return host;
+}
