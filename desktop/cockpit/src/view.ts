@@ -54,7 +54,9 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  const reason=element('span');reason.id='s6-closed-reason';reason.setAttribute('role','status');cap.append(reason);root.append(cap);
  attach.onclick=e=>{if(e.isTrusted&&nativeShell)action(nativeShell.attached?'detach':'putBack');};
  close.onclick=e=>{if(e.isTrusted)action('close');};
- const unwireHud=wireHud(frame.hud,id=>{hudSelected=id;deck.showTune(id);if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());});
+ // WP-22 (macrevb-1062-3): the porthole marks the selected model's rocket by its published name (the still's one key).
+ const markPorthole=(id:string|null)=>{const name=id===null?null:lastData?.details?.publishedModels?.find(m=>m.id===id)?.name??null;root.dispatchEvent(new CustomEvent('model-select',{detail:name}));};
+ const unwireHud=wireHud(frame.hud,id=>{hudSelected=id;markPorthole(id);deck.showTune(id);if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());});
  let showProjectNames=true;
  const paintRecords=(data:WireCockpitData,at:number)=>{const shown=showProjectNames?data:withoutProjectNames(data);deck.render(shown,at);tape.render(shown,showProjectNames,at);};
  function shellControls(){
@@ -122,7 +124,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  frame.lamp.addEventListener('animationend',settled);frame.lamp.addEventListener('animationcancel',settled);
  const displayedState=()=>[frame.engine.innerHTML,frame.hud.innerHTML,frame.mfd.innerHTML].join('\0');
  const pulse=()=>{stop();if(!active||nativeShell?.profile==='closed'||reduceMotion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;void frame.lamp.offsetWidth;frame.lamp.classList.add('state-pulse');};
- const setEmpty=(key:'waiting'|'cleared'|'empty')=>{base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
+ const setEmpty=(key:'waiting'|'cleared'|'empty')=>{base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;markPorthole(null);caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
   // CKP-SHELL-39: with no subscription read yet the screen says so in one line and offers one way in, Settings > Subscriptions.
   if(key==='empty'){const open=element('button',ht(locale,'host.emptyOpen'),'ec-empty-open');bilingual(open,ht('en','host.emptyOpen'),ht('zh-CN','host.emptyOpen'));open.type='button';open.setAttribute('aria-label',ht(locale,'host.emptyOpen'));open.onclick=e=>{if(e.isTrusted)action('openSettingsSubscriptions');};const box=element('div',undefined,'ec-empty-box');box.append(line,open);frame.engine.replaceChildren(box);}
   else frame.engine.replaceChildren(line);frame.hud.replaceChildren();deck.clear();tape.clear();};
@@ -238,6 +240,10 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   updateAppearance(value:LiveAppearance,now:number,threshold,used=false,allModels=false,order=[]){const orderChanged=setMemberOrder(order);showUsedPercent=used;deck.showAllModels(allModels);const namesChanged=showProjectNames!==value.showProjectNames;showProjectNames=value.showProjectNames;selectedRedBelow=threshold;locale=value.locale;reduceMotion=value.reduceMotion;syncReduced();document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion){stop();caution.classList.remove('flash');}if(lastData){lastRenderedAt=now;preserveFocus(()=>{localise(lastRenderedAt);localiseEngine?.(locale,lastRenderedAt);paintHud(frame.hud,lastData!,tier!=='tall',locale,hudOptions());if(namesChanged)paintRecords(lastData!,lastRenderedAt);syncCaution(lastData!,lastRenderedAt);});if(orderChanged)renderData(lastData,now);}else localise();},
   shell(value:ShellState){if(retiredUnstableScopes.has(value.scope))value={...value,scope:'all'};const changed=(nativeShell?.scope??'all')!==value.scope;nativeShell=value;preserveFocus(()=>{tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');tape.layout(layout.tapeLines);shellControls();if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());if(changed){applyScope?.(value.scope);deck.scope(value.scope);}});},
   ignite(on){if(on)root.dataset.ignite='true';else delete root.dataset.ignite;},
+  // WP-22 (macrevb-1062-3): a rocket chosen or cleared in the enlarged field selects the same model on the HUD, the
+  // faders and the porthole. Selection only: the MFD page does not change and no tried effort arrives with it.
+  fieldClosed(){root.dispatchEvent(new CustomEvent('field-closed'));},
+  selectModel(id){hudSelected=id;markPorthole(id);deck.selectModel(id);if(lastData)preserveFocus(()=>paintHud(frame.hud,lastData!,tier!=='tall',locale,hudOptions()));},
   render:renderData,
   nextDeadline(){return lastData?nextDeadline(lastData,lastRenderedAt):null;},
   tick(now){refreshDeadlines(now);},

@@ -62,8 +62,8 @@ private struct FieldBudgetProcesses {
   }
 }
 
-/// CKP-SHELL-19 for the enlarged launch field (plan item 7, D63): the transparent, feathered composition with its
-/// frosted card and behind-window blur, opened on the real official page with synthetic public models. At rest it
+/// CKP-SHELL-19 for the enlarged launch field (plan item 7, D63; WP-22 D298): the launch-field component's window in
+/// the transparent panel over the native dim, opened on the real official page with synthetic public models. At rest it
 /// costs at most 10% of one core (this process + WebContent + GPU); ten open/close cycles return memory to its
 /// pre-open level with no growth across cycles (the #723 thresholds). Every figure prints as `CKP-FIELD-BUDGET`.
 final class CockpitFieldBudgetTests: XCTestCase {
@@ -134,23 +134,23 @@ final class CockpitFieldBudgetTests: XCTestCase {
       let web = try XCTUnwrap(panel.verificationWebView), window = try XCTUnwrap(panel.verificationWindow)
       try await Task.sleep(for: .seconds(2))  // the scene's opening frames (renderFor 1400 ms) settle
       let scene = (try? await web.evaluateJavaScript(
-        "document.querySelector('.field-stage canvas')?'scene':document.querySelector('.field-stage .nogl')?'no-webgl':'none'")) as? String ?? "?"
-      let shape = (try? await web.evaluateJavaScript("document.querySelector('.field-stage')?.dataset.shape??'none'")) as? String ?? "?"
+        "document.querySelector('#field .lf-scene canvas')?'scene':document.querySelector('#field .lf-flat')?'flat':'none'")) as? String ?? "?"
+      let shape = (try? await web.evaluateJavaScript("document.getElementById('field')?.classList.contains('lfw')?'window':'none'")) as? String ?? "?"
       if cycle == 1 {
-        // The floating look in the native panel: a clear, non-opaque window with no shadow; the page's own pixels
-        // are transparent outside the card and the feathered silhouette, and the blur sits under the card.
+        // WP-22 (D298): a clear, non-opaque window with no shadow over the native plain dim; the component draws the
+        // window shape inside the rectangle.
         XCTAssertFalse(window.isOpaque, "the field's panel is not opaque")
         XCTAssertEqual(window.backgroundColor.alphaComponent, 0, "the panel's background is clear")
         XCTAssertFalse(window.hasShadow, "no rectangular window shadow")
         XCTAssertEqual(web.value(forKey: "drawsBackground") as? Bool, false, "the web view paints no backing of its own")
         XCTAssertEqual(web.underPageBackgroundColor.alphaComponent, 0, "nothing opaque under the page")
-        XCTAssertEqual(shape, "feathered", "the scene is masked by the feathered c01 silhouette")
-        XCTAssertNotNil(panel.cardBlurFrame, "the frosted card has its behind-window blur")
+        XCTAssertEqual(shape, "window", "the launch-field component's window mode fills the rectangle")
+        XCTAssertNotNil(panel.verificationDimWindow, "the native dim lies under the rectangle")
         let config = WKSnapshotConfiguration(); config.afterScreenUpdates = true
         let snapshot: NSImage? = await withCheckedContinuation { done in web.takeSnapshot(with: config) { image, _ in done.resume(returning: image) } }
         if let image = snapshot {
           let a = { (x: Double, y: Double) in Self.alpha(image, x, y).map { String(format: "%.2f", $0) } ?? "--" }
-          print("CKP-FIELD-BUDGET snapshot size=\(Int(image.size.width))x\(Int(image.size.height)) alpha topRight=\(a(0.99, 0.01)) bottomRight=\(a(0.99, 0.99)) gap=\(a(0.338, 0.5)) sceneCentre=\(a(0.67, 0.5)) card=\(a(0.15, 0.5)) blur=\(panel.cardBlurFrame.map { "\($0)" } ?? "none")")
+          print("CKP-FIELD-BUDGET snapshot size=\(Int(image.size.width))x\(Int(image.size.height)) alpha topRight=\(a(0.99, 0.01)) bottomRight=\(a(0.99, 0.99)) gap=\(a(0.338, 0.5)) sceneCentre=\(a(0.67, 0.5)) menu=\(a(0.15, 0.5))")
         } else {
           print("CKP-FIELD-BUDGET snapshot unavailable")
         }
