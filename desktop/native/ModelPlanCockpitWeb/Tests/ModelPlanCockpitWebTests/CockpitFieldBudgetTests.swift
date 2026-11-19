@@ -191,8 +191,8 @@ final class CockpitFieldBudgetTests: XCTestCase {
     if hosted {
       let open = HostedRunnerTiming.median(openCPUs), closed = HostedRunnerTiming.median(closedCPUs)
       print(String(format: "CKP-FIELD-BUDGET hosted medianOpenCPU=%.2f%% medianClosedCPU=%.2f%% (median enforced)", open, closed))
-      XCTAssertLessThanOrEqual(open, budget, "median cycle: App + WebContent + GPU average at most 10% of one core with the field open at rest: \(openCPUs)")
-      XCTAssertLessThanOrEqual(closed, budget, "median cycle: closed, the field costs nothing near the open budget: \(closedCPUs)")
+      XCTAssertLessThan(open, budget, "median cycle: App + WebContent + GPU average at most 10% of one core with the field open at rest: \(openCPUs)")
+      XCTAssertLessThan(closed, budget, "median cycle: closed, the field costs nothing near the open budget: \(closedCPUs)")
     }
     // #723 thresholds: the first open loads WebKit's shared code once (32 MiB allowance); later cycles may not grow.
     let firstLoad = 32.0, growth = 8.0
