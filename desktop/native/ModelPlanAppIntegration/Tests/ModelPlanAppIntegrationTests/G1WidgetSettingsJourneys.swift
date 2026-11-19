@@ -257,7 +257,7 @@ private actor G1RowsClient: EngineClient {
     func testG1_DOCK_3_1_01() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-edges-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
-        for (setting, expected) in [(SettingsDockEdge.left, DockEdge.left), (.right, .right), (.bottom, .bottom)] {
+        for (setting, expected) in [(SettingsDockEdge.left, DockEdge.left), (.right, .right), (.bottom, .bottom), (.top, .top)] {
             let app = try await open(G1DisplayEnvironment(), profile: profile)
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.dockEdge(setting))
             XCTAssertEqual(app.composition.dock.edgePresentation?.placement?.edge, expected)
@@ -267,7 +267,8 @@ private actor G1RowsClient: EngineClient {
             await restored.composition.stop(); restored.composition.dock.close()
         }
 
-        // Legacy top placement near the left corner must migrate to the closest allowed edge.
+        // G3-27 (5261516b2, A-1106-4): top is an allowed resting edge below the menu bar, so a saved top
+        // placement is restored as top and is no longer migrated to the closest side edge.
         let legacyProfile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-top-migration-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: legacyProfile) }
         let directory = legacyProfile.appendingPathComponent("ModelPlan/Native", isDirectory: true)
@@ -275,11 +276,11 @@ private actor G1RowsClient: EngineClient {
         let legacy: [String: Any] = ["schemaVersion": 1, "preferences": ["dockEdge": "top", "dockAlongFraction": 0.1]]
         try JSONSerialization.data(withJSONObject: legacy).write(to: directory.appendingPathComponent("settings-v1.json"))
         let migrated = try await open(G1DisplayEnvironment(), profile: legacyProfile)
-        XCTAssertEqual(migrated.composition.dock.edgePresentation?.placement?.edge, .left)
+        XCTAssertEqual(migrated.composition.dock.edgePresentation?.placement?.edge, .top)
         await migrated.composition.stop(); migrated.composition.dock.close()
         let reopened = try await open(G1DisplayEnvironment(), profile: legacyProfile)
         defer { reopened.composition.dock.close() }
-        XCTAssertEqual(reopened.composition.dock.edgePresentation?.placement?.edge, .left)
+        XCTAssertEqual(reopened.composition.dock.edgePresentation?.placement?.edge, .top)
         await reopened.composition.stop()
     }
 
@@ -414,8 +415,9 @@ private actor G1RowsClient: EngineClient {
         let thresholdRow = try XCTUnwrap(rows.first { $0.key == .redBelow })
         guard case let .choice(selected, options) = thresholdRow.value else { return XCTFail("Threshold choices must be presented") }
         XCTAssertEqual(selected, "25")
-        XCTAssertEqual(options, ["10", "16", "20", "25"])
-        for threshold in [10, 16, 20, 25] {
+        // D22 (7c0c5f80e): Settings offers SettingsPreferences.redBelowChoices; 16 is only accepted from older files.
+        XCTAssertEqual(options, SettingsPreferences.redBelowChoices.map(String.init))
+        for threshold in SettingsPreferences.redBelowChoices {
             let editor = app.settingsHost.application.editor
             _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
             let client = try XCTUnwrap(app.composition.client as? G1RowsClient)
@@ -512,7 +514,7 @@ private actor G1RowsClient: EngineClient {
         XCTAssertNil(station.inner.unknownDash)
         let client = try XCTUnwrap(app.composition.client as? G1RowsClient)
         for (five, week, outerStatus, innerStatus) in [(25.0, 72.0, DockQuotaStatus.critical, DockQuotaStatus.normal),
-                                                       (41.0, 25.0, .normal, .critical)] {
+                                                       (41.0, 25.0, .warning, .critical)]  // remaining <= 50 is warning (DockInstrumentModel.evaluate) {
             try await client.replaceRows(fixture(five: five, week: week))
             let reading = try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"])
             let outer = try XCTUnwrap(reading.outer), inner = try XCTUnwrap(reading.inner)
@@ -590,7 +592,7 @@ private actor G1RowsClient: EngineClient {
         XCTAssertEqual(notice.tone, .blue)
         XCTAssertEqual(station.showsReadout, true)
         XCTAssertGreaterThan(station.eventRect.midX, station.readout.midX)
-        XCTAssertEqual(try XCTUnwrap(station.eventHollowDiameter), 5 * station.diameter / 52, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(station.eventHollowDiameter), 6 * station.diameter / 52, accuracy: 0.0001)
         await app.composition.stop()
     }
 
@@ -602,17 +604,20 @@ private actor G1RowsClient: EngineClient {
         defer { app.composition.dock.close() }
         let dock = app.composition.dock
         XCTAssertTrue(dock.card.isHidden)
+        // D166 (EngineResetNotifier): a forecast (announced) never notifies; exactly one notification follows its confirmation.
         let delivered = expectation(description: "synthetic reset notification was delivered")
         var episodes: [String] = []
         app.composition.setResetNotificationDelivery { episode in episodes.append(episode); delivered.fulfill() }
         let client = try XCTUnwrap(app.composition.client as? G1RowsClient)
         try await client.replaceRows(fixture(resetStatus: "announced", eventNow: now))
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(episodes.count, 0, "An announced reset must not notify")
+        try await client.replaceRows(fixture(resetStatus: "confirmed", eventNow: now))
         await fulfillment(of: [delivered], timeout: 3)
         XCTAssertEqual(episodes.count, 1)
-        XCTAssertTrue(dock.card.isHidden, "An announced reset must not open a card")
+        XCTAssertTrue(dock.card.isHidden, "A confirmed reset notification must not open a card")
         let notice = try XCTUnwrap(dock.dockView.presentedNoticesForChecks["0123456789abcdef"])
-        XCTAssertEqual(notice.key.kind, .resetAnnounced)
-        XCTAssertEqual(notice.tone, .blue)
+        XCTAssertEqual(notice.key.kind, .resetConfirmed)
         await app.composition.stop()
     }
 
@@ -669,8 +674,10 @@ private actor G1RowsClient: EngineClient {
                 _ = try await editor.commit(SettingsB20Edit.size(settingSize))
                 let size = try XCTUnwrap(view.appearanceDisplaySize), skin = try XCTUnwrap(view.presentedSkinForChecks)
                 let prefs = try XCTUnwrap(editor.snapshot?.preferences)
-                let coords = T2EdgeCoordinates(edge: geometryEdge, width: size.width, height: size.height, menuBarExclusion: view.appearanceMenuBarExclusion)
-                let geometry = try T2Geometry.make(subscriptions: subscriptions, input: .init(coordinates: coords, diameter: prefs.size.nozzleDiameter, showsPercentages: prefs.showPercentages, along: prefs.dockAlongFraction))
+                // Mirror T2ProductionAppearance.apply: the menu-bar reservation extends the coordinate height (A-1106-4).
+                let top = view.appearanceMenuBarExclusion
+                let coords = T2EdgeCoordinates(edge: geometryEdge, width: size.width, height: size.height + top, menuBarExclusion: top)
+                let geometry = try T2Geometry.make(subscriptions: subscriptions, input: .init(coordinates: coords, diameter: prefs.size.nozzleDiameter, showsPercentages: prefs.showPercentages, ignitionAtEnd: geometryEdge != .left && geometryEdge != .right))
                 XCTAssertEqual(skin.stations.count, 3)
                 for expected in geometry.stations {
                     let id = try XCTUnwrap(expected.subscription?.id)
