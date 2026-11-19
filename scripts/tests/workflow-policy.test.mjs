@@ -574,6 +574,8 @@ test("D254 pr-scope reads NUL-separated paths: tab, quote, newline and unicode n
   const block = text.slice(text.indexOf("\n  pr-scope:\n"));
   const sh = /run: \|\n((?:          .*\n|\n)+)/.exec(block.slice(block.indexOf("- id: scope")))[1].replace(/^          /gm, "");
   const macPaths = /MAC_PATHS: (.*)\n/.exec(block)[1];
+  assert.doesNotMatch(text, /tr '\\0' '\\n'/, "no NUL-to-newline conversion of a path list");
+  assert.match(text, /gui_test_selection\.py select --nul --changed/, "the GUI selector splits the NUL list itself");
   assert.doesNotMatch(sh, /name-only(?![^\n]*-z)/, "every name-only list is NUL-separated");
   const dir = fs.mkdtempSync("/tmp/d254-scope-"), tmp = fs.mkdtempSync("/tmp/d254-tmp-");
   const git = (...a) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", ...a], { cwd: dir, encoding: "utf8" });

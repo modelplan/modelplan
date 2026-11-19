@@ -21,7 +21,7 @@ The selection is conservative. Any path it cannot place is a reason to run the f
          it, tests of other targets and the verification/tooling scripts (they run in their own
          steps, whole, on every leg)
 
-Usage: gui_test_selection.py select --changed <file with one path per line> [--root <repo>]
+Usage: gui_test_selection.py select --changed <file with one path per line, or NUL-separated with --nul> [--root <repo>]
 prints one line: "full", "none" or a comma-separated class list, and the reasons on stderr.
 """
 from __future__ import annotations
@@ -167,6 +167,9 @@ def select(changed: list[str], root: Path = ROOT, manifest: dict | None = None) 
         print(f"gui-selection: full suite: {why}", file=sys.stderr)
         return "full", []
 
+    # Any control character (CR, LF, tab, ...) in a path means the list cannot be trusted to split the way Git meant.
+    if any(any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in p) for p in changed):
+        return full("a changed path contains a control character")
     paths = sorted({p.strip() for p in changed if p.strip()})
     if not paths:
         return full("no changed path to select from")
@@ -227,11 +230,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     s = sub.add_parser("select")
-    s.add_argument("--changed", required=True, type=Path, help="changed paths, one per line")
+    s.add_argument("--changed", required=True, type=Path, help="changed paths, NUL-separated with --nul, else one per line")
+    s.add_argument("--nul", action="store_true", help="the --changed file is `git diff --name-only -z` output")
     s.add_argument("--root", type=Path, default=ROOT)
     ns = parser.parse_args(argv)
     try:
-        mode, classes = select(ns.changed.read_text().splitlines(), ns.root.resolve())
+        if ns.nul:
+            raw = ns.changed.read_bytes().decode("utf-8", "surrogateescape")
+            listed = [p for p in raw.split("\0") if p]
+        else:
+            listed = ns.changed.read_text().splitlines()
+        mode, classes = select(listed, ns.root.resolve())
     except partition.PartitionError as error:
         print(f"gui-selection: full suite: {error}", file=sys.stderr)
         mode, classes = "full", []

@@ -455,10 +455,8 @@ jobs:
             changed="$RUNNER_TEMP/d169-gui-changed.txt"
             if git fetch -q --no-tags origin main && base=$(git merge-base FETCH_HEAD HEAD) \
               && git diff --no-renames --name-only -z "$base" HEAD > "$changed.z"; then
-              # The selector reads one path per line: a path with a newline (or any unparsable list) selects the full share.
-              tr '\0' '\n' < "$changed.z" > "$changed"
-              if [ "$(tr -cd '\n' < "$changed.z" | wc -c)" != 0 ]; then echo "a changed path contains a newline: full GUI share"
-              else classes=$(python3 desktop/native/tools/ci/gui_test_selection.py select --changed "$changed") || classes=full; fi
+              # The selector splits the NUL-separated list itself and selects the full share if any path has a control character.
+              classes=$(python3 desktop/native/tools/ci/gui_test_selection.py select --nul --changed "$changed.z") || classes=full
             else
               echo "no merge base with main: full GUI share"
             fi
