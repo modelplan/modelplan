@@ -29,7 +29,7 @@ export function pickRun(runs) {
 // The red rows of one run: its hosted legs that failed or timed out.
 export function redRows(run, jobs) {
   return jobs.filter((j) => isHostedMacLeg(run.path, j) && j.status === "completed" && RED.has(j.conclusion)).map((j) => ({
-    job_id: j.id, job: j.name, conclusion: j.conclusion, workflow: run.name, path: String(run.path ?? "").split("@")[0], run_id: run.id,
+    job_id: j.id, job: j.name, conclusion: j.conclusion, workflow: run.name, path: runPath(run), run_id: run.id,
     sha: run.head_sha, url: j.html_url ?? run.html_url, test: null,
   }));
 }
@@ -44,9 +44,16 @@ export function redRows(run, jobs) {
 // PATHS per prev row: retired leg -> drop | run.id < row.run_id -> keep | qualifying success -> drop | red hosted leg ->
 // replaced by the new red row | anything else -> keep.  New red leg (no prev row) -> add; red in a run older than its
 // prev row -> prev row stays, no new row.
+// Invariant (macrevd P2 on #1083): a row belongs to a workflow by its PATH when it stores one (the display name can
+// change); only a legacy row without a path falls back to the display name. A row whose leg is no longer in the
+// trusted table is dropped on EVERY path (reconciled or carried), before it can be kept.
+// PATHS: group = same path (or legacy name) | clear = qualifying success of the same/newer run of that path |
+// carry = workflow had no counted run: keep only rows still in the table | retired workflow or leg -> drop.
+const runPath = (run) => String(run.path ?? "").split("@")[0];
+const belongs = (r, run) => (r.path ? r.path === runPath(run) : r.workflow === run.name);
 const inTable = (r) => HOSTED_MAC_LEGS.some((l) => l.name.test(String(r.job)) && (!r.path || l.workflow === r.path));
 export function reconcile(prevRows, run, jobs) {
-  const mine = prevRows.filter((r) => r.workflow === run.name);
+  const mine = prevRows.filter((r) => belongs(r, run));
   const newer = new Set(mine.filter((r) => r.run_id > run.id).map((r) => r.job));
   const red = redRows(run, jobs).filter((r) => !newer.has(r.job));
   const redNames = new Set(red.map((r) => r.job));
@@ -56,7 +63,7 @@ export function reconcile(prevRows, run, jobs) {
 }
 
 // Previous rows of workflows that had no counted run on main this time: unknown, so unchanged.
-export const carryOver = (prevRows, seenRunNames) => prevRows.filter((r) => !seenRunNames.has(r.workflow));
+export const carryOver = (prevRows, seenRuns) => prevRows.filter((r) => inTable(r) && !seenRuns.some((run) => belongs(r, run)));
 
 // The first failing test in a job log (the same patterns as the coordinator's main-red.sh), else the failed step.
 export function firstFailure(log, job) {
@@ -111,13 +118,13 @@ async function main() {
   const open = issues[0] ?? null;
   const prev = parseState(open?.body);
   const known = new Map(prev.map((r) => [r.job_id, r.test]));
-  const rows = [], seen = new Set();
+  const rows = [], seen = [];
   for (const wf of HOSTED_WORKFLOWS) {
     const file = wf.split("/").pop();
     const run = pickRun(await gh.all(`/actions/workflows/${file}/runs?branch=main&event=push&status=completed`, "workflow_runs", 50));
     if (!run) { say({ workflow: wf, run: "none on main" }); continue; }
     const jobs = await gh.all(`/actions/runs/${run.id}/jobs?filter=latest`, "jobs", 500);
-    seen.add(run.name);
+    seen.push(run);
     for (const row of reconcile(prev, run, jobs)) {
       row.test = known.get(row.job_id) ?? null;
       if (!row.test) {
