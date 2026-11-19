@@ -48,16 +48,25 @@ test('audit F 2 (CKP-MFD-19): the comparison measures against the session effort
  const display=await open(page,fixture());
  await fader(page,'used').locator('.fd-strip').click();
  const chart=screen(page).locator('.cmp-chart');
- const current=chart.locator('.pc-band-current');
+ const current=chart.locator('.pc-band-current'),bars=screen(page).locator('svg.cmp-bars');
+ // the bars carry one current number per bar (ability, cost) and no trial lane
+ const nums=role=>bars.locator(`.pc-num[data-role="${role}"]`);
  await expect(current).toHaveAttribute('data-effort','Med');
+ await expect(nums('current')).toHaveCount(2);
+ const before=await nums('current').allTextContents();
  const data=fixture();data.details.sessions[0].effort='low';await display(data);
  await expect(current).toHaveAttribute('data-effort','Low');
+ // the bars follow the newly reported effort (Low's shares, not Med's)
+ await expect(nums('current')).toHaveCount(2);
+ expect(await nums('current').allTextContents()).not.toEqual(before);
  // No new trial of the old effort appeared; the card opened from the LCD still tries nothing.
  await expect(chart.locator('.pc-band-trial')).toHaveCount(0);
+ await expect(nums('trial')).toHaveCount(0);
  // The session ends: current is unreported (unknown), the chart has no current column or label.
  const ended=fixture();ended.details.sessions=ended.details.sessions.slice(1);await display(ended);
  await expect(current).toHaveCount(0);
  await expect(chart.locator('.pc-col-l[data-role="current"]')).toHaveCount(0);
+ await expect(nums('current')).toHaveCount(0);
 });
 
 test('audit F 5 (CKP-MFD-22): the comparison website link names the published model',async({page})=>{

@@ -995,14 +995,7 @@
       "additionalProperties": false,
       "properties": {
         "aaScore": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "number"
         },
         "ability": {
           "anyOf": [
