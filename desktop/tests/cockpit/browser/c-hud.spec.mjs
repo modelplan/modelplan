@@ -204,3 +204,22 @@ test('WP-22 the field\'s selection selects the model on the HUD, the faders and 
  expect(await receive(send('select',{model:'sonnet-5.5',effort:'high'}))).toBe(false);
  await expect(page.locator('.hud .hp.selected')).toHaveCount(0);
 });
+// macrevb-1062-3 r2: the fader renderer resolves the shared effort keys on the visible bank only, so a model chosen in the
+// field whose fader sits on another bank must bring that bank up; a clear keeps the bank and selects no channel.
+test('WP-22 the field\'s selection shows the selected fader\'s bank and the effort keys act on it; a clear keeps the bank',async({page})=>{
+ const {send,receive}=await open(page,{lineup:[models[0]]});
+ const visible=()=>page.locator('.fd-ch [data-travel]').evaluateAll(e=>e.map(x=>x.getAttribute('aria-label')));
+ const selected=()=>page.locator('.fd-ch.sel [data-travel]').evaluateAll(e=>e.map(x=>x.getAttribute('aria-label')));
+ const first=await visible();expect(first).not.toContain('Synthetic m1');
+ expect(await receive(send('select',{model:'m1'}))).toBe(true);
+ expect(await visible()).toContain('Synthetic m1');
+ expect(await selected()).toEqual(['Synthetic m1']);
+ await page.locator('.sc-l:not(.na)').first().click();
+ await expect(page.locator('.fd-ch.trying [data-travel]')).toHaveAttribute('aria-label','Synthetic m1');
+ const bank=await visible();
+ expect(await receive(send('select',{model:null}))).toBe(true);
+ expect(await selected()).toEqual([]);
+ expect(await visible()).toEqual(bank);
+ expect(await receive(send('select',{model:'m0'}))).toBe(true);
+ expect(await visible()).toEqual(first);expect(await selected()).toEqual(['Synthetic m0']);
+});
