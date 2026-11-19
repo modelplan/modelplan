@@ -54,6 +54,10 @@ private actor HeldClient: EngineClient {
   var displays = 0, privateVisible = false, pauseClear = false
   var scopeUpdates:[(String,Bool)]=[]
   func updateScope(_ key:String) { scopeUpdates.append((key,privateVisible)) }
+  var rangeUpdates:[CockpitRange]=[]
+  /// Recorded with whether the page had loaded yet (CKP-SHELL-50: the range must be there before the load).
+  var rangeBeforeLoad:[Bool]=[]
+  func updateRange(_ value:CockpitRange) { rangeUpdates.append(value); rangeBeforeLoad.append(state.queryTicket == nil) }
   var restoredCautions:[[String]]=[]
   var restoredPins:[[String]]=[]
   func setPinnedModels(_ ids:[String]) { restoredPins.append(ids) }
@@ -407,13 +411,21 @@ extension CoordinatorTests {
     coordinator.close();XCTAssertTrue(page.discarded)
     await coordinator.shutdown()
   }
-  /// CKP-ENTRY-04: reopening the same day keeps the scope; the first open on a later day returns to All.
-  @MainActor func testScopeLastsForTheDayAndReturnsToAllTheNextDay() async throws {
+  /// CKP-SHELL-50 (supersedes CKP-ENTRY-04): the scope is kept when the cockpit is opened again, the same day or any
+  /// later day, and a new coordinator (an app restart) restores it from the app's memory.
+  @MainActor final class ScopeMemoryProbe: CockpitScopeMemory {
+    var saved:String?
+    init(_ saved:String?) { self.saved=saved }
+    func load()->String? { saved }
+    func save(_ key:String?) { saved=key }
+  }
+  @MainActor func testScopeIsKeptOnLaterDaysAndAcrossARestart() async throws {
     var pages:[PageProbe]=[]
     let coordinator=EngineCockpitCoordinator { context in let page=PageProbe(context);pages.append(page);return page }
     let noon=try XCTUnwrap(Calendar.current.date(from:DateComponents(year:2026,month:11,day:6,hour:12)))
     var now=noon
     coordinator.currentDate = { now }
+    let memory=ScopeMemoryProbe(nil);coordinator.scopeMemory=memory
     let client=HeldClient();coordinator.bind(client:client)
     let delivery=EngineDeliveryContext(sessionID:"s-00000000-0000-0000-0000-000000000001",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
     await coordinator.consume(.context(delivery));coordinator.open()
@@ -422,20 +434,67 @@ extension CoordinatorTests {
     await coordinator.consume(.response(requestID:.string("scope-day"),.cockpit(.init(envelope:try .init(sessionId:delivery.sessionID,storeEpoch:delivery.floor.storeEpoch,consentGeneration:1,data:data),delivery:delivery))))
     let first=try XCTUnwrap(pages.last)
     first.onIntent?(.scopeSelect("0123456789abcdef"));XCTAssertEqual(coordinator.selectedScope,"0123456789abcdef")
-    await client.complete();await coordinator.joinCurrentQueryForVerification()
-    coordinator.close()
-    now=noon.addingTimeInterval(6*3600);coordinator.open()
-    XCTAssertEqual(coordinator.selectedScope,"0123456789abcdef","Later the same day keeps the scope")
-    XCTAssertEqual(pages.last?.scopeUpdates.first?.0,"0123456789abcdef")
-    for _ in 0..<100 { if await client.requests==2 { break };await Task.yield() }
+    XCTAssertEqual(memory.saved,"0123456789abcdef","the scope is saved without a day")
     await client.complete();await coordinator.joinCurrentQueryForVerification()
     coordinator.close()
     now=noon.addingTimeInterval(24*3600);coordinator.open()
-    XCTAssertEqual(coordinator.selectedScope,"all","The next day starts at All")
-    XCTAssertEqual(pages.last?.scopeUpdates.first?.0,"all")
-    for _ in 0..<100 { if await client.requests==3 { break };await Task.yield() }
+    XCTAssertEqual(coordinator.selectedScope,"0123456789abcdef","The next day keeps the scope")
+    XCTAssertEqual(pages.last?.scopeUpdates.first?.0,"0123456789abcdef")
+    for _ in 0..<100 { if await client.requests==2 { break };await Task.yield() }
     await client.complete();await coordinator.joinCurrentQueryForVerification()
     await coordinator.shutdown();await client.stop()
+    let restarted=EngineCockpitCoordinator { context in PageProbe(context) }
+    now=noon.addingTimeInterval(72*3600);restarted.currentDate = { now }
+    restarted.scopeMemory=memory
+    XCTAssertEqual(restarted.selectedScope,"0123456789abcdef","A restart on a later day restores the scope")
+  }
+  /// CKP-SHELL-50 / MENU-52: the range is the app's. Every page gets it before it loads (no first render in another
+  /// range), a page's request goes through the app's state, a change from elsewhere (the menu bar) reaches the open
+  /// page, and the app's memory restores it in a new state object (an app restart).
+  @MainActor final class RangeMemoryProbe: CockpitRangeMemory {
+    var saved:CockpitRange?
+    init(_ saved:CockpitRange?) { self.saved=saved }
+    func load()->CockpitRange? { saved }
+    func save(_ value:CockpitRange) { saved=value }
+  }
+  @MainActor func testRangeIsTheAppsStateBeforeLoadAndAcrossARestart() async throws {
+    var pages:[PageProbe]=[]
+    let memory=RangeMemoryProbe(.sevenDays),range=CockpitRangeState(memory:memory)
+    XCTAssertEqual(range.value,.sevenDays,"restored at creation, before any menu or page")
+    let coordinator=EngineCockpitCoordinator { context in let page=PageProbe(context);pages.append(page);return page }
+    coordinator.rangeState=range
+    let client=HeldClient();coordinator.bind(client:client)
+    let delivery=EngineDeliveryContext(sessionID:"s-00000000-0000-0000-0000-000000000001",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+    await coordinator.consume(.context(delivery));coordinator.open()
+    let page=try XCTUnwrap(pages.last)
+    XCTAssertEqual(page.rangeUpdates.first,.sevenDays)
+    XCTAssertEqual(page.rangeBeforeLoad.first,true,"the range is set before the page loads")
+    page.onIntent?(.rangeSelect(.thirtyDays))
+    XCTAssertEqual(range.value,.thirtyDays);XCTAssertEqual(memory.saved,.thirtyDays)
+    XCTAssertEqual(page.rangeUpdates.last,.thirtyDays,"the app echoes the page's request")
+    range.select(.today)
+    XCTAssertEqual(page.rangeUpdates.last,.today,"a menu-bar change reaches the open page")
+    range.cycle();XCTAssertEqual(range.value,.sevenDays,"T: Today → 7d")
+    range.cycle();range.cycle();XCTAssertEqual(range.value,.today,"→ 30d → Today")
+    let count=page.rangeUpdates.count;range.select(.today)
+    XCTAssertEqual(page.rangeUpdates.count,count,"the same range is not sent again")
+    XCTAssertEqual(CockpitRangeState(memory:memory).value,.today,"a restart restores the last range")
+    XCTAssertEqual(CockpitRangeState().value,.sevenDays,"no memory starts at 7d")
+    await coordinator.shutdown();await client.stop()
+  }
+  /// MENU-50: the menu's total for each range comes from the reply; a range the reply has no figure for has none.
+  func testRangeTotalsSumEverySubscriptionAndOmitAMissingRange() throws {
+    let data=try JSONDecoder().decode(WireCockpitData.self,from:Data(contentsOf:XCTUnwrap(Bundle.module.url(forResource:"cockpit",withExtension:"json",subdirectory:"Fixtures"))))
+    XCTAssertNil(CockpitRangeTotals.outputTokens(nil,range:.today))
+    for range in CockpitRange.allCases {
+      let expected:[Int64]
+      switch range {
+      case .today: expected=(data.details?.subscriptions ?? []).flatMap { $0.today.map(\.observedOutputTokens) }
+      case .sevenDays: expected=(data.history?.subscriptions ?? []).flatMap { $0.sources.map(\.recent7d.outputTokens) }
+      case .thirtyDays: expected=(data.history?.subscriptions ?? []).flatMap { $0.sources.map(\.recent30d.outputTokens) }
+      }
+      XCTAssertEqual(CockpitRangeTotals.outputTokens(data,range:range),expected.isEmpty ? nil : expected.reduce(0,+),range.rawValue)
+    }
   }
   /// Audit A-5: a reply handed to the presented page reports that the cockpit is showing data again (the console drops a
   /// query failure's pending notice on it); a page that is not presented reports nothing.

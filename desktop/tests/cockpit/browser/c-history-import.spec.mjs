@@ -12,7 +12,8 @@ async function open(page,data,locale='en'){
  await page.clock.setFixedTime(new Date(NOW));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25}))).toBe(true);
+ // CKP-SHELL-50: the host's range; these views are drawn at 30 days unless a test picks another.
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,range:'30d'},redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
 }
@@ -62,7 +63,7 @@ test('HIST-IMP-05 no import-boundary marker, label or origin wording on the char
 
 test('HIST-IMP-05 the 7-day view draws imported days like live ones',async({page})=>{
  await open(page,fixture());
- await page.locator('[data-opt="days"] b',{hasText:/^7$/}).click();
+ await page.locator('[data-opt="range"] b',{hasText:/^7d$/}).click();
  const b=await bars(page);expect(b.length).toBe(7);
  // 6 days back is the first bar and imported only.
  expect([b[0].total,b[0].imported]).toEqual([800,800]);
