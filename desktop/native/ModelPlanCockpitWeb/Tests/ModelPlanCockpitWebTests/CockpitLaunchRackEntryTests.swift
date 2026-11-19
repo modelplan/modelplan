@@ -290,7 +290,8 @@ import XCTest
       fixture.page.setAttached(true)
       XCTAssertEqual(fixture.page.verificationRack.target, 1, "the rack starts unfolding at the press, not when the cockpit nears")
     }
-    XCTAssertLessThanOrEqual(long.fullAt, long.landedAt, "long flight: the rack is fully out by the time the cockpit lands")
+    XCTAssertEqual(long.extAtLanding, 1, "long flight: the rack is fully out at the moment the cockpit lands")
+    XCTAssertTrue(long.sawPartial, "long flight: the rack unfolded through partial extensions, it did not jump")
 
     // Short: a drag torn off, brought back into the catch zone and released at once (a 0.3 s ride home).
     let grab = CGPoint(x: home.minX + 120, y: home.maxY - 16)
@@ -304,37 +305,42 @@ import XCTest
       fixture.page.titleDrag(.moved, point: near)
       fixture.page.titleDrag(.ended, point: near)
     }
-    XCTAssertLessThanOrEqual(short.landedAt, short.fullAt, "short ride: the cockpit lands without waiting for the rack to finish")
+    XCTAssertGreaterThan(short.extAtLanding, 0, "short ride: the rack started with the ride, not after it")
+    XCTAssertLessThan(short.extAtLanding, 1, "short ride: the cockpit lands while the rack is still extending, never waiting for it")
+    XCTAssertTrue(short.sawPartial, "short ride: the rack unfolded through partial extensions, it did not jump")
     XCTAssertEqual(failures, [])
   }
   /// Runs `press` (the put back) and samples the window and rack until the cockpit is latched. The proof is the order of
   /// the observed states, never elapsed time (a slow hosted runner stretches every gap, and the old wall-clock bounds on
-  /// landing, pace and jump flaked there). Returns the sample index at which the window first sat at home and the
-  /// index at which the rack was first fully out. The rack never moves back and never exceeds 1; the 6 s deadline only
+  /// landing, pace and jump flaked there). Returns the
+  /// rack's extension at the exact moment the cockpit landed (read in the motion's completion, `verificationLanded`, not
+  /// sampled) and whether any partial extension (0 < ext < 1) was observed; an instant jump or a rack the flight waits
+  /// for fails these. The rack never moves back and never exceeds 1; the 6 s deadline only
   /// guards against a hang.
   private func samplePutBack(_ fixture: Fixture, _ window: NSWindow, _ home: CGRect, _ label: String,
                              file: StaticString = #filePath, line: UInt = #line,
-                             press: () -> Void) async throws -> (landedAt: Int, fullAt: Int) {
+                             press: () -> Void) async throws -> (extAtLanding: CGFloat, sawPartial: Bool) {
     let deadline = ContinuousClock.now + .seconds(6)
+    var extAtLanding: CGFloat?
+    fixture.page.verificationLanded = { extAtLanding = $0 }
+    defer { fixture.page.verificationLanded = nil }
     press()
-    var index = 0, landedAt: Int?, fullAt: Int?, last = fixture.page.verificationRack.ext
+    XCTAssertLessThan(fixture.page.verificationRack.ext, 1, "\(label): the rack does not jump out at the press", file: file, line: line)
+    var sawPartial = false, last = fixture.page.verificationRack.ext
     while ContinuousClock.now < deadline {
       let ext = fixture.page.verificationRack.ext
       XCTAssertGreaterThanOrEqual(ext, last, "\(label): the rack never moves back", file: file, line: line)
       XCTAssertLessThanOrEqual(ext, 1, "\(label): the rack never overshoots", file: file, line: line)
       XCTAssertEqual(fixture.page.verificationRack.target, 1, "\(label): the rack's target stays out", file: file, line: line)
       last = ext
-      if landedAt == nil, abs(window.frame.minX - home.minX) < 0.01, abs(window.frame.minY - home.minY) < 0.01 { landedAt = index }
-      if fullAt == nil, ext >= 1 { fullAt = index }
+      if ext > 0, ext < 1 { sawPartial = true }
       if fixture.page.isAttached { break }
-      index += 1
       try await Task.sleep(for: .milliseconds(4))
     }
     XCTAssertTrue(fixture.page.isAttached, "\(label): caught and latched", file: file, line: line)
     XCTAssertEqual(window.frame, home, file: file, line: line)
     XCTAssertEqual(fixture.page.verificationRack.ext, 1, "\(label): the rack ends fully out", file: file, line: line)
-    return (try XCTUnwrap(landedAt, "\(label): landed", file: file, line: line),
-            try XCTUnwrap(fullAt ?? index, "\(label): rack full", file: file, line: line))
+    return (try XCTUnwrap(extAtLanding, "\(label): landed", file: file, line: line), sawPartial || (extAtLanding ?? 0) < 1)
   }
 }
 #endif

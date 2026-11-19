@@ -646,6 +646,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationRackMask: CGRect? { (rack.panel?.contentView as? CockpitRackView)?.maskedOut }
     /// Every ignition change sent to the page, in order.
     public var verificationIgnition: ((Bool) -> Void)?
+    /// The cockpit's put-back motion reached home; carries the rack's extension (0-1) at that exact moment, observed
+    /// directly (not sampled), before the latch waits for the rack.
+    public var verificationLanded: ((CGFloat) -> Void)?
     /// The landing a key detach chose (D187).
     public var verificationLanding: ((CockpitDetachLanding.Plan) -> Void)?
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
@@ -1835,7 +1838,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       extendRack()
       runMotion(duration, step: { [weak self] t in
         self?.window?.setFrameOrigin(CockpitPutBackPath.straight(from: p0, to: d, at: t))
-      }, done: { [weak self] in self?.window?.setFrame(home, display: true); self?.whenRackSettled { self?.latch() } })
+      }, done: { [weak self] in self?.window?.setFrame(home, display: true); self?.reportLanded(); self?.whenRackSettled { self?.latch() } })
       return
     }
     // One continuous flight whose last part runs straight up the rack: the control point sits under home. The rack
@@ -1851,6 +1854,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }, done: { [weak self] in
       guard let self else { return }
       self.window?.setFrame(home, display: true)
+      self.reportLanded()
       self.whenRackSettled { [weak self] in self?.latch() }
     })
   }
@@ -1964,6 +1968,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           self?.window?.setFrameOrigin(CockpitPutBackPath.straight(from: start.origin, to: home.origin, at: t))
         }, done: { [weak self] in
           self?.window?.setFrame(home, display: true)
+          self?.reportLanded()
           self?.whenRackSettled { [weak self] in self?.latch() }
         })
       } else {
@@ -2164,6 +2169,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if appearance.reduceMotion { rackExtension = 0 }
     startRackTimer()
   }
+  private func reportLanded() { verificationLanded?(rackExtension) }
   private func whenRackSettled(_ body: @escaping @MainActor () -> Void) {
     if rackExtension == rackTarget { body(); return }
     rackSettledWaiters.append(body); startRackTimer()
