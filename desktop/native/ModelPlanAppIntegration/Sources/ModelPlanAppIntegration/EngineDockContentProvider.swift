@@ -413,7 +413,7 @@ public enum EngineDeadlineFacts {
         let language: SettingsLanguage = english ? .english : .chinese
         let running = today?.runningSessions.flatMap { $0 > 0 ? WidgetCardText.running($0).value(language) : nil }
         return DockTodayRow.make(label: WidgetCardText.today.value(language), cost: todayCost?(member.id),
-                                 tokens: today?.observedOutputTokens, running: running, tokensPerSecond: today?.generationTps)
+                                 tokens: today?.observedTotalTokens ?? today?.observedOutputTokens, running: running, tokensPerSecond: today?.generationTps)
     }
     /// WP-15: the producer's run-out forecast (WP-03) for a current window of this same verified subscription, when it
     /// falls before the window's reset; the card writes "约40m用完" in place of the reset time and the footer can alert.

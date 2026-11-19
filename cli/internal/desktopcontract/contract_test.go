@@ -228,6 +228,20 @@ func TestContractV1Goldens(t *testing.T) {
 				if e := schemas[command].Validate(value(t, got)); e != nil {
 					t.Fatalf("producer violates schema: %v", e)
 				}
+				if command == "desktop" && tc.ID == "F24-token-accounting" {
+					windows, ok := tc.Desktop.TokenAccounting["codex"]
+					if !ok || windows.Today.Total != 10075 || windows.Last7d.Total != 10089 || windows.Last30d.Total != 10103 || windows.Entries != 3 {
+						t.Fatalf("accounting window evidence missing: %+v", windows)
+					}
+					var bad map[string]any
+					if err := json.Unmarshal(got, &bad); err != nil {
+						t.Fatal(err)
+					}
+					bad["tokenAccounting"].(map[string]any)["codex"].(map[string]any)["today"].(map[string]any)["totalTokens"] = "invalid"
+					if err := schemas[command].Validate(value(t, encoded(t, bad))); err == nil {
+						t.Fatal("desktop schema accepts malformed tokenAccounting")
+					}
+				}
 				path := filepath.Join(dir, tc.ID+"-"+command+".json")
 				if *updateContract {
 					if e := os.WriteFile(path, got, 0644); e != nil {

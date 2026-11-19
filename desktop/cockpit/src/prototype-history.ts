@@ -57,7 +57,7 @@ export function usageStats(data:WireCockpitData|null|undefined,ref:string|null|u
  const add=(a:number|null|undefined,b:number|null|undefined)=>a==null||b==null?null:a+b;
  const window=(key:'recent7d'|'recent30d')=>{
   const sums=sources.map(s=>s[key]),one=sums.length===1?sums[0]!.generationTps:null;
-  return {sums:{inputTokens:sums.map(s=>s.inputTokens).reduce(add),observedOutputTokens:sums.map(s=>s.outputTokens).reduce((a,b)=>a+b,0),cacheReadTokens:sums.map(s=>s.cacheReadTokens).reduce(add),cacheWriteTokens:sums.map(s=>s.cacheWriteTokens).reduce(add)},
+  return {sums:{totalTokens:sums.map(s=>s.totalTokens??null).reduce(add),inputTokens:sums.map(s=>s.inputTokens).reduce(add),observedOutputTokens:sums.map(s=>s.outputTokens).reduce((a,b)=>a+b,0),cacheReadTokens:sums.map(s=>s.cacheReadTokens).reduce(add),cacheWriteTokens:sums.map(s=>s.cacheWriteTokens).reduce(add)},
    metrics:{generationTps:one===null?{status:'unknown',value:null}:{status:'ok',value:one}}};
  };
  return {recent7d:window('recent7d'),recent30d:window('recent30d')};
