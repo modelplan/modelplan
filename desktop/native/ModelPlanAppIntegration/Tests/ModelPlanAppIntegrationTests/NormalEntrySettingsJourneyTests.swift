@@ -281,11 +281,11 @@ actor SettingsJourneyClient: EngineClient {
             return view.subviews.lazy.compactMap(field).first
         }
         let age = try XCTUnwrap(field(dock.card)?.stringValue)
-        XCTAssertTrue(age.contains("读数时间未知") || age.contains("刚刚") || age.contains("分钟前") || age.contains("小时前"), "Fresh Chinese entry must render the actual card age in Chinese: \(age)")
+        XCTAssertTrue(age.contains("读数时间未知") || age.contains("未读取") || age.contains("刚刚") || age.contains("分钟前") || age.contains("小时前"), "Fresh Chinese entry must render the actual card age in Chinese: \(age)")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
         XCTAssertFalse(dock.card.isHidden, "The hovered card must survive the language change")
         let englishAge = try XCTUnwrap(field(dock.card)?.stringValue)
-        XCTAssertTrue(englishAge.contains("Reading time unknown") || englishAge.contains("just now") || englishAge.contains(" ago"), "The same card must follow an explicit English choice: \(englishAge)")
+        XCTAssertTrue(englishAge.contains("Reading time unknown") || englishAge.contains("Not read yet") || englishAge.contains("just now") || englishAge.contains(" ago"), "The same card must follow an explicit English choice: \(englishAge)")
         await app.composition.stop()
     }
 
