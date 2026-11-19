@@ -11,7 +11,7 @@
 //
 //   node scripts/merge-gates/post-merge.mjs [--dry-run]     needs GITHUB_TOKEN (issues: write) and GITHUB_REPOSITORY
 import { client } from "./github.mjs";
-import { HOSTED_WORKFLOWS, isHostedMacLeg } from "./hosted.mjs";
+import { HOSTED_MAC_LEGS, HOSTED_WORKFLOWS, isHostedMacLeg } from "./hosted.mjs";
 
 export const LABEL = "post-merge-red";
 export const TITLE = "Post-merge: hosted macOS leg red on main";
@@ -29,20 +29,29 @@ export function pickRun(runs) {
 // The red rows of one run: its hosted legs that failed or timed out.
 export function redRows(run, jobs) {
   return jobs.filter((j) => isHostedMacLeg(run.path, j) && j.status === "completed" && RED.has(j.conclusion)).map((j) => ({
-    job_id: j.id, job: j.name, conclusion: j.conclusion, workflow: run.name, run_id: run.id,
+    job_id: j.id, job: j.name, conclusion: j.conclusion, workflow: run.name, path: String(run.path ?? "").split("@")[0], run_id: run.id,
     sha: run.head_sha, url: j.html_url ?? run.html_url, test: null,
   }));
 }
 
 // The rows one workflow contributes, given the previous rows (from the open issue) and its newest counted main run.
-// A hosted leg is green only when its job there SUCCEEDED; red when it failed or timed out. A leg that is skipped,
-// cancelled or still running says nothing, so its previous row stays (S9: a skipped leg must leave the issue state
-// unchanged, never close it as green). A leg that has no job in the run any more is gone and its row is dropped.
+// Invariants (macrevd P2s on #1080):
+//  1. A row is cleared ONLY by a qualifying success: a job of this run that is a trusted hosted leg (isHostedMacLeg)
+//     and completed success/neutral. Skipped, cancelled, running, absent, or a record without runner metadata says
+//     nothing and keeps the row. A row is dropped without a success only when its leg is retired from the trusted table.
+//  2. A newer record is never overwritten by an older run: a row from run N is cleared (or replaced) only by a run
+//     with id >= N (the same run counts: its completed retry reports the latest attempt).
+// PATHS per prev row: retired leg -> drop | run.id < row.run_id -> keep | qualifying success -> drop | red hosted leg ->
+// replaced by the new red row | anything else -> keep.  New red leg (no prev row) -> add; red in a run older than its
+// prev row -> prev row stays, no new row.
+const inTable = (r) => HOSTED_MAC_LEGS.some((l) => l.name.test(String(r.job)) && (!r.path || l.workflow === r.path));
 export function reconcile(prevRows, run, jobs) {
-  const red = redRows(run, jobs);
+  const mine = prevRows.filter((r) => r.workflow === run.name);
+  const newer = new Set(mine.filter((r) => r.run_id > run.id).map((r) => r.job));
+  const red = redRows(run, jobs).filter((r) => !newer.has(r.job));
   const redNames = new Set(red.map((r) => r.job));
-  const legs = jobs.filter((j) => isHostedMacLeg(run.path, j));
-  const kept = prevRows.filter((r) => r.workflow === run.name && !redNames.has(r.job) && legs.some((j) => j.name === r.job && !(j.status === "completed" && GREEN.has(j.conclusion))));
+  const cleared = (r) => jobs.some((j) => j.name === r.job && isHostedMacLeg(run.path, j) && j.status === "completed" && GREEN.has(j.conclusion));
+  const kept = mine.filter((r) => inTable(r) && !redNames.has(r.job) && (r.run_id > run.id || !cleared(r)));
   return [...red, ...kept];
 }
 

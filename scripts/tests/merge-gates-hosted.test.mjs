@@ -334,7 +334,25 @@ test("post-merge report: a skipped leg leaves the failure issue as it was", () =
   assert.deepEqual(names(skipped), ["app-smoke", "cockpit-spi-tests"], "skipped: unchanged");
   assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "cancelled"), job("cockpit-spi-tests", "success")])), ["app-smoke"], "cancelled keeps, success clears");
   assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), [], "green clears");
-  assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "failure"), linux("shell")])), ["app-smoke"], "red stays, an absent leg is dropped");
+  assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "failure"), linux("shell")])), ["app-smoke", "cockpit-spi-tests"], "red stays, an absent trusted leg keeps its row");
   assert.deepEqual(names(P.carryOver(prev, new Set(["desktop"]))), ["Dock"], "a workflow with no counted run keeps its rows");
   assert.equal(P.plan({ body: P.renderBody(prev, "modelplan/modelplan") }, skipped).action, "update", "never close");
+});
+
+// macrevd P2s on #1080: absent or metadata-less records never clear a row; an older run never clears a newer failure.
+test("post-merge report: only a qualifying success of the same or a newer run clears a row", () => {
+  const mk = (id) => ({ id, path: DESKTOP, name: "desktop", head_sha: H, html_url: "https://x/run/" + id });
+  const row = (job_, run_id, path) => ({ job_id: run_id, job: job_, conclusion: "failure", workflow: "desktop", path, run_id, sha: BASE, url: "u", test: "t" });
+  const prev = [row("app-smoke", 50, DESKTOP), row("cockpit-spi-tests", 50)];
+  const names = (rows) => rows.map((r) => r.job).sort();
+  const both = ["app-smoke", "cockpit-spi-tests"];
+  const noMeta = { ...job("app-smoke", "skipped"), labels: [], runner_group_name: null };
+  assert.deepEqual(names(P.reconcile(prev, mk(60), [])), both, "absent jobs keep every row");
+  assert.deepEqual(names(P.reconcile(prev, mk(60), [noMeta, job("cockpit-spi-tests", "success", SELF)])), both, "no runner metadata / self-hosted success does not clear");
+  assert.deepEqual(names(P.reconcile(prev, mk(40), [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), both, "an older green run keeps newer failures");
+  assert.deepEqual(names(P.reconcile(prev, mk(40), [job("app-smoke", "failure")])), both, "an older red run adds no row and keeps the newer one");
+  assert.equal(P.reconcile(prev, mk(40), [job("app-smoke", "failure")]).find((r) => r.job === "app-smoke").run_id, 50);
+  assert.deepEqual(names(P.reconcile(prev, mk(50), [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), [], "the same run's retry clears");
+  assert.deepEqual(names(P.reconcile(prev, mk(70), [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), [], "a newer success clears");
+  assert.deepEqual(names(P.reconcile([row("retired-leg", 50, DESKTOP)], mk(60), [])), [], "a leg retired from the trusted table is dropped");
 });
