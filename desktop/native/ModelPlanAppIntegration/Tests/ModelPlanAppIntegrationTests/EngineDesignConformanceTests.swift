@@ -144,7 +144,8 @@ import ModelPlanEngineClient
                 XCTAssertEqual(quit.keyEquivalent,"")
                 XCTAssertTrue(dock.allSatisfy { $0.keyEquivalent.isEmpty }, "no item in the widget menu carries a shortcut")
                 let titles=try XCTUnwrap(entry.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
-                XCTAssertEqual(Array(titles.suffix(8)),en ? ["Website","Methodology","Privacy","Help…","Settings…","Reset Position","About ModelPlan","Quit ModelPlan"]:["网站","方法论","隐私","说明…","设置…","重置位置","关于 ModelPlan","退出 ModelPlan"])
+                // MENU-50: the fixed items end the menu.
+                XCTAssertEqual(Array(titles.suffix(3)),en ? ["Settings…","Help…","Quit ModelPlan"]:["设置…","说明…","退出 ModelPlan"])
                 XCTAssertFalse(titles.contains { $0.contains(" / ") })
             }
             entry.composition.dock.close()

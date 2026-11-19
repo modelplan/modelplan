@@ -50,7 +50,7 @@ test('CKP-MFD-23 the time list shows admitted last-seen sessions without claimin
  const {send,receive}=await open(page,data);
  await page.getByRole('button',{name:'Breakdown',exact:true}).click();
  await page.locator('.mfd-ok [data-opt="where"] [data-choice="time"]').click();
- await page.locator('.mfd-ok [data-opt="time"] [data-choice="7d"]').click();
+ await page.locator('.mfd-ok [data-opt="range"] [data-choice="7d"]').click();
  const rows=page.locator('.ws-list .ws');await expect(rows).toHaveCount(2);
  await expect(page.locator('.ws-list .ws-h')).toHaveText(['Running 1','Last seen 1']);
  // glm-608-2: the rows have no action, so they do not offer one to the keyboard.
