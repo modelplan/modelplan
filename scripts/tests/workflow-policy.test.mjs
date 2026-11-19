@@ -251,7 +251,7 @@ test("native GUI gets 70 minutes and other trusted Mac jobs retain their limits"
   const text = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
   const jobs = [...text.matchAll(/^  ([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:\n|$(?![\s\S]))/gm)];
   const limits = Object.fromEntries(jobs.map(([, name, body]) => [name, Number(/^    timeout-minutes: (\d+)$/m.exec(body)?.[1])]));
-  assert.deepEqual(limits, { native: 70, "native-headless": 40, transport: 15, sequences: 15, "u11-native": 30, probe: 5, "gui-probe": 5 });
+  assert.deepEqual(limits, { native: 70, "native-headless": 60, transport: 15, sequences: 15, "u11-native": 30, probe: 5, "gui-probe": 5 });
 });
 
 test("D94: non-GUI jobs refuse GUI runners unless gui-2 is lent; the V1 host is never lent", () => {
