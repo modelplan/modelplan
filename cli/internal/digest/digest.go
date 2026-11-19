@@ -267,6 +267,9 @@ func Parse(component string, b []byte) (*Digest, error) {
 			return nil, errors.New("client: incomplete multiplier contract")
 		}
 	}
+	if err := validateClientV16(raw.Data); err != nil {
+		return nil, err
+	}
 	if d.PlanMetering != nil && !validMetering(d.PlanMetering) {
 		d.PlanMetering = nil
 	}
