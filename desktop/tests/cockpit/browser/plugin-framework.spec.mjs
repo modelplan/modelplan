@@ -165,6 +165,38 @@ test('CKP-PLG-53 clicking the plugin key opens its big screen inside the big-scr
  await expect(page.locator('.mfd-pk .pk').nth(1)).toHaveClass(/\bon\b/);
 });
 
+test('CKP-PLG-53 a page key activated from the keyboard (Enter or Space) also closes the plugin screen',async({page})=>{
+ await open(page,dataWith(2),on());
+ const screen=page.locator('.pl-screen');
+ for(const [i,press] of [[1,'Enter'],[2,' ']]){
+  await key(page).click();await expect(screen).toBeVisible();
+  await page.locator('.mfd-pk .pk').nth(i).focus();await page.keyboard.press(press===' '?'Space':press);
+  await expect(page.locator('.mfd-pk .pk').nth(i)).toHaveClass(/\bon\b/);
+  await expect(screen,`page key ${i} by ${press}`).toHaveCount(0);
+  await expect(key(page)).toHaveAttribute('aria-expanded','false');
+ }
+});
+
+test('CKP-PLG-53 a reading updates the open plugin screen in place: the focused Close button stays mounted and focused',async({page})=>{
+ const {send,receive}=await open(page,dataWith(2),on());
+ expect(await receive(send('pluginData',{id:'placeholder',data:{value:10}}))).toBe(true);
+ await key(page).click();
+ const close=page.locator('.pl-screen .pl-screen-x');await close.focus();await expect(close).toBeFocused();
+ await page.evaluate(()=>{window.__close=document.querySelector('.pl-screen .pl-screen-x');});
+ expect(await receive(send('pluginData',{id:'placeholder',data:{value:11}}))).toBe(true);
+ await expect(page.locator('.pl-screen dd').first()).toHaveText('11%');
+ await expect(close).toBeFocused();
+ expect(await page.evaluate(()=>window.__close===document.querySelector('.pl-screen .pl-screen-x')&&window.__close.isConnected)).toBe(true);
+ // A repaint (new display) and a host settings change redraw the screen in place too.
+ expect(await receive(send('display',{data:dataWith(2)}))).toBe(true);
+ expect(await receive(send('plugins',{plugins:on(false,{intervalSeconds:4})}))).toBe(true);
+ await expect(page.locator('.pl-screen dd').last()).toHaveText('every 4 s');
+ await expect(close).toBeFocused();
+ // Removal in Settings (host state turns it off) closes the screen.
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'placeholder',enabled:false,pinned:false}],settings:{}}}))).toBe(true);
+ await expect(page.locator('.pl-screen')).toHaveCount(0);
+});
+
 test('lifecycle: the plugin runs only while the cockpit is open and its column is on the shown page',async({page})=>{
  const {send,receive}=await open(page,dataWith(7),on(false,{intervalSeconds:5}));
  const reading=value=>send('pluginData',{id:'placeholder',data:{value}});

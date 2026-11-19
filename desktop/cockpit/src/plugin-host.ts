@@ -100,7 +100,7 @@ export interface PluginReports {
 }
 export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=new PluginRegistry(builtinPlugins)):PluginHost {
   let state:PluginState=emptyPluginState,negotiated=false,visible=false,interactive=false,disposed=false,locale:PluginLocale='en';
-  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement}|null=null;
+  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement;title:HTMLElement;close:HTMLButtonElement;list:HTMLElement}|null=null;
   const readings=new Map<string,unknown>(),columns=new Map<string,HTMLElement>(),running=new Set<string>(),placed=new Set<string>();
   const guard=<T>(fn:()=>T,fallback:T):T=>{try{return fn();}catch{return fallback;/* A plugin failure never takes the cockpit down. */}};
   const context=(id:string):PluginContext=>({locale,settings:pluginSettings(state,registry,id),words:(key,vars)=>pluginWords(locale,key,vars)});
@@ -134,30 +134,41 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     reconcile();repaint?.();return true;
   }
   // ---- the big screen (CKP-PLG-53): drawn inside the big-screen well only, so faders and page keys stay uncovered.
-  const pageKeys=(e:Event)=>{if(screen&&(e.target as Element|null)?.closest?.('.mfd-pk'))closeScreen();};
+  // Invariant (macrevb-835-1): any activation of an MFD page key closes the screen. `click` is the activation event for a
+  // button whether it came from a pointer, Enter or Space, so the capture listener sees every path.
+  // Invariant (macrevb-835-2): the screen's frame (icon, title, Close) is built once per opening; readings, repaints,
+  // locale and settings changes update its text and lines in place, so a focused control is never replaced.
+  const pageKeys=(e:Event)=>{if(screen&&(e.target as Element|null)?.closest?.('.mfd-pk .pk'))closeScreen();};
   function drawScreen() {
     if(!screen)return;const plugin=registry.get(screen.id);if(!plugin){closeScreen();return;}
-    const title=pluginWords(locale,plugin.title),head=el('div','pl-screen-h');
-    head.append(icon(plugin,'pl-icon'),fitted('pl-screen-t',title));
-    const close=el('button','pl-screen-x',pluginWords(locale,'plugin.close').full);close.type='button';close.dataset.mat='part';close.onclick=e=>{if(e.isTrusted)closeScreen(true);};head.append(close);
-    const list=el('dl','pl-screen-l');
-    for(const line of guard(()=>plugin.screen(readings.get(plugin.id),context(plugin.id)).lines,[]).slice(0,12)){const row=el('div');row.append(el('dt','',line.label),el('dd','',line.value));list.append(row);}
-    screen.box.setAttribute('aria-label',ht(locale,'plugin.screenAria',{name:title.full}));screen.box.replaceChildren(head,list);fitIn(screen.box);
+    const title=pluginWords(locale,plugin.title),close=pluginWords(locale,'plugin.close');
+    screen.title.dataset.full=title.full;screen.title.dataset.short=title.short;
+    screen.close.textContent=close.full;
+    const lines=guard(()=>plugin.screen(readings.get(plugin.id),context(plugin.id)).lines,[]).slice(0,12);
+    const rows=[...screen.list.children] as HTMLElement[];
+    lines.forEach((line,i)=>{let row=rows[i];if(!row){row=el('div');row.append(el('dt'),el('dd'));screen!.list.append(row);}
+      const [dt,dd]=[row.children[0]!,row.children[1]!];if(dt.textContent!==line.label)dt.textContent=line.label;if(dd.textContent!==line.value)dd.textContent=line.value;});
+    for(const row of rows.slice(lines.length))row.remove();
+    screen.box.setAttribute('aria-label',ht(locale,'plugin.screenAria',{name:title.full}));fitIn(screen.box);
   }
   function closeScreen(restoreFocus=false) {
     if(!screen)return;const id=screen.id;screen.box.remove();screen=null;
-    document.removeEventListener('pointerdown',pageKeys,true);
+    document.removeEventListener('click',pageKeys,true);
     for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))key.setAttribute('aria-expanded','false');
     if(restoreFocus)root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`)?.focus();
   }
   function openScreen(id:string|null):boolean {
     if(id===null){closeScreen();return true;}
-    if(disposed||!enabled(id)||!registry.get(id))return false;
+    const plugin=registry.get(id);
+    if(disposed||!enabled(id)||!plugin)return false;
     if(screen?.id===id){closeScreen();return true;}
     const well=root.querySelector<HTMLElement>('.dk-mfd .mfd-screen');if(!well)return false;
     closeScreen();const box=el('section','pl-screen');box.dataset.plugin=id;box.setAttribute('role','region');box.tabIndex=-1;
-    well.append(box);screen={id,box};drawScreen();
-    document.addEventListener('pointerdown',pageKeys,true);
+    const head=el('div','pl-screen-h'),title=fitted('pl-screen-t',pluginWords(locale,plugin.title));
+    const close=el('button','pl-screen-x');close.type='button';close.dataset.mat='part';close.onclick=e=>{if(e.isTrusted)closeScreen(true);};
+    head.append(icon(plugin,'pl-icon'),title,close);const list=el('dl','pl-screen-l');box.append(head,list);
+    well.append(box);screen={id,box,title,close,list};drawScreen();
+    document.addEventListener('click',pageKeys,true);
     root.querySelector(`.eng-keys .pl-key[data-plugin="${id}"]`)?.setAttribute('aria-expanded','true');
     return true;
   }
