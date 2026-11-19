@@ -45,6 +45,11 @@ public enum ReaderCauseTable {
                                        name.map { "找不到 \($0) 命令" } ?? "找不到工具命令"),
                          action: .init("Check connected tools in Settings", "在设置检查已连接工具"), target: .openSettings)
         case "runtime_missing":
+            // Kiro's reader needs the kiro-cli command itself, not Node.js (same text as its row, ReaderRowFix).
+            if (tool ?? "").lowercased() == "kiro" {
+                return .init(reason: .init("kiro-cli was not found", "没有找到 Kiro 命令行工具"),
+                             action: .init("Install kiro-cli, then refresh", "安装 Kiro 命令行工具后刷新"), target: .guidance)
+            }
             return .init(reason: .init("Node.js is required", "需要 Node.js"),
                          action: .init("Install Node.js, then refresh", "安装 Node.js 后刷新"), target: .guidance)
         case "timeout":

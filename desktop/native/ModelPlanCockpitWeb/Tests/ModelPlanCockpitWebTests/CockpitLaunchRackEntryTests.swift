@@ -237,6 +237,23 @@ import XCTest
 
   /// D178/D181/D187: a drag tears off and the rack retracts; dragged back near home the rack extends and the nozzles
   /// light (no snap guide); the zone acts only on the release, and the cockpit snaps straight up and latches.
+  /// Found-by post-merge sampling 2026-11-19 S12: a drag during the rack-first entrance ends it at once; the open's
+  /// animation-complete receipt is still given (once), not lost with the cancelled motion.
+  func testDragDuringTheEntranceStillGivesTheAnimationCompleteReceipt() async throws {
+    let fixture = try make()
+    defer { fixture.page.discard(); CockpitTimingLog.verificationLine = nil }
+    var lines: [String] = []
+    CockpitTimingLog.verificationLine = { lines.append($0) }
+    _ = try open(fixture)
+    try await wait(100)
+    let home = try XCTUnwrap(fixture.home)
+    XCTAssertFalse(lines.contains { $0.hasPrefix("open stage=animation-complete") })
+    fixture.page.titleDrag(.began, point: CGPoint(x: home.minX + 120, y: home.maxY - 16))
+    XCTAssertEqual(lines.filter { $0.hasPrefix("open stage=animation-complete") }.count, 1)
+    try await wait(900)
+    XCTAssertEqual(lines.filter { $0.hasPrefix("open stage=animation-complete") }.count, 1)
+  }
+
   func testDragPutBackExtendsTheRackInTheZoneAndLatchesOnRelease() async throws {
     let fixture = try make()
     defer { fixture.page.discard() }
