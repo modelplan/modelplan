@@ -646,6 +646,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationRackMask: CGRect? { (rack.panel?.contentView as? CockpitRackView)?.maskedOut }
     /// Every ignition change sent to the page, in order.
     public var verificationIgnition: ((Bool) -> Void)?
+    /// The cockpit's put-back motion reached home; carries the rack's extension (0-1) at that exact moment, observed
+    /// directly (not sampled), before the latch waits for the rack.
+    public var verificationLanded: ((CGFloat) -> Void)?
     /// The landing a key detach chose (D187).
     public var verificationLanding: ((CockpitDetachLanding.Plan) -> Void)?
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
@@ -884,6 +887,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     self.window = panel
     web = view
     let center = NotificationCenter.default
+    // The shutter's frame animation resizes the attached window; the rack's mask line follows that height each step.
+    observers.append(
+      center.addObserver(forName: NSWindow.didResizeNotification, object: panel, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { if let self, self.shutterMoving, self.motion == nil { self.refreshRack() } }
+      })
     for name in [
       NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
       NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
@@ -1695,6 +1703,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           guard let self, self.shutterMoving, self.shutterGeneration == generation else { return }
           self.shutterMoving = false
           if let size = self.layout?.frame.size { self.window?.contentView?.setBoundsSize(size) }
+          if self.motion == nil { self.refreshRack() }
         }
       })
     } else if motion && frame.height < current.height {
@@ -1846,7 +1855,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       extendRack()
       runMotion(duration, step: { [weak self] t in
         self?.window?.setFrameOrigin(CockpitPutBackPath.straight(from: p0, to: d, at: t))
-      }, done: { [weak self] in self?.window?.setFrame(home, display: true); self?.whenRackSettled { self?.latch() } })
+      }, done: { [weak self] in self?.window?.setFrame(home, display: true); self?.reportLanded(); self?.whenRackSettled { self?.latch() } })
       return
     }
     // One continuous flight whose last part runs straight up the rack: the control point sits under home. The rack
@@ -1862,6 +1871,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }, done: { [weak self] in
       guard let self else { return }
       self.window?.setFrame(home, display: true)
+      self.reportLanded()
       self.whenRackSettled { [weak self] in self?.latch() }
     })
   }
@@ -1975,6 +1985,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           self?.window?.setFrameOrigin(CockpitPutBackPath.straight(from: start.origin, to: home.origin, at: t))
         }, done: { [weak self] in
           self?.window?.setFrame(home, display: true)
+          self?.reportLanded()
           self?.whenRackSettled { [weak self] in self?.latch() }
         })
       } else {
@@ -2175,6 +2186,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if appearance.reduceMotion { rackExtension = 0 }
     startRackTimer()
   }
+  private func reportLanded() {
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationLanded?(rackExtension)
+    #endif
+  }
   private func whenRackSettled(_ body: @escaping @MainActor () -> Void) {
     if rackExtension == rackTarget { body(); return }
     rackSettledWaiters.append(body); startRackTimer()
@@ -2211,7 +2227,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     var hidden: CGRect?
     if let layout {
       let frame = rackHidesInHome ? layout.frame : window.frame
-      let drop = CockpitShellLayout.shoulderDrop(layout.profile) * layout.scale
+      let drop = layout.rackMaskDrop(windowHeight: frame.height)
       hidden = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: max(0, frame.height - drop))
     }
     // A prewarmed (never shown) page has no rack on screen.

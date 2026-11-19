@@ -285,7 +285,7 @@ jobs:
 
   cockpit-spi-tests:
     needs: [queue-scope, pr-ref, pr-scope]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') }}
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     # The ModelPlanCockpitWeb test classes (or test methods) behind #if MODELPLAN_TEST_ONLY_SPI are not compiled
     # by the pinned trusted-mac.yml U11 job, which runs `swift test` without the flag. Compile and run them here on a
     # hosted Mac, only those classes. test_spi_gated_tests_run.py (native-partition) fails if a gated class is in no workflow.
@@ -305,7 +305,7 @@ jobs:
       contents: read
       actions: read
     needs: [queue-scope, pr-ref, pr-scope]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') }}
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
