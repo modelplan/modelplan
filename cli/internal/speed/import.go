@@ -328,7 +328,8 @@ func NeedsAutoImport(cache string) bool {
 
 // ImportRoot is one harness's home (Claude Code: ~/.claude or CLAUDE_CONFIG_DIR; Codex: its home).
 // A nil root means the caller has no consent for that tool. Background names the Codex threads the
-// harness runs by itself (skipped, as the live reader skips them); nil skips none.
+// harness runs by itself: their turns are skipped, as the live reader skips them, while their
+// responses are accounted, as the live accountant accounts them; nil skips none.
 type ImportRoot struct {
 	Dir        string
 	Background func(path string) bool
@@ -735,9 +736,9 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			case <-time.After(j.pause):
 			}
 		}
-		if j.root.Background != nil && j.source == "codex" && j.root.Background(p) {
-			continue
-		}
+		// A thread Codex runs by itself still spends tokens: the live observer accounts its
+		// responses, so the import does too. Only its turns stay out of timing and sessions.
+		background := j.root.Background != nil && j.source == "codex" && j.root.Background(p)
 		parser := j.newP()
 		var cp *claudeParser
 		if c, ok := parser.(*claudeParser); ok {
@@ -783,7 +784,7 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			}
 		}
 		for _, t := range turns {
-			if t.at.IsZero() || !inRange(it.ranges, t.at) || t.at.Before(j.cleared) {
+			if background || t.at.IsZero() || !inRange(it.ranges, t.at) || t.at.Before(j.cleared) {
 				continue
 			}
 			tmp.addTurn(j.source, j.parser, t, false)
@@ -930,7 +931,7 @@ func commitImport(ctx context.Context, cache string, j *importJob, auto bool, no
 		led.Coverage = map[string]Span{}
 	}
 	c := led.Coverage[j.source]
-	if !sameEpoch(c.Epoch, epoch) || j.reread { // an older grant's (or a re-read span's) rows are replaced
+	if !sameEpoch(c.Epoch, epoch) { // an older grant's rows are replaced
 		kept := led.Rows[:0]
 		for _, r := range led.Rows {
 			if r.Source != j.source {
@@ -938,6 +939,25 @@ func commitImport(ctx context.Context, cache string, j *importJob, auto bool, no
 			}
 		}
 		led.Rows, c = kept, Span{}
+	} else if j.reread {
+		// A re-read replaces only the days it established again. A day whose logs are gone
+		// (nothing read for it) keeps its earlier rows and its place in the span.
+		read := map[string]bool{}
+		for _, r := range j.rows {
+			read[r.Day] = true
+		}
+		for _, f := range j.usage {
+			for _, r := range f.Records {
+				read[day(r.At)] = true
+			}
+		}
+		kept := led.Rows[:0]
+		for _, r := range led.Rows {
+			if r.Source != j.source || sameEpoch(r.GrantEpoch, epoch) && !read[r.Day] {
+				kept = append(kept, r)
+			}
+		}
+		led.Rows, c = kept, Span{From: c.From, Through: c.Through}
 	}
 	for _, r := range j.rows {
 		r.GrantEpoch = epoch

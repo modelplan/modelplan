@@ -64,6 +64,12 @@ func (v PerfView) Admitted(a consent.Admission) PerfView {
 			l.UsageRows = append(l.UsageRows, r)
 		}
 	}
+	l.accountedUsage = nil
+	for _, r := range v.Ledger.accountedUsage {
+		if allowed(r.Source, r.GrantEpoch) {
+			l.accountedUsage = append(l.accountedUsage, r)
+		}
+	}
 	l.Rows = nil
 	for _, r := range v.Ledger.Rows {
 		if allowed(r.Source, r.GrantEpoch) {
@@ -122,6 +128,13 @@ func LegacyAdmitted(ledger Ledger, perf PerfLedger, long LongLedger, admission c
 		}
 	}
 	perf.UsageRows = usageRows
+	accounted := make([]PerfRow, 0, len(perf.accountedUsage))
+	for _, r := range perf.accountedUsage {
+		if allowed(r.Source) {
+			accounted = append(accounted, r)
+		}
+	}
+	perf.accountedUsage = accounted
 	hourly := make([]Hourly, 0, len(perf.Hourly))
 	for _, r := range perf.Hourly {
 		if allowed(r.Source) {

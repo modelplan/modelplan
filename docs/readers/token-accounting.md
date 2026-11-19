@@ -22,6 +22,16 @@ updates and sidechain copies. An occurrence ordinal preserves distinct identical
 Codex records in one file. Live snapshots replace a changed file's prior live contribution. Imports replace
 only their requested per-file intervals, preserving earlier valid intervals and
 independently owned live records. Records seen by both paths are counted once.
+Accounting replaces the timing ledger's usage only inside proven coverage: live
+usage from the first local day on which no older timing row of that source and
+consent epoch existed when accounting began (`liveFrom`), imported usage on the
+days an accounting import recorded. Earlier days keep their timing usage, so an
+upgrade never erases sessions that were not re-read. Imports account Codex
+background threads as the live observer does; their turns stay out of timing.
+Fork prefixes are matched on ordinary usage only: compaction responses neither
+consume nor end the prefix and are deduplicated by response identity (ccusage
+`CodexReplayFilter`). Session totals subtract Codex cache writes from inclusive
+input, bounded by the uncached input (ccusage `normalize_codex_raw_usage`).
 
 The private compressed cache contains token counts, timestamps, model names,
 consent epochs and hashed identities. It contains no transcript text or raw IDs or

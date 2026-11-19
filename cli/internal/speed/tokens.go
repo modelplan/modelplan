@@ -72,11 +72,32 @@ func (u *cxUsage) kinds() TokenKinds {
 	k.CacheWriteTokens = nonnegative(u.Write)
 	if u.Input != nil && u.Cached != nil && *u.Input >= *u.Cached && *u.Cached >= 0 {
 		n := *u.Input - *u.Cached
+		// input_tokens also includes cache writes (ccusage normalize_codex_raw_usage):
+		// bound them by the uncached input and take them out, so each token counts once.
+		if k.CacheWriteTokens != nil {
+			w := min(*k.CacheWriteTokens, n)
+			k.CacheWriteTokens = &w
+			n -= w
+		}
 		k.InputTokens = &n
 	} else if u.Input != nil && u.Cached != nil && *u.Cached > *u.Input {
 		k.CacheReadTokens = nil
 	}
 	return k
+}
+
+// enrichCodex is enrich for Codex usage, whose input includes cache writes. The input is
+// disjoint only beside known writes: a report with writes replaces an input without them, and
+// a report without writes has the known writes taken out of its input first (either order).
+func (k *TokenKinds) enrichCodex(src TokenKinds) {
+	switch {
+	case k.CacheWriteTokens == nil && src.CacheWriteTokens != nil && src.InputTokens != nil:
+		k.InputTokens = nil
+	case k.CacheWriteTokens != nil && src.CacheWriteTokens == nil && src.InputTokens != nil:
+		n := *src.InputTokens - min(*k.CacheWriteTokens, *src.InputTokens)
+		src.InputTokens = &n
+	}
+	k.enrich(src)
 }
 func usageDelta(cur, prev *cxUsage) *cxUsage {
 	if cur == nil || prev == nil {
