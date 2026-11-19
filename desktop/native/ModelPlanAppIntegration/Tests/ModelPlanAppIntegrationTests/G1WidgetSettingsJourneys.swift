@@ -415,9 +415,11 @@ private actor G1RowsClient: EngineClient {
         let thresholdRow = try XCTUnwrap(rows.first { $0.key == .redBelow })
         guard case let .choice(selected, options) = thresholdRow.value else { return XCTFail("Threshold choices must be presented") }
         XCTAssertEqual(selected, "25")
-        // D22 (7c0c5f80e): Settings offers SettingsPreferences.redBelowChoices; 16 is only accepted from older files.
-        XCTAssertEqual(options, SettingsPreferences.redBelowChoices.map(String.init))
-        for threshold in SettingsPreferences.redBelowChoices {
+        // D22 (7c0c5f80e): the offered red thresholds are this fixed list, written here independently of
+        // production; 16 is only accepted from older files. Default 25 is asserted above.
+        let d22Thresholds = [40, 30, 25, 20, 15, 10]
+        XCTAssertEqual(options, d22Thresholds.map(String.init))
+        for threshold in d22Thresholds {
             let editor = app.settingsHost.application.editor
             _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
             let client = try XCTUnwrap(app.composition.client as? G1RowsClient)
@@ -605,19 +607,22 @@ private actor G1RowsClient: EngineClient {
         let dock = app.composition.dock
         XCTAssertTrue(dock.card.isHidden)
         // D166 (EngineResetNotifier): a forecast (announced) never notifies; exactly one notification follows its confirmation.
-        let delivered = expectation(description: "synthetic reset notification was delivered")
         var episodes: [String] = []
+        let delivered = expectation(description: "the confirmation's reset notification was delivered")
+        delivered.assertForOverFulfill = true
         app.composition.setResetNotificationDelivery { episode in episodes.append(episode); delivered.fulfill() }
         let client = try XCTUnwrap(app.composition.client as? G1RowsClient)
+        // While the announcement is presented: the hollow event dot only, no card and no delivery. The notifier
+        // handles an announcement synchronously in store.apply (no task is spawned), so this check is deterministic.
         try await client.replaceRows(fixture(resetStatus: "announced", eventNow: now))
-        try await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertEqual(episodes.count, 0, "An announced reset must not notify")
+        XCTAssertTrue(dock.card.isHidden, "An announced reset must not open a card")
+        XCTAssertEqual(dock.dockView.presentedNoticesForChecks["0123456789abcdef"]?.key.kind, .resetAnnounced)
+        XCTAssertTrue(episodes.isEmpty, "An announced reset must not notify")
         try await client.replaceRows(fixture(resetStatus: "confirmed", eventNow: now))
         await fulfillment(of: [delivered], timeout: 3)
-        XCTAssertEqual(episodes.count, 1)
+        XCTAssertEqual(episodes.count, 1, "Exactly one notification follows the confirmation")
         XCTAssertTrue(dock.card.isHidden, "A confirmed reset notification must not open a card")
-        let notice = try XCTUnwrap(dock.dockView.presentedNoticesForChecks["0123456789abcdef"])
-        XCTAssertEqual(notice.key.kind, .resetConfirmed)
+        XCTAssertEqual(dock.dockView.presentedNoticesForChecks["0123456789abcdef"]?.key.kind, .resetConfirmed)
         await app.composition.stop()
     }
 
