@@ -27,11 +27,16 @@ class DriverClock:
     its process group are real and actually running. `on_sleep` runs on every
     driver sleep: the first one happens inside the active case's wait loop.
     """
-    def __init__(self, on_sleep=None):
+    HOLD_LIMIT = 30  # real seconds; a hold never outlives it
+
+    def __init__(self, on_sleep=None, hold_limit=HOLD_LIMIT):
         self.wall = time.time()
         self.mono = time.monotonic()
         self.on_sleep = on_sleep
         self.sleeps = 0
+        self.hold_limit = hold_limit
+        self.held_since = None
+        self.hold_expired = False
 
     def time(self):
         return self.wall
@@ -42,7 +47,17 @@ class DriverClock:
     def sleep(self, seconds):
         self.sleeps += 1
         # on_sleep may return False to hold virtual time until an event happens.
-        if not self.on_sleep or self.on_sleep(self) is not False:
+        # A hold is bounded in real time: after hold_limit the clock runs again,
+        # so the driver's own scenario/run deadlines end the case and the test
+        # fails on its outcome (and hold_expired) instead of hanging.
+        hold = self.on_sleep is not None and self.on_sleep(self) is False
+        if hold and not self.hold_expired:
+            self.held_since = self.held_since or time.monotonic()
+            if time.monotonic() - self.held_since >= self.hold_limit:
+                self.hold_expired = True
+        if not hold:
+            self.held_since = None
+        if not hold or self.hold_expired:
             self.advance(seconds)
         time.sleep(min(seconds, .01))
 
@@ -173,9 +188,32 @@ class DriveTests(unittest.TestCase):
         with patch.object(drive, 'IDS', ['U2-migration', 'U2-two-writers']):
             status, result = self.execute(clock)
         self.assertEqual(status, 1)
+        self.assertFalse(clock.hold_expired, 'worker never started its case')
         self.assertTrue(self.args.stop_file.exists())
         self.assertTrue(all(s['outcome'] == 'not-run' and s['reason'] == 'caller-stop'
                             for s in result['scenarios']))
+        self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
+
+    def test_driver_clock_hold_is_bounded_in_real_time(self):
+        clock = DriverClock(on_sleep=lambda c: False, hold_limit=.2)
+        began = time.monotonic()
+        start = clock.monotonic()
+        while clock.monotonic() == start:
+            self.assertLess(time.monotonic() - began, 5, 'hold never released')
+            clock.sleep(.05)
+        self.assertTrue(clock.hold_expired)
+
+    def test_stalled_worker_fails_the_stop_test_in_bounded_time(self):
+        # A worker that never reaches its case: the hold expires, the driver's
+        # own 1s scenario timeout ends the case, and the owned process is reaped.
+        self.args.stop_file = self.root / 'never-given'
+        clock = DriverClock(on_sleep=lambda c: False, hold_limit=.5)
+        began = time.monotonic()
+        with patch.object(drive, 'IDS', ['U2-migration']):
+            status, result = self.execute(clock)
+        self.assertLess(time.monotonic() - began, 15)
+        self.assertTrue(clock.hold_expired)
+        self.assertEqual(result['scenarios'][0]['outcome'], 'timeout')
         self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
 
     def test_stop_before_worker_is_ready_still_confirms_cleanup(self):
