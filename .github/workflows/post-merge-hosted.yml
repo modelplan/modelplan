@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: MIT
+# D314 item 2 (owner 2026-11-19): GitHub-hosted macOS legs (scripts/merge-gates/hosted.mjs) no longer gate merges.
+# They keep running on main through each workflow's own main trigger; whenever one of those workflows finishes on a
+# main commit, this job rereads the newest main run of every such workflow and keeps ONE issue labelled
+# `post-merge-red` current (commit, job, first failing test, run link), closing it when all hosted legs are green.
+# It posts no commit status and never fails because a leg is red, so it never stops the merge line; the coordinator
+# turns the issue into a fix-main task. workflow_run and workflow_dispatch both run the default branch's copy of this
+# file and of the script. Names below must match each workflow's `name:` (tests/merge-gates-hosted.test.mjs).
+name: post-merge hosted legs
+on:
+  workflow_run:
+    workflows:
+      - ci
+      - desktop
+      - Dock host port seam
+      - e2e-journey
+      - macOS distribution
+      - Official Dock geometry
+      - repo checks
+      - U10 candidate interface
+      - U11 native cockpit
+      - U14 engine Drive L1
+      - U14 macOS skeleton
+      - U4 Swift wire
+      - U4b engine client
+      - U6 engine store core
+      - U7 credential agent
+      - U7 prebuilt universal helper
+      - Verification pointer helper
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+  issues: write
+# One report at a time; each one rereads everything, so a replaced pending run loses nothing.
+concurrency:
+  group: post-merge-hosted
+  cancel-in-progress: false
+jobs:
+  report:
+    if: ${{ github.repository == 'modelplan/modelplan' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/merge-gates
+      - run: node scripts/merge-gates/post-merge.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
