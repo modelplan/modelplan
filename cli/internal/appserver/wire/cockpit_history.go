@@ -17,19 +17,49 @@ type CockpitHistory struct {
 	Models         CockpitEntityRanking         `json:"models"`
 	Tools          CockpitEntityRanking         `json:"tools"`
 	// Daily holds local days with observed output, per source, for the last 182 days from
-	// DailyFrom on; Hourly the same for the last 48 local hours. A day or hour that is not
+	// DailyFrom on (the earliest day of live or imported data); Hourly the same for the last 48 local hours. A day or hour that is not
 	// listed has no observation, which is not the same as a known zero.
 	DailyFrom *string               `json:"dailyFrom" null:"coalesced"`
 	Daily     []CockpitSourceBucket `json:"daily" schema:"maxItems=728"`
 	Hourly    []CockpitSourceBucket `json:"hourly" schema:"maxItems=192"`
 	Projects  CockpitProjectRanking `json:"projects"`
+	// Cycles holds up to ten newest closed cycles per window, oldest first, under a subscription only through the
+	// source's one current binding. Points are observed on this device and unattributed.
+	Cycles []CockpitCycleGroup `json:"cycles" schema:"maxItems=64"`
+}
+
+// CockpitCycleGroup is one window kind of one subscription.
+type CockpitCycleGroup struct {
+	SubscriptionRef string         `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	Kind            string         `json:"kind"`
+	Attribution     string         `json:"attribution"`
+	Cycles          []CockpitCycle `json:"cycles" schema:"maxItems=10"`
+}
+
+// CockpitCycle is a closed cycle. HadDrop means the meter fell inside it: a reset card or a
+// correction, which the readings cannot tell apart.
+type CockpitCycle struct {
+	StartedAt time.Time           `json:"startedAt"`
+	ResetsAt  time.Time           `json:"resetsAt"`
+	Points    float64             `json:"points"`
+	HadDrop   bool                `json:"hadDrop"`
+	Spent     []CockpitCycleShare `json:"spent" schema:"maxItems=16"`
+}
+type CockpitCycleShare struct {
+	Model  *string `json:"model" null:"coalesced"`
+	Effort *string `json:"effort" null:"coalesced"`
+	Fast   bool    `json:"fast"`
+	Points float64 `json:"points"`
 }
 
 // CockpitSourceBucket is one source's observed output in one local day or hour. Sources are
 // this device's tools, not subscriptions: the page may show them only as locally observed.
+// Origin is "live" (read while the engine recorded) or "import" (older history the user imported;
+// never a day a live bucket covers); the page may draw the two differently.
 type CockpitSourceBucket struct {
 	At                   string `json:"at" schema:"maxLength=32"`
 	Source               string `json:"source"`
+	Origin               string `json:"origin"`
 	ObservedOutputTokens int64  `json:"observedOutputTokens"`
 }
 
@@ -58,6 +88,8 @@ type CockpitSourceHistory struct {
 	Recent30d    CockpitHistorySums `json:"recent30d"`
 }
 type CockpitHistorySums struct {
+	TotalTokens      *int64   `json:"totalTokens,omitempty" null:"forbidden"`
+	ReasoningTokens  *int64   `json:"reasoningTokens,omitempty" null:"forbidden"`
 	InputTokens      *int64   `json:"inputTokens" null:"coalesced"`
 	OutputTokens     int64    `json:"outputTokens"`
 	CacheReadTokens  *int64   `json:"cacheReadTokens" null:"coalesced"`

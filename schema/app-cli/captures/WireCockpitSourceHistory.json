@@ -2,6 +2,8 @@
   "source": "synthetic",
   "bindingBasis": "synthetic",
   "recent7d": {
+    "totalTokens": 1,
+    "reasoningTokens": 1,
     "inputTokens": 1,
     "outputTokens": 1,
     "cacheReadTokens": 1,
@@ -12,6 +14,8 @@
     "eligibleRequests": 1
   },
   "recent30d": {
+    "totalTokens": 1,
+    "reasoningTokens": 1,
     "inputTokens": 1,
     "outputTokens": 1,
     "cacheReadTokens": 1,

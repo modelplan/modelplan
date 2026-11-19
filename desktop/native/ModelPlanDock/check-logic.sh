@@ -3,6 +3,19 @@
 set -euo pipefail
 logic_root=$(cd "$(dirname "$0")" && pwd)
 logic_build=${1:?Pass your owned scratch directory}
+python3 - "$logic_root/../../.." <<'PYTHON'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1]).resolve()
+manifest = json.loads((root / "docs/borrowed/pulse/manifest.json").read_text())
+for entry in manifest["files"]:
+    actual = hashlib.sha256((root / entry["path"]).read_bytes()).hexdigest()
+    if actual != entry["sha256"]:
+        raise SystemExit(f"Pulse manifest SHA-256 mismatch: {entry['path']}")
+PYTHON
 mkdir -p "$logic_build/module-cache"
 df -h "$HOME"
 du -sh "$logic_build"

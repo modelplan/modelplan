@@ -309,3 +309,66 @@ type PluginInstallParams struct {
 	Tool    PluginTool `json:"tool"`
 	Offline bool       `json:"offline,omitempty" null:"coalesced"`
 }
+
+// ReaderKeyParams is the input of readerkey/set, readerkey/test and readerkey/remove (D90). Key is
+// the only secret on the wire besides credentials/result: empty means "the stored key" for test and
+// is ignored by remove; set needs it. Region is "none" for providers without a choice. The key is
+// never echoed: see ReaderKeyParams.String and LogValue.
+type ReaderKeyParams struct {
+	Provider ReaderKeyProvider `json:"provider"`
+	Region   ReaderKeyRegion   `json:"region"`
+	Key      string            `json:"key" schema:"maxLength=4096"`
+}
+
+// ReaderKeyResult is the output of the three readerkey/* methods. It never carries the key.
+type ReaderKeyResult struct {
+	SchemaVersion int               `json:"schemaVersion" schema:"minimum=1,maximum=1"`
+	Provider      ReaderKeyProvider `json:"provider"`
+	Region        ReaderKeyRegion   `json:"region"`
+	Present       bool              `json:"present"`
+	// OtherKeyFound (owner 2026-11-14): the entered key is in use and a different key was also detected.
+	OtherKeyFound bool             `json:"otherKeyFound"`
+	Outcome       ReaderKeyOutcome `json:"outcome"`
+}
+
+// HistoryImportStartParams starts the local usage-history import (metadata only, from the
+// harness logs on this machine). Days is 7, 30 or 90 (1..371 accepted); FirstRun marks the import
+// that follows the first-run consent, which runs once.
+type HistoryImportStartParams struct {
+	Days     int  `json:"days" schema:"minimum=1,maximum=371"`
+	FirstRun bool `json:"firstRun"`
+}
+
+// HistoryImportSource is one source's outcome; it carries no path or id.
+type HistoryImportSource struct {
+	Source string                    `json:"source"`
+	Status HistoryImportSourceStatus `json:"status"`
+	Turns  int                       `json:"turns" schema:"minimum=0"`
+}
+
+// HistoryImportCoverage is what imported.json covers for one source, in local days.
+type HistoryImportCoverage struct {
+	Source  string `json:"source"`
+	From    string `json:"from"`
+	Through string `json:"through"`
+	Rows    int    `json:"rows" schema:"minimum=0"`
+}
+
+// HistoryImportStatus is the read-only progress and state of the import. Files counts log files
+// read so far of those to read; it never names one.
+type HistoryImportStatus struct {
+	SchemaVersion int                     `json:"schemaVersion" schema:"minimum=1,maximum=1"`
+	Phase         HistoryImportPhase      `json:"phase"`
+	Days          int                     `json:"days" schema:"minimum=0,maximum=371"`
+	FilesDone     int                     `json:"filesDone" schema:"minimum=0"`
+	FilesTotal    int                     `json:"filesTotal" schema:"minimum=0"`
+	FirstRunDone  bool                    `json:"firstRunDone"`
+	ImportedRows  int                     `json:"importedRows" schema:"minimum=0"`
+	Coverage      []HistoryImportCoverage `json:"coverage"`
+	Sources       []HistoryImportSource   `json:"sources"`
+	// Revision changes exactly when an import operation that can change imported history ends: a run
+	// settling (done, cancelled or failed) or a removal. It counts from 0 per engine process. A client
+	// that refreshes imported-history views on a new revision never misses a fast run whose start
+	// reply is already done. Older engines omit it.
+	Revision *int `json:"revision,omitempty" null:"coalesced" schema:"minimum=0"`
+}

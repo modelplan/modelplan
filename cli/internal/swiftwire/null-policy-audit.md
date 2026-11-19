@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Optional wire null audit
 
-This inventory covers the 78 optional/nullable fields reachable from the production
+This inventory covers the 88 optional/nullable fields reachable from the production
 wire roots, including shared rows. It audits the consumer, not just Go's pointer
 representation. `null` tags describe the field's state model; required-key and
 outcome/authorization constraints apply separately. In particular, a required
@@ -42,7 +42,7 @@ schema/Swift rule before the operation can be consumed; rejected input leaves th
 operation available for a valid result. AccessToken is therefore forbidden-null.
 No credential content is logged or included in assertion messages.
 
-## Outputs (67 fields)
+## Outputs (72 fields)
 
 Evidence references name the producer and the production decoder consuming each
 field. `coalesced` means no third state is exposed: absence/null both produce the
@@ -64,8 +64,11 @@ containers and failure ID retain their required-key checks.
 | CockpitResetCount.ExpiresAt | coalesced | Null means no known expiry; expired cards are withheld by the producer. |
 | CockpitCredits.Balance | coalesced | Null is unavailable balance, distinct from a reported zero. |
 | CockpitToday.GenerationTps | coalesced | Null means insufficient or unavailable eligible observations; it never becomes zero. |
+| CockpitDetails.PublishedModels | forbidden | Omission means not negotiated or nothing published; explicit null is rejected. |
 | CockpitDetails.Forecasts | forbidden | Omission means not negotiated or nothing to report; explicit null is rejected. |
 | RowsProjection.Forecasts | forbidden | Omission means not negotiated; explicit null is rejected. |
+| CockpitCycleShare.Model | coalesced | Null means no verified publication ID; the local string never crosses. |
+| CockpitCycleShare.Effort | coalesced | Null means an unknown or default effort. |
 | CockpitForecast.RunsOutAt | coalesced | Null means no run-out before the reset is forecast; it is never a past or invented moment. |
 | WindowForecast.RunsOutAt | coalesced | In-process only (the field is not on the wire); nil matches the cockpit field. |
 | CockpitSession.SubscriptionRef | coalesced | Null means no verified session binding; present identity remains strictly validated and is never inferred from a source-wide account. |
@@ -93,6 +96,7 @@ containers and failure ID retain their required-key checks.
 | HistoryItem.Window | coalesced | Same page/decoder: absent/null both mean no window label. |
 | HistoryItem.Value | coalesced | Same page/decoder: absent/null are unavailable, not numeric zero. |
 | HistoryPage.NextCursor | coalesced | [queries/history.go:156](../appserver/queries/history.go#L156), only encodes a cursor for a next position. `WireHistoryPage` absent/null both mean no next cursor. |
+| HistoryImportStatus.Revision | coalesced | [history_import.go](../appserver/history_import.go), `ImportController.status`, always encodes the process counter (settled runs and removals). An older engine omits it; `WireHistoryImportStatus` absent/null both mean no reported revision, and the cockpit coordinator then treats every settled status as a possible new completion. |
 | PublicationResult.PublishedAt | coalesced | [queries/publication.go:85](../appserver/queries/publication.go#L85), public projection conversion; `WirePublicationResult` requires the key, accepts null as no date. It does not expose an absent state. |
 | PublicationResult.SelectionRevision | distinct | Same conversion preserves raw published JSON. `WirePublicationResult` uses key presence to distinguish nil, `.null`, and value; the store retains the typed result. `TestSelectionRevisionPresenceRegression`/the wire encoder probes and `testSelectionRevisionPreservesAbsenceNullAndString` guard preservation. |
 | PublicationResult.Multipliers | coalesced | Same conversion; `WirePublicationResult` requires this nullable container. Null is unavailable; absent fails its independent required-key guard. |
@@ -102,17 +106,25 @@ containers and failure ID retain their required-key checks.
 | rows.Name.UserAuthored | coalesced | [catalogue.go:85](../rows/catalogue.go#L85), declared-name projection; `RowsName` absent/null both have no authorship marker. |
 | rows.NextStep.AvailableAt | coalesced | [build.go:367](../rows/build.go#L367), `nextStep`; `RowsNextStep` absent/null both have no availability timestamp. |
 | rows.NextStep.DisabledReason | coalesced | Same projection/decoder: absent/null both have no disabled reason. |
+| rows.NextStep.Hint | forbidden | [hints.go](../rows/hints.go), `toolHint` (D232); absent means the tool has no compiled command for this cause, never null. |
+| rows.Hint.SignInCommand | forbidden | Same table; absent means no sign-in command for this cause. |
+| rows.Hint.InstallCommand | forbidden | Same table; absent means no install command (Kiro has a URL only). |
+| rows.Hint.InstallURL | forbidden | Same table; absent means no install page. |
 | rows.Row.VendorKey | coalesced | [build.go:168](../rows/build.go#L168), row construction and expiry latching at lines 288–304; `RowsRow` absent/null both have no vendor key. Row authorization validation remains mandatory. |
 | rows.Row.NextStep | coalesced | Same projection/decoder: absent/null both have no action. |
 | rows.Row.ExpiresAt | coalesced | Same projection/decoder: absent/null both have no expiry. |
 | rows.Row.StateAfterExpiry | coalesced | Same projection/decoder: absent/null both have no expiry-state override. |
 | rows.ExpiryState.NextStep | coalesced | [build.go:304](../rows/build.go#L304), expiry-latch projection; `RowsExpiryState` absent/null both have no post-expiry action. |
+| rows.ResetEvent.Kind | coalesced | Absent/null both mean an older producer; the App reads it as a direct reset. |
+| rows.ResetEvent.ConfirmedAt | coalesced | Absent/null both mean no confirmation time; the App falls back to the event's publishedAt. |
+| rows.ResetEvent.ConfirmedAtBasis | coalesced | Absent/null both mean the basis is unstated; the App shows the time without a qualifier only for published or observed. |
 | rows.ResetEvent.Confirms | coalesced | An absent or null confirmation reference yields no reference; the producer drops confirmations without an eligible reference. |
 | rows.ResetEvent.PlanIDs | coalesced | Absent/null both mean no published structured plan links; no plan is inferred. |
 | rows.ResetEvent.Schedule | coalesced | Absent/null both mean no published schedule. |
 | rows.ResetSource.Links | coalesced | Absent/null both mean no typed source links; only policy-admitted links are published, and a failing candidate is omitted without dropping the event. |
 | rows.ResetSource.URL | coalesced | Absent/null both mean no source link; only producer-approved links can be emitted. |
 | rows.Account.SubscriptionRef | coalesced | [values.go:56](../rows/values.go#L56), `buildAccounts`; `RowsAccount` absent/null both have no subscription reference; present references still validate. |
+| rows.Account.Activity | coalesced | `rows.buildAccounts` publishes admitted per-session activity only for its verified account. Generated `RowsAccount.init(from:)` normalizes absent/null or malformed optional lists to nil. `EngineDockContentProvider` then has no working evidence; valid lists still require matching member/binding, phase and record/expiry times, never a provider or peer-rate fallback. Generated capture mutations and `NormalEntryActivityTests` cover absent, working, stale, mismatched, expiry and lifecycle behavior. |
 | rows.Account.AccountLocator | coalesced | Same projection/decoder: absent/null both have no account locator; present locators still validate. |
 | rows.Account.Credits | coalesced | Same projection/decoder: absent/null both have no credit reading. |
 | rows.Account.ObservedAt | coalesced | Same projection/decoder: absent/null both have no observation timestamp. |
@@ -120,6 +132,7 @@ containers and failure ID retain their required-key checks.
 | rows.Account.LastFailure | coalesced | Same projection/decoder: absent/null both have no recorded failure. |
 | rows.Plan.Name | coalesced | [catalogue.go:81](../rows/catalogue.go#L81), `planValue`; `RowsPlan` absent/null both have no plan name. |
 | rows.Credits.Balance | coalesced | [values.go:77](../rows/values.go#L77), credit projection; `RowsCredits` absent/null both have unavailable balance, not zero. |
+| rows.Credits.Currency | forbidden | [values.go](../rows/values.go), money projection; absent means the reader reported no currency (the app says so), never null. |
 | rows.Row.RefreshNotBefore | coalesced | Omitted when the capability or live grant is absent; null means the budget deadline is unknown. |
 | rows.Account.RefreshNotBefore | coalesced | Omitted when the capability or live grant is absent; null means the member deadline is unknown. |
 | rows.Window.Source | forbidden | Omission means provenance unavailable; null or malformed data is rejected. |

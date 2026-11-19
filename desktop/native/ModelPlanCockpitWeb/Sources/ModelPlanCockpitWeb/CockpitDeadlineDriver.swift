@@ -15,6 +15,19 @@ enum CockpitDeadlineReason: String, Equatable {
   private var lastDeliveredDeadline: UInt64?, lastObservedClock: UInt64?
   private var immediateAdvances = 0
   static let maximumImmediateAdvances = 64
+  /// Recovery contract: deadlines that keep expiring in transit mean a slow page, not a broken one. After
+  /// `maximumImmediateAdvances` already-due deadlines in a row the stream is throttled to one tick per this many
+  /// milliseconds until a deadline in the future arrives; the page is never failed for it.
+  static let throttledDelay: UInt64 = 1_000
+  private var throttled = false
+  /// Clock time of the last delivered deadline tick. While throttled, a newer report keeps the next allowed tick
+  /// time instead of restarting the one-second wait (macrev2-981-7), so the stream still ticks once a second.
+  private var lastTickAt: UInt64?
+  private func throttledWait(_ current: UInt64) -> UInt64 {
+    guard let lastTickAt else { return Self.throttledDelay }
+    let next = lastTickAt &+ Self.throttledDelay
+    return next > current ? next - current : 0
+  }
   private static let maxDelay: UInt64 = 86_400_000
   var isVisible: Bool { visible && !retired }
 
@@ -27,7 +40,7 @@ enum CockpitDeadlineReason: String, Equatable {
   }
   /// A privacy/context generation barrier retires timer, watermark and clock epoch.
   func invalidate() {
-    cancelTimer(); lastDeliveredDeadline = nil; lastObservedClock = nil; immediateAdvances = 0
+    cancelTimer(); lastDeliveredDeadline = nil; lastObservedClock = nil; immediateAdvances = 0; throttled = false; lastTickAt = nil
   }
   private func sampleClock(externalEvent: Bool = false) -> UInt64 {
     let current = now()
@@ -43,40 +56,40 @@ enum CockpitDeadlineReason: String, Equatable {
     visible = true; cancelTimer(); _ = sampleClock(externalEvent: true); tick(.show)
   }
   func hide() {
-    visible = false; cancelTimer(); immediateAdvances = 0
+    visible = false; cancelTimer(); immediateAdvances = 0; throttled = false
   }
   func retire() {
     retired = true; hide()
   }
   func notify(_ reason: CockpitDeadlineReason) {
     guard visible, !retired, reason != .deadline, reason != .show else { return }
-    cancelTimer(); immediateAdvances = 0; _ = sampleClock(externalEvent: true); tick(reason)
+    cancelTimer(); immediateAdvances = 0; throttled = false; _ = sampleClock(externalEvent: true); tick(reason)
   }
   func accept(deadline: UInt64?) {
     cancelTimer()
     guard visible, !retired else { return }
-    guard let deadline else { immediateAdvances = 0; return }
+    guard let deadline else { immediateAdvances = 0; throttled = false; return }
     let current = sampleClock()
     // Reports advance within a generation: a distinct later deadline may have
     // passed in transit, but equal/older reports must not form a tight loop.
     if let lastDeliveredDeadline, deadline <= lastDeliveredDeadline { return }
     if deadline <= current {
-      guard immediateAdvances < Self.maximumImmediateAdvances else {
-        retire(); onExhausted(); return
-      }
-    } else { immediateAdvances = 0 }
-    schedule(deadline)
+      // `onExhausted` only reports the change to a throttled stream; the page stays (recovery contract).
+      if !throttled, immediateAdvances >= Self.maximumImmediateAdvances { throttled = true; onExhausted() }
+    } else { immediateAdvances = 0; throttled = false }
+    schedule(deadline, minimumDelay: deadline <= current && throttled ? throttledWait(current) : 0)
   }
-  private func schedule(_ deadline: UInt64) {
+  private func schedule(_ deadline: UInt64, minimumDelay: UInt64 = 0) {
     guard visible, !retired else { return }
-    let current = sampleClock(), delay = min(Self.maxDelay, deadline > current ? deadline - current : 0)
+    let current = sampleClock(), delay = max(minimumDelay, min(Self.maxDelay, deadline > current ? deadline - current : 0))
     let wasImmediatelyDue = deadline <= current, token = serial
     cancel = arm(delay) { [weak self] in
       guard let self, self.visible, !self.retired, self.serial == token else { return }
       self.cancel = nil; self.serial &+= 1
-      if self.sampleClock() < deadline { self.schedule(deadline); return }
+      let fired = self.sampleClock()
+      if fired < deadline { self.schedule(deadline); return }
       if wasImmediatelyDue { self.immediateAdvances += 1 } else { self.immediateAdvances = 0 }
-      self.lastDeliveredDeadline = deadline; self.tick(.deadline)
+      self.lastDeliveredDeadline = deadline; self.lastTickAt = fired; self.tick(.deadline)
     }
   }
 }
@@ -98,8 +111,9 @@ struct CockpitVisibilityFence {
   mutating func invalidate() { serial &+= 1; targetVisible = false; confirmed = false }
 }
 
-/// Missing rendered acknowledgements fail after a bounded wait; replaced waits
-/// cannot report failure for a newer trigger or page.
+/// A missing rendered acknowledgement is reported once after `CockpitPageHealth.delayedAfterMs`; replaced
+/// waits cannot report for a newer trigger or page. The report marks the reading delayed and starts probing the
+/// page; it never fails the page by itself (recovery contract).
 @MainActor final class CockpitDeadlineReceiptWatchdog {
   private let arm: CockpitDeadlineDriver.Arm, timedOut: (UUID) -> Void
   private var cancellation: (() -> Void)?, generation: UInt64 = 0
@@ -110,7 +124,7 @@ struct CockpitVisibilityFence {
   func wait(for id: UUID) {
     cancel(); currentID = id
     let token = generation
-    cancellation = arm(2_000) { [weak self] in
+    cancellation = arm(CockpitPageHealth.delayedAfterMs) { [weak self] in
       guard let self, self.generation == token, self.currentID == id else { return }
       self.currentID = nil; self.cancellation = nil; self.generation &+= 1
       self.timedOut(id)

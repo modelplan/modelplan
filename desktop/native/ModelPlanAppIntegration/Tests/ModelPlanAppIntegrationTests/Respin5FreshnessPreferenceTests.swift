@@ -47,7 +47,7 @@ import ModelPlanShell
     private func app(_ dock: StaticDockPreviewHost) throws -> SettingsApplicationCoordinator {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("respin5-settings-"+UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at:folder) }
-        let value = SettingsApplicationCoordinator(store:try SettingsStore(url:folder.appendingPathComponent("settings.json")),apply:{dock.apply($0)})
+        let value = SettingsApplicationCoordinator(store:try chineseSettingsStore(url:folder.appendingPathComponent("settings.json")),apply:{dock.apply($0)})
         CommunityPlacementBinding.install(on:dock,application:value)
         return value
     }
@@ -112,6 +112,19 @@ import ModelPlanShell
         }
         for observed in [nil, now.addingTimeInterval(1), Date(timeIntervalSince1970: .infinity)] {
             XCTAssertEqual(CommunityObservationAge.text(observedAt:observed,now:now),CommunityObservationAge.unknown)
+        }
+    }
+    /// A missing/zero timestamp or a far-away clock never prints an absurd age such as
+    /// "632675小时前" (owner test 5, card line); older readings switch to days, then stop.
+    func testAgeNeverPrintsAbsurdHours() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(CommunityObservationAge.cardText(observedAt: now.addingTimeInterval(-47 * 3600), now: now, english: false), "47小时前")
+        XCTAssertEqual(CommunityObservationAge.cardText(observedAt: now.addingTimeInterval(-3 * 86_400), now: now, english: true), "3d ago")
+        XCTAssertEqual(CommunityObservationAge.cardText(observedAt: now.addingTimeInterval(-3 * 86_400), now: now, english: false), "3天前")
+        XCTAssertEqual(CommunityObservationAge.cardText(observedAt: now.addingTimeInterval(-400 * 86_400), now: now, english: false), "超过 30 天前")
+        for zero in [Date(timeIntervalSince1970: 0), Date(timeIntervalSinceReferenceDate: 0)] {
+            XCTAssertEqual(CommunityObservationAge.cardText(observedAt: zero, now: now, english: false), "读数时间未知")
+            XCTAssertEqual(CommunityObservationAge.text(observedAt: zero, now: now), CommunityObservationAge.unknown)
         }
     }
     func testBoundAgeFollowsTheSelectedAccountWithoutUsingReportTime() throws {

@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: MIT
 """Negative controls for the packaged-app assertion gate; no Swift, GUI or network."""
 import importlib.util
+import plistlib
+import shutil
+import tempfile
 from pathlib import Path
 import unittest
 
@@ -160,11 +163,30 @@ class AppSmokeAssertionsTests(unittest.TestCase):
         self.report.pop('showDock')
         self.assertFalse(self.results()['dock-defaults'])
 
-    def test_visible_fresh_default_and_explicit_autohide_are_distinct(self):
+    def test_expanded_fresh_default_and_saved_collapse_are_distinct(self):
+        # D114: a fresh install starts expanded; auto-collapse on here is not the fresh default.
         self.report['autoHide'] = False
         self.assertTrue(self.results()['dock-defaults'])
         self.report['autoHide'] = True
         self.assertFalse(self.results()['dock-defaults'])
+
+
+class AppIconTests(unittest.TestCase):
+    def app(self, plist, icon=None):
+        root = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, root)
+        app = root / 'Sample.app'; (app / 'Contents/Resources').mkdir(parents=True)
+        (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(plist))
+        if icon is not None:
+            (app / 'Contents/Resources/AppIcon.icns').write_bytes(icon)
+        return app
+
+    def test_a_declared_real_icon_passes(self):
+        self.assertIsNone(smoke.icon_problem(self.app({'CFBundleIconFile': 'AppIcon'}, b'icns....')))
+
+    def test_a_missing_declaration_or_file_fails(self):
+        self.assertIn('CFBundleIconFile', smoke.icon_problem(self.app({})))
+        self.assertIn('missing', smoke.icon_problem(self.app({'CFBundleIconFile': 'AppIcon'})))
+        self.assertIn('missing', smoke.icon_problem(self.app({'CFBundleIconFile': 'AppIcon'}, b'not an icon')))
 
 
 if __name__ == '__main__':

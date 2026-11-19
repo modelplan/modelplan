@@ -89,7 +89,7 @@ UTF-16 units. These bridge limits do not change the Go transport's 8 MiB cap.
 
 | Type | Additional fields and effect |
 | --- | --- |
-| `load` | Version 2; exact `appearance: {theme, locale, reduceMotion, reduceTransparency}` and `shell: {profile, attached, forcedClosed, tier, scope}`. Optional top-level `redBelow` is 10, 16, 20 or 25; absent or invalid values use 25 with a fixed warning. Once per page; clears first and applies both before `ready`. |
+| `load` | Version 2; exact `appearance: {theme, locale, reduceMotion, reduceTransparency}` and `shell: {profile, attached, forcedClosed, tier, scope}`. Optional top-level `redBelow` is 10, 15, 20, 25, 30 or 40; absent or invalid values use 25 with a fixed warning. Once per page; clears first and applies both before `ready`. |
 | `appearance` | Flat `theme`, `locale`, `reduceMotion`, `reduceTransparency` and optional top-level `redBelow`, applied without clearing data. Both day and night are supported by the web renderer. |
 | `shell` | `profile` is `open` or `closed`, `attached` and `forcedClosed` are booleans, `tier` is `tall` or `compact`, and `scope` is `all` or a member key. Native chooses tier; forced closure disables user shutter actions. |
 | `tick` | `nowUnixMs` is a bounded canonical decimal timestamp; `reason` is `deadline`, `show`, `wake`, `unlock` or `clockChange`. Only a visible page with a current display accepts it. |
@@ -107,7 +107,7 @@ reply with the new context. Replays and old view revisions are rejected even whe
 the consent floor itself did not change. An engine restart can adopt its new
 session only through that explicit clear, or by unloading and making a fresh page.
 
-Page responses include `ready`, `rendered`, `cleared`, `nextDeadline` and `action`, with the same context/header IDs and the independent output sequence. `ready` carries `appearanceVersion: 2` and the capabilities `appearanceUpdates`, `shellState` and `shellActions`. While visible with displayed data, display, appearance and tick can report a nullable `deadlineUnixMs` correlated to the triggering request. Fixed actions include `chooseSetup`, `openSettings`, `close`, `detach`, `putBack`, `shutterToggle`, `scopeSelect` and `openHistory`. `scopeSelect` carries `key` equal to `all` or an admitted current member; `openHistory` carries a `tool` from the current displayed rows. Clear invalidates that action membership too. Native
+Page responses include `ready`, `rendered`, `cleared`, `nextDeadline` and `action`, with the same context/header IDs and the independent output sequence. `ready` carries `appearanceVersion: 2` and the capabilities `appearanceUpdates`, `shellState` and `shellActions`. While visible with displayed data, display, appearance and tick can report a nullable `deadlineUnixMs` correlated to the triggering request. While the session strip lists a session, the next whole minute is a deadline, so its elapsed time and "6m ago" move with the host's tick (owner decision D277, CKP-STRIP-16). Fixed actions include `chooseSetup`, `openSettings`, `close`, `detach`, `putBack`, `shutterToggle`, `scopeSelect`, `openHistory`, `openField` and `openWebsite`. `openField` may carry `key`, the clicked rocket's published display name (1-64 characters); native resolves it against the published models and focuses nothing for an unknown name. `openWebsite` carries a `page` (`plans`, `effort` or `methodology`) and a short `value`; native builds the public address from them, so no URL crosses the bridge. `scopeSelect` carries `key` equal to `all` or an admitted current member; `openHistory` carries a `tool` from the current displayed rows. Clear invalidates that action membership too. Native
 maps these to typed UI intents, never to a command/URL interpreter. No credential,
 consent mutation or plugin-install message exists in this protocol.
 
@@ -142,7 +142,7 @@ The owner-released G/P6 prototype at
 hierarchy, layout calculation and CSS. [Provenance and exclusions](../../docs/borrowed/cockpit-web.md)
 record the MIT release and source hashes. Resource imports, vendor logos, mock
 bootstrap, canvas/3D and timer loops are removed. Tool names are text. The Go DTO
-populates quota and available details, while absent publication, session and history data remain unavailable. The standard bridge does not yet supply publication to the faders, so their channels remain unavailable; no prototype fixture is loaded in production. Scope selection is session-only and does not sync to the Dock.
+populates quota and available details, while absent publication, session and history data remain unavailable. The faders read the publication the engine fetches by itself; until it arrives, or while it cannot be fetched, their channels stay empty and the bank row says the data is unavailable. No prototype fixture is loaded in production. Scope selection is session-only and does not sync to the Dock.
 The empty canopy awaits U12 media. Native owner review still confirms final fidelity.
 
 The target App + WebContent CPU is at most **6% of one core** in the U11a scenario.
@@ -151,3 +151,44 @@ attribution, memory returning after native close or repeated-window growth. The
 verification skill/test-Mac lane must remeasure those on the actual package before
 this draft becomes ready. No hidden prewarm, old-path deletion or U13/L3 acceptance
 is claimed here.
+
+## Maker livery colours (D131, D250)
+
+**D250 (owner 2026-11-13, guanbear/modelplans.ai#716) supersedes D211 "Set 1" for UI accents:** the old pastel palette, completed ("Old+").
+It applies to engine tabs, fader strips, record-strip chips and chart series. Rockets keep the website livery (`rocket`). The shared table is the
+private site's `src/shell/brandLivery.ts`; `src/livery-shared.json` is its vendored copy and is unchanged by D250.
+
+| Maker | Colour | Alt (collision shade) |
+| --- | --- | --- |
+| OpenAI / Codex | `#6aa8ff` | `#1352a1` |
+| Anthropic / Claude | `#ff9a6a` | `#a0440a` |
+| Zhipu / Z.ai / GLM | `#8f7dff` | `#4422a0` |
+| Copilot | `#c08cff` | `#6c35a1` |
+| Kimi | `#ff8fcf` | `#a03878` |
+| OpenCode | `#b5d65a` | `#647c04` |
+| Cursor | `#eef2f6` | `#6f7782` (mid grey, reads on light backgrounds; `altFrom: 'app'`) |
+| xAI | `#8594a4` | `#374452` |
+| Google | `#4eccd3` | `#0b7176` |
+| MiniMax | `#f16f7e` | `#900d30` |
+| Meta | `#a6dcff` | `#5084a4` |
+| Alibaba | `#4ab89a` | `#025e4b` |
+| DeepSeek | `#00aad6` | `#0e5166` |
+| Xiaomi | `#e89700` | `#794e08` |
+
+Alts are the same hue, lightness lowered by 0.28 in OKLab (`deriveAlt`), so they separate from the main colours. Antigravity `#68d7a1`, Kiro `#f8d376`
+and Amp `#83b259` are owner-approved too but have no table row: the cockpit has no vendor key, logo or engine row for them, so adding a row would be dead
+until that wiring exists.
+
+Same-screen collisions (CIEDE2000 under 15) now include GLM next to Copilot (9.7) and GLM next to xAI (12.6); the later one takes its alt.
+Day theme: marks are drawn at 40% of the colour toward black, at least 3.4:1 on the day metal for every colour. Cursor's near-white would only reach 3.25, so on day Cursor starts from its grey alt `#6f7782` (CSS rule in `prototype-theme.css`).
+Night uses the colours as is.
+
+**UI accents only; rockets keep website livery.** The palette above is applied by `APP_UI` and `TOOLS` in `sync-livery.mjs` over the shared table:
+`livery-shared.json` stays a verbatim copy of the website's `brandLivery.ts`, so `node sync-livery.mjs --check --source <file>` still demands
+identity with it, and the website colour stays in the generated table as `rocket` (Cursor keeps its former `#f79dcb`). Anything that paints a rocket
+(launch-field scene developer colours, porthole stills) uses `rocketColour()`, never `brandColour()`.
+
+`app/livery.css` declares the `--mp-<maker>` developer variables for external or private visual packages appended after the frozen
+`official-visuals/theme.css` (`build.mjs`); nothing in this repo reads them, so the public build's pixels do not depend on that file.
+Contrast floors: night marks are at least 3:1 on the night metal (the lowest are Meta 3.22, Zhipu 3.25, DeepSeek 3.90, MiniMax 4.08); the
+enforced bar is the 3:1 in `livery.test.mjs`. Day marks (40% toward black) are at least 3.4:1.

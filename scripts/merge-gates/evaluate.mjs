@@ -11,7 +11,8 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
-import { CONTEXT, FAILURE, description, evaluateGroup, evaluatePr, feed, parseDesignConf } from "./rules.mjs";
+import { HOSTED_WORKFLOWS } from "./hosted.mjs";
+import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -21,6 +22,7 @@ const repo = env.GITHUB_REPOSITORY || "modelplan/modelplan";
 const cwd = flag("--repo-dir") ?? process.cwd();
 const gh = client({ token: env.GITHUB_TOKEN, repo });
 const conf = parseDesignConf(readFileSync(new URL("./design-paths.conf", import.meta.url), "utf8"));
+const tiers = tiersFrom(() => readFileSync(new URL(`../../${TIER_TABLE}`, import.meta.url), "utf8"));
 const MAIN = "refs/remotes/origin/main";
 const runUrl = env.GITHUB_RUN_ID ? `${env.GITHUB_SERVER_URL || "https://github.com"}/${repo}/actions/runs/${env.GITHUB_RUN_ID}` : undefined;
 
@@ -29,6 +31,8 @@ function log(obj) {
   console.log(line);
   if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, "`" + line.replaceAll("`", "'") + "`\n\n");
 }
+
+if (!tiers.size) log({ warning: `${TIER_TABLE} unreadable: every scenario needs evidence` });
 
 async function post(sha, result) {
   log({ sha, ...result, dryRun });
@@ -47,17 +51,79 @@ function verifiedEdge(oldSha, newSha) {
   return carryCache.get(k);
 }
 
+// D243 G6 auto-carry proof (git.verifyMainMerges). The checkout has full history of main (fetch-depth 0, blobless);
+// main is refetched once before the first proof; PR commits are fetched by sha and blobs on demand, so no
+// shallow-history limit applies.
+const mainMergeCache = new Map();
+let mainFresh = false;
+function proveMainMerges(oldSha, newSha) {
+  const k = `${oldSha}>${newSha}`;
+  if (!mainMergeCache.has(k)) {
+    let r;
+    try {
+      // Refresh main once, so a main commit merged after the job's checkout is still found on main.
+      if (!mainFresh) { G.git(cwd, ["fetch", "-q", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/main:${MAIN}`]); mainFresh = true; }
+      r = G.verifyMainMerges(cwd, oldSha, newSha, MAIN);
+    } catch (e) {
+      r = { ok: false, why: `git error: ${String(e?.message || e).split("\n")[0]}`, between: [] };
+    }
+    log({ autoCarry: k, ok: r.ok, why: r.why });
+    mainMergeCache.set(k, r);
+  }
+  return mainMergeCache.get(k);
+}
+
+// A train's members, read only for a train: the extra calls would otherwise run on every evaluation. A number in
+// Supersedes that is not a PR is skipped; any other read error stops the evaluation, so the gate never passes on
+// a partial member list.
+async function readTrainMembers(pr) {
+  if (!isTrain(pr)) return [];
+  const notFound = (e) => { if (/HTTP 404/.test(String(e))) return null; throw e; };
+  const [based, open, superseded] = await Promise.all([
+    gh.all(`/pulls?state=all&base=${encodeURIComponent(pr.head.ref)}`),
+    gh.all("/pulls?state=open&base=main"),
+    Promise.all(supersededPrs(pr.body).map((n) => gh.get(`/pulls/${n}`).catch(notFound))),
+  ]);
+  G.git(cwd, ["fetch", "-q", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/main:${MAIN}`]);
+  return trainMembers(pr, { based, open, superseded: superseded.filter(Boolean), commits: G.commitsOnlyIn(cwd, pr.head.sha, MAIN) });
+}
+
+// A data-sync PR's evidence, read only for a bot PR on a data/sync-* branch: the workflow run its branch names and
+// the head commit. An unreadable run or commit (404) is "not proven", never a pass.
+async function readDataSync(pr) {
+  const runId = dataSyncRunId(pr);
+  if (!runId) return null;
+  const orNull = (e) => { if (/HTTP 404/.test(String(e))) return null; throw e; };
+  const [run, commit] = await Promise.all([gh.get(`/actions/runs/${runId}`).catch(orNull), gh.get(`/commits/${pr.head.sha}`).catch(orNull)]);
+  return { run, commit };
+}
+
+// D314: the jobs of runs that may hold a GitHub-hosted macOS leg (hosted.mjs), attached as run.jobs so the rules can set
+// those legs aside. Only runs that are not already green are read. An unreadable list leaves run.jobs unset, and the
+// rules then judge the whole run as before (fail closed).
+async function readJobs(runs) {
+  await Promise.all(runs.filter((r) => HOSTED_WORKFLOWS.includes(String(r.path).split("@")[0])).map(async (r) => {
+    try { r.jobs = await gh.all(`/actions/runs/${r.id}/jobs?filter=latest`, "jobs", 500); }
+    catch (e) { log({ run: r.id, jobs: `unreadable: ${String(e).slice(0, 120)}` }); }
+  }));
+}
+
 async function prResult(number) {
   const pr = await gh.get(`/pulls/${number}`);
   const head = pr.head.sha;
-  const [comments, reviews, files, runs, combined] = await Promise.all([
+  const [comments, reviews, files, runs, combined, members] = await Promise.all([
     gh.all(`/issues/${number}/comments`),
     gh.all(`/pulls/${number}/reviews`),
     gh.all(`/pulls/${number}/files`),
     gh.all(`/actions/runs?head_sha=${head}`, "workflow_runs", 500),
     gh.get(`/commits/${head}/status`),
+    readTrainMembers(pr),
   ]);
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf });
+  await readJobs(runs.filter((r) => !(r.status === "completed" && ["success", "skipped", "neutral"].includes(r.conclusion))));
+  // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
+  const now = Date.now();
+  const glmFallbackUntil = parseFallbackUntil(env.GLM_FALLBACK_UNTIL || "", now);
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, proveMainMerges, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now });
   return { pr, result };
 }
 
@@ -91,11 +157,16 @@ async function evaluateGroupAndPost(groupSha) {
     c = p[0];
   }
   if (!G.isAncestor(cwd, c, MAIN)) return post(groupSha, { state: FAILURE, why: "group does not start on main within 10 PRs" });
-  const [queueRuns, combined] = await Promise.all([
+  const [queueRuns, combined, queueCheckRuns] = await Promise.all([
     gh.all(`/actions/runs?head_sha=${groupSha}`, "workflow_runs", 500),
     gh.get(`/commits/${groupSha}/status`),
+    gh.all(`/commits/${groupSha}/check-runs`, "check_runs", 1000),
   ]);
-  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [] });
+  const desktop = queueRuns.filter(queueRunScope(repo)).filter((r) => r.path === ".github/workflows/desktop.yml").sort((x, y) => y.id - x.id)[0];
+  const desktopJobs = desktop ? await gh.all(`/actions/runs/${desktop.id}/jobs`, "jobs", 500) : null;
+  if (desktop) desktop.jobs = desktopJobs;
+  await readJobs(queueRuns.filter(queueRunScope(repo)).filter((r) => r !== desktop));
+  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, desktopJobs, repo });
   await post(groupSha, { group: steps.map((s) => s.pr), ...result });
 }
 
@@ -109,7 +180,11 @@ async function fromEvent() {
     return null;
   }
   if (name !== "workflow_run") return log({ skipped: `event ${name}` });
-  const wr = ev.workflow_run;
+  return fromRun(ev.workflow_run);
+}
+
+// One workflow run (the workflow_run payload): its merge group or its PRs.
+async function fromRun(wr) {
   if (wr.event === "merge_group") {
     if (!String(wr.head_branch).startsWith("gh-readonly-queue/main/")) return log({ skipped: `queue branch ${wr.head_branch}` });
     return evaluateGroupAndPost(wr.head_sha);
@@ -117,7 +192,14 @@ async function fromEvent() {
   if (wr.event !== "pull_request" && wr.event !== "pull_request_review") return log({ skipped: `run event ${wr.event}` });
   let numbers = (wr.pull_requests ?? []).map((p) => p.number);
   if (!numbers.length) numbers = (await gh.get(`/commits/${wr.head_sha}/pulls`)).filter((p) => p.state === "open").map((p) => p.number);
-  for (const n of numbers) await evaluatePrAndPost(n);
+  for (const n of numbers) {
+    // A cancelled run whose head is no longer the PR head was replaced by a newer push: that head's runs decide.
+    if (wr.conclusion === "cancelled" && cancelledRunSuperseded(wr, (await gh.get(`/pulls/${n}`)).head.sha)) {
+      log({ pr: n, skipped: "cancelled run of a superseded head" });
+      continue;
+    }
+    await evaluatePrAndPost(n);
+  }
 }
 
 const pr = flag("--pr"), group = flag("--group");

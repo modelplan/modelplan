@@ -1,6 +1,6 @@
 {
-  "revision": "2026-10-11.2",
-  "checkedAt": "2026-10-11",
+  "revision": "2026-11-17.1",
+  "checkedAt": "2026-11-17",
   "records": [
     {
       "modelId": "opus",
@@ -12,11 +12,15 @@
         "claude-code": [
           "claude-opus-5-5"
         ],
-        "codex": []
+        "codex": [],
+        "copilot": [
+          "claude-opus-5.5"
+        ]
       },
       "sourceUrls": [
         "https://platform.claude.com/docs/en/models/overview",
-        "https://code.claude.com/docs/en/model-config"
+        "https://code.claude.com/docs/en/model-config",
+        "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
       ],
       "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
       "requiredEndpoints": {}
@@ -31,11 +35,15 @@
         "claude-code": [
           "claude-sonnet-5-5"
         ],
-        "codex": []
+        "codex": [],
+        "copilot": [
+          "claude-sonnet-5.5"
+        ]
       },
       "sourceUrls": [
         "https://platform.claude.com/docs/en/models/overview",
-        "https://code.claude.com/docs/en/model-config"
+        "https://code.claude.com/docs/en/model-config",
+        "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
       ],
       "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
       "requiredEndpoints": {}
@@ -50,11 +58,15 @@
         "claude-code": [
           "claude-haiku-5-5"
         ],
-        "codex": []
+        "codex": [],
+        "copilot": [
+          "claude-haiku-5.5"
+        ]
       },
       "sourceUrls": [
         "https://platform.claude.com/docs/en/models/overview",
-        "https://code.claude.com/docs/en/model-config"
+        "https://code.claude.com/docs/en/model-config",
+        "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
       ],
       "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
       "requiredEndpoints": {}
@@ -69,11 +81,15 @@
         "claude-code": [],
         "codex": [
           "gpt-6-astra"
+        ],
+        "copilot": [
+          "gpt-6-astra"
         ]
       },
       "sourceUrls": [
         "https://developers.openai.com/api/docs/models/gpt-6-astra",
-        "https://learn.chatgpt.com/docs/models"
+        "https://learn.chatgpt.com/docs/models",
+        "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
       ],
       "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
       "requiredEndpoints": {}
@@ -88,11 +104,73 @@
         "claude-code": [],
         "codex": [
           "gpt-6.1-sol"
+        ],
+        "copilot": [
+          "gpt-6.1-sol"
         ]
       },
       "sourceUrls": [
         "https://developers.openai.com/api/docs/models",
+        "https://learn.chatgpt.com/docs/models",
+        "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+      ],
+      "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "sol-6.2",
+      "sourceModelId": "openai/gpt-6.2-sol",
+      "harnessIds": {
+        "api": [
+          "gpt-6.2-sol"
+        ],
+        "claude-code": [],
+        "codex": [
+          "gpt-6.2-sol"
+        ]
+      },
+      "sourceUrls": [
+        "https://developers.openai.com/api/docs/models/gpt-6.2-sol",
         "https://learn.chatgpt.com/docs/models"
+      ],
+      "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "astra-6.2",
+      "sourceModelId": "openai/gpt-6.2-astra",
+      "harnessIds": {
+        "api": [
+          "gpt-6.2-astra"
+        ],
+        "claude-code": [],
+        "codex": [
+          "gpt-6.2-astra"
+        ]
+      },
+      "sourceUrls": [
+        "https://developers.openai.com/api/docs/models/gpt-6.2-astra",
+        "https://learn.chatgpt.com/docs/models"
+      ],
+      "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "auto:openai:51617927bdb7d656",
+      "sourceModelId": "openai/gpt-6.1-terra",
+      "harnessIds": {
+        "api": [],
+        "claude-code": [],
+        "codex": [
+          "gpt-6.1-terra"
+        ],
+        "copilot": [
+          "gpt-6.1-terra"
+        ]
+      },
+      "sourceUrls": [
+        "https://learn.chatgpt.com/docs/models",
+        "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
       ],
       "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
       "requiredEndpoints": {}
@@ -107,11 +185,15 @@
         "claude-code": [],
         "codex": [
           "gpt-6-luna"
+        ],
+        "copilot": [
+          "gpt-6-luna"
         ]
       },
       "sourceUrls": [
         "https://developers.openai.com/api/docs/models",
-        "https://learn.chatgpt.com/docs/models"
+        "https://learn.chatgpt.com/docs/models",
+        "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
       ],
       "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
       "requiredEndpoints": {}
@@ -174,6 +256,78 @@
         "https://code.claude.com/docs/en/model-config#available-models"
       ],
       "qualification": "Anthropic provider; active legacy Opus 5, distinct from Opus 5.5; compatible client, managed and account restrictions still apply. No account entitlement or inference verified.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "auto:google:0bb591b009df2469",
+      "sourceModelId": "google/gemini-3.8-flash",
+      "harnessIds": {
+        "api": [],
+        "claude-code": [],
+        "codex": [],
+        "gemini": [
+          "gemini-3.8-flash"
+        ],
+        "copilot": [
+          "gemini-3.8-flash"
+        ]
+      },
+      "sourceUrls": [
+        "https://github.com/google-gemini/gemini-cli/blob/62bab5b232c15b925d31e655ce844ab939c882b7/packages/core/src/config/models.ts",
+        "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+      ],
+      "qualification": "Gemini CLI slug from its LATEST_GEMINI_FLASH_MODEL; Copilot slug from the Copilot CLI model list. Account, plan and rollout restrictions still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "auto:xai:a58a94661bb3544a",
+      "sourceModelId": "xai/grok-4.6",
+      "harnessIds": {
+        "api": [],
+        "claude-code": [],
+        "codex": [],
+        "grok": [
+          "grok-4.6"
+        ]
+      },
+      "sourceUrls": [
+        "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-models/default_models.json"
+      ],
+      "qualification": "Grok Build default catalogue id; session-scoped catalogue and plan restrictions still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "auto:kimi:d59a3fc7d1ed2d19",
+      "sourceModelId": "moonshotai/kimi-k3",
+      "harnessIds": {
+        "api": [],
+        "claude-code": [],
+        "codex": [],
+        "kimi": [
+          "k3"
+        ]
+      },
+      "sourceUrls": [
+        "https://www.kimi.com/code/docs/en/"
+      ],
+      "qualification": "Kimi Code model ID k3 (the k3-256k context variant is not mapped); membership tier and context restrictions still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "auto:kimi:fc39b0c41b4c29e2",
+      "sourceModelId": "moonshotai/kimi-k3.1-pro",
+      "harnessIds": {
+        "api": [],
+        "claude-code": [],
+        "codex": [],
+        "kimi": [
+          "k3.1-pro"
+        ]
+      },
+      "sourceUrls": [
+        "https://www.kimi.com/code/docs/en/"
+      ],
+      "qualification": "Kimi Code model ID k3.1-pro (the highspeed variant is not mapped); membership tier and context restrictions still apply.",
       "requiredEndpoints": {}
     }
   ]

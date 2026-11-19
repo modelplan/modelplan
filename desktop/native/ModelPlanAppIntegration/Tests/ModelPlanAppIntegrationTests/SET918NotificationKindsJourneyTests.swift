@@ -57,19 +57,19 @@ private actor ForecastCapabilityClient: EngineClient {
             XCTAssertFalse(found.contains { $0.key == .forecast }, "Search finds the hidden forecast kind: \(query)")
         }
         XCTAssertFalse(rows.contains { [.expiring, .stale].contains($0.key) }, "SET-9-18: v1.1 notification kinds must not appear in v1")
-        for query in ["Resets expiring", "Data stopped", "重置即将到期", "数据停止更新"] {
+        for query in ["Resets expiring", "Data stopped", "额外重置即将过期", "数据停止更新"] {
             let found = try SettingsCatalogue.rows(preferences: preferences, context: editor.context, query: query)
             XCTAssertFalse(found.contains { [.expiring, .stale].contains($0.key) }, "Search finds a v1.1 kind: \(query)")
         }
 
-        // The engine reports its forecast producer: the row appears, enabled, with the saved value.
+        // ALR-52 (WP-11, supersedes SET-9-29): even with the engine's forecast producer, v1 sends no forecast
+        // notification, so the row stays hidden; only the two delivered kinds remain.
         var context = editor.context
         context.observeForecastProducer(true)
         app.settingsHost.application.update(context: context)
         let withForecast = try SettingsCatalogue.rows(preferences: preferences, context: editor.context, paneID: "notifications")
-        let forecast = try XCTUnwrap(withForecast.first { $0.key == .forecast }, "forecast kind missing once the producer exists")
-        XCTAssertEqual(forecast.availability, .available, "SET-9-29: a shown forecast kind is usable")
-        XCTAssertEqual(forecast.value, .toggle(preferences.notifications.kinds.contains(.forecast)))
+        XCTAssertFalse(withForecast.contains { $0.key == .forecast }, "ALR-52: no forecast notification row in v1")
+        XCTAssertNotNil(withForecast.first { $0.key == .reset }); XCTAssertNotNil(withForecast.first { $0.key == .official })
         XCTAssertFalse(withForecast.contains { [.expiring, .stale].contains($0.key) })
         // The producer goes away again: hidden, and the saved kinds are untouched.
         context = editor.context
@@ -98,7 +98,8 @@ private actor ForecastCapabilityClient: EngineClient {
             XCTAssertEqual(editor.context.capabilities.forecastProducerAvailable, supported)
             let preferences = try XCTUnwrap(editor.snapshot).preferences
             let rows = try SettingsCatalogue.rows(preferences: preferences, context: editor.context, paneID: "notifications")
-            XCTAssertEqual(rows.contains { $0.key == .forecast }, supported)
+            // ALR-52: the capability still reaches Settings, but v1 offers no forecast notification row.
+            XCTAssertFalse(rows.contains { $0.key == .forecast })
             await app.composition.stop()
         }
     }

@@ -563,7 +563,7 @@ Licence: `MIT`.
 
 Copyright (c) 2026 Peter Steinberger
 
-Used in: Pinned optional CodexBar compatibility helper (downloaded on consented use); Native Go provider adaptations, with original source revisions retained in the ported files.
+Used in: Pinned optional CodexBar compatibility helper (downloaded on consented use); Native Go provider adaptations, with original source revisions retained in the ported files; Reader cause and sign-in command parity (D232), independent implementations citing CodexBar main 7447bc77c2497323d9c41e40164ce705533493c8.
 
 Source: https://github.com/steipete/CodexBar/releases/tag/v0.83.0
 
@@ -1082,7 +1082,7 @@ Licence: `Apache-2.0`.
 
 Copyright (c) 2026 qunqin24
 
-Used in: Native Dock shell and staged app-service adapters: PanelScreen, ActiveDisplayFollower, PanelPointerWatcher and PointerProbe, PointerEntryReporter, PanelPlacement, PulseDockPanel, PulseDockPresence and PulseLoginItem; Original Apache-2.0 headers and modification notices retained; per-file provenance is recorded in docs/borrowed/pulse/manifest.json; The pinned upstream has no literal NOTICE file; its complete THIRD_PARTY_NOTICES.md is retained as provenance, without importing Pulse icons, providers, tether, update stack or other components.
+Used in: Native Dock shell and staged app-service adapters: PanelScreen, ActiveDisplayFollower, PanelPointerWatcher and PointerProbe, PointerEntryReporter, PanelPlacement, PulseDockPanel, PulseDockPresence and PulseLoginItem; PulseDockPanel also ports the initial placement, order-in and replacement sequence and exposes the borrowed display identity to the Dock topology adapter; Original Apache-2.0 headers and modification notices retained; per-file provenance is recorded in docs/borrowed/pulse/manifest.json; The pinned upstream has no literal NOTICE file; its complete THIRD_PARTY_NOTICES.md is retained as provenance, without importing Pulse icons, providers, tether, update stack or other components.
 
 Source: https://github.com/qunqin24/Pulse/tree/7668384cbcf357bba7dee4af85b4052a59c6e35d
 
@@ -1558,3 +1558,39 @@ V2EX, Venice, Vercel, Volcengine, Windsurf, Xiaomi MiMo, Z.ai and Zhipu — rema
 the property of their respective owners. Their inclusion identifies compatible
 services and does not imply endorsement.
 ````
+
+## ccusage 58866ba681343634ab6e5add61f18f3b70aa98f7
+
+Licence: `MIT`.
+
+Copyright (c) 2025 ryoppippi
+
+Used in: Local token accounting (input, cache read, cache write, output, reasoning; totals by local day): Codex and Claude Code response accounting matched to the Rust adapters, Go ports of the Gemini CLI, Qwen Code and OpenCode adapters, and shared tool-neutral Buckets and Windows, with ModelPlan modifications in the named files.
+
+Source: https://github.com/ccusage/ccusage/tree/58866ba681343634ab6e5add61f18f3b70aa98f7
+
+### LICENSE
+
+```text
+MIT License
+
+Copyright (c) 2025 ryoppippi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

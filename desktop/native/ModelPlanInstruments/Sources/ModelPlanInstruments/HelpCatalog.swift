@@ -35,6 +35,7 @@ public struct HelpContext: Sendable {
 public struct HelpExplanation: Equatable, Sendable {
     public let title: String
     public let body: String
+    public init(title: String, body: String) { self.title = title; self.body = body }
     /// Views and accessibility consumers use this exact same two-line description.
     public var accessibleDescription: String { title + "\n" + body }
 }
@@ -53,13 +54,13 @@ public struct HelpCatalog: Sendable {
             basis = copy("这里只练习本地操作，不会改变真实会话。", "This is a local practice preview that leaves real sessions unchanged.")
         case .ignition:
             title = copy("点火钮", "Ignition")
-            basis = copy("点按打开驾驶舱，长按点火；快速打开设置会跳过点火。", "Tap to open the Cockpit or hold to ignite; Always quick skips ignition.")
+            basis = copy("点按打开驾驶舱。", "Tap to open the Cockpit.") // C03, D59: in v1 a hold opens it the same way; hold-to-ignite is v1.1
         case .sliver:
-            title = copy("隐藏条", "Sliver")
+            title = copy("细条", "Sliver")
             basis = copy("靠近这里稍停可显示额度挂件，右键可打开菜单。", "Rest near this edge to reveal the Quota Widget or right-click for its menu.")
         case .dockMove:
             title = copy("移动额度挂件", "Move the Quota Widget")
-            basis = copy("拖动背景或端部握柄可移动整个额度挂件，松手贴合预览边缘；只能停在左、右或下边缘。", "Drag the background or end grips to move the whole Quota Widget, then release at the preview on the left, right or bottom edge.")
+            basis = copy("拖动背景或端部握柄可移动整个额度挂件，松手即贴到所在显示器的左、右、上或下边缘。", "Drag the background or end grips to move the whole Quota Widget, then release it on the left, right, top or bottom edge of any display.")
         case .pinned:
             title = copy("已钉住", "Pinned")
             basis = copy("按 Esc 或点别处取消，卡片不会随指针移动而关闭。", "Press Esc or click elsewhere to release the card.")
@@ -134,7 +135,7 @@ public struct HelpCatalog: Sendable {
             title = copy("额度挂件喷口 · 订阅", "Quota Widget nozzle · subscription")
             basis = context.nozzleLocation == .overflow
                 ? copy("悬停查看额度卡片，点按刷新；更多订阅暂不支持拖动排序，可用 ⌥ 加方向键移动一位。", "Hover for the quota card or click to refresh; overflow items cannot be dragged in v1; use Option arrows to move one place.")
-                : copy("悬停查看额度卡片，点按刷新，沿额度挂件拖动喷口可调整订阅顺序；也可用 ⌥ 加方向键移动一位。", "Hover for the quota card, click to refresh, or drag along the Quota Widget to reorder; Option arrows move one place.")
+                : copy("悬停查看额度卡片，点按刷新，拖动喷口可移动整个额度挂件；也可用 ⌥ 加方向键移动一位。", "Hover for the quota card, click to refresh, or drag to move the whole Quota Widget; Option arrows move one place.")
         case .page:
             title = copy("订阅页", "Subscription page")
             basis = copy("翻页不会改变已选订阅。", "Changing pages keeps your subscription selection.")
@@ -160,8 +161,8 @@ public struct HelpCatalog: Sendable {
             title = copy("订阅标识", "Subscription identity")
             basis = copy("颜色标识订阅，不表示正在用或额度告警。", "This colour identifies the subscription; it does not indicate work or quota alerts.")
         case .base:
-            title = copy("火焰与喷口", "Flame and mouth")
-            basis = copy("细线标识订阅，有火焰才表示正在生成。", "The line identifies the subscription and a flame means it is working now.")
+            title = copy("喷口光", "Mouth glow")
+            basis = copy("喷口标识订阅，喷口亮着才表示正在生成。", "The bell identifies the subscription and a lit mouth means it is working now.")
         case .session:
             title = copy("会话", "Session")
             basis = copy("按一下在公共屏查看这次会话。", "Press to view this session on the Main screen.")
@@ -173,7 +174,7 @@ public struct HelpCatalog: Sendable {
             basis = copy("直接点选文字，或用键盘按一下切换。", "Press the printed choice directly or activate the key to cycle.")
         case .screen:
             title = copy("公共屏", "Main screen")
-            basis = copy("按页键查看总览、订阅、档位或去向。", "Use the page keys for Overview, Subscriptions, Effort or Destinations.")
+            basis = copy("按页键查看总览、订阅、模型或去向。", "Use the page keys for Overview, Subscriptions, Models or Destinations.")
         case .heat:
             title = copy("每日用量", "Daily use")
             basis = copy("颜色越亮用量越多，空白表示没有记录。", "Brighter cells mean more use and a gap means no record is available.")
@@ -215,7 +216,7 @@ public struct HelpCatalog: Sendable {
         guard request.valid else { return nil }
         switch request.hint {
         case .trial: return copy("这只是本地比较，不会改你的会话", "Just a local comparison; your session is unchanged")
-        case .ignition: return copy("点按打开，长按点火", "Tap to open · hold to ignite")
+        case .ignition: return copy("点按打开驾驶舱", "Tap to open the Cockpit")
         case .pinned: return copy("已钉住，按 Esc 或点别处取消", "Pinned · Esc or click elsewhere to release")
         case .page: return copy("还有订阅在第 \(request.pageNumber!) 页", "More subscriptions on page \(request.pageNumber!)")
         case .cockpit: return copy("按住 ⌥ 查看说明", "Hold ⌥ for help")

@@ -264,12 +264,40 @@ engine that produces forecasts also reports `forecastProducerV1`, so the App can
 offer the forecast notification. The same capability adds `forecasts` to rows
 snapshots and changes, so the App can notify while the cockpit is closed.
 
+Clients can declare `cockpitModelsV1`, together with `cockpitDetailsV1`, to receive
+`details.publishedModels`: public data of every published model, in publication
+order, for the launch field and the frontier. `details.publication` keeps its
+three-model lineup. Without the capability the field is omitted.
+
+Clients can declare `cockpitSessionsV1`, together with `cockpitDetailsV1`, to receive
+`details.recentSessions`: the sessions this device recorded with a last sighting within the past
+seven days, newest first, at most 200, from admitted sources only. Each has its reference, source,
+published model ID (or `unknown`), the effort reported on its last recorded day, the project label
+while project labels are on, a subscription only under a verified binding, and `lastObservedAt`,
+which is a last sighting, never an end time. There are no titles or token counts. Without the
+capability the field is omitted.
+
+A live session in `details.sessions` carries `fast: true` when the engine recorded its speed
+mode as the harness's Fast mode, so the comparison measures it as Fast. The field is absent
+otherwise: the ledger does not tell an unreported mode from the standard one.
+
+Clients can declare `cockpitPeaksV1`, together with `cockpitDetailsV1`, to receive
+`details.peaks`: for each declared plan row, its current or next window within 24 hours in
+which the publication's time-of-day multiplier is higher than outside it, read from the same
+multiplier windows as the advice. Each has the plan's `rowId`, `startsAt`, `endsAt` (null when
+the window does not end within the published horizon) and `status` (`confirmed` or
+`tentative`). A plan without published windows, or with an unknown rate, has no entry. Without
+the capability the field is omitted.
+
 Clients can declare `cockpitHistoryV1` to receive `history` from `cockpit/query`:
 7/30-day sums per subscription and source, model and tool rankings, `daily` (last
 182 local days from `dailyFrom`) and `hourly` (last 48 local hours) buckets per
 source, and `projects` (labels only while the project-labels preference is on).
 All of it is observed on this device. A day or hour that is not listed has no
 observation, which is not a known zero.
+`cycles` lists up to ten newest closed cycles, oldest first, of each window kind for a subscription, with
+its one current binding; a meter drop inside a cycle cannot be told apart from a
+correction.
 
 Clients can declare `refreshDecisionsV1` to receive `refreshDecisions` from
 `diagnostics/get`. The array holds at most 20 recent in-memory scheduling and

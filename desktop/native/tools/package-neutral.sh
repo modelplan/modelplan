@@ -38,11 +38,15 @@ if [ -e "$output_dir" ]; then echo 'Output directory already exists; refusing ov
 public_source=$(git -C "$repo_root" rev-parse HEAD)
 if [ -n "$(git -C "$repo_root" status --porcelain)" ]; then echo "Source tree must be clean" >&2; exit 1; fi
 if [ "$cockpit_entry" = true ]; then
-    # The canonical official cockpit page, checked against the native admission pins before it is copied.
+    # The canonical cockpit editions; their native admission pins are generated from these exact bytes
+    # (never committed) into a gitignored Swift file that the App build below compiles in.
     npm ci --prefix "$repo_root/desktop/cockpit" --ignore-scripts
     npm run build --prefix "$repo_root/desktop/cockpit"
     npm run build:official --prefix "$repo_root/desktop/cockpit"
-    python3 "$native_root/ModelPlanCockpitWeb/check-bundle-pins.py" --repo "$repo_root"
+    python3 "$native_root/ModelPlanCockpitWeb/check-bundle-pins.py" --repo "$repo_root" --write
+else
+    # No cockpit page in this package, so no pins: never compile in a stale generated file from an earlier build.
+    rm -f "$native_root/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift"
 fi
 mkdir -p "$output_dir"
 archive_dir=$(cd "$archive_dir" && pwd)
@@ -89,16 +93,25 @@ if [ -z "$mark_path" ] || [ "$(printf '%s\n' "$mark_path" | wc -l | tr -d ' ')" 
     echo 'Expected exactly one beta-only Z.ai mark in the Dock resources bundle' >&2; exit 1
 fi
 rm -- "$mark_path"
+# The community build ships the official appearance, under the reserved visuals licence.
+cp "$repo_root/desktop/official-visuals/icons/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 cp "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" "$app/Contents/MacOS/ModelPlanCommunity"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$app/Contents/Helpers/modelplan"
+if [ "$cockpit_entry" = true ]; then
+    # The App admits exactly the page it ships: Resources/Cockpit is the built edition and its pin is in the executable.
+    python3 "$native_root/ModelPlanCockpitWeb/check-bundle-pins.py" --repo "$repo_root" --app "$app"
+fi
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
 <key>CFBundleName</key><string>ModelPlan Community</string>
 <key>CFBundleDisplayName</key><string>ModelPlan Community</string>
 <key>CFBundleIdentifier</key><string>org.modelplan.community.swift.scaffold</string>
 <key>CFBundleExecutable</key><string>ModelPlanCommunity</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
@@ -109,6 +122,16 @@ $owner_test_plist<key>NSHighResolutionCapable</key><true/>
 <key>NSHumanReadableCopyright</key><string>MIT community software. Apple silicon only.</string>
 </dict></plist>
 PLIST
+# SET-9-38: user-visible Info.plist text (app name, copyright) in both declared localizations.
+mkdir -p "$app/Contents/Resources/en.lproj" "$app/Contents/Resources/zh-Hans.lproj"
+cat > "$app/Contents/Resources/en.lproj/InfoPlist.strings" <<'STRINGS'
+"CFBundleDisplayName" = "ModelPlan Community";
+"NSHumanReadableCopyright" = "MIT community software. Apple silicon only.";
+STRINGS
+cat > "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings" <<'STRINGS'
+"CFBundleDisplayName" = "ModelPlan 社区版";
+"NSHumanReadableCopyright" = "开源社区软件。仅支持苹果芯片。";
+STRINGS
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"
 cp "$repo_root/THIRD-PARTY-TRADEMARKS.md" "$app/Contents/Resources/THIRD-PARTY-TRADEMARKS.md"

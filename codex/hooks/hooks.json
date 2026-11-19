@@ -24,6 +24,19 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "spawn_agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$PLUGIN_ROOT/hooks/pre-tool.sh\"",
+            "statusMessage": "ModelPlan: low-quota note before spawning subagents",
+            "timeout": 3
+          }
+        ]
+      }
     ]
   }
 }

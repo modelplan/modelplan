@@ -53,8 +53,11 @@ final class DecodeTests: XCTestCase {
 
     func testCockpitThresholdIsStrictAndBounded() throws {
         let decoder = JSONDecoder()
-        XCTAssertEqual(try decoder.decode(WireCockpitQueryParams.self, from: Data(#"{"redBelow":16}"#.utf8)).redBelow, 16)
-        for json in [#"{"redBelow":17}"#, #"{"redBelow":"16"}"#, #"{"redBelow":null}"#] {
+        for value in [10, 15, 20, 25, 30, 40] {
+            let json = "{\"redBelow\":\(value)}"
+            XCTAssertEqual(try decoder.decode(WireCockpitQueryParams.self, from: Data(json.utf8)).redBelow, value)
+        }
+        for json in [#"{"redBelow":16}"#, #"{"redBelow":17}"#, #"{"redBelow":"15"}"#, #"{"redBelow":null}"#] {
             XCTAssertThrowsError(try decoder.decode(WireCockpitQueryParams.self, from: Data(json.utf8)))
         }
     }
@@ -90,7 +93,16 @@ final class DecodeTests: XCTestCase {
     func testEveryRealGoCaptureUsesGeneratedProductionDecoder() throws {
         let catalog = try index()
         XCTAssertEqual(catalog.version, 1)
-        XCTAssertEqual(catalog.cases.count, 81)
+        // The index is the source of truth: no count is hard-coded, so adding a capture never edits this test.
+        XCTAssertFalse(catalog.cases.isEmpty)
+        let listed = catalog.cases.map(\.file)
+        XCTAssertEqual(Set(listed).count, listed.count, "index lists a capture file twice")
+        // Generated DTO-root captures are named in UpperCamelCase (RowsAccount.json, WireCockpitData.json);
+        // hand-written fixtures are lowercase-hyphenated (null-error.json) and are not DTO roots.
+        let onDisk = try FileManager.default.contentsOfDirectory(atPath: captures.path)
+            .filter { $0.hasSuffix(".json") && $0 != "index.json" && ($0.first?.isUppercase ?? false) }
+        XCTAssertEqual(Set(onDisk).subtracting(listed).sorted(), [], "capture file on disk but missing from index.json")
+        XCTAssertEqual(Set(listed).subtracting(onDisk).sorted(), [], "index.json lists a capture file that is not on disk")
         for entry in catalog.cases {
             XCTAssertNoThrow(try decodeCapture(entry.type, data(entry.file)), entry.type)
             var future = try object(entry.file)
@@ -101,6 +113,8 @@ final class DecodeTests: XCTestCase {
 
     func testEveryOptionalFieldOmittedNullAndWrongType() throws {
         var fields = 0
+        let declared = try index().cases.reduce(0) { $0 + $1.optional.count }
+        XCTAssertGreaterThan(declared, 0)
         for entry in try index().cases {
             for field in entry.optional {
                 fields += 1
@@ -115,7 +129,8 @@ final class DecodeTests: XCTestCase {
                 try check(entry.type, wrongType, accepted: field.wrongType, context: entry.type + "." + field.field + " type")
             }
         }
-        XCTAssertEqual(fields, 113)
+        // Every optional field the index declares was exercised (derived, not hard-coded).
+        XCTAssertEqual(fields, declared)
     }
 
     func testModelScopeAndResetEventsRejectMalformedValues() throws {

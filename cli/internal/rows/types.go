@@ -27,6 +27,17 @@ type NextStep struct {
 	Text           Text            `json:"text"`
 	AvailableAt    *time.Time      `json:"availableAt,omitempty" null:"coalesced"`
 	DisabledReason *DisabledReason `json:"disabledReason,omitempty" null:"coalesced"`
+	// Hint is the tool's own sign-in or install command (D232), for a copy control.
+	Hint *Hint `json:"hint,omitempty" null:"forbidden"`
+}
+
+// Hint carries compiled per-tool commands only, never provider text. The app shows the
+// command in monospace with a Copy control; ModelPlan never runs it.
+type Hint struct {
+	SignInCommand  string `json:"signInCommand,omitempty" null:"forbidden" schema:"maxLength=64"`
+	InstallCommand string `json:"installCommand,omitempty" null:"forbidden" schema:"maxLength=128"`
+	InstallURL     string `json:"installUrl,omitempty" null:"forbidden" schema:"pattern=^https://,maxLength=128"`
+	Text           Text   `json:"text"`
 }
 
 type Row struct {
@@ -87,28 +98,41 @@ type ResetCardSource struct {
 }
 
 type Account struct {
-	Today            *AccountToday `json:"today,omitempty" null:"forbidden"`
-	ResetCards       *ResetCards   `json:"resetCards,omitempty" null:"forbidden"`
-	RefreshNotBefore **time.Time   `json:"refreshNotBefore,omitempty" null:"coalesced"`
-	Route            Route         `json:"route"`
-	SubscriptionRef  *string       `json:"subscriptionRef" null:"coalesced"`
-	AccountLocator   *string       `json:"accountLocator" null:"coalesced"`
-	Plan             Plan          `json:"plan"`
-	Beta             bool          `json:"beta"`
-	Credits          *Credits      `json:"credits" null:"coalesced"`
-	ValueState       ValueState    `json:"valueState"`
-	ObservedAt       *time.Time    `json:"observedAt" null:"coalesced"`
-	FreshUntil       *time.Time    `json:"freshUntil" null:"coalesced"`
-	LastFailure      *Failure      `json:"lastFailure" null:"coalesced"`
-	Windows          []Window      `json:"windows"`
+	Today            *AccountToday     `json:"today,omitempty" null:"forbidden"`
+	Activity         []AccountActivity `json:"activity,omitempty" null:"coalesced"`
+	ResetCards       *ResetCards       `json:"resetCards,omitempty" null:"forbidden"`
+	RefreshNotBefore **time.Time       `json:"refreshNotBefore,omitempty" null:"coalesced"`
+	Route            Route             `json:"route"`
+	SubscriptionRef  *string           `json:"subscriptionRef" null:"coalesced"`
+	AccountLocator   *string           `json:"accountLocator" null:"coalesced"`
+	Plan             Plan              `json:"plan"`
+	Beta             bool              `json:"beta"`
+	Credits          *Credits          `json:"credits" null:"coalesced"`
+	ValueState       ValueState        `json:"valueState"`
+	ObservedAt       *time.Time        `json:"observedAt" null:"coalesced"`
+	FreshUntil       *time.Time        `json:"freshUntil" null:"coalesced"`
+	LastFailure      *Failure          `json:"lastFailure" null:"coalesced"`
+	Windows          []Window          `json:"windows"`
 }
 
 // AccountToday contains only observed values; omission means unknown.
 type AccountToday struct {
+	ObservedTotalTokens  *int64            `json:"observedTotalTokens,omitempty" null:"forbidden" schema:"minimum=0"`
 	ObservedOutputTokens *int64            `json:"observedOutputTokens,omitempty" null:"forbidden" schema:"minimum=1"`
 	GenerationTps        *float64          `json:"generationTps,omitempty" null:"forbidden" schema:"minimum=0"`
 	RunningSessions      *int              `json:"runningSessions,omitempty" null:"forbidden" schema:"minimum=1"`
 	BindingBasis         TodayBindingBasis `json:"bindingBasis"`
+}
+
+// AccountActivity contains no path, transcript, raw session ID or credential.
+// SubscriptionRef must match its parent account; SessionRef is an opaque local ref.
+type AccountActivity struct {
+	SessionRef      string        `json:"sessionRef"`
+	SubscriptionRef string        `json:"subscriptionRef"`
+	BindingVerified bool          `json:"bindingVerified"`
+	Phase           ActivityPhase `json:"phase"`
+	RecordAt        time.Time     `json:"recordAt"`
+	ExpiresAt       time.Time     `json:"expiresAt"`
 }
 
 type Plan struct {
@@ -120,6 +144,8 @@ type Plan struct {
 type Credits struct {
 	Balance *float64 `json:"balance" null:"coalesced"`
 	Unit    string   `json:"unit"`
+	// Currency is the ISO 4217 code of a money balance, when the reader reports one.
+	Currency string `json:"currency,omitempty" null:"forbidden" schema:"pattern=^[A-Z]{3}$"`
 }
 
 type Failure struct {
@@ -151,7 +177,8 @@ type Window struct {
 }
 
 // WindowForecast is the quota engine's outlook for one window. RunsOutAt is set only
-// when the window is forecast to be used up before its reset.
+// when the window is forecast to be used up before its reset (or, with no reset time
+// known, from its recent burn rate).
 type WindowForecast struct {
 	RunsOutAt *time.Time `null:"coalesced"`
 	Pace      string     // tight | on_track | surplus | exhausted

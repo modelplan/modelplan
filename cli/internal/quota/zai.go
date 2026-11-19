@@ -53,6 +53,13 @@ type zaiResponse struct {
 }
 
 func fetchZai(ctx context.Context, c *http.Client, region, key string, now time.Time) codexbarEntry {
+	return fetchZaiAuthorization(ctx, c, region, key, "Bearer "+key, now)
+}
+
+// fetchZaiAuthorization: ZCode's own quota call sends the selected key as the complete
+// Authorization value, without "Bearer" (zai-org/ZCode docs/coding-plan-quota-remaining-api.md
+// and its bigmodelUsageQuotaProvider); the ZCode source follows that contract exactly.
+func fetchZaiAuthorization(ctx context.Context, c *http.Client, region, key, authorization string, now time.Time) codexbarEntry {
 	c = accountReadClient(consent.ScopeZaiAccountUsageAPIKey, c)
 	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
 	host := zaiHosts[region]
@@ -62,10 +69,11 @@ func fetchZai(ctx context.Context, c *http.Client, region, key string, now time.
 	}
 	if key == "" {
 		e.Error = "no API key in the environment"
+		e.ErrorCode = "no_key"
 		return e
 	}
 	var r zaiResponse
-	if err := getJSON(ctx, c, host+"/api/monitor/usage/quota/limit", key, &r); err != nil {
+	if err := getJSONAuthorization(ctx, c, host+"/api/monitor/usage/quota/limit", authorization, &r); err != nil {
 		e.Error = err.Error()
 		e.ErrorCode = errorCode(err)
 		return e
@@ -102,6 +110,11 @@ func parseZai(r zaiResponse, now time.Time) codexbarEntry {
 			code, _ = r.Error.Code.Int64()
 		}
 		e.ErrorCode = zaiBodyErrorCode(code)
+		if r.Error == nil && r.Code == 500 {
+			// The monitor envelope's 500 is a key without a Coding Plan, not a server error
+			// (Token Monitor docs/providers/zai.md and tests/shared/zaiLimits.test.js@b6b5548).
+			e.ErrorCode = "no_plan"
+		}
 		e.Error = e.ErrorCode
 		return e
 	}

@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -112,7 +114,7 @@ func TestSelectCockpitPublicationUsesCurrentReadingsAndPublicationOrder(t *testi
 	}
 	d := &digest.Digest{Source: digest.ComponentClient, PublicationID: "0123456789abcdef01234567", PublishedAt: "2026-10-24T12:00:00Z", Models: []digest.Model{model("o1", "openai"), model("a1", "anthropic"), model("o2", "openai"), model("o3", "openai"), model("o4", "openai")}}
 	p := rows.Projection{Rows: []rows.Row{{ID: "codex", Kind: rows.KindTool, Consent: rows.ConsentAllowed, Accounts: []rows.Account{{ValueState: rows.ValueStateCurrent}}}, {ID: "claude", Kind: rows.KindTool, Consent: rows.ConsentAllowed, Accounts: []rows.Account{{ValueState: rows.ValueStateRetained}}}}}
-	got := selectCockpitPublication(d, p)
+	got := selectCockpitPublication(d, p, nil)
 	if got == nil || !got.Truncated || len(got.Models) != 3 || got.Models[0].ID != "o1" || got.Models[1].ID != "o2" || got.Models[2].ID != "o3" {
 		t.Fatalf("filtered lineup: %+v", got)
 	}
@@ -121,8 +123,12 @@ func TestSelectCockpitPublicationUsesCurrentReadingsAndPublicationOrder(t *testi
 			t.Fatalf("efforts: %+v", m.Efforts)
 		}
 	}
+	// CKP-FAD-02: a model in use leads, even one the three-model limit would have cut.
+	if used := selectCockpitPublication(d, p, map[string]bool{"o4": true}); used == nil || len(used.Models) != 3 || used.Models[0].ID != "o4" || used.Models[1].ID != "o1" || !used.Truncated {
+		t.Fatalf("in-use lineup: %+v", used)
+	}
 	p.Rows[0].Consent = rows.ConsentDenied
-	empty := selectCockpitPublication(d, p)
+	empty := selectCockpitPublication(d, p, nil)
 	if empty == nil || empty.Models == nil || len(empty.Models) != 0 || empty.Truncated {
 		t.Fatalf("empty current lineup: %+v", empty)
 	}
@@ -255,5 +261,93 @@ func TestEligibleCockpitVendorsConsentStates(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestCockpitPublicationCarriesPublishedSpeedTiers(t *testing.T) {
+	const speed = `[{"id":"codex-fast","harness":"codex","tier":"fast","label":"Fast","toggle":"/fast","eligibility":{"plans":["chatgpt-sign-in"],"note":"n"},"models":[{"vendorModelId":"v1","modelId":"m1","speed":{"ratio":1.5,"qualifier":"up-to"}},{"vendorModelId":"v2","modelId":null,"speed":{"ratio":null,"qualifier":"unstated"}}],"billing":[{"account":"subscription","billsTo":"plan-quota","basis":"included-usage","ratio":2}],"caveats":["not-task-time"],"sources":["https://example.test/fast"]}]`
+	d := &digest.Digest{Source: digest.ComponentClient, PublicationID: "0123456789abcdef01234567", PublishedAt: "2026-10-24T12:00:00Z"}
+	if err := json.Unmarshal([]byte(speed), &d.Speed); err != nil {
+		t.Fatal(err)
+	}
+	got := materializeCockpitPublication(d, nil, false)
+	if got == nil || len(got.SpeedTiers) != 1 {
+		t.Fatalf("speed tiers dropped: %+v", got)
+	}
+	out, err := json.Marshal(got.SpeedTiers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want, have any
+	_ = json.Unmarshal([]byte(speed), &want)
+	_ = json.Unmarshal(out, &have)
+	if !reflect.DeepEqual(want, have) {
+		t.Fatalf("shape changed:\n%s\n%s", speed, out)
+	}
+	for _, none := range [][]digest.SpeedTier{nil, {}} {
+		d.Speed = none
+		got = materializeCockpitPublication(d, nil, false)
+		raw, _ := json.Marshal(got)
+		if got == nil || len(got.SpeedTiers) != 0 || bytes.Contains(raw, []byte("speedTiers")) {
+			t.Fatalf("empty speed tiers must be absent: %s", raw)
+		}
+	}
+	bad := math.Inf(1)
+	d.Speed = []digest.SpeedTier{{ID: "x", Billing: []digest.SpeedBilling{{Ratio: bad}}}}
+	if got = materializeCockpitPublication(d, nil, false); got == nil || len(got.SpeedTiers) != 0 {
+		t.Fatalf("non-finite tier admitted: %+v", got)
+	}
+}
+
+func TestCockpitPlanModelsCopyOnlyPublishedPlanLists(t *testing.T) {
+	d := &digest.Digest{Source: digest.ComponentClient, PlanModels: &digest.PlanModels{Plans: []digest.PlanModelList{
+		{PlanID: "openai-plus", Generation: "current", Basis: "access", ModelIDs: []string{"astra", "gone", "sol"}},
+		{PlanID: "claude-pro", Basis: "listing", ModelIDs: []string{"gone"}},
+		{PlanID: "cursor-pro", Basis: "invented", ModelIDs: []string{"astra"}},
+	}}}
+	published := []wire.CockpitPublicationModel{{ID: "astra"}, {ID: "sol"}}
+	got := cockpitPlanModels(d, published)
+	want := []wire.CockpitPlanModels{{PlanID: "openai-plus", Generation: "current", Basis: "access", ModelIDs: []string{"astra", "sol"}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	// An older publication has no planModels: nothing is invented.
+	if cockpitPlanModels(&digest.Digest{Source: digest.ComponentClient}, published) != nil || cockpitPlanModels(nil, published) != nil {
+		t.Fatal("a publication without planModels must yield none")
+	}
+}
+
+func TestReportedModelsMapThroughPublishedHarnessAliases(t *testing.T) {
+	d := &digest.Digest{Source: digest.ComponentClient, Models: []digest.Model{
+		{ID: "astra", HarnessIDs: map[string][]string{"codex": {"native-astra", "native-astra-old"}}},
+		{ID: "sol", HarnessIDs: map[string][]string{"codex": {"native-sol"}}},
+		{ID: "opus", HarnessIDs: map[string][]string{"claude-code": {"native-astra"}}},
+		{ID: "unpublished", HarnessIDs: map[string][]string{"codex": {"native-x"}}},
+	}}
+	published := []wire.CockpitPublicationModel{{ID: "astra"}, {ID: "sol"}, {ID: "opus"}}
+	got := reportedPublishedModels(d, "codex", []string{"native-astra-old", "native-x", "native-unknown"}, published)
+	if !reflect.DeepEqual(got, []string{"astra"}) {
+		t.Fatalf("got %v: only a codex alias of a published model maps; unknown ids are dropped, not guessed", got)
+	}
+	if reportedPublishedModels(d, "codex", []string{"native-unknown"}, published) != nil || reportedPublishedModels(nil, "codex", []string{"native-sol"}, published) != nil {
+		t.Fatal("nothing maps: nothing reported")
+	}
+}
+
+func TestReportedModelsMapUnderEachToolKey(t *testing.T) {
+	if reportedHarnessKey("native:gemini") != "gemini" || reportedHarnessKey("claude-code") != "claude-code" || reportedHarnessKey("codex") != "codex" {
+		t.Fatal("tool key")
+	}
+	d := &digest.Digest{Source: digest.ComponentClient, Models: []digest.Model{
+		{ID: "flash", HarnessIDs: map[string][]string{"gemini": {"gemini-2.5-flash"}, "copilot": {}}},
+		{ID: "gpt", HarnessIDs: map[string][]string{"copilot": {"gpt-5.1"}}},
+	}}
+	published := []wire.CockpitPublicationModel{{ID: "flash"}, {ID: "gpt"}}
+	if got := reportedPublishedModels(d, reportedHarnessKey("native:gemini"), []string{"gemini-2.5-flash", "gpt-5.1"}, published); !reflect.DeepEqual(got, []string{"flash"}) {
+		t.Fatalf("got %v: an id maps only under its own tool key", got)
+	}
+	// No harnessIds published for the tool yet: nothing maps, the plan list stays.
+	if reportedPublishedModels(d, reportedHarnessKey("native:grok"), []string{"grok-build-1"}, published) != nil {
+		t.Fatal("unmapped ids must be dropped")
 	}
 }

@@ -272,7 +272,7 @@ struct NativeFailure:Error {let message:String}
     hiddenView.dispose()
     let effectsView=DockInstrumentView(frame:effectsSkin.bounds)
     try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:2,locale:"en")
-    let pool=EffectResourcePool(),driver=DockWorkingEffects(pool:pool,systemReduceMotion:{false}),provider=SyntheticDockFrameProvider()
+    let pool=EffectResourcePool(),driver=DockWorkingEffects(pool:pool,systemReduceMotion:{false},onBattery:{false}),provider=SyntheticDockFrameProvider()
     let magnifications=Dictionary(uniqueKeysWithValues:working.map{($0.subscriptionID,1.5)})
     try driver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:RenderProfile(scale:2),magnification:magnifications,compositing:.screen,provider:{_ in provider})
     try require(driver.activeIDs.count==6 && driver.animatingIDs.count==6,"six distinct native consumers")
@@ -287,7 +287,7 @@ struct NativeFailure:Error {let message:String}
     driver.stop();pool.purgeUnleased();effectsView.dispose();try require(pool.activeLeaseCount==0 && pool.decodedBytes==0,"explicit teardown releases every jet")
     let smoothPool=EffectResourcePool(),smoothProvider=SyntheticDockFrameProvider()
     var hostTimeReads=0
-    let smoothDriver=DockWorkingEffects(pool:smoothPool,systemReduceMotion:{false},hostTime:{hostTimeReads+=1;return 100})
+    let smoothDriver=DockWorkingEffects(pool:smoothPool,systemReduceMotion:{false},onBattery:{false},hostTime:{hostTimeReads+=1;return 100})
     try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:2,locale:"en")
     try smoothDriver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:.init(scale:2),magnification:magnifications,rotation:.init(period:1),sampling:.interpolatedCandidate,provider:{_ in smoothProvider})
     try require(smoothDriver.interpolatedIDs.count==6 && smoothDriver.interpolationLayerCount==54 && smoothDriver.animatingIDs.count==6,"P04 candidate uses bounded native interpolation without an app frame loop")
@@ -312,7 +312,7 @@ struct NativeFailure:Error {let message:String}
     smoothDriver.stop();smoothPool.purgeUnleased();effectsView.dispose()
     // Optional motion remains independent of the shared discrete bitmap clock.
     var syntheticSystemReduction=false
-    let motionPool=EffectResourcePool(),motionDriver=DockWorkingEffects(pool:motionPool,systemReduceMotion:{syntheticSystemReduction})
+    let motionPool=EffectResourcePool(),motionDriver=DockWorkingEffects(pool:motionPool,systemReduceMotion:{syntheticSystemReduction},onBattery:{false})
     let recipe=DockEffectRotation(period:2,direction:.clockwise)
     func motion(_ profile:RenderProfile = .init(scale:1),quiet:Set<String>=[])throws {
         try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:1,locale:"en")
@@ -353,6 +353,39 @@ struct NativeFailure:Error {let message:String}
     }
     try require(motionDriver.activeIDs.isEmpty && motionDriver.rotatingIDs.isEmpty,"failed recipe retires prior motion")
     motionDriver.stop();motionPool.purgeUnleased();effectsView.dispose()
+    // D171 / DOCK-3.8-23: the working ring turns once every 2 s, smoothly, from host time alone.
+    let ringSpin=DockEffectRotation.working
+    try require(ringSpin.period==2 && ringSpin.direction == .clockwise,"D171 working spin is one clockwise turn every 2 s")
+    for t in [0.0,0.5,1.0,1.5,2.0,3.25,1_000_001.75] {
+        try require(abs(ringSpin.angle(hostTime:t)+t.truncatingRemainder(dividingBy:2)*Double.pi)<1e-9,"D171 angle is a closed form of host time, not a per-tick sum")
+    }
+    // 60 Hz samples over many turns: every frame advances the same 6 degrees, so no step or drift.
+    let spinDeltas=(1...600).map{i->Double in
+        let d=ringSpin.angle(hostTime:5_000+Double(i)/60)-ringSpin.angle(hostTime:5_000+Double(i-1)/60)
+        return (d+4*Double.pi).truncatingRemainder(dividingBy:2*Double.pi)
+    }
+    let spinMean=spinDeltas.reduce(0,+)/Double(spinDeltas.count)
+    let spinVariance=spinDeltas.reduce(0){$0+($1-spinMean)*($1-spinMean)}/Double(spinDeltas.count)
+    try require(abs(spinMean-(2*Double.pi-Double.pi/60))<1e-6 && spinVariance<1e-12,"D171 frame-to-frame spin delta is constant")
+    var spinClock:CFTimeInterval=101.3,spinBattery=false
+    let spinPool=EffectResourcePool(),spinDriver=DockWorkingEffects(pool:spinPool,systemReduceMotion:{false},onBattery:{spinBattery},hostTime:{spinClock})
+    func spinPass(_ profile:RenderProfile = .init(scale:1))throws->CALayer {
+        try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:1,locale:"en")
+        try spinDriver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:profile,rotation:ringSpin,provider:{_ in provider})
+        return effectsView.workingLayerParents["work-0"]!.sublayers!.first!
+    }
+    let firstSpinJet=try spinPass()
+    try require(spinDriver.rotationBeginTimes["work-0"]==firstSpinJet.convertTime(100,from:nil),"D171 spin origin is the last whole-period boundary, not the configure time")
+    try require(spinDriver.rotationPeriods["work-0"]==2 && spinDriver.cycleSeconds["work-0"]==1,"D171 spin period is not the one-second flame clock")
+    spinClock=103.9;spinBattery=true
+    let secondSpinJet=try spinPass()
+    try require(spinDriver.rotationBeginTimes["work-0"]==secondSpinJet.convertTime(102,from:nil),"D171 a reconfigure resumes the shown phase instead of snapping to 0")
+    try require(spinDriver.isThrottled && spinDriver.cycleSeconds["work-0"]==2 && spinDriver.rotationPeriods["work-0"]==2,"D171 battery slows only the flame clock, never the spin")
+    _=try spinPass(RenderProfile(scale:1,reduceMotion:true))
+    try require(spinDriver.rotatingIDs.isEmpty && spinDriver.animatingIDs.isEmpty && spinDriver.activeIDs.count==6,"D171 Reduce Motion holds a static working ring")
+    try spinDriver.configure(view:effectsView,skin:effectsSkin,readings:[],profile:.init(scale:1),rotation:ringSpin,provider:{_ in provider})
+    try require(spinDriver.rotatingIDs.isEmpty && spinDriver.activeIDs.isEmpty,"D171 nothing spins when nothing is working")
+    spinDriver.stop();spinPool.purgeUnleased();effectsView.dispose()
     // B07 uses injected display/protection truth and one scheduler. No NSWindow is created.
     let display=DockDisplayArea(id:"screen",frame:CGRect(x:0,y:0,width:1000,height:800),visibleFrame:CGRect(x:0,y:0,width:1000,height:800))
     let edgeLayouts=DockEdgeGeometry.allowedEdges.map{edge in
@@ -386,10 +419,6 @@ struct NativeFailure:Error {let message:String}
     try require(edgeDriver.presentation?.state == .expanded && edgeEnv.presence.recordedLocks.contains(.menu),"real menu protection outlives stale-lock fallback")
     edgeEnv.presence.menuActuallyOpen=false;edgeTime=7.1;edgeDriver.refresh()
     try require(edgeDriver.presentation?.state == .sliver && edgeEnv.presence.recordedLocks.isEmpty,"stale locks clear only without actual protections")
-    edgeEnv.presence.cockpitClosed=false;edgeTime=8;edgeDriver.refresh();edgeEnv.presence.cockpitClosed=true;edgeTime=9;edgeDriver.restoreAfterCockpitClose()
-    try require(edgeDriver.presentation?.state == .sliver,"away close restores sliver without expanded flash")
-    edgeEnv.pointer=CGPoint(x:999,y:400);edgeTime=10;edgeDriver.restoreAfterCockpitClose()
-    try require(edgeDriver.presentation?.state == .expanded && !edgeDriver.acceptsPress(),"wake close restores dock with arrival guard")
     edgeDriver.stop();let paintsStopped=edgePaints;staleEdgeTimer()
     try require(edgePaints==paintsStopped && edgeScheduler.pending==nil,"cancelled generation cannot revive surface")
     edgeEnv.presence.autoHide=false;edgeTime=11;edgeDriver.resume();edgeTime=11.4
@@ -399,7 +428,7 @@ struct NativeFailure:Error {let message:String}
     try require(!edgeDriver.backgroundCanDrag(local:CGPoint(x:30,y:80)) && !edgeDriver.backgroundCanDrag(local:CGPoint(x:10,y:220)),"nozzle and ignition never drag the dock")
     try require(edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:925,y:515)),"painted body begins capture")
     edgeEnv.presence.autoHide=true;edgeEnv.presence.mouseButtonDown=true;edgeEnv.pointer=CGPoint(x:20,y:300);edgeTime=11.5;edgeDriver.updateBackgroundMove(global:edgeEnv.pointer!)
-    try require(edgeDriver.presentation?.snapPreview?.edge == .left && edgeDriver.isBackgroundMoving && edgeDriver.presentation?.placement?.edge == .right,"exact snap destination is separate from stationary dock")
+    try require(edgeDriver.presentation?.placement?.edge == .left && edgeDriver.isBackgroundMoving && edgeDriver.presentation?.carriedFrame != nil,"the panel is carried to the landing edge")
     var commits=0;edgeDriver.onCommittedPlacement={_ in commits+=1}
     edgeEnv.presence.mouseButtonDown=false;edgeTime=15;edgeDriver.endBackgroundMove(global:edgeEnv.pointer!)
     try require(commits==1 && edgeDriver.preference.edge == .left && !edgeDriver.isBackgroundMoving,"long drag release commits once before stale fallback")
@@ -408,7 +437,7 @@ struct NativeFailure:Error {let message:String}
     edgeDriver.dragRegions=edgeRegions
     try require(edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:5,y:300)),"new drag admitted")
     edgeDriver.updateBackgroundMove(global:CGPoint(x:980,y:500));edgeDriver.cancelBackgroundMove()
-    try require(commits==1 && edgeDriver.preference.edge == .left && edgeDriver.presentation?.snapPreview==nil,"Escape/cancel leaves committed placement")
+    try require(commits==1 && edgeDriver.preference.edge == .left && edgeDriver.presentation?.carriedFrame==nil,"Escape/cancel leaves committed placement")
     edgeTime=16;_ = edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:5,y:300))
     edgeDriver.updateBackgroundMove(global:CGPoint(x:980,y:500))
     let clearsBeforeRemoval=edgeClears.count
@@ -420,7 +449,7 @@ struct NativeFailure:Error {let message:String}
     _ = edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:20),global:CGPoint(x:925,y:anchorBefore+100))
     edgeEnv.presence.mouseButtonDown=true
     edgeDriver.updateBackgroundMove(global:CGPoint(x:925,y:anchorBefore+120))
-    try require(abs(edgeDriver.presentation!.snapPreview!.sliverFrame.midY-(anchorBefore+20))<0.001,"same-edge grip drag preserves grab offset, no centre jump")
+    try require(abs(edgeDriver.presentation!.placement!.sliverFrame.midY-(anchorBefore+20))<0.001,"same-edge grip drag preserves grab offset, no centre jump")
     edgeDriver.cancelBackgroundMove()
     edgeDriver.stop()
     let sliver=DockSliverView(frame:CGRect(x:0,y:0,width:3,height:20));var sliverPresses=0;sliver.onReveal={sliverPresses+=1}
@@ -430,8 +459,6 @@ struct NativeFailure:Error {let message:String}
     catch DockArtworkError.invalidManifest{checks+=1}
     try require(!sliver.accessibilityPerformPress() && !sliver.isPainted(atLocal:CGPoint(x:1,y:1)),"failed sliver cannot preserve old actions")
     sliver.dispose()
-    let outline=DockSnapOutlineView(frame:CGRect(x:0,y:0,width:40,height:40))
-    try require(outline.hitTest(CGPoint(x:10,y:10))==nil,"snap outline never catches input")
     let secondDisplay=DockDisplayArea(id:"other",frame:CGRect(x:2000,y:0,width:1000,height:800),visibleFrame:CGRect(x:2000,y:0,width:1000,height:800))
     var orderedEnv=DockEdgeEnvironment(displays:[display,secondDisplay],layouts:edgeLayouts,primaryDisplayID:"screen",pointer:CGPoint(x:999,y:400))
     orderedEnv.presence.autoHide=false
@@ -503,11 +530,11 @@ struct NativeFailure:Error {let message:String}
     var interactionTime=0.0,interactionEnv=DockInteractionEnvironment(catalogue:["a","b","c"],preferences:.init(),targets:[.init(id:"a",along:0),.init(id:"b",along:20)],overflowIDs:["c"],hoveredID:"a",insideShared:true,contents:["a":.init(subscriptionID:"a",name:"Synthetic A",rows:[.init(id:"q",kind:.quota,label:"Window",value:"--")])])
     let interactionScheduler=NeutralEdgeScheduler(),interaction=DockInteractionController(clock:{interactionTime},scheduler:interactionScheduler,read:{interactionEnv})
     var interactionPaints=0;interaction.onPresent={_ in interactionPaints+=1};interaction.start()
-    try require(interaction.presentation?.card == .hidden && interactionScheduler.deadline==0.25,"native card controller arms250ms once")
+    try require(interaction.presentation?.card == .hover("a") && interactionScheduler.deadline==0.15,"native card controller opens on arrival (no ring dwell) and samples every 150 ms")
     let retiredCardTimer=interactionScheduler.saved[0]
-    interactionTime=0.25;interactionScheduler.fire();try require(interaction.presentation?.card == .hover("a"),"deadline revalidates current hover/content")
+    interactionTime=0.25;interactionScheduler.fire();try require(interaction.presentation?.card == .hover("a"),"the sample revalidates current hover/content")
     interactionTime=10;interactionEnv.parentExpanded=false;interactionEnv.insideShared=false;interaction.refresh()
-    try require(interaction.presentation?.card == .hidden,"native cockpit suppression withdraws the card")
+    try require(interaction.presentation?.card == .hidden,"a withdrawn parent withdraws the card")
     interactionEnv.catalogue=["b","c"];interaction.refresh();try require(interaction.presentation?.card == .hidden,"removed card target retired")
     interaction.stop();let stoppedCardPaints=interactionPaints;retiredCardTimer()
     try require(interactionPaints==stoppedCardPaints && interactionScheduler.pending==nil,"old hover callback cannot reopen stopped card")
@@ -524,11 +551,16 @@ struct NativeFailure:Error {let message:String}
     let toOverflow=orderRequests.last!;interactionEnv.preferences=toOverflow.proposed;interactionEnv.overflowIDs.insert("b")
     interaction.orderAccepted(toOverflow.id,preferences:interactionEnv.preferences,catalogue:interactionEnv.catalogue)
     try require(interaction.presentation?.overflowIDs.contains("b")==true && orderAnnouncements.count==2,"accepted off-main move opens overflow before focus/announcement handoff")
-    _=interaction.beginNozzle(id:"a",along:0);interaction.canPreviewOrder={_ in interaction.stop();return true};interaction.moveNozzle(along:25)
-    try require(interaction.presentation?.reorder==nil && !interaction.hasCapture,"preview callback stop cannot reenter an inout gesture or resurrect it")
-    interaction.canPreviewOrder={_ in true};interactionTime=12;interaction.start();_=interaction.beginNozzle(id:"a",along:0)
+    _=interaction.beginNozzle(id:"a",along:0);interaction.moveNozzle(along:25)
+    try require(interaction.presentation?.reorder==nil,"D244: a moved ring press never previews an order")
+    interaction.endNozzle(insideMain:true,overSameSource:true)
+    try require(orderRequests.count==2 && !interaction.hasCapture,"D244: releasing a moved ring press saves no order and is no click")
+    interactionTime=12;_=interaction.beginNozzle(id:"a",along:0)
     interactionEnv.bindingRevision+=1;interaction.refresh();try require(!interaction.hasCapture,"binding change cancels captured old nozzle")
-    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==["b","c"],"overflow list retains accepted off-main subscriptions in shared canonical order")
+    // D244 dropped the stop/start that used to reset overflowOpen here, so the list opened by the accepted off-main move is still open.
+    try require(interaction.presentation?.overflowIDs==["b","c"],"overflow list retains accepted off-main subscriptions in shared canonical order")
+    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==[],"toggle closes the open overflow list")
+    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==["b","c"],"reopened overflow list keeps the shared canonical order")
     interaction.stop()
     let reorderSurface=DockReorderLayersView(frame:effectsSkin.bounds)
     let firstVisuals=try renderer.reorderVisuals(skin:effectsSkin,readings:Dictionary(uniqueKeysWithValues:working.map{($0.subscriptionID,$0)}),scale:1)
@@ -550,15 +582,15 @@ struct NativeFailure:Error {let message:String}
     statusMenu.onRestoreStatusFocus={menuFocus+=1};statusMenu.perform(.help);statusMenu.helpDidDismiss();statusMenu.helpDidDismiss();statusMenu.perform(.settings)
     try require(menuHelp==1 && menuFocus==1 && menuSettings==1,"Help uses injected map/focus callbacks once")
     let legacyMenu=DockStatusMenu(labels:labels,handlers:[:])
-    try require(legacyMenu.menu.items.filter{!$0.isSeparatorItem}.count==7 && legacyMenu.menu.items.filter(\.isSeparatorItem).count==2,"missing Help callback preserves native seven-item compatibility")
+    try require(legacyMenu.menu.items.filter{!$0.isSeparatorItem}.map{$0.representedObject as! String}==DockMenuCommand.allCases.filter{$0 != .help}.map(\.rawValue) && legacyMenu.menu.items.filter(\.isSeparatorItem).count==2,"missing Help callback keeps every other command in two groups (no update item, #533)")
     statusMenu.dispose();statusMenu.perform(.help);try require(menuHelp==1,"disposed menu cannot replay callback")
     legacyMenu.dispose()
     let cardSurface=DockCardView(frame:CGRect(x:0,y:0,width:300,height:200))
     let cardContent=DockCardContent(subscriptionID:"a",name:"Synthetic",rows:[.init(id:"extra",kind:.extraQuota,label:"Full extra name",value:"0%",remainingFraction:0,tone:.critical)])
     let templateBrand=NSImage(size:NSSize(width:20,height:20));templateBrand.isTemplate=true
     try cardSurface.apply(cardContent,brandImage:templateBrand);try require(!cardSurface.subviews.isEmpty,"native card builds bounded rows/footer")
-    let cardHeader=(cardSurface.subviews.first as! NSStackView).arrangedSubviews.first as! NSStackView
-    try require((cardHeader.arrangedSubviews.first as? NSImageView)?.image?.isTemplate==false && templateBrand.isTemplate,"card brand copy remains intrinsic without mutating caller template")
+    let cardBrand=cardSurface.subviews.compactMap{$0 as? NSImageView}.first
+    try require(cardBrand?.image?.isTemplate==false && templateBrand.isTemplate,"card brand copy remains intrinsic without mutating caller template")
     let unsafeCardContent=DockCardContent(subscriptionID:"a",name:"Synthetic",rows:[],links:[.init(label:"bad",url:URL(string:"file:///synthetic")!)])
     do{try cardSurface.apply(unsafeCardContent);throw NativeFailure(message:"unsafe card link admitted")}catch DockLogicError.invalidCatalogue{checks+=1}
     cardSurface.dispose()

@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"math"
+	"strings"
 	"time"
 	"unicode"
 
@@ -115,28 +116,143 @@ func materializeCockpitPublication(d *digest.Digest, selected []*digest.Model, t
 		result.Models = append(result.Models, converted)
 		seen[model.ID] = true
 	}
+	result.SpeedTiers = publishedSpeedTiers(d.Speed)
 	return result
 }
 
-// selectCockpitPublication preserves the verified models array's publication
-// order; it does not calculate a cross-vendor score or a synthetic ranking.
-func selectCockpitPublication(d *digest.Digest, projection rows.Projection) *wire.CockpitPublication {
+// publishedSpeedTiers copies the published speedTiers verbatim (shape of client data.speedTiers). Tiers with
+// non-finite numbers are skipped; more than 32 tiers are cut. Nil when nothing is published.
+func publishedSpeedTiers(in []digest.SpeedTier) []wire.CockpitSpeedTier {
+	var out []wire.CockpitSpeedTier
+	finite := func(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+	strs := func(v []string) []string { return append([]string{}, v...) }
+tiers:
+	for _, t := range in {
+		if len(out) == 32 {
+			break
+		}
+		c := wire.CockpitSpeedTier{ID: t.ID, Harness: t.Harness, Tier: t.Tier, Label: t.Label, Toggle: t.Toggle,
+			Eligibility: wire.CockpitSpeedEligibility{Plans: strs(t.Eligibility.Plans), Note: t.Eligibility.Note},
+			Models:      []wire.CockpitSpeedTierModel{}, Billing: []wire.CockpitSpeedBilling{}, Caveats: strs(t.Caveats), Sources: strs(t.Sources)}
+		for _, m := range t.Models {
+			if m.Speed.Ratio != nil && !finite(*m.Speed.Ratio) {
+				continue tiers
+			}
+			c.Models = append(c.Models, wire.CockpitSpeedTierModel{VendorModelID: m.VendorModelID, ModelID: m.ModelID, Speed: wire.CockpitSpeedRatio{Ratio: m.Speed.Ratio, Qualifier: m.Speed.Qualifier}})
+		}
+		for _, b := range t.Billing {
+			if !finite(b.Ratio) {
+				continue tiers
+			}
+			c.Billing = append(c.Billing, wire.CockpitSpeedBilling{Account: b.Account, BillsTo: b.BillsTo, Basis: b.Basis, Ratio: b.Ratio})
+		}
+		if len(c.Models) > 256 || len(c.Billing) > 8 || len(c.Caveats) > 16 || len(c.Sources) > 16 || len(c.Eligibility.Plans) > 32 {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// allCockpitModels lists every published model that passes the same checks as the lineup, in
+// publication order. An invalid model is left out rather than failing the whole list.
+func allCockpitModels(d *digest.Digest) []wire.CockpitPublicationModel {
+	out := []wire.CockpitPublicationModel{}
+	if d == nil || d.Source != digest.ComponentClient {
+		return out
+	}
+	seen := map[string]bool{}
+	for i := range d.Models {
+		if len(out) == 256 {
+			break
+		}
+		if converted, ok := publishedCockpitModel(d.Models[i]); ok && !seen[converted.ID] {
+			seen[converted.ID] = true
+			out = append(out, converted)
+		}
+	}
+	return out
+}
+
+// cockpitPlanModels copies the published plan model lists, keeping only models in the published list
+// above and plans that still have one. Nothing is inferred; an older publication yields none.
+func cockpitPlanModels(d *digest.Digest, published []wire.CockpitPublicationModel) []wire.CockpitPlanModels {
+	if d == nil || d.Source != digest.ComponentClient || d.PlanModels == nil {
+		return nil
+	}
+	known := map[string]bool{}
+	for _, m := range published {
+		known[m.ID] = true
+	}
+	var out []wire.CockpitPlanModels
+	for _, p := range d.PlanModels.Plans {
+		if len(out) == 128 || p.PlanID == "" || len(p.PlanID) > 128 || len(p.Generation) > 128 || (p.Basis != "access" && p.Basis != "listing") {
+			continue
+		}
+		ids := []string{}
+		for _, id := range p.ModelIDs {
+			if known[id] && len(ids) < 256 {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) > 0 {
+			out = append(out, wire.CockpitPlanModels{PlanID: p.PlanID, Generation: p.Generation, Basis: p.Basis, ModelIDs: ids})
+		}
+	}
+	return out
+}
+
+// reportedHarnessKey is the tool key a reported model id is mapped under in the published harnessIds: the
+// account source without its native reader prefix (codex, claude-code, gemini, antigravity, grok, copilot,
+// kimi).
+func reportedHarnessKey(source string) string { return strings.TrimPrefix(source, "native:") }
+
+// reportedPublishedModels maps the native model ids a tool reported (Codex model/list) to published model
+// ids through the published harnessIds for that tool, keeping only published models. An id with no alias is
+// dropped, not guessed; the result is nil when nothing maps, so the client falls back to the plan list.
+func reportedPublishedModels(d *digest.Digest, harness string, reported []string, published []wire.CockpitPublicationModel) []string {
+	if d == nil || d.Source != digest.ComponentClient {
+		return nil
+	}
+	known := map[string]bool{}
+	for _, m := range published {
+		known[m.ID] = true
+	}
+	native := map[string]bool{}
+	for _, id := range reported {
+		native[id] = true
+	}
+	var out []string
+	for i := range d.Models {
+		m := d.Models[i]
+		if !known[m.ID] || len(out) >= 256 {
+			continue
+		}
+		for _, id := range m.HarnessIDs[harness] {
+			if native[id] {
+				out = append(out, m.ID)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// selectCockpitPublication puts the models in use first, then keeps the verified models array's
+// publication order; it does not calculate a cross-vendor score or a synthetic ranking.
+func selectCockpitPublication(d *digest.Digest, projection rows.Projection, inUse map[string]bool) *wire.CockpitPublication {
 	if d == nil {
 		return nil
 	}
 	vendors := eligibleCockpitVendors(projection)
-	selected := make([]*digest.Model, 0, 3)
-	truncated := false
-	for i := range d.Models {
-		model := &d.Models[i]
-		if !vendors[model.DeveloperID] {
-			continue
+	eligible := make([]*digest.Model, 0, len(d.Models))
+	for _, used := range []bool{true, false} {
+		for i := range d.Models {
+			model := &d.Models[i]
+			if vendors[model.DeveloperID] && inUse[model.ID] == used {
+				eligible = append(eligible, model)
+			}
 		}
-		if len(selected) == 3 {
-			truncated = true
-			break
-		}
-		selected = append(selected, model)
 	}
-	return materializeCockpitPublication(d, selected, truncated)
+	return materializeCockpitPublication(d, eligible[:min(3, len(eligible))], len(eligible) > 3)
 }

@@ -9,6 +9,7 @@ for(const locale of ['en','zh-CN'])test(`visual fixture populates the synthetic 
  expect(await receive(send('load',{appearance:{...appearance,locale},shell}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:sample()}))).toBe(true);
+ // sample() is a client without details; the normal entry's faders are in publication-faders.spec.
  await expect(page.locator('.fd-ch.empty')).toHaveCount(3);await expect(page.locator('.ck-tape')).toHaveAttribute('data-sessions-available','false');
  const fixture=visualFixture();expect(await receive(send('display',{data:fixture.data}))).toBe(true);
  await expect(page.locator('.ck-tape .t-observed')).toHaveCount(3);await expect(page.locator('.fd-ch.empty')).toHaveCount(3);

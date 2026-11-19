@@ -45,7 +45,7 @@ func candidateClient(t *testing.T, bin, home string, args, extraEnv []string) (*
 	t.Helper()
 	stderr := &bytes.Buffer{}
 	cmd := exec.Command(bin, append([]string{"app-server"}, args...)...)
-	cmd.Env = append([]string{"HOME=" + home, "PATH=" + filepath.Join(home, "bin"), "TMPDIR=" + home, "LANG=C", "MODELPLAN_CACHE=" + filepath.Join(home, "cache")}, noRealCodex(home)...)
+	cmd.Env = append([]string{"HOME=" + home, "PATH=" + filepath.Join(home, "bin"), "TMPDIR=" + home, "LANG=C", "MODELPLAN_BASE=http://127.0.0.1:1", "MODELPLAN_CACHE=" + filepath.Join(home, "cache")}, noRealCodex(home)...)
 	cmd.Env = append(cmd.Env, extraEnv...)
 	cmd.Stderr = stderr
 	stdin, err := cmd.StdinPipe()
@@ -371,8 +371,8 @@ func TestRealBinaryRefreshSharedBudgetAndDeferrals(t *testing.T) {
 			}
 			methods = append(methods, request.Method)
 		}
-		if !reflect.DeepEqual(methods, []string{"initialize", "initialized", "account/rateLimits/read", "account/read"}) {
-			t.Fatalf("logical read escaped its two-request set: %v", methods)
+		if !reflect.DeepEqual(methods, []string{"initialize", "initialized", "account/rateLimits/read", "account/read", "model/list"}) {
+			t.Fatalf("logical read escaped its approved request set: %v", methods)
 		}
 		if stderr.Len() != 0 {
 			t.Fatalf("unexpected stderr: %s", stderr.String())

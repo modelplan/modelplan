@@ -39,7 +39,8 @@ func projectionTestReducer(_ context.Context, s ProjectionState, b ProjectionBat
 		values[b.FileRef] = v
 	}
 	if b.Final {
-		s.Incomplete = !b.RecoveryComplete
+		// This reducer needs every record, so anything left unread is incomplete.
+		s.Incomplete = !b.RecoveryComplete || !b.UnknownAfter.IsZero()
 		if b.DiscoveryComplete {
 			live := map[string]bool{}
 			for _, ref := range b.LiveFileRefs {
@@ -176,7 +177,7 @@ func TestProjectionIncompleteTailRecoveryAndResetEvents(t *testing.T) {
 	two := projectionLine(2, testNow.Add(-time.Minute))
 	fixtureFile(t, path, line+strings.TrimSuffix(two, "\n"))
 	r = RefreshProjection(context.Background(), "claude", root, cache, a, testNow.Add(5*time.Second), reduce)
-	if r.Complete || r.Availability != "partial" || projectionN(t, r) != 1 || !r.CapturedAt.Equal(originalCapture) || finals[len(finals)-1].RecoveryComplete {
+	if r.Complete || r.Availability != "partial" || projectionN(t, r) != 1 || !r.CapturedAt.Equal(originalCapture) || finals[len(finals)-1].UnknownAfter.IsZero() {
 		t.Fatal(r)
 	}
 	fixtureFile(t, path, line+two)
@@ -326,20 +327,50 @@ func TestProjectionPathsConsentAndForgetReservation(t *testing.T) {
 func TestProjectionDiscoveryAndByteBounds(t *testing.T) {
 	a := historyTestAccess(t)
 	root, cache := t.TempDir(), t.TempDir()
-	// An overlarge line is never delivered or checkpointed as consumed.
-	fixtureFile(t, filepath.Join(root, "projects/project/session.jsonl"), strings.Repeat("x", (1<<20)+1)+"\n")
-	lines := 0
+	// Overlarge lines are never delivered: they are skipped and reported as
+	// omitted records, so a later record is still read instead of blocking the
+	// file forever.
+	path := filepath.Join(root, "projects/project/session.jsonl")
+	fixtureFile(t, path, projectionLine(1, testNow.Add(-time.Hour)))
+	lines, omitted := 0, false
 	reduce := func(ctx context.Context, s ProjectionState, b ProjectionBatch) (ProjectionState, error) {
 		lines += len(b.Lines)
+		omitted = omitted || b.PrefixOmitted
 		return projectionTestReducer(ctx, s, b)
 	}
 	r := RefreshProjection(context.Background(), "claude", root, cache, a, testNow, reduce)
-	if lines != 0 || r.Complete || r.Availability != "not_supported_yet" || r.BytesRead > 8<<20 {
+	if lines != 1 || !r.Complete || omitted {
 		t.Fatal(r, lines)
 	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.WriteString(strings.Repeat("x", (1<<20)+1) + "\n" + strings.Repeat("y", 3<<20) + "\n" + projectionLine(4, testNow.Add(-time.Minute)))
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r = RefreshProjection(context.Background(), "claude", root, cache, a, testNow.Add(time.Minute), reduce)
+	if lines != 2 || !r.Complete || projectionN(t, r) != 5 || r.BytesRead > 8<<20 || !omitted {
+		t.Fatal("overlarge records blocked the file", r, lines)
+	}
+	r = RefreshProjection(context.Background(), "claude", root, cache, a, testNow.Add(2*time.Minute), reduce)
+	if lines != 2 || !r.Complete || r.BytesRead != 0 {
+		t.Fatal("skipped records were reread", r, lines)
+	}
+	// Discovery lists every main file but tracks only the newest window. The
+	// newest file left out bounds what the pass could have missed.
 	root, cache = t.TempDir(), t.TempDir()
+	rels := []string{}
 	for i := 0; i < 257; i++ {
-		fixtureFile(t, filepath.Join(root, fmt.Sprintf("projects/p-%03d/s.jsonl", i)), projectionLine(1, testNow.Add(-time.Hour)))
+		rel := fmt.Sprintf("projects/p-%03d/s.jsonl", i)
+		rels = append(rels, rel)
+		fixtureFile(t, filepath.Join(root, rel), projectionLine(1, testNow.Add(-time.Hour)))
+		at := testNow.Add(-time.Duration(300-i) * time.Minute)
+		if err := os.Chtimes(filepath.Join(root, rel), at, at); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var final ProjectionBatch
 	reduce = func(ctx context.Context, s ProjectionState, b ProjectionBatch) (ProjectionState, error) {
@@ -349,8 +380,21 @@ func TestProjectionDiscoveryAndByteBounds(t *testing.T) {
 		return projectionTestReducer(ctx, s, b)
 	}
 	r = RefreshProjection(context.Background(), "claude", root, cache, a, testNow, reduce)
-	if r.Complete || r.Availability != "partial" || final.DiscoveryComplete || len(final.LiveFileRefs) > 256 {
-		t.Fatal(r, len(final.LiveFileRefs))
+	want := map[string]bool{}
+	for _, rel := range rels[257-projectionWindowFiles:] {
+		want[historyHash(a.Key, "history/path/"+a.ProfileRef+"/"+projectionTool, rel)] = true
+	}
+	outside := testNow.Add(-time.Duration(300-(256-projectionWindowFiles)) * time.Minute)
+	if r.Complete || r.Availability != "partial" || !final.DiscoveryComplete || len(final.LiveFileRefs) != projectionWindowFiles || !final.UnknownAfter.Equal(outside) {
+		t.Fatal(r, len(final.LiveFileRefs), final.UnknownAfter)
+	}
+	for _, ref := range final.LiveFileRefs {
+		if !want[ref] {
+			t.Fatal("window is not the newest files")
+		}
+	}
+	if s := historyReadState(cache, projectionTool, a); len(s.Files) != projectionWindowFiles {
+		t.Fatal("tracked files outside the window", len(s.Files))
 	}
 }
 

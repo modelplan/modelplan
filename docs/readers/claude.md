@@ -29,11 +29,12 @@ Five-hour and seven-day usage percentages, reset timestamps and supported scoped
 The reference links above are source-reported behavior/pitfalls, not new incidents observed with a real account by this card.
 - The compared Pulse source reports stale/expired credentials and an optional desktop fallback; ModelPlan must not turn that into a credential-source waterfall. → fixture [TestClaudeAdmissionAndUnsupportedLoginsMakeNoRequests](https://github.com/modelplan/modelplan/blob/670fe9e7f9c2ac44ec64ac22e647b3baac73f11e/cli/internal/quota/claudeaccount_test.go) (`TestClaudeAdmissionAndUnsupportedLoginsMakeNoRequests`).
 - Changed invalid credentials must not inherit a previous account; a reset-past window must not appear current. → fixture [TestClaudeChangedInvalidBindingNeverInheritsAccount](https://github.com/modelplan/modelplan/blob/670fe9e7f9c2ac44ec64ac22e647b3baac73f11e/cli/internal/quota/claudeaccount_review_test.go) (`TestClaudeChangedInvalidBindingNeverInheritsAccount`).
+- A saved-login file replaced or removed while the requests run must not publish the old account's reading; the file is re-read before the result is kept. → fixture `TestAuditEClaudeCredentialChangeDuringRequestDiscardsTheReading` (cli/internal/quota/audit_e_test.go).
 - A credential-carrying redirect must not forward to any second URL. → fixture [TestClaudeDoesNotForwardCredentialOnRedirect](https://github.com/modelplan/modelplan/blob/670fe9e7f9c2ac44ec64ac22e647b3baac73f11e/cli/internal/quota/claudeaccount_test.go) (`TestClaudeDoesNotForwardCredentialOnRedirect`).
 
 ## Choice
 
-- Chosen path and tier: H/O, standard, not pre-selected. Saved-login consent is unchecked initially. Passive/off cannot elevate it. File login is the selected account path; a Keychain source additionally needs the reviewed app credential operation.
+- Chosen path and tier: H/O, standard, on by default (D27). Passive/off cannot elevate it. File login is the selected account path and is read without a click. A login kept only in the macOS Keychain is never read before the user's Allow (D41): the row reports `needs_keychain` / `keychain_unset` from a stat alone, and the read right after Allow goes through the reviewed app credential operation. That read skips a back-off left by failures that never reached Anthropic; a provider back-off and the success floor still apply.
 - Why: The selected saved login reports the needed subscription windows without launching Claude or installing a hook. Retaining a read-only file path does not approve the legacy Keychain fallback.
 - Licence: Independent Go implementation. CodexBar (MIT) and Pulse (Apache-2.0) are protocol/incident references only; this card copies no code or upstream account fixture.
 - Rejected paths and their red lines are listed in Candidate paths. No W/web scraping, automatic source waterfall or catalogue-driven authority expansion is admitted.
@@ -95,3 +96,5 @@ Existing test references are pinned to the reviewed implementation, not new exec
 - File/HTTP fixtures do not prove app identity, OS prompt suppression, native time-unknown rendering, live vendor behavior or owner-shaped L2.
 - Per-read HTTP auth-stop recording does not establish a persisted cross-read scope latch. Later scheduled reads remain possible after backoff; this is a standard-completion gap.
 - Public source/reference behavior is not a guarantee of server-side no-write/no-charge effects. Catalogue enablement requires the card’s red lines and L2; creating this document supplies neither permission nor a pass.
+
+D99: the models Claude Code itself cached are reported from the local `modelAccessCache` field of `~/.claude.json` (entitled `apiName` slugs only; read-only, no other field decoded, nothing logged). No endpoint is called for this; the undocumented bootstrap endpoint is not used.

@@ -13,16 +13,19 @@ ModelPlan's automatic in-agent help bundles the Skill and a checksum-checked CLI
 | `/modelplan:statusline` | **可选显示**，征得同意后写入状态栏设置（用插件配套 CLI 的固定路径 `~/.cache/modelplan-cli/modelplan`，插件升级后也不用改） |
 | `UserPromptSubmit` 钩子 | 你发消息时：有新的额度提示（快重置还有余量、额度偏紧或用完、重置后换回之前的档位、手填套餐的高峰时段或重置卡快过期）就在界面上显示一行给你看，同一件事只显示一次，**不进 Claude 的上下文**，Claude 的回答不会被它打断；每个会话的第一条消息给 Claude 一份**任务开始简报**，额度到某些节点时给 Claude 一行**额度事实**（都在下面说明）；数据过旧时在后台刷新。只读本机缓存，从不等网络 |
 | `SessionStart` 钩子（只在压缩和恢复会话时） | 会话被压缩或恢复后，把这个会话收到过、现在仍然成立的那条额度偏低或会提前用完的提示，按当前数字重新交给 Claude 一次；没有就什么都不做。不下载、不记录、不改设置 |
+| `PreToolUse` 钩子（只在派子代理时，`Agent` 和 `Workflow`） | 主会话额度偏低时派子代理：给你看一行额度事实，Claude 收到同样的事实；派子代理没指定模型时，再附一个能力相当、更省的模型。规则见下面的“派子代理前提醒”。只读本机缓存，不联网，不拦截，不改子代理的设置 |
 
 **任务开始简报**：每个会话第一条消息时，钩子交给 Claude 一份简短材料：Anthropic 各模型在 ★ 档的能力和相对成本（被更好选项压过的标“可跳过”）、普通任务的默认配置（已发布的最划算模型 ★ 档；它比最强模型低 3 分以上时改用最强的，现在是 Opus 5.5 ★Med，两者都是它）、当前模型各档相对当前档的分数和倍数，约 1200 字符。简报里没有额度数字：额度在给你看的提示里；你问到额度或某条提示时，Claude 会运行 `modelplan quota` 或 `modelplan advise` 查当前数据。额度偏紧时简报不提供升档选项。Claude 自己判断任务难度，只有当前设置明显不合适时才用一句话建议，不主动提额度（只在收到下面的额度事实时向你转述一次），不会替你切换。每个会话只给一次；之后换到没介绍过的模型时，只补一行那个模型的档位对比，额度和档位变化不再重发。当前模型和档位来自状态栏为**本会话**记录的读数；状态栏记录的是别的会话时写“未知”。`MODELPLAN_TASK_BRIEF=off` 关闭。
 
-**额度事实**：只看本会话所用账号的 5 小时和每周窗口，每个窗口周期、每个会话每种最多一次，只有事实一行：剩余降到 20%、10%、5% 时各一次；按最近的用量（每周窗口看最近一天，5 小时窗口看最近几十分钟）会在重置前用完时一次，不管还剩多少；窗口快重置、还剩很多（且没有别的窗口偏紧）时一次；之前偏低的窗口重置后一次。偏低或会用完的那一行只在当前档位**高于 ★** 时附带“降到 ★ 能省多少”；在 ★ 或更低时不建议降档，只在有能力相当、更省额度的其他模型时附上它。会话被压缩或恢复后由 `SessionStart` 钩子补发仍然成立的那一条。`MODELPLAN_TASK_BRIEF=off` 一并关闭。
+**额度事实**：只看本会话所用账号的 5 小时和每周窗口，每个窗口周期、每个会话每种最多一次，只有事实一行：剩余降到 20%、10%、5% 时各一次；按最近的用量（每周窗口看最近一天，5 小时窗口看最近几十分钟）会在重置前用完时一次，不管还剩多少；窗口快重置、还剩很多（且没有别的窗口偏紧）时一次；之前偏低的窗口重置后一次。偏低或会用完的那一行只在当前档位**高于 ★** 时附带“降到 ★ 能省多少”；在 ★ 或更低时不建议降档，只在有能力相当、更省额度的其他模型时附上它。会话被压缩或恢复后由 `SessionStart` 钩子补发仍然成立的那一条。`MODELPLAN_TASK_BRIEF=off` 一并关闭。偏低或会用完的那一行，如果你另一个已连接的 plan 明显宽裕（所有未过期窗口都还剩 30% 以上，且没有偏紧），会在后面加一句它还剩多少、哪个窗口、多久后重置，例如“Codex 每周额度还剩60%，2天后重置”。读数过期或读不到的 plan 不会被说成还有额度；只提事实，不推荐购买，不自动切换。
+
+**派子代理前提醒**：批量派子代理是额度消耗大头。主会话调用 `Agent` 或 `Workflow` 时，如果本会话的额度达到上面同样的节点（剩余 20%、10%、5%，或会在重置前用完），界面上显示一行，Claude 收到同样的事实；派子代理时没写模型（子代理沿用当前模型），再附一个已发布数据里能力相当、更省的模型。和消息提示共用记录：已经说过的那一档不再说，每个会话最多 3 次；子代理里再派子代理不提示；读数超过 60 分钟、读不到时什么都不说。Claude Code 的钩子输出和工具结果一起到达，所以赶不上第一次派子代理，提醒影响的是后面的。只提示，不拦截，不改子代理的输入。和自动提示一起用 `/modelplan:setup automatic-hints off` 或 `MODELPLAN_TASK_BRIEF=off` 关闭。
 
 **插件自带 CLI**：插件在 `cli-pin.json` 里锁定一个 `modelplan` CLI 版本和各平台程序包的 SHA-256。装好或升级插件后，钩子在后台从 GitHub 下载这个版本到 `~/.cache/modelplan-cli/<版本>`，校验值和插件里写的完全一致才使用。所以不需要另外安装或升级 CLI。不改 PATH、配置文件，也不用 sudo；你自己装的 `modelplan` 保持不动，只在配套的那份还没下载好时临时使用。下载好后聊天里提示一次；下载失败会说明原因，每周最多一次。`MODELPLAN_PLUGIN_CLI=off` 关闭自动下载。
 
 **自动提示（默认开启） / Automatic hints (default ON)**：运行 `/modelplan:setup automatic-hints off` 关闭，`/modelplan:setup automatic-hints on` 恢复。设置保存在 `~/.config/modelplan/claude-code/automatic-hints`；关闭后提示钩子完全不输出（包括设置通知和任务开始简报），命令和状态栏仍可使用。Use these setup commands to silence or restore the whole prompt hook; explicit commands and the optional status line keep working. `/modelplan:setup` reports the saved preference.
 
-**状态栏是可选显示。** 当前版本的 Claude Code 额度只来自它记录的本机快照；自动检测尚未上线。没有快照时额度保持未知，公开模型/档位建议和其他来源仍可使用。/ **The status line is OPTIONAL.** Today Claude Code quota comes only from its recorded local snapshot; automatic detection is coming. Without a snapshot that quota stays unknown, while public advice and other sources still work.
+**状态栏是可选显示。** Claude Code 额度优先从 Claude Code 自己保存的登录读取（macOS 上只存在钥匙串里的登录要你先允许），读不到时用状态栏记录的本机快照。两者都没有时额度保持未知，公开模型/档位建议和其他来源仍可使用。/ **The status line is OPTIONAL.** Claude Code quota comes from Claude Code's own saved login when readable (a Keychain-only login on macOS needs your permission first), else from the status line's local snapshot. Without either, that quota stays unknown, while public advice and other sources still work.
 
 状态栏 Status line:
 

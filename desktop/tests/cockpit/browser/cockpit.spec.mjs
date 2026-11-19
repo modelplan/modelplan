@@ -167,7 +167,7 @@ test('fixed keyboard-reachable actions have current context; reduced motion has 
 });
 for(const profile of ['full','compact'])for(const theme of ['day','night'])for(const locale of ['en','zh-CN']){
   test(`visual ${profile} ${theme} ${locale}`,async({page})=>{
-    await page.setViewportSize({width:636,height:profile==='full'?890:640});await page.emulateMedia({reducedMotion:'reduce'});
+    await page.setViewportSize({width:636,height:profile==='full'?939:669});await page.emulateMedia({reducedMotion:'reduce'});
     await page.clock.setFixedTime(new Date('2026-11-03T12:00:00Z'));
 
     const {send}=await open(page,{theme,locale,profile}),fixture=visualFixture();await display(page,send,fixture.data);await renderVisualDeck(page,fixture,locale);

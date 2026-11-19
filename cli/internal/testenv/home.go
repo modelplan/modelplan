@@ -48,9 +48,14 @@ func IsolateHome(t *testing.T) {
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// A profile root wins over HOME, so an inherited one would receive this test's files.
+	t.Setenv("MODELPLAN_PROFILE_ROOT", "")
+	_ = os.Unsetenv("MODELPLAN_PROFILE_ROOT")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	// A started app-server fetches the publication; a test reaches only a host it set up.
+	t.Setenv("MODELPLAN_BASE", "http://127.0.0.1:1")
 }

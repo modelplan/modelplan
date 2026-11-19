@@ -11,7 +11,7 @@ function dataFor(details=false){
 }
 async function open(page,data){
  await page.addInitScript(()=>{window.__messages=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__messages.push(JSON.parse(raw));}}}};});
- await page.clock.install({time:new Date(start)});await page.clock.pauseAt(new Date(start));await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ await page.clock.install({time:new Date(Date.parse(start)-60000)});await page.clock.pauseAt(new Date(start));await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit?.receive(raw)??false,raw),tick=(time,reason='deadline',extra={})=>receive(send('tick',{nowUnixMs:String(Date.parse(time)),reason,...extra}));
  expect(await receive(send('load',{appearance,shell}))).toBe(true);expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);expect(await receive(send('display',{data}))).toBe(true);return {send,receive,tick};
 }
@@ -25,7 +25,7 @@ for(const details of [false,true])test(`native tick withdraws elapsed current ze
 });
 test('reset event has its own deadline and tick',async({page})=>{
  const data=dataFor(true),a=data.projection.rows[0].accounts[0];a.windows[0].remainingPercent=80;a.windows[0].validUntil=week;a.windows[0].resetsAt=week;data.projection.rows[0].expiresAt=week;data.details.alerts=[];data.details.resetEvents=[{version:1,id:'synthetic-reset',provider:'openai',rowId:data.projection.rows[0].id,status:'announced',publishedAt:start,expiresAt:at,source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];
- const {tick}=await open(page,data);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(at)));await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toContainText('Reset announced');expect(await tick(at)).toBe(true);await expect(page.locator('.pg-overview .mfd-alerts li')).toHaveCount(0);await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(week)));
+ const {tick}=await open(page,data);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(at)));await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toContainText('official extra reset · time TBA');expect(await tick(at)).toBe(true);await expect(page.locator('.pg-overview .mfd-alerts li')).toHaveCount(0);await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(week)));
 });
 test('replacement, stale context, hidden and show tick preserve current data',async({page})=>{
  const data=dataFor(),{send,receive,tick}=await open(page,data);data.projection.rows[0].accounts[0].windows[0].resetsAt=week;data.projection.rows[0].accounts[0].windows[0].validUntil=week;data.projection.rows[0].expiresAt=week;expect(await receive(send('display',{data}))).toBe(true);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(week)));

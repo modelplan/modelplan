@@ -7,7 +7,9 @@ const SHA = /^[0-9a-f]{40}$/;
 
 export function git(cwd, args, { allowFail = false } = {}) {
   try {
-    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20 });
+    // Replace refs and grafts would let a fetched ref rewrite a commit's parents or tree under every proof below.
+    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20,
+      env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1", GIT_GRAFT_FILE: "/dev/null" } });
   } catch (e) {
     if (allowFail) return null;
     throw e;
@@ -27,6 +29,12 @@ export const parents = (cwd, sha) => git(cwd, ["rev-list", "--parents", "-n", "1
 export const tree = (cwd, sha) => git(cwd, ["rev-parse", `${sha}^{tree}`]).trim();
 export const isAncestor = (cwd, a, b) => git(cwd, ["merge-base", "--is-ancestor", a, b], { allowFail: true }) !== null;
 export const mergeBase = (cwd, a, b) => (git(cwd, ["merge-base", a, b], { allowFail: true }) ?? "").trim() || null;
+
+// The commits reachable from sha that main does not have, as a Set of full ids.
+export function commitsOnlyIn(cwd, sha, mainRef) {
+  if (!ensure(cwd, sha)) throw new Error(`commit ${sha} not found`);
+  return new Set(git(cwd, ["rev-list", sha, `^${mainRef}`]).split("\n").filter(Boolean));
+}
 
 // The contribution between two commits as Git object identity: one record per changed path with old and
 // new mode and object id and the change letter, NUL-delimited, renames off. Unlike a patch id this sees
@@ -50,6 +58,8 @@ export function verifyCarry(cwd, oldSha, newSha, mainRef) {
   const reviewed = contribution(cwd, mb, oldSha);
   if (!reviewed) return { ok: false, why: "reviewed head has no contribution" };
   if (reviewed !== contribution(cwd, p[1], newSha)) return { ok: false, why: "contribution changed by the merge" };
+  const clean = verifyCleanMerge(cwd, newSha);
+  if (!clean.ok) return { ok: false, why: clean.why };
   return { ok: true, why: "object-identical contribution" };
 }
 
@@ -63,4 +73,50 @@ export function verifyCleanMerge(cwd, sha) {
   if (out === null) return { ok: false, why: "parents do not merge cleanly" };
   if (out.trim().split("\n")[0] !== tree(cwd, sha)) return { ok: false, why: "group tree differs from a clean merge of its parents" };
   return { ok: true, why: "clean merge" };
+}
+
+// The PR's own change from `from` to `to` as patch text that does not depend on where main moved: per file the
+// headers (path, mode, new or deleted) and every hunk's removed, added and context lines, byte for byte, binaries
+// in full. Only the parts a main merge shifts are dropped: blob ids on `index` lines and the line numbers and
+// function text of `@@` hunk headers. Patch content lines always start with ' ', '+', '-' or '\', and a binary
+// patch's base85 lines contain no space, so the two patterns below never touch content.
+export function ownPatch(cwd, from, to) {
+  const out = git(cwd, ["-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "diff", "--no-renames", "--no-ext-diff", "--no-textconv", "--no-color",
+    "--binary", "--full-index", "--diff-algorithm=myers", "--unified=3", from, to]);
+  return out.split("\n").filter((l) => !l.startsWith("index ")).map((l) => (l.startsWith("@@ ") ? "@@" : l)).join("\n");
+}
+
+// D243 G6 auto-carry: an earlier review of `oldSha` holds for `newSha` without any carry comment when
+//   1. following first parents from newSha reaches oldSha within 20 commits, and every commit on that path is a
+//      two-parent merge, equal to Git's clean merge of its parents (verifyCleanMerge), whose second parent is on main (so every other commit in old..new came from main), and
+//   2. the PR's own change is identical: ownPatch(merge-base(main, old), old) == ownPatch(merge-base(main, new), new).
+// A conflict resolution or a regenerated file that alters the PR's own hunks breaks (2) and needs a fresh review.
+// `between` lists the first-parent commits after oldSha up to newSha, so the rules can refuse a carry over a head
+// that was reviewed after oldSha.
+export function verifyMainMerges(cwd, oldSha, newSha, mainRef) {
+  const no = (why) => ({ ok: false, why, between: [] });
+  if (oldSha === newSha) return no("same commit");
+  if (!ensure(cwd, oldSha) || !ensure(cwd, newSha)) return no("commit not found");
+  if (!isAncestor(cwd, oldSha, newSha)) return no("reviewed head is not an ancestor");
+  const between = [];
+  let c = newSha;
+  for (let hop = 0; c !== oldSha; hop++) {
+    if (hop >= 20) return no("more than 20 commits after the reviewed head");
+    const p = parents(cwd, c);
+    if (p.length !== 2) return no(`${c.slice(0, 8)} is not a merge of main`);
+    if (!isAncestor(cwd, p[1], mainRef)) return no(`${c.slice(0, 8)}: second parent is not on main`);
+    if (!isAncestor(cwd, oldSha, p[0])) return no(`${c.slice(0, 8)}: first parent does not descend from the reviewed head`);
+    // Each merge must be exactly Git's own clean merge of its parents: a hand-edited merge tree can move the
+    // PR's code while leaving the own-diff text identical (macrevd-946 relocated-hunk bypass).
+    const clean = verifyCleanMerge(cwd, c);
+    if (!clean.ok) return no(`${c.slice(0, 8)}: ${clean.why}`);
+    between.push(c);
+    c = p[0];
+  }
+  const oldBase = mergeBase(cwd, mainRef, oldSha), newBase = mergeBase(cwd, mainRef, newSha);
+  if (!oldBase || !newBase) return no("no merge base with main");
+  const reviewed = ownPatch(cwd, oldBase, oldSha);
+  if (!reviewed.trim()) return no("reviewed head has no change of its own");
+  if (reviewed !== ownPatch(cwd, newBase, newSha)) return no("the PR's own diff changed");
+  return { ok: true, why: "main merges only, diff unchanged", between };
 }

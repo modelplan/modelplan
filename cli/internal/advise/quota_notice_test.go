@@ -1,6 +1,7 @@
 package advise
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -318,8 +319,18 @@ func TestQuotaMarksSurviveConcurrentWriters(t *testing.T) {
 		go func(s *State) {
 			defer wg.Done()
 			<-start
-			if err := s.Save(cache, now); err != nil {
-				t.Error(err)
+			// The test is about merging, not lock timing: on a loaded runner a writer can
+			// wait out the 1 s lock budget, so a busy writer retries until it gets its turn.
+			deadline := time.Now().Add(time.Minute)
+			for {
+				err := s.Save(cache, now)
+				if err == nil {
+					return
+				}
+				if !errors.Is(err, ErrStateBusy) || time.Now().After(deadline) {
+					t.Error(err)
+					return
+				}
 			}
 		}(s)
 	}

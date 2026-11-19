@@ -4,6 +4,7 @@ package render
 import (
 	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/history"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
 func (s Style) EffortSuggestionLine(v *history.EffortSuggestion) string {
@@ -19,7 +20,7 @@ func (s Style) EffortSuggestionLine(v *history.EffortSuggestion) string {
 	}
 	scope := v.Source
 	if v.Plan != "" {
-		scope += " / " + v.Plan
+		scope += " / " + rows.PlanLabel(v.Source, v.Plan)
 	}
 	fast := ""
 	if v.Fast {

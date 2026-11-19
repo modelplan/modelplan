@@ -297,7 +297,10 @@ func (v PaceView) History() PaceHistory {
 	return h
 }
 
-func (v PaceView) Groups() []PaceGroup {
+func (v PaceView) Groups() []PaceGroup { return v.GroupsShowing(paceShown) }
+
+// GroupsShowing is Groups with its own limit on the cycles listed, newest first.
+func (v PaceView) GroupsShowing(shown int) []PaceGroup {
 	out := []PaceGroup{}
 	if !v.OK {
 		return out
@@ -343,7 +346,7 @@ func (v PaceView) Groups() []PaceGroup {
 					hours += c.LastObservedAt.Sub(c.FirstObservedAt).Hours()
 				}
 			}
-			if len(g.Cycles) < paceShown {
+			if len(g.Cycles) < shown {
 				g.Cycles = append(g.Cycles, cv)
 			}
 		}

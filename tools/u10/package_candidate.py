@@ -108,7 +108,7 @@ def stage_resources(app, root=ROOT):
     copy_tree(fonts, resources / 'ThirdParty/fonts')
     copy_tree(root / 'desktop/third-party/licenses', resources / 'ThirdParty/licenses')
     shutil.copyfile(regular(root / 'desktop/third-party/NOTICES.md'), resources / 'ThirdParty/NOTICES.md')
-    shutil.copyfile(regular(visuals / 'icons/icon.icns'), resources / 'ModelPlan.icns')
+    shutil.copyfile(regular(visuals / 'icons/AppIcon.icns'), resources / 'ModelPlan.icns')
     shutil.copyfile(regular(visuals / 'LICENSE.md'), resources / 'VISUAL-LICENSE.md')
     cockpit = root / 'desktop/cockpit/dist'
     if cockpit.exists():
@@ -140,9 +140,18 @@ def configure_product(app, source, build_number, root=ROOT):
     info = plistlib.loads(info_path.read_bytes())
     info.update(CFBundleName='ModelPlan', CFBundleDisplayName='ModelPlan Candidate',
                 CFBundleIdentifier=BUNDLE_ID, CFBundleIconFile='ModelPlan.icns', CFBundleShortVersionString=version,
-                CFBundleVersion=build_number, ModelPlanCandidateStage='interface-only')
+                CFBundleVersion=build_number, ModelPlanCandidateStage='interface-only',
+                CFBundleDevelopmentRegion='en', CFBundleLocalizations=['en', 'zh-Hans'])
     info_path.write_bytes(plistlib.dumps(info))
     resources = app / 'Contents/Resources'
+    # glm-873-1: the neutral package ships localized InfoPlist.strings, which macOS prefers over Info.plist,
+    # so the candidate name is written there too, one language per file (SET-9-38).
+    for language, name in (('en', 'ModelPlan Candidate'), ('zh-Hans', 'ModelPlan 候选版')):
+        strings = resources / (language + '.lproj') / 'InfoPlist.strings'
+        lines = regular(strings).read_text(encoding='utf-8').splitlines() if strings.exists() or strings.is_symlink() else []
+        lines = [line for line in lines if not line.lstrip().startswith('"CFBundleDisplayName"')]
+        strings.parent.mkdir(exist_ok=True)
+        strings.write_text('\n'.join(['"CFBundleDisplayName" = "%s";' % name] + lines) + '\n', encoding='utf-8')
     (resources / 'build-edition.json').write_bytes(encoded({'edition': 'official', 'stage': 'interface-only'}))
     (resources / 'release-provenance.json').write_bytes(encoded({
         'sourceRepository': 'modelplan/modelplan', 'sourceCommit': source,

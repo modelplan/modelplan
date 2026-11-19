@@ -59,7 +59,12 @@ def tighten(binary, home, **actions):
 
 
 def plain_smoke(binary, home):
-    with EngineProcess(binary, home, 'u14-plain') as engine:
+    engine = EngineProcess(binary, home, 'u14-plain')
+    # Same race as the 'empty' case in empty_states: the synthetic Codex exits at once, so a background
+    # first read can end before rows/subscribe and turn the row failed/closed instead of pending (G3-38).
+    engine.environment['MODELPLAN_NATIVE'] = 'off'
+    engine.environment['MODELPLAN_CODEX_ACCOUNT'] = 'off'
+    with engine:
         hello = engine.initialize()
         require({'consent', 'rows', 'diagnostics', 'history', 'refresh', 'publication', 'plugin_install'} <=
                 set(hello['data']['capabilities']), 'production-handlers-not-linked')
@@ -175,6 +180,9 @@ def zero_rows(binary, home, mode):
     fixture_input(home, mode)
     with EngineProcess(binary, home, 'u14-model-' + mode) as engine:
         fixture_hello(engine)
+        # The Codex reader's first background read is independent of history: once it ends, its outcome (a failed
+        # first read names its cause) changes the codex row. Settle it first so the comparison isolates history.
+        _await_row_settled(engine, 'codex', 'codex-first-read-did-not-finish')
         before = row_projection(engine.request('rows/subscribe'))
         ids = [r['id'] for r in before['rows']]
         require('codex' in ids and 'claude' in ids and len(ids) == len(set(ids)), 'missing-production-rows')
@@ -213,8 +221,11 @@ def empty_states(binary, home, fault_binary):
         engine = EngineProcess(fault_binary if empty == 'pending' else binary, case, 'u14-empty-' + empty)
         if empty == 'readers_off':
             engine.environment['MODELPLAN_READERS'] = 'off'
-        if empty == 'pending':
-            # Background reads build views too; this case is only about the consent fault.
+        if empty in ('pending', 'empty'):
+            # Background reads build views too; 'pending' is only about the consent fault. In 'empty'
+            # the synthetic Codex exits at once, so a background first read that ends before rows are
+            # taken turns the codex row failed (closed, #792-2) and the summary no_dock_rows: a race,
+            # not the "still reading" state this case asserts.
             engine.environment['MODELPLAN_NATIVE'] = 'off'
             engine.environment['MODELPLAN_CODEX_ACCOUNT'] = 'off'
         with engine:
@@ -224,7 +235,14 @@ def empty_states(binary, home, fault_binary):
             projection = fresh_rows(engine, patience)
             if empty == 'pending':
                 projection = await_pending(engine, projection, patience)
-            require(projection['rowsSummary']['state'] == empty, 'wrong-empty-summary-' + empty)
+            # G3-38: on the plain synthetic home the detected, allowed tools are waiting for their
+            # first read, so the Dock summary is "Reading ..." (pending), never "no readings".
+            # A true empty / no_dock_rows is covered by the rows unit tests (an allowed tool with
+            # no reader).
+            expected = 'pending' if empty == 'empty' else empty
+            require(projection['rowsSummary']['state'] == expected, 'wrong-empty-summary-' + empty)
+            if empty == 'empty':
+                require(projection['rowsSummary']['text']['en'].startswith('Reading ') and not projection['rowsSummary'].get('nextStep'), 'wrong-reading-summary')
             require(bool(projection['rowsSummary']['text']['en']) and bool(projection['rowsSummary']['text']['zh']), 'empty-summary-without-text')
             if empty in ('readers_off', 'pending'):
                 require(all(not row['accounts'] for row in projection['rows']), 'private-values-in-off-or-pending-state')
@@ -439,6 +457,18 @@ def _seed_post_logins(home):
     cursor.chmod(0o600)
     return {'gemini': {'path': gemini, 'sha256': digest(regular_bytes(gemini))},
             'cursor': {'path': cursor, 'sha256': digest(regular_bytes(cursor))}}, (canary, token)
+
+
+def _await_row_settled(engine, row_id, error_code, seconds=45):
+    """Poll rows until one row has left "pending" (its first read ended); the deadline bounds a read that never ends."""
+    import time
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        projection = row_projection(engine.request('rows/subscribe'))
+        if any(row['id'] == row_id and row['state'] != 'pending' for row in projection['rows']):
+            return
+        time.sleep(.1)
+    require(False, error_code)
 
 
 def _wait_scheduler_capture(engine, home, scope, path, capture_ready, error_code):
@@ -678,19 +708,25 @@ def admission(binary, home, plan):
 
 def shared_state(binary, home):
     fixture_input(home)
+    from contracts import encoded, write_private
+    from datetime import datetime, timezone
+    # A first run creates the consent store. The reading is then written while no engine runs:
+    # a fresh good reading makes every runtime refresh in the next run stop at its own due check,
+    # so no failure can replace it. No Codex is installed here.
+    with EngineProcess(binary, home, 'u14-shared-state-setup') as engine:
+        fixture_hello(engine)
+    captured = state(home)
+    observed = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    cache = Path(home) / '.cache/modelplan/observed/codex-account.json'
+    cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    cache.unlink(missing_ok=True)
+    write_private(cache, encoded({'schemaVersion': 1, 'status': 'ok', 'observedAt': observed,
+                                  'admission': {'storeEpoch': captured['storeEpoch'], 'generation': captured['generation'], 'scope': 'codex.runtime_usage'},
+                                  'windows': [{'kind': 'five_hour', 'observedAt': observed, 'usedPercent': 25}]}))
     with EngineProcess(binary, home, 'u14-shared-state') as engine:
         hello = fixture_hello(engine)
-        from contracts import encoded, write_private
-        from datetime import datetime, timezone
         allowed_runtime = engine.request('consent/grant', decision(home, allow=['codex.runtime_usage']))
         require(allowed_runtime.get('result', {}).get('data', {}).get('committed'), 'runtime-grant-failed')
-        captured = state(home)
-        observed = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-        cache = Path(home) / '.cache/modelplan/observed/codex-account.json'
-        cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        write_private(cache, encoded({'schemaVersion': 1, 'status': 'ok', 'observedAt': observed,
-                                     'admission': {'storeEpoch': captured['storeEpoch'], 'generation': captured['generation'], 'scope': 'codex.runtime_usage'},
-                                     'windows': [{'kind': 'five_hour', 'observedAt': observed, 'usedPercent': 25}]}))
         before = row_projection(engine.request('rows/subscribe'))
         page = engine.request('history/query', {'kind': 'tokens', 'tool': 'codex', 'limit': 1})
         require('error' not in page, 'initial-history-unavailable')

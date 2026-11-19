@@ -63,11 +63,15 @@
         },
         "today": [
           {
+            "observedTotalTokens": 1,
             "source": "synthetic",
             "observedOutputTokens": 1,
             "generationTps": 42.5,
             "bindingBasis": "synthetic"
           }
+        ],
+        "reportedModels": [
+          "synthetic"
         ]
       }
     ],
@@ -79,21 +83,68 @@
         "model": "synthetic",
         "effort": "synthetic",
         "projectLabel": "synthetic",
+        "projectState": "named",
         "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
         "state": "synthetic",
-        "rate": 42.5
+        "rate": 42.5,
+        "fast": false,
+        "startedAt": "2026-10-29T12:00:00.123456789Z",
+        "observedTotalTokens": 1,
+        "modelDisplay": "synthetic"
       }
     ],
     "sessionCoverage": "synthetic",
     "resetEvents": [
       {
         "version": 1,
+        "id": "synthetic-confirmed",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "confirmed",
+        "kind": "reset_credit",
+        "confirmedAt": "2026-10-29T12:00:00Z",
+        "confirmedAtBasis": "firstSeen",
+        "confirms": "synthetic-confirmed",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "expiresAt": "2026-10-30T12:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
+      {
+        "version": 1,
+        "id": "synthetic-credit",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "announced",
+        "kind": "reset_credit",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
+      {
+        "version": 1,
         "id": "synthetic-reset",
         "provider": "openai",
         "rowId": "codex",
         "status": "announced",
+        "kind": "direct_reset",
         "publishedAt": "2026-10-29T12:00:00Z",
-        "expiresAt": "2026-10-31T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
         "source": {
           "kind": "publication",
           "publicationId": "0123456789abcdef01234567",
@@ -115,6 +166,34 @@
         "remainingPercent": 42.5
       }
     ],
+    "publishedModels": [
+      {
+        "id": "synthetic-model",
+        "name": "Synthetic model",
+        "developerId": "openai",
+        "recommended": "medium",
+        "efforts": [
+          {
+            "effort": "medium",
+            "label": "Med",
+            "star": true,
+            "ability": 50,
+            "cost": 2,
+            "time": 1.2
+          }
+        ]
+      }
+    ],
+    "planModels": [
+      {
+        "planId": "synthetic",
+        "generation": "synthetic",
+        "basis": "synthetic",
+        "modelIds": [
+          "synthetic"
+        ]
+      }
+    ],
     "forecasts": [
       {
         "source": "synthetic",
@@ -124,6 +203,26 @@
         "pace": "tight",
         "basis": "recent-rate",
         "observedAt": "2026-10-29T12:00:00.123456789Z"
+      }
+    ],
+    "recentSessions": [
+      {
+        "sessionRef": "0123456789abcdef",
+        "source": "synthetic",
+        "subscriptionRef": "0123456789abcdef",
+        "model": "synthetic",
+        "effort": "synthetic",
+        "projectLabel": "synthetic",
+        "projectState": "named",
+        "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
+      }
+    ],
+    "peaks": [
+      {
+        "rowId": "synthetic",
+        "startsAt": "2026-10-29T12:00:00.123456789Z",
+        "endsAt": "2026-10-29T12:00:00.123456789Z",
+        "status": "synthetic"
       }
     ]
   },
@@ -142,6 +241,8 @@
             "source": "synthetic",
             "bindingBasis": "synthetic",
             "recent7d": {
+              "totalTokens": 1,
+              "reasoningTokens": 1,
               "inputTokens": 1,
               "outputTokens": 1,
               "cacheReadTokens": 1,
@@ -152,6 +253,8 @@
               "eligibleRequests": 1
             },
             "recent30d": {
+              "totalTokens": 1,
+              "reasoningTokens": 1,
               "inputTokens": 1,
               "outputTokens": 1,
               "cacheReadTokens": 1,
@@ -226,6 +329,7 @@
       {
         "at": "synthetic",
         "source": "synthetic",
+        "origin": "synthetic",
         "observedOutputTokens": 1
       }
     ],
@@ -233,6 +337,7 @@
       {
         "at": "synthetic",
         "source": "synthetic",
+        "origin": "synthetic",
         "observedOutputTokens": 1
       }
     ],
@@ -257,18 +362,83 @@
           "share": 42.5
         }
       ]
-    }
+    },
+    "cycles": [
+      {
+        "subscriptionRef": "0123456789abcdef",
+        "kind": "tokens",
+        "attribution": "synthetic",
+        "cycles": [
+          {
+            "startedAt": "2026-10-29T12:00:00.123456789Z",
+            "resetsAt": "2026-10-29T12:00:00.123456789Z",
+            "points": 42.5,
+            "hadDrop": false,
+            "spent": [
+              {
+                "model": "synthetic",
+                "effort": "synthetic",
+                "fast": false,
+                "points": 42.5
+              }
+            ]
+          }
+        ]
+      }
+    ]
   },
   "projection": {
     "resetEvents": [
+      {
+        "version": 1,
+        "id": "synthetic-confirmed",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "confirmed",
+        "kind": "reset_credit",
+        "confirmedAt": "2026-10-29T12:00:00Z",
+        "confirmedAtBasis": "firstSeen",
+        "confirms": "synthetic-confirmed",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "expiresAt": "2026-10-30T12:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
+      {
+        "version": 1,
+        "id": "synthetic-credit",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "announced",
+        "kind": "reset_credit",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
       {
         "version": 1,
         "id": "synthetic-reset",
         "provider": "openai",
         "rowId": "codex",
         "status": "announced",
+        "kind": "direct_reset",
         "publishedAt": "2026-10-29T12:00:00Z",
-        "expiresAt": "2026-10-31T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
         "source": {
           "kind": "publication",
           "publicationId": "0123456789abcdef01234567",
@@ -323,7 +493,16 @@
             "zh": "synthetic"
           },
           "availableAt": "2026-10-29T12:00:00.123456789Z",
-          "disabledReason": "cooldown"
+          "disabledReason": "cooldown",
+          "hint": {
+            "signInCommand": "codex login",
+            "installCommand": "npm i -g @openai/codex",
+            "installUrl": "https://kiro.dev",
+            "text": {
+              "en": "To sign in, run this in Terminal",
+              "zh": "在终端运行这条命令登录"
+            }
+          }
         },
         "accounts": [
           {
@@ -333,6 +512,16 @@
               "runningSessions": 1,
               "bindingBasis": "source-wide-current-binding"
             },
+            "activity": [
+              {
+                "sessionRef": "aaaaaaaaaaaaaaaa",
+                "subscriptionRef": "bbbbbbbbbbbbbbbb",
+                "bindingVerified": true,
+                "phase": "tool",
+                "recordAt": "2026-10-29T12:00:00Z",
+                "expiresAt": "2026-10-29T12:05:00Z"
+              }
+            ],
             "resetCards": {
               "state": "complete",
               "count": 1,
@@ -365,7 +554,8 @@
             "beta": false,
             "credits": {
               "balance": 42.5,
-              "unit": "synthetic"
+              "unit": "synthetic",
+              "currency": "USD"
             },
             "valueState": "current",
             "observedAt": "2026-10-29T12:00:00.123456789Z",
@@ -418,7 +608,16 @@
               "zh": "synthetic"
             },
             "availableAt": "2026-10-29T12:00:00.123456789Z",
-            "disabledReason": "cooldown"
+            "disabledReason": "cooldown",
+            "hint": {
+              "signInCommand": "codex login",
+              "installCommand": "npm i -g @openai/codex",
+              "installUrl": "https://kiro.dev",
+              "text": {
+                "en": "To sign in, run this in Terminal",
+                "zh": "在终端运行这条命令登录"
+              }
+            }
           }
         }
       }
@@ -443,7 +642,16 @@
           "zh": "synthetic"
         },
         "availableAt": "2026-10-29T12:00:00.123456789Z",
-        "disabledReason": "cooldown"
+        "disabledReason": "cooldown",
+        "hint": {
+          "signInCommand": "codex login",
+          "installCommand": "npm i -g @openai/codex",
+          "installUrl": "https://kiro.dev",
+          "text": {
+            "en": "To sign in, run this in Terminal",
+            "zh": "在终端运行这条命令登录"
+          }
+        }
       }
     }
   },
@@ -460,6 +668,16 @@
               "runningSessions": 1,
               "bindingBasis": "source-wide-current-binding"
             },
+            "activity": [
+              {
+                "sessionRef": "aaaaaaaaaaaaaaaa",
+                "subscriptionRef": "bbbbbbbbbbbbbbbb",
+                "bindingVerified": true,
+                "phase": "tool",
+                "recordAt": "2026-10-29T12:00:00Z",
+                "expiresAt": "2026-10-29T12:05:00Z"
+              }
+            ],
             "resetCards": {
               "state": "complete",
               "count": 1,
@@ -492,7 +710,8 @@
             "beta": false,
             "credits": {
               "balance": 42.5,
-              "unit": "synthetic"
+              "unit": "synthetic",
+              "currency": "USD"
             },
             "valueState": "current",
             "observedAt": "2026-10-29T12:00:00.123456789Z",

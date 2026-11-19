@@ -1,7 +1,25 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanCockpitWeb
 import ModelPlanInstruments
 import ModelPlanSettings
+
+/// The Help overlay panel. It is nonactivating, and while a requested map is up it may become key,
+/// so Esc reaches this process even when macOS refuses to activate the accessory (LSUIElement) app.
+/// It stays non-key for hints and explanations, so pressing a hint never takes the user's keyboard.
+@MainActor final class HelpOverlayPanel: NSPanel {
+    var acceptsKey = false
+    var onEscape: (@MainActor () -> Void)?
+    override var canBecomeKey: Bool { acceptsKey }
+    override var canBecomeMain: Bool { false }
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.keyCode == 53, let onEscape { onEscape(); return }
+        super.sendEvent(event)
+    }
+    override func cancelOperation(_ sender: Any?) {
+        if let onEscape { onEscape() } else { super.cancelOperation(sender) }
+    }
+}
 
 /// Hosts the existing Help layer in a card-sized nonactivating panel. Hint
 /// admission, dwell, persistence and the sole ledger remain with HintExecutionHost.
@@ -18,14 +36,34 @@ import ModelPlanSettings
     private let accessibility: @MainActor () -> (motion: Bool, transparency: Bool)
     private let copy: @MainActor (FirstUseHintKind, InstrumentLanguage) -> Copy?
     private let dismiss: @MainActor (UUID) -> Void
+    /// Asks to bring this app forward when a requested map opens. macOS may refuse this for an
+    /// accessory app (14f walkthrough), so dismissal never depends on it: the map panel is made key
+    /// without activation and a global pointer monitor sees clicks in other apps.
+    private let activate: @MainActor () -> Void
+    /// Installs a pointer-down monitor for other apps' windows; returns its remover. Mouse events need
+    /// no system permission (unlike global key monitors).
+    private let outsidePointerMonitor: @MainActor (@escaping @MainActor () -> Void) -> (@MainActor () -> Void)
     private let layer: HelpUILayerView
-    private var panel: NSPanel?
+    private var panel: HelpOverlayPanel?
     private var eventMonitor: Any?
+    private var removeOutsidePointerMonitor: (@MainActor () -> Void)?
     private var deactivateObserver: NSObjectProtocol?
+    /// The app that was frontmost before a map activated this one; restored when the map closes.
+    private var previousApp: NSRunningApplication?
     private var currentOffer: HintOffer?
+    private var currentExplanationID: String?
     private var currentSurfaceValue: DockHelpSurface?
+    private var currentReducedMotion: Bool?
     private var generation: UInt64 = 0
     private var retired = false
+    /// Native-shell spec item 1: the map's and the hint's input paths decide through one funnel each.
+    private let now: () -> UInt64
+    private let isModal: @MainActor () -> Bool
+    private let notificationCenter: NotificationCenter
+    private var mapFunnel: DismissalFunnel?
+    private var hintFunnel: DismissalFunnel?
+    /// The map usually opens from a menu or a context action, whose own dismissing click must not close it.
+    static let mapOpeningHoldMilliseconds: UInt64 = 150
 
     init(currentSurface: @escaping @MainActor () -> DockHelpSurface?,
          isCurrent: @escaping @MainActor (DockHelpSurface) -> Bool,
@@ -35,11 +73,18 @@ import ModelPlanSettings
          accessibility: @escaping @MainActor () -> (motion: Bool, transparency: Bool),
          copy: @escaping @MainActor (FirstUseHintKind, InstrumentLanguage) -> Copy?,
          dismiss: @escaping @MainActor (UUID) -> Void,
+         activate: @escaping @MainActor () -> Void = { if !NSApp.isActive { NSApplication.shared.activate() } },
+         outsidePointerMonitor: @escaping @MainActor (@escaping @MainActor () -> Void) -> (@MainActor () -> Void) = DockHelpPresenter.globalPointerMonitor,
+         now: @escaping () -> UInt64 = DismissalFunnel.uptimeMilliseconds,
+         isModal: @escaping @MainActor () -> Bool = { NSApp.modalWindow != nil },
+         notificationCenter: NotificationCenter = .default,
          layer: HelpUILayerView) {
+        self.now = now; self.isModal = isModal; self.notificationCenter = notificationCenter
         self.currentSurface = currentSurface; self.isCurrent = isCurrent
         self.blockers = blockers; self.windowPolicy = windowPolicy
         self.language = language; self.accessibility = accessibility
-        self.copy = copy; self.dismiss = dismiss
+        self.copy = copy; self.dismiss = dismiss; self.activate = activate
+        self.outsidePointerMonitor = outsidePointerMonitor
         self.layer = layer
     }
 
@@ -47,7 +92,7 @@ import ModelPlanSettings
         guard !retired, let surface = currentSurface(), surface.visible, !surface.dragging,
               context.dockReveal == surface.revealID, isCurrent(surface) else { return [] }
         let lang = language()
-        return Set([FirstUseHintKind.ignition, .drag, .pinned, .ringRefresh, .findWidget].filter {
+        return Set([FirstUseHintKind.ignition, .drag, .pinned, .ringRefresh, .findWidget, .widgetOff, .detach, .putBack].filter {
             surface.anchors[$0] != nil && copy($0, lang) != nil
         })
     }
@@ -61,17 +106,17 @@ import ModelPlanSettings
         generation &+= 1
         let token = generation
         removeEventMonitor()
-        currentOffer = nil; currentSurfaceValue = nil; panel?.orderOut(nil)
+        currentOffer = nil; currentSurfaceValue = nil; currentExplanationID = nil; panel?.orderOut(nil)
         // Detach before the new input: viewWillMove(toWindow:nil) suspends the
         // old layer, and must not invalidate the replacement after it is drawn.
         layer.removeFromSuperview()
         guard let surface = currentSurface(), surface.visible, !surface.dragging,
               isCurrent(surface), let anchor = surface.anchors[offer.kind],
-              let screen = NSScreen.screens.first(where: { offer.kind == .findWidget ? $0.frame.intersects(anchor) : $0.visibleFrame.contains(anchor) }),
+              let screen = NSScreen.screens.first(where: { offer.kind == .findWidget || offer.kind == .widgetOff ? $0.frame.intersects(anchor) : $0.visibleFrame.contains(anchor) }),
               let policy = windowPolicy(surface),
               let words = copy(offer.kind, language()) else { return false }
         // The status item lies in the menu-bar area above visibleFrame; its real frame remains the anchor.
-        let viewport = offer.kind == .findWidget ? screen.frame : screen.visibleFrame
+        let viewport = offer.kind == .findWidget || offer.kind == .widgetOff ? screen.frame : screen.visibleFrame
         func local(_ rect: CGRect) -> CGRect {
             CGRect(x: rect.minX - viewport.minX, y: viewport.maxY - rect.maxY,
                    width: rect.width, height: rect.height)
@@ -85,6 +130,7 @@ import ModelPlanSettings
         let effective = accessibility()
         input.reduceMotion = motionOverride ?? effective.motion
         input.reduceTransparency = effective.transparency
+        currentReducedMotion = input.reduceMotion
         layer.update(input)
         guard !retired, generation == token, isCurrent(surface),
               let placement = layer.presentation?.card,
@@ -104,28 +150,31 @@ import ModelPlanSettings
         container.addSubview(layer); window.contentView = container
         currentOffer = offer; currentSurfaceValue = surface
         layer.onAction = { [weak self] action in
-            guard let self, !self.retired, self.generation == token,
-                  self.currentOffer == offer, self.currentSurfaceValue == surface, self.isCurrent(surface) else { return }
+            guard let self, !self.retired, self.generation == token, self.currentOffer == offer,
+                  let current = self.currentSurfaceValue, self.isCurrent(current) else { return }
             if case .dismissHint(let id, _) = action, id == offer.id { self.dismiss(id) }
         }
         window.setFrame(screenRect, display: true); window.orderFrontRegardless()
+        // Not this panel's occlusionState: AppKit updates it later, so a panel just ordered in never
+        // reports .visible here. isCurrent carries the settled state of the window the hint belongs to.
         guard !retired, generation == token, currentOffer == offer, currentSurfaceValue == surface,
               isCurrent(surface), window.isVisible, !window.isMiniaturized, window.alphaValue > 0,
               window.sharingType == policy.0, window.collectionBehavior == policy.1,
-              window.occlusionState.contains(.visible),
               layer.visibleRect.contains(rect), layer.presentation?.card == placement else {
             window.orderOut(nil); currentOffer = nil; currentSurfaceValue = nil; return false
         }
+        let funnel = makeFunnel { [weak self] _ in self?.dismiss(offer.id) }
+        hintFunnel = funnel; funnel.rearm()
         // Observe only this app's events; no global input monitor or new system permission.
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self, weak window] event in
-            guard let self, let window, !self.retired, self.generation == token,
-                  self.currentOffer == offer, self.currentSurfaceValue == surface,
-                  self.isCurrent(surface), window.isVisible else { return event }
+            guard let self, let window, !self.retired, self.generation == token, self.currentOffer == offer,
+                  let current = self.currentSurfaceValue, self.isCurrent(current), window.isVisible else { return event }
             if event.type == .keyDown, event.keyCode == 53 {
-                self.dismiss(offer.id)
+                funnel.request(.escape)
                 return nil
             }
-            if event.type != .keyDown, event.window !== window { self.dismiss(offer.id) }
+            // A press while the widget is being dragged belongs to the drag (the surface's own state).
+            if event.type != .keyDown, event.window !== window, !current.dragging { funnel.request(.outsidePress) }
             return event
         }
         return true
@@ -133,6 +182,14 @@ import ModelPlanSettings
 
     func updateAndVerify(_ presentation: HintPresentation) -> Bool {
         guard currentOffer == presentation.offer else { return false }
+        // The surface is republished on most refreshes; ordering the panel out and in each time flashes it.
+        let kind = presentation.offer.kind
+        if let surface = currentSurface(), let shown = currentSurfaceValue, surface.revealID == shown.revealID,
+           surface.visible, !surface.dragging, surface.anchors[kind] == shown.anchors[kind],
+           presentation.reducedMotion == currentReducedMotion, panel?.isVisible == true, isCurrent(surface) {
+            currentSurfaceValue = surface
+            return true
+        }
         return show(presentation.offer, motionOverride: presentation.reducedMotion)
     }
 
@@ -150,7 +207,7 @@ import ModelPlanSettings
               let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(anchor) }),
               let policy = windowPolicy(surface) else { return nil }
         generation &+= 1; removeEventMonitor(); removeDeactivateObserver()
-        currentOffer = nil; currentSurfaceValue = surface
+        currentOffer = nil; currentExplanationID = nil; currentSurfaceValue = surface
         panel?.orderOut(nil); layer.removeFromSuperview()
         let window = panel ?? makePanel(); panel = window
         window.sharingType = policy.0; window.collectionBehavior = policy.1
@@ -163,36 +220,127 @@ import ModelPlanSettings
         return viewport
     }
 
-    func showPreparedMap(surface: DockHelpSurface, dismissMap: @escaping @MainActor () -> Void) -> Bool {
+    func showPreparedMap(surface: DockHelpSurface, dismissMap: @escaping @MainActor (HelpUIDismissReason?) -> Void) -> Bool {
         guard !retired, currentSurfaceValue == surface, isCurrent(surface), let window = panel,
               layer.presentation?.mapHeader != nil else { return false }
         let token = generation
         window.orderFrontRegardless()
-        guard window.isVisible, window.alphaValue > 0, window.occlusionState.contains(.visible), isCurrent(surface) else {
+        // As in show: occlusionState lags the order, and isCurrent has the settled state.
+        guard window.isVisible, window.alphaValue > 0, isCurrent(surface) else {
             window.orderOut(nil); return false
         }
+        // A second call replaces the first: one monitor and one observer at a time, never stacked.
+        removeEventMonitor(); removeDeactivateObserver()
+        let funnel = makeFunnel { reason in
+            dismissMap(reason == .escape ? .escape : reason == .outsidePress ? .pointer : nil)
+        }
+        mapFunnel = funnel; funnel.rearm()
+        funnel.hold(.opening, forMilliseconds: Self.mapOpeningHoldMilliseconds)
         var optionHeld = NSEvent.modifierFlags.contains(.option)
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .flagsChanged]) { [weak self] event in
-            guard let self, !self.retired, self.generation == token, self.currentSurfaceValue == surface else { return event }
-            if event.type == .keyDown && event.keyCode == 53 { dismissMap(); return nil }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .flagsChanged]) { [weak self, weak window] event in
+            guard let self, let window, window.isVisible, !self.retired, self.generation == token,
+                  self.currentSurfaceValue == surface, self.isCurrent(surface) else { return event }
+            if event.type == .keyDown && event.keyCode == 53 { funnel.request(.escape); return nil }
             if event.type == .flagsChanged {
                 let held = event.modifierFlags.contains(.option)
-                if optionHeld && !held { dismissMap() }
+                if optionHeld && !held { dismissMap(nil) }
                 optionHeld = held
             }
-            if event.type == .leftMouseDown || event.type == .rightMouseDown { dismissMap() }
+            if event.type == .leftMouseDown || event.type == .rightMouseDown { funnel.request(.outsidePress) }
             return event
         }
-        deactivateObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { dismissMap() }
+        deactivateObserver = notificationCenter.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.mapFunnel === funnel, self.generation == token else { return }
+                funnel.request(.appResigned)
+            }
         }
+        // Without app activation the local monitor sees neither Esc nor clicks in other apps. The
+        // nonactivating panel becomes key on its own, so Esc arrives here; a click in another app
+        // reaches the global monitor. Clicks on this app's windows (the widget again) stay local.
+        let current: @MainActor () -> Bool = { [weak self, weak window] in
+            guard let self, let window else { return false }
+            return window.isVisible && !self.retired && self.generation == token
+                && self.currentSurfaceValue == surface && self.isCurrent(surface)
+        }
+        window.onEscape = { if current() { funnel.request(.escape) } }
+        removeOutsidePointerMonitor = outsidePointerMonitor { if current() { funnel.request(.outsidePress) } }
+        window.acceptsKey = true
+        window.makeKey()
+        // After the observer exists: activating must not read as the app losing focus. Activation is a
+        // courtesy; if macOS grants it, the local monitor above answers first.
+        if !NSApp.isActive, previousApp == nil {
+            let front = NSWorkspace.shared.frontmostApplication
+            if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
+        }
+        activate()
         return true
+    }
+
+    /// A first-use hint owns the panel while it is shown.
+    var showsHint: Bool { currentOffer != nil }
+    private(set) var shownExplanationForChecks: HelpExplanation?
+    /// The screen frame of the explanation card while it is shown (checks only).
+    var shownExplanationFrameForChecks: CGRect? { currentExplanationID != nil && panel?.isVisible == true ? panel?.frame : nil }
+
+    /// G3-10: the prototype explanation card next to the hovered or focused widget element.
+    /// The panel ignores the pointer, so the hover that produced it stays on the widget.
+    func showExplanation(_ explanation: HelpExplanation, id: String, anchor: CGRect, surface: DockHelpSurface) -> Bool {
+        guard !retired, currentOffer == nil, surface.visible, !surface.dragging,
+              let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(anchor) }),
+              let policy = windowPolicy(surface) else { return false }
+        generation &+= 1
+        let token = generation
+        removeEventMonitor(); removeDeactivateObserver()
+        currentSurfaceValue = nil; currentExplanationID = nil; shownExplanationForChecks = nil
+        panel?.orderOut(nil); layer.removeFromSuperview()
+        let viewport = screen.visibleFrame
+        func local(_ rect: CGRect) -> CGRect {
+            CGRect(x: rect.minX - viewport.minX, y: viewport.maxY - rect.maxY, width: rect.width, height: rect.height)
+        }
+        let anchorID = "dock.explanation"
+        var input = HelpUIRenderInput(sessionID: surface.layoutID, viewport: viewport.size, profile: .compact640,
+            language: language(), anchors: [.init(id: anchorID, rect: local(anchor))],
+            liveReadings: blockers(surface).map(local),
+            contextual: .init(id: id, anchorID: anchorID, explanation: explanation))
+        let effective = accessibility()
+        input.reduceMotion = effective.motion
+        input.reduceTransparency = effective.transparency
+        layer.update(input)
+        guard !retired, generation == token, let placement = layer.presentation?.card,
+              placement.identity == .context(id) else { return false }
+        let rect = placement.frame
+        guard rect.width > 0, rect.height > 0, CGRect(origin: .zero, size: viewport.size).contains(rect) else { return false }
+        let screenRect = CGRect(x: viewport.minX + rect.minX, y: viewport.maxY - rect.maxY,
+                                width: rect.width, height: rect.height)
+        let window = panel ?? makePanel()
+        panel = window
+        window.ignoresMouseEvents = true
+        window.sharingType = policy.0; window.collectionBehavior = policy.1
+        let container = ClipView(frame: CGRect(origin: .zero, size: rect.size))
+        container.wantsLayer = true; container.layer?.masksToBounds = true
+        layer.frame = CGRect(x: -rect.minX, y: -rect.minY, width: viewport.width, height: viewport.height)
+        container.addSubview(layer); window.contentView = container
+        layer.onAction = { _ in }
+        window.setFrame(screenRect, display: true); window.orderFrontRegardless()
+        guard window.isVisible else { window.orderOut(nil); return false }
+        currentExplanationID = id; shownExplanationForChecks = explanation
+        return true
+    }
+
+    func hideExplanation() {
+        guard currentExplanationID != nil else { return }
+        currentExplanationID = nil; shownExplanationForChecks = nil; generation &+= 1
+        panel?.orderOut(nil); layer.suspend()
     }
 
     func endMap() {
         generation &+= 1; currentSurfaceValue = nil
         removeEventMonitor(); removeDeactivateObserver()
         panel?.orderOut(nil); layer.removeFromSuperview()
+        // Give focus back only if this app still holds it; a user who switched away keeps their choice.
+        if let previousApp, NSApp.isActive { previousApp.activate() }
+        previousApp = nil
     }
 
     func dispose() {
@@ -202,18 +350,40 @@ import ModelPlanSettings
         panel?.orderOut(nil); panel?.close(); panel = nil; layer.dispose()
     }
 
-    private func removeEventMonitor() {
-        if let eventMonitor { NSEvent.removeMonitor(eventMonitor); self.eventMonitor = nil }
+    private func makeFunnel(_ close: @escaping @MainActor (DismissReason) -> Void) -> DismissalFunnel {
+        DismissalFunnel(now: now, live: { [weak self] in self?.isModal() == true ? .modal : [] }, close: close)
     }
-    private func removeDeactivateObserver() {
-        if let deactivateObserver { NotificationCenter.default.removeObserver(deactivateObserver); self.deactivateObserver = nil }
+    /// Removes every input path of the current hint or map: the local monitor, the global pointer
+    /// monitor and the map panel's key focus and Esc handler.
+    private func removeEventMonitor() {
+        mapFunnel?.disarm(); mapFunnel = nil; hintFunnel?.disarm(); hintFunnel = nil
+        if let eventMonitor { NSEvent.removeMonitor(eventMonitor); self.eventMonitor = nil }
+        if let removeOutsidePointerMonitor { removeOutsidePointerMonitor(); self.removeOutsidePointerMonitor = nil }
+        panel?.onEscape = nil; panel?.acceptsKey = false
     }
 
-    private func makePanel() -> NSPanel {
-        let window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        window.isFloatingPanel = true; window.level = .floating; window.isOpaque = false
+    static func globalPointerMonitor(_ handler: @escaping @MainActor () -> Void) -> @MainActor () -> Void {
+        let token = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { _ in
+            Task { @MainActor in handler() }
+        }
+        return { if let token { NSEvent.removeMonitor(token) } }
+    }
+
+    /// The overlay panel (checks only).
+    var panelForChecks: HelpOverlayPanel? { panel }
+    private func removeDeactivateObserver() {
+        if let deactivateObserver { notificationCenter.removeObserver(deactivateObserver); self.deactivateObserver = nil }
+    }
+
+    static let overlayLevel = CockpitWindowController.aboveCockpitLevel
+    private func makePanel() -> HelpOverlayPanel {
+        let window = HelpOverlayPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        // D49: Help can be asked for while the cockpit is open, so it draws above it.
+        window.isFloatingPanel = true; window.level = Self.overlayLevel; window.isOpaque = false
         window.backgroundColor = .clear; window.hasShadow = false; window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
+        // D88: a press on a hint over the attached cockpit is not an outside click that closes it.
+        window.identifier = CockpitWindowController.helpOverlayIdentifier
         return window
     }
 }

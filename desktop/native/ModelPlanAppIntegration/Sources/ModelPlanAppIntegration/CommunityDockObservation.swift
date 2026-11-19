@@ -13,27 +13,42 @@ enum CommunityObservationAge {
     static func unknown(language: SettingsLanguage) -> String {
         language == .english ? unknown : "读数时间未知"
     }
-    static func cardText(observedAt: Date?, now: Date, english: Bool) -> String {
-        guard let observedAt else { return english ? "Reading time unknown" : "读数时间未知" }
+    /// Older readings switch to days, and nothing older than this is printed as a number:
+    /// a missing, zero or otherwise implausible timestamp must never read "632675小时前".
+    static let longestShownAge: TimeInterval = 30 * 86_400
+    /// Readings cannot predate the product; a timestamp before 2020 is a missing/zero value.
+    private static let earliestPlausible = Date(timeIntervalSince1970: 1_577_836_800)
+    private enum Age { case unknown, justNow, minutes(Int), hours(Int), days(Int), older }
+    private static func age(_ observedAt: Date?, now: Date) -> Age {
+        guard let observedAt, observedAt >= earliestPlausible else { return .unknown }
         let seconds = now.timeIntervalSince(observedAt)
-        guard seconds.isFinite, seconds >= 0, seconds < Double(Int.max) else { return english ? "Reading time unknown" : "读数时间未知" }
-        if seconds < 60 { return english ? "just now" : "刚刚" }
-        let minutes = Int(seconds / 60)
-        if minutes < 60 { return english ? "\(minutes)m ago" : "\(minutes)分钟前" }
-        let hours = minutes / 60
-        return english ? "\(hours)h ago" : "\(hours)小时前"
+        guard seconds.isFinite, seconds >= 0 else { return .unknown }
+        if seconds < 60 { return .justNow }
+        if seconds < 3600 { return .minutes(Int(seconds / 60)) }
+        if seconds < 48 * 3600 { return .hours(Int(seconds / 3600)) }
+        if seconds <= longestShownAge { return .days(Int(seconds / 86_400)) }
+        return .older
+    }
+    static func cardText(observedAt: Date?, now: Date, english: Bool) -> String {
+        switch age(observedAt, now: now) {
+        case .unknown: return english ? "Reading time unknown" : "读数时间未知"
+        case .justNow: return english ? "just now" : "刚刚"
+        case .minutes(let n): return english ? "\(n)m ago" : "\(n)分钟前"
+        case .hours(let n): return english ? "\(n)h ago" : "\(n)小时前"
+        case .days(let n): return english ? "\(n)d ago" : "\(n)天前"
+        case .older: return english ? "over 30 days ago" : "超过 30 天前"
+        }
     }
     static func text(observedAt: Date?, now: Date, language: SettingsLanguage = .english) -> String {
-        guard let observedAt else { return unknown(language: language) }
-        let age = now.timeIntervalSince(observedAt)
-        guard age.isFinite, age >= 0, age < Double(Int.max) else { return unknown(language: language) }
-        if age < 60 { return language == .english ? "Reading taken <1m ago" : "读取于 1 分钟内" }
-        if age < 3600 {
-            let minutes = Int(age / 60)
-            return language == .english ? "Reading taken \(minutes)m ago" : "读取于 \(minutes) 分钟前"
+        let english = language == .english
+        switch age(observedAt, now: now) {
+        case .unknown: return unknown(language: language)
+        case .justNow: return english ? "Reading taken <1m ago" : "读取于 1 分钟内"
+        case .minutes(let n): return english ? "Reading taken \(n)m ago" : "读取于 \(n) 分钟前"
+        case .hours(let n): return english ? "Reading taken \(n)h ago" : "读取于 \(n) 小时前"
+        case .days(let n): return english ? "Reading taken \(n)d ago" : "读取于 \(n) 天前"
+        case .older: return english ? "Reading taken over 30 days ago" : "读取于超过 30 天前"
         }
-        let hours = Int(age / 3600)
-        return language == .english ? "Reading taken \(hours)h ago" : "读取于 \(hours) 小时前"
     }
 }
 enum CommunityDockObservation {

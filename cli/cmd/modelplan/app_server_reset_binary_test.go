@@ -120,7 +120,7 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 		t.Fatalf("events: %+v", env.Data.Projection.ResetEvents)
 	}
 	event := env.Data.Projection.ResetEvents[0]
-	if event.Status != "announced" || event.Schedule == nil || event.Schedule.Precision != "deadline" || !event.Schedule.From.Equal(deadline) || !event.Schedule.Through.Equal(deadline) || !event.ExpiresAt.Equal(deadline) {
+	if event.Status != "announced" || event.Schedule == nil || event.Schedule.Precision != "deadline" || !event.Schedule.From.Equal(deadline) || !event.Schedule.Through.Equal(deadline) || !event.ExpiresAt.Equal(deadline.Add(24*time.Hour)) {
 		t.Fatalf("point deadline changed: %+v", event)
 	}
 	if strings.Contains(string(response["result"]), `"links"`) {
@@ -262,12 +262,15 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if err := validator.Validate("app-server", encodedDetails); err != nil {
 		t.Fatalf("cockpit details violate schema: %v", err)
 	}
-	configured := detailsClient.call("cockpit/query", map[string]any{"redBelow": 16})
+	configured := detailsClient.call("cockpit/query", map[string]any{"redBelow": 15})
 	if configured["result"] == nil {
 		t.Fatalf("negotiated threshold rejected: %s", configured["error"])
 	}
+	if rejected := detailsClient.call("cockpit/query", map[string]any{"redBelow": 16}); rejected["error"] == nil {
+		t.Fatal("unsupported threshold accepted")
+	}
 	legacy := startQueryBinaryCaps(t, binary, []string{"rows", "reset_events_v1"})
-	if rejected := legacy.call("cockpit/query", map[string]any{"redBelow": 16}); rejected["error"] == nil {
+	if rejected := legacy.call("cockpit/query", map[string]any{"redBelow": 15}); rejected["error"] == nil {
 		t.Fatal("legacy client accepted negotiated-only threshold")
 	}
 	old := legacy.call("rows/subscribe", map[string]any{})

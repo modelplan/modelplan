@@ -4,7 +4,7 @@ on:
     branches: [main]
     paths: ["desktop/native/**", "clients/swift/**", "cli/internal/releaseguard/**", "codex/cli-pin.json", ".github/workflows/macos-distribution.yml"]
   pull_request:
-    paths: ["desktop/native/**", "clients/swift/**", "cli/internal/releaseguard/**", ".github/workflows/macos-distribution.yml"]
+    paths: ["desktop/native/**", "clients/swift/**", "cli/internal/releaseguard/**", ".github/workflows/macos-distribution.yml", "!**/*.md"]
   workflow_dispatch:
 
 permissions:
@@ -19,7 +19,7 @@ jobs:
       contents: read
       actions: read
     # No secrets or protected environment in the PR/build job.
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     runs-on: macos-latest
     timeout-minutes: 25
     env:

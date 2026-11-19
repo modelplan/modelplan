@@ -79,7 +79,7 @@ public struct DockOverflowEntry:Equatable,Sendable {
     }
     private func navigate(_ id:String,event:NSEvent)->Bool{
         let modifiers=event.modifierFlags.intersection([.option,.control,.command])
-        let keys:[UInt16]=edge == .bottom ? [123,124]:[126,125]
+        let keys:[UInt16]=edge.isHorizontal ? [123,124]:[126,125]
         guard let direction=keys.firstIndex(of:event.keyCode) else{return false}
         if modifiers == .option{onOptionMove?(id,direction==0 ? -1:1);return true}
         guard modifiers.isEmpty,let index=order.firstIndex(of:id),!order.isEmpty else{return false}
@@ -87,7 +87,7 @@ public struct DockOverflowEntry:Equatable,Sendable {
         if let view=rows[next]{window?.makeFirstResponder(view)};return true
     }
     public override func keyDown(with event:NSEvent){
-        let keys:[UInt16]=edge == .bottom ? [123,124]:[126,125]
+        let keys:[UInt16]=edge.isHorizontal ? [123,124]:[126,125]
         if event.modifierFlags.intersection([.option,.control,.command]) == .option,let id=keyboardTargetID,ids.contains(id),let index=keys.firstIndex(of:event.keyCode){onOptionMove?(id,index==0 ? -1:1);return}
         super.keyDown(with:event)
     }

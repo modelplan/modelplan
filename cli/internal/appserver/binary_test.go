@@ -37,7 +37,7 @@ func TestRealBinaryProtocolLifecycle(t *testing.T) {
 		home := t.TempDir()
 		stderr := &bytes.Buffer{}
 		cmd := exec.Command(bin, "app-server")
-		cmd.Env = append([]string{"HOME=" + home, "PATH=/nonexistent", "TMPDIR=" + home, "LANG=C"}, noRealCodex(home)...)
+		cmd.Env = append([]string{"HOME=" + home, "PATH=/nonexistent", "TMPDIR=" + home, "LANG=C", "MODELPLAN_BASE=http://127.0.0.1:1"}, noRealCodex(home)...)
 		cmd.Stderr = stderr
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
@@ -90,8 +90,9 @@ func TestRealBinaryProtocolLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		// Detection also includes compiled system executable locations. An empty
-		// synthetic home must contain no personal readings for any such tool.
-		if snapshot.Data.Projection.RowsSummary.State != rows.SummaryStateEmpty && snapshot.Data.Projection.RowsSummary.State != rows.SummaryStateNoConsent {
+		// synthetic home must contain no personal readings for any such tool. Tools still waiting for
+		// their first read give the "Reading ..." summary (G3-38).
+		if state := snapshot.Data.Projection.RowsSummary.State; state != rows.SummaryStateEmpty && state != rows.SummaryStateNoConsent && state != rows.SummaryStatePending {
 			t.Fatalf("unexpected empty state: %s", m["result"])
 		}
 		for _, row := range snapshot.Data.Projection.Rows {

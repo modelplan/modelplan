@@ -8,8 +8,9 @@ import "time"
 // building and must not mutate them until the build completes. All fields are
 // excluded from JSON: raw adapter facts must never be exported as display rows.
 type Input struct {
-	Now               time.Time `json:"-"`
-	ConsentGeneration uint64    `json:"-"`
+	Activities        []ActivityInput `json:"-"`
+	Now               time.Time       `json:"-"`
+	ConsentGeneration uint64          `json:"-"`
 	// ConsentChanged requests the fail-closed shape after the publication retry: declared rows only.
 	ConsentChanged bool             `json:"-"`
 	ReadersOff     bool             `json:"-"`
@@ -28,6 +29,14 @@ type Input struct {
 	KeychainBlocks  []KeychainBlock `json:"-"`
 }
 
+// ActivityInput is admitted session provenance, not a provider-level working flag.
+type ActivityInput struct {
+	ToolID, SubscriptionRef, SessionRef string
+	BindingVerified                     bool
+	Phase                               ActivityPhase
+	RecordAt, ExpiresAt                 time.Time
+}
+
 // CatalogueEntry contains evaluated catalogue facts, not remote display text,
 // paths, signals or hosts. Output names/art keys come from the CLI's title table.
 type CatalogueEntry struct {
@@ -38,6 +47,8 @@ type CatalogueEntry struct {
 	Retired      bool
 	ReaderExists bool
 	Status       string
+	// InstalledLater: detected now, and absent when this Mac's engine first looked (D238).
+	InstalledLater bool
 }
 
 // ConsentRecord includes persisted allow/deny decisions and computed implicit
@@ -111,8 +122,9 @@ type AccountInput struct {
 }
 
 type CreditsInput struct {
-	Balance *float64
-	Unit    string
+	Balance  *float64
+	Unit     string
+	Currency string
 }
 
 // WindowInput keys/roles/plans may contain raw provider values. The projection

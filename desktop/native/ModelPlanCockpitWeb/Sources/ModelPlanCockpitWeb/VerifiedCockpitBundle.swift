@@ -2,6 +2,7 @@ import CryptoKit
 import Darwin
 // SPDX-License-Identifier: MIT
 import Foundation
+import ModelPlanEngineClient
 
 public enum CockpitBundleError: Error {
   case invalidManifest, unsafePath, unsafeRoot, unsafeInventory, unsafeOpen, unsafeRegular,
@@ -10,7 +11,9 @@ public enum CockpitBundleError: Error {
 
 /// Caller-pinned build output. Holds hashes and a directory descriptor, never a
 /// second asset cache. Every served file is checked again through no-follow FDs.
-public final class VerifiedCockpitBundle {
+/// Sendable: every stored property is immutable except the served-file counters (behind `statsLock`), and each read
+/// works on its own dup of the descriptor.
+public final class VerifiedCockpitBundle: @unchecked Sendable {
   private struct Manifest: Decodable {
     let schemaVersion: Int
     let edition: String
@@ -21,6 +24,16 @@ public final class VerifiedCockpitBundle {
   private let files: [String: String]
   public let edition: String
   private static let fileLimit = 8 * 1024 * 1024
+  /// WP-17 (G3-123): how many served files were read and checked, and how long that took, since this bundle was made.
+  /// Measurement only; a page load logs the difference.
+  public struct ServedStats: Equatable, Sendable {
+    public var files = 0
+    public var nanoseconds: UInt64 = 0
+    public var milliseconds: Int { Int((Double(nanoseconds) / 1_000_000).rounded()) }
+  }
+  private let statsLock = NSLock()
+  private var stats = ServedStats()
+  public var servedStats: ServedStats { statsLock.lock(); defer { statsLock.unlock() }; return stats }
   static func digest(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
@@ -32,6 +45,7 @@ public final class VerifiedCockpitBundle {
       }
   }
   public init(root: URL, manifestSHA256: String, allowOfficial: Bool = false) throws {
+    let started = DispatchTime.now().uptimeNanoseconds
     let fd = open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
     guard fd >= 0 else { throw CockpitBundleError.unsafeRoot }
     do {
@@ -85,6 +99,8 @@ public final class VerifiedCockpitBundle {
       self.rootFD = fd
       self.files = manifest.files
       self.edition = manifest.edition
+      let verifyMs = Int((Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000).rounded())
+      LaunchTimingLog.shared.mark("bundle-verified", detail: "ms=\(verifyMs) files=\(manifest.files.count) bytes=\(total)")
     } catch {
       close(fd)
       throw error
@@ -120,6 +136,11 @@ public final class VerifiedCockpitBundle {
   }
   public func resource(path: String) throws -> Data {
     guard let expected = files[path] else { throw CockpitBundleError.unsafePath }
+    let started = DispatchTime.now().uptimeNanoseconds
+    defer {
+      let spent = DispatchTime.now().uptimeNanoseconds - started
+      statsLock.lock(); stats.files += 1; stats.nanoseconds += spent; statsLock.unlock()
+    }
     let data = try Self.read(path, root: rootFD)
     guard Self.digest(data) == expected else { throw CockpitBundleError.integrity }
     return data

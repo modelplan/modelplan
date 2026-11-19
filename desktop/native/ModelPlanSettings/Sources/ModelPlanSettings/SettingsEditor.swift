@@ -5,10 +5,10 @@ import Foundation
 public enum SettingsB20Edit: Equatable, Sendable {
     case theme(SettingsTheme), size(SettingsSize), motion(AccessibilityPreference), transparency(AccessibilityPreference)
     case percentageMode(PercentageMode), showPercentages(Bool), percentagePin(String, PercentagePin)
-    case redBelow(Int), sliverAlert(Bool)
+    case redBelow(Int), sliverAlert(Bool), showAllModels(Bool)
 
     public static let keys: Set<SettingKey> = [
-        .theme, .size, .motion, .transparency, .percentageMode, .showPercentages, .percentagePin, .redBelow, .sliverAlert,
+        .theme, .size, .motion, .transparency, .percentageMode, .showPercentages, .percentagePin, .redBelow, .sliverAlert, .showAllModels,
     ]
 
     public init(key: SettingKey, value: String, subscriptionID: String? = nil) throws {
@@ -23,8 +23,9 @@ public enum SettingsB20Edit: Equatable, Sendable {
             if let id = subscriptionID, !id.isEmpty, let v = PercentagePin(rawValue: value) {
                 self = .percentagePin(id, v); return
             }
-        case .redBelow: if let v = Int(value), [10, 16, 20, 25].contains(v) { self = .redBelow(v); return }
+        case .redBelow: if let v = Int(value), SettingsPreferences.redBelowChoices.contains(v) { self = .redBelow(v); return }
         case .sliverAlert: if let v = Bool(value) { self = .sliverAlert(v); return }
+        case .showAllModels: if let v = Bool(value) { self = .showAllModels(v); return }
         default: break
         }
         throw SettingsError.invalidPreference
@@ -40,6 +41,7 @@ public enum SettingsB20Edit: Equatable, Sendable {
         case .showPercentages(let v): p.showPercentages = v
         case .redBelow(let v): p.redBelow = v
         case .sliverAlert(let v): p.sliverAlert = v
+        case .showAllModels(let v): p.showAllModels = v
         case .percentagePin(let id, let v):
             var setting = p.subscriptionSettings[id] ?? .init()
             setting.percentagePin = v
@@ -134,7 +136,23 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         for observer in Array(changeObservers.values) { observer() }
     }
     public func reload() async { accept(await store.snapshot()); notifyChange() }
-    public func update(context: SettingsPageContext) { self.context = context; notifyChange() }
+    /// G3-71: the hidden-icon notice was dismissed; it stays dismissed until the notice clears (situation changes).
+    public private(set) var statusItemNoticeDismissed = false
+    public func dismissStatusItemNotice() { statusItemNoticeDismissed = true; notifyChange() }
+    public func update(context: SettingsPageContext) {
+        self.context = context
+        if context.statusItemNotice == nil { statusItemNoticeDismissed = false }
+        notifyChange()
+    }
+    /// The host's live read of the macOS login item. An explicit login choice is decided against it,
+    /// not against the observation cached when the app started; nil keeps that cached observation.
+    public var observeLogin: (@MainActor () -> LoginServiceState)?
+    private func currentLogin() -> LoginServiceState {
+        guard let observeLogin else { return context.capabilities.login }
+        let observed = observeLogin()
+        if observed != context.capabilities.login { context.capabilities.login = observed; notifyChange() }
+        return observed
+    }
     public func update(environment: SettingsEnvironment) {
         self.environment = environment; notifyChange()
         if let snapshot, let effective { onEnvironmentChange?(snapshot, effective) }
@@ -149,14 +167,13 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         let ids: [String]
         if case .moveSubscription = edit { ids = context.subscriptions.filter { !$0.isUnstable }.map(\.id) }
         else { ids = context.subscriptions.map(\.id) }
-        let observedLogin = context.capabilities.login
         let kind: SettingsCommittedEdit.Kind
         if case .resetHints = edit { kind = .resetHelpHints } else { kind = .preferences }
         let committed = try await transact(subscriptionID: edit.subscriptionID, kind: kind) { try edit.apply(to: &$0, catalogue: ids) }
         let intent: SettingsHostIntent?
         switch edit {
         case .login(let enabled):
-            intent = LoginServicePolicy.request(choice: enabled, observed: observedLogin, reason: .explicitUserChoice).map(SettingsHostIntent.action)
+            intent = LoginServicePolicy.request(choice: enabled, observed: currentLogin(), reason: .explicitUserChoice).map(SettingsHostIntent.action)
         case .resetHints: intent = .action(.resetHelpHints)
         case .shortcut:
             intent = .shortcutPreferencesChanged(openCockpit: committed.preferences.openShortcut, toggleDock: committed.preferences.dockShortcut)
@@ -187,19 +204,24 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
             guard context.capabilities.appCacheClearAvailable else { throw SettingsEditorError.actionUnavailable }
             intent = .action(.clearAppCache)
         case .openLink(let link): intent = .openPublicLink(link)
+        case .openSystemSettings(let pane): intent = .openSystemSettings(pane)
         case .checkForUpdates:
             guard context.capabilities.updateServiceAvailable else { throw SettingsEditorError.actionUnavailable }
             intent = .checkForUpdates
         case .previewFirstRun:
             guard context.capabilities.firstRunPreviewAvailable else { throw SettingsEditorError.actionUnavailable }
             intent = .previewFirstRun
+        case .exportDiagnostics:
+            guard context.capabilities.diagnosticsExportAvailable else { throw SettingsEditorError.actionUnavailable }
+            intent = .exportDiagnostics
         }
         onHostRequest(.init(revision: snapshot.revision, intent: intent))
     }
     @discardableResult public func completeFirstRun(options: OnboardingOptions, action: FirstRunAction,
         host: FirstRunHost, expectedRevision: UInt64) async throws -> FirstRunCommit {
         if action == .seeWhatsHere, !context.capabilities.helpMapAvailable { throw SettingsEditorError.actionUnavailable }
-        let capabilities = context.capabilities
+        var capabilities = context.capabilities
+        capabilities.login = currentLogin()
         let result = try await persist(expectedRevision: expectedRevision, operation: { [store] revision in
             try await store.completeFirstRun(options: options, action: action, host: host,
                                              capabilities: capabilities, expectedRevision: revision)

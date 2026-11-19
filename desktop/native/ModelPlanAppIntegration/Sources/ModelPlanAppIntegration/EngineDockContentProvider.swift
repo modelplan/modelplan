@@ -107,6 +107,13 @@ public enum EngineDeadlineFacts {
             guard matches else { continue }
             includeDate(event.publishedAt)
             includeDate(event.expiresAt)
+            // D166: the confirmed dot ends before the event does; recompute then on the existing deadline path.
+            if event.status == "confirmed" {
+                includeDate((event.confirmedAt ?? event.publishedAt).addingTimeInterval(DockResetSignal.confirmedDotLifetime))
+            } else if let through = event.scheduledThrough {
+                // The card turns to "awaiting confirmation" when the forecast window ends.
+                includeDate(through)
+            }
         }
         if let next { return .scheduled(next, hasUnknownDeadline: unknown) }
         return unknown ? .unknown : .none
@@ -156,6 +163,7 @@ public enum EngineDeadlineFacts {
             inputs.append(input)
             let message = message(row, now: context.now)
             let account=member.account
+            let hasWindowSources = account.windows.contains { $0.source != nil }
             var resets:[String:Date]=[:]
             var descriptions:[String:String]=[:]
             for window in account.windows {
@@ -168,7 +176,6 @@ public enum EngineDeadlineFacts {
                 }
             }
             var reserve:[DockCardRow]=[]
-            reserve.append(.init(id:"source",kind:.statistic,label:english ? "Source":"来源",value:sourceName(account.route)))
             let memberEvents=events.filter { event in
                 event.rowID == member.rowID && event.publishedAt <= context.now && context.now < event.expiresAt &&
                 (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true)
@@ -179,20 +186,29 @@ public enum EngineDeadlineFacts {
             var signal=DockSubscriptionSignal(id:member.id);signal.dataState=input.dataState
             if let event=preferred {
                 if event.status == "confirmed" {
-                    var reset=DockResetSignal(id:event.id,status:.confirmed,confirmedAt:event.publishedAt,expiresAt:event.expiresAt)
-                    reset.restartedReading=member.account.valueState == .current && member.account.windows.contains { window in
-                        guard window.current else { return false }
-                        guard let observed=date(window.observedAt),let resets=date(window.resetsAt) else { return false }
-                        return observed > event.publishedAt && resets > event.publishedAt
-                    }
+                    let confirmedAt=event.confirmedAt ?? event.publishedAt
+                    var reset=DockResetSignal(id:event.id,status:.confirmed,confirmedAt:confirmedAt,expiresAt:event.expiresAt)
+                    reset.kind=event.isResetCredit ? .resetCredit : .directReset
+                    // A local reading that restarted after the confirmation is an observation, not proof of the
+                    // public event (same predicate as the notification).
+                    reset.restartedReading = event.restartedReading(in: member.account)
                     signal.reset=reset
-                } else { signal.reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt) }
+                } else {
+                    var reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt)
+                    reset.kind=event.isResetCredit ? .resetCredit : .directReset
+                    signal.reset=reset
+                }
             }
             passSignals.append(signal)
-            for event in preferred.map({[$0]}) ?? [] {
-                let label=event.status == "confirmed" ? (english ? "Public reset confirmed":"公开重置已确认") : (english ? "Public reset announced":"已公告公开重置")
-                reserve.append(.init(id:"reset-event:"+event.id+":"+event.status,kind:.notice,label:label,value:"",detail:english ? "Public status does not confirm a personal quota reset":"公开状态不代表个人额度已重置"))
+            if let event = preferred {
+                let wording = EngineResetEventWording(english: english)
+                reserve.append(.init(id: "reset-event:" + event.id + ":" + event.status, kind: .notice,
+                    label: wording.label(event), value: wording.title(event, now: context.now),
+                    detail: wording.detail(rose: signal.reset?.restartedReading == true),
+                    pill: event.status == "confirmed" ? (english ? "Confirmed" : "已确认") : (english ? "Announced" : "已预告")))
             }
+            let resetCount = resetCountRow(member, now: context.now)
+            if let resetCount { reserve.append(resetCount.row) }
             if (row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired),
                account.valueState == .current || account.valueState == .retained,
                let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
@@ -210,8 +226,15 @@ public enum EngineDeadlineFacts {
                     case .fallback(let value, _): number=String(value)
                     case .missing,.invalid: number=nil
                     }
-                    if let number { reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",value:number,detail:reserveDetail())) }
-                case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:String(balance),detail:reserveDetail(english ? "Currency not reported":"未报告币种")))
+                    if let number { reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:number+(english ? " credits":" 点数"),detail:reserveDetail(),hint:"credits")) }
+                case "money":
+                    // G3-103 follow-up: a reader that reports its currency (Grok: USD) shows it; only a balance
+                    // without one keeps the "currency not reported" note.
+                    if let code = credits.currency, let money = M5CreditsDisplayFormat.currencyText(balance, code: code, english: english) {
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:money,detail:reserveDetail(),hint:"money"))
+                    } else {
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:M5CreditsDisplayFormat.moneyText(balance,english:english),detail:reserveDetail(english ? "Currency not reported":"未报告币种"),hint:"money"))
+                    }
                 default:
                     let unit=M5CreditsDisplayFormat.Unit(identifier:credits.unit)
                     switch M5CreditsDisplayFormat.unknownUnitText(balance,unit:unit,knowledge:.unknown,english:english) {
@@ -222,6 +245,13 @@ public enum EngineDeadlineFacts {
                     case .missing,.invalid,.notApplicable(nil,_): break
                     }
                 }
+            }
+            reserve.append(todayRow(account))
+            // D228/D233: a reading with a balance but no usage percentage needs no action, so the shared cause
+            // table's sentence is only a small grey footnote at the bottom of the card (no fix line, no button).
+            if row.reason.code == .usageNotReported,
+               let entry = ReaderCauseTable.entry(code: "usage_not_reported", tool: row.id, toolName: member.name(english: english)) {
+                reserve.append(.init(id: "usage-not-reported", kind: .footnote, label: "", value: entry.reason.value(english ? .english : .chinese)))
             }
             let cardState: DockCardReadingState
             if row.consent != .allowed && row.consent != .implicit && row.consent != .notRequired {
@@ -237,16 +267,57 @@ public enum EngineDeadlineFacts {
             } else {
                 cardState = input.dataState == .fresh ? .ok : .error
             }
-            reasons[member.id] = .init(input: input, reason: text(message.0.text),
-                nextStep: message.1.map { text($0.text) } ?? "",
-                originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
-                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,cardReadingState:cardState)
+            let observations: [String: DockWindowObservation]? = hasWindowSources
+                ? Dictionary(grouping: account.windows, by: \.id).compactMapValues { windows in
+                    guard windows.count == 1, let window = windows.first else { return nil }
+                    let observed = date(window.observedAt)
+                    // A single unbound account, such as local Codex history, has no subscription
+                    // reference but is still one stable member: its card keeps its source and age.
+                    let verifiedRetained = account.valueState == .retained && member.isStable &&
+                        (member.subscriptionRef == nil || member.subscriptionRef == member.id) && sourceState(member, now: context.now) == .stale &&
+                        window.source?.isKnown == true && (observed.map { $0 <= context.now } ?? false)
+                    return DockWindowObservation(sourceName: windowSourceName(window.source),
+                                                 observedAt: observed, verifiedRetained: verifiedRetained)
+                }
+                : nil
+            // D41: one plain sentence and one button, whatever the Keychain outcome was.
+            let needsKeychain = row.id == "claude" && row.state == .needsKeychain
+            let cause = needsKeychain ? nil : causeLine(member, now: context.now)
+            let keychainReason: String = english ? "Keychain access needed" : "需要允许读取钥匙串"
+            let messageReason: String = text(message.0.text)
+            let reasonText: String
+            if needsKeychain {
+                reasonText = keychainReason
+            } else if let causeReason = cause?.reason {
+                reasonText = causeReason
+            } else {
+                reasonText = messageReason
+            }
+            let nextStepText: String
+            if let causeNext = cause?.nextStep {
+                nextStepText = causeNext
+            } else if let messageNext = message.1 {
+                nextStepText = text(messageNext.text)
+            } else {
+                nextStepText = ""
+            }
+            let planName: String = account.plan.name.map { text($0) } ?? ""
+            let linkList = preferred.map(resetEventLinks) ?? []
+            let presentation = DockContentRow(input: input, reason: reasonText, nextStep: nextStepText,
+                originalObservedAt: date(account.observedAt), plan: planName,
+                sourceName: sourceName(account.route), resetTimes: resets, windowDescriptions: descriptions,
+                additionalRows: reserve, resetCountExpiry: resetCount?.expiry, links: linkList,
+                windowObservations: observations, cardReadingState: cardState)
+            reasons[member.id] = presentation
+            if needsKeychain { reasons[member.id]?.actionLabel = english ? "Allow reading" : "允许读取" }
+            // D87 slice 9: any other named cause links to that subscription's row in Settings.
+            else if cause != nil { reasons[member.id]?.actionLabel = english ? "Open in Settings" : "在设置中处理" }
         }
         let status: String
         switch value.status {
         case .loading: status = english ? "Loading readings…" : "正在读取…"
         case .empty: status = english ? "No readings are available. Check Settings." : "暂无读数，请检查设置。"
-        case .failed: status = english ? "Readings unavailable. Check the engine connection." : "读数不可用，请检查引擎连接。"
+        case .failed: status = EngineRowsText.readingServiceUnavailable.value(english ? .english : .chinese)
         case .cleared: status = english ? "Readings cleared. Waiting for current data." : "读数已清除，正在等待当前数据。"
         case .ready: status = value.summary.map { text($0.text) } ?? (english ? "Readings" : "读数")
         }
@@ -256,16 +327,80 @@ public enum EngineDeadlineFacts {
             let number = reading?.remainingPercent.map { " · \(Int($0.rounded()))%" } ?? ""
             return member.name(english:english) + number + " · " + text(message(row, now: context.now).0.text)
         }
-        let subscriptions=members.map { member in SettingsSubscription(id:member.id,
-            name:.init(member.name(english:true),member.name(english:false)),
-            plan:member.account.plan.name.map{text($0)} ?? "",vendor:member.row.vendorKey ?? "",
-            source:sourceState(member,now:context.now),isUnstable:!member.isStable) }
-        let content = DockContent(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
+        let subscriptions: [SettingsSubscription] = members.map { member -> SettingsSubscription in
+            let retainedFailure = (member.row.state == .stale || member.account.valueState == .retained)
+                ? member.account.lastFailure?.code.rawValue : nil
+            let failing = member.row.state == .failed || member.row.state == .needsAction
+            let causeCode: String?
+            // Only a member that is failing carries a cause; a stale but live row keeps its own status.
+            if let retainedFailure {
+                causeCode = retainedFailure
+            } else if failing {
+                causeCode = message(member.row, now: context.now).0.code.rawValue
+            } else {
+                causeCode = nil
+            }
+            let planName: String = member.account.plan.name.map { text($0) } ?? ""
+            return SettingsSubscription(id: member.id,
+                name: .init(member.name(english: true), member.name(english: false)),
+                plan: planName, vendor: member.row.vendorKey ?? "",
+                source: sourceState(member, now: context.now), isUnstable: !member.isStable,
+                causeCode: causeCode, tool: member.row.id)
+        }
+        // SET-9-42: a reader that failed before any account or reading exists has no Dock member, yet its tool
+        // still owns a Settings row carrying the cause. Build those rows from the Settings surface, not the Dock.
+        let memberRows = Set(members.map(\.rowID))
+        let accountless: [SettingsSubscription] = value.settingsRows.compactMap { row in
+            guard row.accounts.isEmpty, !memberRows.contains(row.id),
+                  row.state == .failed || row.state == .needsAction || row.state == .needsKeychain else { return nil }
+            let authorized = row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired
+            return SettingsSubscription(id: row.id, name: .init(row.name.en, row.name.zh), vendor: row.vendorKey ?? row.id,
+                source: authorized ? .unavailable : .denied, isUnstable: true, causeCode: message(row, now: context.now).0.code.rawValue)
+        }
+        let content = DockContent(snapshot: .init(inputs: inputs, subscriptions: subscriptions + accountless,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
         verifiedWindows = passWindows; recomputeDeadline = passDeadline
         memberInstability = passInstability; signals = passSignals
         return .init(content: content, deadline: passDeadline, verifiedWindows: passWindows)
     }
+    /// card.js: today's tokens, rate and running sessions; an unknown figure stays --.
+    private func todayRow(_ account: RowsAccount) -> DockCardRow {
+        let today = account.today
+        func tokens(_ n: Int64) -> String {
+            n < 1000 ? String(n) : n < 1_000_000 ? "\(Int((Double(n) / 1000).rounded()))k" : String(format: "%.1fM", Double(n) / 1_000_000)
+        }
+        var parts = [(today?.observedTotalTokens ?? today?.observedOutputTokens).map(tokens) ?? "--", today?.generationTps.map { "\(Int($0.rounded())) t/s" } ?? "-- t/s"]
+        if let running = today?.runningSessions, running > 0 { parts.append(english ? "\(running) running" : "\(running) 个运行中") }
+        return .init(id: "today", kind: .statistic, label: english ? "Today" : "今日", value: parts.joined(separator: " · "))
+    }
+    private func resetEventLinks(_ event: EngineResetEvent) -> [DockCardLink] {
+        let order = english
+            ? [("original", "Original"), ("aihot", "AIHot"), ("official", "Official source"), ("publication", "Source")]
+            : [("aihot", "AIHot"), ("official", "官方来源"), ("original", "原文"), ("publication", "来源")]
+        return order.flatMap { kind, label in
+            event.sourceLinks.filter { $0.kind == kind }.map { DockCardLink(label: label, url: $0.url) }
+        }
+    }
+
+    private func resetCountRow(_ member: EngineAccountMember, now: Date) -> (row: DockCardRow, expiry: Date?)? {
+        let row = member.row, account = member.account
+        guard row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired,
+              account.valueState == .current || account.valueState == .retained,
+              let facts = account.resetCards, facts.state == .complete || facts.state == .partial,
+              facts.count != nil || facts.earliestExpiresAt != nil else { return nil }
+        let title = facts.count.map { "↺\($0)" } ?? "↺"
+        var details: [String] = []
+        if facts.state == .partial { details.append(english ? "Reported subset" : "已报告部分") }
+        if facts.truncated { details.append(english ? "Details truncated" : "明细已截断") }
+        if account.valueState == .retained || row.state != .fresh ||
+            (date(row.expiresAt).map { now >= $0 } ?? false) ||
+            (date(account.freshUntil).map { now >= $0 } ?? false) {
+            details.append(english ? "Last known reading" : "上次读数")
+        }
+        return (.init(id: "reset-count", kind: .reserve, label: english ? "Reserve" : "储备", value: title, detail: details.joined(separator: " · ")),
+                date(facts.earliestExpiresAt))
+    }
+
     private func sourceState(_ member:EngineAccountMember,now:Date) -> SubscriptionSourceState {
         let row=member.row, account=member.account
         guard row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired else { return .denied }
@@ -336,6 +471,34 @@ public enum EngineDeadlineFacts {
         case .knownUnknown,.unknown:return english ? "Unknown source":"未知来源"
         }
     }
+    private func windowSourceName(_ source: RowsWindowSource?) -> String {
+        switch source {
+        case .localHistory: return sourceName(.localLog)
+        case .runtime: return sourceName(.runtimeRpc)
+        case .savedLogin: return sourceName(.savedLoginApi)
+        case .apiKey: return sourceName(.apiKeyApi)
+        case .other: return english ? "Other source" : "其他来源"
+        case .none, .unknown: return sourceName(.knownUnknown)
+        }
+    }
+    /// D87 slice 4: a failed or stale row says its own cause from the shared table, in place of the
+    /// engine's generic sentence. A stale reading names its age and the cause of the failed refresh.
+    /// A code without a table entry returns nil and keeps the engine's text.
+    private func causeLine(_ member: EngineAccountMember, now: Date) -> (reason: String, nextStep: String)? {
+        let row = member.row, account = member.account
+        let language: SettingsLanguage = english ? .english : .chinese
+        let name = member.name(english: english)
+        if row.state == .stale || account.valueState == .retained,
+           let failure = account.lastFailure,
+           let entry = ReaderCauseTable.entry(code: failure.code.rawValue, tool: row.id, toolName: name),
+           let observed = date(account.observedAt) {
+            return (ReaderCauseTable.staleLine(entry: entry, ageSeconds: Int(max(0, now.timeIntervalSince(observed))), language: language),
+                    entry.action.value(language))
+        }
+        guard row.state == .failed || row.state == .needsAction,
+              let entry = ReaderCauseTable.entry(code: message(row, now: now).0.code.rawValue, tool: row.id, toolName: name) else { return nil }
+        return (entry.reason.value(language), entry.action.value(language))
+    }
     private func message(_ row: RowsRow, now: Date) -> (RowsReason, RowsNextStep?) {
         if let expiry = date(row.expiresAt), now >= expiry, let after = row.stateAfterExpiry {
             return (after.reason, after.nextStep)
@@ -352,7 +515,8 @@ public enum EngineDeadlineFacts {
     private func makeInput(_ member:EngineAccountMember, now: Date) -> DockInstrumentInput {
         let row=member.row
         var input = DockInstrumentInput(id: member.id, name: member.name(english:english), windows: [])
-        input.vendorResourceKey = row.vendorKey
+        // D42: most catalogue rows carry no vendor key; their tool ID names the mark.
+        input.vendorResourceKey = row.vendorKey.flatMap { $0.isEmpty ? nil : $0 } ?? row.id
         input.duplicateAccountTag=member.duplicateTag
         // A non-fresh row remains non-fresh. The Dock model currently cannot
         // display a current weekly window while its overall input is non-fresh.
@@ -374,10 +538,11 @@ public enum EngineDeadlineFacts {
                     remainingPercent: current ? window.remainingPercent : nil,
                     resetsAt: current ? date(window.resetsAt) : nil,
                     durationSeconds: window.durationSeconds.map { Double($0) })
-                // Only known plan-wide session and weekly limits participate.
+                // Only known plan-wide session, weekly and monthly limits participate.
                 // Named, unknown and model-scoped pools remain card-only.
                 let generalLimit = (period == .fiveHour && ["main", "five_hour"].contains(window.limitKey)) ||
-                    (period == .week && ["main", "weekly"].contains(window.limitKey))
+                    (period == .week && ["main", "weekly"].contains(window.limitKey)) ||
+                    (period == .month && ["main", "monthly"].contains(window.limitKey))
                 projected.isGeneral = window.modelScope == nil && window.poolKey == "main" && generalLimit
                 input.windows.append(projected)
             }
@@ -390,7 +555,33 @@ public enum EngineDeadlineFacts {
             let a=left.remainingPercent ?? .infinity,b=right.remainingPercent ?? .infinity
             return a == b ? left.id < right.id:a < b
         }
-        input.dataState = input.windows.contains { $0.remainingPercent != nil } ? .fresh : .unavailable
+        // D228: a current balance-only reading (Grok's X Subscription: a balance, no usage percentage) is a
+        // successful read. Its quota stays unknown ("--"), but the card is not presented as a failed one.
+        let balanceOnly = accountCurrent && row.reason.code == .usageNotReported && account.credits?.balance != nil &&
+            input.windows.allSatisfy { $0.remainingPercent == nil }
+        input.dataState = input.windows.contains { $0.remainingPercent != nil } || balanceOnly ? .fresh : .unavailable
+        if source.dockContent.status == .ready, accountCurrent, member.isStable, let ref=member.subscriptionRef {
+            let admitted=(account.activity ?? []).compactMap { activity -> Date? in
+                guard activity.bindingVerified, activity.subscriptionRef == ref,
+                      let recorded=date(activity.recordAt), let expiry=date(activity.expiresAt),
+                      recorded <= now, now < expiry else { return nil }
+                let grace:TimeInterval
+                switch activity.phase {
+                case .model: grace=90
+                case .tool: grace=300
+                case .fallback: grace=30
+                case .finished,.unknown: return nil
+                }
+                guard abs(expiry.timeIntervalSince(recorded)-grace) < 0.001 else { return nil }
+                return expiry
+            }
+            // One live, verified session is sufficient for this account only. Use
+            // the member key, never its shared provider/row ID or a peer's rate.
+            if let expiry=admitted.max() {
+                input.working = .init(subscriptionID:member.id,bindingVerified:true,fresh:true,
+                    observedOutput:false,observedInFlight:true,expiresAt:expiry)
+            }
+        }
         return input
     }
 
