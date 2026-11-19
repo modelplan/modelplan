@@ -14,6 +14,14 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const common = ['file', 'kind', 'sha256', 'bytes', 'license', 'size'];
 
 export const fieldRocketVehicles = ['falcon9', 'falcon-heavy', 'new-glenn', 'vulcan', 'long-march-2f', 'long-march-5', 'long-march-3b', 'starship'];
+// WP-22 (D298): the 2D fallback's side views, one per vehicle and maker livery the component renders, at 2x and 3x.
+const usMakers = ['anthropic', 'google', 'meta', 'openai', 'xai'];
+const cnMakers = ['alibaba', 'deepseek', 'kimi', 'minimax', 'tencent', 'volcengine', 'xiaomi', 'zhipuai'];
+export const fieldFlatSprites = [
+  ...['falcon9', 'falconHeavy', 'newGlenn', 'vulcan'].flatMap(v => usMakers.map(m => `${v}-${m}`)),
+  ...['cz2f', 'cz3b', 'cz5'].flatMap(v => cnMakers.map(m => `${v}-${m}`)),
+  ...[...usMakers, ...cnMakers].map(m => `heavy-${m}`),
+];
 
 function expectedFiles(porthole) {
   const files = new Map([['README.md', { kind: 'notice' }]]);
@@ -28,12 +36,17 @@ function expectedFiles(porthole) {
       files.set(`canopy-c01/${layer}-${tier}-${scale}x.png`, { kind: 'canopy-layer', tier, scale });
     }
   }
-  // Owner D39/D-A: the minified launch-field scene (reserved licence, official edition only, loaded on demand).
+  // WP-22 (D298): the minified launch-field component, script and styles (reserved licence, official edition only,
+  // loaded on demand). It replaced the D39/D-A scene bundle.
   files.set('field-scene/README.md', { kind: 'notice' });
-  files.set('field-scene/cockpit-scene.bundle.js', { kind: 'field-scene' });
+  files.set('field-scene/launch-field.js', { kind: 'field-scene' });
+  files.set('field-scene/launch-field.css', { kind: 'field-scene' });
   // D207: the fleet r4 rockets' albedo (512/256 px) and material atlases, read by the scene at runtime.
   for (const vehicle of fieldRocketVehicles) for (const part of ['512', '256', 'mat']) {
     files.set(`field-scene/rockets/${vehicle}-${part}.webp`, { kind: 'field-rocket-atlas' });
+  }
+  for (const sprite of fieldFlatSprites) for (const scale of [2, 3]) {
+    files.set(`field-scene/rockets/flat/${sprite}@${scale}x.webp`, { kind: 'field-rocket-sprite', scale });
   }
   if (porthole) for (const f of porthole.descriptors) {
     const meta = { kind: f.kind };
@@ -50,7 +63,7 @@ function walk(directory, relative = '') {
     const path = join(directory, item), stat = lstatSync(path);
     assert.ok(!stat.isSymbolicLink(), `symlink in runtime pack: ${name}`);
     if (stat.isDirectory()) {
-      assert.ok(['ignition-a5', 'canopy-c01', 'field-scene', 'field-scene/rockets', 'porthole-stills', 'porthole-stills/assets', 'porthole-stills/assets/projected'].includes(name), 'directory outside manifest');
+      assert.ok(['ignition-a5', 'canopy-c01', 'field-scene', 'field-scene/rockets', 'field-scene/rockets/flat', 'porthole-stills', 'porthole-stills/assets', 'porthole-stills/assets/projected'].includes(name), 'directory outside manifest');
       files.push(...walk(path, name));
     }
     else {
@@ -97,7 +110,7 @@ export function verifyVisualPack(root = fileURLToPath(new URL('..', import.meta.
       assert.equal(entry.size, null, 'notice dimensions');
       assert.ok(bytes.toString().includes('SPDX-License-Identifier') && bytes.toString().includes(license), 'notice licence');
       if (entry.kind === 'notice') assert.match(bytes.toString(), /ModelPlan.*trademark/i);
-      // The minified scene embeds three.js's own MIT notice, so it is registered by hash like a binary.
+      // The minified component embeds three.js's own MIT notice, so it is registered by hash like a binary.
       if (entry.kind === 'field-scene') pngs[prefix + entry.file] = entry.sha256;
     } else {
       keys(entry.size, ['width', 'height']);
