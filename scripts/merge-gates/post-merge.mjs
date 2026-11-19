@@ -11,12 +11,13 @@
 //
 //   node scripts/merge-gates/post-merge.mjs [--dry-run]     needs GITHUB_TOKEN (issues: write) and GITHUB_REPOSITORY
 import { client } from "./github.mjs";
-import { HOSTED_WORKFLOWS, isHostedMacLeg } from "./hosted.mjs";
+import { HOSTED_MAC_LEGS, HOSTED_WORKFLOWS, isHostedMacLeg } from "./hosted.mjs";
 
 export const LABEL = "post-merge-red";
 export const TITLE = "Post-merge: hosted macOS leg red on main";
 const STATE_RE = /<!-- post-merge-red-state (.*?) -->/s;
 const RED = new Set(["failure", "timed_out"]);
+const GREEN = new Set(["success", "neutral"]);
 const COUNTED = new Set(["success", "failure", "timed_out", "neutral"]);
 
 // The run that speaks for a workflow on main: the newest finished push run that was not cancelled or skipped.
@@ -28,10 +29,34 @@ export function pickRun(runs) {
 // The red rows of one run: its hosted legs that failed or timed out.
 export function redRows(run, jobs) {
   return jobs.filter((j) => isHostedMacLeg(run.path, j) && j.status === "completed" && RED.has(j.conclusion)).map((j) => ({
-    job_id: j.id, job: j.name, conclusion: j.conclusion, workflow: run.name, run_id: run.id,
+    job_id: j.id, job: j.name, conclusion: j.conclusion, workflow: run.name, path: String(run.path ?? "").split("@")[0], run_id: run.id,
     sha: run.head_sha, url: j.html_url ?? run.html_url, test: null,
   }));
 }
+
+// The rows one workflow contributes, given the previous rows (from the open issue) and its newest counted main run.
+// Invariants (macrevd P2s on #1080):
+//  1. A row is cleared ONLY by a qualifying success: a job of this run that is a trusted hosted leg (isHostedMacLeg)
+//     and completed success/neutral. Skipped, cancelled, running, absent, or a record without runner metadata says
+//     nothing and keeps the row. A row is dropped without a success only when its leg is retired from the trusted table.
+//  2. A newer record is never overwritten by an older run: a row from run N is cleared (or replaced) only by a run
+//     with id >= N (the same run counts: its completed retry reports the latest attempt).
+// PATHS per prev row: retired leg -> drop | run.id < row.run_id -> keep | qualifying success -> drop | red hosted leg ->
+// replaced by the new red row | anything else -> keep.  New red leg (no prev row) -> add; red in a run older than its
+// prev row -> prev row stays, no new row.
+const inTable = (r) => HOSTED_MAC_LEGS.some((l) => l.name.test(String(r.job)) && (!r.path || l.workflow === r.path));
+export function reconcile(prevRows, run, jobs) {
+  const mine = prevRows.filter((r) => r.workflow === run.name);
+  const newer = new Set(mine.filter((r) => r.run_id > run.id).map((r) => r.job));
+  const red = redRows(run, jobs).filter((r) => !newer.has(r.job));
+  const redNames = new Set(red.map((r) => r.job));
+  const cleared = (r) => jobs.some((j) => j.name === r.job && isHostedMacLeg(run.path, j) && j.status === "completed" && GREEN.has(j.conclusion));
+  const kept = mine.filter((r) => inTable(r) && !redNames.has(r.job) && (r.run_id > run.id || !cleared(r)));
+  return [...red, ...kept];
+}
+
+// Previous rows of workflows that had no counted run on main this time: unknown, so unchanged.
+export const carryOver = (prevRows, seenRunNames) => prevRows.filter((r) => !seenRunNames.has(r.workflow));
 
 // The first failing test in a job log (the same patterns as the coordinator's main-red.sh), else the failed step.
 export function firstFailure(log, job) {
@@ -84,14 +109,16 @@ async function main() {
 
   const issues = (await gh.all(`/issues?state=open&labels=${LABEL}&sort=created&direction=asc`)).filter((i) => !i.pull_request);
   const open = issues[0] ?? null;
-  const known = new Map(parseState(open?.body).map((r) => [r.job_id, r.test]));
-  const rows = [];
+  const prev = parseState(open?.body);
+  const known = new Map(prev.map((r) => [r.job_id, r.test]));
+  const rows = [], seen = new Set();
   for (const wf of HOSTED_WORKFLOWS) {
     const file = wf.split("/").pop();
     const run = pickRun(await gh.all(`/actions/workflows/${file}/runs?branch=main&event=push&status=completed`, "workflow_runs", 50));
     if (!run) { say({ workflow: wf, run: "none on main" }); continue; }
     const jobs = await gh.all(`/actions/runs/${run.id}/jobs?filter=latest`, "jobs", 500);
-    for (const row of redRows(run, jobs)) {
+    seen.add(run.name);
+    for (const row of reconcile(prev, run, jobs)) {
       row.test = known.get(row.job_id) ?? null;
       if (!row.test) {
         let log = "";
@@ -102,6 +129,7 @@ async function main() {
     }
     say({ workflow: wf, run: run.id, sha: run.head_sha, red: rows.filter((r) => r.run_id === run.id).map((r) => r.job) });
   }
+  rows.push(...carryOver(prev, seen));
   const p = plan(open, rows);
   say({ issue: open?.number ?? null, action: p.action, red: rows.length, fresh: p.fresh.map((r) => r.job), dryRun });
   if (dryRun) return;
