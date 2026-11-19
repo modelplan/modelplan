@@ -93,9 +93,11 @@ html[data-theme="night"] #cockpit .ek-all:not(.on)>span:not(.ki){color:#a1aab3}
 .ck-still-add{mix-blend-mode:plus-lighter;z-index:1}
 /* Flame/halo flicker (owner D39/D-H; prototype composer.js:26,34): only on an active, open page; static under the
    host's or the system's Reduce Motion. Hidden/closed pages have data-active=false or data-shell=closed. */
+/* V1-FINAL §16 / MOT-2.3-05: the flicker steps through five levels per sweep (both ends held) instead of easing every
+   frame, so the additive layers change a few times a cycle rather than each frame. Period and phase stay per rocket. */
 @keyframes cockpit-porthole-flicker{from{opacity:.94;transform:scale(.985,.98)}to{opacity:1;transform:scale(1.015,1.02)}}
 @media (prefers-reduced-motion:no-preference){
-html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker{animation:cockpit-porthole-flicker .43s ease-in-out 0s infinite alternate!important}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker{animation:cockpit-porthole-flicker .43s steps(5,jump-none) 0s infinite alternate!important}
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-p1{animation-duration:.5s!important}
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-p2{animation-duration:.57s!important}
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-p3{animation-duration:.64s!important}
@@ -138,10 +140,12 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 /* HUD B: borderless, on one scrim that fades to nothing at every edge (CKP-PORT-03, 04). The port's padding box starts at (18,14) in the window, so these are the window-local (76,24) and (58,9) less that. */
 #cockpit .hud[hidden]{display:none!important}
 #cockpit[data-layout] .hud.hud-b,#cockpit[data-layout] .hud.hud-strip{position:absolute;right:auto;bottom:auto;min-width:0;max-width:none;min-height:0;padding:0;border:0;border-radius:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:auto;cursor:default}
-#cockpit[data-layout] .hud.hud-b{left:58px;top:10px;width:180px;height:160px;display:block;background:radial-gradient(closest-side,#0b0f13cc 62%,#0b0f1300)}
+/* WP-14 (V1-FINAL §5, final-3): one solid dark backing under the whole HUD (the old radial fade left the lower rows on the
+   earth glow); the prototype's #030810 at 0.5 (final-3). */
+#cockpit[data-layout] .hud.hud-b{left:58px;top:10px;width:180px;height:160px;display:block;background:#03081080;border-radius:6px}
 #cockpit .hud-b .hud-chart{width:180px;height:86px;padding:4px 9px 5px}
 #cockpit .hud-b .hud-list{width:117px;height:74px;padding:0;gap:0;overflow:hidden}
-#cockpit[data-layout] .hud.hud-strip{left:44px;top:11px;width:216px;height:30px;display:block;background:linear-gradient(90deg,#0b0f1300,#0b0f13cc 12% 88%,#0b0f1300)}
+#cockpit[data-layout] .hud.hud-strip{left:44px;top:11px;width:216px;height:30px;display:block;background:#03081080;border-radius:6px}
 #cockpit .hud .hp{display:flex;align-items:baseline;gap:3px;padding:0 2px;min-width:0;background:none;border:0;color:inherit;font-size:10px;line-height:12px;cursor:pointer}
 #cockpit .hud .hp b{overflow:visible;text-overflow:clip;font-size:10px}
 #cockpit .hud .hp-rec{white-space:nowrap;margin-left:auto}
@@ -149,6 +153,7 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 /* G3-48: the compact strip follows the study at 640: an 86x30 chart beside three stacked 10 px rows. One block, after the
    generic .hud rules and more specific than them, so its clipping and row height are not overridden. */
 #cockpit[data-layout] .hud.hud-strip{display:grid;grid-template-columns:86px minmax(0,1fr);column-gap:2px}#cockpit[data-layout] .hud.hud-strip .hud-chart{grid-column:1;grid-row:1;width:86px;height:30px;padding:0}#cockpit[data-layout] .hud.hud-strip .hud-list{display:grid;grid-column:2;grid-row:1;grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(3,10px);gap:0;padding:0;height:100%;min-width:0;align-self:start}#cockpit[data-layout] .hud.hud-strip .hp{height:10px;line-height:10px}#cockpit[data-layout] .hud.hud-strip .hp b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:10px}#cockpit[data-layout] .hud.hud-strip .hp-rec{flex:none;font-size:9px;line-height:10px}
+#cockpit .hud .hp b{color:#e9edf0}#cockpit .hud .hp-on{display:inline-block;flex:none;width:5px;height:5px;margin-left:2px;border-radius:50%;background:#5ad9ba;align-self:center}
 #cockpit .hud .hp b.gold{color:var(--gold)}#cockpit .hud .hp-rec.on{text-shadow:0 0 6px color-mix(in srgb,var(--gold) 53%,transparent)}
 .hud-front{fill:none;stroke:var(--gold);stroke-width:1.2;stroke-dasharray:3 2}
 .hud-dot{fill:var(--gold);cursor:pointer}.hud-dot.dominated{opacity:.35}
@@ -161,7 +166,7 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 /* QA 11-08 (G3-48, CKP-PORT-04/08): the tall HUD follows the study's hud-selection style. Six 12 px rows fill the 74 px
    list (names 10 px, ranks and effort 9 px); the list widens only as far as a complete name needs, inside the HUD. */
 #cockpit .hud-b .hud-list{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(6,12px);width:max-content;min-width:117px;max-width:174px;height:74px;box-sizing:border-box;padding:1px 2px 1px 4px;align-content:start}
-#cockpit .hud-b .hp{display:grid;grid-template-columns:9px auto auto;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap}
+#cockpit .hud-b .hp{display:grid;grid-template-columns:9px auto auto 7px;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap}
 #cockpit .hud-b .hp b{font:500 10px/12px var(--f-lcd);overflow:hidden;text-overflow:ellipsis;min-width:0}
 #cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-n{color:var(--muted,#8a96a0)}
 .hud-axis{fill:none;stroke:#e9edf030;stroke-width:.7}.hud-axis-label{font:400 9px var(--f-silk);fill:#aab6bf}
@@ -282,7 +287,7 @@ html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{ani
 @keyframes cockpit-bell-flare{from{scale:1 .25}45%{scale:1 1.12}to{scale:1 1}}
 @keyframes cockpit-bell-burn{0%,100%{scale:1 1}30%{scale:1 1.08}55%{scale:1 .92}80%{scale:1 1.04}}
 @media (prefers-reduced-motion:no-preference){
-html:not([data-reduce-motion="true"]) #cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .84s steps(7,end) .22s infinite}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"][data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .84s steps(7,end) .22s infinite}
 }
 #cockpit[data-ignite="true"] .ck-base .bz .bz-sheet{opacity:0;transition:opacity .06s}
 html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::after,html[data-reduce-motion="true"] .ck-base .bz .bz-sheet{transition:none!important;animation:none!important}
