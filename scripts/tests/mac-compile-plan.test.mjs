@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import assert from "node:assert/strict";
 import test from "node:test";
-import { APP_INTEGRATION_MAX_CLASSES, FILTER_MAX, NEVER_RUN, ownerPackage, plan, testClasses, toTsv } from "../mac-compile/plan.mjs";
+import { seedPlan, APP_INTEGRATION_MAX_CLASSES, FILTER_MAX, NEVER_RUN, ownerPackage, plan, testClasses, toTsv } from "../mac-compile/plan.mjs";
 
 const files = {
   "desktop/native/Package.swift": "",
@@ -87,4 +87,23 @@ test("AppIntegration touching too many classes falls back to build-tests", () =>
 test("AppIntegration deleted test file is not read", () => {
   const rows = plan([`${AI}/Tests/GoneTests.swift`], Object.keys(aiFiles), aiRead);
   assert.equal(rows[0].mode, "build-tests");
+});
+
+test("seed plan: every standalone-buildable package, tests built only, one scratch each; run 44422368763's failures left out", () => {
+  const f = {
+    "desktop/native/Package.swift": 'targets: [.target(name: "Shell", path: "Shell/Sources/Shell"), .target(name: "Free", path: "Free/Sources/Free")]',
+    "desktop/native/Sources/A.swift": "",
+    "desktop/native/Shell/Package.swift": 'dependencies: [.package(name: "ModelPlanNative", path: "..")]',
+    "desktop/native/Shell/Sources/Shell/S.swift": "",
+    "desktop/native/Free/Package.swift": "dependencies: []",
+    "desktop/native/Free/Tests/FreeTests.swift": "final class FreeTests: XCTestCase {}",
+    "desktop/native/Dep/Package.swift": 'dependencies: [.package(name: "ModelPlanNative", path: "..")]',
+    "desktop/native/Dep/Sources/D.swift": "",
+    "desktop/native/verification/Package.swift": "",
+    "desktop/native/verification/U.swift": "",
+  };
+  const rows = seedPlan(Object.keys(f), (p) => f[p]);
+  assert.deepEqual(rows.map((r) => r.dir), ["desktop/native", "desktop/native/Dep", "desktop/native/Free"]);
+  assert.ok(rows.every((r) => r.mode === "build-tests" && r.filter === ""));
+  assert.equal(new Set(rows.map((r) => r.scratch)).size, rows.length);
 });
