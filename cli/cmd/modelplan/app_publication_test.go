@@ -241,3 +241,39 @@ func TestAppPublicationSleepsToTheRealDeadlineAndKeepsFailureCount(t *testing.T)
 		t.Fatalf("six-hour deadline: delay %v", got)
 	}
 }
+
+// macrevc-895-1 (third head): a failed check is retried at its own 10-minute deadline, even when the next normal
+// interval is redrawn longer than the time that has passed.
+func TestAppPublicationFailedCheckRetriesOnItsOwnDeadline(t *testing.T) {
+	t0 := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	clock := t0
+	st := &store.Store{Dir: t.TempDir()}
+	f := newPublicationFixture(t, nil)
+	saveFixture(t, st, f, store.State{CheckedAt: t0.Add(-16 * time.Minute), LastAttemptAt: t0.Add(-16 * time.Minute)})
+	calls := 0
+	ok := func() error { return nil }
+	down := func() error { return errors.New("offline") }
+	a, _, syncs := scriptedAppPublication(st, t0, []func() error{down, ok})
+	a.now = func() time.Time { return clock }
+	a.sync = func(context.Context) (publication.Result, error) {
+		calls++
+		if calls == 1 {
+			return publication.Result{}, down()
+		}
+		return publication.Result{}, ok()
+	}
+	a.subscribed = func() bool { return true }
+	draws := []time.Duration{0, resetNoticeSpread}
+	a.jitter = func() time.Duration { d := draws[0]; draws = append(draws[1:], resetNoticeSpread); return d }
+	failures := 0
+	if got := a.pass(context.Background(), &failures); got != 10*time.Minute || calls != 1 {
+		t.Fatalf("first failure: delay %v, syncs %d, want 10m, 1", got, calls)
+	}
+	// The failed attempt is recorded by the real sync; this stub records it here.
+	saveFixture(t, st, f, store.State{CheckedAt: t0.Add(-16 * time.Minute), LastAttemptAt: t0})
+	clock = t0.Add(10*time.Minute + time.Second)
+	a.pass(context.Background(), &failures)
+	if calls != 2 {
+		t.Fatalf("no retry after the 10-minute backoff (syncs %d, scripted %d)", calls, *syncs)
+	}
+}

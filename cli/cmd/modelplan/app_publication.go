@@ -76,6 +76,9 @@ func (a *appPublication) untilDue(s store.State, now time.Time) time.Duration {
 			a.resetAfter = a.drawResetAfter()
 		}
 		consider(s.CheckedAt.Add(a.resetAfter))
+		if !a.retryAt.IsZero() {
+			consider(a.retryAt)
+		}
 	}
 	return max(wake, time.Second)
 }
@@ -112,6 +115,9 @@ type appPublication struct {
 	jitter func() time.Duration
 	// resetAfter is this client's current reset-notice interval, redrawn after each check.
 	resetAfter time.Duration
+	// retryAt is the deadline of a failed reset-notice check's 10/20/30-minute backoff. It is kept apart from
+	// resetAfter so the next normal draw cannot defer the retry; zero when no retry is pending.
+	retryAt time.Time
 	// testCadence is set only by a binary built with the modelplan_test_cadence tag (never in a release): it replaces
 	// the 10-minute wake-up and the 15-30 minute reset-notice interval.
 	testCadence time.Duration
@@ -190,12 +196,14 @@ func (a *appPublication) run(ctx context.Context) {
 // retries are spaced here.
 func (a *appPublication) pass(ctx context.Context, failures *int) time.Duration {
 	d, s, _ := publication.Load(a.st)
-	if d != nil && !publicationSyncDue(d, s, a.now()) && !a.resetNoticeDue(s, a.now()) {
+	retryDue := !a.retryAt.IsZero() && !a.now().Before(a.retryAt) && a.subscribed != nil && a.subscribed()
+	if d != nil && !retryDue && !publicationSyncDue(d, s, a.now()) && !a.resetNoticeDue(s, a.now()) {
 		// Not due: sleep to the real deadline (not a fixed ten minutes, which would stretch 15-30 min to 39). A failed
 		// check's backoff count is kept until a check succeeds.
 		return a.untilDue(s, a.now())
 	}
 	a.resetAfter = 0 // redraw after every check
+	a.retryAt = time.Time{}
 	_, err := a.sync(ctx)
 	if errors.Is(err, store.ErrBusy) {
 		return appPublicationBusyRetry
@@ -208,6 +216,7 @@ func (a *appPublication) pass(ctx context.Context, failures *int) time.Duration 
 			// A failed reset-notice check backs off 10, 20, then 30 minutes.
 			delay := min(a.every()<<min(*failures, 2), resetNoticeMax)
 			*failures++
+			a.retryAt = a.now().Add(delay)
 			return delay
 		}
 		*failures = 0
