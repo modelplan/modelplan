@@ -179,16 +179,46 @@ export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)", "(gh-terra)"]
 // reviews. Counts for the head or a carried head; per lane the latest wins. A lane name is lower-case letters,
 // digits and inner hyphens; any other parenthesised suffix leaves the verdict unnamed.
 export function verdicts(items, head, carried) {
+  // A verdict on the current head always beats a carried one from the same lane, whatever the posting order: a
+  // delayed review of an older head must not override an explicit block of this head (macrevc-946-1).
   const at = new Set([head, ...carried]);
-  const lanes = new Map();
+  const lanes = new Map(), own = new Map();
   for (const x of items)
     for (const l of lines(x.body)) {
       const m = /^VERDICT: (merge|block) @ ([0-9a-f]{40})\b(?: \(([a-z0-9]+(?:-[a-z0-9]+)*)\))?/i.exec(l);
       if (!m) continue;
       const sha = m[2].toLowerCase();
-      if (at.has(sha)) lanes.set(m[3] ? `(${m[3].toLowerCase()})` : "(unnamed)", m[1].toLowerCase());
+      if (!at.has(sha)) continue;
+      const lane = m[3] ? `(${m[3].toLowerCase()})` : "(unnamed)";
+      (sha === head ? own : lanes).set(lane, m[1].toLowerCase());
     }
+  for (const [lane, v] of own) lanes.set(lane, v);
   return lanes;
+}
+
+// ---- Auto-carry (D243 G6, owner 2026-11-14) ----
+// A PR that only merged main keeps its review without a VERDICT-CARRY comment. The candidate is the head named by
+// the most recently posted VERDICT line (any lane, merge or block); when that names the current head, nothing carries. It carries when
+// prove(old, head) (evaluate.mjs: git.verifyMainMerges) shows only main merges since it and an identical own diff,
+// and no VERDICT line names a commit between it and the head. Only the newest candidate is tried, so a later review
+// of another head is never skipped over. The carried head's verdicts then count under the same tier rules; a block
+// carries too. Returns { from, why } or null.
+export function autoCarry(items, head, prove = () => ({ ok: false })) {
+  const named = [];
+  for (const x of items)
+    for (const l of lines(x.body)) {
+      const m = /^VERDICT: (?:merge|block) @ ([0-9a-f]{40})\b/i.exec(l);
+      if (m) named.push(m[1].toLowerCase());
+    }
+  // The latest posted head across all lanes is the only candidate. When it is the current head, the PR was reviewed
+  // here and nothing carries, so an older verdict of another lane never stands in for it (macrevb-946-1).
+  const old = named.at(-1);
+  if (!old || old === head) return null;
+  const proof = prove(old, head);
+  if (!proof?.ok) return null;
+  const after = new Set((proof.between ?? []).filter((s) => s !== head));
+  if (named.some((s) => after.has(s))) return null;
+  return { from: old, why: `verdict carried from ${old.slice(0, 8)} (main merges only, diff unchanged)` };
 }
 
 // Sticky reviewer (owner 2026-11-18): "REVIEWER: <lane>" on its own line in a trusted comment names the one GPT lane
@@ -454,6 +484,8 @@ export function trainScenarioGap(pr, members) {
 }
 
 // ---- CI at one commit (merge-when.sh) ----
+// (An import may sit anywhere at module top level; it is here, next to its only users, to keep the file's head stable.)
+import { hostedInfo, hostedJobIds, runWithoutHostedLegs, touchesWorkflows } from "./hosted.mjs";
 // runs: Actions workflow runs whose head_sha is the commit. A head sha is not unique to us: a fork can open a PR
 // with the same head and produce its own runs, which the head_sha listing returns too. So only runs that
 // `scope` accepts count (prRunScope / queueRunScope below), and of those only the newest run per workflow, so a
@@ -489,10 +521,19 @@ export function queueRunScope(repo) {
     && String(r.head_branch).startsWith("gh-readonly-queue/main/");
 }
 
-export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], scope } = {}) {
+// D314 (hosted.mjs): with hosted = true, a run whose jobs were read (run.jobs) is judged without its GitHub-hosted
+// macOS legs; they are only reported (`info`). A run without jobs is judged whole, as before.
+export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], scope, hosted = false } = {}) {
   const latest = latestRuns(runs, scope);
-  const failed = [], waiting = [];
+  const failed = [], waiting = [], aside = [];
   for (const r of latest) {
+    const v = hosted ? runWithoutHostedLegs(r) : null;
+    if (v) {
+      aside.push(...v.hosted);
+      failed.push(...v.failed.map((j) => `${r.name}: ${j}`));
+      waiting.push(...v.waiting.map((j) => `${r.name}: ${j}`));
+      continue;
+    }
     if (r.status !== "completed") waiting.push(r.name);
     else if (r.conclusion === "cancelled") failed.push(`${r.name} cancelled upstream (timed out or stopped; re-run it)`);
     else if (!OK_CONCLUSIONS.has(r.conclusion)) failed.push(`${r.name} ${r.conclusion}`);
@@ -502,11 +543,12 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], sco
     if (s.state === "pending") waiting.push(s.context);
     else if (s.state !== "success") failed.push(`${s.context} ${s.state}`);
   }
-  if (failed.length) return { state: FAILURE, why: `failed: ${failed.join(", ")}` };
+  const info = hostedInfo(aside);
+  if (failed.length) return { state: FAILURE, why: `failed: ${failed.join(", ")}`, info };
   const missing = required.filter((p) => !latest.some((r) => r.path === p));
-  if (missing.length) return { state: PENDING, why: `waiting for ${missing.join(", ")} to start` };
-  if (waiting.length) return { state: PENDING, why: `running: ${waiting.join(", ")}` };
-  return { state: SUCCESS, why: "checks green" };
+  if (missing.length) return { state: PENDING, why: `waiting for ${missing.join(", ")} to start`, info };
+  if (waiting.length) return { state: PENDING, why: `running: ${waiting.join(", ")}`, info };
+  return { state: SUCCESS, why: "checks green", info };
 }
 
 // A finished cancelled run re-evaluates its PR only while its head is still the PR head; a run cancelled because
@@ -571,10 +613,10 @@ export function dataSyncProblem({ pr, files, items, sync }) {
 
 // ---- One PR head ----
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
-// verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs;
+// verifiedEdge(old, new): carry proof; proveMainMerges(old, new): auto-carry proof (autoCarry); conf: parsed design-paths.conf; members: a train's member PRs;
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -592,7 +634,9 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   const paths = prPaths(files);
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
-  const carried = carryChain(carryEdges(items), head, verifiedEdge);
+  const chain = carryChain(carryEdges(items), head, verifiedEdge);
+  const auto = chain.length ? null : autoCarry(items, head, proveMainMerges);
+  const carried = auto ? [auto.from] : chain;
   const fb = { until: glmFallbackUntil, now, used: [] };
 
   // One review gate (D243 step 5; amends R1/R4/R13/R14/R16 and the D161/D235 lifts). Tier 2 needs a Sol verdict
@@ -625,8 +669,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (gap) notes.push(gap);
   const refNote = referenceProblem(pr, paths);
   if (refNote) notes.push(refNote);
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried, glmFallback: fb.used, notes };
-  const say = (why) => (notes.length ? `${why}; info: ${notes.join("; ")}` : why);
+  const extra = { tier, design: design.touching ? design.surfaces : [], carried, ...(auto ? { autoCarried: auto.from } : {}), glmFallback: fb.used, notes };
+  const say = (why) => [why, ...(auto ? [auto.why] : []), ...(notes.length ? [`info: ${notes.join("; ")}`] : [])].join("; ");
   if (pr.draft) return res(PENDING, say("draft"), extra);
 
   const blocked = [...lanes].filter(([, v]) => v === "block").map(([l]) => l);
@@ -640,11 +684,15 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   // A PR opened with the workflow token starts no pull_request run, so data-sync.yml dispatches ci.yml and
   // repo-checks.yml on the branch; prRunScope accepts those same-repository runs on the PR's branch. Both are
   // required before an admitted PR can pass.
-  const ci = ciState(runs, statuses, { scope: prRunScope(pr), ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
+  // D314: hosted macOS legs are post-merge only, unless the PR changes a workflow (hosted.mjs explains why).
+  extra.hostedExempt = !touchesWorkflows(paths) && files.length < FILE_LIST_LIMIT;
+  if (!extra.hostedExempt) notes.push("workflow change: hosted legs gate");
+  const ci = ciState(runs, statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
+  if (ci.info) notes.push(ci.info);
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
   if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
   if (ci.state === PENDING) return res(PENDING, say(ci.why), extra);
-  return res(SUCCESS, say(`tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}`), extra);
+  return res(SUCCESS, say(`tier ${tier}: gates pass${chain.length ? ` (carried ${chain.length})` : ""}`), extra);
 }
 
 // ---- One merge-group commit ----
@@ -663,11 +711,14 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 // this default (85 min) must stay below it or the gate's timeout never fires. Override with env GROUP_WAIT_MINUTES.
 export const GROUP_WAIT_MS = (Number(process.env.GROUP_WAIT_MINUTES) > 0 ? Number(process.env.GROUP_WAIT_MINUTES) : 85) * 60 * 1000;
 const OK_CHECK = new Set(["success", "skipped", "neutral"]);
-export function queueCheckState(queueRuns, queueCheckRuns, repo = REPO) {
-  const suites = new Set(latestRuns(queueRuns, queueRunScope(repo)).map((r) => r.check_suite_id).filter((x) => x != null));
+// D314: with hosted = true, the check runs of hosted macOS legs (hosted.mjs; check-run id = job id) are skipped.
+export function queueCheckState(queueRuns, queueCheckRuns, repo = REPO, { hosted = false } = {}) {
+  const counted = latestRuns(queueRuns, queueRunScope(repo));
+  const suites = new Set(counted.map((r) => r.check_suite_id).filter((x) => x != null));
+  const skip = hosted ? hostedJobIds(counted) : new Set();
   const failed = [], waiting = [];
   for (const c of queueCheckRuns) {
-    if (!suites.has(c.check_suite?.id)) continue;
+    if (!suites.has(c.check_suite?.id) || skip.has(c.id)) continue;
     if (c.status !== "completed") waiting.push(c.name);
     else if (!OK_CHECK.has(c.conclusion)) failed.push(`${c.name} ${c.conclusion}`);
   }
@@ -702,8 +753,10 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheck
     if (!s.mergeProof.ok) return { state: FAILURE, why: `${n}: ${s.mergeProof.why}` };
     if (s.prResult.state !== SUCCESS) return { state: s.prResult.state === PENDING ? FAILURE : s.prResult.state, why: `${n}: ${s.prResult.why}` };
   }
-  let ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo) });
-  if (ci.state === SUCCESS) ci = queueCheckState(queueRuns, queueCheckRuns, repo);
+  // D314: hosted macOS legs never gate a group, unless a member PR changes a workflow (its evaluatePr says so).
+  const hosted = steps.every((s) => s.prResult.hostedExempt === true);
+  let ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo), hosted });
+  if (ci.state === SUCCESS) ci = queueCheckState(queueRuns, queueCheckRuns, repo, { hosted });
   if (ci.state === SUCCESS) ci = guiLegState(desktopJobs);
   if (ci.state === PENDING) {
     const starts = queueRuns.filter(queueRunScope(repo)).map((r) => Date.parse(r.created_at)).filter(Number.isFinite);

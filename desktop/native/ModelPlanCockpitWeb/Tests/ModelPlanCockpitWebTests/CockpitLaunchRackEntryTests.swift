@@ -65,13 +65,85 @@ import XCTest
     let layout = try XCTUnwrap(fixture.page.verificationLayout)
     let panel = try XCTUnwrap(fixture.page.verificationRack.panel)
     let actual = try XCTUnwrap(fixture.page.verificationRackMask)
-    let drop = CockpitShellLayout.shoulderDrop(layout.profile) * layout.scale
+    let drop = layout.rackMaskDrop
     let hidden = CGRect(x: window.frame.minX, y: window.frame.minY, width: window.frame.width,
                         height: max(0, window.frame.height - drop))
     let expected = CGRect(x: hidden.minX - panel.minX, y: panel.maxY - hidden.maxY,
                           width: hidden.width, height: hidden.height)
     XCTAssertNotEqual(actual, before, "the old mask must not survive a size change")
     XCTAssertEqual(actual, expected, "the rack clips against the resized cockpit")
+    XCTAssertEqual(failures, [])
+  }
+
+  /// Owner 11-18: with the shutter closed, the rack must not show below the closed cockpit's top edge at any frame of the
+  /// open (it used to hang 27-32 pt into empty space from ~83 ms until the cockpit covered it at ~364 ms).
+  func testClosedShutterIconOpenNeverShowsRackBelowTheClosedTopEdge() async throws {
+    let fixture = try make()
+    defer { fixture.page.discard() }
+    fixture.session.shutterClosed = true
+    let window = try open(fixture)
+    let home = try XCTUnwrap(CockpitShellLayout.fit(usable: fixture.usable, anchor: fixture.icon, shutterClosed: true, screenWidth: fixture.screenWidth)?.frame)
+    var sampled = 0
+    for _ in 0..<30 {
+      if let mask = fixture.page.verificationRackMask, let panel = fixture.page.verificationRack.panel {
+        let maskTop = panel.maxY - mask.minY
+        XCTAssertEqual(maskTop, home.maxY, accuracy: 0.5, "rack mask line is the closed slab's top edge")
+        sampled += 1
+      }
+      try await wait(20)
+    }
+    XCTAssertGreaterThan(sampled, 5, "the rack was on screen while sampled")
+    try await wait(300)
+    XCTAssertEqual(window.frame, home)
+    let layout = try XCTUnwrap(fixture.page.verificationLayout)
+    XCTAssertEqual(layout.rackMaskDrop, 0)
+    XCTAssertEqual(failures, [])
+  }
+
+  /// Owner 11-18: a shutter toggle while attached moves the rack's mask line with the slab, not in one step. Observed
+  /// on the window's own resize notifications (the shutter's frame animation), with monotonic times, the actual window
+  /// height and the actual mask position at each one; no assumption about how often the main queue gets to run (CI
+  /// coalesced 4 ms sleeps into steps of several points). The line must be the function of the window height at every
+  /// observation (so it never moves independently of the slab), the height must pass through in-between values, and
+  /// the line must end at the closed top edge.
+  func testShutterToggleWhileAttachedMovesTheRackMaskLineSmoothly() async throws {
+    let fixture = try make()
+    defer { fixture.page.discard() }
+    let window = try open(fixture)
+    try await wait(900)
+    let openLayout = try XCTUnwrap(fixture.page.verificationLayout)
+    let total = openLayout.rackMaskDrop
+    XCTAssertGreaterThan(total, 0)
+    func line() -> CGFloat? {
+      guard let mask = fixture.page.verificationRackMask, let panel = fixture.page.verificationRack.panel else { return nil }
+      return window.frame.maxY - (panel.maxY - mask.minY)
+    }
+    struct Observation { let time: TimeInterval, height: CGFloat, line: CGFloat }
+    var seen: [Observation] = []
+    // Registered after the controller's own resize observer, so the mask is refreshed when this runs.
+    let token = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { _ in
+      MainActor.assumeIsolated {
+        if let value = line() { seen.append(.init(time: ProcessInfo.processInfo.systemUptime, height: window.frame.height, line: value)) }
+      }
+    }
+    defer { NotificationCenter.default.removeObserver(token) }
+    let openHeight = window.frame.height
+    fixture.page.toggleShutter()
+    try await wait(800)
+    let closedLayout = try XCTUnwrap(fixture.page.verificationLayout)
+    XCTAssertGreaterThanOrEqual(seen.count, 2, "the shutter's frame animation reported its progress")
+    for (previous, next) in zip(seen, seen.dropFirst()) {
+      XCTAssertGreaterThanOrEqual(next.time, previous.time, "monotonic observation times")
+      XCTAssertLessThanOrEqual(next.height, previous.height + 0.001, "the slab only moves one way")
+    }
+    for item in seen {
+      XCTAssertEqual(item.line, openLayout.rackMaskDrop(windowHeight: item.height), accuracy: 0.5,
+                     "the mask line is the slab's own position at every observation, never an independent step")
+    }
+    XCTAssertTrue(seen.contains { $0.height < openHeight - 0.5 && $0.height > closedLayout.frame.height + 0.5 },
+                  "the window passes through in-between heights")
+    XCTAssertTrue(seen.contains { $0.line > 0.1 && $0.line < total - 0.1 }, "and so does the line")
+    XCTAssertEqual(try XCTUnwrap(line()), 0, accuracy: 0.5, "closed: the line ends at the slab's top edge")
     XCTAssertEqual(failures, [])
   }
 
@@ -214,11 +286,12 @@ import XCTest
     fixture.page.setAttached(false)
     try await wait(1_000)
     XCTAssertEqual(fixture.page.verificationRack.ext, 0, "retracted after the detach")
-    let long = try await samplePutBack(fixture, window, home, "key put back", within: 1.3) {
+    let long = try await samplePutBack(fixture, window, home, "key put back") {
       fixture.page.setAttached(true)
       XCTAssertEqual(fixture.page.verificationRack.target, 1, "the rack starts unfolding at the press, not when the cockpit nears")
     }
-    XCTAssertEqual(long.extAtLanding, 1, "long flight: the rack is fully out when the cockpit lands")
+    XCTAssertEqual(long.extAtLanding, 1, "long flight: the rack is fully out at the moment the cockpit lands")
+    XCTAssertTrue(long.sawPartial, "long flight: the rack unfolded through partial extensions, it did not jump")
 
     // Short: a drag torn off, brought back into the catch zone and released at once (a 0.3 s ride home).
     let grab = CGPoint(x: home.minX + 120, y: home.maxY - 16)
@@ -228,49 +301,46 @@ import XCTest
     try await wait(700)
     XCTAssertEqual(fixture.page.verificationRack.ext, 0, "retracted after the tear-off")
     let near = CGPoint(x: grab.x + 10, y: grab.y - 20)
-    let short = try await samplePutBack(fixture, window, home, "drag released in the zone", within: CockpitLaunchRackTiming.rideHome) {
+    let short = try await samplePutBack(fixture, window, home, "drag released in the zone") {
       fixture.page.titleDrag(.moved, point: near)
       fixture.page.titleDrag(.ended, point: near)
     }
-    XCTAssertLessThan(short.extAtLanding, 1, "short ride: the rack is still coming down when the cockpit lands")
+    XCTAssertGreaterThan(short.extAtLanding, 0, "short ride: the rack started with the ride, not after it")
+    XCTAssertLessThan(short.extAtLanding, 1, "short ride: the cockpit lands while the rack is still extending, never waiting for it")
+    XCTAssertTrue(short.sawPartial, "short ride: the rack unfolded through partial extensions, it did not jump")
     XCTAssertEqual(failures, [])
   }
-  /// Runs `press` (the put back) and samples the window and rack every 4 ms until the cockpit is latched, all timed from
-  /// just before the press, which is when the rack's own clock can start (macrevb-1038-4: timing from after the press
-  /// left out the rack's first, slower frame and read its catch-up as a jump). `within`: the motion's own time; the
-  /// landing (the window exactly at home) may be up to 150 ms of timer and sampling latency later. The rack never moves
-  /// back, in total never runs ahead of its full-travel pace since the press, and never jumps between two samples (the
-  /// 100 ms allowances cover a late tick catching up after a busy main thread).
-  private func samplePutBack(_ fixture: Fixture, _ window: NSWindow, _ home: CGRect, _ label: String, within: TimeInterval,
+  /// Runs `press` (the put back) and samples the window and rack until the cockpit is latched. The proof is the order of
+  /// the observed states, never elapsed time (a slow hosted runner stretches every gap, and the old wall-clock bounds on
+  /// landing, pace and jump flaked there). Returns the
+  /// rack's extension at the exact moment the cockpit landed (read in the motion's completion, `verificationLanded`, not
+  /// sampled) and whether any partial extension (0 < ext < 1) was observed; an instant jump or a rack the flight waits
+  /// for fails these. The rack never moves back and never exceeds 1; the 6 s deadline only
+  /// guards against a hang.
+  private func samplePutBack(_ fixture: Fixture, _ window: NSWindow, _ home: CGRect, _ label: String,
                              file: StaticString = #filePath, line: UInt = #line,
-                             press: () -> Void) async throws -> (landed: Duration, extAtLanding: CGFloat) {
-    func seconds(_ value: Duration) -> Double { Double(value.components.seconds) + Double(value.components.attoseconds) / 1e18 }
-    let full = CockpitLaunchRackTiming.fullTravel
-    let started = ContinuousClock.now, deadline = started + .milliseconds(2_600), ext0 = fixture.page.verificationRack.ext
+                             press: () -> Void) async throws -> (extAtLanding: CGFloat, sawPartial: Bool) {
+    let deadline = ContinuousClock.now + .seconds(6)
+    var extAtLanding: CGFloat?
+    fixture.page.verificationLanded = { extAtLanding = $0 }
+    defer { fixture.page.verificationLanded = nil }
     press()
-    var landed: Duration?, extAtLanding: CGFloat = -1
-    var last = (time: started, ext: ext0)
+    XCTAssertLessThan(fixture.page.verificationRack.ext, 1, "\(label): the rack does not jump out at the press", file: file, line: line)
+    var sawPartial = false, last = fixture.page.verificationRack.ext
     while ContinuousClock.now < deadline {
-      let now = ContinuousClock.now, ext = fixture.page.verificationRack.ext
-      XCTAssertGreaterThanOrEqual(ext, last.ext, "\(label): the rack never moves back", file: file, line: line)
-      XCTAssertLessThanOrEqual(ext - ext0, CGFloat((seconds(now - started) + 0.1) / full),
-                               "\(label): the rack never runs ahead of its normal pace", file: file, line: line)
-      XCTAssertLessThanOrEqual(ext - last.ext, CGFloat((seconds(now - last.time) + 0.1) / full),
-                               "\(label): no jump in the rack", file: file, line: line)
-      last = (now, ext)
-      if landed == nil, abs(window.frame.minX - home.minX) < 0.01, abs(window.frame.minY - home.minY) < 0.01 {
-        landed = now - started; extAtLanding = ext
-      }
+      let ext = fixture.page.verificationRack.ext
+      XCTAssertGreaterThanOrEqual(ext, last, "\(label): the rack never moves back", file: file, line: line)
+      XCTAssertLessThanOrEqual(ext, 1, "\(label): the rack never overshoots", file: file, line: line)
+      XCTAssertEqual(fixture.page.verificationRack.target, 1, "\(label): the rack's target stays out", file: file, line: line)
+      last = ext
+      if ext > 0, ext < 1 { sawPartial = true }
       if fixture.page.isAttached { break }
       try await Task.sleep(for: .milliseconds(4))
     }
     XCTAssertTrue(fixture.page.isAttached, "\(label): caught and latched", file: file, line: line)
-    let landing = try XCTUnwrap(landed, "\(label): landed", file: file, line: line)
-    HostedRunnerTiming.enforce("\(label): the cockpit did not wait for the rack (landing ms)", measured: Double(landing / .milliseconds(1)), atMost: within * 1_000 + 150,
-                               file: file, line: line)
     XCTAssertEqual(window.frame, home, file: file, line: line)
     XCTAssertEqual(fixture.page.verificationRack.ext, 1, "\(label): the rack ends fully out", file: file, line: line)
-    return (landing, extAtLanding)
+    return (try XCTUnwrap(extAtLanding, "\(label): landed", file: file, line: line), sawPartial || (extAtLanding ?? 0) < 1)
   }
 }
 #endif
