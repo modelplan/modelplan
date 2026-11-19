@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import select
 from pathlib import Path
 import subprocess
 import socket
@@ -242,13 +243,27 @@ class DriveTests(unittest.TestCase):
 
     def test_eperm_on_group_kill_with_live_member_stays_unconfirmed(self):
         # The EPERM path must prove the group empty; a surviving member is a failure.
-        process = subprocess.Popen([sys.executable, '-c',
-            'import os,signal,time; signal.signal(signal.SIGTERM, lambda *_: os._exit(0)); '
-            'os.fork() == 0 and signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)'],
-            start_new_session=True, stdin=subprocess.PIPE)
+        # Leader ends on TERM; its forked member ignores TERM and so survives it.
+        # The member writes 'R' only after both handlers are installed (the
+        # leader's before the fork), so the test never signals a half-ready group.
+        child = ('import os, signal, time\n'
+                 'signal.signal(signal.SIGTERM, lambda *_: os._exit(0))\n'
+                 'if os.fork() == 0:\n'
+                 '    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+                 '    os.write(1, b"R")\n'
+                 'time.sleep(30)\n')
+        process = subprocess.Popen([sys.executable, '-c', child], start_new_session=True,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        self.addCleanup(process.stdout.close)
         self.addCleanup(process.stdin.close)
-        self.addCleanup(lambda: subprocess.run(['kill', '-9', '--', '-%d' % process.pid], capture_output=True))
-        time.sleep(.5)
+        def kill_group():
+            with contextlib.suppress(OSError):
+                os.killpg(process.pid, drive.signal.SIGKILL)
+            with contextlib.suppress(Exception):
+                process.wait(timeout=3)
+        self.addCleanup(kill_group)
+        ready, _, _ = select.select([process.stdout], [], [], 10)
+        self.assertTrue(ready and process.stdout.read(1) == b'R', 'group member not ready within 10s')
         real_killpg = os.killpg
         def darwin_killpg(pgid, sig):
             if sig == drive.signal.SIGKILL:
