@@ -63,9 +63,16 @@ test('CKP-ENG-55 a selected subscription does not keep a paged-out reading in th
  await open(page,data);
  await page.locator('.ek[data-sub]').first().click();
  await expect(page.locator('.eng-upd-t'),'selected, own reading').toHaveText('Updated 3 min ago');
+ await page.evaluate(()=>{window.sent.length=0;});await page.locator('.eng-upd-r').click();
+ const own=await page.evaluate(()=>window.sent.filter(m=>m.action==='refreshMember').map(m=>m.key));expect(own,'on screen: its own key').toHaveLength(1);expect(own[0]).not.toBe('all');
  await page.locator('.eng-pk[data-bpage="1"]').click();
  await expect(page.locator('.eng-upd-t'),'page 2 is on screen: its reading, its failure').toHaveText('Updated 2 h ago · no new data');
  await expect(page.locator('.eng-upd')).toHaveAttribute('data-failing','true');
+ // Retry's label and target follow what is on screen: the selected account is paged out, so it is not what refreshes.
+ await expect(page.locator('.eng-upd-r')).toHaveText('Retry');
+ await expect(page.locator('.eng-upd-r')).toHaveAttribute('aria-label',/all/i);
+ await page.evaluate(()=>{window.sent.length=0;});await page.locator('.eng-upd-r').click();
+ expect(await page.evaluate(()=>window.sent.filter(m=>m.action==='refreshMember').map(m=>m.key))).toEqual(['all']);
  await page.locator('.eng-pk[data-bpage="-1"]').click();
  await expect(page.locator('.eng-upd-t')).toHaveText('Updated 3 min ago');
  await expect(page.locator('.eng-upd')).toHaveAttribute('data-failing','false');

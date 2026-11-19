@@ -103,8 +103,8 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const state=footerState(shown.map(m=>m.account));line.dataset.failing=String(state.failing);
   if(state.at!==null||state.failing){const text=document.createElement('span');text.className='eng-upd-t';
    text.textContent=[state.at!==null?updatedText(state.at,now,locale):'',state.failing?ht(locale,'host.noNewData'):''].filter(Boolean).join(' · ');line.append(text);}
-  const button=document.createElement('button');button.type='button';button.className='eng-upd-r';button.dataset.refresh='';button.textContent=ht(locale,state.failing?'host.retry':'host.refresh');
-  const member=scope?seen.get(scope):undefined;
+  const button=document.createElement('button');button.type='button';button.className='eng-upd-r';button.dataset.refresh=own[0]?.key??'all';button.textContent=ht(locale,state.failing?'host.retry':'host.refresh');
+  const member=own[0];// label, target and footer text all follow the same effective selection (macrevb-1020-1)
   button.setAttribute('aria-label',member?ht(locale,'host.refreshOne',{name:accountLabel(locale==='en'?member.row.name.en:member.row.name.zh,member.account,locale)}):ht(locale,'host.refreshAll'));
   line.append(button);return line;
  }
@@ -132,7 +132,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  host.addEventListener('focusin',e=>showHint(e.target));host.addEventListener('focusout',hideHint);
  host.onclick=e=>{if(!e.isTrusted)return;if(choosePage(e.target as Element))return;const b=(e.target as Element).closest<HTMLButtonElement>('button');if(!b||!host.contains(b))return;
   if(b.hasAttribute('data-add-subscription')){onAdd();return;}
-  if(b.hasAttribute('data-refresh')){onRefresh(scope||'all');return;}
+  if(b.hasAttribute('data-refresh')){onRefresh(b.dataset.refresh||'all');return;}
   if(b.hasAttribute('data-all')){if(onSelect('all')){scope='';paint();}return;}
   if(b.hasAttribute('data-sub')){const key=b.dataset.sub??'';if(!seen.has(key))return;if(key===scope){if(onSelect('all')){scope='';paint();}return;}if(onSelect(key)){scope=key;paint();}return;}
   if(b.hasAttribute('data-bpage')){const step=b.dataset.bpage==='1'?1:b.dataset.bpage==='-1'?-1:0;page=Math.max(0,Math.min(Math.ceil(members.length/6)-1,page+step));paint();}
