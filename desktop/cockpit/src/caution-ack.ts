@@ -70,7 +70,7 @@ export function createCautionMemory(onChange:(ids:string[])=>void=()=>{}):Cautio
    let changed=false;
    const refilled=new Set<string>();
    for(const id of new Set([...acked.keys(),...shown.keys()])){
-    if(!amberStable(id)||(acked.get(id)??shown.get(id))!==null)continue;
+    if(!amberStable(id)||(acked.has(id)?acked.get(id):shown.get(id))!==null)continue;
     const w=window_(id),rem=w===null?undefined:read.get(w)?.remaining;if(typeof rem!=='number')continue;
     const low=floor.get(id);
     if(low!==undefined&&rem>low+REFILL){refilled.add(id);floor.delete(id);}else floor.set(id,Math.min(rem,low??rem));

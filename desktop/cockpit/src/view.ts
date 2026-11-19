@@ -157,6 +157,9 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   if(!focused||!area||focused.isConnected||!active||document.hidden)return;
   const current=document.activeElement;if(current&&current!==document.body&&current!==document.documentElement&&current!==focused)return;
   if(key==='data-add-subscription'&&priorPage!==(frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??null))return;
+  // CKP-MFD-56: an alert row names its subscription; a fallback identity (row#route#position) can be reassigned by a new
+  // snapshot, so across a replacement the focus is kept only for a verified subscription present in both snapshots.
+  if(key==='data-al-id'&&replacing){const alertMember=focused.dataset.alMember??'',has=(d:WireCockpitData|null)=>!!d?.subscriptions.some(s=>s.subscriptionRef===alertMember);if(!alertMember||!has(previousData)||!has(lastData))return;}
   if(memberKey&&!previousMember)return;
   if(memberKey&&previousMember){
    const member=lastData?cockpitMembers(lastData).find(m=>m.key===memberKey):undefined;
@@ -226,7 +229,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
    const engine=renderPrototypeEngine(data,locale,root,priorScope,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};deck.scope(key);return true;},()=>{if(!active)return false;action('openSettings');return true;},priorPage,lastRenderedAt,redBelow,showUsed);
    // No widget subscription yet (every row still lacks a dock surface): the engine says so, but admitted sessions and
    // the publication's faders stay visible (post-merge sample 11-11, #847 finding 1).
-   if(!engine){setEmpty('empty');if(data.details){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}frame.engine.append(engine.table);engine.fit();applyScope=engine.applyScope;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,tier!=='tall',locale,hudOptions());syncCaution(data,now);help.refresh();
+   if(!engine){setEmpty('empty');if(data.details||cautionItems(data,now,redBelow()).length){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}frame.engine.append(engine.table);engine.fit();applyScope=engine.applyScope;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,tier!=='tall',locale,hudOptions());syncCaution(data,now);help.refresh();
    if(before!==displayedState())pulse();
   },true);
  }

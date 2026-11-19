@@ -175,3 +175,29 @@ test('CKP-MFD-56 a refresh that re-sorts the list keeps focus on the same alert,
  win(data,1).remainingPercent=90;expect(await receive(send('display',{data}))).toBe(true);
  expect(await page.evaluate(()=>document.activeElement?.closest('li')?.textContent??'')).not.toContain('Codex');
 });
+
+// macrev2 11-19 (delta): a projection whose only row is signed-out, with no optional cockpit details at all.
+test('ALR-51 a one-row signed-out projection without details still lists its grey row',async({page})=>{
+ const data=calm();data.projection.rows=data.projection.rows.slice(2,3);data.details=null;
+ const row=data.projection.rows[0];row.surfaces=['menu','settings'];row.state='needs_action';row.reason={...row.reason,code:'not_signed_in'};
+ const c=row.accounts[0];c.valueState='none';c.windows=[];c.lastFailure={at:iso(-1),code:'not_signed_in'};
+ await open(page,data);await lamp(page).click();
+ await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 1');
+ await expect(rows(page).nth(0).locator('.al-l1')).toHaveText('Cursor no reading · not signed in');
+});
+
+// macrev2 11-19 (delta): two unverified accounts of one provider and route swap positions; a fallback identity can be
+// reassigned, so focus is dropped rather than moved to the other account.
+test('CKP-MFD-56 a fallback-keyed alert never passes focus to the other account after a swap',async({page})=>{
+ const data=calm();data.projection.rows=data.projection.rows.slice(0,1);data.subscriptions=[];
+ const row=data.projection.rows[0],a=row.accounts[0],b=structuredClone(a);
+ for(const x of [a,b]){x.subscriptionRef=null;x.accountLocator=null;}
+ a.windows[0].remainingPercent=10;b.windows[0].remainingPercent=20;row.accounts=[a,b];
+ data.details=null;
+ const {send,receive}=await open(page,data);await lamp(page).click();
+ await expect(rows(page)).toHaveCount(2);
+ await rows(page).nth(0).locator('button').focus();
+ expect(await rows(page).nth(0).locator('.al-l1').textContent()).toContain('10%');
+ row.accounts=[b,a];expect(await receive(send('display',{data}))).toBe(true);
+ expect(await page.evaluate(()=>document.activeElement?.closest('li')?.textContent??'')).not.toContain('20%');
+});

@@ -98,3 +98,18 @@ test('an unknown-reset forecast acknowledged before a restart stays steady acros
  assert.equal(show(page,unknownReset({remaining:47,level:null})),false);
  assert.equal(show(page,unknownReset({remaining:46,level:'amber'})),false);
 });
+
+test('a restored or manually acknowledged unknown-reset forecast still detects a refill',()=>{
+ // Restored after a restart: the stored identity has no cycle and was never shown on this page.
+ const host={ids:[]};let page=entry(host);show(page,unknownReset({remaining:48,level:'amber'}));
+ page=entry({ids:[...host.ids]});
+ assert.equal(show(page,unknownReset({remaining:47,level:null})),false);
+ assert.equal(show(page,unknownReset({remaining:95,level:null})),false,'refill');
+ assert.equal(show(page,unknownReset({remaining:90,level:'amber'})),true,'recurrence after restore');
+ // Acknowledged by a press before it ever blinked (page could not blink).
+ const p2=entry({ids:[]});
+ show(p2,unknownReset({remaining:48,level:'amber'}),false);p2.acknowledge();
+ assert.equal(show(p2,unknownReset({remaining:47,level:null}),true),false);
+ assert.equal(show(p2,unknownReset({remaining:95,level:null}),true),false);
+ assert.equal(show(p2,unknownReset({remaining:90,level:'amber'}),true),true,'recurrence after a press');
+});
