@@ -53,13 +53,18 @@ function mount(root:HTMLElement) {
    view=component.createLaunchWindow({container:root,language,assetBase:assets,dim:false,limit:FIELD_LIMIT,...live(),
     onClose:(reason:string)=>post({type:'close',reason}),
     onOpenSite:(target:unknown,params:unknown)=>post({type:'openSite',target,params}),
-    onShownChange:(ids:string[])=>{shown=[...ids];},
-    onSelect:(id:string|null)=>{focus=id;},
+    // Retracting the selected rocket ends the component's selection without an onSelect; the host hears the clear.
+    onShownChange:(ids:string[])=>{shown=[...ids];if(focus!==null&&!shown.includes(focus)){focus=null;post({type:'select',model:null});}},
+    // macrevb-1062-3: a rocket chosen (or the choice cleared) in the field becomes the cockpit's selection too, so the HUD,
+    // the faders and the porthole follow it. Only a known public model id crosses; a tried effort stays in the field.
+    onSelect:(id:string|null)=>{focus=id!==null&&known.has(id)?id:null;post({type:'select',model:focus});},
     onFail:()=>{flat=true;console.info('launch field: 3D unavailable, the window shows the 2D field');},
     onSlow:()=>{console.info('launch field: 3D is slow');}});
    mode='window';
    view.update({models,shown,focus,mine,provisional,language,...(asOf?{asOf}:{})});
    post({type:'ready'});
+   // The rocket the field opened on (a porthole click) is the field's selection from the start: the host follows it.
+   if(focus!==null)post({type:'select',model:focus});
   },
   /** A Low Power Mode change: the field goes quiet like Reduce Motion, live. */
   power(next:boolean) {

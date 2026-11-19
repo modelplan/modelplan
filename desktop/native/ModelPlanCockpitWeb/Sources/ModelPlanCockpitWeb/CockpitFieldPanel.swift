@@ -79,6 +79,9 @@ import WebKit
   /// The open panel's window frame (nil when closed).
   public var windowFrame: NSRect? { window?.frame }
   public var onClosed: (() -> Void)?
+  /// WP-22 (macrevb-1062-3): a rocket chosen in the field (its public model id) or the choice cleared (nil). Only the id
+  /// crosses; a tried effort stays in the field.
+  public var onSelect: (@MainActor (String?) -> Void)?
   /// Test seams (CKP-SHELL-19 field budget, WP-22): every page event's type, the page's web view, the panel, the dim
   /// and the last close's reason.
   var onPageEvent: ((String) -> Void)?
@@ -243,6 +246,10 @@ import WebKit
     case "activity": renewIdle()
     case "close": close(message["reason"] as? String == "esc" ? .esc : .key)
     case "failed": close(.failed)
+    case "select":
+      renewIdle()
+      if message["model"] is NSNull { onSelect?(nil) }
+      else if let id = message["model"] as? String, CockpitBridgeState.isPublicModelID(id) { onSelect?(id) }
     case "openSite":
       renewIdle()
       if let url = Self.siteURL(target: message["target"], params: message["params"]) { openURL(url) }

@@ -186,6 +186,29 @@ final class CockpitFieldPanelTests: XCTestCase {
     XCTAssertEqual(CockpitFieldPanel.siteURL(target: "fleet", params: nil)?.absoluteString, "https://modelplan.ai/")
   }
 
+  /// macrevb-1062-3: the field's selection reaches the host as a public model id, or nil for a clear. Anything else
+  /// (a malformed id, an effort, another shape) is ignored, and a closed panel reports nothing.
+  @MainActor func testTheFieldsSelectionAndClearReachTheHostByPublicModelID() throws {
+    let panel = try makePanel("field-select")
+    var selected: [String?] = []
+    panel.onSelect = { selected.append($0) }
+    panel.open(payload: "{}", near: nil)
+    for message in [
+      #"{"type":"select","model":"sonnet-5.5"}"#,
+      #"{"type":"select","model":null}"#,
+      #"{"type":"select","model":""}"#,
+      #"{"type":"select","model":7}"#,
+      #"{"type":"select"}"#,
+      #"{"type":"select","model":"a\u0001b"}"#,
+      "{\"type\":\"select\",\"model\":\"" + String(repeating: "x", count: 129) + "\"}",
+    ] { panel.receive(message) }
+    XCTAssertEqual(selected, ["sonnet-5.5", nil])
+    XCTAssertTrue(panel.isOpen, "a selection leaves the field open")
+    panel.close()
+    panel.receive(#"{"type":"select","model":"opus"}"#)
+    XCTAssertEqual(selected, ["sonnet-5.5", nil], "a closed field reports nothing")
+  }
+
   // MARK: Live settings
 
   /// Spike 11-08 / D63: native tells the page about Low Power Mode, which the page cannot read. Changes while open go

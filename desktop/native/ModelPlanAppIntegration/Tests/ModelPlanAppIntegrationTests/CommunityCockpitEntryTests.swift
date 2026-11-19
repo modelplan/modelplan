@@ -71,6 +71,8 @@ actor RouteClient: EngineClient { // internal: the real-page size test (OwnerTes
     func discard(){state.dispose();onClosed?()}
     var appearances:[CockpitAppearance]=[]
     func updateAppearance(_ appearance:CockpitAppearance){appearances.append(appearance)}
+    var selections:[String?]=[]
+    func selectModel(_ id:String?){selections.append(id)}
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
@@ -794,6 +796,13 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertNotNil(page.onClosed,"The cockpit page opened")
         surface.handle(.openField)
         XCTAssertTrue(surface.fieldIsOpen)
+        // macrevb-1062-3: through the normal entry, a rocket chosen in the field and the clear reach the open cockpit page
+        // by public model id; an id the publication does not list never does.
+        let panel=try XCTUnwrap(surface.fieldPanel)
+        panel.receive(#"{"type":"select","model":"synthetic-model"}"#)
+        panel.receive(#"{"type":"select","model":"not-published"}"#)
+        panel.receive(#"{"type":"select","model":null}"#)
+        XCTAssertEqual(page.selections,["synthetic-model",nil])
         page.discard()
         XCTAssertFalse(surface.fieldIsOpen,"The cockpit's own close closes the field")
         surface.hide();await coordinator.shutdown();await composition.stop()

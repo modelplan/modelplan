@@ -28,3 +28,14 @@ test('WP-22 a published model becomes the launch-field component\'s model, on it
  assert.equal(windowModel(model('c',[{effort:'low',label:'Low',ability:30,cost:.1}])).rec,null,'no ★ effort published');
  assert.deepEqual(provisionalIds([model('p',[{effort:'medium',label:'Med',star:true,ability:40,cost:.2,provisional:true}]),model('q',[{effort:'medium',label:'Med',star:true,ability:40,cost:.2}])]),['p']);
 });
+// macrevb-1062-4: the provisional flag describes the row the component prints, never an effort it does not show.
+test('WP-22 the provisional flag comes from the displayed row, including when the provisional ★ has no ability or cost',()=>{
+ const droppedStar=model('d',[{effort:'low',label:'Low',ability:30,cost:.1},{effort:'medium',label:'Med',star:true,ability:null,cost:.2,provisional:true}]);
+ assert.deepEqual(windowModel(droppedStar).sel,['Low',30,.1,null,false]);
+ assert.deepEqual(provisionalIds([droppedStar]),[],'a dropped provisional ★ does not mark the nonprovisional fallback row');
+ const costless=model('c',[{effort:'low',label:'Low',ability:30,cost:.1},{effort:'medium',label:'Med',star:true,ability:40,cost:null,provisional:true}]);
+ assert.deepEqual(provisionalIds([costless]),[],'nullable cost drops the ★ the same way');
+ const provisionalFallback=model('f',[{effort:'low',label:'Low',ability:30,cost:.1,provisional:true},{effort:'medium',label:'Med',star:true,ability:null,cost:null}]);
+ assert.deepEqual(provisionalIds([provisionalFallback]),['f'],'the displayed fallback row is itself provisional');
+ assert.deepEqual(provisionalIds([model('n',[{effort:'low',label:'Low',ability:null,cost:null,provisional:true}])]),[],'no displayed row, no flag');
+});

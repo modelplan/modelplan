@@ -28,6 +28,8 @@ import ModelPlanWire
   func requestClose()
   func updateAppearance(_ appearance: CockpitAppearance)
   func updateScope(_ key:String)
+  /// WP-22 (macrevb-1062-3): the enlarged field's selection by public model id; nil clears it.
+  func selectModel(_ id:String?)
   /// G3-56: the acknowledged caution identities to restore; applied before the page loads.
   func setAckedCautions(_ ids:[String])
   /// D136: the favourite model ids to restore; applied before the page loads.
@@ -48,6 +50,7 @@ public extension CockpitPageSurface {
   func requestClose() { discard() }
   func updateAppearance(_ appearance: CockpitAppearance) {}
   func updateScope(_ key:String) {}
+  func selectModel(_ id:String?) {}
   func setAckedCautions(_ ids:[String]) {}
   func setPinnedModels(_ ids:[String]) {}
 }
@@ -463,6 +466,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     if selectedScope != "all", scopeDay != calendarDay(currentDate()) { selectedScope="all" }
   }
   public func updateAppearance(_ appearance: CockpitAppearance) { page?.updateAppearance(appearance) }
+  /// WP-22 (macrevb-1062-3): the enlarged field's selection reaches the cockpit page (HUD, faders, porthole).
+  public func selectModel(_ id: String?) { page?.selectModel(id) }
   /// User close retains the page until its normal transition completes.
   /// Privacy/shutdown continue to use close() for immediate disposal.
   public func requestClose() {

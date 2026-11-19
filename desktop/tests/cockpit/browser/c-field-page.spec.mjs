@@ -72,6 +72,32 @@ test('WP-22 a focused rocket outside my models joins the field',async({page})=>{
  await open(page);await show(page,payload(12,{focus:'m7'}));await ready(page);
  expect((await state(page)).shown).toEqual(['m1','m2','m7']);
 });
+// macrevb-1062-3: the field's selection is the cockpit's. Through the normal entry (show, then a click on a rocket in the
+// window's 2D field, which runs in every browser) the host hears the public id; a click on the empty field clears it.
+// No effort crosses: a tried effort stays local to the field.
+test('WP-22 a rocket chosen or cleared in the field is reported to the host by public model id, never with an effort',async({page})=>{
+ await open(page,{noWebGL:true});await show(page,payload());await ready(page);
+ const selects=()=>page.evaluate(()=>window.messages.filter(m=>m.type==='select'));
+ expect(await selects()).toEqual([],'opening without a focus selects nothing');
+ await page.locator('#field .lfw-flat g[role="button"][data-id="m2"]').first().click();
+ await expect.poll(selects).toEqual([{type:'select',model:'m2'}]);
+ const box=await page.locator('#field .lfw-flat svg.lf-flat').boundingBox();
+ await page.mouse.click(box.x+box.width-6,box.y+6);
+ await expect.poll(selects).toEqual([{type:'select',model:'m2'},{type:'select',model:null}]);
+});
+test('WP-22 retracting the selected rocket from the field clears the host\'s selection too',async({page})=>{
+ await open(page,{noWebGL:true});await show(page,payload());await ready(page);
+ const selects=()=>page.evaluate(()=>window.messages.filter(m=>m.type==='select').map(m=>m.model));
+ await page.locator('#field .lfw-flat g[role="button"][data-id="m2"]').first().click();
+ await expect.poll(selects).toEqual(['m2']);
+ await page.locator('#field .lfw-menu [data-rm="m2"], #field .lfw-menu [data-tg="m2"]').first().click();
+ await expect.poll(()=>state(page).then(s=>s.shown)).toEqual(['m1']);
+ await expect.poll(selects).toEqual(['m2',null]);
+});
+test('WP-22 the rocket the field opens on (a porthole click) is the host\'s selection from the start',async({page})=>{
+ await open(page,{noWebGL:true});await show(page,payload(12,{focus:'m7'}));await ready(page);
+ await expect.poll(()=>page.evaluate(()=>window.messages.filter(m=>m.type==='select'))).toEqual([{type:'select',model:'m7'}]);
+});
 test('WP-22 dispose clears the page',async({page})=>{
  await open(page);await show(page,payload());await ready(page);await page.evaluate(()=>window.modelPlanField.dispose());
  await expect(page.locator('#field > *')).toHaveCount(0);expect(await page.evaluate(()=>window.modelPlanField)).toBeUndefined();

@@ -72,6 +72,21 @@ final class BridgeTests: XCTestCase {
     }
     _ = try state.accept(raw, source: source)
   }
+  /// WP-22 (macrevb-1062-3): the enlarged field's selection goes to the page as a strict `select` message: a public
+  /// model id, or null for a clear. No receipt; nothing before the page is ready; malformed ids never leave.
+  func testFieldSelectionIsAStrictSelectMessage() throws {
+    let state = CockpitBridgeState(context: try context())
+    XCTAssertThrowsError(try state.setSelection("sonnet-5.5"), "not before the page is ready")
+    _ = try ready(state)
+    let chosen = try object(state.setSelection("sonnet-5.5"))
+    XCTAssertEqual(chosen["type"] as? String, "select"); XCTAssertEqual(chosen["model"] as? String, "sonnet-5.5")
+    let cleared = try object(state.setSelection(nil))
+    XCTAssertEqual(cleared["type"] as? String, "select"); XCTAssertTrue(cleared["model"] is NSNull)
+    XCTAssertEqual(Set(cleared.keys), ["version", "pageId", "requestId", "sessionId", "storeEpoch", "generation", "viewRevision", "sequence", "type", "model"])
+    for bad in ["", String(repeating: "x", count: 129), "a\u{1}b", "a\u{7f}b"] {
+      XCTAssertThrowsError(try state.setSelection(bad))
+    }
+  }
   func testClearBarrierUnknownFloorAndStaleQueryCannotBeRetagged() throws {
     let state = CockpitBridgeState(context: try context())
     _ = try ready(state)

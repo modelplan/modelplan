@@ -511,10 +511,20 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         if let fieldScreens { panel.screens=fieldScreens }
         // WP-22: the field's site keys open the allowlisted modelplan.ai pages in the default browser (CockpitFieldPanel.siteURL).
         panel.openURL={ [weak self] url in self?.owner.openWebsite(url) }
+        // macrevb-1062-3: the field's selection is the cockpit's (HUD, faders, porthole); only a published model id passes.
+        panel.onSelect={ [weak self] id in self?.fieldSelected(id) }
         // Build 14c (G3-80): on the cockpit's display. The intent does not say whether a click or a key opened it, so
         // the pointer counts only while it is over the cockpit (macrev2-845-2).
         let cockpit=cockpitFrameForField?() ?? owner.coordinator?.cockpitFrame
         fieldPanel=panel;panel.open(payload:payload,cockpit:cockpit,pointer:pointerLocation(),fallback:owner.anchor?())
+    }
+    /// WP-22 (macrevb-1062-3): a published model id from the field, or nil for a clear, selects on the cockpit page. An id
+    /// the publication does not list is ignored.
+    func fieldSelected(_ id:String?) {
+        if let id {
+            guard composition.store.snapshot.cockpit?.details?.publishedModels?.contains(where: { $0.id == id }) == true else { return }
+        }
+        owner.coordinator?.selectModel(id)
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.
     func applySettings(_ value: SettingsApplication) {

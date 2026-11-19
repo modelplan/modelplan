@@ -47,6 +47,9 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
   // A HUD row lights its rocket by published display name, the one key the still's roster and the publication share.
   const lit=(event:Event)=>{const name=(event as CustomEvent<string|null>).detail;for(const e of field.querySelectorAll<HTMLElement>('[data-model-name]'))e.classList.toggle('ck-hot',e.dataset.modelName===name);};
   cockpit.addEventListener('hud-hover',lit,{signal:opener.signal});
+  // WP-22 (macrevb-1062-3): the cockpit's selected model (the HUD, or the enlarged field) stays marked until it changes.
+  let chosen:string|null=null;const mark=()=>{for(const e of field.querySelectorAll<HTMLElement>('[data-model-name]'))e.classList.toggle('ck-sel',chosen!==null&&e.dataset.modelName===chosen);};
+  cockpit.addEventListener('model-select',event=>{chosen=(event as CustomEvent<string|null>).detail??null;mark();},{signal:opener.signal});
   const host=document.createElement('div');host.className='ck-still';host.setAttribute('aria-hidden','true');field.prepend(host);
   const base=new URL(pack.base,document.baseURI).href;let painted='';
   // The ⤢ key sits inside the glass of the c01 canopy, never on its frame (owner, 11-09). Positions are measured on the
@@ -89,7 +92,7 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
       if(kind==='body'&&m.name)e.dataset.modelName=m.name;
       if(flicker)e.style.transformOrigin=`${m.nozzle.x-l.left}px ${m.nozzle.y-l.top}px`;
     }
-    host.replaceChildren(stage);host.dataset.projection=frame.id;field.dataset.still='ready';
+    host.replaceChildren(stage);host.dataset.projection=frame.id;field.dataset.still='ready';mark();
   };
   paint();
   const resize=new ResizeObserver(paint);resize.observe(field.parentElement??field);

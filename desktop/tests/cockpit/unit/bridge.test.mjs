@@ -365,6 +365,17 @@ test('CKP-SHELL-33: the host ignition message lights and puts out the base bells
   for(const bad of [{on:'yes'},{},{on:true,extra:1}])assert.equal(f.bridge.receive(f.send('ignition',bad),source),false);
   assert.deepEqual(lit,[true,false],'a malformed ignition has no effect');
 });
+test('WP-22 macrevb-1062-3: the field\'s selection reaches the view as a public model id or a clear, strictly typed',()=>{
+  const f=fixture(),picked=[];f.bridge.view.selectModel=id=>picked.push(id);
+  assert.equal(f.bridge.receive(f.send('select',{model:'sonnet-5.5'}),source),true);
+  assert.equal(f.bridge.receive(f.send('select',{model:null}),source),true);
+  assert.deepEqual(picked,['sonnet-5.5',null]);
+  for(const bad of [{},{model:''},{model:7},{model:'x'.repeat(129)},{model:'a\u0000b'},{model:'m1',effort:'high'}]){assert.equal(f.bridge.receive(f.send('select',bad),source),false);assert.equal(f.bridge.lastReject,'select.fields');}
+  assert.deepEqual(picked,['sonnet-5.5',null],'a malformed selection (or one carrying a tried effort) has no effect');
+  f.bridge.view.selectModel=()=>{throw Error('view');};
+  assert.equal(f.bridge.receive(f.send('select',{model:'m1'}),source),false);assert.equal(f.bridge.lastReject,'select.view');
+  assert.notEqual(f.bridge.state,'unloaded','a selection the view cannot apply never unloads the page');
+});
 test('G3-96: reset events as CLI v0.5.59 emits them (kind, confirmedAt, confirmedAtBasis) are displayed, not rejected as data.schema',()=>{
   // Build 14d: the CLI sets kind on every reset event and a confirmation time on a confirmed one. Their schema nodes
   // carried an enum without a type, which the page's bounded validator refuses, so every display with a published

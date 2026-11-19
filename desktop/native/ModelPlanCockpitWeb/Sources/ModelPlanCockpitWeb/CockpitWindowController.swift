@@ -1504,6 +1504,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
   public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }
+  /// WP-22 (macrevb-1062-3): the enlarged field's selection (a public model id, nil for a clear) selects the same model on
+  /// the page's HUD, faders and porthole. Presentation only: a page that cannot show it keeps working.
+  public func selectModel(_ id: String?) {
+    guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.setSelection(id) else { return }
+    send(raw, onRejected: { true })
+  }
   public func updateScope(_ key:String) {
     guard key != scope, CockpitMemberScopes.isValidKey(key) else { return }
     scope=key; publishAppearance()

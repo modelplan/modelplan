@@ -365,6 +365,16 @@ public final class CockpitBridgeState {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
     return try envelope("ignition", extra: ["on": on])
   }
+  /// WP-22 (macrevb-1062-3): the enlarged field's selection, a public model id (the page's identity bound: 1-128
+  /// characters, no control characters) or nil when it was cleared there. No receipt: the page only shows it.
+  public func setSelection(_ model: String?) throws -> String {
+    guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    guard model.map(Self.isPublicModelID) ?? true else { throw CockpitBridgeError.invalidMessage }
+    return try envelope("select", extra: ["model": model.map { $0 as Any } ?? NSNull()])
+  }
+  static func isPublicModelID(_ id: String) -> Bool {
+    !id.isEmpty && id.utf16.count <= 128 && !id.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7f }
+  }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) throws -> String {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }
     // A newer display retires all prior unacknowledged display receipts.

@@ -183,3 +183,24 @@ test('CKP-PORT-06 hovering a row lights its rocket by published name, for real p
 test('an older engine shows no HUD',async({page})=>{
  await open(page,{published:null});await expect(page.locator('.hud')).toBeHidden();
 });
+// WP-22 macrevb-1062-3: a rocket chosen in the enlarged field arrives as the host's `select` message (public model id) and
+// selects the same model on the HUD, the faders and the porthole still; a clear from the field clears all three.
+test('WP-22 the field\'s selection selects the model on the HUD, the faders and the porthole, and a clear clears them',async({page})=>{
+ const sonnet={...model('sonnet-5.5',62,.4),name:'Claude Sonnet 5.5',developerId:'anthropic'};
+ const published=[sonnet,...models];
+ const {send,receive}=await open(page,{published,lineup:[sonnet,published[1]]});
+ await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
+ const marked=()=>page.locator('.ck-field .ck-still-body.ck-sel').evaluateAll(e=>e.map(x=>x.dataset.modelName));
+ const fader=()=>page.locator('.fd-ch.sel [data-travel]').evaluateAll(e=>e.map(x=>x.getAttribute('aria-label')));
+ expect(await receive(send('select',{model:'sonnet-5.5'}))).toBe(true);
+ await expect(page.locator('.hud .hp.selected')).toHaveCount(1);
+ await expect(page.locator('.hud .hp.selected')).toHaveAttribute('data-hud-model','sonnet-5.5');
+ expect(await fader()).toEqual(['Claude Sonnet 5.5']);
+ expect(await marked()).toEqual(['Claude Sonnet 5.5']);
+ expect(await receive(send('select',{model:null}))).toBe(true);
+ await expect(page.locator('.hud .hp.selected')).toHaveCount(0);
+ expect(await fader()).toEqual([]);
+ expect(await marked()).toEqual([]);
+ expect(await receive(send('select',{model:'sonnet-5.5',effort:'high'}))).toBe(false);
+ await expect(page.locator('.hud .hp.selected')).toHaveCount(0);
+});
