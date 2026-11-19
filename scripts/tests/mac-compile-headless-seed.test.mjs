@@ -17,12 +17,15 @@ function setup() {
   // One scratch path for both packages (trusted-mac.yml native-headless: HEADLESS_SCRATCH).
   return { d, ws, native: path.join(d, "tmp", "headless-build"), seed: path.join(d, "seed") };
 }
+// The synthetic cases are a self-hosted runner whatever runs the tests: repo-checks itself is a hosted job and exports
+// RUNNER_ENVIRONMENT=github-hosted, which would make every case the hosted no-op. The hosted case below sets it.
+const SELF_HOSTED = { RUNNER_ENVIRONMENT: "self-hosted", RUNNER_NAME: "test-runner" };
 const run = (s, mode, extra = {}) =>
-  spawnSync("bash", [script, mode], { cwd: s.ws, encoding: "utf8", env: { ...process.env, PATH: `${path.join(s.d, "bin")}:${process.env.PATH}`, RUNNER_TEMP: path.join(s.d, "tmp"), SEED_ROOT: s.seed, ...extra } });
+  spawnSync("bash", [script, mode], { cwd: s.ws, encoding: "utf8", env: { ...process.env, PATH: `${path.join(s.d, "bin")}:${process.env.PATH}`, RUNNER_TEMP: path.join(s.d, "tmp"), SEED_ROOT: s.seed, ...SELF_HOSTED, ...extra } });
 const build = (s, tag) => { fs.mkdirSync(s.native, { recursive: true }); fs.writeFileSync(path.join(s.native, "product"), tag); };
 const seedlib = new URL("../mac-compile/seedlib.sh", import.meta.url).pathname;
 const lib = (s, cmd, extra = {}) =>
-  spawnSync("bash", ["-c", `. "${seedlib}"; ${cmd}`], { cwd: s.ws, encoding: "utf8", env: { ...process.env, SEED_ROOT: s.seed, SEED_WRITE: "1", ...extra } });
+  spawnSync("bash", ["-c", `. "${seedlib}"; ${cmd}`], { cwd: s.ws, encoding: "utf8", env: { ...process.env, SEED_ROOT: s.seed, SEED_WRITE: "1", ...SELF_HOSTED, ...extra } });
 
 test("a trusted publish seeds the one shared scratch path; restore clones it and the job's copy is writable", () => {
   const s = setup(); build(s, "warm");
@@ -175,4 +178,48 @@ test("a hosted runner is a silent no-op", () => {
   const r = run(s, "restore", { RUNNER_ENVIRONMENT: "github-hosted" });
   assert.equal(r.status, 0);
   assert.equal(fs.readFileSync(path.join(s.native, "product"), "utf8"), "keep");
+});
+
+// A publish killed (SIGKILL, no traps) exactly when a rename of the swap runs: the shim kills its caller instead of moving.
+const killOn = (s, pattern) => {
+  const real = spawnSync("which", ["mv"], { encoding: "utf8" }).stdout.trim();
+  fs.writeFileSync(path.join(s.d, "bin", "mv"), `#!/bin/bash\ncase "$*" in ${pattern}) kill -9 $PPID; exit 1;; esac\nexec ${real} "$@"\n`, { mode: 0o755 });
+};
+const restoredProduct = (s) => { fs.rmSync(s.native, { recursive: true, force: true }); const r = run(s, "restore"); assert.equal(r.status, 0, r.stdout + r.stderr); return fs.existsSync(path.join(s.native, "product")) ? fs.readFileSync(path.join(s.native, "product"), "utf8") : null; };
+
+test("killed between the two renames of the swap: readers use the old seed, the next publish restores and replaces it", () => {
+  const s = setup(); build(s, "old"); run(s, "publish");
+  build(s, "new");
+  killOn(s, '*"/.headless_build.stage."*" "*"/headless_build"');  // stage -> slot, after slot -> backup
+  const r = run(s, "publish");
+  assert.notEqual(r.status, 0, "the publish was killed");
+  assert.ok(!fs.existsSync(path.join(s.seed, "headless_build")) && fs.existsSync(path.join(s.seed, ".headless_build.old")), "died mid-swap");
+  fs.rmSync(path.join(s.d, "bin", "mv"));
+  assert.equal(restoredProduct(s), "old", "the backup still serves");
+  build(s, "newer");
+  const again = run(s, "publish");
+  assert.match(again.stdout, /recovered the previous seed/);
+  assert.deepEqual(fs.readdirSync(s.seed).filter((n) => !n.endsWith(".lock")), ["headless_build"]);
+  assert.equal(restoredProduct(s), "newer");
+});
+
+test("killed before the swap or after it: the slot holds a complete seed (old or new), never nothing", () => {
+  const s = setup(); build(s, "old"); run(s, "publish");
+  build(s, "new");
+  killOn(s, '*"/headless_build "*"/.headless_build.old"');  // slot -> backup never happens
+  assert.notEqual(run(s, "publish").status, 0, "the publish was killed");
+  assert.ok(!fs.existsSync(path.join(s.seed, ".headless_build.old")));
+  fs.rmSync(path.join(s.d, "bin", "mv"));
+  assert.equal(restoredProduct(s), "old");
+  // After both renames, before the backup is deleted: a stale backup next to the new slot.
+  const real = spawnSync("which", ["rm"], { encoding: "utf8" }).stdout.trim();
+  fs.writeFileSync(path.join(s.d, "bin", "rm"), `#!/bin/bash\ncase "$*" in *"/.headless_build.old"*) kill -9 $PPID; exit 1;; esac\nexec ${real} "$@"\n`, { mode: 0o755 });
+  build(s, "new");
+  assert.notEqual(run(s, "publish").status, 0, "the publish was killed");
+  fs.rmSync(path.join(s.d, "bin", "rm"));
+  assert.ok(fs.existsSync(path.join(s.seed, ".headless_build.old")), "died while deleting the backup");
+  assert.equal(restoredProduct(s), "new", "the new slot wins over a stale backup");
+  build(s, "newest"); run(s, "publish");
+  assert.deepEqual(fs.readdirSync(s.seed).filter((n) => !n.endsWith(".lock")), ["headless_build"], "the stale backup is cleared");
+  assert.equal(restoredProduct(s), "newest");
 });
