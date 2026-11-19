@@ -113,7 +113,7 @@ extension CommunityCockpitEntryTests {
 
     /// One launch of the normal entry on the real page and CLI, then three opens. With `prewarm` it asserts
     /// the CKP-SHELL-20 open; without, it only reports the open as it was before.
-    @MainActor private func measureLaunch(prewarm: Bool, root: URL, official: URL, cli: URL) async throws {
+    @MainActor private func measureLaunch(prewarm: Bool, root: URL, official: URL, cli: URL, speedBudget: Bool = false) async throws {
         let label = prewarm ? "prewarm" : "baseline"
         let app = try Self.ownerTestShapedApp(at: root.appendingPathComponent("package"), helper: cli, ownerTest: true, official: official)
         let helper = app.appendingPathComponent("Contents/Helpers/modelplan")
@@ -206,7 +206,7 @@ extension CommunityCockpitEntryTests {
             } else {
                 try await Task.sleep(for: .seconds(3))
             }
-            for run in 1...3 {
+            for run in 1...(speedBudget ? 10 : 3) {
                 if prewarm, run > 1 {
                     for _ in 0..<3000 where probe.traced("warm.ready", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
                     let ready = try XCTUnwrap(probe.traced("warm.ready", after: closedAt), "run \(run): an empty page is loaded again after the close")
@@ -277,14 +277,37 @@ extension CommunityCockpitEntryTests {
                     let layouts = probe.layouts[ObjectIdentifier(page)] ?? []
                     if layouts.count >= 2 { XCTAssertEqual(layouts[0], layouts[1], "run \(run): fresh data causes no layout jump") }
                 }
+                if speedBudget {
+                    for _ in 0..<100 where probe.timed("open stage=animation-complete", after: click) == nil {
+                        try await Task.sleep(for: .milliseconds(10))
+                    }
+                }
                 if page.verificationWebView != nil {
                     page.requestClose()
                     for _ in 0..<300 where page.verificationWebView != nil { try await Task.sleep(for: .milliseconds(10)) }
                 }
                 XCTAssertNil(page.verificationWebView, "\(label) run \(run): the user close discards the shown page")
+                if speedBudget {
+                    let lines = probe.timing.filter { $0.at > click }.map(\.line)
+                    XCTAssertNil(page.window, "cycle \(run): the cockpit window is gone")
+                    print("G3-123 cycle=\(run) " + lines.joined(separator: " | "))
+                    func milliseconds(_ prefix: String) throws -> Int {
+                        let line = try XCTUnwrap(lines.first { $0.hasPrefix(prefix) }, "cycle \(run): missing \(prefix)")
+                        return try XCTUnwrap(Int(line.split(separator: "=").last ?? ""))
+                    }
+                    // Product targets: visible <=200 ms, animation <=400 ms. A 2x
+                    // ceiling catches clear regressions while retaining loaded-runner evidence.
+                    XCTAssertLessThanOrEqual(try milliseconds("open stage=window-visible"), 400)
+                    XCTAssertLessThanOrEqual(try milliseconds("open stage=animation-complete"), 800)
+                    XCTAssertGreaterThanOrEqual(try milliseconds("open stage=page-rendered"), 0)
+                    // Measured boundary: the close clock starts in closeAnimated (here reached through requestClose), so
+                    // it covers the close motion and window removal, not the hop from a menu-bar click to closeAnimated.
+                    // Real clicks on MacCI (wp17-measure-plan.md) carry that hop in the `close requested` log line.
+                    XCTAssertLessThanOrEqual(try milliseconds("close stage=gone"), 800)
+                }
                 closedAt = .now
             }
-            if prewarm {
+            if prewarm && !speedBudget {
                 // As the packaged walkthrough does: open again soon after a close, while the next page may still load.
                 try await Task.sleep(for: .milliseconds(1000))
                 let pagesBefore = probe.made.count, click = ContinuousClock.now
@@ -344,6 +367,19 @@ extension CommunityCockpitEntryTests {
             + "prewarm=\(Self.shownFootprints["prewarm"]?.map { "\($0.kib)/\($0.processes)p" } ?? []) "
             + "baseline=\(Self.shownFootprints["baseline"]?.map { "\($0.kib)/\($0.processes)p" } ?? [])")
         Self.shownFootprints = [:]
+    }
+
+    /// G3-123: real normal entry, real app-server and WKWebView; ten complete
+    /// open/close cycles. Timing records also reach the existing diagnostics log.
+    @MainActor func testG3_123OpenCloseBudgetTenNormalEntryCycles() async throws {
+        Self.shownFootprints = [:]
+        defer { Self.shownFootprints = [:] }
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        let path = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"], "GUI CI must supply the synthetic-test CLI")
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: path))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-123-" + UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try await measureLaunch(prewarm: true, root: root, official: official, cli: URL(fileURLWithPath: path), speedBudget: true)
     }
 }
 #endif

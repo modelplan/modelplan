@@ -138,6 +138,20 @@ test("clone probe: a partial copy whose wipe fails is never reused or nested; th
   assert.ok(!fs.existsSync(path.join(sp, "c")) && !fs.existsSync(path.join(sp, "partial")) && !fs.existsSync(path.join(sp, "desktop_native_Pkg")));
 });
 
+test("seed publish is per package: a failing package does not block another, and scratches are separate", () => {
+  const d = setup();
+  fs.writeFileSync(path.join(d, "plan.tsv"), "desktop/native/Bad\tdesktop_native_Bad\tbuild-tests\t-\tNone\ndesktop/native/Good\tdesktop_native_Good\tbuild-tests\t-\tNone\n");
+  fs.writeFileSync(path.join(d, "bin", "swift"), `#!/bin/bash\nif [ "$1" = --version ]; then echo s; exit 0; fi\ncase "$*" in *Bad*) echo "error: boom"; exit 1;; esac\nfor a in "$@"; do case $a in --scratch-path) n=1;; *) [ "\${n:-}" = 1 ] && { mkdir -p "$a"; echo "$a" > "$a/product"; n=0; };; esac; done\nexit 0\n`, { mode: 0o755 });
+  const r = run(d, { SEED_ROOT: seedDir(d), SEED_WRITE: "1" });
+  assert.notEqual(r.status, 0);
+  assert.match(fs.readFileSync(path.join(d, "sum"), "utf8"), /Bad`: build fail[\s\S]*Good`: build ok/);
+  assert.ok(!fs.existsSync(path.join(seedDir(d), "desktop_native_Bad")));
+  const [key] = fs.readdirSync(path.join(seedDir(d), "desktop_native_Good")).filter((n) => !n.includes("."));
+  const product = fs.readFileSync(path.join(seedDir(d), "desktop_native_Good", key, "product"), "utf8");
+  assert.match(product, /scratch\/desktop_native_Good$/m);
+  assert.doesNotMatch(product, /Bad/);
+});
+
 test("an interrupted run releases its lock", async () => {
   const d = setup();
   fs.writeFileSync(path.join(d, "bin", "swift"), `#!/bin/bash\nif [ "$1" = --version ]; then echo s; exit 0; fi\nsleep 3\n`, { mode: 0o755 });
