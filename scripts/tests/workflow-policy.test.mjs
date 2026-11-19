@@ -655,3 +655,12 @@ test("D254 pr-scope reads NUL-separated paths: tab, quote, newline and unicode n
     assert.doesNotMatch(bad.out, /mac=false/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(`${dir}.out`, { force: true }); fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+test("no workflow step asserts with a bare '! command' (bash exempts it from set -e, so a failure stays green)", () => {
+  const dir = new URL("../../.github/workflows/", import.meta.url);
+  for (const f of fs.readdirSync(dir)) {
+    if (!/\.(ya?ml)$/.test(f)) continue;
+    const lines = fs.readFileSync(new URL(f, dir), "utf8").split("\n");
+    lines.forEach((l, i) => assert.doesNotMatch(l, /^\s+!\s+(grep|test|\[)/, `${f}:${i + 1} use an explicit if ...; then exit 1; fi`));
+  }
+});
