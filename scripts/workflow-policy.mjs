@@ -1,4 +1,4 @@
-export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && inputs.os == 'macos-15' && vars.MAC_CI_NONGUI == 'enabled' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/'))))) && fromJSON('[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (inputs.task != 'native-headless' || github.event_name == 'merge_group') && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'native-headless') && github.event_name == 'merge_group' && startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main'))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'gui-probe') && '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\",\"modelplan-mac-gui\"]' || '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}";
+export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && inputs.os == 'macos-15' && vars.MAC_CI_NONGUI == 'enabled' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/'))))) && fromJSON('[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (inputs.task != 'native-headless' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'native-headless') && github.event_name == 'merge_group' && startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main'))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'gui-probe') && '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\",\"modelplan-mac-gui\"]' || '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}";
 // SPDX-License-Identifier: MIT
 // Runner and trigger rules for public workflows. Defence in depth only: the enforced boundaries
 // are the immutable reusable workflow selected by the runner group and the owner-only pre-job gate.
@@ -291,5 +291,84 @@ export function draftGuardProblems(text) {
       problems.push(`macOS job ${job.name} runs on draft PRs; add "if: github.event_name != 'pull_request' || !github.event.pull_request.draft" (or collapse the matrix to ubuntu on drafts)`);
     }
   }
+  return problems;
+}
+
+// D254 (2026-11-14): hosted macOS gives 5 concurrent jobs, so a pull_request must start macOS jobs only when it
+// changes something they test, and a newer push must cancel the older run of the same PR. Nothing else is ever
+// filtered or cancelled: merge_group, push, schedule and workflow_dispatch keep the full suite. Required checks
+// need no stub: merge-gates counts only the newest run per workflow that exists, plus ci.yml as the anchor, and
+// a skipped job is green (OK_CONCLUSIONS), so a workflow or job a PR does not trigger never blocks it.
+function onEvent(text, event) {
+  const on = topLevelBlock(text, "on");
+  if (!on) return null;
+  const lines = on.split("\n");
+  const start = lines.findIndex((l) => new RegExp(`^  ["']?${event}["']?:`).test(l));
+  if (start === -1) return null;
+  const end = lines.findIndex((l, i) => i > start && /^  \S/.test(l));
+  return lines.slice(start, end === -1 ? lines.length : end).join("\n");
+}
+
+// A job-level scope gate: the job's own `if:` reads a scope job's output (mac / run / notices-mac style),
+// is dispatch-only, or is opt-in by label.
+const JOB_SCOPE_GATE = /needs\.[\w-]+\.outputs\.[\w-]*(?:mac|run)\b|github\.event_name\s*==\s*'workflow_dispatch'|labels\.\*\.name,\s*'gui-ci'/;
+
+function jobIf(lines) {
+  const i = lines.findIndex((l) => /^    if:/.test(l));
+  return i === -1 ? "" : lines[i];
+}
+
+export function macPathGateProblems(text, path = "") {
+  const problems = [];
+  if (path.endsWith("/trusted-mac.yml")) return problems;
+  const pr = onEvent(text, "pull_request");
+  if (pr === null || !runsMacos(text)) return problems;
+  const wfFilter = /^    paths:/m.test(pr) && /!\*\*\/\*\.md/.test(pr);
+  const macJobs = jobBlocks(text).filter((j) => jobRunsMacos(j.lines));
+  if (!wfFilter) {
+    for (const job of macJobs) {
+      if (!JOB_SCOPE_GATE.test(jobIf(job.lines)))
+        problems.push(`macOS job ${job.name} has no path gate on pull_request (a workflow-level pull_request paths list excluding !**/*.md, or an if: reading a scope job's output)`);
+    }
+  } else if (/^  pull_request:/m.test(text) && macJobs.some((j) => /needs\.pr-scope\./.test(jobIf(j.lines)) === false && /workflows\/desktop\.yml/.test(path))) {
+    // desktop.yml keeps a broad workflow-level list for its Linux jobs; its Mac jobs narrow it with pr-scope.
+    for (const job of macJobs) {
+      if (!JOB_SCOPE_GATE.test(jobIf(job.lines)))
+        problems.push(`macOS job ${job.name} has no path gate on pull_request (needs pr-scope)`);
+    }
+  }
+  return problems;
+}
+
+// merge_group, schedule and workflow_dispatch are never path-filtered; the markdown exclusion belongs to
+// pull_request only (push keeps whatever list it had); a PR cancel is pull_request-only wherever a
+// workflow can run for a PR.
+export function nonPrFilterProblems(text) {
+  const problems = [];
+  for (const ev of ["merge_group", "schedule", "workflow_dispatch"]) {
+    const b = onEvent(text, ev);
+    if (b !== null && /^    (paths|paths-ignore|branches|branches-ignore):/m.test(b) && ev !== "schedule")
+      problems.push(`${ev} must not be path- or branch-filtered`);
+  }
+  const push = onEvent(text, "push");
+  if (push !== null && /!\*\*\/\*\.md/.test(push)) problems.push("the markdown exclusion is for pull_request only, never push");
+  return problems;
+}
+
+export function prCancelProblems(text) {
+  const problems = [];
+  const on = topLevelBlock(text, "on");
+  if (!on || onEvent(text, "pull_request") === null) return problems;
+  // A workflow whose only event is pull_request has no other run to cancel.
+  if (on.split("\n").filter((l) => /^  \S/.test(l)).length === 1) return problems;
+  const conc = topLevelBlock(text, "concurrency");
+  if (!conc) return problems;
+  const groupLine = conc.split("\n").find((l) => /^\s+group:/.test(l)) ?? "";
+  const cancelLine = conc.split("\n").find((l) => /^\s+cancel-in-progress:/.test(l)) ?? "";
+  if (/cancel-in-progress:\s*true\s*$/.test(cancelLine)) problems.push("cancel-in-progress: true would also cancel merge_group, push and schedule runs");
+  if (/cancel-in-progress/.test(cancelLine) && !/github\.event_name\s*==\s*'pull_request'/.test(cancelLine) && !/cancel-in-progress:\s*false/.test(cancelLine))
+    problems.push("cancel-in-progress must be pull_request-only");
+  if (/cancel-in-progress:\s*\$\{\{/.test(cancelLine) && /github\.sha/.test(groupLine) )
+    problems.push("a non-PR run must not share a group by commit sha (a merge_group and the push to main carry the same sha)");
   return problems;
 }
