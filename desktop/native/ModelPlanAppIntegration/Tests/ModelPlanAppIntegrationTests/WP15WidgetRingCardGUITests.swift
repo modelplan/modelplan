@@ -7,7 +7,7 @@ import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanWire
-@testable import ModelPlanAppIntegration
+@_spi(DockResourceChecks) @testable import ModelPlanAppIntegration
 
 @MainActor private final class WP15NoWindowSurface: SettingsWindowSurface {
     func prepare() async {}
