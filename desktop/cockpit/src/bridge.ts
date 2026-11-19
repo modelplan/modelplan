@@ -40,7 +40,7 @@ export interface CockpitView {
   clear():void;
   nextDeadline():number|null;
   tick(now:number):void;
-  active(active:boolean):void;
+  active(active:boolean,now?:number):void;
   dispose():void;
 }
 const header=['version','pageId','requestId','sequence','sessionId','storeEpoch','generation','viewRevision'];
@@ -243,7 +243,7 @@ export class CockpitBridge {
   private pendingAck:string[]|null=null;
   private pendingPins:string[]|null=null;
   private syncActive():void {
-    this.view.active(this.isActive());
+    this.view.active(this.isActive(),this.clock());
     if(this.pendingAck&&this.isActive()) {const ids=this.pendingAck;this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});}
     if(this.pendingPins&&this.isActive()) {const ids=this.pendingPins;this.pendingPins=null;this.emit('action',this.requestId(),{action:'pinnedModels',ids});}
   }

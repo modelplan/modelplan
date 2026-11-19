@@ -9,7 +9,7 @@ import type {Appearance} from './bridge.js';
 import {cockpitMembers} from './members.js';
 import {memberColours} from './session-binding.js';
 import {NEUTRAL} from './livery.js';
-import {cautionItems,cautionLevel} from './caution.js';
+import {cautionItems,cautionLevel,lights} from './caution.js';
 import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf,moneyText} from './prototype-data-adapter.js';
 import {engineModel} from '../study/rocket-r1/engine-model.js';
 import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
@@ -47,7 +47,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
- const alerts=items.flatMap(x=>x.level==='blue'?[]:[{level:x.level,sub:esc(x.member)}]);
+ const alerts=items.flatMap(x=>lights(x)?[{level:x.level,sub:esc(x.member)}]:[]);
  const level=cautionLevel(items);
  const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(ht(locale,'host.alertActive')):(ht(locale,'host.alertInactive')));}
  return {now,accounts,alerts,caution:{level,key:''}};

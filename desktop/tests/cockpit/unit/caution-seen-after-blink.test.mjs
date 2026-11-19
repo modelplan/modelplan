@@ -68,5 +68,48 @@ test('a press on an unverified (fallback-keyed) account survives the next open w
 test('activating the page re-syncs the lamp, so a caution that arrived while inactive blinks on activation',async()=>{
  const {readFileSync}=await import('node:fs');
  const view=readFileSync(new URL('../../../cockpit/src/view.ts',import.meta.url),'utf8');
- assert.match(view,/active\(value\)\{const was=active;[^}]*\}else if\(!was&&lastData\)syncCaution\(lastData,lastRenderedAt\);\}/);
+ assert.match(view,/active\(value,now\)\{const was=active;[^}]*\}else if\(!was&&lastData\)\{if\(now!==undefined\)lastRenderedAt=now;syncCaution\(lastData,lastRenderedAt\);\}\}/);
+});
+
+// macrev2 11-19 (CKP-MFD-57): an amber forecast whose reset time is unknown has no cycle, yet an ordinary pause of the
+// forecast (the window keeps a real reading) must not make its return blink again. Only a refill of the window (a new
+// allowance) or a red escalation does.
+function unknownReset({remaining,level}){
+ const items=[];
+ if(level==='amber')items.push({id:JSON.stringify([ref,win,null,'forecast']),stable:JSON.stringify([ref,win,'amber']),level:'amber',member:ref,text:{en:'',zh:`${remaining}%`}});
+ if(level==='red')items.push({id:JSON.stringify([ref,win,null]),stable:JSON.stringify([ref,win,'red']),level:'red',member:ref,text:{en:'',zh:`${remaining}%`}});
+ return {items,read:new Map([[key,{resetAt:null,span:WEEK,remaining}]])};
+}
+test('an unknown-reset forecast that pauses and returns does not blink again; a refill or a red escalation does',()=>{
+ const host={ids:[]};let page=entry(host);
+ assert.equal(show(page,unknownReset({remaining:48,level:'amber'})),true,'new forecast blinks');
+ assert.equal(show(page,unknownReset({remaining:47,level:null})),false,'pause');
+ assert.equal(show(page,unknownReset({remaining:45,level:'amber'})),false,'the forecast returns: steady');
+ assert.equal(show(page,unknownReset({remaining:44,level:null})),false);
+ assert.equal(show(page,unknownReset({remaining:46,level:'amber'})),false,'a small rise is not a refill');
+ assert.equal(show(page,unknownReset({remaining:95,level:null})),false,'refill: the old condition is over');
+ assert.equal(show(page,unknownReset({remaining:90,level:'amber'})),true,'a forecast after a refill is a recurrence');
+ assert.equal(show(page,unknownReset({remaining:20,level:'red'})),true,'amber to red blinks');
+});
+test('an unknown-reset forecast acknowledged before a restart stays steady across a pause and return',()=>{
+ const host={ids:[]};let page=entry(host);
+ show(page,unknownReset({remaining:48,level:'amber'}));
+ page=entry({ids:[...host.ids]});
+ assert.equal(show(page,unknownReset({remaining:47,level:null})),false);
+ assert.equal(show(page,unknownReset({remaining:46,level:'amber'})),false);
+});
+
+test('macrev2 repro: a restored unknown-reset forecast (stored null cycle, nothing shown on this page) detects a refill',()=>{
+ const host={ids:[]};show(entry(host),unknownReset({remaining:48,level:'amber'}));
+ const page=entry({ids:[...host.ids]});
+ assert.equal(show(page,unknownReset({remaining:47,level:null})),false);
+ assert.equal(show(page,unknownReset({remaining:95,level:null})),false,'refill');
+ assert.equal(show(page,unknownReset({remaining:90,level:'amber'})),true,'recurrence after restore blinks');
+});
+test('macrev2 repro: an unknown-reset forecast acknowledged by a press before it blinked detects a refill',()=>{
+ const p2=entry({ids:[]});
+ show(p2,unknownReset({remaining:48,level:'amber'}),false);p2.acknowledge();
+ assert.equal(show(p2,unknownReset({remaining:47,level:null}),true),false);
+ assert.equal(show(p2,unknownReset({remaining:95,level:null}),true),false);
+ assert.equal(show(p2,unknownReset({remaining:90,level:'amber'}),true),true,'recurrence after a press');
 });
