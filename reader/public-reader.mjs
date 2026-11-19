@@ -712,7 +712,8 @@ var clientDigestSchema = z3.object({
       developerId: text3,
       costBasisId: text3,
       method: z3.literal(LINEUP_METHOD),
-      tie: z3.literal(LINEUP_TIE),
+      // 1 on index display scale 0.3, 0.815 on 0.4 (same gap re-expressed); verdicts unchanged.
+      tie: z3.union([z3.literal(LINEUP_TIE), z3.literal(0.815)]),
       baseline: text3,
       frontier: ids2,
       steps: z3.array(
