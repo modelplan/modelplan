@@ -16,13 +16,24 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/profile"
 )
 
-// A session's project is known by an opaque reference: a keyed hash of its project root, with a
-// random key kept beside the ledger (<cache>/observed/project-key), so the reference says nothing
-// about the path and cannot be matched across machines. The root is the repository's git common
-// directory when the session's working directory is inside a checkout or worktree that still
-// exists, so worktrees of one repository are one project; otherwise the working directory itself.
-// It is found by reading .git files, never by running git. The label (the root folder's name) is
-// stored only while project labels are on: the default, until the user turns them off
+// A session's project is the tool's own notion of a project, never ModelPlan's guess (owner
+// decision G3-100; docs/personal-snapshot.md). It is known by an opaque reference: a keyed
+// hash of the tool's project identity, with a random key kept beside the ledger
+// (<cache>/observed/project-key), so the reference says nothing about the path and cannot be
+// matched across machines. Per tool:
+//   - Codex: the project folder Codex lists (a [projects."<path>"] table in config.toml, or a
+//     saved workspace root of the desktop app) that contains the session's working directory or
+//     its repository root; none when no such folder exists.
+//   - Claude Code: the session's working directory, which is what names ~/.claude/projects/<dir>.
+//     Worktrees and subfolders are projects of their own, as Claude shows them.
+//   - OpenCode: the project row its session belongs to (its name, else its worktree's folder);
+//     the "global" project is no project.
+//   - ZCode: the session's project_id; its label is the folder name from ZCode's own session record
+//     (ZCode stores no separate project name).
+//   - Any other source: none.
+//
+// A session without a project carries an empty reference; the apps show "No project". The label
+// is stored only while project labels are on: the default, until the user turns them off
 // (`modelplan project-labels off`, which deletes the stored labels). Labels never leave the machine.
 
 const maxProjects = 500
@@ -97,15 +108,37 @@ func ClearProjectLabels(cache string) error {
 	return write(PerfPath(cache), append(b, '\n'))
 }
 
-// projector names a working directory's project: its reference and, with labels on, its label.
-// Nil when the key cannot be read or made; sessions then carry no project.
-func projector(cache string, labels bool) func(cwd string) (ref, label string) {
+// nativeProject is a project a tool's own store names for a session (OpenCode, ZCode).
+type nativeProject struct{ ID, Name string }
+
+// projector names a session's project: its reference and, with labels on, its label. Nil when the
+// key cannot be read or made; sessions then carry no project.
+func projector(cache string, labels bool) func(source, cwd string, np nativeProject) (ref, label string) {
 	key := projectKey(cache)
 	if key == nil {
 		return nil
 	}
-	return func(cwd string) (string, string) {
-		id, name := projectRoot(cwd)
+	var codex *codexProjects
+	return func(source, cwd string, np nativeProject) (string, string) {
+		var id, name string
+		switch source {
+		case "claude-code":
+			id, name = cwdProject(cwd)
+		case "codex":
+			if codex == nil {
+				codex = loadCodexProjects()
+			}
+			id, name = codex.lookup(cwd)
+		case "opencode":
+			if np.ID != "" && np.ID != "global" {
+				id, name = "opencode:"+np.ID, nativeLabel(np.Name)
+			}
+		case "zcode":
+			if np.ID != "" && np.ID != "global" {
+				// ZCode stores no project name; its own record of the session folder gives the folder name.
+				id, name = "zcode:"+np.ID, nativeLabel(cwd)
+			}
+		}
 		if id == "" {
 			return "", ""
 		}
@@ -117,6 +150,18 @@ func projector(cache string, labels bool) func(cwd string) (ref, label string) {
 		}
 		return ref, name
 	}
+}
+
+// nativeLabel: a project's name, or the folder name when the tool only stores a path.
+func nativeLabel(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.ContainsAny(s, `/\`) {
+		s = filepath.Base(filepath.Clean(s))
+	}
+	if len(s) > 200 {
+		s = s[:200]
+	}
+	return s
 }
 
 func projectKeyPath(cache string) string { return filepath.Join(cache, "observed", "project-key") }
@@ -153,21 +198,29 @@ func projectKey(cache string) []byte {
 	return k
 }
 
-// projectRoot: the identity a project reference hashes, and the root folder's name. "" for a
-// working directory that is not absolute.
-func projectRoot(cwd string) (id, name string) {
+// cwdProject: Claude Code's project, the session's working directory. "" for one that is not
+// absolute.
+func cwdProject(cwd string) (id, name string) {
 	if cwd == "" || len(cwd) > 4096 || !filepath.IsAbs(cwd) {
 		return "", ""
 	}
 	dir := filepath.Clean(cwd)
-	real, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return "cwd:" + dir, filepath.Base(dir) // gone since: the directory as written
+	return "cwd:" + dir, filepath.Base(dir)
+}
+
+// gitRoot: the folder of the checkout's repository (the one holding the common .git directory)
+// that a working directory belongs to, "" when it is in none. Found by reading .git files.
+func gitRoot(cwd string) string {
+	dir := filepath.Clean(cwd)
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
 	}
-	dir = real
 	for d, i := dir, 0; i < 64; i++ {
 		if common := gitCommonDir(d); common != "" {
-			return "git:" + common, repoName(common, d)
+			if filepath.Base(common) == ".git" {
+				return filepath.Dir(common)
+			}
+			return d
 		}
 		up := filepath.Dir(d)
 		if up == d {
@@ -175,7 +228,7 @@ func projectRoot(cwd string) (id, name string) {
 		}
 		d = up
 	}
-	return "cwd:" + dir, filepath.Base(dir)
+	return ""
 }
 
 // gitCommonDir: the repository's common git directory for a checkout rooted at dir, from its
@@ -221,17 +274,6 @@ func gitCommonDir(dir string) string {
 		return ""
 	}
 	return real
-}
-
-// repoName: the folder that holds the common directory (…/repo/.git), else the checkout's own.
-func repoName(common, checkout string) string {
-	if filepath.Base(common) == ".git" {
-		return filepath.Base(filepath.Dir(common))
-	}
-	if n := strings.TrimSuffix(filepath.Base(common), ".git"); n != "" && n != filepath.Base(common) {
-		return n
-	}
-	return filepath.Base(checkout)
 }
 
 // readSmall reads a regular file of at most 4 KiB.

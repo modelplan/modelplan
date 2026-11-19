@@ -14,10 +14,11 @@ The reviewed data behind [modelplan.ai](https://modelplan.ai): coding plan tiers
 | [`client-harness-aliases.json`](client-harness-aliases.json) | Model names as Claude Code, Codex and other clients report them | CC-BY-SA-4.0 |
 | [`model-developers.json`](model-developers.json) | Model developers | CC-BY-SA-4.0 |
 | [`model-identities.json`](model-identities.json) | Reviewed model identities and names | CC-BY-SA-4.0 |
+| [`plan-reader-aliases.json`](plan-reader-aliases.json) | Plan names as coding-tool readers report them, mapped to catalogue plans | CC-BY-SA-4.0 |
 | [`real-api-pricing/LICENSE`](real-api-pricing/LICENSE) | Real API Pricing license | MIT |
 | [`real-api-pricing/README.md`](real-api-pricing/README.md) | Real API Pricing seed (third party, MIT) | MIT |
 | [`real-api-pricing/mapping.json`](real-api-pricing/mapping.json) | Real API Pricing display grouping | MIT |
-| [`real-api-pricing/seed.json`](real-api-pricing/seed.json) | Real API Pricing observations (third party) | MIT |
+| [`real-api-pricing/seed.json`](real-api-pricing/seed.json) | Real API Pricing observations (third party); some ChatGPT rows rest on Awesome Coding Plan, CC BY 4.0, see README | MIT |
 | [`schemas/ranker-input.schema.json`](schemas/ranker-input.schema.json) | Ranker input schema | CC-BY-SA-4.0 |
 | [`schemas/ranker-output.schema.json`](schemas/ranker-output.schema.json) | Ranker output schema | CC-BY-SA-4.0 |
 | [`vendor-effort-defaults.json`](vendor-effort-defaults.json) | Current effort defaults and suggested starts from each vendor's client and API docs, shown beside ★ as a reference | CC-BY-SA-4.0 |

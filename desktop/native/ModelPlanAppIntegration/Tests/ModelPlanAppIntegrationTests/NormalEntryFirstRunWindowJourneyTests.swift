@@ -277,7 +277,12 @@ import ModelPlanWire
         let otherLanguage = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.appendingPathComponent("other-language"),
             preferredLanguages: ["fr-FR", "zh-Hans", "en-US"])
         let otherSnapshot = await otherLanguage.snapshot()
-        XCTAssertEqual(otherSnapshot.preferences.language, .english, "A non-Chinese Mac preference defaults to English")
+        XCTAssertEqual(otherSnapshot.preferences.language, .chinese, "The whole preferred list is walked: the first zh or en entry wins (SET-9-39)")
+        XCTAssertTrue(otherSnapshot.preferences.followsSystemLanguage, "A fresh install follows the system language")
+        let unsupported = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.appendingPathComponent("unsupported-language"),
+            preferredLanguages: ["fr-FR", "de-DE"])
+        let unsupportedSnapshot = await unsupported.snapshot()
+        XCTAssertEqual(unsupportedSnapshot.preferences.language, .english, "No zh or en entry falls back to English")
         let noLanguage = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.appendingPathComponent("no-language"), preferredLanguages: [])
         let noLanguageSnapshot = await noLanguage.snapshot()
         XCTAssertEqual(noLanguageSnapshot.preferences.language, .english, "A missing Mac preference defaults to English")

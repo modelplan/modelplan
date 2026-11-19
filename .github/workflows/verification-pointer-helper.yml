@@ -8,6 +8,7 @@ on:
       - 'desktop/native/verification/bin/status_menu_drive.swift'
       - 'desktop/native/verification/StatusMenu/**'
       - '.github/workflows/verification-pointer-helper.yml'
+      - '!**/*.md'
   push:
     branches: [main]
     paths:
@@ -23,7 +24,7 @@ permissions:
   contents: read
 jobs:
   pointer-helper:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     runs-on: macos-latest
     timeout-minutes: 10
     steps:

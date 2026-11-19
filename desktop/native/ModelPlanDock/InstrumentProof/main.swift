@@ -530,9 +530,9 @@ struct NativeFailure:Error {let message:String}
     var interactionTime=0.0,interactionEnv=DockInteractionEnvironment(catalogue:["a","b","c"],preferences:.init(),targets:[.init(id:"a",along:0),.init(id:"b",along:20)],overflowIDs:["c"],hoveredID:"a",insideShared:true,contents:["a":.init(subscriptionID:"a",name:"Synthetic A",rows:[.init(id:"q",kind:.quota,label:"Window",value:"--")])])
     let interactionScheduler=NeutralEdgeScheduler(),interaction=DockInteractionController(clock:{interactionTime},scheduler:interactionScheduler,read:{interactionEnv})
     var interactionPaints=0;interaction.onPresent={_ in interactionPaints+=1};interaction.start()
-    try require(interaction.presentation?.card == .hidden && interactionScheduler.deadline==0.25,"native card controller arms250ms once")
+    try require(interaction.presentation?.card == .hover("a") && interactionScheduler.deadline==0.15,"native card controller opens on arrival (no ring dwell) and samples every 150 ms")
     let retiredCardTimer=interactionScheduler.saved[0]
-    interactionTime=0.25;interactionScheduler.fire();try require(interaction.presentation?.card == .hover("a"),"deadline revalidates current hover/content")
+    interactionTime=0.25;interactionScheduler.fire();try require(interaction.presentation?.card == .hover("a"),"the sample revalidates current hover/content")
     interactionTime=10;interactionEnv.parentExpanded=false;interactionEnv.insideShared=false;interaction.refresh()
     try require(interaction.presentation?.card == .hidden,"a withdrawn parent withdraws the card")
     interactionEnv.catalogue=["b","c"];interaction.refresh();try require(interaction.presentation?.card == .hidden,"removed card target retired")
@@ -557,7 +557,10 @@ struct NativeFailure:Error {let message:String}
     try require(orderRequests.count==2 && !interaction.hasCapture,"D244: releasing a moved ring press saves no order and is no click")
     interactionTime=12;_=interaction.beginNozzle(id:"a",along:0)
     interactionEnv.bindingRevision+=1;interaction.refresh();try require(!interaction.hasCapture,"binding change cancels captured old nozzle")
-    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==["b","c"],"overflow list retains accepted off-main subscriptions in shared canonical order")
+    // D244 dropped the stop/start that used to reset overflowOpen here, so the list opened by the accepted off-main move is still open.
+    try require(interaction.presentation?.overflowIDs==["b","c"],"overflow list retains accepted off-main subscriptions in shared canonical order")
+    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==[],"toggle closes the open overflow list")
+    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==["b","c"],"reopened overflow list keeps the shared canonical order")
     interaction.stop()
     let reorderSurface=DockReorderLayersView(frame:effectsSkin.bounds)
     let firstVisuals=try renderer.reorderVisuals(skin:effectsSkin,readings:Dictionary(uniqueKeysWithValues:working.map{($0.subscriptionID,$0)}),scale:1)

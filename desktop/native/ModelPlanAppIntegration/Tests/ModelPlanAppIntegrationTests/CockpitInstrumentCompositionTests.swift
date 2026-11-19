@@ -37,14 +37,14 @@ import ModelPlanCockpitShell
             "lineups": []]
         var assembly = SelectionAssembly()
         return assembly.evaluate(feeds: .init(publication: try FeedDecoder.publication(JSONSerialization.data(withJSONObject: wire)),
-            personal: nil, personalUsable: false), scope: .all, now: now)
+            personal: nil, personalUsable: false), scope: .all, language: .english, now: now)
     }
     private func frames() throws -> InstrumentSurfaceFrames {
         try .init(engines: .init(width: 1040, height: 240), console: .init(width: 1040, height: 440),
             mainScreen: .init(x: 0, y: 0, width: 600, height: 440), faders: .init(x: 640, y: 0, width: 400, height: 440))
     }
     private func observation(scope: InstrumentScope = .all) throws -> CockpitInstrumentObservation {
-        try .init(snapshot: nil, selection: selection(), scope: scope, language: .chinese,
+        try .init(snapshot: nil, selection: selection(), scope: scope, language: .english,
                   publishedAt: now, now: now, showProjectNames: false)
     }
     private func composition(main: MainScreenView? = nil, provider: SyntheticInstrumentInputs) throws -> CockpitInstrumentComposition {
@@ -84,7 +84,7 @@ import ModelPlanCockpitShell
         try composition.update(observation()); try composition.setPresentationAllowed(true)
         var requests: [InstrumentSurfaceIntent] = []
         composition.onIntent = { requests.append($0) }
-        try composition.surface.engineTable.update(columns: [], language: .chinese, now: now, scope: .subscription("a"))
+        try composition.surface.engineTable.update(columns: [], language: .english, now: now, scope: .subscription("a"))
         composition.surface.binding.receiveEngine(.selectScope(.subscription("a")))
         XCTAssertEqual(requests, [.requestScope(.subscription("a"))])
         XCTAssertEqual(composition.requestedScope, .subscription("a"))

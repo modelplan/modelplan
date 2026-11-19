@@ -14,9 +14,10 @@ export interface ShellState { readonly profile:'open'|'closed'; readonly attache
 export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'openField'|'openWebsite';
 export interface Header extends Context { readonly version:2; readonly pageId:string; readonly requestId:string; readonly sequence:string }
 export type HostMessage = Header & (
-  {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly ackedCautions?:unknown; readonly memberOrder?:readonly string[]} |
-  ({readonly type:'appearance'; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly memberOrder?:readonly string[]} & LiveAppearance) |
+  {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean; readonly ackedCautions?:unknown; readonly pinnedModels?:unknown; readonly memberOrder?:readonly string[]} |
+  ({readonly type:'appearance'; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean; readonly memberOrder?:readonly string[]} & LiveAppearance) |
   ({readonly type:'shell'} & ShellState) |
+  {readonly type:'ignition'; readonly on:boolean} |
   {readonly type:'display'; readonly data:WireCockpitData} |
   {readonly type:'visibility'; readonly visible:boolean; readonly occluded:boolean; readonly key:boolean} |
   {readonly type:'tick'; readonly nowUnixMs:string; readonly reason:'deadline'|'show'|'wake'|'unlock'|'clockChange'} |
@@ -24,16 +25,20 @@ export type HostMessage = Header & (
 export interface CockpitView {
   /** G3-56: caution identities the host remembered as acknowledged; sent before `configure`. */
   restoreAcked?(ids:string[]):void;
+  /** D136: the favourite (pinned) model ids the host remembered; sent before `configure`. */
+  restorePins?(ids:string[]):void;
   forgetAcked?():void;
   /** memberOrder (D244): the saved subscription order; absent or empty is the engine's default order. */
-  configure(appearance:Appearance,redBelow:RedBelow,showUsedPercent?:boolean,memberOrder?:readonly string[]):void;
-  updateAppearance(appearance:LiveAppearance,now:number,redBelow:RedBelow,showUsedPercent?:boolean,memberOrder?:readonly string[]):void;
+  configure(appearance:Appearance,redBelow:RedBelow,showUsedPercent?:boolean,showAllModels?:boolean,memberOrder?:readonly string[]):void;
+  updateAppearance(appearance:LiveAppearance,now:number,redBelow:RedBelow,showUsedPercent?:boolean,showAllModels?:boolean,memberOrder?:readonly string[]):void;
   shell(state:ShellState):void;
+  /** CKP-SHELL-33 (D178/D186): the host lights every base bell with the amber nozzle glow during a rack put-back or key detach. */
+  ignite?(on:boolean):void;
   render(data:WireCockpitData,now:number):void;
   clear():void;
   nextDeadline():number|null;
   tick(now:number):void;
-  active(active:boolean):void;
+  active(active:boolean,now?:number):void;
   dispose():void;
 }
 const header=['version','pageId','requestId','sequence','sessionId','storeEpoch','generation','viewRevision'];
@@ -62,7 +67,15 @@ function validData(value:unknown):value is WireCockpitData {
 }
 // Code path of the last rejected host message (a fixed constant, never message content).
 const no=(code:string):null=>{why=code;return null;};
-function message(raw:string):HostMessage|null {
+/** Recovery contract: a short fingerprint of a display's data (FNV-1a over its JSON, plus length). A display the page
+ *  refused (schema or render) is quarantined by it, so the identical revision sent again is refused at once instead of
+ *  being validated and rendered again. Never message content in any report. */
+export function dataFingerprint(data:unknown):string {
+  const text=JSON.stringify(data)??'';let hash=0x811c9dc5;
+  for(let i=0;i<text.length;i++){hash^=text.charCodeAt(i);hash=Math.imul(hash,0x01000193)>>>0;}
+  return text.length.toString(36)+':'+hash.toString(36);
+}
+function message(raw:string,quarantined?:(data:unknown)=>boolean,refused?:(data:unknown)=>void):HostMessage|null {
   if(typeof raw!=='string'||raw.length>MAX_MESSAGE_BYTES||new TextEncoder().encode(raw).length>MAX_MESSAGE_BYTES) return no('msg.size');
   let m:unknown; try {m=parseMessage(raw);} catch {return no('msg.parse');}
   if(!record(m)||m.version!==2||!uuid(m.pageId)||!uuid(m.requestId)||!uint(m.sequence)||!uuid(m.sessionId)||!identity(m.storeEpoch)||['unavailable','legacy'].includes(m.storeEpoch)||!uint(m.generation)||!uint(m.viewRevision)) return no('msg.header');
@@ -73,10 +86,11 @@ function message(raw:string):HostMessage|null {
   const validOrder=(v:unknown):boolean=>Array.isArray(v)&&v.length>0&&v.length<=256&&v.every(k=>k!=='all'&&validScope(k))&&new Set(v).size===v.length;
   const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope'])&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
   switch(m.type) {
-    case 'load': if(!keys(['appearance','shell'],['redBelow','showUsedPercent','ackedCautions','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||!validAppearance(m.appearance)||!validShell(m.shell)||(m.ackedCautions!==undefined&&!validAcked(m.ackedCautions))) return no('load.keys'); break;
-    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow','showUsedPercent','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
+    case 'load': if(!keys(['appearance','shell'],['redBelow','showUsedPercent','showAllModels','ackedCautions','pinnedModels','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||!validAppearance(m.appearance)||!validShell(m.shell)||(m.ackedCautions!==undefined&&!validAcked(m.ackedCautions))||(m.pinnedModels!==undefined&&!validAcked(m.pinnedModels))) return no('load.keys'); break;
+    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow','showUsedPercent','showAllModels','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
     case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope})) return no('shell.fields'); break;
-    case 'display': if(!keys(['data']))return no('display.keys');if(!validData(m.data))return null; break;
+    case 'ignition': if(!keys(['on'])||typeof m.on!=='boolean') return no('ignition.fields'); break;
+    case 'display': if(!keys(['data']))return no('display.keys');if(quarantined?.(m.data))return no('display.quarantined');if(!validData(m.data)){refused?.(m.data);return null;} break;
     case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return no('visibility.fields'); break;
     case 'tick': if(!keys(['nowUnixMs','reason'])||!timestamp(m.nowUnixMs)||!['deadline','show','wake','unlock','clockChange'].includes(m.reason as string)) return no('tick.fields'); break;
     case 'clear': case 'unload': if(!keys()) return no('clear.keys'); break;
@@ -107,6 +121,10 @@ export class CockpitBridge {
   private historyTools=new Set<string>();
   private retiredSessions=new Set<string>();
   private retiredEpochs=new Set<string>();
+  /** Fingerprint of the last display this page refused (schema or render); cleared by a rendered display or a barrier. */
+  private quarantine:string|null=null;
+  private readonly isQuarantined=(data:unknown):boolean=>this.quarantine!==null&&dataFingerprint(data)===this.quarantine;
+  private readonly refuseData=(data:unknown):void=>{this.quarantine=dataFingerprint(data);};
   constructor(private readonly pageId:string,private readonly origin:string,private readonly post:(message:string)=>void,private readonly view:CockpitView,private readonly requestId:()=>string,private readonly clock:()=>number=Date.now) {
     if(!uuid(pageId)||!(origin==='modelplan-cockpit://bundle'||/^http:\/\/127\.0\.0\.1:[0-9]{1,5}$/.test(origin))) throw TypeError('Invalid cockpit configuration');
     view.clear(); view.active(false);
@@ -147,17 +165,17 @@ export class CockpitBridge {
   receive(raw:string,source:BridgeSource):boolean {
     why='none';
     if(this.ended||!source||source.isMainFrame!==true||source.origin!==this.origin) return this.no('recv.source');
-    const m=message(raw);
+    const m=message(raw,this.isQuarantined,this.refuseData);
     if(!m) return false;
     if(m.pageId!==this.pageId) return this.no('recv.page');
     if(BigInt(m.sequence)<=this.sequence) return this.no('recv.sequence');
     if(m.type==='load') {
       if(this.loaded) return this.no('load.again');
       // First load is also an explicit privacy barrier.
-      this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;
+      this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;this.quarantine=null;
       this.context={sessionId:m.sessionId,storeEpoch:m.storeEpoch,generation:m.generation,viewRevision:m.viewRevision};
       this.sequence=BigInt(m.sequence); this.loaded=true;this.cleared=false;this.loadRequestId=m.requestId;
-      try {this.view.restoreAcked?.(validAcked(m.ackedCautions)?m.ackedCautions:[]);this.view.configure(m.appearance,threshold(m.redBelow),m.showUsedPercent===true,m.memberOrder??[]);this.view.shell(m.shell);} catch {this.unload();return this.no('load.view');}
+      try {this.view.restoreAcked?.(validAcked(m.ackedCautions)?m.ackedCautions:[]);this.view.restorePins?.(validAcked(m.pinnedModels)?m.pinnedModels:[]);this.view.configure(m.appearance,threshold(m.redBelow),m.showUsedPercent===true,m.showAllModels===true,m.memberOrder??[]);this.view.shell(m.shell);} catch {this.unload();return this.no('load.view');}
       this.shellState=m.shell;this.syncActive();
       if(this.domReady) {this.emit('ready',m.requestId,{appearanceVersion:2,capabilities:['appearanceUpdates','shellState','shellActions']});this.loadRequestId=null;}
       return true;
@@ -171,7 +189,7 @@ export class CockpitBridge {
       // A generation or epoch change is the store/consent barrier: the page forgets what was acknowledged before it. A
       // session-only clear keeps it (the owner's pressed cautions must not blink again).
       if(m.storeEpoch!==old.storeEpoch||m.generation!==old.generation){this.view.forgetAcked?.();this.pendingAck=null;}
-      this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;if(this.shellState)this.shellState={...this.shellState,scope:'all'};this.cleared=true;
+      this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;this.quarantine=null;if(this.shellState)this.shellState={...this.shellState,scope:'all'};this.cleared=true;
       if(m.sessionId!==old.sessionId) this.retiredSessions.add(old.sessionId);
       if(m.storeEpoch!==old.storeEpoch) this.retiredEpochs.add(old.storeEpoch);
       this.context={sessionId:m.sessionId,storeEpoch:m.storeEpoch,generation:m.generation,viewRevision:m.viewRevision};
@@ -182,15 +200,21 @@ export class CockpitBridge {
     if(!same(m,this.context)) return this.no('recv.context');
     switch(m.type) {
       case 'appearance':
-        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow),m.showUsedPercent===true,m.memberOrder??[]);} catch {this.unload();return this.no('appearance.view');}
+        // Recovery contract: a view exception is refused, never an unload; the page keeps what it shows.
+        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow),m.showUsedPercent===true,m.showAllModels===true,m.memberOrder??[]);} catch {return this.no('appearance.view');}
         this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       case 'shell':
-        try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return this.no('shell.view');}
+        try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {return this.no('shell.view');}
         this.shellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope};this.sequence=BigInt(m.sequence);return true;
+      case 'ignition':
+        try {this.view.ignite?.(m.on);} catch {this.unload();return this.no('ignition.view');}
+        this.sequence=BigInt(m.sequence);return true;
       case 'display':
         if(!this.domReady) return this.no('display.notReady');
-        // Render is synchronous, with no queued/private snapshot cache to revive.
-        try {this.view.render(m.data,this.clock());} catch {this.unload();return this.no('display.render');}
+        // Render is synchronous and transactional (view.ts): a render that throws leaves the last rendered data on
+        // screen, and the refused revision is quarantined. The page is never unloaded for it (recovery contract).
+        try {this.view.render(m.data,this.clock());} catch {this.refuseData(m.data);return this.no('display.render');}
+        this.quarantine=null;
         this.historyTools=new Set(m.data.projection.rows.filter(row=>row.kind==='tool').map(row=>row.id));
         this.scopeMembers=new Set(cockpitMembers(m.data).map(member=>member.key));
         this.hasDisplay=true;this.cleared=false;
@@ -198,7 +222,7 @@ export class CockpitBridge {
       case 'tick':
         if(!this.isVisible())return this.no(this.hidden?'tick.documentHidden':'tick.notVisible');
         if(!this.hasDisplay||this.cleared)return this.no('tick.noDisplay');
-        try {this.view.tick(Number(m.nowUnixMs));} catch {this.unload();return this.no('tick.view');}
+        try {this.view.tick(Number(m.nowUnixMs));} catch {return this.no('tick.view');}
         this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       case 'visibility':
         this.visible=m.visible;this.occluded=m.occluded;this.key=m.key;this.sequence=BigInt(m.sequence);
@@ -213,9 +237,17 @@ export class CockpitBridge {
   }
   /** G3-56: the lamp was pressed; the host keeps the acknowledged identities across restarts. */
   private pendingAck:string[]|null=null;
+  private pendingPins:string[]|null=null;
   private syncActive():void {
-    this.view.active(this.isActive());
+    this.view.active(this.isActive(),this.clock());
     if(this.pendingAck&&this.isActive()) {const ids=this.pendingAck;this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});}
+    if(this.pendingPins&&this.isActive()) {const ids=this.pendingPins;this.pendingPins=null;this.emit('action',this.requestId(),{action:'pinnedModels',ids});}
+  }
+  /** D136: report the favourite model ids after every long-press; the host keeps them across restarts. */
+  pinModels(ids:string[]):boolean {
+    if(!validAcked(ids)) return false;
+    if(!this.isActive()) {this.pendingPins=ids;return false;}
+    this.pendingPins=null;this.emit('action',this.requestId(),{action:'pinnedModels',ids});return true;
   }
   acknowledgeCautions(ids:string[]):boolean {
     if(!validAcked(ids)) return false;

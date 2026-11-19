@@ -14,6 +14,11 @@ private actor CountingClient: EngineClient {
   func start() throws -> EngineDeliveryContext { throw EngineClientError.notReady }
   func retry() throws -> EngineDeliveryContext { throw EngineClientError.notReady }
   func stop() { complete() }
+  /// Recovery step 4: the held cockpit reads fail, as a timed-out query does.
+  func failAll() {
+    let held = waiters; waiters = []
+    for waiter in held { waiter.resume(throwing: EngineClientError.deadlineExceeded(.cancelled)) }
+  }
   func complete() {
     let held = waiters; waiters = []
     for waiter in held { waiter.resume(returning: .init(requestID: .string("synthetic-cockpit"))) }
@@ -46,9 +51,14 @@ private actor CountingClient: EngineClient {
   var onDataRendered: (() -> Void)?
   /// Like the real page, reports each display it renders; off for the probes that predate G3-42.
   let reportsDataRendered: Bool
+  var onRenderVerified: (() -> Void)?, onDisplayAbandoned: (() -> Void)?
   var queryTicket: CockpitQueryTicket? { state.queryTicket }
   private(set) var prewarmed = false, opened = 0, discarded = false
+  /// CKP-SHELL-33: the rack-first open shows the page only after the rack's visible part is out; the test confirms it.
+  var holdShown = false
+  var entersWithRack: Bool { holdShown && opened > 0 }
   private(set) var displays = 0, displayedWhileHidden = 0
+  private(set) var displayedNames: [String] = []
   private var sequence = 0
   init(_ context: CockpitEngineContext, reportsRenders: Bool = false) {
     state = CockpitBridgeState(context: context); reportsDataRendered = reportsRenders
@@ -57,7 +67,7 @@ private actor CountingClient: EngineClient {
   func rendered() { onDataRendered?() }
   private func ack(_ raw: String, _ type: String) {
     var value = try! JSONSerialization.jsonObject(with: Data(raw.utf8)) as! [String: Any]
-    value["shell"] = nil; value["appearance"] = nil; value["redBelow"] = nil; value["showUsedPercent"] = nil
+    value["shell"] = nil; value["appearance"] = nil; value["redBelow"] = nil; value["showUsedPercent"] = nil; value["showAllModels"] = nil
     if type == "ready" {
       value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     }
@@ -78,11 +88,11 @@ private actor CountingClient: EngineClient {
   func open() {
     opened += 1
     load()
-    if opened == 1 { onShown?() }
+    if opened == 1, !holdShown { onShown?(); if displays > 0 { onRenderVerified?() } }
   }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {
     guard ticket == queryTicket else { return }
-    if opened == 0 { displayedWhileHidden += 1 } else { displays += 1 }
+    if opened == 0 { displayedWhileHidden += 1 } else { displays += 1; displayedNames.append(data.projection.rows.first?.name.en ?? "") }
   }
   func clearPrivateViews(adopting: CockpitEngineContext?) async {
     let raw = try! state.clear(adopting: adopting)
@@ -99,14 +109,86 @@ private actor CountingClient: EngineClient {
   func failWhileHidden() { discard() }
 }
 
+/// Recovery contract: a page whose only job is to report verified renders.
+@MainActor private final class RenderProbe: CockpitPageSurface {
+  var onReady: (() -> Void)?, onIntent: ((CockpitIntent) -> Void)?, onClosed: (() -> Void)?, onRenderVerified: (() -> Void)?
+  var queryTicket: CockpitQueryTicket? { nil }
+  func open() {}
+  func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {}
+  func clearPrivateViews(adopting: CockpitEngineContext?) async {}
+  func discard() { onClosed?() }
+}
+
 final class CoordinatorPrewarmTests: XCTestCase {
+  /// macrevb-981-2: the console's rebuild budget counts health from verified renders; the coordinator forwards them only
+  /// from the page it presents, and a closed page's late receipt counts for nothing.
+  /// Recovery step 4: a presented page with verified data keeps it when a read fails or the engine reports a cockpit
+  /// feature failure; the read is retried after 1 s, then 2 s, and nothing is announced. A page with nothing to show
+  /// still reports the failure as before.
+  @MainActor func testAFailedReadOnARenderedPageKeepsThePageAndRetries() async {
+    for rendered in [true, false] {
+      var pages: [WarmProbe] = [], unavailable: [CockpitUnavailableReason] = []
+      var timers: [(UInt64, @MainActor () -> Void)] = []
+      let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
+      let client = CountingClient(); coordinator.bind(client: client)
+      coordinator.schedule = { delay, fire in timers.append((delay, fire)); return {} }
+      coordinator.onUnavailable = { unavailable.append($0) }
+      await coordinator.consume(.context(delivery()))
+      coordinator.open()
+      for _ in 0..<1_000 { if await client.requests >= 1 { break }; await Task.yield() }
+      if rendered { pages[0].onRenderVerified?() }
+      await client.failAll()
+      for _ in 0..<1_000 where timers.isEmpty && unavailable.isEmpty { await Task.yield() }
+      if rendered {
+        XCTAssertEqual(unavailable, [], "a page with verified data announces nothing")
+        XCTAssertEqual(timers.map { $0.0 }, [1_000], "the read is retried after 1 s")
+        timers[0].1()
+        for _ in 0..<1_000 { if await client.requests >= 2 { break }; await Task.yield() }
+        let requests = await client.requests; XCTAssertEqual(requests, 2, "the retry asks again")
+        await coordinator.consume(.featureFailure(.cockpit, .featureDecode(.cockpit)))
+        XCTAssertFalse(pages[0].discarded, "a feature failure keeps a page that shows verified data")
+        XCTAssertTrue(coordinator.presented)
+        XCTAssertEqual(timers.map { $0.0 }, [1_000, 2_000], "and retries after 2 s")
+        XCTAssertEqual(unavailable, [])
+      } else {
+        XCTAssertEqual(unavailable, [.query("deadlineExceeded")], "a page with nothing to show still reports it")
+        XCTAssertTrue(timers.isEmpty)
+        await coordinator.consume(.featureFailure(.cockpit, .featureDecode(.cockpit)))
+        XCTAssertTrue(pages[0].discarded, "unchanged: an empty page is closed on a feature failure")
+      }
+      await coordinator.shutdown(); await client.complete()
+    }
+  }
+  @MainActor func testOnlyThePresentedPagesVerifiedRenderReachesTheCoordinator() async {
+    var pages: [RenderProbe] = [], verified = 0
+    let coordinator = EngineCockpitCoordinator { _ in let page = RenderProbe(); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.onRenderVerified = { verified += 1 }
+    await coordinator.consume(.context(delivery()))
+    coordinator.open()
+    XCTAssertEqual(pages.count, 1)
+    pages[0].onRenderVerified?()
+    XCTAssertEqual(verified, 1)
+    coordinator.close()
+    pages[0].onRenderVerified?()
+    XCTAssertEqual(verified, 1, "A page that is no longer presented reports nothing")
+    await coordinator.shutdown(); await client.complete()
+  }
   private func delivery(generation: UInt64 = 3) -> EngineDeliveryContext {
     EngineDeliveryContext(sessionID: "s-" + UUID().uuidString.lowercased(),
       floor: .init(storeEpoch: "synthetic", generation: generation), revision: 2)
   }
-  private func reply(_ delivery: EngineDeliveryContext) throws -> EngineClientEvent {
-    let data = try JSONDecoder().decode(WireCockpitData.self, from: Data(contentsOf: XCTUnwrap(
-      Bundle.module.url(forResource: "cockpit", withExtension: "json", subdirectory: "Fixtures"))))
+  private func reply(_ delivery: EngineDeliveryContext, name: String? = nil) throws -> EngineClientEvent {
+    let bytes = try Data(contentsOf: XCTUnwrap(
+      Bundle.module.url(forResource: "cockpit", withExtension: "json", subdirectory: "Fixtures")))
+    var root = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    if let name {
+      var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+      var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+      rows[0]["name"] = ["en": name, "zh": name]
+      projection["rows"] = rows; root["projection"] = projection
+    }
+    let data = try JSONDecoder().decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: root))
     let envelope = try WireEnvelope(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
       consentGeneration: delivery.floor.generation, data: data)
     return .response(requestID: .string("synthetic-reply"), .cockpit(.init(envelope: envelope, delivery: delivery)))
@@ -278,6 +360,176 @@ final class CoordinatorPrewarmTests: XCTestCase {
     coordinator.requestClose()
     await settle { pages.count == 6 }
     XCTAssertEqual(pages.count, 6, "after an open, prewarming resumes")
+    await coordinator.shutdown(); await client.complete()
+  }
+
+  /// CKP-SHELL-33 (owner, D186): the click asks for fresh data at once, while the rack still extends and before the page
+  /// is confirmed visible; the page then shows the last reply without waiting, and no second query is started.
+  @MainActor func testTheClickAsksForFreshDataBeforeThePageIsShown() async throws {
+    var pages: [WarmProbe] = [], steps: [String] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    #if MODELPLAN_TEST_ONLY_SPI
+    coordinator.verificationTrace = { steps.append($0) }
+    #endif
+    coordinator.prewarmDelay = .zero
+    coordinator.prewarmEnabled = true
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    await settle { pages.count == 1 }
+    await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(session))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+
+    coordinator.open()
+    XCTAssertEqual(warm.opened, 1)
+    await settle { await client.requests == 2 }
+    var requests = await client.requests
+    XCTAssertEqual(requests, 2, "the fresh query starts at the click")
+    XCTAssertEqual(warm.displays, 0, "the page is not shown yet (the rack is still extending)")
+    #if MODELPLAN_TEST_ONLY_SPI
+    XCTAssertTrue(steps.contains("open.refresh"), "\(steps)")
+    XCTAssertFalse(steps.contains("page.shown"), "the query did not wait for the page to be shown: \(steps)")
+    #endif
+
+    warm.onShown?() // the rack's visible part is out and the page is confirmed visible
+    XCTAssertEqual(warm.displays, 1, "the last reply shows at once, without waiting for the fresh one")
+    warm.onRenderVerified?()
+    requests = await client.requests
+    XCTAssertEqual(requests, 2, "the query asked at the click is not asked again")
+    await coordinator.consume(try reply(session))
+    XCTAssertEqual(warm.displays, 2, "the fresh reply replaces it when it lands")
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    await coordinator.shutdown(); await client.complete()
+  }
+
+  /// The fresh query can finish during the rack entrance; the cached reply must still be displayed first.
+  @MainActor func testFreshReplyBeforeShownWaitsBehindCachedReply() async throws {
+    var pages: [WarmProbe] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.prewarmDelay = .zero; coordinator.prewarmEnabled = true
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    await settle { pages.count == 1 }; await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(session, name: "cached"))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+    coordinator.open()
+    await settle { await client.requests == 2 }
+    await coordinator.consume(try reply(session, name: "fresh"))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    XCTAssertEqual(warm.displays, 0, "neither reply is displayed before the page is shown")
+    warm.onShown?()
+    XCTAssertEqual(warm.displayedNames, ["cached"], "only the cached reply is submitted first")
+    warm.onRenderVerified?()
+    XCTAssertEqual(warm.displayedNames, ["cached", "fresh"], "the fresh reply follows the verified cached render")
+    let count = await client.requests
+    XCTAssertEqual(count, 2, "a completed click-time query is not repeated")
+    await coordinator.shutdown(); await client.complete()
+  }
+
+  /// A refused cached display has no render receipt; fresh data must recover whether it arrived before or after refusal.
+  @MainActor func testRefusedCachedDisplayReleasesFreshReply() async throws {
+    for freshFirst in [true, false] {
+      var pages: [WarmProbe] = []
+      let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+      let client = CountingClient(); coordinator.bind(client: client)
+      coordinator.prewarmDelay = .zero; coordinator.prewarmEnabled = true
+      let session = delivery()
+      await coordinator.consume(.context(session))
+      await settle { pages.count == 1 }; await settle { await client.requests == 1 }
+      await coordinator.consume(try reply(session, name: "cached"))
+      await client.complete(); await coordinator.joinCurrentQueryForVerification()
+      let warm = try XCTUnwrap(pages.first)
+      coordinator.open(); await settle { await client.requests == 2 }
+      warm.onShown?()
+      if freshFirst { await coordinator.consume(try reply(session, name: "fresh")) }
+      XCTAssertEqual(warm.displayedNames, ["cached"])
+      warm.onDisplayAbandoned?() // no onRenderVerified: the cached display was refused
+      if !freshFirst { await coordinator.consume(try reply(session, name: "fresh")) }
+      XCTAssertEqual(warm.displayedNames, ["cached", "fresh"], "fresh data reaches the same page after refusal")
+      await client.complete(); await coordinator.shutdown(); await client.complete()
+    }
+  }
+
+  /// A delivery change during entrance invalidates the held reply before the page is shown.
+  @MainActor func testDeliveryChangeBeforeShownDiscardsHeldReply() async throws {
+    var pages: [WarmProbe] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.prewarmDelay = .zero; coordinator.prewarmEnabled = true
+    let old = delivery()
+    await coordinator.consume(.context(old))
+    await settle { pages.count == 1 }; await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(old, name: "old"))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+    coordinator.open(); await settle { await client.requests == 2 }
+    await coordinator.consume(.context(delivery(generation: 4)))
+    warm.onShown?()
+    XCTAssertTrue(warm.displayedNames.isEmpty, "the old delivery is never shown after a context change")
+    await client.complete(); await coordinator.shutdown(); await client.complete()
+  }
+
+  /// G3-42: a plain fade open does not query at the click; the query follows the shown page's last reply, so a fresh
+  /// reply cannot land before the page is confirmed visible and hold back its first show.
+  @MainActor func testAFadeOpenQueriesAfterTheLastReplyIsShown() async throws {
+    var pages: [WarmProbe] = [], steps: [String] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    #if MODELPLAN_TEST_ONLY_SPI
+    coordinator.verificationTrace = { steps.append($0) }
+    #endif
+    coordinator.prewarmDelay = .zero
+    coordinator.prewarmEnabled = true
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    await settle { pages.count == 1 }
+    await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(session))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+
+    coordinator.open()
+    XCTAssertEqual(warm.displays, 1, "the last reply shows as the page is confirmed visible")
+    await settle { await client.requests == 2 }
+    let requests = await client.requests
+    XCTAssertEqual(requests, 2, "the shown page asks for fresh data once")
+    #if MODELPLAN_TEST_ONLY_SPI
+    XCTAssertFalse(steps.contains("open.refresh"), "\(steps)")
+    let shown = try XCTUnwrap(steps.firstIndex(of: "display.last"), "\(steps)")
+    XCTAssertLessThan(shown, try XCTUnwrap(steps.lastIndex(of: "query.start"), "\(steps)"), "\(steps)")
+    #endif
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    await coordinator.shutdown(); await client.complete()
+  }
+
+  /// G3-116: the console rebuilds a failed page (close, then open) up to three times while the window stays up. A
+  /// rebuild replaces the page only: the engine client and its delivery stay, so the next open is never
+  /// `open.noDelivery`. (On build 14f the delivery was lost about 40 s after the rebuilds, through the engine's own
+  /// clear event, not through them.)
+  @MainActor func testPageRebuildsKeepTheEngineDelivery() async throws {
+    var pages: [WarmProbe] = [], unavailable: [CockpitUnavailableReason] = [], opened = 0
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.onUnavailable = { unavailable.append($0) }
+    coordinator.onOpened = { opened += 1 }
+    await coordinator.consume(.context(delivery()))
+    XCTAssertTrue(coordinator.diagnosticState.contains("delivery=true"))
+    for round in 1...4 {
+      coordinator.open()
+      XCTAssertEqual(pages.count, round, "each rebuild opens a new page")
+      XCTAssertEqual(opened, round)
+      pages[round - 1].discard() // what a page failure does (a dead page: contentTerminated, unresponsive and the like)
+      XCTAssertFalse(coordinator.presented)
+      XCTAssertTrue(coordinator.diagnosticState.contains("client=true delivery=true"),
+        "a rebuild keeps the engine client and delivery: \(coordinator.diagnosticState)")
+    }
+    coordinator.open()
+    XCTAssertEqual(pages.count, 5); XCTAssertTrue(coordinator.presented)
+    XCTAssertEqual(unavailable.count, 0, "no open after the rebuilds reports a missing delivery")
     await coordinator.shutdown(); await client.complete()
   }
 

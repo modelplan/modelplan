@@ -62,11 +62,15 @@
       },
       "today": [
         {
+          "observedTotalTokens": 1,
           "source": "synthetic",
           "observedOutputTokens": 1,
           "generationTps": 42.5,
           "bindingBasis": "synthetic"
         }
+      ],
+      "reportedModels": [
+        "synthetic"
       ]
     }
   ],
@@ -78,10 +82,14 @@
       "model": "synthetic",
       "effort": "synthetic",
       "projectLabel": "synthetic",
+      "projectState": "named",
       "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
       "state": "synthetic",
       "rate": 42.5,
-      "fast": false
+      "fast": false,
+      "startedAt": "2026-10-29T12:00:00.123456789Z",
+      "observedTotalTokens": 1,
+      "modelDisplay": "synthetic"
     }
   ],
   "sessionCoverage": "synthetic",
@@ -175,6 +183,16 @@
       ]
     }
   ],
+  "planModels": [
+    {
+      "planId": "synthetic",
+      "generation": "synthetic",
+      "basis": "synthetic",
+      "modelIds": [
+        "synthetic"
+      ]
+    }
+  ],
   "forecasts": [
     {
       "source": "synthetic",
@@ -194,6 +212,7 @@
       "model": "synthetic",
       "effort": "synthetic",
       "projectLabel": "synthetic",
+      "projectState": "named",
       "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
     }
   ],

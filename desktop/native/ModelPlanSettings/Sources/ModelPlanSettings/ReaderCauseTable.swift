@@ -45,6 +45,11 @@ public enum ReaderCauseTable {
                                        name.map { "找不到 \($0) 命令" } ?? "找不到工具命令"),
                          action: .init("Check connected tools in Settings", "在设置检查已连接工具"), target: .openSettings)
         case "runtime_missing":
+            // Kiro's reader needs the kiro-cli command itself, not Node.js (same text as its row, ReaderRowFix).
+            if (tool ?? "").lowercased() == "kiro" {
+                return .init(reason: .init("kiro-cli was not found", "没有找到 Kiro 命令行工具"),
+                             action: .init("Install kiro-cli, then refresh", "安装 Kiro 命令行工具后刷新"), target: .guidance)
+            }
             return .init(reason: .init("Node.js is required", "需要 Node.js"),
                          action: .init("Install Node.js, then refresh", "安装 Node.js 后刷新"), target: .guidance)
         case "timeout":
@@ -71,8 +76,8 @@ public enum ReaderCauseTable {
                          action: .init("Allow it again in Settings", "在设置重新允许"), target: .openSettings)
         case "key_missing":
             if isGLM(tool) {
-                return .init(reason: .init("Sign in to the GLM Coding Plan in ZCode", "在 ZCode 里登录 GLM 编程套餐"),
-                             action: .init("Open ZCode and sign in", "打开 ZCode 并登录"), target: .guidance)
+                return .init(reason: .init("No GLM key found on this Mac", "本机没有找到 GLM 密钥"),
+                             action: .init("Sign in to ZCode, or add a key in Settings", "在 ZCode 里登录，或在设置里添加密钥"), target: .openSettings)
             }
             return .init(reason: .init("A key is needed", "需要配置密钥"),
                          action: .init("Open Settings", "在设置查看"), target: .openSettings)

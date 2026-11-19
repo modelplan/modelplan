@@ -74,7 +74,8 @@ import ModelPlanSettings
         XCTAssertNil(delegate.settingsIntegration)
         let item = delegate.configureSettings(LifecycleCoordinator(store: SnapshotStore(transport: desktop)))
         XCTAssertEqual(item?.isEnabled, false)
-        XCTAssertTrue(item?.title.contains("quit and reopen ModelPlan") == true)
+        // No Settings choice exists on this failed path, so the macOS list decides the one language shown.
+        XCTAssertTrue(["quit and reopen ModelPlan", "请退出并重新打开 ModelPlan"].contains { item?.title.contains($0) == true }, item?.title ?? "")
         XCTAssertFalse(item?.title.contains("unavailable") == true)
         XCTAssertNil(delegate.settingsIntegration)
     }

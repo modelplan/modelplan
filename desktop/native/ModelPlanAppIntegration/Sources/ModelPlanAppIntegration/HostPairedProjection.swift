@@ -90,12 +90,17 @@ import ModelPlanDock
         return valid(value, evaluatedAt: evaluatedAt, now: now)
     }
     func makeContent(_ context: DockContentContext) -> DockContent {
-        guard let value, let evaluatedAt else { return empty() }
+        admittedContent(context) ?? empty()
+    }
+    /// The admitted content, or nil while none is admitted (between a clear and the next install). G3-122: the menu
+    /// bar title tells this gap apart from an admitted content that has no number.
+    func admittedContent(_ context: DockContentContext) -> DockContent? {
+        guard let value, let evaluatedAt else { return nil }
         guard valid(value, evaluatedAt: evaluatedAt, now: context.now) else {
             clear(); onStale?()
             if let replacement = self.value, let at = self.evaluatedAt,
                valid(replacement, evaluatedAt: at, now: context.now) { return replacement }
-            return empty()
+            return nil
         }
         return value
     }

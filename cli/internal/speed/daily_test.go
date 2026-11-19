@@ -24,8 +24,7 @@ func TestDailyLongFromLogs(t *testing.T) {
 	utc(t)
 	cache, logs := t.TempDir(), t.TempDir()
 	cwd := filepath.Join(t.TempDir(), "secret-project")
-	// TMPDIR may live inside a checkout. Give this fixture its own repository
-	// boundary so projectRoot observes the intended synthetic project label.
+	codexHome(t, cwd) // a Codex project, so the ledger holds a label
 	if err := os.MkdirAll(filepath.Join(cwd, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
