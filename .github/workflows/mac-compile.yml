@@ -98,8 +98,8 @@ jobs:
           set -eu
           git fetch -q --no-tags --filter=blob:none origin "$SHA"
           if [ "$SEED" = true ]; then
-            # Every package at main, tests built (not run): the same scratch layout a PR job clones into.
-            plan=$(node scripts/mac-compile/plan.mjs "$(git hash-object -t tree /dev/null)" "$SHA" | awk -F'\t' 'BEGIN{OFS="\t"} {$3="build-tests"; $4="-"; print}')
+            # Every package a PR run can build, tests built (not run), each in its own scratch (plan.mjs --seed).
+            plan=$(node scripts/mac-compile/plan.mjs --seed "$SHA")
           else
             plan=$(node scripts/mac-compile/plan.mjs "$(git merge-base origin/main "$SHA")" "$SHA")
           fi
