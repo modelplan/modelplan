@@ -255,6 +255,9 @@ func firstLiveCoveredDay(cache, source string, epoch *GrantEpoch, start, now tim
 type usageCoverage struct {
 	live     map[string]string
 	imported map[string]bool
+	// timed: days with a live timing row; scanned: logs the timing reader counts (not skipped).
+	timed   map[string]bool
+	scanned map[string]bool
 }
 
 func coverageKey(source string, epoch *GrantEpoch) string {
@@ -271,15 +274,31 @@ func (c *usageCoverage) covers(r PerfRow) bool {
 	from, ok := c.live[key]
 	return ok && r.Day >= from
 }
-func (c *usageCoverage) keeps(f usageFile, r usageRecord) bool {
+// keeps drops a live record only where it overlaps kept timing usage: before LiveFrom, in a
+// log the timing reader counts, on a day with a live timing row. Accounting-only usage (a
+// background thread, a log the timing reader never read) always stays.
+func (c *usageCoverage) keeps(key string, f usageFile, r usageRecord) bool {
 	if r.Imported {
 		return true
 	}
-	from, ok := c.live[coverageKey(f.Source, f.Epoch)]
-	return ok && day(r.At) >= from
+	k := coverageKey(f.Source, f.Epoch)
+	if from, ok := c.live[k]; ok && day(r.At) >= from {
+		return true
+	}
+	return !c.scanned[key] || !c.timed[k+"\x00"+day(r.At)]
 }
-func newUsageCoverage(l accountingLedger, clear Cleared) *usageCoverage {
-	c := &usageCoverage{live: map[string]string{}, imported: map[string]bool{}}
+func newUsageCoverage(l accountingLedger, perf PerfLedger, clear Cleared) *usageCoverage {
+	c := &usageCoverage{live: map[string]string{}, imported: map[string]bool{}, timed: map[string]bool{}, scanned: map[string]bool{}}
+	for _, r := range perf.Rows {
+		if r.Origin != OriginImport {
+			c.timed[coverageKey(r.Source, r.GrantEpoch)+"\x00"+r.Day] = true
+		}
+	}
+	for key, cur := range perf.Files {
+		if !cur.Skip {
+			c.scanned[key] = true
+		}
+	}
 	for source, lc := range l.LiveFrom {
 		c.live[coverageKey(source, lc.Epoch)] = lc.Day
 	}
@@ -305,7 +324,7 @@ func accountingRows(cache string) ([]PerfRow, map[string]bool) {
 
 // usageRows: keep (nil keeps all) drops records before deduplication, so a dropped live
 // copy never hides the imported copy of the same response.
-func usageRows(l accountingLedger, clear Cleared, keep func(usageFile, usageRecord) bool) ([]PerfRow, map[string]bool) {
+func usageRows(l accountingLedger, clear Cleared, keep func(string, usageFile, usageRecord) bool) ([]PerfRow, map[string]bool) {
 	type stamped struct {
 		usageRecord
 		source string
@@ -323,7 +342,7 @@ func usageRows(l accountingLedger, clear Cleared, keep func(usageFile, usageReco
 		f := l.Files[key]
 		sources[f.Source] = true
 		for _, r := range withoutForkReplay(f, l) {
-			if r.At.Before(clear.floor(f.Source)) || keep != nil && !keep(f, r) {
+			if r.At.Before(clear.floor(f.Source)) || keep != nil && !keep(key, f, r) {
 				continue
 			}
 			id := usageHash(f.Source, "\x00", f.Epoch, "\x00", r.Key)
@@ -395,20 +414,27 @@ func usageRows(l accountingLedger, clear Cleared, keep func(usageFile, usageReco
 func accountingOverlay(cache string, l PerfLedger) PerfLedger {
 	acct, ok := loadAccounting(cache)
 	if !ok {
-		l.UsageRows, l.usageCover = nil, nil
+		l.UsageRows, l.accountedUsage, l.usageCover = nil, nil, nil
 		return l
 	}
 	clear := LoadCleared(cache)
-	l.usageCover = newUsageCoverage(acct, clear)
-	l.UsageRows, _ = usageRows(acct, clear, l.usageCover.keeps)
+	// UsageRows is the accounting-only contract (AccountingWindows): every response once.
+	// accountedUsage is what usage views add to the timing rows they keep.
+	l.UsageRows, _ = usageRows(acct, clear, nil)
+	l.usageCover = newUsageCoverage(acct, l, clear)
+	l.accountedUsage, _ = usageRows(acct, clear, l.usageCover.keeps)
 	return l
 }
 
 // accounted is used by usage views only. Configuration-level timing samples stay
 // intact, and their eligible output/timing sums remain the sole basis of t/s.
 func (v PerfView) accounted() PerfView {
+	usage := v.Ledger.UsageRows
+	if v.Ledger.usageCover != nil {
+		usage = v.Ledger.accountedUsage
+	}
 	sources := map[string]bool{}
-	for _, r := range v.Ledger.UsageRows {
+	for _, r := range usage {
 		sources[r.Source] = true
 	}
 	if len(sources) == 0 {
@@ -424,7 +450,7 @@ func (v PerfView) accounted() PerfView {
 			r.ObservedOutputTokens = 0
 		}
 	}
-	v.Ledger.Rows = append(rows, v.Ledger.UsageRows...)
+	v.Ledger.Rows = append(rows, usage...)
 	return v
 }
 

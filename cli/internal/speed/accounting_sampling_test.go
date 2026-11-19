@@ -139,3 +139,89 @@ func TestCodexSessionTotalCountsCacheWritesOnce(t *testing.T) {
 		})
 	}
 }
+
+// macrevd-1082-1: accounting-only usage (a background thread the timing reader skips) stays in
+// both the accounting windows and the usage views, also on a day a timing row keeps.
+func TestAccountingKeepsAccountingOnlyUsageBeforeCoverage(t *testing.T) {
+	utc(t)
+	grantLocalHistory(t)
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	cache := t.TempDir()
+	epoch := currentEpoch(consent.Capture(), "codex")
+	if epoch == nil {
+		t.Fatal("codex history not granted")
+	}
+	legacy := PerfRow{GrantEpoch: epoch, Day: day(now), Source: "codex", Model: "fixture-model", EffortStatus: "unreported",
+		Parser: ParserCodex, Eligibility: EligibilityV1, ObservedRequests: 4, ObservedOutputTokens: 400}
+	if err := os.MkdirAll(filepath.Join(cache, "observed"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(PerfLedger{SchemaVersion: 1, Since: now.AddDate(0, 0, -1).UTC(), Rows: []PerfRow{legacy}})
+	if err := os.WriteFile(PerfPath(cache), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("testdata", "accounting", "sessions", "2026", "11", "16", "rollout-redacted.jsonl")
+	if err := ObserveCodex(cache, []string{path}, func(string) bool { return true }, Ingest{}, now); err != nil {
+		t.Fatal(err)
+	}
+	v := view(t, cache, now)
+	if got := v.AccountingWindows()["codex"].Today.Total; got != 3030 {
+		t.Fatalf("accounting-only total lost the background response: %d, want 3030", got)
+	}
+	if today := v.TodayTotals(); len(today) != 1 || today[0].Sums.ObservedOutputTokens != 430 {
+		t.Fatalf("want 400 timing + 30 background output, got %+v", today)
+	}
+}
+
+// macrevd-1082-2: the accounting re-read of an older import replaces only the days it read
+// again; a day whose log is gone keeps its earlier rows.
+func TestAccountingReimportKeepsDaysWhoseLogsAreGone(t *testing.T) {
+	f := newFixture(t)
+	gone := f.codexLog("rollout-gone.jsonl", -3)
+	f.codexLog("rollout-kept.jsonl", -1)
+	seedPerf(t, f.cache, t0)
+	f.run(7, both())
+	before, _ := LoadImported(f.cache)
+	if _, out := total(before, "codex"); out != 600 {
+		t.Fatalf("setup: imported output %d, want 600", out)
+	}
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+	span := before.Coverage["codex"]
+	span.AccountingVersion = 0
+	before.Coverage["codex"] = span
+	if err := writeImported(f.cache, before); err != nil {
+		t.Fatal(err)
+	}
+	f.run(7, both())
+	after, _ := LoadImported(f.cache)
+	if _, out := total(after, "codex"); out != 600 {
+		t.Fatalf("re-read erased the day whose log is gone or double-counted the other: output %d, want 600", out)
+	}
+}
+
+// macrevd-1082-3: a usage record with cache writes, then a notice without them, still counts
+// the writes once (105, not 115).
+func TestCodexSessionTotalWhenNoticeLacksCacheWrites(t *testing.T) {
+	utc(t)
+	cache, dir := t.TempDir(), t.TempDir()
+	seedPerf(t, cache, t0.Add(-time.Minute))
+	p := filepath.Join(dir, "rollout-n.jsonl")
+	writeLines(t, p, cx(0, "session_meta", `{"id":"n","source":"cli"}`), cx(0, "event_msg", `{"type":"task_started"}`), cx(0, "turn_context", high),
+		cx(1, "event_msg", `{"type":"item_completed","item":{"type":"AgentMessage","id":"i"},"started_at_ms":`+fmt.Sprint(t0.Add(time.Second).UnixMilli())+`}`),
+		cx(3, "token_usage_record", `{"response_id":"r","usage":{"input_tokens":100,"cached_input_tokens":60,"cache_write_input_tokens":10,"output_tokens":5}}`),
+		cx(3, "event_msg", `{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":60,"output_tokens":5}}}`),
+		cx(4, "event_msg", `{"type":"task_complete","duration_ms":4000}`))
+	if err := ObserveCodex(cache, []string{p}, func(string) bool { return false }, Ingest{}, t0.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	l, ok := LoadPerf(cache)
+	if !ok || len(l.Sessions) != 1 || len(l.Sessions[0].Days) == 0 {
+		t.Fatalf("ledger: %+v", l)
+	}
+	d := l.Sessions[0].Days[0]
+	if got, ok := d.CompleteTotal(); !ok || got != 105 {
+		t.Fatalf("CompleteTotal = %d, %v; want 105 (kinds %+v)", got, ok, d.Kinds)
+	}
+}

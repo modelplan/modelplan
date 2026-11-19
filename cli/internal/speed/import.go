@@ -931,7 +931,7 @@ func commitImport(ctx context.Context, cache string, j *importJob, auto bool, no
 		led.Coverage = map[string]Span{}
 	}
 	c := led.Coverage[j.source]
-	if !sameEpoch(c.Epoch, epoch) || j.reread { // an older grant's (or a re-read span's) rows are replaced
+	if !sameEpoch(c.Epoch, epoch) { // an older grant's rows are replaced
 		kept := led.Rows[:0]
 		for _, r := range led.Rows {
 			if r.Source != j.source {
@@ -939,6 +939,25 @@ func commitImport(ctx context.Context, cache string, j *importJob, auto bool, no
 			}
 		}
 		led.Rows, c = kept, Span{}
+	} else if j.reread {
+		// A re-read replaces only the days it established again. A day whose logs are gone
+		// (nothing read for it) keeps its earlier rows and its place in the span.
+		read := map[string]bool{}
+		for _, r := range j.rows {
+			read[r.Day] = true
+		}
+		for _, f := range j.usage {
+			for _, r := range f.Records {
+				read[day(r.At)] = true
+			}
+		}
+		kept := led.Rows[:0]
+		for _, r := range led.Rows {
+			if r.Source != j.source || sameEpoch(r.GrantEpoch, epoch) && !read[r.Day] {
+				kept = append(kept, r)
+			}
+		}
+		led.Rows, c = kept, Span{From: c.From, Through: c.Through}
 	}
 	for _, r := range j.rows {
 		r.GrantEpoch = epoch

@@ -86,11 +86,16 @@ func (u *cxUsage) kinds() TokenKinds {
 	return k
 }
 
-// enrichCodex is enrich for Codex usage, whose input includes cache writes: when src is
-// the first to report the writes, its input is the disjoint one and replaces the inclusive one.
+// enrichCodex is enrich for Codex usage, whose input includes cache writes. The input is
+// disjoint only beside known writes: a report with writes replaces an input without them, and
+// a report without writes has the known writes taken out of its input first (either order).
 func (k *TokenKinds) enrichCodex(src TokenKinds) {
-	if k.CacheWriteTokens == nil && src.CacheWriteTokens != nil && src.InputTokens != nil {
+	switch {
+	case k.CacheWriteTokens == nil && src.CacheWriteTokens != nil && src.InputTokens != nil:
 		k.InputTokens = nil
+	case k.CacheWriteTokens != nil && src.CacheWriteTokens == nil && src.InputTokens != nil:
+		n := *src.InputTokens - min(*k.CacheWriteTokens, *src.InputTokens)
+		src.InputTokens = &n
 	}
 	k.enrich(src)
 }

@@ -49,6 +49,8 @@ type PerfLedger struct {
 	subscription string                                                         // while observing: the harness account's reference
 	cleared      Cleared                                                        // while observing: the clear boundaries (cleared.go)
 	usageCover   *usageCoverage                                                 // with UsageRows: which rows accounting replaces (accounting.go)
+	// accountedUsage: UsageRows without the live records that overlap kept timing rows.
+	accountedUsage []PerfRow
 }
 
 // Ingest: what the caller knows while the ledger reads new turns. Labels: project labels are on
