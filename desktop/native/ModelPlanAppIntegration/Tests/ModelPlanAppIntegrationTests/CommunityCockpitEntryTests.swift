@@ -73,6 +73,8 @@ actor RouteClient: EngineClient { // internal: the real-page size test (OwnerTes
     func updateAppearance(_ appearance:CockpitAppearance){appearances.append(appearance)}
     var selections:[String?]=[]
     func selectModel(_ id:String?){selections.append(id)}
+    var fieldCloses=0
+    func fieldClosed(){fieldCloses+=1}
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
@@ -803,6 +805,12 @@ final class CommunityCockpitEntryTests:XCTestCase {
         panel.receive(#"{"type":"select","model":"not-published"}"#)
         panel.receive(#"{"type":"select","model":null}"#)
         XCTAssertEqual(page.selections,["synthetic-model",nil])
+        // #1062: the field's close (here its × key) reaches the cockpit page, which guards the porthole against the bounce.
+        XCTAssertEqual(page.fieldCloses,0)
+        panel.receive(#"{"type":"close","reason":"key"}"#)
+        XCTAssertFalse(surface.fieldIsOpen);XCTAssertEqual(page.fieldCloses,1)
+        surface.handle(.openField)
+        XCTAssertTrue(surface.fieldIsOpen)
         page.discard()
         XCTAssertFalse(surface.fieldIsOpen,"The cockpit's own close closes the field")
         surface.hide();await coordinator.shutdown();await composition.stop()

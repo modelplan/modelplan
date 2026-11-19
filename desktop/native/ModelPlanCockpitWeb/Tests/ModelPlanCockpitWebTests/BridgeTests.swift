@@ -87,6 +87,15 @@ final class BridgeTests: XCTestCase {
       XCTAssertThrowsError(try state.setSelection(bad))
     }
   }
+  /// #1062: the field's close goes to the page as a header-only `fieldClosed` message, never before the page is ready.
+  func testFieldClosedIsAHeaderOnlyMessage() throws {
+    let state = CockpitBridgeState(context: try context())
+    XCTAssertThrowsError(try state.fieldClosed())
+    _ = try ready(state)
+    let closed = try object(state.fieldClosed())
+    XCTAssertEqual(closed["type"] as? String, "fieldClosed")
+    XCTAssertEqual(Set(closed.keys), ["version", "pageId", "requestId", "sessionId", "storeEpoch", "generation", "viewRevision", "sequence", "type"])
+  }
   func testClearBarrierUnknownFloorAndStaleQueryCannotBeRetagged() throws {
     let state = CockpitBridgeState(context: try context())
     _ = try ready(state)

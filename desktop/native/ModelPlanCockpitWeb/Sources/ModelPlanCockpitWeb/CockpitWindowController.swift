@@ -1512,6 +1512,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }
   /// WP-22 (macrevb-1062-3): the enlarged field's selection (a public model id, nil for a clear) selects the same model on
   /// the page's HUD, faders and porthole. Presentation only: a page that cannot show it keeps working.
+  /// Owner 11-19 (#1062): tells the page the enlarged field closed, so a click bouncing off the close does not reopen it.
+  public func fieldClosed() {
+    guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.fieldClosed() else { return }
+    send(raw, onRejected: { true })
+  }
   public func selectModel(_ id: String?) {
     guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.setSelection(id) else { return }
     send(raw, onRejected: { true })

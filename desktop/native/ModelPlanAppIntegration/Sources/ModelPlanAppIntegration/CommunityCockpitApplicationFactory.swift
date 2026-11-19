@@ -513,6 +513,9 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         panel.openURL={ [weak self] url in self?.owner.openWebsite(url) }
         // macrevb-1062-3: the field's selection is the cockpit's (HUD, faders, porthole); only a published model id passes.
         panel.onSelect={ [weak self] id in self?.fieldSelected(id) }
+        // Owner 11-19 (#1062): every close path (Esc, ×, outside click, losing key, idle, failure, the cockpit's hide) runs
+        // the panel's one close funnel; the page then ignores a porthole click bouncing off it.
+        panel.onClosed={ [weak self] in self?.owner.coordinator?.fieldClosed() }
         // Build 14c (G3-80): on the cockpit's display. The intent does not say whether a click or a key opened it, so
         // the pointer counts only while it is over the cockpit (macrev2-845-2).
         let cockpit=cockpitFrameForField?() ?? owner.coordinator?.cockpitFrame

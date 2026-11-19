@@ -78,7 +78,7 @@ import WebKit
   public var openURL: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
   /// The open panel's window frame (nil when closed).
   public var windowFrame: NSRect? { window?.frame }
-  public var onClosed: (() -> Void)?
+  public var onClosed: (@MainActor () -> Void)?
   /// WP-22 (macrevb-1062-3): a rocket chosen in the field (its public model id) or the choice cleared (nil). Only the id
   /// crosses; a tried effort stays in the field.
   public var onSelect: (@MainActor (String?) -> Void)?

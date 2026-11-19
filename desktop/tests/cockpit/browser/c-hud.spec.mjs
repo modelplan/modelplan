@@ -233,13 +233,21 @@ test('WP-22 a drag across the porthole does not open the field; a press that sta
  await expect.poll(()=>fieldOpens(page)).toBe(1);
 });
 test('WP-22 a porthole click within 300 ms of the field closing is ignored; a later one opens it',async({page})=>{
+ // Controlled time: the page's clock only moves when the test moves it.
+ await page.clock.install({time:new Date('2026-11-19T12:00:00Z')});
  const {send,receive}=await open(page);const port=page.locator('.ck-port');
+ await page.clock.pauseAt(new Date('2026-11-19T12:00:10Z'));
  await port.click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(1);
- // The field takes key (the cockpit goes inactive), then closes (the cockpit is key again).
+ // A cockpit reactivation alone is not a field close: no guard.
  expect(await receive(send('visibility',{visible:true,occluded:false,key:false}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
- await port.click({position:{x:520,y:120}});
- await page.waitForTimeout(50);expect(await fieldOpens(page)).toBe(1);
- await page.waitForTimeout(320);
  await port.click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(2);
+ // The host's field close starts the guard.
+ expect(await receive(send('fieldClosed',{}))).toBe(true);
+ await port.click({position:{x:520,y:120}});
+ await page.clock.runFor(299);
+ await port.click({position:{x:520,y:120}});
+ expect(await fieldOpens(page)).toBe(2);
+ await page.clock.runFor(2);
+ await port.click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(3);
 });

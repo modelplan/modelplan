@@ -372,6 +372,12 @@ public final class CockpitBridgeState {
     guard model.map(Self.isPublicModelID) ?? true else { throw CockpitBridgeError.invalidMessage }
     return try envelope("select", extra: ["model": model.map { $0 as Any } ?? NSNull()])
   }
+  /// Owner 11-19 (#1062): the enlarged field closed (any close path); the page ignores the porthole click that bounces
+  /// off it. No receipt.
+  public func fieldClosed() throws -> String {
+    guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    return try envelope("fieldClosed")
+  }
   static func isPublicModelID(_ id: String) -> Bool {
     !id.isEmpty && id.utf16.count <= 128 && !id.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7f }
   }

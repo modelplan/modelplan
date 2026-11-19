@@ -238,6 +238,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   ignite(on){if(on)root.dataset.ignite='true';else delete root.dataset.ignite;},
   // WP-22 (macrevb-1062-3): a rocket chosen or cleared in the enlarged field selects the same model on the HUD, the
   // faders and the porthole. Selection only: the MFD page does not change and no tried effort arrives with it.
+  fieldClosed(){root.dispatchEvent(new CustomEvent('field-closed'));},
   selectModel(id){hudSelected=id;markPorthole(id);deck.selectModel(id);if(lastData)preserveFocus(()=>paintHud(frame.hud,lastData!,tier!=='tall',locale,hudOptions()));},
   render:renderData,
   nextDeadline(){return lastData?nextDeadline(lastData,lastRenderedAt):null;},

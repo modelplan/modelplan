@@ -36,23 +36,21 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
   // press on the key does not move focus to it, so a later key press cannot light it either.
   const port=field.parentElement,opener=new AbortController();let big:HTMLButtonElement|null=null;
   // Owner 11-19 (#1062): the field must not open by accident. A press released more than PORT_CLICK_SLOP px from where it
-  // started is a drag; a click within PORT_REOPEN_GUARD_MS of the field closing (the cockpit, inactive while the field
-  // held key, becomes active again) is the close's bounce. The activation click on an inactive cockpit is native's
-  // (CockpitWebView.declinesActivationClick). Keyboard presses (detail 0) are never a drag or a bounce.
-  let pressed:{x:number;y:number}|null=null,asked=false,closedAt=-Infinity,activity:MutationObserver|null=null;
+  // started is a drag; a click within PORT_REOPEN_GUARD_MS of the field closing (the host's `fieldClosed`, sent from the
+  // field panel's single close funnel: Esc, ×, an outside click, losing key, idle, the cockpit's own hide) is the
+  // close's bounce. The activation click on an inactive cockpit is native's (CockpitWebView.declinesActivationClick).
+  // Keyboard presses (detail 0) are never a drag or a bounce.
+  let pressed:{x:number;y:number}|null=null,closedAt=-Infinity;
   const accidental=(e:MouseEvent)=>{
    if(e.detail===0)return false;
    const from=pressed;pressed=null;
    if(from&&Math.hypot(e.clientX-from.x,e.clientY-from.y)>PORT_CLICK_SLOP)return true;
    return performance.now()-closedAt<PORT_REOPEN_GUARD_MS;
   };
-  const open=(focus?:string)=>{asked=true;if(focus===undefined)enlarge?.();else enlarge?.(focus);};
+  const open=(focus?:string)=>{if(focus===undefined)enlarge?.();else enlarge?.(focus);};
   if(port&&enlarge){
    port.addEventListener('pointerdown',e=>{if(e.isPrimary)pressed={x:e.clientX,y:e.clientY};},{signal:opener.signal,capture:true});
-   // Only the inactive-to-active edge after an open counts; the page sets data-active again on every bridge sync.
-   let wasActive=cockpit.dataset.active==='true';
-   activity=new MutationObserver(()=>{const now=cockpit.dataset.active==='true';if(now&&!wasActive&&asked){asked=false;closedAt=performance.now();}wasActive=now;});
-   activity.observe(cockpit,{attributes:true,attributeFilter:['data-active']});
+   cockpit.addEventListener('field-closed',()=>{closedAt=performance.now();},{signal:opener.signal});
    port.dataset.opensField='';
    big=document.createElement('button');big.type='button';big.className='hud-x port-big';big.dataset.bigfield='';big.textContent='⤢';port.append(big);
    const name=()=>{big?.setAttribute('aria-label',ht(document.documentElement.lang==='en'?'en':'zh-CN','host.portBig'));};name();
@@ -120,5 +118,5 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
   const attributes=new MutationObserver(paint);
   attributes.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   attributes.observe(cockpit,{attributes:true,attributeFilter:['data-layout']});
-  return {dispose(){opener.abort();activity?.disconnect();big?.remove();if(port&&enlarge){port.removeAttribute('tabindex');port.removeAttribute('role');port.removeAttribute('aria-label');}resize.disconnect();attributes.disconnect();host.remove();delete field.dataset.still;}};
+  return {dispose(){opener.abort();big?.remove();if(port&&enlarge){port.removeAttribute('tabindex');port.removeAttribute('role');port.removeAttribute('aria-label');}resize.disconnect();attributes.disconnect();host.remove();delete field.dataset.still;}};
 }

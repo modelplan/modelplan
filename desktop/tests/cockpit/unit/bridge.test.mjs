@@ -376,6 +376,14 @@ test('WP-22 macrevb-1062-3: the field\'s selection reaches the view as a public 
   assert.equal(f.bridge.receive(f.send('select',{model:'m1'}),source),false);assert.equal(f.bridge.lastReject,'select.view');
   assert.notEqual(f.bridge.state,'unloaded','a selection the view cannot apply never unloads the page');
 });
+test('WP-22 #1062: the host tells the page the enlarged field closed, strictly typed and without unloading on a view error',()=>{
+  const f=fixture();let closed=0;f.bridge.view.fieldClosed=()=>closed++;
+  assert.equal(f.bridge.receive(f.send('fieldClosed',{}),source),true);assert.equal(closed,1);
+  assert.equal(f.bridge.receive(f.send('fieldClosed',{reason:'esc'}),source),false);assert.equal(f.bridge.lastReject,'fieldClosed.keys');
+  f.bridge.view.fieldClosed=()=>{throw Error('view');};
+  assert.equal(f.bridge.receive(f.send('fieldClosed',{}),source),false);assert.equal(f.bridge.lastReject,'fieldClosed.view');
+  assert.notEqual(f.bridge.state,'unloaded');assert.equal(closed,1);
+});
 test('G3-96: reset events as CLI v0.5.59 emits them (kind, confirmedAt, confirmedAtBasis) are displayed, not rejected as data.schema',()=>{
   // Build 14d: the CLI sets kind on every reset event and a confirmation time on a confirmed one. Their schema nodes
   // carried an enum without a type, which the page's bounded validator refuses, so every display with a published
