@@ -29,6 +29,7 @@ register('alert', {
   causeNetwork: ['alert', '网络问题', 'network problem'],
   openSettings: ['alert', '去设置 ›', 'Open Settings ›'],
   resetsAvailable: ['alert', '可用重置 {n} 次', {one: '{n} reset available', other: '{n} resets available'}],
+  resetsAvailableSome: ['alert', '有可用重置', 'Resets available'],
   advice: ['alert', '{m} {e}→★{rec} 成本×{cost} 能力{abl}', '{m} {e}→★{rec} ×{cost} cost, {abl}'],
   official: ['alert', '{s} 官方：{text}', '{s} official: {text}'],
   peak: ['alert', '{s} {in} 后进入高峰 · 持续 {dur}', '{s} peak in {in} for {dur}'],

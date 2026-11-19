@@ -78,6 +78,7 @@ register('host', {
   alStale: ['alert', '{s} · 上次读数', '{s} · Last reading'],
   alStaleAge: ['alert', '{s} · 上次读数 {age}前', '{s} · Last reading {age} ago'],
   alCardsOne: ['alert', '{s} · 重置次数中有 {n} 次将在 48 小时内到期', '{s} · {n} reset expires within 48 hours'],
+  alCardsSome: ['alert', '{s} · 部分重置次数将在 48 小时内到期', '{s} · some resets expire within 48 hours'],
   alCardsMany: ['alert', '{s} · 重置次数中有 {n} 次将在 48 小时内到期', '{s} · {n} resets expire within 48 hours'],
   alPeakOpen: ['alert', '{s} {in} 后进入高峰', '{s} peak in {in}'],
   relNow: ['lcd', '现在', 'now'],

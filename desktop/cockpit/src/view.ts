@@ -144,7 +144,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   const previousMember=memberKey&&lastData?cockpitMembers(lastData).find(m=>m.key===memberKey):undefined;
   const verified=(m:typeof previousMember,d:WireCockpitData|null)=>!!m?.account.subscriptionRef&&m.account.subscriptionRef===m.key&&!!d?.subscriptions.some(s=>s.subscriptionRef===m.key);
   const quotaIdentity=quota?quotaFocusIdentity?.(quota)??null:null;const previousData=lastData;
-  let path:number[]|null=null;const keys=['data-focus-member','data-scope','data-page','data-mfd','data-opt','data-row','data-col','data-bpage','data-add-subscription','aria-label'];
+  let path:number[]|null=null;const keys=['data-al-id','data-focus-member','data-scope','data-page','data-mfd','data-opt','data-row','data-col','data-bpage','data-add-subscription','aria-label'];
   const key=focused&&area?keys.find(k=>focused.hasAttribute(k)):undefined;
   const keyValue=key&&focused?focused.getAttribute(key):null;
   const priorPage=key==='data-add-subscription'?frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??null:null;
@@ -166,7 +166,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   }
   let target:HTMLElement|null=null;
   if(key&&key!=='data-add-subscription'&&keyValue!==null){const matches=[...area.querySelectorAll<HTMLElement>(focused.tagName)].filter(e=>e.getAttribute(key)===keyValue);if(matches.length===1)target=matches[0];}
-  if(!target&&path){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
+  // CKP-MFD-56: an alert row is found by its identity only; a refresh that re-sorts the list must never hand its focus to another subscription's row.
+  if(!target&&path&&key!=='data-al-id'){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
   target?.focus({preventScroll:true});
  }
  function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);syncCaution(lastData!,now);});}

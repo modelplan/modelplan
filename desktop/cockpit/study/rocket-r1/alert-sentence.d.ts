@@ -14,4 +14,4 @@ export function unreadableCause(code:string):Both|null;
 export function isUnreadable(code:string|null|undefined):boolean;
 export function alertSentence(input:AlertSentenceInput):AlertSentence;
 export function openSettingsAction():Both;
-export function resetsAvailable(n:number):Both;
+export function resetsAvailable(n:number|null):Both;

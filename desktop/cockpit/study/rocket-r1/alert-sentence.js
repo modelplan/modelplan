@@ -56,4 +56,5 @@ export function alertSentence(input) {
 }
 /** The alert list's second line. */
 export const openSettingsAction = () => both('openSettings');
-export const resetsAvailable = n => both('resetsAvailable', () => ({n: String(n)}));
+/** `null`: the producer listed only some of the cards, so no number is claimed. */
+export const resetsAvailable = n => n === null ? both('resetsAvailableSome') : both('resetsAvailable', () => ({n: String(n)}));

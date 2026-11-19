@@ -135,3 +135,43 @@ test('CKP-MFD-57 opening the list acknowledges: the lamp stops blinking and stay
  win(data,0).remainingPercent=20;expect(await receive(send('display',{data}))).toBe(true);
  await expect(lamp(page)).toHaveClass(/\bflash\b/);await expect(lamp(page)).toHaveClass(/\bred\b/);
 });
+
+// macrev2 11-19 finding 1: the producer drops the Dock surface from a signed-out or unreadable tool row (cli/internal/rows
+// build.go), so the row is not a cockpit member; its grey line still reaches the alert list. A row with no surface stays hidden.
+test('ALR-51 / CKP-MFD-56 a signed-out row the producer kept off the Dock still gets its grey list row, and no tab or column',async({page})=>{
+ const data=calm(),row=data.projection.rows[2],hidden=data.projection.rows[3];
+ row.surfaces=['menu','settings'];row.state='needs_action';row.reason={...row.reason,code:'not_signed_in'};
+ const c=row.accounts[0];c.valueState='none';c.windows=[];c.lastFailure={at:iso(-1),code:'not_signed_in'};
+ hidden.surfaces=[];const h=hidden.accounts[0];h.valueState='none';h.windows=[];h.lastFailure={at:iso(-1),code:'not_signed_in'};
+ await open(page,data);
+ await expect(page.locator('.ec[data-col]')).toHaveCount(2);
+ await lamp(page).click();
+ await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 1');
+ await expect(rows(page).nth(0).locator('.al-l1')).toHaveText('Cursor no reading · not signed in');
+ await expect(rows(page).nth(0).locator('.al-l2')).toHaveText('Open Settings ›');
+ await rows(page).nth(0).click();
+ expect((await actions(page)).map(a=>a.action)).toContain('openSettingsSubscriptions');
+});
+
+// macrev2 11-19 finding 3: a partial or truncated card list never shows an exact count.
+test('CKP-MFD-55 a partial reset-card list says resets are available without a count',async({page})=>{
+ const data=busy(),detail=data.details.subscriptions[0];
+ detail.resetCards={state:'partial',count:2,truncated:false,sources:[{observedAt:iso(-5),source:'saved_login'}],items:[{id:'1'.padStart(64,'0'),expiresAt:iso(60*30)}]};
+ await open(page,data);await lamp(page).click();
+ const text=await rows(page).locator('.al-l2').allTextContents();
+ expect(text.join('|')).toContain('Resets available');
+ expect(text.join('|')).not.toMatch(/\b1 reset available\b/);
+});
+
+// macrev2 11-19 finding 4: a refresh that re-sorts the list keeps keyboard focus on the same alert, never on another subscription.
+test('CKP-MFD-56 a refresh that re-sorts the list keeps focus on the same alert, or drops it',async({page})=>{
+ const data=calm();win(data,0).remainingPercent=15;win(data,1).remainingPercent=22;
+ const {send,receive}=await open(page,data);await lamp(page).click();
+ await expect(rows(page).nth(1).locator('.al-l1')).toContainText('Claude Code');
+ await rows(page).nth(1).locator('button').focus();
+ win(data,1).remainingPercent=10;expect(await receive(send('display',{data}))).toBe(true);
+ await expect(rows(page).nth(0).locator('.al-l1')).toContainText('Claude Code');
+ expect(await page.evaluate(()=>document.activeElement?.closest('li')?.textContent??'')).toContain('Claude Code');
+ win(data,1).remainingPercent=90;expect(await receive(send('display',{data}))).toBe(true);
+ expect(await page.evaluate(()=>document.activeElement?.closest('li')?.textContent??'')).not.toContain('Codex');
+});

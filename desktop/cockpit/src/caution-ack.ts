@@ -30,6 +30,10 @@ const keepable=(id:string)=>{try{const p=JSON.parse(id);return withinIdBound(id)
 const parse=(id:string):unknown[]|null=>{try{const p=JSON.parse(id);return Array.isArray(p)?p:null;}catch{return null;}};
 const window_=(stable:string)=>{const p=parse(stable);return p&&p.length===3?JSON.stringify([p[0],p[1]]):null;};
 const MINUTE=60000,HOUR=60*MINUTE;
+/** An amber forecast with no known reset has no cycle to compare. It is over only when the window refills (its remaining
+ *  percent rises this far above the lowest reading seen since), never because the forecast paused. */
+const REFILL=10;
+const amberStable=(id:string)=>parse(id)?.[2]==='amber';
 /** The persisted form: the stable identity, plus the cycle's reset moment (to the minute) when it has one. */
 const persisted=(stable:string,cycle:number|null)=>{if(cycle===null)return stable;const p=parse(stable)!;return JSON.stringify([...p,new Date(Math.round(cycle/MINUTE)*MINUTE).toISOString().replace('.000Z','Z')]);};
 const fromPersisted=(id:string):[string,number|null]|null=>{
@@ -52,22 +56,30 @@ export interface CautionMemory {
 }
 export function createCautionMemory(onChange:(ids:string[])=>void=()=>{}):CautionMemory {
  // stable identity -> the reset moment of the cycle it was seen or acknowledged in (null: no cycle, the G3-56 rule).
- const acked=new Map<string,number|null>(),shown=new Map<string,number|null>();let current:CautionItem[]=[],newest:string|null=null;
+ const acked=new Map<string,number|null>(),shown=new Map<string,number|null>(),floor=new Map<string,number>();let current:CautionItem[]=[],newest:string|null=null;
  const durable=()=>[...acked].map(([id,cycle])=>persisted(id,cycle)).filter(keepable);
  const report=()=>onChange(durable().slice(-MAX));
  return {
-  checkpoint(){const savedAcked=new Map(acked),savedShown=new Map(shown),savedCurrent=current,savedNewest=newest;return ()=>{acked.clear();for(const [k,v] of savedAcked)acked.set(k,v);shown.clear();for(const [k,v] of savedShown)shown.set(k,v);current=savedCurrent;newest=savedNewest;};},
-  forget(){acked.clear();shown.clear();current=[];newest=null;},
+  checkpoint(){const savedAcked=new Map(acked),savedShown=new Map(shown),savedFloor=new Map(floor),savedCurrent=current,savedNewest=newest;return ()=>{acked.clear();for(const [k,v] of savedAcked)acked.set(k,v);shown.clear();for(const [k,v] of savedShown)shown.set(k,v);floor.clear();for(const [k,v] of savedFloor)floor.set(k,v);current=savedCurrent;newest=savedNewest;};},
+  forget(){acked.clear();shown.clear();floor.clear();current=[];newest=null;},
   restore(ids){for(const id of ids.slice(0,MAX)){if(typeof id!=='string'||!keepable(id))continue;const r=fromPersisted(id);if(r)acked.set(r[0],r[1]);}},
   update(items,read,canBlink=true){
    const lit=items.filter(lights),litIds=lit.map(x=>x.stable);
    // Recurrence: a condition is over only when its window has a real reading and no longer qualifies, or, for one held
    // by its cycle, when the window is read in another cycle.
    let changed=false;
+   const refilled=new Set<string>();
+   for(const id of new Set([...acked.keys(),...shown.keys()])){
+    if(!amberStable(id)||(acked.get(id)??shown.get(id))!==null)continue;
+    const w=window_(id),rem=w===null?undefined:read.get(w)?.remaining;if(typeof rem!=='number')continue;
+    const low=floor.get(id);
+    if(low!==undefined&&rem>low+REFILL){refilled.add(id);floor.delete(id);}else floor.set(id,Math.min(rem,low??rem));
+   }
    for(const set of [acked,shown])for(const [id,cycle] of [...set]){
     const w=window_(id),r=w===null?undefined:read.get(w);if(!r)continue;
     let over:boolean;
-    if(cycle===null)over=!litIds.includes(id);
+    if(cycle===null&&amberStable(id))over=refilled.has(id);
+    else if(cycle===null)over=!litIds.includes(id);
     else{const now=lit.find(x=>x.stable===id)?.cycle??r.resetAt;over=now!==null&&now!==undefined&&!sameCycle(cycle,now,r.span);}
     if(over){set.delete(id);if(set===acked&&keepable(persisted(id,cycle)))changed=true;}
    }
@@ -76,7 +88,7 @@ export function createCautionMemory(onChange:(ids:string[])=>void=()=>{}):Cautio
    // cannot blink yet (inactive, closed) leaves it unseen so the blink is not lost.
    const fresh=canBlink?lit.filter(x=>!acked.has(x.stable)&&!shown.has(x.stable)):[];
    const before=durable().join('|');
-   for(const x of fresh){shown.set(x.stable,x.cycle??null);acked.set(x.stable,x.cycle??null);newest=x.stable;}
+   for(const x of fresh){shown.set(x.stable,x.cycle??null);acked.set(x.stable,x.cycle??null);newest=x.stable;const w=window_(x.stable),rem=w===null?undefined:read.get(w)?.remaining;if(typeof rem==='number'&&x.cycle===undefined)floor.set(x.stable,rem);}
    if(durable().join('|')!==before)report();
    current=lit;if(newest!==null&&!litIds.includes(newest))newest=litIds.find(id=>!acked.has(id))??litIds[0]??null;
    return fresh.length>0;

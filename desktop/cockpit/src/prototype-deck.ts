@@ -215,7 +215,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    page.onclick=e=>{
     if(!e.isTrusted)return;const target=e.target as HTMLElement;
     if(target.closest('[data-mfd="back"]')){closeAlerts();return;}
-    const row=target.closest<HTMLElement>('[data-al]'),x=row?d.allAlerts[Number(row.dataset.al)]:undefined;if(!x)return;
+    const row=target.closest<HTMLElement>('[data-al]'),x=row?d.allAlerts.find(a=>a.stable===row.dataset.alId):undefined;if(!x)return;
     if(x.settings){onSettings();return;}
     if(d.members.some(m=>m.key===x.member)&&onScope?.(x.member)){setScope(x.member);closeAlerts();}
    };
