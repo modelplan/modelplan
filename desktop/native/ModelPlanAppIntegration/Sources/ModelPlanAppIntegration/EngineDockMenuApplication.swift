@@ -63,6 +63,8 @@ struct StatusNoticePresentation {
     public let cockpitEntryEnabled: Bool
     private var terminating = false
     private var lifecycleController: EngineLifecycleController?
+    /// Recovery step 6: the engine stopped on its own and the supervisor has not brought it back yet.
+    var lifecycleEngineStopped: Bool { lifecycleController?.engineStopped ?? false }
     private var activityPaused = false
     private(set) var lifecyclePaused = false
     private var accessibilityObserver: NSObjectProtocol?
@@ -146,6 +148,10 @@ struct StatusNoticePresentation {
     public var openPublicURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// Injection point for the cache action; the normal entry clears the app's own folder.
     public var clearAppCache: () -> Void = { EngineAppCache.clearCurrentApp() }
+    /// Settings → Diagnostics → Export diagnostics…. The normal entry (a real .app) shows what is included, a save
+    /// panel, and writes the zip; nil hides the row (v1 shows no dead control). Tests inject a recorder.
+    public var exportDiagnostics: (@MainActor (SettingsLanguage, SettingsAbout) -> Void)?
+    private let engineConfiguration: EngineClientConfiguration
     /// Injection point for global shortcuts; the normal entry supplies the system registrar.
     var shortcutRegistrar: (any EngineShortcutRegistering)?
     private let notificationConsumer = SettingsNotificationConsumer()
@@ -154,7 +160,22 @@ struct StatusNoticePresentation {
     public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     public var makeFirstRunSurfaceWithConsent: (@MainActor (SettingsEditor, ScopeConsentEntry) -> any SettingsWindowSurface)?
     private let activateSettings: @MainActor () -> Void
-    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false && (self?.lifecyclePaused == false || self?.setupActive == true) }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, makeSurface: makeSettingsSurface)
+    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false && (self?.lifecyclePaused == false || self?.setupActive == true) }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, presence: dockPresence, makeSurface: makeSettingsSurface)
+    /// Native-shell spec item 4 (CodexBar `DockIconController`, Pulse `PulseDockPresence`): one owner of the Dock icon and
+    /// Cmd-Tab entry. The app is regular while Settings or a detached cockpit is open or minimised, accessory otherwise.
+    /// A flip posts resign/become active on its own, so the attached cockpit is told to ignore that for 250 ms; no flip
+    /// after terminate begins.
+    public private(set) lazy var dockPresence = PulseDockPresence(
+        currentPolicy: { NSApplication.shared.activationPolicy() },
+        setPolicy: { [weak self] policy in
+            guard let self, !self.terminating else { return }
+            self.currentCockpitPage?()?.suppressDismissal(.policyChange, forMilliseconds: EngineDockMenuApplication.policyChangeHoldMilliseconds)
+            _ = NSApplication.shared.setActivationPolicy(policy)
+        },
+        activate: { NSApplication.shared.activate() })
+    static let policyChangeHoldMilliseconds: UInt64 = 250
+    /// Set by the cockpit factory: the page currently made, attached or not.
+    var currentCockpitPage: (() -> CockpitWindowController?)?
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                 createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                 cockpitEntryEnabled: Bool? = nil,
@@ -167,6 +188,7 @@ struct StatusNoticePresentation {
                 activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) {
         let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient)
         self.composition = composition
+        self.engineConfiguration = configuration
         self.scopeBinding = EngineScopeConsentBinding(composition: composition)
         self.foundationStore = settingsStore
         self.appBundleURL = bundleURL
@@ -217,6 +239,7 @@ struct StatusNoticePresentation {
             if self.composition.provider.dockContent.status == .cleared { self.unavailableMemberRefreshes.removeAll() }
             self.updateMemberRefreshCapability()
             self.updateForecastProducerCapability()
+            self.updateReaderKeyCapability()
             self.updateSettingsContext(); self.renderMenu(); self.console?.render()
             self.revealPendingWidgetIfReadable()
             #if MODELPLAN_U6_DRIVE
@@ -243,6 +266,24 @@ struct StatusNoticePresentation {
             let supported = await self.composition.client.supportsCapability("memberRefreshV1")
             guard !self.terminating, self.composition.client.isCurrent(delivery), self.memberRefreshAdapter == nil else { return }
             if supported { self.memberRefreshAdapter = AppServerMemberRefreshAdapter(client: self.composition.client, store: self.composition.store) }
+        }
+    }
+    /// D90: the manual key area shows only while the connected engine negotiated `reader_key`.
+    private var readerKeyBackend: AppServerReaderKeyBackend?
+    private func updateReaderKeyCapability() {
+        guard let delivery = composition.store.snapshot.delivery, composition.client.isCurrent(delivery) else {
+            if readerKeyBackend != nil { readerKeyBackend = nil; scopeBinding.entry.readerKeys = nil }
+            return
+        }
+        guard readerKeyBackend == nil else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let supported = await self.composition.client.supportsCapability("reader_key")
+            guard supported, !self.terminating, self.composition.client.isCurrent(delivery), self.readerKeyBackend == nil else { return }
+            let binding = self.scopeBinding
+            let backend = AppServerReaderKeyBackend(client: self.composition.client, store: self.composition.store, allow: { scope in await binding.allow(scope: scope) })
+            self.readerKeyBackend = backend
+            binding.entry.readerKeys = backend
         }
     }
     /// SET-9-29: capabilities are fixed per engine session, so each session asks once. The
@@ -359,10 +400,12 @@ struct StatusNoticePresentation {
         return rect
     }
     /// Build 14c (G3-79): the screen point the latest open came from (the widget's ignition click). Nil for the menu
-    /// bar icon, the status menu and shortcuts, which open on the icon's display as before.
+    /// bar icon, the status menu and shortcuts. Only a detached open uses it; attached, the cockpit always opens under
+    /// the menu bar icon's display (G3-128).
     var cockpitOpenPoint: CGPoint?
     /// D88: `fromStatusItem` is the menu bar icon's own click: the attached cockpit grows out of the icon.
-    /// `openPoint` is the click that opened it elsewhere (the widget's ignition): the cockpit opens on that display.
+    /// `openPoint` is the click that opened it elsewhere (the widget's ignition): a detached cockpit with no remembered
+    /// place opens on that display; an attached one still opens under the icon (G3-128).
     public func showConsole(fromStatusItem: Bool = false, openPoint: CGPoint? = nil) {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
         cockpitOpenPoint = fromStatusItem ? nil : openPoint
@@ -381,8 +424,8 @@ struct StatusNoticePresentation {
         refreshStatusTooltip()
         dockHelp?.refresh()
     }
-    /// D204 v3 (G3-94): attached to the menu bar, the ignition toggles the cockpit like a menu bar popover (it opens
-    /// under the icon of the display pressed on). Detached, it always brings the cockpit to the front like a Dock icon
+    /// D204 v3 (G3-94): attached to the menu bar, the ignition toggles the cockpit like a menu bar popover (G3-128: it
+    /// opens under the status item, on the status item's display, whichever display the widget is on). Detached, it always brings the cockpit to the front like a Dock icon
     /// (covered or on another Space: moved to the current Space; minimised: restored; closed: opened at its last
     /// position) and never closes it; the detached cockpit closes from its own title-strip close key.
     /// G3-94 was the attached case: the ignition's mouse-down closed the cockpit as an outside click, then its action
@@ -425,6 +468,16 @@ struct StatusNoticePresentation {
            bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL, bundle.bundleURL.pathExtension == "app" {
             shortcutRegistrar = CarbonShortcutRegistrar()
         }
+        if exportDiagnostics == nil, let bundle = Bundle(url: appBundleURL),
+           bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL, bundle.bundleURL.pathExtension == "app" {
+            let helper = engineConfiguration.executableURL, environment = engineConfiguration.allowedEnvironment
+            exportDiagnostics = { language, about in
+                let summary = about.diagnosticText
+                DiagnosticsExportFlow.present(language: language) {
+                    DiagnosticsBundleInputs.live(helper: helper, helperEnvironment: environment, summary: summary)
+                }
+            }
+        }
         let observedAuthorization = await notificationAuthorizationService?.authorization() ?? .unavailable
         guard !terminating else { return }
         notificationConsumer.observeAuthorization(observedAuthorization)
@@ -434,9 +487,24 @@ struct StatusNoticePresentation {
         context.capabilities.loginNotInApplications = loginServiceAdapter?.observedNotInApplications ?? false
         context.notificationAuthorization = observedAuthorization
         context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
-        composition.dock.cardActionRequested = { [weak self] _ in Task { await self?.scopeConsentEntry.controller.allowKeychain() } }
+        // D87 slice 9: the Keychain card still asks for Keychain access; any other cause opens its Subscriptions row.
+        composition.dock.cardActionRequested = { [weak self] id in
+            guard let self else { return }
+            let vendor = self.settings.editor.context.subscriptions.first { $0.id == id }?.vendor
+            if self.scopeConsentEntry.controller.needsKeychainAccess, vendor == nil || vendor == "claude" {
+                Task { await self.scopeConsentEntry.controller.allowKeychain() }
+            } else {
+                Task {
+                    await self.settingsHost.present(paneID: "subscriptions", origin: .userInitiated)
+                    self.scopeConsentEntry.view.revealSubscriptionRow(id)
+                }
+            }
+        }
+        // D87 slice 6: a row's "Retry" asks the engine for one foreground refresh, the same request as the menu's.
+        scopeConsentEntry.view.rowActions.retry = { [weak self] _ in Task { await self?.composition.refresh() } }
         context.loginServiceObserved = true
         context.notificationServiceObserved = true
+        context.capabilities.diagnosticsExportAvailable = exportDiagnostics != nil
         // The choice stays visible; a service macOS refuses gets an honest reason and the fallback row.
         if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
         else if context.capabilities.loginNotInApplications { context.unavailableControls[.login] = .init("ModelPlan isn't in the Applications folder (for example opened from Downloads), so it can't be a login item.", "ModelPlan 不在“应用程序”文件夹里（例如从“下载”直接打开），所以不能设为登录项。") }
@@ -565,6 +633,23 @@ struct StatusNoticePresentation {
         controller.setActivityPaused(activityPaused)
         withdrawForLifecycle(); controller.start()
     }
+    /// Spec item 2: the cockpit's wake/unlock/clock/display signals from the lifecycle's one `SystemEvents`, or nil
+    /// before the lifecycle exists (a page then keeps its own observers).
+    var cockpitSystemSignals: CockpitSystemSignalSource? {
+        guard lifecycleController != nil else { return nil }
+        return { [weak self] handler in
+            guard let controller = self?.lifecycleController else { return {} }
+            return controller.subscribe { signal in
+                switch signal {
+                case .wake, .screensWake: handler(.wake)
+                case .unlock: handler(.unlock)
+                case .clockChanged, .timeZoneChanged: handler(.clockChanged)
+                case .displaysChanged: handler(.displaysChanged)
+                case .displaysSettled: handler(.displaysSettled)
+                }
+            }
+        }
+    }
     /// M4's activity observer sets an independent pause reason; it never clears OS reasons.
     public func setActivityPaused(_ paused: Bool) {
         activityPaused = paused; lifecycleController?.setActivityPaused(paused)
@@ -636,6 +721,9 @@ struct StatusNoticePresentation {
         case .openPublicLink(let link): openPublicURL(link.url)
         case .openSystemSettings(let pane): openSystemSettings(pane.url)
         case .action(.clearAppCache): clearAppCache()
+        case .exportDiagnostics:
+            guard let exportDiagnostics, let preferences = settings.editor.snapshot?.preferences else { return }
+            exportDiagnostics(preferences.language, settings.editor.context.about)
         case .shortcutPreferencesChanged(let openCockpit, let toggleDock):
             registerShortcuts(openCockpit: openCockpit, toggleDock: toggleDock)
         case .firstRunCompleted(let effects, _):
@@ -682,6 +770,7 @@ struct StatusNoticePresentation {
     /// The same restore used by the real launch; it never grants access itself.
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        LaunchTimingLog.shared.mark("did-finish-launching")
         // Spec 5.3 D: off unless MODELPLAN_MAIN_THREAD_HANG_WATCHDOG=1 (or the debug default); never in test runs.
         MainThreadHangWatchdog.shared.startIfEnabled()
         NSApp.setActivationPolicy(.accessory)
@@ -718,13 +807,16 @@ struct StatusNoticePresentation {
            actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
         renderMenu()
+        LaunchTimingLog.shared.mark("status-item")
         watchStatusItemVisibility()
         Task {
             await prepare(); guard !terminating else { return }
+            LaunchTimingLog.shared.mark("prepared")
             // Owner 11-12 (E1): the guide window comes first, from the local mark; the reader starts behind it.
             await beginSetupAtLaunch()
             guard !terminating else { return }
             startLifecycle(); renderMenu()
+            LaunchTimingLog.shared.mark("lifecycle-started")
         }
     }
     /// G3-22: a full menu bar hides the item behind the notch (the owner's Mac: occluded at

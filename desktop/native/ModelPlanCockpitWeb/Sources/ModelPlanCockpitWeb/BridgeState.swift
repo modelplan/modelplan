@@ -240,6 +240,14 @@ public enum CockpitCautionIdentities {
   public static func valid(_ ids: [String]) -> Bool {
     ids.count <= maxCount && ids.allSatisfy { !$0.isEmpty && $0.utf8.count <= maxBytes && $0.utf8.allSatisfy { $0 >= 32 && $0 != 127 } }
   }
+  /// G3-135: only an identity led by a verified subscription reference (16 hex) names the same account after a restart.
+  /// A fallback member's identity is kept in memory for the session and never written to disk.
+  public static func durable(_ ids: [String]) -> [String] {
+    ids.filter { id in
+      guard let data = id.data(using: .utf8), let array = (try? JSONSerialization.jsonObject(with: data)) as? [Any], let first = array.first as? String else { return false }
+      return first.utf8.count == 16 && first.utf8.allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }
+    }
+  }
 }
 
 public final class CockpitBridgeState {
@@ -280,6 +288,13 @@ public final class CockpitBridgeState {
   public init(context: CockpitEngineContext, pageID: UUID = UUID()) {
     self.context = context
     self.pageID = pageID
+  }
+  /// Recovery contract (step 2): the host's correlated health probe for this page. main.ts `state(pageId)` answers
+  /// only for its own page; a replaced one answers "mismatch", which is never taken as liveness. The page id is a UUID,
+  /// so it is safe inside the script's string literal. The controller adopts it in step 2b; until then it probes
+  /// without the id, as before.
+  public var probeScript: String {
+    "const c=window.modelPlanCockpit;return c&&typeof c.state==='function'?String(c.state('\(pageID.uuidString)')):'missing'"
   }
   public var queryTicket: CockpitQueryTicket? {
     ready && !blocked && !disposed
@@ -343,6 +358,12 @@ public final class CockpitBridgeState {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
     guard CockpitMemberScopes.isValidKey(shell.scope), scopeMembers.isEmpty || scopeMembers.contains(shell.scope) else { throw CockpitBridgeError.invalidMessage }
     return try envelope("shell", extra: shell.fields)
+  }
+  /// CKP-SHELL-33 (D178/D186/D188): lights (or puts out) every base bell with the amber nozzle glow during a rack
+  /// put-back or a key detach. No receipt: the page only paints it.
+  public func setIgnition(_ on: Bool) throws -> String {
+    guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    return try envelope("ignition", extra: ["on": on])
   }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) throws -> String {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }

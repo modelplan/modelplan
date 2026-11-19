@@ -31,13 +31,19 @@ struct LineFramer {
     }
 }
 
+/// Recovery contract (cockpit recovery step 5): the engine supervisor's budget. Crashes restart after a capped
+/// exponential backoff (1, 2, 4, 8 s, at most 30 s). The fifth crash inside the rolling 600 s window starts a cooldown,
+/// after which one half-open attempt runs by itself; while crashes stay inside the window each further crash starts
+/// another cooldown. Nothing is sticky: the engine never needs an explicit retry to come back.
 struct RestartBudget {
+    enum Decision: Equatable { case restart(after: Double), cooldown(after: Double) }
+    static let window: Double = 600, limit = 5, cap: Double = 30, cooldown: Double = 120
     private var crashes: [Double] = []
-    mutating func recordCrash(at now: Double) -> Double? {
-        crashes.removeAll { now - $0 >= 600 }
+    mutating func recordCrash(at now: Double) -> Decision {
+        crashes.removeAll { now - $0 >= Self.window }
         crashes.append(now)
-        guard crashes.count < 5 else { return nil }
-        return min(30, pow(2, Double(crashes.count - 1)))
+        guard crashes.count < Self.limit else { return .cooldown(after: Self.cooldown) }
+        return .restart(after: min(Self.cap, pow(2, Double(crashes.count - 1))))
     }
 }
 

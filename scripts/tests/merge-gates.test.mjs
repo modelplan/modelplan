@@ -55,6 +55,30 @@ test("trust needs the login and the numeric id; deleted authors and drafts never
   assert.deepEqual(items.map((x) => x.body), ["z"]);
 });
 
+test("sticky REVIEWER: only the assigned lane's verdict counts; others are advisory", () => {
+  const t2 = [file("cli/internal/quota/x.go")];
+  const rv = (lane) => `REVIEWER: ${lane}`;
+  const mixed = [comment(v("block", H, "macrev2")), comment(v("block", H, "macrevb")), comment(v("merge", H, "macrevd"))];
+  assert.equal(evalPr({ files: t2, comments: mixed }).state, R.FAILURE, "no REVIEWER: old behaviour, any block stops it");
+  const ok = evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed] });
+  assert.equal(ok.state, R.SUCCESS, "sticky merge passes over other lanes' blocks");
+  assert.match(ok.why, /info: .*\(macrev2\) block/);
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("block", H, "macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "sticky block fails");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.PENDING, "other lane merge does not satisfy");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrev2")), comment(rv("macrevd")), ...mixed] }).state, R.SUCCESS, "latest REVIEWER wins");
+  assert.equal(evalPr({ files: t2, comments: mixed, reviews: [review(rv("macrevd"))] }).state, R.FAILURE, "a REVIEWER line in a review never assigns");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed], reviews: [review(rv("macrev2"))] }).state, R.SUCCESS, "a review cannot reassign");
+  for (const bad of ["sonnet", "nosuchlane"]) {
+    const r = evalPr({ files: [file("docs/a.md")], comments: [comment(rv(bad)), comment(v("block", H, "macrev2"))] });
+    assert.equal(r.state, R.FAILURE, `${bad} assignment hides no GPT block`);
+    assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(rv(bad))] }).state, R.PENDING, `${bad} assignment holds the PR`);
+    assert.equal(evalPr({ files: t2, comments: [comment(rv(bad)), comment(v("merge", H, bad)), comment(v("merge", H, "macrevd"))] }).state, R.PENDING, `${bad} cannot pass tier 2`);
+  }
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevc")), comment(v("merge", H, "macrevc")), comment(v("merge", H, "macrevd"))] }).state, R.PENDING, "Terra assignment is invalid on tier 2");
+  const stranger = { login: "mallory", id: 5 };
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd"), stranger), ...mixed] }).state, R.FAILURE, "untrusted REVIEWER ignored");
+});
+
 test("tier: path rules, test-only rule, override and gate self-protection", () => {
   assert.equal(R.pathTier(["docs/a.md", ".github/workflows/ci.yml", "x.png"]), 0);
   assert.equal(R.pathTier(["cli/main.go"]), 1);
@@ -112,6 +136,29 @@ test("tier gates: tier 1 needs a GPT merge, tier 2 needs a Sol lane, macrev is a
   assert.equal(evalPr({ comments: [comment(v("merge", H, "glm"))] }).state, R.PENDING, "tier 1 GLM-only");
   assert.equal(evalPr({ comments: [comment(v("merge", H, "macrevc"))] }).state, R.SUCCESS, "tier 1 macrevc");
   assert.equal(evalPr({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "tier 1 Sol");
+});
+
+test("workflow reviewer (gh-terra pilot): a Terra lane; its shadow name and other hyphenated names count for nothing", () => {
+  assert.ok(R.TERRA_LANES.includes("(gh-terra)"));
+  assert.ok(!R.SOL_LANES.includes("(gh-terra)"));
+  assert.deepEqual([...R.verdicts(R.feed([comment(v("merge", H, "gh-terra"))]), H, [])], [["(gh-terra)", "merge"]]);
+  assert.deepEqual([...R.verdicts(R.feed([comment(v("block", H, "GH-Terra-Shadow"))]), H, [])], [["(gh-terra-shadow)", "block"]]);
+  for (const odd of ["gh-", "-gh", "gh--terra", "gh_terra", "gh terra"])
+    assert.deepEqual([...R.verdicts(R.feed([comment(v("merge", H, odd))]), H, [])], [["(unnamed)", "merge"]], odd);
+  const t2 = [file("clients/swift/Wire.swift")];
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-terra"))] }).state, R.SUCCESS, "tier 1 gh-terra");
+  assert.equal(evalPr({ comments: [comment(v("block", H, "gh-terra")), comment(v("merge", H, "macrevc"))] }).state, R.FAILURE, "a gh-terra block stops tier 1");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "gh-terra"))] }).state, R.PENDING, "tier 2 needs Sol");
+  const t2Block = evalPr({ files: t2, comments: [comment(v("block", H, "gh-terra")), comment(v("merge", H, "macrev2"))] });
+  assert.equal(t2Block.state, R.SUCCESS, "on tier 2 a Terra block is advice");
+  assert.match(t2Block.why, /info: .*\(gh-terra\) block/);
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-terra-shadow"))] }).state, R.PENDING, "shadow never counts");
+  const shadow = evalPr({ comments: [comment(v("block", H, "gh-terra-shadow")), comment(v("merge", H, "macrevc"))] });
+  assert.equal(shadow.state, R.SUCCESS, "a shadow block is input");
+  assert.match(shadow.why, /info: .*\(gh-terra-shadow\) block/);
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-terra"), { login: "github-actions[bot]", id: 41898282 })] }).state, R.PENDING, "only the trusted account posts verdicts");
+  assert.equal(R.pathTier([".github/workflows/pr-review.yml"]), 2, "the reviewer workflow is gate-self");
+  assert.equal(R.pathTier(["scripts/pr-review/brief.mjs"]), 2);
 });
 
 test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothing looser does", () => {
@@ -801,6 +848,19 @@ test("data-sync: a bot PR from a data-sync.yml run with a trusted exact-head ver
   assert.equal(evalSync({ run: syncRun({ event: "workflow_dispatch" }) }).state, R.SUCCESS);
 });
 
+test("data-sync: with a REVIEWER assignment only the assigned lane's merge admits the PR", () => {
+  const rv = comment("REVIEWER: macrevd");
+  assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "unassigned lane's merge does not admit");
+  assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrevd"))] }).state, R.SUCCESS);
+  assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrevd")), comment(v("block", H, "macrevd"))] }).state, R.FAILURE, "assigned block fails");
+  for (const bad of ["sonnet", "nosuchlane"]) {
+    assert.equal(evalSync({ comments: [comment(`REVIEWER: ${bad}`), comment(v("merge", H, bad)), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, `assigned ${bad} does not admit`);
+  }
+  assert.equal(evalSync({ comments: [comment("REVIEWER: macrevc"), comment(v("merge", H, "macrevc"))] }).state, R.SUCCESS, "Terra is fine on tier 1");
+  assert.equal(evalSync({ files: [file("cli/internal/quota/x.go")], comments: [comment("REVIEWER: macrevc"), comment(v("merge", H, "macrevc"))] }).state, R.FAILURE, "Terra cannot admit a tier 2 data-sync PR");
+  assert.equal(evalSync({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "no REVIEWER keeps old behaviour");
+});
+
 test("data-sync: ci.yml and repo-checks.yml stay required; dispatched runs on the branch count, a fork's or another branch's do not", () => {
   assert.equal(evalSync({ runs: [] }).state, R.PENDING, "no checks yet");
   assert.equal(evalSync({ runs: syncChecks(".github/workflows/ci.yml") }).state, R.PENDING, "repo-checks missing");
@@ -1051,3 +1111,54 @@ test("D239: check-reference.mjs runs the gate rule on a local diff", async () =>
   assert.equal(run("nothing").status, 1);
   assert.equal(run("Reference: CodexBar@0827f30 a/b.swift").status, 1);
 });
+
+test("merge-group gate waits for the group's GUI job, fails closed, times out", () => {
+  const ok = { state: R.SUCCESS, why: "ok" };
+  const steps = [{ pr: 7, prResult: ok, mergeProof: { ok: true } }];
+  const runs = R.QUEUE_WORKFLOWS.map((path, i) => qrun(path, "success", 1, "completed", { check_suite_id: 100 + i, created_at: "2026-11-15T15:00:00Z" }));
+  const desktopSuite = 100 + R.QUEUE_WORKFLOWS.indexOf(".github/workflows/desktop.yml");
+  const gui = (status, conclusion = null) => ({ name: "native (macos-latest) / native (macos-latest)", status, conclusion, check_suite: { id: desktopSuite } });
+  const now = Date.parse("2026-11-15T15:31:00Z");
+  const ev = (checks, at = now) => R.evaluateGroup({ steps, queueRuns: runs, queueCheckRuns: checks, now: at });
+  assert.equal(ev([gui("completed", "success")]).state, R.SUCCESS);
+  assert.equal(ev([gui("completed", "skipped")]).state, R.SUCCESS, "skipped by design");
+  assert.equal(ev([]).state, R.SUCCESS, "no GUI job when desktop.yml scoped it out");
+  const queued = ev([gui("queued")]);
+  assert.equal(queued.state, R.PENDING);
+  assert.match(queued.why, /native \(macos-latest\)/);
+  assert.equal(ev([gui("in_progress")]).state, R.PENDING);
+  for (const c of ["failure", "cancelled", "timed_out"]) assert.equal(ev([gui("completed", c)]).state, R.FAILURE, c);
+  const late = ev([gui("queued")], now + R.GROUP_WAIT_MS + 60000);
+  assert.equal(late.state, R.FAILURE);
+  assert.match(late.why, /timed out/);
+  assert.equal(ev([{ ...gui("queued"), check_suite: { id: 9999 } }]).state, R.SUCCESS, "another suite's job is not the queue's");
+});
+
+test("merge-group GUI leg: skipped is ok only when desktop.yml declared the GUI share not needed", () => {
+  const job = (name, conclusion, steps = []) => ({ name, conclusion, steps });
+  const none = job("queue-scope", "success", [{ name: "GUI share not needed", conclusion: "success" }]);
+  const gui = "native (macos-latest) / native (macos-latest)";
+  assert.equal(R.guiLegState([none, job("gui-scope", "skipped"), job(gui, "skipped")]).state, R.SUCCESS, "declared not needed");
+  assert.equal(R.guiLegState([job("queue-scope", "success", [{ name: "GUI share not needed", conclusion: "skipped" }]), job(gui, "skipped")]).state, R.FAILURE, "skipped without the declaration");
+  assert.equal(R.guiLegState([job("queue-scope", "success"), job("gui-scope", "success"), job(gui, "skipped")]).state, R.FAILURE);
+  assert.equal(R.guiLegState([job("queue-scope", "success")]).state, R.FAILURE, "no GUI job at all");
+  assert.equal(R.guiLegState([job(gui, "success")]).state, R.SUCCESS);
+  assert.equal(R.guiLegState([job(gui, "failure")]).state, R.FAILURE);
+  assert.equal(R.guiLegState([job("native (${{ matrix.os }})", "skipped"), job("native-hosted (macos-15) / native-hosted-gui (macos-15)", "success"), job("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)", "success")]).state, R.SUCCESS, "hosted pair green, native skipped whole");
+  // macrevb-997-3: the live job list of merge-group run 43781966202 shape, GUI leg green, child jobs skipped by design.
+  const live = [job("queue-scope", "success"), job("gui-scope", "success"), job("native-partition", "success"),
+    job("native-headless (macos-latest) / native-headless (macos-latest)", "success"), job("native-headless (macos-latest) / probe", "skipped"),
+    job(gui, "success"), job("native (macos-latest) / transport", "skipped"), job("native (macos-latest) / sequences", "skipped"), job("native (macos-latest) / probe", "skipped"),
+    job("native (macos-latest) / native-headless (${{ inputs.os }})", "skipped"), job("native (macos-latest) / u11-native (${{ inputs.os }})", "skipped"), job("native (macos-latest) / gui-probe", "skipped"),
+    job("native-hosted (${{ matrix.os }})", "skipped"), job("native-owner-gui (macos-latest)", "skipped")];
+  assert.equal(R.guiLegState(live).state, R.SUCCESS, "child jobs skipped by design do not fail a green GUI leg");
+  assert.equal(R.guiLegState(live.map((j) => j.name === gui ? { ...j, conclusion: "failure" } : j)).state, R.FAILURE);
+  assert.equal(R.guiLegState(live.filter((j) => j.name !== gui)).state, R.FAILURE, "children alone are not a GUI leg");
+  assert.equal(R.guiLegState([job(gui, "skipped"), job("native-hosted (macos-15) / native-hosted-gui (macos-15)", "success"), job("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)", "skipped")]).state, R.FAILURE, "half the hosted pair skipped");
+  const ok = { state: R.SUCCESS, why: "ok" };
+  const runs = R.QUEUE_WORKFLOWS.map((path, i) => qrun(path, "success", 1, "completed", { check_suite_id: 100 + i }));
+  const g = (desktopJobs) => R.evaluateGroup({ steps: [{ pr: 7, prResult: ok, mergeProof: { ok: true } }], queueRuns: runs, desktopJobs });
+  assert.equal(g([job(gui, "skipped")]).state, R.FAILURE);
+  assert.equal(g([none, job(gui, "skipped")]).state, R.SUCCESS);
+});
+

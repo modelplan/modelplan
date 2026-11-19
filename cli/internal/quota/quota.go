@@ -81,7 +81,8 @@ type Window struct {
 	// RecentPercentPerHour: how fast the window filled over the last readings (up to 45 minutes,
 	// at least 10), in percentage points per hour; nil without enough fresh readings.
 	RecentPercentPerHour *float64 `json:"recentPercentPerHour"`
-	// RunsOutInMinutes: when the window is used up at that rate, only when that comes before its reset.
+	// RunsOutInMinutes: when the window is used up at that rate, only when that comes before its reset
+	// (or at any time when the reset is unknown).
 	RunsOutInMinutes *int   `json:"runsOutInMinutes"`
 	UnknownReason    string `json:"unknownReason,omitempty"` // reset_passed: awaiting a reading of the new cycle
 	Pace             string `json:"pace"`                    // exhausted | tight | on_track | surplus | reset_passed | unknown
@@ -116,8 +117,8 @@ const (
 	recentMinRise = 2.0
 )
 
-// RunsOutTight: a run-out at the recent rate within this many minutes, before the reset, makes a
-// window tight.
+// RunsOutTight: a run-out at the recent rate within this many minutes, before the reset (or with
+// no reset known), makes a window tight.
 const RunsOutTight = 180
 
 // Harness is what the harness itself reported about the session, when it did.
@@ -178,6 +179,9 @@ func creditsFrom(has, unlimited bool, balance json.RawMessage, at time.Time) *Cr
 // Account groups the windows one subscription reports; Claude Code and Codex are separate accounts.
 type Account struct {
 	ResetCards *rows.ResetCards `json:"-"`
+	// ReportedModels (D98): model ids the tool itself lists for this account (Codex model/list), native ids as
+	// the harness names them. Internal: it reaches the cockpit wire mapped to published ids, not this JSON.
+	ReportedModels []string `json:"-"`
 	Beta       bool             `json:"beta,omitempty"` // reader has not completed real-account verification
 	Source     string           `json:"source"`         // claude-code | codex | user | codexbar:<provider>
 	Plan       string           `json:"plan,omitempty"`
@@ -446,7 +450,11 @@ func evalWindow(w *Window, now time.Time) {
 		return
 	}
 	if w.ResetsAt == nil || w.WindowMinutes == 0 || w.ResetMode == "rolling" {
-		if used >= 90 {
+		if w.ResetsAt == nil {
+			// No reset to beat: the burn rate alone forecasts the run-out (CKP-ENG-26, D277).
+			recentRate(w, now)
+		}
+		if used >= 90 || (w.RunsOutInMinutes != nil && *w.RunsOutInMinutes <= RunsOutTight) {
 			w.Pace = "tight"
 		}
 		return
@@ -474,15 +482,20 @@ func evalWindow(w *Window, now time.Time) {
 }
 
 // recentRate: the rate between the oldest reading within recentLook of the latest one and the
-// latest, for readings of the same cycle (a reset in between starts the count again).
+// latest, for readings of the same cycle (a reset in between starts the count again). With no
+// reset time known, a drop in the readings stands for an unseen reset: the count starts after it.
 func recentRate(w *Window, now time.Time) {
-	if w.UsedPercent == nil || w.ResetsAt == nil || w.ObservedAt.IsZero() || now.Sub(w.ObservedAt) > recentFresh {
+	if w.UsedPercent == nil || w.ObservedAt.IsZero() || now.Sub(w.ObservedAt) > recentFresh {
 		return
 	}
 	base := Sample{At: w.ObservedAt, Used: *w.UsedPercent}
-	for _, s := range w.recent {
-		if sameCycle(s.ResetsAt, w.ResetsAt) && !s.At.After(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= recentLook && s.At.Before(base.At) {
-			base = s
+	if w.ResetsAt == nil {
+		base = unknownCycleBase(w)
+	} else {
+		for _, s := range w.recent {
+			if sameCycle(s.ResetsAt, w.ResetsAt) && !s.At.After(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= recentLook && s.At.Before(base.At) {
+				base = s
+			}
 		}
 	}
 	span := w.ObservedAt.Sub(base.At)
@@ -492,10 +505,35 @@ func recentRate(w *Window, now time.Time) {
 	}
 	rate := rise / span.Hours()
 	w.RecentPercentPerHour = round1(rate)
-	if rise < recentMinRise || *w.UsedPercent >= 100 || w.ResetsInMinutes == nil {
+	if rise < recentMinRise || *w.UsedPercent >= 100 || (w.ResetsAt != nil && w.ResetsInMinutes == nil) {
 		return
 	}
 	w.RunsOutInMinutes = projectedRunout(w, rate, now)
+}
+
+// unknownCycleBase: for a window with no reset time, the oldest reading within recentLook from
+// which the readings never drop up to the latest one.
+func unknownCycleBase(w *Window) Sample {
+	base := Sample{At: w.ObservedAt, Used: *w.UsedPercent}
+	var in []Sample
+	for _, s := range w.recent {
+		if s.ResetsAt == nil && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= recentLook {
+			in = append(in, s)
+		}
+	}
+	sort.SliceStable(in, func(i, j int) bool { return in[i].At.After(in[j].At) }) // newest first
+	for _, s := range in {
+		if s.Used > base.Used {
+			break // a drop after s: an earlier cycle
+		}
+		base = s
+	}
+	return base
+}
+
+// sameOrUnknownCycle is sameCycle, and also two readings that both lack a reset time.
+func sameOrUnknownCycle(a, b *time.Time) bool {
+	return (a == nil && b == nil) || sameCycle(a, b)
 }
 
 // sameCycle: two readings name the same reset, within the jitter of a computed reset time.
@@ -532,11 +570,14 @@ func thin(ss []Sample, w Window) []Sample {
 	}
 	var in []Sample
 	for _, s := range ss {
-		if sameCycle(s.ResetsAt, w.ResetsAt) && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= keep {
+		if sameOrUnknownCycle(s.ResetsAt, w.ResetsAt) && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= keep {
 			in = append(in, s)
 		}
 	}
 	sort.SliceStable(in, func(i, j int) bool { return in[i].At.Before(in[j].At) })
+	if w.ResetsAt == nil {
+		in = afterLastDrop(in, w)
+	}
 	var out []Sample
 	for _, s := range in {
 		spacing := sampleEvery
@@ -548,6 +589,22 @@ func thin(ss []Sample, w Window) []Sample {
 		}
 	}
 	return out
+}
+
+// afterLastDrop: with no reset time, a drop in the readings (the latest included) stands for an
+// unseen reset. Readings before it are of an earlier cycle; cut them before the sparse sampling
+// can thin the peak that marks the drop and leave a rate spanning two cycles.
+func afterLastDrop(in []Sample, w Window) []Sample {
+	cut := 0
+	for i := 1; i < len(in); i++ {
+		if in[i].Used < in[i-1].Used {
+			cut = i
+		}
+	}
+	if n := len(in); n > 0 && w.UsedPercent != nil && *w.UsedPercent < in[n-1].Used {
+		cut = n
+	}
+	return in[cut:]
 }
 
 // addSample appends a reading to a window's history: the readers attach what they kept.

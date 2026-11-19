@@ -74,6 +74,9 @@ jobs:
       - name: "source-policy: workflow policy tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/workflow-policy.test.mjs
+      - name: "source-policy: mac-compile plan tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/mac-compile-plan.test.mjs
       - name: "source-policy: changelog tests and fragment check"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/changelog.test.mjs && node scripts/changelog.mjs --check
@@ -86,6 +89,9 @@ jobs:
       - name: "source-policy: merge-gates tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/merge-gates.test.mjs
+      - name: "source-policy: workflow reviewer tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/pr-review.test.mjs
       - name: "source-policy: no sound or haptics (MOT-2.3-12)"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/no-sound-haptics.test.mjs

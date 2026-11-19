@@ -249,7 +249,10 @@ public struct FirstRunReading: Sendable, Equatable {
         guard diagnosticsToken == token else { return }
         diagnosticsToken = nil; changed()
     }
+    /// Counts accepted row snapshots (each is a new reading), so Settings can refresh what depends on one.
+    public private(set) var rowsRevision = 0
     public func receiveAcceptedRows(_ value: WireRowsSnapshot) {
+        rowsRevision &+= 1
         rowsSummary = value.projection.rowsSummary
         claudeRowState = value.projection.rows.first { $0.id == "claude" }?.state
         var consents: [String: RowsConsent] = [:]
@@ -396,6 +399,14 @@ public struct FirstRunReading: Sendable, Equatable {
             changed()
             return attempt
         }
+    }
+    /// D87 slice 5: the engine's accepted row facts (consent, state, reason code) per tool id.
+    public var toolRowFacts: [String: ToolRowFacts] {
+        var ids = Set(rowCodes.keys).union(rowStates.keys)
+        if let rowConsent { ids.formUnion(rowConsent.keys) }
+        var result: [String: ToolRowFacts] = [:]
+        for id in ids { result[id] = ToolRowFacts(consent: rowConsent?[id], state: rowStates[id], code: rowCodes[id]?.rawValue) }
+        return result
     }
     /// Not committed: refused before dispatch, not sent, or answered by the engine with an error.
     private static func attempt(after error: Error) -> ScopeConsentAttempt {

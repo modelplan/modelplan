@@ -530,9 +530,9 @@ struct NativeFailure:Error {let message:String}
     var interactionTime=0.0,interactionEnv=DockInteractionEnvironment(catalogue:["a","b","c"],preferences:.init(),targets:[.init(id:"a",along:0),.init(id:"b",along:20)],overflowIDs:["c"],hoveredID:"a",insideShared:true,contents:["a":.init(subscriptionID:"a",name:"Synthetic A",rows:[.init(id:"q",kind:.quota,label:"Window",value:"--")])])
     let interactionScheduler=NeutralEdgeScheduler(),interaction=DockInteractionController(clock:{interactionTime},scheduler:interactionScheduler,read:{interactionEnv})
     var interactionPaints=0;interaction.onPresent={_ in interactionPaints+=1};interaction.start()
-    try require(interaction.presentation?.card == .hidden && interactionScheduler.deadline==0.25,"native card controller arms250ms once")
+    try require(interaction.presentation?.card == .hover("a") && interactionScheduler.deadline==0.15,"native card controller opens on arrival (no ring dwell) and samples every 150 ms")
     let retiredCardTimer=interactionScheduler.saved[0]
-    interactionTime=0.25;interactionScheduler.fire();try require(interaction.presentation?.card == .hover("a"),"deadline revalidates current hover/content")
+    interactionTime=0.25;interactionScheduler.fire();try require(interaction.presentation?.card == .hover("a"),"the sample revalidates current hover/content")
     interactionTime=10;interactionEnv.parentExpanded=false;interactionEnv.insideShared=false;interaction.refresh()
     try require(interaction.presentation?.card == .hidden,"a withdrawn parent withdraws the card")
     interactionEnv.catalogue=["b","c"];interaction.refresh();try require(interaction.presentation?.card == .hidden,"removed card target retired")

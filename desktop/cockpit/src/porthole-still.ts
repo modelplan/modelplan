@@ -6,6 +6,7 @@
 // Reduce Motion; web/cockpit.css gates it on an active, open, visible page). No WebGL, no personal data:
 // the roster is the public study fleet.
 // Prototype: rocket-r1/porthole.js:187-192 (syncStill) and study/porthole-sprites/composer.js:13-31,34.
+import {ht} from './host-text.js';
 export type StillLayer={left:number;top:number;width:number;height:number;file:string};
 export type StillModel={id:string;name?:string;nozzle:{x:number;y:number};body?:StillLayer;flame?:StillLayer;halo?:StillLayer};
 export type StillProjection={id:string;theme:'night'|'day';layout:890|640;width:number;height:number;background:string;models:StillModel[]};
@@ -33,8 +34,7 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
   if(port&&enlarge){
    port.dataset.opensField='';
    big=document.createElement('button');big.type='button';big.className='hud-x port-big';big.dataset.bigfield='';big.textContent='⤢';port.append(big);
-   const name=()=>{const en=document.documentElement.lang==='en';
-    big?.setAttribute('aria-label',en?'Open the 3D launch field · Or click anywhere on the field':'打开 3D 发射场 · 点击视野也可以打开');};name();
+   const name=()=>{big?.setAttribute('aria-label',ht(document.documentElement.lang==='en'?'en':'zh-CN','host.portBig'));};name();
    big.addEventListener('focus',name,{signal:opener.signal});
    big.addEventListener('mousedown',e=>e.preventDefault(),{signal:opener.signal});
    big.addEventListener('click',e=>{e.stopPropagation();if(e.isTrusted&&e.detail<2)enlarge();},{signal:opener.signal});

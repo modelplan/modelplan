@@ -11,6 +11,7 @@ import ModelPlanInstruments
 import ModelPlanOfficialDock
 import ModelPlanDockResources
 import ModelPlanCommunityHost
+import ModelPlanEngineClient
 
 /// Geometry returned by an injected appearance, already scaled in view-local points.
 struct DockHoverStation {
@@ -392,8 +393,16 @@ struct DockHelpInteraction: Equatable {
     var suppressJourneyOrderIn = false
     #endif
 
+    /// The carry sets the closed hand (DockInstrumentView.pointerDragged); a release or cancel routed through the
+    /// panel never reaches the view's pointerUp, so the panel route restores the arrow itself (#960 sampling, P3).
+    /// Always present: release code calls it; only the test override is DEBUG-only.
+    var restorePanelMoveCursor: () -> Void = { NSCursor.arrow.set() }
+
     #if DEBUG
     var detachedCardForChecks: DockCardView? { !createsNativePanels && !card.isHidden ? card : nil }
+    /// Render passes run, full (resting) and carried (a press's edge-view preparation), for the carry checks.
+    private(set) var fullRebuildPassesForChecks = 0, carriedRebuildPassesForChecks = 0
+    var applicationForChecks: SettingsApplication? { application }
     #endif
     func refreshPresence() { displayFollower.sample(); edge.refresh() }
     var isFollowingDisplay: Bool { displayFollower.isRunning }
@@ -572,6 +581,10 @@ struct DockHelpInteraction: Equatable {
     private var sliverPrepared = false
     private var preparedSliverGeometrySize: CGSize?
     private var rebuildPending = false
+    /// A non-privacy content withdrawal arrived while the widget was pressed; it is applied after the press.
+    private var withdrawHeldForPress = false
+    /// The placement the last drop committed, kept as the host's own until a Settings snapshot carries it.
+    private var heldDrop: HeldDockDrop?
     private var inputGeneration: UInt64 = 0, cardGeneration: UInt64 = 0
     private var panel: NSPanel?, cardPanel: NSPanel?
     private var lastDisplayChoices: [SettingsDisplayChoice] = []
@@ -645,38 +658,73 @@ struct DockHelpInteraction: Equatable {
         let active = permitted && !retired && !rendering && preferences.showDock &&
             appearance != nil && view.interactionProjectionAvailable && model != nil
         var inside: Bool?
+        var hover = interactionHoveredID
         if let place, let pointer = env.pointer,
            let display = env.displays.first(where: { $0.id == place.displayID }) {
-            var painted = place.globalHoverRects
+            // G3-120 (Pulse pointerMoved): the ring under the pointer is read from the same sample that
+            // decides leaving. A widget that opens under a resting pointer has no tracking event to report
+            // the ring, and a missed exit must not leave a stale ring holding the card. With a window the
+            // sample is authoritative; a detached synthetic host falls back to its reported hover while
+            // the pointer is on the widget.
+            if expanded, let local = Self.interactionLocal(pointer, view: view, frame: place.frame) {
+                let sampled = view.ringUnitID(atLocal: local).flatMap { catalogue.contains($0) ? $0 : nil }
+                hover = sampled ?? (view.window == nil && place.frame.contains(pointer) ? interactionHoveredID : nil)
+            }
+            var painted = place.globalHoverRects, wake = place.wakeFrame
+            var outerEdge = DockEdgeGeometry.canWake(at: pointer, placement: place, displays: env.displays)
+            // G3-120: an open card is held by its own ring, the card and the band between them, not by
+            // the whole widget body (which held it open for as long as the pointer rested anywhere on it).
+            if let open = cardID, !card.isHidden, let ringLocal = view.interactionAnchor(open),
+               let ring = Self.interactionGlobal(ringLocal.union(view.cardRingAnchor(open) ?? ringLocal),
+                                                 view: view, frame: place.frame, expanded: expanded) {
+                painted = [env.cardFrame.map { ring.union($0) } ?? ring]
+                wake = .null; outerEdge = false
+            }
             if overflowPanel?.isVisible == true, let frame = overflowPanel?.frame { painted.append(frame) }
-            let region = DockPresenceArea(painted: painted, wake: place.wakeFrame, card: env.cardFrame,
-                display: display.usableFrame, edge: orientation,
-                outerEdge: DockEdgeGeometry.canWake(at: pointer, placement: place, displays: env.displays))
+            let region = DockPresenceArea(painted: painted, wake: wake, card: env.cardFrame,
+                display: display.usableFrame, edge: orientation, outerEdge: outerEdge)
                 .region(at: pointer, policy: visibilityPolicy)
             switch region { case .inside, .wake: inside = true; case .outside: inside = false; default: inside = nil }
             var trackedFrame: CGRect?
-            if let id = interactionHoveredID, let anchor = view.interactionAnchor(id) {
-                if let window = view.window {
-                    trackedFrame = window.convertToScreen(view.convert(anchor, to: nil))
-                } else if expanded, view.bounds.size == place.frame.size {
-                    // Detached synthetic hosts use the same registered local geometry.
-                    trackedFrame = CGRect(x: place.frame.minX + anchor.minX - view.bounds.minX,
-                        y: place.frame.maxY - anchor.maxY + view.bounds.minY, width: anchor.width, height: anchor.height)
-                }
+            if let id = hover, let anchor = view.interactionAnchor(id) {
+                trackedFrame = Self.interactionGlobal(anchor, view: view, frame: place.frame, expanded: expanded)
             }
             inside = Self.cardPointerEvidence(sampled: inside, pointer: pointer, trackedRow: trackedFrame)
+            // A ring under the pointer holds (the card switches to it); a held press is never an outside press.
+            // A carry closes the card instead (`carrying`, G3-114).
+            if hover != nil || edge.isBackgroundPressed || interactionController?.hasCapture == true { inside = true }
         }
+        let pressedOutside = env.presence.mouseButtonDown && inside == false
         let focusedID = view.keyboardTargetID.flatMap { catalogue.contains($0) ? $0 : nil }
         if cardHasKeyboardFocus || focusedID != nil { inside = true }
         let safePreferences = memberSafePreferences
         let visible = Set((try? safePreferences.presentedSubscriptionIDs(catalogue)) ?? [])
         var contents: [String: DockCardContent] = [:]
         for id in catalogue where visible.contains(id) { contents[id] = interactionCardContent(id) }
-        return DockInteractionEnvironment(catalogue: catalogue, preferences: safePreferences.subscriptions,
+        let value = DockInteractionEnvironment(catalogue: catalogue, preferences: safePreferences.subscriptions,
             targets: view.interactionTargets(edge: orientation), overflowIDs: view.interactionOverflowIDs,
-            bindingRevision: inputGeneration, hoverEventRevision: interactionHoverRevision, hoveredID: focusedID ?? interactionHoveredID, insideShared: inside,
+            bindingRevision: inputGeneration, hoverEventRevision: interactionHoverRevision, hoveredID: focusedID ?? hover, insideShared: inside,
             parentOwnsHide: true, parentExpanded: expanded && active, menuActuallyOpen: menuOpen,
             active: active, reducedMotion: application?.effective.reduceMotion ?? true, edge: orientation, contents: contents)
+        var result = value; result.pressedOutside = pressedOutside && !(cardHasKeyboardFocus || focusedID != nil)
+        // G3-114 (Pulse `.onChange(of: placement.isDragging)` deselects): a carry, ring or body, closes the card.
+        result.carrying = edge.isCarrying
+        return result
+    }
+
+    /// View-local point for a global pointer: through the window, or through the placement frame for a
+    /// detached synthetic host whose view has the placement's size.
+    static func interactionLocal(_ pointer: CGPoint, view: NSView, frame: CGRect) -> CGPoint? {
+        if let window = view.window { return view.convert(window.convertPoint(fromScreen: pointer), from: nil) }
+        guard view.bounds.size == frame.size else { return nil }
+        return CGPoint(x: pointer.x - frame.minX + view.bounds.minX, y: frame.maxY - pointer.y + view.bounds.minY)
+    }
+    static func interactionGlobal(_ local: CGRect, view: NSView, frame: CGRect, expanded: Bool) -> CGRect? {
+        if let window = view.window { return window.convertToScreen(view.convert(local, to: nil)) }
+        // Detached synthetic hosts use the same registered local geometry.
+        guard expanded, view.bounds.size == frame.size else { return nil }
+        return CGRect(x: frame.minX + local.minX - view.bounds.minX, y: frame.maxY - local.maxY + view.bounds.minY,
+                      width: local.width, height: local.height)
     }
 
     private func updateNozzleMagnification() {
@@ -969,6 +1017,10 @@ struct DockHelpInteraction: Equatable {
     private var presentedSurfaceState: DockSurfaceState?
     private let collapseGhost = DockCollapseGhost()
     var collapseAnimatingForChecks: Bool { collapseGhost.animatingForChecks }
+    var collapseCompletedForChecks: (() -> Void)? {
+        get { collapseGhost.didStopForChecks }
+        set { collapseGhost.didStopForChecks = newValue }
+    }
     private(set) var revealAnimationsForChecks = 0
     var containerAnimationsForChecks: [String: CAAnimation] {
         guard let layer = container.layer else { return [:] }
@@ -1064,15 +1116,36 @@ struct DockHelpInteraction: Equatable {
     private func connectEdge() {
         edge.onPresent = { [weak self] value in self?.present(value) }
         edge.prepareDragDisplay = { [weak self] display in
-            // Also prepare the top-edge artwork once per carry on the same display (lazy, G3-27).
+            // Once per press, as it is taken: every edge's view, the top edge's included (lazy, G3-27), is prepared
+            // for the press display now, so the carry itself re-renders nothing (Pulse rebuilds nothing mid-drag).
             guard let self, self.appearanceDisplay != display || self.edgeViews[.top] == nil, !self.rendering else { return }
             self.rendering = true
             defer { self.rendering = false }
             self.rebuildPass(self.inputGeneration, carriedTo: display)
         }
         edge.onDragCancelled = { [weak self] in self?.rebuild() }
+        // The press is over: apply, once, whatever content or settings change was held back while it lasted.
+        // A carry that crossed onto another display was drawn for the press display; it is redrawn for its own.
+        edge.onPressEnded = { [weak self] in
+            guard let self else { return }
+            let crossed = self.edge.presentation?.placement.map { $0.displayID != self.appearanceDisplay?.id } ?? false
+            guard self.rebuildPending || self.withdrawHeldForPress || crossed else { return }
+            self.rebuild()
+        }
+        edge.onDiagnostic = { DiagnosticsLog.shared.info("dock", $0) }
         edge.onCommittedPlacement = { [weak self] value in
             guard let self, let next = SettingsDockEdge(rawValue: String(describing: value.edge)) else { return }
+            // Pulse persists the dock it showed at mouse-up. The Settings write is asynchronous, so the dropped
+            // placement becomes the host's own preference now: no rebuild, and no Settings snapshot from before the
+            // save lands (another writer saved in between), can put the widget back on the old edge.
+            if self.commitDisplayPlacement != nil || self.commitPlacement != nil {
+                let before = HeldDockDrop.Fields(self.preferences)
+                let dropped = HeldDockDrop.Fields(displayID: value.displayID ?? before.displayID, edge: next,
+                                                  alongFraction: value.alongFraction)
+                self.heldDrop = dropped == before ? nil : HeldDockDrop(dropped: dropped, before: before,
+                                                                       until: ContinuousClock.now + HeldDockDrop.limit)
+                dropped.write(to: &self.preferences)
+            }
             if let id = value.displayID, let commit = self.commitDisplayPlacement {
                 if self.preferences.followActiveDisplay { self.followedDisplayID = id }
                 commit(id, next, value.alongFraction)
@@ -1087,6 +1160,13 @@ struct DockHelpInteraction: Equatable {
         application = value
         let oldReveal = preferences.revealMilliseconds
         preferences = value.snapshot.preferences
+        if let held = heldDrop {
+            // Still the pre-drop placement: this snapshot predates the drop's save, so the drop stands. Any other
+            // placement (the save itself, or a later choice) ends the hold.
+            if HeldDockDrop.Fields(preferences) == held.before, ContinuousClock.now < held.until {
+                held.dropped.write(to: &preferences)
+            } else { heldDrop = nil }
+        }
         // A panel keeps its Spaces behaviour until told otherwise, and the edge may not re-present.
         for window in [panel, cardPanel, overflowPanel] { window?.collectionBehavior = panelCollectionBehavior }
         if value.effective.reduceMotion { locateLayer?.removeAnimation(forKey: "locate-pulse") }
@@ -1148,6 +1228,12 @@ struct DockHelpInteraction: Equatable {
     @discardableResult
     func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = []) -> Bool {
         guard !retired else { return false }
+        if !privacy, edge.isBackgroundPressed {
+            // G3-113 (Pulse rebuilds nothing during a drag): a replacement that lands while the widget is pressed
+            // leaves the held widget as it is; this clear and the reinstall after it are applied once, after the press.
+            withdrawHeldForPress = true; rebuildPending = true
+            return false
+        }
         let keepCard = !privacy && cardPresentedGeneration != nil && (cardID.map(members.contains) ?? false)
         if keepCard {
             // Leave only an empty shell during the synchronous replacement.
@@ -1242,18 +1328,10 @@ struct DockHelpInteraction: Equatable {
     private func rebuild() {
         guard !retired, !retiring, application != nil else { return }
         rebuildPending = true
-        guard !rendering, !edge.isPublishingRelease else { return }
-        if edge.isBackgroundPressed {
-            // G3-113: a content replacement (the engine clears the admitted content, then reinstalls it) can land
-            // while the widget is held. The clear has already retired the rings, so waiting for the drop left the
-            // carried widget without them until the release. Repaint the held widget in place, as the carry's own
-            // preparation pass does; placement, menus and the card wait for the full pass after the drop (still pending).
-            guard let display = appearanceDisplay else { return }
-            rendering = true
-            defer { rendering = false; rebuildPending = true; bindInteractionInput(); interactionController?.refresh() }
-            rebuildPass(inputGeneration, carriedTo: display)
-            return
-        }
+        // G3-113 (Pulse rebuilds nothing during a drag): while the widget is pressed nothing is re-rendered, so
+        // the carried rings stay exactly as painted. The change stays pending and the press's end applies it once.
+        guard !rendering, !edge.isPublishingRelease, !edge.isBackgroundPressed else { return }
+        if withdrawHeldForPress { withdrawHeldForPress = false; _ = withdrawAdmittedContent(privacy: false) }
         rendering = true
         defer { rendering = false; bindInteractionInput(); interactionController?.refresh() }
         while rebuildPending, !retired {
@@ -1267,6 +1345,9 @@ struct DockHelpInteraction: Equatable {
         return true
     }
     private func rebuildPass(_ generation: UInt64, carriedTo: DockDisplayArea? = nil) {
+        #if DEBUG
+        if carriedTo == nil { fullRebuildPassesForChecks += 1 } else { carriedRebuildPassesForChecks += 1 }
+        #endif
         let displayFacts = sampleEnvironment()
         let topology = topology(of: displayFacts)
         let choices = topology.displays.map { SettingsDisplayChoice(id: $0.id, name: $0.name ?? $0.id) }
@@ -1280,7 +1361,7 @@ struct DockHelpInteraction: Equatable {
         let passPreferences = preferences.withoutUnstableMemberChoices(next.subscriptions)
         contentMenuStatusLines = content.menuStatusLines
         contentEmptyText = content.emptyText
-        let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)|\($0.isUnstable)" }.joined(separator: "\n")
+        let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)|\($0.isUnstable)|\($0.causeCode ?? "")" }.joined(separator: "\n")
         if carriedTo == nil, key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
         guard passIsCurrent(generation) else { return }
         let byID = Dictionary(uniqueKeysWithValues: next.inputs.map { ($0.id, $0) })
@@ -1631,7 +1712,6 @@ struct DockHelpInteraction: Equatable {
             collapseGhost.play(snapshotOf: container, frame: panel.frame, level: panel.level, edge: motionEdge, reduceMotion: reduceMotion)
         } else if value.state == .expanded { collapseGhost.stop() }
         panel.level = value.moving ? .statusBar : .floating
-        let previousFrame = panel.frame
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = panelCollectionBehavior
         let content: NSView
@@ -1653,14 +1733,8 @@ struct DockHelpInteraction: Equatable {
         case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
-        // G3-114: an open card follows its ring when the widget moves (D244: a ring press-drag carries the whole
-        // widget), as prototype card.js re-places it from the ring as painted. Only now is the presented edge's view
-        // in the panel (macrevc-960-1: a carry onto another edge swaps it in above). While carrying, the edge's own
-        // refresh is idle, so re-place now; after a drop, re-place once the release's refresh has finished.
-        if value.state == .expanded, previousFrame != panel.frame {
-            if value.moving { refreshCardPlacement() }
-            else { Task { @MainActor [weak self] in self?.refreshCardPlacement() } }
-        }
+        // G3-114: an open card is closed when a carry starts (Pulse FUC:204-206), through the interaction
+        // environment's `carrying`; it is never re-placed under a moving widget.
         bindPointerInput(value, content: content)
         // Keep the AppKit tracking instance attached while the surface redraws.
         let contextualMenu = trackedDockMenu ?? menu()
@@ -2341,6 +2415,7 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
         edge.updateBackgroundMove(global: globalPoint)
     }
     public func finishPanelMove(globalPoint: CGPoint) {
+        defer { restorePanelMoveCursor() }
         guard permitted, !retired else { edge.cancelBackgroundMove(); return }
         edge.endBackgroundMove(global: globalPoint)
     }
@@ -2350,7 +2425,23 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
     public var hasPanelCarry: Bool { permitted && !retired && edge.isBackgroundPressed }
 
     public func cancelPanelMove() {
+        defer { restorePanelMoveCursor() }
         if hasPanelControlCapture { interactionController?.cancelNozzle() }
         edge.cancelBackgroundMove()
     }
+}
+
+/// The placement a drop committed, held by the host until a Settings snapshot carries it (see `onCommittedPlacement`).
+/// Bounded in time, so a save that never lands cannot override a later choice of the old placement for long.
+private struct HeldDockDrop {
+    struct Fields: Equatable {
+        var displayID: String?, edge: SettingsDockEdge, alongFraction: Double
+        init(displayID: String?, edge: SettingsDockEdge, alongFraction: Double) {
+            self.displayID = displayID; self.edge = edge; self.alongFraction = alongFraction
+        }
+        init(_ p: SettingsPreferences) { self.init(displayID: p.dockDisplayID, edge: p.dockEdge, alongFraction: p.dockAlongFraction) }
+        func write(to p: inout SettingsPreferences) { p.dockDisplayID = displayID; p.dockEdge = edge; p.dockAlongFraction = alongFraction }
+    }
+    static let limit: Duration = .seconds(10)
+    let dropped: Fields, before: Fields, until: ContinuousClock.Instant
 }

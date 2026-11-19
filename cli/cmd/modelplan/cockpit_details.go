@@ -38,6 +38,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	result.Publication = selectCockpitPublication(published, view.Projection, nil)
 	if appserver.CockpitModelsEnabled(ctx) {
 		result.PublishedModels = allCockpitModels(published)
+		result.PlanModels = cockpitPlanModels(published, result.PublishedModels)
 	}
 	now := time.Now()
 	redBelow := admission.RedBelow
@@ -79,6 +80,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		out := byRef[account.Subscription.Ref]
 		if out == nil {
 			continue
+		}
+		if len(account.ReportedModels) > 0 && len(result.PublishedModels) > 0 {
+			out.ReportedModels = reportedPublishedModels(published, reportedHarnessKey(account.Source), account.ReportedModels, result.PublishedModels)
 		}
 		for _, card := range account.Cards {
 			if card.ExpiresAt != nil && !now.Before(*card.ExpiresAt) {

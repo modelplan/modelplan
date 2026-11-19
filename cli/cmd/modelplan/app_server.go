@@ -85,7 +85,8 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 				importer.StartOwedAfter(owedGrantDelay, speed.ImportDefaultDays)
 			}
 		},
-		Activity: appActivity(st.Dir),
+		ManualKeyPresent: func(provider string) bool { return quota.ManualKeyPresent(st.Dir, provider) },
+		Activity:         appActivity(st.Dir),
 		Reported: func(report quota.Report, now time.Time) {
 			if !options.ReadOnly {
 				observeQuotaHistory(st, report, now)
@@ -107,6 +108,9 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		return nil, func() {}, err
 	}
 	handlers["publication/get"] = publication
+	for method, h := range appserver.ReaderKeyHandlers(appserver.ReaderKeyConfig{Dir: st.Dir, ReadOnly: options.ReadOnly, Offline: options.Offline}) {
+		handlers[method] = h
+	}
 	if !options.ReadOnly {
 		importer = appserver.NewImportController(importEngine{st: st})
 		for method, h := range appserver.HistoryImportHandlers(importer) {

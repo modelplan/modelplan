@@ -12,10 +12,16 @@ import ModelPlanWire
   var onShown: (() -> Void)? { get set }
   /// D88: the attachment or the settled open changed (detach, put back, drop, entrance end).
   var onShellChanged: (() -> Void)? { get set }
+  /// Recovery contract: the page acknowledged a rendered display (verified data on screen).
+  var onRenderVerified: (() -> Void)? { get set }
+  /// A submitted display terminated without a rendered receipt.
+  var onDisplayAbandoned: (() -> Void)? { get set }
   /// D88: the detach / put-back key on screen for the one-time hints; nil while not settled.
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { get }
   /// G3-80: the cockpit window's frame while it is on screen; the enlarged field opens on its display.
   var cockpitFrame: CGRect? { get }
+  /// CKP-SHELL-33: the open just made runs the rack-first entrance, so the page is shown only once the rack is out.
+  var entersWithRack: Bool { get }
   /// CKP-SHELL-20: build and load the page without showing it or taking focus.
   func prewarm()
   func open()
@@ -33,8 +39,11 @@ import ModelPlanWire
 public extension CockpitPageSurface {
   var onShown: (() -> Void)? { get { nil } set {} }
   var onShellChanged: (() -> Void)? { get { nil } set {} }
+  var onRenderVerified: (() -> Void)? { get { nil } set {} }
+  var onDisplayAbandoned: (() -> Void)? { get { nil } set {} }
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
   var cockpitFrame: CGRect? { nil }
+  var entersWithRack: Bool { false }
   func prewarm() {}
   func requestClose() { discard() }
   func updateAppearance(_ appearance: CockpitAppearance) {}
@@ -98,7 +107,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// G3-56: the acknowledged caution identities. Restored at load, replaced whenever the page reports a press.
   public private(set) var ackedCautions: [String] = []
   public var cautionMemory: (any CockpitCautionMemory)? {
-    didSet { let ids = cautionMemory?.load() ?? []; ackedCautions = CockpitCautionIdentities.valid(ids) ? ids : [] }
+    didSet { let ids = cautionMemory?.load() ?? []; ackedCautions = CockpitCautionIdentities.valid(ids) ? CockpitCautionIdentities.durable(ids) : [] }
   }
   /// D136: the favourite model ids. Restored at load and replaced whenever the page reports a long-press. A user
   /// preference, so a store barrier does not clear them.
@@ -123,7 +132,13 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// at the next open before the fresh query returns, and dropped with every private-view clear,
   /// delivery change, feature failure and shutdown. The page applies the same freshness rules to it as
   /// to any data, against the clock at display time.
-  private var lastReply: (delivery: EngineDeliveryContext, data: WireCockpitData)?
+  private var lastReply: (delivery: EngineDeliveryContext, data: WireCockpitData)? {
+    didSet { if lastReply == nil { openingReply = nil; openingFreshPending = false; openingShown = false } }
+  }
+  // A warm open holds the reply present at the click until onShown; a faster fresh query waits behind it.
+  private var openingReply: (delivery: EngineDeliveryContext, data: WireCockpitData)?
+  private var openingFreshPending = false
+  private var openingShown = false
   /// The last settled history-import state seen for this delivery (phase, rows, coverage). The cockpit reads
   /// imported history on every query, but an import finishing or a removal need not change the engine's rows,
   /// so a change here is what asks the cockpit again (HIST-IMP-05).
@@ -173,6 +188,29 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// A fresh reply was handed to the presented page: the cockpit is showing data again (audit A-5: a query failure
   /// followed by this is a recovery, not an unavailable cockpit).
   public var onDisplayed: (() -> Void)?
+  /// Recovery contract: the presented page acknowledged a rendered display. Unlike `onDisplayed` (a reply handed to
+  /// the page), this is verified data on screen; the console's rebuild budget counts health from it.
+  public var onRenderVerified: (() -> Void)?
+  /// Recovery step 4: the presented page has shown verified data since it opened (or since the last privacy clear).
+  /// While it has, a failed query or a feature failure keeps the page and its last data, and the read is retried with a
+  /// backoff instead of announcing an unavailable cockpit.
+  public private(set) var presentedPageRendered = false
+  /// Recovery step 4: retries of a failed cockpit read, 1, 2, 4 ... at most 30 s. Injected in tests.
+  public var schedule: CockpitArm = { CockpitScheduling.task($0, $1) }
+  private var readRetry: (() -> Void)?
+  private var readRetryAttempt = 0
+  private func cancelReadRetry() { readRetry?(); readRetry = nil }
+  private func scheduleReadRetry(_ cause: String) {
+    guard presented, readRetry == nil else { return }
+    let delay = UInt64(min(30_000, 1_000 << min(readRetryAttempt, 5)))
+    readRetryAttempt += 1
+    CockpitFailureLog.record("cockpit-read retry=\(readRetryAttempt) delayMs=\(delay) after=\(cause)")
+    readRetry = schedule(delay) { [weak self] in
+      guard let self else { return }
+      self.readRetry = nil
+      self.refresh()
+    }
+  }
   /// D88: forwarded from the presented page only.
   public var onShellChanged: (() -> Void)?
   /// D88: the presented page's detach / put-back key, for the one-time hints.
@@ -234,7 +272,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     if let page {
       if !presented {
         // The prewarmed page: the click only shows it. Its scope starts as a new page's does.
-        presented = true
+        presented = true; presentedPageRendered = false
+        openingReply = lastReply; openingFreshPending = false; openingShown = false
         freshLogged = false
         CockpitTimingLog.record("open page=\(page.queryTicket == nil ? "warm-loading" : "warm-ready") clickMs=\(CockpitTimingLog.sinceClick())")
         trace("open.warm")
@@ -242,6 +281,11 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         page.updateScope(selectedScope)
       }
       page.open()
+      // CKP-SHELL-33 (owner, D186): a rack-first open asks for fresh data at the click, not when the page is first
+      // confirmed visible, so the reply can land while the rack extends; the page shows the last reply meanwhile and
+      // never waits for this one. A plain fade open keeps G3-42's order (last reply shown, then the fresh query): a query
+      // started at that click can land before the page is confirmed visible and hold back its first show (G3-42).
+      if self.page === page, page.entersWithRack, request == nil { trace("open.refresh"); refresh() }
       if self.page === page { onOpened?() }
       return
     }
@@ -249,7 +293,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     do { newPage = try makeWiredPage(context) } catch {
       onUnavailable?(.pageCreation(CockpitFailureLog.errorName(error))); return
     }
-    presented = true
+    presented = true; presentedPageRendered = false
     freshLogged = false
     CockpitTimingLog.record("open page=cold clickMs=\(CockpitTimingLog.sinceClick())")
     trace("open.cold")
@@ -277,13 +321,24 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       guard let self, self.pageGeneration == generation, self.presented else { return }
       CockpitTimingLog.record("open shown clickMs=\(CockpitTimingLog.sinceClick())")
       self.trace("page.shown")
-      self.showLastReply()
-      // A query already running was asked after this page loaded; its reply is fresh.
-      if self.request == nil { self.refresh() }
+      self.openingShown = true
+      self.showLastReply(self.openingReply ?? self.lastReply)
+      // Do not ask twice when the click-time query has already completed.
+      if !self.openingFreshPending && self.request == nil { self.refresh() }
     }
     newPage.onShellChanged = { [weak self] in
       guard let self, self.pageGeneration == generation, self.presented else { return }
       self.onShellChanged?()
+    }
+    newPage.onRenderVerified = { [weak self] in
+      guard let self, self.pageGeneration == generation, self.presented else { return }
+      self.presentedPageRendered = true; self.readRetryAttempt = 0
+      self.releaseOpeningReply()
+      self.onRenderVerified?()
+    }
+    newPage.onDisplayAbandoned = { [weak self] in
+      guard let self, self.pageGeneration == generation, self.presented else { return }
+      self.releaseOpeningReply()
     }
     newPage.onIntent = { [weak self] intent in
       guard self?.pageGeneration == generation else { return }; self?.receiveIntent(intent)
@@ -295,7 +350,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       self.cancelQuery()
       self.page = nil
       let wasPresented = self.presented
-      self.presented = false
+      self.presented = false; self.presentedPageRendered = false
+      self.openingReply = nil; self.openingFreshPending = false; self.openingShown = false
       if wasPresented { self.onClosed?() }
       else if !self.releasingWarmPage {
         self.warmFailures += 1
@@ -305,9 +361,16 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     }
     return newPage
   }
+  /// A rendered or terminally refused cached display releases the latest fresh reply, if one arrived.
+  private func releaseOpeningReply() {
+    guard openingShown, openingReply != nil else { return }
+    let hasFresh = openingFreshPending
+    openingReply = nil; openingFreshPending = false; openingShown = false
+    if hasFresh { showLastReply(lastReply); onDisplayed?() }
+  }
   /// The last reply for this exact delivery, on a page confirmed visible. Never retagged to a newer context.
-  private func showLastReply() {
-    guard let page, let ticket = page.queryTicket, let delivery, let last = lastReply, last.delivery == delivery,
+  private func showLastReply(_ reply: (delivery: EngineDeliveryContext, data: WireCockpitData)?) {
+    guard let page, let ticket = page.queryTicket, let delivery, let last = reply, last.delivery == delivery,
       let context = try? Self.bridgeContext(delivery), ticket.context == context else { return }
     scopeMembers = CockpitMemberScopes.keys(last.data)
     if CockpitMemberScopes.isIndexedFallback(selectedScope) || !scopeMembers.contains(selectedScope) { selectedScope = "all" }
@@ -381,7 +444,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func receiveIntent(_ intent:CockpitIntent) {
     if case .cautionAck(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids) else { return }
-      ackedCautions=ids; cautionMemory?.save(ids); return
+      ackedCautions=ids; cautionMemory?.save(CockpitCautionIdentities.durable(ids)); return
     }
     if case .pinnedModels(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids), Set(ids).count == ids.count else { return }
@@ -411,12 +474,14 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     cancelQuery()
     prewarmTask?.cancel(); prewarmTask = nil
     let previous = page, wasPresented = presented
-    page = nil; pageGeneration = nil; scopeMembers.removeAll(); presented = false
+    page = nil; pageGeneration = nil; scopeMembers.removeAll(); presented = false; presentedPageRendered = false
+    openingReply = nil; openingFreshPending = false; openingShown = false
     previous?.discard()
     if previous != nil, wasPresented { onClosed?() }
     schedulePrewarm()
   }
   private func cancelQuery() {
+    cancelReadRetry()
     request?.cancel()
     request = nil
     requestToken = nil
@@ -442,7 +507,12 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         // event. That event alone owns the notice, in either scheduling order.
       } catch {
         // A query for a hidden page that fails shows nothing; the open asks again.
-        if self?.requestToken == token, self?.presented == true { self?.onUnavailable?(.query(CockpitFailureLog.errorName(error))) }
+        if let self, self.requestToken == token, self.presented {
+          // Recovery step 4: a page with verified data keeps it; the read is retried. Only a page with nothing to show
+          // reports the failure (the console's notice grace decides from there).
+          if self.presentedPageRendered { self.scheduleReadRetry("query." + CockpitFailureLog.errorName(error)) }
+          else { self.onUnavailable?(.query(CockpitFailureLog.errorName(error))) }
+        }
       }
       guard let self, self.requestToken == token else { return }
       self.request = nil
@@ -482,7 +552,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public func consume(_ event: EngineClientEvent) async {
     switch event {
     case .clearPrivateViews(let invalidation):
-      cancelQuery()
+      cancelQuery(); presentedPageRendered = false
       lastReply = nil; importState = nil
       // The engine's first floor arrives as a clear with no previous session; nothing private was shown yet, so a scope
       // restored for today (D64) stays, and is still checked against the first reply. After a session, a consent or
@@ -507,11 +577,14 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         reply.envelope.storeEpoch == delivery.floor.storeEpoch,
         reply.envelope.consentGeneration == delivery.floor.generation
       {
-        lastReply = (delivery, reply.envelope.data)
+        lastReply = (delivery, reply.envelope.data); readRetryAttempt = 0
+        LaunchTimingLog.shared.mark("first-cockpit-reply", detail: "presented=\(presented)")
         trace(presented ? "query.reply" : "warm.reply")
         if !presented { CockpitTimingLog.record("prewarm last-reply buildMs=\(warmBuiltAt.map { CockpitTimingLog.ms(since: $0) } ?? -1)") }
         else if !freshLogged { freshLogged = true; CockpitTimingLog.record("open display=fresh clickMs=\(CockpitTimingLog.sinceClick())") }
-        if presented {
+        if presented, openingReply != nil {
+          openingFreshPending = true
+        } else if presented {
           scopeMembers=CockpitMemberScopes.keys(reply.envelope.data)
           if CockpitMemberScopes.isIndexedFallback(selectedScope) || !scopeMembers.contains(selectedScope) { selectedScope="all" }
           page?.display(reply.envelope.data, ticket: ticket)
@@ -540,6 +613,11 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       lastReply = nil
       trace("import.changed")
       refresh()
+    case .featureFailure(.cockpit, _) where presented && presentedPageRendered:
+      // Recovery step 4: one bad reply on a page that shows verified data is a data problem: the page keeps its last
+      // data (lastReply stays, it is the previous valid reply for this delivery) and the read is retried with a backoff.
+      cancelQuery()
+      scheduleReadRetry("feature.cockpit")
     case .featureFailure(.cockpit, _):
       cancelQuery()
       lastReply = nil
