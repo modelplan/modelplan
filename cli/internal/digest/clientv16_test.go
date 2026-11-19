@@ -285,3 +285,42 @@ func TestClientV16APIPriceMultiplierAtOrBelowOneIsDropped(t *testing.T) {
 		t.Fatalf("1.5 dropped %v", dropped)
 	}
 }
+
+// A malformed optional longContext, null included, drops only itself: the base price stays, so the priceUnit stays valid
+// even when that model is the only priced one.
+func TestClientV16NullLongContextKeepsTheBasePrice(t *testing.T) {
+	setNull := func(d map[string]any) { exampleModel(d, "astra")["price"].(map[string]any)["longContext"] = nil }
+	onlyAstraPriced := func(d map[string]any) {
+		for _, m := range d["models"].([]any) {
+			if m := m.(map[string]any); m["id"] != "astra" {
+				delete(m, "price")
+			}
+		}
+	}
+	for name, edit := range map[string]func(d map[string]any){
+		"null longContext":              setNull,
+		"null longContext, sole priced": func(d map[string]any) { onlyAstraPriced(d); setNull(d) },
+		"bad longContext, sole priced": func(d map[string]any) {
+			onlyAstraPriced(d)
+			exampleModel(d, "astra")["price"].(map[string]any)["longContext"] = map[string]any{"aboveInputTokens": 0, "input": 1, "output": 1}
+		},
+	} {
+		dropped, models := v16Drops(t, name, edit)
+		price, _ := publishedModel(t, models, "astra")["price"].(map[string]any)
+		if len(dropped) != 1 || dropped[0] != "models[astra].price.longContext" || price == nil || price["input"] != 10.0 || price["cacheRead"] != 1.0 {
+			t.Fatalf("%s: dropped %v, published price %v", name, dropped, price)
+		}
+		if _, ok := price["longContext"]; ok {
+			t.Fatalf("%s: longContext still published", name)
+		}
+	}
+}
+
+// A pending row's efforts must be a present empty array: absent and null are rejected like non-empty.
+func TestClientV16PendingEffortsMustBeAPresentEmptyArray(t *testing.T) {
+	v16Rejects(t, "efforts absent", "invalid_client_pending_model", func(d map[string]any) { delete(exampleModel(d, v16Pending), "efforts") })
+	v16Rejects(t, "efforts null", "invalid_client_pending_model", func(d map[string]any) { exampleModel(d, v16Pending)["efforts"] = nil })
+	if _, err := v16Parse(t, func(d map[string]any) { exampleModel(d, v16Pending)["efforts"] = []any{} }); err != nil {
+		t.Fatalf("efforts []: %v", err)
+	}
+}

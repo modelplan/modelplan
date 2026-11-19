@@ -128,3 +128,10 @@ test('a speed tier apiPriceMultiplier is a finite number above 1', async () => {
   for (const v of [1, 0.5, 0, '2', null]) await assert.rejects(async () => verifyClientDigest(await publication(d => { d.speedTiers[0].apiPriceMultiplier = v; })));
   await verifyClientDigest(await publication(d => { d.speedTiers[0].apiPriceMultiplier = 1.5; }));
 });
+
+test('the strict reader rejects a null longContext and a pending row without a present empty efforts array', async () => {
+  await assert.rejects(async () => verifyClientDigest(await publication(d => { model(d, 'astra').price.longContext = null; })));
+  await assert.rejects(async () => verifyClientDigest(await publication(d => { delete model(d, pendingId).efforts; })));
+  await assert.rejects(async () => verifyClientDigest(await publication(d => { model(d, pendingId).efforts = null; })));
+  await verifyClientDigest(await publication(d => { model(d, pendingId).efforts = []; }));
+});

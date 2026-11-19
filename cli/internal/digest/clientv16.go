@@ -29,14 +29,14 @@ var (
 )
 
 type v16Model struct {
-	ID                  string            `json:"id"`
-	Small               json.RawMessage   `json:"small"`
-	Evaluation          json.RawMessage   `json:"evaluation"`
-	Price               json.RawMessage   `json:"price"`
-	Efforts             []json.RawMessage `json:"efforts"`
-	Recommended         json.RawMessage   `json:"recommended"`
-	RecommendationBasis json.RawMessage   `json:"recommendationBasis"`
-	DefaultSelected     json.RawMessage   `json:"defaultSelected"`
+	ID                  string          `json:"id"`
+	Small               json.RawMessage `json:"small"`
+	Evaluation          json.RawMessage `json:"evaluation"`
+	Price               json.RawMessage `json:"price"`
+	Efforts             json.RawMessage `json:"efforts"` // absent, null and [] stay distinct
+	Recommended         json.RawMessage `json:"recommended"`
+	RecommendationBasis json.RawMessage `json:"recommendationBasis"`
+	DefaultSelected     json.RawMessage `json:"defaultSelected"`
 }
 
 type v16Data struct {
@@ -66,6 +66,12 @@ func projectionMinor(v string) int {
 }
 
 func present(r json.RawMessage) bool { return len(r) > 0 }
+
+// emptyArray is true only for a present JSON [] (not absent, not null).
+func emptyArray(r json.RawMessage) bool {
+	var a []json.RawMessage
+	return present(r) && string(r) != "null" && json.Unmarshal(r, &a) == nil && a != nil && len(a) == 0
+}
 
 // screenClientV16 checks the client-v1.6 fields before Parse decodes the digest. It returns the data with every
 // malformed optional field removed, one diagnostic per removal, and an error only for a publication-level violation.
@@ -108,7 +114,7 @@ func screenClientV16(data json.RawMessage) (json.RawMessage, []string, error) {
 			}
 			pending[m.ID] = true
 		}
-		if pending[m.ID] && (len(m.Efforts) > 0 || string(m.Recommended) != "null" || string(m.RecommendationBasis) != "null" || string(m.DefaultSelected) == "true") {
+		if pending[m.ID] && (!emptyArray(m.Efforts) || string(m.Recommended) != "null" || string(m.RecommendationBasis) != "null" || string(m.DefaultSelected) == "true") {
 			return nil, nil, errPendingModel
 		}
 	}
@@ -271,7 +277,19 @@ func validRates(o map[string]json.RawMessage) bool {
 // screenPrice returns the price to keep (nil to drop it) and, when something was dropped, what: "price" when the base
 // rates are malformed, "price.longContext" when only the long-context rates are.
 func screenPrice(raw json.RawMessage) (json.RawMessage, string) {
-	o, ok := fields(raw, []string{"input", "output", "source", "asOf"}, []string{"cacheRead", "cacheWrite", "longContext"})
+	// The base rates are validated without longContext, so a malformed longContext (null included) never takes
+	// the valid base price down with it.
+	var whole map[string]json.RawMessage
+	if json.Unmarshal(raw, &whole) != nil || whole == nil {
+		return nil, "price"
+	}
+	lc, hasLC := whole["longContext"]
+	delete(whole, "longContext")
+	base, err := json.Marshal(whole)
+	if err != nil {
+		return nil, "price"
+	}
+	o, ok := fields(base, []string{"input", "output", "source", "asOf"}, []string{"cacheRead", "cacheWrite"})
 	if !ok || !validRates(o) || !isoDay(o["asOf"]) {
 		return nil, "price"
 	}
@@ -279,16 +297,10 @@ func screenPrice(raw json.RawMessage) (json.RawMessage, string) {
 	if json.Unmarshal(o["source"], &source) != nil || (source != "litellm" && source != "modelsdev") {
 		return nil, "price"
 	}
-	lc, set := o["longContext"]
-	if !set || validLongContext(lc) {
+	if !hasLC || validLongContext(lc) {
 		return raw, ""
 	}
-	delete(o, "longContext")
-	b, err := json.Marshal(o)
-	if err != nil {
-		return nil, "price"
-	}
-	return b, "price.longContext"
+	return base, "price.longContext"
 }
 
 func validLongContext(raw json.RawMessage) bool {
