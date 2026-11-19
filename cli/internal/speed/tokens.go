@@ -5,6 +5,8 @@ import "math"
 // TokenKinds keeps unknown distinct from zero. Input is uncached input; cached reads and
 // writes are separate. A sum is known only if every observed request supplied that field.
 type TokenKinds struct {
+	TotalTokens      *int64 `json:"totalTokens,omitempty"`
+	ReasoningTokens  *int64 `json:"reasoningTokens,omitempty"` // subset of output, never added twice
 	InputTokens      *int64 `json:"inputTokens"`
 	CacheReadTokens  *int64 `json:"cacheReadTokens"`
 	CacheWriteTokens *int64 `json:"cacheWriteTokens"`
@@ -34,6 +36,8 @@ func addKind(dst **int64, src *int64, first bool) {
 	*dst = &x
 }
 func (k *TokenKinds) add(src TokenKinds, first bool) {
+	addKind(&k.TotalTokens, src.TotalTokens, first)
+	addKind(&k.ReasoningTokens, src.ReasoningTokens, first)
 	addKind(&k.InputTokens, src.InputTokens, first)
 	addKind(&k.CacheReadTokens, src.CacheReadTokens, first)
 	addKind(&k.CacheWriteTokens, src.CacheWriteTokens, first)
