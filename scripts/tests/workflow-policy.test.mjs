@@ -413,7 +413,7 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
   fs.writeFileSync(`${dir}/gh`, '#!/bin/bash\n[ -n "${GH_FAIL:-}" ] && exit 1\nurl="$2"\nwhile [ $# -gt 0 ]; do [ "$1" = --jq ] && f="$2"; shift; done\n' +
     'if [[ $url =~ /runs/([0-9]+)/jobs ]]; then [ -n "${JOBS_FAIL:-}" ] && exit 1; v="JOBS_${BASH_REMATCH[1]}"; d="${!v:-null}"; else d="${RUNS:-null}"; fi\n' +
     'printf "%s" "$d" | jq -r "$f"\n', { mode: 0o755 });
-  fs.writeFileSync(`${dir}/git`, '#!/bin/bash\ncase "$1" in fetch) [ -z "${NO_BASE:-}" ];; merge-base) echo base;; diff) echo desktop/native/x.swift;; esac\n', { mode: 0o755 });
+  fs.writeFileSync(`${dir}/git`, '#!/bin/bash\ncase "$1" in fetch) [ -z "${NO_BASE:-}" ];; merge-base) echo base;; diff) printf %s desktop/native/x.swift; printf "\\\\0";; esac\n', { mode: 0o755 });
   fs.writeFileSync(`${dir}/python3`, '#!/bin/bash\n[ -n "${SEL_FAIL:-}" ] && exit 1\nprintf "%s\\n" "${SELECTED:-WidgetTests}"\n', { mode: 0o755 });
   const go = (env) => {
     const out = `${dir}/out`; fs.writeFileSync(out, "");
@@ -567,4 +567,35 @@ test("D254: trusted-mac.yml is untouched (its SHA is pinned by callers and the r
   assert.notEqual(r.status, 1, "trusted-mac.yml differs from origin/main");
   const callers = workflows().flatMap(([, t]) => [...t.matchAll(/workflows\/trusted-mac\.yml@([0-9a-f]{40})/g)].map((m) => m[1]));
   assert.ok(callers.length > 0 && callers.every((s) => /^[0-9a-f]{40}$/.test(s)), "every caller pins trusted-mac.yml by full SHA");
+});
+
+test("D254 pr-scope reads NUL-separated paths: tab, quote, newline and unicode names under desktop/native still run the Macs; failures fail closed", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  const block = text.slice(text.indexOf("\n  pr-scope:\n"));
+  const sh = /run: \|\n((?:          .*\n|\n)+)/.exec(block.slice(block.indexOf("- id: scope")))[1].replace(/^          /gm, "");
+  const macPaths = /MAC_PATHS: (.*)\n/.exec(block)[1];
+  assert.doesNotMatch(sh, /name-only(?![^\n]*-z)/, "every name-only list is NUL-separated");
+  const dir = fs.mkdtempSync("/tmp/d254-scope-"), tmp = fs.mkdtempSync("/tmp/d254-tmp-");
+  const git = (...a) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", ...a], { cwd: dir, encoding: "utf8" });
+  try {
+    git("init", "-q", "-b", "main");
+    fs.writeFileSync(`${dir}/README.md`, "x\n"); git("add", "-A"); git("commit", "-qm", "base");
+    const scope = (files, extraEnv = {}) => {
+      git("checkout", "-q", "-B", "pr", "main");
+      for (const f of files) { fs.mkdirSync(`${dir}/${f.split("/").slice(0, -1).join("/")}`, { recursive: true }); fs.writeFileSync(`${dir}/${f}`, "y\n"); }
+      git("add", "-A"); git("commit", "-qm", "pr");
+      git("checkout", "-q", "-B", "merge", "main"); git("merge", "-q", "--no-ff", "-m", "m", "pr");
+      const out = `${dir}.out`; fs.writeFileSync(out, "");
+      const r = spawnSync("bash", ["-c", sh], { cwd: dir, env: { PATH: process.env.PATH, MAC_PATHS: macPaths, RUNNER_TEMP: tmp, GITHUB_OUTPUT: out, ...extraEnv }, encoding: "utf8" });
+      return { status: r.status, out: fs.readFileSync(out, "utf8").trim() };
+    };
+    for (const name of ["desktop/native/with\ttab.swift", 'desktop/native/with"quote.swift', "desktop/native/with\nnewline.swift", "desktop/native/\u00fcn\u00efcode-\u4e2d.swift"])
+      assert.deepEqual(scope([name]), { status: 0, out: "mac=true" }, JSON.stringify(name));
+    assert.deepEqual(scope(["docs/a.txt", "desktop/native/only.md"]), { status: 0, out: "mac=false" }, "no Mac path, markdown only");
+    assert.deepEqual(scope(["docs/with\ttab.txt"]), { status: 0, out: "mac=false" });
+    // A failing diff stops the step instead of emitting mac=false.
+    const bad = scope(["desktop/native/a.swift"], { GIT_DIR: `${dir}/nowhere` });
+    assert.notEqual(bad.status, 0);
+    assert.doesNotMatch(bad.out, /mac=false/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(`${dir}.out`, { force: true }); fs.rmSync(tmp, { recursive: true, force: true }); }
 });

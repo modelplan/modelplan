@@ -172,8 +172,10 @@ jobs:
           set -eu
           # A pull_request checkout is the merge commit, so its first parent is the base. Markdown never needs a Mac.
           # A failed diff must not read as "no Mac path": capture it first (set -e stops the step), then filter.
-          git -c core.quotepath=off diff --no-renames --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed.txt"
-          if grep -vE '\.md$' "$RUNNER_TEMP/changed.txt" | grep -qE "$MAC_PATHS"; then
+          # NUL-separated (-z) so Git never quotes a path (tab, quote, newline, non-ASCII); a quoted path would miss the
+          # anchored pattern and skip the Macs. Anything unreadable or odd falls through to mac=true (fail closed).
+          git diff --no-renames --name-only -z HEAD^1 HEAD > "$RUNNER_TEMP/changed.z"
+          if [ ! -s "$RUNNER_TEMP/changed.z" ] || grep -zvE '\.md$' "$RUNNER_TEMP/changed.z" | grep -qzE "$MAC_PATHS"; then
             echo "mac=true" >> "$GITHUB_OUTPUT"; echo "PR changes paths the macOS jobs test"
           else
             echo "mac=false" >> "$GITHUB_OUTPUT"; echo "PR changes no path the macOS jobs test: macOS jobs skipped"
@@ -452,9 +454,11 @@ jobs:
             && [ "$REF" != refs/heads/main ] && [[ $REF != refs/heads/release* ]]; then
             changed="$RUNNER_TEMP/d169-gui-changed.txt"
             if git fetch -q --no-tags origin main && base=$(git merge-base FETCH_HEAD HEAD) \
-              && git diff --no-renames --name-only "$base" HEAD > "$changed"; then
-              # Any selector failure falls back to the full share.
-              classes=$(python3 desktop/native/tools/ci/gui_test_selection.py select --changed "$changed") || classes=full
+              && git diff --no-renames --name-only -z "$base" HEAD > "$changed.z"; then
+              # The selector reads one path per line: a path with a newline (or any unparsable list) selects the full share.
+              tr '\0' '\n' < "$changed.z" > "$changed"
+              if [ "$(tr -cd '\n' < "$changed.z" | wc -c)" != 0 ]; then echo "a changed path contains a newline: full GUI share"
+              else classes=$(python3 desktop/native/tools/ci/gui_test_selection.py select --changed "$changed") || classes=full; fi
             else
               echo "no merge base with main: full GUI share"
             fi
