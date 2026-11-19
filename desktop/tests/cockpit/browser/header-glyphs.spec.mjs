@@ -2,7 +2,7 @@
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 
-test('official built header displays each approved control glyph',async({page})=>{
+test('LBL-2.2-04 official built header actions display their approved symbols',async({page})=>{
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands();expect(await page.evaluate(raw=>window.modelPlanCockpit.receive(raw),send('load',{appearance,shell}))).toBe(true);
  const cases=[
@@ -20,5 +20,6 @@ test('official built header displays each approved control glyph',async({page})=
   const url=urls.find(value=>value.endsWith('/'+item.asset));expect(url,`${item.selector} missing ${item.asset}`).toBeTruthy();
   expect(await page.evaluate(src=>new Promise(resolve=>{const image=new Image();image.onload=()=>resolve(image.naturalWidth>0&&image.naturalHeight>0);image.onerror=()=>resolve(false);image.src=src;}),url)).toBe(true);
  }
+ for(const selector of ['[data-settings]','[data-detach]','[data-close]'])await expect(page.locator(selector)).toHaveText('');
  expect(await page.locator('.private-content img').count()).toBe(0);
 });
