@@ -20,6 +20,10 @@ enum WP15Rows {
         case keptOld
         /// A kept 5h reading whose window reset an hour ago.
         case keptReset
+        /// macrevb-1051-1: a kept 5h reading taken 10 minutes before its window ended, but the producer states no reset time.
+        case keptNoReset
+        /// macrevb-1051-2: tight like `tight`, but its one reset card expired an hour ago.
+        case tightExpiredReserve
         /// Enabled but unreadable: not signed in, no reading at all.
         case unread
         /// The first read is still running.
@@ -32,6 +36,8 @@ enum WP15Rows {
             case .keptReset: return "4444444444444444"
             case .unread: return "5555555555555555"
             case .loading: return "6666666666666666"
+            case .keptNoReset: return "7777777777777777"
+            case .tightExpiredReserve: return "8888888888888888"
             }
         }
         var name: String {
@@ -42,6 +48,8 @@ enum WP15Rows {
             case .keptReset: return "Kept reset"
             case .unread: return "Unread"
             case .loading: return "Loading"
+            case .keptNoReset: return "Kept no reset"
+            case .tightExpiredReserve: return "Tight expired"
             }
         }
     }
@@ -78,26 +86,29 @@ enum WP15Rows {
             account["lastFailure"] = NSNull(); account["plan"] = ["id": "pro", "name": ["en": "Pro", "zh": "Pro"]]
             for key in ["activity", "resetCards", "credits", "today"] { account.removeValue(forKey: key) }
             switch member {
-            case .tight:
+            case .tight, .tightExpiredReserve:
                 let observed = base.addingTimeInterval(-120)
                 row["state"] = "fresh"; row["expiresAt"] = "2099-01-01T00:00:00Z"
                 account["valueState"] = "current"; account["freshUntil"] = "2099-01-01T00:00:00Z"; account["observedAt"] = stamp(observed)
                 account["windows"] = [window(Self.session, remaining: 9, resets: base.addingTimeInterval(7200), observed: observed, current: true),
                                       window(Self.weekly, remaining: 42, resets: base.addingTimeInterval(2 * 86_400 + 10 * 3600), observed: observed, current: true)]
                 account["today"] = ["observedOutputTokens": 6_800_000, "runningSessions": 2, "bindingBasis": "source-wide-current-binding"]
-                let card = stamp(base.addingTimeInterval(30 * 3600))
+                let card = stamp(base.addingTimeInterval(member == .tightExpiredReserve ? -3600 : 30 * 3600))
                 account["resetCards"] = ["state": "complete", "count": 1, "earliestExpiresAt": card,
                                          "items": [["id": String(repeating: "a", count: 64), "expiresAt": card]], "truncated": false,
                                          "sources": [["source": "codex-account", "observedAt": stamp(observed)]]]
                 forecasts.append(["source": member.rawValue.lowercased(), "subscriptionRef": member.ref, "windowId": Self.session,
                                   "runsOutAt": stamp(base.addingTimeInterval(40 * 60)), "pace": "tight", "basis": "recent-rate",
                                   "observedAt": stamp(observed)])
-            case .keptRecent, .keptOld, .keptReset:
-                let observed = base.addingTimeInterval(member == .keptRecent ? -30 * 60 : member == .keptOld ? -3 * 3600 : -6 * 3600)
+            case .keptRecent, .keptOld, .keptReset, .keptNoReset:
+                let observed = base.addingTimeInterval(member == .keptNoReset ? -10 * 60 : member == .keptRecent ? -30 * 60 : member == .keptOld ? -3 * 3600 : -6 * 3600)
                 row["state"] = "stale"; row["nextStep"] = refresh; row["expiresAt"] = NSNull(); row["stateAfterExpiry"] = NSNull()
                 row["reason"] = ["code": "stale_reading", "text": ["en": "A retained reading is shown", "zh": "正在显示保留的旧读数"]]
                 account["valueState"] = "retained"; account["observedAt"] = stamp(observed)
-                if member == .keptReset {
+                if member == .keptNoReset {
+                    account["freshUntil"] = NSNull()
+                    account["windows"] = [window(Self.session, remaining: 30, resets: nil, observed: observed, current: false)]
+                } else if member == .keptReset {
                     let reset = base.addingTimeInterval(-3600)
                     account["freshUntil"] = stamp(reset)
                     account["windows"] = [window(Self.session, remaining: 30, resets: reset, observed: observed, current: false)]
@@ -295,5 +306,26 @@ actor WP15Engine: EngineClient {
         XCTAssertTrue(rows.allSatisfy { $0.value.isEmpty && $0.detail.isEmpty && $0.fillFraction == nil && !$0.label.isEmpty })
         XCTAssertEqual(content.rows.count, rows.count, "nothing but the window rows")
         XCTAssertEqual(content.actionLabel, "")
+    }
+
+    /// macrevb-1051-1: a kept reading needs a producer-stated reset; without one it must not be shown from a guessed end
+    /// (reading time plus 5 h would show it for ~5 h after a real reset the producer never told us about).
+    func testKeptReadingWithoutAProducerResetIsNotKept() async throws {
+        let (app, _) = try await launch([.keptNoReset])
+        let ring = try reading(app, .keptNoReset)
+        XCTAssertNotEqual(ring.readout, "30%", "no guessed end: the old number is not carried")
+        let session = try XCTUnwrap(try card(app, .keptNoReset).rows.first { $0.id == "quota:" + WP15Rows.session })
+        XCTAssertNotEqual(session.value, "30%")
+    }
+
+    /// macrevb-1051-2: under an alert, a positive but expired reserve is labelled expired and is not the lit action.
+    func testExpiredReserveIsNotBrightenedUnderAnAlert() async throws {
+        let (app, _) = try await launch([.tight, .tightExpiredReserve])
+        XCTAssertEqual(try card(app, .tight).rows.first { $0.id == "reserve" }?.emphasised, true, "a usable reset is lit")
+        let content = try card(app, .tightExpiredReserve)
+        XCTAssertTrue(content.rows.contains { $0.kind == .alert }, "the alert still shows")
+        let reserve = try XCTUnwrap(content.rows.first { $0.id == "reserve" })
+        XCTAssertTrue(reserve.detail.contains("expired"), reserve.detail)
+        XCTAssertFalse(reserve.emphasised, "an expired reset is not the action to take")
     }
 }

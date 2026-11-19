@@ -432,7 +432,7 @@ public enum EngineDeadlineFacts {
     }
     /// DOCK-3.2-50 / DOCK-3.3-09 (amended): a stale member keeps the number it last read for a window until that window
     /// resets. Only a stable member that is its own subscription (or a single unbound account), with a known reading time
-    /// and a known end (its reset, else its reading time plus its duration). Never a current window, never a peer's value.
+    /// and a producer-stated reset (never a guessed end). Never a current window, never a peer's value.
     private func retainedWindow(_ member: EngineAccountMember, _ window: RowsWindow, now: Date) -> EngineRetainedWindow? {
         let row = member.row, account = member.account
         guard now.timeIntervalSinceReferenceDate.isFinite,
@@ -444,11 +444,10 @@ public enum EngineDeadlineFacts {
               let percent = window.remainingPercent, percent.isFinite, (0...100).contains(percent),
               let observed = date(window.observedAt) ?? date(account.observedAt),
               observed.timeIntervalSinceReferenceDate.isFinite, observed <= now else { return nil }
-        let reset = date(window.resetsAt)
-        let until: Date
-        if let reset { until = reset }
-        else if let seconds = window.durationSeconds, seconds > 0 { until = observed.addingTimeInterval(TimeInterval(seconds)) }
-        else { return nil }
+        // macrevb-1051-1: only a producer-stated reset ends a kept reading. A guessed end (reading time plus duration) can
+        // outlive the real reset by hours when the reading was taken near the window's end, so no reset means no kept value.
+        guard let reset = date(window.resetsAt) else { return nil }
+        let until = reset
         guard until.timeIntervalSinceReferenceDate.isFinite, until > now else { return nil }
         return .init(memberID: member.id, windowID: window.id, remainingPercent: percent, resetsAt: reset, observedAt: observed, until: until)
     }

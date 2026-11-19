@@ -93,9 +93,12 @@ public struct DockContentRow: Sendable {
         }
     }
     /// The reserve brightens under an alert only when a reset is there to use (V1-FINAL §2 item 5).
-    var hasResetAvailable: Bool {
-        guard let value = additionalRows.first(where: { $0.id == "reset-count" })?.value else { return false }
-        return Int(String(value.drop { $0 == "↺" })).map { $0 > 0 } ?? false
+    /// macrevb-1051-2: judged at presentation time; a positive count whose earliest expiry has passed is not spendable.
+    func hasResetAvailable(at now: Date) -> Bool {
+        guard let value = additionalRows.first(where: { $0.id == "reset-count" })?.value,
+              Int(String(value.drop { $0 == "↺" })).map({ $0 > 0 }) ?? false else { return false }
+        if let expiry = resetCountExpiry, expiry <= now { return false }
+        return true
     }
 
     public func cardBadge(at now:Date,english:Bool) -> String {

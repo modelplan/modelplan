@@ -547,7 +547,7 @@ actor S4RowsClient: EngineClient {
         try require(card.rows.contains{$0.id == "quota:extra" && $0.kind == .extraQuota && $0.value == "1%"},"extra quota belongs in the card only")
         let afterReset=Date(timeIntervalSince1970:4_102_444_800) // 2100-01-01
         let expired=try entry.composition.dock.cardContent(for:input.id,at:afterReset)
-        try require(expired?.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("Reset time passed") == true,"relative reset text must use presentation time, not cached projection time")
+        try require(expired?.rows.first(where:{$0.id == "quota:five"})?.detail == "","relative reset text must use presentation time, not cached projection time: no reset text once the reset has passed (WP-15, V1-FINAL §0)")
         var old=SettingsPreferences();old.subscriptionSettings["codex"] = .init(alias:"Saved",percentagePin:.week)
         old.subscriptions = .init(order:["codex"],hiddenIDs:["codex"])
         let migrated=entry.composition.accountMembers.migratingRowPreferences(old)

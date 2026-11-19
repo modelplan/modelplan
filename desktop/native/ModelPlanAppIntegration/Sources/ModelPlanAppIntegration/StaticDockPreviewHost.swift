@@ -2239,7 +2239,7 @@ struct DockHelpInteraction: Equatable {
         if !loading, !unreadable,
            let alert = DockCardAlertRule.alert(input: projected, runOutTimes: row.runOutTimes, redBelow: effectiveRedBelow, now: now) {
             // DOCK-3.8-52: a reset the user can spend is the one thing to do now, so its reserve line brightens.
-            if row.hasResetAvailable {
+            if row.hasResetAvailable(at: now) {
                 additional = additional.map { r in
                     r.id == "reserve" ? DockCardRow(id: r.id, kind: r.kind, label: r.label, value: r.value, detail: r.detail,
                         remainingFraction: r.remainingFraction, fillFraction: .some(r.fillFraction), tone: r.tone,
