@@ -115,6 +115,8 @@ type Digest struct {
 	CalendarFrom      time.Time          `json:"-"`
 	CalendarTo        time.Time          `json:"-"`
 	Catalogue         *detect.Catalogue  `json:"-"`
+	// Dropped names each malformed optional field Parse removed (client-v1.6: "models[opus].price"), for diagnostics.
+	Dropped           []string `json:"-"`
 	publication       publicationFields
 	CLIUpdate         json.RawMessage    `json:"cli,omitempty"` // optional verified update pin; decoded only by explicit update
 	PublicationID     string             `json:"publicationId"`
@@ -221,7 +223,12 @@ func Parse(component string, b []byte) (*Digest, error) {
 	if raw.SchemaVersion != 1 || raw.Kind != ComponentClient || raw.Data == nil {
 		return nil, errors.New("client: unsupported schema")
 	}
-	var d Digest
+	screened, dropped, err := screenClientV16(raw.Data) // client-v1.6: drops malformed optional fields
+	if err != nil {
+		return nil, err
+	}
+	raw.Data = screened
+	d := Digest{Dropped: dropped}
 	var catalogueErr error
 	d.Catalogue, catalogueErr = detect.ParseData(raw.Data)
 	if catalogueErr != nil {
@@ -266,9 +273,6 @@ func Parse(component string, b []byte) (*Digest, error) {
 		if !strings.HasPrefix(d.ProjectionVersion, "client-v1.") || d.Multipliers == nil || d.MultiplierHorizon == nil || d.MultiplierHorizon.Selection != "highest-priority-no-stacking" {
 			return nil, errors.New("client: incomplete multiplier contract")
 		}
-	}
-	if err := validateClientV16(raw.Data); err != nil {
-		return nil, err
 	}
 	if d.PlanMetering != nil && !validMetering(d.PlanMetering) {
 		d.PlanMetering = nil

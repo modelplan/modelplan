@@ -125,7 +125,34 @@ func TestClientV16PriceUnitIsPresentExactlyWithPrices(t *testing.T) {
 	}
 }
 
-func TestClientV16ModelPricesAreStrict(t *testing.T) {
+// v16Drops parses an edited example and returns the diagnostics and the published models as the app receives them.
+func v16Drops(t *testing.T, name string, edit func(d map[string]any)) ([]string, string) {
+	t.Helper()
+	d, err := v16Parse(t, edit)
+	if err != nil {
+		t.Fatalf("%s: the publication was rejected: %v", name, err)
+	}
+	p := d.Publication()
+	return d.Dropped, string(p.Models) + "\n" + string(p.SpeedTiers)
+}
+
+// publishedModel finds one model in the published models feed returned by v16Drops.
+func publishedModel(t *testing.T, feed, id string) map[string]any {
+	t.Helper()
+	var models []map[string]any
+	if err := json.Unmarshal([]byte(strings.SplitN(feed, "\n", 2)[0]), &models); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range models {
+		if m["id"] == id {
+			return m
+		}
+	}
+	t.Fatalf("%s not published", id)
+	return nil
+}
+
+func TestClientV16MalformedModelPricesAreDroppedForThatModel(t *testing.T) {
 	for name, edit := range map[string]func(p map[string]any){
 		"zero input":      func(p map[string]any) { p["input"] = 0 },
 		"negative output": func(p map[string]any) { p["output"] = -1 },
@@ -135,44 +162,67 @@ func TestClientV16ModelPricesAreStrict(t *testing.T) {
 		"timestamp asOf":  func(p map[string]any) { p["asOf"] = "2026-11-19T00:00:00Z" },
 		"impossible asOf": func(p map[string]any) { p["asOf"] = "2026-02-30" },
 		"unknown key":     func(p map[string]any) { p["extra"] = 1 },
-		"zero threshold": func(p map[string]any) {
-			p["longContext"] = map[string]any{"aboveInputTokens": 0, "input": 1, "output": 1}
-		},
-		"fraction": func(p map[string]any) {
-			p["longContext"] = map[string]any{"aboveInputTokens": 1.5, "input": 1, "output": 1}
-		},
-		"null long cache": func(p map[string]any) {
-			p["longContext"] = map[string]any{"aboveInputTokens": 200000, "input": 1, "output": 1, "cacheRead": nil}
-		},
-		"string input":      func(p map[string]any) { p["input"] = "4" },
-		"missing longInput": func(p map[string]any) { p["longContext"] = map[string]any{"aboveInputTokens": 200000, "output": 1} },
+		"string input":    func(p map[string]any) { p["input"] = "4" },
 	} {
-		if _, err := v16Parse(t, func(d map[string]any) { edit(exampleModel(d, "opus")["price"].(map[string]any)) }); err == nil {
-			t.Fatalf("%s accepted", name)
+		dropped, models := v16Drops(t, name, func(d map[string]any) { edit(exampleModel(d, "opus")["price"].(map[string]any)) })
+		if len(dropped) != 1 || dropped[0] != "models[opus].price" {
+			t.Fatalf("%s: dropped %v", name, dropped)
+		}
+		if _, ok := publishedModel(t, models, "opus")["price"]; ok {
+			t.Fatalf("%s: opus price still published", name)
 		}
 	}
-	if _, err := v16Parse(t, func(d map[string]any) {
+	for name, lc := range map[string]any{
+		"zero threshold":    map[string]any{"aboveInputTokens": 0, "input": 1, "output": 1},
+		"fraction":          map[string]any{"aboveInputTokens": 1.5, "input": 1, "output": 1},
+		"null long cache":   map[string]any{"aboveInputTokens": 200000, "input": 1, "output": 1, "cacheRead": nil},
+		"missing longInput": map[string]any{"aboveInputTokens": 200000, "output": 1},
+		"not an object":     "272000",
+	} {
+		dropped, models := v16Drops(t, name, func(d map[string]any) { exampleModel(d, "opus")["price"].(map[string]any)["longContext"] = lc })
+		price, _ := publishedModel(t, models, "opus")["price"].(map[string]any)
+		if len(dropped) != 1 || dropped[0] != "models[opus].price.longContext" || price == nil || price["input"] != 4.0 || price["longContext"] != nil {
+			t.Fatalf("%s: dropped %v, published price %v", name, dropped, price)
+		}
+	}
+	dropped, _ := v16Drops(t, "small", func(d map[string]any) { exampleModel(d, "opus")["small"] = "yes" })
+	if len(dropped) != 1 || dropped[0] != "models[opus].small" {
+		t.Fatalf("small: dropped %v", dropped)
+	}
+	if dropped, _ := v16Drops(t, "absent cache rates", func(d map[string]any) {
 		p := exampleModel(d, "opus")["price"].(map[string]any)
 		delete(p, "cacheRead")
 		delete(p, "cacheWrite")
-	}); err != nil {
-		t.Fatalf("absent cache rates: %v", err)
+	}); len(dropped) != 0 {
+		t.Fatalf("absent cache rates dropped %v", dropped)
 	}
-}
-
-func TestClientV16UsageTrend(t *testing.T) {
-	trend := func(d map[string]any) map[string]any { return d["usageTrend"].(map[string]any) }
-	v16Rejects(t, "unknown model", "invalid_client_usage_trend", func(d map[string]any) {
-		trend(d)["ranks"].(map[string]any)["not-a-model"] = make([]any, 30)
-	})
-	v16Rejects(t, "short series", "invalid_client_usage_trend", func(d map[string]any) {
-		r := trend(d)["ranks"].(map[string]any)
-		for k, v := range r {
-			r[k] = v.([]any)[1:]
-			break
+	// priceUnit is checked after the drops: no priced model left means the unit must go too.
+	v16Rejects(t, "every price dropped", "invalid_client_price_unit", func(d map[string]any) {
+		for _, m := range d["models"].([]any) {
+			if p, ok := m.(map[string]any)["price"].(map[string]any); ok {
+				p["input"] = 0
+			}
 		}
 	})
-	v16Rejects(t, "over 8192 bytes", "invalid_client_usage_trend", func(d map[string]any) {
+}
+
+func TestClientV16MalformedUsageTrendIsDroppedAsAWhole(t *testing.T) {
+	trend := func(d map[string]any) map[string]any { return d["usageTrend"].(map[string]any) }
+	for name, edit := range map[string]func(u map[string]any){
+		"unknown model": func(u map[string]any) { u["ranks"].(map[string]any)["not-a-model"] = make([]any, 30) },
+		"short series":  func(u map[string]any) { u["ranks"].(map[string]any)["astra"] = make([]any, 29) },
+		"zero days":     func(u map[string]any) { u["days"] = 0 },
+		"91 days":       func(u map[string]any) { u["days"] = 91 },
+		"source":        func(u map[string]any) { u["source"] = "openrouter" },
+		"asOf":          func(u map[string]any) { u["asOf"] = "18 Nov 2026" },
+		"rank 0":        func(u map[string]any) { u["ranks"].(map[string]any)["astra"].([]any)[0] = 0 },
+		"unknown key":   func(u map[string]any) { u["extra"] = true },
+	} {
+		if dropped, _ := v16Drops(t, name, func(d map[string]any) { edit(trend(d)) }); len(dropped) != 1 || dropped[0] != "usageTrend" {
+			t.Fatalf("%s: dropped %v", name, dropped)
+		}
+	}
+	dropped, _ := v16Drops(t, "over 8192 bytes", func(d map[string]any) {
 		trend(d)["days"] = 90
 		r := map[string]any{}
 		for _, m := range d["models"].([]any) {
@@ -184,15 +234,8 @@ func TestClientV16UsageTrend(t *testing.T) {
 		}
 		trend(d)["ranks"] = r
 	})
-	for name, edit := range map[string]func(u map[string]any){
-		"zero days":   func(u map[string]any) { u["days"] = 0 },
-		"91 days":     func(u map[string]any) { u["days"] = 91 },
-		"source":      func(u map[string]any) { u["source"] = "openrouter" },
-		"asOf":        func(u map[string]any) { u["asOf"] = "18 Nov 2026" },
-		"rank 0":      func(u map[string]any) { u["ranks"].(map[string]any)["astra"].([]any)[0] = 0 },
-		"unknown key": func(u map[string]any) { u["extra"] = true },
-	} {
-		v16Rejects(t, name, "invalid_client_usage_trend", func(d map[string]any) { edit(trend(d)) })
+	if len(dropped) != 1 || dropped[0] != "usageTrend" {
+		t.Fatalf("over 8192 bytes: dropped %v", dropped)
 	}
 }
 
@@ -231,13 +274,14 @@ func TestClientV16PendingRows(t *testing.T) {
 	}
 }
 
-func TestClientV16APIPriceMultiplierIsAboveOne(t *testing.T) {
+func TestClientV16APIPriceMultiplierAtOrBelowOneIsDropped(t *testing.T) {
 	for _, v := range []any{1, 0.5, 0, "2", nil} {
-		if _, err := v16Parse(t, func(d map[string]any) { d["speedTiers"].([]any)[0].(map[string]any)["apiPriceMultiplier"] = v }); err == nil {
-			t.Fatalf("apiPriceMultiplier %v accepted", v)
+		dropped, tiers := v16Drops(t, "apiPriceMultiplier", func(d map[string]any) { d["speedTiers"].([]any)[0].(map[string]any)["apiPriceMultiplier"] = v })
+		if len(dropped) != 1 || !strings.HasSuffix(dropped[0], ".apiPriceMultiplier") || strings.Count(tiers, "apiPriceMultiplier") != 1 {
+			t.Fatalf("apiPriceMultiplier %v: dropped %v", v, dropped)
 		}
 	}
-	if _, err := v16Parse(t, func(d map[string]any) { d["speedTiers"].([]any)[0].(map[string]any)["apiPriceMultiplier"] = 1.5 }); err != nil {
-		t.Fatal(err)
+	if dropped, _ := v16Drops(t, "1.5", func(d map[string]any) { d["speedTiers"].([]any)[0].(map[string]any)["apiPriceMultiplier"] = 1.5 }); len(dropped) != 0 {
+		t.Fatalf("1.5 dropped %v", dropped)
 	}
 }

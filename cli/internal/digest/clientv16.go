@@ -24,12 +24,8 @@ const (
 var (
 	errV16Projection = errors.New("client: invalid_client_v16_projection")
 	errPriceUnit     = errors.New("client: invalid_client_price_unit")
-	errUsageTrend    = errors.New("client: invalid_client_usage_trend")
 	errPendingModel  = errors.New("client: invalid_client_pending_model")
-	errPrice         = errors.New("client: invalid_client_price")
-	errSmall         = errors.New("client: invalid_client_small")
 	errEvaluation    = errors.New("client: invalid_client_evaluation")
-	errSpeedPrice    = errors.New("client: invalid_speed_tier_api_price_multiplier")
 )
 
 type v16Model struct {
@@ -71,90 +67,143 @@ func projectionMinor(v string) int {
 
 func present(r json.RawMessage) bool { return len(r) > 0 }
 
-func validateClientV16(data json.RawMessage) error {
+// screenClientV16 checks the client-v1.6 fields before Parse decodes the digest. It returns the data with every
+// malformed optional field removed, one diagnostic per removal, and an error only for a publication-level violation.
+//
+// The split with reader/public-reader.mjs is deliberate. The JS public reader is the producer's validator and rejects
+// any violation. This app-facing CLI digest follows the rule for optional fields (aaScore, planMetering, planModels):
+// a bad models[].small, models[].price or price.longContext is dropped for that model, a bad
+// speedTiers[].apiPriceMultiplier for that tier, and a bad usageTrend as a whole; the publication survives. These stay
+// rejections: v1.6 fields below client-v1.6, an evaluation other than "pending", a pending row with efforts, a
+// recommendation, a missing null recommendationBasis, defaultSelected true or a lineup place, and a priceUnit that is
+// not usd-per-1m-tokens or does not match whether any model still has a price after the drops.
+func screenClientV16(data json.RawMessage) (json.RawMessage, []string, error) {
 	var d v16Data
 	if err := json.Unmarshal(data, &d); err != nil {
-		return err
+		return nil, nil, err
 	}
 	if projectionMinor(d.ProjectionVersion) < 6 {
 		if present(d.PriceUnit) || present(d.UsageTrend) {
-			return errV16Projection
+			return nil, nil, errV16Projection
 		}
 		for _, m := range d.Models {
 			if present(m.Small) || present(m.Price) || present(m.Evaluation) {
-				return errV16Projection
+				return nil, nil, errV16Projection
 			}
 		}
 		for _, t := range d.SpeedTiers {
 			if present(t.APIPriceMultiplier) {
-				return errV16Projection
+				return nil, nil, errV16Projection
 			}
 		}
-		return nil
+		return data, nil, nil
 	}
-	priced, pending, ids := false, map[string]bool{}, map[string]bool{}
+	pending, ids := map[string]bool{}, map[string]bool{}
 	for _, m := range d.Models {
 		ids[m.ID] = true
-		if present(m.Small) {
-			var b bool
-			if string(m.Small) == "null" || json.Unmarshal(m.Small, &b) != nil {
-				return errSmall
-			}
-		}
 		if present(m.Evaluation) {
 			var s string
 			if json.Unmarshal(m.Evaluation, &s) != nil || s != "pending" {
-				return errEvaluation
+				return nil, nil, errEvaluation
 			}
 			pending[m.ID] = true
 		}
-		if present(m.Price) {
-			if !validModelPrice(m.Price) {
-				return errPrice
-			}
-			priced = true
+		if pending[m.ID] && (len(m.Efforts) > 0 || string(m.Recommended) != "null" || string(m.RecommendationBasis) != "null" || string(m.DefaultSelected) == "true") {
+			return nil, nil, errPendingModel
 		}
 	}
-	for _, t := range d.SpeedTiers {
-		if present(t.APIPriceMultiplier) {
-			if v, ok := number(t.APIPriceMultiplier); !ok || v <= 1 {
-				return errSpeedPrice
+	for _, l := range d.Lineups {
+		if pending[l.Baseline] {
+			return nil, nil, errPendingModel
+		}
+		for _, id := range l.Frontier {
+			if pending[id] {
+				return nil, nil, errPendingModel
+			}
+		}
+		for _, r := range l.Members {
+			if pending[r.ID] {
+				return nil, nil, errPendingModel
 			}
 		}
 	}
 	if present(d.PriceUnit) {
 		var u string
 		if json.Unmarshal(d.PriceUnit, &u) != nil || u != PriceUnitUSDPer1M {
-			return errPriceUnit
+			return nil, nil, errPriceUnit
+		}
+	}
+
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(data, &top); err != nil {
+		return nil, nil, err
+	}
+	var dropped []string
+	changed, priced := false, false
+	var models []map[string]json.RawMessage
+	if json.Unmarshal(top["models"], &models) == nil {
+		modelsChanged := false
+		for i, m := range models {
+			id := d.Models[i].ID
+			if v, ok := m["small"]; ok {
+				var b bool
+				if string(v) == "null" || json.Unmarshal(v, &b) != nil {
+					delete(m, "small")
+					dropped, modelsChanged = append(dropped, "models["+id+"].small"), true
+				}
+			}
+			if v, ok := m["price"]; ok {
+				kept, note := screenPrice(v)
+				if note != "" {
+					dropped, modelsChanged = append(dropped, "models["+id+"]."+note), true
+				}
+				if kept == nil {
+					delete(m, "price")
+				} else {
+					m["price"], priced = kept, true
+				}
+			}
+		}
+		if modelsChanged {
+			if b, err := json.Marshal(models); err == nil {
+				top["models"], changed = b, true
+			}
+		}
+	}
+	var tiers []map[string]json.RawMessage
+	if json.Unmarshal(top["speedTiers"], &tiers) == nil {
+		tiersChanged := false
+		for _, t := range tiers {
+			if v, ok := t["apiPriceMultiplier"]; ok {
+				if x, ok := number(v); !ok || x <= 1 {
+					var id string
+					_ = json.Unmarshal(t["id"], &id)
+					delete(t, "apiPriceMultiplier")
+					dropped, tiersChanged = append(dropped, "speedTiers["+id+"].apiPriceMultiplier"), true
+				}
+			}
+		}
+		if tiersChanged {
+			if b, err := json.Marshal(tiers); err == nil {
+				top["speedTiers"], changed = b, true
+			}
 		}
 	}
 	if present(d.PriceUnit) != priced {
-		return errPriceUnit
+		return nil, nil, errPriceUnit
 	}
 	if present(d.UsageTrend) && !validUsageTrend(d.UsageTrend, ids) {
-		return errUsageTrend
+		delete(top, "usageTrend")
+		dropped, changed = append(dropped, "usageTrend"), true
 	}
-	for _, m := range d.Models {
-		if pending[m.ID] && (len(m.Efforts) > 0 || string(m.Recommended) != "null" || string(m.RecommendationBasis) != "null" || string(m.DefaultSelected) == "true") {
-			return errPendingModel
-		}
+	if !changed {
+		return data, nil, nil
 	}
-	for _, l := range d.Lineups {
-		if pending[l.Baseline] {
-			return errPendingModel
-		}
-		for _, id := range l.Frontier {
-			if pending[id] {
-				return errPendingModel
-			}
-		}
-		for _, r := range l.Members {
-			if pending[r.ID] {
-				return errPendingModel
-			}
-		}
+	b, err := json.Marshal(top)
+	if err != nil {
+		return nil, nil, err
 	}
-	return nil
+	return b, dropped, nil
 }
 
 // fields decodes a strict JSON object: only the listed keys, every required key present, no nulls.
@@ -219,25 +268,36 @@ func validRates(o map[string]json.RawMessage) bool {
 	return true
 }
 
-func validModelPrice(raw json.RawMessage) bool {
+// screenPrice returns the price to keep (nil to drop it) and, when something was dropped, what: "price" when the base
+// rates are malformed, "price.longContext" when only the long-context rates are.
+func screenPrice(raw json.RawMessage) (json.RawMessage, string) {
 	o, ok := fields(raw, []string{"input", "output", "source", "asOf"}, []string{"cacheRead", "cacheWrite", "longContext"})
 	if !ok || !validRates(o) || !isoDay(o["asOf"]) {
-		return false
+		return nil, "price"
 	}
 	var source string
 	if json.Unmarshal(o["source"], &source) != nil || (source != "litellm" && source != "modelsdev") {
+		return nil, "price"
+	}
+	lc, set := o["longContext"]
+	if !set || validLongContext(lc) {
+		return raw, ""
+	}
+	delete(o, "longContext")
+	b, err := json.Marshal(o)
+	if err != nil {
+		return nil, "price"
+	}
+	return b, "price.longContext"
+}
+
+func validLongContext(raw json.RawMessage) bool {
+	l, ok := fields(raw, []string{"aboveInputTokens", "input", "output"}, []string{"cacheRead", "cacheWrite"})
+	if !ok || !validRates(l) {
 		return false
 	}
-	if lc, set := o["longContext"]; set {
-		l, ok := fields(lc, []string{"aboveInputTokens", "input", "output"}, []string{"cacheRead", "cacheWrite"})
-		if !ok || !validRates(l) {
-			return false
-		}
-		if v, ok := integer(l["aboveInputTokens"]); !ok || v <= 0 {
-			return false
-		}
-	}
-	return true
+	v, ok := integer(l["aboveInputTokens"])
+	return ok && v > 0
 }
 
 func validUsageTrend(raw json.RawMessage, models map[string]bool) bool {
