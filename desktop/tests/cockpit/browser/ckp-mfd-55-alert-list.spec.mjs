@@ -181,9 +181,14 @@ test('ALR-51 a one-row signed-out projection without details still lists its gre
  const data=calm();data.projection.rows=data.projection.rows.slice(2,3);data.details=null;
  const row=data.projection.rows[0];row.surfaces=['menu','settings'];row.state='needs_action';row.reason={...row.reason,code:'not_signed_in'};
  const c=row.accounts[0];c.valueState='none';c.windows=[];c.lastFailure={at:iso(-1),code:'not_signed_in'};
- await open(page,data);await lamp(page).click();
+ const {send,receive}=await open(page,data);await lamp(page).click();
  await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 1');
  await expect(rows(page).nth(0).locator('.al-l1')).toHaveText('Cursor no reading · not signed in');
+ // A routine refresh with the same account keeps the list open and the focus on the same row (never closes a live alert).
+ await rows(page).nth(0).locator('button').focus();
+ for(let i=0;i<2;i++){expect(await receive(send('display',{data}))).toBe(true);}
+ await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 1');
+ expect(await page.evaluate(()=>document.activeElement?.closest('li')?.textContent??'')).toContain('Cursor');
 });
 
 // macrev2 11-19 (delta): two unverified accounts of one provider and route swap positions; a fallback identity can be
