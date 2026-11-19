@@ -231,12 +231,12 @@ test("every owner-Mac route that is not a GUI task needs modelplan-mac-nongui, s
   const gui = /\(inputs\.task == 'native' \|\| inputs\.task == 'native-owner-gui' \|\| inputs\.task == 'gui-probe'\) && '(\[[^\]]*\])'/.exec(TRUSTED_MAC_ROUTE);
   assert.ok(gui && JSON.parse(gui[1]).includes("modelplan-mac-gui"), "only native, native-owner-gui and gui-probe take the GUI label");
   // The hosted GUI split never reaches an owner Mac: it is excluded from the owner branch, and its caller passes macos-15.
-  assert.ok(TRUSTED_MAC_ROUTE.includes("inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (inputs.task != 'native-headless' || github.event_name == 'merge_group') &&"));
+  assert.ok(TRUSTED_MAC_ROUTE.includes("inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (inputs.task != 'native-headless' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) &&"));
   // D198 for every event but the merge queue: native-headless resolves to the hosted image from inputs.os.
   // D246: in the merge queue it takes the non-GUI owner Macs; the GUI label is only for the three tasks checked above.
   const headless = TRUSTED_MAC_ROUTE.split("|| (inputs.os == 'ubuntu-latest'")[0].split("native-headless").length - 1;
   assert.equal(headless, 2, "native-headless appears only in the merge_group exception and the merge_group clause");
-  assert.ok(TRUSTED_MAC_ROUTE.includes("(inputs.task != 'native-headless' || github.event_name == 'merge_group')"));
+  assert.ok(TRUSTED_MAC_ROUTE.includes("(inputs.task != 'native-headless' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))"));
   assert.ok(TRUSTED_MAC_ROUTE.includes("((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled')"), "owner GUI tasks still need MAC_CI_GUI");
   const reusable = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
   assert.deepEqual(guiGuardProblems(reusable), [], "every non-GUI job opens with the D94 GUI guard");
@@ -515,4 +515,19 @@ test("desktop.yml queue-scope declares 'GUI share not needed' for the merge gate
   assert.ok(m, "the step rules.mjs guiLegState relies on must exist in queue-scope, gated on gui != 'true'");
   assert.ok(text.indexOf(m[0]) > text.indexOf("\n  queue-scope:") && text.indexOf(m[0]) < text.indexOf("\n  gui-scope:"), "inside queue-scope");
   assert.ok(!/: /.test(m[1]) && !/ #/.test(m[1]), "a plain scalar with ': ' is a YAML error (this broke desktop.yml at 7df3cedc)");
+});
+
+test("native-headless warms from a seed script read from main, and only a main dispatch publishes", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  const job = text.split("\n  native-headless:\n")[1].split("\n  transport:\n")[0];
+  // The script never comes from the workspace (the merge-queue commit): it is a separate sparse checkout of main.
+  assert.match(job, /uses: actions\/checkout@[0-9a-f]{40}[^\n]*\n {6}with:\n {8}ref: main\n {8}path: \.trusted-main\n {8}sparse-checkout: scripts\/mac-compile\n {8}persist-credentials: false/);
+  const calls = [...job.matchAll(/run: bash "([^"]+)" (\w+)/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(calls, [["$GITHUB_WORKSPACE/.trusted-main/scripts/mac-compile/headless-seed.sh", "restore"], ["$GITHUB_WORKSPACE/.trusted-main/scripts/mac-compile/headless-seed.sh", "publish"]]);
+  assert.ok(!/bash scripts\//.test(job) && !/bash "?\$GITHUB_WORKSPACE\/scripts/.test(job), "no seed script from the workspace");
+  const publish = job.split("name: Publish the build seed")[1].split("run:")[0];
+  assert.ok(publish.includes("github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'") && publish.includes("success()"));
+  // restore comes before the first build, publish after the last check.
+  assert.ok(job.indexOf("headless-seed.sh\" restore") < job.indexOf("swift build --package-path desktop/native --jobs 2"));
+  assert.ok(job.indexOf("headless-seed.sh\" publish") > job.indexOf("Synthetic fixture integrity"));
 });
