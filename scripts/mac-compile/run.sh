@@ -11,12 +11,13 @@
 set -u
 PLAN=$1; SCRATCH_ROOT=$2; SHA=$3
 LIMIT=$(( ${PACKAGE_MINUTES:-25} * 60 ))
-LOGS=${RUNNER_TEMP:-/tmp}/mac-compile-logs; rm -rf "$LOGS"; mkdir -p "$LOGS" "$SCRATCH_ROOT"
+LOGS=${RUNNER_TEMP:-/tmp}/mac-compile-logs; mkdir -p "$SCRATCH_ROOT"
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 ok=1; rows=; failed_tests=; errors=
 
 SEED_ROOT=${SEED_ROOT:-}; SEED_WRITE=${SEED_WRITE:-0}
 . "$(dirname "${BASH_SOURCE[0]}")/seedlib.sh"
+wipe "$LOGS"; mkdir -p "$LOGS" || exit 1
 
 # Run "$@" until it exits or the package deadline passes (macOS has no timeout(1)); SwiftPM stops its children on TERM.
 limited() {
@@ -34,7 +35,7 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
   [ -n "$dir" ] || continue
   sp="$SCRATCH_ROOT/$scratch"; blog="$LOGS/$scratch-build.log"; tlog="$LOGS/$scratch-test.log"
   deadline=$(( $(date +%s) + LIMIT ))
-  wipe "$sp"; [ ! -e "$sp" ] || { echo "::error::could not clear $sp"; exit 1; }
+  clear_path "$sp" || { echo "::error::could not clear or move aside $sp"; exit 1; }
   if [ -n "$SEED_ROOT" ]; then seed_restore "$dir" "$scratch" "$sp" || true; fi
   echo "::group::$dir: swift build"
   limited swift build --package-path "$dir" --scratch-path "$sp" >"$blog" 2>&1; brc=$?
