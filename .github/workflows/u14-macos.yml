@@ -19,6 +19,13 @@ on:
       - desktop/native/**
       - .github/workflows/u14-macos.yml
       - '!**/*.md'
+  # D314: a hosted leg runs on main after merge (post-merge-hosted.yml reports it); without this it never ran there.
+  push:
+    branches: [main]
+    paths:
+      - tools/u14/**
+      - desktop/native/**
+      - .github/workflows/u14-macos.yml
 permissions:
   contents: read
 concurrency:
@@ -30,7 +37,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft) && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     runs-on: macos-latest
     timeout-minutes: 45
     env:

@@ -214,3 +214,19 @@ test("when the scratch cannot be deleted it is moved aside and the job builds co
   assert.equal(fs.readFileSync(path.join(sp, "product"), "utf8"), "built\n");
   unlock(path.join(d, "scratch"));
 });
+
+test("one build compiles product and test targets; swift test then runs with --skip-build and the same scratch", () => {
+  for (const [mode, filter, skip, expectTest] of [["filter", "ATests|BTests", "Never", ["--filter", "ATests|BTests", "--skip", "Never"]], ["skip", "-", "Never", ["--skip", "Never"]], ["build-tests", "-", "None", null]]) {
+    const d = setup();
+    fs.writeFileSync(path.join(d, "plan.tsv"), `desktop/native/Pkg\tdesktop_native_Pkg\t${mode}\t${filter}\t${skip}\n`);
+    fs.writeFileSync(path.join(d, "bin", "swift"), `#!/bin/bash\nif [ "$1" = --version ]; then echo s; exit 0; fi\necho "$*" >> "${d}/calls"\nexit 0\n`, { mode: 0o755 });
+    const r = run(d);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const calls = fs.readFileSync(path.join(d, "calls"), "utf8").trim().split("\n");
+    const sp = path.join(d, "scratch", "desktop_native_Pkg");
+    assert.equal(calls[0], `build --build-tests --package-path desktop/native/Pkg --scratch-path ${sp}`);
+    if (!expectTest) { assert.equal(calls.length, 1, calls.join("\n")); continue; }
+    assert.equal(calls.length, 2, calls.join("\n"));
+    assert.equal(calls[1], `test --skip-build --package-path desktop/native/Pkg --scratch-path ${sp} ${expectTest.join(" ")}`);
+  }
+});
