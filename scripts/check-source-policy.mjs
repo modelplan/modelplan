@@ -14,11 +14,10 @@ verifyFontPack(root);
 verifyPortholePack(root);
 const tracked = execFileSync(
   "git",
-  ["ls-files", "--cached", "--others", "--exclude-standard"],
+  ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
   { cwd: root, encoding: "utf8" },
 )
-  .trim()
-  .split("\n")
+  .split("\0")
   .filter(Boolean);
 const reserved = policy.reservedVisuals;
 const inReserved = (p) => p.startsWith(reserved.prefix);

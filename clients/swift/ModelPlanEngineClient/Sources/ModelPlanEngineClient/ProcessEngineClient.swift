@@ -234,6 +234,7 @@ public actor ProcessEngineClient: EngineClient {
                 frame: { [weak self] id, bytes in await self?.receive(id, bytes: bytes) },
                 ended: { [weak self] id, badFrame in await self?.ended(id, protocolFault: badFrame) })
             child = process
+            LaunchTimingLog.shared.mark("engine-spawn")
             let params = try WireInitializeParams(sessionId: sessionID, protocolVersion: WireProtocol.version,
                 appVersion: configuration.applicationVersion,
                 capabilities: Self.declaredCapabilities(withCredentials: credentialAgent != nil))
