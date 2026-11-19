@@ -171,7 +171,9 @@ jobs:
         run: |
           set -eu
           # A pull_request checkout is the merge commit, so its first parent is the base. Markdown never needs a Mac.
-          if git diff --no-renames --name-only -z HEAD^1 HEAD | grep -zvE '\.md$' | grep -qzE "$MAC_PATHS"; then
+          # A failed diff must not read as "no Mac path": capture it first (set -e stops the step), then filter.
+          git -c core.quotepath=off diff --no-renames --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed.txt"
+          if grep -vE '\.md$' "$RUNNER_TEMP/changed.txt" | grep -qE "$MAC_PATHS"; then
             echo "mac=true" >> "$GITHUB_OUTPUT"; echo "PR changes paths the macOS jobs test"
           else
             echo "mac=false" >> "$GITHUB_OUTPUT"; echo "PR changes no path the macOS jobs test: macOS jobs skipped"
