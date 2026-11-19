@@ -77,6 +77,9 @@ jobs:
       - name: "source-policy: mac-compile plan tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/mac-compile-plan.test.mjs
+      - name: "source-policy: build seed tests (mac-compile and native-headless)"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/mac-compile-run.test.mjs scripts/tests/mac-compile-headless-seed.test.mjs
       - name: "source-policy: changelog tests and fragment check"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/changelog.test.mjs && node scripts/changelog.mjs --check
