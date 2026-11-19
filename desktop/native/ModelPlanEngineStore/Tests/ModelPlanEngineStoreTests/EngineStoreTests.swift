@@ -48,6 +48,44 @@ import ModelPlanWire
         return .init(envelope: try .init(sessionId: ctx.sessionID, storeEpoch: ctx.floor.storeEpoch,
                                         consentGeneration: generation, data: value), delivery: ctx)
     }
+    /// The capture's tool row (`codex`) with another reader state. Edited as text: the decoder keeps identifiers out of
+    /// NSNumber conversion, so the bytes are not round-tripped through JSONSerialization.
+    private func rows(state: String) throws -> WireRowsSnapshot {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures").standardizedFileURL
+        let text = try String(contentsOf: root.appendingPathComponent("WireRowsSnapshot.json"), encoding: .utf8)
+        let rowsStart = try XCTUnwrap(text.range(of: "\"rows\": ["))
+        let field = try XCTUnwrap(text.range(of: "\"state\": \"off\"", range: rowsStart.upperBound..<text.endIndex))
+        let edited = text.replacingCharacters(in: field, with: "\"state\": \"" + state + "\"")
+        let value = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(edited.utf8))
+        XCTAssertEqual(value.projection.rows.first?.id, "codex")
+        XCTAssertEqual(value.projection.rows.first?.state.rawValue, state)
+        return value
+    }
+    /// WP-17 (macrevd-1006-2): the bootstrap rows reply is the first delivery on a cold start; its readings are marked
+    /// there, once, and later notifications do not move them.
+    func testFirstReadingStagesMarkTheBootstrapRowsReply() async throws {
+        let store = EngineStore()
+        var lines: [String] = []
+        store.launchTiming = LaunchTimingLog(now: { 2 }, processStart: { 1 }, sink: { lines.append($0) })
+        await store.consume(.response(requestID: .string("bootstrap"), .rows(try reply(rows(state: "fresh")), invalidRowCount: 0)))
+        XCTAssertEqual(lines, ["timing launch stage=first-reading.codex uptimeMs=2000 sinceStartMs=1000",
+                               "timing launch stage=first-fresh.codex uptimeMs=2000 sinceStartMs=1000"])
+        await store.consume(.rowsChanged(try reply(rows(state: "fresh")), invalidRowCount: 0))
+        XCTAssertEqual(lines.count, 2, "once per process")
+    }
+    func testStaleThenFreshRowsMarkReadingThenFresh() async throws {
+        let store = EngineStore()
+        var stages: [String] = []
+        store.launchTiming = LaunchTimingLog(now: { 2 }, processStart: { 1 }, sink: { stages.append(String($0.split(separator: " ")[2])) })
+        await store.consume(.response(requestID: .string("bootstrap"), .rows(try reply(rows(state: "off")), invalidRowCount: 0)))
+        XCTAssertEqual(stages, [])
+        await store.consume(.rowsChanged(try reply(rows(state: "stale")), invalidRowCount: 0))
+        XCTAssertEqual(stages, ["stage=first-reading.codex"])
+        await store.consume(.featureFailure(.rows, .notReady))
+        await store.consume(.rowsChanged(try reply(rows(state: "fresh")), invalidRowCount: 0))
+        XCTAssertEqual(stages, ["stage=first-reading.codex", "stage=first-fresh.codex"])
+    }
     func testRowsFanOutAndDetachWithoutMembershipReinterpretation() async throws {
         let store = EngineStore(), sink = Sink()
         let token = store.attach(sink)
