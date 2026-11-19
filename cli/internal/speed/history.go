@@ -9,15 +9,16 @@ import (
 // TodayTotals is for today: what the harnesses on this machine produced, summed across their
 // configurations. Unattributed: the rows carry no subscription identity.
 type SourceHistory struct {
-	Source    string    `json:"source"`
-	Recent7d  PerfSums  `json:"recent7d"`
-	Recent30d PerfSums  `json:"recent30d"`
+	Source    string   `json:"source"`
+	Recent7d  PerfSums `json:"recent7d"`
+	Recent30d PerfSums `json:"recent30d"`
 }
 
 // HistoryWindows: per source, the sums of the recent 7 and 30 local days. A missing token kind
 // in any counted row leaves that sum unknown, never zero. Sources with no counted row in either
 // window are left out, like TodayTotals leaves out a source with nothing today.
 func (v PerfView) HistoryWindows() []SourceHistory {
+	v = v.accounted()
 	out := []SourceHistory{}
 	if !v.OK {
 		return out
@@ -54,19 +55,19 @@ type RankedEntity struct {
 
 // EntityWindow: every entity with a counted row in the window, ranked by observed output tokens.
 type EntityWindow struct {
-	Entities                  int             `json:"entities"`
-	TotalObservedOutputTokens int64           `json:"totalObservedOutputTokens"`
-	Top                       []RankedEntity  `json:"top"`
+	Entities                  int            `json:"entities"`
+	TotalObservedOutputTokens int64          `json:"totalObservedOutputTokens"`
+	Top                       []RankedEntity `json:"top"`
 }
 
 // EntityRanking ranks models or tools by observed output tokens over the recent 7 and 30 local
 // days. Attribution is "unattributed": the ledger cannot split a source's history between the
 // accounts that used it.
 type EntityRanking struct {
-	Measure     string        `json:"measure"`     // observed-output-tokens
-	Attribution string        `json:"attribution"` // unattributed
-	Recent7d    EntityWindow  `json:"recent7d"`
-	Recent30d   EntityWindow  `json:"recent30d"`
+	Measure     string       `json:"measure"`     // observed-output-tokens
+	Attribution string       `json:"attribution"` // unattributed
+	Recent7d    EntityWindow `json:"recent7d"`
+	Recent30d   EntityWindow `json:"recent30d"`
 }
 
 // HistoryRankings holds the two rankings. Only rows of the given sources are counted (nil or
