@@ -170,7 +170,10 @@ def select(changed: list[str], root: Path = ROOT, manifest: dict | None = None) 
     # Any control character (CR, LF, tab, ...) in a path means the list cannot be trusted to split the way Git meant.
     if any(any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in p) for p in changed):
         return full("a changed path contains a control character")
-    paths = sorted({p.strip() for p in changed if p.strip()})
+    # Paths are compared byte-exact: one with leading or trailing whitespace is an odd name, never trimmed into another.
+    if any(p != p.strip() for p in changed if p):
+        return full("a changed path has leading or trailing whitespace")
+    paths = sorted({p for p in changed if p})
     if not paths:
         return full("no changed path to select from")
     if len(paths) > MAX_CHANGED:

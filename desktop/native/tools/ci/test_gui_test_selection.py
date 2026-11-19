@@ -79,14 +79,16 @@ class SelectTests(unittest.TestCase):
     def test_a_control_character_in_any_path_selects_the_full_suite(self):
         narrow = f"{TESTS}/WidgetTests.swift"
         self.assertEqual(self.pick(narrow), "WidgetTests")
-        for bad in ["Probe.md\rToken.swift", "Probe.md\nToken.swift", "a\tb.swift", "x\x00y", "x\x7fy"]:
+        for bad in ["Probe.md ", " Probe.md", "Probe.md\t", "Probe.md\rToken.swift", "Probe.md\nToken.swift", "a\tb.swift", "x\x00y", "x\x7fy"]:
             self.assertEqual(self.pick(narrow, bad), "full", repr(bad))
 
     def test_nul_separated_input_is_split_on_nul_only(self):
         narrow = f"{TESTS}/WidgetTests.swift"
         cases = {"ok": (f"{narrow}\0".encode(), "WidgetTests"),
                  "cr": (f"{narrow}\0Probe.md\rToken.swift\0".encode(), "full"),
-                 "lf": (f"{narrow}\0Probe.md\nToken.swift\0".encode(), "full")}
+                 "lf": (f"{narrow}\0Probe.md\nToken.swift\0".encode(), "full"),
+                 "trail": (f"{narrow}\0Probe.md \0".encode(), "full"),
+                 "lead": (f"{narrow}\0 Probe.md\0".encode(), "full")}
         for name, (raw, want) in cases.items():
             f = self.root / f"changed-{name}.z"
             f.write_bytes(raw)
