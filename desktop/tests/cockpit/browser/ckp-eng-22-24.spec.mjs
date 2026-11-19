@@ -55,3 +55,29 @@ test('CKP-ENG-24 the empty bay add-subscription opens Settings on the Subscripti
  await page.locator('.ec-add').first().click();
  expect(await page.evaluate(()=>window.sent.filter(m=>m.type==='action').map(m=>m.action))).toEqual(['openSettingsSubscriptions']);
 });
+
+// macrevb-1020-1: the footer describes only the DISPLAYED columns, also while a subscription is selected and the pager moves.
+test('CKP-ENG-55 a selected subscription does not keep a paged-out reading in the footer',async({page})=>{
+ const {data,account,sync}=fixture(7);
+ account(6).observedAt=iso(-125);account(6).valueState='retained';account(6).lastFailure={at:iso(-1),code:'network'};sync();
+ await open(page,data);
+ await page.locator('.ek[data-sub]').first().click();
+ await expect(page.locator('.eng-upd-t'),'selected, own reading').toHaveText('Updated 3 min ago');
+ await page.locator('.eng-pk[data-bpage="1"]').click();
+ await expect(page.locator('.eng-upd-t'),'page 2 is on screen: its reading, its failure').toHaveText('Updated 2 h ago · no new data');
+ await expect(page.locator('.eng-upd')).toHaveAttribute('data-failing','true');
+ await page.locator('.eng-pk[data-bpage="-1"]').click();
+ await expect(page.locator('.eng-upd-t')).toHaveText('Updated 3 min ago');
+ await expect(page.locator('.eng-upd')).toHaveAttribute('data-failing','false');
+});
+
+// macrevb-1020-3: the age rides the first populated quota cell, so a weekly-only (or Other-only) stale column still has it.
+test('CKP-ENG-22 a stale weekly-only subscription shows its reading age on its weekly cell',async({page})=>{
+ const {data,account,sync}=fixture(2);
+ Object.assign(account(1),{valueState:'retained',observedAt:iso(-125)});account(1).windows=account(1).windows.filter(w=>w.role==='weekly');sync();
+ await open(page,data);
+ const col=page.locator('.eng-cols > .ec[data-col]').nth(1);
+ await expect(col.locator('.qcell[data-row="first"] .qtxt')).toHaveCount(0);
+ await expect(col.locator('.qcell[data-row="second"] .qtxt')).toHaveText(/2h ago/);
+ expect((await col.innerText()).split('2h ago').length-1).toBe(1);
+});

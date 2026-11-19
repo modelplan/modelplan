@@ -43,11 +43,11 @@ function note(col,c,ui) {
 }
 function title(col,c,ui){return [col.name,periodTag(c),c.value==null?t('eng.noReading'):t(ui.used?'eng.used':'eng.left',{v:Math.round(c.value)}),
   c.level==='low'?t('eng.lvLow'):c.level==='mid'?t('eng.lvMid'):'',c.runOutMin!=null?t('eng.runOut',{t:dhm(c.runOutMin)}):'',c.resetIn!=null?t('eng.resetIn',{t:dhm(c.resetIn)}):c.value!=null&&!col.grey?t('eng.resetUnknown'):'',note(col,c,ui).text].filter(Boolean).join(' · ');}
-function cell(col,c,row,m,ui,fresh){
+function cell(col,c,row,m,ui,fresh,lead){
   const n=note(col,c,ui), different=c.extra||c.period!==m.rowPeriods[row];
   const tag=different?periodTag(c):'', shortTag=c.extra?extraShort(c):tag;
-  // CKP-ENG-22: a stale reading says how old it is, once per column, from the row's own reading time; none known = no age.
-  const age=col.state==='stale'&&col.ageMin!=null&&row==='first'?ageText(col.ageMin):'';
+  // CKP-ENG-22: a stale reading says how old it is, once per column on its first populated quota cell, from the row's own reading time; none known = no age.
+  const age=col.state==='stale'&&col.ageMin!=null&&row===lead?ageText(col.ageMin):'';
   const meta=(txt,tg)=>[tg,txt,age,c.more?`+${c.more}`:''].filter(Boolean).join(' ');
   const full=meta(n.warn&&m.cls==='narrow'?(n.short||n.text):n.text,tag), short=meta(n.event&&ui.lang==='zh-CN'?(n.short||n.text).replaceAll(' ',''):(n.short||n.text),shortTag);
   const smallest=[c.extra?[...extraName(c)][0]:tag,n.small||n.short||n.text,age].filter(Boolean).join(' ')+(c.more?`+${c.more}`:'');
@@ -94,7 +94,7 @@ const UNREAD={kind:'5h',period:'5h',remaining:null,value:null,level:'none',lit:0
 function column(col,m,ui,changed){
  const cells=col.state==='error'&&!m.rows.some(r=>col.cells[r])?{...col.cells,[m.rows[0]]:UNREAD}:col.cells;
  return `<div class="ec${col.tint?' tint-'+col.tint:''}${col.grey?' grey':''}${col.off?' dimmed':''}" data-col="${esc(col.id)}" data-state="${esc(col.state)}">`+
- m.rows.map(r=>col.state==='loading'?placeholder(col,r):cells[r]?cell(col,cells[r],r,m,ui,changed.has(`${col.id}:${r}`)):`<div class="qcell none" data-row="${r}"></div>`).join('')+today(col,m)+(m.reserve?reserve(col,m,ui):'')+(m.rich?detail(col,ui):'')+'</div>';}
+ m.rows.map(r=>col.state==='loading'?placeholder(col,r):cells[r]?cell(col,cells[r],r,m,ui,changed.has(`${col.id}:${r}`),m.rows.find(x=>cells[x])):`<div class="qcell none" data-row="${r}"></div>`).join('')+today(col,m)+(m.reserve?reserve(col,m,ui):'')+(m.rich?detail(col,ui):'')+'</div>';}
 const key=col=>`<button class="ek bd-r${col.on?' on':''}${col.off?' off':''}" data-sub="${esc(col.id)}" data-col="${esc(col.id)}" data-mat="part" title="${esc(col.name)}" aria-pressed="${col.on}" aria-label="${esc(t('eng.keyAria',{name:col.name,k:col.key}))}"><span class="ek-identity"><img class="lamp" src="assets/brands/${esc(col.logo)}" alt=""><span class="ek-name" data-full="${esc(col.short)}" data-short="${esc(col.alias||col.short)}" title="${esc(col.name)}">${esc(col.short)}</span></span><i class="bl" style="--v:${esc(col.colour)}"></i><span class="ki">${col.key}</span></button>`;
 function pageDescription(l,m) { return t('rev49.page',{p:l.page+1,names:(l.accounts||[]).map(a=>a.name+(a.status?' · '+t(a.status==='red'?'eng.lvLow':'eng.lvMid'):'')).join(', '),scope:t(m.scoped?'rev49.pageSub':'rev49.pageAll')}); }
 

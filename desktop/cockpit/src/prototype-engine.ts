@@ -99,7 +99,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  // held; no stale badge, no "delayed" notice, no "recovered" message.
  function updatedLine(now:number):HTMLElement {
   const line=document.createElement('div');line.className='eng-upd';
-  const shown=scope?members.filter(m=>m.key===scope):members.slice(page*6,page*6+6);
+  const onPage=members.slice(page*6,page*6+6),own=scope?onPage.filter(m=>m.key===scope):[],shown=own.length?own:onPage;// the DISPLAYED columns: a selected one that is paged out no longer counts (macrevb-1020-1)
   const state=footerState(shown.map(m=>m.account));line.dataset.failing=String(state.failing);
   if(state.at!==null||state.failing){const text=document.createElement('span');text.className='eng-upd-t';
    text.textContent=[state.at!==null?updatedText(state.at,now,locale):'',state.failing?ht(locale,'host.noNewData'):''].filter(Boolean).join(' · ');line.append(text);}
