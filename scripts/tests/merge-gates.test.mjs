@@ -55,6 +55,30 @@ test("trust needs the login and the numeric id; deleted authors and drafts never
   assert.deepEqual(items.map((x) => x.body), ["z"]);
 });
 
+test("sticky REVIEWER: only the assigned lane's verdict counts; others are advisory", () => {
+  const t2 = [file("cli/internal/quota/x.go")];
+  const rv = (lane) => `REVIEWER: ${lane}`;
+  const mixed = [comment(v("block", H, "macrev2")), comment(v("block", H, "macrevb")), comment(v("merge", H, "macrevd"))];
+  assert.equal(evalPr({ files: t2, comments: mixed }).state, R.FAILURE, "no REVIEWER: old behaviour, any block stops it");
+  const ok = evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed] });
+  assert.equal(ok.state, R.SUCCESS, "sticky merge passes over other lanes' blocks");
+  assert.match(ok.why, /info: .*\(macrev2\) block/);
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("block", H, "macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "sticky block fails");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.PENDING, "other lane merge does not satisfy");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrev2")), comment(rv("macrevd")), ...mixed] }).state, R.SUCCESS, "latest REVIEWER wins");
+  assert.equal(evalPr({ files: t2, comments: mixed, reviews: [review(rv("macrevd"))] }).state, R.FAILURE, "a REVIEWER line in a review never assigns");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed], reviews: [review(rv("macrev2"))] }).state, R.SUCCESS, "a review cannot reassign");
+  for (const bad of ["sonnet", "nosuchlane"]) {
+    const r = evalPr({ files: [file("docs/a.md")], comments: [comment(rv(bad)), comment(v("block", H, "macrev2"))] });
+    assert.equal(r.state, R.FAILURE, `${bad} assignment hides no GPT block`);
+    assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(rv(bad))] }).state, R.PENDING, `${bad} assignment holds the PR`);
+    assert.equal(evalPr({ files: t2, comments: [comment(rv(bad)), comment(v("merge", H, bad)), comment(v("merge", H, "macrevd"))] }).state, R.PENDING, `${bad} cannot pass tier 2`);
+  }
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevc")), comment(v("merge", H, "macrevc")), comment(v("merge", H, "macrevd"))] }).state, R.PENDING, "Terra assignment is invalid on tier 2");
+  const stranger = { login: "mallory", id: 5 };
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd"), stranger), ...mixed] }).state, R.FAILURE, "untrusted REVIEWER ignored");
+});
+
 test("tier: path rules, test-only rule, override and gate self-protection", () => {
   assert.equal(R.pathTier(["docs/a.md", ".github/workflows/ci.yml", "x.png"]), 0);
   assert.equal(R.pathTier(["cli/main.go"]), 1);
@@ -822,6 +846,19 @@ test("data-sync: a bot PR from a data-sync.yml run with a trusted exact-head ver
   const r = evalSync();
   assert.equal(r.state, R.SUCCESS, r.why);
   assert.equal(evalSync({ run: syncRun({ event: "workflow_dispatch" }) }).state, R.SUCCESS);
+});
+
+test("data-sync: with a REVIEWER assignment only the assigned lane's merge admits the PR", () => {
+  const rv = comment("REVIEWER: macrevd");
+  assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "unassigned lane's merge does not admit");
+  assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrevd"))] }).state, R.SUCCESS);
+  assert.equal(evalSync({ comments: [rv, comment(v("merge", H, "macrevd")), comment(v("block", H, "macrevd"))] }).state, R.FAILURE, "assigned block fails");
+  for (const bad of ["sonnet", "nosuchlane"]) {
+    assert.equal(evalSync({ comments: [comment(`REVIEWER: ${bad}`), comment(v("merge", H, bad)), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, `assigned ${bad} does not admit`);
+  }
+  assert.equal(evalSync({ comments: [comment("REVIEWER: macrevc"), comment(v("merge", H, "macrevc"))] }).state, R.SUCCESS, "Terra is fine on tier 1");
+  assert.equal(evalSync({ files: [file("cli/internal/quota/x.go")], comments: [comment("REVIEWER: macrevc"), comment(v("merge", H, "macrevc"))] }).state, R.FAILURE, "Terra cannot admit a tier 2 data-sync PR");
+  assert.equal(evalSync({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "no REVIEWER keeps old behaviour");
 });
 
 test("data-sync: ci.yml and repo-checks.yml stay required; dispatched runs on the branch count, a fork's or another branch's do not", () => {

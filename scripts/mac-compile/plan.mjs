@@ -10,6 +10,10 @@
 //   such as @MainActor allowed, minus NEVER_RUN;
 // - a class list longer than FILTER_MAX runs the whole package minus NEVER_RUN; a package without XCTest classes
 //   only builds its tests.
+// - ModelPlanAppIntegration is the exception (it is ~540 window/GUI-style cases, over the compile Mac's time limit):
+//   it never runs whole. It builds its tests and runs only the classes declared in the test files the PR itself
+//   touches, and at most APP_INTEGRATION_MAX_CLASSES of them (more than that, or none, means build-tests only). The
+//   full suite is the GUI and headless legs' job (desktop.yml, native-test-partition.json).
 // Usage: node scripts/mac-compile/plan.mjs <base> <head> (base: the merge base of main and the PR head), in a clone
 // that has both commits. Prints one TSV row per package:
 // dir, scratch name, mode (filter | skip | build-tests), filter pattern, skip pattern.
@@ -23,6 +27,9 @@ export const ROOT = "desktop/native";
 // GeneratedConsentPortTests are frozen (#315); hosted CI skips them too.
 export const NEVER_RUN = Object.freeze(["DockBehaviourTests", "DockClickFocusTests", "CockpitContextMenuAndReloadTests", "GeneratedDecoderTests", "GeneratedConsentPortTests"]);
 export const FILTER_MAX = 700;
+export const LIMITED_PACKAGE = "ModelPlanAppIntegration";
+// Past this many touched classes a "targeted" run is just the broad suite again, which overran the 45 minute limit.
+export const APP_INTEGRATION_MAX_CLASSES = 8;
 export const CLASS_RE = /^[ \t]*(?:@[A-Za-z0-9_]+(?:\([^)]*\))?[ \t]+)*(?:(?:final|open|public|internal|private|fileprivate) )*class ([A-Za-z0-9_]+)[ \t]*:[ \t]*[A-Za-z0-9_., ]*XCTestCase/gm;
 
 // Nearest ancestor of file (a repo-relative path) that is a package directory, or null.
@@ -43,13 +50,27 @@ export function testClasses(source) {
 export function plan(changed, files, read) {
   const packages = new Set(files.filter((f) => f.startsWith(ROOT + "/") && /(^|\/)Package\.swift$/.test(f)).map((f) => path.posix.dirname(f)));
   const touched = new Set();
+  const touchedFiles = new Map();
   for (const f of changed) {
     if (!f.startsWith(ROOT + "/") || !f.endsWith(".swift")) continue;
     const pkg = ownerPackage(f, packages);
-    if (pkg) touched.add(pkg);
+    if (!pkg) continue;
+    touched.add(pkg);
+    if (!touchedFiles.has(pkg)) touchedFiles.set(pkg, []);
+    touchedFiles.get(pkg).push(f);
   }
   const skip = NEVER_RUN.join("|");
   return [...touched].sort().map((dir) => {
+    if (path.posix.basename(dir) === LIMITED_PACKAGE) {
+      const own = new Set();
+      for (const f of touchedFiles.get(dir)) {
+        if (!files.includes(f)) continue; // deleted at the head
+        for (const c of testClasses(read(f))) if (!NEVER_RUN.includes(c)) own.add(c);
+      }
+      const names = [...own].sort();
+      const mode = names.length && names.length <= APP_INTEGRATION_MAX_CLASSES ? "filter" : "build-tests";
+      return { dir, scratch: dir.replaceAll("/", "_"), mode, filter: mode === "filter" ? names.join("|") : "", skip };
+    }
     const classes = new Set();
     for (const f of files) {
       if (!f.endsWith(".swift") || ownerPackage(f, packages) !== dir) continue;

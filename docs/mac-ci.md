@@ -173,6 +173,11 @@ against `full`, `none` or a comma-separated list of identifiers, and passes it t
 leg) and verifies that exactly that narrowed share ran. Every other run (merge queue, nightly,
 push, `main`/release dispatch) runs and verifies the whole share whatever the caller passes.
 
+The compile check is build plus touched classes: for `ModelPlanAppIntegration` (about 540 window-style cases,
+longer than the compile Mac's 45 minute limit) it builds the tests and runs only the classes declared in the
+test files the PR touches (at most 8, otherwise build-tests only). The full suite is the job of the GUI and
+headless legs, not of the compile check.
+
 A selection is a speed-up for the PR round, not the merge gate. The merge queue runs the full GUI
 leg on the group commit, and `desktop` must pass there before anything reaches `main`; the
 coordinator's gate still requires a successful GUI leg at the PR head. A `schedule` run at 09:23

@@ -13,7 +13,7 @@
 #   Mac job runs PR code; it holds a read-only token, no secrets, and checkouts keep no credentials.
 # - The result is posted as the commit status "mac-compile" on the PR head by a separate hosted job, the only one with
 #   statuses: write, which runs no repository code.
-# Follow-up (not done): remove /Volumes/MacBuildCache/compile/pr-<N> when the PR closes.
+# Build seed: written only by the `seed` job (workflow_dispatch of main by the owner), read-only for PR jobs.
 name: mac-compile
 run-name: "${{ inputs.pr && format('mac-compile PR #{0}', inputs.pr) || '' }}"
 on:
@@ -23,14 +23,18 @@ on:
   workflow_dispatch:
     inputs:
       pr:
-        description: "PR number: compile the PR at its current head (drafts allowed)"
+        description: "PR number: compile the PR at its current head (drafts allowed). Empty with seed=true."
         type: string
-        required: true
+        required: false
+      seed:
+        description: "Build main and publish this runner's read-only build seed (trusted; no PR code)"
+        type: boolean
+        default: false
 permissions:
   contents: read
 # One run per PR (a dispatch joins the PR's group); a newer head cancels the older run.
 concurrency:
-  group: mac-compile-${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  group: mac-compile-${{ github.event_name == 'workflow_dispatch' && (inputs.seed && 'seed' || inputs.pr) || github.event.workflow_run.pull_requests[0].number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -44,6 +48,7 @@ jobs:
     outputs:
       pr: ${{ steps.pr.outputs.pr }}
       sha: ${{ steps.pr.outputs.sha }}
+      seed: ${{ steps.pr.outputs.seed }}
       run: ${{ steps.plan.outputs.run }}
       plan: ${{ steps.plan.outputs.plan }}
     steps:
@@ -54,8 +59,17 @@ jobs:
           EVENT: ${{ github.event_name }}
           PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.workflow_run.pull_requests[0].number }}
           RUN_HEAD: ${{ github.event.workflow_run.head_sha }}
+          SEED: ${{ github.event_name == 'workflow_dispatch' && inputs.seed }}
         run: |
           set -eu
+          # Seed run (owner dispatch of main): no PR; main's own head is built and published to the runner's read-only seed.
+          if [ "$SEED" = true ]; then
+            [ -z "$PR" ] || { echo "::error::seed runs take no PR"; exit 1; }
+            sha=$(gh api "repos/$REPO/commits/main" -q .sha)
+            [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no sha for main"; exit 1; }
+            echo "pr=0" >> "$GITHUB_OUTPUT"; echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "seed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           case $PR in ''|*[!0-9]*) echo "::error::pr must be a PR number, got '$PR'"; exit 1;; esac
           j=$(gh api "repos/$REPO/pulls/$PR")
           [ "$(jq -r .state <<<"$j")" = open ] || { echo "::error::PR #$PR is not open"; exit 1; }
@@ -79,10 +93,16 @@ jobs:
       - id: plan
         env:
           SHA: ${{ steps.pr.outputs.sha }}
+          SEED: ${{ steps.pr.outputs.seed }}
         run: |
           set -eu
           git fetch -q --no-tags --filter=blob:none origin "$SHA"
-          plan=$(node scripts/mac-compile/plan.mjs "$(git merge-base origin/main "$SHA")" "$SHA")
+          if [ "$SEED" = true ]; then
+            # Every package at main, tests built (not run): the same scratch layout a PR job clones into.
+            plan=$(node scripts/mac-compile/plan.mjs "$(git hash-object -t tree /dev/null)" "$SHA" | awk -F'\t' 'BEGIN{OFS="\t"} {$3="build-tests"; $4="-"; print}')
+          else
+            plan=$(node scripts/mac-compile/plan.mjs "$(git merge-base origin/main "$SHA")" "$SHA")
+          fi
           { echo "plan<<MAC_COMPILE_PLAN_EOF"; printf '%s\n' "$plan"; echo "MAC_COMPILE_PLAN_EOF"; } >> "$GITHUB_OUTPUT"
           if [ -n "$plan" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; fi
           { if [ -n "$plan" ]; then echo "Packages to compile at ${SHA:0:8}:"; echo '```'; printf '%s\n' "$plan" | cut -f1,3; echo '```'
@@ -115,15 +135,19 @@ jobs:
           PR: ${{ needs.plan.outputs.pr }}
           SHA: ${{ needs.plan.outputs.sha }}
           PLAN: ${{ needs.plan.outputs.plan }}
-          # A cold per-PR scratch build of ModelPlanAppIntegration alone took 12.7 min on these runners (11-15), which
+          SEED_WRITE: ${{ needs.plan.outputs.seed == 'true' && '1' || '0' }}
+          # A cold scratch build of ModelPlanAppIntegration alone took 12.7 min on these runners (11-15), which
           # left too little of a 25-minute budget for its ~930 tests (#981/#795 stopped at exit 143 with 0 failures).
           PACKAGE_MINUTES: "45"
         run: |
           set -eu
           [ "$(git rev-parse HEAD)" = "$SHA" ] || { echo "::error::checked out $(git rev-parse HEAD), expected $SHA"; exit 1; }
           case $PR in ''|*[!0-9]*) echo "::error::bad PR number '$PR'"; exit 1;; esac
-          # Build products go to the cache disk when it is mounted, one directory per PR (one per package inside).
-          if [ -d /Volumes/MacBuildCache ]; then root=/Volumes/MacBuildCache/compile/pr-$PR; else root=$RUNNER_TEMP/mac-compile/pr-$PR; fi
+          # SwiftPM build state: a PR job only READS the per-runner seed (SEED_ROOT, written by a seed run (owner dispatch with seed=true) from
+          # main) by cloning it into its own scratch under runner temp, which the runner empties after the job. A PR can
+          # therefore never promote its build output into state another PR consumes. No seed is a cold build.
+          root=$RUNNER_TEMP/mac-compile
+          export SEED_ROOT=$HOME/mac-compile-seed/${RUNNER_NAME:-runner}
           printf '%s\n' "$PLAN" > "$RUNNER_TEMP/mac-compile-plan.tsv"
           swift --version
           bash "$GITHUB_WORKSPACE/.mac-compile-main/scripts/mac-compile/run.sh" "$RUNNER_TEMP/mac-compile-plan.tsv" "$root" "$SHA"
@@ -131,7 +155,7 @@ jobs:
   # The result as the commit status "mac-compile" on the PR head. Runs no repository code; the only job with a write scope.
   report:
     needs: [plan, compile]
-    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.seed != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:

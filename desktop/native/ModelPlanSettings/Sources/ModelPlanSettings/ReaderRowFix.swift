@@ -15,8 +15,10 @@ public struct RowFixEntry: Equatable, Sendable {
     public let reason: SettingsText
     public let action: SettingsText
     public let target: RowFixTarget
-    public init(reason: SettingsText, action: SettingsText, target: RowFixTarget) {
-        self.reason = reason; self.action = action; self.target = target
+    /// A plain fact with nothing to fix (the card says "No action needed"): no attention flag and no button.
+    public let isInformational: Bool
+    public init(reason: SettingsText, action: SettingsText, target: RowFixTarget, isInformational: Bool = false) {
+        self.reason = reason; self.action = action; self.target = target; self.isInformational = isInformational
     }
 }
 
@@ -29,6 +31,17 @@ extension ReaderCauseTable {
     /// for the key-based providers, after auto-detect found nothing.
     public static func rowEntry(code rawCode: String, tool: String? = nil, toolName: String? = nil,
                              keyEntryAvailable: Bool = false) -> RowFixEntry? {
+        let card = entry(code: rawCode, tool: tool, toolName: toolName)
+        guard let fix = rowFix(code: rawCode, tool: tool, toolName: toolName, keyEntryAvailable: keyEntryAvailable) else {
+            // A cause only the card knows (usage_not_reported): the card's sentence and its own (no-action) text, explain-only.
+            return card.map { .init(reason: $0.reason, action: $0.action, target: .explain, isInformational: true) }
+        }
+        // WP-16 / SET-9-51: the cause sentence is the card's (`entry`); only the action and target are the row's own.
+        guard let card else { return fix }
+        return .init(reason: card.reason, action: fix.action, target: fix.target)
+    }
+
+    private static func rowFix(code rawCode: String, tool: String?, toolName: String?, keyEntryAvailable: Bool) -> RowFixEntry? {
         let name = toolName.flatMap { $0.isEmpty ? nil : $0 }
         let canon = canonical(rawCode)
         if rowIsKiro(tool) {
