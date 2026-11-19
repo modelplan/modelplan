@@ -1,0 +1,501 @@
+{
+ "comment": "ALR-50 (WP-11): one sentence per alert, the same in the ALERT tooltip, column wash, overview line, alert list, menu line and widget-card footer. The JS table (desktop/cockpit/src/alert-sentence.ts) and the Swift table (ModelPlanSettings/AlertSentence.swift) are both tested against these cases. `text` adds the reset when it is known; `short` is the form used when the reset does not fit.",
+ "cases": [
+  {
+   "name": "amber forecast with a known reset",
+   "input": {
+    "kind": "quota",
+    "subscription": {
+     "en": "Claude",
+     "zh": "Claude"
+    },
+    "window": {
+     "en": "Weekly",
+     "zh": "每周"
+    },
+    "remaining": 42,
+    "runOutMinutes": 2640,
+    "resetMinutes": 3480
+   },
+   "en": {
+    "text": "Claude Weekly 42% · out ~1d20h · resets in 2d10h",
+    "short": "Claude Weekly 42% · out ~1d20h"
+   },
+   "zh": {
+    "text": "Claude 每周 42% · 约1d20h用完 · 2d10h 后重置",
+    "short": "Claude 每周 42% · 约1d20h用完"
+   }
+  },
+  {
+   "name": "forecast with an unknown reset (WP-03)",
+   "input": {
+    "kind": "quota",
+    "subscription": {
+     "en": "Codex",
+     "zh": "Codex"
+    },
+    "window": {
+     "en": "5h",
+     "zh": "5小时"
+    },
+    "remaining": 60,
+    "runOutMinutes": 40,
+    "resetMinutes": null
+   },
+   "en": {
+    "text": "Codex 5h 60% · out ~40m",
+    "short": "Codex 5h 60% · out ~40m"
+   },
+   "zh": {
+    "text": "Codex 5小时 60% · 约40m用完",
+    "short": "Codex 5小时 60% · 约40m用完"
+   }
+  },
+  {
+   "name": "at the red line",
+   "input": {
+    "kind": "quota",
+    "subscription": {
+     "en": "Codex",
+     "zh": "Codex"
+    },
+    "window": {
+     "en": "5h",
+     "zh": "5小时"
+    },
+    "remaining": 20,
+    "runOutMinutes": null,
+    "resetMinutes": 210
+   },
+   "en": {
+    "text": "Codex 5h 20% · resets in 3h30",
+    "short": "Codex 5h 20%"
+   },
+   "zh": {
+    "text": "Codex 5小时 20% · 3h30 后重置",
+    "short": "Codex 5小时 20%"
+   }
+  },
+  {
+   "name": "at the red line and forecast to run out",
+   "input": {
+    "kind": "quota",
+    "subscription": {
+     "en": "Codex",
+     "zh": "Codex"
+    },
+    "window": {
+     "en": "5h",
+     "zh": "5小时"
+    },
+    "remaining": 18,
+    "runOutMinutes": 40,
+    "resetMinutes": 198
+   },
+   "en": {
+    "text": "Codex 5h 18% · out ~40m · resets in 3h18",
+    "short": "Codex 5h 18% · out ~40m"
+   },
+   "zh": {
+    "text": "Codex 5小时 18% · 约40m用完 · 3h18 后重置",
+    "short": "Codex 5小时 18% · 约40m用完"
+   }
+  },
+  {
+   "name": "used up with a known reset",
+   "input": {
+    "kind": "quota",
+    "subscription": {
+     "en": "Claude",
+     "zh": "Claude"
+    },
+    "window": {
+     "en": "Weekly",
+     "zh": "每周"
+    },
+    "remaining": 0,
+    "runOutMinutes": null,
+    "resetMinutes": 125
+   },
+   "en": {
+    "text": "Claude Weekly used up · resets in 2h05",
+    "short": "Claude Weekly used up"
+   },
+   "zh": {
+    "text": "Claude 每周 已用完 · 2h05 后重置",
+    "short": "Claude 每周 已用完"
+   }
+  },
+  {
+   "name": "used up ignores a stale forecast and an unknown reset",
+   "input": {
+    "kind": "quota",
+    "subscription": {
+     "en": "Claude",
+     "zh": "Claude"
+    },
+    "window": {
+     "en": "Weekly",
+     "zh": "每周"
+    },
+    "remaining": 0,
+    "runOutMinutes": 30,
+    "resetMinutes": null
+   },
+   "en": {
+    "text": "Claude Weekly used up",
+    "short": "Claude Weekly used up"
+   },
+   "zh": {
+    "text": "Claude 每周 已用完",
+    "short": "Claude 每周 已用完"
+   }
+  },
+  {
+   "name": "rounding: a whole percent, never 1h60, at least one minute",
+   "input": {
+    "kind": "quota",
+    "subscription": {
+     "en": "Codex",
+     "zh": "Codex"
+    },
+    "window": {
+     "en": "5h",
+     "zh": "5小时"
+    },
+    "remaining": 41.6,
+    "runOutMinutes": 0.2,
+    "resetMinutes": 119.7
+   },
+   "en": {
+    "text": "Codex 5h 42% · out ~1m · resets in 2h00",
+    "short": "Codex 5h 42% · out ~1m"
+   },
+   "zh": {
+    "text": "Codex 5小时 42% · 约1m用完 · 2h00 后重置",
+    "short": "Codex 5小时 42% · 约1m用完"
+   }
+  },
+  {
+   "name": "whole days",
+   "input": {
+    "kind": "quota",
+    "subscription": {
+     "en": "GLM",
+     "zh": "GLM"
+    },
+    "window": {
+     "en": "Monthly",
+     "zh": "每月"
+    },
+    "remaining": 12,
+    "runOutMinutes": null,
+    "resetMinutes": 7380
+   },
+   "en": {
+    "text": "GLM Monthly 12% · resets in 5d3h",
+    "short": "GLM Monthly 12%"
+   },
+   "zh": {
+    "text": "GLM 每月 12% · 5d3h 后重置",
+    "short": "GLM 每月 12%"
+   }
+  },
+  {
+   "name": "unreadable, not signed in",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Kimi",
+     "zh": "Kimi"
+    },
+    "cause": "not_signed_in"
+   },
+   "en": {
+    "text": "Kimi no reading · not signed in",
+    "short": "Kimi no reading"
+   },
+   "zh": {
+    "text": "Kimi 读不到 · 未登录",
+    "short": "Kimi 读不到"
+   }
+  },
+  {
+   "name": "unreadable, sign-in expired",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Claude",
+     "zh": "Claude"
+    },
+    "cause": "login_expired"
+   },
+   "en": {
+    "text": "Claude no reading · not signed in",
+    "short": "Claude no reading"
+   },
+   "zh": {
+    "text": "Claude 读不到 · 未登录",
+    "short": "Claude 读不到"
+   }
+  },
+  {
+   "name": "unreadable, Keychain",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Claude",
+     "zh": "Claude"
+    },
+    "cause": "keychain_denied"
+   },
+   "en": {
+    "text": "Claude no reading · Keychain access needed",
+    "short": "Claude no reading"
+   },
+   "zh": {
+    "text": "Claude 读不到 · 需要钥匙串权限",
+    "short": "Claude 读不到"
+   }
+  },
+  {
+   "name": "unreadable, permission",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Codex",
+     "zh": "Codex"
+    },
+    "cause": "consent_required"
+   },
+   "en": {
+    "text": "Codex no reading · needs permission",
+    "short": "Codex no reading"
+   },
+   "zh": {
+    "text": "Codex 读不到 · 需要授权",
+    "short": "Codex 读不到"
+   }
+  },
+  {
+   "name": "unreadable, not installed",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Gemini",
+     "zh": "Gemini"
+    },
+    "cause": "tool_not_found"
+   },
+   "en": {
+    "text": "Gemini no reading · not installed",
+    "short": "Gemini no reading"
+   },
+   "zh": {
+    "text": "Gemini 读不到 · 未安装",
+    "short": "Gemini 读不到"
+   }
+  },
+  {
+   "name": "unreadable, update needed",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Codex",
+     "zh": "Codex"
+    },
+    "cause": "update_required"
+   },
+   "en": {
+    "text": "Codex no reading · update needed",
+    "short": "Codex no reading"
+   },
+   "zh": {
+    "text": "Codex 读不到 · 需要更新",
+    "short": "Codex 读不到"
+   }
+  },
+  {
+   "name": "unreadable, network",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Kimi",
+     "zh": "Kimi"
+    },
+    "cause": "timeout"
+   },
+   "en": {
+    "text": "Kimi no reading · network problem",
+    "short": "Kimi no reading"
+   },
+   "zh": {
+    "text": "Kimi 读不到 · 网络问题",
+    "short": "Kimi 读不到"
+   }
+  },
+  {
+   "name": "unreadable, a cause with no short phrase",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Kimi",
+     "zh": "Kimi"
+    },
+    "cause": "other"
+   },
+   "en": {
+    "text": "Kimi no reading",
+    "short": "Kimi no reading"
+   },
+   "zh": {
+    "text": "Kimi 读不到",
+    "short": "Kimi 读不到"
+   }
+  },
+  {
+   "name": "three or more unreadable merge into one line",
+   "input": {
+    "kind": "unreadableMany",
+    "count": 3
+   },
+   "en": {
+    "text": "3 subscriptions have no reading",
+    "short": "3 subscriptions have no reading"
+   },
+   "zh": {
+    "text": "3 个订阅读不到",
+    "short": "3 个订阅读不到"
+   }
+  }
+ ],
+ "causes": {
+  "not_signed_in": {
+   "en": "not signed in",
+   "zh": "未登录"
+  },
+  "login_expired": {
+   "en": "not signed in",
+   "zh": "未登录"
+  },
+  "http_401": {
+   "en": "not signed in",
+   "zh": "未登录"
+  },
+  "unsupported_login": {
+   "en": "not signed in",
+   "zh": "未登录"
+  },
+  "key_missing": {
+   "en": "key missing",
+   "zh": "缺少密钥"
+  },
+  "keychain_unset": {
+   "en": "Keychain access needed",
+   "zh": "需要钥匙串权限"
+  },
+  "keychain_denied": {
+   "en": "Keychain access needed",
+   "zh": "需要钥匙串权限"
+  },
+  "keychain_canceled": {
+   "en": "Keychain access needed",
+   "zh": "需要钥匙串权限"
+  },
+  "keychain_not_found": {
+   "en": "Keychain access needed",
+   "zh": "需要钥匙串权限"
+  },
+  "keychain_unavailable": {
+   "en": "Keychain access needed",
+   "zh": "需要钥匙串权限"
+  },
+  "keychain_confirmation_needed": {
+   "en": "Keychain access needed",
+   "zh": "需要钥匙串权限"
+  },
+  "consent_required": {
+   "en": "needs permission",
+   "zh": "需要授权"
+  },
+  "consent_denied": {
+   "en": "needs permission",
+   "zh": "需要授权"
+  },
+  "consent_outdated": {
+   "en": "needs permission",
+   "zh": "需要授权"
+  },
+  "consent_changed": {
+   "en": "needs permission",
+   "zh": "需要授权"
+  },
+  "no_consent": {
+   "en": "needs permission",
+   "zh": "需要授权"
+  },
+  "browser_session_consent_required": {
+   "en": "needs permission",
+   "zh": "需要授权"
+  },
+  "privacy_blocked": {
+   "en": "needs permission",
+   "zh": "需要授权"
+  },
+  "tool_not_found": {
+   "en": "not installed",
+   "zh": "未安装"
+  },
+  "runtime_missing": {
+   "en": "not installed",
+   "zh": "未安装"
+  },
+  "file_missing": {
+   "en": "not installed",
+   "zh": "未安装"
+  },
+  "update_required": {
+   "en": "update needed",
+   "zh": "需要更新"
+  },
+  "schema_changed": {
+   "en": "update needed",
+   "zh": "需要更新"
+  },
+  "network": {
+   "en": "network problem",
+   "zh": "网络问题"
+  },
+  "timeout": {
+   "en": "network problem",
+   "zh": "网络问题"
+  },
+  "http_5xx": {
+   "en": "network problem",
+   "zh": "网络问题"
+  },
+  "http_429": {
+   "en": "network problem",
+   "zh": "网络问题"
+  },
+  "http_403": {
+   "en": "network problem",
+   "zh": "网络问题"
+  }
+ },
+ "causesComment": "Short cause phrases after \"no reading\". Any other failure code has none (the sentence ends at \"no reading\"); the codes in notUnreadable never make an alert at all.",
+ "notUnreadable": [
+  "ok",
+  "estimated",
+  "not_read_yet",
+  "reader_busy",
+  "usage_not_reported",
+  "no_usage_windows",
+  "stale_reading",
+  "catalogue_off",
+  "readers_off",
+  "no_dock_rows",
+  "not_admitted",
+  "cleanup_pending"
+ ]
+}
