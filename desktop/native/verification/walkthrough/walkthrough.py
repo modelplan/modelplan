@@ -59,6 +59,8 @@ def matcher(target):
         "ax": lambda n: n.get("id") == value,
         "ax^": lambda n: str(n.get("id", "")).startswith(value),
         "label": lambda n: value in (n.get("label"), n.get("title")),
+        "label^": lambda n: any(str(n.get(k) or "").startswith(value) for k in ("label", "title")),
+        "label~": lambda n: any(value in str(n.get(k) or "") for k in ("label", "title")),
         "title^": lambda n: str(n.get("title", "")).startswith(value),
         "value": lambda n: n.get("value") == value,
         "dom^": lambda n: str(n.get("dom", "")).startswith(value),
@@ -250,6 +252,23 @@ class Walkthrough:
                 raise WalkthroughError("still on screen after %ss: %s" % (action.get("timeout", 15), action["target"]))
             self.host.sleep(0.5)
 
+    def op_awaitStable(self, action):
+        """Wait until every match of a target keeps the same title and frame for "quiet" seconds. A data refresh
+        (a seeded reading going stale) rebuilds the fader bank and would clear a view opened meanwhile."""
+        quiet, deadline = action.get("quiet", 3), self.host.now() + action.get("timeout", 30)
+        last, since = None, self.host.now()
+        while True:
+            now = self.host.now()
+            seen = [(n.get("title"), n.get("label"), n.get("value"), tuple(n.get("frame") or ()))
+                    for n in resolve_all(self.tree(), action["target"])]
+            if seen != last:
+                last, since = seen, now
+            elif now - since >= quiet:
+                return
+            if now >= deadline:
+                raise WalkthroughError("not stable after %ss: %s" % (action.get("timeout", 30), action["target"]))
+            self.host.sleep(0.5)
+
     def op_when(self, action):
         """Run nested actions only when a target is on screen ("present"), is not ("absent"), or shows a value
         ("equals": {"target", "value"}), so one walk fits a build with the flow and a build without it (the
@@ -279,6 +298,16 @@ class Walkthrough:
         verb = "rightclick" if action.get("button") == "right" else "click"
         self.host.helper(verb, *centre(self.need(action["target"])["frame"]))
 
+    def op_clickFirst(self, action):
+        """Click the first of several targets that is on screen; the step fails when none is."""
+        tree = self.tree()
+        for target in action["targets"]:
+            node = resolve(tree, target)
+            if node is not None:
+                self.host.helper("click", *centre(node["frame"]))
+                return
+        raise WalkthroughError("none of the targets is on screen: " + ", ".join(action["targets"]))
+
     def op_hover(self, action):
         self.host.helper("move", *centre(self.need(action["target"])["frame"]), 0.5)
         self.host.sleep(action.get("seconds", 1))
@@ -305,10 +334,19 @@ class Walkthrough:
         self.host.helper("click", *centre(ring["frame"]))
 
     def op_dragStrip(self, action):
-        """Drag the cockpit by its title strip: left of the strip buttons, at their height."""
+        """Drag the cockpit by the middle of its title-strip drag region (G3-43).
+
+        The region is the app's `titleDragFrame`: page x 24..240 and, from the top of the page, the strip top
+        (253 full, 65 short, from the top of the open canvas; CockpitShellLayout.stripTop) minus 3 down to plus 29. It
+        scales with the window, so the point comes from the reported window frame: page width 636 and a height of
+        939 (full open), 711 (full, shutter closed: the window drops the 228 px porthole band above the strip), 669
+        (short open) or 629 (short closed: 40 px dropped). Closed, the strip therefore sits 25 px from the window top.
+        """
         window = self.need(action["window"])["frame"]
-        button = self.need(action["strip"])["frame"]
-        start = (window[0] + window[2] * action.get("x", 0.12), centre(button)[1])
+        scale = window[2] / 636.0
+        height = window[3] / scale
+        strip_top = {939: 253, 711: 25, 669: 65, 629: 25}[min((939, 711, 669, 629), key=lambda h: abs(h - height))]
+        start = (window[0] + 132 * scale, window[1] + (strip_top + 13) * scale)
         self.host.helper("down", *start)
         self.host.helper("held", start[0] + action["by"][0], start[1] + action["by"][1], action.get("seconds", 1.0))
         self.host.helper("up")

@@ -269,17 +269,32 @@ private actor LaunchEngine: EngineClient {
     func testCockpitPrewarmWaitsUntilEveryRowHasAnAnswer() async throws {
         let launch = try await make(holdRows: true)
         let app = launch.app
+        let controller = app.scopeConsentEntry.controller
+        // The row's seconds come from the scan's injectable clock. Frozen here, so a slow runner cannot turn the
+        // first snapshot into reading(1) (gui-2 merge groups pr-1015 and pr-1008); the test moves time itself.
+        var now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        controller.clock = { now }
         var released = 0
         app.releaseCockpitPrewarm = { released += 1 }
         await app.beginSetupAtLaunch()
         await launch.engine.release()
         await app.composition.start()
-        try await wait { app.scopeConsentEntry.controller.facts != nil }
-        XCTAssertEqual(app.scopeConsentEntry.controller.firstRunToolStatus("codex"), .reading(0), "listed, still being read")
+        try await wait { controller.facts != nil }
+        XCTAssertEqual(controller.firstRunToolStatus("codex"), .reading(0), "listed, still being read")
         XCTAssertEqual(released, 0, "E4: the prewarm does not compete with the reader while the scan runs")
+        // The reader stays held (the engine holds its rows): the second a slow runner took, then the slow-tool mark,
+        // pass and the row is still being read, so the prewarm keeps waiting. Only an answer (or the 15 s timeout) ends it.
+        now += 1; controller.firstRunTick()
+        XCTAssertEqual(controller.firstRunToolStatus("codex"), .reading(1), "one second later the row is still being read")
+        XCTAssertFalse(controller.firstRunScanSettled)
+        XCTAssertEqual(released, 0, "E4: a row still being read holds the prewarm")
+        now += TimeInterval(ScopeConsentController.firstRunSlowTool); controller.firstRunTick()
+        XCTAssertEqual(controller.firstRunToolStatus("codex"), .slowReading(1 + ScopeConsentController.firstRunSlowTool))
+        XCTAssertFalse(controller.firstRunScanSettled)
+        XCTAssertEqual(released, 0, "E4: a slow row is not an answer either")
         try await launch.engine.deliverRows()
         try await wait { released == 1 }
-        XCTAssertTrue(app.scopeConsentEntry.controller.firstRunScanSettled)
+        XCTAssertTrue(controller.firstRunScanSettled)
     }
 
     func testReturningUserSeesNoFirstRunAndNormalMenu() async throws {

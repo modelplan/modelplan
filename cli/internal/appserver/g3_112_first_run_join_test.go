@@ -295,3 +295,38 @@ func TestCancelWithoutARunStopsAPendingRetry(t *testing.T) {
 		t.Fatal("Cancel without a run was not recorded")
 	}
 }
+
+// slowStop settles only some time after it is cancelled, as an importer finishing its commit does,
+// and records whether the run had settled when the suppression was persisted.
+type slowStop struct {
+	countingOwed
+	settled       atomic.Bool
+	settledAtMark atomic.Bool
+}
+
+func (s *slowStop) Run(ctx context.Context, days int, firstRun bool, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+	<-ctx.Done()
+	time.Sleep(50 * time.Millisecond)
+	s.settled.Store(true)
+	return nil, ctx.Err()
+}
+func (s *slowStop) NextOwedAt(now time.Time) (time.Time, bool) { return time.Time{}, false }
+func (s *slowStop) CancelOwed() { s.settledAtMark.Store(s.settled.Load()) }
+
+// Post-merge sampling 11-15: Cancel stops the run and waits for it before it persists the
+// suppression, so a commit past its context check cannot land after (and erase) the mark.
+func TestCancelPersistsSuppressionOnlyAfterTheRunSettled(t *testing.T) {
+	e := &slowStop{}
+	c := NewImportController(e)
+	h := HistoryImportHandlers(c)
+	if _, err := call(t, h, "history/import_start", `{"days":30,"firstRun":false}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := call(t, h, "history/import_cancel", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	if !e.settledAtMark.Load() {
+		t.Fatal("suppression was persisted while the run could still commit")
+	}
+	c.Close()
+}

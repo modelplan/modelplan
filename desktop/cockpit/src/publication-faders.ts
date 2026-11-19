@@ -33,12 +33,24 @@ export type FaderSetOptions={
  /** Recorded sessions (details.recentSessions, the 7-day ledger). They count as "in use" like live ones (sampling #930)
   * but never attach to a fader: a fader's `sessions` stay live only. */
  readonly recorded?:readonly unknown[];
+ /** Observed output tokens per published model from the history ranking (cockpitHistoryV1 models.recent7d / recent30d), imported
+  * or recorded. G3-133: a model the user runs every day leads the unused recommendations even when no session shows it. */
+ readonly usage?:ReadonlyMap<string,{readonly d7:number;readonly d30:number}>;
 };
+/** Model usage from the history ranking, for `FaderSetOptions.usage`. Names are verified publication IDs. */
+export function historyUsage(history:{readonly models?:{readonly recent7d?:{readonly top?:readonly {readonly name:string;readonly observedOutputTokens:number}[]};readonly recent30d?:{readonly top?:readonly {readonly name:string;readonly observedOutputTokens:number}[]}}}|null|undefined):Map<string,{d7:number;d30:number}>{
+ const out=new Map<string,{d7:number;d30:number}>();
+ for(const [key,list] of [['d7',history?.models?.recent7d?.top],['d30',history?.models?.recent30d?.top]] as const)for(const e of list??[]){
+  if(typeof e.name!=='string'||!(e.observedOutputTokens>0))continue;
+  const row=out.get(e.name)??{d7:0,d30:0};row[key]+=e.observedOutputTokens;out.set(e.name,row);
+ }
+ return out;
+}
 /** Beyond the engine's three: published models in use (live or recorded), then those of a developer one of the user's
  * subscriptions runs, in publication order. Every subscription counts, whatever the state of its reading: a stale or
  * loading reading is still the user's plan (sampling #930). `publicationFaders` applies the 7-day and own-plan rules. */
-export function moreFaderModels<T extends {readonly id:string;readonly developerId:string}>(published:readonly T[],live:readonly {readonly model:string}[],recorded:readonly {readonly model:string}[],subscriptions:readonly {readonly developer:string|null}[]):T[]{
- const used=new Set([...live,...recorded].map(s=>s.model)),vendors=new Set(subscriptions.map(s=>s.developer));
+export function moreFaderModels<T extends {readonly id:string;readonly developerId:string}>(published:readonly T[],live:readonly {readonly model:string}[],recorded:readonly {readonly model:string}[],subscriptions:readonly {readonly developer:string|null}[],historyModels:ReadonlySet<string>=new Set()):T[]{
+ const used=new Set([...live,...recorded].map(s=>s.model).concat([...historyModels])),vendors=new Set(subscriptions.map(s=>s.developer));
  return [...published.filter(m=>used.has(m.id)),...published.filter(m=>!used.has(m.id)&&vendors.has(m.developerId))];
 }
 export function publicationFaders(publication:unknown,live:unknown=null,more:readonly unknown[]=[],subscriptions:readonly FaderSubscription[]=[],options:FaderSetOptions={}):{accounts:Account[];faders:Fader[]} {
@@ -59,7 +71,7 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
   if(faders.length>=FADER_LIMIT)break;
   const model=object(value),id=text(model?.id),name=text(model?.name),recommended=level(model?.recommended),developer=text(model?.developerId);
   if(!model||!id||!name||!recommended||!Array.isArray(model.efforts)||taken.has(id))continue;
-  if(filterPlans&&!lastUsed.has(id)&&!(developer&&planDevelopers.has(developer)))continue;
+  if(filterPlans&&!lastUsed.has(id)&&!options.usage?.has(id)&&!(developer&&planDevelopers.has(developer)))continue;
   const rows:Fader['e']=[],seen=new Set<string>();let recommendedStarred=false;
   for(const value of model.efforts.slice(0,32)){
    const effort=object(value),label=level(effort?.effort),ability=number(effort?.ability),cost=number(effort?.cost);
@@ -75,9 +87,12 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
  // D123 order after favourites (applied by the deck): in use, most recent first; then the publication's starred
  // recommendations; then the others by published ability at their recommended effort, strongest first.
  const ability=(f:Fader)=>f.e.find(r=>r[0]===f.rec)?.[1]??-1,used=(f:Fader)=>lastUsed.has(f.id);
+ // G3-133: after the sessions, models only the history shows: 7-day tokens, then 30-day tokens.
+ const usage=options.usage,past=(f:Fader)=>!used(f)&&((usage?.get(f.id)?.d30??0)>0||(usage?.get(f.id)?.d7??0)>0);
  const inUse=faders.filter(used).sort((a,b)=>(lastUsed.get(b.id)??0)-(lastUsed.get(a.id)??0));
- const rest=faders.filter(f=>!used(f)),starred=rest.filter(f=>tierOf.get(f.id)===1),others=rest.filter(f=>tierOf.get(f.id)!==1).sort((a,b)=>ability(b)-ability(a));
- return {accounts,faders:[...inUse,...starred,...others]};
+ const history=faders.filter(past).sort((a,b)=>(usage!.get(b.id)!.d7-usage!.get(a.id)!.d7)||(usage!.get(b.id)!.d30-usage!.get(a.id)!.d30));
+ const rest=faders.filter(f=>!used(f)&&!past(f)),starred=rest.filter(f=>tierOf.get(f.id)===1),others=rest.filter(f=>tierOf.get(f.id)!==1).sort((a,b)=>ability(b)-ability(a));
+ return {accounts,faders:[...inUse,...history,...starred,...others]};
 }
 
 /** CKP-FAD-32 proposed (G3-110): a subscription scope shows only the faders of that subscription, as the opus-r7 study's faders()

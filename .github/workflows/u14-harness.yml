@@ -35,8 +35,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: u14-harness-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: u14-harness-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   # Merge queue only (D112): run the checks below on the group commit ("PR + latest main") when the group
   # changes a path from the pull_request list, unless the group commit's tree is the PR head's tree (the head

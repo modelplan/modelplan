@@ -197,51 +197,62 @@ import ModelPlanShell
         XCTAssertEqual(refreshes, ["a"], "a stationary ring click still refreshes the member")
     }
 
-    func testD09DisappearingDragDestinationCannotJumpOrSaveFallback() throws {
+    private func carryController(_ topology: DragTopology, clock: @escaping () -> TimeInterval,
+                                 enabled: @escaping () -> Bool = { true },
+                                 position: @escaping (DockPlacementRequest) throws -> DockEdgePlacement? = PulseDockPositioning.resolve)
+        -> DockEdgeController {
+        DockEdgeController(preference: .init(displayID: topology.a.id), clock: clock, scheduler: DragSchedule(), read: {
+            var sample = topology.read()
+            sample.presence.autoHide = false
+            sample.presence.enabled = enabled()
+            sample.layouts = sample.displays.flatMap { display in
+                DockEdgeGeometry.allowedEdges.map { edge in
+                    DockEdgeLayout(displayID: display.id, edge: edge, expandedSize: CGSize(width: 80, height: 160),
+                        sliverLength: 110, sliverThickness: 4, hoverRects: [])
+                }
+            }
+            return sample
+        }, position: position)
+    }
+    /// Takes a body press at the widget's centre and returns the press point.
+    private func pressBody(_ controller: DockEdgeController) throws -> CGPoint {
+        let frame = try XCTUnwrap(controller.presentation?.paintedFrame)
+        controller.dragRegions = .init(body: CGPath(rect: CGRect(origin: .zero, size: frame.size), transform: nil), excludedControls: [])
+        let down = CGPoint(x: frame.midX, y: frame.midY)
+        XCTAssertTrue(controller.beginBackgroundMove(local: CGPoint(x: frame.width / 2, y: frame.height / 2), global: down))
+        return down
+    }
+
+    /// Pulse records the dock it showed. A destination display that disappears mid-carry keeps the last verified
+    /// carry on screen (no jump), and a release while it is gone lands where the carry last showed the widget and
+    /// saves that, instead of silently cancelling (14f: "placement not saved after an edge change").
+    func testD09DisappearingDragDestinationKeepsTheLastShownCarryAndSavesIt() throws {
         let topology = DragTopology()
         var clock = 0.0
-        let controller = DockEdgeController(preference: .init(displayID: topology.a.id), clock: { clock },
-            scheduler: DragSchedule(), read: {
-                var sample = topology.read()
-                sample.presence.autoHide = false
-                sample.layouts = sample.displays.flatMap { display in
-                    DockEdgeGeometry.allowedEdges.map { edge in
-                        DockEdgeLayout(displayID: display.id, edge: edge, expandedSize: CGSize(width: 80, height: 160),
-                            sliverLength: 110, sliverThickness: 4, hoverRects: [])
-                    }
-                }
-                return sample
-            }, position: PulseDockPositioning.resolve)
+        let controller = carryController(topology, clock: { clock })
         var commits: [DockEdgePreference] = []
         controller.onCommittedPlacement = { commits.append($0) }
         controller.start()
         defer { controller.stop() }
-        let initial = try XCTUnwrap(controller.presentation?.paintedFrame)
-        controller.dragRegions = .init(body: CGPath(rect: CGRect(origin: .zero, size: initial.size), transform: nil),
-            excludedControls: [])
         clock = 1
-        let down = CGPoint(x: initial.midX, y: initial.midY)
-        XCTAssertTrue(controller.beginBackgroundMove(local: CGPoint(x: initial.width / 2, y: initial.height / 2), global: down))
+        let down = try pressBody(controller)
         controller.updateBackgroundMove(global: CGPoint(x: down.x, y: down.y + 24))
         let held = try XCTUnwrap(controller.presentation)
         XCTAssertTrue(held.moving)
         let target = CGPoint(x: topology.b.frame.midX, y: topology.b.frame.midY)
-        controller.prepareDragDisplay = { display in
-            if display.id == topology.b.id { topology.active = [topology.a, topology.c] }
-        }
-
+        topology.active = [topology.a, topology.c]
         controller.updateBackgroundMove(global: target)
-        XCTAssertEqual(controller.presentation, held, "the last verified carry stays visible during a topology race")
+        XCTAssertEqual(controller.presentation, held, "the last verified carry stays visible while its destination is gone")
         XCTAssertTrue(controller.isBackgroundPressed)
         XCTAssertTrue(commits.isEmpty)
-        topology.active = [topology.a, topology.b, topology.c]
         controller.endBackgroundMove(global: target)
-        XCTAssertTrue(commits.isEmpty, "release cannot save a fallback when its destination disappears")
-        XCTAssertEqual(controller.preference.displayID, topology.a.id)
-        XCTAssertEqual(controller.presentation?.paintedFrame, initial)
+        let shown = try XCTUnwrap(held.placement)
+        XCTAssertEqual(commits, [shown.preference], "the drop saves the placement the carry showed")
+        XCTAssertEqual(controller.preference, shown.preference)
+        XCTAssertFalse(controller.isBackgroundPressed)
     }
 
-    func testD09PreparationCannotCarryOrSaveAfterCockpitBlocks() throws {
+    func testD09ACarryBlockedMidwayCannotCarryOrSave() throws {
         defer { UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": 1]) }
         for mode in [1, 2] {
             UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": mode])
@@ -249,37 +260,21 @@ import ModelPlanShell
                 let topology = DragTopology()
                 var clock = 0.0, widgetEnabled = true
                 let original = DockEdgePreference(displayID: topology.a.id)
-                let controller = DockEdgeController(preference: original, clock: { clock },
-                    scheduler: DragSchedule(), read: {
-                        var sample = topology.read()
-                        sample.presence.autoHide = false
-                        sample.presence.enabled = widgetEnabled
-                        sample.layouts = sample.displays.flatMap { display in
-                            DockEdgeGeometry.allowedEdges.map { edge in
-                                DockEdgeLayout(displayID: display.id, edge: edge, expandedSize: CGSize(width: 80, height: 160),
-                                    sliverLength: 110, sliverThickness: 4, hoverRects: [])
-                            }
-                        }
-                        return sample
-                    }, position: PulseDockPositioning.resolve)
-                var presents: [DockEdgePresentation] = [], commits: [DockEdgePreference] = []
+                let controller = carryController(topology, clock: { clock }, enabled: { widgetEnabled })
+                var presents: [DockEdgePresentation] = [], commits: [DockEdgePreference] = [], ended = 0
                 controller.onPresent = { presents.append($0) }
                 controller.onCommittedPlacement = { commits.append($0) }
+                controller.onPressEnded = { ended += 1 }
                 controller.start()
                 defer { controller.stop() }
-                let frame = try XCTUnwrap(controller.presentation?.paintedFrame)
-                controller.dragRegions = .init(body: CGPath(rect: CGRect(origin: .zero, size: frame.size), transform: nil),
-                    excludedControls: [])
                 clock = 1
-                let down = CGPoint(x: frame.midX, y: frame.midY)
-                XCTAssertTrue(controller.beginBackgroundMove(local: CGPoint(x: frame.width / 2, y: frame.height / 2), global: down))
+                let down = try pressBody(controller)
                 controller.updateBackgroundMove(global: CGPoint(x: down.x, y: down.y + 24))
                 XCTAssertTrue(controller.presentation?.moving == true)
                 presents.removeAll()
 
-                // A new sample can observe suppression during destination preparation,
-                // before the next normal visibility event is delivered.
-                controller.prepareDragDisplay = { _ in widgetEnabled = false }
+                // The cockpit blocks the widget between two pointer events.
+                widgetEnabled = false
                 let target = CGPoint(x: topology.b.frame.midX, y: topology.b.frame.midY)
                 if releasing { controller.endBackgroundMove(global: target) }
                 else { controller.updateBackgroundMove(global: target) }
@@ -289,8 +284,109 @@ import ModelPlanShell
                 XCTAssertTrue(presents.allSatisfy { $0.paintedFrame == nil }, "Suppression must not flash a carried or resting frame")
                 XCTAssertTrue(commits.isEmpty, "A newly blocked release must not save")
                 XCTAssertEqual(controller.preference, original)
+                XCTAssertEqual(ended, 1, "the host hears the press end once, to apply what it held back")
             }
         }
+    }
+
+    /// Item 3 (Pulse rebuilds nothing during a drag): the host prepares the edge views once, as the press is
+    /// taken, never per move and never at the release. Fails before: `prepareDragDisplay` ran on every move.
+    func testEdgeViewsArePreparedOncePerPressNeverPerMove() throws {
+        let topology = DragTopology()
+        var clock = 0.0, prepared: [String] = [], ended = 0
+        let controller = carryController(topology, clock: { clock })
+        controller.prepareDragDisplay = { prepared.append($0.id) }
+        controller.onPressEnded = { ended += 1 }
+        controller.start()
+        defer { controller.stop() }
+        clock = 1
+        let down = try pressBody(controller)
+        XCTAssertEqual(prepared, [topology.a.id], "prepared once, for the press display, as the press is taken")
+        for step in 1...6 { controller.updateBackgroundMove(global: CGPoint(x: down.x, y: down.y + CGFloat(step) * 30)) }
+        let other = CGPoint(x: topology.b.frame.midX, y: topology.b.frame.midY)
+        controller.updateBackgroundMove(global: other)
+        XCTAssertEqual(controller.presentation?.placement?.displayID, topology.b.id, "the carry crosses displays")
+        controller.endBackgroundMove(global: other)
+        XCTAssertEqual(prepared, [topology.a.id], "no preparation per move, per display change or at the release")
+        XCTAssertEqual(ended, 1)
+    }
+
+    /// Item 3 / Pulse `finish`: a press that never moved is a click. Nothing is restored or rebuilt
+    /// (`onDragCancelled` is for a carry that moved), nothing is saved, and the press end is still reported.
+    /// Fails before: every unmoved body click ran `onDragCancelled`, which the host answers with a full rebuild.
+    func testAnUnmovedBodyClickRebuildsAndSavesNothing() throws {
+        let topology = DragTopology()
+        var clock = 0.0, cancelled = 0, ended = 0, commits = 0
+        let controller = carryController(topology, clock: { clock })
+        controller.onDragCancelled = { cancelled += 1 }
+        controller.onPressEnded = { ended += 1 }
+        controller.onCommittedPlacement = { _ in commits += 1 }
+        controller.start()
+        defer { controller.stop() }
+        clock = 1
+        let before = controller.presentation
+        let down = try pressBody(controller)
+        controller.updateBackgroundMove(global: CGPoint(x: down.x + 3, y: down.y + 2))
+        controller.endBackgroundMove(global: CGPoint(x: down.x + 3, y: down.y + 2))
+        XCTAssertEqual(cancelled, 0, "a click rebuilds nothing")
+        XCTAssertEqual(commits, 0)
+        XCTAssertEqual(ended, 1)
+        XCTAssertEqual(controller.presentation, before)
+        // A carry that moved and is then cancelled (Escape) still restores.
+        let again = try pressBody(controller)
+        controller.updateBackgroundMove(global: CGPoint(x: again.x, y: again.y + 60))
+        controller.cancelBackgroundMove()
+        XCTAssertEqual(cancelled, 1)
+        XCTAssertEqual(ended, 2)
+    }
+
+    /// Item 4: the release re-resolves its landing, and that can come back nil (the edge eliminated by the resting
+    /// rules). Pulse persists what it showed; ours silently cancelled and nothing was saved. Fails before.
+    func testAReleaseWhoseLandingNoLongerResolvesSavesWhatTheCarryShowed() throws {
+        let topology = DragTopology()
+        var clock = 0.0, releasing = false, commits: [DockEdgePreference] = []
+        let controller = carryController(topology, clock: { clock }, position: { request in
+            releasing ? nil : try PulseDockPositioning.resolve(request)
+        })
+        controller.onCommittedPlacement = { commits.append($0) }
+        controller.start()
+        defer { controller.stop() }
+        clock = 1
+        let down = try pressBody(controller)
+        let bottom = CGPoint(x: topology.a.usableFrame.midX, y: topology.a.usableFrame.minY + 1)
+        controller.updateBackgroundMove(global: CGPoint(x: down.x, y: down.y - 40))
+        controller.updateBackgroundMove(global: bottom)
+        let shown = try XCTUnwrap(controller.presentation?.placement)
+        XCTAssertEqual(shown.edge, .bottom, "precondition: the carry shows the bottom edge")
+        releasing = true
+        controller.endBackgroundMove(global: bottom)
+        XCTAssertEqual(commits, [shown.preference], "the drop is saved where the carry showed it, not cancelled")
+        XCTAssertEqual(controller.preference.edge, .bottom)
+    }
+
+    /// Item 4: the commit is reported at mouse-up, before the release's own refresh. Before, the refresh ran
+    /// first; a host that re-set the old preference while presenting it (a rebuild from a Settings snapshot
+    /// that predated the drop) made the `preference == destination` guard skip the commit silently.
+    func testTheDropIsCommittedBeforeTheReleaseRefreshCanReenterIt() throws {
+        let topology = DragTopology()
+        var clock = 0.0, commits: [DockEdgePreference] = []
+        let controller = carryController(topology, clock: { clock })
+        let original = controller.preference
+        controller.onCommittedPlacement = { commits.append($0) }
+        controller.onPresent = { [weak controller] value in
+            // A host rebuild from a stale snapshot during the release's present.
+            if !value.moving, controller?.isBackgroundPressed == false, commits.isEmpty { controller?.setPreference(original) }
+        }
+        controller.start()
+        defer { controller.stop() }
+        clock = 1
+        let down = try pressBody(controller)
+        let bottom = CGPoint(x: topology.a.usableFrame.midX, y: topology.a.usableFrame.minY + 1)
+        controller.updateBackgroundMove(global: CGPoint(x: down.x, y: down.y - 40))
+        controller.updateBackgroundMove(global: bottom)
+        controller.endBackgroundMove(global: bottom)
+        XCTAssertEqual(commits.count, 1, "the drop is committed even if the release refresh re-enters")
+        XCTAssertEqual(commits.first?.edge, .bottom)
     }
 
     func testD08D10InnerStripWakeAndHotPlugPreserveIntentInBothModes() throws {

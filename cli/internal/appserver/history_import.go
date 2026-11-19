@@ -278,12 +278,14 @@ func HistoryImportHandlers(c *ImportController) map[string]Handler {
 			// (macrevd-967-4).
 			c.stopRetriesLocked()
 			c.mu.Unlock()
-			if s, ok := c.engine.(OwedScheduler); ok {
-				s.CancelOwed()
-			}
+			// Stop the run first and wait for it to settle: an importer past its context check
+			// can still commit, and that commit must not land after (and erase) the suppression.
 			if running && cancel != nil {
 				cancel()
-				c.wg.Wait() // the run has stopped and written nothing when this answers
+			}
+			c.wg.Wait() // the run has stopped and written nothing when this answers
+			if s, ok := c.engine.(OwedScheduler); ok {
+				s.CancelOwed()
 			}
 			return reply(stamp)
 		}},

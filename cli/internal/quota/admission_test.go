@@ -318,3 +318,18 @@ exec "$MODELPLAN_TEST_HELPER_INNER" "$@"
 		t.Fatal("revoked runtime re-admitted")
 	}
 }
+
+// A user-requested Forget that meets a short refresh admission must wait for it, as the
+// comment on consent.ReaderLockWait says, instead of reporting busy.
+func TestForgetToolWaitsForAShortReaderAdmission(t *testing.T) {
+	isolateHome(t)
+	p := nativePaths(t)
+	unlock, err := consent.ReaderLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { time.Sleep(300 * time.Millisecond); unlock() }()
+	if err := ForgetTool(p, "cursor"); err != nil {
+		t.Fatalf("Forget during a short refresh reported %v", err)
+	}
+}
