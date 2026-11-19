@@ -60,7 +60,7 @@ test("publish with no build state warns and exits 0; a bad mode is refused", () 
   assert.equal(run(s, "other").status, 2);
 });
 
-test("a scratch path that survives cleanup is moved aside, never reused or cloned onto", () => {
+test("a scratch path that survives cleanup is moved aside into a fresh directory, then restored cleanly", () => {
   const s = setup(); build(s, "warm"); run(s, "publish");
   fs.writeFileSync(path.join(s.native, "product"), "stale");
   const real = spawnSync("which", ["rm"], { encoding: "utf8" }).stdout.trim();
@@ -68,12 +68,12 @@ test("a scratch path that survives cleanup is moved aside, never reused or clone
   const r = run(s, "restore");
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(fs.readFileSync(path.join(s.native, "product"), "utf8"), "warm", "restored into a clean path");
-  const stale = fs.readdirSync(path.dirname(s.native)).filter((n) => n.startsWith(".build.stale."));
+  const stale = fs.readdirSync(path.dirname(s.native)).filter((n) => n.startsWith(".build.aside."));
   assert.equal(stale.length, 1);
   assert.equal(fs.readFileSync(path.join(path.dirname(s.native), stale[0], "old", "product"), "utf8"), "stale");
 });
 
-test("if the survivor cannot be moved aside either, nothing is cloned onto it and the job still exits 0", () => {
+test("if the survivor can be neither deleted nor moved aside, restore fails closed and clones nothing onto it", () => {
   const s = setup(); build(s, "warm"); run(s, "publish");
   fs.writeFileSync(path.join(s.native, "product"), "stale");
   const real = spawnSync("which", ["rm"], { encoding: "utf8" }).stdout.trim();
@@ -81,10 +81,28 @@ test("if the survivor cannot be moved aside either, nothing is cloned onto it an
   fs.writeFileSync(path.join(s.d, "bin", "rm"), `#!/bin/bash\nfor a; do case $a in *"/.build") exit 1;; esac; done\nexec ${real} "$@"\n`, { mode: 0o755 });
   fs.writeFileSync(path.join(s.d, "bin", "mv"), `#!/bin/bash\nfor a; do case $a in *"/.build") exit 1;; esac; done\nexec ${mv} "$@"\n`, { mode: 0o755 });
   const r = run(s, "restore");
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stdout, /could not clear/);
+  assert.equal(r.status, 1, "the job must not build on the survivor");
+  assert.match(r.stdout, /cannot establish a clean/);
   assert.equal(fs.readFileSync(path.join(s.native, "product"), "utf8"), "stale");
   assert.ok(!fs.existsSync(path.join(s.native, "c")), "no seed nested into the survivor");
+});
+
+test("an unavailable seed root or a lock that cannot be taken never fails the step", () => {
+  const s = setup(); build(s, "warm");
+  fs.writeFileSync(path.join(s.d, "file"), "x");
+  let r = run(s, "publish", { SEED_ROOT: path.join(s.d, "file", "seed") }); // parent is a file
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /unavailable/);
+  // a live owner holds the lock: after the wait the step still exits 0 (shortened by a sleep shim)
+  fs.mkdirSync(s.seed + ".lock", { recursive: true }); fs.writeFileSync(path.join(s.seed + ".lock", "pid"), String(process.pid));
+  fs.mkdirSync(s.seed);
+  fs.writeFileSync(path.join(s.d, "bin", "sleep"), "#!/bin/bash\nexit 0\n", { mode: 0o755 });
+  r = run(s, "publish");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /unavailable/);
+  assert.ok(fs.existsSync(s.seed + ".lock"), "the other owner's lock is untouched");
+  r = run(s, "restore", { SEED_ROOT: path.join(s.d, "file", "seed") });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
 });
 
 test("a hosted runner is a silent no-op", () => {
