@@ -315,6 +315,13 @@
       "coverage": "data",
       "desktop": "F23-effort-suggestion-absent-desktop.json",
       "publication": "F23-effort-suggestion-absent-publication.json"
+    },
+    {
+      "id": "F24-token-accounting",
+      "description": "response token buckets and local calendar windows",
+      "coverage": "data",
+      "desktop": "F24-token-accounting-desktop.json",
+      "publication": "F24-token-accounting-publication.json"
     }
   ]
 }

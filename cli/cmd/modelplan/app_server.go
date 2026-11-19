@@ -161,6 +161,12 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	var fetcher *appPublication
 	if !options.Offline && !options.ReadOnly {
 		fetcher = newAppPublication(ctx, st, appPublicationBase())
+		if fetcher != nil {
+			applyTestCadence(fetcher)
+			fetcher.subscribed = func() bool {
+				return hasTrackedSubscription(quota.ReadPermitted(quota.ProductionPaths(st.Dir, version), time.Now()).Accounts)
+			}
+		}
 	}
 	if fetcher != nil {
 		closeScheduler := closeBackend

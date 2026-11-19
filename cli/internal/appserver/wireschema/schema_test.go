@@ -363,3 +363,36 @@ func TestMemberRefreshGeneratedCapturesValidate(t *testing.T) {
 		}
 	}
 }
+
+// A pointer field tagged null:"forbidden" accepts absence or a value and rejects explicit null, as the Go encoder,
+// the Swift decoder and this schema (read by the web page) must all agree (macrevb-1024-4).
+func TestForbiddenNullPointerFieldsRejectExplicitNull(t *testing.T) {
+	s := schema(t, "CockpitSession")
+	at := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	total, fast, display := int64(3030), true, "Sol 6.2"
+	base := wire.CockpitSession{SessionRef: "0000000000000001", Source: "codex", Model: "unknown", LastObservedAt: at, State: "running"}
+	if err := validate(t, s, base); err != nil {
+		t.Fatalf("absent: %v", err)
+	}
+	full := base
+	full.StartedAt, full.ObservedTotalTokens, full.Fast, full.ModelDisplay = &at, &total, &fast, &display
+	if err := validate(t, s, full); err != nil {
+		t.Fatalf("valid: %v", err)
+	}
+	encoded, _ := json.Marshal(full)
+	for _, field := range []string{"startedAt", "observedTotalTokens", "fast", "modelDisplay"} {
+		var m map[string]any
+		_ = json.Unmarshal(encoded, &m)
+		m[field] = nil
+		if err := validate(t, s, m); err == nil {
+			t.Errorf("explicit null accepted for %s", field)
+		}
+	}
+	// A coalesced nullable field still accepts null.
+	var m map[string]any
+	_ = json.Unmarshal(encoded, &m)
+	m["effort"] = nil
+	if err := validate(t, s, m); err != nil {
+		t.Errorf("coalesced null refused: %v", err)
+	}
+}

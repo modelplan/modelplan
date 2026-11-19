@@ -10,6 +10,7 @@
 // description's "info:" part); device evidence moved to the build gate. There is no stale-base check (owner 2026-11-07): a PR need not contain the latest main, because the queue's own CI on
 // the group commit (QUEUE_WORKFLOWS) tests "PR + latest main".
 
+import referenceMap from "./reference-map.json" with { type: "json" };
 export const CONTEXT = "modelplan-gates";
 // The repository whose runs count; evaluate.mjs passes GITHUB_REPOSITORY, this is the default.
 export const REPO = "modelplan/modelplan";
@@ -190,6 +191,20 @@ export function verdicts(items, head, carried) {
   return lanes;
 }
 
+// Sticky reviewer (owner 2026-11-18): "REVIEWER: <lane>" on its own line in a trusted comment names the one GPT lane
+// whose VERDICT counts for the PR; the latest such line wins. Other lanes become advisory notes. Null = no sticky.
+export function reviewerLane(items) {
+  let lane = null;
+  // Comments only: the workflow re-evaluates on issue_comment events, not on review submit/edit/dismiss, so a
+  // review-borne assignment could leave a stale gate status.
+  for (const x of items.filter((i) => i.kind === "comment"))
+    for (const l of lines(x.body)) {
+      const m = /^REVIEWER: \(?([a-z0-9]+(?:-[a-z0-9]+)*)\)?\s*$/i.exec(l);
+      if (m) lane = `(${m[1].toLowerCase()})`;
+    }
+  return lane;
+}
+
 // ---- GLM-out fallback (owner 2026-11-09: "GLM fails -> there must be a fallback; mix them") ----
 // D243: GLMREV and DESIGN no longer gate. The rules below still decide which marker the description reports.
 // While the GLM quota is out, a Claude Sonnet reviewer stands in for GLM under its own label:
@@ -348,6 +363,60 @@ export function evidenceState(pr, items, head, tiers = new Map(), { designTouchi
     : { state: SUCCESS, why: "scenario evidence verified" };
 }
 
+// ---- Reference apps (D239, owner 2026-11-13) ----
+// Reader, detection and metric work follows a named reference app (docs/readers/integration-standard.md §3).
+// A PR touching these paths must carry a body line
+//   Reference: <app>@<commit-or-tag> <path>[, <path>][; <app>@<ref> <path> ...]
+// naming at least one app allowed for the touched area (scripts/merge-gates/reference-map.json), or "Reference: none (<reason>)". D243 step 3 (owner 2026-11-13): advisory only. A
+// missing or malformed line is reported in the status description ("info:"), drafts too, and never fails.
+const REFERENCE_MAP = referenceMap;
+const REFERENCE_GROUPS = REFERENCE_MAP.groups.map((g) => ({ ...g, re: g.paths.map((p) => new RegExp(p, "i")) }));
+const NONE_MIN = REFERENCE_MAP.noneReasonMinLength;
+export const REFERENCE_APPS = Object.freeze({ codexbar: "CodexBar", pulse: "Pulse", tokenmonitor: "TokenMonitor", ccusage: "ccusage", tokei: "Tokei", stats: "Stats", maccy: "Maccy" });
+const REFERENCE_LINE = /^\s*\*{0,2}Reference(?::\*{0,2}|\*{0,2}:)\s*/i;
+const REFERENCE_REF = /^([0-9a-f]{7,40}|v?[0-9][A-Za-z0-9._-]*)$/;
+
+// The reference groups a set of changed paths touches (renamed-from paths included by the caller).
+export const referenceGroups = (paths) => REFERENCE_GROUPS.filter((g) => paths.some((p) => g.re.some((re) => re.test(p))));
+export const referenceTouch = (paths) => referenceGroups(paths).length > 0;
+
+// The first matching body line is the declaration. refs: [{app, ref, paths}]; none: true for "Reference: none (reason)".
+export function parseReference(body) {
+  const line = lines(body ?? "").find((l) => REFERENCE_LINE.test(l));
+  if (line === undefined) return { declared: false, refs: [], none: false, malformed: null };
+  const rest = line.replace(REFERENCE_LINE, "").replace(/\*+\s*$/, "").trim();
+  if (/^none\b/i.test(rest)) {
+    const reason = /^none\s*\(([^()]*)\)$/i.exec(rest)?.[1].trim();
+    if (reason === undefined || reason === "") return { declared: true, refs: [], none: true, malformed: "none needs a reason in brackets" };
+    return reason.length < NONE_MIN ? { declared: true, refs: [], none: true, malformed: `none needs a reason of at least ${NONE_MIN} characters` }
+      : { declared: true, refs: [], none: true, malformed: null };
+  }
+  const refs = [];
+  for (const entry of rest.split(";").map((e) => e.trim())) {
+    const m = /^([A-Za-z][A-Za-z -]*?)\s*@\s*(\S+)\s+(.+)$/.exec(entry);
+    const app = m && REFERENCE_APPS[m[1].toLowerCase().replace(/[\s-]/g, "")];
+    const paths = m ? m[3].split(/[,\s]+/).filter(Boolean) : [];
+    if (!m || !app || !REFERENCE_REF.test(m[2]) || !paths.length || paths.some((p) => !/[./]/.test(p)))
+      return { declared: true, refs: [], none: false, malformed: `malformed entry '${entry || "(empty)"}'` };
+    refs.push({ app, ref: m[2], paths });
+  }
+  return { declared: true, refs, none: false, malformed: null };
+}
+
+// null when the PR is out of scope or declares an allowed reference; else why it falls short.
+export function referenceProblem(pr, paths) {
+  const groups = referenceGroups(paths);
+  if (!groups.length) return null;
+  const names = groups.map((g) => g.name).join(" + ");
+  const { declared, refs, none, malformed } = parseReference(pr.body);
+  if (!declared) return `${names} PR: no Reference: line (D239)`;
+  if (malformed) return `Reference: line ${malformed} (D239)`;
+  if (none) return null;
+  const used = new Set(refs.map((r) => r.app));
+  const bad = groups.find((g) => !g.apps.some((a) => used.has(a)));
+  return bad ? `${bad.name} PR must follow one of ${bad.apps.join(", ")} (D239); got ${[...used].join(", ")}` : null;
+}
+
 // ---- Trains ----
 // A train lands many PRs under one Scenarios line, and only that line is checked for evidence, so a member's
 // scenario missing from it would land unaccounted for (#650 dropped seven). evaluate.mjs reads members only for
@@ -490,7 +559,13 @@ export function dataSyncProblem({ pr, files, items, sync }) {
   // The commit sits directly on the main commit the run checked out (this also rules out a tag or branch that merely
   // shares the name "main").
   if (commit.parents[0].sha !== run.head_sha) return "head commit is not on the commit the data-sync run checked out";
-  if (![...verdicts(items, pr.head.sha, []).values()].includes("merge")) return "needs a trusted VERDICT: merge @ the exact head";
+  // The assigned reviewer (REVIEWER:) is the only lane whose merge counts here too.
+  const sticky = reviewerLane(items);
+  if (sticky) {
+    const t = tierOverride(items) ?? pathTier(prPaths(files));
+    if (!(t === 2 ? SOL_LANES : [...SOL_LANES, ...TERRA_LANES]).includes(sticky)) return `assigned reviewer ${sticky} is not an eligible GPT lane for tier ${t}`;
+  }
+  if (![...verdicts(items, pr.head.sha, [])].some(([l, v]) => v === "merge" && (!sticky || l === sticky))) return "needs a trusted VERDICT: merge @ the exact head";
   return null;
 }
 
@@ -526,9 +601,14 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   // head (or a verified carried head) stops every tier, tier 0 included. GLM, (sonnet) and other lanes are input.
   const allLanes = verdicts(items, head, carried);
   const gptLanes = tier === 2 ? [...SOL_LANES, "(unnamed)"] : [...SOL_LANES, ...TERRA_LANES, "(unnamed)"];
-  const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l)));
+  const assigned = reviewerLane(items);
+  // An assignment naming a lane that cannot review this tier (Sonnet, unknown, Terra on tier 2) is invalid: it filters
+  // nothing, so no GPT block is hidden, and it holds the PR until the coordinator fixes it.
+  const sticky = assigned && [...SOL_LANES, ...TERRA_LANES].includes(assigned) && (tier !== 2 || SOL_LANES.includes(assigned)) ? assigned : null;
+  const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l) && (!sticky || l === sticky)));
   // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
   const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);
+  if (sticky) notes.unshift(`reviewer ${sticky}`);
   if (tier !== 0 && glmInScope(paths)) {
     const g = glmVerdict(items, head, fb);
     if (g) notes.push(`GLMREV ${g}`);
@@ -543,6 +623,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (evidence.state !== SUCCESS) notes.push(evidence.why);
   const gap = trainScenarioGap(pr, members);
   if (gap) notes.push(gap);
+  const refNote = referenceProblem(pr, paths);
+  if (refNote) notes.push(refNote);
   const extra = { tier, design: design.touching ? design.surfaces : [], carried, glmFallback: fb.used, notes };
   const say = (why) => (notes.length ? `${why}; info: ${notes.join("; ")}` : why);
   if (pr.draft) return res(PENDING, say("draft"), extra);
@@ -551,6 +633,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (blocked.length) return res(FAILURE, say(`VERDICT block ${blocked.join(" ")}`), extra);
 
   const missing = [];
+  if (assigned && !sticky) missing.push(`a valid REVIEWER (${assigned} cannot review tier ${tier})`);
   const merged = (names) => names.some((n) => lanes.get(n) === "merge");
   if (tier === 2 && !merged(SOL_LANES)) missing.push(`VERDICT ${SOL_LANES.join(" or ")} merge`);
   if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES])) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} merge`);

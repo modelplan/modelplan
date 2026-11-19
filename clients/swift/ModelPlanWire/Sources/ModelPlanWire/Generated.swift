@@ -341,17 +341,20 @@ public struct RowsAccountActivity: Codable, Sendable {
 }
 
 public struct RowsAccountToday: Codable, Sendable {
+    public let `observedTotalTokens`: Int64?
     public let `observedOutputTokens`: Int64?
     public let `generationTps`: Double?
     public let `runningSessions`: Int?
     public let `bindingBasis`: RowsTodayBindingBasis
     private enum CodingKeys: String, CodingKey {
+        case `observedTotalTokens`
         case `observedOutputTokens`
         case `generationTps`
         case `runningSessions`
         case `bindingBasis`
     }
-    public init(`observedOutputTokens`: Int64? = nil, `generationTps`: Double? = nil, `runningSessions`: Int? = nil, `bindingBasis`: RowsTodayBindingBasis) throws {
+    public init(`observedTotalTokens`: Int64? = nil, `observedOutputTokens`: Int64? = nil, `generationTps`: Double? = nil, `runningSessions`: Int? = nil, `bindingBasis`: RowsTodayBindingBasis) throws {
+        self.`observedTotalTokens` = `observedTotalTokens`
         self.`observedOutputTokens` = `observedOutputTokens`
         self.`generationTps` = `generationTps`
         self.`runningSessions` = `runningSessions`
@@ -360,6 +363,8 @@ public struct RowsAccountToday: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`observedTotalTokens`), try c.decodeNil(forKey: .`observedTotalTokens`) { throw WireDecodeError.invalidIdentity }
+        self.`observedTotalTokens` = try c.decodeIfPresent(Int64.self, forKey: .`observedTotalTokens`)
         if c.contains(.`observedOutputTokens`), try c.decodeNil(forKey: .`observedOutputTokens`) { throw WireDecodeError.invalidIdentity }
         self.`observedOutputTokens` = try c.decodeIfPresent(Int64.self, forKey: .`observedOutputTokens`)
         if c.contains(.`generationTps`), try c.decodeNil(forKey: .`generationTps`) { throw WireDecodeError.invalidIdentity }
@@ -372,6 +377,7 @@ public struct RowsAccountToday: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`observedTotalTokens`, forKey: .`observedTotalTokens`)
         try c.encodeIfPresent(`observedOutputTokens`, forKey: .`observedOutputTokens`)
         try c.encodeIfPresent(`generationTps`, forKey: .`generationTps`)
         try c.encodeIfPresent(`runningSessions`, forKey: .`runningSessions`)
@@ -2562,6 +2568,8 @@ public struct WireCockpitHistory: Codable, Sendable {
 }
 
 public struct WireCockpitHistorySums: Codable, Sendable {
+    public let `totalTokens`: Int64?
+    public let `reasoningTokens`: Int64?
     public let `inputTokens`: Int64?
     public let `outputTokens`: Int64
     public let `cacheReadTokens`: Int64?
@@ -2571,6 +2579,8 @@ public struct WireCockpitHistorySums: Codable, Sendable {
     public let `observedRequests`: Int
     public let `eligibleRequests`: Int
     private enum CodingKeys: String, CodingKey {
+        case `totalTokens`
+        case `reasoningTokens`
         case `inputTokens`
         case `outputTokens`
         case `cacheReadTokens`
@@ -2580,7 +2590,9 @@ public struct WireCockpitHistorySums: Codable, Sendable {
         case `observedRequests`
         case `eligibleRequests`
     }
-    public init(`inputTokens`: Int64? = nil, `outputTokens`: Int64, `cacheReadTokens`: Int64? = nil, `cacheWriteTokens`: Int64? = nil, `cacheHitRatio`: Double? = nil, `generationTps`: Double? = nil, `observedRequests`: Int, `eligibleRequests`: Int) throws {
+    public init(`totalTokens`: Int64? = nil, `reasoningTokens`: Int64? = nil, `inputTokens`: Int64? = nil, `outputTokens`: Int64, `cacheReadTokens`: Int64? = nil, `cacheWriteTokens`: Int64? = nil, `cacheHitRatio`: Double? = nil, `generationTps`: Double? = nil, `observedRequests`: Int, `eligibleRequests`: Int) throws {
+        self.`totalTokens` = `totalTokens`
+        self.`reasoningTokens` = `reasoningTokens`
         self.`inputTokens` = `inputTokens`
         self.`outputTokens` = `outputTokens`
         self.`cacheReadTokens` = `cacheReadTokens`
@@ -2593,6 +2605,10 @@ public struct WireCockpitHistorySums: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`totalTokens`), try c.decodeNil(forKey: .`totalTokens`) { throw WireDecodeError.invalidIdentity }
+        self.`totalTokens` = try c.decodeIfPresent(Int64.self, forKey: .`totalTokens`)
+        if c.contains(.`reasoningTokens`), try c.decodeNil(forKey: .`reasoningTokens`) { throw WireDecodeError.invalidIdentity }
+        self.`reasoningTokens` = try c.decodeIfPresent(Int64.self, forKey: .`reasoningTokens`)
         self.`inputTokens` = try c.decodeIfPresent(Int64.self, forKey: .`inputTokens`)
         self.`outputTokens` = try c.decode(Int64.self, forKey: .`outputTokens`)
         self.`cacheReadTokens` = try c.decodeIfPresent(Int64.self, forKey: .`cacheReadTokens`)
@@ -2606,6 +2622,8 @@ public struct WireCockpitHistorySums: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`totalTokens`, forKey: .`totalTokens`)
+        try c.encodeIfPresent(`reasoningTokens`, forKey: .`reasoningTokens`)
         try c.encode(`inputTokens`, forKey: .`inputTokens`)
         try c.encode(`outputTokens`, forKey: .`outputTokens`)
         try c.encode(`cacheReadTokens`, forKey: .`cacheReadTokens`)
@@ -3136,6 +3154,9 @@ public struct WireCockpitSession: Codable, Sendable {
     public let `state`: String
     public let `rate`: Double?
     public let `fast`: Bool?
+    public let `startedAt`: WireTimestamp?
+    public let `observedTotalTokens`: Int64?
+    public let `modelDisplay`: String?
     private enum CodingKeys: String, CodingKey {
         case `sessionRef`
         case `source`
@@ -3148,8 +3169,11 @@ public struct WireCockpitSession: Codable, Sendable {
         case `state`
         case `rate`
         case `fast`
+        case `startedAt`
+        case `observedTotalTokens`
+        case `modelDisplay`
     }
-    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `projectState`: WireCockpitProjectState? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil, `fast`: Bool? = nil) throws {
+    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `projectState`: WireCockpitProjectState? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil, `fast`: Bool? = nil, `startedAt`: WireTimestamp? = nil, `observedTotalTokens`: Int64? = nil, `modelDisplay`: String? = nil) throws {
         self.`sessionRef` = `sessionRef`
         self.`source` = `source`
         self.`subscriptionRef` = `subscriptionRef`
@@ -3161,6 +3185,9 @@ public struct WireCockpitSession: Codable, Sendable {
         self.`state` = `state`
         self.`rate` = `rate`
         self.`fast` = `fast`
+        self.`startedAt` = `startedAt`
+        self.`observedTotalTokens` = `observedTotalTokens`
+        self.`modelDisplay` = `modelDisplay`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -3178,6 +3205,12 @@ public struct WireCockpitSession: Codable, Sendable {
         self.`rate` = try c.decodeIfPresent(Double.self, forKey: .`rate`)
         if c.contains(.`fast`), try c.decodeNil(forKey: .`fast`) { throw WireDecodeError.invalidIdentity }
         self.`fast` = try c.decodeIfPresent(Bool.self, forKey: .`fast`)
+        if c.contains(.`startedAt`), try c.decodeNil(forKey: .`startedAt`) { throw WireDecodeError.invalidIdentity }
+        self.`startedAt` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`startedAt`)
+        if c.contains(.`observedTotalTokens`), try c.decodeNil(forKey: .`observedTotalTokens`) { throw WireDecodeError.invalidIdentity }
+        self.`observedTotalTokens` = try c.decodeIfPresent(Int64.self, forKey: .`observedTotalTokens`)
+        if c.contains(.`modelDisplay`), try c.decodeNil(forKey: .`modelDisplay`) { throw WireDecodeError.invalidIdentity }
+        self.`modelDisplay` = try c.decodeIfPresent(String.self, forKey: .`modelDisplay`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -3194,6 +3227,9 @@ public struct WireCockpitSession: Codable, Sendable {
         try c.encode(`state`, forKey: .`state`)
         try c.encode(`rate`, forKey: .`rate`)
         try c.encodeIfPresent(`fast`, forKey: .`fast`)
+        try c.encodeIfPresent(`startedAt`, forKey: .`startedAt`)
+        try c.encodeIfPresent(`observedTotalTokens`, forKey: .`observedTotalTokens`)
+        try c.encodeIfPresent(`modelDisplay`, forKey: .`modelDisplay`)
     }
     private func validate() throws {
         try WireValidation.reference(`sessionRef`)
@@ -3589,17 +3625,20 @@ public struct WireCockpitSubscriptionHistory: Codable, Sendable {
 }
 
 public struct WireCockpitToday: Codable, Sendable {
+    public let `observedTotalTokens`: Int64?
     public let `source`: String
     public let `observedOutputTokens`: Int64
     public let `generationTps`: Double?
     public let `bindingBasis`: String
     private enum CodingKeys: String, CodingKey {
+        case `observedTotalTokens`
         case `source`
         case `observedOutputTokens`
         case `generationTps`
         case `bindingBasis`
     }
-    public init(`source`: String, `observedOutputTokens`: Int64, `generationTps`: Double? = nil, `bindingBasis`: String) throws {
+    public init(`observedTotalTokens`: Int64? = nil, `source`: String, `observedOutputTokens`: Int64, `generationTps`: Double? = nil, `bindingBasis`: String) throws {
+        self.`observedTotalTokens` = `observedTotalTokens`
         self.`source` = `source`
         self.`observedOutputTokens` = `observedOutputTokens`
         self.`generationTps` = `generationTps`
@@ -3608,6 +3647,8 @@ public struct WireCockpitToday: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`observedTotalTokens`), try c.decodeNil(forKey: .`observedTotalTokens`) { throw WireDecodeError.invalidIdentity }
+        self.`observedTotalTokens` = try c.decodeIfPresent(Int64.self, forKey: .`observedTotalTokens`)
         self.`source` = try c.decode(String.self, forKey: .`source`)
         self.`observedOutputTokens` = try c.decode(Int64.self, forKey: .`observedOutputTokens`)
         self.`generationTps` = try c.decodeIfPresent(Double.self, forKey: .`generationTps`)
@@ -3617,6 +3658,7 @@ public struct WireCockpitToday: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`observedTotalTokens`, forKey: .`observedTotalTokens`)
         try c.encode(`source`, forKey: .`source`)
         try c.encode(`observedOutputTokens`, forKey: .`observedOutputTokens`)
         try c.encode(`generationTps`, forKey: .`generationTps`)

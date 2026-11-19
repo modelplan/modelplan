@@ -19,6 +19,7 @@ on:
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/DockContentProviderTests.swift'
       - 'desktop/native/ModelPlanDock/Native/DockInstrumentView.swift'
       - '.github/workflows/official-dock.yml'
+      - '!**/*.md'
   push:
     branches: [main]
     paths:
