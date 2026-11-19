@@ -19,7 +19,7 @@ import subprocess
 import sys
 import time
 
-APP_EXECUTABLE = "ModelPlanCommunity"
+APP_EXECUTABLE = "ModelPlan"
 DISPLAY_CANDIDATES = ((1920, 1200), (1920, 1080), (1680, 1050), (1600, 1200), (1440, 900), (1280, 1024))
 PARK = (0.42, 0.62)  # A screen fraction clear of the widget's edges, the menu bar and the Dock.
 MIN_COLOURS = 24  # Coarse 12-bit colours: a blank, black or single-tone render has far fewer.

@@ -5,12 +5,16 @@ import ModelPlanSettings
 /// Bundle-only legal text. This does not inspect a profile, execute a component or follow an external link.
 enum CommunityBundledNotices {
     static let maximumBytes = 1_048_576
+    static let visualComponent = "Official visuals © ModelPlan"
+    static let visualLicense = "Reserved licence, not MIT: ModelPlan Official Visuals License 1.0"
     static func load(bundle: URL) -> [SettingsLicenseNotice] {
         let root = bundle.standardizedFileURL.resolvingSymlinksInPath()
+        // D57: the official edition lists its reserved visuals licence first, in full; a self-built
+        // neutral package ships no VISUAL-LICENSE.md and so shows no such entry.
         let files: [(String, String, String, Bool)] = [
+            ("VISUAL-LICENSE.md", visualComponent, visualLicense, false),
             ("LICENSE.txt", "ModelPlan software", "MIT", true),
             ("CLI-THIRD-PARTY-NOTICES.md", "Bundled CLI dependencies", "See bundled licence notices", true),
-            ("VISUAL-LICENSE.md", "Official visuals", "ModelPlan Official Visuals License 1.0", false),
         ]
         var notices: [SettingsLicenseNotice] = []
         for (name, component, license, required) in files {

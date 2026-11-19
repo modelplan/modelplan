@@ -179,7 +179,7 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.assertTrue(seals[0][1].endswith('/Contents/Helpers/modelplan'))
         self.assertLess(seals[0][0], identity)
         self.assertLess(identity, seals[1][0])
-        self.assertTrue(seals[1][1].endswith('/ModelPlan Community.app'))
+        self.assertTrue(seals[1][1].endswith('/ModelPlan.app'))
         embed = next(i for i, c in enumerate(commands) if c['command'] == 'python3' and c['args'][0].endswith('/embed_fixed_helper.py'))
         final = commands[-1]
         self.assertLess(embed, seals[1][0])
@@ -192,18 +192,34 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.assertTrue(all(not c['args'][0].endswith('/build_fixed_helper.py') for c in commands if c['command'] == 'python3'))
         self.assertTrue(all('credential-agent' not in target for _, target in seals))
         self.assertEqual(self.fixture.snapshot(inputs), before)
-        resources = self.fixture.output / 'ModelPlan Community.app' / 'Contents' / 'Resources'
+        resources = self.fixture.output / 'ModelPlan.app' / 'Contents' / 'Resources'
         self.assertTrue((resources / 'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle' / 'fixture.txt').is_file())
         self.assertFalse(list((resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle').rglob('zai-white.svg')))
-        self.assertTrue((resources / 'VISUAL-LICENSE.md').is_file())
+        # D57/D321: a build from source is the neutral edition: no official icon or visuals licence.
+        self.assertFalse((resources / 'VISUAL-LICENSE.md').exists())
+        self.assertFalse((resources / 'AppIcon.icns').exists())
+        self.assertNotIn('CFBundleIconFile', (resources.parent / 'Info.plist').read_text())
+        self.assertTrue((resources / 'THIRD-PARTY-TRADEMARKS.md').is_file())
+
+    def test_official_edition_adds_the_official_icon_and_visuals_licence(self):
+        result = self.fixture.run(environment={'MODELPLAN_EDITION': 'official'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        resources = self.fixture.output / 'ModelPlan.app' / 'Contents' / 'Resources'
+        self.assertEqual((resources / 'VISUAL-LICENSE.md').read_text(), 'Synthetic visuals license')
         self.assertEqual((resources / 'AppIcon.icns').read_bytes(), b'icns synthetic')
         self.assertIn('<key>CFBundleIconFile</key><string>AppIcon</string>', (resources.parent / 'Info.plist').read_text())
-        self.assertTrue((resources / 'THIRD-PARTY-TRADEMARKS.md').is_file())
+        self.assertFalse(list((resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle').rglob('zai-white.svg')))
+
+    def test_unknown_edition_fails_before_building(self):
+        result = self.fixture.run(environment={'MODELPLAN_EDITION': 'community'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('MODELPLAN_EDITION must be neutral (default) or official', result.stderr)
+        self.assertEqual(self.fixture.commands(), [])
 
     def test_flat_resource_bundle_excludes_beta_only_mark(self):
         result = self.fixture.run(environment={'PACKAGING_FLAT_BUNDLE': '1'})
         self.assertEqual(result.returncode, 0, result.stderr)
-        bundle = self.fixture.output / 'ModelPlan Community.app' / 'Contents' / 'Resources' / 'ModelPlanDockResources_ModelPlanDockResources.bundle'
+        bundle = self.fixture.output / 'ModelPlan.app' / 'Contents' / 'Resources' / 'ModelPlanDockResources_ModelPlanDockResources.bundle'
         self.assertFalse(list(bundle.rglob('zai-white.svg')))
 
     def test_absent_or_duplicate_beta_mark_fails_closed(self):
@@ -294,7 +310,7 @@ class OwnerTestCockpitEntryTests(unittest.TestCase):
 
     def info(self):
         import plistlib
-        return plistlib.loads((self.fixture.output / 'ModelPlan Community.app/Contents/Info.plist').read_bytes())
+        return plistlib.loads((self.fixture.output / 'ModelPlan.app/Contents/Info.plist').read_bytes())
 
     def test_release_and_unverified_packages_keep_the_cockpit_entry_closed(self):
         for arguments in ((), ('--unverified',)):
@@ -305,7 +321,7 @@ class OwnerTestCockpitEntryTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIs(self.info()['ModelPlanCockpitEntryEnabled'], False)
                     self.assertNotIn('ModelPlanOwnerTestBuild', self.info())
-                    resources = self.fixture.output / 'ModelPlan Community.app/Contents/Resources'
+                    resources = self.fixture.output / 'ModelPlan.app/Contents/Resources'
                     self.assertFalse((resources / 'Cockpit').exists())
                     self.assertFalse((resources / 'build-edition.json').exists())
                     self.assertFalse(any(c['command'] == 'npm' for c in self.fixture.commands()))
@@ -314,12 +330,19 @@ class OwnerTestCockpitEntryTests(unittest.TestCase):
                     self.assertFalse(any(c['command'] == 'python3' and c['args'][0].endswith('/check-bundle-pins.py')
                                          for c in self.fixture.commands()))
 
-    def test_owner_test_package_opens_the_entry_with_the_pinned_official_cockpit(self):
+    def test_neutral_owner_test_package_ships_the_community_cockpit_page(self):
         result = self.fixture.run(arguments=('--owner-test',))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        resources = self.fixture.output / 'ModelPlan.app/Contents/Resources'
+        self.assertEqual((resources / 'Cockpit/index.html').read_text(), 'synthetic community cockpit')
+        self.assertEqual(json.loads((resources / 'build-edition.json').read_text())['edition'], 'community')
+
+    def test_owner_test_package_opens_the_entry_with_the_pinned_official_cockpit(self):
+        result = self.fixture.run(arguments=('--owner-test',), environment={'MODELPLAN_EDITION': 'official'})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIs(self.info()['ModelPlanCockpitEntryEnabled'], True)
         self.assertIs(self.info()['ModelPlanOwnerTestBuild'], True)
-        resources = self.fixture.output / 'ModelPlan Community.app/Contents/Resources'
+        resources = self.fixture.output / 'ModelPlan.app/Contents/Resources'
         self.assertEqual((resources / 'Cockpit/index.html').read_text(), 'synthetic official cockpit')
         self.assertEqual(json.loads((resources / 'build-edition.json').read_text())['edition'], 'official')
         commands = self.fixture.commands()
@@ -335,7 +358,7 @@ class OwnerTestCockpitEntryTests(unittest.TestCase):
         self.assertLess(pins, swift[0])
         # Then the finished App is checked to ship exactly that page and pin, before anything is signed.
         app_args = commands[shipped]['args']
-        self.assertEqual(app_args[app_args.index('--app') + 1], str(self.fixture.output / 'ModelPlan Community.app'))
+        self.assertEqual(app_args[app_args.index('--app') + 1], str(self.fixture.output / 'ModelPlan.app'))
         self.assertLess(max(swift), shipped)
         self.assertLess(shipped, next(i for i, c in enumerate(commands) if c['command'] == 'codesign'))
         identity = next(c for c in commands if c['command'] == 'python3' and c['args'][0].endswith('/write-consent-bundle-identity.py'))

@@ -39,9 +39,9 @@ FLAVOURS = ('release', 'test', 'verify')
 LEGACY_TAURI = 'Model-Plan-Community-macOS-arm64-unsigned'
 WORKFLOWS = {'.github/workflows/desktop.yml': 'app-smoke', '.github/workflows/v1-test-build.yml': None,
              '.github/workflows/verify-batch.yml': None}
-INNER = 'ModelPlan-Community-native.zip'
-EXECUTABLE = 'ModelPlanCommunity'
-BUNDLE_ID = 'org.modelplan.community.swift.scaffold'
+INNER = 'ModelPlan-native.zip'
+EXECUTABLE = 'ModelPlan'
+BUNDLE_ID = 'ai.modelplan.app'
 RESOURCE_BUNDLES = ('ModelPlanAppIntegration_ModelPlanAppIntegration.bundle',
                     'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle',
                     'ModelPlanDockResources_ModelPlanDockResources.bundle')
@@ -183,7 +183,7 @@ def sha256_file(path):
 
 def parse_build(text):
     """#551's BUILD.txt: key=value lines (sourceSHA, runID, runAttempt, optional flavour) plus one
-    `shasum -a 256` line `<64 hex>  ModelPlan-Community-native.zip`."""
+    `shasum -a 256` line `<64 hex>  ModelPlan-native.zip`."""
     fields, sums = {}, {}
     for line in text.splitlines():
         if not line.strip():

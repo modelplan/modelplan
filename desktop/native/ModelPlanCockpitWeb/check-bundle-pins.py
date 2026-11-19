@@ -162,7 +162,7 @@ def check_app(repo, app):
     _, built = inventory(repo / 'desktop/cockpit/.tmp' / edition, edition)
     if pin != pins[edition] or files != built:
         raise ValueError('Packaged cockpit differs from the canonical build')
-    if pins[edition].encode() not in (app / 'Contents/MacOS/ModelPlanCommunity').read_bytes():
+    if pins[edition].encode() not in (app / 'Contents/MacOS/ModelPlan').read_bytes():
         raise ValueError('Packaged executable does not carry the build pin of its cockpit')
     return {'edition': edition, 'manifestSHA256': pin, 'files': len(files)}
 

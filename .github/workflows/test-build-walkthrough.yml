@@ -58,9 +58,9 @@ jobs:
         run: |
           gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n "$ARTIFACT" -D "$RUNNER_TEMP/artifact"
           cd "$RUNNER_TEMP/artifact"
-          grep -E '^[0-9a-f]{64}  ModelPlan-Community-native.zip$' BUILD.txt | shasum -a 256 -c -
-          ditto -x -k --noqtn ModelPlan-Community-native.zip "$RUNNER_TEMP/subject-app"
-          echo "APP=$RUNNER_TEMP/subject-app/ModelPlan Community.app" >> "$GITHUB_ENV"
+          grep -E '^[0-9a-f]{64}  ModelPlan-native.zip$' BUILD.txt | shasum -a 256 -c -
+          ditto -x -k --noqtn ModelPlan-native.zip "$RUNNER_TEMP/subject-app"
+          echo "APP=$RUNNER_TEMP/subject-app/ModelPlan.app" >> "$GITHUB_ENV"
       # No artifact (they last three days): package the ref as desktop.yml's owner_test run does.
       - uses: actions/checkout@v4
         if: ${{ steps.find.outputs.run == '' }}
@@ -81,11 +81,12 @@ jobs:
         working-directory: subject
         env:
           MACOSX_DEPLOYMENT_TARGET: "14.0"
+          MODELPLAN_EDITION: official
           DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
         run: |
           python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/cli-archives"
           bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/subject-build" --owner-test
-          echo "APP=$RUNNER_TEMP/subject-build/ModelPlan Community.app" >> "$GITHUB_ENV"
+          echo "APP=$RUNNER_TEMP/subject-build/ModelPlan.app" >> "$GITHUB_ENV"
       - name: Build the input helper
         run: swiftc -O desktop/native/verification/walkthrough/walkthrough_input.swift -o "$RUNNER_TEMP/walkthrough_input"
       - name: Walk the app

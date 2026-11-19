@@ -67,7 +67,7 @@ class ProducerShapedMarkTests(unittest.TestCase):
         fixture = PackageNeutralFixture(self.root / 'pack')
         result = fixture.run()
         self.assertEqual(result.returncode, 0, result.stderr)  # the actual packager shell succeeded
-        self.app = fixture.output / 'ModelPlan Community.app'
+        self.app = fixture.output / 'ModelPlan.app'
         self.bundle = self.app / 'Contents/Resources' / DOCK
         self.count = 0
 

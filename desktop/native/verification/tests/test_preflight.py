@@ -261,7 +261,7 @@ class PreflightTests(unittest.TestCase):
 
     def test_clean_state(self):
         digest = write_artifact(self.artifacts, NAME)
-        for host in (FakeHost(digest, executables=[(9, '/Applications/X.app/Contents/MacOS/ModelPlanCommunity')]),
+        for host in (FakeHost(digest, executables=[(9, '/Applications/X.app/Contents/MacOS/ModelPlan')]),
                      FakeHost(digest, executables=[(9, '/opt/runner/bin/Runner.Worker')]),
                      FakeHost(digest, booking={'head': dict(state='started', lane='M1')})):
             self.assertIn('PF-12', self.failed(self.run_preflight(digest, host=host)))
