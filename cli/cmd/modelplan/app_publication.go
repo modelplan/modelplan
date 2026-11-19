@@ -10,6 +10,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/publication"
+	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -33,6 +34,17 @@ const (
 // attempt by any client in the last ten minutes.
 func publicationSyncDue(d *digest.Digest, s store.State, now time.Time) bool {
 	return (d == nil || now.Sub(s.CheckedAt) > staleAfter) && now.Sub(s.LastAttemptAt) > backgroundEvery
+}
+
+// hasTrackedSubscription is the DOCK-3.8-30 gate: an account that a permitted (enabled) reader of a tracked provider
+// bound to a subscription it saw. A user declaration or an unbound reading does not count (macrevc-895-2).
+func hasTrackedSubscription(accounts []quota.Account) bool {
+	for _, a := range accounts {
+		if a.Subscription != nil && a.Subscription.Status == "verified" && a.Subscription.Ref != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // resetNoticeDue is the faster rule for reset notices only; everything else keeps staleAfter.
@@ -202,10 +214,14 @@ func (a *appPublication) pass(ctx context.Context, failures *int) time.Duration 
 		// check's backoff count is kept until a check succeeds.
 		return a.untilDue(s, a.now())
 	}
+	// A busy lock means no check was made: keep the drawn interval and any pending retry deadline, so a due retry is
+	// tried again after the short busy wait instead of being deferred to a redrawn normal deadline (macrevc-895-1).
+	keptAfter, keptRetry := a.resetAfter, a.retryAt
 	a.resetAfter = 0 // redraw after every check
 	a.retryAt = time.Time{}
 	_, err := a.sync(ctx)
 	if errors.Is(err, store.ErrBusy) {
+		a.resetAfter, a.retryAt = keptAfter, keptRetry
 		return appPublicationBusyRetry
 	}
 	if err == nil {

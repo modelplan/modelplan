@@ -294,12 +294,18 @@ func pointerChecks(h *appPublicationHost) int {
 func TestAppServerRechecksPublicationPointerOnlyWithASubscription(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
+		seed       string // "codex": a bound Codex subscription; "declared": a user declaration only; "": nothing
 		subscribed bool
-	}{{"with a subscription", true}, {"without one", false}} {
+	}{{"with a bound tracked subscription", "codex", true}, {"with only a declared plan", "declared", false}, {"without one", "", false}} {
 		t.Run(tc.name, func(t *testing.T) {
 			home, _ := freshAppHome(t)
-			if tc.subscribed {
-				// An enabled subscription the user declared in the local plan file (a reader the app reads without a grant).
+			switch tc.seed {
+			case "codex":
+				// An enabled Codex reader whose cached account reading is bound to a subscription it saw (macrevc-895-2).
+				seedBoundCodexSubscription(t, home)
+			case "declared":
+				// A plan the user declared in the local plan file: no reader saw the account, so it is not a tracked,
+				// bound subscription and keeps the six-hour rule.
 				path := filepath.Join(home, ".config", "modelplan", "local.json")
 				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 					t.Fatal(err)
@@ -333,5 +339,32 @@ func TestAppServerRechecksPublicationPointerOnlyWithASubscription(t *testing.T) 
 				t.Fatalf("without a subscription the pointer was checked %d times: %v", n, host.requests())
 			}
 		})
+	}
+}
+
+// seedBoundCodexSubscription grants the Codex reader and caches an account reading bound to a subscription reference,
+// as account_today_binary_test does. MODELPLAN_CODEX_ACCOUNT stays off, so no live refresh replaces the reading.
+func seedBoundCodexSubscription(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("MODELPLAN_READERS", "passive")
+	t.Setenv("MODELPLAN_IDENTITY", "")
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := consent.Change(consent.Path(), func(s *consent.State) error { return consent.Set(s, "codex", true, "native:codex", "native", now) }); err != nil {
+		t.Fatal(err)
+	}
+	state, err := consent.Load(consent.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reading := map[string]any{"schemaVersion": 1, "status": "ok", "observedAt": now, "admission": state.CaptureStamp(consent.ScopeCodexRuntimeUsage), "subscriptionRef": "0123456789abcdef", "windows": []any{map[string]any{"kind": "weekly", "usedPercent": 25, "windowMinutes": 10080, "resetsAt": now.Add(time.Hour), "observedAt": now}}}
+	path := filepath.Join(home, "cache", "observed", "codex-account.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, publicationJSON(t, reading), 0600); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -148,7 +148,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		if fetcher != nil {
 			applyTestCadence(fetcher)
 			fetcher.subscribed = func() bool {
-				return len(quota.ReadPermitted(quota.ProductionPaths(st.Dir, version), time.Now()).Accounts) > 0
+				return hasTrackedSubscription(quota.ReadPermitted(quota.ProductionPaths(st.Dir, version), time.Now()).Accounts)
 			}
 		}
 	}

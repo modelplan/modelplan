@@ -10,6 +10,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/publication"
+	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -275,5 +276,88 @@ func TestAppPublicationFailedCheckRetriesOnItsOwnDeadline(t *testing.T) {
 	a.pass(context.Background(), &failures)
 	if calls != 2 {
 		t.Fatalf("no retry after the 10-minute backoff (syncs %d, scripted %d)", calls, *syncs)
+	}
+}
+
+// macrevc-895-1 (fourth head): a due retry that finds sync.lock busy keeps its deadline, so it is tried again after
+// the short busy wait instead of waiting for a redrawn normal interval. Failure, due retry, busy, successful retry.
+func TestAppPublicationBusyRetryKeepsItsDeadline(t *testing.T) {
+	t0 := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	clock := t0
+	st := &store.Store{Dir: t.TempDir()}
+	f := newPublicationFixture(t, nil)
+	saveFixture(t, st, f, store.State{CheckedAt: t0.Add(-16 * time.Minute), LastAttemptAt: t0.Add(-16 * time.Minute)})
+	script := []error{errors.New("offline"), store.ErrBusy, nil}
+	calls := 0
+	a, _, _ := scriptedAppPublication(st, t0, nil)
+	a.now = func() time.Time { return clock }
+	a.sync = func(context.Context) (publication.Result, error) {
+		if calls >= len(script) {
+			t.Fatalf("unexpected sync %d", calls+1)
+		}
+		err := script[calls]
+		calls++
+		return publication.Result{}, err
+	}
+	a.subscribed = func() bool { return true }
+	// The first draw makes the 16-minute-old cache due; every later draw is the full 30 minutes, so only the pending
+	// retry can make the later passes due.
+	draws := []time.Duration{0}
+	a.jitter = func() time.Duration {
+		if len(draws) == 0 {
+			return resetNoticeSpread
+		}
+		d := draws[0]
+		draws = draws[1:]
+		return d
+	}
+	failures := 0
+	if got := a.pass(context.Background(), &failures); got != 10*time.Minute || calls != 1 {
+		t.Fatalf("first failure: delay %v, syncs %d, want 10m, 1", got, calls)
+	}
+	retry := a.retryAt
+	if !retry.Equal(t0.Add(10 * time.Minute)) {
+		t.Fatalf("retry deadline %v, want %v", retry, t0.Add(10*time.Minute))
+	}
+	// The failed attempt is recorded by the real sync; this stub records it here. A busy lock records nothing.
+	saveFixture(t, st, f, store.State{CheckedAt: t0.Add(-16 * time.Minute), LastAttemptAt: t0})
+	clock = t0.Add(10*time.Minute + time.Second)
+	if got := a.pass(context.Background(), &failures); got != appPublicationBusyRetry || calls != 2 {
+		t.Fatalf("due retry with a busy lock: delay %v, syncs %d, want %v, 2", got, calls, appPublicationBusyRetry)
+	}
+	if !a.retryAt.Equal(retry) || failures != 1 {
+		t.Fatalf("after busy: retry deadline %v, failures %d, want %v, 1", a.retryAt, failures, retry)
+	}
+	clock = clock.Add(appPublicationBusyRetry)
+	a.pass(context.Background(), &failures)
+	if calls != 3 {
+		t.Fatalf("the retry was deferred after a busy lock (syncs %d, want 3)", calls)
+	}
+	if !a.retryAt.IsZero() || failures != 0 {
+		t.Fatalf("after the successful retry: retry deadline %v, failures %d, want none, 0", a.retryAt, failures)
+	}
+}
+
+// macrevc-895-2: only an enabled reader's account bound to a subscription it saw turns on the faster cadence.
+func TestAppPublicationTrackedSubscriptionGate(t *testing.T) {
+	bound := func(status, ref string) *quota.Binding {
+		return &quota.Binding{Ref: ref, Status: status, Basis: "codex-account"}
+	}
+	for _, c := range []struct {
+		name     string
+		accounts []quota.Account
+		want     bool
+	}{
+		{"no accounts (readers off or none enabled)", nil, false},
+		{"user declaration only", []quota.Account{{Source: "user", Plan: "codex-plus"}}, false},
+		{"reader account without a binding", []quota.Account{{Source: "codex"}}, false},
+		{"binding not verified", []quota.Account{{Source: "codex", Subscription: bound("unverified", "0123456789abcdef")}}, false},
+		{"verified binding without a reference", []quota.Account{{Source: "codex", Subscription: bound("verified", "")}}, false},
+		{"bound tracked subscription", []quota.Account{{Source: "codex", Subscription: bound("verified", "0123456789abcdef")}}, true},
+		{"declaration beside a bound subscription", []quota.Account{{Source: "user"}, {Source: "claude-code", Subscription: bound("verified", "fedcba9876543210")}}, true},
+	} {
+		if got := hasTrackedSubscription(c.accounts); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
 	}
 }
