@@ -77,7 +77,6 @@ register('host', {
   helpNote16: ['prose', '喷口光：表示这个订阅正在用，不表示额度告警。', 'Glow: this subscription is working now; it does not mean an alert.'],
   alStale: ['alert', '{s} · 上次读数', '{s} · Last reading'],
   alStaleAge: ['alert', '{s} · 上次读数 {age}前', '{s} · Last reading {age} ago'],
-  alLowReset: ['alert', '{s} {w} 剩 {r}% · {left}后重置', '{s} {w} {r}% left · resets in {left}'],
   alCardsOne: ['alert', '{s} · 重置次数中有 {n} 次将在 48 小时内到期', '{s} · {n} reset expires within 48 hours'],
   alCardsMany: ['alert', '{s} · 重置次数中有 {n} 次将在 48 小时内到期', '{s} · {n} resets expire within 48 hours'],
   alPeakOpen: ['alert', '{s} {in} 后进入高峰', '{s} peak in {in}'],
