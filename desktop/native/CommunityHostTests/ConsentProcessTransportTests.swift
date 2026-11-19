@@ -11,14 +11,15 @@ final class ConsentProcessTransportTests: XCTestCase {
         let old = ProcessInfo.processInfo.environment[key]
         setenv(key, "synthetic-marker", 1)
         defer { if let old { setenv(key, old, 1) } else { unsetenv(key) } }
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let script = root.appendingPathComponent("environment-fixture")
-        try Data("#!/usr/bin/python3\nimport os,json\nprint(json.dumps({'marker':os.environ.get('MODELPLAN_CONSENT_ENV_TEST')}))\n".utf8).write(to: script)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        // Prints {"marker":null} when the variable is unset, else its value (the synthetic marker needs no escaping).
+        let script = try SubprocessFixture.write("environment-fixture", body: """
+        if [ -n "${MODELPLAN_CONSENT_ENV_TEST+set}" ]; then printf '{"marker":"%s"}\\n' "$MODELPLAN_CONSENT_ENV_TEST"
+        else printf '{"marker":null}\\n'; fi
+        """)
+        defer { try? FileManager.default.removeItem(at: script.deletingLastPathComponent()) }
         for explicitEmpty in [false, true] {
-            let port = ProcessCLITransport(executable: script, environment: explicitEmpty ? [:] : nil)
+            let port = ProcessCLITransport(executable: script, environment: explicitEmpty ? [:] : nil,
+                                           timeoutOverride: SubprocessFixture.generousTimeout)
             let result = try await port.readConsentJSON()
             XCTAssertEqual(result.exitCode, 0)
             let object = try XCTUnwrap(JSONSerialization.jsonObject(with: result.stdout) as? [String: Any])
@@ -26,17 +27,17 @@ final class ConsentProcessTransportTests: XCTestCase {
             else { XCTAssertEqual(object["marker"] as? String, "synthetic-marker") }
         }
     }
+    /// `consent grant --json` (exactly) copies stdin to stdout byte for byte; any other argv is printed as JSON.
     private func fixture() throws -> URL {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
-        let file = root.appendingPathComponent("consent-fixture")
-        try Data("#!/usr/bin/python3\nimport sys,json\nif sys.argv[1:]==['consent','grant','--json']:\n sys.stdout.buffer.write(sys.stdin.buffer.read())\nelse:\n print(json.dumps(sys.argv[1:]))\n".utf8).write(to: file)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
-        return file
+        try SubprocessFixture.write("consent-fixture", body: SubprocessFixture.printArgv + """
+
+        if [ $# -eq 3 ] && [ "$1" = consent ] && [ "$2" = grant ] && [ "$3" = --json ]; then exec /bin/cat; fi
+        print_argv "$@"
+        """)
     }
     func testBoundedGrantStdinIsCompleteAndReadUsesExactCommand() async throws {
         let file = try fixture(); defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
-        let port = ProcessCLITransport(executable: file, environment: [:])
+        let port = ProcessCLITransport(executable: file, environment: [:], timeoutOverride: SubprocessFixture.generousTimeout)
         let start = ProcessInfo.processInfo.systemUptime
         let read: CommandResult
         do { read = try await port.readConsentJSON() }
