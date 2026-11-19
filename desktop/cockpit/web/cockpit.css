@@ -49,6 +49,16 @@ html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .caution.flash
 #cockpit .mfd-alerts li.al-mark.al-flash{animation:cockpit-alert-row-flash 900ms ease-out 1}
 html[data-reduce-motion="true"] #cockpit .mfd-alerts li.al-mark.al-flash{animation:none!important}
 @media(prefers-reduced-motion:reduce){#cockpit .mfd-alerts li.al-mark.al-flash{animation:none!important}}
+/* CKP-MFD-55/56 (WP-11, V1-FINAL §8.6): the alert list. Title "提醒 · N" on the back key's line; each row is a button with
+   two lines (the shared sentence, then the help: available resets or "去设置 ›"); grey = unreadable, list-only. */
+#cockpit .pg-alerts .al-head{margin:0 0 4px;min-height:14px;text-align:right;font:10px/14px var(--f-lcd);color:var(--text)}
+#cockpit .mfd-alerts.all li{display:block}
+#cockpit .mfd-alerts .al-row{display:grid;grid-template-columns:10px minmax(0,1fr);gap:0 3px;width:100%;margin:0;padding:1px 2px;border:0;border-radius:3px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+#cockpit .mfd-alerts .al-row:hover,#cockpit .mfd-alerts .al-row:focus-visible{background:rgba(255,255,255,.06)}
+#cockpit .mfd-alerts .al-row i{font-style:normal}
+#cockpit .mfd-alerts .al-row .al-l1{overflow:hidden;white-space:normal}
+#cockpit .mfd-alerts .al-row .al-l2{grid-column:2;color:var(--muted);white-space:normal}
+#cockpit .al-grey{color:var(--muted)}
 
 @media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .caution.flash{animation:none!important}}
 

@@ -13,7 +13,7 @@ import { paintHud,wireHud } from './prototype-hud.js';
 import { mountPrototypeTape } from './prototype-tape.js';
 import { cockpitMembers,setMemberOrder } from './members.js';
 import { mountPrototypeBase } from './prototype-base.js';
-import { cautionItems,readWindows } from './caution.js';
+import { cautionItems,lights,readWindows } from './caution.js';
 import { createCautionMemory } from './caution-ack.js';
 import {currentWindow,withoutProjectNames} from './prototype-data-adapter.js';
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
@@ -25,7 +25,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  let hudSelected:string|null=null;const hudOptions=()=>({scope:nativeShell?.scope??'all',now:lastRenderedAt,selected:hudSelected,closed:nativeShell?.profile==='closed'});
  let selectedRedBelow=effectiveRedBelow(undefined);const redBelow=()=>selectedRedBelow;let showUsedPercent=false;const showUsed=()=>showUsedPercent;
  let stripSelected:string|null=null;
- const frame=prototypeFrame(root);const help=mountPrototypeHelp(root,()=>locale,()=>active,()=>nativeShell?.attached??true);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;},undefined,redBelow,reportPins);const tape=mountPrototypeTape(root,{knows:ref=>deck.knowsSession(ref),hover(session){deck.highlightSession(session?.sessionRef??null);const key=session?.subscriptionRef??null;for(const el of root.querySelectorAll<HTMLElement>('[data-col]'))el.classList.toggle('xhl',!!key&&el.dataset.col===key);},select(session){if(!active)return;if(stripSelected===session.sessionRef&&deck.sessionSelected(session.sessionRef)){stripSelected=null;deck.clearSession();return;}stripSelected=session.sessionRef;const key=session.subscriptionRef;if(key&&[...root.querySelectorAll<HTMLElement>('.ek[data-sub]')].some(el=>el.dataset.sub===key)){retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);deck.scope(key);}deck.selectSession(session.sessionRef);},more(){if(active)deck.showWhere();},clear(){if(!active||stripSelected===null)return;const ref=stripSelected;stripSelected=null;if(deck.sessionSelected(ref))deck.clearSession();}});
+ const frame=prototypeFrame(root);const help=mountPrototypeHelp(root,()=>locale,()=>active,()=>nativeShell?.attached??true);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;},undefined,redBelow,reportPins,()=>{if(!active)return false;action('openSettingsSubscriptions');return true;});const tape=mountPrototypeTape(root,{knows:ref=>deck.knowsSession(ref),hover(session){deck.highlightSession(session?.sessionRef??null);const key=session?.subscriptionRef??null;for(const el of root.querySelectorAll<HTMLElement>('[data-col]'))el.classList.toggle('xhl',!!key&&el.dataset.col===key);},select(session){if(!active)return;if(stripSelected===session.sessionRef&&deck.sessionSelected(session.sessionRef)){stripSelected=null;deck.clearSession();return;}stripSelected=session.sessionRef;const key=session.subscriptionRef;if(key&&[...root.querySelectorAll<HTMLElement>('.ek[data-sub]')].some(el=>el.dataset.sub===key)){retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);deck.scope(key);}deck.selectSession(session.sessionRef);},more(){if(active)deck.showWhere();},clear(){if(!active||stripSelected===null)return;const ref=stripSelected;stripSelected=null;if(deck.sessionSelected(ref))deck.clearSession();}});
  // G3-47: base bells under the engine columns; repainted from the drawn engine table.
  const base=mountPrototypeBase(root,()=>lastData,z=>{
   const member=lastData?cockpitMembers(lastData).find(m=>m.key===z.key):undefined,name=member?(locale==='en'?member.row.name.en:member.row.name.zh):'';
@@ -34,8 +34,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  const scopeShortcut=(event:KeyboardEvent)=>{if(!event.isTrusted||!active||disposed||!nativeShell||nativeShell.profile!=='open'||nativeShell.forcedClosed||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||event.repeat||!/^[0-6]$/.test(event.key))return;const target=event.target;if(target instanceof Element&&(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')))return;const button=event.key==='0'?frame.engine.querySelector<HTMLButtonElement>('.ek[data-all]'):[...frame.engine.querySelectorAll<HTMLButtonElement>('.eng-keys .ek[data-sub]')][Number(event.key)-1];if(!button||!applyScope)return;const key=button.dataset.scope;if(key===undefined)return;const scope=key||'all';event.preventDefault();retiredUnstableScopes.delete(scope);action('scopeSelect',scope);nativeShell={...nativeShell,scope};deck.scope(scope);applyScope(scope);};
  window.addEventListener('keydown',scopeShortcut);
  const caution=root.querySelector<HTMLButtonElement>('[data-caution]')!;const cautions=createCautionMemory(reportAcked);const motionQuery=matchMedia('(prefers-reduced-motion: reduce)');const finishCaution=(e:AnimationEvent)=>{if(e.animationName==='cockpit-caution-blink')caution.classList.remove('flash');};const syncReduced=()=>document.body.classList.toggle('reduced',reduceMotion||motionQuery.matches);/* body.reduced is the carried prototype CSS's Reduce Motion switch: app setting or OS preference. */const motionChanged=()=>{syncReduced();if(motionQuery.matches)caution.classList.remove('flash');};caution.addEventListener('animationend',finishCaution);motionQuery.addEventListener('change',motionChanged);
- function syncCaution(data:WireCockpitData,now:number){const items=cautionItems(data,now,redBelow()),fresh=cautions.update(items,readWindows(data,now),active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches);if(!items.some(x=>x.level!=='blue'))caution.classList.remove('flash');else if(fresh&&active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches){caution.classList.remove('flash');void caution.offsetWidth;caution.classList.add('flash');}}
- caution.onclick=e=>{if(!e.isTrusted||!active||(!caution.classList.contains('lit')&&!deck.alertsOpen()))return;caution.classList.remove('flash');deck.showAlerts(deck.alertsOpen()?undefined:cautions.acknowledge());};
+ function syncCaution(data:WireCockpitData,now:number){const items=cautionItems(data,now,redBelow()),fresh=cautions.update(items,readWindows(data,now),active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches);if(!items.some(lights))caution.classList.remove('flash');else if(fresh&&active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches){caution.classList.remove('flash');void caution.offsetWidth;caution.classList.add('flash');}}
+ caution.onclick=e=>{if(!e.isTrusted||!active)return;caution.classList.remove('flash');deck.showAlerts(deck.alertsOpen()?undefined:cautions.acknowledge());};
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
  const shutter=root.querySelector<HTMLButtonElement>('[data-shutter]')!;
  let drag:{id:number;x:number;start:number;scale:number;moved:boolean}|null=null,suppressClick=false;
@@ -122,10 +122,10 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  frame.lamp.addEventListener('animationend',settled);frame.lamp.addEventListener('animationcancel',settled);
  const displayedState=()=>[frame.engine.innerHTML,frame.hud.innerHTML,frame.mfd.innerHTML].join('\0');
  const pulse=()=>{stop();if(!active||nativeShell?.profile==='closed'||reduceMotion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;void frame.lamp.offsetWidth;frame.lamp.classList.add('state-pulse');};
- const setEmpty=(key:'waiting'|'cleared'|'empty')=>{root.dataset.engineEmpty=String(key==='empty');base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
+ const setEmpty=(key:'waiting'|'cleared'|'empty',keepDeck=false)=>{root.dataset.engineEmpty=String(key==='empty');base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
   // CKP-SHELL-39: with no subscription read yet the screen says so in one line and offers one way in, Settings > Subscriptions.
   if(key==='empty'){const open=element('button',ht(locale,'host.emptyOpen'),'ec-empty-open');bilingual(open,ht('en','host.emptyOpen'),ht('zh-CN','host.emptyOpen'));open.type='button';open.setAttribute('aria-label',ht(locale,'host.emptyOpen'));open.onclick=e=>{if(e.isTrusted)action('openSettingsSubscriptions');};const box=element('div',undefined,'ec-empty-box');box.append(line,open);frame.engine.replaceChildren(box);}
-  else frame.engine.replaceChildren(line);frame.hud.replaceChildren();deck.clear();tape.clear();};
+  else frame.engine.replaceChildren(line);frame.hud.replaceChildren();if(!keepDeck){deck.clear();tape.clear();}};
  function nextDeadline(data:WireCockpitData,now:number):number|null {
   let next=Infinity;
   for(const row of data.projection.rows)for(const account of row.accounts)if(account.valueState==='current')for(const w of account.windows){
@@ -148,7 +148,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   const previousMember=memberKey&&lastData?cockpitMembers(lastData).find(m=>m.key===memberKey):undefined;
   const verified=(m:typeof previousMember,d:WireCockpitData|null)=>!!m?.account.subscriptionRef&&m.account.subscriptionRef===m.key&&!!d?.subscriptions.some(s=>s.subscriptionRef===m.key);
   const quotaIdentity=quota?quotaFocusIdentity?.(quota)??null:null;const previousData=lastData;
-  let path:number[]|null=null;const keys=['data-focus-member','data-scope','data-page','data-mfd','data-opt','data-row','data-col','data-bpage','data-add-subscription','aria-label'];
+  let path:number[]|null=null;const keys=['data-al-id','data-focus-member','data-scope','data-page','data-mfd','data-opt','data-row','data-col','data-bpage','data-add-subscription','aria-label'];
   const key=focused&&area?keys.find(k=>focused.hasAttribute(k)):undefined;
   const keyValue=key&&focused?focused.getAttribute(key):null;
   const priorPage=key==='data-add-subscription'?frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??null:null;
@@ -157,6 +157,9 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   if(!focused||!area||focused.isConnected||!active||document.hidden)return;
   const current=document.activeElement;if(current&&current!==document.body&&current!==document.documentElement&&current!==focused)return;
   if(key==='data-add-subscription'&&priorPage!==(frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??null))return;
+  // CKP-MFD-56: an alert row names its subscription; a fallback identity (row#route#position) can be reassigned by a new
+  // snapshot, so across a replacement the focus is kept only for a verified subscription present in both snapshots.
+  if(key==='data-al-id'&&replacing){const alertMember=focused.dataset.alMember??'',has=(d:WireCockpitData|null)=>!!d?.subscriptions.some(s=>s.subscriptionRef===alertMember);if(!alertMember||!has(previousData)||!has(lastData))return;}
   if(memberKey&&!previousMember)return;
   if(memberKey&&previousMember){
    const member=lastData?cockpitMembers(lastData).find(m=>m.key===memberKey):undefined;
@@ -170,7 +173,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   }
   let target:HTMLElement|null=null;
   if(key&&key!=='data-add-subscription'&&keyValue!==null){const matches=[...area.querySelectorAll<HTMLElement>(focused.tagName)].filter(e=>e.getAttribute(key)===keyValue);if(matches.length===1)target=matches[0];}
-  if(!target&&path){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
+  // CKP-MFD-56: an alert row is found by its identity only; a refresh that re-sorts the list must never hand its focus to another subscription's row.
+  if(!target&&path&&key!=='data-al-id'){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
   target?.focus({preventScroll:true});
  }
  function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);});}
@@ -225,7 +229,11 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
    const engine=renderPrototypeEngine(data,locale,root,priorScope,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};deck.scope(key);return true;},()=>{if(!active)return false;action('openSettingsSubscriptions');return true;},priorPage,lastRenderedAt,redBelow,showUsed,key=>{if(!active)return false;action('refreshMember',key);return true;});
    // No widget subscription yet (every row still lacks a dock surface): the engine says so, but admitted sessions and
    // the publication's faders stay visible (post-merge sample 11-11, #847 finding 1).
-   if(!engine){setEmpty('empty');if(data.details){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}root.dataset.engineEmpty='false';frame.engine.append(engine.table);engine.fit();applyScope=engine.applyScope;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,tier!=='tall',locale,hudOptions());syncCaution(data,now);help.refresh();
+   if(!engine){
+    // A routine refresh must not reset an open alert list: when the deck still has something to show (details, or list-only
+    // alerts) it is kept and repainted from the new data; only a projection with nothing left clears it.
+    const keep=!!data.details||cautionItems(data,now,redBelow()).length>0;
+    setEmpty('empty',keep);if(keep){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}root.dataset.engineEmpty='false';frame.engine.append(engine.table);engine.fit();applyScope=engine.applyScope;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,tier!=='tall',locale,hudOptions());syncCaution(data,now);help.refresh();
    if(before!==displayedState())pulse();
   },true);
  }
@@ -242,7 +250,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   nextDeadline(){return lastData?nextDeadline(lastData,lastRenderedAt):null;},
   tick(now){refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
-  active(value){const was=active;active=value;root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}else if(!was&&lastData)syncCaution(lastData,lastRenderedAt);},
+  active(value,now){const was=active;active=value;root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}else if(!was&&lastData){if(now!==undefined)lastRenderedAt=now;syncCaution(lastData,lastRenderedAt);}},
   dispose(){if(disposed)return;disposed=true;shutterRun=null;base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }

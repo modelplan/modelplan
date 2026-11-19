@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.23.18",
+  "version": "0.23.35",
   "license": {
     "id": "CC-BY-SA-4.0",
     "url": "https://creativecommons.org/licenses/by-sa/4.0/",
@@ -20,7 +20,7 @@
       "path": "data/client-harness-aliases.json",
       "description": "Model names as Claude Code, Codex and other clients report them",
       "license": "CC-BY-SA-4.0",
-      "sha256": "8390868d5bf47523f73547885086c0295f66c4d6f0e737f9f8e0cd358a365623"
+      "sha256": "a3558a42eb7a45d5e9f38b8872aa08b60739f1e0e012bb4953bcc08f50baa807"
     },
     {
       "path": "data/model-developers.json",
@@ -32,7 +32,7 @@
       "path": "data/model-identities.json",
       "description": "Reviewed model identities and names",
       "license": "CC-BY-SA-4.0",
-      "sha256": "f926511f82ae8a3427ba62f8445a07c5e99ff827335ec39bbf13e8e377cef6de"
+      "sha256": "1828a8f1ddf9f934b176a4b8e75ee78f5a3e377781d71fd01373cf1d12a1d06f"
     },
     {
       "path": "data/plan-reader-aliases.json",
@@ -50,7 +50,7 @@
       "path": "data/real-api-pricing/README.md",
       "description": "Real API Pricing seed (third party, MIT)",
       "license": "MIT",
-      "sha256": "42b5a3ef6a511043e5429ed4d69c4ce9e3510879a4f4fa163f0df403dd22f4f6"
+      "sha256": "643ca3e732d10a45eaf8b5e461a53ddc6a9a9b5a1e468210c0848a3b7bc07df4"
     },
     {
       "path": "data/real-api-pricing/mapping.json",
@@ -60,7 +60,7 @@
     },
     {
       "path": "data/real-api-pricing/seed.json",
-      "description": "Real API Pricing observations (third party)",
+      "description": "Real API Pricing observations (third party); some ChatGPT rows rest on Awesome Coding Plan, CC BY 4.0, see README",
       "license": "MIT",
       "sha256": "a759ae69aab7a32bb6c6e6c124e17ff115885d5080cdad68c16015367b51d205"
     },
