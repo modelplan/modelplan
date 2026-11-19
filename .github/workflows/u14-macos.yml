@@ -19,6 +19,13 @@ on:
       - desktop/native/**
       - .github/workflows/u14-macos.yml
       - '!**/*.md'
+  # D314: a hosted leg runs on main after merge (post-merge-hosted.yml reports it); without this it never ran there.
+  push:
+    branches: [main]
+    paths:
+      - tools/u14/**
+      - desktop/native/**
+      - .github/workflows/u14-macos.yml
 permissions:
   contents: read
 concurrency:

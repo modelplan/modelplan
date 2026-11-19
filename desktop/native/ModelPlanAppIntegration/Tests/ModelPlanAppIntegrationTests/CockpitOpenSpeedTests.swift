@@ -310,13 +310,13 @@ extension CommunityCockpitEntryTests {
                     }
                     // Product targets: visible <=200 ms, animation <=400 ms. A 2x
                     // ceiling catches clear regressions while retaining loaded-runner evidence.
-                    XCTAssertLessThanOrEqual(try milliseconds("open stage=window-visible"), 400)
-                    XCTAssertLessThanOrEqual(try milliseconds("open stage=animation-complete"), 800)
+                    HostedRunnerTiming.enforce("G3-123 cycle \(run) open stage=window-visible ms", measured: Double(try milliseconds("open stage=window-visible")), atMost: 400)
+                    HostedRunnerTiming.enforce("G3-123 cycle \(run) open stage=animation-complete ms", measured: Double(try milliseconds("open stage=animation-complete")), atMost: 800)
                     XCTAssertGreaterThanOrEqual(try milliseconds("open stage=page-rendered"), 0)
                     // Measured boundary: the close clock starts in closeAnimated (here reached through requestClose), so
                     // it covers the close motion and window removal, not the hop from a menu-bar click to closeAnimated.
                     // Real clicks on MacCI (wp17-measure-plan.md) carry that hop in the `close requested` log line.
-                    XCTAssertLessThanOrEqual(try milliseconds("close stage=gone"), 800)
+                    HostedRunnerTiming.enforce("G3-123 cycle \(run) close stage=gone ms", measured: Double(try milliseconds("close stage=gone")), atMost: 800)
                 }
                 closedAt = .now
             }

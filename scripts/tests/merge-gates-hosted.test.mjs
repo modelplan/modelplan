@@ -299,3 +299,73 @@ test("post-merge report: picks main's newest real run, lists red hosted legs wit
   assert.equal(P.plan({ body }, [{ ...rows[0], job_id: 1 }]).fresh.length, 1, "a new red job is announced");
   assert.equal(P.plan({ body }, []).action, "close");
 });
+
+// S10 (post-merge sampling 2026-11-19): every hosted leg #1067 moved post-merge must actually run on main after a merge.
+// PATHS (workflow: how its hosted leg reaches main). Every one is `push: branches: [main]` with the leg's own `if:`
+// letting push through (the if-guard test above); post-merge-hosted.yml then follows the workflow by name.
+//   ci, desktop, dock-host-port, e2e-journey*, macos-distribution, official-dock, repo-checks, u10-candidate, u11-native,
+//   u14-engine-drive, u14-macos (was MISSING), u4-swift-wire, u4b-engine-client, u6-engine-store-core, u7-credential-agent,
+//   u7-helper-producer, verification-pointer-helper.   * e2e-journey is dispatch-only by design (legacy app, frozen).
+test("every hosted leg's workflow runs on pushes to main (or is dispatch-only by design)", () => {
+  for (const leg of Hs.HOSTED_MAC_LEGS) {
+    const ifLine = (jobBlocks(wfText(leg.workflow)).get(leg.key) ?? []).find((l) => /^    if:/.test(l)) ?? "";
+    if (/^    if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}$/.test(ifLine)) continue;
+    const text = wfText(leg.workflow);
+    assert.ok(onEvents(text).includes("push"), `${leg.workflow}: no push trigger, so ${leg.key} never runs on main after a merge`);
+    const wl = text.split("\n"), at = wl.findIndex((l) => /^on:/.test(l));
+    const on = wl.slice(at, at + 1 + wl.slice(at + 1).findIndex((l) => /^\S/.test(l))).join("\n");
+    assert.match(on, /^ {2}push:\n {4}branches: \[main\]/m, `${leg.workflow}: push is limited to main`);
+  }
+});
+
+// S9: a skipped, cancelled or unfinished hosted leg says nothing about main, so it must not close the failure issue.
+// PATHS over the issue state (rows = open issue's red legs): per workflow, newest counted main run ->
+//   leg failed/timed_out -> row (new or kept) | leg success/neutral -> row dropped (green) |
+//   leg skipped/cancelled/running -> previous row KEPT | leg absent from the run -> row dropped (leg gone) |
+//   workflow has no counted run on main -> previous rows KEPT.  Issue: no rows & none open -> none; rows & none open ->
+//   create; rows & open -> update (+comment on a new job); no rows & open -> close (only when every leg above is green/gone).
+test("post-merge report: a skipped leg leaves the failure issue as it was", () => {
+  const run = { id: 20, path: DESKTOP, name: "desktop", head_sha: H, html_url: "https://x/run/20" };
+  const prev = [{ job_id: 7, job: "app-smoke", conclusion: "failure", workflow: "desktop", run_id: 10, sha: BASE, url: "https://x/job/7", test: "t1" },
+    { job_id: 8, job: "cockpit-spi-tests", conclusion: "failure", workflow: "desktop", run_id: 10, sha: BASE, url: "https://x/job/8", test: "t2" },
+    { job_id: 9, job: "contracts", conclusion: "failure", workflow: "Dock host port seam", run_id: 11, sha: BASE, url: "https://x/job/9", test: "t3" }];
+  const names = (rows) => rows.map((r) => r.job).sort();
+  const skipped = P.reconcile(prev, run, [job("app-smoke", "skipped"), job("cockpit-spi-tests", "skipped")]);
+  assert.deepEqual(names(skipped), ["app-smoke", "cockpit-spi-tests"], "skipped: unchanged");
+  assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "cancelled"), job("cockpit-spi-tests", "success")])), ["app-smoke"], "cancelled keeps, success clears");
+  assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), [], "green clears");
+  assert.deepEqual(names(P.reconcile(prev, run, [job("app-smoke", "failure"), linux("shell")])), ["app-smoke", "cockpit-spi-tests"], "red stays, an absent trusted leg keeps its row");
+  assert.deepEqual(names(P.carryOver(prev, [run])), ["contracts"], "a workflow with no counted run keeps its rows");
+  assert.equal(P.plan({ body: P.renderBody(prev, "modelplan/modelplan") }, skipped).action, "update", "never close");
+});
+
+// macrevd P2s on #1080: absent or metadata-less records never clear a row; an older run never clears a newer failure.
+test("post-merge report: only a qualifying success of the same or a newer run clears a row", () => {
+  const mk = (id) => ({ id, path: DESKTOP, name: "desktop", head_sha: H, html_url: "https://x/run/" + id });
+  const row = (job_, run_id, path) => ({ job_id: run_id, job: job_, conclusion: "failure", workflow: "desktop", path, run_id, sha: BASE, url: "u", test: "t" });
+  const prev = [row("app-smoke", 50, DESKTOP), row("cockpit-spi-tests", 50)];
+  const names = (rows) => rows.map((r) => r.job).sort();
+  const both = ["app-smoke", "cockpit-spi-tests"];
+  const noMeta = { ...job("app-smoke", "skipped"), labels: [], runner_group_name: null };
+  assert.deepEqual(names(P.reconcile(prev, mk(60), [])), both, "absent jobs keep every row");
+  assert.deepEqual(names(P.reconcile(prev, mk(60), [noMeta, job("cockpit-spi-tests", "success", SELF)])), both, "no runner metadata / self-hosted success does not clear");
+  assert.deepEqual(names(P.reconcile(prev, mk(40), [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), both, "an older green run keeps newer failures");
+  assert.deepEqual(names(P.reconcile(prev, mk(40), [job("app-smoke", "failure")])), both, "an older red run adds no row and keeps the newer one");
+  assert.equal(P.reconcile(prev, mk(40), [job("app-smoke", "failure")]).find((r) => r.job === "app-smoke").run_id, 50);
+  assert.deepEqual(names(P.reconcile(prev, mk(50), [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), [], "the same run's retry clears");
+  assert.deepEqual(names(P.reconcile(prev, mk(70), [job("app-smoke", "success"), job("cockpit-spi-tests", "success")])), [], "a newer success clears");
+  assert.deepEqual(names(P.reconcile([row("retired-leg", 50, DESKTOP)], mk(60), [])), [], "a leg retired from the trusted table is dropped");
+});
+
+// macrevd P2 on #1083: rows group by workflow path; retired workflows are not carried forward.
+test("post-merge report: rows reconcile by workflow path and retired workflows drop", () => {
+  const run = { id: 60, path: DESKTOP, name: "desktop renamed", head_sha: H, html_url: "https://x/run/60" };
+  const row = (job_, path, workflow = "desktop") => ({ job_id: 5, job: job_, conclusion: "failure", workflow, path, run_id: 50, sha: BASE, url: "u", test: "t" });
+  const names = (rows) => rows.map((r) => r.job).sort();
+  assert.deepEqual(names(P.reconcile([row("app-smoke", DESKTOP)], run, [job("app-smoke", "success")])), [], "old display name, same path: a success clears");
+  assert.deepEqual(names(P.reconcile([row("claude-code-macos", CI, "desktop renamed")], run, [job("app-smoke", "success")])), [], "another path's row is not this run's");
+  assert.deepEqual(names(P.carryOver([row("app-smoke", DESKTOP)], [run])), [], "carried only when its workflow had no run");
+  assert.deepEqual(names(P.carryOver([row("app-smoke", DESKTOP), row("app-smoke", ".github/workflows/gone.yml")], [])), ["app-smoke"], "a retired workflow's row is dropped from carry-over");
+  assert.deepEqual(names(P.carryOver([row("retired-leg", DESKTOP)], [])), [], "a retired leg is dropped from carry-over");
+  assert.deepEqual(names(P.carryOver([{ ...row("app-smoke", undefined), path: undefined }], [{ ...run, name: "desktop" }])), [], "legacy row without path groups by name");
+});

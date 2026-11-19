@@ -208,6 +208,10 @@ var DeveloperNames = map[string]string{
 	"xiaomi": "小米 MiMo", "minimax": "MiniMax", "tencent": "腾讯混元",
 }
 
+// validTie accepts the lineup tie on each published index display scale: 1 point on scale 0.3
+// and the same gap re-expressed on scale 0.4 (0.815 = 8.150 / 10). Verdicts are unchanged.
+func validTie(t float64) bool { return t == 1 || t == 0.815 }
+
 func Parse(component string, b []byte) (*Digest, error) {
 	if component != ComponentClient {
 		return nil, fmt.Errorf("unsupported component %q; client digest required", component)
@@ -257,7 +261,7 @@ func Parse(component string, b []byte) (*Digest, error) {
 		}
 	}
 	for _, l := range d.Lineups {
-		if l.Method != "lineup-v1" || l.Tie != 1 || l.CostBasisID == "" || l.Baseline == "" || seen[l.Baseline] == nil {
+		if l.Method != "lineup-v1" || !validTie(l.Tie) || l.CostBasisID == "" || l.Baseline == "" || seen[l.Baseline] == nil {
 			return nil, errors.New("client: invalid lineup")
 		}
 		for _, r := range l.Members {

@@ -202,3 +202,16 @@ func TestEffortAAScoreKeptFromClientV15AndDroppedOtherwise(t *testing.T) {
 		t.Fatalf("absent aaScore encoded: %s %v", out, err)
 	}
 }
+
+func TestLineupTieAcceptsBothDisplayScales(t *testing.T) {
+	for _, tc := range []struct {
+		tie string
+		ok  bool
+	}{{"1", true}, {"0.815", true}, {"0.5", false}, {"0", false}} {
+		b := []byte(`{"schemaVersion":1,"kind":"client","data":{"units":{"ability":"websiteAbility","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"},"models":[{"id":"opus","name":"Claude Opus 5.5","developerId":"anthropic","recommended":"medium","harnessIds":{"api":[],"claude-code":[],"codex":[]},"efforts":[{"effort":"medium","label":"Med","ability":null,"cost":null,"time":null}]}],"lineups":[{"developerId":"anthropic","costBasisId":"test","method":"lineup-v1","tie":` + tc.tie + `,"baseline":"opus","frontier":["opus"],"steps":[],"members":[]}],"resets":[],"windows":[]}}`)
+		_, err := Parse("client", b)
+		if (err == nil) != tc.ok {
+			t.Fatalf("tie %s: err=%v, want ok=%v", tc.tie, err, tc.ok)
+		}
+	}
+}

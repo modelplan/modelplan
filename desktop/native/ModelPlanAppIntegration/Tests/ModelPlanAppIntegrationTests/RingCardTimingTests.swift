@@ -310,6 +310,37 @@ private actor RingCardClient: EngineClient {
         pressed = false
     }
 
+    /// T4 (post-merge sampling 11-17): the card closed on an outside press only when a 150 ms sample saw the button
+    /// down. A click pressed and released between two samples was missed, so the card waited out the leave deadline.
+    /// The mouse-down monitor reports the press for an immediate sample. Fails before: the card is still shown.
+    func testAnOutsideClickBetweenTwoSamplesClosesTheCardAtOnce() async throws {
+        let (dock, id, ring) = try await widget()
+        pointer = CGPoint(x: ring.midX, y: ring.midY)
+        try XCTUnwrap(dock.dockView.nozzleEventDelegate).hoverNozzle(id)
+        tick(dock, 0.251)
+        XCTAssertFalse(dock.card.isHidden)
+        pointer = CGPoint(x: 200, y: 400)
+        try XCTUnwrap(dock.dockView.nozzleEventDelegate).hoverNozzle(nil)
+        tick(dock, 0.01)
+        XCTAssertFalse(dock.card.isHidden, "precondition: one outside sample only arms the close")
+        // Pressed and released before the next sample: no sample ever sees the button down.
+        elapsed += 0.05
+        dock.observeMouseDown()
+        XCTAssertFalse(pressed)
+        XCTAssertTrue(dock.card.isHidden, "the outside press closes the card at once, not at the leave deadline")
+    }
+
+    /// T4: a press on the card's own ring is not an outside press; the card stays.
+    func testAPressOnTheOpenCardsRingKeepsTheCard() async throws {
+        let (dock, id, ring) = try await widget()
+        pointer = CGPoint(x: ring.midX, y: ring.midY)
+        try XCTUnwrap(dock.dockView.nozzleEventDelegate).hoverNozzle(id)
+        tick(dock, 0.251)
+        XCTAssertFalse(dock.card.isHidden)
+        dock.observeMouseDown()
+        XCTAssertFalse(dock.card.isHidden, "a press on the ring holds the card")
+    }
+
     /// #960 post-merge sampling (P3): a ring carry released or cancelled through the panel route (hasPanelCarry)
     /// never reaches the view's pointerUp, which was the only place the closed-hand cursor was reset.
     func testAPanelRoutedReleaseOrCancelRestoresTheArrowCursor() async throws {

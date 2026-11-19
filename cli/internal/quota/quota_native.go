@@ -568,6 +568,9 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			st.Status, st.Reason = "missing", "MiniMax key, region or identity setting changed; refresh required"
 		case !ok:
 			st.Status, st.Reason = "missing", "not read yet"
+		case e.ObservedAt.IsZero() && e.Status == "" && len(e.Windows) == 0:
+			// A reference-only entry (a key change cleared the reading, glmReferenceOnly) has no observation to age.
+			st.Status, st.Reason = "missing", "not read yet"
 		case x.Provider == "kimi" && now.Sub(e.ObservedAt) > staleAfter:
 			st.Status, st.Reason = "stale", "Kimi reading older than 60 minutes"
 		case now.Sub(e.ObservedAt) > nativeKeep || e.ObservedAt.After(now.Add(5*time.Minute)):
