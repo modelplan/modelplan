@@ -47,6 +47,15 @@ export const HOSTED_MAC_LEGS = Object.freeze([
 
 export const HOSTED_WORKFLOWS = Object.freeze([...new Set(HOSTED_MAC_LEGS.map((l) => l.workflow))]);
 
+// Every table leg's `if:` (or its matrix `os:` list) carries this guard, so it never starts on pull_request or
+// merge_group: a PR or group run then finishes without waiting for a hosted runner and its workflow_run re-evaluates
+// the gate (merge-gates.yml has no job-level trigger: workflow_job is a webhook, not an Actions event). The legs keep
+// running on every main push (post-merge-hosted.yml reports them) and by workflow_dispatch on any branch. The three
+// trusted-mac.yml callers keep their macOS leg before merge only when the owner's variables route it to a self-hosted
+// Mac (u11-native: MAC_CI_NONGUI; transport, sequences: MAC_CI_RUNNER_V2); if routing still lands it on a hosted Mac,
+// the rules below set it aside. Checked against main's workflows by tests/merge-gates-hosted.test.mjs.
+export const PRE_MERGE_SKIP = "!contains(fromJSON('[\"pull_request\",\"merge_group\"]'), github.event_name)";
+
 // A path that can change job names, runner labels or needs: edges. Any workflow, not only the table's: reusable
 // workflows (trusted-mac.yml) name the called jobs.
 const WORKFLOW_RE = /^\.github\/workflows\//;
@@ -99,14 +108,6 @@ export function hostedInfo(hosted) {
   if (!hosted.length) return null;
   const shown = hosted.slice(0, 2).map((h) => `${h.name.split(" / ").pop()} ${h.state}`);
   return `post-merge only: ${shown.join(", ")}${hosted.length > 2 ? ` +${hosted.length - 2}` : ""}`;
-}
-
-// merge-gates.yml's workflow_job path: a required job finished while its run may still wait for a hosted Mac.
-// "completed": the run's own workflow_run evaluates; "hosted": a hosted leg finishing changes nothing; else "evaluate".
-export function workflowJobAction(run, job) {
-  if (run?.status === "completed") return "completed";
-  if (isHostedMacLeg(run?.path, job)) return "hosted";
-  return "evaluate";
 }
 
 // Check-run ids (= job ids) of the hosted legs among runs whose jobs were read; queueCheckState skips them.

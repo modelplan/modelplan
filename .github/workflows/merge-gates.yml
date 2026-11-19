@@ -36,10 +36,9 @@ on:
       - U7 prebuilt universal helper
       - Verification pointer helper
     types: [completed]
-  # D314: a required job that finishes while its run still waits for a hosted Mac (post-merge only) fires no
-  # workflow_run; its job completion re-evaluates instead. Filtered below to the workflows that hold hosted legs.
-  workflow_job:
-    types: [completed]
+  # D314: no job-level trigger (workflow_job is a webhook, not an Actions event). Hosted Mac legs never start in
+  # PR or queue runs (hosted.mjs PRE_MERGE_SKIP), so those runs complete, and fire workflow_run above, once their
+  # required jobs finish.
   workflow_dispatch:
     inputs:
       pr:
@@ -85,16 +84,13 @@ jobs:
       && (github.event.workflow_run.conclusion != 'cancelled' || github.event.workflow_run.event == 'merge_group'
       || github.event.workflow_run.pull_requests[0].head.sha == github.event.workflow_run.head_sha)
       && !(github.event.workflow_run.name == 'merge-gates probe' && github.event.workflow_run.conclusion == 'skipped'))
-      || (github.event_name == 'workflow_job' && github.event.workflow_job.head_branch != 'main'
-      && !startsWith(join(github.event.workflow_job.labels, ','), 'macos-')
-      && contains(fromJSON('["ci","desktop","Dock host port seam","e2e-journey","macOS distribution","Official Dock geometry","repo checks","U10 candidate interface","U11 native cockpit","U14 engine Drive L1","U14 macOS skeleton","U4 Swift wire","U4b engine client","U6 engine store core","U7 credential agent","U7 prebuilt universal helper","Verification pointer helper"]'), github.event.workflow_job.workflow_name))
       || github.event_name == 'workflow_dispatch' }}
     # One evaluation per PR or group at a time; a newer event supersedes a queued older one. On the job, not the
     # workflow, so a run skipped by `if:` above never cancels a live evaluation of the same PR. A cancelled run's
     # evaluation takes its own group per head sha: the cancel of an old head after a push must not cancel the
     # live evaluation of the new head.
     concurrency:
-      group: merge-gates-${{ github.event.workflow_run.conclusion == 'cancelled' && format('cancelled-{0}', github.event.workflow_run.head_sha) || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha || github.event.workflow_job.head_sha || github.event.issue.number || inputs.pr || inputs.group_sha || github.run_id }}
+      group: merge-gates-${{ github.event.workflow_run.conclusion == 'cancelled' && format('cancelled-{0}', github.event.workflow_run.head_sha) || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha || github.event.issue.number || inputs.pr || inputs.group_sha || github.run_id }}
       cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 5

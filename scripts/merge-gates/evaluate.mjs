@@ -11,7 +11,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
-import { HOSTED_WORKFLOWS, workflowJobAction } from "./hosted.mjs";
+import { HOSTED_WORKFLOWS } from "./hosted.mjs";
 import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
@@ -157,21 +157,11 @@ async function fromEvent() {
     if (ev.inputs?.pr) return evaluatePrAndPost(Number(ev.inputs.pr));
     return null;
   }
-  // D314: a required job finishing inside a run that still waits for a hosted Mac fires no workflow_run, yet the rules
-  // may now pass; evaluate on that job's completion. A finished run (its workflow_run evaluates) or a hosted leg is skipped.
-  if (name === "workflow_job") {
-    const wj = ev.workflow_job;
-    const run = await gh.get(`/actions/runs/${wj.run_id}`);
-    const action = workflowJobAction(run, wj);
-    if (action === "completed") return log({ skipped: `run ${run.id} completed; its workflow_run evaluates` });
-    if (action === "hosted") return log({ skipped: `hosted leg ${wj.name}` });
-    return fromRun(run);
-  }
   if (name !== "workflow_run") return log({ skipped: `event ${name}` });
   return fromRun(ev.workflow_run);
 }
 
-// One workflow run (the workflow_run payload, or a run read for a workflow_job event): its merge group or its PRs.
+// One workflow run (the workflow_run payload): its merge group or its PRs.
 async function fromRun(wr) {
   if (wr.event === "merge_group") {
     if (!String(wr.head_branch).startsWith("gh-readonly-queue/main/")) return log({ skipped: `queue branch ${wr.head_branch}` });

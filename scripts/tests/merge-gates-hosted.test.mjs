@@ -143,20 +143,74 @@ test("merge group: hosted legs never gate; self-hosted legs and workflow changes
   assert.equal(group(smoke("failure"), nh("success"), head).state, R.SUCCESS);
 });
 
-test("a required job finishing while its run waits for a hosted Mac re-evaluates the gate (merge-gates.yml workflow_job)", () => {
-  const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
-  assert.match(gates, /^  workflow_job:\n    types: \[completed\]$/m);
-  const names = JSON.parse(/contains\(fromJSON\('(\[[^']*\])'\), github\.event\.workflow_job\.workflow_name\)/.exec(gates)[1]).sort();
-  const want = Hs.HOSTED_WORKFLOWS.map((p) => /^name: (.+)$/m.exec(readFileSync(join(root, p), "utf8"))[1].trim()).sort();
-  assert.deepEqual(names, want, "every workflow with a hosted leg");
-  assert.match(gates, /github\.event\.workflow_job\.head_branch != 'main'/, "main pushes carry no gate");
-  assert.match(gates, /!startsWith\(join\(github\.event\.workflow_job\.labels, ','\), 'macos-'\)/, "a hosted leg finishing starts no job");
-  assert.match(gates, /github\.event\.workflow_run\.head_sha \|\| github\.event\.workflow_job\.head_sha \|\|/, "one evaluation per head at a time");
-  assert.match(readFileSync(join(root, "scripts/merge-gates/evaluate.mjs"), "utf8"), /workflowJobAction\(run, wj\)/);
-  const queued = (status) => ({ id: 2, path: DESKTOP, status });
-  assert.equal(Hs.workflowJobAction(queued("in_progress"), job("native-headless (macos-latest) / native-headless (macos-latest)", "success", SELF)), "evaluate");
-  assert.equal(Hs.workflowJobAction(queued("in_progress"), job("app-smoke", "failure")), "hosted");
-  assert.equal(Hs.workflowJobAction(queued("completed"), linux("app")), "completed");
+// Events that start a GitHub Actions workflow (docs: "Events that trigger workflows"). Webhook-only events such as
+// workflow_job are accepted by YAML but never start a run (actionlint: "unknown Webhook event").
+const ACTIONS_EVENTS = new Set(["branch_protection_rule", "check_run", "check_suite", "create", "delete", "deployment",
+  "deployment_status", "discussion", "discussion_comment", "fork", "gollum", "image_version", "issue_comment", "issues", "label",
+  "merge_group", "milestone", "page_build", "project", "project_card", "project_column", "public", "pull_request",
+  "pull_request_review", "pull_request_review_comment", "pull_request_target", "push", "registry_package", "release",
+  "repository_dispatch", "schedule", "status", "watch", "workflow_call", "workflow_dispatch", "workflow_run"]);
+function onEvents(text) {
+  const lines = text.split("\n");
+  const at = lines.findIndex((l) => /^(on|'on'|"on"):/.test(l));
+  if (at < 0) return null;
+  const inline = lines[at].replace(/^(on|'on'|"on"):\s*/, "").replace(/\s+#.*$/, "").trim();
+  if (inline) return inline.replace(/^\[|\]$/g, "").split(",").map((x) => x.trim()).filter(Boolean);
+  const out = [];
+  for (const l of lines.slice(at + 1)) {
+    if (/^\S/.test(l)) break;
+    const m = /^ {2}([A-Za-z_]+):/.exec(l);
+    if (m) out.push(m[1]);
+  }
+  return out;
+}
+
+test("every workflow triggers only on events GitHub Actions supports (no webhook-only workflow_job)", () => {
+  const unsupported = (text) => (onEvents(text) ?? []).filter((e) => !ACTIONS_EVENTS.has(e));
+  for (const f of readdirSync(join(root, ".github/workflows")).filter((f) => /\.ya?ml$/.test(f))) {
+    const events = onEvents(readFileSync(join(root, ".github/workflows", f), "utf8"));
+    assert.ok(events?.length, `${f}: no on: events found`);
+    assert.deepEqual(unsupported(readFileSync(join(root, ".github/workflows", f), "utf8")), [], f);
+  }
+  // The checker itself catches the D314 head a0ad63fd form and the inline forms.
+  assert.deepEqual(unsupported("name: x\non:\n  workflow_run:\n    types: [completed]\n  workflow_job:\n    types: [completed]\njobs:\n"), ["workflow_job"]);
+  assert.deepEqual(unsupported("on: [push, workflow_job]\n"), ["workflow_job"]);
+  assert.deepEqual(unsupported("'on':\n  push:\n"), []);
+});
+
+test("hosted legs never start on pull_request or merge_group, so no PR or group run waits for a hosted Mac", () => {
+  // Any run the gate reads then completes when its required jobs do, and its workflow_run re-evaluates the gate.
+  const NOT_SKIP = Hs.PRE_MERGE_SKIP.slice(1);
+  // Callers of trusted-mac.yml keep a pre-merge macOS leg only where the owner's variable routes it to a self-hosted Mac.
+  const routed = {
+    "u11-native": `(${Hs.PRE_MERGE_SKIP} || vars.MAC_CI_NONGUI == 'enabled')`,
+    transport: `(${NOT_SKIP} && vars.MAC_CI_RUNNER_V2 != 'self-hosted')) && '["ubuntu-latest"]'`,
+    sequences: `(${NOT_SKIP} && vars.MAC_CI_RUNNER_V2 != 'self-hosted')) && '["ubuntu-latest"]'`,
+  };
+  for (const leg of Hs.HOSTED_MAC_LEGS) {
+    const lines = jobBlocks(wfText(leg.workflow)).get(leg.key);
+    assert.ok(lines, `${leg.workflow}: job ${leg.key}`);
+    const ifLine = lines.find((l) => /^    if:/.test(l)) ?? "";
+    const osLine = lines.find((l) => /^        os:/.test(l)) ?? "";
+    if (/^    if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}$/.test(ifLine)) continue; // dispatch only (e2e-journey)
+    const want = routed[leg.key === "native" ? "u11-native" : leg.key];
+    if (want) { assert.ok((ifLine + osLine).includes(want), `${leg.workflow} ${leg.key}: routed guard`); continue; }
+    if (osLine) {
+      assert.ok(osLine.includes(`${Hs.PRE_MERGE_SKIP} && '["ubuntu-latest","macos-latest"]' || '["ubuntu-latest"]'`), `${leg.workflow} ${leg.key}: macOS matrix leg is main-only`);
+      continue;
+    }
+    assert.match(ifLine, /^    if: \$\{\{ .* \}\}$/, `${leg.workflow} ${leg.key}: if is an expression`);
+    assert.ok(ifLine.endsWith(` && ${Hs.PRE_MERGE_SKIP} }}`), `${leg.workflow} ${leg.key}: if ends with the pre-merge skip`);
+    // A top-level || would let a pre-merge event through the guard: the guard is the last &&-term of the whole expression.
+    const body = ifLine.replace(/^    if: \$\{\{ /, "").replace(` && ${Hs.PRE_MERGE_SKIP} }}`, "");
+    let depth = 0, topOr = false;
+    for (let k = 0; k < body.length; k++) { const c = body[k]; if (c === "(") depth++; else if (c === ")") depth--; else if (!depth && body.startsWith("||", k)) topOr = true; }
+    assert.equal(topOr, false, `${leg.workflow} ${leg.key}: no top-level || before the guard`);
+  }
+  // merge-gates.yml re-evaluates on workflow_run only; nothing job-level.
+  const gates = wfText(".github/workflows/merge-gates.yml");
+  assert.deepEqual(onEvents(gates), ["issue_comment", "workflow_run", "workflow_dispatch"]);
+  assert.doesNotMatch(gates, /github\.event\.workflow_job/);
 });
 
 // ---- The table against main's workflows ----

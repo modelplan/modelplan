@@ -144,7 +144,7 @@ jobs:
   # the notices inputs changed; main pushes and manual runs always do.
   notices-macos:
     needs: checks
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'pull_request' || needs.checks.outputs.notices-mac == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'pull_request' || needs.checks.outputs.notices-mac == 'true') && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
