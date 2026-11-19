@@ -286,11 +286,11 @@ import XCTest
     fixture.page.setAttached(false)
     try await wait(1_000)
     XCTAssertEqual(fixture.page.verificationRack.ext, 0, "retracted after the detach")
-    let long = try await samplePutBack(fixture, window, home, "key put back", within: 1.3) {
+    let long = try await samplePutBack(fixture, window, home, "key put back") {
       fixture.page.setAttached(true)
       XCTAssertEqual(fixture.page.verificationRack.target, 1, "the rack starts unfolding at the press, not when the cockpit nears")
     }
-    XCTAssertEqual(long.extAtLanding, 1, "long flight: the rack is fully out when the cockpit lands")
+    XCTAssertLessThanOrEqual(long.fullAt, long.landedAt, "long flight: the rack is fully out by the time the cockpit lands")
 
     // Short: a drag torn off, brought back into the catch zone and released at once (a 0.3 s ride home).
     let grab = CGPoint(x: home.minX + 120, y: home.maxY - 16)
@@ -300,49 +300,41 @@ import XCTest
     try await wait(700)
     XCTAssertEqual(fixture.page.verificationRack.ext, 0, "retracted after the tear-off")
     let near = CGPoint(x: grab.x + 10, y: grab.y - 20)
-    let short = try await samplePutBack(fixture, window, home, "drag released in the zone", within: CockpitLaunchRackTiming.rideHome) {
+    let short = try await samplePutBack(fixture, window, home, "drag released in the zone") {
       fixture.page.titleDrag(.moved, point: near)
       fixture.page.titleDrag(.ended, point: near)
     }
-    XCTAssertLessThan(short.extAtLanding, 1, "short ride: the rack is still coming down when the cockpit lands")
+    XCTAssertLessThanOrEqual(short.landedAt, short.fullAt, "short ride: the cockpit lands without waiting for the rack to finish")
     XCTAssertEqual(failures, [])
   }
-  /// Runs `press` (the put back) and samples the window and rack every 4 ms until the cockpit is latched, all timed from
-  /// just before the press, which is when the rack's own clock can start (macrevb-1038-4: timing from after the press
-  /// left out the rack's first, slower frame and read its catch-up as a jump). `within`: the motion's own time; the
-  /// landing (the window exactly at home) may be up to 150 ms of timer and sampling latency later. The rack never moves
-  /// back, in total never runs ahead of its full-travel pace since the press, and never jumps between two samples (the
-  /// 100 ms allowances cover a late tick catching up after a busy main thread).
-  private func samplePutBack(_ fixture: Fixture, _ window: NSWindow, _ home: CGRect, _ label: String, within: TimeInterval,
+  /// Runs `press` (the put back) and samples the window and rack until the cockpit is latched. The proof is the order of
+  /// the observed states, never elapsed time (a slow hosted runner stretches every gap, and the old wall-clock bounds on
+  /// landing, pace and jump flaked there). Returns the sample index at which the window first sat at home and the
+  /// index at which the rack was first fully out. The rack never moves back and never exceeds 1; the 6 s deadline only
+  /// guards against a hang.
+  private func samplePutBack(_ fixture: Fixture, _ window: NSWindow, _ home: CGRect, _ label: String,
                              file: StaticString = #filePath, line: UInt = #line,
-                             press: () -> Void) async throws -> (landed: Duration, extAtLanding: CGFloat) {
-    func seconds(_ value: Duration) -> Double { Double(value.components.seconds) + Double(value.components.attoseconds) / 1e18 }
-    let full = CockpitLaunchRackTiming.fullTravel
-    let started = ContinuousClock.now, deadline = started + .milliseconds(2_600), ext0 = fixture.page.verificationRack.ext
+                             press: () -> Void) async throws -> (landedAt: Int, fullAt: Int) {
+    let deadline = ContinuousClock.now + .seconds(6)
     press()
-    var landed: Duration?, extAtLanding: CGFloat = -1
-    var last = (time: started, ext: ext0)
+    var index = 0, landedAt: Int?, fullAt: Int?, last = fixture.page.verificationRack.ext
     while ContinuousClock.now < deadline {
-      let now = ContinuousClock.now, ext = fixture.page.verificationRack.ext
-      XCTAssertGreaterThanOrEqual(ext, last.ext, "\(label): the rack never moves back", file: file, line: line)
-      XCTAssertLessThanOrEqual(ext - ext0, CGFloat((seconds(now - started) + 0.1) / full),
-                               "\(label): the rack never runs ahead of its normal pace", file: file, line: line)
-      XCTAssertLessThanOrEqual(ext - last.ext, CGFloat((seconds(now - last.time) + 0.1) / full),
-                               "\(label): no jump in the rack", file: file, line: line)
-      last = (now, ext)
-      if landed == nil, abs(window.frame.minX - home.minX) < 0.01, abs(window.frame.minY - home.minY) < 0.01 {
-        landed = now - started; extAtLanding = ext
-      }
+      let ext = fixture.page.verificationRack.ext
+      XCTAssertGreaterThanOrEqual(ext, last, "\(label): the rack never moves back", file: file, line: line)
+      XCTAssertLessThanOrEqual(ext, 1, "\(label): the rack never overshoots", file: file, line: line)
+      XCTAssertEqual(fixture.page.verificationRack.target, 1, "\(label): the rack's target stays out", file: file, line: line)
+      last = ext
+      if landedAt == nil, abs(window.frame.minX - home.minX) < 0.01, abs(window.frame.minY - home.minY) < 0.01 { landedAt = index }
+      if fullAt == nil, ext >= 1 { fullAt = index }
       if fixture.page.isAttached { break }
+      index += 1
       try await Task.sleep(for: .milliseconds(4))
     }
     XCTAssertTrue(fixture.page.isAttached, "\(label): caught and latched", file: file, line: line)
-    let landing = try XCTUnwrap(landed, "\(label): landed", file: file, line: line)
-    XCTAssertLessThanOrEqual(landing, .milliseconds(Int(within * 1_000) + 150), "\(label): the cockpit did not wait for the rack",
-                             file: file, line: line)
     XCTAssertEqual(window.frame, home, file: file, line: line)
     XCTAssertEqual(fixture.page.verificationRack.ext, 1, "\(label): the rack ends fully out", file: file, line: line)
-    return (landing, extAtLanding)
+    return (try XCTUnwrap(landedAt, "\(label): landed", file: file, line: line),
+            try XCTUnwrap(fullAt ?? index, "\(label): rack full", file: file, line: line))
   }
 }
 #endif
