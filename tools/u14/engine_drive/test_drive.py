@@ -11,12 +11,44 @@ import sys
 import tarfile
 import tempfile
 import time
-import threading
 import unittest
 from unittest.mock import patch
 
 import run as drive
 import release
+
+
+class DriverClock:
+    """Virtual clock for the driver's own time budgets (wall and monotonic).
+
+    Time advances only when the driver sleeps, never while it does preflight
+    I/O, so a slow host cannot spend the budget before a case has started.
+    Each driver sleep still yields briefly for real, so the subject worker and
+    its process group are real and actually running. `on_sleep` runs on every
+    driver sleep: the first one happens inside the active case's wait loop.
+    """
+    def __init__(self, on_sleep=None):
+        self.wall = time.time()
+        self.mono = time.monotonic()
+        self.on_sleep = on_sleep
+        self.sleeps = 0
+
+    def time(self):
+        return self.wall
+
+    def monotonic(self):
+        return self.mono
+
+    def sleep(self, seconds):
+        self.sleeps += 1
+        if self.on_sleep:
+            self.on_sleep(self)
+        self.advance(seconds)
+        time.sleep(min(seconds, .01))
+
+    def advance(self, seconds):
+        self.wall += seconds
+        self.mono += seconds
 
 
 class DriveTests(unittest.TestCase):
@@ -34,8 +66,9 @@ class DriveTests(unittest.TestCase):
             scenario_timeout=1, deadline=None, stop_file=None)
         drive.STOP = False
 
-    def execute(self):
-        with contextlib.redirect_stdout(io.StringIO()):
+    def execute(self, clock=None):
+        with contextlib.redirect_stdout(io.StringIO()), \
+             (patch.object(drive, 'time', clock) if clock else contextlib.nullcontext()):
             status = drive.execute(self.args)
         manifest = json.loads((self.args.output / 'manifest.json').read_text())
         return status, manifest
@@ -87,45 +120,54 @@ class DriveTests(unittest.TestCase):
     def test_timeout_reaps_owned_worker_and_keeps_outcome(self):
         # A real stalled subject exercises supervisor/worker process-group cleanup.
         # One scenario is enough; this is not a mock of the timeout implementation.
+        # The driver's clock is virtual so slow preflight cannot exhaust the run budget first.
         with patch.object(drive, 'IDS', ['U2-migration']):
-            status, result = self.execute()
+            status, result = self.execute(DriverClock())
         self.assertEqual(status, 1)
         self.assertEqual(result['scenarios'][0]['outcome'], 'timeout')
+        self.assertEqual(result['scenarios'][0]['reason'], 'scenario-deadline')
         self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
         self.assertFalse((self.args.output / '.work').exists())
 
     def test_absolute_deadline_marks_active_case_timeout_and_rest_not_run(self):
-        self.args.deadline = time.time() + 17  # 15s cleanup reserve, 2s work
+        clock = DriverClock()
+        self.args.deadline = clock.time() + 17  # 15s cleanup reserve, 2s work
         self.args.scenario_timeout = 20
         with patch.object(drive, 'IDS', ['U2-migration', 'U2-two-writers']):
-            status, result = self.execute()
+            status, result = self.execute(clock)
         self.assertEqual(status, 1)
+        self.assertGreater(clock.sleeps, 0)  # the deadline hit while the first case was active
         self.assertEqual(result['scenarios'][0]['outcome'], 'timeout')
+        self.assertEqual(result['scenarios'][0]['reason'], 'run-deadline')
         self.assertEqual(result['scenarios'][1]['outcome'], 'not-run')
+        self.assertEqual(result['scenarios'][1]['reason'], 'run-deadline')
         self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
 
     def test_absolute_deadline_survives_slow_preflight(self):
         # Preflight time must count once against the absolute deadline, not twice.
-        self.args.deadline = time.time() + 17.5  # 15s reserve, 1.5s preflight, 1s work; the old double count left none
+        clock = DriverClock()
+        self.args.deadline = clock.time() + 17.5  # 15s reserve, 1.5s preflight, 1s work; the old double count left none
         self.args.scenario_timeout = 20
         real = drive.qualification
         def slow(*a, **k):
-            time.sleep(1.5)
+            clock.advance(1.5)  # exactly 1.5s of preflight on both clocks, however slow the host is
             return real(*a, **k)
         with patch.object(drive, 'IDS', ['U2-migration', 'U2-two-writers']), patch.object(drive, 'qualification', slow):
-            status, result = self.execute()
+            status, result = self.execute(clock)
         self.assertEqual(status, 1)
         self.assertEqual(result['scenarios'][0]['outcome'], 'timeout')
+        self.assertEqual(result['scenarios'][0]['reason'], 'run-deadline')
         self.assertEqual(result['scenarios'][1]['outcome'], 'not-run')
 
     def test_stop_during_case_ends_owned_process_and_keeps_remaining_not_run(self):
         self.args.stop_file = self.root / 'stop-during'
-        timer = threading.Timer(.25, self.args.stop_file.touch)
-        timer.start()
-        self.addCleanup(timer.cancel)
+        # Stop on the first driver sleep, which is inside the active case's wait loop:
+        # event ordering, not a timer racing the 1s scenario timeout.
+        clock = DriverClock(on_sleep=lambda c: c.sleeps == 1 and self.args.stop_file.touch())
         with patch.object(drive, 'IDS', ['U2-migration', 'U2-two-writers']):
-            status, result = self.execute()
+            status, result = self.execute(clock)
         self.assertEqual(status, 1)
+        self.assertGreater(clock.sleeps, 0)
         self.assertTrue(all(s['outcome'] == 'not-run' and s['reason'] == 'caller-stop'
                             for s in result['scenarios']))
         self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
