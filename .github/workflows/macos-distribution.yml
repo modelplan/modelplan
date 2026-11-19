@@ -32,19 +32,27 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-      - name: Select newest installed Xcode for Swift 6 source
+      - name: Pin Xcode 26.6 (17F113)
         run: |
           python3 - <<'PY'
-          import os, plistlib, re
+          import os, plistlib, subprocess
           from pathlib import Path
-          candidates = []
-          for app in Path('/Applications').glob('Xcode*.app'):
-              version = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
-              candidates.append((tuple(map(int, re.findall(r'\d+', version))), app))
-          if not candidates:
-              raise SystemExit('No installed Xcode')
+          WANT_VERSION, WANT_BUILD = '26.6', '17F113'
+          for app in sorted(Path('/Applications').glob('Xcode*.app')):
+              try:
+                  info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+                  build = plistlib.loads((app / 'Contents/version.plist').read_bytes())['ProductBuildVersion']
+              except (OSError, KeyError):
+                  continue
+              if info['CFBundleShortVersionString'] == WANT_VERSION and build == WANT_BUILD:
+                  developer_dir = f'{app}/Contents/Developer'
+                  break
+          else:
+              raise SystemExit(f'Pinned Xcode {WANT_VERSION} ({WANT_BUILD}) is not installed on this runner')
           with open(os.environ['GITHUB_ENV'], 'a') as output:
-              output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
+              output.write(f'DEVELOPER_DIR={developer_dir}\n')
+          print(f'DEVELOPER_DIR={developer_dir}', flush=True)
+          subprocess.run(['xcodebuild', '-version'], check=True, env={**os.environ, 'DEVELOPER_DIR': developer_dir})
           PY
       - name: Test release gates with synthetic values only
         run: python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py' -v
