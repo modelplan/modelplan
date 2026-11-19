@@ -11,13 +11,34 @@
 set -u
 PLAN=$1; SCRATCH_ROOT=$2; SHA=$3
 LIMIT=$(( ${PACKAGE_MINUTES:-25} * 60 ))
-LOGS=${RUNNER_TEMP:-/tmp}/mac-compile-logs; rm -rf "$LOGS"; mkdir -p "$LOGS" "$SCRATCH_ROOT"
+LOGS=${RUNNER_TEMP:-/tmp}/mac-compile-logs; mkdir -p "$SCRATCH_ROOT"
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 ok=1; rows=; failed_tests=; errors=
 
 SEED_ROOT=${SEED_ROOT:-}; SEED_WRITE=${SEED_WRITE:-0}
 sha256() { if command -v shasum >/dev/null; then shasum -a 256; else sha256sum; fi | cut -d' ' -f1; }
-wipe() { chmod -R u+w "$@" 2>/dev/null; rm -rf "$@"; }   # seeds are read-only: make them writable before removing
+# Seeds and their clones are read-only, and a read-only directory blocks unlinking its entries: make every target
+# owner-writable first (find, so one unreadable entry cannot stop the walk), clear immutable flags on macOS, then remove.
+wipe() {
+  local p
+  for p in "$@"; do
+    [ -e "$p" ] || [ -L "$p" ] || continue
+    find "$p" ! -type l -exec chmod u+rwx {} + 2>/dev/null
+    [ "$(uname)" = Darwin ] && chflags -R nouchg,noschg "$p" 2>/dev/null
+    rm -rf "$p" 2>/dev/null || { find "$p" ! -type l -exec chmod u+rwx {} + 2>/dev/null; rm -rf "$p"; }
+  done
+  return 0
+}
+# Like wipe, but never fatal: a path that still cannot be removed is moved aside into a fresh mktemp directory (logged),
+# so the caller finds it gone and builds cold instead of failing the job.
+clear_path() {
+  local aside
+  wipe "$1"
+  [ -e "$1" ] || [ -L "$1" ] || return 0
+  aside=$(mktemp -d "$1.aside.XXXXXX") && mv "$1" "$aside/old" 2>/dev/null && [ ! -e "$1" ] && { echo "could not delete $1: moved aside to $aside, building cold"; return 0; }
+  return 1
+}
+wipe "$LOGS"; mkdir -p "$LOGS" || exit 1
 # Copy $1 to $2 (must not exist): each attempt (APFS clonefile, then plain copy) gets a FRESH mktemp directory next to
 # it, copies to <tmp>/c, and renames on success. A failed attempt is wiped; if the wipe fails nothing is retried and the
 # caller builds cold. A path is never reused, so a partial copy can neither be renamed into place nor nested.
@@ -84,13 +105,13 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
   [ -n "$dir" ] || continue
   sp="$SCRATCH_ROOT/$scratch"; blog="$LOGS/$scratch-build.log"; tlog="$LOGS/$scratch-test.log"
   deadline=$(( $(date +%s) + LIMIT ))
-  wipe "$sp"; [ ! -e "$sp" ] || { echo "::error::could not clear $sp"; exit 1; }
+  clear_path "$sp" || { echo "::error::could not clear or move aside $sp"; exit 1; }
   key=; seed=
   if [ -n "$SEED_ROOT" ]; then
     key=$(seedkey "$dir"); seed="$SEED_ROOT/$scratch/$key"
     if [ "$SEED_WRITE" != 1 ] && [ -d "$seed" ] && m=$(manifest "$seed") && [ "$(cat "$seed.manifest" 2>/dev/null)" = "$m" ]; then
       echo "seed hit for $dir: cloning"
-      if clone "$seed" "$sp" && chmod -R u+w "$sp"; then :; else wipe "$sp"; echo "seed clone failed: cold build"; fi
+      if clone "$seed" "$sp" && chmod -R u+w "$sp"; then :; else clear_path "$sp" || { echo "::error::could not clear or move aside $sp"; exit 1; }; echo "seed clone failed: cold build"; fi
     else echo "no usable seed for $dir: cold build"; fi
   fi
   echo "::group::$dir: swift build"
