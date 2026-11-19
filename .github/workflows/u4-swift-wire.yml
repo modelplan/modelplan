@@ -12,6 +12,7 @@ on:
       - schema/app-cli/captures/**
       - clients/swift/ModelPlanWire/**
       - .github/workflows/u4-swift-wire.yml
+      - '!**/*.md'
   push:
     branches: [main]
     paths:

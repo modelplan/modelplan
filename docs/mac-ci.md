@@ -173,6 +173,11 @@ against `full`, `none` or a comma-separated list of identifiers, and passes it t
 leg) and verifies that exactly that narrowed share ran. Every other run (merge queue, nightly,
 push, `main`/release dispatch) runs and verifies the whole share whatever the caller passes.
 
+The compile check is build plus touched classes: for `ModelPlanAppIntegration` (about 540 window-style cases,
+longer than the compile Mac's 45 minute limit) it builds the tests and runs only the classes declared in the
+test files the PR touches (at most 8, otherwise build-tests only). The full suite is the job of the GUI and
+headless legs, not of the compile check.
+
 A selection is a speed-up for the PR round, not the merge gate. The merge queue runs the full GUI
 leg on the group commit, and `desktop` must pass there before anything reaches `main`; the
 coordinator's gate still requires a successful GUI leg at the PR head. A `schedule` run at 09:23
@@ -184,6 +189,16 @@ Non-UI Swift tests are not skipped on the strength of a Mac compile lane's earli
 head (D169 item 3 was dropped): those lanes run on agent-operated machines, and nothing they report
 (a comment, a file, or a signature made with a key on that machine) can be verified as untampered
 by CI. Only GitHub-produced results count.
+
+### macOS legs on pull requests (D254)
+
+Hosted macOS gives 5 concurrent jobs, so a pull request starts a Mac job only when it changes something that job
+tests. Every PR-triggered Mac workflow either has a `pull_request` `paths` list that ends in `'!**/*.md'`, or gates
+each Mac job on a scope output (`desktop.yml` `pr-scope`, `ci.yml` and `repo-checks.yml` `mac-scope` and `notices-mac`).
+`merge_group`, `push`, `schedule` and `workflow_dispatch` are never filtered and keep the full suite. A workflow or
+job a PR does not trigger needs no stub: `merge-gates` counts only runs that exist (plus the `ci` anchor) and a skipped
+job is green. `trusted-mac.yml` stays untouched; the filters live in its callers. Concurrency cancels only
+`pull_request` runs of the same PR (`workflow-policy.test.mjs` enforces both rules).
 
 ## Migration
 
