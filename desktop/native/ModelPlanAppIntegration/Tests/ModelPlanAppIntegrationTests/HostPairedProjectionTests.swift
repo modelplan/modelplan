@@ -517,17 +517,17 @@ actor EntrySyntheticClient: EngineClient {
             if let field = root as? NSTextField, field.accessibilityIdentifier() == "dock.card.text." + name { return field.stringValue }
             return root.subviews.lazy.compactMap { text($0, named: name) }.first
         }
-        XCTAssertEqual(text(dock.card, named: "source"), "Local history · 37m ago")
+        XCTAssertEqual(text(dock.card, named: "source"), "Updated 37 min ago")
         // The header names the selected window's source and age; only a row that differs repeats it.
         XCTAssertFalse(text(dock.card, named: "row.quota:session:18000:main:main.detail")?.contains("Local history") == true)
         XCTAssertTrue(text(dock.card, named: "row.quota:weekly:604800:main:main.detail")?.contains("Tool runtime · 11m ago") == true)
         XCTAssertTrue(text(dock.card, named: "row.quota:missing-provenance.detail")?.contains("Unknown source · Reading time unknown") == true)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertEqual(text(dock.card, named: "source"), "本地历史 · 37分钟前")
+        XCTAssertEqual(text(dock.card, named: "source"), "37 分钟前更新")
         XCTAssertTrue(text(dock.card, named: "row.quota:weekly:604800:main:main.detail")?.contains("工具运行时 · 11分钟前") == true)
         XCTAssertTrue(text(dock.card, named: "row.quota:missing-provenance.detail")?.contains("未知来源 · 读数时间未知") == true)
         _ = try await app.settingsHost.application.editor.commit(SettingsB20Edit.percentagePin(id, .week))
-        XCTAssertEqual(text(dock.card, named: "source"), "工具运行时 · 11分钟前")
+        XCTAssertEqual(text(dock.card, named: "source"), "11 分钟前更新")
     }
 
     func testNormalCardRetainsAccountProvenanceForRestrictedAndSourceLessMembers() async throws {
@@ -567,12 +567,12 @@ actor EntrySyntheticClient: EngineClient {
         let restricted = "aaaaaaaaaaaaaaaa"
         XCTAssertNil(try XCTUnwrap(view.presentedReadingsForChecks[restricted]).outer)
         try open(restricted)
-        XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 24h ago")
+        XCTAssertEqual(text("source", in: dock.card), "Updated 24 h ago")
         XCTAssertEqual(text("row.quota:restricted-runtime.value", in: dock.card), "38%")
         XCTAssertTrue(text("row.quota:restricted-runtime.detail", in: dock.card)?.contains("Local history · 37m ago") == true)
         let editor = app.settingsHost.application.editor
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertEqual(text("source", in: dock.card), "已有登录 · 24小时前")
+        XCTAssertEqual(text("source", in: dock.card), "24 小时前更新")
         XCTAssertEqual(text("row.quota:restricted-runtime.value", in: dock.card), "38%")
         XCTAssertTrue(text("row.quota:restricted-runtime.detail", in: dock.card)?.contains("本地历史 · 37分钟前") == true)
         XCTAssertNil(try XCTUnwrap(view.presentedReadingsForChecks[restricted]).outer)
@@ -581,10 +581,10 @@ actor EntrySyntheticClient: EngineClient {
         dock.interactionControllerForChecks?.dismissCard()
         events.hoverNozzle(nil)
         try open("bbbbbbbbbbbbbbbb")
-        XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 23m ago")
+        XCTAssertEqual(text("source", in: dock.card), "Updated 23 min ago")
         XCTAssertNil(text("row.source.label", in: dock.card), "The header names the source")
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertEqual(text("source", in: dock.card), "已有登录 · 23分钟前")
+        XCTAssertEqual(text("source", in: dock.card), "23 分钟前更新")
         _ = try await editor.commit(SettingsB21Edit.language(.english))
 
         dock.interactionControllerForChecks?.dismissCard()
@@ -596,10 +596,10 @@ actor EntrySyntheticClient: EngineClient {
             consentGeneration: delivery.floor.generation, data: legacy), delivery: delivery)
         await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: legacy.projection.invalidRowCount))
         try open(restricted)
-        XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 24h ago")
+        XCTAssertEqual(text("source", in: dock.card), "Updated 24 h ago")
         XCTAssertNil(text("row.source.value", in: dock.card), "provenance lives in the header (card.js cd-h), not a second row")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertEqual(text("source", in: dock.card), "已有登录 · 24小时前")
+        XCTAssertEqual(text("source", in: dock.card), "24 小时前更新")
     }
 
     /// DOCK-3.8-07 / D40: the card's reset time uses the prototype's compact form in both languages.
@@ -622,7 +622,7 @@ actor EntrySyntheticClient: EngineClient {
             return try XCTUnwrap(content.rows.first { $0.id == "quota:weekly:604800:main:main" }?.detail)
         }
         let english = try weekly()
-        XCTAssertTrue(english.hasPrefix("resets 2h14"), english)
+        XCTAssertTrue(english.hasPrefix("resets in 2h14"), english)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         let chinese = try weekly()
         XCTAssertTrue(chinese.hasPrefix("2h14 后重置"), chinese)
