@@ -454,6 +454,8 @@ export function trainScenarioGap(pr, members) {
 }
 
 // ---- CI at one commit (merge-when.sh) ----
+// (An import may sit anywhere at module top level; it is here, next to its only users, to keep the file's head stable.)
+import { hostedInfo, hostedJobIds, runWithoutHostedLegs, touchesWorkflows } from "./hosted.mjs";
 // runs: Actions workflow runs whose head_sha is the commit. A head sha is not unique to us: a fork can open a PR
 // with the same head and produce its own runs, which the head_sha listing returns too. So only runs that
 // `scope` accepts count (prRunScope / queueRunScope below), and of those only the newest run per workflow, so a
@@ -489,10 +491,19 @@ export function queueRunScope(repo) {
     && String(r.head_branch).startsWith("gh-readonly-queue/main/");
 }
 
-export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], scope } = {}) {
+// D314 (hosted.mjs): with hosted = true, a run whose jobs were read (run.jobs) is judged without its GitHub-hosted
+// macOS legs; they are only reported (`info`). A run without jobs is judged whole, as before.
+export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], scope, hosted = false } = {}) {
   const latest = latestRuns(runs, scope);
-  const failed = [], waiting = [];
+  const failed = [], waiting = [], aside = [];
   for (const r of latest) {
+    const v = hosted ? runWithoutHostedLegs(r) : null;
+    if (v) {
+      aside.push(...v.hosted);
+      failed.push(...v.failed.map((j) => `${r.name}: ${j}`));
+      waiting.push(...v.waiting.map((j) => `${r.name}: ${j}`));
+      continue;
+    }
     if (r.status !== "completed") waiting.push(r.name);
     else if (r.conclusion === "cancelled") failed.push(`${r.name} cancelled upstream (timed out or stopped; re-run it)`);
     else if (!OK_CONCLUSIONS.has(r.conclusion)) failed.push(`${r.name} ${r.conclusion}`);
@@ -502,11 +513,12 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], sco
     if (s.state === "pending") waiting.push(s.context);
     else if (s.state !== "success") failed.push(`${s.context} ${s.state}`);
   }
-  if (failed.length) return { state: FAILURE, why: `failed: ${failed.join(", ")}` };
+  const info = hostedInfo(aside);
+  if (failed.length) return { state: FAILURE, why: `failed: ${failed.join(", ")}`, info };
   const missing = required.filter((p) => !latest.some((r) => r.path === p));
-  if (missing.length) return { state: PENDING, why: `waiting for ${missing.join(", ")} to start` };
-  if (waiting.length) return { state: PENDING, why: `running: ${waiting.join(", ")}` };
-  return { state: SUCCESS, why: "checks green" };
+  if (missing.length) return { state: PENDING, why: `waiting for ${missing.join(", ")} to start`, info };
+  if (waiting.length) return { state: PENDING, why: `running: ${waiting.join(", ")}`, info };
+  return { state: SUCCESS, why: "checks green", info };
 }
 
 // A finished cancelled run re-evaluates its PR only while its head is still the PR head; a run cancelled because
@@ -640,7 +652,11 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   // A PR opened with the workflow token starts no pull_request run, so data-sync.yml dispatches ci.yml and
   // repo-checks.yml on the branch; prRunScope accepts those same-repository runs on the PR's branch. Both are
   // required before an admitted PR can pass.
-  const ci = ciState(runs, statuses, { scope: prRunScope(pr), ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
+  // D314: hosted macOS legs are post-merge only, unless the PR changes a workflow (hosted.mjs explains why).
+  extra.hostedExempt = !touchesWorkflows(paths) && files.length < FILE_LIST_LIMIT;
+  if (!extra.hostedExempt) notes.push("workflow change: hosted legs gate");
+  const ci = ciState(runs, statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
+  if (ci.info) notes.push(ci.info);
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
   if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
   if (ci.state === PENDING) return res(PENDING, say(ci.why), extra);
@@ -663,11 +679,14 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 // this default (85 min) must stay below it or the gate's timeout never fires. Override with env GROUP_WAIT_MINUTES.
 export const GROUP_WAIT_MS = (Number(process.env.GROUP_WAIT_MINUTES) > 0 ? Number(process.env.GROUP_WAIT_MINUTES) : 85) * 60 * 1000;
 const OK_CHECK = new Set(["success", "skipped", "neutral"]);
-export function queueCheckState(queueRuns, queueCheckRuns, repo = REPO) {
-  const suites = new Set(latestRuns(queueRuns, queueRunScope(repo)).map((r) => r.check_suite_id).filter((x) => x != null));
+// D314: with hosted = true, the check runs of hosted macOS legs (hosted.mjs; check-run id = job id) are skipped.
+export function queueCheckState(queueRuns, queueCheckRuns, repo = REPO, { hosted = false } = {}) {
+  const counted = latestRuns(queueRuns, queueRunScope(repo));
+  const suites = new Set(counted.map((r) => r.check_suite_id).filter((x) => x != null));
+  const skip = hosted ? hostedJobIds(counted) : new Set();
   const failed = [], waiting = [];
   for (const c of queueCheckRuns) {
-    if (!suites.has(c.check_suite?.id)) continue;
+    if (!suites.has(c.check_suite?.id) || skip.has(c.id)) continue;
     if (c.status !== "completed") waiting.push(c.name);
     else if (!OK_CHECK.has(c.conclusion)) failed.push(`${c.name} ${c.conclusion}`);
   }
@@ -702,8 +721,10 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheck
     if (!s.mergeProof.ok) return { state: FAILURE, why: `${n}: ${s.mergeProof.why}` };
     if (s.prResult.state !== SUCCESS) return { state: s.prResult.state === PENDING ? FAILURE : s.prResult.state, why: `${n}: ${s.prResult.why}` };
   }
-  let ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo) });
-  if (ci.state === SUCCESS) ci = queueCheckState(queueRuns, queueCheckRuns, repo);
+  // D314: hosted macOS legs never gate a group, unless a member PR changes a workflow (its evaluatePr says so).
+  const hosted = steps.every((s) => s.prResult.hostedExempt === true);
+  let ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo), hosted });
+  if (ci.state === SUCCESS) ci = queueCheckState(queueRuns, queueCheckRuns, repo, { hosted });
   if (ci.state === SUCCESS) ci = guiLegState(desktopJobs);
   if (ci.state === PENDING) {
     const starts = queueRuns.filter(queueRunScope(repo)).map((r) => Date.parse(r.created_at)).filter(Number.isFinite);

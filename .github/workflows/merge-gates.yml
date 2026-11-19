@@ -36,6 +36,9 @@ on:
       - U7 prebuilt universal helper
       - Verification pointer helper
     types: [completed]
+  # D314: no job-level trigger (workflow_job is a webhook, not an Actions event). Hosted Mac legs never start in
+  # PR or queue runs (hosted.mjs PRE_MERGE_SKIP), so those runs complete, and fire workflow_run above, once their
+  # required jobs finish.
   workflow_dispatch:
     inputs:
       pr:
