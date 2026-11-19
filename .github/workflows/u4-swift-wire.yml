@@ -62,7 +62,7 @@ jobs:
           node-version: '24'
       - run: node scripts/check-source-policy.mjs
   swift-decoder:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
