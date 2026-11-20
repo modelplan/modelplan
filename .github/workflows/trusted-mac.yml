@@ -41,7 +41,7 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '24'
-    - name: Select Xcode 26.6 (fail loudly if the runner lacks it)
+    - name: Select Xcode (26.6 17F113 on self-hosted, fail loudly; image Xcode on github-hosted)
       run: |
         ls -d /Applications/Xcode*.app
         python3 - <<'PYCODE'
@@ -50,19 +50,31 @@ jobs:
         import os
         from pathlib import Path
 
+        apps = Path(os.environ.get("XCODE_APPS_DIR", "/Applications"))
         candidates = []
-        for app in Path("/Applications").glob("Xcode*.app"):
+        for app in apps.glob("Xcode*.app"):
             with (app / "Contents/Info.plist").open("rb") as metadata:
                 version = plistlib.load(metadata)["CFBundleShortVersionString"]
-            print(f"{app}: Xcode {version}", flush=True)
-            candidates.append((tuple(map(int, re.findall(r"\d+", version))), str(app)))
+            try:
+                with (app / "Contents/version.plist").open("rb") as metadata:
+                    build = plistlib.load(metadata).get("ProductBuildVersion", "")
+            except OSError:
+                build = ""
+            print(f"{app}: Xcode {version} ({build or 'build unknown'})", flush=True)
+            candidates.append((tuple(map(int, re.findall(r"\d+", version))), build, str(app)))
         if not candidates:
             raise SystemExit("No installed Xcode found")
-        # Pinned: every runner must carry Xcode 26.6 (build 17F113); a runner without it fails here, not later in a build.
-        pinned = sorted(app for version, app in candidates if version == (26, 6))
-        if not pinned:
-            raise SystemExit("Xcode 26.6 (17F113) is not installed on this runner; refusing to build with another toolchain")
-        selected = pinned[0] + "/Contents/Developer"
+        if os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted":
+            # Hosted images (macos-15 carries Xcode 26.3, and 26.6 needs macOS 26.2+) keep their newest Xcode; logged.
+            version, build, app = max(candidates)
+            print(f"github-hosted runner: keeping the image's newest Xcode {version} ({build}) at {app}", flush=True)
+            selected = app + "/Contents/Developer"
+        else:
+            # Pinned: our self-hosted runners must carry Xcode 26.6 build 17F113; version alone is not enough.
+            pinned = sorted(app for version, build, app in candidates if version == (26, 6) and build == "17F113")
+            if not pinned:
+                raise SystemExit("Xcode 26.6 (17F113) is not installed on this runner; refusing to build with another toolchain")
+            selected = pinned[0] + "/Contents/Developer"
         with open(os.environ["GITHUB_ENV"], "a") as output:
             output.write(f"DEVELOPER_DIR={selected}\n")
         PYCODE
@@ -216,7 +228,7 @@ jobs:
         path: .trusted-main
         sparse-checkout: scripts/mac-compile
         persist-credentials: false
-    - name: Select Xcode 26.6 (fail loudly if the runner lacks it)
+    - name: Select Xcode (26.6 17F113 on self-hosted, fail loudly; image Xcode on github-hosted)
       run: |
         ls -d /Applications/Xcode*.app
         python3 - <<'PYCODE'
@@ -225,19 +237,31 @@ jobs:
         import os
         from pathlib import Path
 
+        apps = Path(os.environ.get("XCODE_APPS_DIR", "/Applications"))
         candidates = []
-        for app in Path("/Applications").glob("Xcode*.app"):
+        for app in apps.glob("Xcode*.app"):
             with (app / "Contents/Info.plist").open("rb") as metadata:
                 version = plistlib.load(metadata)["CFBundleShortVersionString"]
-            print(f"{app}: Xcode {version}", flush=True)
-            candidates.append((tuple(map(int, re.findall(r"\d+", version))), str(app)))
+            try:
+                with (app / "Contents/version.plist").open("rb") as metadata:
+                    build = plistlib.load(metadata).get("ProductBuildVersion", "")
+            except OSError:
+                build = ""
+            print(f"{app}: Xcode {version} ({build or 'build unknown'})", flush=True)
+            candidates.append((tuple(map(int, re.findall(r"\d+", version))), build, str(app)))
         if not candidates:
             raise SystemExit("No installed Xcode found")
-        # Pinned: every runner must carry Xcode 26.6 (build 17F113); a runner without it fails here, not later in a build.
-        pinned = sorted(app for version, app in candidates if version == (26, 6))
-        if not pinned:
-            raise SystemExit("Xcode 26.6 (17F113) is not installed on this runner; refusing to build with another toolchain")
-        selected = pinned[0] + "/Contents/Developer"
+        if os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted":
+            # Hosted images (macos-15 carries Xcode 26.3, and 26.6 needs macOS 26.2+) keep their newest Xcode; logged.
+            version, build, app = max(candidates)
+            print(f"github-hosted runner: keeping the image's newest Xcode {version} ({build}) at {app}", flush=True)
+            selected = app + "/Contents/Developer"
+        else:
+            # Pinned: our self-hosted runners must carry Xcode 26.6 build 17F113; version alone is not enough.
+            pinned = sorted(app for version, build, app in candidates if version == (26, 6) and build == "17F113")
+            if not pinned:
+                raise SystemExit("Xcode 26.6 (17F113) is not installed on this runner; refusing to build with another toolchain")
+            selected = pinned[0] + "/Contents/Developer"
         with open(os.environ["GITHUB_ENV"], "a") as output:
             output.write(f"DEVELOPER_DIR={selected}\n")
         PYCODE

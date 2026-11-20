@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, prCancelProblems, workflowProblems } from "../workflow-policy.mjs";
 import { spawnSync } from "node:child_process";
 
@@ -252,9 +254,9 @@ test("native GUI gets 70 minutes, native-headless a temporary 90, and other trus
   const jobs = [...text.matchAll(/^  ([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:\n|$(?![\s\S]))/gm)];
   const limits = Object.fromEntries(jobs.map(([, name, body]) => [name, Number(/^    timeout-minutes: (\d+)$/m.exec(body)?.[1])]));
   assert.deepEqual(limits, { native: 70, "native-headless": 90, transport: 30, sequences: 30, "u11-native": 30, probe: 5, "gui-probe": 5 });
-  const xcodeSteps = text.match(/Select Xcode 26\.6 \(fail loudly/g) || [];
+  const xcodeSteps = text.match(/Select Xcode \(26\.6 17F113 on self-hosted/g) || [];
   assert.equal(xcodeSteps.length, 2, "both Swift-building jobs pin Xcode 26.6");
-  assert.match(text, /version == \(26, 6\)/);
+  assert.match(text, /version == \(26, 6\) and build == "17F113"/);
   assert.match(text, /xcodebuild -version/);
   // The 90 is a stopgap with a recorded way back to 60.
   const headless = text.split("\n  native-headless:\n")[1].split("\n  transport:\n")[0];
@@ -667,4 +669,30 @@ test("no workflow step asserts with a bare '! command' (bash exempts it from set
     const lines = fs.readFileSync(new URL(f, dir), "utf8").split("\n");
     lines.forEach((l, i) => assert.doesNotMatch(l, /^\s+!\s+(grep|test|\[)/, `${f}:${i + 1} use an explicit if ...; then exit 1; fi`));
   }
+});
+
+test("Xcode selector: self-hosted needs 26.6 build 17F113, hosted keeps the image's newest", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  const scripts = [...text.matchAll(/python3 - <<'PYCODE'\n([\s\S]*?)\n *PYCODE/g)].map((m) => m[1].replace(/^ {8}/gm, ""));
+  assert.equal(scripts.length, 2);
+  const run = (apps, runnerEnv) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xcode-"));
+    for (const [name, version, build] of apps) {
+      fs.mkdirSync(path.join(dir, name, "Contents"), { recursive: true });
+      const plist = (k, v) => `<?xml version="1.0"?><plist version="1.0"><dict><key>${k}</key><string>${v}</string></dict></plist>`;
+      fs.writeFileSync(path.join(dir, name, "Contents/Info.plist"), plist("CFBundleShortVersionString", version));
+      if (build) fs.writeFileSync(path.join(dir, name, "Contents/version.plist"), plist("ProductBuildVersion", build));
+    }
+    const out = path.join(dir, "env");
+    return { r: scripts.map((code) => spawnSync("python3", ["-I", "-c", code], { encoding: "utf8", env: { PATH: process.env.PATH, XCODE_APPS_DIR: dir, GITHUB_ENV: out, RUNNER_ENVIRONMENT: runnerEnv } })), out, dir };
+  };
+  const good = run([["Xcode_26.6.app", "26.6", "17F113"], ["Xcode_26.3.app", "26.3", "17C529"]], "self-hosted");
+  for (const r of good.r) assert.equal(r.status, 0, r.stderr);
+  assert.match(fs.readFileSync(good.out, "utf8"), /Xcode_26\.6\.app\/Contents\/Developer/);
+  for (const r of run([["Xcode_26.6.app", "26.6", "17F999"]], "self-hosted").r) assert.match(r.stderr, /Xcode 26\.6 \(17F113\) is not installed/);
+  for (const r of run([["Xcode_26.6.app", "26.6", ""]], "self-hosted").r) assert.notEqual(r.status, 0);
+  for (const r of run([["Xcode_26.3.app", "26.3", "17C529"]], "self-hosted").r) assert.notEqual(r.status, 0);
+  const hosted = run([["Xcode_26.3.app", "26.3", "17C529"]], "github-hosted");
+  for (const r of hosted.r) assert.equal(r.status, 0, r.stderr);
+  assert.match(fs.readFileSync(hosted.out, "utf8"), /Xcode_26\.3\.app/);
 });
