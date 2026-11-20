@@ -182,6 +182,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var occlusionReported = false
   private var layout: CockpitShellLayout?
   private var scope = "all"
+  /// CKP-SHELL-50: the app's range; not private data, so a privacy clear keeps it.
+  private var range: CockpitRange = .initial
   private var outsideMonitor: Any?, localMonitor: Any?, switchMonitor: Any?
   private var closeTask: Task<Void, Never>?
   /// Walkthrough 11-17: a user put back keeps an active app active across the regular-to-accessory flip it causes.
@@ -541,6 +543,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onShellChanged: (() -> Void)?
   public var onIntent: ((CockpitIntent) -> Void)?
   public var onRendered: (() -> Void)?
+  /// G3-42: the coordinator's hook for an admitted rendered receipt; `onRendered` stays free for observers.
+  public var onDataRendered: (() -> Void)?
+  public var reportsDataRendered: Bool { true }
   /// Recovery contract: every accepted rendered receipt, for the coordinator (verified data on screen). Separate from
   /// `onRendered`, which verification and timing hooks own.
   public var onRenderVerified: (() -> Void)?
@@ -1236,6 +1241,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         if let reason = pendingFreshnessReason { sendFreshnessTick(reason) }
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
         onRendered?()
+        onDataRendered?()
         onRenderVerified?()
       case .deadlinePending(let id):
         if receiptWatchdog.currentID != id { receiptWatchdog.wait(for: id) }
@@ -1533,6 +1539,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard key != scope, CockpitMemberScopes.isValidKey(key) else { return }
     scope=key; publishAppearance()
   }
+  /// CKP-SHELL-50: before the load this only sets what the load's shell carries, so the first render has it.
+  public func updateRange(_ value: CockpitRange) {
+    guard value != range else { return }
+    range = value; publishAppearance()
+  }
   public func updateAppearance(_ value: CockpitAppearance) {
     let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
@@ -1550,7 +1561,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #if MODELPLAN_TEST_ONLY_SPI
     if let shell = verificationNoWindowShell { return shell }
     #endif
-    return layout?.shellState(attached: !shellSession.detached, scope: scope)
+    return layout?.shellState(attached: !shellSession.detached, scope: scope, range: range)
   }
   /// `behindPendingDisplay` (glm-959-1): send while a display receipt is still pending, as an uncorrelated change
   /// that derives no deadline, so the pending display's own deadline correlation is untouched.

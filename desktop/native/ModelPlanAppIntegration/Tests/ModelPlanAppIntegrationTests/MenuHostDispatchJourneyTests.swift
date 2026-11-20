@@ -30,14 +30,9 @@ import ModelPlanWire
         app.openPublicURL = { opened.append($0) }
         await app.prepare()
         app.renderMenu()
+        // MENU-50 (WP-09): the public links left the status menu; Settings still reaches them through the host opener.
         let menu = try XCTUnwrap(app.liveStatusMenu)
-        for title in ["Website", "Methodology", "Privacy"] {
-            let item = try XCTUnwrap(menu.items.first { $0.title == title }, title)
-            XCTAssertTrue(item.isEnabled, title)
-            _ = try XCTUnwrap(item.target as? NSObject).perform(try XCTUnwrap(item.action), with: item)
-        }
-        XCTAssertEqual(opened, [SettingsPublicLink.website.url, SettingsPublicLink.methodology.url, SettingsPublicLink.privacy.url])
-        opened = []
+        for title in ["Website", "Methodology", "Privacy"] { XCTAssertNil(menu.items.first { $0.title == title }, title) }
         let editor = app.settingsHost.application.editor
         try editor.request(.openLink(.repository))
         try editor.request(.openLink(.feedback))
