@@ -11,6 +11,7 @@ export const orderOf = (items) => items.map((x, i) => ({...x, i})).sort((a, b) =
 /** The items must appear in `expected` order along their `pos` (y for a stacked column, x for a time axis). */
 export function assertChartOrder(items, expected, what) {
   assert.ok(items.length > 0, `${what}: nothing was measured`);
+  assert.equal(new Set(items.map((x) => x.pos)).size, items.length, `${what}: two items share a position, so their order is not drawn`);
   assert.deepEqual(orderOf(items), expected, `${what}: drawn order differs from the required order ${expected.join(' > ')}`);
 }
 
@@ -20,8 +21,13 @@ export function assertAscending(values, what) {
   for (let i = 1; i < values.length; i++) assert.ok(values[i] >= values[i - 1], `${what}: item ${i} (${values[i]}) is before item ${i - 1} (${values[i - 1]})`);
 }
 
-/** Overview bars: every .ov-bucket of overviewBars() as {x, total, tip}, in markup order. */
+/** Overview bars: every .ov-bucket of overviewBars() as {x, total, tip, barX}, in markup order. x is the hit target;
+ *  barX is the first VISIBLE bar's left edge (the .ov-bar path), null for a bucket with no bar, so a chart whose bars
+ *  are drawn reversed under correct hit targets and tooltips still fails. */
 export function overviewBuckets(svg) {
-  return [...svg.matchAll(/<g class="ov-bucket"[^>]*data-total="([^"]*)"[^>]*data-tip="([^"]*)"[^>]*><rect class="ov-hit" x="([\d.]+)"/g)]
-    .map((m) => ({total: Number(m[1]), tip: m[2], x: Number(m[3])}));
+  return [...svg.matchAll(/<g class="ov-bucket"[^>]*data-total="([^"]*)"[^>]*data-tip="([^"]*)"[^>]*>(.*?)<\/g>/gs)].map((m) => {
+    const x = m[3].match(/<rect class="ov-hit" x="([\d.]+)"/);
+    const bar = m[3].match(/<path class="ov-bar"[^>]*\sd="M([\d.]+),/);
+    return {total: Number(m[1]), tip: m[2], x: Number(x?.[1]), barX: bar ? Number(bar[1]) : null};
+  });
 }

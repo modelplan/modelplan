@@ -13,7 +13,8 @@ import {costView,subscriptionCost,estCostText} from '../../../cockpit/.tmp/compi
 import {assertAscending} from '../chart-order.mjs';
 
 const fx=JSON.parse(readFileSync(new URL('../../../../testdata/cost-fixture/independent-cost.json',import.meta.url),'utf8'));
-const ref='0123456789abcdef',now=new Date(2026,10,20,12,0,0).getTime();
+// 23:30 local on 2026-11-20 (Los Angeles) is already 2026-11-21 in UTC: a UTC calendar day would report tomorrow as Today.
+const ref='0123456789abcdef',now=new Date(2026,10,20,23,30,0).getTime();
 const near=(a,b,what)=>assert.ok(Math.abs(a-b)<1e-9,`${what}: ${a} != ${b}`);
 const dayKey=off=>{const d=new Date(2026,10,20-off);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 
@@ -36,7 +37,7 @@ test('the fixture is hand-calculated: every priced case carries its arithmetic a
 });
 
 test('Overview totals: ≈cost and tokens count every bucket, in the local Today, 7 and 30 day windows',()=>{
- const v=costView(wire(),now),e=fx.window.expected;
+ const v=costView(wire({extra:[{at:dayKey(-1),source:'codex',estimatedUsd:70,pricedTokens:1,unpricedTokens:0}]}),now),e=fx.window.expected;
  assert.ok(v);
  for(const [range,key] of [['today','today'],['last7d','last7d'],['last30d','last30d']]){
   near(v.total[range].cost.usd,e[key].usd,`${range} usd`);
