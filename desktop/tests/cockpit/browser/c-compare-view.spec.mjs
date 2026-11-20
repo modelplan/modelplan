@@ -55,9 +55,9 @@ test('CKP-MFD compare: a fader trial opens the comparison with the two share bar
  await expect(page.locator('.mfd-ok.mfd-vk .vk-back')).toHaveText('‹ Overview');
  await expect(page.locator('.mfd-ok.mfd-vk .vk-fast')).toHaveCount(1);
  await expect(page.locator('.mfd-pk')).toHaveClass(/dark/);await expect(page.locator('.mfd-pk .pk.on')).toHaveCount(0);
- // The fader shows the trial: blue indicator, ghost cap, "Try XHigh" on its LCD.
- await expect(sol(page).locator('.fd-indicator')).toHaveAttribute('data-state','try');
- await expect(sol(page).locator('.st-try')).toContainText('XHigh');
+ // The fader shows the trial: ghost cap and blue "Try XHigh" on its card (WP-08: the lamp shows sessions only, CKP-FAD-55).
+ await expect(sol(page)).toHaveClass(/\btrying\b/);
+ await expect(sol(page).locator('.cd-try')).toContainText('XHigh');
 });
 
 test('CKP-MFD compare: the effort keys move the trial, one trial at a time, and back returns to the page',async({page})=>{
@@ -69,10 +69,10 @@ test('CKP-MFD compare: the effort keys move the trial, one trial at a time, and 
  const second=page.locator('.fd-ch:not(.empty)').nth(1);
  await second.locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
  await expect(page.locator('.mfd-title')).toHaveText('Effort · Astra');
- await expect(page.locator('.fd-indicator[data-state="try"]')).toHaveCount(1);
+ await expect(page.locator('.fd-ch.trying')).toHaveCount(1);
  await page.locator('.mfd-vk .vk-back').click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);await expect(page.locator('.mfd-pk .pk.on')).toHaveCount(1);
- await expect(page.locator('.fd-indicator[data-state="try"]')).toHaveCount(0);
+ await expect(page.locator('.fd-ch.trying')).toHaveCount(0);
  // Esc returns too, and pressing the LCD again toggles the card.
  await sol(page).locator('.fd-strip').click();await expect(page.locator('.mfd-page.pg-compare')).toBeVisible();
  await page.keyboard.press('Escape');await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);
@@ -146,7 +146,7 @@ test('CKP-MFD compare: the back key is named "Back …" for assistive tech, and 
  await expect(page.locator('.mfd-vk .vk-back')).toHaveAttribute('aria-label',/^Back /);
  await page.locator('.hud-list .hp').first().click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-tune/);
- await expect(page.locator('.fd-indicator[data-state="try"]')).toHaveCount(0);
+ await expect(page.locator('.fd-ch.trying')).toHaveCount(0);
  // A page key closes the view the HUD opened (study closeMfdView('page')): no stale "‹ back" line on the next page.
  await page.locator('[data-mfd="page:overview"]').click();
  await expect(page.locator('.mfd-page .mfd-back')).toHaveCount(0);
@@ -163,11 +163,11 @@ test('CKP-FAD-10 CKP-MFD-21: a record-line click closes the comparison and the t
  await open(page);
  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
  await expect(page.locator('.mfd-page.pg-compare')).toBeVisible();
- await expect(page.locator('.fd-indicator[data-state="try"]')).toHaveCount(1);
+ await expect(page.locator('.fd-ch.trying')).toHaveCount(1);
  await page.locator(`.ck-tape .t-observed[data-session="${SESSION_REF}"]`).click();
  await expect(page.locator('.mfd-page.pg-compare')).toHaveCount(0);
  await expect(page.locator('.mfd-page.pg-where .ws-list .ws').first()).toBeVisible();
- await expect(page.locator('.fd-indicator[data-state="try"]')).toHaveCount(0);
+ await expect(page.locator('.fd-ch.trying')).toHaveCount(0);
 });
 
 // CKP-FAD-11 through the ordinary bridge: the publication carries speedTiers; no session is needed for the key.

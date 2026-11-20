@@ -6,3 +6,7 @@ export function lcdView(channel:unknown):string;
 export function stripAria(channel:unknown):string;
 export function indicatorView(channel:unknown):string;
 export function marksView(channel:unknown):string;
+export const CARD_LINE:number;
+export function effortLine(cur:string|null,rec:string):{cur:string;rec:string};
+export function card(channel:unknown,fader?:unknown):any;
+export function cardText(card:unknown):string[];
