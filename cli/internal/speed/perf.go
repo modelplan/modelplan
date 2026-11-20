@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -31,6 +32,7 @@ const (
 
 // PerfLedger is perf.json's content.
 type PerfLedger struct {
+	UsageRows     []PerfRow         `json:"-"` // response accounting, loaded independently of timing samples
 	SchemaVersion int               `json:"schemaVersion"`
 	Since         time.Time         `json:"since"` // UTC, when the file was created
 	Hourly        []Hourly          `json:"hourly,omitempty"`
@@ -89,6 +91,9 @@ type SessionDay struct {
 	Speed                string `json:"speed,omitempty"`
 	ObservedRequests     int    `json:"observedRequests"`
 	ObservedOutputTokens int64  `json:"observedOutputTokens"`
+	// Kinds are the day's input, cache-read and cache-write sums (CKP-STRIP-16): each is unknown, never zero, unless
+	// every recorded request supplied it. Absent for days recorded before they were kept, which read as unknown.
+	Kinds *TokenKinds `json:"tokenKinds,omitempty"`
 }
 
 // PerfRow is one local day of one configuration, as one parser read it.
@@ -123,6 +128,9 @@ type PerfRow struct {
 	LastAt *time.Time `json:"lastAt,omitempty"`
 	// Origin: "import" on rows the history importer made (import.go); empty on live rows.
 	Origin string `json:"origin,omitempty"`
+	// Responses: on response-accounting rows only, each counted response in the row, so a
+	// price can be applied per request (cost.go). Never stored; rebuilt from the ledger.
+	Responses []Response `json:"-"`
 }
 
 // PerfPath is the ledger file.
@@ -131,7 +139,14 @@ func PerfPath(cache string) string { return filepath.Join(cache, "observed", "pe
 // LoadPerf reads the ledger. A missing file is a new, empty ledger (zero Since). ok is false when
 // the file is there but cannot be used (unreadable, too large, another schema or no Since); it is
 // then left as it is and nothing is reported from it.
-func LoadPerf(cache string) (l PerfLedger, ok bool) {
+func LoadPerf(cache string) (PerfLedger, bool) {
+	l, ok := loadPerf(cache)
+	if ok {
+		l = accountingOverlay(cache, l)
+	}
+	return l, ok
+}
+func loadPerf(cache string) (l PerfLedger, ok bool) {
 	b, err := os.ReadFile(PerfPath(cache))
 	if errors.Is(err, os.ErrNotExist) {
 		return PerfLedger{SchemaVersion: 1}, true
@@ -157,7 +172,7 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 		return nil
 	}
 	defer unlock()
-	l, ok := LoadPerf(cache)
+	l, ok := loadPerf(cache)
 	if !ok {
 		return nil // not ours to overwrite
 	}
@@ -273,6 +288,10 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 			s.Days = append(s.Days, SessionDay{Day: d, Model: q.cfg.model, EffortStatus: status, Effort: q.cfg.effort, Speed: q.cfg.speed})
 			x = &s.Days[len(s.Days)-1]
 		}
+		if x.Kinds == nil {
+			x.Kinds = &TokenKinds{}
+		}
+		x.Kinds.add(q.TokenKinds, x.ObservedRequests == 0)
 		x.ObservedRequests++
 		x.ObservedOutputTokens += q.out
 		if e := q.end.UTC().Truncate(time.Minute); e.After(s.LastAt) {
@@ -450,3 +469,26 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 
 // projectRule is the current project attribution rule (see PerfSession.ProjectRule).
 const projectRule = 1
+
+// CompleteTotal is the day's total: input, cache reads, cache writes and output, each counted once (the ccusage
+// definition; reasoning is part of output). It is unknown unless every part is, and never falls back to output alone.
+func (d SessionDay) CompleteTotal() (int64, bool) {
+	total := d.ObservedOutputTokens
+	if total < 0 {
+		return 0, false
+	}
+	if d.Kinds == nil {
+		return 0, false
+	}
+	// The accounting total of every recorded request (TOK-50, ccusage-aligned) wins when it is known.
+	if t := d.Kinds.TotalTokens; t != nil && *t >= 0 {
+		return *t, true
+	}
+	for _, part := range []*int64{d.Kinds.InputTokens, d.Kinds.CacheReadTokens, d.Kinds.CacheWriteTokens} {
+		if part == nil || *part < 0 || *part > math.MaxInt64-total {
+			return 0, false
+		}
+		total += *part
+	}
+	return total, true
+}

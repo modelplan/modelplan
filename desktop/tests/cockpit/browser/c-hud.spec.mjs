@@ -183,3 +183,105 @@ test('CKP-PORT-06 hovering a row lights its rocket by published name, for real p
 test('an older engine shows no HUD',async({page})=>{
  await open(page,{published:null});await expect(page.locator('.hud')).toBeHidden();
 });
+// WP-22 macrevb-1062-3: a rocket chosen in the enlarged field arrives as the host's `select` message (public model id) and
+// selects the same model on the HUD, the faders and the porthole still; a clear from the field clears all three.
+test('WP-22 the field\'s selection selects the model on the HUD, the faders and the porthole, and a clear clears them',async({page})=>{
+ const sonnet={...model('sonnet-5.5',62,.4),name:'Claude Sonnet 5.5',developerId:'anthropic'};
+ const published=[sonnet,...models];
+ const {send,receive}=await open(page,{published,lineup:[sonnet,published[1]]});
+ await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
+ const marked=()=>page.locator('.ck-field .ck-still-body.ck-sel').evaluateAll(e=>e.map(x=>x.dataset.modelName));
+ const fader=()=>page.locator('.fd-ch.sel [data-travel]').evaluateAll(e=>e.map(x=>x.getAttribute('aria-label')));
+ expect(await receive(send('select',{model:'sonnet-5.5'}))).toBe(true);
+ await expect(page.locator('.hud .hp.selected')).toHaveCount(1);
+ await expect(page.locator('.hud .hp.selected')).toHaveAttribute('data-hud-model','sonnet-5.5');
+ expect(await fader()).toEqual(['Claude Sonnet 5.5']);
+ expect(await marked()).toEqual(['Claude Sonnet 5.5']);
+ expect(await receive(send('select',{model:null}))).toBe(true);
+ await expect(page.locator('.hud .hp.selected')).toHaveCount(0);
+ expect(await fader()).toEqual([]);
+ expect(await marked()).toEqual([]);
+ expect(await receive(send('select',{model:'sonnet-5.5',effort:'high'}))).toBe(false);
+ await expect(page.locator('.hud .hp.selected')).toHaveCount(0);
+});
+// macrevb-1062-3 r2: the fader renderer resolves the shared effort keys on the visible bank only, so a model chosen in the
+// field whose fader sits on another bank must bring that bank up; a clear keeps the bank and selects no channel.
+test('WP-22 the field\'s selection shows the selected fader\'s bank and the effort keys act on it; a clear keeps the bank',async({page})=>{
+ const {send,receive}=await open(page,{lineup:[models[0]]});
+ const visible=()=>page.locator('.fd-ch [data-travel]').evaluateAll(e=>e.map(x=>x.getAttribute('aria-label')));
+ const selected=()=>page.locator('.fd-ch.sel [data-travel]').evaluateAll(e=>e.map(x=>x.getAttribute('aria-label')));
+ const first=await visible();expect(first).not.toContain('Synthetic m1');
+ expect(await receive(send('select',{model:'m1'}))).toBe(true);
+ expect(await visible()).toContain('Synthetic m1');
+ expect(await selected()).toEqual(['Synthetic m1']);
+ await page.locator('.sc-l:not(.na)').first().click();
+ await expect(page.locator('.fd-ch.trying [data-travel]')).toHaveAttribute('aria-label','Synthetic m1');
+ const bank=await visible();
+ expect(await receive(send('select',{model:null}))).toBe(true);
+ expect(await selected()).toEqual([]);
+ expect(await visible()).toEqual(bank);
+ expect(await receive(send('select',{model:'m0'}))).toBe(true);
+ expect(await visible()).toEqual(first);expect(await selected()).toEqual(['Synthetic m0']);
+});
+// Owner 11-19 (#1062): the enlarged field opens on a click on the port, not on a drag across it, and not on the click
+// that bounces off the field's close (the cockpit, inactive while the field held key, becomes active again).
+test('WP-22 a drag across the porthole does not open the field; a press that stays within 4 px still does',async({page})=>{
+ await open(page);const box=await page.locator('.ck-port').boundingBox(),x=box.x+520,y=box.y+120;
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+12,y+3,{steps:4});await page.mouse.up();
+ await page.waitForTimeout(100);expect(await fieldOpens(page)).toBe(0);
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+3,y+2,{steps:2});await page.mouse.up();
+ await expect.poll(()=>fieldOpens(page)).toBe(1);
+});
+test('WP-22 a porthole click within 300 ms of the field closing is ignored; a later one opens it',async({page})=>{
+ // Controlled time: the page's clock only moves when the test moves it.
+ await page.clock.install({time:new Date('2026-11-19T12:00:00Z')});
+ const {send,receive}=await open(page);const port=page.locator('.ck-port');
+ await page.clock.pauseAt(new Date('2026-11-19T12:00:10Z'));
+ await port.click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(1);
+ // A cockpit reactivation alone is not a field close: no guard.
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:false}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ await port.click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(2);
+ // The host's field close starts the guard.
+ expect(await receive(send('fieldClosed',{}))).toBe(true);
+ await port.click({position:{x:520,y:120}});
+ await page.clock.runFor(299);
+ await port.click({position:{x:520,y:120}});
+ expect(await fieldOpens(page)).toBe(2);
+ await page.clock.runFor(2);
+ await port.click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(3);
+});
+// v1 final (WP-14, V1-FINAL §5): the HUD is the legend of the user's own models. A session does not add a model its
+// subscription does not carry (a Claude Code session pointed at another vendor's model is not that subscription's model),
+// the rows stop at six (three on the short cockpit) on one solid dark backing, names 10 px white, and a small green dot
+// follows the ★ effort of every model a session is running right now.
+const running=(ref,id,state='running',source='codex')=>({sessionRef:ref.repeat(16),source,subscriptionRef:null,model:id,effort:'high',projectLabel:null,lastObservedAt:observed(),state,rate:null});
+test('CKP-PORT-50 a session on a model outside its subscription does not list that model',async({page})=>{
+ await open(page,{published:mixed(),edit:keepRows(['codex']),sessions:[running('a','claude-a'),running('b','google-a','idle')]});
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['gpt-a','gpt-b']);
+});
+const backing=page=>page.locator('.hud').evaluate(h=>{const cs=getComputedStyle(h),box=h.getBoundingClientRect(),alpha=(/rgba?\(([^)]+)\)/.exec(cs.backgroundColor)?.[1].split(',').map(Number)[3])??1;
+ return {image:cs.backgroundImage,alpha,inside:[...h.querySelectorAll('.hp')].every(r=>{const b=r.getBoundingClientRect();return b.left>=box.left-.5&&b.right<=box.right+.5&&b.top>=box.top-.5&&b.bottom<=box.bottom+.5;}),
+  names:[...h.querySelectorAll('.hp b')].map(b=>[getComputedStyle(b).fontSize,getComputedStyle(b).color])};});
+for(const [tier,cap] of [['tall',6],['compact',3]])test(`CKP-PORT-50 ${tier}: at most ${cap} rows of owned models on one solid dark backing, names 10 px white`,async({page})=>{
+ await open(page,{tier,sessions:[running('a','m6'),running('b','m7')]});
+ await expect(page.locator('.hud .hp')).toHaveCount(cap);
+ const b=await backing(page);
+ expect(b.image).toBe('none');expect(b.alpha).toBeGreaterThanOrEqual(.5);expect(b.inside).toBe(true);
+ for(const [size,colour] of b.names)expect([size,colour]).toEqual(['10px','rgb(233, 237, 240)']);
+});
+test('CKP-PORT-51 a green dot follows the ★ effort of each model a session is running now, and only those',async({page})=>{
+ await open(page,{sessions:[running('a','m7'),running('b','m6'),running('c','m5','idle')]});
+ await expect(page.locator('.hud .hp .hp-on')).toHaveCount(2);
+ for(const id of ['m7','m6']){const row=page.locator(`.hud .hp[data-hud-model=${id}]`),dot=row.locator('.hp-on');
+  await expect(dot).toHaveCSS('background-color','rgb(90, 217, 186)');
+  const [rec,mark]=await Promise.all([row.locator('.hp-rec').boundingBox(),dot.boundingBox()]);expect(mark.x).toBeGreaterThanOrEqual(rec.x+rec.width);expect(mark.width).toBeLessThanOrEqual(6);}
+ await expect(page.locator('.hud .hp[data-hud-model=m5] .hp-on')).toHaveCount(0);
+ await expect(page.locator('.hud .hp[data-hud-model=m7] .hp-on')).toHaveAttribute('aria-label','Running');
+});
+test('CKP-PORT-51 the compact strip keeps the dot inside its row',async({page})=>{
+ await open(page,{tier:'compact',sessions:[running('a','m0')]});
+ const row=page.locator('.hud.hud-strip .hp').first();await expect(row.locator('.hp-on')).toHaveCount(1);
+ const [r,d,hud]=await Promise.all([row.boundingBox(),row.locator('.hp-on').boundingBox(),page.locator('.hud').boundingBox()]);
+ expect(d.y).toBeGreaterThanOrEqual(r.y-.5);expect(d.y+d.height).toBeLessThanOrEqual(r.y+r.height+.5);expect(d.x+d.width).toBeLessThanOrEqual(hud.x+hud.width+.5);
+});

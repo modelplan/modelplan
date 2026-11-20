@@ -48,9 +48,9 @@ test('the deck lights the fader carrying a session',async({page})=>{
 test('with the wire publication, a record line lights the fader of its model',async({page})=>{
  const {data}=visualFixture(),session=data.details.sessions[0];session.subscriptionRef=null;session.model='model-b';session.lastObservedAt=new Date().toISOString(); // D123: in use = seen in the last 7 days
  const model=(id,name)=>({id,name,developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]});
- data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[model('model-a','Synthetic A'),model('model-b','Synthetic B')]};
+ data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[model('model-a','Alpha'),model('model-b','Bravo')]};
  await open(page,data);
- const line=page.locator(`.ck-tape .t-observed[data-session="${session.sessionRef}"]`),fader=page.locator('.fd-ch:not(.empty)').filter({hasText:'Synthetic B'});
+ const line=page.locator(`.ck-tape .t-observed[data-session="${session.sessionRef}"]`),fader=page.locator('.fd-ch:not(.empty)').filter({hasText:'Bravo'});
  await expect(fader).toHaveCount(1);
  await expect(line).not.toHaveAttribute('aria-disabled','true');
  await line.hover();await expect(fader).toHaveClass(/\bxhl\b/);

@@ -52,6 +52,8 @@ test('WP-12 CKP-MFD-59 a record shorter than the range says "since" on the total
 });
 test('WP-12 CKP-MFD-59 a record longer than the range names the range',async({page})=>{
  await open(page,recorded(60));
+ await expect(page.locator('.pg-overview .ov-top .lbl').first()).toHaveText('7d');
+ await page.locator('[data-opt="range"] b',{hasText:/^30d$/}).click();
  await expect(page.locator('.pg-overview .ov-top .lbl').first()).toHaveText('30d');
 });
 
@@ -83,4 +85,19 @@ test('WP-12 CKP-MFD-62 the Grid key is not lit and pressing it changes nothing',
  await expect(grid).not.toHaveClass(/\bon\b/);await grid.click();
  await expect(page.locator('[data-opt="chart"] b.on')).toHaveText('Bars');
  await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(0);
+});
+
+// CKP-MFD-60 through the wire's real cost section (WP-06, history.cost): bars, the ≈cost total and the unpriced note.
+function priced(){
+ const data=recorded(60);
+ data.history.cost={basis:'api-list-price',currency:'USD',pricesAsOf:'2026-11-01',models:{today:[],recent7d:[],recent30d:[]},hourly:[],
+  daily:[{at:localDay(1),source:'codex',estimatedUsd:6,pricedTokens:900,unpricedTokens:100},{at:localDay(0),source:'codex',estimatedUsd:3,pricedTokens:180,unpricedTokens:20}]};
+ return data;
+}
+test('WP-12 CKP-MFD-60 wire cost draws one bar per day, the ≈cost total and the unpriced note',async({page})=>{
+ await open(page,priced());
+ await expect(page.locator('.pg-overview svg.ov-chart')).toHaveCount(1);
+ await expect(page.locator('.pg-overview .ov-bucket')).toHaveCount(7);
+ await expect(page.locator('.pg-overview .ov-top .ov-total')).toContainText('9');
+ await expect(page.locator('.pg-overview .ov-note')).toContainText('has no public price');
 });

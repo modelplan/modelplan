@@ -63,6 +63,7 @@
         },
         "today": [
           {
+            "observedTotalTokens": 1,
             "source": "synthetic",
             "observedOutputTokens": 1,
             "generationTps": 42.5,
@@ -86,7 +87,10 @@
         "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
         "state": "synthetic",
         "rate": 42.5,
-        "fast": false
+        "fast": false,
+        "startedAt": "2026-10-29T12:00:00.123456789Z",
+        "observedTotalTokens": 1,
+        "modelDisplay": "synthetic"
       }
     ],
     "sessionCoverage": "synthetic",
@@ -237,6 +241,8 @@
             "source": "synthetic",
             "bindingBasis": "synthetic",
             "recent7d": {
+              "totalTokens": 1,
+              "reasoningTokens": 1,
               "inputTokens": 1,
               "outputTokens": 1,
               "cacheReadTokens": 1,
@@ -247,6 +253,8 @@
               "eligibleRequests": 1
             },
             "recent30d": {
+              "totalTokens": 1,
+              "reasoningTokens": 1,
               "inputTokens": 1,
               "outputTokens": 1,
               "cacheReadTokens": 1,
@@ -377,7 +385,59 @@
           }
         ]
       }
-    ]
+    ],
+    "cost": {
+      "basis": "synthetic",
+      "currency": "USD",
+      "pricesAsOf": "synthetic",
+      "daily": [
+        {
+          "at": "synthetic",
+          "source": "synthetic",
+          "estimatedUsd": 42.5,
+          "pricedTokens": 1,
+          "unpricedTokens": 1
+        }
+      ],
+      "hourly": [
+        {
+          "at": "synthetic",
+          "source": "synthetic",
+          "estimatedUsd": 42.5,
+          "pricedTokens": 1,
+          "unpricedTokens": 1
+        }
+      ],
+      "models": {
+        "today": [
+          {
+            "model": "synthetic",
+            "source": "synthetic",
+            "estimatedUsd": 42.5,
+            "pricedTokens": 1,
+            "unpricedTokens": 1
+          }
+        ],
+        "recent7d": [
+          {
+            "model": "synthetic",
+            "source": "synthetic",
+            "estimatedUsd": 42.5,
+            "pricedTokens": 1,
+            "unpricedTokens": 1
+          }
+        ],
+        "recent30d": [
+          {
+            "model": "synthetic",
+            "source": "synthetic",
+            "estimatedUsd": 42.5,
+            "pricedTokens": 1,
+            "unpricedTokens": 1
+          }
+        ]
+      }
+    }
   },
   "projection": {
     "resetEvents": [

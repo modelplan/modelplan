@@ -77,3 +77,10 @@ func TestMatchesReferenceFixture(t *testing.T) {
 }
 
 func near(a, b float64) bool { return math.Abs(a-b) <= 1e-9*math.Max(1, math.Abs(b)) }
+
+// The fallback tolerance is the published display-scale tie (#781).
+func TestTieIsDisplayScale(t *testing.T) {
+	if Tie != 0.815 {
+		t.Fatalf("Tie = %v, want 0.815", Tie)
+	}
+}

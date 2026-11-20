@@ -3,10 +3,9 @@
 // wire's cost section (WP-06: history.cost, API list price). A day with no record is null, never zero; a recorded day
 // whose use has no public price is a recorded zero (it keeps the 3 px base). Without any priced usage there is no
 // series at all: the page then draws no bars and builds no fallback from tokens.
-// The cost section's wire type arrives with WP-06 (#1050); until then it is read through this structural subset.
-interface CostBucket {readonly at:string;readonly source:string;readonly estimatedUsd:number;readonly pricedTokens:number;readonly unpricedTokens:number}
-interface CostSection {readonly basis?:string;readonly currency?:string;readonly daily?:readonly CostBucket[];readonly hourly?:readonly CostBucket[]}
-interface HistoryLike {readonly coverage?:string;readonly subscriptions?:readonly {readonly subscriptionRef:string;readonly sources:readonly {readonly source:string}[]}[];readonly cost?:CostSection|null}
+import type {WireCockpitCost,WireCockpitCostBucket} from '../generated/wire.js';
+type CostBucket=WireCockpitCostBucket;
+interface HistoryLike {readonly coverage?:string;readonly subscriptions?:readonly {readonly subscriptionRef:string;readonly sources:readonly {readonly source:string}[]}[];readonly cost?:WireCockpitCost|null}
 export interface OverviewCost {
  readonly daily:readonly {accountId:string;values:(number|null)[]}[];
  readonly hourly:readonly {accountId:string;instants:number[];values:(number|null)[]}[];
@@ -19,7 +18,7 @@ const dayKey=(at:number)=>{const d=new Date(at);return `${d.getFullYear()}-${Str
 export function overviewCost(data:{readonly history?:HistoryLike|null}|null|undefined,ids:ReadonlyMap<string,string>,now:number):OverviewCost|null {
  const h=data?.history,c=h?.cost;
  if(!h||h.coverage!=='local-history'||!c||c.basis!=='api-list-price'||c.currency!=='USD'||!h.subscriptions)return null;
- const daily=c.daily??[],hourly=c.hourly??[];
+ const daily=c.daily,hourly=c.hourly;
  if(!daily.some(b=>b.pricedTokens>0)&&!hourly.some(b=>b.pricedTokens>0))return null;
  const clock=new Date(now),top=now-clock.getMinutes()*6e4-clock.getSeconds()*1e3-clock.getMilliseconds();
  const instants=Array.from({length:24},(_,i)=>top-(23-i)*HOUR);

@@ -41,7 +41,7 @@ public enum NativeSurfaceLanguage {
     init(chinese: Bool) {
         self.chinese = chinese
         status = NSTextField(labelWithString: NativeSurfaceLanguage.text("Not connected", "未连接", chinese: chinese))
-        let title = NSTextField(labelWithString: NativeSurfaceLanguage.text("ModelPlan Community", "ModelPlan 社区版", chinese: chinese))
+        let title = NSTextField(labelWithString: NativeSurfaceLanguage.text("ModelPlan", "ModelPlan", chinese: chinese))
         title.font = .systemFont(ofSize:18, weight:.semibold)
         let intel = NSTextField(wrappingLabelWithString:NativeSurfaceLanguage.text("Intel untested; 3D may stutter", "Intel 未测试，3D 效果可能卡顿", chinese: chinese))
         intel.font = .systemFont(ofSize:11); intel.textColor = .secondaryLabelColor

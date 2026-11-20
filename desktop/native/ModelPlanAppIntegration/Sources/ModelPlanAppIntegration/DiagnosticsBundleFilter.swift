@@ -27,7 +27,7 @@ public enum DiagnosticsBundleFilter {
         "delivery-skipped", "diagnostics", "disclosure", "display", "display-non-finite", "dock", "drag", "edge", "end",
         "ended", "engine", "export", "exited", "extended", "failed", "failure", "feature", "finished", "gone", "grant",
         "hidden-visibility-late", "idle", "launch", "lifecycle", "lost", "notice-shown", "offline", "open",
-        "open-retry", "page-failure", "page-reject", "page-resync", "panel", "presentation", "prewarm",
+        "open-retry", "page", "page-failure", "page-reject", "page-resync", "panel", "presentation", "prewarm",
         "prewarm-unavailable", "read-only", "reader", "readers", "ready", "rebuild", "released",
         "rendered", "requested", "restart", "resume", "retry", "save", "settings", "shown", "start", "started",
         "starting", "stopped", "suspend", "tick", "timeout", "timing", "unavailable", "views", "wait", "warm-paint", "was",

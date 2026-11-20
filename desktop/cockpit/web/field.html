@@ -1,13 +1,19 @@
 <!doctype html>
 <!-- SPDX-License-Identifier: MIT -->
-<html lang="en" data-theme="night" data-profile="full">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'">
 <title>ModelPlan launch field</title>
-<link rel="stylesheet" href="cockpit.css">
+<!-- WP-22 (D298): the panel is one transparent rectangle; the launch-field component draws everything in it. -->
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="runtime/field-scene/launch-field.css">
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:transparent}
+#field{position:absolute;inset:0}
+</style>
 <script type="module" src="src/field-page.js"></script>
 </head>
-<body class="r1 field-page"><main id="field"></main></body>
+<body class="field-page"><main id="field"></main></body>
 </html>

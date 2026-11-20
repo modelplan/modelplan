@@ -15,6 +15,16 @@ final class CockpitWebView: WKWebView {
   /// AppKit the view paints no backing of its own; the hosts still set `drawsBackground` false, which is what stops
   /// WebKit painting one.
   override var isOpaque: Bool { false }
+  /// Owner 11-19 (#1062): an activation click (the first click on a window that is not key) is not delivered where this
+  /// says so; it only brings the window forward. Given the point in view coordinates measured from the view's top.
+  var declinesActivationClick: (@MainActor (CGPoint) -> Bool)?
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    if let event, let declines = declinesActivationClick {
+      let p = convert(event.locationInWindow, from: nil)
+      if declines(CGPoint(x: p.x, y: isFlipped ? p.y : bounds.height - p.y)) { return false }
+    }
+    return super.acceptsFirstMouse(for: event)
+  }
   override func menu(for event: NSEvent) -> NSMenu? { nil }
   override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
     if menu !== ownMenu { menu.removeAllItems() }

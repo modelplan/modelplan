@@ -61,7 +61,7 @@ for(const [name,extra] of [['recording off',{coverage:'recording-off',subscripti
 // macrevb-635-1 (a short record ends at today) is covered on the ≈cost series by unit/wp-12-overview-bars.test.mjs (WP-12).
 // macrevb-635-2: Today is known only when every selected subscription has a reading.
 const today=(data,index,value)=>{data.details.subscriptions[index].today=value===null?[]:[{source:'codex',observedOutputTokens:value,generationTps:null,bindingBasis:'source-wide-current-binding'}];};
-const day24=page=>page.locator('[data-opt="days"] b',{hasText:/^24h$/}).click();
+const day24=page=>page.locator('[data-opt="range"] b',{hasText:/^Today$/}).click();
 test('D36 an unknown Today stays unknown beside the history',async({page})=>{
  const {data}=fixture();data.details.subscriptions.forEach((_,i)=>today(data,i,null));
  await open(page,data);
@@ -80,7 +80,7 @@ test('D36 an observed zero Today stays zero',async({page})=>{
 });
 
 test('SET-9-19 project names off: a labelled project in the ranking is named by its rank',async({page})=>{
- const {data}=fixture();data.history.projects.recent30d[0].label='desktop-secret';
+ const {data}=fixture();data.history.projects.recent30d[0].label='desktop-secret';data.history.projects.recent7d[0].label='desktop-secret';
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.clock.setFixedTime(new Date(NOW));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);

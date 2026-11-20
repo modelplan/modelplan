@@ -25,6 +25,7 @@ type Stamp struct {
 type View struct {
 	QuotaReport               quota.Report
 	PublicModels              []digest.Model
+	PublicSpeedTiers          []digest.SpeedTier // the same publication's speed tiers (API price multipliers, WP-06)
 	Stamp                     Stamp
 	Projection                rows.Projection
 	ResetEvents               *[]rows.ResetEvent

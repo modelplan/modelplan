@@ -66,8 +66,10 @@ test('CKP-SHELL-21 every try control stays local: zero requests and only whiteli
  const types=new Set(after.posts.map(m=>m.type));
  for(const type of types)expect(['ready','rendered','nextDeadline','cleared','action'],`bridge message ${type}`).toContain(type);
  const sent=after.posts.slice(before).filter(m=>m.type==='action');
- // Trying an effort or a model is not an action native could apply: no try control produces any action at all.
- expect(sent.map(m=>m.action),'actions sent while trying').toEqual([]);
+ // Trying an effort or a model is not an action native could apply: no try control produces any action at all. The
+ // range key is not a try control: it asks the app for its one range (CKP-SHELL-50), a fixed key and nothing else.
+ for(const m of sent.filter(m=>m.action==='rangeSelect'))expect(['today','7d','30d']).toContain(m.key);
+ expect(sent.filter(m=>m.action!=='rangeSelect').map(m=>m.action),'actions sent while trying').toEqual([]);
  for(const m of after.posts)expect(JSON.stringify(m),'no model, effort, credential or path leaves the page').not.toMatch(/"(model|effort|setModel|setEffort|token|credential|password|apiKey|path|file)"\s*:/i);
 });
 
@@ -98,7 +100,7 @@ for(const [tier,height] of [['tall',890],['compact',640]]){
   await page.locator('.fd-strip[aria-label^="Synthetic lineup-1:"]').click();
   const screen=page.locator('.mfd-page.pg-compare');await expect(screen).toBeVisible();
   const key=screen.locator('.cmp-lad [data-mfd="try:Low"]');await key.click();
-  await expect(screen.locator('svg.cmp-chart .cfg-trial')).not.toHaveCount(0);
+  await expect(screen.locator('svg.cmp-chart .pc-band-trial')).toHaveCount(1);
   await expect.poll(()=>page.evaluate(()=>{const area=document.querySelector('[data-fill="cmp"]'),svg=area?.querySelector('svg.cmp-chart');if(!svg||!area.clientWidth)return null;return {width:Math.abs(svg.getBoundingClientRect().width-area.clientWidth)<=1,height:svg.getBoundingClientRect().height<=area.clientHeight+1};})).toEqual({width:true,height:true});
  });
 }

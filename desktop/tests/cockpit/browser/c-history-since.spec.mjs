@@ -28,22 +28,28 @@ function fixture(extra={}) {
 }
 
 
+// CKP-SHELL-50 (WP-09): the totals follow the app's range, which starts at 7d; the overview cases are about the 30-day total.
+const to30=page=>page.locator('[data-opt="range"] b').nth(2).click();
 const label=page=>page.locator('.ov-top .lbl').first().textContent();
 test('D63 a record shorter than 30 days labels the 30-day total with its start',async({page})=>{
  await open(page,fixture().data);
+ await to30(page);
  expect(await label(page)).toBe('since 10-26');await expect(page.locator('.ov-top .ov-total')).toHaveText('1k');
 });
 test('D63 imported history that starts earlier moves the start to the earliest day of either source',async({page})=>{
  const {data}=fixture({dailyFrom:localDay(14)});data.history.daily.push({at:localDay(14),source:'codex',origin:'import',observedOutputTokens:500});
  await open(page,data);
+ await to30(page);
  expect(await label(page)).toBe('since 10-21');
 });
 test('D63 the Chinese label says where the record starts',async({page})=>{
  await open(page,fixture().data,'zh-CN');
+ await to30(page);
  expect(await label(page)).toBe('自 10-26 起');
 });
 for(const back of [29,40])test(`D63 a record of ${back+1} days keeps the plain 30-day label`,async({page})=>{
  await open(page,fixture({dailyFrom:localDay(back)}).data);
+ await to30(page);
  expect(await label(page)).toBe('30d');
 });
 test('D63 the Subscription usage block names a record shorter than its window',async({page})=>{
@@ -58,5 +64,6 @@ test('D63 a full week of record keeps the plain 7-day heading',async({page})=>{
 });
 test('D63 a calendar-invalid first day is not shown as a shifted date',async({page})=>{
  await open(page,fixture({dailyFrom:'2026-02-30'}).data);
+ await to30(page);
  expect(await label(page)).toBe('30d');
 });

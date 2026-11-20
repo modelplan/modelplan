@@ -70,6 +70,18 @@ type LiveSession struct {
 	LastAt          time.Time     `json:"lastAt"`
 	Status          string        `json:"status"`
 	Rate            Rate          `json:"rate"`
+	// InProgress is true while a turn is open: the parser reports one running, or an unexpired activity record says
+	// so. It can stay true after Status reads "idle" (activity expiry without a completion event). Totals read from
+	// the completed-turn ledger would undercount then, so consumers use this, never the Status word.
+	InProgress bool `json:"-"`
+}
+
+// turnOpen is the one definition of "a turn is in progress" for a live record at now (macrevb-1024-1).
+func (r LiveRecord) turnOpen(now time.Time) bool {
+	if r.Running {
+		return true
+	}
+	return r.Activity != nil && r.Activity.Phase != "finished" && now.Before(r.Activity.ExpiresAt)
 }
 
 func (p *claudeParser) liveProbe() liveProbe {
@@ -321,7 +333,7 @@ func (v PerfView) LiveSessions() []LiveSession {
 		if !r.LastAt.After(v.Now.Add(-LiveWithin)) || r.LastAt.After(v.Now) {
 			continue
 		}
-		x := LiveSession{Ref: r.Ref, Source: r.Source, Model: r.Model, Effort: r.Effort, EffortStatus: "unreported", Speed: r.Speed, StartedAt: r.StartedAt, LastAt: r.LastAt, Status: "idle", ProjectRef: refOrNil(r.ProjectRef), ProjectLabel: r.ProjectLabel, SubscriptionRef: refOrNil(r.SubscriptionRef)}
+		x := LiveSession{Ref: r.Ref, Source: r.Source, Model: r.Model, Effort: r.Effort, EffortStatus: "unreported", Speed: r.Speed, StartedAt: r.StartedAt, LastAt: r.LastAt, Status: "idle", ProjectRef: refOrNil(r.ProjectRef), ProjectLabel: r.ProjectLabel, SubscriptionRef: refOrNil(r.SubscriptionRef), InProgress: r.turnOpen(v.Now)}
 		if r.Effort != "" {
 			x.EffortStatus = "reported"
 		}

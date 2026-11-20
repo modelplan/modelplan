@@ -201,7 +201,7 @@ import ModelPlanShell
             let size = (surface as? any CommunityInstrumentSurface)?.preferredContentSize ?? CGSize(width:440,height:210)
             let panel = NSWindow(contentRect:NSRect(origin:.zero,size:size),
                 styleMask:[.titled,.closable],backing:.buffered,defer:false)
-            panel.title = hostText("ModelPlan Community", "ModelPlan 社区版"); panel.contentView = surface.view
+            panel.title = hostText("ModelPlan", "ModelPlan"); panel.contentView = surface.view
             panel.isReleasedWhenClosed = false; panel.delegate = self; panel.center(); window = panel
         }
         render(); runtime.store.refresh()
@@ -225,7 +225,7 @@ import ModelPlanShell
         closeWindowItem?.title = hostText("Close Window", "关闭窗口"); appQuitItem?.title = hostText("Quit", "退出")
         statusShowItem?.title = hostText("Status…", "状态…"); statusQuitItem?.title = hostText("Quit", "退出")
         intelItem?.title = hostText("Intel untested; 3D may stutter", "Intel 未测试，3D 效果可能卡顿")
-        window?.title = hostText("ModelPlan Community", "ModelPlan 社区版")
+        window?.title = hostText("ModelPlan", "ModelPlan")
     }
     private func render() {
         guard let runtime, !terminating else { return }

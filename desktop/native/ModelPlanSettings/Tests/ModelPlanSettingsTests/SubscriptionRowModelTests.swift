@@ -120,6 +120,23 @@ final class SubscriptionRowModelTests: XCTestCase {
         XCTAssertEqual(without.added[0].fix?.target, .explain, "no key area: the plain explanation stays")
     }
 
+    /// D322 (reader-fail-no-account): a tool that reads by default whose reader fails before any account exists shows
+    /// the table's one cause plus one next step in its own row, not a bare "Reading...".
+    func testD322FailedReaderWithNoAccountShowsItsCauseInTheToolRow() throws {
+        let facts = ["codex": ToolRowFacts(state: .failed, code: "runtime_missing")]
+        let model = build([], order: [], tools: [tool("codex")], facts: facts, reading: ["codex"])
+        let row = try XCTUnwrap(model.added.first { $0.id == "codex" })
+        let entry = try XCTUnwrap(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex", toolName: "Codex"))
+        XCTAssertEqual(row.status, entry.reason)
+        XCTAssertEqual(row.fix?.action, entry.action)
+        XCTAssertTrue(row.needsAttention)
+        XCTAssertEqual(row.causeCode, "runtime_missing")
+        // A reader with no failure keeps the plain "Reading..." line.
+        let calm = build([], order: [], tools: [tool("codex")], facts: ["codex": ToolRowFacts(state: .fresh, code: "ok")], reading: ["codex"])
+        XCTAssertEqual(calm.added[0].status, SettingsText("Reading…", "正在读取…"))
+        XCTAssertNil(calm.added[0].fix)
+    }
+
     func testDetectedNotAddedAndNotInstalledSections() {
         let tools = [tool("claude"), tool("codex"), tool("cursor"), tool("grok", block: .notSignedIn, readable: false), tool("gemini", detected: false)]
         let model = build([sub("claude", vendor: "claude")], order: ["claude"], tools: tools, reading: ["codex"])
@@ -157,6 +174,18 @@ final class SubscriptionRowModelTests: XCTestCase {
             XCTAssertEqual(model.row(forTool: "openai")?.id, "codex-1")
             XCTAssertEqual(model.row(forTool: "zai")?.id, "zai-1")
         }
+    }
+
+    /// Found-by post-merge sampling 2026-11-19 S1: Kiro's runtime_missing is a missing kiro-cli, never Node.js (row and card).
+    func testKiroRuntimeMissingNamesKiroCliNotNodeJS() {
+        let row = ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "kiro", toolName: "Kiro")
+        XCTAssertEqual(row?.reason.english, "kiro-cli was not found")
+        XCTAssertEqual(row?.action.english, "Install kiro-cli")
+        let card = ReaderCauseTable.entry(code: "runtime_missing", tool: "kiro", toolName: "Kiro")
+        XCTAssertEqual(card?.reason.english, "kiro-cli was not found")
+        XCTAssertFalse(card?.action.english.contains("Node") ?? true)
+        // Other tools keep the Node.js cause.
+        XCTAssertEqual(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex")?.reason.english, "Node.js is required")
     }
 
     func testFirstRunPrerequisiteLineUsesTheSameTable() {

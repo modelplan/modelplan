@@ -16,6 +16,8 @@ import ModelPlanWire
         ProfileRoot.current.prepareLaunch(helper: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"))
         // Persistent diagnostics (ModelPlan.log, engine.log), before any engine child starts so its stderr is kept.
         DiagnosticsLog.shared.configure(directory: ProfileRoot.current.logs)
+        // WP-17 (G3-123): the first cold-start stage, as soon as the log can hold it.
+        LaunchTimingLog.shared.mark("main")
         let info = Bundle.main.infoDictionary ?? [:]
         DiagnosticsLog.shared.notice("lifecycle", "launch version=\(info["CFBundleShortVersionString"] as? String ?? "unknown") "
             + "build=\(info["CFBundleVersion"] as? String ?? "unknown") macOS=\(ProcessInfo.processInfo.operatingSystemVersion.majorVersion).\(ProcessInfo.processInfo.operatingSystemVersion.minorVersion).\(ProcessInfo.processInfo.operatingSystemVersion.patchVersion) "
@@ -148,6 +150,8 @@ import ModelPlanWire
                 allowedEnvironment: profile.childEnvironment(ProcessInfo.processInfo.environment.filter { WireChildEnvironment.allowedKeys.contains($0.key) }),
                 minimumServerVersion: EngineRowsEntry.minimumAppServerVersion), settingsStore: preferences)
             NSApplication.shared.delegate = app
+            // D57: once the run loop is up, ask the person to remove a pre-rename app that is still running.
+            Task { @MainActor in LegacyAppNotice.presentIfNeeded() }
             withExtendedLifetime(app) { NSApplication.shared.run() }
         } catch { fputs("ModelPlan preferences could not load. Existing data was preserved.\n", stderr) }
     }

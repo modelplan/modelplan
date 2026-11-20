@@ -6,7 +6,7 @@
 import {t} from '../i18n.js';
 import {chartPalette} from '../chart-colours.js';
 import {esc, tok, unit, md, mon, tip, fill} from './fmt.js';
-import {accountsIn} from './scope.js';
+import {accountsIn, rangeKey} from './scope.js';
 import {statusItems,statusRow} from './public-helpers.js';
 
 // The same local wall time `back` calendar days earlier: a day across a DST change is 23 or 25 hours, so fixed 24-hour
@@ -137,9 +137,10 @@ export const overview = {
   optionKeys: ui => [
     // v1: the Grid key is shown but not lit and changes nothing (CKP-MFD-62); the heatmap code above is for v1.1.
     {id: 'chart', a: {value:'bars', text: t('mfd.oBars'), on: true}, b: {value:'bars', text: t('mfd.oGrid'), on: false}},
-    {id:'days',items:[{value:24,text:'24h',on:ui.days===24},{value:7,text:'7',on:ui.days===7},{value:30,text:'30',on:ui.days===30}]},
+    // CKP-SHELL-50: the app's range; Today is the 24-hour chart (ui.days follows the range in the deck).
+    rangeKey(ui),
     {id:'stack',a:{value:'stack', text:t('mfd.oStack'),on:ui.stack},b:{value:'split', text:t('mfd.oSplit'),on:!ui.stack}},
-    ],
+    null],
   render(d, ui) {
     // The taller screen shows four alert lines, the short one only the tightest plus "+N ▸" (V1-FINAL §13); the chart
     // takes the rest of the height (data-fill), so the page always fills the screen.
@@ -162,7 +163,7 @@ export const overview = {
   },
   onClick(act, val, ui) {
     if (act === 'opt' && val === 'chart') return {patch: {mfdChart: 'bars'}};
-    if (act === 'opt' && val === 'days') return {patch: {mfdDays: ui.optionChoice != null ? Number(ui.optionChoice) : ui.days === 30 ? 24 : ui.days === 24 ? 7 : 30}};
+    if (act === 'opt' && val === 'range') return {range: ui.optionChoice};
     if (act === 'opt' && val === 'stack') return {patch: {mfdStack: ui.optionChoice != null ? ui.optionChoice === 'stack' : !ui.stack}};
     if (act === 'alerts') return {open: ['alerts', {from: 'mfd', key: 'alerts'}]};
     return null;

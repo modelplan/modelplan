@@ -445,6 +445,71 @@ extension CommunityCockpitEntryTests {
         }
     }
 
+    /// CKP-MFD-55/56 (WP-11) on the real page and panel, GUI leg: a real click on the ALERT lamp opens the alert list
+    /// (title "Alerts · N" and one row per alert, or "No alerts"); a second click returns to the page it came from.
+    @MainActor func testCKP_MFD_55LampClickOpensAndClosesTheRealAlertList() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        let usable = CGRect(x: 0, y: 0, width: 1680, height: 1026)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ckp-mfd-55-" + UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+        let settings = try await completedOnboarding(try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"]))
+        let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+        let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
+        let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
+        defer { page.discard() }
+        page.verificationPlacement = (usable: usable, anchor: CGRect(x: usable.maxX - 340, y: usable.maxY, width: 28, height: 24))
+        NSApp.activate(ignoringOtherApps: true)
+        page.open()
+        let window = try XCTUnwrap(page.window), web = try XCTUnwrap(page.verificationWebView)
+        window.makeKeyAndOrderFront(nil)
+        func pageValue(_ script: String) async -> [String: Any]? { (try? await web.evaluateJavaScript(script)) as? [String: Any] }
+        let probe = "(()=>{const l=document.querySelector('[data-caution]');if(!l||!document.documentElement.dataset.profile)return null;const r=l.getBoundingClientRect(),h=document.querySelector('.pg-alerts .al-head');return {x:r.x+r.width/2,y:r.y+r.height/2,active:document.getElementById('cockpit').dataset.active,open:!!h,head:h?h.textContent:'',rows:document.querySelectorAll('.pg-alerts .mfd-alerts.all > li:not(.al-none)').length,none:document.querySelectorAll('.pg-alerts .al-none').length}})()"
+        var state: [String: Any]?
+        var deadline = ContinuousClock.now + .seconds(30)
+        while ContinuousClock.now < deadline {
+            state = await pageValue(probe)
+            if state?["active"] as? String == "true" { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let before = try XCTUnwrap(state, "the page must be painted")
+        guard NSApp.isActive, window.isKeyWindow else {
+            throw XCTSkip("CKP-MFD-55 needs an active app and key cockpit window (GUI Mac); this runner has app active \(NSApp.isActive), key \(window.isKeyWindow)")
+        }
+        XCTAssertEqual(before["open"] as? Bool, false, "the list starts closed")
+        let scale = page.verificationLayout?.scale ?? 1
+        func click() throws {
+            let content = try XCTUnwrap(window.contentView), h = web.frame.maxY
+            let p = content.convert(CGPoint(x: (before["x"] as! Double) * scale, y: h - (before["y"] as! Double) * scale), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                window.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)))
+            }
+        }
+        for open in [true, false] {
+            try click()
+            deadline = ContinuousClock.now + .seconds(10)
+            var drawn: [String: Any]?
+            while ContinuousClock.now < deadline {
+                drawn = await pageValue(probe)
+                if drawn?["open"] as? Bool == open { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            XCTAssertEqual(drawn?["open"] as? Bool, open, "a lamp click \(open ? "opens" : "closes") the alert list")
+            if open {
+                let head = drawn?["head"] as? String ?? "", rows = drawn?["rows"] as? Int ?? -1, none = drawn?["none"] as? Int ?? -1
+                XCTAssertEqual(head, "Alerts · \(rows)", "the title counts the rows")
+                XCTAssertEqual(none, rows == 0 ? 1 : 0, "an empty list says so")
+            }
+            try await Task.sleep(for: .milliseconds(200))
+        }
+    }
+
     /// CKP-SHELL-07 / owner D51, C-02, C-03 on the real page and panel: an Air shows the full cockpit with its flame
     /// reserve, scaled as one page (WebKit page zoom, not a bitmap), with the strip and shutter still hit where drawn.
     /// Covers 1470x956 with the Dock at the bottom, the lowest full scale (75 %) and a live switch to 80 %.
