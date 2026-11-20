@@ -130,10 +130,13 @@ final class CockpitPluginBridgeTests: XCTestCase {
         bridge.observeRunning { second.append($0) }
         bridge.observeChoices { choices.append($0.enabledIDs()) }
         bridge.sampler.register("placeholder") { reads += 1; return ["value": 1] }
-        XCTAssertEqual(first, [[]]); XCTAssertEqual(second, [[]]); XCTAssertEqual(choices, [[]], "observers start from the current values")
+        // The catalogue's default-on plugins (the calendar since #844) are the current choice before any edit.
+        let initial = bridge.model.preferences.enabledIDs()
+        XCTAssertFalse(initial.contains("placeholder"))
+        XCTAssertEqual(first, [[]]); XCTAssertEqual(second, [[]]); XCTAssertEqual(choices, [initial], "observers start from the current values")
         let enabled = await bridge.model.perform(.setEnabled("placeholder", true))
         XCTAssertTrue(enabled)
-        XCTAssertEqual(choices.last, ["placeholder"])
+        XCTAssertEqual(choices.last, ["placeholder"] + initial, "the placeholder is first in the catalogue")
         coordinator.onPluginsRunning?(["placeholder"])
         XCTAssertEqual(first.last, ["placeholder"]); XCTAssertEqual(second.last, ["placeholder"])
         XCTAssertEqual(reads, 1, "the sampler still follows the running set")
