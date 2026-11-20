@@ -53,6 +53,7 @@ test('CKP-ENG-24 the empty bay add-subscription opens Settings on the Subscripti
  await open(page,data);
  await page.evaluate(()=>{window.sent.length=0;});
  await page.locator('.ec-add').first().click();
+ await page.locator('.pl-menu .pm-more[data-pm-all]').click();
  expect(await page.evaluate(()=>window.sent.filter(m=>m.type==='action').map(m=>m.action))).toEqual(['openSettingsSubscriptions']);
 });
 

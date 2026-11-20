@@ -131,6 +131,8 @@ for(const n of [1,2])test(`CKP-ENG-56 ${n} subscription(s): one quiet add afford
  await page.locator('.eng-cols > .ec-bay').first().hover();
  expect(Number(await add.evaluate(e=>getComputedStyle(e).opacity))).toBeGreaterThan(rest);
  await page.locator('.eng-cols > .ec-bay').first().click();
+ // The bay opens the add menu (WP-18); its all-subscriptions row is the way into Settings > Subscriptions.
+ await page.locator('.pl-menu .pm-more[data-pm-all]').click();
  expect(await page.evaluate(()=>window.sent.filter(m=>m.type==='action').at(-1)?.action)).toBe('openSettingsSubscriptions');
 });
 
