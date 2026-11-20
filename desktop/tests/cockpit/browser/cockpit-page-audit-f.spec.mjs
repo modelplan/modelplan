@@ -7,14 +7,17 @@ import {visualFixture} from '../visual-fixture.mjs';
 
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 const model=(id,developerId)=>({id,name:'Synthetic '+id,developerId,recommended:'medium',efforts:[{effort:'low',label:'Low',star:false,ability:30,cost:1,time:null},{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]});
-const session=(ref,source,model,effort)=>({sessionRef:ref,source,subscriptionRef:null,model,effort,projectLabel:null,lastObservedAt:new Date().toISOString(),state:'running',rate:null});
+// The faders order by recency, so each session gets an explicit age: two `new Date()` reads one millisecond apart swapped slots 0 and 1
+// on a loaded runner (a2 newer than a1), and the trial then sat on slot 0 while the test looked at slot 1.
+const NOW=Date.now();
+const session=(ref,source,model,effort,agoSec=0)=>({sessionRef:ref,source,subscriptionRef:null,model,effort,projectLabel:null,lastObservedAt:new Date(NOW-agoSec*1000).toISOString(),state:'running',rate:null});
 // As c-fader-banks.spec.mjs: faders used, also-used, lineup-1, lineup-2, more-1, more-2, more-3 (banks 3, 3, 1).
 function fixture(){
  const data=visualFixture().data;
  const publication=[model('used','openai'),model('lineup-1','openai'),model('lineup-2','anthropic')];
  data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:true,models:publication};
  data.details.publishedModels=[...publication,model('more-1','openai'),model('xai-1','xai'),model('more-2','openai'),model('also-used','anthropic'),model('more-3','openai')];
- data.details.sessions=[session('00000000000000a1','codex','used','medium'),session('00000000000000a2','claude','also-used','medium')];
+ data.details.sessions=[session('00000000000000a1','codex','used','medium',20),session('00000000000000a2','claude','also-used','medium',40)];
  return data;
 }
 async function open(page,data){
