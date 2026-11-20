@@ -5,7 +5,7 @@ import {t} from '../i18n.js';
 import '../strings/review49.js';
 import {scopedProject} from '../project-attribution.js';
 import {esc, tok, dhm, stamp, chip, bolt} from './fmt.js';
-import {accountOf, modelOf, poolsIn, sessionsIn, accountsIn, rangeKey, rangeOf} from './scope.js';
+import {accountOf, modelOf, poolsIn, sessionsIn, accountsIn, rangeOf} from './scope.js';
 import {rangeWord} from './page-range.js';
 
 // TODO(#1050, WP-06): the ≈cost cell stays empty until the client-v1.6 price data (~11-21) reaches this page.
@@ -45,10 +45,9 @@ function timeline(d, ui) {
 
 export const where = {
   id: 'where', title: 'mfd.pWhere',
-  // 项目 | 会话 and the app's range key (CKP-SHELL-50, WP-09).
+  // 项目 | 会话 only: the page has no range key of its own; it follows the header range (V1-FINAL 8.4, CKP-MFD-67).
   optionKeys: ui => [
     {id: 'where', a: {value:'proj', text: t('mfd.oProj'), on: ui.where !== 'time'}, b: {value:'time', text: t('mfd.oSessions'), on: ui.where === 'time'}},
-    rangeKey(ui),
     null, null],
   render: (d, ui) => ui.where === 'time' ? timeline(d, ui) : projects(d, ui),
   onClick(act, val, ui) {

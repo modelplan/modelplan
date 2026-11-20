@@ -105,6 +105,7 @@ test('CKP-MFD-66 the Models chart key shows the frontier and names only the sele
 test('CKP-MFD-67 the Breakdown page has one key, Projects | Sessions; project rows carry their share as a bar',async({page})=>{
  await open(page,withHistory());await page.locator('[data-mfd="page:where"]').click();
  expect(await page.locator('.ok[data-opt="where"] b').allTextContents()).toEqual(['Projects','Sessions']);
+ await expect(page.locator('.mfd-ok [data-opt="range"]')).toHaveCount(0);await expect(page.locator('.mfd-ok .ok:not(.off)')).toHaveCount(1);
  await expect(page.locator('.mfd-page .wd-h')).toHaveText('7d · 2 projects');
  expect(await page.locator('.mfd-page .wd').evaluateAll(r=>r.map(x=>x.dataset.p+'%'))).toEqual(['90%','10%']);
  await expect(page.locator('.mfd-page .wd .wd-s').first()).toHaveText('90%');
