@@ -40,6 +40,7 @@ async function open(page) {
    screen:()=>({lines:[{label:'fallback',value:'line'}],draw:draw('screen')}),
   };
   window.__host=mountPluginHost(document.getElementById('cockpit'),{state(){},running(){}},new PluginRegistry([plugin]));
+  window.__host.applyHostState({version:1,entries:[{id:'probe',enabled:true,pinned:false}],settings:{}});
   window.__host.setVisible(true);window.__host.setInteractive(true);
  });
  // Repaint: the engine now lays its table out through the probe's host.
