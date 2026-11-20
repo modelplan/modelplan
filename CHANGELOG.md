@@ -6,6 +6,34 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.65 (2026-11-19)
+
+- The cockpit session strip now reads tool, project, model and effort, elapsed time and the session's total tokens for each session, and ends in the live speed ("● 58 t/s") while it runs or how long ago it was seen ("6m ago") when it is idle. A time, token total or speed that is not known is left out instead of written as "--". A model that is not in the published list but has a readable name shows that name with a dim "Not listed" badge, and a name that cannot be read reads "Unknown model". When more sessions are running than fit, the last line reads "3 more sessions" and opens the Breakdown page; with no session the strip says so in one grey line. Clicking a line again, or the empty strip, clears the model it lit. The cockpit data now carries each session's start time, total tokens and, for an unlisted model, its display name.
+
+- CI-only: the Mac compile check clears read-only scratch and seed clones before wiping them, and builds cold instead of failing when a temp directory cannot be deleted.
+
+- Forgetting a tool while a refresh is reading now waits up to two seconds for the refresh to finish instead of reporting that the reader is busy.
+
+- ZCode / GLM keeps reading after the first-run Done: allowing it no longer switches the read from ZCode's own key file to an environment variable the app does not have, so its widget ring and cockpit column appear.
+
+- With two displays, the attached cockpit and its launch rack always open under the menu bar icon's display, even when the widget's ignition is on the other display, and Put back returns a cockpit dragged to another display home under the icon. On a put back the rack starts unfolding together with the cockpit's flight. A cockpit you just detached comes to the front and takes the keyboard, and stays an ordinary window afterwards. The cockpit now has one size on every display: Auto picks 85 % when any connected display is laptop-width and 100 % only when all are wider, and every size is capped so the cockpit fits the smallest connected display, so dragging it between displays never resizes it.
+
+- Order the cockpit faders by what the history shows was used in the last 7 and 30 days, after sessions seen in the last 7 days and before unused recommendations.
+
+- Clients accept a lineup tie of 0.815 as well as 1: the index display scale moves to version 0.4, where the same one-point tie reads 0.815. Verdicts are unchanged.
+
+- The Codex Ultrafast speed line now labels the Pro $200 plan instead of dropping it.
+
+- The cockpit's launch rack no longer hangs into empty space under the menu bar when the cockpit opens or closes with the shutter closed: its mask line now follows the shutter state.
+
+- Keep the launch rack clipped to the attached cockpit when its size changes in Settings.
+
+- While you have an enabled subscription, the app now re-checks the publication for announced reset notices every 15-30 minutes (a conditional request, spread per client) instead of every six hours. Reset notices travel in the same publication, so when the pointer changes the whole publication switches with them; an unchanged cache is still force-refreshed only on the six-hour rule (DOCK-3.8-30).
+
+- Codex and Claude Code usage now counts responses independently of speed samples, including unfinished turns. The today number includes input, cached input and output tokens; generation speed remains output tokens per second. The CLI exposes local-day today/7-day/30-day accounting with separate cache and reasoning buckets, without counting reasoning twice.
+
+- OpenCode, Gemini CLI and Qwen Code now use local-day token accounting based on ccusage: OpenCode counts completed compactions and a reported total the other buckets leave out, and no longer counts the parent history a forked session copies; Gemini and Qwen local usage reports add input without cache, cache read, output and reasoning for today, the last 7 days and the last 30 days, with the total as the sum of those buckets. Qwen counts cached prompt tokens once: input excludes cache, intentionally correcting ccusage's overlap. OpenCode keeps running compactions pending so a status-only completion counts once after the cursor advances.
+
 ## CLI v0.5.64 (2026-11-17)
 
 - The cockpit's effort faders are now the top-down throttle the owner chose: each model's real lever sits in a chamfered slot plate, day and night, and dragging it moves a translucent blue ghost grip with a thin blue line along the slot that snaps to the nearest effort the model has when released, while the real lever stays on the current effort. The recommended effort is a small gold ★ tick on the slot scale, and every lever is drawn exactly on its column's centre (it looked off-centre on the GLM column before). The community edition keeps the flat fader.
