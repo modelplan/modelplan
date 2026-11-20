@@ -32,6 +32,11 @@ register('mfd', {
   oTime: ['silk', '时间', 'Time'],
   oToday: ['silk', '今日', 'Today'],
   o7d: ['silk', '7天', '7 days'],
+  // CKP-SHELL-50 (WP-09): the one range key, the same words as the menu bar and the title bar (V1-FINAL §0)
+  rToday: ['silk', '今天', 'Today'],
+  r7d: ['silk', '7天', '7d'],
+  r30d: ['silk', '30天', '30d'],
+  rangeNoToday: ['text', '今天的统计还没有，见 7天 或 30天', 'No statistics for today yet; see 7d or 30d'],
   oNow: ['silk', '概况', 'Now'],
   oHist: ['silk', '记录', 'History'],
   oLatest: ['silk', '最新', 'Latest'],
