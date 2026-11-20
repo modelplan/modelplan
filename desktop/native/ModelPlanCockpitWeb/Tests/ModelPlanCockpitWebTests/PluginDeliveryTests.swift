@@ -5,7 +5,7 @@ import ModelPlanWire
 @testable import ModelPlanCockpitWeb
 
 #if MODELPLAN_TEST_ONLY_SPI
-/// #1104 review: the window controller's plugin delivery (macrevd-1104-2/-3, macrevb-1104-3, macrev2-1104-4/-5/-6).
+/// #1104 review: the window controller's plugin delivery (macrevd-1104-2/-3, macrevb-1104-3/-6/-8, macrev2-1104-4/-5/-6).
 /// Drives the real controller, ordered queue and bridge on a no-window page.
 @MainActor final class PluginDeliveryTests: XCTestCase {
   private let source = CockpitMessageSource(mainFrame: true, origin: "modelplan-cockpit://bundle")
@@ -88,7 +88,8 @@ import ModelPlanWire
     page.discard()
   }
 
-  /// #1096 card action: the controller holds a screen request until the page has its plugin state, then sends it after.
+  /// #1096 card action: the controller holds a screen request until the page has confirmed its plugin state
+  /// (macrevb-1104-8), then sends it after.
   func testPluginScreenRequestWaitsForThePluginState() throws {
     let (page, box) = try readyPage()
     var done = box.sent.count
@@ -96,12 +97,115 @@ import ModelPlanWire
     XCTAssertEqual(box.sent.count, done, "no plugin state yet: held")
     XCTAssertEqual(page.pluginScreenWanted, "placeholder")
     page.setPlugins(stateA)
-    let types = box.sent[done...].map { type($0.0) ?? "?" }
-    XCTAssertEqual(types, ["plugins", "pluginScreen"], "sent right after the state the page needs to open it")
+    XCTAssertEqual(box.sent[done...].map { type($0.0) ?? "?" }, ["plugins"], "the state goes first")
+    XCTAssertEqual(page.heldPluginScreen, "placeholder", "held until the page confirms the state")
+    box.sent[done].1(.accepted); done += 1
+    XCTAssertEqual(box.sent[done...].map { type($0.0) ?? "?" }, ["pluginScreen"], "sent once the page has its state")
     XCTAssertNil(page.pluginScreenWanted, "sent once")
     completeAll(box, from: &done)
+    XCTAssertNil(page.heldPluginScreen)
     page.openPluginScreen("placeholder")
     XCTAssertEqual(type(box.sent.last!.0), "pluginScreen", "with state on the page, a request goes at once")
+    page.discard()
+  }
+
+  /// macrevb-1104-8: the first state delivery fails while the page stays alive. The screen request is not sent to a page
+  /// that has not negotiated plugins; once the state is resent and confirmed it opens exactly once, without a new request.
+  func testAHeldScreenOpensOnceAfterTheFirstStateDeliveryFails() throws {
+    let (page, box) = try readyPage()
+    var done = box.sent.count
+    page.openPluginScreen("placeholder")
+    page.setPlugins(stateA)
+    XCTAssertEqual(box.sent[done...].map { type($0.0) ?? "?" }, ["plugins"])
+    box.sent[done].1(.failed); done += 1
+    XCTAssertFalse(box.sent.contains { type($0.0) == "pluginScreen" }, "never sent before the page took the state")
+    XCTAssertEqual(page.heldPluginScreen, "placeholder")
+    // The queue moves (a visibility change): the state goes again, is confirmed, then the screen follows.
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: false))
+    completeAll(box, from: &done)
+    XCTAssertEqual(page.pluginsAccepted, CockpitPluginWire.canonical(json: stateA))
+    XCTAssertEqual(box.sent.filter { type($0.0) == "pluginScreen" }.count, 1, "the requested screen opens exactly once")
+    XCTAssertNil(page.heldPluginScreen)
+    XCTAssertEqual(box.failures, [])
+    page.discard()
+  }
+
+  /// macrevb-1104-8: the same when the first state delivery is dropped (full queue) instead of failing.
+  func testAHeldScreenOpensOnceAfterTheFirstStateDeliveryIsDropped() throws {
+    let (page, box) = try readyPage()
+    var done = box.sent.count
+    page.openPluginScreen("placeholder")
+    page.verificationRefuseSubmissions = 1
+    page.setPlugins(stateA)
+    XCTAssertEqual(box.sent.count, done, "the state was dropped")
+    XCTAssertEqual(page.heldPluginScreen, "placeholder")
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: false))
+    completeAll(box, from: &done)
+    XCTAssertEqual(page.pluginsAccepted, CockpitPluginWire.canonical(json: stateA))
+    let types = box.sent.compactMap { type($0.0) }.filter { $0 == "plugins" || $0 == "pluginScreen" }
+    XCTAssertEqual(types.filter { $0 == "pluginScreen" }.count, 1, "the requested screen opens exactly once")
+    XCTAssertEqual(types.last, "pluginScreen", "after the state")
+    XCTAssertNil(page.heldPluginScreen)
+    page.discard()
+  }
+
+  /// macrevb-1104-6 (CKP-PLG-50/54): with A confirmed, B is committed and A again before the page answers B. The page
+  /// accepts B, then A reaches it without another edit or visibility event.
+  func testAReturnToTheConfirmedStateWhileAnotherIsInFlightReachesThePage() throws {
+    let (page, box) = try readyPage()
+    var done = box.sent.count
+    page.setPlugins(stateA); completeAll(box, from: &done)
+    XCTAssertEqual(page.pluginsAccepted, CockpitPluginWire.canonical(json: stateA))
+    page.setPlugins(stateB)
+    let held = done
+    XCTAssertEqual(pluginsBody(box.sent[held].0), CockpitPluginWire.canonical(json: stateB))
+    page.setPlugins(stateA)
+    box.sent[held].1(.accepted); done = held + 1
+    let plugins = box.sent.filter { type($0.0) == "plugins" }
+    XCTAssertEqual(pluginsBody(plugins.last!.0), CockpitPluginWire.canonical(json: stateA), "A is sent after B is accepted")
+    completeAll(box, from: &done)
+    XCTAssertEqual(page.pluginsAccepted, CockpitPluginWire.canonical(json: stateA), "the page ends on the committed state")
+    let count = box.sent.count
+    page.setPlugins(stateA)
+    XCTAssertEqual(box.sent.count, count, "and it is not sent again")
+    page.discard()
+  }
+
+  /// macrevb-1104-6: the same return while B's call is lost to a queue invalidation (hide). What the page shows is then
+  /// unknown, so the committed A is sent when the page is shown again.
+  func testAReturnToTheConfirmedStateSurvivesAnInvalidatedDelivery() throws {
+    let (page, box) = try readyPage()
+    var done = box.sent.count
+    page.setPlugins(stateA); completeAll(box, from: &done)
+    page.setPlugins(stateB)
+    let held = done
+    page.setPlugins(stateA)
+    page.verificationSetHostVisibility(.init(visible: true, occluded: true, key: false))
+    box.sent[held].1(.accepted) // completes after the invalidation: not counted
+    done = held + 1
+    completeAll(box, from: &done)
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: true))
+    completeAll(box, from: &done)
+    let plugins = box.sent.filter { type($0.0) == "plugins" }
+    XCTAssertEqual(pluginsBody(plugins.last!.0), CockpitPluginWire.canonical(json: stateA))
+    XCTAssertEqual(page.pluginsAccepted, CockpitPluginWire.canonical(json: stateA))
+    page.discard()
+  }
+
+  /// macrevb-1104-6: while a page edit is being saved, a delivery that completes or a show does not send the older
+  /// committed state back over the edit.
+  func testAPageEditIsNotRevertedWhileItIsSaved() throws {
+    let (page, box) = try readyPage()
+    var done = box.sent.count
+    page.setPlugins(stateA); completeAll(box, from: &done)
+    let editBody = try XCTUnwrap(JSONSerialization.jsonObject(with: stateB))
+    page.verificationReceive(try pageMessage(box.sent.last!.0, "action", extra: ["action": "pluginsEdit", "plugins": editBody]), source: source)
+    let count = box.sent.filter { type($0.0) == "plugins" }.count
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: false))
+    completeAll(box, from: &done)
+    XCTAssertEqual(box.sent.filter { type($0.0) == "plugins" }.count, count, "the edit stays on the page")
+    page.setPlugins(stateB) // saved
+    XCTAssertEqual(box.sent.filter { type($0.0) == "plugins" }.count, count)
     page.discard()
   }
 

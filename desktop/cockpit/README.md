@@ -146,7 +146,7 @@ page. The page has no timers; the host samples. Messages, all with the common he
 
 Native host (macrevc-844-1): `CockpitPluginWire.canonical` applies `parsePluginState`'s rules in both directions;
 `plugins` is the one nested reply value (at most 4 levels, 64 unique keys per object, 32 items per array, 64 KiB).
-The window sends `plugins` on ready, after every clear and on change (never the same state twice to one page);
+The window sends `plugins` on ready, after every clear and on change (never a state the page confirmed twice; a failed or lost call is sent again, and a change made while another state is in flight is sent once that one is answered); a `pluginScreen` request waits until the page confirmed a plugin state;
 `pluginsRunning` is accepted without focus, `pluginsEdit` only from the active page. The running set drops to `[]`
 when the page goes or is cleared. `CockpitPluginBridge` (ModelPlanAppIntegration) keeps the durable copy in
 `cockpit-plugins.json` and drives `CockpitPluginSampler`, which reads registered plugins at their interval.

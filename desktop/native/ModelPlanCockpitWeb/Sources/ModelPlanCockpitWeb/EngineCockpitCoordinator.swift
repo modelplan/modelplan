@@ -48,6 +48,8 @@ import ModelPlanWire
   func sendPluginData(id: String, data: [String: Any])
   /// Open this plugin's big screen once the page can (after its plugin state).
   func openPluginScreen(_ id: String)
+  /// macrevb-1104-8: a screen request the page holds and has not delivered yet.
+  var heldPluginScreen: String? { get }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket)
   func clearPrivateViews(adopting: CockpitEngineContext?) async
   func discard()
@@ -74,6 +76,7 @@ public extension CockpitPageSurface {
   func setPlugins(_ json: Data) {}
   func sendPluginData(id: String, data: [String: Any]) {}
   func openPluginScreen(_ id: String) {}
+  var heldPluginScreen: String? { nil }
 }
 extension CockpitWindowController: CockpitPageSurface {}
 
@@ -423,8 +426,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       self.pageGeneration = nil
       self.scopeMembers.removeAll()
       self.cancelQuery()
-      self.page = nil
       let wasPresented = self.presented
+      // macrevb-1104-8: a hidden page that goes before it could open a requested screen hands it to the next page.
+      if !wasPresented, let held = self.page?.heldPluginScreen { self.pluginScreenRequest = held }
+      self.page = nil
       self.presented = false; self.presentedPageRendered = false
       self.openingReply = nil; self.openingFreshPending = false; self.openingShown = false
       if wasPresented { self.onClosed?() }
@@ -516,6 +521,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     prewarmTask?.cancel(); prewarmTask = nil
     guard let warm = page, !presented else { return }
     cancelQuery()
+    if let held = warm.heldPluginScreen { pluginScreenRequest = held }
     page = nil; pageGeneration = nil; scopeMembers.removeAll()
     warm.discard()
     CockpitTimingLog.record("prewarm released")

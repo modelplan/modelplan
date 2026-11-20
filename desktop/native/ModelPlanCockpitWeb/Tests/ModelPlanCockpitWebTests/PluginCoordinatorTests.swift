@@ -14,6 +14,8 @@ import XCTest
   /// Plugin calls in order: "plugins" and "screen:<id>".
   var calls: [String] = []
   func openPluginScreen(_ id: String) { calls.append("screen:" + id) }
+  /// A screen request the page took and did not deliver yet (macrevb-1104-8).
+  var heldPluginScreen: String?
   /// Whether the state arrived before the page was opened (it must be there before the load).
   var pluginsBeforeOpen: [Bool] = []
   func setPlugins(_ json: Data) { plugins.append(json); pluginsBeforeOpen.append(!opened); calls.append("plugins") }
@@ -69,6 +71,31 @@ final class PluginCoordinatorTests: XCTestCase {
     coordinator.openPluginScreen("placeholder")
     XCTAssertEqual(pages.first?.calls.last, "screen:placeholder", "the current page gets it at once")
     XCTAssertEqual(pages.count, 1)
+    await coordinator.shutdown(); await client.stop()
+  }
+
+  /// macrevb-1104-8: a hidden page that goes before it delivered a screen request hands it to the next page.
+  @MainActor func testAHeldScreenRequestOutlivesAReleasedHiddenPage() async throws {
+    var pages: [PluginPage] = []
+    let coordinator = EngineCockpitCoordinator { _ in let page = PluginPage(); pages.append(page); return page }
+    let client = HeldClient(); coordinator.bind(client: client)
+    coordinator.pluginsJSON = state
+    coordinator.prewarmDelay = .zero
+    coordinator.prewarmEnabled = true
+    await coordinator.consume(.context(delivery()))
+    for _ in 0..<500 where pages.isEmpty { try await Task.sleep(for: .milliseconds(2)) }
+    let warm = try XCTUnwrap(pages.first)
+    coordinator.openPluginScreen("placeholder")
+    XCTAssertEqual(warm.calls.last, "screen:placeholder", "the hidden page takes the request")
+    XCTAssertNil(coordinator.pluginScreenRequest)
+    warm.heldPluginScreen = "placeholder" // its plugin state has not been confirmed yet
+    coordinator.releaseWarmPage()
+    XCTAssertEqual(coordinator.pluginScreenRequest, "placeholder", "the request is not lost with the page")
+    coordinator.open()
+    let next = try XCTUnwrap(pages.last)
+    XCTAssertFalse(next === warm)
+    XCTAssertEqual(next.calls, ["plugins", "screen:placeholder"], "the next page gets it after its plugin state")
+    XCTAssertNil(coordinator.pluginScreenRequest)
     await coordinator.shutdown(); await client.stop()
   }
 
