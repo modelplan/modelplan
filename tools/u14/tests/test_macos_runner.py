@@ -51,8 +51,8 @@ class MacosHarnessTests(unittest.TestCase):
         for directory in ['Contents/MacOS','Contents/Helpers','Contents/Resources']:
             (app/directory).mkdir(parents=True,exist_ok=True)
         import plistlib
-        (app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'ModelPlanCommunity'}))
-        executable=app/'Contents/MacOS/ModelPlanCommunity';executable.write_bytes(b'app');executable.chmod(0o700)
+        (app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'ModelPlan'}))
+        executable=app/'Contents/MacOS/ModelPlan';executable.write_bytes(b'app');executable.chmod(0o700)
         helper=app/'Contents/Helpers/modelplan';helper.write_bytes(b'helper');helper.chmod(0o700)
         pin=app/'Contents/Resources/modelplan.sha256';pin.write_text(digest(b'helper')+'\n')
         self.assertEqual(mac.verify_app(app)[1],helper)

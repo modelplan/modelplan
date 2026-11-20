@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {pluginLayout,pageOfSubscription} from '../../../cockpit/.tmp/compiled/src/plugin-layout.js';
-import {PluginRegistry,builtinPlugins,placeholderPlugin,PLUGIN_INKS} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
+import {PluginRegistry,builtinPlugins,placeholderPlugin,PLUGIN_INKS,PLUGIN_TOKENS} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
 import {checkBudgets,tables} from '../../../cockpit/study/rocket-r1/i18n.js';
 import '../../../cockpit/study/rocket-r1/strings/plugins.js';
 import {parsePluginState,emptyPluginState,materialize,enabledPlugins,enablePlugin,disablePlugin,pinPlugin,movePlugin,setPluginSetting,pluginSettings} from '../../../cockpit/.tmp/compiled/src/plugin-state.js';
@@ -136,4 +136,21 @@ test('CKP-PLG-54 the Swift Settings catalogue mirrors the web registry (ids, sum
  // CKP-PLG-54: Settings shows the page's own one sentence, in both languages.
  for(const plugin of registry.list())assert.ok(swift.includes(`summary: .init("${tables.en[plugin.summary]}", "${tables['zh-CN'][plugin.summary]}")`),`${plugin.id} summary`);
  assert.match(swift,/maximumPinned = 2\b/);assert.match(swift,/maximumEntries = 32\b/);
+});
+
+test('D323 custom draw: the registry stays DOM-free and the draw tokens are cockpit variables the sheets define',()=>{
+ const source=readFileSync(new URL('../../../cockpit/src/plugin-registry.ts',import.meta.url),'utf8');
+ assert.doesNotMatch(source,/\bdocument\.|\bwindow\.|^import (?!type)[^;]*from '\.\/(?:plugin-host|view|prototype-[a-z]+)\.js'/m);
+ // The stylesheets the bundle actually ships: build.mjs's prototype sheet list plus web/cockpit.css.
+ const build=readFileSync(new URL('../../../cockpit/build.mjs',import.meta.url),'utf8'),list=/const sheets=\[([^\]]+)\]/.exec(build)?.[1];
+ assert.ok(list,'build.mjs lists its sheets');
+ const shipped=['web/cockpit.css',...[...list.matchAll(/'([a-z0-9-]+)'/g)].map(m=>`prototype/prototype-${m[1]}.css`)];
+ assert.ok(shipped.length>3,'the shipped sheet list was read');
+ const sheets=shipped.map(f=>readFileSync(new URL('../../../cockpit/'+f,import.meta.url),'utf8')).join('\n');
+ for(const [name,value] of Object.entries(PLUGIN_TOKENS)){
+  const variable=/^var\((--[a-z0-9-]+)\)$/.exec(value)?.[1];
+  assert.ok(variable,name);assert.match(sheets,new RegExp(variable+':'),`${name} ${variable} is defined`);
+ }
+ // A plugin without draw is drawn from its cells exactly as before.
+ assert.equal(placeholderPlugin.column(undefined,{locale:'en',settings:{intervalSeconds:10},words:k=>({full:k,short:k})}).draw,undefined);
 });

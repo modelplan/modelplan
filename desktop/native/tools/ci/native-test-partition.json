@@ -80,6 +80,7 @@
         "InstrumentHintSourceRouterTests",
         "M5CreditsDisplayFormatTests",
         "MenuHostDispatchJourneyTests",
+        "MenuRangeSummaryTests",
         "NativeAccountDockProjectionTests",
         "NormalEntrySettingsJourneyTests",
         "ObservedPlacementAdapterTests",
@@ -125,7 +126,7 @@
           "leg": "gui",
           "reason": "needs the real synthetic-test CLI, which the native job does not build"
         },
-        "CommunityCockpitEntryTests/testNormalEntryKeepsTheScopeForTheDayAndStartsTheNextDayAtAll": {
+        "CommunityCockpitEntryTests/testNormalEntryKeepsTheScopeAndRangeAcrossRestartsAndDays": {
           "leg": "gui",
           "reason": "needs the real synthetic-test CLI, which the native job does not build; U11 builds and supplies it"
         },

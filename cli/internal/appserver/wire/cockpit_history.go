@@ -26,6 +26,9 @@ type CockpitHistory struct {
 	// Cycles holds up to ten newest closed cycles per window, oldest first, under a subscription only through the
 	// source's one current binding. Points are observed on this device and unattributed.
 	Cycles []CockpitCycleGroup `json:"cycles" schema:"maxItems=64"`
+	// Cost is ≈cost at public API list prices (WP-06), present only when the verified
+	// publication carries prices (client-v1.6). See CockpitCost.
+	Cost *CockpitCost `json:"cost,omitempty" null:"forbidden"`
 }
 
 // CockpitCycleGroup is one window kind of one subscription.
@@ -117,4 +120,52 @@ type CockpitRankedEntity struct {
 	ObservedRequests     int     `json:"observedRequests"`
 	ObservedOutputTokens int64   `json:"observedOutputTokens"`
 	Share                float64 `json:"share"`
+}
+
+// CockpitCost is ≈cost (WP-06, D291): tokens this device counted × each model's public API
+// list price from the verified publication (client-v1.6). It estimates what the same use
+// would cost at API list prices; it is not what a subscription charges. It is computed on
+// this device and present only when the publication carries prices. Usage of a model
+// without a public price counts in UnpricedTokens and never in EstimatedUsd.
+type CockpitCost struct {
+	Basis    string `json:"basis"`    // api-list-price
+	Currency string `json:"currency"` // USD
+	// PricesAsOf is the newest asOf date among the prices used, null when none was used.
+	PricesAsOf *string `json:"pricesAsOf" null:"coalesced" schema:"maxLength=10"`
+	// Daily holds the last 30 local days per source; Hourly the last 48 local hours per source.
+	// A day or hour without usage is not listed.
+	Daily  []CockpitCostBucket `json:"daily" schema:"maxItems=480"`
+	Hourly []CockpitCostBucket `json:"hourly" schema:"maxItems=384"`
+	// Models ranks the published models used in each range by ≈cost; usage the publication
+	// cannot name is one "unknown" entry per source.
+	Models CockpitCostModels `json:"models"`
+}
+
+// CockpitCostBucket is one source's ≈cost in one local day ("2006-01-02") or hour (RFC 3339).
+// Approximate: part of it came from day totals of a model with a long-context price, so the
+// long-context rate could not be chosen per request; the page keeps "≈" and says why.
+type CockpitCostBucket struct {
+	At             string  `json:"at" schema:"maxLength=32"`
+	Source         string  `json:"source"`
+	EstimatedUsd   float64 `json:"estimatedUsd" schema:"minimum=0"`
+	PricedTokens   int64   `json:"pricedTokens" schema:"minimum=0"`
+	UnpricedTokens int64   `json:"unpricedTokens" schema:"minimum=0"`
+	Approximate    bool    `json:"approximate,omitempty" null:"forbidden"`
+}
+
+type CockpitCostModels struct {
+	Today     []CockpitModelCost `json:"today" schema:"maxItems=64"`
+	Recent7d  []CockpitModelCost `json:"recent7d" schema:"maxItems=64"`
+	Recent30d []CockpitModelCost `json:"recent30d" schema:"maxItems=64"`
+}
+
+// CockpitModelCost is one model's use from one source in a range. Model is a published model
+// ID or "unknown". EstimatedUsd is null when none of its tokens had a price.
+type CockpitModelCost struct {
+	Model          string   `json:"model" schema:"minLength=1,maxLength=128"`
+	Source         string   `json:"source"`
+	EstimatedUsd   *float64 `json:"estimatedUsd" null:"coalesced" schema:"minimum=0"`
+	PricedTokens   int64    `json:"pricedTokens" schema:"minimum=0"`
+	UnpricedTokens int64    `json:"unpricedTokens" schema:"minimum=0"`
+	Approximate    bool     `json:"approximate,omitempty" null:"forbidden"`
 }

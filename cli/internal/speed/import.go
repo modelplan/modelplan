@@ -774,7 +774,7 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 					records = append(records, r)
 				}
 			}
-			j.usage[fileKey(p)] = usageFile{Source: j.source, Epoch: j.epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(usage.session), Parent: usage.parent, Started: usage.started}
+			j.usage[fileKey(p)] = usageFile{Tiered: true, Source: j.source, Epoch: j.epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(usage.session), Parent: usage.parent, Started: usage.started}
 			j.usageRanges[fileKey(p)] = append([]span(nil), it.ranges...)
 		}
 		if cp != nil {

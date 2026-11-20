@@ -722,7 +722,7 @@
       ],
       "source": "https://github.com/ccusage/ccusage/tree/58866ba681343634ab6e5add61f18f3b70aa98f7",
       "usedBy": [
-        "Local token accounting (input, cache read, cache write, output, reasoning; totals by local day): Codex and Claude Code response accounting matched to the Rust adapters, Go ports of the Gemini CLI, Qwen Code and OpenCode adapters, and shared tool-neutral Buckets and Windows, with ModelPlan modifications in the named files"
+        "Local token accounting (input, cache read, cache write, output, reasoning; totals by local day): Codex and Claude Code response accounting matched to the Rust adapters, Go ports of the Gemini CLI, Qwen Code and OpenCode adapters, and shared tool-neutral Buckets and Windows, and the estimated-cost rules for long-context and fast-mode requests, with ModelPlan modifications in the named files"
       ],
       "paths": [
         "cli/internal/tokenacct/buckets.go",
@@ -730,7 +730,8 @@
         "cli/internal/tokenacct/json.go",
         "cli/internal/tokenacct/gemini.go",
         "cli/internal/tokenacct/qwen.go",
-        "cli/internal/tokenacct/opencode.go"
+        "cli/internal/tokenacct/opencode.go",
+        "cli/internal/cost/cost.go"
       ]
     },
     {
@@ -752,10 +753,10 @@
       ],
       "source": "https://www.npmjs.com/package/three/v/0.186.1",
       "usedBy": [
-        "Official edition only: minified into the launch-field scene bundle, loaded on demand by the enlarged porthole"
+        "Official edition only: minified into the launch-field component bundle, loaded on demand by the enlarged porthole"
       ],
       "paths": [
-        "desktop/official-visuals/runtime/field-scene/cockpit-scene.bundle.js"
+        "desktop/official-visuals/runtime/field-scene/launch-field.js"
       ]
     }
   ]

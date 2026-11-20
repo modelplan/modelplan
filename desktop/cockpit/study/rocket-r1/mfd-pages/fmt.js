@@ -15,6 +15,8 @@ export const tok = n => n == null ? '--' : n < 1000 ? String(Math.round(n)) : n 
 export const approxCost = v => { if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return null;
   if (v >= 999.5) { const k = v / 1000; return `≈$${k >= 99.95 ? Math.round(k) : Number(k.toPrecision(2))}k`; }
   return v >= 99.5 ? `≈$${Math.round(v)}` : `≈$${Number(v.toPrecision(2))}`; };
+// Tokens as on the model cards and the effort page title (V1-FINAL §0): 212M, 4.2M, 830k, 1.2B.
+export const tokShort = n => n >= 1e10 ? Math.round(n / 1e9) + 'B' : n >= 1e9 ? (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B' : n >= 1e8 ? Math.round(n / 1e6) + 'M' : n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(Math.round(n));
 export const grouped = n => n == null ? '--' : Math.round(n).toLocaleString('en-US');
 export const unit = n => n >= 1e6 ? [(n / 1e6).toFixed(1), 'M'] : n >= 1e3 ? [String(Math.round(n / 1e3)), 'k'] : [String(Math.round(n)), ''];
 export const sign = v => v > 0.05 ? '+' + v.toFixed(1) : v < -0.05 ? '−' + Math.abs(v).toFixed(1) : '±0';

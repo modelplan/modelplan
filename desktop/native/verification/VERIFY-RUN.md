@@ -37,7 +37,7 @@ makes that ID `NOT-RUN reason=...` and the run goes on with the next ID.
 - Download each artifact unmodified to `ARTIFACTS/<name>.zip`:
   `gh api repos/modelplan/modelplan/actions/artifacts/<artifact id>/zip > ARTIFACTS/<name>.zip`.
   The GitHub digest covers that archive. Inside it, `BUILD.txt` (#551 format: `sourceSHA=`, `runID=`,
-  `runAttempt=`, optional `flavour=`, then `<sha256>  ModelPlan-Community-native.zip`) covers the inner zip.
+  `runAttempt=`, optional `flavour=`, then `<sha256>  ModelPlan-native.zip`) covers the inner zip.
 - One coordinator GO URL covers the whole batch; every MacCI segment's `release.py --coordinator-go`
   uses it. The lane still opens the comment once and confirms it is the coordinator's GO for this batch.
   An M1 batch (dev Mac) instead carries `approval`, the https URL of the coordinator's OK comment, and
@@ -57,7 +57,7 @@ FAIL stops the run before booking (every ID becomes `NOT-RUN reason=preflight-PF
 | PF-03 | sha256 of the archive differing from the manifest or GitHub digest; inner zip differing from `BUILD.txt` |
 | PF-04 | `BUILD.txt` `sourceSHA` (or `flavour`) differing from the expected head; the bundle's own `Info.plist` `ModelPlanPublicSource` (the built checkout's `git rev-parse HEAD`) missing or differing from that label, e.g. a pull_request merge-commit build labelled with the PR head; a PR head that moved or is not an ancestor of the integration SHA |
 | PF-05 | Not exactly one top-level `.app`; a symlink leaving it |
-| PF-06 | `CFBundleExecutable` not `ModelPlanCommunity`, a non-Mach-O executable, no arm64 slice, another bundle ID |
+| PF-06 | `CFBundleExecutable` not `ModelPlan`, a non-Mach-O executable, no arm64 slice, another bundle ID |
 | PF-07 | A missing SwiftPM resource bundle (cockpit bundle too for test/verify), a `zai-white.svg` that breaks the producers' policy (neutral `package-neutral.sh` builds: none, no `zaiMarkEnabled`; beta `configure_beta_zai` builds: boolean `zaiMarkEnabled`, and when true exactly one mark at the Dock manifest's `Marks/zai-white.svg` with the manifest's bytes and SHA-256), `Helpers/modelplan` not matching `Resources/modelplan.sha256` |
 | PF-08 | `ModelPlanCockpitEntryEnabled` not false (release) or true (test), the VF marker `ModelPlanVerificationFlavour` outside the verify flavour, any Sparkle framework or feed key |
 | PF-09 | `codesign --verify --deep --strict` failing (ad-hoc accepted; kind recorded) |
@@ -194,7 +194,7 @@ python3 desktop/native/verification/bin/launch.py --config RUN.json --execute --
   defaults it to `<registry>.product-backup`, outside the removable scratch) runs
   `bin/product_backup.py` around the subject: before the subject starts it archives exactly
   `~/Library/Application Support/ModelPlan/Native/`,
-  `~/Library/Preferences/org.modelplan.community.swift.scaffold.plist`, `~/Library/Caches/modelplan/`
+  `~/Library/Preferences/ai.modelplan.app.plist`, `~/Library/Caches/modelplan/`
   and `~/.config/modelplan/consent.json` (tar + SHA-256 manifest; absent paths recorded as absent),
   and after the subject has ended it puts them back and re-hashes every file. The preferences domain
   is synced through `defaults import`/`delete` first so `cfprefsd` does not keep the run's values.

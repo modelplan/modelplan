@@ -150,6 +150,8 @@ import ModelPlanWire
                 allowedEnvironment: profile.childEnvironment(ProcessInfo.processInfo.environment.filter { WireChildEnvironment.allowedKeys.contains($0.key) }),
                 minimumServerVersion: EngineRowsEntry.minimumAppServerVersion), settingsStore: preferences)
             NSApplication.shared.delegate = app
+            // D57: once the run loop is up, ask the person to remove a pre-rename app that is still running.
+            Task { @MainActor in LegacyAppNotice.presentIfNeeded() }
             withExtendedLifetime(app) { NSApplication.shared.run() }
         } catch { fputs("ModelPlan preferences could not load. Existing data was preserved.\n", stderr) }
     }

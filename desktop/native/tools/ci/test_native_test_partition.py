@@ -183,3 +183,88 @@ class OwnerGuiTests(unittest.TestCase):
             self.assertTrue(any("both headless and ownerGui" in e for e in errors), errors)
             manifest["packages"]["m"]["ownerGui"] = ["Missing"]
             self.assertTrue(any("ownerGui class Missing" in e for e in partition.check(root, manifest)))
+
+
+STATIC_SOURCE = '''import XCTest
+final class Fast: XCTestCase {
+    let json = "{\\"a\\": {}"            // a brace inside a string
+    let block = """
+    } not a closing brace {
+    """
+    struct Helper { func testNotATest() {} }   // nested type: not a test of Fast
+    func testA() { if true { } }
+    @MainActor func testEnvGated() async throws {}
+    private func testHidden() {}
+    static func testStatic() {}
+    func testWithArgument(_ value: Int) {}
+    func helper() {}
+    // func testCommentedOut() {}
+}
+final class FastLater: XCTestCase { func testB() {} }
+'''
+STATIC_EXTENSION = '''extension Fast {
+    nonisolated func testFromExtension() {}
+}
+'''
+
+
+class StaticListTests(unittest.TestCase):
+    def tree(self, extra=None):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name); (root / "Tests").mkdir()
+        (root / "Tests/Fast.swift").write_text(STATIC_SOURCE)
+        (root / "Tests/FastMore.swift").write_text(STATIC_EXTENSION if extra is None else extra)
+        return root
+
+    def test_reads_what_xctest_discovers_for_the_headless_classes_only(self):
+        ids = partition.static_ids(self.tree(), PKG)
+        self.assertEqual(sorted(ids), ["Mod.Fast/testA", "Mod.Fast/testEnvGated", "Mod.Fast/testFromExtension"])
+
+    def test_a_headless_class_without_tests_or_declared_twice_fails(self):
+        with self.assertRaisesRegex(partition.PartitionError, "Gone"):
+            partition.static_ids(self.tree(), {**PKG, "headless": ["Fast", "Gone"]})
+        with self.assertRaisesRegex(partition.PartitionError, "declared twice"):
+            partition.static_ids(self.tree("extension Fast { func testA() {} }\n"), PKG)
+
+    def test_static_plan_runs_the_same_arguments_as_the_listed_plan(self):
+        static_args, expected, summary = partition.plan_static(PKG, ["Mod.Fast/testA", "Mod.Fast/testEnvGated"], "headless")
+        listed_args, listed_expected, _ = partition.plan(PKG, LISTED, "headless")
+        self.assertEqual(static_args, listed_args)
+        self.assertEqual(expected, listed_expected)
+        self.assertEqual(summary["headless"], 2)
+
+    def test_static_plan_refuses_other_legs_stray_ids_and_missing_classes(self):
+        with self.assertRaises(partition.PartitionError):
+            partition.plan_static(PKG, ["Mod.Fast/testA"], "gui")
+        with self.assertRaisesRegex(partition.PartitionError, "outside the headless share"):
+            partition.plan_static(PKG, ["Mod.Fast/testA", "Mod.Window/testC"], "headless")
+        with self.assertRaisesRegex(partition.PartitionError, "absent"):
+            partition.plan_static({**PKG, "headless": ["Fast", "Gone"]}, ["Mod.Fast/testA"], "headless")
+
+    def test_drift_between_sources_and_binary_is_red(self):
+        # The binary ran a test the sources did not show (or missed one they did): verify fails either way.
+        _, expected, _ = partition.plan_static(PKG, ["Mod.Fast/testA"], "headless")
+        self.assertTrue(partition.verify(PKG, expected, log([("Mod.Fast/testA", "passed"), ("Mod.Fast/testNew", "passed")]), "headless"))
+        self.assertTrue(partition.verify(PKG, expected, log([]), "headless"))
+        self.assertEqual([], partition.verify(PKG, expected, log([("Mod.Fast/testA", "passed")]), "headless"))
+
+    def test_cli_static_list_round_trip(self):
+        import contextlib, io
+        with tempfile.TemporaryDirectory() as tmp:
+            listing, args, test_log = Path(tmp, "list"), Path(tmp, "args"), Path(tmp, "log")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(0, partition.main(["static-list", "--package", "app-integration", "--root", str(ROOT)]))
+            listing.write_text(out.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(0, partition.main(["plan", "--package", "app-integration", "--leg", "headless", "--static",
+                                                    "--list", str(listing), "--args", str(args)]))
+                self.assertEqual(1, partition.main(["plan", "--package", "app-integration", "--leg", "gui", "--static",
+                                                    "--list", str(listing), "--args", str(args)]))
+            self.assertIn("--filter", args.read_text().splitlines())
+            ids = [line for line in listing.read_text().splitlines() if line]
+            test_log.write_text(log([(i, "passed") for i in ids]))
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(0, partition.main(["verify", "--package", "app-integration", "--leg", "headless", "--static",
+                                                    "--list", str(listing), "--log", str(test_log)]))
