@@ -108,6 +108,13 @@ test('the big screen: charts on the draw hook, redrawn by readings, closed by Es
  await expect(chart.locator('[data-chart="cpu"] [data-bar]')).toHaveCount(60);
  await expect(chart.locator('[data-chart="cpu-line"]')).toHaveCount(1);
  await expect(chart.locator('[data-chart="disk-notch"]')).toHaveCount(1);
+ // D347: the charts read CPU, Memory, Disk top to bottom (as the column), and all three sit inside the panel.
+ const boxes=await page.evaluate(()=>{const r=s=>document.querySelector(s).getBoundingClientRect(),panel=r('.dk-mfd .mfd-screen');
+  return {panel:{top:panel.top,bottom:panel.bottom},cpu:r('[data-chart="cpu"]').top,memory:r('[data-chart="memory-used"]').top,disk:r('[data-chart="disk"]'),
+   labels:[...document.querySelectorAll('.pl-draw-chart text')].map(t=>t.textContent)};});
+ expect(boxes.labels).toEqual(['CPU','Memory','Disk']);
+ expect(boxes.cpu).toBeLessThan(boxes.memory);expect(boxes.memory).toBeLessThan(boxes.disk.top);
+ expect(boxes.disk.bottom).toBeLessThanOrEqual(boxes.panel.bottom+.5);expect(boxes.disk.top).toBeGreaterThanOrEqual(boxes.panel.top-.5);
  // Orchid ink for the series; amber only for the pressure cells that read warn.
  const ink=await page.evaluate(()=>{const g=document.querySelector('[data-chart="memory-used"]');return g.getAttribute('fill');});
  expect(ink).toBe('#da66c2');

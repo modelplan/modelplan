@@ -103,37 +103,38 @@ function drawCharts(c:PluginDrawContext,state:unknown):void {
   const svg=node('svg',{class:'pl-draw-chart',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':c.words('plugin.resourcesTitle').full});
   const T=c.tokens,pad=6,gap=8,innerW=W-2*pad,fs=Math.max(8,Math.min(11,H/16));
   const label=(text:string,x:number,y:number,anchor='start')=>{const t=node('text',{x,y,fill:T.muted,'font-size':fs,'font-family':T.lcdFont,'text-anchor':anchor},svg);t.textContent=text;};
-  const memH=H*0.4,stripH=Math.max(4,H*0.05),cpuH=H*0.28,diskH=Math.max(6,H*0.06);
-  let y=pad+fs;
-  // Memory: stacked area (used, then cached on top) over the ten minutes.
-  label(c.words('plugin.resourcesMemory').full,pad,y);
-  const mTop=y+3,mBot=mTop+memH-fs,span=Math.max(1,d.memory[d.memory.length-1]!.t-Math.min(d.memory[0]!.t,d.memory[d.memory.length-1]!.t-RESOURCE_WINDOW_MS));
-  const t0=d.memory[d.memory.length-1]!.t-span,X=(t:number)=>pad+(t-t0)/span*innerW,Y=(f:number)=>mBot-Math.min(1,Math.max(0,f))*(mBot-mTop);
-  const edge=(f:(p:ChartData['memory'][number])=>number)=>d.memory.map(p=>`${X(p.t).toFixed(1)},${Y(f(p)).toFixed(1)}`);
-  const area=(top:string[],bottom:string[])=>`M${top.join('L')}L${bottom.slice().reverse().join('L')}Z`;
-  const floor=d.memory.map(p=>`${X(p.t).toFixed(1)},${mBot.toFixed(1)}`),usedEdge=edge(p=>p.used),stackEdge=edge(p=>p.used+p.cached);
-  node('path',{'data-chart':'memory-cached',d:area(stackEdge,usedEdge),fill:T.ink,'fill-opacity':0.18},svg);
-  node('path',{'data-chart':'memory-used',d:area(usedEdge,floor),fill:RESOURCE_INK,'fill-opacity':0.85},svg);
-  y=mBot+gap;
-  // Pressure strip: one cell per 10 s, grey normal / amber warn / red critical.
-  const strip=node('g',{'data-chart':'pressure'},svg),cw=innerW/d.strip.length;
-  d.strip.forEach((p,i)=>node('rect',{x:(pad+i*cw).toFixed(2),y,width:Math.max(0.5,cw-0.5).toFixed(2),height:stripH,fill:p==='critical'?T.low:p==='warn'?T.mid:T.ghost,'data-pressure':p},strip));
-  y+=stripH+gap+fs;
+  // Order CPU · Memory · Disk (D347, same as the column). Heights come from one budget so the three sections always fit
+  // inside the area: every section is label row + body + gap, and the bodies share what is left.
+  const lab=fs+3,stripH=Math.max(3,Math.min(6,H*0.04)),diskH=Math.max(5,Math.min(10,H*0.05)),fixed=pad*2+3*lab+2*gap+stripH+gap+diskH+4;
+  const free=Math.max(12,H-fixed),cpuH=free*0.4,memH=free*0.6;
+  let y=pad;
   // CPU: one bar per 10 s, user (ink) under system (lighter), with the 70 % dashed line.
-  label(c.words('plugin.resourcesCpu').full,pad,y);
-  const cTop=y+3,cBot=cTop+cpuH-fs,cy=(v:number)=>cBot-Math.min(100,v)/100*(cBot-cTop);
+  label(c.words('plugin.resourcesCpu').full,pad,y+fs);y+=lab;
+  const cw=innerW/60,cTop=y,cBot=y+cpuH,cy=(v:number)=>cBot-Math.min(100,v)/100*(cBot-cTop);
   const cpu=node('g',{'data-chart':'cpu'},svg);
   d.cpu.forEach((b,i)=>{const g=node('g',{'data-bar':i,'data-user':b.user.toFixed(1),'data-system':b.system.toFixed(1)},cpu);
     node('rect',{x:(pad+i*cw).toFixed(2),y:cy(b.user).toFixed(2),width:Math.max(0.5,cw-0.5).toFixed(2),height:(cBot-cy(b.user)).toFixed(2),fill:RESOURCE_INK},g);
     node('rect',{x:(pad+i*cw).toFixed(2),y:cy(b.user+b.system).toFixed(2),width:Math.max(0.5,cw-0.5).toFixed(2),height:(cy(b.user)-cy(b.user+b.system)).toFixed(2),fill:RESOURCE_INK,'fill-opacity':0.45},g);});
   node('line',{'data-chart':'cpu-line',x1:pad,x2:W-pad,y1:cy(d.cpuLine),y2:cy(d.cpuLine),stroke:T.mid,'stroke-dasharray':'3 3','stroke-width':1},svg);
-  y=cBot+gap+fs;
+  y=cBot+gap;
+  // Memory: stacked area (used, then cached on top) over the ten minutes, with the pressure strip under it.
+  label(c.words('plugin.resourcesMemory').full,pad,y+fs);y+=lab;
+  const mTop=y,mBot=y+memH,last=d.memory[d.memory.length-1]!,span=RESOURCE_WINDOW_MS,t0=last.t-span;
+  const X=(t:number)=>pad+Math.max(0,t-t0)/span*innerW,Y=(f:number)=>mBot-Math.min(1,Math.max(0,f))*(mBot-mTop);
+  const edge=(f:(p:ChartData['memory'][number])=>number)=>d.memory.map(p=>`${X(p.t).toFixed(1)},${Y(f(p)).toFixed(1)}`);
+  const area=(top:string[],bottom:string[])=>`M${top.join('L')}L${bottom.slice().reverse().join('L')}Z`;
+  const floor=d.memory.map(p=>`${X(p.t).toFixed(1)},${mBot.toFixed(1)}`),usedEdge=edge(p=>p.used),stackEdge=edge(p=>p.used+p.cached);
+  node('path',{'data-chart':'memory-cached',d:area(stackEdge,usedEdge),fill:T.ink,'fill-opacity':0.18},svg);
+  node('path',{'data-chart':'memory-used',d:area(usedEdge,floor),fill:RESOURCE_INK,'fill-opacity':0.85},svg);
+  y=mBot+3;
+  const strip=node('g',{'data-chart':'pressure'},svg);
+  d.strip.forEach((p,i)=>node('rect',{x:(pad+i*cw).toFixed(2),y,width:Math.max(0.5,cw-0.5).toFixed(2),height:stripH,fill:p==='critical'?T.low:p==='warn'?T.mid:T.ghost,'data-pressure':p},strip));
+  y+=stripH+gap;
   // Disk: one bar with the 90 % notch.
-  label(c.words('plugin.resourcesDisk').full,pad,y);
-  const dy=y+3;
-  node('rect',{x:pad,y:dy,width:innerW,height:diskH,fill:T.ghost},svg);
-  node('rect',{'data-chart':'disk',x:pad,y:dy,width:(innerW*d.disk/100).toFixed(2),height:diskH,fill:RESOURCE_INK},svg);
-  node('line',{'data-chart':'disk-notch',x1:pad+innerW*d.diskNotch/100,x2:pad+innerW*d.diskNotch/100,y1:dy-2,y2:dy+diskH+2,stroke:T.mid,'stroke-width':1.5},svg);
+  label(c.words('plugin.resourcesDisk').full,pad,y+fs);y+=lab;
+  node('rect',{x:pad,y,width:innerW,height:diskH,fill:T.ghost},svg);
+  node('rect',{'data-chart':'disk',x:pad,y,width:(innerW*d.disk/100).toFixed(2),height:diskH,fill:RESOURCE_INK},svg);
+  node('line',{'data-chart':'disk-notch',x1:pad+innerW*d.diskNotch/100,x2:pad+innerW*d.diskNotch/100,y1:y-1,y2:y+diskH+1,stroke:T.mid,'stroke-width':1.5},svg);
   c.area.replaceChildren(svg);
 }
 const peak=(samples:readonly ResourceSample[])=>samples.reduce((m,s)=>Math.max(m,resourceView(s).cpu),0);
