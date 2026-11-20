@@ -355,6 +355,12 @@ struct StatusNoticePresentation {
         context.readerDiagnostics = readers
         settings.update(context: context)
     }
+    /// Owner D277 (CKP-ENG-27): the cockpit's Refresh is the widget ring's per-member re-read; `all` asks for every
+    /// stable member. Unknown keys and unstable members change nothing (activateMember guards both).
+    func refreshFromCockpit(_ key: String) {
+        let ids = key == "all" ? composition.accountMembers.members.filter(\.isStable).map(\.id) : [key]
+        for id in ids { activateMember(id) }
+    }
     private func activateMember(_ id: String) {
         guard !terminating, !lifecyclePaused,
               composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }

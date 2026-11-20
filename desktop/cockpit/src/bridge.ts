@@ -15,7 +15,7 @@ export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'
 export type LiveAppearance = Appearance;
 /** CKP-SHELL-50: `range` is the app's time range, sent with every shell (absent only from an older host: 7d). */
 export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string; readonly range?:CockpitRange }
-export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'rangeSelect'|'openField'|'openWebsite';
+export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'rangeSelect'|'openField'|'openWebsite'|'refreshMember';
 export interface Header extends Context { readonly version:2; readonly pageId:string; readonly requestId:string; readonly sequence:string }
 export type HostMessage = Header & (
   {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean; readonly ackedCautions?:unknown; readonly pinnedModels?:unknown; readonly memberOrder?:readonly string[]} |
@@ -282,7 +282,7 @@ export class CockpitBridge {
     this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});return true;
   }
   action(action:PageAction,tool?:string):boolean {
-    if(!this.isActive()||!['chooseSetup','openSettings','openSettingsSubscriptions','openHistory','close','detach','putBack','shutterToggle','scopeSelect','rangeSelect','openField','openWebsite'].includes(action)) return false;
+    if(!this.isActive()||!['chooseSetup','openSettings','openSettingsSubscriptions','openHistory','close','detach','putBack','shutterToggle','scopeSelect','rangeSelect','openField','openWebsite','refreshMember'].includes(action)) return false;
     // CKP-SHELL-50: one of the three ranges, by key; the host decides and echoes it in the shell.
     if(action==='rangeSelect') {
       if(!isCockpitRange(tool))return false;
@@ -291,6 +291,12 @@ export class CockpitBridge {
     if(['close','detach','putBack','shutterToggle'].includes(action)) {
       if(!this.shellState)return false;
       if(action==='detach'&&!this.shellState.attached||action==='putBack'&&this.shellState.attached||action==='shutterToggle'&&this.shellState.forcedClosed)return false;
+    }
+    // Owner D277 (CKP-ENG-27): read one shown subscription (or all of them) again. Native asks the engine through the
+    // same per-member refresh the widget's ring uses; only a current member key or `all` crosses.
+    if(action==='refreshMember') {
+      if(!this.hasDisplay||!tool||(tool!=='all'&&!this.scopeMembers.has(tool)))return false;
+      this.emit('action',this.requestId(),{action,key:tool});return true;
     }
     if(action==='scopeSelect') {
       if(!this.hasDisplay||!tool||(tool!=='all'&&!this.scopeMembers.has(tool)))return false;
