@@ -126,7 +126,19 @@ import ModelPlanShell
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
         owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
         application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
+        installCockpitPlugins(application: application, owner: owner, settingsStore: settingsStore)
         return application
+    }
+    /// macrevc-844-1: the saved plugin choices reach every cockpit page, page edits are saved, and the page's running
+    /// plugins drive the sampler. Until the file is read, pages wait without plugin state (plugin-host.ts keeps the
+    /// default-on plugins off and posts nothing until it arrives).
+    static func installCockpitPlugins(application: EngineDockMenuApplication, owner: CockpitConsoleOwner, settingsStore: SettingsStore) {
+        let directory = settingsStore.directory
+        Task { @MainActor [weak application, weak owner] in
+            let bridge = await CockpitPluginBridge.load(directory: directory, coordinator: owner?.coordinator)
+            application?.cockpitPlugins = bridge
+            application?.cockpitPluginsReady?(bridge)
+        }
     }
 }
 
@@ -524,7 +536,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()

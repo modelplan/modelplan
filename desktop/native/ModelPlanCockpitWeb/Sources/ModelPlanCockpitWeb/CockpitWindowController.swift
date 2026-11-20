@@ -1169,6 +1169,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// Resends what a refused update left stale, once the queue has room again.
   private func resyncAfterBacklog() {
     guard !ending, orderedDelivery.outstanding < 8 else { return }
+    if pluginsResend { pluginsResend = false; publishPlugins() }
     let pending = backlog
     guard pending.display || pending.visibility || pending.appearance || pending.tick != nil else { return }
     backlog = BacklogResync()
@@ -1199,6 +1200,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         web?.isHidden = false
         publishAppearance()
         visibilityChanged()
+        publishPlugins(force: true)
         onReady?()
         if !shown { warmPaint() }
       case .cleared:
@@ -1211,6 +1213,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           publishAppearance()
           lastVisibility = nil
           visibilityChanged()
+          publishPlugins(force: true)
         }
         waiter?.resume()
       case .action(let intent):
@@ -1220,6 +1223,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         case .shutterToggle:
           toggleShutter()
         case .close: closeAnimated()
+        case .pluginsEdit(let state):
+          // The page already shows this state; the host's echo of it is not sent back.
+          pluginsOnPage = state; onIntent?(intent)
         default: onIntent?(intent)
         }
       case .rendered:
@@ -1524,6 +1530,27 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
   public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }
+  /// Plugin columns (macrevc-844-1): the saved plugin choices (canonical JSON) and the state this page already has.
+  /// Sent on ready, after every clear that leaves the page usable, and on change; an identical state is not sent again
+  /// and the queue keeps only the newest one.
+  private var pluginsWanted: Data?, pluginsResend = false
+  private(set) var pluginsOnPage: Data?
+  public func setPlugins(_ json: Data) {
+    guard let canonical = CockpitPluginWire.canonical(json: json) else { return }
+    pluginsWanted = canonical; publishPlugins()
+  }
+  private func publishPlugins(force: Bool = false) {
+    guard let wanted = pluginsWanted, bridge.ready, !bridge.blocked, !ending, force || wanted != pluginsOnPage,
+      let raw = try? bridge.setPlugins(wanted) else { return }
+    pluginsOnPage = wanted
+    send(raw, coalesce: "plugins", onRejected: { [weak self] in self?.pluginsOnPage = nil; return true },
+         dropped: { [weak self] in self?.pluginsOnPage = nil; self?.pluginsResend = true })
+  }
+  /// Plugin columns: one reading for a running plugin. Dropped while the page is hidden or has no plugin state.
+  public func sendPluginData(id: String, data: [String: Any]) {
+    guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.pluginData(id: id, data: data) else { return }
+    send(raw, onRejected: { true })
+  }
   /// WP-22 (macrevb-1062-3): the enlarged field's selection (a public model id, nil for a clear) selects the same model on
   /// the page's HUD, faders and porthole. Presentation only: a page that cannot show it keeps working.
   /// Owner 11-19 (#1062): tells the page the enlarged field closed, so a click bouncing off the close does not reopen it.

@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: MIT
+import Foundation
+import ModelPlanCockpitWeb
+import ModelPlanSettings
+
+/// Samples the plugins the cockpit page runs (D124: only while the cockpit is open and the column is on the shown
+/// page). A plugin that needs host readings registers a reader; one that derives everything from `display` (calendar)
+/// registers none. Each running, enabled, registered plugin is read at once and then every `intervalSeconds` (its
+/// setting, else 10 s); it stops the moment it leaves the running set or is turned off.
+@MainActor public final class CockpitPluginSampler {
+    public typealias Reader = @MainActor () -> [String: Any]?
+    /// Runs `fire` once after the delay; the returned closure cancels it.
+    public typealias Schedule = @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> () -> Void
+    public static let defaultInterval = 10
+    public var send: ((String, [String: Any]) -> Void)?
+    private let schedule: Schedule
+    private var readers: [String: Reader] = [:]
+    private var timers: [String: (interval: Int, cancel: () -> Void)] = [:]
+    private var running: [String] = []
+    private var preferences = CockpitPluginPreferences()
+    private var catalogue = CockpitPluginCatalogue.builtIn
+    public init(schedule: Schedule? = nil) {
+        if let schedule { self.schedule = schedule; return }
+        self.schedule = { delay, fire in
+            let task = Task { @MainActor in
+                do { try await Task.sleep(for: .milliseconds(Int(delay * 1000))) } catch { return }
+                fire()
+            }
+            return { task.cancel() }
+        }
+    }
+    public func register(_ id: String, reader: @escaping Reader) { readers[id] = reader; reconcile() }
+    public func unregister(_ id: String) { readers[id] = nil; reconcile() }
+    public func setRunning(_ ids: [String]) { running = ids; reconcile() }
+    public func apply(_ preferences: CockpitPluginPreferences, catalogue: [CockpitPluginDefinition] = CockpitPluginCatalogue.builtIn) {
+        self.preferences = preferences; self.catalogue = catalogue; reconcile()
+    }
+    /// The ids being sampled now (tests and diagnostics).
+    public var sampling: [String] { timers.keys.sorted() }
+    private func reconcile() {
+        let enabled = Set(preferences.enabledIDs(catalogue))
+        let wanted = running.filter { enabled.contains($0) && readers[$0] != nil }
+        for (id, timer) in timers where !wanted.contains(id) { timer.cancel(); timers[id] = nil }
+        for id in wanted {
+            let interval = max(1, preferences.value(id, "intervalSeconds", catalogue) ?? Self.defaultInterval)
+            if timers[id]?.interval == interval { continue }
+            timers[id]?.cancel(); timers[id] = nil
+            sample(id, interval: interval)
+        }
+    }
+    private func sample(_ id: String, interval: Int) {
+        if let reading = readers[id]?() { send?(id, reading) }
+        // The reader may have changed the running set or the choices; only a still-wanted plugin is scheduled again.
+        guard running.contains(id), readers[id] != nil, preferences.enabledIDs(catalogue).contains(id) else { return }
+        let cancel = schedule(TimeInterval(interval)) { [weak self] in
+            guard let self, self.timers[id]?.interval == interval else { return }
+            self.sample(id, interval: interval)
+        }
+        timers[id] = (interval, cancel)
+    }
+}
+
+/// macrevc-844-1: the app's side of the cockpit plugin columns. One `CockpitPluginSettingsModel`, persisted by
+/// `CockpitPluginStore` beside the settings file, is the durable copy. Every committed change (Settings or a page edit)
+/// goes to the coordinator, which hands it to every page; the page's edits are saved here; the page's running plugins
+/// drive the sampler.
+@MainActor public final class CockpitPluginBridge {
+    public let model: CockpitPluginSettingsModel
+    public let sampler: CockpitPluginSampler
+    private weak var coordinator: EngineCockpitCoordinator?
+    public init(model: CockpitPluginSettingsModel, coordinator: EngineCockpitCoordinator?, sampler: CockpitPluginSampler = .init()) {
+        self.model = model; self.coordinator = coordinator; self.sampler = sampler
+        sampler.send = { [weak coordinator] id, data in coordinator?.sendPluginData(id: id, data: data) }
+        coordinator?.onPluginsRunning = { [weak sampler] ids in sampler?.setRunning(ids) }
+        coordinator?.onPluginsEdit = { [weak model] state in
+            guard let object = try? JSONSerialization.jsonObject(with: state) else { return }
+            Task { @MainActor in await model?.acceptPageEdit(object) }
+        }
+        model.onChange = { [weak self] preferences in self?.publish(preferences) }
+        publish(model.preferences)
+    }
+    /// Loads the saved choices (`<settings directory>/cockpit-plugins.json`) and attaches them to the coordinator.
+    public static func load(directory: URL, coordinator: EngineCockpitCoordinator?) async -> CockpitPluginBridge {
+        CockpitPluginBridge(model: await CockpitPluginSettingsModel.load(from: CockpitPluginStore(directory: directory)), coordinator: coordinator)
+    }
+    private func publish(_ preferences: CockpitPluginPreferences) {
+        sampler.apply(preferences, catalogue: model.catalogue)
+        if let json = try? preferences.bridgeJSON() { coordinator?.pluginsJSON = json }
+    }
+}

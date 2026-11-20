@@ -133,6 +133,11 @@ public enum CockpitIntent: Equatable, Sendable {
   /// D136: the favourite (long-press pinned) model ids, most recent first. The coordinator keeps them across restarts.
   case pinnedModels([String])
   case openWebsite(CockpitWebsiteLink)
+  /// Plugin columns (macrevc-844-1): the plugins the page runs now; the host samples exactly these. Accepted while the
+  /// page is hidden too (it reports [] when it stops showing them).
+  case pluginsRunning([String])
+  /// A plugin edit made on the page (right-click Remove or the + menu), as `CockpitPluginWire.canonical` JSON.
+  case pluginsEdit(Data)
 }
 /// A typed public page, never a URL from the page: native builds the address from these fields.
 public struct CockpitWebsiteLink: Equatable, Sendable {
@@ -169,9 +174,11 @@ public struct CockpitMessageSource {
 }
 
 // Replies have scalar fields plus two bounded flat string arrays: the three-string `capabilities` of `ready` and the
-// `ids` (at most CockpitCautionIdentities.maxCount) of `cautionAck`. No other key may carry an array.
-// Reject nesting/duplicate keys before JSONSerialization can collapse them.
+// `ids` (at most CockpitCautionIdentities.maxCount) of `cautionAck`, `pinnedModels` and `pluginsRunning`. The one
+// nested value is the `plugins` body of `pluginsEdit` (macrevc-844-1), scanned with its own bounds. No other key may
+// carry an array or an object. Reject duplicate keys at every level before JSONSerialization can collapse them.
 enum FlatReply {
+  static let nestedDepth = 4, nestedKeys = 64, nestedItems = 32, nestedBytes = 65_536
   static func parse(_ raw: String) throws -> [String: Any] {
     guard let bytes = raw.data(using: .utf8), bytes.count <= 1_048_576 else {
       throw CockpitBridgeError.limit
@@ -200,6 +207,50 @@ enum FlatReply {
       }
       throw CockpitBridgeError.invalidMessage
     }
+    // The `plugins` body: objects, arrays and scalars, at most `nestedDepth` containers deep, `nestedKeys` unique keys per
+    // object, `nestedItems` items per array and `nestedBytes` bytes. CockpitPluginWire.canonical then checks its shape.
+    var nestedStart = 0
+    func scalar() throws {
+      let literal: (String) -> Bool = { word in
+        let w = Array(word.utf8)
+        guard i + w.count <= a.count, Array(a[i..<(i + w.count)]) == w else { return false }
+        i += w.count; return true
+      }
+      if literal("true") || literal("false") || literal("null") { return }
+      let start = i
+      while i < a.count, a[i] == 45 || a[i] == 43 || a[i] == 46 || a[i] == 69 || a[i] == 101 || (48...57).contains(a[i]) { i += 1 }
+      guard i > start, i - start <= 32 else { throw CockpitBridgeError.invalidMessage }
+    }
+    func nested(_ depth: Int) throws {
+      guard depth <= nestedDepth, i - nestedStart <= nestedBytes else { throw CockpitBridgeError.limit }
+      white()
+      guard i < a.count else { throw CockpitBridgeError.invalidMessage }
+      if a[i] == 34 { _ = try string(); return }
+      guard a[i] == 123 || a[i] == 91 else { try scalar(); return }
+      let object = a[i] == 123, close: UInt8 = object ? 125 : 93
+      i += 1; white()
+      if i < a.count, a[i] == close { i += 1; return }
+      var names = Set<String>(), count = 0
+      while true {
+        count += 1
+        guard count <= (object ? nestedKeys : nestedItems) else { throw CockpitBridgeError.limit }
+        if object {
+          white()
+          let name = try string()
+          guard names.insert(name).inserted else { throw CockpitBridgeError.invalidMessage }
+          white()
+          guard i < a.count, a[i] == 58 else { throw CockpitBridgeError.invalidMessage }
+          i += 1
+        }
+        try nested(depth + 1)
+        white()
+        guard i < a.count else { throw CockpitBridgeError.invalidMessage }
+        let end = a[i]; i += 1
+        if end == close { break }
+        guard end == 44 else { throw CockpitBridgeError.invalidMessage }
+      }
+      guard i - nestedStart <= nestedBytes else { throw CockpitBridgeError.limit }
+    }
     white()
     guard i < a.count, a[i] == 123 else { throw CockpitBridgeError.invalidMessage }
     i += 1
@@ -215,6 +266,11 @@ enum FlatReply {
       white()
       if i < a.count, a[i] == 34 {
         _ = try string()
+      } else if key == "plugins", i < a.count, a[i] == 123 {
+        let start = i
+        nestedStart = i
+        try nested(1)
+        guard i - start <= nestedBytes else { throw CockpitBridgeError.limit }
       } else if key == "capabilities" || key == "ids", i < a.count, a[i] == 91 {
         // Flat arrays of strings only: the ready capabilities and the cautionAck identities (G3-56).
         let limit = key == "ids" ? CockpitCautionIdentities.maxCount : 3
@@ -283,6 +339,9 @@ public final class CockpitBridgeState {
   public var ackedCautions: [String] = []
   /// D136: favourite model ids restored from the app's own file; sent on load.
   public var pinnedModels: [String] = []
+  /// Plugin columns: the host sent its plugin state (`plugins`); only then may it push readings or accept the page's
+  /// plugin actions. The page keeps its negotiation across a clear, so this does too.
+  public private(set) var pluginsSent = false
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
   private var retiredSessions = Set<UUID>(), retiredEpochs = Set<String>(),
@@ -486,6 +545,21 @@ public final class CockpitBridgeState {
       nowUnixMs <= Self.maximumUnixMs else { throw CockpitBridgeError.unavailable }
     return try envelope("tick", extra: ["nowUnixMs": String(nowUnixMs), "reason": reason.rawValue], deadlineReport: true)
   }
+  /// Plugin columns: the saved plugin choices (CockpitPluginPreferences.bridgeJSON), checked by the page's own rules.
+  public func setPlugins(_ json: Data) throws -> String {
+    guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    guard let canonical = CockpitPluginWire.canonical(json: json),
+      let body = try? JSONSerialization.jsonObject(with: canonical) else { throw CockpitBridgeError.invalidMessage }
+    let raw = try envelope("plugins", extra: ["plugins": body])
+    pluginsSent = true
+    return raw
+  }
+  /// Plugin columns: one reading for a running plugin. Only after `plugins`, and only to a visible, unoccluded page.
+  public func pluginData(id: String, data: [String: Any]) throws -> String {
+    guard ready, !blocked, pluginsSent, visibility.visible, !visibility.occluded else { throw CockpitBridgeError.unavailable }
+    guard CockpitPluginWire.validID(id), JSONSerialization.isValidJSONObject(data) else { throw CockpitBridgeError.invalidMessage }
+    return try envelope("pluginData", extra: ["id": id, "data": data])
+  }
   public func setVisibility(_ value: CockpitVisibility) throws -> String {
     guard ready, !blocked else { throw CockpitBridgeError.unavailable }
     if !value.visible || value.occluded { cancelDeadlineReports() }
@@ -597,9 +671,12 @@ public final class CockpitBridgeState {
       let action = m["action"] as? String
       let history = action == "openHistory", scope = action == "scopeSelect" || action == "rangeSelect" || action == "refreshMember", website = action == "openWebsite", ack = action == "cautionAck" || action == "pinnedModels"
       let focusedField = action == "openField" && m["key"] != nil
-      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack ? ["action","ids"] : ["action"]
+      let running = action == "pluginsRunning", pluginEdit = action == "pluginsEdit"
+      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack || running ? ["action","ids"] : pluginEdit ? ["action","plugins"] : ["action"]
+      // Plugin actions exist only for a host that sent `plugins`. A page stops its plugins when it hides, so
+      // `pluginsRunning` is accepted without focus; every other action needs the active page.
       guard Set(m.keys) == base.union(extra), ready, !blocked,
-        visibility.active
+        running ? pluginsSent : visibility.active, !pluginEdit || pluginsSent
       else { throw CockpitBridgeError.invalidMessage }
       let intent: CockpitIntent
       switch action {
@@ -627,6 +704,12 @@ public final class CockpitBridgeState {
       case "pinnedModels":
         guard let ids = m["ids"] as? [String], CockpitCautionIdentities.valid(ids), Set(ids).count == ids.count else { throw CockpitBridgeError.invalidMessage }
         intent = .pinnedModels(ids)
+      case "pluginsRunning":
+        guard let ids = m["ids"] as? [String], CockpitPluginWire.validRunning(ids) else { throw CockpitBridgeError.invalidMessage }
+        intent = .pluginsRunning(ids)
+      case "pluginsEdit":
+        guard let body = m["plugins"], let canonical = CockpitPluginWire.canonical(body) else { throw CockpitBridgeError.invalidMessage }
+        intent = .pluginsEdit(canonical)
       case "close": intent = .close
       case "detach": intent = .detach
       case "putBack": intent = .putBack

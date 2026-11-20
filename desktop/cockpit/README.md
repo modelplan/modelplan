@@ -142,6 +142,13 @@ page. The page has no timers; the host samples. Messages, all with the common he
 - page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's right-click Remove or the "+" menu.
 - page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
 
+Native host (macrevc-844-1): `CockpitPluginWire.canonical` applies `parsePluginState`'s rules in both directions;
+`plugins` is the one nested reply value (at most 4 levels, 64 unique keys per object, 32 items per array, 64 KiB).
+The window sends `plugins` on ready, after every clear and on change (never the same state twice to one page);
+`pluginsRunning` is accepted without focus, `pluginsEdit` only from the active page. The running set drops to `[]`
+when the page goes or is cleared. `CockpitPluginBridge` (ModelPlanAppIntegration) keeps the durable copy in
+`cockpit-plugins.json` and drives `CockpitPluginSampler`, which reads registered plugins at their interval.
+
 ## Animation budget and evidence
 
 The lamp is static at idle. A change in displayed readings, reasons, summary or

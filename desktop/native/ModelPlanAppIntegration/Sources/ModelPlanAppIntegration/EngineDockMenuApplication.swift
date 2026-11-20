@@ -140,6 +140,10 @@ struct StatusNoticePresentation {
     public var firstRunPresence: FirstRunPresenceDetector = .live()
     /// Set by the cockpit factory: starts the cockpit prewarm that the first launch held back (E4).
     public var releaseCockpitPrewarm: (@MainActor () -> Void)?
+    /// macrevc-844-1: the cockpit plugin choices and sampler, once the saved file is read (CockpitPluginBridge).
+    public internal(set) var cockpitPlugins: CockpitPluginBridge?
+    /// Called once `cockpitPlugins` is set; a plugin that samples registers its reader here.
+    public var cockpitPluginsReady: (@MainActor (CockpitPluginBridge) -> Void)?
     private var prewarmReleased = false
     private var setupScanObserver: UUID?
     /// Done with nothing read yet: the widget appears when the first tool is read, then Find Quota Widget runs once.
