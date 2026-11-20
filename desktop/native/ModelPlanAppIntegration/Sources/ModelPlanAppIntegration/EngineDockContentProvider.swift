@@ -435,6 +435,10 @@ public enum EngineDeadlineFacts {
     /// and a producer-stated reset (never a guessed end). Never a current window, never a peer's value.
     private func retainedWindow(_ member: EngineAccountMember, _ window: RowsWindow, now: Date) -> EngineRetainedWindow? {
         let row = member.row, account = member.account
+        let staleAfterExpiry = date(row.expiresAt).map { now >= $0 } == true && row.stateAfterExpiry?.state == .stale
+        // WP-15 keeps producer-declared stale/retained readings until reset. A fresh row that merely reaches its validity
+        // deadline is not a retained reading unless the producer explicitly declares that stale transition.
+        guard row.state == .stale || account.valueState == .retained || staleAfterExpiry else { return nil }
         guard now.timeIntervalSinceReferenceDate.isFinite,
               row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired,
               member.isStable, member.subscriptionRef == nil || member.subscriptionRef == member.id,
