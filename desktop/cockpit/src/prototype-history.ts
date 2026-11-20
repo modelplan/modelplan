@@ -3,6 +3,8 @@
 // through the producer's current binding (owner D-D: shown as local records). A day or hour without an observation
 // stays null, never zero, and the page says nothing about days before the recording began.
 import {ht} from './host-text.js';
+import {cardUsage} from './model-card.js';
+import {costView} from './prototype-cost.js';
 import type {WireCockpitData} from '../generated/wire.js';
 
 const HOUR=36e5,DAYS=182;
@@ -16,9 +18,11 @@ export interface HistoryView {
  readonly paceHistory:Record<string,Record<string,unknown[]>>;
  /** WP-13: the Models page's usage list, by model id, observed output tokens per range. */
  readonly modelRanking:{recent7d:{top:{name:string;tokens:number}[]};recent30d:{top:{name:string;tokens:number}[]}};
+ /** WP-13 + WP-06: the producer's ≈cost (US dollars) per model id for the 7- and 30-day ranges, and each range's total; absent without price data. */
+ readonly modelCost:{recent7d:Readonly<Record<string,number>>;recent30d:Readonly<Record<string,number>>;total:{recent7d:number|null;recent30d:number|null}};
 }
 const kinds:Readonly<Record<string,string>>={five_hour:'5h',weekly:'week',monthly:'month'};
-export const noHistory:HistoryView={daily:[],hourly:[],projectRanking:{recent7d:[],recent30d:[]},paceHistory:{},modelRanking:{recent7d:{top:[]},recent30d:{top:[]}}};
+export const noHistory:HistoryView={daily:[],hourly:[],projectRanking:{recent7d:[],recent30d:[]},paceHistory:{},modelRanking:{recent7d:{top:[]},recent30d:{top:[]}},modelCost:{recent7d:{},recent30d:{},total:{recent7d:null,recent30d:null}}};
 
 export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<string,string>,now:number,locale:string):HistoryView {
  const h=data?.history;if(!h||h.coverage!=='local-history')return noHistory;
@@ -51,7 +55,9 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
   (paceHistory[accountId]??={})[kind]=group.cycles.map(c=>({start:c.startedAt,end:c.resetsAt,points:c.points,hadDrop:c.hadDrop,spent:c.spent.map(s=>({model:s.model??'',effort:s.effort,fast:s.fast,points:s.points}))}));
  }
  const models=(w:{top:ReadonlyArray<{name:string;observedOutputTokens:number}>})=>({top:w.top.map(e=>({name:e.name,tokens:e.observedOutputTokens}))});
- return {daily,hourly,projectRanking:{recent7d:projects(h.projects.recent7d),recent30d:projects(h.projects.recent30d)},paceHistory,modelRanking:{recent7d:models(h.models.recent7d),recent30d:models(h.models.recent30d)}};
+ const costOf=(range:'7d'|'30d')=>Object.fromEntries([...cardUsage(h,range)].flatMap(([id,u])=>u.cost!==undefined&&u.cost>0?[[id,u.cost] as const]:[])),cv=costView(data,now);
+ return {daily,hourly,projectRanking:{recent7d:projects(h.projects.recent7d),recent30d:projects(h.projects.recent30d)},paceHistory,modelRanking:{recent7d:models(h.models.recent7d),recent30d:models(h.models.recent30d)},
+  modelCost:{recent7d:costOf('7d'),recent30d:costOf('30d'),total:{recent7d:cv?.total.last7d.cost?.usd??null,recent30d:cv?.total.last30d.cost?.usd??null}}};
 }
 
 /** The 7|30 usage block for one subscription: several linked tools add up; an unknown kind stays unknown. */

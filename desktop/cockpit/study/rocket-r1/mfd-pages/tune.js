@@ -4,15 +4,14 @@ import {secondaryLink} from './public-helpers.js';
 // The HUD opens this page as a view
 // (return rule). Pure view (spec 2.6).
 import {t} from '../i18n.js';
-import {fill, esc} from './fmt.js';
+import {fill, esc, approxCost} from './fmt.js';
 import {chartModels, currentOf, accountsIn} from './scope.js';
 import {pageRange, rangeWord, pct} from './page-range.js';
 import {frontierSvg} from './frontier.js';
 import {withOlderLabel} from './public-helpers.js';
 
-// TODO(#1050, WP-06): the ≈cost cell stays empty until the client-v1.6 price data (~11-21) reaches this page.
 // CKP-MFD-65 (V1-FINAL 8.3): the usage list. One row per known model: colour chip, model, current effort and the
-// recommended one, a share bar, ≈cost (empty until WP-06's price data reaches this page), share. Models in use come
+// recommended one, a share bar, ≈cost (from WP-06's price data; empty for a model without a public price), share. Models in use come
 // first by their share of the range's tokens; unused ones follow in the published order, dimmed. With no usage record
 // at all the list is in the published (recommendation) order and the share and ≈cost columns stay empty.
 export function usageRows(d, ui) {
@@ -25,16 +24,19 @@ export function usageRows(d, ui) {
   const total = rows.reduce((sum, r) => sum + (r.tokens ?? 0), 0);
   return {rows, total, hasUsage: rows.some(r => r.tokens != null)};
 }
+// The price data has 7- and 30-day model rows; Today has none on this page yet, so it shows no ≈$ rather than another range's.
+const costKey = ui => ({'7d': 'recent7d', '30d': 'recent30d'})[pageRange(ui)];
+const totalCost = (d, ui) => { const v = approxCost(d.modelCost?.total?.[costKey(ui)]); return v ? ` · ${esc(v)}` : ''; };
 function list(d, ui) {
   const {rows, total, hasUsage} = usageRows(d, ui);
   if (!rows.length) return `<p class="mp-empty">${t('mfd.noModels')}</p>`;
   const inUse = rows.filter(r => r.tokens != null).length, accounts = accountsIn(d, ui);
   const body = rows.map(({m, tokens}) => {
     const cur = currentOf(d, ui, m.id)?.effort, share = pct(tokens, total), colour = accounts.find(a => a.pool && a.pool === m.pool)?.colour || 'var(--lcd-muted)';
-    const idle = hasUsage && tokens == null;
-    return `<button type="button" data-p="${share ?? 0}" class="md-row ${idle ? 'idle' : ''} ${ui.selModel === m.id ? 'sel' : ''}" data-mfd="model:${esc(m.id)}" data-model="${esc(m.id)}" aria-label="${esc(t('mfd.mdRowAria', {m: m.name}))}"${idle ? ` title="${esc(t('mfd.mdUnused'))}"` : ''}><i class="chip" data-v="${esc(colour)}"></i><b class="md-n">${esc(m.short || m.name)}</b><span class="md-e">${cur ? esc(cur) : ''}${m.rec ? `<i class="md-star">★${esc(m.rec)}</i>` : ''}</span><span class="md-c" data-cost></span><span class="md-s">${share == null ? '' : share + '%'}</span></button>`;
+    const idle = hasUsage && tokens == null, cost = d.modelCost?.[costKey(ui)]?.[m.id];
+    return `<button type="button" data-p="${share ?? 0}" class="md-row ${idle ? 'idle' : ''} ${ui.selModel === m.id ? 'sel' : ''}" data-mfd="model:${esc(m.id)}" data-model="${esc(m.id)}" aria-label="${esc(t('mfd.mdRowAria', {m: m.name}))}"${idle ? ` title="${esc(t('mfd.mdUnused'))}"` : ''}><i class="chip" data-v="${esc(colour)}"></i><b class="md-n">${esc(m.short || m.name)}</b><span class="md-e">${cur ? esc(cur) : ''}${m.rec ? `<i class="md-star">★${esc(m.rec)}</i>` : ''}</span><span class="md-c" data-cost>${esc(cost == null ? '' : approxCost(cost) ?? '')}</span><span class="md-s">${share == null ? '' : share + '%'}</span></button>`;
   }).join('');
-  return `<div class="md-h">${esc(t('mfd.mdTitle', {r: rangeWord(ui), n: hasUsage ? inUse : rows.length}))}</div><div class="md-list" data-usage="${hasUsage}">${body}</div>`;
+  return `<div class="md-h">${esc(t('mfd.mdTitle', {r: rangeWord(ui), n: hasUsage ? inUse : rows.length}))}${totalCost(d, ui)}</div><div class="md-list" data-usage="${hasUsage}">${body}</div>`;
 }
 
 // 图 (CKP-MFD-66): the ability-cost frontier of the user's models. Only the selected model and the first-ranked one carry

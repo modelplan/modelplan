@@ -97,7 +97,7 @@ def write_app(app, reports='modelplan 0.5.52', *, release=True, exit_code=0, dec
     helper.chmod(0o755)
     digest = hashlib.sha256(helper.read_bytes()).hexdigest()
     (app / 'Contents/Resources/modelplan.sha256').write_text(digest + '\n')
-    info = {'CFBundleExecutable': 'ModelPlanCommunity', 'ModelPlanPublicSource': 'c' * 40,
+    info = {'CFBundleExecutable': 'ModelPlan', 'ModelPlanPublicSource': 'c' * 40,
             'ModelPlanBundledHelperSHA256': digest}
     if release:
         info.update({'ModelPlanHelperVersion': declared, 'ModelPlanSourceHelperSHA256ByArchitecture': sources})
@@ -114,7 +114,7 @@ class BundledHelperTests(unittest.TestCase):
         root = Path(self.tmp.name)
         self.pin = root / 'consent-cli-pin.json'
         self.pin.write_text(json.dumps({'version': '0.5.52', 'sourceSHA256ByArchitecture': SOURCE}))
-        self.app = root / 'ModelPlan Community.app'
+        self.app = root / 'ModelPlan.app'
         self.helper = self.app / 'Contents/Helpers/modelplan'
         self.helper.parent.mkdir(parents=True)
 
@@ -223,12 +223,12 @@ class CandidateCommandTests(SyntheticRepo, unittest.TestCase):
 class WorkflowWiringTests(unittest.TestCase):
     def test_built_apps_are_checked_against_the_pin_they_were_packaged_from(self):
         neutral = (ROOT / '.github/workflows/macos-distribution.yml').read_text()
-        self.assertIn('check_cli_pin_consistency.py --app "$RUNNER_TEMP/neutral-build/ModelPlan Community.app" '
+        self.assertIn('check_cli_pin_consistency.py --app "$RUNNER_TEMP/neutral-build/ModelPlan.app" '
                       '--pin desktop/native/consent-cli-pin.json --require-release-identity', neutral)
         self.assertLess(neutral.index('package-neutral.sh "$RUNNER_TEMP/cli-archives"'),
                         neutral.index('check_cli_pin_consistency.py --app'))
         smoke = (ROOT / '.github/workflows/desktop.yml').read_text()
-        self.assertIn('check_cli_pin_consistency.py --app "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app" '
+        self.assertIn('check_cli_pin_consistency.py --app "$RUNNER_TEMP/smoke-neutral-build/ModelPlan.app" '
                       '--pin codex/cli-pin.json', smoke)
 
 

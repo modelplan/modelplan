@@ -1,0 +1,301 @@
+{
+ "version": 1,
+ "sources": [
+  "local-history"
+ ],
+ "coverage": "local-history",
+ "recordingSince": "2026-10-06T12:00:00Z",
+ "subscriptions": [
+  {
+   "subscriptionRef": "0123456789abcdef",
+   "sources": [
+    {
+     "source": "codex",
+     "bindingBasis": "source-wide-current-binding",
+     "recent7d": {
+      "inputTokens": 1100500,
+      "outputTokens": 110500,
+      "cacheReadTokens": 2000000,
+      "cacheWriteTokens": 0,
+      "cacheHitRatio": 0.6451,
+      "generationTps": 242.9,
+      "observedRequests": 46,
+      "eligibleRequests": 46
+     },
+     "recent30d": {
+      "inputTokens": 1100500,
+      "outputTokens": 110500,
+      "cacheReadTokens": 2000000,
+      "cacheWriteTokens": 0,
+      "cacheHitRatio": 0.6451,
+      "generationTps": 242.9,
+      "observedRequests": 46,
+      "eligibleRequests": 46
+     }
+    }
+   ]
+  },
+  {
+   "subscriptionRef": "fedcba9876543210",
+   "sources": [
+    {
+     "source": "claude-code",
+     "bindingBasis": "source-wide-current-binding",
+     "recent7d": {
+      "inputTokens": 10000,
+      "outputTokens": 50000,
+      "cacheReadTokens": 1000000,
+      "cacheWriteTokens": 100000,
+      "cacheHitRatio": 0.9901,
+      "generationTps": 250,
+      "observedRequests": 12,
+      "eligibleRequests": 12
+     },
+     "recent30d": {
+      "inputTokens": 10000,
+      "outputTokens": 50000,
+      "cacheReadTokens": 1000000,
+      "cacheWriteTokens": 100000,
+      "cacheHitRatio": 0.9901,
+      "generationTps": 250,
+      "observedRequests": 12,
+      "eligibleRequests": 12
+     }
+    }
+   ]
+  }
+ ],
+ "models": {
+  "measure": "observed-output-tokens",
+  "attribution": "unattributed",
+  "recent7d": {
+   "entities": 4,
+   "totalObservedOutputTokens": 160500,
+   "top": [
+    {
+     "name": "sol-6.1",
+     "observedRequests": 40,
+     "observedOutputTokens": 100000,
+     "share": 0.623
+    },
+    {
+     "name": "opus",
+     "observedRequests": 12,
+     "observedOutputTokens": 50000,
+     "share": 0.312
+    },
+    {
+     "name": "astra-6.2",
+     "observedRequests": 5,
+     "observedOutputTokens": 10000,
+     "share": 0.062
+    }
+   ]
+  },
+  "recent30d": {
+   "entities": 4,
+   "totalObservedOutputTokens": 160500,
+   "top": [
+    {
+     "name": "sol-6.1",
+     "observedRequests": 40,
+     "observedOutputTokens": 100000,
+     "share": 0.623
+    },
+    {
+     "name": "opus",
+     "observedRequests": 12,
+     "observedOutputTokens": 50000,
+     "share": 0.312
+    },
+    {
+     "name": "astra-6.2",
+     "observedRequests": 5,
+     "observedOutputTokens": 10000,
+     "share": 0.062
+    }
+   ]
+  }
+ },
+ "tools": {
+  "measure": "observed-output-tokens",
+  "attribution": "unattributed",
+  "recent7d": {
+   "entities": 2,
+   "totalObservedOutputTokens": 160500,
+   "top": [
+    {
+     "name": "codex",
+     "observedRequests": 46,
+     "observedOutputTokens": 110500,
+     "share": 0.688
+    },
+    {
+     "name": "claude-code",
+     "observedRequests": 12,
+     "observedOutputTokens": 50000,
+     "share": 0.312
+    }
+   ]
+  },
+  "recent30d": {
+   "entities": 2,
+   "totalObservedOutputTokens": 160500,
+   "top": [
+    {
+     "name": "codex",
+     "observedRequests": 46,
+     "observedOutputTokens": 110500,
+     "share": 0.688
+    },
+    {
+     "name": "claude-code",
+     "observedRequests": 12,
+     "observedOutputTokens": 50000,
+     "share": 0.312
+    }
+   ]
+  }
+ },
+ "dailyFrom": "2026-10-06",
+ "daily": [
+  {
+   "at": "2026-11-03",
+   "source": "claude-code",
+   "origin": "live",
+   "observedOutputTokens": 50000
+  },
+  {
+   "at": "2026-11-04",
+   "source": "codex",
+   "origin": "live",
+   "observedOutputTokens": 10000
+  },
+  {
+   "at": "2026-11-05",
+   "source": "codex",
+   "origin": "live",
+   "observedOutputTokens": 100500
+  }
+ ],
+ "hourly": [],
+ "projects": {
+  "recent7d": [],
+  "recent30d": []
+ },
+ "cycles": [],
+ "cost": {
+  "basis": "api-list-price",
+  "currency": "USD",
+  "pricesAsOf": "2026-11-19",
+  "daily": [
+   {
+    "at": "2026-11-03",
+    "source": "claude-code",
+    "estimatedUsd": 1.74,
+    "pricedTokens": 1160000,
+    "unpricedTokens": 0
+   },
+   {
+    "at": "2026-11-04",
+    "source": "codex",
+    "estimatedUsd": 1.2,
+    "pricedTokens": 110000,
+    "unpricedTokens": 0,
+    "approximate": true
+   },
+   {
+    "at": "2026-11-05",
+    "source": "codex",
+    "estimatedUsd": 3.2,
+    "pricedTokens": 3100000,
+    "unpricedTokens": 1000,
+    "approximate": true
+   }
+  ],
+  "hourly": [],
+  "models": {
+   "today": [
+    {
+     "model": "sol-6.1",
+     "source": "codex",
+     "estimatedUsd": 3.2,
+     "pricedTokens": 3100000,
+     "unpricedTokens": 0,
+     "approximate": true
+    },
+    {
+     "model": "unknown",
+     "source": "codex",
+     "estimatedUsd": null,
+     "pricedTokens": 0,
+     "unpricedTokens": 1000
+    }
+   ],
+   "recent7d": [
+    {
+     "model": "sol-6.1",
+     "source": "codex",
+     "estimatedUsd": 3.2,
+     "pricedTokens": 3100000,
+     "unpricedTokens": 0,
+     "approximate": true
+    },
+    {
+     "model": "opus",
+     "source": "claude-code",
+     "estimatedUsd": 1.74,
+     "pricedTokens": 1160000,
+     "unpricedTokens": 0
+    },
+    {
+     "model": "astra-6.2",
+     "source": "codex",
+     "estimatedUsd": 1.2,
+     "pricedTokens": 110000,
+     "unpricedTokens": 0,
+     "approximate": true
+    },
+    {
+     "model": "unknown",
+     "source": "codex",
+     "estimatedUsd": null,
+     "pricedTokens": 0,
+     "unpricedTokens": 1000
+    }
+   ],
+   "recent30d": [
+    {
+     "model": "sol-6.1",
+     "source": "codex",
+     "estimatedUsd": 3.2,
+     "pricedTokens": 3100000,
+     "unpricedTokens": 0,
+     "approximate": true
+    },
+    {
+     "model": "opus",
+     "source": "claude-code",
+     "estimatedUsd": 1.74,
+     "pricedTokens": 1160000,
+     "unpricedTokens": 0
+    },
+    {
+     "model": "astra-6.2",
+     "source": "codex",
+     "estimatedUsd": 1.2,
+     "pricedTokens": 110000,
+     "unpricedTokens": 0,
+     "approximate": true
+    },
+    {
+     "model": "unknown",
+     "source": "codex",
+     "estimatedUsd": null,
+     "pricedTokens": 0,
+     "unpricedTokens": 1000
+    }
+   ]
+  }
+ }
+}

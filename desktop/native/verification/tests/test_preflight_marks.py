@@ -65,9 +65,10 @@ class ProducerShapedMarkTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / 'pack').mkdir()
         fixture = PackageNeutralFixture(self.root / 'pack')
-        result = fixture.run()
+        # The producers whose artifacts preflight verifies package the official edition (D57/D321).
+        result = fixture.run(environment={'MODELPLAN_EDITION': 'official'})
         self.assertEqual(result.returncode, 0, result.stderr)  # the actual packager shell succeeded
-        self.app = fixture.output / 'ModelPlan Community.app'
+        self.app = fixture.output / 'ModelPlan.app'
         self.bundle = self.app / 'Contents/Resources' / DOCK
         self.count = 0
 
@@ -127,6 +128,18 @@ class ProducerShapedMarkTests(unittest.TestCase):
         self.assertIn('does not match', self.pf07(zip_app(self.app))[0]['detail'])
         shutil.rmtree(self.app / 'Contents/Resources/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle')
         self.assertIn('missing ModelPlanOfficialDock', self.pf07(zip_app(self.app))[0]['detail'])
+
+
+    def test_neutral_package_needs_no_reserved_dock_bundle(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'pack').mkdir()
+            fixture = PackageNeutralFixture(Path(folder) / 'pack')
+            self.assertEqual(fixture.run().returncode, 0)
+            app = fixture.output / 'ModelPlan.app'
+            self.assertFalse((app / 'Contents/Resources/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle').exists())
+            self.assertEqual([c['status'] for c in self.pf07(zip_app(app))], ['PASS'])
+            shutil.rmtree(app / 'Contents/Resources/ModelPlanDockResources_ModelPlanDockResources.bundle')
+            self.assertIn('missing ModelPlanDockResources', self.pf07(zip_app(app))[0]['detail'])
 
 
 if __name__ == '__main__':

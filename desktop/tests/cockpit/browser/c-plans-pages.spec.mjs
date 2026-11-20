@@ -52,14 +52,31 @@ for(const n of [3,4])test(`CKP-MFD-64 with ${n} subscriptions it lists one row e
 // A published-model profile with a local history: Sol used 900 output tokens, Terra 100, the others none.
 const ranking=top=>({entities:top.length,totalObservedOutputTokens:top.reduce((n,e)=>n+e.observedOutputTokens,0),top});
 const entity=(name,tokens)=>({name,observedOutputTokens:tokens,observedRequests:1,share:0});
-function withHistory(used=true){
+function withHistory(used=true,priced=false){
  const data=build13Profile(),at=n=>{const d=new Date(Date.now()-n*864e5);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
  const top=used?[entity('gpt-6.1-sol',900),entity('gpt-6.1-terra',100)]:[],none={measure:'observed-output-tokens',attribution:'unattributed'};
  data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:at(3),subscriptions:[],daily:[],hourly:[],cycles:[],
   models:{...none,recent7d:ranking(top),recent30d:ranking(top)},tools:{...none,recent7d:ranking([]),recent30d:ranking([])},
   projects:{recent7d:used?[{ref:'p1',label:'modelPlans',model:'gpt-6.1-sol',effort:'high',observedOutputTokens:900,share:0.9},{ref:'p2',label:'site',model:'gpt-6.1-terra',effort:'medium',observedOutputTokens:100,share:0.1}]:[],recent30d:used?[{ref:'p1',label:'modelPlans',model:'gpt-6.1-sol',effort:'high',observedOutputTokens:900,share:0.9},{ref:'p2',label:'site',model:'gpt-6.1-terra',effort:'medium',observedOutputTokens:100,share:0.1}]:[]}};
+ if(priced)data.history.cost={basis:'api-list-price',currency:'USD',pricesAsOf:'2026-11-04',daily:[{at:at(1),source:'codex',estimatedUsd:15,pricedTokens:1000,unpricedTokens:0}],hourly:[],
+  models:{today:[],recent7d:[{model:'gpt-6.1-sol',source:'codex',estimatedUsd:12,pricedTokens:900,unpricedTokens:0},{model:'gpt-6.1-terra',source:'codex',estimatedUsd:3,pricedTokens:100,unpricedTokens:0}],recent30d:[]}};
  return data;
 }
+
+// WP-13 + WP-06 (#1050): the Models rows carry the producer's ≈cost; a model without a price keeps an empty cell.
+test('CKP-MFD-65 the Models rows fill the ≈cost cell from the price data and the title carries the total',async({page})=>{
+ await open(page,withHistory(true,true));await page.locator('[data-mfd="page:tune"]').click();
+ const rows=page.locator('.mfd-page .md-list .md-row');
+ await expect(rows.nth(0).locator('.md-c')).toHaveText('≈$12');await expect(rows.nth(1).locator('.md-c')).toHaveText('≈$3');
+ await expect(rows.last().locator('.md-c')).toHaveText('');
+ await expect(page.locator('.mfd-page .md-h')).toHaveText('7d · 2 models · ≈$15');
+});
+
+test('CKP-MFD-65 without price data the Models cost cells and title stay free of ≈$',async({page})=>{
+ await open(page,withHistory(true,false));await page.locator('[data-mfd="page:tune"]').click();
+ expect((await page.locator('.mfd-page .md-c').allTextContents()).join('')).toBe('');
+ await expect(page.locator('.mfd-page .md-h')).toHaveText('7d · 2 models');
+});
 
 test('CKP-MFD-65 the Models page follows the header range: its title, rows and shares change with it',async({page})=>{
  const data=withHistory();data.history.models.recent30d=ranking([entity('gpt-6.1-terra',800),entity('gpt-6.1-sol',200)]);

@@ -183,6 +183,74 @@ test('CKP-PORT-06 hovering a row lights its rocket by published name, for real p
 test('an older engine shows no HUD',async({page})=>{
  await open(page,{published:null});await expect(page.locator('.hud')).toBeHidden();
 });
+// WP-22 macrevb-1062-3: a rocket chosen in the enlarged field arrives as the host's `select` message (public model id) and
+// selects the same model on the HUD, the faders and the porthole still; a clear from the field clears all three.
+test('WP-22 the field\'s selection selects the model on the HUD, the faders and the porthole, and a clear clears them',async({page})=>{
+ const sonnet={...model('sonnet-5.5',62,.4),name:'Claude Sonnet 5.5',developerId:'anthropic'};
+ const published=[sonnet,...models];
+ const {send,receive}=await open(page,{published,lineup:[sonnet,published[1]]});
+ await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
+ const marked=()=>page.locator('.ck-field .ck-still-body.ck-sel').evaluateAll(e=>e.map(x=>x.dataset.modelName));
+ const fader=()=>page.locator('.fd-ch.sel [data-travel]').evaluateAll(e=>e.map(x=>x.getAttribute('aria-label')));
+ expect(await receive(send('select',{model:'sonnet-5.5'}))).toBe(true);
+ await expect(page.locator('.hud .hp.selected')).toHaveCount(1);
+ await expect(page.locator('.hud .hp.selected')).toHaveAttribute('data-hud-model','sonnet-5.5');
+ expect(await fader()).toEqual(['Claude Sonnet 5.5']);
+ expect(await marked()).toEqual(['Claude Sonnet 5.5']);
+ expect(await receive(send('select',{model:null}))).toBe(true);
+ await expect(page.locator('.hud .hp.selected')).toHaveCount(0);
+ expect(await fader()).toEqual([]);
+ expect(await marked()).toEqual([]);
+ expect(await receive(send('select',{model:'sonnet-5.5',effort:'high'}))).toBe(false);
+ await expect(page.locator('.hud .hp.selected')).toHaveCount(0);
+});
+// macrevb-1062-3 r2: the fader renderer resolves the shared effort keys on the visible bank only, so a model chosen in the
+// field whose fader sits on another bank must bring that bank up; a clear keeps the bank and selects no channel.
+test('WP-22 the field\'s selection shows the selected fader\'s bank and the effort keys act on it; a clear keeps the bank',async({page})=>{
+ const {send,receive}=await open(page,{lineup:[models[0]]});
+ const visible=()=>page.locator('.fd-ch [data-travel]').evaluateAll(e=>e.map(x=>x.getAttribute('aria-label')));
+ const selected=()=>page.locator('.fd-ch.sel [data-travel]').evaluateAll(e=>e.map(x=>x.getAttribute('aria-label')));
+ const first=await visible();expect(first).not.toContain('Synthetic m1');
+ expect(await receive(send('select',{model:'m1'}))).toBe(true);
+ expect(await visible()).toContain('Synthetic m1');
+ expect(await selected()).toEqual(['Synthetic m1']);
+ await page.locator('.sc-l:not(.na)').first().click();
+ await expect(page.locator('.fd-ch.trying [data-travel]')).toHaveAttribute('aria-label','Synthetic m1');
+ const bank=await visible();
+ expect(await receive(send('select',{model:null}))).toBe(true);
+ expect(await selected()).toEqual([]);
+ expect(await visible()).toEqual(bank);
+ expect(await receive(send('select',{model:'m0'}))).toBe(true);
+ expect(await visible()).toEqual(first);expect(await selected()).toEqual(['Synthetic m0']);
+});
+// Owner 11-19 (#1062): the enlarged field opens on a click on the port, not on a drag across it, and not on the click
+// that bounces off the field's close (the cockpit, inactive while the field held key, becomes active again).
+test('WP-22 a drag across the porthole does not open the field; a press that stays within 4 px still does',async({page})=>{
+ await open(page);const box=await page.locator('.ck-port').boundingBox(),x=box.x+520,y=box.y+120;
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+12,y+3,{steps:4});await page.mouse.up();
+ await page.waitForTimeout(100);expect(await fieldOpens(page)).toBe(0);
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+3,y+2,{steps:2});await page.mouse.up();
+ await expect.poll(()=>fieldOpens(page)).toBe(1);
+});
+test('WP-22 a porthole click within 300 ms of the field closing is ignored; a later one opens it',async({page})=>{
+ // Controlled time: the page's clock only moves when the test moves it.
+ await page.clock.install({time:new Date('2026-11-19T12:00:00Z')});
+ const {send,receive}=await open(page);const port=page.locator('.ck-port');
+ await page.clock.pauseAt(new Date('2026-11-19T12:00:10Z'));
+ await port.click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(1);
+ // A cockpit reactivation alone is not a field close: no guard.
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:false}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ await port.click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(2);
+ // The host's field close starts the guard.
+ expect(await receive(send('fieldClosed',{}))).toBe(true);
+ await port.click({position:{x:520,y:120}});
+ await page.clock.runFor(299);
+ await port.click({position:{x:520,y:120}});
+ expect(await fieldOpens(page)).toBe(2);
+ await page.clock.runFor(2);
+ await port.click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(3);
+});
 // v1 final (WP-14, V1-FINAL §5): the HUD is the legend of the user's own models. A session does not add a model its
 // subscription does not carry (a Claude Code session pointed at another vendor's model is not that subscription's model),
 // the rows stop at six (three on the short cockpit) on one solid dark backing, names 10 px white, and a small green dot

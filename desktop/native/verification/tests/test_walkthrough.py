@@ -154,6 +154,9 @@ class Bundle(unittest.TestCase):
 
     def test_release_package_and_wrong_source_are_refused(self):
         self.assertTrue(w.check_bundle({**self.INFO, "ModelPlanCockpitEntryEnabled": False}, None))
+        # D57: a pre-rename owner test build is still walkable; any other executable is refused.
+        self.assertEqual(w.check_bundle({**self.INFO, "CFBundleExecutable": "ModelPlanCommunity"}, "a" * 40), [])
+        self.assertTrue(w.check_bundle({**self.INFO, "CFBundleExecutable": "Other"}, "a" * 40))
         self.assertTrue(w.check_bundle(self.INFO, "b" * 40))
 
 
