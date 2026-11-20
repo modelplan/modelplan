@@ -53,7 +53,9 @@ jobs:
     - uses: actions/checkout@v4
       with:
         persist-credentials: false
-        ref: ${{ inputs.ref }}
+        # GitHub compares strings case-insensitively, so 'MAIN' passes the job condition: the main case builds this run's
+        # own commit (the dispatch ref is main, checked above), never a branch spelled differently. Tags are refs/tags/.
+        ref: ${{ startsWith(inputs.ref, 'refs/tags/') && inputs.ref || github.sha }}
     - uses: actions/setup-node@v4
       with:
         node-version: '24'

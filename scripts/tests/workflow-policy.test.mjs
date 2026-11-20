@@ -513,6 +513,9 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
     ["  contents: read\n", "  contents: write\n"],
     ["persist-credentials: false", "persist-credentials: true"],
     ["          - smoke-arm64-5\n", "          - smoke-arm64-5\n          - modelplan-mac\n"],
+    ["          - smoke-arm64-5\n", "          - smoke-arm64-5\n          - modelplan-mac-nongui # standby\n"],
+    ["          - smoke-arm64-5\n", "          - smoke-arm64-5\n          - 'modelplan-mac-nongui'\n"],
+    ["ref: ${{ startsWith(inputs.ref, 'refs/tags/') && inputs.ref || github.sha }}", "ref: ${{ inputs.ref }}"],
     [" && github.actor == 'guanbear'", ""],
     [" && github.ref == 'refs/heads/main'", ""],
     ["timeout-minutes: 40", "timeout-minutes: 400"],
@@ -522,7 +525,8 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
     assert.ok(text.includes(from), from);
     assert.ok(workflowProblems(text.replace(from, to), RUNNER_SMOKE_PATH).length > 0, `accepted: ${from} -> ${to}`);
   }
-  assert.ok(runnerSmokeProblems(text.replace("secrets", "x")).length === 0);
+  assert.deepEqual(runnerSmokeProblems(text.replace("          - smoke-arm64-5\n", "          - smoke-arm64-5 # first\n          - smoke-arm64-6\n")), []);
+  assert.ok(runnerSmokeProblems(text.replace("jobs:\n", "jobs:\n  x:\n    env:\n      T: ${{ secrets.X }}\n    steps: []\n")).length > 0);
   // The smoke label and route are refused in any other workflow.
   assert.ok(workflowProblems(text, ".github/workflows/other.yml").length > 0);
   assert.ok(workflowProblems("runs-on: [self-hosted, macOS, ARM64, smoke-arm64-5]\n", ".github/workflows/other.yml").length > 0);

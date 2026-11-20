@@ -82,8 +82,10 @@ export function runnerSmokeProblems(text) {
   if (/\bsecrets\./.test(text) || /^\s+[a-z-]+:\s*write\b/m.test(text)) problems.push("runner-smoke.yml may not use secrets or write permissions");
   const checkouts = (text.match(/uses: actions\/checkout@/g) ?? []).length;
   if (checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every runner-smoke.yml checkout must set persist-credentials: false");
-  const options = [...(topLevelBlock(text, "on") ?? "").matchAll(/^ {10}- (\S+)\s*$/gm)].map((m) => m[1]);
-  if (!options.length || options.some((o) => !/^smoke-arm64-\d+$/.test(o))) problems.push("runner-smoke.yml label options must all be smoke-arm64-N");
+  // Every list item of the on: block is a label choice: only `- smoke-arm64-N` (optionally followed by a comment).
+  const items = (topLevelBlock(text, "on") ?? "").split("\n").filter((l) => /^\s*-\s/.test(l));
+  if (!items.length || items.some((l) => !/^ {10}- smoke-arm64-\d+(?:\s+#.*)?\s*$/.test(l))) problems.push("runner-smoke.yml label options must all be smoke-arm64-N");
+  if (!text.includes("        ref: ${{ startsWith(inputs.ref, 'refs/tags/') && inputs.ref || github.sha }}")) problems.push("runner-smoke.yml must check out a tag or its own commit, never a free-form branch (expressions compare case-insensitively)");
   const jobs = jobBlocks(text);
   const routed = jobs.filter((j) => j.lines.some((l) => l.trim() === RUNNER_SMOKE_ROUTE));
   if (jobs.length !== 1 || routed.length !== 1) problems.push("runner-smoke.yml has exactly one job, on the smoke route");
