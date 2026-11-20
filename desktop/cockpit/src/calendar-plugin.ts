@@ -13,13 +13,16 @@ import {PLUGIN_ICON_FRAME,type CockpitPlugin,type PluginCell,type PluginContext,
 import {CALENDAR_MAX_BYTES,calendarFromCockpit,emptyCalendar,parseCalendarData,type CalendarData,type CalendarSpan} from './calendar-data.js';
 import {HOUR,WEEK_DAYS,addDays,dayOffset,dayPieces,hhmm,hourMarks,isWeekend,midnights,monthDay,nextMinute,packLanes,startOfDay,stripWindow,wallHours,type Span} from './calendar-time.js';
 
-const W={
- en:{title:'Calendar',week:'Calendar · 7 days',now:'Now',back:'↺ Now',allDay:'All day',peak:'peak',cont:' (cont.)',r5:'5h',week5:'5h reset',weekly:'weekly',weeklyLong:'weekly reset',wk:'wk',cards:'reset card',until:'until',announced:'announced reset',confirmed:'confirmed reset',effective:'',more:'more',empty:'No peaks or resets',waiting:'Waiting for readings',zoomed:'Zoomed · ⌘− to fit',days:['Today','Tmr'],
-  weekdays:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],narrow:['S','M','T','W','T','F','S'],tentative:'tentative',announcedOn:'announced'},
- 'zh-CN':{title:'日历',week:'日历 · 7 天',now:'现在',back:'↺ 现在',allDay:'全天',peak:'高峰',cont:'（续）',r5:'5h',week5:'5h 重置',weekly:'周重置',weeklyLong:'周额度重置',wk:'周',cards:'重置卡',until:'至',announced:'预告重置',confirmed:'已确认重置',effective:'生效',more:'更多',empty:'暂无高峰或重置',waiting:'等待读数',zoomed:'放大中 · ⌘− 还原',days:['今','明','后'],
-  weekdays:['周日','周一','周二','周三','周四','周五','周六'],narrow:['日','一','二','三','四','五','六'],tentative:'未确认',announcedOn:'公告'},
-} as const;
-type Words=typeof W[PluginLocale];
+// Every word the calendar draws comes from the plugin string table (strings/plugins.js, `plugin.cal*`), in the locale
+// of the draw context; nothing here picks a language's text inline.
+const WORDS=['now','back','allDay','peak','cont','r5','week5','weekly','weeklyLong','wk','cards','until','announced','confirmed','effective','empty','waiting','zoomed','tentative','announcedOn'] as const;
+type Words={readonly [k in typeof WORDS[number]]:string}&{readonly days:readonly string[];readonly weekdays:readonly string[];readonly narrow:readonly string[]};
+function wordsOf(context:PluginContext):Words {
+ const word=(key:string)=>context.words('plugin.'+key).full,out:Record<string,unknown>={};
+ for(const k of WORDS)out[k]=word('cal'+k[0]!.toUpperCase()+k.slice(1));
+ out.days=[0,1,2].map(i=>word('calDay'+i));out.weekdays=[0,1,2,3,4,5,6].map(i=>word('calWd'+i));out.narrow=[0,1,2,3,4,5,6].map(i=>word('calWn'+i));
+ return out as Words;
+}
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
 const pct=(v:number)=>`${(Math.max(0,Math.min(1,v))*100).toFixed(3)}%`;
 
@@ -34,7 +37,7 @@ const button=(className:string,focus:string,text?:string)=>{const b=el('button',
 const weekday=(t:number,w:Words,narrow=false)=>(narrow?w.narrow:w.weekdays)[new Date(t).getDay()]!;
 const dayLabel=(t:number,w:Words,zh:boolean)=>zh?`${monthDay(t)} ${weekday(t,w)}`:`${weekday(t,w)} ${monthDay(t)}`;
 /** A chip's day prefix inside the 36-hour view: none today, 明/后 (Tmr/weekday) on later days. */
-function dayPrefix(at:number,now:number,w:Words,zh:boolean){const d=dayOffset(now,at);return d<=0?'':zh?(d<3?w.days[d]!:`${monthDay(at)} `):d===1?'Tmr ':`${weekday(at,w)} `;}
+function dayPrefix(at:number,now:number,w:Words,zh:boolean){const d=dayOffset(now,at);return d<=0?'':zh?(d<3?w.days[d]!:`${monthDay(at)} `):d===1?`${w.days[1]} `:`${weekday(at,w)} `;}
 function resetText(abbr:string,kind:'5h'|'week',at:number,prefix:string,w:Words,long=false){
  const what=kind==='5h'?(long?w.week5:w.r5):(long?w.weeklyLong:w.weekly);return `${abbr} ${what} ${prefix}${hhmm(at)}`;
 }
@@ -63,7 +66,7 @@ export function beyond(data:CalendarData,span:Span):{at:number;sub:number;kind:'
 
 // --- the column (day view) ---------------------------------------------------------------------------------------
 function paintStrip(context:PluginDrawContext,reading:CalendarData|null) {
- const s=viewOf(context.memo),w=W[context.locale],zh=context.locale==='zh-CN',now=context.now;
+ const s=viewOf(context.memo),w=wordsOf(context),zh=context.locale==='zh-CN',now=context.now;
  const panel=el('div','cal');context.area.append(panel);
  const redraw=()=>context.redraw();
  // No host time yet (the first draw comes before the first display data): nothing to place.
@@ -140,7 +143,7 @@ function settleChips(axis:HTMLElement) {
 const ZOOMS=[24,16,12,8] as const;
 interface WeekItem {day:number;start:number;end:number;label:string;kind:'peak'|'chip'}
 function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
- const s=viewOf(context.memo),w=W[context.locale],zh=context.locale==='zh-CN',now=context.now,data=reading??emptyCalendar,today=startOfDay(now);
+ const s=viewOf(context.memo),w=wordsOf(context),zh=context.locale==='zh-CN',now=context.now,data=reading??emptyCalendar,today=startOfDay(now);
  if(context.opening){s.zoom=24;s.centre=null;}
  const narrow=(context.width||600)<450,zoom=s.zoom,fit=zoom>=24;
  const body=el('div','cal-wk'+(narrow?' narrow':'')+(fit?' fit':' zoom'));context.area.append(body);
@@ -244,7 +247,7 @@ const readingOf=(state:unknown)=>state&&typeof state==='object'&&(state as Calen
 function nextReset(data:CalendarData,now:number) {const r=data.resets.find(x=>x.at>now);return r?{r,sub:data.subs[r.sub]!}:null;}
 function fallbackCells(data:CalendarData|null,context:PluginContext):PluginCell[] {
  if(!data||!context.now)return [{tag:context.words('plugin.calendarWaiting')}];
- const w=W[context.locale],now=context.now,zh=context.locale==='zh-CN',side=(full:string,short=full)=>({full,short});
+ const w=wordsOf(context),now=context.now,zh=context.locale==='zh-CN',side=(full:string,short=full)=>({full,short});
  const reset=nextReset(data,now),peak=data.peaks.find(p=>(p.to??p.from+1)>now),cards=data.spans.find(x=>x.kind==='cards');
  const cells:PluginCell[]=[];
  cells.push({tag:context.words('plugin.calendarReset'),side:reset?side(resetText(reset.sub.abbr,reset.r.kind,reset.r.at,dayPrefix(reset.r.at,now,w,zh),w),`${reset.sub.abbr} ${hhmm(reset.r.at)}`):context.words('plugin.calendarNone')});
@@ -254,7 +257,7 @@ function fallbackCells(data:CalendarData|null,context:PluginContext):PluginCell[
 }
 function fallbackLines(data:CalendarData|null,context:PluginContext):{label:string;value:string}[] {
  if(!data||!context.now)return [{label:context.words('plugin.calendarWaiting').full,value:''}];
- const w=W[context.locale],zh=context.locale==='zh-CN',now=context.now,end=addDays(now,WEEK_DAYS);
+ const w=wordsOf(context),zh=context.locale==='zh-CN',now=context.now,end=addDays(now,WEEK_DAYS);
  const lines=[
   ...data.resets.filter(r=>r.at>now&&r.at<end).map(r=>({at:r.at,label:resetText(data.subs[r.sub]!.abbr,r.kind,r.at,'',w,true),value:`${dayLabel(r.at,w,zh)} ${hhmm(r.at)}`})),
   ...data.peaks.filter(p=>(p.to??p.from+1)>now&&p.from<end).map(p=>({at:p.from,label:`${data.subs[p.sub]!.abbr} ${w.peak}`,value:`${dayLabel(p.from,w,zh)} ${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}`})),
