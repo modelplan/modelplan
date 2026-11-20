@@ -1,0 +1,2717 @@
+{
+  "cli": {
+    "latest": "0.5.44",
+    "sha256": {
+      "darwin/arm64": "8fb5246012ccfb7e2147ecb8ac5312285267ed6b852946c72592574d3bf3a2e8",
+      "darwin/amd64": "856e274c2aca8be19488de09d276524383dec077922a55b0162800c6caadce5a",
+      "linux/arm64": "fbf79d68abfeac785159d57c75a3f0ed74ab403245d9747ee1209e1abfd39165",
+      "linux/amd64": "01e4e5c7544b20f10dbdbf246c6bf16d06634c0f6013ee69d710a8ee281d247c",
+      "windows/arm64": "806330367b5d09e66e85a664af39291cbcfcc4b7457836402b6c15b6916e3929",
+      "windows/amd64": "b0e976120dc3e1d85206dc7d9d45b6b99ac796b16f0c090f04681c4247b96ba5"
+    }
+  },
+  "projectionVersion": "client-v1.6",
+  "multipliers": [
+    {
+      "ruleId": "deepseek-api-base",
+      "provider": "deepseek",
+      "kind": "base",
+      "models": [],
+      "clients": [],
+      "planIds": [
+        "deepseek-api"
+      ],
+      "generations": [
+        "deepseek-api-2026-10"
+      ],
+      "region": "global",
+      "timezone": "UTC",
+      "multiplier": 0.5,
+      "startsAt": "2026-11-19T10:00:00.000Z",
+      "endsAt": "2026-11-20T00:00:00.000Z",
+      "priority": 0,
+      "status": "TENTATIVE",
+      "minClientVersions": {},
+      "requiresQuotaAvailable": false,
+      "conditions": [
+        "周末与中国法定节假日全天为非高峰；节假日日期规则待官方安排公布后补充"
+      ],
+      "url": "https://api-docs.deepseek.com/quick_start/pricing/"
+    },
+    {
+      "ruleId": "opencode-go-deepseek-base",
+      "provider": "opencode",
+      "kind": "base",
+      "models": [
+        "DeepSeek V4 Pro",
+        "DeepSeek V4.1 Flash"
+      ],
+      "clients": [],
+      "planIds": [
+        "opencode-go",
+        "opencode-go-plus"
+      ],
+      "generations": [
+        "reviewed-2026-10"
+      ],
+      "region": "global",
+      "timezone": "UTC",
+      "multiplier": 0.5,
+      "startsAt": "2026-11-19T10:00:00.000Z",
+      "endsAt": "2026-11-20T00:00:00.000Z",
+      "priority": 0,
+      "status": "TENTATIVE",
+      "minClientVersions": {},
+      "requiresQuotaAvailable": false,
+      "conditions": [
+        "按 Go 页面高峰/非高峰两档单价扣减该模型自己的额度池；页面未提节假日"
+      ],
+      "url": "https://opencode.ai/v2/docs/console/go/"
+    }
+  ],
+  "speedTiers": [
+    {
+      "id": "codex-fast-gpt-6-2",
+      "harness": "codex",
+      "tier": "fast",
+      "label": "Fast",
+      "toggle": "/fast; config.toml: service_tier = \"fast\" with [features].fast_mode = true",
+      "eligibility": {
+        "plans": [
+          "chatgpt-sign-in"
+        ],
+        "note": "ChatGPT desktop app, Codex CLI and IDE extension when signed in with ChatGPT, where the GPT-6.2 models are available. With an API key Codex uses API token pricing and these multipliers do not apply."
+      },
+      "models": [
+        {
+          "vendorModelId": "gpt-6.2-astra",
+          "modelId": "astra-6.2",
+          "speed": {
+            "ratio": 1.5,
+            "qualifier": "approximate"
+          }
+        },
+        {
+          "vendorModelId": "gpt-6.2-sol",
+          "modelId": null,
+          "speed": {
+            "ratio": null,
+            "qualifier": "unstated"
+          }
+        }
+      ],
+      "billing": [
+        {
+          "account": "subscription",
+          "billsTo": "plan-quota",
+          "basis": "included-usage",
+          "ratio": 2
+        },
+        {
+          "account": "credits",
+          "billsTo": "credits",
+          "basis": "credit-rate",
+          "ratio": 2
+        }
+      ],
+      "caveats": [],
+      "sources": [
+        "https://learn.chatgpt.com/docs/agent-configuration/speed",
+        "https://learn.chatgpt.com/docs/pricing"
+      ],
+      "reviewedAt": "2026-11-17T20:00:00Z"
+    },
+    {
+      "id": "claude-code-fast",
+      "harness": "claude-code",
+      "tier": "fast",
+      "label": "Fast mode",
+      "toggle": "/fast; settings: \"fastMode\": true",
+      "eligibility": {
+        "plans": [
+          "claude-subscription-usage-credits",
+          "claude-console"
+        ],
+        "note": "Pro, Max, Team and Enterprise through usage credits only (usage credits must be on; Team and Enterprise need an Owner to enable fast mode), and provisioned Claude Console organizations. Not on Amazon Bedrock, Google Cloud, Microsoft Foundry or Claude Platform on AWS. Research preview."
+      },
+      "models": [
+        {
+          "vendorModelId": "claude-opus-5-5",
+          "modelId": "opus",
+          "speed": {
+            "ratio": 2.5,
+            "qualifier": "up-to"
+          }
+        },
+        {
+          "vendorModelId": "claude-opus-5",
+          "modelId": "auto:anthropic:2a365f1cb3bef456",
+          "speed": {
+            "ratio": 2.5,
+            "qualifier": "up-to"
+          }
+        },
+        {
+          "vendorModelId": "claude-opus-4-8",
+          "modelId": null,
+          "speed": {
+            "ratio": 2.5,
+            "qualifier": "up-to"
+          }
+        }
+      ],
+      "billing": [
+        {
+          "account": "subscription",
+          "billsTo": "usage-credits",
+          "basis": "token-price",
+          "ratio": 2
+        },
+        {
+          "account": "api",
+          "billsTo": "api",
+          "basis": "token-price",
+          "ratio": 2
+        }
+      ],
+      "caveats": [
+        "not-plan-quota",
+        "rebills-context-on-enable",
+        "research-preview",
+        "separate-rate-limit"
+      ],
+      "sources": [
+        "https://code.claude.com/docs/en/fast-mode",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ],
+      "reviewedAt": "2026-10-15T06:30:00Z",
+      "apiPriceMultiplier": 2
+    }
+  ],
+  "planMetering": {
+    "revision": "2026-10-10.1",
+    "tokenMix": {
+      "cacheRead": 0.97,
+      "input": 0.025,
+      "output": 0.005
+    },
+    "plans": [
+      {
+        "planId": "claude-max-20x",
+        "generation": null,
+        "basis": "api-proportional",
+        "basisAssumed": true,
+        "unit": null,
+        "timeRules": [],
+        "pool": null,
+        "rows": []
+      }
+    ]
+  },
+  "planModels": {
+    "plans": [
+      {
+        "planId": "claude-max-20x",
+        "generation": "current",
+        "basis": "access",
+        "modelIds": [
+          "auto:anthropic:ccb37fec2677f068",
+          "fable",
+          "opus",
+          "sonnet-5.5"
+        ]
+      },
+      {
+        "planId": "claude-max-5x",
+        "generation": "current",
+        "basis": "access",
+        "modelIds": [
+          "auto:anthropic:ccb37fec2677f068",
+          "fable",
+          "opus",
+          "sonnet-5.5"
+        ]
+      }
+    ]
+  },
+  "planMatch": {
+    "revision": "2026-11-13.1",
+    "tools": [
+      {
+        "tool": "codex",
+        "readerFields": [
+          "planType"
+        ],
+        "planIds": [
+          "openai-plus",
+          "openai-pro-100",
+          "openai-pro-200",
+          "openai-pro-500",
+          "openai-pro-5x",
+          "openai-pro-20x"
+        ],
+        "aliases": [
+          {
+            "match": {
+              "planType": "plus"
+            },
+            "planId": "openai-plus",
+            "confidence": "exact"
+          },
+          {
+            "match": {
+              "planType": "prolite"
+            },
+            "planId": "openai-pro-100",
+            "confidence": "exact"
+          },
+          {
+            "match": {
+              "planType": "pro"
+            },
+            "planId": "openai-pro-200",
+            "confidence": "exact",
+            "note": "Before the three-tier split, pro was the $200 plan too."
+          },
+          {
+            "match": {
+              "planType": "promax"
+            },
+            "planId": "openai-pro-500",
+            "confidence": "exact"
+          }
+        ]
+      }
+    ],
+    "plans": [
+      {
+        "planId": "openai-plus",
+        "name": "ChatGPT Plus / Codex",
+        "lifecycle": null,
+        "price": {
+          "amount": 20,
+          "currency": "USD",
+          "symbol": null,
+          "period": "month"
+        }
+      },
+      {
+        "planId": "openai-pro-100",
+        "name": "ChatGPT Pro 100",
+        "lifecycle": "current",
+        "price": {
+          "amount": 100,
+          "currency": "USD",
+          "symbol": null,
+          "period": "month"
+        }
+      },
+      {
+        "planId": "openai-pro-200",
+        "name": "ChatGPT Pro 200",
+        "lifecycle": "current",
+        "price": {
+          "amount": 200,
+          "currency": "USD",
+          "symbol": null,
+          "period": "month"
+        }
+      },
+      {
+        "planId": "openai-pro-500",
+        "name": "ChatGPT Pro 500",
+        "lifecycle": "current",
+        "price": {
+          "amount": 500,
+          "currency": "USD",
+          "symbol": null,
+          "period": "month"
+        }
+      },
+      {
+        "planId": "openai-pro-5x",
+        "name": "ChatGPT Pro 5x",
+        "lifecycle": "legacy",
+        "price": {
+          "amount": 100,
+          "currency": "USD",
+          "symbol": null,
+          "period": "month"
+        }
+      },
+      {
+        "planId": "openai-pro-20x",
+        "name": "ChatGPT Pro 20x",
+        "lifecycle": "legacy",
+        "price": {
+          "amount": 200,
+          "currency": "USD",
+          "symbol": null,
+          "period": "month"
+        }
+      }
+    ]
+  },
+  "aaIndexVersion": "5",
+  "priceUnit": "usd-per-1m-tokens",
+  "usageTrend": {
+    "source": "openrouter-paid-daily",
+    "asOf": "2026-11-18",
+    "days": 30,
+    "ranks": {
+      "astra": [
+        35,
+        31,
+        35,
+        34,
+        34,
+        null,
+        42,
+        40,
+        35,
+        34,
+        34,
+        40,
+        null,
+        43,
+        null,
+        null,
+        38,
+        40,
+        null,
+        null,
+        45,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        40,
+        null,
+        null
+      ],
+      "auto:anthropic:a24a93ceda35e3ae": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        23,
+        29,
+        28,
+        34,
+        34,
+        34
+      ],
+      "auto:anthropic:ccb37fec2677f068": [
+        18,
+        14,
+        9,
+        12,
+        17,
+        16,
+        16,
+        18,
+        16,
+        12,
+        13,
+        15,
+        18,
+        18,
+        15,
+        14,
+        13,
+        14,
+        14,
+        14,
+        15,
+        13,
+        13,
+        13,
+        14,
+        15,
+        16,
+        16,
+        16,
+        13
+      ],
+      "auto:openai:51617927bdb7d656": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        32,
+        34,
+        25,
+        25,
+        32,
+        27,
+        26,
+        27,
+        25,
+        25,
+        24,
+        25,
+        23,
+        23,
+        24,
+        21,
+        22,
+        25,
+        24,
+        27,
+        28,
+        26,
+        25
+      ],
+      "fable": [
+        null,
+        null,
+        null,
+        33,
+        43,
+        null,
+        43,
+        null,
+        42,
+        42,
+        42,
+        null,
+        null,
+        45,
+        46,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "luna": [
+        7,
+        7,
+        6,
+        4,
+        4,
+        4,
+        4,
+        6,
+        5,
+        2,
+        5,
+        7,
+        5,
+        6,
+        5,
+        6,
+        6,
+        5,
+        6,
+        7,
+        5,
+        6,
+        5,
+        5,
+        6,
+        5,
+        5,
+        6,
+        5,
+        5
+      ],
+      "opus": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        6,
+        6,
+        5,
+        6,
+        6,
+        8,
+        9,
+        8,
+        8,
+        6,
+        5,
+        7,
+        7,
+        8,
+        8,
+        7,
+        5,
+        6,
+        6,
+        5,
+        7,
+        7,
+        5,
+        6,
+        7
+      ],
+      "sol-6.1": [
+        15,
+        13,
+        13,
+        11,
+        11,
+        15,
+        15,
+        16,
+        11,
+        8,
+        12,
+        13,
+        12,
+        12,
+        11,
+        10,
+        9,
+        9,
+        10,
+        10,
+        11,
+        8,
+        10,
+        8,
+        9,
+        14,
+        15,
+        12,
+        13,
+        16
+      ],
+      "sonnet-5.5": [
+        14,
+        10,
+        15,
+        16,
+        18,
+        19,
+        17,
+        14,
+        13,
+        11,
+        17,
+        19,
+        19,
+        19,
+        17,
+        16,
+        15,
+        12,
+        18,
+        17,
+        17,
+        16,
+        15,
+        15,
+        15,
+        16,
+        14,
+        13,
+        12,
+        14
+      ],
+      "terra-5.6": [
+        null,
+        null,
+        42,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    }
+  },
+  "multiplierHorizon": {
+    "from": "2026-11-19T18:57:03.578Z",
+    "to": "2026-11-21T18:57:03.578Z",
+    "selection": "highest-priority-no-stacking"
+  },
+  "units": {
+    "ability": "websiteAbility",
+    "cost": "usdPerReferenceTask",
+    "time": "taskTimeCrossModel"
+  },
+  "builtAt": "2026-11-19T18:57:03.578Z",
+  "aliasRevision": "2026-11-17.1",
+  "selectionRevision": "a6b99fdfefc9c364f06cc78b23ef9d755ea18917dfd4f59e67b0f1c1f931234f",
+  "developers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "color": "#85ccee",
+      "region": null
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "color": "#dfb792",
+      "region": null
+    }
+  ],
+  "models": [
+    {
+      "id": "astra",
+      "name": "GPT-6 Astra",
+      "developerId": "openai",
+      "current": true,
+      "lineageId": "openai:astra",
+      "lineageStatus": null,
+      "defaultSelected": false,
+      "recommended": "medium",
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [
+          "gpt-6-astra"
+        ],
+        "claude-code": [],
+        "codex": [
+          "gpt-6-astra"
+        ],
+        "copilot": [
+          "gpt-6-astra"
+        ]
+      },
+      "harnessEvidence": {
+        "checkedAt": "2026-11-17",
+        "sourceUrls": [
+          "https://developers.openai.com/api/docs/models/gpt-6-astra",
+          "https://learn.chatgpt.com/docs/models",
+          "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+        ],
+        "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+        "requiredEndpoints": {}
+      },
+      "efforts": [
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 58.56624940453079,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 1.8536078953544068,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.4277544881804861,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 43.3
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 67.39723103390773,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 2.8808722689778703,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.47912465953529654,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 51.6
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 71.02809649251517,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 3.455988951527589,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.5369986705868584,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 54.8
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 72.01706718989034,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 3.798175551899671,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.5610832019638912,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 55.3
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 73.70153212515844,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 7.07839765180033,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.7104174587510207,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 56.9
+        }
+      ],
+      "small": false,
+      "price": {
+        "input": 10,
+        "output": 50,
+        "cacheRead": 1,
+        "cacheWrite": 12.5,
+        "source": "litellm",
+        "asOf": "2026-11-19",
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "input": 20,
+          "output": 75,
+          "cacheRead": 2,
+          "cacheWrite": 25
+        }
+      }
+    },
+    {
+      "id": "astra-6.2",
+      "name": "GPT-6.2 Astra",
+      "developerId": "openai",
+      "current": true,
+      "lineageId": "openai:astra",
+      "lineageStatus": null,
+      "defaultSelected": false,
+      "recommended": null,
+      "recommendationBasis": null,
+      "harnessIds": {
+        "api": [
+          "gpt-6.2-astra"
+        ],
+        "claude-code": [],
+        "codex": [
+          "gpt-6.2-astra"
+        ]
+      },
+      "harnessEvidence": {
+        "checkedAt": "2026-11-17",
+        "sourceUrls": [
+          "https://developers.openai.com/api/docs/models/gpt-6.2-astra",
+          "https://learn.chatgpt.com/docs/models"
+        ],
+        "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+        "requiredEndpoints": {}
+      },
+      "efforts": [],
+      "small": false,
+      "price": {
+        "input": 8,
+        "output": 40,
+        "cacheRead": 0.4,
+        "cacheWrite": 10,
+        "source": "litellm",
+        "asOf": "2026-11-19",
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "input": 16,
+          "output": 60,
+          "cacheRead": 0.8,
+          "cacheWrite": 20
+        }
+      },
+      "evaluation": "pending"
+    },
+    {
+      "id": "auto:anthropic:2a365f1cb3bef456",
+      "name": "Claude Opus 5",
+      "developerId": "anthropic",
+      "current": false,
+      "lineageId": "anthropic:opus",
+      "lineageStatus": "older",
+      "defaultSelected": false,
+      "recommended": null,
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [
+          "claude-opus-5"
+        ],
+        "claude-code": [
+          "claude-opus-5"
+        ],
+        "codex": []
+      },
+      "harnessEvidence": {
+        "checkedAt": "2026-11-17",
+        "sourceUrls": [
+          "https://platform.claude.com/docs/en/models/opus-5/overview",
+          "https://code.claude.com/docs/en/model-config#available-models"
+        ],
+        "qualification": "Anthropic provider; active legacy Opus 5, distinct from Opus 5.5; compatible client, managed and account restrictions still apply. No account entitlement or inference verified.",
+        "requiredEndpoints": {}
+      },
+      "efforts": [
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 37.78738330990806,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 3.338150155480544,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.6980636403954423,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          }
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 46.515771763720494,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 5.375673021933461,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.7799184886025012,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          }
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 51.42463299297596,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 7.750616607716702,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.905282409771472,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          }
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 54.31423004795514,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 10.309359035433017,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 1.0693000092604428,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          }
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 55.56045371198864,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 10.895455890768119,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 1.1351675824270606,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          }
+        }
+      ],
+      "small": false,
+      "price": {
+        "input": 5,
+        "output": 25,
+        "cacheRead": 0.5,
+        "cacheWrite": 6.25,
+        "source": "litellm",
+        "asOf": "2026-11-19"
+      }
+    },
+    {
+      "id": "auto:anthropic:a24a93ceda35e3ae",
+      "name": "Claude Fable 5.2",
+      "developerId": "anthropic",
+      "current": false,
+      "lineageId": "anthropic:fable",
+      "lineageStatus": "current",
+      "defaultSelected": true,
+      "recommended": "medium",
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [],
+        "claude-code": [],
+        "codex": []
+      },
+      "harnessEvidence": null,
+      "efforts": [
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 72.68561354900132,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 3.3266619043701136,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.1763611413590449,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Claude Code",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "provisional": true,
+          "aaScore": 53.9
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 75.54547057561174,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 3.968812815724622,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.18673532614487107,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Claude Code",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "provisional": true,
+          "aaScore": 56.4
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 81.20669023845016,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 8.662461004283982,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.37252754458193976,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Claude Code",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "provisional": true,
+          "aaScore": 61.8
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 81.6778465893187,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 13.64133335440157,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.5375713934473562,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Claude Code",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "provisional": true,
+          "aaScore": 62.2
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 85.79841706208816,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 26.81881985742839,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 1.3467578067417973,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Claude Code",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "provisional": true,
+          "aaScore": 64.6
+        }
+      ],
+      "small": false,
+      "price": {
+        "input": 8,
+        "output": 40,
+        "cacheRead": 0.2,
+        "cacheWrite": 10,
+        "source": "litellm",
+        "asOf": "2026-11-19"
+      }
+    },
+    {
+      "id": "auto:anthropic:ccb37fec2677f068",
+      "name": "Claude Haiku 5.5",
+      "developerId": "anthropic",
+      "current": true,
+      "lineageId": "anthropic:haiku",
+      "lineageStatus": "current",
+      "defaultSelected": false,
+      "recommended": "xhigh",
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [
+          "claude-haiku-5-5"
+        ],
+        "claude-code": [
+          "claude-haiku-5-5"
+        ],
+        "codex": [],
+        "copilot": [
+          "claude-haiku-5.5"
+        ]
+      },
+      "harnessEvidence": {
+        "checkedAt": "2026-11-17",
+        "sourceUrls": [
+          "https://platform.claude.com/docs/en/models/overview",
+          "https://code.claude.com/docs/en/model-config",
+          "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+        ],
+        "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
+        "requiredEndpoints": {}
+      },
+      "efforts": [
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 31.231311972544063,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.091475289531561,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.31297112618718403,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 18.6
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 38.89443164315703,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.16750707953744848,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.3778763319619619,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 24.6
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 44.325201026023706,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.28088130702027087,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.49946021639050003,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 29.9
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 50.626399540213036,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.4586121735702373,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.7007802176100728,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 34.6
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 50.9061712573531,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 1.368082203667616,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 2.3765272135342306,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 36.5
+        }
+      ],
+      "small": true,
+      "price": {
+        "input": 0.1,
+        "output": 0.5,
+        "cacheRead": 0.01,
+        "cacheWrite": 0.125,
+        "source": "litellm",
+        "asOf": "2026-11-19",
+        "longContext": {
+          "aboveInputTokens": 100000,
+          "input": 0.5,
+          "output": 2.5,
+          "cacheRead": 0.05,
+          "cacheWrite": 0.625
+        }
+      }
+    },
+    {
+      "id": "auto:openai:0b01798a1e6ba444",
+      "name": "GPT-6.2 Sol",
+      "developerId": "openai",
+      "current": false,
+      "lineageId": "openai:sol",
+      "lineageStatus": null,
+      "defaultSelected": false,
+      "recommended": "medium",
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [],
+        "claude-code": [],
+        "codex": []
+      },
+      "harnessEvidence": null,
+      "efforts": [
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 58.473036735103804,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.22735344649480466,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.17824735677464965,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "provisional": true,
+          "aaScore": 40.6
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 73.15651288268748,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.47383785354653174,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.29896514337335417,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "provisional": true,
+          "aaScore": 52.7
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 76.00238415397679,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.6476331075603383,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.39987766810820874,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "provisional": true,
+          "aaScore": 54.9
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 76.86754255037447,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.7151581814260445,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.390446591030185,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "provisional": true,
+          "aaScore": 55.7
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 79.15709450544652,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 1.1511692674750944,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.6431994567212226,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "provisional": true,
+          "aaScore": 57.3
+        }
+      ],
+      "small": false,
+      "price": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.1,
+        "cacheWrite": 2.5,
+        "source": "litellm",
+        "asOf": "2026-11-19",
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "input": 4,
+          "output": 15,
+          "cacheRead": 0.2,
+          "cacheWrite": 5
+        }
+      }
+    },
+    {
+      "id": "auto:openai:51617927bdb7d656",
+      "name": "GPT-6.1 Terra",
+      "developerId": "openai",
+      "current": true,
+      "lineageId": "openai:terra",
+      "lineageStatus": "current",
+      "defaultSelected": true,
+      "recommended": "medium",
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [],
+        "claude-code": [],
+        "codex": [
+          "gpt-6.1-terra"
+        ],
+        "copilot": [
+          "gpt-6.1-terra"
+        ]
+      },
+      "harnessEvidence": {
+        "checkedAt": "2026-11-17",
+        "sourceUrls": [
+          "https://learn.chatgpt.com/docs/models",
+          "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+        ],
+        "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+        "requiredEndpoints": {}
+      },
+      "efforts": [
+        {
+          "effort": "none",
+          "label": "None",
+          "available": true,
+          "ability": 43.72927325182102,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.259910664207594,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.26481017938782003,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 30.5
+        },
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 42.37950834086911,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.07329056356669987,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.1157420317991869,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 29.4
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 52.60514034356612,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.14700174122996004,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.18243918197696396,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 38.2
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 57.62572243322166,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.23325545289806,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.2467238388605775,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 42.4
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 61.087813941842086,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.3502836875398327,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.321858081788378,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 45.3
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 70.30572703776664,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 1.0686345667426511,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.5820428416116253,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 51.3
+        }
+      ],
+      "small": false,
+      "price": {
+        "input": 1,
+        "output": 5,
+        "cacheRead": 0.05,
+        "cacheWrite": 1.25,
+        "source": "litellm",
+        "asOf": "2026-11-19",
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "input": 2,
+          "output": 7.5,
+          "cacheRead": 0.1,
+          "cacheWrite": 2.5
+        }
+      }
+    },
+    {
+      "id": "fable",
+      "name": "Claude Fable 5.1",
+      "developerId": "anthropic",
+      "current": true,
+      "lineageId": "anthropic:fable",
+      "lineageStatus": "older",
+      "defaultSelected": false,
+      "recommended": "medium",
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [
+          "claude-fable-5-1"
+        ],
+        "claude-code": [
+          "claude-fable-5-1"
+        ],
+        "codex": []
+      },
+      "harnessEvidence": {
+        "checkedAt": "2026-11-17",
+        "sourceUrls": [
+          "https://platform.claude.com/docs/en/models/fable-5-1/overview",
+          "https://code.claude.com/docs/en/model-config#available-models",
+          "https://code.claude.com/docs/en/model-config#work-with-fable"
+        ],
+        "qualification": "Anthropic provider; Claude Code v2.1.257+; managed and account restrictions still apply. No account entitlement or inference verified.",
+        "requiredEndpoints": {}
+      },
+      "efforts": [
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 57.7741537093241,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 4.269827967052869,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.5819920303639946,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 38.7
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 62.59117056381666,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 5.06218462185689,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.6423303869256537,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 43.2
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 67.10742794778633,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 7.0959655201064,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.7666655098783945,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 47.2
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 70.22375978509014,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 9.522071219002838,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.8135134801940574,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 50
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 70.41132253989197,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 12.84084167811058,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.9891679632539779,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "tb",
+            "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+            "boundary": "trial_wall",
+            "referenceSeconds": 4388.301096474238
+          },
+          "aaScore": 49.2
+        }
+      ],
+      "small": false,
+      "price": {
+        "input": 10,
+        "output": 50,
+        "cacheRead": 0.25,
+        "cacheWrite": 12.5,
+        "source": "litellm",
+        "asOf": "2026-11-19"
+      }
+    },
+    {
+      "id": "luna",
+      "name": "GPT-6 Luna",
+      "developerId": "openai",
+      "current": true,
+      "lineageId": "openai:luna",
+      "lineageStatus": "current",
+      "defaultSelected": true,
+      "recommended": "high",
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [
+          "gpt-6-luna"
+        ],
+        "claude-code": [],
+        "codex": [
+          "gpt-6-luna"
+        ],
+        "copilot": [
+          "gpt-6-luna"
+        ]
+      },
+      "harnessEvidence": {
+        "checkedAt": "2026-11-17",
+        "sourceUrls": [
+          "https://developers.openai.com/api/docs/models",
+          "https://learn.chatgpt.com/docs/models",
+          "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+        ],
+        "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+        "requiredEndpoints": {}
+      },
+      "efforts": [
+        {
+          "effort": "none",
+          "label": "None",
+          "available": true,
+          "ability": 21.132445738927967,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.08214971856760611,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.22701144516844787,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "aaScore": 9.4
+        },
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 21.50056344191485,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.0058678370405432926,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.18201978760585916,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "aaScore": 9.7
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 31.623800274054155,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.04855347511978959,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.08110726287100462,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "aaScore": 18.5
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 35.3536945364409,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.08387555299129527,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.23011828070378051,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "aaScore": 21.4
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 38.163294541360436,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.11977290900403068,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.537571393447356,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "aaScore": 23.5
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 43.563604675428664,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.1726189910621504,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.9355628461399601,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          },
+          "aaScore": 27.9
+        }
+      ],
+      "small": true,
+      "price": {
+        "input": 0.1,
+        "output": 0.5,
+        "cacheRead": 0.01,
+        "cacheWrite": 0.125,
+        "source": "litellm",
+        "asOf": "2026-11-19",
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "input": 0.2,
+          "output": 0.75,
+          "cacheRead": 0.02,
+          "cacheWrite": 0.25
+        }
+      }
+    },
+    {
+      "id": "opus",
+      "name": "Claude Opus 5.5",
+      "developerId": "anthropic",
+      "current": true,
+      "lineageId": "anthropic:opus",
+      "lineageStatus": "current",
+      "defaultSelected": true,
+      "recommended": "medium",
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [
+          "claude-opus-5-5"
+        ],
+        "claude-code": [
+          "claude-opus-5-5"
+        ],
+        "codex": [],
+        "copilot": [
+          "claude-opus-5.5"
+        ]
+      },
+      "harnessEvidence": {
+        "checkedAt": "2026-11-17",
+        "sourceUrls": [
+          "https://platform.claude.com/docs/en/models/overview",
+          "https://code.claude.com/docs/en/model-config",
+          "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+        ],
+        "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
+        "requiredEndpoints": {}
+      },
+      "efforts": [
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 49.19256936469078,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 1.0358493584353405,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.3915135484880215,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 34.8
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 64.93008032181359,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 2.500495936901842,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.6965870181990551,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 48.2
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 69.56649152726914,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 3.489498532580579,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.8661723979729271,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 51.8
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 74.73277839985508,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 6.027926321299423,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 1.2382823244083145,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 57.4
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 77.28335461056488,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 10.821441698729691,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 1.745071615638415,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 59.1
+        }
+      ],
+      "small": false,
+      "price": {
+        "input": 4,
+        "output": 20,
+        "cacheRead": 0.2,
+        "cacheWrite": 5,
+        "source": "litellm",
+        "asOf": "2026-11-19"
+      }
+    },
+    {
+      "id": "sol-5.6",
+      "name": "GPT-5.6 Sol",
+      "developerId": "openai",
+      "current": true,
+      "lineageId": "openai:sol",
+      "lineageStatus": null,
+      "defaultSelected": false,
+      "recommended": null,
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [],
+        "claude-code": [],
+        "codex": []
+      },
+      "harnessEvidence": null,
+      "efforts": [
+        {
+          "effort": "none",
+          "label": "None",
+          "available": true,
+          "ability": 12.401957105065364,
+          "abilityBasis": "abilityWithinModel",
+          "cost": null,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": null,
+          "timeEstimated": false,
+          "timeBasis": null
+        },
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 23.276741916178622,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.6975343983891584,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.21316900708962735,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          }
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 34.52134547438439,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 1.483179821473022,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.4212935186425992,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          }
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 40.89343495612433,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 2.4683609435561222,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.5903419683500286,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          }
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 44.296400367217174,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 3.7166438261487285,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 1.1169588666532777,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          }
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 50.297709423450215,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 5.990029220302808,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 2.24011322622777,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          }
+        }
+      ],
+      "small": false,
+      "price": {
+        "input": 4,
+        "output": 20,
+        "cacheRead": 0.4,
+        "cacheWrite": 5,
+        "source": "litellm",
+        "asOf": "2026-11-19",
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "input": 8,
+          "output": 30,
+          "cacheRead": 0.8,
+          "cacheWrite": 10
+        }
+      }
+    },
+    {
+      "id": "sol-6.1",
+      "name": "GPT-6.1 Sol",
+      "developerId": "openai",
+      "current": true,
+      "lineageId": "openai:sol",
+      "lineageStatus": null,
+      "defaultSelected": false,
+      "recommended": "medium",
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [
+          "gpt-6.1-sol"
+        ],
+        "claude-code": [],
+        "codex": [
+          "gpt-6.1-sol"
+        ],
+        "copilot": [
+          "gpt-6.1-sol"
+        ]
+      },
+      "harnessEvidence": {
+        "checkedAt": "2026-11-17",
+        "sourceUrls": [
+          "https://developers.openai.com/api/docs/models",
+          "https://learn.chatgpt.com/docs/models",
+          "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+        ],
+        "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+        "requiredEndpoints": {}
+      },
+      "efforts": [
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 55.106203674230166,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.3217789241218342,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.23366970570983542,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Codex",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 34.8
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 65.81882735814983,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.5327232131584977,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.29391722446334434,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Codex",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 46.3
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 68.33386632466458,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.7664699154862865,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.36090360615066197,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Codex",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 50.3
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 71.67442503886977,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.9407255216404378,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.4202973933995819,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Codex",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 52.5
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 71.7550611563336,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 1.3953650509852389,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.6602171758542897,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Codex",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 54.6
+        }
+      ],
+      "small": false,
+      "price": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.1,
+        "cacheWrite": 2.5,
+        "source": "litellm",
+        "asOf": "2026-11-19",
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "input": 4,
+          "output": 15,
+          "cacheRead": 0.2,
+          "cacheWrite": 5
+        }
+      }
+    },
+    {
+      "id": "sonnet-5.5",
+      "name": "Claude Sonnet 5.5",
+      "developerId": "anthropic",
+      "current": true,
+      "lineageId": "anthropic:sonnet",
+      "lineageStatus": "current",
+      "defaultSelected": true,
+      "recommended": "high",
+      "recommendationBasis": "balanced",
+      "harnessIds": {
+        "api": [
+          "claude-sonnet-5-5"
+        ],
+        "claude-code": [
+          "claude-sonnet-5-5"
+        ],
+        "codex": [],
+        "copilot": [
+          "claude-sonnet-5.5"
+        ]
+      },
+      "harnessEvidence": {
+        "checkedAt": "2026-11-17",
+        "sourceUrls": [
+          "https://platform.claude.com/docs/en/models/overview",
+          "https://code.claude.com/docs/en/model-config",
+          "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+        ],
+        "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
+        "requiredEndpoints": {}
+      },
+      "efforts": [
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 39.2034421196217,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.47248868890938944,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.17186590067060314,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 25.6
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 45.10914824348238,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.6686182778208996,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.2304920491519625,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 30.8
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 58.34976299277467,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 1.3852363127836103,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.33175920334918,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 41.5
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 68.38204757321877,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 3.491958922446001,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.7305991696479545,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 49.9
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 74.85738287201303,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 11.197223276798029,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 2.366853281520465,
+          "timeEstimated": false,
+          "timeBasis": {
+            "source": "aa-agent",
+            "cohort": "AA Coding Agent v1.5 / Claude Code",
+            "boundary": "agent_wall",
+            "referenceSeconds": 2216.0078167447414
+          },
+          "aaScore": 54.5
+        }
+      ],
+      "small": false,
+      "price": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.1,
+        "cacheWrite": 2.5,
+        "source": "litellm",
+        "asOf": "2026-11-19"
+      }
+    },
+    {
+      "id": "terra-5.6",
+      "name": "GPT-5.6 Terra",
+      "developerId": "openai",
+      "current": true,
+      "lineageId": "openai:terra",
+      "lineageStatus": "older",
+      "defaultSelected": false,
+      "recommended": null,
+      "harnessIds": {
+        "api": [],
+        "claude-code": [],
+        "codex": []
+      },
+      "harnessEvidence": null,
+      "efforts": [
+        {
+          "effort": "low",
+          "label": "Low",
+          "available": true,
+          "ability": 21.90409417366263,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.38370405876306246,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": null,
+          "timeEstimated": false,
+          "timeBasis": null
+        },
+        {
+          "effort": "medium",
+          "label": "Med",
+          "available": true,
+          "ability": 25.927742341347535,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.5018684258273406,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.1905077569760806,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          }
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "available": true,
+          "ability": 30.888876648350674,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 0.8424579049371382,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.26501326589246854,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          }
+        },
+        {
+          "effort": "xhigh",
+          "label": "XHigh",
+          "available": true,
+          "ability": 35.36054956820604,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 1.3508439039129863,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 0.5337989626161466,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          }
+        },
+        {
+          "effort": "max",
+          "label": "Max",
+          "available": true,
+          "ability": 48.638716522566156,
+          "abilityBasis": "abilityWithinModel",
+          "cost": 3.744673511179704,
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "time": 1.5061430093603994,
+          "timeEstimated": true,
+          "timeBasis": {
+            "source": "bughunt",
+            "cohort": "Bug Hunt 105 / Codex CLI",
+            "boundary": "reported_run_wall",
+            "referenceSeconds": 4655.859204661198
+          }
+        }
+      ],
+      "small": false,
+      "price": {
+        "input": 2,
+        "output": 12,
+        "cacheRead": 0.2,
+        "cacheWrite": 2.5,
+        "source": "litellm",
+        "asOf": "2026-11-19",
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "input": 4,
+          "output": 18,
+          "cacheRead": 0.4,
+          "cacheWrite": 5
+        }
+      }
+    }
+  ],
+  "lineups": [
+    {
+      "developerId": "openai",
+      "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+      "method": "lineup-v1",
+      "tie": 1,
+      "baseline": "luna",
+      "frontier": [
+        "luna",
+        "auto:openai:51617927bdb7d656",
+        "sol-6.1",
+        "astra"
+      ],
+      "steps": [
+        {
+          "from": "luna",
+          "to": "auto:openai:51617927bdb7d656",
+          "abilityDelta": 17.251445807125222,
+          "costRatio": 1.752617252433687
+        },
+        {
+          "from": "auto:openai:51617927bdb7d656",
+          "to": "sol-6.1",
+          "abilityDelta": 13.213687014583712,
+          "costRatio": 3.6239245106977327
+        },
+        {
+          "from": "sol-6.1",
+          "to": "astra",
+          "abilityDelta": 1.5784036757578974,
+          "costRatio": 5.407821919186283
+        }
+      ],
+      "members": [
+        {
+          "id": "astra",
+          "ability": 67.39723103390773,
+          "cost": 2.8808722689778703,
+          "costRelative": 34.346983909326376,
+          "tags": [
+            "strongest"
+          ],
+          "dominatedBy": null
+        },
+        {
+          "id": "auto:openai:51617927bdb7d656",
+          "ability": 52.60514034356612,
+          "cost": 0.14700174122996004,
+          "costRelative": 1.752617252433687,
+          "tags": [
+            "best_value"
+          ],
+          "dominatedBy": null
+        },
+        {
+          "id": "luna",
+          "ability": 35.3536945364409,
+          "cost": 0.08387555299129527,
+          "costRelative": 1,
+          "tags": [
+            "cheapest"
+          ],
+          "dominatedBy": null
+        },
+        {
+          "id": "sol-6.1",
+          "ability": 65.81882735814983,
+          "cost": 0.5327232131584977,
+          "costRelative": 6.351352618966154,
+          "tags": [],
+          "dominatedBy": null
+        },
+        {
+          "id": "auto:openai:0b01798a1e6ba444",
+          "status": "incomplete",
+          "tags": [],
+          "dominatedBy": null
+        },
+        {
+          "id": "sol-5.6",
+          "status": "incomplete",
+          "tags": [],
+          "dominatedBy": null
+        },
+        {
+          "id": "terra-5.6",
+          "status": "incomplete",
+          "tags": [],
+          "dominatedBy": null
+        }
+      ]
+    },
+    {
+      "developerId": "anthropic",
+      "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+      "method": "lineup-v1",
+      "tie": 1,
+      "baseline": "auto:anthropic:ccb37fec2677f068",
+      "frontier": [
+        "auto:anthropic:ccb37fec2677f068",
+        "sonnet-5.5",
+        "opus"
+      ],
+      "steps": [
+        {
+          "from": "auto:anthropic:ccb37fec2677f068",
+          "to": "sonnet-5.5",
+          "abilityDelta": 7.723363452561635,
+          "costRatio": 3.0204961678180546
+        },
+        {
+          "from": "sonnet-5.5",
+          "to": "opus",
+          "abilityDelta": 6.58031732903892,
+          "costRatio": 1.8051042366028762
+        }
+      ],
+      "members": [
+        {
+          "id": "auto:anthropic:ccb37fec2677f068",
+          "ability": 50.626399540213036,
+          "cost": 0.4586121735702373,
+          "costRelative": 1,
+          "tags": [
+            "cheapest"
+          ],
+          "dominatedBy": null
+        },
+        {
+          "id": "fable",
+          "ability": 62.59117056381666,
+          "cost": 5.06218462185689,
+          "costRelative": 11.038051132503588,
+          "tags": [
+            "dominated"
+          ],
+          "dominatedBy": {
+            "id": "opus",
+            "kind": "weaker"
+          }
+        },
+        {
+          "id": "opus",
+          "ability": 64.93008032181359,
+          "cost": 2.500495936901842,
+          "costRelative": 5.452310429171122,
+          "tags": [
+            "strongest",
+            "best_value"
+          ],
+          "dominatedBy": null
+        },
+        {
+          "id": "sonnet-5.5",
+          "ability": 58.34976299277467,
+          "cost": 1.3852363127836103,
+          "costRelative": 3.0204961678180546,
+          "tags": [],
+          "dominatedBy": null
+        },
+        {
+          "id": "auto:anthropic:2a365f1cb3bef456",
+          "status": "incomplete",
+          "tags": [],
+          "dominatedBy": null
+        },
+        {
+          "id": "auto:anthropic:a24a93ceda35e3ae",
+          "status": "incomplete",
+          "tags": [],
+          "dominatedBy": null
+        }
+      ]
+    }
+  ],
+  "resets": [
+    {
+      "id": "banked-2120410480204525936-1-1",
+      "provider": "openai",
+      "eventType": "reset_credit_issued",
+      "schedule": {
+        "precision": "approximate",
+        "from": "2026-11-13T06:59:00.000+08:00",
+        "through": "2026-11-13T06:59:00.000+08:00",
+        "label": "北京时间约 11月13日 06:59"
+      },
+      "observationUrl": "https://aihot.news/codex-reset",
+      "scope": null,
+      "status": "upstream-announced",
+      "at": null,
+      "precision": "unknown",
+      "publishedAt": "2026-11-11T14:57:08.000+08:00",
+      "url": "https://x.com/thsottiaux/status/2120999993079451919"
+    }
+  ],
+  "windows": []
+}
