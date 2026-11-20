@@ -1,0 +1,1 @@
+A free Grok Build subscription ($0 balance) no longer gets a widget ring or a cockpit column; it shows as one line in Settings. A tool whose reader fails before any account exists now shows the reason and one next step in its row under Settings, instead of "Reading...".

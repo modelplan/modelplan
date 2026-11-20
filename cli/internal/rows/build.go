@@ -335,6 +335,11 @@ func buildCandidate(in Input, c *candidate) Row {
 		latchInput.Now = *row.ExpiresAt
 		row.StateAfterExpiry = &ExpiryState{State: latch.State, Reason: Reason{Code: latch.Code, Text: latch.Text}, NextStep: nextStep(latchInput, c, latch)}
 	}
+	if row.Kind == KindTool && freeGrok(row) {
+		// D322: a free Grok Build subscription ($0, no usage percentage) has no ring and no cockpit column
+		// (both follow the Dock surface). One line in Settings says why.
+		row.Surfaces = []Surface{SurfaceSettings}
+	}
 	if row.Kind == KindTool && unreadable(row) {
 		// G3-38 (owner decision D76): a detected subscription with no reading and no way to get
 		// one from ModelPlan has no ring. Settings and the menu still list it with the reason.
@@ -593,4 +598,27 @@ func hasValue(accounts []Account) bool {
 		}
 	}
 	return false
+}
+
+// freeGrok reports a Grok row whose every current reading is a $0 balance with no usage percentage.
+func freeGrok(row Row) bool {
+	if row.ID != "grok" || row.State != StateFresh {
+		return false
+	}
+	current := false
+	for _, a := range row.Accounts {
+		if a.ValueState != ValueStateCurrent {
+			continue
+		}
+		if a.Credits == nil || a.Credits.Balance == nil || *a.Credits.Balance != 0 {
+			return false
+		}
+		for _, w := range a.Windows {
+			if w.RemainingPercent != nil {
+				return false
+			}
+		}
+		current = true
+	}
+	return current
 }
