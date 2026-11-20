@@ -443,6 +443,26 @@ final class BridgeTests: XCTestCase {
     XCTAssertThrowsError(try state.accept(reply(display,"nextDeadline",4,extra:["deadlineUnixMs":"1234"]),source:source))
     state.dispose()
   }
+  /// CKP-SHELL-50: the page asks for one of the three ranges by key; anything else, an inactive page or a stray field fails closed.
+  func testRangeSelectAdmitsOnlyTheThreeRangesFromAnActivePage() throws {
+    let state=CockpitBridgeState(context:try context()),load=try ready(state)
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    var sequence=1
+    func action(_ key:String) throws -> String {
+      sequence+=1
+      var body=try object(reply(load,"action",sequence,extra:["action":"rangeSelect","key":key]))
+      body["requestId"]=UUID().uuidString; return try encode(body)
+    }
+    XCTAssertEqual(try state.accept(action("today"),source:source),.action(.rangeSelect(.today)))
+    XCTAssertEqual(try state.accept(action("7d"),source:source),.action(.rangeSelect(.sevenDays)))
+    XCTAssertEqual(try state.accept(action("30d"),source:source),.action(.rangeSelect(.thirtyDays)))
+    for key in ["24h","7","month",""] { XCTAssertThrowsError(try state.accept(action(key),source:source),key) }
+    var wrong=try object(action("7d"));wrong["range"]=wrong.removeValue(forKey:"key")
+    XCTAssertThrowsError(try state.accept(encode(wrong),source:source))
+    _ = try state.setVisibility(.init(visible:true,occluded:true,key:true))
+    XCTAssertThrowsError(try state.accept(action("7d"),source:source))
+    state.dispose()
+  }
   func testScopeRejectsUnknownKeysWrongFieldAndClearedMembership() throws {
     let state=CockpitBridgeState(context:try context()),load=try ready(state)
     _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))

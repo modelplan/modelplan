@@ -32,6 +32,8 @@ import ModelPlanWire
   func requestClose()
   func updateAppearance(_ appearance: CockpitAppearance)
   func updateScope(_ key:String)
+  /// CKP-SHELL-50: the app's range; before the page loads it only sets what the load carries (no repaint, no flicker).
+  func updateRange(_ value: CockpitRange)
   /// G3-56: the acknowledged caution identities to restore; applied before the page loads.
   func setAckedCautions(_ ids:[String])
   /// D136: the favourite model ids to restore; applied before the page loads.
@@ -54,15 +56,17 @@ public extension CockpitPageSurface {
   func requestClose() { discard() }
   func updateAppearance(_ appearance: CockpitAppearance) {}
   func updateScope(_ key:String) {}
+  func updateRange(_ value: CockpitRange) {}
   func setAckedCautions(_ ids:[String]) {}
   func setPinnedModels(_ ids:[String]) {}
 }
 extension CockpitWindowController: CockpitPageSurface {}
 
-/// D64: where the app keeps the cockpit scope and the local day it was chosen, so it outlives a restart that day.
+/// CKP-SHELL-50 (supersedes CKP-ENTRY-04 / D64's day rule): where the app keeps the cockpit scope, so it outlives
+/// every restart. A consent or store change still removes it.
 @MainActor public protocol CockpitScopeMemory: AnyObject {
-  func load() -> (key: String, day: String)?
-  func save(_ value: (key: String, day: String)?)
+  func load() -> String?
+  func save(_ key: String?)
 }
 
 /// G3-56: where the app keeps the caution identities the owner acknowledged, so the lamp stays steady after a restart.
@@ -97,19 +101,27 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var page: (any CockpitPageSurface)?
   private var pageGeneration: UUID?
   public private(set) var selectedScope = "all"
-  /// The calendar day the scope was chosen.
-  private var scopeDay: DateComponents?
-  /// The clock that decides that day. The app sets its own clock here, so the day follows the clock its
-  /// other deadlines use.
+  /// The app clock. Kept for the hosts that set it; since CKP-SHELL-50 the scope no longer depends on the day.
   public var currentDate: @MainActor () -> Date = { Date() }
-  /// D64: set after `currentDate`. A saved scope from today is restored; any other day is ignored. A numbered
-  /// (positional) fallback is never kept, and a restored scope is still checked against each reply.
+  /// CKP-SHELL-50: a saved scope is restored whatever day it was chosen. A numbered (positional) fallback is never
+  /// kept, and a restored scope is still checked against each reply.
   public var scopeMemory: (any CockpitScopeMemory)? {
     didSet {
-      guard let saved = scopeMemory?.load(), Self.persistable(saved.key), saved.day == dayKey(currentDate()) else { return }
-      selectedScope = saved.key; scopeDay = calendarDay(currentDate())
+      guard let saved = scopeMemory?.load(), Self.persistable(saved) else { return }
+      selectedScope = saved
     }
   }
+  /// CKP-SHELL-50: the app-owned range. The coordinator hands it to every page before that page loads and passes the
+  /// page's requests (big-screen key, T) back to it; the menu bar asks the same object.
+  public var rangeState: CockpitRangeState? {
+    didSet {
+      if let token = rangeObservation { oldValue?.removeObserver(token); rangeObservation = nil }
+      rangeObservation = rangeState?.observe { [weak self] value in self?.page?.updateRange(value) }
+      page?.updateRange(selectedRange)
+    }
+  }
+  private var rangeObservation: UUID?
+  public var selectedRange: CockpitRange { rangeState?.value ?? .initial }
   /// G3-56: the acknowledged caution identities. Restored at load, replaced whenever the page reports a press.
   public private(set) var ackedCautions: [String] = []
   public var cautionMemory: (any CockpitCautionMemory)? {
@@ -123,9 +135,6 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   }
   private static func persistable(_ key: String) -> Bool {
     key != "all" && CockpitMemberScopes.isValidKey(key) && !CockpitMemberScopes.isIndexedFallback(key)
-  }
-  private func dayKey(_ date: Date) -> String {
-    let d = calendarDay(date); return String(format: "%04d-%02d-%02d", d.year ?? 0, d.month ?? 0, d.day ?? 0)
   }
   private var scopeMembers = Set<String>()
   private var request: Task<Void, Never>?
@@ -289,7 +298,6 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         freshLogged = false
         CockpitTimingLog.record("open page=\(page.queryTicket == nil ? "warm-loading" : "warm-ready") clickMs=\(CockpitTimingLog.sinceClick())")
         trace("open.warm")
-        retireScopeFromAnotherDay()
         page.updateScope(selectedScope)
       }
       page.open()
@@ -310,7 +318,6 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     CockpitTimingLog.record("open page=cold clickMs=\(CockpitTimingLog.sinceClick())")
     trace("open.cold")
     page = newPage
-    retireScopeFromAnotherDay()
     newPage.updateScope(selectedScope)
     newPage.open()
     if page === newPage { onOpened?() }
@@ -320,6 +327,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     let newPage = try makePage(context)
     newPage.setAckedCautions(ackedCautions)
     newPage.setPinnedModels(pinnedModels)
+    newPage.updateRange(selectedRange)
     let generation = UUID()
     pageGeneration = generation
     newPage.onReady = { [weak self] in
@@ -490,15 +498,14 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     }
     if case .scopeSelect(let key)=intent {
       guard delivery != nil,scopeMembers.contains(key) else { return }
-      selectedScope=key; scopeDay=calendarDay(currentDate()); page?.updateScope(key)
-      scopeMemory?.save(Self.persistable(key) ? (key, dayKey(currentDate())) : nil); return
+      selectedScope=key; page?.updateScope(key)
+      scopeMemory?.save(Self.persistable(key) ? key : nil); return
+    }
+    if case .rangeSelect(let value)=intent {
+      // The app decides; its observer echoes the range to the page in the shell (one source of truth).
+      rangeState?.select(value); return
     }
     onIntent?(intent)
-  }
-  private func calendarDay(_ date:Date) -> DateComponents { Calendar.current.dateComponents([.era,.year,.month,.day],from:date) }
-  /// CKP-ENTRY-04: a scope lasts for the day it was chosen; the first open on a later day starts at All.
-  private func retireScopeFromAnotherDay() {
-    if selectedScope != "all", scopeDay != calendarDay(currentDate()) { selectedScope="all" }
   }
   public func updateAppearance(_ appearance: CockpitAppearance) { page?.updateAppearance(appearance) }
   /// User close retains the page until its normal transition completes.
@@ -574,7 +581,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     guard delivery != next else { return }
     cancelQuery()
     lastReply = nil; importState = nil
-    // A restored scope (D64) waits for the first context; a change of session or floor after that returns to All.
+    // A restored scope (CKP-SHELL-50) waits for the first context; a change of session or floor after that returns to All.
     if let previous = delivery, previous.sessionID != next.sessionID || previous.floor != next.floor { selectedScope="all" }
     scopeMembers.removeAll()
     delivery = next
@@ -595,9 +602,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     case .clearPrivateViews(let invalidation):
       cancelQuery(); presentedPageRendered = false
       lastReply = nil; importState = nil
-      // The engine's first floor arrives as a clear with no previous session; nothing private was shown yet, so a scope
-      // restored for today (D64) stays, and is still checked against the first reply. After a session, a consent or
-      // store change forgets the saved scope; an engine stop (the app quitting) keeps it for today.
+      // The engine's first floor arrives as a clear with no previous session; nothing private was shown yet, so a
+      // restored scope (CKP-SHELL-50) stays, and is still checked against the first reply. After a session, a consent or
+      // store change forgets the saved scope; an engine stop (the app quitting) keeps it.
       if invalidation.previous == nil {
         delivery = nil; scopeMembers.removeAll()
         // A prewarmed page cleared here is not a failure of that page (CKP-SHELL-20).

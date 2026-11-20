@@ -195,9 +195,9 @@ public struct CockpitShellLayout: Equatable, Sendable {
         rect.applying(.init(scaleX: scale, y: scale)).offsetBy(dx: 0, dy: canvasHeight - pageSize.height * scale)
     }
 
-    public func shellState(attached: Bool, scope: String = "all") -> CockpitShellState {
+    public func shellState(attached: Bool, scope: String = "all", range: CockpitRange = .initial) -> CockpitShellState {
         .init(closed: shutterClosed, attached: attached, forcedClosed: forcedClosed,
-              tier: profile == .full ? .tall : .compact, scope: scope)
+              tier: profile == .full ? .tall : .compact, scope: scope, range: range)
     }
     public func clamping(origin: CGPoint, usable: CGRect) -> CGRect {
         CGRect(x: max(usable.minX, min(origin.x, usable.maxX - frame.width)),
