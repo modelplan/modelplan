@@ -625,3 +625,15 @@ test("no workflow step asserts with a bare '! command' (bash exempts it from set
     lines.forEach((l, i) => assert.doesNotMatch(l, /^\s+!\s+(grep|test|\[)/, `${f}:${i + 1} use an explicit if ...; then exit 1; fi`));
   }
 });
+
+test("packaging workflows pin Xcode 26.6 (17F113) instead of selecting the newest installed Xcode", () => {
+  const dir = new URL("../../.github/workflows/", import.meta.url);
+  for (const f of ["desktop.yml", "e2e-journey.yml", "u10-candidate.yml", "macos-distribution.yml"]) {
+    const text = fs.readFileSync(new URL(f, dir), "utf8");
+    assert.doesNotMatch(text, /Select (the )?newest installed Xcode/i, `${f} selects the newest Xcode`);
+    assert.doesNotMatch(text, /max\(candidates\)/, `${f} picks the max Xcode version`);
+    assert.match(text, /WANT_VERSION, WANT_BUILD = '26\.6', '17F113'/, `${f} must pin Xcode 26.6 (17F113)`);
+    assert.match(text, /is not installed on this runner/, `${f} must fail when the pinned Xcode is absent`);
+    assert.match(text, /'xcodebuild', '-version'/, `${f} must log xcodebuild -version`);
+  }
+});
