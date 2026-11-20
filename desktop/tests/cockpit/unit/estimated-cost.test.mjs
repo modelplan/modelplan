@@ -97,6 +97,17 @@ test('the smallest positive wire figure still reads "<$0.01"',()=>{
  assert.equal(estCostText(costView(d,now).total.today.cost.usd),'<$0.01');
 });
 
+// macrevb-1050-3. Invariant: tiny charges keep their ratio from the wire to the page's shares.
+test('shares of sub-micro-dollar charges stay true',()=>{
+ const d=data(false);
+ d.history.cost={basis:'api-list-price',currency:'USD',pricesAsOf:'2026-11-04',daily:[{at:day(0),source:'opencode',estimatedUsd:5e-7,pricedTokens:2,unpricedTokens:0}],hourly:[],
+  models:{today:[{model:'b',source:'opencode',estimatedUsd:4e-7,pricedTokens:1,unpricedTokens:0},{model:'a',source:'opencode',estimatedUsd:1e-7,pricedTokens:1,unpricedTokens:0}],recent7d:[],recent30d:[]}};
+ const rows=costView(d,now).models.today;
+ assert.deepEqual(rows.map(r=>r.model),['b','a']);
+ assert.ok(Math.abs(rows[0].share-0.8)<1e-9&&Math.abs(rows[1].share-0.2)<1e-9,JSON.stringify(rows));
+ assert.equal(estCostText(rows[1].cost.usd),'<$0.01');
+});
+
 test('≈cost text follows V1-FINAL §0',()=>{
  assert.equal(estCostText(64),'≈$64');
  assert.equal(estCostText(10.2),'≈$10');

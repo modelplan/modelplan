@@ -122,3 +122,31 @@ func TestTinyPricedUseStaysPositiveOnTheWire(t *testing.T) {
 		t.Fatalf("model: %+v", m)
 	}
 }
+
+// macrevb-1050-3. Invariant: rounding on the wire keeps every estimate's ratio to the others, so
+// shares of tiny charges stay true (and positive charges stay positive).
+func TestTinyChargesKeepTheirRatio(t *testing.T) {
+	now := limitsNow(t)
+	f := func(v float64) *float64 { return &v }
+	i := func(n int64) *int64 { return &n }
+	models := []digest.Model{
+		{ID: "a", Price: &digest.Price{Input: 1, Output: 1, CacheRead: f(0.1), CacheWrite: f(1), Source: "litellm", AsOf: "2026-11-04"}},
+		{ID: "b", Price: &digest.Price{Input: 1, Output: 1, CacheRead: f(0.4), CacheWrite: f(1), Source: "litellm", AsOf: "2026-11-04"}},
+	}
+	read := func(model string) speed.PerfRow {
+		return speed.PerfRow{Day: "2026-11-05", Source: "opencode", Model: model, ObservedRequests: 1, TokenKinds: speed.TokenKinds{InputTokens: i(0), CacheReadTokens: i(1), CacheWriteTokens: i(0)}}
+	}
+	c := cockpitCost(speed.PerfView{OK: true, Now: now, Ledger: speed.PerfLedger{SchemaVersion: 1, Since: now.AddDate(0, 0, -40), Rows: []speed.PerfRow{read("a"), read("b")}}},
+		map[string]bool{"opencode": true}, models, nil, now)
+	m := c.Models.Today
+	if len(m) != 2 || m[0].Model != "b" || m[1].Model != "a" {
+		t.Fatalf("order: %+v", m)
+	}
+	total := c.Daily[0].EstimatedUsd
+	if share := *m[0].EstimatedUsd / total; math.Abs(share-0.8) > 1e-6 {
+		t.Fatalf("b's share = %v of %v, want 0.8", share, total)
+	}
+	if share := *m[1].EstimatedUsd / total; math.Abs(share-0.2) > 1e-6 {
+		t.Fatalf("a's share = %v of %v, want 0.2", share, total)
+	}
+}

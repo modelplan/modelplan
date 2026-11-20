@@ -2,12 +2,15 @@
 package speed
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 // claudeFastTranscript is the redacted Claude fixture with its second response in fast mode.
@@ -104,20 +107,34 @@ func TestUpgradedAccountingCacheNeverPricesAnUnrecordedTier(t *testing.T) {
 // macrevb-1050-2 / macrev2-1050-2. Invariant: priced use that a reader timed to the hour reaches
 // the hourly ≈cost, and is counted once in its day. OpenCode is priced by day totals; its hours
 // come from the ledger's hourly view as hour-only rows.
-func TestOpenCodeHourlyUseIsPricedOnceInItsHour(t *testing.T) {
-	utc(t)
-	cache, home := t.TempDir(), t.TempDir()
+func openCodeTimedRequest(t *testing.T) (cache, home string) {
+	cache, home, _ = openCodeTimedDB(t)
+	return cache, home
+}
+
+func openCodeTimedDB(t *testing.T) (cache, home string, add func(id string, seq int, at time.Time)) {
+	t.Helper()
+	cache, home = t.TempDir(), t.TempDir()
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 	seedPerf(t, cache, t0.Add(-time.Minute))
 	db := sqliteDB(t, OpenCodeDB(home), `
 		CREATE TABLE session_v2 (id TEXT PRIMARY KEY, directory TEXT NOT NULL, project_id TEXT, fork_session_id TEXT, fork_boundary TEXT);
 		CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL);`)
 	exec(t, db, `INSERT INTO session_v2 VALUES ('ses', '/redacted', NULL, NULL, NULL)`)
-	data := fmt.Sprintf(`{"id":"msg-1","time":{"created":%d,"completed":%d},"model":{"id":"glm-5.3","providerID":"zai"},"content":[{"text":"[redacted]"}],"tokens":{"input":100,"output":10,"reasoning":0,"cache":{"read":0,"write":0}}}`, ms(t0), ms(t0.Add(3*time.Second)))
-	exec(t, db, `INSERT INTO session_message VALUES ('m1', 'ses', 'assistant', 1, ?)`, data)
+	add = func(id string, seq int, at time.Time) {
+		data := fmt.Sprintf(`{"id":"msg-%s","time":{"created":%d,"completed":%d},"model":{"id":"glm-5.3","providerID":"zai"},"content":[{"text":"[redacted]"}],"tokens":{"input":100,"output":10,"reasoning":0,"cache":{"read":0,"write":0}}}`, id, ms(at), ms(at.Add(3*time.Second)))
+		exec(t, db, `INSERT INTO session_message VALUES (?, 'ses', 'assistant', ?, ?)`, id, seq, data)
+	}
+	add("m1", 1, t0)
 	if err := ObserveOpenCode(cache, home, Ingest{}, t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
+	return cache, home, add
+}
+
+func TestOpenCodeHourlyUseIsPricedOnceInItsHour(t *testing.T) {
+	utc(t)
+	cache, _ := openCodeTimedRequest(t)
 	v := view(t, cache, t0.Add(time.Minute))
 	if len(v.Hourly()) != 1 {
 		t.Fatalf("the reader recorded no hour: %+v", v.Hourly())
@@ -139,5 +156,94 @@ func TestOpenCodeHourlyUseIsPricedOnceInItsHour(t *testing.T) {
 	}
 	if hour.Hour != localHour(t0) || hour.Day != day.Day || hour.PricedTokens != 110 || hour.USD != 200 {
 		t.Fatalf("hour: %+v", *hour)
+	}
+}
+
+// macrevd-1050-6 / macrevb-1050-2 / macrev2-1050-2. Invariant: a timed hour stays in the hourly
+// ≈cost for the whole rolling 48 hours, through the ledger's pruning, and then only the hour
+// expires. t0 is 09:00 UTC; 40 hours later is 01:00 two local dates on, past the second midnight.
+func TestOpenCodeHourSurvivesTheRolling48Hours(t *testing.T) {
+	utc(t)
+	cache, home, add := openCodeTimedDB(t)
+	pricer := &fakePricer{models: map[string]bool{"glm-5.3": true}}
+	seq := 1
+	at := func(now time.Time) (hour, day *CostRow) {
+		t.Helper()
+		// A later request makes the observation save, and so prune, the ledger at that time.
+		seq++
+		add(fmt.Sprintf("m%d", seq), seq, now.Add(-time.Minute))
+		if err := ObserveOpenCode(cache, home, Ingest{}, now); err != nil {
+			t.Fatal(err)
+		}
+		rows := view(t, cache, now).Costs(pricer)
+		for i := range rows {
+			if rows[i].HourOnly && rows[i].Hour == localHour(t0) {
+				hour = &rows[i]
+			} else if !rows[i].HourOnly && rows[i].Day == day0(t0) {
+				day = &rows[i]
+			}
+		}
+		return hour, day
+	}
+	hour, d := at(t0.Add(40 * time.Hour))
+	if hour == nil || hour.Hour != localHour(t0) || hour.PricedTokens != 110 || d == nil || d.PricedTokens != 110 {
+		t.Fatalf("at 40h: hour %+v day %+v", hour, d)
+	}
+	hour, d = at(t0.Add(48*time.Hour + time.Minute))
+	if hour != nil || d == nil || d.PricedTokens != 110 {
+		t.Fatalf("after 48h: hour %+v day %+v (only the hour expires)", hour, d)
+	}
+}
+
+func day0(at time.Time) string { return at.Local().Format("2006-01-02") }
+
+// macrevb-1050-1 / macrev2-1050-1. Invariant (as in TestUpgradedAccountingCacheNeverPricesAnUnrecordedTier):
+// a partial history import of a file whose live records predate tiers must not mark them tiered, so
+// the next observation of the unchanged log rescans them; imported ownership survives.
+func TestPartialImportKeepsLegacyLiveRecordsRescannable(t *testing.T) {
+	f := newFixture(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("MODELPLAN_READERS", "")
+	raw, _ := json.Marshal(both().State())
+	if err := os.MkdirAll(filepath.Dir(consent.Path()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(consent.Path(), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path, out := accountingImportLog(t, f, "claude-code", -0.1, 0.1)
+	seedPerf(t, f.cache, t0)
+	observe := func() {
+		t.Helper()
+		if err := ObserveClaude(f.cache, path, false, Ingest{}, f.now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	observe()
+	stripTiers(t, f.cache)
+	f.run(7, both())
+	observe()
+	l, ok := loadAccounting(f.cache)
+	if !ok {
+		t.Fatal("unreadable accounting cache")
+	}
+	imported, tierless := 0, 0
+	for _, file := range l.Files {
+		for _, r := range file.Records {
+			if r.Imported {
+				imported++
+			}
+			if r.Tier == "" {
+				tierless++
+			}
+		}
+	}
+	if tierless != 0 || imported == 0 {
+		t.Fatalf("after import and an unchanged observation: %d tierless records, %d imported", tierless, imported)
+	}
+	if got := accountingImportedOutput(t, f, "claude-code"); got != 2*out {
+		t.Fatalf("total changed: %d want %d", got, 2*out)
 	}
 }

@@ -37,11 +37,13 @@ its tokens count, its estimate does not. No rate is ever borrowed from another.
 Codex and Claude Code are priced per response. Tools whose logs hold only day
 totals are priced by those totals; when the model has a long-context price the
 figure is marked `approximate`, and the page keeps "≈" with a tooltip line.
-Their hours come from the ledger's hourly view (the last two local days) and
-feed only the hourly figures, so a day never counts the same use twice.
+Their hours come from the ledger's hourly rows, which are kept for the whole
+rolling 48 hours, and feed only the hourly figures, so a day never counts the
+same use twice.
 
 A response recorded before the speed tier was kept (an accounting cache from an
-earlier build) is rescanned when its log is still there. When the log is gone,
+earlier build) is rescanned when its log is still there, also after a partial
+history import of the same file. When the log is gone,
 its tokens still count, but as unpriced: a fast response is never priced at the
 standard rate.
 
@@ -56,7 +58,6 @@ tokens of the range.
 
 The per-model lists are ranked by a model's ≈cost over all its sources and hold
 at most 64 rows; a model is listed whole or not at all. A model's share is of
-the range total from the day buckets, never of the listed rows. A positive
-estimate never reaches the wire as zero (it is at least $0.000001, shown as
-"<$0.01"). The usage row shows no ≈cost yet: that waits for the "Show estimated
+the range total from the day buckets, never of the listed rows. Figures on the wire keep nine significant digits, so a positive estimate stays
+positive (shown as "<$0.01") and keeps its ratio to every other figure. The usage row shows no ≈cost yet: that waits for the "Show estimated
 cost" setting to reach the page (SET-9-50 follow-up).

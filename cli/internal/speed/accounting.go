@@ -766,6 +766,9 @@ func mergeImportedUsage(old, incoming usageFile, ranges []span) usageFile {
 	incoming.LiveObserved = old.LiveObserved
 	if old.LiveObserved {
 		incoming.Size, incoming.Modified = old.Size, old.Modified
+		// The live records kept below are as tier-aware as the live scan that wrote them; an import
+		// must not mark an older scan's records as tiered, or the next observation skips the rescan.
+		incoming.Tiered = old.Tiered
 	}
 	for _, r := range old.Records {
 		// Pre-release caches without live-scan provenance cannot prove live ownership.

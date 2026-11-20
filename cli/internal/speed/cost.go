@@ -37,8 +37,8 @@ type CostRow struct {
 	// Approximate: some priced tokens came from day totals of a model that has a
 	// long-context price, so the long-context rate could not be applied per request.
 	Approximate bool
-	// HourOnly: an hour of a tool priced by day totals, from the ledger's hourly view (the last
-	// two local days). Its use is already in that day's row, so it feeds hours only.
+	// HourOnly: an hour of a tool priced by day totals, from the ledger's hourly rows of the last
+	// 48 hours. Its use is already in that day's row, so it feeds hours only.
 	HourOnly bool
 }
 
@@ -104,7 +104,7 @@ func (v PerfView) Costs(p Pricer) []CostRow {
 		usd, ok, approximate := p.Aggregate(r.Source, r.Model, b)
 		add(key{r.Day, "", r.Source, r.Model, r.Origin, false}, usd, b.Sum(), ok, approximate)
 	}
-	for _, h := range v.Hourly() {
+	for _, h := range v.costHourly() {
 		at, err := time.Parse(time.RFC3339, h.Hour)
 		if err != nil || perResponse[h.Source] || h.Model == "" {
 			continue

@@ -4,6 +4,7 @@ package main
 import (
 	"math"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
@@ -244,12 +245,16 @@ func costBuckets[K comparable](in map[K]*wire.CockpitCostBucket, limit int) []wi
 	return out
 }
 
-// roundUSD keeps a micro-dollar: below anything the page shows, and stable on the wire. A positive
-// estimate never rounds to zero, so the page can still say "<$0.01" rather than "≈$0".
+// roundUSD keeps nine significant digits: stable on the wire, far below anything the page shows,
+// and relative. A positive estimate stays positive (the page says "<$0.01", never "≈$0") and keeps
+// its ratio to every other figure, so shares of tiny charges stay true.
 func roundUSD(v float64) float64 {
-	r := math.Round(v*1e6) / 1e6
-	if v > 0 && r == 0 {
-		return 1e-6
+	if v == 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return v
+	}
+	r, err := strconv.ParseFloat(strconv.FormatFloat(v, 'g', 9, 64), 64)
+	if err != nil {
+		return v
 	}
 	return r
 }
