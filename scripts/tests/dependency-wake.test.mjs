@@ -15,11 +15,11 @@ const hoursAgo = (h) => new Date(NOW - h * 3600e3).toISOString();
 function fake({ prs, open, comments = {} }) {
   const posted = [];
   const api = async (method, path, body) => {
-    if (method === "POST") { const n = Number(path.match(/issues\/(\d+)\//)[1]); posted.push([n, body.body]); (comments[n] ??= []).push({ body: body.body, user: { type: "Bot" } }); return {}; }
+    if (method === "POST") { const n = Number(path.match(/issues\/(\d+)\//)[1]); posted.push([n, body.body]); (comments[n] ??= []).push({ body: body.body, user: { type: "Bot", login: "github-actions[bot]" } }); return {}; }
     const m = path.match(/^\/pulls\/(\d+)$/);
     if (!m) throw new Error(path);
     if (!prs[m[1]]) throw new Error(`GET ${path}: 404`);
-    return { merged_at: prs[m[1]].merged_at ?? null, merge_commit_sha: prs[m[1]].sha ?? "" };
+    return { merged_at: prs[m[1]].merged_at ?? null, merge_commit_sha: prs[m[1]].sha ?? "", base: { ref: prs[m[1]].base ?? "main" } };
   };
   const pages = async (path) => path.startsWith("/pulls?") ? open : (comments[Number(path.match(/issues\/(\d+)\//)[1])] ?? []);
   return { api, pages, posted };
@@ -66,9 +66,21 @@ test("macrev2-1105-4: a human quoting the marker does not suppress the notice; t
   assert.deepEqual(await run(f), []);
 });
 
+test("macrev2-1105-4: a marker from another App bot does not suppress the notice", async () => {
+  const comments = { 31: [{ body: MARKER(31, [5]), user: { type: "Bot", login: "some-other-app[bot]" } }] };
+  const f = fake({ prs: { 5: { merged_at: hoursAgo(1), sha: "d" } }, open: [{ number: 31, body: "Blocked-by: #5" }], comments });
+  assert.deepEqual(await run(f), [31]);
+  assert.deepEqual(await run(f), []);
+});
+
+test("macrev2-1105-5: a dependency merged only into another base never wakes; one merged to main still does", async () => {
+  const f = fake({ prs: { 5: { merged_at: hoursAgo(1), sha: "a", base: "release" }, 6: { merged_at: hoursAgo(1), sha: "b" } }, open: [{ number: 50, body: "Depends-on: #5" }, { number: 51, body: "Depends-on: #6" }] });
+  assert.deepEqual(await run(f), [51]);
+});
+
 test("a blocker that merged long ago does not produce news, and a changed blocker set is told again", async () => {
   const f = fake({ prs: { 6: { merged_at: hoursAgo(200), sha: "e" }, 7: { merged_at: hoursAgo(1), sha: "f" } }, open: [{ number: 40, body: "Depends-on: #6" }] });
   assert.deepEqual(await run(f), []);
-  f.pages = async (p) => p.startsWith("/pulls?") ? [{ number: 40, body: "Depends-on: #6\nDepends-on: #7" }] : [{ body: MARKER(40, [6]), user: { type: "Bot" } }];
+  f.pages = async (p) => p.startsWith("/pulls?") ? [{ number: 40, body: "Depends-on: #6\nDepends-on: #7" }] : [{ body: MARKER(40, [6]), user: { type: "Bot", login: "github-actions[bot]" } }];
   assert.deepEqual(await run(f), [40]);
 });

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Dependency wake (throughput D352, change 5a). On every push to main, reconcile the open pull requests (drafts included)
-// whose body has a `Depends-on: #N` or `Blocked-by: #N` line: when every named pull request has merged (the last one within
+// whose body has a `Depends-on: #N` or `Blocked-by: #N` line: when every named pull request has merged (into main, the last one within
 // the last 72 hours), post ONE comment "Unblocked: #N merged at <sha>; ready to continue" on that pull request. The local
 // coordinator raises its own event from the same lines (stuck-scan.sh --unblocked), because a comment alone may sit unread.
 //
@@ -32,9 +32,10 @@ export function commentText(prNumber, blockers, last) {
   return `${MARKER(prNumber, blockers)}\nUnblocked: #${last.number} merged at ${last.sha.slice(0, 12)}; ready to continue`;
 }
 
-/** A comment counts as this workflow's own notice only when a bot posted it and it starts with the marker. */
+/** A comment counts as this workflow's own notice only when the workflow's identity (GITHUB_TOKEN posts as github-actions[bot]) wrote it and it starts with the marker. */
+export const WORKFLOW_BOT = "github-actions[bot]";
 export function isOurNotice(comment, marker) {
-  return comment?.user?.type === "Bot" && String(comment.body ?? "").startsWith(marker);
+  return comment?.user?.type === "Bot" && comment.user.login === WORKFLOW_BOT && String(comment.body ?? "").startsWith(marker);
 }
 
 /** Run one reconcile. `api(method, path, body?)` returns parsed JSON; `pages(path)` lists every page. */
@@ -45,7 +46,7 @@ export async function wake({ api, pages, now = Date.now(), log = () => {} }) {
     if (!cache.has(n)) {
       try {
         const p = await api("GET", `/pulls/${n}`);
-        cache.set(n, { merged: Boolean(p.merged_at), at: p.merged_at ? Date.parse(p.merged_at) : 0, sha: p.merge_commit_sha || "" });
+        cache.set(n, { merged: Boolean(p.merged_at) && p.base?.ref === "main", at: p.merged_at ? Date.parse(p.merged_at) : 0, sha: p.merge_commit_sha || "" });
       } catch (e) { log(`#${n}: ${e.message}`); cache.set(n, null); }
     }
     return cache.get(n);
