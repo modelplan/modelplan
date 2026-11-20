@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: MIT
+# Official Sol review in Actions (owner D352, change 1). One Sol review per PR head, posted as
+# "VERDICT: merge|block @ <head> (gh-sol)" on the last line of the comment, after the R19 record. While
+# vars.PR_REVIEW_SOL_MODE is "shadow" it posts as (gh-sol-shadow), which counts for nothing, and logs agreement with
+# the lane verdict; "count" is the cutover; unset (or anything else) keeps the workflow off.
+#
+# When: compile first (owner 11-18). A head that changes desktop/native is reviewed after the trusted mac-compile
+# success status lands on that exact head (status event); every other head after ci.yml passes (workflow_run). Each
+# run re-checks both conditions for the PR's current head, so whichever finishes last starts the review.
+#
+# Trust boundary:
+# - status, workflow_run and workflow_dispatch all run main's definition of this file, never a PR's copy.
+# - PR code is data: its git objects are fetched and read into the request; nothing is checked out, built or run.
+#   The model gets no tools, files or network; the PR text reaches it only inside the request.
+# - The OpenAI API key (secret OPENAI_API_KEY, environment pr-review) is referenced only by the review step; the
+#   comment token (PR_REVIEW_COMMENT_TOKEN, same environment) only by the post step. The answer stays in the runner
+#   temp, never in the public log; nothing is uploaded.
+# - One review job per PR at a time (job concurrency on the PR number); before spending tokens it skips a head that
+#   already has this lane's verdict (and, counting, any counting verdict or another sticky reviewer); right before
+#   posting it re-reads the PR and posts nothing if the head moved or the verdict appeared meanwhile.
+name: pr review sol
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+  status:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number to review at its current head (ci, and mac-compile where needed, must have passed)
+        required: true
+        type: string
+      force:
+        description: Review again even if this head already has a verdict from this lane
+        type: boolean
+        default: false
+permissions: {}
+jobs:
+  resolve:
+    if: >-
+      (vars.PR_REVIEW_SOL_MODE == 'shadow' || vars.PR_REVIEW_SOL_MODE == 'count') &&
+      github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.pull_requests[0].number) ||
+       (github.event_name == 'status' && github.event.context == 'mac-compile' && github.event.state == 'success') ||
+       (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005' && github.triggering_actor == 'guanbear'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.resolve.outputs.pr }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Check out main (trusted scripts only)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          sparse-checkout: scripts
+          persist-credentials: false
+      - id: resolve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.workflow_run.pull_requests[0].number }}
+          TRIGGER_SHA: ${{ github.event_name == 'status' && github.event.sha || github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
+        run: node scripts/pr-review/sol-resolve.mjs
+
+  review:
+    needs: resolve
+    if: needs.resolve.outputs.pr != ''
+    runs-on: ubuntu-24.04
+    environment: pr-review
+    timeout-minutes: 45
+    # Serialize by PR; a queued run waits instead of cancelling a review that is already spending tokens.
+    concurrency:
+      group: pr-review-sol-${{ needs.resolve.outputs.pr }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: read
+      statuses: read
+    env:
+      PR: ${{ needs.resolve.outputs.pr }}
+      TRIGGER_SHA: ${{ needs.resolve.outputs.sha }}
+      FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+      LANE: ${{ vars.PR_REVIEW_SOL_MODE == 'count' && 'gh-sol' || 'gh-sol-shadow' }}
+      MODEL: ${{ vars.PR_REVIEW_SOL_MODEL || 'gpt-6.2-sol' }}
+      EFFORT: medium
+    steps:
+      - name: Check out main (trusted scripts only)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Decide and build the request (no secret)
+        id: prep
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/pr-review/sol-prepare.mjs
+
+      - name: Review with Sol (API key only here)
+        if: steps.prep.outputs.review == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node scripts/pr-review/sol-call.mjs
+
+      - name: Post the verdict (comment token only here)
+        if: steps.prep.outputs.review == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PR_REVIEW_COMMENT_TOKEN }}
+          HEAD_SHA: ${{ steps.prep.outputs.head }}
+          MODE: ${{ steps.prep.outputs.mode }}
+          BASE: ${{ steps.prep.outputs.base }}
+          TIER: ${{ steps.prep.outputs.tier }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/pr-review/sol-post.mjs
+
+      - name: Clean up the review directory
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/pr-review-sol"

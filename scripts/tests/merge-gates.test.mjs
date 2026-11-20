@@ -161,6 +161,43 @@ test("workflow reviewer (gh-terra pilot): a Terra lane; its shadow name and othe
   assert.equal(R.pathTier(["scripts/pr-review/brief.mjs"]), 2);
 });
 
+test("Sol workflow reviewer (gh-sol, D352): a Sol lane for tiers 1 and 2 and a valid sticky REVIEWER; gh-sol-shadow counts for nothing", () => {
+  assert.ok(R.SOL_LANES.includes("(gh-sol)"));
+  assert.ok(!R.TERRA_LANES.includes("(gh-sol)"));
+  assert.ok(!R.SOL_LANES.includes("(gh-sol-shadow)"));
+  const t2 = [file("clients/swift/Wire.swift")];
+  const rv = (lane) => comment(`REVIEWER: ${lane}`);
+  for (const files of [undefined, t2]) {
+    const tier = files ? 2 : 1;
+    assert.equal(evalPr({ files, comments: [comment(v("merge", H, "gh-sol"))] }).state, R.SUCCESS, `tier ${tier}: gh-sol merge passes`);
+    assert.equal(evalPr({ files, comments: [comment(v("block", H, "gh-sol")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, `tier ${tier}: a gh-sol block stops it`);
+    // Sticky: the assigned gh-sol is the only verdict that counts, either way round.
+    const sticky = evalPr({ files, comments: [rv("gh-sol"), comment(v("block", H, "macrevb")), comment(v("merge", H, "gh-sol"))] });
+    assert.equal(sticky.state, R.SUCCESS, `tier ${tier}: sticky gh-sol merge passes over another lane's block`);
+    assert.match(sticky.why, /info: reviewer \(gh-sol\); \(macrevb\) block/);
+    assert.equal(evalPr({ files, comments: [rv("(gh-sol)"), comment(v("merge", H, "macrevb"))] }).state, R.PENDING, `tier ${tier}: another lane's merge does not satisfy a gh-sol assignment`);
+    assert.equal(evalPr({ files, comments: [rv("gh-sol"), comment(v("block", H, "gh-sol")), comment(v("merge", H, "macrevb"))] }).state, R.FAILURE, `tier ${tier}: sticky gh-sol block fails`);
+    // Shadow: never counts, never assigns; its block is reported only.
+    assert.equal(evalPr({ files, comments: [comment(v("merge", H, "gh-sol-shadow"))] }).state, R.PENDING, `tier ${tier}: shadow never counts`);
+    const shadow = evalPr({ files, comments: [comment(v("block", H, "gh-sol-shadow")), comment(v("merge", H, "macrev2"))] });
+    assert.equal(shadow.state, R.SUCCESS, `tier ${tier}: a shadow block is advice`);
+    assert.match(shadow.why, /info: .*\(gh-sol-shadow\) block/);
+    const badSticky = evalPr({ files, comments: [rv("gh-sol-shadow"), comment(v("merge", H, "gh-sol-shadow")), comment(v("merge", H, "macrev2"))] });
+    assert.equal(badSticky.state, R.PENDING, `tier ${tier}: the shadow lane cannot be the sticky reviewer`);
+    assert.match(badSticky.why, /a valid REVIEWER \(\(gh-sol-shadow\) cannot review/);
+  }
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-sol"), { login: "github-actions[bot]", id: 41898282 })] }).state, R.PENDING, "only the trusted account posts verdicts");
+  // The comment format the workflow posts: the record and quoted answer first, the VERDICT as the last line.
+  const posted = `**Sol workflow review** (gh-sol)\n\n> FOLLOW-UP F1: x\n> Record: ${H}\n> VERDICT: block\n\nVERDICT: merge @ ${H} (gh-sol)`;
+  assert.deepEqual([...R.verdicts(R.feed([comment(posted)]), H, [])], [["(gh-sol)", "merge"]], "only the unquoted last line is read");
+  // Data-sync admission honours a gh-sol assignment on tier 1 and tier 2.
+  assert.equal(evalSync({ comments: [comment("REVIEWER: gh-sol"), comment(v("merge", H, "gh-sol"))] }).state, R.SUCCESS);
+  assert.equal(evalSync({ comments: [comment("REVIEW-TIER: 2"), comment("REVIEWER: gh-sol"), comment(v("merge", H, "gh-sol"))] }).state, R.SUCCESS);
+  assert.equal(evalSync({ comments: [comment("REVIEWER: gh-sol"), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "another lane's merge does not admit");
+  assert.equal(R.pathTier([".github/workflows/pr-review-sol.yml"]), 2, "the Sol reviewer workflow is gate-self");
+  assert.equal(R.pathTier(["scripts/pr-review/sol.mjs"]), 2);
+});
+
 test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothing looser does", () => {
   const ledger = pr({ title: "G3-20 fix", body: "Scenarios: D-01" });
   const later = `EVIDENCE-DEFERRED: D-01 @ ${H} issue=470`;

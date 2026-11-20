@@ -62,9 +62,9 @@ const TIER2_RE = /^schema\/app-cli\/|^cli\/internal\/appserver\/wire\/|^cli\/int
 const TIER0_RE = /^docs\/|\.md$|^NOTICE|^LICEN|\.(png|jpe?g|svg|webp|woff2?|ttf|otf)$|^desktop\/official-visuals\/|^desktop\/third-party\/|^scripts\/check-[a-z-]+\.mjs$|^scripts\/tests\/(check-|[a-z-]+-pack\.test\.mjs$)|^\.github\/|^source-policy\.json$/;
 // Stricter: the gate's own rules and workflows are tier 2, so a PR cannot loosen the gate that judges it
 // with less review than a seam change gets. The tier table counts too: it decides which scenarios need evidence.
-// So does the workflow reviewer (pr-review.yml and scripts/pr-review/): it writes verdicts and runs next to the
-// owner's Codex login.
-const GATE_SELF_RE = /^scripts\/merge-gates\/|^\.github\/workflows\/merge-gates[^/]*$|^desktop\/native\/verification\/scenario-tiers\.tsv$|^\.github\/workflows\/pr-review\.yml$|^scripts\/pr-review\//;
+// So do the workflow reviewers (pr-review.yml, pr-review-sol.yml and scripts/pr-review/): they write verdicts and
+// hold review credentials.
+const GATE_SELF_RE = /^scripts\/merge-gates\/|^\.github\/workflows\/merge-gates[^/]*$|^desktop\/native\/verification\/scenario-tiers\.tsv$|^\.github\/workflows\/pr-review(-sol)?\.yml$|^scripts\/pr-review\//;
 
 export function tierOverride(items) {
   let t = null;
@@ -169,11 +169,14 @@ export function carryChain(edges, head, verified = () => false) {
 
 // ---- Verdicts ----
 // GPT reviewer lanes (owner D149): Sol = tier 2 (and tier 1), Terra = tier 1 only. macrevd is the third Sol lane
-// (owner 2026-11-12, until the v1 candidate).
-export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)", "(macrevd)"]);
+// (owner 2026-11-12, until the v1 candidate). (gh-sol) is the Sol workflow reviewer (pr-review-sol.yml, owner D352):
+// the official Sol review run in Actions. It is a Sol lane for tiers 1 and 2 and can be the sticky REVIEWER; the
+// workflow posts under it only once vars.PR_REVIEW_SOL_MODE is "count". Its shadow name (gh-sol-shadow) counts for
+// nothing, like any other named lane.
+export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)", "(macrevd)", "(gh-sol)"]);
 // (gh-terra) is the GitHub workflow reviewer (pr-review.yml, owner 2026-11-15 pilot): the same Terra model run by a
 // workflow on the owner's review runner instead of an interactive pane. Its shadow name (gh-terra-shadow) counts
-// for nothing, like any other named lane. A Sol workflow lane, (gh-sol), joins SOL_LANES only after the pilot.
+// for nothing, like any other named lane.
 export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)", "(gh-terra)"]);
 // "VERDICT: merge|block @ <40 hex> (<lane>)" on its own line, case-insensitive, in trusted comments and
 // reviews. Counts for the head or a carried head; per lane the latest wins. A lane name is lower-case letters,
