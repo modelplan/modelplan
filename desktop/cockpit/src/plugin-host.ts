@@ -190,6 +190,8 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     state=next;if(negotiated)report.state(state);
     for(const id of [...placed])if(!enabled(id))placed.delete(id);
     for(const id of [...memos.keys()])if(!enabled(id))memos.delete(id);
+    // macrevb-1096-2: a plugin turned off (Settings or Remove) keeps no readings; its next Add starts from a fresh sample.
+    for(const id of [...readings.keys()])if(!enabled(id))readings.delete(id);
     reconcile();repaint?.();return true;
   }
   // ---- the big screen (CKP-PLG-53): drawn inside the big-screen well only, so faders and page keys stay uncovered.
@@ -319,6 +321,8 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       if(!negotiated)reported=null;negotiated=true;state=next;
       for(const id of [...placed])if(!enabled(id))placed.delete(id);
       for(const id of [...memos.keys()])if(!enabled(id))memos.delete(id);
+    // macrevb-1096-2: a plugin turned off (Settings or Remove) keeps no readings; its next Add starts from a fresh sample.
+    for(const id of [...readings.keys()])if(!enabled(id))readings.delete(id);
       reconcile();repaint?.();return true;
     },
     deliver(id,data){

@@ -111,10 +111,16 @@ test('the big screen: charts on the draw hook, redrawn by readings, closed by Es
  // D347: the charts read CPU, Memory, Disk top to bottom (as the column), and all three sit inside the panel.
  const boxes=await page.evaluate(()=>{const r=s=>document.querySelector(s).getBoundingClientRect(),panel=r('.dk-mfd .mfd-screen');
   return {panel:{top:panel.top,bottom:panel.bottom},cpu:r('[data-chart="cpu"]').top,memory:r('[data-chart="memory-used"]').top,disk:r('[data-chart="disk"]'),
-   labels:[...document.querySelectorAll('.pl-draw-chart text')].map(t=>t.textContent)};});
+   labels:[...document.querySelectorAll('.pl-draw-chart text:not([data-readout])')].map(t=>t.textContent)};});
  expect(boxes.labels).toEqual(['CPU','Memory','Disk']);
  expect(boxes.cpu).toBeLessThan(boxes.memory);expect(boxes.memory).toBeLessThan(boxes.disk.top);
  expect(boxes.disk.bottom).toBeLessThanOrEqual(boxes.panel.bottom+.5);expect(boxes.disk.top).toBeGreaterThanOrEqual(boxes.panel.top-.5);
+ // macrevb-1096-1: the load, the memory breakdown and the disk capacity are visible beside the charts.
+ const readouts=await page.locator('.pl-draw-chart text[data-readout]').allTextContents();
+ expect(readouts.length).toBe(4);
+ expect(readouts[0]).toMatch(/Load 2\.4/);expect(readouts[0]).toMatch(/User · system/);
+ expect(readouts[1]).toMatch(/GB/);expect(readouts[2]).toMatch(/Wired · app · compressed 4\.5 · 9\.2 · 1\.4/);expect(readouts[2]).toMatch(/Cached · free 12\.8 · 4\.1/);
+ expect(readouts[3]).toMatch(/120 GB free · 494 GB/);
  // Orchid ink for the series; amber only for the pressure cells that read warn.
  const ink=await page.evaluate(()=>{const g=document.querySelector('[data-chart="memory-used"]');return g.getAttribute('fill');});
  expect(ink).toBe('#da66c2');
@@ -127,4 +133,20 @@ test('the big screen: charts on the draw hook, redrawn by readings, closed by Es
  await expect(chart.locator('[data-chart="cpu"] [data-bar]').last()).not.toHaveAttribute('data-user',before);
  await page.keyboard.press('Escape');
  await expect(screen).toHaveCount(0);
+});
+
+test('macrevb-1096-2 turning the plugin off and on (Settings or page Remove/Add) clears readings until a fresh sample',async({page})=>{
+ const {push,receive,send}=await open(page);
+ expect(await push([reading(T0,{cpuUser:71,cpuSystem:25}),reading(T0+5000,{cpuUser:71,cpuSystem:25})])).toBe(true);
+ await expect(column(page).locator('.qvalue').first()).toHaveText('96');
+ const off={version:1,entries:[{id:'resources',enabled:false,pinned:false}],settings:{}},on={version:1,entries:[],settings:{}};
+ expect(await receive(send('plugins',{plugins:off}))).toBe(true);
+ await expect(column(page)).toHaveCount(0);
+ expect(await receive(send('plugins',{plugins:on}))).toBe(true);
+ expect(await receive(send('display',{data:data2()}))).toBe(true);
+ await expect(column(page)).toHaveCount(1);
+ await expect(column(page).locator('.qvalue')).toHaveCount(0);
+ expect(await push([reading(T0+600000,{cpuUser:8,cpuSystem:2})])).toBe(true);
+ await expect(column(page).locator('.qvalue').first()).toHaveText('10');
+ await expect(column(page).locator('.pl-cell[data-row="0"]')).toContainText('peak 10%');
 });

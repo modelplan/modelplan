@@ -103,13 +103,20 @@ function drawCharts(c:PluginDrawContext,state:unknown):void {
   const svg=node('svg',{class:'pl-draw-chart',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':c.words('plugin.resourcesTitle').full});
   const T=c.tokens,pad=6,gap=8,innerW=W-2*pad,fs=Math.max(8,Math.min(11,H/16));
   const label=(text:string,x:number,y:number,anchor='start')=>{const t=node('text',{x,y,fill:T.muted,'font-size':fs,'font-family':T.lcdFont,'text-anchor':anchor},svg);t.textContent=text;};
+  // macrevb-1096-1: the readings sit beside the charts (CPU load, memory breakdown, disk capacity), right-aligned on the
+  // label row and squeezed to the free width when the line is longer than the panel.
+  const w=(key:string,vars?:Readonly<Record<string,string|number>>)=>c.words(key,vars).full,last0=samples[samples.length-1]!,view=resourceView(last0);
+  const value=(text:string,y:number,room:number,anchor:'start'|'end'='end')=>{
+    const t=node('text',{x:anchor==='end'?W-pad:pad,y,fill:T.ink,'font-size':fs,'font-family':T.lcdFont,'text-anchor':anchor,'data-readout':''},svg);t.textContent=text;
+    const need=text.length*fs*0.62;if(need>room){t.setAttribute('textLength',String(room));t.setAttribute('lengthAdjust','spacingAndGlyphs');}};
   // Order CPU · Memory · Disk (D347, same as the column). Heights come from one budget so the three sections always fit
   // inside the area: every section is label row + body + gap, and the bodies share what is left.
-  const lab=fs+3,stripH=Math.max(3,Math.min(6,H*0.04)),diskH=Math.max(5,Math.min(10,H*0.05)),fixed=pad*2+3*lab+2*gap+stripH+gap+diskH+4;
+  const lab=fs+3,stripH=Math.max(3,Math.min(6,H*0.04)),diskH=Math.max(5,Math.min(10,H*0.05)),fixed=pad*2+4*lab+2*gap+stripH+gap+diskH+4;
   const free=Math.max(12,H-fixed),cpuH=free*0.4,memH=free*0.6;
   let y=pad;
   // CPU: one bar per 10 s, user (ink) under system (lighter), with the 70 % dashed line.
-  label(c.words('plugin.resourcesCpu').full,pad,y+fs);y+=lab;
+  label(w('plugin.resourcesCpu'),pad,y+fs);
+  value(`${pct(view.cpu)}% · ${w('plugin.resourcesUserSystem')} ${pct(last0.cpuUser)}% · ${pct(last0.cpuSystem)}% · ${w('plugin.resourcesLoad')} ${Math.round(last0.load*10)/10}`,y+fs,innerW-48);y+=lab;
   const cw=innerW/60,cTop=y,cBot=y+cpuH,cy=(v:number)=>cBot-Math.min(100,v)/100*(cBot-cTop);
   const cpu=node('g',{'data-chart':'cpu'},svg);
   d.cpu.forEach((b,i)=>{const g=node('g',{'data-bar':i,'data-user':b.user.toFixed(1),'data-system':b.system.toFixed(1)},cpu);
@@ -118,7 +125,9 @@ function drawCharts(c:PluginDrawContext,state:unknown):void {
   node('line',{'data-chart':'cpu-line',x1:pad,x2:W-pad,y1:cy(d.cpuLine),y2:cy(d.cpuLine),stroke:T.mid,'stroke-dasharray':'3 3','stroke-width':1},svg);
   y=cBot+gap;
   // Memory: stacked area (used, then cached on top) over the ten minutes, with the pressure strip under it.
-  label(c.words('plugin.resourcesMemory').full,pad,y+fs);y+=lab;
+  label(w('plugin.resourcesMemory'),pad,y+fs);
+  value(`${pct(view.memory)}% · ${w('plugin.resourcesGb',{used:gb(view.memoryUsed),total:gb(last0.memTotal)})}`,y+fs,innerW-60);y+=lab;
+  value(`${w('plugin.resourcesKinds')} ${[last0.memWired,last0.memApp,last0.memCompressed].map(gb).join(' · ')} · ${w('plugin.resourcesCachedFree')} ${[last0.memCached,last0.memFree].map(gb).join(' · ')} GB`,y+fs,innerW,'start');y+=lab;
   const mTop=y,mBot=y+memH,last=d.memory[d.memory.length-1]!,span=RESOURCE_WINDOW_MS,t0=last.t-span;
   const X=(t:number)=>pad+Math.max(0,t-t0)/span*innerW,Y=(f:number)=>mBot-Math.min(1,Math.max(0,f))*(mBot-mTop);
   const edge=(f:(p:ChartData['memory'][number])=>number)=>d.memory.map(p=>`${X(p.t).toFixed(1)},${Y(f(p)).toFixed(1)}`);
@@ -131,7 +140,8 @@ function drawCharts(c:PluginDrawContext,state:unknown):void {
   d.strip.forEach((p,i)=>node('rect',{x:(pad+i*cw).toFixed(2),y,width:Math.max(0.5,cw-0.5).toFixed(2),height:stripH,fill:p==='critical'?T.low:p==='warn'?T.mid:T.ghost,'data-pressure':p},strip));
   y+=stripH+gap;
   // Disk: one bar with the 90 % notch.
-  label(c.words('plugin.resourcesDisk').full,pad,y+fs);y+=lab;
+  label(w('plugin.resourcesDisk'),pad,y+fs);
+  value(`${pct(view.disk)}% · ${w('plugin.resourcesFree',{gb:gb(last0.diskFree)})} · ${gb(last0.diskTotal)} GB`,y+fs,innerW-48);y+=lab;
   node('rect',{x:pad,y,width:innerW,height:diskH,fill:T.ghost},svg);
   node('rect',{'data-chart':'disk',x:pad,y,width:(innerW*d.disk/100).toFixed(2),height:diskH,fill:RESOURCE_INK},svg);
   node('line',{'data-chart':'disk-notch',x1:pad+innerW*d.diskNotch/100,x2:pad+innerW*d.diskNotch/100,y1:y-1,y2:y+diskH+1,stroke:T.mid,'stroke-width':1.5},svg);
