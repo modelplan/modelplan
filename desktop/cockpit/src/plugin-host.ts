@@ -195,6 +195,8 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const shown=guard(()=>plugin.screen(readings.get(plugin.id),context(plugin.id)),{lines:[]});
     // D323: a custom draw paints the body under the title bar; when it throws, the lines are shown instead.
     const opening=screen.opening;screen.opening=false;
+    // The area is shown before the draw so the plugin measures its real size (no second draw from the observer).
+    if(typeof shown.draw==='function'){screen.area.hidden=false;screen.list.hidden=true;}
     const custom=typeof shown.draw==='function'&&paint(screen.area,plugin.id,shown.draw,opening);
     screen.area.hidden=!custom;screen.list.hidden=custom;screen.box.dataset.draw=typeof shown.draw!=='function'?'lines':custom?'custom':'fallback';
     if(!custom)screen.area.replaceChildren();
