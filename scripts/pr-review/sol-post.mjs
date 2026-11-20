@@ -5,7 +5,7 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { client } from "../merge-gates/github.mjs";
-import { feed, parseGlmTiers, TRUSTED } from "../merge-gates/rules.mjs";
+import { feed, isShadowLane, parseGlmTiers, TRUSTED } from "../merge-gates/rules.mjs";
 import { secretHits } from "./brief.mjs";
 import { agreement, parseAnswer, postLane, postProblem, renderSolComment, renderWaitNote, waitNoted } from "./sol.mjs";
 
@@ -35,7 +35,7 @@ const n = Number(env.PR);
 const pr = await gh.get(`/pulls/${n}`);
 const items = feed(await gh.all(`/issues/${n}/comments`), await gh.all(`/pulls/${n}/reviews`));
 const prAfter = await gh.get(`/pulls/${n}`);
-const check = { items, head, lane: env.LANE, force: env.FORCE === "true", tier: Number(env.TIER), glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS) };
+const check = { items, head, lane: env.LANE, posted: waiting ? null : lane, force: env.FORCE === "true", tier: Number(env.TIER), glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS) };
 const late = postProblem({ pr, ...check }) ?? postProblem({ pr: prAfter, ...check });
 if (late) { say(`#${n}: ${late}; nothing posted`); process.exit(0); }
 
@@ -54,7 +54,7 @@ let usage = null;
 try { usage = JSON.parse(read(join(dir, "usage.json"))); } catch {}
 const meta = { why: read(join(dir, "why")).trim() ? `quota fallback to ${provider}` : "", model: read(join(dir, "model")).trim() || env.MODEL, effort: provider === "openai" ? env.EFFORT : "default", seconds: read(join(dir, "seconds")).trim() || "?", usage, runUrl: env.RUN_URL };
 // Shadow runs log how the lane that counts has judged this head so far (D352: compare on three PRs before cutover).
-const agreeNow = lane.endsWith("-shadow") ? agreement([...items, { kind: "comment", user: TRUSTED, body: `VERDICT: ${answer.verdict} @ ${head} (${lane})`, at: "~" }], head, lane, Number(env.TIER), parseGlmTiers(env.REVIEW_GLM_TIERS)) : null;
+const agreeNow = isShadowLane(lane) ? agreement([...items, { kind: "comment", user: TRUSTED, body: `VERDICT: ${answer.verdict} @ ${head} (${lane})`, at: "~" }], head, lane, Number(env.TIER), parseGlmTiers(env.REVIEW_GLM_TIERS)) : null;
 const body = renderSolComment({ answer, head, lane, mode: env.MODE, base: env.BASE, tier: env.TIER, meta, agree: agreeNow?.text ?? "" });
 if (secretHits(body)) fail("the comment looks like it contains a credential");
 await gh.post(`/issues/${n}/comments`, { body });

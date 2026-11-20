@@ -46,7 +46,7 @@ export function decide({ pr, files, items, runHead = "", lane, force = false }) 
   const atHead = all.filter((v) => v.sha === head);
   if (!force && atHead.some((v) => v.lane === `(${lane})`)) return skip("this lane already reviewed this head");
   // Counting mode keeps R14's one GPT verdict per head; shadow mode reviews anyway so the pilot can compare.
-  // Tier 1 only, where Sol and Terra always count; (gh-glm) counts only on REVIEW_GLM_TIERS, which this pilot does not
+  // Tier 1 only, where Sol and Terra always count; (ghglm) counts only on REVIEW_GLM_TIERS, which this pilot does not
   // read, so a GLM verdict never stops it (SOL-8).
   const counting = new Set([...SOL_LANES, ...TERRA_LANES]);
   if (!force && lane === COUNTING_LANE && atHead.some((v) => counting.has(v.lane))) return skip("a counting GPT lane already reviewed this head");

@@ -161,39 +161,39 @@ test("workflow reviewer (gh-terra pilot): a Terra lane; its shadow name and othe
   assert.equal(R.pathTier(["scripts/pr-review/brief.mjs"]), 2);
 });
 
-test("Sol workflow reviewer (gh-sol, D352): a Sol lane for tiers 1 and 2 and a valid sticky REVIEWER; gh-sol-shadow counts for nothing", () => {
-  assert.ok(R.SOL_LANES.includes("(gh-sol)"));
-  assert.ok(!R.TERRA_LANES.includes("(gh-sol)"));
-  assert.ok(!R.SOL_LANES.includes("(gh-sol-shadow)"));
+test("Sol workflow reviewer (ghsol, D352): a Sol lane for tiers 1 and 2 and a valid sticky REVIEWER; ghsolshadow counts for nothing", () => {
+  assert.ok(R.SOL_LANES.includes("(ghsol)"));
+  assert.ok(!R.TERRA_LANES.includes("(ghsol)"));
+  assert.ok(!R.SOL_LANES.includes("(ghsolshadow)"));
   const t2 = [file("clients/swift/Wire.swift")];
   const rv = (lane) => comment(`REVIEWER: ${lane}`);
   for (const files of [undefined, t2]) {
     const tier = files ? 2 : 1;
-    assert.equal(evalPr({ files, comments: [comment(v("merge", H, "gh-sol"))] }).state, R.SUCCESS, `tier ${tier}: gh-sol merge passes`);
-    assert.equal(evalPr({ files, comments: [comment(v("block", H, "gh-sol")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, `tier ${tier}: a gh-sol block stops it`);
-    // Sticky: the assigned gh-sol is the only verdict that counts, either way round.
-    const sticky = evalPr({ files, comments: [rv("gh-sol"), comment(v("block", H, "macrevb")), comment(v("merge", H, "gh-sol"))] });
-    assert.equal(sticky.state, R.SUCCESS, `tier ${tier}: sticky gh-sol merge passes over another lane's block`);
-    assert.match(sticky.why, /info: reviewer \(gh-sol\); \(macrevb\) block/);
-    assert.equal(evalPr({ files, comments: [rv("(gh-sol)"), comment(v("merge", H, "macrevb"))] }).state, R.PENDING, `tier ${tier}: another lane's merge does not satisfy a gh-sol assignment`);
-    assert.equal(evalPr({ files, comments: [rv("gh-sol"), comment(v("block", H, "gh-sol")), comment(v("merge", H, "macrevb"))] }).state, R.FAILURE, `tier ${tier}: sticky gh-sol block fails`);
+    assert.equal(evalPr({ files, comments: [comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS, `tier ${tier}: ghsol merge passes`);
+    assert.equal(evalPr({ files, comments: [comment(v("block", H, "ghsol")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, `tier ${tier}: a ghsol block stops it`);
+    // Sticky: the assigned ghsol is the only verdict that counts, either way round.
+    const sticky = evalPr({ files, comments: [rv("ghsol"), comment(v("block", H, "macrevb")), comment(v("merge", H, "ghsol"))] });
+    assert.equal(sticky.state, R.SUCCESS, `tier ${tier}: sticky ghsol merge passes over another lane's block`);
+    assert.match(sticky.why, /info: reviewer \(ghsol\); \(macrevb\) block/);
+    assert.equal(evalPr({ files, comments: [rv("(ghsol)"), comment(v("merge", H, "macrevb"))] }).state, R.PENDING, `tier ${tier}: another lane's merge does not satisfy a ghsol assignment`);
+    assert.equal(evalPr({ files, comments: [rv("ghsol"), comment(v("block", H, "ghsol")), comment(v("merge", H, "macrevb"))] }).state, R.FAILURE, `tier ${tier}: sticky ghsol block fails`);
     // Shadow: never counts, never assigns; its block is reported only.
-    assert.equal(evalPr({ files, comments: [comment(v("merge", H, "gh-sol-shadow"))] }).state, R.PENDING, `tier ${tier}: shadow never counts`);
-    const shadow = evalPr({ files, comments: [comment(v("block", H, "gh-sol-shadow")), comment(v("merge", H, "macrev2"))] });
+    assert.equal(evalPr({ files, comments: [comment(v("merge", H, "ghsolshadow"))] }).state, R.PENDING, `tier ${tier}: shadow never counts`);
+    const shadow = evalPr({ files, comments: [comment(v("block", H, "ghsolshadow")), comment(v("merge", H, "macrev2"))] });
     assert.equal(shadow.state, R.SUCCESS, `tier ${tier}: a shadow block is advice`);
-    assert.match(shadow.why, /info: .*\(gh-sol-shadow\) block/);
-    const badSticky = evalPr({ files, comments: [rv("gh-sol-shadow"), comment(v("merge", H, "gh-sol-shadow")), comment(v("merge", H, "macrev2"))] });
+    assert.match(shadow.why, /info: .*\(ghsolshadow\) block/);
+    const badSticky = evalPr({ files, comments: [rv("ghsolshadow"), comment(v("merge", H, "ghsolshadow")), comment(v("merge", H, "macrev2"))] });
     assert.equal(badSticky.state, R.PENDING, `tier ${tier}: the shadow lane cannot be the sticky reviewer`);
-    assert.match(badSticky.why, /a valid REVIEWER \(\(gh-sol-shadow\) cannot review/);
+    assert.match(badSticky.why, /a valid REVIEWER \(\(ghsolshadow\) cannot review/);
   }
-  assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-sol"), { login: "github-actions[bot]", id: 41898282 })] }).state, R.PENDING, "only the trusted account posts verdicts");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "ghsol"), { login: "github-actions[bot]", id: 41898282 })] }).state, R.PENDING, "only the trusted account posts verdicts");
   // The comment format the workflow posts: the record and quoted answer first, the VERDICT as the last line.
-  const posted = `**Sol workflow review** (gh-sol)\n\n> FOLLOW-UP F1: x\n> Record: ${H}\n> VERDICT: block\n\nVERDICT: merge @ ${H} (gh-sol)`;
-  assert.deepEqual([...R.verdicts(R.feed([comment(posted)]), H, [])], [["(gh-sol)", "merge"]], "only the unquoted last line is read");
-  // Data-sync admission honours a gh-sol assignment on tier 1 and tier 2.
-  assert.equal(evalSync({ comments: [comment("REVIEWER: gh-sol"), comment(v("merge", H, "gh-sol"))] }).state, R.SUCCESS);
-  assert.equal(evalSync({ comments: [comment("REVIEW-TIER: 2"), comment("REVIEWER: gh-sol"), comment(v("merge", H, "gh-sol"))] }).state, R.SUCCESS);
-  assert.equal(evalSync({ comments: [comment("REVIEWER: gh-sol"), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "another lane's merge does not admit");
+  const posted = `**Sol workflow review** (ghsol)\n\n> FOLLOW-UP F1: x\n> Record: ${H}\n> VERDICT: block\n\nVERDICT: merge @ ${H} (ghsol)`;
+  assert.deepEqual([...R.verdicts(R.feed([comment(posted)]), H, [])], [["(ghsol)", "merge"]], "only the unquoted last line is read");
+  // Data-sync admission honours a ghsol assignment on tier 1 and tier 2.
+  assert.equal(evalSync({ comments: [comment("REVIEWER: ghsol"), comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS);
+  assert.equal(evalSync({ comments: [comment("REVIEW-TIER: 2"), comment("REVIEWER: ghsol"), comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS);
+  assert.equal(evalSync({ comments: [comment("REVIEWER: ghsol"), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "another lane's merge does not admit");
   assert.equal(R.pathTier([".github/workflows/pr-review-sol.yml"]), 2, "the Sol reviewer workflow is gate-self");
   assert.equal(R.pathTier(["scripts/pr-review/sol.mjs"]), 2);
 });
@@ -1408,7 +1408,7 @@ test("auto-carry: a shadow lane's verdict never changes the carry or the gate st
   const ref = evalPr({ comments: base, prove: proved() });
   assert.equal(ref.state, R.SUCCESS);
   assert.equal(ref.autoCarried, OLD);
-  for (const lane of ["gh-sol-shadow", "gh-glm-shadow", "gh-terra-shadow"])
+  for (const lane of ["ghsolshadow", "ghglmshadow", "gh-terra-shadow"])
     for (const sha of [H, OLD])
       for (const verdict of ["merge", "block"]) {
         const r = evalPr({ comments: [...base, comment(v(verdict, sha, lane))], prove: proved() });
@@ -1446,4 +1446,21 @@ test("auto-carry: the latest posted verdict head is the only candidate; when it 
   assert.equal(evalPr({ files: t2, comments: [comment("REVIEWER: macrev2"), oldSol], prove: ok }).state, R.SUCCESS);
   const cur = comment(v("merge", H, "macrevc")), later = comment(v("merge", OLD, "macrev2"));
   assert.equal(R.autoCarry(R.feed([cur, later], []), H, ok)?.from, OLD, "an old-head verdict posted after the current-head one is the candidate");
+});
+
+// macrevb-1108-4: a workflow shadow lane never admits a data-sync PR, and (ghglm) never decides tier 0 (or a tier outside REVIEW_GLM_TIERS).
+test("gh lanes: shadow lanes never admit data-sync; ghglm counts only on its configured tiers, never tier 0", () => {
+  for (const lane of ["ghsolshadow", "ghglmshadow", "gh-terra-shadow"])
+    assert.equal(evalSync({ comments: [comment(v("merge", H, lane))] }).state, R.FAILURE, `${lane} merge does not admit a data-sync PR`);
+  assert.equal(evalSync({ comments: [comment(v("merge", H, "ghsolshadow")), comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "an eligible lane still admits beside a shadow");
+  assert.equal(evalSync({ comments: [comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS, "ghsol admits");
+  assert.equal(evalSync({ comments: [comment(v("merge", H, "ghglm"))] }).state, R.SUCCESS, "ghglm admits on tier 1 (default REVIEW_GLM_TIERS)");
+  assert.equal(evalSync({ files: [file("cli/internal/quota/x.go")], comments: [comment(v("merge", H, "ghglm"))] }).state, R.FAILURE, "ghglm does not admit tier 2 by default");
+  assert.deepEqual(R.eligibleLanes(0), R.eligibleLanes(0, [1, 2]), "tier 0 has no GLM lane for any configuration");
+  assert.ok(!R.eligibleLanes(0, [1, 2]).includes("(ghglm)") && !R.eligibleLanes(0).includes("(ghglm)"));
+  assert.ok(R.eligibleLanes(1).includes("(ghglm)") && !R.eligibleLanes(2).includes("(ghglm)") && R.eligibleLanes(2, [2]).includes("(ghglm)"));
+  const docs = [file("docs/a.md")];
+  assert.equal(evalPr({ files: docs, comments: [comment(v("block", H, "ghglm"))] }).state, R.SUCCESS, "a tier-0 ghglm block is advice");
+  assert.equal(evalPr({ files: [file("scripts/tool.mjs")], comments: [comment(v("block", H, "ghglm"))] }).state, R.FAILURE, "a tier-1 ghglm block still stops");
+  assert.ok(R.isShadowLane("(ghsolshadow)") && R.isShadowLane("gh-terra-shadow") && !R.isShadowLane("(ghsol)"));
 });

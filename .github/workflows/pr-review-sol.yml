@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Official review in Actions (owner D352, change 1). One review per PR head, posted as
-# "VERDICT: merge|block @ <head> (gh-sol)" ((gh-glm) when GLM-5.3 answered) on the last line of the comment, after
-# the R19 record. While vars.PR_REVIEW_SOL_MODE is "shadow" it posts as (gh-sol-shadow)/(gh-glm-shadow), which count
+# "VERDICT: merge|block @ <head> (ghsol)" ((ghglm) when GLM-5.3 answered) on the last line of the comment, after
+# the R19 record. While vars.PR_REVIEW_SOL_MODE is "shadow" it posts as (ghsolshadow)/(ghglmshadow), which count
 # for nothing, and logs agreement with the lane verdict; "count" is the cutover; unset (or anything else) keeps the
 # workflow off.
 #
@@ -13,7 +13,7 @@
 # Providers (scripts/pr-review/providers.mjs): vars.REVIEW_PROVIDER_MODE is gpt-first (default; OpenAI Responses API,
 # gpt-6.2-sol medium), glm-first (Zhipu GLM-5.3) or schedule (GPT during the Zhipu peak 06:00-10:00 UTC on weekdays,
 # GLM otherwise). On insufficient_quota, a billing limit or a sustained 429 the other provider answers, unless
-# vars.PR_REVIEW_GLM_FALLBACK is "off". GLM is used only where (gh-glm) counts: vars.REVIEW_GLM_TIERS (default "1"),
+# vars.PR_REVIEW_GLM_FALLBACK is "off". GLM is used only where (ghglm) counts: vars.REVIEW_GLM_TIERS (default "1"),
 # which modelplan-gates reads too. When every usable provider is out of quota, the head gets one advisory
 # "tier-N review waiting: GPT quota out" note (the coordinator event) and no verdict.
 #
@@ -41,7 +41,7 @@ on:
         required: true
         type: string
       force:
-        description: Review again even if this head already has a verdict from this lane
+        description: Review even if another counting lane already reviewed this head (a lane that already has a verdict at the head never posts twice)
         type: boolean
         default: false
 permissions: {}
@@ -108,7 +108,7 @@ jobs:
       PR: ${{ needs.resolve.outputs.pr }}
       TRIGGER_SHA: ${{ needs.resolve.outputs.sha }}
       FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
-      LANE: ${{ vars.PR_REVIEW_SOL_MODE == 'count' && 'gh-sol' || 'gh-sol-shadow' }}
+      LANE: ${{ vars.PR_REVIEW_SOL_MODE == 'count' && 'ghsol' || 'ghsolshadow' }}
       MODEL: ${{ vars.PR_REVIEW_SOL_MODEL || 'gpt-6.2-sol' }}
       EFFORT: medium
       REVIEW_GLM_TIERS: ${{ vars.REVIEW_GLM_TIERS }}

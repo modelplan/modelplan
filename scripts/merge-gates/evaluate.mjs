@@ -120,7 +120,7 @@ async function prResult(number) {
     readTrainMembers(pr),
   ]);
   await readJobs(runs.filter((r) => !(r.status === "completed" && ["success", "skipped", "neutral"].includes(r.conclusion))));
-  // REVIEW_GLM_TIERS (repository variable, default "1"): the tiers the (gh-glm) workflow lane may decide.
+  // REVIEW_GLM_TIERS (repository variable, default "1"): the tiers the (ghglm) workflow lane may decide.
   // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
   const now = Date.now();
   const glmFallbackUntil = parseFallbackUntil(env.GLM_FALLBACK_UNTIL || "", now);

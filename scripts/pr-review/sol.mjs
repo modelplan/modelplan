@@ -3,23 +3,23 @@
 // review from the interactive lanes into Actions. decideSol() picks whether one PR head gets a review, solPolicy() is
 // the coordinator's sol-consult.sh policy text, buildSolPrompt() the whole request, parseAnswer() checks the answer,
 // renderSolComment() writes the PR comment and agreement() compares a shadow verdict with the lane verdict.
-import { DEFAULT_GLM_TIERS, eligibleLanes, isTrusted, pathTier, prPaths, reviewerLane, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
+import { DEFAULT_GLM_TIERS, eligibleLanes, isShadowLane, isTrusted, pathTier, prPaths, reviewerLane, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
 import { verdictLines } from "./brief.mjs";
 
-export const SOL_LANE = "gh-sol";
-export const SOL_SHADOW_LANE = "gh-sol-shadow";
-// The GLM-5.3 provider posts under its own lanes; rules.mjs counts (gh-glm) on the tiers in vars.REVIEW_GLM_TIERS
-// (default 1) and (gh-glm-shadow) never.
-export const GLM_LANE = "gh-glm";
-export const GLM_SHADOW_LANE = "gh-glm-shadow";
+export const SOL_LANE = "ghsol";
+export const SOL_SHADOW_LANE = "ghsolshadow";
+// The GLM-5.3 provider posts under its own lanes; rules.mjs counts (ghglm) on the tiers in vars.REVIEW_GLM_TIERS
+// (default 1) and (ghglmshadow) never.
+export const GLM_LANE = "ghglm";
+export const GLM_SHADOW_LANE = "ghglmshadow";
 // The lane a verdict is posted under: the run's lane (count or shadow) for the given provider.
 export const postLane = (lane, provider) => (provider === "glm" ? (lane === SOL_LANE ? GLM_LANE : GLM_SHADOW_LANE) : lane);
 // The lanes whose verdict at a head means this run's job is done there: the run's Sol lane, plus its GLM lane while
-// (gh-glm) may decide the tier.
+// (ghglm) may decide the tier.
 export const ownLanes = (lane, tier, glmTiers = DEFAULT_GLM_TIERS) =>
   [`(${lane})`, ...(eligibleLanes(Number(tier), glmTiers).includes(`(${GLM_LANE})`) ? [`(${postLane(lane, "glm")})`] : [])];
-// vars.PR_REVIEW_SOL_MODE: "count" posts as (gh-sol), which modelplan-gates counts as a Sol lane; "shadow" posts as
-// (gh-sol-shadow), which counts for nothing; anything else (unset) leaves the workflow off.
+// vars.PR_REVIEW_SOL_MODE: "count" posts as (ghsol), which modelplan-gates counts as a Sol lane; "shadow" posts as
+// (ghsolshadow), which counts for nothing; anything else (unset) leaves the workflow off.
 export const laneFor = (mode) => (mode === "count" ? SOL_LANE : mode === "shadow" ? SOL_SHADOW_LANE : null);
 // Tier 0 needs no verdict; Sol reviews tiers 1 and 2 (owner D149).
 export const SOL_TIERS = Object.freeze([1, 2]);
@@ -38,8 +38,8 @@ const skip = (why) => ({ review: false, why });
 // checks: { ci: ci.yml passed at the head, compile: a trusted mac-compile success status is on the head };
 // glmTiers: parseGlmTiers(vars.REVIEW_GLM_TIERS).
 // Returns { review: true, head, tier, compile, since, earlier, record, providers } where providers lists the providers
-// whose verdict would count here ("openai" always unless (gh-glm) is the assigned reviewer; "glm" on glmTiers unless
-// (gh-sol) is assigned).
+// whose verdict would count here ("openai" always unless (ghglm) is the assigned reviewer; "glm" on glmTiers unless
+// (ghsol) is assigned).
 export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { ci: false, compile: false }, force = false, glmTiers = DEFAULT_GLM_TIERS }) {
   if (lane !== SOL_LANE && lane !== SOL_SHADOW_LANE) return skip(`unknown lane ${lane}`);
   if (pr.state !== "open") return skip(`PR is ${pr.state}`);
@@ -62,10 +62,11 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   const atHead = all.filter((v) => v.sha === head);
   const sticky = reviewerLane(items);
   const eligible = eligibleLanes(tier, glmTiers);
-  // The run's own lanes: its Sol lane, and its GLM lane only while (gh-glm) may decide this tier (SOL-8: a GLM verdict
+  // The run's own lanes: its Sol lane, and its GLM lane only while (ghglm) may decide this tier (SOL-8: a GLM verdict
   // left over from a wider REVIEW_GLM_TIERS is advice and does not settle the head).
   const own = ownLanes(lane, tier, glmTiers);
-  if (!force && atHead.some((v) => own.includes(v.lane))) return skip("this lane already reviewed this head");
+  // Once per lane per head, forced or not: force only lifts the "another counting lane already reviewed" skip below.
+  if (atHead.some((v) => own.includes(v.lane))) return skip("this lane already reviewed this head");
   const ownCounting = [`(${SOL_LANE})`, `(${GLM_LANE})`];
   if (lane === SOL_LANE) {
     // Counting mode spends no tokens when another lane owns or already settled this head.
@@ -81,12 +82,15 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   // R19: the record of the latest earlier GPT verdict comment that has one is the cumulative per-PR record. The delta
   // starts at that record's head, so the record and the scope line up (Sol SOL-5); without any record it starts at the
   // latest earlier GPT verdict.
+  // Only an official review (a lane that counts on this tier: never a shadow lane, nor Terra on tier 2, nor (ghglm) outside
+  // REVIEW_GLM_TIERS) may narrow the scope; the others stay in `earlier` as context, but the first counting review is full.
+  const official = earlier.filter((v) => eligible.includes(v.lane));
   let record = null;
-  for (let i = earlier.length - 1; i >= 0 && !record; i--) {
-    const r = extractRecord(earlier[i].body);
-    if (r) record = { sha: earlier[i].sha, lane: earlier[i].lane, text: r };
+  for (let i = official.length - 1; i >= 0 && !record; i--) {
+    const r = extractRecord(official[i].body);
+    if (r) record = { sha: official[i].sha, lane: official[i].lane, text: r };
   }
-  const since = record ? record.sha : earlier.length ? earlier[earlier.length - 1].sha : null;
+  const since = record ? record.sha : official.length ? official[official.length - 1].sha : null;
   return { review: true, head, tier, compile, since, earlier: earlier.slice(-MAX_EARLIER), record, providers };
 }
 
@@ -165,18 +169,56 @@ export function buildSolPrompt({ pr, d, lane, stat, diff, delta = "", contents =
   return `${solPolicy(d.base, d.head)}\n\n--- Brief ---\n${brief.join("\n")}\n`;
 }
 
-// The model's answer, canonicalised as sol-consult.sh does (trailing whitespace dropped). Null unless the last line is
-// exactly "VERDICT: merge|block" and a Record block for this head precedes it.
+// Port of the coordinator's verdict-check.py (D340, R18/R19) for a comment this workflow posts: the format a GPT lane's
+// verdict must have to count. Returns one problem string per defect (empty = the comment passes). The lane name must be
+// letters and digits only; the Record and every BLOCKER sit at the top level (never quoted); a block has a labelled blocker.
+export function validatorProblems(body) {
+  const ls = String(body).replace(/\r/g, "").split("\n");
+  const problems = [];
+  const vlines = ls.map((l, i) => (l.toUpperCase().startsWith("VERDICT:") ? i : -1)).filter((i) => i >= 0);
+  const nonblank = ls.map((l, i) => (l.trim() ? i : -1)).filter((i) => i >= 0);
+  if (!vlines.length) return [];
+  const last = nonblank.at(-1);
+  const m = /^VERDICT: (merge|block) @ ([0-9a-f]{40}) \(([a-z0-9]+)\)$/.exec(ls[last]);
+  if (!m) return [`the last non-blank line must be exactly \`VERDICT: merge|block @ <40-hex head> (<lane>)\` (got: ${ls[last].slice(0, 80)})`];
+  if (vlines.length > 1) problems.push("more than one line starts with VERDICT:; only the final line may");
+  if (!ls.some((l) => /^Record: [0-9a-f]{7,40}\b/.test(l))) problems.push("no `Record: <reviewed SHA>` block before the verdict (R19)");
+  const STARTS = /^\s*(?:\d+[.)]\s*|[-*]\s*)?\**BLOCKER\b/i;
+  const ENDS = /^\s*(?:\d+[.)]\s+|[-*]\s+)|^\s*\**(?:BLOCKER|FOLLOW-UP|Record:)/i;
+  const blockers = [];
+  let cur = null;
+  for (const l of ls.slice(0, last)) {
+    if (STARTS.test(l)) { cur = [l]; blockers.push(cur); }
+    else if (cur) { if (!l.trim() || ENDS.test(l)) cur = null; else cur.push(l); }
+  }
+  if (m[1] === "block" && !blockers.length) problems.push("a block verdict needs at least one blocker: a line starting BLOCKER <ID> with Trigger, Consequence and Acceptance test");
+  const label = (w) => new RegExp(`${w}\\s*[:=]\\s*(?!(?:trigger|consequence|acceptance)\\b)\\S.{2,}`, "i");
+  for (const b of blockers) {
+    const t = b.join(" ").replace(/[*_`]/g, "");
+    const ident = /BLOCKER\W+([A-Za-z0-9-]+)/i.exec(t)?.[1] ?? "?";
+    const miss = [["Trigger:", "trigger"], ["Consequence:", "consequence"], ["Acceptance test:", "acceptance(?:\\s+test)?"]].filter(([, w]) => !label(w).test(t)).map(([n]) => n);
+    if (miss.length) problems.push(`blocker ${ident} lacks: ${miss.join(", ")}`);
+  }
+  return problems;
+}
+
+// The model's answer, canonicalised as sol-consult.sh does (trailing whitespace dropped). Not ok unless the last line is
+// exactly "VERDICT: merge|block" (marker-looking lines before it are defused), an unquoted "Record: <sha>" block for this head
+// precedes it, and a block names at least one labelled blocker (what the coordinator's validator will demand of the comment).
 export function parseAnswer(text, head) {
   const body = String(text ?? "").replace(/\r/g, "").replace(/\s+$/, "");
   const ls = body.split("\n");
   const m = /^VERDICT: (merge|block)$/.exec(ls[ls.length - 1] ?? "");
   if (!m) return { ok: false, why: "the answer has no final VERDICT line" };
-  const rest = ls.slice(0, -1).join("\n").replace(/\s+$/, "");
+  // A line that starts with a gate marker (a forged VERDICT, REVIEWER, REVIEW-TIER ...) is defused with a word joiner, so
+  // the answer is posted as written but the gate and the coordinator never read it as a marker.
+  const rest = ls.slice(0, -1).map((l) => (MARKER.test(l) ? `\u2060${l}` : l)).join("\n").replace(/\s+$/, "");
+  const rm = /^Record: ([0-9a-f]{7,40})\b/m.exec(rest);
+  if (!rm) return { ok: false, why: "the answer has no top-level Record block (R19)" };
+  if (!head.startsWith(rm[1].toLowerCase())) return { ok: false, why: "the Record names another commit" };
   const record = extractRecord(rest);
-  if (!record) return { ok: false, why: "the answer has no Record block (R19)" };
-  const rsha = /Record:\**\s*([0-9a-f]{7,40})/i.exec(record)[1].toLowerCase();
-  if (!head.startsWith(rsha)) return { ok: false, why: "the Record names another commit" };
+  const problems = validatorProblems(`${rest}\n\nVERDICT: ${m[1]} @ ${head} (ghsol)`);
+  if (problems.length) return { ok: false, why: `the answer would fail the verdict format: ${problems[0]}` };
   return { ok: true, verdict: m[1], body: rest, record };
 }
 
@@ -205,25 +247,43 @@ export function renderSolComment({ answer, head, lane, mode, base, tier, meta = 
   const kind = mode === "delta" ? `delta review since \`${base}\`` : `complete review against merge base \`${base}\``;
   const glm = lane === GLM_LANE || lane === GLM_SHADOW_LANE;
   const out = [`**${glm ? "GLM-5.3 workflow review" : "Sol workflow review"}** (${lane}) · tier ${tier} · ${kind}${meta.why ? ` · ${tidy(meta.why)}` : ""}`, ""];
-  if (lane.endsWith("-shadow"))
+  if (isShadowLane(lane))
     out.push(`_Shadow mode: advisory only. (${lane}) is not a gate lane, so this verdict does not count._`, "");
-  out.push(...clipKeepingRecord(tidy(answer.body)).split("\n").map((l) => (l ? `> ${l}` : ">")), "");
+  // The answer goes in as written (the Record and the BLOCKER lines must stay top-level for the coordinator's validator);
+  // the gate-marker check below and in parseAnswer keeps it from forging a marker.
+  out.push(clipKeepingRecord(tidy(answer.body)), "");
   if (agree) out.push(`<sub>${tidy(agree)}</sub>`, "");
   const tokens = meta.usage ? ` · tokens in ${meta.usage.input} (cached ${meta.usage.cached}) out ${meta.usage.output}` : "";
   out.push(`<sub>workflow ${glm ? "GLM" : "Sol"} reviewer · ${meta.model ?? "?"} ${meta.effort ?? "?"} · ${meta.seconds ?? "?"} s${tokens}${meta.runUrl ? ` · [run](${meta.runUrl})` : ""}</sub>`, "");
   if (out.some((l) => MARKER.test(l))) throw new Error("rendered comment has a gate marker before the verdict line");
   // R19: the VERDICT line is the last line; it is the only line the gate reads.
   out.push(`VERDICT: ${answer.verdict} @ ${head} (${lane})`);
-  return out.join("\n");
+  const comment = out.join("\n");
+  const bad = validatorProblems(comment);
+  if (bad.length) throw new Error(`rendered comment fails the verdict format: ${bad[0]}`);
+  return comment;
 }
 
-// Right before posting (the comment token step): the PR must still be open at the reviewed head, and this lane must not
-// have posted a verdict there meanwhile (a second delivery of the same trigger). Returns null to post, else the reason.
-export function postProblem({ pr, items, head, lane, force = false, tier = 1, glmTiers = DEFAULT_GLM_TIERS }) {
+// Right before posting (the comment token step): the PR must still be open at the reviewed head, and the verdict about to
+// be posted must still be allowed there under the same rules decideSol applied before the model call, now against the
+// comments as they are: this run's lanes and the provider lane being posted must not have a verdict at the head (once
+// per lane per head, forced or not: a second delivery or a retry never posts twice), the head must not have been
+// assigned meanwhile to another reviewer (REVIEWER:) or to the other provider, and in counting mode no other counting
+// verdict may have landed unless the run was forced. posted: the lane the verdict goes out under (postLane), or null for
+// the advisory wait note, which has no lane of its own. Returns null to post, else the reason.
+export function postProblem({ pr, items, head, lane, posted = lane, force = false, tier = 1, glmTiers = DEFAULT_GLM_TIERS }) {
   if (pr?.state !== "open") return `PR is ${pr?.state}`;
   if (String(pr.head?.sha ?? "").toLowerCase() !== head) return `head moved to ${pr.head?.sha ?? "?"} after the review of ${head}`;
-  const own = ownLanes(lane, tier, glmTiers);
-  if (!force && verdictLines(items).some((v) => v.sha === head && own.includes(v.lane))) return `(${lane}) already has a verdict at ${head}`;
+  const atHead = verdictLines(items).filter((v) => v.sha === head);
+  const own = [...ownLanes(lane, tier, glmTiers), ...(posted ? [`(${posted})`] : [])];
+  if (atHead.some((v) => own.includes(v.lane))) return `(${posted ?? lane}) already has a verdict at ${head}`;
+  if (lane === SOL_LANE) {
+    const sticky = reviewerLane(items);
+    const eligible = eligibleLanes(Number(tier), glmTiers);
+    if (sticky && (posted ? sticky !== `(${posted})` : ![`(${SOL_LANE})`, `(${GLM_LANE})`].includes(sticky))) return `the assigned reviewer is ${sticky}`;
+    if (posted === GLM_LANE && !eligible.includes(`(${GLM_LANE})`)) return `(${GLM_LANE}) may not decide tier ${tier}`;
+    if (!force && !sticky && atHead.some((v) => eligible.includes(v.lane) || v.lane === "(unnamed)")) return "a counting verdict already exists at this head";
+  }
   return null;
 }
 
@@ -233,7 +293,7 @@ export function postProblem({ pr, items, head, lane, force = false, tier = 1, gl
 // "tier-<n> review waiting: GPT quota out @ <sha> (<lane>)" (SOL-9); which providers were tried is in the body.
 export const waitEvent = (tier) => `tier-${tier} review waiting: GPT quota out`;
 export const WAIT_EVENT = waitEvent(2);
-export const WAIT_EVENT_RE = /^tier-[12] review waiting: GPT quota out @ ([0-9a-f]{40}) \(gh-[a-z-]+\)$/;
+export const WAIT_EVENT_RE = /^tier-[12] review waiting: GPT quota out @ ([0-9a-f]{40}) \(gh[a-z]+\)$/;
 const firstLine = (x) => String(x.body).split("\n")[0].replace(/\r$/, "");
 export const waitNoted = (items, head) => items.some((x) => WAIT_EVENT_RE.exec(firstLine(x))?.[1] === head);
 export function renderWaitNote({ head, lane, tier = 2, who = ["openai"], why = "", runUrl = "" }) {
