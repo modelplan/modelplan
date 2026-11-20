@@ -541,6 +541,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onShellChanged: (() -> Void)?
   public var onIntent: ((CockpitIntent) -> Void)?
   public var onRendered: (() -> Void)?
+  /// G3-42: the coordinator's hook for an admitted rendered receipt; `onRendered` stays free for observers.
+  public var onDataRendered: (() -> Void)?
+  public var reportsDataRendered: Bool { true }
   /// Recovery contract: every accepted rendered receipt, for the coordinator (verified data on screen). Separate from
   /// `onRendered`, which verification and timing hooks own.
   public var onRenderVerified: (() -> Void)?
@@ -1230,6 +1233,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         if let reason = pendingFreshnessReason { sendFreshnessTick(reason) }
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
         onRendered?()
+        onDataRendered?()
         onRenderVerified?()
       case .deadlinePending(let id):
         if receiptWatchdog.currentID != id { receiptWatchdog.wait(for: id) }
@@ -2094,7 +2098,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     verificationEntrance?(appearance.reduceMotion ? "instant" : reverse ? "rack" : "fade")
     #endif
     guard !appearance.reduceMotion, let window else { discard(); return }
-    finishEntrance()
+    finishEntrance(completesOpen: false)
     let duration = reverse ? reverseDuration : 0.12
     if reverse, let home = layout?.frame {
       rackHidesInHome = true
@@ -2181,12 +2185,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// A put back is flying (key, menu or a drag released in the catch zone) and latches at its end.
   private var flying = false
   /// Ends a running entrance, landing or flight at once, in its final state (a drag, a close or another key press).
-  private func finishEntrance() {
+  private func finishEntrance(completesOpen: Bool = true) {
     guard entering || motion != nil || flying || !rackSettledWaiters.isEmpty else { return }
     motion = nil; rackSettledWaiters = []
     if flying { flying = false; latch(); return }
     if entering {
       entering = false; rackHidesInHome = false
+      // The ended motion's own completion no longer runs, so its receipt is given here (a drag or a key press, not a close).
+      if completesOpen { timing(transitionTiming.openStage("animation-complete")) }
       window?.alphaValue = 1
       rackExtension = rackIcon() != nil && !shellSession.detached ? 1 : 0; rackTarget = rackExtension
       if !shellSession.detached, let frame = layout?.frame { window?.setFrame(frame, display: true) }

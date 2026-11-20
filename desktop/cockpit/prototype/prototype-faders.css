@@ -20,12 +20,16 @@
 .dk-fad .fd-ch{display:grid;grid-template-rows:var(--fd-rows);justify-items:center;min-width:0;min-height:0}
 
 
-.dk-fad .fd-leds{grid-row:1;display:grid;place-items:center;height:var(--row-h,18px)}
+.dk-fad .fd-leds{grid-row:1;position:relative;display:grid;place-items:center;height:var(--row-h,18px)}
 .dk-fad .fd-indicator{display:grid;place-items:center;width:12px;height:12px;color:var(--fd-unlit)}
 .dk-fad .fd-indicator:not(.fast)::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 4px currentColor}
 .dk-fad .fd-indicator.on{color:var(--lcd-ink)}
 .dk-fad .fd-indicator.try{color:var(--trial)}
-.dk-fad .fd-indicator svg{width:6px;height:9px;fill:currentColor;filter:drop-shadow(0 0 2px currentColor)}
+/* owner 11-12: fast mode = a symbol-only bolt beside the lamp (white real, solid blue trial on, blue outline trial off) */
+.dk-fad .fd-fast{position:absolute;left:calc(50% + 6px);top:50%;width:6px;height:9px;margin-top:-4.5px;overflow:visible;pointer-events:none}
+.dk-fad .fd-fast.on path{fill:var(--lcd-ink)}
+.dk-fad .fd-fast.try path{fill:var(--trial)}.dk-fad .fd-fast.try{filter:drop-shadow(0 0 2px color-mix(in srgb,var(--trial) 67%,transparent))}
+.dk-fad .fd-fast.off path{fill:none;stroke:var(--trial);stroke-width:1.1;stroke-linejoin:round}
 
 
 

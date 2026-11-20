@@ -120,6 +120,7 @@ import ModelPlanShell
         }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         owner.settingsSubscriptions = { [weak application] in Task { await application?.presentSettings(paneID: "subscriptions") } }
+        owner.refreshMember = { [weak application] key in application?.refreshFromCockpit(key) }
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
         owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
         application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
@@ -140,6 +141,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var settings: (() -> Void)?
     /// CKP-SHELL-39: Settings on its Subscriptions pane, for the empty engine screen's button.
     var settingsSubscriptions: (() -> Void)?
+    /// Owner D277 (CKP-ENG-27): the engine table's Refresh; a member key, or `all`.
+    var refreshMember: ((String) -> Void)?
     /// Right-click menu hooks, set by the factory beside `settings`.
     var setSize: ((SettingsSize) -> Void)?
     var currentSize: (() -> SettingsSize?)?
@@ -494,6 +497,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openField:openField()
         case .openFieldAt(let name):openField(focusName:name)
         case .openWebsite(let link):owner.openWebsite(link.url)
+        case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
         case .detach,.putBack,.shutterToggle,.scopeSelect,.cautionAck,.pinnedModels:
             // The page owns shell controls; the coordinator validates and

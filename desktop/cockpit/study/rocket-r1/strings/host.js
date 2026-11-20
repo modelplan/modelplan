@@ -82,8 +82,8 @@ register('host', {
   helpNote16: ['prose', '喷口光：表示这个订阅正在用，不表示额度告警。', 'Glow: this subscription is working now; it does not mean an alert.'],
   alStale: ['alert', '{s} · 上次读数', '{s} · Last reading'],
   alStaleAge: ['alert', '{s} · 上次读数 {age}前', '{s} · Last reading {age} ago'],
-  alLowReset: ['alert', '{s} {w} 剩 {r}% · {left}后重置', '{s} {w} {r}% left · resets in {left}'],
   alCardsOne: ['alert', '{s} · 重置次数中有 {n} 次将在 48 小时内到期', '{s} · {n} reset expires within 48 hours'],
+  alCardsSome: ['alert', '{s} · 部分重置次数将在 48 小时内到期', '{s} · some resets expire within 48 hours'],
   alCardsMany: ['alert', '{s} · 重置次数中有 {n} 次将在 48 小时内到期', '{s} · {n} resets expire within 48 hours'],
   alPeakOpen: ['alert', '{s} {in} 后进入高峰', '{s} peak in {in}'],
   relNow: ['lcd', '现在', 'now'],
@@ -95,4 +95,14 @@ register('host', {
   webPlans: ['line', '套餐详情', 'Plan details'],
   webCompare: ['line', '在网站上对比', 'Compare on the website'],
   webHow: ['line', '怎么算的', 'How it’s worked out'],
+  // Owner D277 (CKP-ENG-27): the quiet line under the engine table.
+  updatedNow: ['line', '刚刚更新', 'Updated just now'],
+  updatedMin: ['line', '{n} 分钟前更新', 'Updated {n} min ago'],
+  updatedHour: ['line', '{n} 小时前更新', 'Updated {n} h ago'],
+  updatedDay: ['line', '{n} 天前更新', 'Updated {n} d ago'],
+  refresh: ['silk', '刷新', 'Refresh'],
+  noNewData: ['line', '读不到新数据', 'no new data'], // CKP-ENG-55: reads keep failing; values are held
+  retry: ['silk', '重试', 'Retry'],
+  refreshAll: ['aria', '重新读取全部订阅', 'Read all subscriptions again'],
+  refreshOne: ['aria', '重新读取 {name}', 'Read {name} again'],
 });

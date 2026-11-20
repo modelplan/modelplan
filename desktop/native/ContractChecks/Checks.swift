@@ -170,23 +170,24 @@ func processChecks() async throws {
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
     let exe = dir.appendingPathComponent("fake-cli")
+    // /bin/sh with absolute-path tools only. A `#!/usr/bin/python3` fixture goes through the xcrun shim and a full
+    // interpreter start, which on a loaded Mac took longer than the production per-command timeouts.
     let script = """
-    #!/usr/bin/python3
-    import json,os,sys,time,signal
-    mode=os.environ.get('MODE','args')
-    if os.environ.get('PIDFILE'):
-        with open(os.environ['PIDFILE'],'w') as f: f.write(str(os.getpid()))
-    if mode=='cap':
-        sys.stdout.buffer.write(b' '*(8*1024*1024+1)); sys.stdout.flush()
-    elif mode=='slow':
-        signal.signal(signal.SIGTERM,signal.SIG_IGN)
-        time.sleep(5)
-    else:
-        print(json.dumps(sys.argv[1:]))
-        sys.stderr.write('x'*70000)
+    #!/bin/sh
+    mode=${MODE:-args}
+    if [ -n "${PIDFILE:-}" ]; then printf '%s' "$$" > "$PIDFILE.tmp" && /bin/mv "$PIDFILE.tmp" "$PIDFILE"; fi
+    case $mode in
+    cap) exec /usr/bin/head -c 8388609 /dev/zero;;
+    slow) trap '' TERM; exec /bin/sleep 60;;
+    *)
+      out='['; sep=''
+      for a in "$@"; do out="$out$sep\\"$a\\""; sep=','; done
+      printf '%s]\\n' "$out"
+      /usr/bin/head -c 70000 /dev/zero >&2;;
+    esac
     """
     try Data(script.utf8).write(to: exe); try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: exe.path)
-    let argsTransport = ProcessCLITransport(executable: exe, environment: ["MODE":"args"])
+    let argsTransport = ProcessCLITransport(executable: exe, environment: ["MODE":"args"], timeoutOverride: 60)
     let args = try await argsTransport.execute(.desktop)
     let argv = try JSONDecoder().decode([String].self, from: args.stdout)
     try require(argv == ["desktop","--json","--read-only"] && args.warning && args.stderrTruncated, "fixed readonly args/stderr cap")
@@ -204,19 +205,23 @@ func processChecks() async throws {
     try Data(digest.utf8).write(to: pin)
     let bundledArgs = try await BundledCLI(bundle: bundle, environment: ["MODE":"args"]).execute(.desktop)
     try require(try JSONDecoder().decode([String].self, from: bundledArgs.stdout) == CLICommand.desktop.arguments, "pinned bundled helper fixed arguments")
-    do { _ = try await ProcessCLITransport(executable: exe, environment: ["MODE":"cap"]).execute(.desktop); throw CheckFailure(message: "cap accepted") } catch TransportError.outputLimit {}
+    do { _ = try await ProcessCLITransport(executable: exe, environment: ["MODE":"cap"], timeoutOverride: 60).execute(.desktop); throw CheckFailure(message: "cap accepted") } catch TransportError.outputLimit {}
     let slow = ProcessCLITransport(executable: exe, environment: ["MODE":"slow"], timeoutOverride: 0.15)
     let start = ContinuousClock.now
     do { _ = try await slow.execute(.desktop); throw CheckFailure(message: "timeout accepted") } catch TransportError.timeout {}
-    try require(start.duration(to: .now) < .seconds(2), "bounded kill/reap")
+    // The child ignores SIGTERM and would sleep 60 s; returning well before that proves the SIGKILL and reap.
+    try require(start.duration(to: .now) < .seconds(10), "bounded kill/reap")
     do { _ = try await slow.execute(.refreshAccount); throw CheckFailure(message: "refresh timeout accepted") } catch TransportError.timeout {}
     let pidFile = dir.appendingPathComponent("owned-child.pid")
-    let cancelling = ProcessCLITransport(executable: exe, environment: ["MODE":"slow","PIDFILE":pidFile.path])
+    // Cancellation is under test, not the timeout: a generous override keeps a slow start from timing out first.
+    let cancelling = ProcessCLITransport(executable: exe, environment: ["MODE":"slow","PIDFILE":pidFile.path], timeoutOverride: 120)
     let task = Task { try await cancelling.execute(.desktop) }
     let launchedAt = ContinuousClock.now
-    while !FileManager.default.fileExists(atPath:pidFile.path) && launchedAt.duration(to:.now) < .seconds(2) {
+    // Readiness handshake: the child writes its PID before it blocks. Bounded generously for a loaded host.
+    while !FileManager.default.fileExists(atPath:pidFile.path) && launchedAt.duration(to:.now) < .seconds(30) {
         try await Task.sleep(nanoseconds:5_000_000)
     }
+    try require(FileManager.default.fileExists(atPath:pidFile.path), "synthetic child did not start within 30 s")
     do { _ = try await cancelling.execute(.desktop); throw CheckFailure(message:"overlapping command accepted") } catch TransportError.busy {}
     task.cancel()
     do { _ = try await task.value; throw CheckFailure(message: "cancel accepted") } catch TransportError.cancelled {}

@@ -15,6 +15,16 @@ import XCTest
         controller.searchField.stringValue = text
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
     }
+    func testExplicitPaneNavigationClearsRetainedSearch() async throws {
+        let editor = SettingsEditor(store: try store())
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
+        await controller.prepare()
+        search("no-such-setting-123", in: controller)
+        controller.selectPane("subscriptions")
+        XCTAssertEqual(controller.searchField.stringValue, "", "a card's explicit pane target must not remain filtered out")
+        XCTAssertEqual(controller.selectedPaneID, "subscriptions")
+        controller.close()
+    }
     private func assertRetiredCannotCommit(_ popup: SettingsChoiceControl, target: AnyObject?, action: Selector,
                                           editor: SettingsEditor) async throws {
         let before = await editor.store.snapshot()

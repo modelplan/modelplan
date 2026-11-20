@@ -351,3 +351,29 @@ func TestReportedModelsMapUnderEachToolKey(t *testing.T) {
 		t.Fatal("unmapped ids must be dropped")
 	}
 }
+
+// WP-05 (D292, owner 11-17): the cockpit carries the published aaScore only as a reference beside our own ability
+// score; it never replaces ability. Absent (or not a positive finite number) = the field is absent on the wire.
+func TestPublishedCockpitModelCarriesAAScoreOnlyWhenPublished(t *testing.T) {
+	ability, aa, zero, nan := 42.8, 61.5, 0.0, math.NaN()
+	model := digest.Model{ID: "model", Name: "Synthetic model", DeveloperID: "openai", Recommended: "high", Efforts: []digest.Effort{
+		{Effort: "high", Label: "High", Ability: &ability, AAScore: &aa}, {Effort: "max", Label: "Max"}, {Effort: "low", Label: "Low", AAScore: &zero}}}
+	got, ok := publishedCockpitModel(model)
+	if !ok || len(got.Efforts) != 3 {
+		t.Fatalf("projection: %+v", got)
+	}
+	if got.Efforts[0].AAScore == nil || *got.Efforts[0].AAScore != 61.5 || got.Efforts[0].Ability != &ability || got.Efforts[1].AAScore != nil || got.Efforts[2].AAScore != nil {
+		t.Fatalf("aaScore copy: %+v", got.Efforts)
+	}
+	raw, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Count(raw, []byte(`"aaScore"`)) != 1 || bytes.Contains(raw, []byte(`"aaScore":null`)) {
+		t.Fatalf("aaScore on the wire: %s", raw)
+	}
+	model.Efforts[0].AAScore = &nan
+	if got, ok := publishedCockpitModel(model); !ok || got.Efforts[0].AAScore != nil {
+		t.Fatalf("non-finite aaScore: %+v %v", got.Efforts, ok)
+	}
+}

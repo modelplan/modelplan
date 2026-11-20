@@ -226,20 +226,32 @@ private actor D41Engine: EngineClient {
         XCTAssertFalse(app.scopeConsentEntry.controller.needsKeychainAccess, "this card is not the Keychain card")
         XCTAssertNotNil(app.composition.dock.cardActionRequested, "the card action is wired")
         let member = try XCTUnwrap(app.composition.accountMembers.members.first?.id)
+        // S7: the singleton Settings window retains its search. A card deep link must reveal its row even after
+        // an unrelated search hid the Subscriptions view during an earlier Settings visit.
+        await app.settingsHost.present(paneID: "appearance", origin: .userInitiated)
+        let retainedWindow = try XCTUnwrap(NSApplication.shared.windows.first {
+            $0.isVisible && $0.contentView.map { view("settings.search", in: $0) != nil } == true
+        })
+        let search = try XCTUnwrap(view("settings.search", in: try XCTUnwrap(retainedWindow.contentView)) as? NSSearchField)
+        search.stringValue = "no-such-setting-123"
+        search.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: search))
+        XCTAssertTrue(app.scopeConsentEntry.view.isHiddenOrHasHiddenAncestor)
         // SET-9-34 / SET-9-42: press the card's own action (the production closure the Dock calls) and observe the real
         // Settings window; the row and its reason come from the app's own rows projection, not an injected context.
-        let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
         let requested = try XCTUnwrap(app.composition.dock.cardActionRequested, "the card action is wired")
         requested(member)
         var found: NSWindow?
         for _ in 0..<500 {
-            found = NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible }
-            if let found, view("subscriptions.row." + member, in: try XCTUnwrap(found.contentView)) != nil { break }
+            found = retainedWindow.isVisible ? retainedWindow : nil
+            if let found, search.stringValue.isEmpty,
+               view("subscriptions.row." + member, in: try XCTUnwrap(found.contentView))?.isHiddenOrHasHiddenAncestor == false { break }
             try await Task.sleep(for: .milliseconds(10))
         }
         let window = try XCTUnwrap(found, "the card action opens Settings")
         addTeardownBlock { @MainActor in window.close() }
         let root = try XCTUnwrap(window.contentView)
+        XCTAssertEqual(search.stringValue, "")
+        XCTAssertFalse(app.scopeConsentEntry.view.isHiddenOrHasHiddenAncestor, "the navigation target is visible, not just mounted")
         XCTAssertNotNil(view("subscriptions.row." + member, in: root), "the row the card links to exists in the Settings window")
         XCTAssertEqual((view("subscriptions.status." + member, in: root) as? NSTextField)?.stringValue, "The reading timed out; it will retry on its own")
         let grants = await engine.recorded()

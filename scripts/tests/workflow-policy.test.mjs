@@ -696,3 +696,15 @@ test("Xcode selector: self-hosted needs 26.6 build 17F113, hosted keeps the imag
   for (const r of hosted.r) assert.equal(r.status, 0, r.stderr);
   assert.match(fs.readFileSync(hosted.out, "utf8"), /Xcode_26\.3\.app/);
 });
+
+test("packaging workflows pin Xcode 26.6 (17F113) instead of selecting the newest installed Xcode", () => {
+  const dir = new URL("../../.github/workflows/", import.meta.url);
+  for (const f of ["desktop.yml", "e2e-journey.yml", "u10-candidate.yml", "macos-distribution.yml"]) {
+    const text = fs.readFileSync(new URL(f, dir), "utf8");
+    assert.doesNotMatch(text, /Select (the )?newest installed Xcode/i, `${f} selects the newest Xcode`);
+    assert.doesNotMatch(text, /max\(candidates\)/, `${f} picks the max Xcode version`);
+    assert.match(text, /WANT_VERSION, WANT_BUILD = '26\.6', '17F113'/, `${f} must pin Xcode 26.6 (17F113)`);
+    assert.match(text, /is not installed on this runner/, `${f} must fail when the pinned Xcode is absent`);
+    assert.match(text, /'xcodebuild', '-version'/, `${f} must log xcodebuild -version`);
+  }
+});
