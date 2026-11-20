@@ -170,7 +170,7 @@ def build_app(work):
     write_private(archive/'checksums.txt', ('\n'.join(checksums)+'\n').encode())
     command(['bash',str(REPO/'desktop/native/tools/package-neutral.sh'),str(archive),
              str(work/'package'),'--unverified'],REPO,env,1800,work/'package.log')
-    app=work/'package/ModelPlan Community.app'
+    app=work/'package/ModelPlan.app'
     verify_app(app)
     return app,version
 

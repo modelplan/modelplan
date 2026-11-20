@@ -22,7 +22,8 @@ import XCTest
             let surface = NeutralSurfaceProvider(preferredLanguages: list).makeOverview()
             let shown = texts(surface.view)
             XCTAssertFalse(shown.isEmpty)
-            for text in shown where !text.isEmpty {
+            // D57: the product name "ModelPlan" is the same in both languages, so it carries no language signal.
+            for text in shown where !text.isEmpty && text != "ModelPlan" {
                 let hasCJK = text.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }
                 XCTAssertEqual(hasCJK, chinese, "\(list): \(text)")
                 XCTAssertFalse(text.contains(" / "), "never both languages at once: \(text)")
