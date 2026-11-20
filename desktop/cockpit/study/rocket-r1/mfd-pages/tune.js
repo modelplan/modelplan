@@ -31,6 +31,8 @@ export function usageRows(d, ui) {
 }
 // The price data has 7- and 30-day model rows; Today has none on this page yet, so it shows no ≈$ rather than another range's.
 const costKey = ui => ui.scope ? undefined : ({'7d': 'recent7d', '30d': 'recent30d'})[pageRange(ui)];
+// A known estimate of exactly zero reads "≈$0"; a model without a price has no entry at all, so its cell stays empty.
+const costText = v => v === 0 ? '≈$0' : approxCost(v);
 const totalCost = (d, ui) => { const v = approxCost(d.modelCost?.total?.[costKey(ui)]); return v ? ` · ${esc(v)}` : ''; };
 function list(d, ui) {
   if (pageRange(ui) === 'today') return `<p class="mp-empty period">${t('mfd.rangeNoToday')}</p>`; // no per-model ranking for Today yet (macrevc-1058-7)
@@ -40,7 +42,7 @@ function list(d, ui) {
   const body = rows.map(({m, tokens}) => {
     const cur = currentOf(d, ui, m.id)?.effort, share = pct(tokens, total), colour = accounts.find(a => a.pool && a.pool === m.pool)?.colour || 'var(--lcd-muted)';
     const idle = hasUsage && tokens == null, cost = d.modelCost?.[costKey(ui)]?.[m.id];
-    return `<button type="button" data-p="${share ?? 0}" class="md-row ${idle ? 'idle' : ''} ${ui.selModel === m.id ? 'sel' : ''}" data-mfd="model:${esc(m.id)}" data-model="${esc(m.id)}" aria-label="${esc(t('mfd.mdRowAria', {m: m.name}))}"${idle ? ` title="${esc(t('mfd.mdUnused'))}"` : ''}><i class="chip" data-v="${esc(colour)}"></i><b class="md-n">${esc(m.short || m.name)}</b><span class="md-e">${cur ? esc(cur) : ''}${m.rec ? `<i class="md-star">★${esc(m.rec)}</i>` : ''}</span><span class="md-c" data-cost>${esc(cost == null ? '' : approxCost(cost) ?? '')}</span><span class="md-s">${share == null ? '' : share + '%'}</span></button>`;
+    return `<button type="button" data-p="${share ?? 0}" class="md-row ${idle ? 'idle' : ''} ${ui.selModel === m.id ? 'sel' : ''}" data-mfd="model:${esc(m.id)}" data-model="${esc(m.id)}" aria-label="${esc(t('mfd.mdRowAria', {m: m.name}))}"${idle ? ` title="${esc(t('mfd.mdUnused'))}"` : ''}><i class="chip" data-v="${esc(colour)}"></i><b class="md-n">${esc(m.short || m.name)}</b><span class="md-e">${cur ? esc(cur) : ''}${m.rec ? `<i class="md-star">★${esc(m.rec)}</i>` : ''}</span><span class="md-c" data-cost>${esc(cost == null ? '' : costText(cost) ?? '')}</span><span class="md-s">${share == null ? '' : share + '%'}</span></button>`;
   }).join('');
   return `<div class="md-h">${esc(t('mfd.mdTitle', {r: rangeWord(ui), n: hasUsage ? inUse : rows.length}))}${totalCost(d, ui)}</div><div class="md-list" data-usage="${hasUsage}">${body}</div>`;
 }
@@ -48,9 +50,12 @@ function list(d, ui) {
 // 图 (CKP-MFD-66): the ability-cost frontier of the user's models. Only the selected model and the first-ranked one carry
 // a name on the chart; the others show theirs on hover (their points already carry a tooltip).
 function chart(d, ui) {
-  const ms = chartModels(d, ui).map(m => withOlderLabel(m, t('mfd.olderBadge')));
+  const first = usageRows(d, ui).rows[0]?.m.id, field = chartModels(d, ui);
+  // A model selected or ranked first from the list stays on the chart even outside the ten-model field (macrevc-1058-11).
+  const extra = (d.listModels ?? []).filter(m => (m.id === ui.selModel || m.id === first) && !field.some(f => f.id === m.id));
+  const ms = [...field, ...extra].map(m => withOlderLabel(m, t('mfd.olderBadge')));
   if (!ms.length) return `<p class="mp-empty">${t('mfd.noModels')}</p>`;
-  const {w, h} = fill(ui, 'fc', {w: 260, h: 180}), current = {}, first = usageRows(d, ui).rows[0]?.m.id;
+  const {w, h} = fill(ui, 'fc', {w: 260, h: 180}), current = {};
   for (const m of ms) { const c = currentOf(d, ui, m.id); if (c?.effort) current[m.id] = c.effort; }
   const named = new Set([ui.selModel, first].filter(Boolean));
   return `<div class="mfd-fill" data-fill="fc" data-models="${ms.map(m => m.id).join(' ')}">${frontierSvg(ms, {w, h, current, trial: ui.trials, selected: ui.selModel, named,

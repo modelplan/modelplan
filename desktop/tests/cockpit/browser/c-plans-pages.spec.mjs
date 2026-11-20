@@ -79,12 +79,12 @@ test('CKP-MFD-65 without price data the Models cost cells and title stay free of
 });
 
 // macrevc-1058-10: ≈cost reads the price rows themselves, not only models the output-token ranking lists (input-only use).
-test('CKP-MFD-65 a priced model with no output-token ranking still shows its ≈cost; a zero price shows none',async({page})=>{
+test('CKP-MFD-65 a priced model with no output-token ranking shows its ≈cost, a known zero shows ≈$0, an unpriced model stays blank',async({page})=>{
  const data=withHistory(true,true);data.history.models.recent7d=ranking([entity('gpt-6.1-sol',900)]);
  data.history.cost.models.recent7d.push({model:'gpt-6-luna',source:'codex',estimatedUsd:0,pricedTokens:50,unpricedTokens:0});
  await open(page,data);await page.locator('[data-mfd="page:tune"]').click();
  const cell=id=>page.locator(`.mfd-page .md-row[data-model="${id}"] .md-c`);
- await expect(cell('gpt-6.1-terra')).toHaveText('≈$3');await expect(cell('gpt-6-luna')).toHaveText('');
+ await expect(cell('gpt-6.1-terra')).toHaveText('≈$3');await expect(cell('gpt-6-luna')).toHaveText('≈$0');await expect(cell('gpt-6-astra')).toHaveText('');
 });
 
 // macrevc-1058-3: a subscription scope has no scoped attribution for the ranking or the prices, so they stay unknown.
@@ -115,6 +115,9 @@ test('CKP-MFD-65 a used model outside the ten-model field is still listed and se
  await open(page,data);await page.locator('[data-mfd="page:tune"]').click();
  const row=page.locator('.mfd-page .md-row[data-model="gpt-x11"]');await expect(row).toBeVisible();await row.click();
  await expect(page.locator('.mfd-page .md-row.sel')).toHaveAttribute('data-model','gpt-x11');
+ // macrevc-1058-11: the chart keeps that selected model.
+ await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
+ await expect(page.locator('.mfd-page .mfd-fill')).toHaveAttribute('data-models',/\bgpt-x11\b/);
 });
 
 // macrevc-1058-6: every project in the title is a row (the list scrolls).
