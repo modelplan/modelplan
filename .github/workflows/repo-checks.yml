@@ -98,6 +98,9 @@ jobs:
       - name: "source-policy: merge-gates hosted-leg tests (D314)"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/merge-gates-hosted.test.mjs
+      - name: "source-policy: dependency wake tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/dependency-wake.test.mjs
       - name: "source-policy: workflow reviewer tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/pr-review.test.mjs
