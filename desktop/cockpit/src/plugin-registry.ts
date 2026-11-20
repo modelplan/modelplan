@@ -7,6 +7,7 @@
 // the subscription columns (small tag · large number · side value · continuous bar with a thin trend line below) and an
 // optional bottom line; the host draws them in the table's own rows, so plugin columns look and align like subscriptions.
 // Pure: no DOM and no string tables here (the host resolves `plugin.*` keys), so the bridge and unit tests can load it.
+import {resourcePlugin} from './resource-plugin.js';
 export type PluginLocale='en'|'zh-CN';
 /** One per-plugin setting. `seconds` is a whole number of seconds inside [min, max] (e.g. sampling 3–30 s, D124). */
 export interface PluginSettingSpec {readonly key:string;readonly kind:'seconds';readonly min:number;readonly max:number;readonly default:number}
@@ -38,8 +39,9 @@ export interface PluginColumn {
   readonly foot?:{readonly label:PluginWords;readonly value?:PluginWords|null}|null;
 }
 export interface PluginScreen {readonly lines:readonly {readonly label:string;readonly value:string}[]}
-/** D293 colours: only these instrument inks (V1-FINAL §0 white / grey, resource silver #b9c7d6). */
-export const PLUGIN_INKS:readonly string[]=Object.freeze(['#87939e','#e9edf0','#b9c7d6']);
+/** D293 colours: only these instrument inks (V1-FINAL §0 white / grey, resource silver #b9c7d6) and the D327 resource
+ *  plugin's orchid #da66c2 (it replaces the silver for the resource plugin; the silver stays allowed for other plugins). */
+export const PLUGIN_INKS:readonly string[]=Object.freeze(['#87939e','#e9edf0','#b9c7d6','#da66c2']);
 export interface CockpitPlugin {
   readonly id:string;
   /** `plugin.*` string-table keys: the key name (with a Short form) and the one-sentence summary for Settings. */
@@ -53,6 +55,9 @@ export interface CockpitPlugin {
   readonly ink?:string;
   /** D121: plugins are default on once they ship; the framework placeholder is not. */
   readonly defaultEnabled:boolean;
+  /** The host samples this plugin's readings (e.g. the resource plugin). Such a plugin is drawn only for a host that sent
+   *  its plugin state, so a host that cannot sample never shows an empty column. */
+  readonly hostSampled?:boolean;
   readonly settings:readonly PluginSettingSpec[];
   /** Folds a host reading (`pluginData`) into the plugin's state; `undefined` refuses it. The state survives repaints. */
   accept(data:unknown,previous:unknown):unknown;
@@ -109,4 +114,4 @@ export const placeholderPlugin:CockpitPlugin=Object.freeze({
       {label:context.words('plugin.placeholderScreenEvery').full,value:context.words('plugin.placeholderEvery',{n:context.settings.intervalSeconds}).full}]};
   },
 });
-export const builtinPlugins:readonly CockpitPlugin[]=Object.freeze([placeholderPlugin]);
+export const builtinPlugins:readonly CockpitPlugin[]=Object.freeze([placeholderPlugin,resourcePlugin]);

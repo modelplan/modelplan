@@ -206,7 +206,8 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   const host:PluginHost={
     registry,
     state:()=>state,
-    layout:subscriptions=>pluginLayout(subscriptions,enabledPlugins(state,registry)),
+    // A host-sampled plugin is laid out only once the host has sent its plugin state (it is the one that samples).
+    layout:subscriptions=>pluginLayout(subscriptions,enabledPlugins(state,registry).filter(p=>negotiated||!registry.get(p.id)?.hostSampled)),
     bindEngine(next){repaint=next;},
     decorate(table,page,value){
       locale=value;placed.clear();columns.clear();

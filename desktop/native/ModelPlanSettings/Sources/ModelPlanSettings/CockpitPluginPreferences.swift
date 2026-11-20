@@ -35,12 +35,20 @@ public struct CockpitPluginDefinition: Equatable, Sendable {
 public enum CockpitPluginCatalogue {
     public static let maximumPinned = 2
     public static let maximumEntries = 32
-    /// Framework placeholder until the calendar and resource plugins land (WP-19, WP-20); off by default.
+    /// The framework placeholder (off by default) and the resource plugin (D324, default on).
     public static let builtIn: [CockpitPluginDefinition] = [
         CockpitPluginDefinition(id: "placeholder", title: .init("Placeholder", "占位插件"),
                                 summary: .init("Shows the last number the app sent; for trying plugins.", "显示应用推来的最后一个数，用来试插件框架。"),
                                 symbol: "dot.square", defaultEnabled: false, settings: [
             CockpitPluginSettingSpec(key: "intervalSeconds", minimum: 3, maximum: 30, defaultValue: 10, title: .init("Update interval", "更新间隔")),
+        ]),
+        // D324: the resource plugin, default on. The column samples every 2, 5 or 10 s while it is shown
+        // (ModelPlanResources ResourceCadence snaps other saved values to these); the widget and the hidden case
+        // have fixed cadences (10 s / 60 s) and are not settings.
+        CockpitPluginDefinition(id: "resources", title: .init("Resources", "资源占用"),
+                                summary: .init("CPU, memory and disk of this Mac; sampled only while shown.", "显示这台 Mac 的 CPU、内存和磁盘，只在看得见时采样。"),
+                                symbol: "waveform.path.ecg.rectangle", defaultEnabled: true, settings: [
+            CockpitPluginSettingSpec(key: "intervalSeconds", minimum: 2, maximum: 10, defaultValue: 5, title: .init("Sampling interval", "采样间隔")),
         ]),
     ]
     private static let lower: ClosedRange<Unicode.Scalar> = "a"..."z"
