@@ -327,17 +327,18 @@ final class CommunityCockpitEntryTests:XCTestCase {
             var oldCard: DockCardContent?
             for _ in 0..<300 {
                 if let member = app.composition.accountMembers.members.first(where: { $0.rowID == "codex" }),
-                   let card = try app.composition.dock.cardContent(for: member.id), card.stateLabel.contains("Stale") {
+                   let card = try app.composition.dock.cardContent(for: member.id), card.sourceAndAge.contains("3 h ago") {
                     memberID = member.id; oldCard = card; break
                 }
                 try await Task.sleep(for: .milliseconds(50))
             }
             let id = try XCTUnwrap(memberID, "the real CLI must deliver a retained Codex card")
             let before = try XCTUnwrap(oldCard)
-            XCTAssertTrue(before.sourceAndAge.contains("Local history"), before.sourceAndAge)
-            XCTAssertTrue(before.sourceAndAge.contains("3h ago"), before.sourceAndAge)
-            XCTAssertTrue(before.stateLabel.contains("Stale"), before.stateLabel)
-            XCTAssertTrue(before.rows.contains { $0.label == "Weekly" }, "the retained card must have a weekly row")
+            // WP-15 (DOCK-3.8-50, DOCK-3.2-50): the header is the age only, no stale badge, and the kept weekly reading
+            // stays (dim after an hour) until its window resets.
+            XCTAssertEqual(before.sourceAndAge, "Updated 3 h ago")
+            XCTAssertEqual(before.stateLabel, "")
+            XCTAssertTrue(before.rows.contains { $0.label == "Weekly" && $0.value == "20%" && $0.tone == .unknown }, "the retained card keeps its dim weekly reading")
             let file = try FileHandle(forWritingTo: log)
             try file.seekToEnd()
             let updatedAt = Date()
@@ -346,14 +347,13 @@ final class CommunityCockpitEntryTests:XCTestCase {
             var recovered: DockCardContent?
             for _ in 0..<300 {
                 if let card = try app.composition.dock.cardContent(for: id), card.stateLabel.isEmpty,
-                   card.rows.contains(where: { $0.label == "Weekly" && $0.value == "70%" }) {
+                   card.rows.contains(where: { $0.label == "Weekly" && $0.value == "70%" && $0.tone != .unknown }) {
                     recovered = card; break
                 }
                 try await Task.sleep(for: .milliseconds(50))
             }
             let after = try XCTUnwrap(recovered, "new local observation did not automatically recover the card")
-            XCTAssertTrue(after.sourceAndAge.contains("Local history"), after.sourceAndAge)
-            XCTAssertTrue(after.sourceAndAge.contains("just now"), after.sourceAndAge)
+            XCTAssertEqual(after.sourceAndAge, "Updated just now")
             let observed = try XCTUnwrap(app.composition.presentedContent.snapshot.presentationRows[id]?.originalObservedAt)
             XCTAssertLessThan(abs(observed.timeIntervalSince(updatedAt)), 2)
             // R-01: two more real local observations show 4% then 3% on the
@@ -373,8 +373,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
                     try await Task.sleep(for: .milliseconds(50))
                 }
                 let card = try XCTUnwrap(current, "subscribed card did not deliver \(expected)")
-                XCTAssertTrue(card.sourceAndAge.contains("Local history"), card.sourceAndAge)
-                XCTAssertTrue(card.sourceAndAge.contains("just now"), card.sourceAndAge)
+                XCTAssertEqual(card.sourceAndAge, "Updated just now")
                 let actual = try XCTUnwrap(app.composition.presentedContent.snapshot.presentationRows[id]?.originalObservedAt)
                 XCTAssertLessThan(abs(actual.timeIntervalSince(nextAt)), 2)
             }

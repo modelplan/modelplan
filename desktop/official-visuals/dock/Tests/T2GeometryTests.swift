@@ -156,7 +156,8 @@ final class T2GeometryTests: XCTestCase {
         }
     }
 
-    /// DOCK-3.1-19: an empty Dock reserves one empty slot (a dashed "?" station), never zero and never more.
+    /// DOCK-3.1-19: an empty Dock reserves one empty slot, never zero and never more. G3-136 (WP-15): that slot is an empty
+    /// ring on the nozzle backdrop with the rocket mark, never a "?".
     func testEmptyDockReservesOneEmptySlot() throws {
         for edge in [T2Edge.right, .left, .bottom, .top] {
             for diameter in [CGFloat(36), 44, 52] {
@@ -169,7 +170,9 @@ final class T2GeometryTests: XCTestCase {
                 XCTAssertFalse(geometry.outline.isEmpty, label)
                 let skin = try T2DockSkin.make(geometry: geometry, rows: [], showsPercentages: true)
                 XCTAssertEqual(skin.stations.count, 1, label)
-                XCTAssertEqual(skin.stations[0].placeholderLabel, "?", label)
+                XCTAssertEqual(skin.stations[0].placeholderLabel, "", label)
+                XCTAssertEqual(skin.stations[0].emptyRing, true, label)
+                XCTAssertFalse(skin.stations[0].layers.isEmpty, "the empty ring keeps the regular nozzle backdrop: " + label)
                 XCTAssertNil(skin.stations[0].subscriptionID, label)
             }
         }
