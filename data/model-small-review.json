@@ -1,0 +1,14 @@
+{
+  "revision": "2026-11-20.1",
+  "models": {
+    "auto:deepseek:6fce99c1f52e55db": true,
+    "auto:google:0bb591b009df2469": true,
+    "auto:xiaomi:c0e177b6ccb12bee": true,
+    "auto:google:735e7f7bbe790ec7": false,
+    "auto:kimi:fc39b0c41b4c29e2": false,
+    "auto:xai:208666a1a50e881a": false,
+    "auto:alibaba:b6b89c36a7e23db5": false,
+    "auto:xiaomi:5606e136097c03fb": false,
+    "auto:minimax:9250ce592a868329": false
+  }
+}

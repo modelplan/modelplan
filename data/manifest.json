@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.23.35",
+  "version": "0.23.40",
   "license": {
     "id": "CC-BY-SA-4.0",
     "url": "https://creativecommons.org/licenses/by-sa/4.0/",
@@ -32,7 +32,13 @@
       "path": "data/model-identities.json",
       "description": "Reviewed model identities and names",
       "license": "CC-BY-SA-4.0",
-      "sha256": "1828a8f1ddf9f934b176a4b8e75ee78f5a3e377781d71fd01373cf1d12a1d06f"
+      "sha256": "cb750d64fd2ffab0365310e15cd53894b639dcd638b8f5b6f7c29a0b77196f1a"
+    },
+    {
+      "path": "data/model-small-review.json",
+      "description": "Reviewed small-tier flags for discovered models",
+      "license": "CC-BY-SA-4.0",
+      "sha256": "0c43b9075ea89cd1479ee381f0d3da00f1a771ae7b6d65047f5aa3c200ce3a99"
     },
     {
       "path": "data/plan-reader-aliases.json",
