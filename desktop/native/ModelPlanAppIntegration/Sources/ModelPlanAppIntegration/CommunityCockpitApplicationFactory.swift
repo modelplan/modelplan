@@ -8,6 +8,7 @@ import ModelPlanSettings
 import ModelPlanWire
 import ModelPlanDock
 import ModelPlanShell
+import ModelPlanResources
 
 /// Keep #332's single showConsole route and one protocol client/store.
 /// Clear the existing synchronous sinks first, then await WK clear/disposal,
@@ -40,6 +41,8 @@ import ModelPlanShell
     public static var verificationCockpitTrace: ((String) -> Void)?
     /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
     static var verificationPrewarm = true
+    /// Test apps leave the resource plugin out (its ring would change every Dock fixture) unless a test asks for it.
+    static var verificationResourcePlugin = false
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -126,7 +129,46 @@ import ModelPlanShell
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
         owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
         application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
+        #if MODELPLAN_TEST_ONLY_SPI
+        if verificationResourcePlugin { installResourcePlugin(application: application, owner: owner, settingsStore: settingsStore) }
+        #else
+        installResourcePlugin(application: application, owner: owner, settingsStore: settingsStore)
+        #endif
         return application
+    }
+    /// D324: one ResourceSampler for the app. Its cadence follows the plugin choices (Settings or a page edit), the
+    /// cockpit page's running plugins and the widget's visibility; its samples feed the widget ring and the page.
+    static func installResourcePlugin(application: EngineDockMenuApplication, owner: CockpitConsoleOwner, settingsStore: SettingsStore) {
+        let store = CockpitPluginStore(directory: settingsStore.directory)
+        Task { @MainActor [weak application, weak owner] in
+            let model = await CockpitPluginSettingsModel.load(from: store)
+            guard let application else { return }
+            let sampler = ResourceSampler(reader: SystemResourceReader(),
+                                          reduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })
+            let language: () -> ResourceLanguage = { [weak application] in
+                application?.composition.latestSettings?.snapshot.preferences.language == .english ? .english : .chinese
+            }
+            let widget = application.composition.installResourceWidget(sampler: sampler, language: language)
+            let host = ResourcePluginHost(sampler: sampler, widget: widget)
+            let coordinator = owner?.coordinator
+            host.sendData = { [weak coordinator] id, data in coordinator?.sendPluginData(id: id, data: data) }
+            coordinator?.onPluginsRunning = { [weak host] ids in host?.pageRunning(ids) }
+            coordinator?.onPluginsEdit = { [weak model] body in
+                guard let object = try? JSONSerialization.jsonObject(with: body) else { return }
+                Task { @MainActor in await model?.acceptPageEdit(object) }
+            }
+            let publish: (CockpitPluginPreferences) -> Void = { [weak host, weak coordinator] preferences in
+                host?.apply(preferences)
+                if let json = try? preferences.bridgeJSON() { coordinator?.pluginsJSON = json }
+            }
+            model.onChange = publish
+            let dock = application.composition.dock
+            dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
+            host.setWidgetShown(dock.isVisible)
+            publish(model.preferences)
+            application.settingsHost.cockpitPlugins = model
+            application.resourcePlugin = host; application.cockpitPluginModel = model
+        }
     }
 }
 

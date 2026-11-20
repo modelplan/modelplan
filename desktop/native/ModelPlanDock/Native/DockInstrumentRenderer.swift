@@ -264,6 +264,22 @@ public struct DockNozzlePose: Equatable, Sendable {
             }
             c.restoreGState()
         }
+        /// D327: a plugin ring's centre is the plugin's white line icon (the resource plugin's rounded screen with a
+        /// heartbeat line, desktop/cockpit/src/resource-plugin.ts `icon`), drawn from its 16-unit outline at the vendor
+        /// mark's size and stroke weight.
+        func pluginIcon(_ rect: CGRect) throws {
+            let side = min(rect.width, rect.height), s = side / 16
+            guard side.isFinite, side > 0 else { throw DockArtworkError.invalidManifest }
+            let o = CGPoint(x: rect.midX - side / 2, y: rect.midY - side / 2)
+            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: o.x + x * s, y: o.y + y * s) }
+            c.saveGState(); defer { c.restoreGState() }
+            c.setStrokeColor(try ink("text")); c.setLineWidth(1.3 * s); c.setLineJoin(.round); c.setLineCap(.round)
+            c.addPath(CGPath(roundedRect: CGRect(origin: p(1, 1.5), size: CGSize(width: 14 * s, height: 13 * s)),
+                             cornerWidth: 3 * s, cornerHeight: 3 * s, transform: nil))
+            c.strokePath()
+            c.addLines(between: [p(3.5, 8.5), p(5.5, 8.5), p(6.8, 5.5), p(8.8, 10.5), p(10, 8.5), p(12.5, 8.5)])
+            c.strokePath()
+        }
         func drawNotice(_ notice: DockNotice, _ station: DockStationRecipe) throws {
                 // D166: a confirmed reset is green; a skin without its own notice green uses its normal green.
                 let palette=notice.tone == .amber ? "noticeAmber":notice.tone == .blue ? "noticeBlue":notice.tone == .green ? (skin.palette["noticeGreen"] != nil ? "noticeGreen":"normal"):"noticeWhite"
@@ -346,7 +362,11 @@ public struct DockNozzlePose: Equatable, Sendable {
                     c.move(to:CGPoint(x:station.centre.x,y:station.centre.y-station.diameter/2))
                     c.addLine(to:CGPoint(x:station.centre.x,y:station.centre.y-radius));c.strokePath()
                 }
-                if let key=reading.vendorResourceKey,let resource=station.glyphs[key] {
+                if reading.pluginRing != nil {
+                    let opacity=station.glyphOpacity ?? 1
+                    guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
+                    c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try pluginIcon(station.glyphRect)
+                } else if let key=reading.vendorResourceKey,let resource=station.glyphs[key] {
                     let opacity=station.glyphOpacity ?? 1
                     guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
                     c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try image(resource,station.glyphRect,fitVisibleGlyph:true)

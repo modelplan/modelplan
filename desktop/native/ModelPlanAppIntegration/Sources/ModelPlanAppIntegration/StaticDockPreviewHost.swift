@@ -196,9 +196,11 @@ struct DockHelpInteraction: Equatable {
     public private(set) var isVisible = false
     public private(set) var lastAppearanceError: Error?
     public var visibilityChanged: (() -> Void)?
+    /// D324: the resource sampler's widget cadence follows this (the community delegate owns `visibilityChanged`).
+    public var widgetShownChanged: ((Bool) -> Void)?
     private func reportVisibility(_ visible: Bool) {
         guard visible != isVisible else { return }
-        isVisible = visible; visibilityChanged?()
+        isVisible = visible; visibilityChanged?(); widgetShownChanged?(visible)
     }
     public var showConsole: (() -> Void)?
     /// D204 (G3-94): the ignition's own press, with the screen point it came from. Nil falls back to `showConsole`.
