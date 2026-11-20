@@ -62,14 +62,14 @@ export const enablePlugin=(state:PluginState,registry:PluginRegistry,id:string,d
 /** Remove = turn off; the entry keeps its place in the order. Removing also unpins. */
 export const disablePlugin=(state:PluginState,registry:PluginRegistry,id:string,defaults=true)=>replace(state,registry,id,e=>({...e,enabled:false,pinned:false}),defaults);
 /** Pin to page 1 (at most two). Returns null when the plugin is off or two others are already pinned. */
-export function pinPlugin(state:PluginState,registry:PluginRegistry,id:string,pinned:boolean):PluginState|null {
-  const full=materialize(state,registry),entry=full.entries.find(e=>e.id===id);
+export function pinPlugin(state:PluginState,registry:PluginRegistry,id:string,pinned:boolean,defaults=true):PluginState|null {
+  const full=materialize(state,registry,defaults),entry=full.entries.find(e=>e.id===id);
   if(!entry||pinned&&(!entry.enabled||full.entries.filter(e=>e.pinned&&e.id!==id).length>=MAX_PINNED))return null;
-  return replace(full,registry,id,e=>({...e,pinned}));
+  return replace(full,registry,id,e=>({...e,pinned}),defaults);
 }
 /** Move one step earlier (-1) or later (+1) in the order. */
-export function movePlugin(state:PluginState,registry:PluginRegistry,id:string,step:-1|1):PluginState|null {
-  const full=materialize(state,registry),i=full.entries.findIndex(e=>e.id===id),j=i+step;
+export function movePlugin(state:PluginState,registry:PluginRegistry,id:string,step:-1|1,defaults=true):PluginState|null {
+  const full=materialize(state,registry,defaults),i=full.entries.findIndex(e=>e.id===id),j=i+step;
   if(i<0||j<0||j>=full.entries.length)return null;
   const entries=[...full.entries];[entries[i],entries[j]]=[entries[j],entries[i]];return {...full,entries};
 }

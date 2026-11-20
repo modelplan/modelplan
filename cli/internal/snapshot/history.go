@@ -84,6 +84,8 @@ type PerfSourceHistory struct {
 // PerfWindowSums: observed token sums of one window. The nullable token kinds and derived
 // figures stay null when unknown, never zero.
 type PerfWindowSums struct {
+	TotalTokens      *int64   `json:"totalTokens,omitempty" null:"forbidden"`
+	ReasoningTokens  *int64   `json:"reasoningTokens,omitempty" null:"forbidden"`
 	InputTokens      *int64   `json:"inputTokens"`
 	OutputTokens     int64    `json:"outputTokens"`
 	CacheReadTokens  *int64   `json:"cacheReadTokens"`
@@ -100,7 +102,7 @@ type PerfWindowSums struct {
 func BuildPerfHistory(perf *speed.PerfView, accounts []quota.Account, allowed map[string]bool, now time.Time) *PerfHistory {
 	h := &PerfHistory{Coverage: "unavailable", Subscriptions: []PerfSubscriptionHistory{},
 		Models: speed.EntityRanking{Measure: "observed-output-tokens", Attribution: "unattributed", Recent7d: speed.EntityWindow{Top: []speed.RankedEntity{}}, Recent30d: speed.EntityWindow{Top: []speed.RankedEntity{}}},
-		Tools: speed.EntityRanking{Measure: "observed-output-tokens", Attribution: "unattributed", Recent7d: speed.EntityWindow{Top: []speed.RankedEntity{}}, Recent30d: speed.EntityWindow{Top: []speed.RankedEntity{}}}}
+		Tools:  speed.EntityRanking{Measure: "observed-output-tokens", Attribution: "unattributed", Recent7d: speed.EntityWindow{Top: []speed.RankedEntity{}}, Recent30d: speed.EntityWindow{Top: []speed.RankedEntity{}}}}
 	if perf == nil || !perf.OK || len(allowed) == 0 {
 		return h
 	}
@@ -149,7 +151,7 @@ func BuildPerfHistory(perf *speed.PerfView, accounts []quota.Account, allowed ma
 }
 
 func windowSums(s speed.PerfSums) PerfWindowSums {
-	out := PerfWindowSums{InputTokens: s.InputTokens, CacheReadTokens: s.CacheReadTokens, CacheWriteTokens: s.CacheWriteTokens,
+	out := PerfWindowSums{TotalTokens: s.TotalTokens, ReasoningTokens: s.ReasoningTokens, InputTokens: s.InputTokens, CacheReadTokens: s.CacheReadTokens, CacheWriteTokens: s.CacheWriteTokens,
 		OutputTokens: s.ObservedOutputTokens, ObservedRequests: s.ObservedRequests, EligibleRequests: s.EligibleRequests}
 	out.CacheHitRatio = cacheHitRatio(s.CacheReadTokens, s.InputTokens)
 	if s.EligibleRequests >= speed.MinSamples && s.GenMs > 0 && s.EligibleOutputTokens >= 0 {

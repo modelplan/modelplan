@@ -8,11 +8,13 @@ public struct DockContentSnapshot: Sendable {
     public let status: DockContentStatus
     public let dockRows: [RowsRow]
     public let menuRows: [RowsRow]
+    /// Rows that carry the Settings surface, including a failed reader with no account (SET-9-42).
+    public let settingsRows: [RowsRow]
     public let summary: RowsRowsSummary?
 }
 /// Presentation fanout over the native store's already-admitted rows, never a protocol reducer.
 @MainActor public final class EngineDockMenuProvider: EngineStoreSink {
-    public private(set) var dockContent = DockContentSnapshot(status: .loading, dockRows: [], menuRows: [], summary: nil)
+    public private(set) var dockContent = DockContentSnapshot(status: .loading, dockRows: [], menuRows: [], settingsRows: [], summary: nil)
     public var dockContentDidChange: (() -> Void)?
     #if MODELPLAN_U6_DRIVE
     public var verificationWillClear: ((EngineInvalidation) -> Void)?
@@ -24,7 +26,7 @@ public struct DockContentSnapshot: Sendable {
         #if MODELPLAN_U6_DRIVE
         verificationWillClear?(invalidation)
         #endif
-        dockContent = .init(status: .cleared, dockRows: [], menuRows: [], summary: nil)
+        dockContent = .init(status: .cleared, dockRows: [], menuRows: [], settingsRows: [], summary: nil)
         dockContentDidChange?()
     }
     public func apply(_ snapshot: EngineStoreSnapshot) {
@@ -46,6 +48,7 @@ public struct DockContentSnapshot: Sendable {
         dockContent = .init(status: status,
                             dockRows: rows?.rows.filter { $0.surfaces.contains(.dock) } ?? [],
                             menuRows: rows?.rows.filter { $0.surfaces.contains(.menu) } ?? [],
+                            settingsRows: rows?.rows.filter { $0.surfaces.contains(.settings) } ?? [],
                             summary: rows?.rowsSummary)
         dockContentDidChange?()
     }

@@ -10,7 +10,8 @@ public struct DockSliverNoticeMark: Equatable {
     /// DOCK-3.7-02: the mark paints at this opacity.
     public static let opacity: CGFloat = 0.7
     public static func diameter(tone: DockNotice.Tone, shape: DockNotice.Shape, unit: CGFloat) -> CGFloat {
-        (tone == .blue ? 4 * 52 / 44 : (shape == .hollow ? 6 : 5)) * unit
+        // Reset marks: the announced amber ring and the confirmed green dot (D166; formerly both blue).
+        (tone == .blue || tone == .green || (tone == .amber && shape == .hollow) ? 4 * 52 / 44 : (shape == .hollow ? 6 : 5)) * unit
     }
     fileprivate var diameter: CGFloat { Self.diameter(tone: notice.tone, shape: notice.shape, unit: unit) }
     public init(position: CGFloat, notice: DockNotice, unit: CGFloat) { self.position = position; self.notice = notice; self.unit = unit }
@@ -180,6 +181,7 @@ public struct DockSliverResolvedColorSegment: Equatable {
             switch mark.notice.tone {
             case .amber: components = [234.0/255,193.0/255,123.0/255,1]
             case .blue: components = [159.0/255,210.0/255,1,1]
+            case .green: components = [52.0/255,199.0/255,89.0/255,1]
             case .white: components = [1,1,1,1]
             }
             let c = graphics.cgContext, color = CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, components: components)!
@@ -209,6 +211,7 @@ public struct DockSliverResolvedColorSegment: Equatable {
         switch mark.notice.tone {
         case .amber: components = [234.0/255, 193.0/255, 123.0/255]
         case .blue: components = [159.0/255, 210.0/255, 1]
+        case .green: components = [52.0/255, 199.0/255, 89.0/255]
         case .white: components = [1, 1, 1]
         }
         let bright = components.map { min(1, $0 * 2.2) } + [CGFloat(1)]

@@ -12,6 +12,7 @@ on:
       - desktop/third-party/**
       - desktop/package.json
       - .github/workflows/u10-candidate.yml
+      - '!**/*.md'
   push:
     branches: [main]
     paths:
@@ -62,7 +63,7 @@ jobs:
       contents: read
       actions: read
     # Drafts run portable contracts first; macOS starts when ready, or by manual dispatch.
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     needs: contracts
     runs-on: macos-latest
     timeout-minutes: 35

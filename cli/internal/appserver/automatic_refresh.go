@@ -22,9 +22,16 @@ func (s *RefreshScheduler) StartAutomatic() {
 
 func (s *RefreshScheduler) automatic() {
 	defer close(s.autoDone)
+	// Observation has its own loop: a refresh job that waits for its budget, a credential or a slow
+	// provider must not hold back the local sessions and rates (G3-85). Closing waits for it.
+	observed := make(chan struct{})
+	go func() {
+		defer close(observed)
+		s.observeLoop()
+	}()
+	defer func() { <-observed }()
 	first := true
 	var previous Stamp
-	var nextObserve time.Time
 	for s.ctx.Err() == nil {
 		now := s.now()
 		admission := consent.Capture()
@@ -82,6 +89,7 @@ func (s *RefreshScheduler) automatic() {
 				_, pending := s.pending[key]
 				s.mu.Unlock()
 				if pending {
+					s.replanQueued(admission, scope, key, now)
 					continue
 				}
 				if until.After(now) {
@@ -106,24 +114,6 @@ func (s *RefreshScheduler) automatic() {
 			}
 		}
 		first = false
-		if s.config.Observe != nil && !s.config.Offline && !s.config.ReadOnly {
-			// Local writes skip rather than wait for the reader lock, so go when no read holds it.
-			// The end of each read wakes this loop.
-			s.mu.Lock()
-			idle := len(s.pending) == 0
-			s.mu.Unlock()
-			if idle && !now.Before(nextObserve) {
-				s.config.Observe(now)
-				nextObserve = now.Add(observeEvery)
-				if s.config.Changed != nil {
-					s.config.Changed()
-				}
-			}
-			// While a read runs an overdue observation must not set the wake-up: the loop would spin.
-			if idle && nextObserve.Before(next) {
-				next = nextObserve
-			}
-		}
 		wait := next.Sub(s.now())
 		if wait < 0 {
 			wait = 0

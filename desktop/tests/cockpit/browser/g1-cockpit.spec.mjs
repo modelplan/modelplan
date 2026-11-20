@@ -17,12 +17,17 @@ async function open(page,data=visualFixture().data) {
 
 test('CKP-ENG-02 one or two subscriptions keep three engine columns',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);
+ // A row the widget hides (signed out: menu and settings only, no dock surface) gets no tab and no column either.
+ const hidden=structuredClone(data.projection.rows[0]);hidden.id='synthetic-signed-out';hidden.name={en:'Signed out',zh:'未登录'};hidden.surfaces=['menu','settings'];hidden.accounts[0].subscriptionRef=null;hidden.accounts[0].accountLocator=null;hidden.accounts[0].valueState='none';data.projection.rows.push(hidden);
  const {send,receive}=await open(page,data);
  for(const count of [1,2]){
   if(count===2){const row=structuredClone(data.projection.rows[0]);row.id='synthetic-second';row.accounts[0].subscriptionRef=null;row.accounts[0].accountLocator=null;data.projection.rows.push(row);expect(await receive(send('display',{data}))).toBe(true);}
   await expect(page.locator('.eng-keys')).toHaveAttribute('data-slots','3');
   await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(count);
   await expect(page.locator('.eng-keys .ek-bay')).toHaveCount(3-count);
+  // Build 14c (G3-77): the empty slots are unnamed add-subscription bays, never the hidden tool.
+  for(const bay of await page.locator('.eng-keys .ek-bay').all())await expect(bay).toHaveAttribute('data-add-subscription','');
+  await expect(page.locator('.ck-eng')).not.toContainText('Signed out');
  }
 });
 
@@ -72,7 +77,7 @@ test('CKP-STRIP-08 record strip has five or three lines including the collapsed 
 test('CKP-STRIP-11 v1 session lines expose text without state-square or done indicators',async({page})=>{
  await open(page);const row=page.locator('.ck-tape .t-observed').first();
  await expect(row.locator('.t-tool')).toHaveText('Codex');await expect(row.locator('.t-proj')).toHaveText('modelPlans');
- await expect(row.locator('.t-time')).toHaveText('Running');await expect(row.locator('.session-state,.done,.error,[data-session-state]')).toHaveCount(0);
+ await expect(row.locator('.t-live')).toHaveText('●');await expect(row.locator('.session-state,.done,.error,[data-session-state]')).toHaveCount(0);
 });
 
 test('CKP-ENG-07 a monthly-only quota stays in Other and distinguishes unknown from absent',async({page})=>{
@@ -209,6 +214,15 @@ test('CKP-SHELL-22 missing bridge data stays empty and the page makes no externa
  const origin=new URL(page.url()).origin;expect(requests.every(url=>new URL(url).origin===origin)).toBe(true);
 });
 
+test('Cockpit members (14c): sessions stay on the tape while no subscription has a widget reading yet',async({page})=>{
+ // Post-merge sample 11-11 (#847 finding 1): every tool row is menu/settings only (no quota reading yet) while the
+ // producer already delivers running sessions; the engine is empty, the sessions are not.
+ const data=visualFixture().data;for(const row of data.projection.rows)row.surfaces=['menu','settings'];
+ await open(page,data);
+ await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(0);await expect(page.locator('.ck-eng .ec-empty')).toHaveCount(1);
+ await expect(page.locator('.ck-tape .t-observed')).toHaveCount(data.details.sessions.length);
+});
+
 test('CKP-ENG-10 quota numerals and bars use the LCD font and status inks',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,3);for(const [i,row] of data.projection.rows.entries())row.accounts[0].windows[0].remainingPercent=[75,40,20][i];await open(page,data);
  const cells=page.locator('.eng-cols .ec[data-col] .qcell[data-row="first"]');await expect(cells).toHaveCount(3);const ink=[];
@@ -228,7 +242,7 @@ test('CKP-STRIP-05 alert lamp selects the clear, amber and red art through bridg
  for(const [value,lit] of [[25,true],[26,false],[0,true]]){data.projection.rows[0].accounts[0].windows[0].remainingPercent=value;expect(await receive(send('display',{data}))).toBe(true);if(lit)await expect(lamp).toHaveClass(/\bred\b/);else await expect(lamp).not.toHaveClass(/\blit\b/);}
  // A stale (retained) reading never lights the lamp; it is listed as a blue line.
  data.projection.rows[0].accounts[0].valueState='retained';data.projection.rows[0].accounts[0].observedAt='2026-11-04T10:00:00Z';expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\blit\b/);
- await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toContainText('Last reading 2h00 ago');await expect(page.locator('.pg-overview .mfd-alerts li.al-red')).toHaveCount(0);
+ await expect(page.locator('.pg-overview .mfd-alerts li.al-grey')).toContainText('Last reading 2h00 ago');await expect(page.locator('.pg-overview .mfd-alerts li.al-red')).toHaveCount(0);
 });
 
 test('CKP-ENG-11 alert washes a whole column without warning marks and missing cells stay blank',async({page})=>{
@@ -251,7 +265,7 @@ test('CKP-ENTRY-03 opens on usage with no comparison when publication is absent'
 
 test('CKP-MFD-02 four page keys select and light the current page in both languages',async({page})=>{
  const {send,receive}=await open(page);const buttons=page.locator('.mfd-pk .pk');await expect(buttons).toHaveCount(4);
- for(const labels of [['Overview','Subscription','Effort','Breakdown'],['总览','订阅','档位','去向']]){
+ for(const labels of [['Overview','Subscription','Models','Breakdown'],['总览','订阅','模型','去向']]){
   for(const [i,label] of labels.entries()){const key=buttons.nth(i);await expect(key).toHaveAttribute('aria-label',label);await key.click();await expect(key).toHaveAttribute('aria-pressed','true');await expect(key).toHaveClass(/\bon\b/);await expect(buttons.locator('.pk-led')).toHaveCount(4);const activeColor=await key.locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor);for(let j=0;j<4;j++)if(i!==j){await expect(buttons.nth(j)).toHaveAttribute('aria-pressed','false');expect(await buttons.nth(j).locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor)).not.toBe(activeColor);}}
   if(labels[0]==='Overview')expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
  }
@@ -289,7 +303,7 @@ test('CKP-ENG-05 shortcuts appear in tooltip, accessible name and Option help an
 test('CKP-MFD-06 Overview shows delivered today total and puts threshold notices first',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);data.details.subscriptions=data.details.subscriptions.slice(0,1);const row=data.projection.rows[0],account=row.accounts[0],detail=data.details.subscriptions[0];detail.today[0].observedOutputTokens=12000;
  data.details.alerts=[{severity:'warning',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[1].id,remainingPercent:35},{severity:'critical',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[0].id,remainingPercent:20}];account.windows[0].remainingPercent=20;account.windows[0].resetsAt='2026-11-04T15:30:00Z';account.windows[1].remainingPercent=35;data.details.resetEvents=[{version:1,id:'synthetic-reset',provider:'openai',rowId:row.id,status:'confirmed',publishedAt:'2026-11-04T11:00:00Z',expiresAt:'2026-11-05T12:00:00Z',source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];const {send,receive}=await open(page,data);
- await expect(page.locator('.pg-overview .mfd-alerts')).toBeVisible();await expect(page.locator('.pg-overview .mfd-alerts li').first()).toHaveClass(/\bal-red\b/);await expect(page.locator('.pg-overview .mfd-alerts li').first()).toContainText('5h 20% left · resets in 3h30');await expect(page.locator('.pg-overview .mfd-alerts li').nth(1)).toHaveClass(/\bal-blue\b/);await expect(page.locator('.pg-overview .mfd-alerts li.al-amber')).toHaveCount(0);await expect(page.locator('.pg-overview .mfd-alerts')).toContainText('official extra reset confirmed');await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
+ await expect(page.locator('.pg-overview .mfd-alerts')).toBeVisible();await expect(page.locator('.pg-overview .mfd-alerts li').first()).toHaveClass(/\bal-red\b/);await expect(page.locator('.pg-overview .mfd-alerts li').first()).toContainText('5h 20% · resets in 3h30');await expect(page.locator('.pg-overview .mfd-alerts li').nth(1)).toHaveClass(/\bal-blue\b/);await expect(page.locator('.pg-overview .mfd-alerts li.al-amber')).toHaveCount(0);await expect(page.locator('.pg-overview .mfd-alerts')).toContainText('official extra reset confirmed');await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
  const positions=await page.locator('.pg-overview').evaluate(e=>[...e.children].map(n=>n.className));expect(positions.indexOf('mfd-alerts')).toBeLessThan(positions.indexOf('ov-top'));
  const second=visualFixture().data;data.projection.rows.push(second.projection.rows[1]);data.details.subscriptions.push({...second.details.subscriptions[1],today:[]});expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);await page.locator('.eng-keys .ek[data-sub]').first().click();await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
  detail.today=[];expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);
@@ -308,12 +322,12 @@ test('CKP-MFD-12 scoped subscription shows reported credits and reading age with
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(credits).toContainText('5m前读取');
 });
 
-test('CKP-STRIP-06 a new caution flashes at most ten seconds and a new condition retriggers',async({page})=>{
+test('CKP-STRIP-06 a new caution blinks three times, then stays lit; a new condition retriggers',async({page})=>{
  const data=visualFixture().data;data.details=null;data.projection.rows=data.projection.rows.slice(0,1);const windows=data.projection.rows[0].accounts[0].windows;for(const w of windows)w.remainingPercent=75;
  const {send,receive}=await open(page,data),lamp=page.locator('[data-caution]');await expect(lamp).not.toHaveClass(/\bflash\b/);
  windows[0].remainingPercent=35;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\b(flash|lit)\b/);
  windows[0].remainingPercent=20;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bflash\b/);await expect(lamp).toHaveClass(/\bred\b/);
- const animation=await lamp.evaluate(e=>{const s=getComputedStyle(e);window.__g1CautionAnimation=e.getAnimations()[0];return {name:s.animationName,duration:s.animationDuration,count:s.animationIterationCount};});expect(animation.name).not.toBe('none');expect(animation.duration).toBe('1s');expect(animation.count).toBe('10');
+ const animation=await lamp.evaluate(e=>{const s=getComputedStyle(e);window.__g1CautionAnimation=e.getAnimations()[0];return {name:s.animationName,duration:s.animationDuration,count:s.animationIterationCount};});expect(animation.name).not.toBe('none');expect(animation.duration).toBe('1s');expect(animation.count).toBe('3');
  // The same condition keeps its blink; a second red window is a new condition and blinks again.
  windows[0].remainingPercent=18;expect(await receive(send('display',{data}))).toBe(true);expect(await lamp.evaluate(e=>e.getAnimations().includes(window.__g1CautionAnimation))).toBe(true);
  windows[1].remainingPercent=10;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bred\b/);expect(await lamp.evaluate(e=>e.getAnimations().includes(window.__g1CautionAnimation))).toBe(false);windows[1].remainingPercent=75;
@@ -323,7 +337,7 @@ test('CKP-STRIP-06 a new caution flashes at most ten seconds and a new condition
 });
 
 test('CKP-STRIP-09 last-seen records follow running sessions without claiming they ended',async({page})=>{
- const data=visualFixture().data;data.details.sessions[0].rate=58;data.details.sessions[2].rate=58;data.details.sessions.reverse();const {send,receive}=await open(page,data);const rows=page.locator('.ck-tape .t-observed');await expect(rows).toHaveCount(3);await expect(rows.nth(0).locator('.t-time')).toHaveText('Running');await expect(rows.nth(1).locator('.t-time')).toHaveText('Running');await expect(rows.nth(1).locator('.t-live')).toContainText('58');await expect(rows.nth(2).locator('.t-model')).toHaveText('GLM-5.3');await expect(rows.nth(2).locator('.t-time')).toHaveText('Last seen');await expect(rows.nth(2).locator('.t-live')).toHaveText('--');await expect(rows.nth(2)).not.toContainText(/ended|stopped/i);expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(rows.nth(2).locator('.t-time')).toHaveText('最近读数');const template=data.details.sessions.find(s=>s.state==='running');data.details.sessions=Array.from({length:7},(_,i)=>({...template,sessionRef:(i+1).toString(16).padStart(16,'0')}));expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(4);await expect(page.locator('.ck-tape .t-overflow')).toContainText('3');await expect(page.locator('.ck-tape .t-overflow')).toContainText('运行中');data.details.sessionCoverage='unavailable';expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(0);
+ const data=visualFixture().data;data.details.sessions[0].rate=58;data.details.sessions[2].rate=58;data.details.sessions.reverse();const {send,receive}=await open(page,data);const rows=page.locator('.ck-tape .t-observed');await expect(rows).toHaveCount(3);await expect(rows.nth(0).locator('.t-live')).toHaveText('●');await expect(rows.nth(1).locator('.t-live')).toHaveText('● 58 t/s');await expect(rows.nth(2).locator('.t-model')).toHaveText('GLM-5.3');await expect(rows.nth(2).locator('.t-live')).toHaveText(/^\S+ ago$/);await expect(rows.nth(2).locator('.t-live')).not.toContainText('t/s');await expect(rows.nth(2)).not.toContainText(/ended|stopped/i);expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(rows.nth(2).locator('.t-live')).toHaveText(/^\S+前$/);const template=data.details.sessions.find(s=>s.state==='running');data.details.sessions=Array.from({length:7},(_,i)=>({...template,sessionRef:(i+1).toString(16).padStart(16,'0')}));expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(4);await expect(page.locator('.ck-tape .t-overflow')).toContainText('3');await expect(page.locator('.ck-tape .t-overflow')).toHaveText('另有 3 个会话 ▸');data.details.sessionCoverage='unavailable';expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(0);
 });
 
 test('CKP-STRIP-10 running session cursors blink, stop when hidden, and stay static under Reduce Motion',async({page})=>{
@@ -348,14 +362,14 @@ test('CKP-MOT-07 active key text and quota bars meet contrast thresholds in both
  for(const theme of ['night','day']){if(theme==='day')expect(await receive(send('appearance',{...appearance,theme}))).toBe(true);const result=await audit();expect(result.keys).toHaveLength(6);for(const n of result.keys)expect(n).toBeGreaterThanOrEqual(4.5);expect(result.bars).toHaveLength(3);for(const n of result.bars)expect(n).toBeGreaterThanOrEqual(3);}
 });
 
-test('Record strip (requirement ID pending) session status text fits without ellipsis in both locales and tiers',async({page})=>{
+test('CKP-STRIP-16 record strip right-end text fits without ellipsis in both locales and tiers',async({page})=>{
  const {send,receive}=await open(page);
  for(const tier of ['tall','compact']){
   expect(await receive(send('shell',{...shell,tier}))).toBe(true);
   for(const locale of ['en','zh-CN']){
    expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);
-   const labels=page.locator('.ck-tape .t-observed .t-time');await expect(labels).toHaveCount(3);
-   await expect(labels.nth(2)).toHaveText(locale==='en'?'Last seen':'最近读数');
+   const labels=page.locator('.ck-tape .t-observed .t-live');await expect(labels).toHaveCount(3);
+   await expect(labels.nth(2)).toHaveText(locale==='en'?/ ago$/:/前$/);
    for(const label of await labels.all()){const size=await label.evaluate(e=>({scroll:e.scrollWidth,client:e.clientWidth,text:e.textContent}));expect(size.text).not.toMatch(/[\u2026]/);expect(size.scroll).toBeLessThanOrEqual(size.client);}
   }
  }
@@ -381,7 +395,7 @@ test('CKP-STRIP-06 ALERT under a healthy selected subscription lists the other s
  // Esc returns; a second lamp press returns; a page key leaves the view for that page.
  await lamp.click();await expect(list).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('.pg-sub')).toBeVisible();
  await lamp.click();await expect(list).toBeVisible();await lamp.click();await expect(page.locator('.pg-sub')).toBeVisible();
- await lamp.click();await expect(list).toBeVisible();await page.getByRole('button',{name:'Effort',exact:true}).click();await expect(page.locator('.pg-tune')).toBeVisible();
+ await lamp.click();await expect(list).toBeVisible();await page.getByRole('button',{name:'Models',exact:true}).click();await expect(page.locator('.pg-tune')).toBeVisible();
 });
 test('CKP-STRIP-06 ALERT reveals a critical subscription on another engine page',async({page})=>{
  const {lamp}=await alertScope(page,7);await expect(lamp).toHaveClass(/\bred\b/);await expect(page.locator('.eng-keys')).not.toContainText('Synthetic 6');

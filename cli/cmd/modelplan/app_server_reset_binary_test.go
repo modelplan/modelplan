@@ -120,7 +120,7 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 		t.Fatalf("events: %+v", env.Data.Projection.ResetEvents)
 	}
 	event := env.Data.Projection.ResetEvents[0]
-	if event.Status != "announced" || event.Schedule == nil || event.Schedule.Precision != "deadline" || !event.Schedule.From.Equal(deadline) || !event.Schedule.Through.Equal(deadline) || !event.ExpiresAt.Equal(deadline) {
+	if event.Status != "announced" || event.Schedule == nil || event.Schedule.Precision != "deadline" || !event.Schedule.From.Equal(deadline) || !event.Schedule.Through.Equal(deadline) || !event.ExpiresAt.Equal(deadline.Add(24*time.Hour)) {
 		t.Fatalf("point deadline changed: %+v", event)
 	}
 	if strings.Contains(string(response["result"]), `"links"`) {

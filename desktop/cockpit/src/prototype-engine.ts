@@ -2,12 +2,15 @@
 // Adapter around the released study engine model/view. Every wire string is
 // escaped once before the prototype's trusted HTML renderer; its fmt wrapper
 // does not escape again. All non-text substitutions use closed vocabularies.
+import {ht} from './host-text.js';
 import {effectiveRedBelow} from './threshold.js';
 import type {WireCockpitData,WireWindow} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
 import {cockpitMembers} from './members.js';
-import {cautionItems,cautionLevel} from './caution.js';
-import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf} from './prototype-data-adapter.js';
+import {memberColours} from './session-binding.js';
+import {NEUTRAL} from './livery.js';
+import {cautionItems,cautionLevel,lights} from './caution.js';
+import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf,moneyText} from './prototype-data-adapter.js';
 import {engineModel,statusBySub,widthClass} from '../study/rocket-r1/engine-model.js';
 import {pluginHostOf} from './plugin-host.js';
 import {pageOfSubscription,type LayoutPage} from './plugin-layout.js';
@@ -15,11 +18,11 @@ import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
 const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 // Vendor marks are the bundled official-edition files under assets/brands/ (third-party marks, SOURCES.md).
-const palette:Readonly<Record<string,{colour:string;logo:string}>>={openai:{colour:'#6aa8ff',logo:'openai-white.svg'},claude:{colour:'#ff9a6a',logo:'claude-rounded.svg'},cursor:{colour:'#eef2f6',logo:'cursor.svg'},copilot:{colour:'#c08cff',logo:'copilot.svg'},kimi:{colour:'#ff8fcf',logo:'kimi-white.svg'},glm:{colour:'#8f7dff',logo:'zai-white.svg'},opencode:{colour:'#b5d65a',logo:'opencode.svg'}};
+const logos:Readonly<Record<string,string>>={openai:'openai-white.svg',claude:'claude-rounded.svg',cursor:'cursor.svg',copilot:'copilot.svg',kimi:'kimi-white.svg',glm:'zai-white.svg',opencode:'opencode.svg'};
 const finite=(v:number|null)=>v!==null&&Number.isFinite(v)?v:null;
 const role=(w:WireWindow)=>w.role==='session'&&w.durationSeconds===18000?'5h':w.role==='weekly'&&w.durationSeconds===604800?'week':w.role==='daily'?'day':w.role==='monthly'?'month':'other';
 const general=(w:WireWindow)=>!w.modelScope&&w.poolKey==='main'&&(w.role==='session'?(w.limitKey==='main'||w.limitKey==='five_hour'):w.role==='weekly'?(w.limitKey==='main'||w.limitKey==='weekly'):false);
-export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,onSelect:(key:string)=>boolean,onAdd:()=>boolean,priorPage=0,initialNow=0,redBelow:()=>number=()=>effectiveRedBelow(undefined),showUsed:()=>boolean=()=>false):{table:HTMLElement;applyScope:(scope:string)=>void;refresh:(now?:number)=>void;setLocale:(value:Appearance['locale'],now:number)=>void;focusIdentity:(element:HTMLElement)=>string|null}|null {
+export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,onSelect:(key:string)=>boolean,onAdd:()=>boolean,priorPage=0,initialNow=0,redBelow:()=>number=()=>effectiveRedBelow(undefined),showUsed:()=>boolean=()=>false):{table:HTMLElement;applyScope:(scope:string)=>void;refresh:(now?:number)=>void;setLocale:(value:Appearance['locale'],now:number)=>void;focusIdentity:(element:HTMLElement)=>string|null;fit:()=>void}|null {
  const members=cockpitMembers(data);if(!members.length)return null;
  const seen=new Map(members.map(x=>[x.key,x]));let scope=seen.has(priorScope)?priorScope:'',page=Number.isSafeInteger(priorPage)?Math.max(0,Math.min(priorPage,Math.ceil(members.length/6)-1)):0;
  const host=document.createElement('div');host.className='u11-engine-table s6-page';const focusIdentities=new WeakMap<HTMLElement,string>();
@@ -27,8 +30,9 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  const base=(w:WireWindow)=>`${w.role}:${w.durationSeconds??'unknown'}:${w.limitKey}:${w.poolKey}`;
  const semantic=(w:WireWindow)=>JSON.stringify([w.role,w.durationSeconds,w.limitKey,w.poolKey,w.modelScope?.models?[...w.modelScope.models].sort():null]);
  function sourceAt(now:number){
+ const colours=memberColours(members);
  const accounts=members.map(({key,row,account})=>{
-  const brand=row.vendorKey&&Object.hasOwn(palette,row.vendorKey)?palette[row.vendorKey]:null;
+  const brand=row.vendorKey&&Object.hasOwn(logos,row.vendorKey)?{colour:colours.get(key)!,logo:logos[row.vendorKey]!}:null;
   const name=locale==='en'?row.name.en:row.name.zh;
   const ids=new Map<string,number>(),bases=new Map<string,number>(),meanings=new Map<string,number>(),semantics=new Map<WireWindow,string>();
   for(const w of account.windows){const meaning=semantic(w),key=base(w);semantics.set(w,meaning);ids.set(w.id,(ids.get(w.id)??0)+1);bases.set(key,(bases.get(key)??0)+1);meanings.set(meaning,(meanings.get(meaning)??0)+1);}
@@ -38,17 +42,19 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const windows=account.windows.filter(general).map(convert);
   const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)}}));
   const notice=data.details?.resetEvents.find(e=>e.rowId===row.id&&Date.parse(e.expiresAt)>now&&(!e.planIds?.length||e.planIds.includes(account.plan.id)));
+  // G3-109: a money balance (Grok Build) has no credits/points; the reserve row shows it in its reported currency.
+  const money=moneyText(account.credits,locale);
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?brand.logo:'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
+  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
- const alerts=items.flatMap(x=>x.level==='blue'?[]:[{level:x.level,sub:esc(x.member)}]);
+ const alerts=items.flatMap(x=>lights(x)?[{level:x.level,sub:esc(x.member)}]:[]);
  const level=cautionLevel(items);
- const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(locale==='en'?'Alert active':'告警激活'):(locale==='en'?'Alert inactive':'告警未激活'));}
+ const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(ht(locale,'host.alertActive')):(ht(locale,'host.alertInactive')));}
  return {now,accounts,alerts,caution:{level,key:''}};
  }
- // v1.1 plugin columns (D124): with a plugin host, pages and widths follow the plugin layout; the study model still
+ // Plugin columns (D124, D293): with a plugin host, pages and widths follow the plugin layout; the study model still
  // draws each page's subscriptions, and the host turns the page's first empty slots into its plugin columns.
  const plugins=pluginHostOf(root);
  const pageCount=()=>plugins?plugins.layout(members.length).pages.length:Math.ceil(members.length/6);
@@ -88,13 +94,20 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   for(const row of host.querySelectorAll<HTMLElement>('.qrow-t'))row.dataset.available=String(!!row.querySelector('.qtokens,.qaverage'));
   // Native supplies only allowlisted marks; retain the established accessibility hook.
   for(const image of host.querySelectorAll<HTMLImageElement>('.ek img.lamp'))image.classList.add('vendor-mark');
-  for(const led of host.querySelectorAll<HTMLElement>('.eng-led[data-page]')){const n=Number(led.dataset.page);led.setAttribute('role','button');led.setAttribute('aria-label',locale==='en'?`Page ${n+1}`:`第 ${n+1} 页`);led.setAttribute('aria-current',String(n===page));}
+  for(const led of host.querySelectorAll<HTMLElement>('.eng-led[data-page]')){const n=Number(led.dataset.page);led.setAttribute('role','button');led.setAttribute('aria-label',ht(locale,'host.pageN',{n:n+1}));led.setAttribute('aria-current',String(n===page));}
   // Unknown vendors have no mark; never turn their input into an image URL.
   for(const image of host.querySelectorAll<HTMLImageElement>('img[src="assets/brands/../../neutral.png"]'))image.remove();
-  for(const b of host.querySelectorAll<HTMLButtonElement>('.ek[data-sub]')){const member=seen.get(b.dataset.sub??'');if(member){b.dataset.scope=member.key;b.dataset.unstable=String(member.unstable);const name=locale==='en'?member.row.name.en:member.row.name.zh;const digit=b.querySelector('.ki')?.textContent??'';const shortcut=locale==='en'?`Shortcut key ${digit}`:`快捷键 ${digit}`;b.setAttribute('aria-label',`${name} · ${shortcut}`);b.title=`${name} · ${shortcut}`;const label=b.querySelector<HTMLElement>('.ek-name');if(label)label.title=b.title;}}
-  const all=host.querySelector<HTMLButtonElement>('.ek[data-all]');if(all){all.dataset.scope='';const shortcut=locale==='en'?'Shortcut key 0':'快捷键 0';all.setAttribute('aria-label',`${locale==='en'?'All':'全部'} · ${shortcut}`);all.title=shortcut;}
+  for(const b of host.querySelectorAll<HTMLButtonElement>('.ek[data-sub]')){const member=seen.get(b.dataset.sub??'');if(member){b.dataset.scope=member.key;b.dataset.unstable=String(member.unstable);const name=locale==='en'?member.row.name.en:member.row.name.zh;const digit=b.querySelector('.ki')?.textContent??'';const shortcut=ht(locale,'host.shortcutKey',{digit});b.setAttribute('aria-label',`${name} · ${shortcut}`);b.title=`${name} · ${shortcut}`;const label=b.querySelector<HTMLElement>('.ek-name');if(label)label.title=b.title;}}
+  const all=host.querySelector<HTMLButtonElement>('.ek[data-all]');if(all){all.dataset.scope='';const shortcut=ht(locale,'host.shortcutKey',{digit:0});all.setAttribute('aria-label',`${ht(locale,'host.allScope')} · ${shortcut}`);all.title=shortcut;}
   root.dataset.scope=scope?'subscription':'all';
+  fit();
  };
+ // G3-109: a cell line that does not fit its column takes the view's shorter forms (data-short, then data-small);
+ // CSS ellipsis is the last resort. Measured again whenever the table's width changes (not laid out yet: skipped).
+ let watch:ResizeObserver|null=null;
+ // The width watch starts once the table is in the page: WebKit reports nothing for a target observed while detached.
+ function fit(){if(!watch&&host.isConnected&&typeof ResizeObserver!=='undefined'){watch=new ResizeObserver(fit);watch.observe(host);}for(const e of host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full],.pl-fit[data-full]')){if(!e.isConnected||e.clientWidth<=0)continue;const forms=[e.dataset.full,e.dataset.short,e.dataset.small].filter((v):v is string=>!!v);e.textContent=forms[0]??'';for(const form of forms.slice(1)){if(e.scrollWidth<=e.clientWidth)break;e.textContent=form;}}}
+
  const choosePage=(element:Element)=>{const led=element.closest<HTMLElement>('.eng-led[data-page]');if(!led||!host.contains(led))return false;const requested=Number(led.dataset.page);if(Number.isInteger(requested)&&requested>=0&&requested<pageCount()){page=requested;paint();}return true;};
  host.onkeydown=e=>{if(e.isTrusted&&(e.key==='Enter'||e.key===' ')&&choosePage(e.target as Element))e.preventDefault();};
  // Owner D76: the Reserve label's hint, in the MFD's floating LCD tip style (study mfd.css .mfd-tip), on hover or focus.
@@ -109,12 +122,11 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  host.addEventListener('pointerover',e=>showHint(e.target));host.addEventListener('pointerleave',hideHint);
  host.addEventListener('focusin',e=>showHint(e.target));host.addEventListener('focusout',hideHint);
  host.onclick=e=>{if(!e.isTrusted)return;if(choosePage(e.target as Element))return;const b=(e.target as Element).closest<HTMLButtonElement>('button');if(!b||!host.contains(b))return;
-  if(b.hasAttribute('data-add-subscription')){if(plugins){plugins.openMenu(b,{data,locale,mark:vendorKey=>vendorKey&&Object.hasOwn(palette,vendorKey)?'assets/brands/'+palette[vendorKey].logo:null,connect:onAdd});return;}onAdd();return;}
-  if(b.hasAttribute('data-plugin-remove')){plugins?.remove(b.dataset.pluginRemove??'');return;}
+  if(b.hasAttribute('data-add-subscription')){if(plugins){plugins.openMenu(b,{data,locale,mark:vendorKey=>vendorKey&&Object.hasOwn(logos,vendorKey)?'assets/brands/'+logos[vendorKey]:null,connect:onAdd});return;}onAdd();return;}
   if(b.hasAttribute('data-all')){if(onSelect('all')){scope='';paint();}return;}
   if(b.hasAttribute('data-sub')){const key=b.dataset.sub??'';if(seen.has(key)&&onSelect(key)){scope=key;paint();}return;}
   if(b.hasAttribute('data-bpage')){const step=b.dataset.bpage==='1'?1:b.dataset.bpage==='-1'?-1:0;page=Math.max(0,Math.min(pageCount()-1,page+step));paint();}
  };
  const applyScope=(next:string)=>{scope=next!=='all'&&seen.has(next)?next:'';if(scope){const index=members.findIndex(m=>m.key===scope);page=pageOf(index);}paint();};
- plugins?.bindEngine(()=>paint());paint();return {table:host,applyScope,refresh:paint,setLocale(value,now){locale=value;paint(now);},focusIdentity(element){return focusIdentities.get(element)??null;}};
+ plugins?.bindEngine(()=>paint());paint();return {table:host,applyScope,refresh:paint,setLocale(value,now){locale=value;paint(now);},focusIdentity(element){return focusIdentities.get(element)??null;},fit};
 }

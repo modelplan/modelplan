@@ -87,15 +87,16 @@ import ModelPlanWire
         // G3-45 (owner 11-08) supersedes the G3-19 one-line notice: the page lists each detected tool
         // with a checkbox, checked by default when it can be read (D27 keeps standard readers on), and
         // no per-path controls. Browser sessions and unrecognised paths are not offered here.
-        let toolBoxes = try firstRunViews().compactMap { $0 as? NSButton }.filter { $0.accessibilityIdentifier().hasPrefix("scope.") }
+        let toolBoxes = try firstRunViews().compactMap { $0 as? NSButton }.filter { $0.accessibilityIdentifier().hasPrefix("scope.firstRun.tool.") }
         XCTAssertEqual(Set(toolBoxes.map { $0.accessibilityIdentifier() }), ["scope.firstRun.tool.codex", "scope.firstRun.tool.cursor"],
                        "one checkbox per detected tool and nothing else")
         XCTAssertTrue(toolBoxes.allSatisfy { $0.state == .on }, "readable tools start checked")
-        let notice = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.firstRun.notice" } as? NSTextField)
-        XCTAssertTrue(notice.stringValue.contains("Settings › Data & Privacy"), notice.stringValue)
+        let smallPrint = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.firstRun.import" } as? NSTextField)
+        XCTAssertTrue(smallPrint.stringValue.contains("Settings › Data & Privacy"), smallPrint.stringValue)
         XCTAssertTrue(first.scopeConsentEntry.controller.isOnByDefault("codex.local_history"))
         XCTAssertFalse(first.scopeConsentEntry.controller.isOnByDefault("cursor.browser_session"), "browser sessions ask when first needed")
         // Settings lists the same reader as on, with an on switch; turning it off is a confirmed revoke.
+        first.scopeConsentEntry.view.setPathDetailsExpanded(true) // the per-path rows sit behind a disclosure
         let settingsViews = descendants(first.scopeConsentEntry.view)
         let settingsSwitch = try XCTUnwrap(settingsViews.first { $0.accessibilityIdentifier() == "scope.allow.codex.local_history" } as? NSButton)
         XCTAssertEqual(settingsSwitch.state, .on, "a default-on reader shows on in Settings")
@@ -276,7 +277,12 @@ import ModelPlanWire
         let otherLanguage = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.appendingPathComponent("other-language"),
             preferredLanguages: ["fr-FR", "zh-Hans", "en-US"])
         let otherSnapshot = await otherLanguage.snapshot()
-        XCTAssertEqual(otherSnapshot.preferences.language, .english, "A non-Chinese Mac preference defaults to English")
+        XCTAssertEqual(otherSnapshot.preferences.language, .chinese, "The whole preferred list is walked: the first zh or en entry wins (SET-9-39)")
+        XCTAssertTrue(otherSnapshot.preferences.followsSystemLanguage, "A fresh install follows the system language")
+        let unsupported = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.appendingPathComponent("unsupported-language"),
+            preferredLanguages: ["fr-FR", "de-DE"])
+        let unsupportedSnapshot = await unsupported.snapshot()
+        XCTAssertEqual(unsupportedSnapshot.preferences.language, .english, "No zh or en entry falls back to English")
         let noLanguage = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.appendingPathComponent("no-language"), preferredLanguages: [])
         let noLanguageSnapshot = await noLanguage.snapshot()
         XCTAssertEqual(noLanguageSnapshot.preferences.language, .english, "A missing Mac preference defaults to English")

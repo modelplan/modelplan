@@ -39,7 +39,7 @@ import AppKit
         let height=provider.measure(bodyText,width:width,role:text==nil ? .hintBody:.contextBody).height
         guard isCurrent() else { return }
         title.stringValue=text ?? "";title.isHidden=text==nil;title.font=titleFont;title.textColor=ink
-        body.stringValue=bodyText;body.font=bodyFont;body.textColor=ink
+        body.stringValue=bodyText;body.font=bodyFont;body.textColor=text==nil ? ink:provider.secondaryInk
         var y:CGFloat=8
         if text != nil { title.frame = .init(x:11,y:y,width:width,height:titleHeight);y+=titleHeight+3 }
         body.frame = .init(x:11,y:y,width:width,height:height);y+=height+5
@@ -50,7 +50,7 @@ import AppKit
         needsDisplay=true
     }
     override func draw(_ dirtyRect:NSRect) {
-        provider.panelColor.setFill();let path=NSBezierPath(roundedRect:bounds.insetBy(dx:0.5,dy:0.5),xRadius:4,yRadius:4);path.fill()
+        provider.panelColor.setFill();let path=NSBezierPath(roundedRect:bounds.insetBy(dx:0.5,dy:0.5),xRadius:5,yRadius:5);path.fill()
         provider.borderColor.setStroke();path.lineWidth=1;path.stroke()
     }
     override func updateTrackingAreas() {

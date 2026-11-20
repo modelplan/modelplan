@@ -1,33 +1,41 @@
 // SPDX-License-Identifier: MIT
-// The page side of the v1.1 plugin columns: lays plugins into the engine table, keeps one long-lived panel per
-// plugin across repaints, runs the start/stop lifecycle and the empty-slot "+" menu.
+// The page side of the cockpit plugin columns (D121/D124, D293): lays plugins into the engine table in the subscription
+// columns' own grammar, runs the lifecycle, the plugin key (click = its big screen, right-click = Remove) and the
+// empty-slot "+" menu.
 //
 // Lifecycle (owner D124): a plugin runs only while the cockpit is open (the page is visible and not occluded) AND its
 // column is on the shown page (placed by the latest drawn table; a new table is drawn before it is attached, so
-// placement, not DOM connection, is the test). Every repaint, page change, visibility change, removal or teardown re-checks that, so
-// nothing samples in the background. Panels survive repaints so a plugin keeps its own history (e.g. a 10-minute line).
+// placement, not DOM connection, is the test). Every repaint, page change, visibility change, removal or teardown
+// re-checks that, so nothing samples in the background. A plugin's state (e.g. its trend history) survives repaints.
 //
 // The page has no timers (bundle rule). The host samples: the page reports the plugins that are running
 // (`pluginsRunning`, on every change) and the host pushes readings for them (`pluginData`), which reach a plugin only
 // while it runs.
 //
-// State: the host (Settings) owns the durable copy and sends it as a `plugins` message. Until the host has sent one,
-// page edits stay in this page only and nothing is posted, so an older host never sees an action it does not know, and
-// default-on plugins stay off (an older host's cockpit is the v1 table).
+// Custom draw (owner D323): a plugin whose column or screen carries `draw` paints inside one clipped area the host gives
+// it (the column's cell rows, or the screen body under the title bar). The key, underline, pin, "+" menu, bottom line,
+// title bar and lifecycle stay here. A draw that throws falls back to the plugin's cells or lines; a size change draws
+// again; focus on a `data-focus` element survives every redraw.
 //
-// Data (v1.1 calendar additions): every reading, pushed by the host or shaped here from the display data (`derive`),
-// passes the plugin's own bounded shape (`data.maxBytes`, `data.parse`) before `update`. Ticks: running plugins name
-// their next repaint (`nextDeadline`), the view reports the earliest to the host with its own, and the host's `tick`
-// reaches them. Expand on MFD (CKP-PLG-07): a plugin with `expand` opens a temporary overlay inside the MFD screen only.
+// State: the host (Settings › Subscriptions › Plugins) owns the durable copy and sends it as a `plugins` message. Until
+// the host has sent one, page edits stay in this page only and nothing is posted, so an older host never sees an action
+// it does not know, and default-on plugins stay off (an older host's cockpit is the v1 table).
+//
+// Shaped data and ticks (v1.1 calendar): a running plugin with `derive` gets its reading shaped here from the display
+// data the page rendered, through its own `accept`, unless the host pushes readings for it. A running plugin with
+// `nextDeadline` names its next redraw; the view reports the earliest to the host, whose `tick` redraws it.
 import type {WireCockpitData,WireRow} from '../generated/wire.js';
-import {PLUGIN_DATA_MAX_BYTES,PluginRegistry,type CockpitPlugin,type PluginContext,type PluginLocale} from './plugin-registry.js';
+import {PLUGIN_TOKENS,PluginRegistry,type CockpitPlugin,type PluginCell,type PluginContext,type PluginDrawContext,type PluginLocale,type PluginWords} from './plugin-registry.js';
 import {builtinPlugins} from './plugin-builtins.js';
 import {pluginLayout,type LayoutPage,type PluginLayout} from './plugin-layout.js';
 import {disablePlugin,emptyPluginState,enablePlugin,enabledPlugins,parsePluginState,pluginSettings,type PluginState} from './plugin-state.js';
-const words={
-  en:{back:'Back to',close:'Close',remove:'Remove',plugin:'plugin',connect:'Connect a subscription',detected:'Detected',notConnected:'Not connected',go:'Connect',all:'All subscriptions…',add:'Add a plugin',added:'✓ Added',addGo:'Add',menu:'Add to the engine table'},
-  'zh-CN':{back:'返回',close:'关闭',remove:'移除',plugin:'插件',connect:'连接订阅',detected:'已检测到',notConnected:'未连接',go:'连接',all:'全部订阅…',add:'添加插件',added:'✓ 已添加',addGo:'添加',menu:'添加到引擎表'},
-} as const;
+import {ht} from './host-text.js';
+import '../study/rocket-r1/strings/plugins.js';
+/** Long and short forms of a `plugin.*` string-table key in one locale (`<key>Short` when it exists). */
+export function pluginWords(locale:PluginLocale,key:string,vars?:Readonly<Record<string,string|number>>):PluginWords {
+  const full=ht(locale,key,vars),shortKey=key+'Short',short=ht(locale,shortKey,vars);
+  return {full,short:short===shortKey?full:short};
+}
 const DETECTED=new Set<WireRow['state']>(['needs_action','needs_consent','needs_keychain']);
 const NOT_CONNECTED=new Set<WireRow['state']>(['off']);
 const MENU_ROWS=5;
@@ -37,7 +45,44 @@ export function connectableRows(data:WireCockpitData|null):{row:WireRow;detected
   return [...rows.filter(r=>DETECTED.has(r.state)).map(row=>({row,detected:true})),...rows.filter(r=>NOT_CONNECTED.has(r.state)).map(row=>({row,detected:false}))].slice(0,MENU_ROWS);
 }
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
+/** A text box that takes its short form when the long one does not fit (prototype-engine fit()). */
+const fitted=(className:string,words:PluginWords)=>{const e=el('span',className+' pl-fit',words.full);e.dataset.full=words.full;e.dataset.short=words.short;return e;};
+/** Menus and the big screen sit outside the engine table's fit(): the same long-then-short rule, once they are laid out. */
+const fitIn=(box:HTMLElement)=>{for(const e of box.querySelectorAll<HTMLElement>('.pl-fit[data-short]')){e.textContent=e.dataset.full??'';if(e.clientWidth>0&&e.scrollWidth>e.clientWidth)e.textContent=e.dataset.short??'';}};
 const icon=(plugin:CockpitPlugin,className:string)=>{const span=el('span',className);span.setAttribute('aria-hidden','true');span.innerHTML=plugin.icon;return span;};
+const clamp01=(v:number)=>Math.max(0,Math.min(1,v));
+/** The stable `data-focus` key of the focused element inside `box`, if any (D323: focus survives a redraw). */
+function focusKey(box:HTMLElement):string|null {
+  const active=document.activeElement,marked=active instanceof HTMLElement&&box.contains(active)?active.closest<HTMLElement>('[data-focus]'):null;
+  return marked&&box.contains(marked)?marked.dataset.focus??null:null;
+}
+function refocus(box:HTMLElement,key:string|null) {
+  if(key===null||!box.isConnected)return;
+  for(const e of box.querySelectorAll<HTMLElement>('[data-focus]'))if(e.dataset.focus===key){if(document.activeElement!==e)e.focus({preventScroll:true});return;}
+}
+const SVG='http://www.w3.org/2000/svg';
+function trendLine(points:readonly number[]):SVGSVGElement|null {
+  const values=points.filter(Number.isFinite).slice(-48);if(values.length<2)return null;
+  const svg=document.createElementNS(SVG,'svg');svg.setAttribute('class','pl-trend');svg.setAttribute('viewBox','0 0 100 8');svg.setAttribute('preserveAspectRatio','none');svg.setAttribute('aria-hidden','true');
+  const path=document.createElementNS(SVG,'path');
+  path.setAttribute('d',values.map((v,i)=>`${i?'L':'M'}${(i*100/(values.length-1)).toFixed(1)} ${(7-6*clamp01(v)).toFixed(1)}`).join(''));
+  svg.append(path);return svg;
+}
+function drawCell(cell:PluginCell|undefined,row:number):HTMLElement {
+  if(!cell){const empty=el('div','qcell none');empty.dataset.row=String(row);return empty;}
+  const box=el('div','qcell pl-cell'+(cell.level?' pl-'+cell.level:''));box.dataset.row=String(row);
+  box.append(fitted('pl-tag',cell.tag));
+  const line=el('span','qline');
+  if(typeof cell.value==='number'&&Number.isFinite(cell.value)){const num=el('b','qnum'),value=el('span','qvalue',String(Math.round(cell.value)));num.append(value);if(cell.unit)num.append(el('small','',cell.unit));line.append(num);}
+  if(cell.side){const side=fitted('qtxt',cell.side);side.dataset.small=cell.side.short;line.append(side);}
+  box.append(line);
+  if(typeof cell.bar==='number'&&Number.isFinite(cell.bar)){
+    const meter=el('span','pl-meter'),bar=el('span','pl-bar'),fill=el('i');fill.style.width=(clamp01(cell.bar)*100).toFixed(1)+'%';bar.append(fill);meter.append(bar);
+    const trend=trendLine(cell.trend??[]);if(trend)meter.append(trend);box.append(meter);
+  }
+  const words=[cell.tag.full,typeof cell.value==='number'?String(Math.round(cell.value))+(cell.unit??''):'',cell.side?.full??''].filter(Boolean).join(' · ');
+  box.setAttribute('aria-label',words);return box;
+}
 export interface MenuOptions {readonly data:WireCockpitData|null;readonly locale:PluginLocale;readonly mark:(vendorKey:string|null)=>string|null;readonly connect:()=>boolean}
 export interface PluginHost {
   readonly registry:PluginRegistry;
@@ -51,7 +96,6 @@ export interface PluginHost {
   clearPlacement():void;
   setVisible(visible:boolean):void;
   setInteractive(interactive:boolean):void;
-  setLocale(locale:PluginLocale):void;
   applyHostState(raw:unknown):boolean;
   /** A host reading for a running plugin; false when the plugin is not running or refuses the data. */
   deliver(id:string,data:unknown):boolean;
@@ -59,209 +103,275 @@ export interface PluginHost {
   add(id:string):boolean;
   openMenu(anchor:HTMLElement,options:MenuOptions):boolean;
   closeMenu():void;
+  /** CKP-PLG-53: the plugin's big screen inside the big-screen area; null closes it. */
+  openScreen(id:string|null):boolean;
   /** Plugins currently running (for tests and diagnostics). */
   running():string[];
-  /** The display data the page rendered, at the host's time: running plugins with `derive` get their shaped data. */
+  /** The display data the page rendered, at the host's time: running plugins with `derive` get their shaped reading. */
   display(data:WireCockpitData|null,now:number):void;
-  /** The host's deadline tick. */
+  /** The host's deadline tick: running plugins are shaped and drawn again at `now`. */
   tick(now:number):void;
-  /** The earliest repaint a running plugin asked for, or null. */
+  /** The earliest redraw a running plugin asked for, or null. */
   nextDeadline():number|null;
-  /** The plugin whose overlay is open on the MFD screen, or null. */
-  overlay():string|null;
-  openOverlay(id:string):boolean;
-  closeOverlay():boolean;
   dispose():void;
 }
 const hosts=new WeakMap<HTMLElement,PluginHost>();
 export const pluginHostOf=(root:HTMLElement)=>hosts.get(root)??null;
 export interface PluginReports {
-  /** The page changed the plugin choices (× on a key, "Add" in the + menu). */
+  /** The page changed the plugin choices (right-click Remove, "Add" in the + menu). */
   readonly state:(state:PluginState)=>void;
   /** The plugins now running, in user order; the host samples exactly these. */
   readonly running:(ids:string[])=>void;
 }
 export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=new PluginRegistry(builtinPlugins)):PluginHost {
   let state:PluginState=emptyPluginState,negotiated=false,visible=false,interactive=false,disposed=false,locale:PluginLocale='en';
-  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null;
-  let display:WireCockpitData|null=null,now=0,open:{id:string;frame:HTMLElement;body:HTMLElement;status:HTMLElement;opening:boolean}|null=null;
-  const panels=new Map<string,HTMLElement>(),drawnWith=new Map<string,string>(),running=new Set<string>(),placed=new Set<string>(),hostFed=new Set<string>();
-  const guard=(fn:()=>void)=>{try{fn();}catch{/* A plugin failure never takes the cockpit down. */}};
-  const context=(id:string):PluginContext=>({locale,settings:pluginSettings(state,registry,id),now});
-  // Before the host sent its plugin state, defaults do not apply (D121 default-on needs a host that knows plugins).
-  const enabled=()=>enabledPlugins(state,registry,negotiated);
-  /** The framework's half of the data seam: size bound, then the plugin's own strict shape, then `update`. */
-  function accept(plugin:CockpitPlugin,panel:HTMLElement,raw:unknown):boolean {
-    const spec=plugin.data;if(!plugin.update||!spec)return false;
-    let bytes=Infinity;try{const json=JSON.stringify(raw);if(typeof json==='string')bytes=new TextEncoder().encode(json).length;}catch{return false;}
-    if(bytes>Math.min(spec.maxBytes,PLUGIN_DATA_MAX_BYTES))return false;
-    let accepted=false;guard(()=>{const value=spec.parse(raw);if(value!==null)accepted=plugin.update!(panel,value,context(plugin.id));});return accepted;
-  }
-  function derive(id:string) {
-    const plugin=registry.get(id),panel=panels.get(id);
-    if(!plugin?.derive||!panel||!display||hostFed.has(id)||!running.has(id))return;
-    let raw:unknown=null,ok=false;guard(()=>{raw=plugin.derive!(display!,now);ok=true;});if(ok)accept(plugin,panel,raw);
-  }
-  const signature=(id:string)=>locale+JSON.stringify(pluginSettings(state,registry,id));
-  function panelFor(plugin:CockpitPlugin):HTMLElement {
-    let panel=panels.get(plugin.id);
-    if(!panel){panel=el('div','pl-panel');panel.dataset.plugin=plugin.id;panels.set(plugin.id,panel);}
-    if(drawnWith.get(plugin.id)!==signature(plugin.id)){
-      const wasRunning=running.has(plugin.id);
-      if(wasRunning){running.delete(plugin.id);guard(()=>plugin.stop?.(panel!));}
-      drawnWith.set(plugin.id,signature(plugin.id));guard(()=>plugin.render(panel!,context(plugin.id)));
-      if(wasRunning&&shouldRun(plugin.id)){running.add(plugin.id);guard(()=>plugin.start?.(panel!,context(plugin.id)));}
+  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement;title:HTMLElement;close:HTMLButtonElement;list:HTMLElement;area:HTMLElement;opening:boolean}|null=null;
+  const readings=new Map<string,unknown>(),columns=new Map<string,HTMLElement>(),running=new Set<string>(),placed=new Set<string>(),hostFed=new Set<string>();
+  let shown:WireCockpitData|null=null,now=0;
+  // D323 custom draw: per-plugin view memory, the size each area was last drawn at, and one observer that draws an area
+  // again when its size changes (a column is drawn before its table is attached, so the first real size arrives here).
+  const memos=new Map<string,Record<string,unknown>>(),drawnAt=new WeakMap<HTMLElement,{id:string;w:number;h:number}>();
+  let drawing=false;
+  const watch=typeof ResizeObserver==='undefined'?null:new ResizeObserver(entries=>{
+    for(const entry of entries){
+      const area=entry.target as HTMLElement,last=drawnAt.get(area);
+      if(!last||!area.isConnected||area.clientWidth===last.w&&area.clientHeight===last.h)continue;
+      if(area.classList.contains('pl-screen-d'))drawScreen();else redrawColumn(last.id);
     }
-    return panel;
+  });
+  const memo=(id:string)=>{let m=memos.get(id);if(!m){m={};memos.set(id,m);}return m;};
+  /** Draws one area; false (and the area left empty) when the plugin's draw throws. */
+  function paint(area:HTMLElement,id:string,draw:(context:PluginDrawContext)=>void,opening:boolean):boolean {
+    const key=focusKey(area);area.replaceChildren();
+    const w=area.clientWidth,h=area.clientHeight;drawnAt.set(area,{id,w,h});watch?.observe(area);
+    const was=drawing;drawing=true;
+    try{draw({...context(id),area,width:w,height:h,tokens:PLUGIN_TOKENS,memo:memo(id),opening,redraw:()=>redrawPlugin(id)});}
+    catch{area.replaceChildren();return false;/* The plugin's cells or lines are drawn instead. */}
+    finally{drawing=was;}
+    refocus(area,key);return true;
   }
-  const shouldRun=(id:string)=>!disposed&&visible&&placed.has(id)&&panels.has(id)&&enabled().some(p=>p.id===id);
+  /** A plugin asked to be drawn again: its column and, when open, its screen. Ignored while a draw runs (no recursion). */
+  function redrawPlugin(id:string) {if(drawing||disposed)return;redrawColumn(id);if(screen?.id===id)drawScreen();}
+  const guard=<T>(fn:()=>T,fallback:T):T=>{try{return fn();}catch{return fallback;/* A plugin failure never takes the cockpit down. */}};
+  const context=(id:string):PluginContext=>({locale,settings:pluginSettings(state,registry,id),now,words:(key,vars)=>pluginWords(locale,key,vars)});
+  // Before the host sent its plugin state, defaults do not apply (D121 default-on needs a host that knows plugins).
+  const active=()=>enabledPlugins(state,registry,negotiated);
+  const enabled=(id:string)=>active().some(p=>p.id===id);
+  /** A reading (host push or shaped here) through the plugin's own `accept`; redraws on success. */
+  function take(plugin:CockpitPlugin,data:unknown):boolean {
+    const next=guard(()=>plugin.accept(data,readings.get(plugin.id)),undefined);if(next===undefined)return false;
+    readings.set(plugin.id,next);redrawColumn(plugin.id);if(screen?.id===plugin.id)drawScreen();return true;
+  }
+  /** Shapes a running plugin's reading from the rendered display data (unless the host feeds it). */
+  function derive(id:string):boolean {
+    const plugin=registry.get(id);
+    if(!plugin?.derive||!shown||hostFed.has(id)||!running.has(id))return false;
+    const data=shown;let raw:unknown,ok=false;guard(()=>{raw=plugin.derive!(data,now);ok=true;},undefined);
+    return ok&&take(plugin,raw);
+  }
+  const shouldRun=(id:string)=>!disposed&&visible&&placed.has(id)&&enabled(id);
+  /** (Re)draws one plugin column's rows in place: one cell per table row, the bottom line, and the reserve row when the table has one. */
+  function fill(column:HTMLElement,plugin:CockpitPlugin,rows:number,reserve:boolean) {
+    const drawn=guard(()=>plugin.column(readings.get(plugin.id),context(plugin.id)),{cells:[]});
+    const cells=()=>Array.from({length:rows},(_,i)=>drawCell(drawn.cells?.[i],i));
+    const key=focusKey(column);
+    for(const old of column.querySelectorAll<HTMLElement>(':scope > .pl-draw'))watch?.unobserve(old);
+    // D323: a custom draw gets one clipped area over all the cell rows; the bottom line stays the framework's.
+    const area=typeof drawn.draw==='function'&&rows>0?el('div','pl-draw'):null;
+    if(area){area.style.gridRow=`1 / span ${rows}`;area.dataset.plugin=plugin.id;}
+    const parts:HTMLElement[]=area?[area]:cells();
+    const foot=el('div','qrow qrow-t pl-foot');
+    if(drawn.foot){foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value)foot.append(fitted('pl-foot-v',drawn.foot.value));}
+    parts.push(foot);if(reserve)parts.push(el('div','qrow qrow-r'));
+    column.replaceChildren(...parts);column.dataset.rows=String(rows);column.dataset.reserve=String(reserve);
+    const ink=plugin.ink;if(ink)column.style.setProperty('--pl-ink',ink);else column.style.removeProperty('--pl-ink');
+    if(area){const ok=paint(area,plugin.id,drawn.draw!,false);column.dataset.draw=ok?'custom':'fallback';if(!ok){watch?.unobserve(area);area.replaceWith(...cells());}}
+    else delete column.dataset.draw;
+    refocus(column,key);
+  }
+  function redrawColumn(id:string) {
+    const column=columns.get(id),plugin=registry.get(id);
+    if(column?.isConnected&&plugin)fill(column,plugin,Number(column.dataset.rows)||0,column.dataset.reserve==='true');
+  }
   function reconcile() {
-    for(const id of [...running])if(!shouldRun(id)){running.delete(id);if(open?.id===id)closeOverlay();const p=registry.get(id),panel=panels.get(id);if(p&&panel)guard(()=>p.stop?.(panel));}
-    for(const id of placed)if(!running.has(id)&&shouldRun(id)){const p=registry.get(id),panel=panels.get(id);if(p&&panel){running.add(id);guard(()=>p.start?.(panel,context(id)));derive(id);}}
-    for(const [id,panel] of panels)panel.dataset.running=String(running.has(id));
-    if(negotiated&&!disposed){const ids=enabled().map(p=>p.id).filter(id=>running.has(id)),key=ids.join();if(key!==reported){reported=key;report.running(ids);}}
+    for(const id of [...running])if(!shouldRun(id))running.delete(id);
+    for(const id of placed)if(!running.has(id)&&shouldRun(id)){running.add(id);derive(id);}
+    for(const [id,column] of columns)column.dataset.running=String(running.has(id));
+    if(screen&&!enabled(screen.id))closeScreen();
+    if(negotiated&&!disposed){const ids=active().map(p=>p.id).filter(id=>running.has(id)),key=ids.join();if(key!==reported){reported=key;report.running(ids);}}
   }
-  // Expand on MFD (CKP-PLG-07): the overlay lives in the MFD screen only (the faders and the MFD page keys stay usable).
-  // A click on the plugin again, its ×, its back key, Esc, or an MFD page key (which then shows that page) closes it.
-  const screen=()=>root.querySelector<HTMLElement>('.dk-mfd .mfd-screen');
-  const pageName=()=>root.querySelector<HTMLElement>('.dk-mfd .mfd-pk .pk.on > span')?.textContent?.trim()??'';
-  function paintOverlay() {
-    if(!open)return;const plugin=registry.get(open.id),panel=panels.get(open.id);if(!plugin?.expand||!panel)return;
-    const w=words[locale],back=open.frame.querySelector<HTMLButtonElement>('.po-back')!,title=open.frame.querySelector<HTMLElement>('.po-t')!,x=open.frame.querySelector<HTMLButtonElement>('.po-x')!,to=pageName();
-    back.textContent=`‹ ${w.back}${locale==='en'?' ':' '}${to}`.trimEnd();back.hidden=!to;title.textContent=plugin.expand.title[locale];open.frame.setAttribute('aria-label',plugin.expand.title[locale]);x.setAttribute('aria-label',`${w.close} ${plugin.title[locale]}`);
-    const opening=open.opening;open.opening=false;
-    guard(()=>plugin.expand!.render(open!.body,panel,{...context(open!.id),opening,returnTo:to,status:open!.status,close:()=>{closeOverlay();}}));
-  }
-  function closeOverlay(restoreFocus=false):boolean {
-    if(!open)return false;const {id,frame}=open,focusInside=frame.contains(document.activeElement);open=null;frame.remove();
-    document.removeEventListener('keydown',overlayKeys,true);document.removeEventListener('click',pageKeyClose,true);
-    for(const e of root.querySelectorAll<HTMLElement>(`.pl-col[data-plugin="${id}"],.pl-key[data-plugin="${id}"]`))e.setAttribute('aria-expanded','false');
-    root.querySelector('.dk-mfd')?.classList.remove('pl-over');
-    if((restoreFocus||focusInside)&&!disposed)root.querySelector<HTMLElement>(`.pl-col[data-plugin="${id}"]`)?.focus({preventScroll:true});
-    return true;
-  }
-  function openOverlay(id:string):boolean {
-    const plugin=registry.get(id),host=screen();
-    if(disposed||!interactive||!plugin?.expand||!running.has(id)||!host)return false;
-    closeOverlay();closeMenu();
-    const frame=el('div','pl-ovl'),head=el('div','po-h'),back=el('button','po-back'),title=el('b','po-t'),status=el('span','po-st'),x=el('button','po-x','×'),body=el('div','po-b');
-    frame.dataset.plugin=id;frame.setAttribute('role','dialog');frame.tabIndex=-1;back.type='button';x.type='button';back.dataset.poClose='';x.dataset.poClose='';
-    back.onclick=x.onclick=e=>{if(e.isTrusted)closeOverlay(true);};
-    head.append(back,title,status,x);frame.append(head,body);host.append(frame);
-    open={id,frame,body,status,opening:true};
-    for(const e of root.querySelectorAll<HTMLElement>(`.pl-col[data-plugin="${id}"],.pl-key[data-plugin="${id}"]`))e.setAttribute('aria-expanded','true');
-    root.querySelector('.dk-mfd')?.classList.add('pl-over');
-    document.addEventListener('keydown',overlayKeys,true);document.addEventListener('click',pageKeyClose,true);
-    paintOverlay();frame.focus({preventScroll:true});return true;
-  }
-  function overlayKeys(e:KeyboardEvent) {
-    if(!open||menu||!e.isTrusted)return;const plugin=registry.get(open.id),panel=panels.get(open.id);
-    if(plugin?.expand?.key&&panel){let handled=false;guard(()=>{handled=plugin.expand!.key!(e,open!.body,panel,{...context(open!.id),opening:false,returnTo:pageName(),status:open!.status,close:()=>{closeOverlay();}});});if(handled){e.preventDefault();e.stopPropagation();return;}}
-    if(e.key==='Escape'&&!e.altKey){e.preventDefault();e.stopPropagation();closeOverlay(true);}
-  }
-  // An MFD page key (or the alert lamp, which takes over the screen) closes the overlay; the click then does its usual job.
-  const pageKeyClose=(e:Event)=>{if(open&&(e.target as Element|null)?.closest?.('.dk-mfd .mfd-pk .pk,[data-caution]'))closeOverlay();};
-  const toggleOverlay=(id:string)=>open?.id===id?closeOverlay(true):openOverlay(id);
-  // A click on an expandable plugin's column or key, outside its own controls, opens or closes its overlay.
-  const expandClick=(id:string)=>(e:MouseEvent)=>{if(!e.isTrusted||e.button!==0)return;const t=e.target as Element|null;if(t?.closest?.('button,a,input,select,textarea,[data-pl-own]'))return;toggleOverlay(id);};
   function changed(next:PluginState|null) {
     if(!next||disposed)return false;
     state=next;if(negotiated)report.state(state);
-    for(const id of [...panels.keys()])if(!enabled().some(p=>p.id===id))placed.delete(id);
+    for(const id of [...placed])if(!enabled(id))placed.delete(id);
+    for(const id of [...memos.keys()])if(!enabled(id))memos.delete(id);
     reconcile();repaint?.();return true;
   }
+  // ---- the big screen (CKP-PLG-53): drawn inside the big-screen well only, so faders and page keys stay uncovered.
+  // Invariant (macrevb-835-1): any activation of an MFD page key closes the screen. `click` is the activation event for a
+  // button whether it came from a pointer, Enter or Space, so the capture listener sees every path.
+  // Invariant (macrevb-835-2): the screen's frame (icon, title, Close) is built once per opening; readings, repaints,
+  // locale and settings changes update its text and lines in place, so a focused control is never replaced.
+  const pageKeys=(e:Event)=>{if(screen&&(e.target as Element|null)?.closest?.('.mfd-pk .pk'))closeScreen();};
+  function drawScreen() {
+    if(!screen)return;const plugin=registry.get(screen.id);if(!plugin){closeScreen();return;}
+    const title=pluginWords(locale,plugin.title),close=pluginWords(locale,'plugin.close');
+    screen.title.dataset.full=title.full;screen.title.dataset.short=title.short;
+    screen.close.textContent=close.full;
+    const shown=guard(()=>plugin.screen(readings.get(plugin.id),context(plugin.id)),{lines:[]});
+    // D323: a custom draw paints the body under the title bar; when it throws, the lines are shown instead.
+    const opening=screen.opening;screen.opening=false;
+    const custom=typeof shown.draw==='function'&&paint(screen.area,plugin.id,shown.draw,opening);
+    screen.area.hidden=!custom;screen.list.hidden=custom;screen.box.dataset.draw=typeof shown.draw!=='function'?'lines':custom?'custom':'fallback';
+    if(!custom)screen.area.replaceChildren();
+    const lines=custom?[]:(Array.isArray(shown.lines)?shown.lines:[]).slice(0,12);
+    const rows=[...screen.list.children] as HTMLElement[];
+    lines.forEach((line,i)=>{let row=rows[i];if(!row){row=el('div');row.append(el('dt'),el('dd'));screen!.list.append(row);}
+      const [dt,dd]=[row.children[0]!,row.children[1]!];if(dt.textContent!==line.label)dt.textContent=line.label;if(dd.textContent!==line.value)dd.textContent=line.value;});
+    for(const row of rows.slice(lines.length))row.remove();
+    screen.box.setAttribute('aria-label',ht(locale,'plugin.screenAria',{name:title.full}));fitIn(screen.box);
+  }
+  function closeScreen(restoreFocus=false) {
+    if(!screen)return;const id=screen.id;watch?.unobserve(screen.area);screen.box.remove();screen=null;
+    document.removeEventListener('click',pageKeys,true);
+    for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))key.setAttribute('aria-expanded','false');
+    if(restoreFocus)root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`)?.focus();
+  }
+  function openScreen(id:string|null):boolean {
+    if(id===null){closeScreen();return true;}
+    const plugin=registry.get(id);
+    if(disposed||!enabled(id)||!plugin)return false;
+    if(screen?.id===id){closeScreen();return true;}
+    const well=root.querySelector<HTMLElement>('.dk-mfd .mfd-screen');if(!well)return false;
+    closeScreen();const box=el('section','pl-screen');box.dataset.plugin=id;box.setAttribute('role','region');box.tabIndex=-1;
+    const head=el('div','pl-screen-h'),title=fitted('pl-screen-t',pluginWords(locale,plugin.title));
+    const close=el('button','pl-screen-x');close.type='button';close.dataset.mat='part';close.onclick=e=>{if(e.isTrusted)closeScreen(true);};
+    head.append(icon(plugin,'pl-icon'),title,close);const list=el('dl','pl-screen-l'),area=el('div','pl-screen-d');area.hidden=true;area.dataset.plugin=id;box.append(head,list,area);
+    well.append(box);screen={id,box,title,close,list,area,opening:true};drawScreen();
+    document.addEventListener('click',pageKeys,true);
+    root.querySelector(`.eng-keys .pl-key[data-plugin="${id}"]`)?.setAttribute('aria-expanded','true');
+    return true;
+  }
+  // ---- menus: the empty-slot "+" menu and the plugin key's right-click menu share one popup.
   function closeMenu(restoreFocus=false) {
     if(!menu)return;menu.remove();menu=null;
-    document.removeEventListener('pointerdown',outside,true);document.removeEventListener('keydown',escape,true);
-    menuAnchor?.classList.remove('on');menuAnchor?.setAttribute('aria-expanded','false');if(restoreFocus&&menuAnchor?.isConnected)menuAnchor.focus();menuAnchor=null;
+    document.removeEventListener('pointerdown',outside,true);
+    menuAnchor?.classList.remove('on');if(menuAnchor?.hasAttribute('data-add-subscription'))menuAnchor.setAttribute('aria-expanded','false');if(restoreFocus&&menuAnchor?.isConnected)menuAnchor.focus();menuAnchor=null;
   }
   const outside=(e:Event)=>{if(menu&&!menu.contains(e.target as Node)&&!menuAnchor?.contains(e.target as Node))closeMenu();};
-  const escape=(e:KeyboardEvent)=>{if(e.key==='Escape'&&menu){e.preventDefault();e.stopPropagation();closeMenu(true);}};
+  const escape=(e:KeyboardEvent)=>{
+    if(e.key!=='Escape')return;
+    if(menu){e.preventDefault();e.stopPropagation();closeMenu(true);}
+    else if(screen){e.preventDefault();e.stopPropagation();closeScreen(true);}
+  };
+  document.addEventListener('keydown',escape,true);
+  function popup(anchor:HTMLElement,label:string):HTMLElement {
+    const m=el('div','pl-menu');m.setAttribute('role','menu');m.setAttribute('aria-label',label);m.dataset.mat='glass';return m;
+  }
+  function place(m:HTMLElement,anchor:HTMLElement,at?:{x:number;y:number}) {
+    root.append(m);menu=m;menuAnchor=anchor;anchor.classList.add('on');
+    const r=anchor.getBoundingClientRect(),x=at?.x??r.left,y=at?.y??r.bottom+6;
+    m.style.left=Math.max(8,Math.min(window.innerWidth-m.offsetWidth-8,x))+'px';
+    m.style.top=(y+m.offsetHeight>window.innerHeight-4?Math.max(4,(at?.y??r.top)-m.offsetHeight-6):y)+'px';
+    document.addEventListener('pointerdown',outside,true);fitIn(m);
+    m.querySelector<HTMLButtonElement>('.pm-i:not([disabled])')?.focus();
+  }
+  const item=(className:string,onPick:()=>void,disabled=false)=>{const b=el('button','pm-i'+(className?' '+className:''));b.type='button';b.setAttribute('role','menuitem');if(disabled){b.disabled=true;b.setAttribute('aria-disabled','true');}b.onclick=e=>{if(!e.isTrusted||disabled)return;closeMenu();onPick();};return b;};
+  function openKeyMenu(key:HTMLElement,id:string,at?:{x:number;y:number}) {
+    const plugin=registry.get(id);if(disposed||!interactive||!plugin)return false;
+    closeMenu();const name=pluginWords(locale,plugin.title).full,m=popup(key,ht(locale,'plugin.menuAria',{name}));
+    const remove=item('pm-remove',()=>{host.remove(id);});remove.dataset.pmRemove=id;remove.append(fitted('pm-n',pluginWords(locale,'plugin.remove')));m.append(remove);
+    place(m,key,at);return true;
+  }
   const host:PluginHost={
     registry,
     state:()=>state,
-    layout:subscriptions=>pluginLayout(subscriptions,enabled()),
+    layout:subscriptions=>pluginLayout(subscriptions,active()),
     bindEngine(next){repaint=next;},
     decorate(table,page,value){
-      locale=value;placed.clear();
-      const keys=[...table.querySelectorAll<HTMLElement>('.eng-keys > .ek-bay')],cols=[...table.querySelectorAll<HTMLElement>('.eng-cols > .ec-bay')];
-      const w=words[locale];
+      locale=value;placed.clear();columns.clear();
+      const keys=[...table.querySelectorAll<HTMLElement>('.eng-keys > .ek-bay')],bays=[...table.querySelectorAll<HTMLElement>('.eng-cols > .ec-bay')];
       page.plugins.forEach((id,i)=>{
-        const plugin=registry.get(id);if(!plugin||!keys[i]||!cols[i])return;
-        const title=plugin.title[locale];
-        const key=el('div','ek pl-key'+(i===0?' pl-first':''));key.dataset.plugin=id;key.dataset.mat='part';key.setAttribute('role','group');key.setAttribute('aria-label',`${title} · ${w.plugin}`);
-        const identity=el('span','ek-identity');identity.append(icon(plugin,'pl-icon'),el('span','ek-name',title));
-        const x=el('button','pl-x','×');x.type='button';x.dataset.pluginRemove=id;x.setAttribute('aria-label',`${w.remove} ${title}`);x.title=`${w.remove} ${title}`;
-        key.append(identity,x);keys[i].replaceWith(key);
-        const col=el('div','ec pl-col pl-b'+(i===0?' pl-first':''));col.dataset.plugin=id;col.setAttribute('role','group');col.setAttribute('aria-label',title);
-        if(plugin.expand){
-          // Expandable: the column is the control that opens the MFD view (a click, or Enter/Space when focused).
-          col.classList.add('pl-exp');col.tabIndex=0;col.setAttribute('aria-expanded',String(open?.id===id));key.classList.add('pl-exp');key.setAttribute('aria-expanded',String(open?.id===id));
-          col.addEventListener('click',expandClick(id));identity.addEventListener('click',expandClick(id));
-          col.addEventListener('keydown',e=>{if(e.isTrusted&&e.target===col&&(e.key==='Enter'||e.key===' ')){e.preventDefault();toggleOverlay(id);}});
-        }
-        col.append(panelFor(plugin));cols[i].replaceWith(col);placed.add(id);
+        const plugin=registry.get(id),bay=bays[i];if(!plugin||!keys[i]||!bay)return;
+        const title=pluginWords(locale,plugin.title);
+        // CKP-PLG-50: the subscription key's box and type, a white line-art icon in the vendor-mark box, a dashed
+        // underline in the plugin's colour, no digit and no ×.
+        const key=el('button','ek bd-r pl-key');key.type='button';key.dataset.plugin=id;key.dataset.mat='part';
+        key.setAttribute('aria-label',ht(locale,'plugin.keyAria',{name:title.full}));key.setAttribute('aria-expanded',String(screen?.id===id));key.title=title.full;
+        const identity=el('span','ek-identity');identity.append(icon(plugin,'lamp pl-icon'),fitted('ek-name',title));
+        const line=el('i','bl pl-dash');line.setAttribute('aria-hidden','true');line.style.setProperty('--v',plugin.underline);
+        key.append(identity,line);
+        key.onclick=e=>{if(e.isTrusted)openScreen(id);};
+        key.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();if(e.isTrusted)openKeyMenu(key,id,{x:e.clientX,y:e.clientY});};
+        key.onkeydown=e=>{if(e.isTrusted&&(e.key==='ContextMenu'||e.key==='F10'&&e.shiftKey)){e.preventDefault();openKeyMenu(key,id);}};
+        keys[i].replaceWith(key);
+        // CKP-PLG-51: the subscription column itself, no inner frame; each row is one cell in the Other-cell grammar.
+        const col=el('div','ec pl-col');col.dataset.plugin=id;col.setAttribute('role','group');col.setAttribute('aria-label',title.full);
+        fill(col,plugin,bay.querySelectorAll('.qcell').length,bay.querySelectorAll('.qrow').length>1);
+        bay.replaceWith(col);columns.set(id,col);placed.add(id);
       });
-      reconcile();
+      reconcile();if(screen)drawScreen();
     },
-    clearPlacement(){placed.clear();closeMenu();reconcile();},
+    clearPlacement(){placed.clear();columns.clear();closeMenu();closeScreen();reconcile();},
     setVisible(value){visible=value;reconcile();},
-    setInteractive(value){interactive=value;if(!value){closeMenu();closeOverlay();}},
-    setLocale(value){if(locale===value)return;locale=value;for(const id of panels.keys()){const p=registry.get(id);if(p)panelFor(p);}reconcile();paintOverlay();},
+    setInteractive(value){interactive=value;if(!value)closeMenu();},
     applyHostState(raw){
       const next=parsePluginState(raw);if(!next||disposed)return false;
       if(!negotiated)reported=null;negotiated=true;state=next;
-      for(const id of [...panels.keys()]){const p=registry.get(id);if(p&&drawnWith.has(id))panelFor(p);}
+      for(const id of [...placed])if(!enabled(id))placed.delete(id);
+      for(const id of [...memos.keys()])if(!enabled(id))memos.delete(id);
       reconcile();repaint?.();return true;
     },
     deliver(id,data){
-      const plugin=registry.get(id),panel=panels.get(id);
-      if(!plugin?.update||!panel||!running.has(id))return false;
-      if(!accept(plugin,panel,data))return false;
-      hostFed.add(id);if(open?.id===id)paintOverlay();return true;
+      const plugin=registry.get(id);
+      if(!plugin||!running.has(id))return false;
+      if(!take(plugin,data))return false;
+      hostFed.add(id);return true;
     },
-    display(data,at){display=data;now=at;for(const id of running)derive(id);paintOverlay();},
-    tick(at){now=at;for(const id of running){derive(id);const p=registry.get(id),panel=panels.get(id);if(p?.tick&&panel)guard(()=>p.tick!(panel,context(id)));}paintOverlay();},
+    display(data,at){
+      shown=data;now=at;
+      for(const id of running)if(!derive(id)&&registry.get(id)?.nextDeadline){redrawColumn(id);if(screen?.id===id)drawScreen();}
+    },
+    tick(at){
+      now=at;
+      for(const id of running)if(!derive(id)&&registry.get(id)?.nextDeadline){redrawColumn(id);if(screen?.id===id)drawScreen();}
+    },
     nextDeadline(){
       let next=Infinity;
-      for(const id of running){const p=registry.get(id),panel=panels.get(id);if(!p?.nextDeadline||!panel)continue;guard(()=>{const at=p.nextDeadline!(panel,now);if(at!==null&&Number.isSafeInteger(at)&&at>now)next=Math.min(next,at);});}
+      for(const id of running){
+        const plugin=registry.get(id);if(!plugin?.nextDeadline)continue;
+        const at=guard(()=>plugin.nextDeadline!(readings.get(id),now),null);
+        if(typeof at==='number'&&Number.isSafeInteger(at)&&at>now)next=Math.min(next,at);
+      }
       return Number.isFinite(next)?next:null;
     },
-    overlay:()=>open?.id??null,
-    openOverlay,
-    closeOverlay:()=>closeOverlay(),
     remove:id=>changed(disablePlugin(state,registry,id,negotiated)),
     add:id=>changed(enablePlugin(state,registry,id,negotiated)),
     openMenu(anchor,options){
       if(disposed||!interactive)return false;
       if(menu&&menuAnchor===anchor){closeMenu();return true;}closeMenu();
-      const w=words[options.locale],m=el('div','pl-menu');m.setAttribute('role','menu');m.setAttribute('aria-label',w.menu);m.dataset.mat='glass';
-      const item=(className:string,onPick:()=>void,disabled=false)=>{const b=el('button','pm-i'+(className?' '+className:''));b.type='button';b.setAttribute('role','menuitem');if(disabled){b.disabled=true;b.setAttribute('aria-disabled','true');}b.onclick=e=>{if(!e.isTrusted||disabled)return;closeMenu();onPick();};return b;};
-      m.append(el('div','pm-h',w.connect));
+      const w=(key:string)=>pluginWords(options.locale,key),m=popup(anchor,ht(options.locale,'plugin.addMenu'));
+      m.append(fitted('pm-h',w('plugin.connect')));
       for(const {row,detected} of connectableRows(options.data)){
         const b=item('pm-connect',()=>{options.connect();});b.dataset.pmRow=row.id;
         const src=options.mark(row.vendorKey),mark=el('span','pm-mark');mark.setAttribute('aria-hidden','true');
         if(src){const img=el('img');img.src=src;img.alt='';mark.append(img);}
-        b.append(mark,el('span','pm-n',options.locale==='en'?row.name.en:row.name.zh),el('em',detected?'pm-det':'',detected?w.detected:w.notConnected),el('b','pm-go'+(detected?'':' dim'),w.go));m.append(b);
+        const state=fitted('pm-st'+(detected?' pm-det':''),w(detected?'plugin.detected':'plugin.notConnected'));
+        b.append(mark,el('span','pm-n',options.locale==='en'?row.name.en:row.name.zh),state,el('b','pm-go'+(detected?'':' dim'),w('plugin.connectGo').full));m.append(b);
       }
-      const more=item('pm-more',()=>{options.connect();});more.dataset.pmAll='';more.append(el('span','pm-n',w.all));m.append(more);
-      m.append(el('div','pm-sep'),el('div','pm-h',w.add));
-      const on=new Set(enabled().map(p=>p.id));
+      const more=item('pm-more',()=>{options.connect();});more.dataset.pmAll='';more.append(fitted('pm-n',w('plugin.allSubscriptions')));m.append(more);
+      m.append(el('div','pm-sep'),fitted('pm-h',w('plugin.addPlugin')));
       for(const plugin of registry.list()){
-        const added=on.has(plugin.id),b=item('pm-plugin'+(added?' on':''),()=>{host.add(plugin.id);},added);b.dataset.pmPlugin=plugin.id;
-        b.append(icon(plugin,'pm-ic'),el('span','pm-n',plugin.title[options.locale]),el('b',added?'pm-ok':'pm-go',added?w.added:w.addGo));m.append(b);
+        const added=enabled(plugin.id),b=item('pm-plugin'+(added?' on':''),()=>{host.add(plugin.id);},added);b.dataset.pmPlugin=plugin.id;
+        b.append(icon(plugin,'pm-ic'),fitted('pm-n',pluginWords(options.locale,plugin.title)),added?fitted('pm-ok',w('plugin.added')):el('b','pm-go',w('plugin.addGo').full));m.append(b);
       }
-      root.append(m);menu=m;menuAnchor=anchor;anchor.classList.add('on');anchor.setAttribute('aria-expanded','true');
-      const r=anchor.getBoundingClientRect();
-      m.style.left=Math.max(8,Math.min(window.innerWidth-m.offsetWidth-8,r.left))+'px';
-      m.style.top=(r.bottom+6+m.offsetHeight>window.innerHeight-4?Math.max(4,r.top-m.offsetHeight-6):r.bottom+6)+'px';
-      document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',escape,true);
-      m.querySelector<HTMLButtonElement>('.pm-i:not([disabled])')?.focus();
+      anchor.setAttribute('aria-expanded','true');place(m,anchor);
       return true;
     },
     closeMenu:()=>closeMenu(),
+    openScreen,
     running:()=>[...running],
-    dispose(){if(disposed)return;closeMenu();closeOverlay();placed.clear();visible=false;reconcile();disposed=true;repaint=null;panels.clear();hosts.delete(root);},
+    dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();memos.clear();hostFed.clear();shown=null;watch?.disconnect();document.removeEventListener('keydown',escape,true);hosts.delete(root);},
   };
   hosts.set(root,host);
   return host;

@@ -126,6 +126,19 @@ type Result struct {
 }
 
 // Sync refreshes the cache. On any failure the last verified publication stays current.
+// minCheckOverride replaces MinCheckInterval; only a test build of the command sets it (see SetTestMinCheckInterval).
+var minCheckOverride time.Duration
+
+func minCheck() time.Duration {
+	if minCheckOverride > 0 {
+		return minCheckOverride
+	}
+	return MinCheckInterval
+}
+
+// SetTestMinCheckInterval is called only from the command's modelplan_test_cadence test build.
+func SetTestMinCheckInterval(d time.Duration) { minCheckOverride = d }
+
 func (c *Client) Sync(ctx context.Context, force bool) (Result, error) {
 	unlock, err := c.Store.Lock()
 	if err != nil {
@@ -144,7 +157,7 @@ func (c *Client) Sync(ctx context.Context, force bool) (Result, error) {
 	now := c.Now()
 	nextCheck := st.NextCheckAt
 	if nextCheck.IsZero() { // caches written before interval jitter
-		nextCheck = st.CheckedAt.Add(MinCheckInterval)
+		nextCheck = st.CheckedAt.Add(minCheck())
 	}
 	if !force && st.PublicationID != "" && now.Before(nextCheck) {
 		return Result{PublicationID: st.PublicationID, Skipped: true}, nil
@@ -169,7 +182,7 @@ func (c *Client) Sync(ctx context.Context, force bool) (Result, error) {
 	} else {
 		st.LastError = ""
 		st.CheckedAt = now
-		st.NextCheckAt = now.Add(MinCheckInterval + c.Jitter())
+		st.NextCheckAt = now.Add(minCheck() + c.Jitter())
 	}
 	if serr := c.Store.SaveState(st); err == nil {
 		err = serr
@@ -207,8 +220,14 @@ func waitForCheck(ctx context.Context, delay time.Duration) error {
 }
 
 func (c *Client) sync(ctx context.Context, st *store.State) (Result, error) {
-	etag := ""
+	// The unchanged-publication shortcuts below hold only while the cached copy still verifies;
+	// a missing or damaged object is fetched again through the full verification path.
+	etag, cacheOK := "", false
 	if st.PublicationID != "" {
+		_, _, err := Load(c.Store)
+		cacheOK = err == nil
+	}
+	if cacheOK {
 		etag = st.ETag
 	}
 	body, newTag, status, err := c.get(ctx, "/publications/current.json", etag)
@@ -229,7 +248,7 @@ func (c *Client) sync(ctx context.Context, st *store.State) (Result, error) {
 	if p.SchemaVersion != 1 || !idRe.MatchString(p.PublicationID) || !hashRe.MatchString(p.ManifestHash) {
 		return Result{}, errors.New("pointer: unsupported schema or malformed ids")
 	}
-	if p.PublicationID == st.PublicationID && p.ManifestHash == st.ManifestHash {
+	if cacheOK && p.PublicationID == st.PublicationID && p.ManifestHash == st.ManifestHash {
 		if _, _, err := Load(c.Store); err != nil {
 			return Result{}, err
 		}

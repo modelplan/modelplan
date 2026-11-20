@@ -148,10 +148,14 @@ func TestPointDeadlineAndWindowBoundaries(t *testing.T) {
 			}
 			if tc.want {
 				e := events[0]
-				if e.Schedule == nil || e.Schedule.Precision != tc.precision || !e.Schedule.From.Equal(tc.from) || !e.Schedule.Through.Equal(tc.through) || !e.ExpiresAt.Equal(tc.through) {
+				if e.Schedule == nil || e.Schedule.Precision != tc.precision || !e.Schedule.From.Equal(tc.from) || !e.Schedule.Through.Equal(tc.through) || !e.ExpiresAt.Equal(tc.through.Add(24*time.Hour)) {
 					t.Fatalf("deadline changed: %+v", e)
 				}
-				expired, _ := Project(d, projection, tc.through)
+				// D166: it then awaits confirmation for 24 hours after the window.
+				if awaiting, _ := Project(d, projection, tc.through); len(awaiting) != 1 {
+					t.Fatal("event dropped at its window end")
+				}
+				expired, _ := Project(d, projection, tc.through.Add(24*time.Hour))
 				if len(expired) != 0 {
 					t.Fatal("event retained at expiry")
 				}

@@ -83,20 +83,36 @@ test('calendar data has a strict, bounded shape',()=>{
   {...week,spans:[{sub:0,kind:'other',from:NOW,to:null,count:null}]},{...week,spans:[{sub:0,kind:'cards',from:NOW,to:NOW-1,count:null}]},
   {...week,subs:Array.from({length:17},()=>week.subs[0])}])
   assert.equal(parseCalendarData(bad),null,JSON.stringify(bad)?.slice(0,80));
- // The plugin declares this shape and bound to the framework.
- assert.equal(calendarPlugin.data.maxBytes,CALENDAR_MAX_BYTES);assert.equal(calendarPlugin.data.parse,parseCalendarData);
+ // The plugin's accept is this shape, bounded as JSON first: a refusal is `undefined` (the framework keeps the last reading).
+ assert.deepEqual(calendarPlugin.accept(week,undefined),parseCalendarData(week));
+ assert.equal(calendarPlugin.accept({...week,extra:1},undefined),undefined);
+ assert.equal(calendarPlugin.accept({...week,subs:[{...week.subs[0],name:{en:'x'.repeat(CALENDAR_MAX_BYTES),zh:'y'}}]},undefined),undefined,'over the byte bound');
  assert.deepEqual(new PluginRegistry(builtinPlugins).list().map(p=>p.id),['placeholder','calendar']);
- assert.equal(calendarPlugin.defaultEnabled,true);assert.ok(calendarPlugin.expand);
+ assert.equal(calendarPlugin.defaultEnabled,true);
  assert.equal(calendarPlugin.nextDeadline(null,NOW),local(2026,11,11,11,21));
+ assert.equal(calendarPlugin.nextDeadline(null,0),null,'no host time yet: no deadline');
 });
 
-test('the framework refuses plugin declarations without a bounded data shape',()=>{
- const base={id:'x',title:{en:'X','zh-CN':'X'},icon:'',defaultEnabled:false,settings:[],render(){}};
- assert.throws(()=>new PluginRegistry([{...base,update(){return true;}}]),/bounded shape/);
- assert.throws(()=>new PluginRegistry([{...base,update(){return true;},data:{maxBytes:1e9,parse:()=>null}}]),/bounded shape/);
- assert.throws(()=>new PluginRegistry([{...base,derive(){return null;}}]),/derive needs update/);
- assert.throws(()=>new PluginRegistry([{...base,expand:{title:{en:'',"zh-CN":''},render(){}}}]),/overlay/);
- assert.doesNotThrow(()=>new PluginRegistry([{...base,update(){return true;},data:{maxBytes:1024,parse:()=>null}}]));
+test('D323: the calendar draws its column and screen, and falls back to D293 cells and lines',()=>{
+ const words=(key,vars)=>({full:key+(vars?JSON.stringify(vars):''),short:key+'Short'});
+ const context={locale:'en',settings:{},now:NOW,words};
+ const reading=calendarPlugin.accept(week,undefined);
+ const column=calendarPlugin.column(reading,context),screen=calendarPlugin.screen(reading,context);
+ assert.equal(typeof column.draw,'function');assert.equal(typeof screen.draw,'function');
+ assert.ok(column.cells.length>=2&&column.cells.length<=3);
+ assert.deepEqual(column.cells.slice(0,2).map(c=>c.tag.full),['plugin.calendarReset','plugin.calendarPeak']);
+ assert.equal(column.foot.label.full,'plugin.calendarNow');assert.equal(column.foot.value.full,'11:20');
+ assert.ok(screen.lines.length>0&&screen.lines.every(l=>typeof l.label==='string'&&typeof l.value==='string'));
+ // Before the first reading or host time: one waiting cell, no foot.
+ const waiting=calendarPlugin.column(undefined,{...context,now:0});
+ assert.deepEqual(waiting.cells.map(c=>c.tag.full),['plugin.calendarWaiting']);assert.equal(waiting.foot,null);
+});
+
+test('the framework refuses a plugin whose derive or nextDeadline is not a function',()=>{
+ const base={id:'x',title:'plugin.calendarTitle',summary:'plugin.calendarSummary',icon:'',underline:'#87939e',defaultEnabled:false,settings:[],accept:()=>undefined,column:()=>({cells:[]}),screen:()=>({lines:[]})};
+ assert.throws(()=>new PluginRegistry([{...base,derive:1}]),/Invalid cockpit plugin/);
+ assert.throws(()=>new PluginRegistry([{...base,nextDeadline:'soon'}]),/Invalid cockpit plugin/);
+ assert.doesNotThrow(()=>new PluginRegistry([{...base,derive:()=>null,nextDeadline:()=>null}]));
 });
 
 function display() {

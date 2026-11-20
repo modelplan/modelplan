@@ -112,6 +112,8 @@ public struct EngineStoreCore: Sendable {
         case .diagnostics(let reply):
             snapshot.diagnostics = reply.envelope.data
             succeeded(.diagnostics)
+        case .readerKey:
+            succeeded(.readerKey) // delivered to the request-specific observer, never retained as global state
         case .historyImport(let reply):
             snapshot.historyImport = reply.envelope.data
             succeeded(.historyImport)

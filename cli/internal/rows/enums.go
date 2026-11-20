@@ -117,8 +117,10 @@ const (
 type Code string
 
 const (
-	CodeOK                            Code = "ok"
-	CodeEstimated                     Code = "estimated"
+	CodeOK        Code = "ok"
+	CodeEstimated Code = "estimated"
+	// CodeUsageNotReported: a current reading with a balance but no usage percentage (D228).
+	CodeUsageNotReported              Code = "usage_not_reported"
 	CodeStaleReading                  Code = "stale_reading"
 	CodeObservationTimeUnknown        Code = "observation_time_unknown"
 	CodeNotReadYet                    Code = "not_read_yet"
@@ -163,6 +165,13 @@ const (
 	CodeHTTP5xx                       Code = "http_5xx"
 	CodeNetwork                       Code = "network"
 	CodeTimeout                       Code = "timeout"
+	CodeNotFound                      Code = "not_found"
+	CodeRPCError                      Code = "rpc_error"
+	CodeClosed                        Code = "closed"
+	CodeRegionRefused                 Code = "region_refused"
+	CodeCodexCustomProvider           Code = "codex_custom_provider" // D232: Codex uses Bedrock or a custom provider
+	CodeTeamUnsupported               Code = "team_unsupported"      // D232: team/enterprise usage not on this endpoint
+	CodeNoPlan                        Code = "no_plan"
 	CodeOther                         Code = "other"
 	CodeReadersOff                    Code = "readers_off"
 	CodeNoConsent                     Code = "no_consent"

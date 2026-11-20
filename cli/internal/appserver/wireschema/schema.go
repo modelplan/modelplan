@@ -71,6 +71,8 @@ func Generate(root string) ([]byte, error) {
 	// spelling of generic instantiations.
 	roots := map[string]reflect.Type{
 		"PluginInstallParams":      reflect.TypeFor[wire.PluginInstallParams](),
+		"ReaderKeyParams":         reflect.TypeFor[wire.ReaderKeyParams](),
+		"ReaderKeyResult":         reflect.TypeFor[wire.ReaderKeyResult](),
 		"HistoryImportStartParams": reflect.TypeFor[wire.HistoryImportStartParams](),
 		"HistoryImportStatus":      reflect.TypeFor[wire.HistoryImportStatus](),
 		"PublicationResult":        reflect.TypeFor[wire.PublicationResult](),
@@ -116,6 +118,13 @@ func Generate(root string) ([]byte, error) {
 	delete(proposed, "allOf")
 	proposed["properties"].(map[string]any)["version"] = object{"type": "integer", "enum": []int{1}}
 	proposed["properties"].(map[string]any)["status"].(map[string]any)["type"] = "string"
+	// G3-96: the proposal leaves its later string enums untyped (kind, confirmedAtBasis). The cockpit page's bounded
+	// validator refuses a node without a type, so every display carrying a reset event was rejected as data.schema.
+	for _, property := range proposed["properties"].(map[string]any) {
+		if node, ok := property.(map[string]any); ok && node["enum"] != nil && node["type"] == nil {
+			node["type"] = "string"
+		}
+	}
 	schedule := overlay.Defs["ProposedResetSchedule"].(map[string]any)
 	schedule["properties"].(map[string]any)["precision"].(map[string]any)["type"] = "string"
 	source := overlay.Defs["ProposedResetSource"].(map[string]any)
@@ -162,7 +171,7 @@ func Generate(root string) ([]byte, error) {
 	errorProps["id"] = object{"anyOf": []any{object{"$ref": "#/$defs/RequestID"}, object{"type": "null"}}}
 
 	incoming := []any{}
-	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "CockpitQueryParams", "publication/get": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams", "history/import_start": "HistoryImportStartParams", "history/import_status": "", "history/import_cancel": "", "history/import_remove": ""}
+	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "CockpitQueryParams", "publication/get": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams", "readerkey/set": "ReaderKeyParams", "readerkey/test": "ReaderKeyParams", "readerkey/remove": "ReaderKeyParams", "readerkey/status": "ReaderKeyParams", "history/import_start": "HistoryImportStartParams", "history/import_status": "", "history/import_cancel": "", "history/import_remove": ""}
 	for _, method := range sortedKeys(requestMethods) {
 		param := requestMethods[method]
 		props := object{"jsonrpc": object{"const": wire.JSONRPC}, "method": object{"const": method}, "id": object{"$ref": "#/$defs/RequestID"}}
@@ -182,7 +191,7 @@ func Generate(root string) ([]byte, error) {
 	}
 	b.defs["Request"] = object{"oneOf": incoming}
 	envelopes := []any{}
-	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "CockpitData", "PluginInstallResult", "PublicationResult", "MemberRefreshResult", "HistoryImportStatus"} {
+	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "CockpitData", "PluginInstallResult", "PublicationResult", "MemberRefreshResult", "ReaderKeyResult", "HistoryImportStatus"} {
 		env := b.schema(reflect.TypeFor[wire.Envelope[wire.Empty]](), false).(object)
 		env["properties"].(object)["data"] = object{"$ref": "#/$defs/" + name}
 		b.defs[name+"Envelope"] = env
@@ -258,6 +267,11 @@ func (b *builder) schema(t reflect.Type, ref bool) any {
 				name = field.Name
 			}
 			props[name] = b.schema(field.Type, true)
+			// null:"forbidden" means explicit null is invalid: the optional pointer is absent or a value, so the web
+			// reader and the Swift decoder refuse the same documents.
+			if field.Type.Kind() == reflect.Pointer && field.Tag.Get("null") == string(wire.NullForbidden) {
+				props[name] = b.schema(field.Type.Elem(), true)
+			}
 			for _, constraint := range strings.Split(field.Tag.Get("schema"), ",") {
 				key, value, ok := strings.Cut(constraint, "=")
 				if !ok {

@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/profile"
 )
 
 const TextVersion = 2
@@ -75,7 +77,7 @@ var toolID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
 func ValidTool(id string) bool { return toolID.MatchString(id) }
 func Path() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "modelplan", "consent.json")
+	return profile.ConfigFile(home, "consent.json")
 }
 func Empty() State {
 	return State{SchemaVersion: 2, Privacy: Automatic, Tools: map[string]Record{}, Scopes: map[string]Record{}, Revoked: map[string]uint64{}, Hinted: map[string]bool{}}
@@ -391,6 +393,21 @@ func ReaderLock() (func(), error) {
 		return nil, err
 	}
 	return lockFile(file)
+}
+
+// ReaderLockWait is ReaderLock for a user-requested erase (revoke or forget). A
+// background reader or snapshot commit holds the lock only briefly, and failing
+// fast here would leave a durable revocation with unfinished cleanup, so wait up
+// to two seconds for it, as the consent writers do.
+func ReaderLockWait() (func(), error) {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		unlock, err := ReaderLock()
+		if err == nil || !errors.Is(err, ErrBusy) || time.Now().After(deadline) {
+			return unlock, err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // ErrReaderBusy distinguishes admission contention from collection failures.

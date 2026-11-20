@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 
-/// Settings › Cockpit › "Cockpit plugins" (v1.1, D121/D124/D127): turn plugins on or off (off is the cockpit key's
-/// ×), change their order, pin up to two to the engine table's first page, and each plugin's own settings
-/// (for example a sampling interval of 3–30 seconds). Shown on the Cockpit pane and for matching searches.
+/// Settings › Subscriptions › "Plugins" (CKP-PLG-54, D293): one row per plugin with its white line icon, one sentence,
+/// an on/off toggle, its options (for example a sampling interval of 3–30 seconds) and "Pin to page 1" (at most two).
+/// Turning a plugin off here is the same edit as Remove in the cockpit key's right-click menu. Shown on the
+/// Subscriptions pane, after the subscription rows, and for matching searches.
 @MainActor public final class SettingsCockpitPluginsView: NSView {
     public let model: CockpitPluginSettingsModel
     private var language: SettingsLanguage
@@ -17,7 +18,7 @@ import AppKit
         translatesAutoresizingMaskIntoConstraints = false
         setAccessibilityIdentifier("settings.cockpitPlugins"); isHidden = true
         heading.font = .systemFont(ofSize: 12, weight: .semibold)
-        heading.setAccessibilityIdentifier("settings.section.cockpit.plugins")
+        heading.setAccessibilityIdentifier("settings.section.subscriptions.plugins")
         note.font = .systemFont(ofSize: 11); note.textColor = .secondaryLabelColor
         list.orientation = .vertical; list.alignment = .leading; list.spacing = 6
         let stack = NSStackView(views: [heading, note, list])
@@ -33,20 +34,22 @@ import AppKit
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
 
-    /// Re-labels and shows the section on the Cockpit pane, or for a search that names it.
+    /// The pane that shows the section (WP-16 moved it from Cockpit to Subscriptions).
+    public static let paneID = "subscriptions"
+    /// Re-labels and shows the section on the Subscriptions pane, or for a search that names it.
     public func apply(language: SettingsLanguage, paneID: String, query: String) {
         self.language = language
-        isHidden = query.isEmpty ? paneID != "cockpit"
-            : !["plugin", "cockpit", "插件", "驾驶舱"].contains(where: { query.localizedCaseInsensitiveContains($0) })
+        isHidden = query.isEmpty ? paneID != Self.paneID
+            : !["plugin", "subscription", "cockpit", "插件", "订阅", "驾驶舱"].contains(where: { query.localizedCaseInsensitiveContains($0) })
         rebuild()
     }
     private func text(_ en: String, _ zh: String) -> String { SettingsWords.text(en, zh, language) }
 
     /// One row per catalogued plugin, in the saved order.
     func rebuild() {
-        heading.stringValue = text("Cockpit plugins", "驾驶舱插件")
-        note.stringValue = text("Plugins fill empty engine-table columns after your subscriptions. A pinned plugin stays on the first page (at most two).",
-                                "插件放在订阅后面的空列里。固定的插件始终留在第一页（最多两个）。")
+        heading.stringValue = text("Plugins", "插件")
+        note.stringValue = text("Plugin columns follow your subscriptions in the cockpit. A pinned plugin stays on page 1 (at most two).",
+                                "插件列排在驾驶舱订阅的后面。固定的插件留在第 1 页（最多两个）。")
         for view in list.arrangedSubviews { list.removeArrangedSubview(view); view.removeFromSuperview() }
         let prefs = model.preferences.materialized(model.catalogue)
         let known = prefs.entries.filter { entry in model.catalogue.contains(where: { $0.id == entry.id }) }
@@ -63,10 +66,15 @@ import AppKit
     }
     private func row(_ plugin: CockpitPluginDefinition, entry: CockpitPluginEntry, first: Bool, last: Bool, prefs: CockpitPluginPreferences) -> NSView {
         let base = "settings.cockpitPlugins.\(plugin.id)"
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: plugin.symbol, accessibilityDescription: nil)
+        icon.contentTintColor = .labelColor; icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        icon.setAccessibilityIdentifier(base + ".icon")
+        icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
         let on = NSButton(checkboxWithTitle: plugin.title.value(language), target: self, action: #selector(toggleEnabled(_:)))
         on.state = entry.enabled ? .on : .off; on.identifier = .init(plugin.id); on.isEnabled = !busy
         on.setAccessibilityIdentifier(base + ".enabled")
-        let pin = NSButton(checkboxWithTitle: text("Pin to first page", "固定在第一页"), target: self, action: #selector(togglePinned(_:)))
+        let pin = NSButton(checkboxWithTitle: text("Pin to page 1", "固定到第 1 页"), target: self, action: #selector(togglePinned(_:)))
         pin.state = entry.pinned ? .on : .off; pin.identifier = .init(plugin.id)
         pin.isEnabled = !busy && (entry.pinned || prefs.canPin(plugin.id, model.catalogue))
         pin.setAccessibilityIdentifier(base + ".pinned")
@@ -77,9 +85,14 @@ import AppKit
         up.identifier = .init(plugin.id); up.setAccessibilityLabel(text("Move earlier", "前移"))
         let down = button("↓", id: base + ".down", action: #selector(movePluginLater(_:)), enabled: !last)
         down.identifier = .init(plugin.id); down.setAccessibilityLabel(text("Move later", "后移"))
-        let line = NSStackView(views: [on, pin, up, down])
+        let line = NSStackView(views: [icon, on, pin, up, down])
         line.orientation = .horizontal; line.spacing = 10; line.alignment = .centerY
-        var views: [NSView] = [line]
+        let summary = NSTextField(wrappingLabelWithString: plugin.summary.value(language))
+        summary.font = .systemFont(ofSize: 11); summary.textColor = .secondaryLabelColor
+        summary.setAccessibilityIdentifier(base + ".summary")
+        let summaryLine = NSStackView(views: [summary])
+        summaryLine.edgeInsets = .init(top: 0, left: 26, bottom: 0, right: 0)
+        var views: [NSView] = [line, summaryLine]
         // The per-plugin settings slot: one stepper per declared setting.
         for spec in plugin.settings {
             let value = prefs.value(plugin.id, spec.key, model.catalogue) ?? spec.defaultValue
@@ -95,7 +108,7 @@ import AppKit
             stepper.setAccessibilityLabel(spec.title.value(language))
             let settingLine = NSStackView(views: [label, shown, stepper])
             settingLine.orientation = .horizontal; settingLine.spacing = 8; settingLine.alignment = .centerY
-            settingLine.edgeInsets = .init(top: 0, left: 22, bottom: 0, right: 0)
+            settingLine.edgeInsets = .init(top: 0, left: 26, bottom: 0, right: 0)
             views.append(settingLine)
         }
         let column = NSStackView(views: views)

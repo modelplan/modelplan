@@ -463,6 +463,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 	base = context.WithValue(base, cockpitForecastContextKey{}, s.clientCapabilities[CapabilityCockpitForecastV1])
 	base = context.WithValue(base, cockpitModelsContextKey{}, s.clientCapabilities[CapabilityCockpitModelsV1])
 	base = context.WithValue(base, cockpitSessionsContextKey{}, s.clientCapabilities[CapabilityCockpitSessionsV1])
+	base = context.WithValue(base, cockpitPeaksContextKey{}, s.clientCapabilities[CapabilityCockpitPeaksV1])
 	base = context.WithValue(base, cockpitHistoryContextKey{}, s.clientCapabilities[CapabilityCockpitHistoryV1])
 	base = context.WithValue(base, accountTodayContextKey{}, s.clientCapabilities[CapabilityAccountTodayV1])
 	ctx, cancel := context.WithTimeout(base, timeout)

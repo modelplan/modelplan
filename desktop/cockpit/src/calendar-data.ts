@@ -5,7 +5,7 @@
 // 5 h / weekly resets come from the local quota readings, all inside the `display` data the native host already sends.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
-import {memberColour} from './session-binding.js';
+import {memberColours} from './session-binding.js';
 import {currentWindow} from './prototype-data-adapter.js';
 import {exact,record} from './schema.js';
 
@@ -79,7 +79,8 @@ function effectiveAt(schedule:{from:string;through:string;precision:string}|unde
  *  appear; a peak, reset event or reset card of a row the user does not have is left out. */
 export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarData {
  const members=cockpitMembers(data).slice(0,LIMITS.subs);
- const subs:CalendarSub[]=members.map(m=>({abbr:abbreviation(m.row.id,m.row.vendorKey,m.row.name.en),colour:memberColour(m),name:{en:label(m.row.name.en,m.row.id),zh:label(m.row.name.zh,m.row.id)}}));
+ const colours=memberColours(members);
+ const subs:CalendarSub[]=members.map(m=>({abbr:abbreviation(m.row.id,m.row.vendorKey,m.row.name.en),colour:colours.get(m.key)??'#c6ccd4',name:{en:label(m.row.name.en,m.row.id),zh:label(m.row.name.zh,m.row.id)}}));
  const subOfRow=(rowId:string)=>{const i=members.findIndex(m=>m.row.id===rowId);return i<0?null:i;};
  const peaks:CalendarPeak[]=[];
  for(const p of wirePeaks(data)){

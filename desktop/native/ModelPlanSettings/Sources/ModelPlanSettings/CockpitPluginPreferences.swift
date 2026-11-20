@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 
-/// v1.1 cockpit plugin columns (owner D121, D124, D126, D127): which plugins are on, their order, which are pinned
+/// Cockpit plugin columns (owner D121, D124, D293): which plugins are on, their order, which are pinned
 /// to the engine table's first page (at most two), and per-plugin settings such as a sampling interval (3–30 s).
 /// The cockpit page applies the same rules (desktop/cockpit/src/plugin-state.ts); the JSON shape below is the
 /// bridge's `plugins` message body and the page's `pluginsEdit` action body (desktop/cockpit/README.md, "Plugin
@@ -20,23 +20,33 @@ public struct CockpitPluginSettingSpec: Equatable, Sendable {
 public struct CockpitPluginDefinition: Equatable, Sendable {
     public let id: String
     public let title: SettingsText
+    /// CKP-PLG-54: the one sentence shown beside the toggle in Settings › Subscriptions › Plugins. The same words as the
+    /// page's `plugin.<id>Summary` string (desktop/cockpit/study/rocket-r1/strings/plugins.js).
+    public let summary: SettingsText
+    /// A white line-art SF Symbol that stands for the page's icon in Settings.
+    public let symbol: String
     public let defaultEnabled: Bool
     public let settings: [CockpitPluginSettingSpec]
-    public init(id: String, title: SettingsText, defaultEnabled: Bool, settings: [CockpitPluginSettingSpec]) {
-        self.id = id; self.title = title; self.defaultEnabled = defaultEnabled; self.settings = settings
+    public init(id: String, title: SettingsText, summary: SettingsText = .init("", ""), symbol: String = "puzzlepiece",
+                defaultEnabled: Bool, settings: [CockpitPluginSettingSpec]) {
+        self.id = id; self.title = title; self.summary = summary; self.symbol = symbol; self.defaultEnabled = defaultEnabled; self.settings = settings
     }
 }
 public enum CockpitPluginCatalogue {
     public static let maximumPinned = 2
     public static let maximumEntries = 32
-    /// The framework placeholder (off by default) until the resource (D124) and cost (D126/D127) plugins land, then the calendar.
+    /// The framework placeholder (off by default), then the calendar (WP-19, default on); the resource plugin follows (WP-20).
     public static let builtIn: [CockpitPluginDefinition] = [
-        CockpitPluginDefinition(id: "placeholder", title: .init("Placeholder", "占位插件"), defaultEnabled: false, settings: [
+        CockpitPluginDefinition(id: "placeholder", title: .init("Placeholder", "占位插件"),
+                                summary: .init("Shows the last number the app sent; for trying plugins.", "显示应用推来的最后一个数，用来试插件框架。"),
+                                symbol: "dot.square", defaultEnabled: false, settings: [
             CockpitPluginSettingSpec(key: "intervalSeconds", minimum: 3, maximum: 30, defaultValue: 10, title: .init("Update interval", "更新间隔")),
         ]),
         /// v1.1 calendar (D137/D138/D140/D141/D145, CKP-PLG-06/07): default on; no settings. The page shapes its data from
         /// the display data the app already sends, so the app samples nothing for it.
-        CockpitPluginDefinition(id: "calendar", title: .init("Calendar", "日历"), defaultEnabled: true, settings: []),
+        CockpitPluginDefinition(id: "calendar", title: .init("Calendar", "日历"),
+                                summary: .init("Peaks and resets for the next day and a half; open for 7 days.", "今明两天的高峰和重置，点开看 7 天。"),
+                                symbol: "calendar", defaultEnabled: true, settings: []),
     ]
     private static let lower: ClosedRange<Unicode.Scalar> = "a"..."z"
     private static let upper: ClosedRange<Unicode.Scalar> = "A"..."Z"

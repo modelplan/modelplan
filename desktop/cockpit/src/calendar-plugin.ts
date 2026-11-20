@@ -2,26 +2,33 @@
 // v1.1 cockpit calendar plugin (owner D137, D138, D140, D141, D145; CKP-PLG-06/07; mockups v4 A, C, E3).
 // The column is an Apple-style day view: a 今/明/后 picker with dots, an all-day lane, a 36-hour axis from now with a
 // midnight divider, peak blocks in the subscription's colour (side by side when they overlap), the user's own reset chips,
-// the now line and a folded line for what lies beyond. 明/后 show that day 00–24 with a ↺ 现在 chip. A click on the column
-// opens the 7-day week view as a temporary overlay inside the MFD screen (the framework's "expand on MFD").
+// the now line and a folded line for what lies beyond. 明/后 show that day 00–24 with a ↺ 现在 chip. The plugin key opens
+// the 7-day week view as the plugin's big screen inside the MFD screen.
+// Owner D323: both are custom draws (the framework's `draw` hook): the day strip paints the column's cell area, the week
+// grid paints the screen body. The key, its underline, the bottom line ("Now 12:00"), the screen's title bar and the
+// lifecycle stay the framework's. If a draw fails, the column falls back to three cells (next reset, next peak, reset
+// cards) and the screen to plain lines.
 // All times are local. The page has no timers: the host's minute tick moves the now line and rolls the day over.
-import {type CockpitPlugin,type PluginContext,type PluginLocale,type PluginOverlayContext} from './plugin-registry.js';
+import {PLUGIN_ICON_FRAME,type CockpitPlugin,type PluginCell,type PluginContext,type PluginDrawContext,type PluginLocale} from './plugin-registry.js';
 import {CALENDAR_MAX_BYTES,calendarFromCockpit,emptyCalendar,parseCalendarData,type CalendarData,type CalendarSpan} from './calendar-data.js';
 import {HOUR,WEEK_DAYS,addDays,dayOffset,dayPieces,hhmm,hourMarks,isWeekend,midnights,monthDay,nextMinute,packLanes,startOfDay,stripWindow,wallHours,type Span} from './calendar-time.js';
 
 const W={
  en:{title:'Calendar',week:'Calendar · 7 days',now:'Now',back:'↺ Now',allDay:'All day',peak:'peak',cont:' (cont.)',r5:'5h',week5:'5h reset',weekly:'weekly',weeklyLong:'weekly reset',wk:'wk',cards:'reset card',until:'until',announced:'announced reset',confirmed:'confirmed reset',effective:'',more:'more',empty:'No peaks or resets',waiting:'Waiting for readings',zoomed:'Zoomed · ⌘− to fit',days:['Today','Tmr'],
-  weekdays:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],narrow:['S','M','T','W','T','F','S'],tentative:'tentative',announcedOn:'announced',open:'Open the week view on the MFD'},
+  weekdays:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],narrow:['S','M','T','W','T','F','S'],tentative:'tentative',announcedOn:'announced'},
  'zh-CN':{title:'日历',week:'日历 · 7 天',now:'现在',back:'↺ 现在',allDay:'全天',peak:'高峰',cont:'（续）',r5:'5h',week5:'5h 重置',weekly:'周重置',weeklyLong:'周额度重置',wk:'周',cards:'重置卡',until:'至',announced:'预告重置',confirmed:'已确认重置',effective:'生效',more:'更多',empty:'暂无高峰或重置',waiting:'等待读数',zoomed:'放大中 · ⌘− 还原',days:['今','明','后'],
-  weekdays:['周日','周一','周二','周三','周四','周五','周六'],narrow:['日','一','二','三','四','五','六'],tentative:'未确认',announcedOn:'公告',open:'在大屏上打开周视图'},
+  weekdays:['周日','周一','周二','周三','周四','周五','周六'],narrow:['日','一','二','三','四','五','六'],tentative:'未确认',announcedOn:'公告'},
 } as const;
 type Words=typeof W[PluginLocale];
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
 const pct=(v:number)=>`${(Math.max(0,Math.min(1,v))*100).toFixed(3)}%`;
 
-interface PanelState {data:CalendarData|null;now:number;day:number|null;fold:boolean;zoom:number;centre:number|null}
-const states=new WeakMap<HTMLElement,PanelState>();
-const stateOf=(panel:HTMLElement)=>{let s=states.get(panel);if(!s){s={data:null,now:0,day:null,fold:false,zoom:24,centre:null};states.set(panel,s);}return s;};
+/** View state (the framework's per-plugin `memo`, shared by the column and the screen): the picked day, the folded
+ *  list, the week zoom and its centre hour. Readings are the framework's state (`accept`), not kept here. */
+interface View {day:number|null;fold:boolean;zoom:number;centre:number|null}
+const viewOf=(memo:Record<string,unknown>)=>{let v=memo.view as View|undefined;if(!v){v={day:null,fold:false,zoom:24,centre:null};memo.view=v;}return v;};
+/** A button the framework keeps focused across redraws (D323 `data-focus`). */
+const button=(className:string,focus:string,text?:string)=>{const b=el('button',className,text);b.type='button';b.dataset.focus=focus;return b;};
 
 // --- shared labels -----------------------------------------------------------------------------------------------
 const weekday=(t:number,w:Words,narrow=false)=>(narrow?w.narrow:w.weekdays)[new Date(t).getDay()]!;
@@ -55,25 +62,27 @@ export function beyond(data:CalendarData,span:Span):{at:number;sub:number;kind:'
 }
 
 // --- the column (day view) ---------------------------------------------------------------------------------------
-function paintStrip(panel:HTMLElement,context:PluginContext) {
- const s=stateOf(panel),w=W[context.locale],zh=context.locale==='zh-CN',now=context.now||s.now;
- panel.classList.add('cal');
+function paintStrip(context:PluginDrawContext,reading:CalendarData|null) {
+ const s=viewOf(context.memo),w=W[context.locale],zh=context.locale==='zh-CN',now=context.now;
+ const panel=el('div','cal');context.area.append(panel);
+ const redraw=()=>context.redraw();
  // No host time yet (the first draw comes before the first display data): nothing to place.
  if(!now){panel.dataset.view='waiting';panel.replaceChildren(el('p','cal-empty',w.waiting));return;}
  if(s.day!==null&&dayOffset(now,s.day)<=0)s.day=null;// the day rolled over: back to now
  panel.dataset.view=s.day===null?'now':String(dayOffset(now,s.day));
- const data=s.data??emptyCalendar,span=stripWindow(now,s.day);
+ const data=reading??emptyCalendar,span=stripWindow(now,s.day);
  // Picker: 今 明 后 with dots on days that have events; the selected day is lit.
  const pick=el('div','cal-pick');
  for(let i=0;i<3;i++){
-  const at=addDays(now,i),b=el('button','cal-d'),sel=s.day===null?i===0:dayOffset(now,s.day)===i;b.type='button';b.dataset.day=String(i);
-  b.append(el('i','',zh||i<2?w.days[i]??weekday(at,w):weekday(at,w)),el('b','',String(new Date(at).getDate())),el('s',s.data&&dayHasEvents(data,now,i)?'on':''));
+  const at=addDays(now,i),b=button('cal-d','day-'+i),sel=s.day===null?i===0:dayOffset(now,s.day)===i;b.dataset.day=String(i);
+  b.append(el('i','',zh||i<2?w.days[i]??weekday(at,w):weekday(at,w)),el('b','',String(new Date(at).getDate())),el('s',reading&&dayHasEvents(data,now,i)?'on':''));
   b.classList.toggle('sel',sel);b.setAttribute('aria-pressed',String(sel));b.setAttribute('aria-label',dayLabel(at,w,zh));
-  b.onclick=e=>{if(!e.isTrusted)return;s.day=i===0?null:startOfDay(at);s.fold=false;paintStrip(panel,context);};pick.append(b);
+  b.onclick=e=>{if(!e.isTrusted)return;s.day=i===0?null:startOfDay(at);s.fold=false;redraw();};pick.append(b);
  }
+ // The time now is the framework's bottom line; another day shows its date and the ↺ Now chip here.
  const head=el('div','cal-hd');
- if(s.day===null)head.append(el('span','cal-ts',`${w.now} ${hhmm(now)}`));
- else{const back=el('button','cal-back',w.back);back.type='button';back.onclick=e=>{if(!e.isTrusted)return;s.day=null;s.fold=false;paintStrip(panel,context);};head.append(el('span','cal-ts',dayLabel(s.day,w,zh)),back);}
+ if(s.day===null)head.hidden=true;
+ else{const back=button('cal-back','back',w.back);back.onclick=e=>{if(!e.isTrusted)return;s.day=null;s.fold=false;redraw();};head.append(el('span','cal-ts',dayLabel(s.day,w,zh)),back);}
  // All-day lane: reset cards and announced resets that touch the window.
  const allDay=el('div','cal-ad');allDay.append(el('span','cal-adl',w.allDay));
  const rows=data.spans.filter(x=>x.from<span.to&&(x.to===null||x.to>=span.from));
@@ -88,9 +97,9 @@ function paintStrip(panel:HTMLElement,context:PluginContext) {
  // The axis: linear in real time over the window (36 h from now, or the 23/24/25 h of one local day).
  const axis=el('div','cal-ax'),len=span.to-span.from,Y=(t:number)=>(t-span.from)/len;
  // Built after the rest so the axis can be measured: hour labels every 3 h when there is room, else every 6 h.
- const later=beyond(data,span),fold=el('button','cal-fold');fold.type='button';
+ const later=beyond(data,span),fold=button('cal-fold','fold');
  const label=(x:ReturnType<typeof beyond>[number])=>x.kind==='span'?`${monthDay(x.at)} ${spanText(data,x.span!,w,zh)}`:`${monthDay(x.at)} ${resetText(data.subs[x.sub]!.abbr,x.kind,x.at,'',w)}`;
- if(later.length){fold.textContent=`▾ ${label(later[0]!)}${later.length>1?` · +${later.length-1}`:''}`;fold.setAttribute('aria-expanded',String(s.fold));fold.onclick=e=>{if(!e.isTrusted)return;s.fold=!s.fold;paintStrip(panel,context);};}
+ if(later.length){fold.textContent=`▾ ${label(later[0]!)}${later.length>1?` · +${later.length-1}`:''}`;fold.setAttribute('aria-expanded',String(s.fold));fold.onclick=e=>{if(!e.isTrusted)return;s.fold=!s.fold;redraw();};}
  else{fold.disabled=true;fold.classList.add('none');}
  panel.replaceChildren(pick,head,allDay,axis,fold);
  const H=axis.clientHeight||160,pxHour=H/(len/HOUR),every=pxHour*3>=13?3:pxHour*6>=13?6:12;
@@ -111,10 +120,10 @@ function paintStrip(panel:HTMLElement,context:PluginContext) {
   c.textContent=resetText(sub.abbr,r.kind,r.at,s.day===null?dayPrefix(r.at,now,w,zh):'',w);c.title=`${zh?sub.name.zh:sub.name.en} · ${resetText(sub.abbr,r.kind,r.at,'',w,true)} · ${dayLabel(r.at,w,zh)}`;axis.append(c);
  }
  if(s.day===null){const line=el('div','cal-nl');line.style.top='0%';axis.append(line);}
- if(!s.data)axis.append(el('p','cal-empty',w.waiting));
+ if(!reading)axis.append(el('p','cal-empty',w.waiting));
  else if(!pieces.length&&!chips.length&&!rows.length)axis.append(el('p','cal-empty',w.empty));
  // Folded: everything beyond the window in one line (built above); a press lists it.
- if(s.fold&&later.length){const list=el('ul','cal-more');list.dataset.plOwn='';for(const x of later.slice(0,12))list.append(el('li','',label(x)));panel.append(list);}
+ if(s.fold&&later.length){const list=el('ul','cal-more');for(const x of later.slice(0,12))list.append(el('li','',label(x)));panel.append(list);}
  settleChips(axis);
 }
 /** Reset chips never overlap: a chip that would sit on the one above moves down (the axis is measured when drawn). */
@@ -127,23 +136,30 @@ function settleChips(axis:HTMLElement) {
  chips.forEach((c,i)=>{c.style.top=`${ys[i]!.toFixed(1)}px`;});
 }
 
-// --- the week overlay (MFD) ----------------------------------------------------------------------------------------
+// --- the week view (the plugin's big screen on the MFD) -------------------------------------------------------------
 const ZOOMS=[24,16,12,8] as const;
 interface WeekItem {day:number;start:number;end:number;label:string;kind:'peak'|'chip'}
-function paintWeek(body:HTMLElement,panel:HTMLElement,context:PluginOverlayContext) {
- const s=stateOf(panel),w=W[context.locale],zh=context.locale==='zh-CN',now=context.now||s.now,data=s.data??emptyCalendar,today=startOfDay(now);
+function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
+ const s=viewOf(context.memo),w=W[context.locale],zh=context.locale==='zh-CN',now=context.now,data=reading??emptyCalendar,today=startOfDay(now);
  if(context.opening){s.zoom=24;s.centre=null;}
- const narrow=(body.clientWidth||600)<450,zoom=s.zoom,fit=zoom>=24;
- body.className='po-b cal-wk'+(narrow?' narrow':'')+(fit?' fit':' zoom');
- context.status.textContent=fit?'':w.zoomed;context.status.classList.toggle('on',!fit);
+ const narrow=(context.width||600)<450,zoom=s.zoom,fit=zoom>=24;
+ const body=el('div','cal-wk'+(narrow?' narrow':'')+(fit?' fit':' zoom'));context.area.append(body);
+ const status=el('span','wk-zoom',fit?'':w.zoomed);status.classList.toggle('on',!fit);
+ const redraw=()=>context.redraw();
+ // ⌘+ / ⌘− / ⌘0 zoom while focus is inside the week view (the framework keeps Esc for closing the screen).
+ context.area.onkeydown=e=>{
+  if(!e.isTrusted||!(e.metaKey||e.ctrlKey)||e.altKey)return;
+  const step=e.key==='+'||e.key==='='?1:e.key==='-'||e.key==='_'?-1:e.key==='0'?0:null;if(step===null)return;
+  e.preventDefault();e.stopPropagation();if(step===0){s.zoom=24;redraw();}else zoomBy(step,s,redraw);
+ };
  const col=(i:number)=>`calc(var(--wk-g) + (100% - var(--wk-g) - var(--wk-r)) * ${i/WEEK_DAYS})`,colW=`calc((100% - var(--wk-g) - var(--wk-r)) / ${WEEK_DAYS})`;
  const place=(e:HTMLElement,i:number,span=1)=>{e.style.left=col(i);e.style.width=span===1?colW:`calc((100% - var(--wk-g) - var(--wk-r)) * ${span/WEEK_DAYS})`;};
  const selected=s.day===null?0:dayOffset(now,s.day);
- const pickDay=(i:number)=>{s.day=i===0?null:addDays(now,i);s.fold=false;paintStrip(panel,context);paintWeek(body,panel,{...context,opening:false});};
+ const pickDay=(i:number)=>{s.day=i===0?null:addDays(now,i);s.fold=false;redraw();};
  // Day headers (a press moves the strip to that day).
  const heads=el('div','wk-days');
  for(let i=0;i<WEEK_DAYS;i++){
-  const at=addDays(today,i),b=el('button','wk-dh'+(isWeekend(at)?' we':'')+(i===0?' today':'')+(i===selected?' sel':''));b.type='button';b.dataset.day=String(i);place(b,i);
+  const at=addDays(today,i),b=button('wk-dh'+(isWeekend(at)?' we':'')+(i===0?' today':'')+(i===selected?' sel':''),'wk-day-'+i);b.dataset.day=String(i);place(b,i);
   b.append(el('i','',weekday(at,w,narrow)),el('b','',String(new Date(at).getDate())));b.setAttribute('aria-label',dayLabel(at,w,zh));b.setAttribute('aria-pressed',String(i===selected));
   b.onclick=e=>{if(e.isTrusted)pickDay(i);};heads.append(b);
  }
@@ -195,7 +211,7 @@ function paintWeek(body:HTMLElement,panel:HTMLElement,context:PluginOverlayConte
  const line=el('div','wk-nl');place(line,0);line.style.top=Y(nh);const tag=el('div','wk-nt',hhmm(now));tag.style.top=Y(nh);
  inner.append(past,line,tag);
  const hints=el('div','wk-hints');
- body.replaceChildren(heads,allDay,scroll,hints);hints.style.top=`${scroll.offsetTop}px`;
+ body.replaceChildren(heads,allDay,scroll,hints,status);hints.style.top=`${scroll.offsetTop}px`;
  // Zoomed: keep the centre hour (first zoom: centre on now), and keep the edge hints in step with the scroll.
  if(!fit){
   const centre=s.centre??nh,vh=scroll.clientHeight,ch=inner.clientHeight;
@@ -205,8 +221,8 @@ function paintWeek(body:HTMLElement,panel:HTMLElement,context:PluginOverlayConte
  }
  else s.centre=null;
  // Pinch (WebKit sends ctrl+wheel) or ⌘+wheel zooms; a plain wheel scrolls when zoomed.
- scroll.onwheel=e=>{if(!e.isTrusted)return;if(e.ctrlKey||e.metaKey){e.preventDefault();zoomBy(e.deltaY<0?1:-1,body,panel,context);}};
- const gesture=(e:Event)=>{const scale=(e as Event&{scale?:number}).scale;if(typeof scale!=='number')return;e.preventDefault();if(scale>1.15)zoomBy(1,body,panel,context);else if(scale<0.87)zoomBy(-1,body,panel,context);};
+ scroll.onwheel=e=>{if(!e.isTrusted)return;if(e.ctrlKey||e.metaKey){e.preventDefault();zoomBy(e.deltaY<0?1:-1,s,redraw);}};
+ const gesture=(e:Event)=>{const scale=(e as Event&{scale?:number}).scale;if(typeof scale!=='number')return;e.preventDefault();if(scale>1.15)zoomBy(1,s,redraw);else if(scale<0.87)zoomBy(-1,s,redraw);};
  scroll.addEventListener('gestureend',gesture);
 }
 function paintHints(hints:HTMLElement,items:readonly WeekItem[],top:number,bottom:number,col:(i:number)=>string,colW:string) {
@@ -218,36 +234,58 @@ function paintHints(hints:HTMLElement,items:readonly WeekItem[],top:number,botto
   if(below){const h=el('i','down',`↓ ${below.label}`);h.style.left=col(i);h.style.width=colW;hints.append(h);}
  }
 }
-function zoomBy(step:number,body:HTMLElement,panel:HTMLElement,context:PluginOverlayContext):boolean {
- const s=stateOf(panel),at=ZOOMS.indexOf(s.zoom as typeof ZOOMS[number]),next=ZOOMS[Math.max(0,Math.min(ZOOMS.length-1,(at<0?0:at)+step))]!;
- if(next===s.zoom)return true;s.zoom=next;paintWeek(body,panel,{...context,opening:false});return true;
+function zoomBy(step:number,s:View,redraw:()=>void) {
+ const at=ZOOMS.indexOf(s.zoom as typeof ZOOMS[number]),next=ZOOMS[Math.max(0,Math.min(ZOOMS.length-1,(at<0?0:at)+step))]!;
+ if(next!==s.zoom){s.zoom=next;redraw();}
+}
+
+// --- the fallback cells and lines (D293 grammar), used when a draw fails ----------------------------------------
+const readingOf=(state:unknown)=>state&&typeof state==='object'&&(state as CalendarData).version===1?state as CalendarData:null;
+function nextReset(data:CalendarData,now:number) {const r=data.resets.find(x=>x.at>now);return r?{r,sub:data.subs[r.sub]!}:null;}
+function fallbackCells(data:CalendarData|null,context:PluginContext):PluginCell[] {
+ if(!data||!context.now)return [{tag:context.words('plugin.calendarWaiting')}];
+ const w=W[context.locale],now=context.now,zh=context.locale==='zh-CN',side=(full:string,short=full)=>({full,short});
+ const reset=nextReset(data,now),peak=data.peaks.find(p=>(p.to??p.from+1)>now),cards=data.spans.find(x=>x.kind==='cards');
+ const cells:PluginCell[]=[];
+ cells.push({tag:context.words('plugin.calendarReset'),side:reset?side(resetText(reset.sub.abbr,reset.r.kind,reset.r.at,dayPrefix(reset.r.at,now,w,zh),w),`${reset.sub.abbr} ${hhmm(reset.r.at)}`):context.words('plugin.calendarNone')});
+ cells.push({tag:context.words('plugin.calendarPeak'),side:peak?side(`${data.subs[peak.sub]!.abbr} ${hhmm(peak.from)}–${peak.to===null?'…':hhmm(peak.to)}`,`${data.subs[peak.sub]!.abbr} ${hhmm(peak.from)}`):context.words('plugin.calendarNone')});
+ if(cards)cells.push({tag:context.words('plugin.calendarCards'),side:side(spanText(data,cards,w,zh),`${data.subs[cards.sub]!.abbr} ${monthDay(cards.to!)}`)});
+ return cells;
+}
+function fallbackLines(data:CalendarData|null,context:PluginContext):{label:string;value:string}[] {
+ if(!data||!context.now)return [{label:context.words('plugin.calendarWaiting').full,value:''}];
+ const w=W[context.locale],zh=context.locale==='zh-CN',now=context.now,end=addDays(now,WEEK_DAYS);
+ const lines=[
+  ...data.resets.filter(r=>r.at>now&&r.at<end).map(r=>({at:r.at,label:resetText(data.subs[r.sub]!.abbr,r.kind,r.at,'',w,true),value:`${dayLabel(r.at,w,zh)} ${hhmm(r.at)}`})),
+  ...data.peaks.filter(p=>(p.to??p.from+1)>now&&p.from<end).map(p=>({at:p.from,label:`${data.subs[p.sub]!.abbr} ${w.peak}`,value:`${dayLabel(p.from,w,zh)} ${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}`})),
+ ].sort((a,b)=>a.at-b.at).map(({label,value})=>({label,value}));
+ return lines.length?lines:[{label:w.empty,value:''}];
 }
 
 // --- the plugin ------------------------------------------------------------------------------------------------------
 export const calendarPlugin:CockpitPlugin=Object.freeze({
  id:'calendar',
- title:Object.freeze({en:'Calendar','zh-CN':'日历'}),
- // Mockup v4 key icon: a calendar sheet with two rings, on the shared 16 px grid (currentColor).
- icon:'<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3.5" width="12" height="10.5" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2 7h12M5.5 2v3M10.5 2v3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>',
+ title:'plugin.calendarTitle',
+ summary:'plugin.calendarSummary',
+ // Mockup v4 key icon: a calendar sheet with two rings, on the shared 16 px frame at the vendor marks' stroke (currentColor).
+ icon:`<svg viewBox="0 0 16 16" aria-hidden="true">${PLUGIN_ICON_FRAME}<path d="M1 6h14M5 0.5v3M11 0.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>`,
+ underline:'#b9c7d6',
  defaultEnabled:true,
  settings:Object.freeze([]),
- render(panel:HTMLElement,context:PluginContext){paintStrip(panel,context);},
- start(panel:HTMLElement,context:PluginContext){const s=stateOf(panel);s.now=context.now;paintStrip(panel,context);},
- stop(panel:HTMLElement){const s=stateOf(panel);s.fold=false;},
- data:Object.freeze({maxBytes:CALENDAR_MAX_BYTES,parse:parseCalendarData}),
+ /** A host push or the page's own shaping (`derive`): bounded as JSON, then the strict parser. */
+ accept(data:unknown){
+  let bytes=Infinity;try{const json=JSON.stringify(data);if(typeof json==='string')bytes=new TextEncoder().encode(json).length;}catch{return undefined;}
+  if(bytes>CALENDAR_MAX_BYTES)return undefined;
+  return parseCalendarData(data)??undefined;
+ },
  derive:calendarFromCockpit,
- update(panel:HTMLElement,value:unknown,context:PluginContext){const s=stateOf(panel);s.data=value as CalendarData;s.now=context.now;paintStrip(panel,context);return true;},
- nextDeadline:(_panel:HTMLElement,now:number)=>nextMinute(now),
- tick(panel:HTMLElement,context:PluginContext){const s=stateOf(panel);s.now=context.now;paintStrip(panel,context);},
- expand:Object.freeze({
-  title:Object.freeze({en:'Calendar · 7 days','zh-CN':'日历 · 7 天'}),
-  render:paintWeek,
-  key(e:KeyboardEvent,body:HTMLElement,panel:HTMLElement,context:PluginOverlayContext){
-   if(!(e.metaKey||e.ctrlKey)||e.altKey)return false;
-   if(e.key==='+'||e.key==='=')return zoomBy(1,body,panel,context);
-   if(e.key==='-'||e.key==='_')return zoomBy(-1,body,panel,context);
-   if(e.key==='0'){stateOf(panel).zoom=24;paintWeek(body,panel,{...context,opening:false});return true;}
-   return false;
-  },
- }),
+ nextDeadline:(_state:unknown,now:number)=>now?nextMinute(now):null,
+ column(state:unknown,context:PluginContext){
+  const data=readingOf(state);
+  return {cells:fallbackCells(data,context),foot:context.now?{label:context.words('plugin.calendarNow'),value:{full:hhmm(context.now),short:hhmm(context.now)}}:null,draw:(c:PluginDrawContext)=>paintStrip(c,data)};
+ },
+ screen(state:unknown,context:PluginContext){
+  const data=readingOf(state);
+  return {lines:fallbackLines(data,context),draw:(c:PluginDrawContext)=>paintWeek(c,data)};
+ },
 });

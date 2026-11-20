@@ -50,3 +50,20 @@ The packaged v1 app requires macOS 15 or later. Still required: physical lock/sl
 ## Community Settings composition
 
 The packaged neutral entry is now the upper `ModelPlanCommunityApp` product in `ModelPlanAppIntegration`. It injects the existing Settings store/editor/window host into the reusable root `ModelPlanCommunityHost`, so the root never depends back on Settings. The legacy `ModelPlanCommunity` product and its explicit probe arguments remain available. The helper transport, lifecycle and probes have one implementation in the shared host. Builds/tests do not launch or package the app; actual visual/physical acceptance remains B25. Normal Settings opens are explicit user actions; restore/programmatic paths do not activate. No login/reader/notification/updater operation is enabled by the entry wiring.
+
+## Fresh profile (D164)
+
+`MODELPLAN_PROFILE_ROOT=<absolute existing folder>` launches the app as a brand-new user without touching the real profile. Only test-build tooling sets it (a double-clickable launcher in owner test packages and a walkthrough option, added separately); production builds ship no launcher. `ProfileRoot` (`ModelPlanAppIntegration`) is the one resolver for app stores and `cli/internal/profile` the one resolver for engine stores; the app passes the same root to its engine child, which is on the child-environment allow-list.
+
+| Store | Real profile | Fresh profile |
+| --- | --- | --- |
+| Settings, cockpit scope/cautions, reset and forecast notification ledgers, legacy/self-test settings | `~/Library/Application Support/ModelPlan/` | `<root>/app/Application Support/ModelPlan/` |
+| App cache ("Clear app cache") and URL cache | `~/Library/Caches/<bundle id>/` | `<root>/app/Caches/` |
+| Engine config: consent (+ locks), connections, declared quota (`local.json`), CodexBar, local-usage, project labels | `~/.config/modelplan/` | `<root>/engine/config/` |
+| Engine store: publication cache, history, perf, cycles, observed readings, native snapshots | `$MODELPLAN_CACHE` or `~/Library/Caches/modelplan/` | `<root>/engine/cache/` (wins over `MODELPLAN_CACHE`) |
+| Status-item position (standard defaults domain) | saved | not saved (no autosave name) |
+| Window restoration | AppKit default | off (`ApplePersistenceIgnoreState`, registration domain only) |
+| Login item (SMAppService) | registered on request | shown unavailable; never registered or unregistered |
+| Keychain | only through the credential agent, which the normal entry does not wire | same: no reads or writes |
+
+The app and CLI refuse to start (rather than fall back to the real profile) when the key is present but empty, the root is relative, missing or overlaps the real profile, anything inside it is a symbolic link (the whole tree is walked without following links; neither the app nor the engine creates links there), or when the bundled engine's `--help` does not list `MODELPLAN_PROFILE_ROOT` (an older engine would write the real profile). Tool data (`~/.codex`, `~/.claude`, ZCode…) is still found from `HOME` and read only after first-run consent. Notification permission is per app in macOS and is shared with the real profile. `ProfileRootTests` and `cli/internal/profile` assert that every store resolves under the root and that no source bypasses the resolvers.

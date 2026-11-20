@@ -99,8 +99,8 @@ func TestFailedRefreshAfterAccountKeepKeepsNothing(t *testing.T) {
 	}
 }
 
-// A missing Codex binary keeps the windows too, and the report still says runtime_missing.
-func TestMissingCodexKeepsWindowsAndSaysRuntimeMissing(t *testing.T) {
+// A missing Codex binary keeps the windows too, and the state names the not_found cause.
+func TestMissingCodexKeepsWindowsAndSaysNotFound(t *testing.T) {
 	isolateHome(t)
 	cache := t.TempDir()
 	goodAccount(t, cache, acctNow)
@@ -113,7 +113,7 @@ func TestMissingCodexKeepsWindowsAndSaysRuntimeMissing(t *testing.T) {
 	if len(r.Accounts) != 1 || len(r.Accounts[0].Windows) != 2 {
 		t.Fatalf("accounts %+v", r.Accounts)
 	}
-	if s := loadAccount(cache); codexFailureState(s) != "unavailable:"+toolcli.RuntimeMissing {
+	if s := loadAccount(cache); codexFailureState(s) != "unavailable:reader_error:not_found" {
 		t.Fatalf("state %q", codexFailureState(s))
 	}
 }
@@ -124,7 +124,10 @@ func TestCodexFailureStateMatchesTheOtherReaders(t *testing.T) {
 		want string
 	}{
 		{accountSnap{Status: toolcli.RuntimeMissing}, "unavailable:" + toolcli.RuntimeMissing},
-		{accountSnap{Status: "error", Error: "codex not found"}, "unavailable:" + toolcli.RuntimeMissing},
+		{accountSnap{Status: "error", Error: "codex not found"}, "unavailable:reader_error:not_found"},
+		{accountSnap{Status: "error", ErrorCode: "not_found"}, "unavailable:reader_error:not_found"},
+		{accountSnap{Status: "error", ErrorCode: "rpc_error"}, "unavailable:reader_error:rpc_error"},
+		{accountSnap{Status: "error", ErrorCode: "closed"}, "unavailable:reader_error:closed"},
 		{accountSnap{Status: "error", ErrorCode: "runtime_missing"}, "unavailable:" + toolcli.RuntimeMissing},
 		{accountSnap{Status: "error", ErrorCode: "timeout"}, "unavailable:reader_error:timeout"},
 		{accountSnap{Status: "error", ErrorCode: "secret text"}, "unavailable:reader_error:other"},

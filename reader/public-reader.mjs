@@ -600,6 +600,16 @@ var tags = z3.array(
     "dominated"
   ])
 );
+var harnessIdsSchema = z3.object({
+  api: ids2,
+  "claude-code": ids2,
+  codex: ids2,
+  gemini: ids2.optional(),
+  antigravity: ids2.optional(),
+  grok: ids2.optional(),
+  copilot: ids2.optional(),
+  kimi: ids2.optional()
+}).strict();
 var clientAliasRegistrySchema = z3.object({
   revision: text3,
   checkedAt: text3,
@@ -607,7 +617,7 @@ var clientAliasRegistrySchema = z3.object({
     z3.object({
       modelId: text3,
       sourceModelId: text3,
-      harnessIds: z3.object({ api: ids2, "claude-code": ids2, codex: ids2 }).strict(),
+      harnessIds: harnessIdsSchema,
       sourceUrls: z3.array(z3.url()),
       qualification: text3,
       requiredEndpoints: z3.record(z3.string(), z3.url())
@@ -629,6 +639,8 @@ var clientDigestSchema = z3.object({
   // exact by the publication replay check.
   projectionVersion: z3.string().regex(/^client-v1\.[1-9]\d*$/).optional(),
   multipliers: z3.array(clientMultiplierSchema).optional(),
+  // client-v1.5: AA Intelligence Index version behind every effort aaScore.
+  aaIndexVersion: text3.optional(),
   // client-v1.2 (#347): Fast / Ultrafast and their billing multipliers per harness.
   speedTiers: z3.array(clientSpeedTierSchema).optional(),
   multiplierHorizon: z3.object({
@@ -660,7 +672,7 @@ var clientDigestSchema = z3.object({
       recommended: text3.nullable(),
       // ADR 0033; optional so digests published before it still validate.
       recommendationBasis: z3.enum(["balanced", "single-configuration", "assumed-highest"]).nullable().optional(),
-      harnessIds: z3.object({ api: ids2, "claude-code": ids2, codex: ids2 }).strict(),
+      harnessIds: harnessIdsSchema,
       harnessEvidence: z3.object({
         checkedAt: text3,
         sourceUrls: z3.array(z3.url()),
@@ -687,7 +699,10 @@ var clientDigestSchema = z3.object({
           // Present only when true: the ability rests on evidence outside the range its
           // cross-source link was fitted on. Shown within its own model's ladder only;
           // the producer already leaves it out of every cross-model lineup.
-          provisional: z3.literal(true).optional()
+          provisional: z3.literal(true).optional(),
+          // client-v1.5: the raw AA Intelligence Index score for this model and effort.
+          // Absent when unscored; never null or 0. Provisional efforts still carry it.
+          aaScore: scalar.positive().optional()
         }).strict()
       )
     }).strict()
@@ -697,7 +712,8 @@ var clientDigestSchema = z3.object({
       developerId: text3,
       costBasisId: text3,
       method: z3.literal(LINEUP_METHOD),
-      tie: z3.literal(LINEUP_TIE),
+      // 1 on index display scale 0.3, 0.815 on 0.4 (same gap re-expressed); verdicts unchanged.
+      tie: z3.union([z3.literal(LINEUP_TIE), z3.literal(0.815)]),
       baseline: text3,
       frontier: ids2,
       steps: z3.array(
@@ -756,6 +772,10 @@ var clientDigestSchema = z3.object({
     fail("incomplete_multiplier_projection");
   if (d.projectionVersion === "client-v1.2" && d.speedTiers === void 0 || d.speedTiers !== void 0 && (d.projectionVersion === void 0 || d.projectionVersion === "client-v1.1"))
     fail("incomplete_speed_tier_projection");
+  const minor = d.projectionVersion ? Number(d.projectionVersion.slice("client-v1.".length)) : 0;
+  const aaScored = d.models.some((m) => m.efforts.some((e) => e.aaScore !== void 0));
+  if (d.aaIndexVersion !== void 0 !== aaScored || aaScored && minor < 5)
+    fail("invalid_client_aa_score");
   const models = new Map(d.models.map((m) => [m.id, m]));
   for (const t of d.speedTiers ?? [])
     for (const m of t.models)

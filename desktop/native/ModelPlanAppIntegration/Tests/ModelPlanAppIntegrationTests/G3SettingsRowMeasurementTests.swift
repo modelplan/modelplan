@@ -144,7 +144,12 @@ private actor G316Engine: EngineClient {
                     print(measurement); measurements.append(measurement)
                     if abs(offset) > 1 { offenders.append((row.convert(control, to: canvas), "\(pane.id).\(row.key.rawValue): \(offset)")) }
                     if let copy = row.titleLabel.superview as? NSStackView {
-                        if copy.arrangedSubviews.count != 2 || copy.arrangedSubviews[0] !== row.titleLabel || copy.arrangedSubviews[1] !== row.subtitle {
+                        // G3-69 (#791) keeps the login item's "Show how" button and text in every title stack, hidden
+                        // (detached) unless the system cannot find the login item. They are the only extra content allowed.
+                        let extra = Array(copy.arrangedSubviews.dropFirst(2))
+                        let allowedExtra = extra.count == 2 && extra[0] === row.loginHowButton && extra[1] === row.loginHowLabel
+                            && (row.key == .login || extra.allSatisfy(\.isHidden))
+                        if copy.arrangedSubviews.count < 2 || copy.arrangedSubviews[0] !== row.titleLabel || copy.arrangedSubviews[1] !== row.subtitle || !allowedExtra {
                             offenders.append((.zero, "\(pane.id).\(row.key.rawValue): unexpected content in title stack"))
                         }
                     } else { offenders.append((.zero, "\(pane.id).\(row.key.rawValue): missing title stack")) }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// v1.1 calendar plugin (owner D137, D138, D140, D141, D145; CKP-PLG-06, CKP-PLG-07): the column's day view and the
-// 7-day week view that opens as a temporary overlay inside the MFD screen. Times are local (America/Los_Angeles here).
+// v1.1 calendar plugin (owner D137, D138, D140, D141, D145; CKP-PLG-06, CKP-PLG-07; D323 custom draw): the column's day
+// view and the 7-day week view on the plugin's big screen inside the MFD screen, both drawn through the framework's
+// `draw` hook. Times are local (America/Los_Angeles here).
 // Set CAL_SHOTS=<dir> to also write review screenshots.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,sample,shell,excludePortholeFlicker} from '../fixture.mjs';
@@ -38,22 +39,29 @@ async function open(page,{data=dataWith(4),tier='tall',locale='en',push=week}={}
  if(push)expect(await receive(send('pluginData',{id:'calendar',data:push}))).toBe(true);
  return {send,receive};
 }
-const strip=page=>page.locator('.eng-cols .pl-col[data-plugin="calendar"] .pl-panel');
-const overlay=page=>page.locator('.dk-mfd .mfd-screen .pl-ovl[data-plugin="calendar"]');
+const column=page=>page.locator('.eng-cols .pl-col[data-plugin="calendar"]');
+const strip=page=>column(page).locator('.pl-draw .cal');
+const key=page=>page.locator('.eng-keys .pl-key[data-plugin="calendar"]');
+const screen=page=>page.locator('.dk-mfd .mfd-screen .pl-screen[data-plugin="calendar"]');
+const weekView=page=>screen(page).locator('.pl-screen-d .cal-wk');
 const deadlines=page=>page.evaluate(()=>window.__events.filter(e=>e.type==='nextDeadline').map(e=>e.deadlineUnixMs));
 
 test('CKP-PLG-06 day view: picker with dots, all-day lane, 36 h axis from now, peaks, own resets, now line, folded line',async({page})=>{
  await open(page);
  // Default on (D121) once the host knows plugins: 4 subscriptions + the calendar = 5 equal columns.
  await expect(page.locator('.eng-keys')).toHaveAttribute('data-slots','5');
- const col=page.locator('.eng-cols .pl-col[data-plugin="calendar"]'),sub=page.locator('.eng-cols .ec[data-col]').first();
+ const col=column(page),sub=page.locator('.eng-cols .ec[data-col]').first();
  const [a,b]=[await col.boundingBox(),await sub.boundingBox()];expect(Math.abs(a.width-b.width)).toBeLessThan(2);
- await expect(page.locator('.eng-keys .pl-key .ek-name')).toHaveText('Calendar');
+ await expect(key(page).locator('.ek-name')).toHaveText('Calendar');
+ // D323: drawn through the framework's hook; the key, its underline and the bottom line stay the framework's.
+ await expect(col).toHaveAttribute('data-draw','custom');
+ await expect(key(page).locator('.pl-dash')).toHaveCount(1);
+ await expect(col.locator('.pl-foot .pl-foot-l')).toHaveText('Now');await expect(col.locator('.pl-foot .pl-foot-v')).toHaveText('11:20');
  const s=strip(page);
  await expect(s.locator('.cal-d b')).toHaveText(['11','12','13']);
  await expect(s.locator('.cal-d s.on')).toHaveCount(3);
  await expect(s.locator('.cal-d').first()).toHaveAttribute('aria-pressed','true');
- await expect(s.locator('.cal-ts')).toHaveText('Now 11:20');
+ await expect(s.locator('.cal-hd')).toBeHidden();
  await expect(s.locator('.cal-adr')).toHaveText(['CL reset card · until 11/13','GL announced reset · 11/16']);
  await expect(s.locator('.cal-adr.line')).toHaveClass(/before/);await expect(s.locator('.cal-adr.line')).toHaveClass(/after/);
  // 11:20 + 36 h = Thu 23:20: one midnight divider, GLM's peak crosses it as one block, CL's Thursday peak below.
@@ -67,11 +75,14 @@ test('CKP-PLG-06 day view: picker with dots, all-day lane, 36 h axis from now, p
  const boxes=await s.locator('.cal-ch').evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect();return [r.top,r.bottom];}));
  for(let i=1;i<boxes.length;i++)expect(boxes[i][0]).toBeGreaterThanOrEqual(boxes[i-1][1]);
  await expect(s.locator('.cal-nl')).toHaveCount(1);
+ // Everything stays inside the drawn area (above the framework's bottom line).
+ const [area,foot]=[await col.locator('.pl-draw').boundingBox(),await col.locator('.pl-foot').boundingBox()];
+ expect(area.y+area.height).toBeLessThanOrEqual(foot.y+0.5);
  // Beyond 36 h: Codex's weekly reset Friday 06:00, then the announced GLM reset: one folded line, a press lists both.
  await expect(s.locator('.cal-fold')).toHaveText('▾ 11/13 CX weekly 06:00 · +1');
  await s.locator('.cal-fold').click();
  await expect(s.locator('.cal-more li')).toHaveText(['11/13 CX weekly 06:00','11/16 GL announced reset · 11/16']);
- await expect(overlay(page)).toHaveCount(0);// the fold is the plugin's own control, not the expand click
+ await expect(screen(page)).toHaveCount(0);// the column's own controls never open the screen
  await shot(page,'A-strip-en',page.locator('.ck-eng'));
 });
 
@@ -79,7 +90,7 @@ test('CKP-PLG-06 Chinese labels and the 明 day view (00–24 with ↺ 现在)',
  await open(page,{locale:'zh-CN'});
  const s=strip(page);
  await expect(s.locator('.cal-d i')).toHaveText(['今','明','后']);
- await expect(s.locator('.cal-ts')).toHaveText('现在 11:20');
+ await expect(column(page).locator('.pl-foot .pl-foot-l')).toHaveText('现在');
  await expect(s.locator('.cal-adr')).toHaveText(['CL 重置卡 至11/13','GL 预告重置 · 11/16 生效']);
  await expect(s.locator('.cal-ch').last()).toHaveText('CL 周重置 明09:00');
  await expect(s.locator('.cal-fold')).toHaveText('▾ 11/13 CX 周重置 06:00 · +1');
@@ -96,9 +107,8 @@ test('CKP-PLG-06 Chinese labels and the 明 day view (00–24 with ↺ 现在)',
  await expect(s.locator('.cal-g i').first()).toHaveText(/^0[36]$/);
  await shot(page,'C-strip-tomorrow-zh',page.locator('.ck-eng'));
  await s.locator('.cal-back').click();
- await expect(s).toHaveAttribute('data-view','now');await expect(s.locator('.cal-ts')).toHaveText('现在 11:20');
- // Neither picker press nor ↺ opened the overlay.
- await expect(overlay(page)).toHaveCount(0);
+ await expect(s).toHaveAttribute('data-view','now');await expect(s.locator('.cal-hd')).toBeHidden();
+ await expect(screen(page)).toHaveCount(0);
 });
 
 test('host minute tick: the now line moves and the day rolls over without page timers',async({page})=>{
@@ -107,110 +117,122 @@ test('host minute tick: the now line moves and the day rolls over without page t
  expect((await deadlines(page)).at(-1)).toBe(String(L(0,11,21)));
  expect(await receive(send('tick',{nowUnixMs:String(L(0,11,21)),reason:'deadline'}))).toBe(true);
  const s=strip(page);
- await expect(s.locator('.cal-ts')).toHaveText('Now 11:21');
+ await expect(column(page).locator('.pl-foot-v')).toHaveText('11:21');
  expect((await deadlines(page)).at(-1)).toBe(String(L(0,11,22)));
  // Pick tomorrow, then midnight passes: tomorrow is today now, so the strip returns to the now view.
  await s.locator('.cal-d').nth(1).click();await expect(s).toHaveAttribute('data-view','1');
  expect(await receive(send('tick',{nowUnixMs:String(L(1,0,1)),reason:'deadline'}))).toBe(true);
  await expect(s).toHaveAttribute('data-view','now');
  await expect(s.locator('.cal-d b')).toHaveText(['12','13','14']);
- await expect(s.locator('.cal-ts')).toHaveText('Now 00:01');
+ await expect(column(page).locator('.pl-foot-v')).toHaveText('00:01');
  // Stopped (occluded) plugins ask for no ticks.
  expect(await receive(send('visibility',{visible:true,occluded:true,key:false}))).toBe(true);
- expect(await page.evaluate(()=>window.modelPlanCockpit&&document.querySelector('.pl-panel[data-plugin="calendar"]').dataset.running)).toBe('false');
+ await expect(column(page)).toHaveAttribute('data-running','false');
 });
 
-test('CKP-PLG-07 week overlay opens inside the MFD screen only; plugin click, ×, Esc, back and a page key close it',async({page})=>{
+test('glm-844-1: keyboard focus on a strip day or a week day header survives the host minute tick',async({page})=>{
+ const {send,receive}=await open(page);
+ const day=strip(page).locator('.cal-d').nth(2);await day.focus();await expect(day).toBeFocused();
+ expect(await receive(send('tick',{nowUnixMs:String(L(0,11,21)),reason:'deadline'}))).toBe(true);
+ await expect(column(page).locator('.pl-foot-v')).toHaveText('11:21');
+ await expect(strip(page).locator('.cal-d').nth(2)).toBeFocused();
+ await key(page).click();
+ const head=weekView(page).locator('.wk-dh').nth(3);await head.focus();await expect(head).toBeFocused();
+ expect(await receive(send('tick',{nowUnixMs:String(L(0,11,22)),reason:'deadline'}))).toBe(true);
+ await expect(weekView(page).locator('.wk-nt')).toHaveText('11:22');
+ await expect(weekView(page).locator('.wk-dh').nth(3)).toBeFocused();
+});
+
+test('CKP-PLG-07 week view opens from the key inside the MFD screen only; the key, Close, Esc and a page key close it',async({page})=>{
  await open(page);
- const col=page.locator('.eng-cols .pl-col[data-plugin="calendar"]');
- await col.locator('.cal-ax').click();
- const o=overlay(page);await expect(o).toBeVisible();
- await expect(col).toHaveAttribute('aria-expanded','true');
+ const col=column(page),k=key(page);
+ await k.click();
+ const o=screen(page),w=weekView(page);await expect(o).toBeVisible();await expect(w).toBeVisible();
+ await expect(o).toHaveAttribute('data-draw','custom');
+ // glm-844-2: the expanded state sits on the key (a button), never on the column's role=group.
+ await expect(k).toHaveAttribute('aria-expanded','true');
+ await expect(col).toHaveAttribute('role','group');expect(await col.getAttribute('aria-expanded')).toBeNull();
  // Inside the screen, never over the faders, the page keys or the option keys.
  const [ob,sb]=[await o.boundingBox(),await page.locator('.dk-mfd .mfd-screen').boundingBox()];
  expect(ob.x>=sb.x&&ob.y>=sb.y&&ob.x+ob.width<=sb.x+sb.width+0.5&&ob.y+ob.height<=sb.y+sb.height+0.5).toBe(true);expect(ob.width).toBeGreaterThan(sb.width-6);
  for(const sel of ['.dk-mfd .mfd-pk','.dk-mfd .mfd-ok','.fd-chs']){const r=await page.locator(sel).boundingBox();expect(r.y+r.height<=ob.y+0.5||r.y>=ob.y+ob.height-0.5||r.x+r.width<=ob.x+0.5,sel).toBe(true);}
  const pk=await page.locator('.dk-mfd .mfd-pk .pk').nth(1).boundingBox();
  expect(await page.evaluate(([x,y])=>!!document.elementFromPoint(x,y)?.closest('.mfd-pk'),[pk.x+pk.width/2,pk.y+pk.height/2])).toBe(true);
- await expect(o.locator('.po-t')).toHaveText('Calendar · 7 days');
- await expect(o.locator('.po-back')).toHaveText('‹ Back to Overview');
- await expect(o.locator('.wk-dh b')).toHaveText(['11','12','13','14','15','16','17']);
- await expect(o.locator('.wk-dh.we')).toHaveCount(2);await expect(o.locator('.wk-col.we')).toHaveCount(2);
- await expect(o.locator('.wk-dh.today')).toHaveCount(1);
- await expect(o.locator('.wk-adr')).toHaveCount(2);
- await expect(o.locator('.wk-ch')).toHaveText(['CL 5h 12:30','CX 5h 14:10','GL 5h 15:50','CL wk 09:00','CX wk 06:00']);
- await expect(o.locator('.wk-nt')).toHaveText('11:20');
+ // The framework's title bar; the plugin draws the body below it.
+ await expect(o.locator('.pl-screen-t')).toHaveText('Calendar');
+ await expect(w.locator('.wk-dh b')).toHaveText(['11','12','13','14','15','16','17']);
+ await expect(w.locator('.wk-dh.we')).toHaveCount(2);await expect(w.locator('.wk-col.we')).toHaveCount(2);
+ await expect(w.locator('.wk-dh.today')).toHaveCount(1);
+ await expect(w.locator('.wk-adr')).toHaveCount(2);
+ await expect(w.locator('.wk-ch')).toHaveText(['CL 5h 12:30','CX 5h 14:10','GL 5h 15:50','CL wk 09:00','CX wk 06:00']);
+ await expect(w.locator('.wk-nt')).toHaveText('11:20');
  // Whole day fitted: no scrolling.
- expect(await o.locator('.wk-sc').evaluate(e=>e.scrollHeight<=e.clientHeight+1)).toBe(true);
+ expect(await w.locator('.wk-sc').evaluate(e=>e.scrollHeight<=e.clientHeight+1)).toBe(true);
  await shot(page,'E3-week-fit',page.locator('.ck-deck'));
- // Plugin click again closes.
- await col.locator('.cal-ax').click();await expect(o).toHaveCount(0);await expect(col).toHaveAttribute('aria-expanded','false');
- // ×
- await col.locator('.cal-ax').click();await o.locator('.po-x').click();await expect(o).toHaveCount(0);
- // Esc (and focus returns to the column)
- await col.locator('.cal-ax').click();await page.keyboard.press('Escape');await expect(o).toHaveCount(0);await expect(col).toBeFocused();
- // ‹ Back
- await col.locator('.cal-ax').click();await o.locator('.po-back').click();await expect(o).toHaveCount(0);
+ // The key again closes.
+ await k.click();await expect(o).toHaveCount(0);await expect(k).toHaveAttribute('aria-expanded','false');
+ // Close
+ await k.click();await o.locator('.pl-screen-x').click();await expect(o).toHaveCount(0);
+ // Esc (focus returns to the key)
+ await k.click();await expect(o).toBeVisible();await page.keyboard.press('Escape');await expect(o).toHaveCount(0);await expect(k).toBeFocused();
  // An MFD page key closes it and shows that page.
- await col.locator('.cal-ax').click();await expect(o).toBeVisible();
+ await k.click();await expect(o).toBeVisible();
  await page.locator('.dk-mfd .mfd-pk .pk').nth(2).click();
  await expect(o).toHaveCount(0);
  await expect(page.locator('.dk-mfd .mfd-pk .pk').nth(2)).toHaveAttribute('aria-pressed','true');
- // The faders stayed usable with the overlay open: open again and press a fader bank key area (no overlay change).
- await col.locator('.cal-ax').click();await expect(o.locator('.po-back')).toHaveText('‹ Back to Effort');
- // Keyboard: the column is a control (Enter toggles).
- await page.keyboard.press('Escape');await col.focus();await page.keyboard.press('Enter');await expect(o).toBeVisible();await page.keyboard.press('Enter');
 });
 
 test('CKP-PLG-07 zoom: ⌘+ / pinch to about 8 h with a scrollbar and edge hints; every open starts fitted',async({page})=>{
  await open(page);
- const col=page.locator('.eng-cols .pl-col[data-plugin="calendar"]'),o=overlay(page);
- await col.locator('.cal-ax').click();
+ const k=key(page),w=weekView(page);
+ await k.click();await w.locator('.wk-dh').first().focus();
  for(let i=0;i<3;i++)await page.keyboard.press('Meta+=');
- await expect(o.locator('.po-b')).toHaveClass(/zoom/);
- await expect(o.locator('.po-st')).toHaveText('Zoomed · ⌘− to fit');
- const sc=o.locator('.wk-sc');
+ await expect(w).toHaveClass(/zoom/);
+ await expect(w.locator('.wk-zoom')).toHaveText('Zoomed · ⌘− to fit');
+ const sc=w.locator('.wk-sc');
  expect(await sc.evaluate(e=>Math.round(e.scrollHeight/e.clientHeight))).toBe(3);// 24 h / 8 h
  // Centred on now; peaks and chips outside the view are hinted at the column edges.
- await expect(o.locator('.wk-hints i.down').first()).toHaveText('↓ GL 5h 15:50');
- await expect(o.locator('.wk-hints i.down',{hasText:'↓ GL peak 22:00'})).toHaveCount(2);
- await expect(o.locator('.wk-pk b').first()).toHaveText('CL peak');
+ await expect(w.locator('.wk-hints i.down').first()).toHaveText('↓ GL 5h 15:50');
+ await expect(w.locator('.wk-hints i.down',{hasText:'↓ GL peak 22:00'})).toHaveCount(2);
+ await expect(w.locator('.wk-pk b').first()).toHaveText('CL peak');
  await shot(page,'E3-week-zoom',page.locator('.ck-deck'));
  await sc.evaluate(e=>{e.scrollTop=0;e.dispatchEvent(new Event('scroll'));});
- await expect(o.locator('.wk-hints i.down').first()).toBeVisible();
+ await expect(w.locator('.wk-hints i.down').first()).toBeVisible();
  // ⌘− steps back out; ⌘0 fits.
  await page.keyboard.press('Meta+-');expect(await sc.evaluate(e=>Math.round(e.scrollHeight/e.clientHeight*10))).toBe(20);
- await page.keyboard.press('Meta+0');await expect(o.locator('.po-b')).toHaveClass(/fit/);
+ await page.keyboard.press('Meta+0');await expect(w).toHaveClass(/fit/);
  // Pinch (ctrl + wheel) zooms in.
  await sc.hover();await page.keyboard.down('Control');await page.mouse.wheel(0,-40);await page.keyboard.up('Control');
- await expect(o.locator('.po-b')).toHaveClass(/zoom/);
+ await expect(w).toHaveClass(/zoom/);
  // Close and reopen: whole day again.
- await page.keyboard.press('Escape');await col.locator('.cal-ax').click();
- await expect(o.locator('.po-b')).toHaveClass(/fit/);await expect(o.locator('.po-st')).toHaveText('');
+ await page.keyboard.press('Escape');await expect(screen(page)).toHaveCount(0);await k.click();
+ await expect(w).toHaveClass(/fit/);await expect(w.locator('.wk-zoom')).toBeHidden();
 });
 
 test('CKP-PLG-07 a day pressed in the week view moves the strip to that day',async({page})=>{
  await open(page,{locale:'zh-CN'});
- const col=page.locator('.eng-cols .pl-col[data-plugin="calendar"]'),o=overlay(page),s=strip(page);
- await col.locator('.cal-ax').click();
- await expect(o.locator('.po-t')).toHaveText('日历 · 7 天');
- await expect(o.locator('.po-back')).toHaveText('‹ 返回 总览');
- await o.locator('.wk-dh').nth(1).click();
- await expect(s).toHaveAttribute('data-view','1');await expect(o.locator('.wk-dh').nth(1)).toHaveAttribute('aria-pressed','true');
- await o.locator('.wk-col').nth(4).click({position:{x:10,y:20}});
+ const w=weekView(page),s=strip(page);
+ await key(page).click();
+ await expect(screen(page).locator('.pl-screen-t')).toHaveText('日历');
+ await w.locator('.wk-dh').nth(1).click();
+ await expect(s).toHaveAttribute('data-view','1');await expect(w.locator('.wk-dh').nth(1)).toHaveAttribute('aria-pressed','true');
+ await w.locator('.wk-col').nth(4).click({position:{x:10,y:20}});
  await expect(s).toHaveAttribute('data-view','4');await expect(s.locator('.cal-ts')).toHaveText('11/15 周日');
  await expect(s.locator('.cal-d[aria-pressed="true"]')).toHaveCount(0);
- await expect(o).toBeVisible();
- await o.locator('.wk-dh').first().click();await expect(s).toHaveAttribute('data-view','now');
+ await expect(screen(page)).toBeVisible();
+ // A strip press moves the week view's selection too (shared view memory).
+ await s.locator('.cal-d').nth(2).click();await expect(w.locator('.wk-dh').nth(2)).toHaveAttribute('aria-pressed','true');
+ await w.locator('.wk-dh').first().click();await expect(s).toHaveAttribute('data-view','now');
 });
 
 test('640 layout keeps seven narrow columns',async({page})=>{
  await open(page,{tier:'compact',locale:'zh-CN'});
- await page.locator('.eng-cols .pl-col[data-plugin="calendar"] .cal-ax').click();
- const o=overlay(page);await expect(o).toBeVisible();
- await expect(o.locator('.po-b')).toHaveClass(/narrow/);
- await expect(o.locator('.wk-dh i')).toHaveText(['三','四','五','六','日','一','二']);
- await expect(o.locator('.wk-col')).toHaveCount(7);
+ await key(page).click();
+ const w=weekView(page);await expect(w).toBeVisible();
+ await expect(w).toHaveClass(/narrow/);
+ await expect(w.locator('.wk-dh i')).toHaveText(['三','四','五','六','日','一','二']);
+ await expect(w.locator('.wk-col')).toHaveCount(7);
+ await expect(column(page)).toHaveAttribute('data-draw','custom');
  await shot(page,'E3-week-640',page.locator('.ck-deck'));
 });
 

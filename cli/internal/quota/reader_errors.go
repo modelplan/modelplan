@@ -12,13 +12,18 @@ import (
 // ReaderErrorCode is the complete public vocabulary. Never return input text,
 // even when a cache, subprocess or provider invents a new code.
 func ReaderErrorCode(code string) string {
-	switch code {
-	case "policy_pending", "file_missing", "file_unreadable", "parse_error", "schema_changed", "http_401", "http_403", "http_429", "http_5xx", "network", "timeout", "runtime_missing", "unsupported_login", "not_signed_in", "other":
-		return code
-	default:
-		return "other"
+	for _, known := range readerErrorCodes {
+		if code == known {
+			return code
+		}
 	}
+	return "other"
 }
+
+// readerErrorCodes is the vocabulary; schema/app-cli/common.json#/$defs/readerErrorCode lists
+// exactly these (a test compares them).
+var readerErrorCodes = []string{"policy_pending", "file_missing", "file_unreadable", "parse_error", "schema_changed", "http_401", "http_403", "http_429", "http_5xx", "network", "timeout", "runtime_missing", "unsupported_login", "not_signed_in", "not_found", "rpc_error", "closed", "no_key", "region_refused", "codex_custom_provider", "team_unsupported", "no_plan", "other"}
+
 func fileErrorCode(status string) string {
 	if status == "missing" {
 		return "file_missing"

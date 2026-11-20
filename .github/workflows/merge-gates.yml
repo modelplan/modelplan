@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
-# Publishes the `modelplan-gates` commit status: the review gates (tier, VERDICT, GLMREV, DESIGN,
-# VERDICT-CARRY and exact-head VERIFIED scenario evidence) plus green CI for a PR head, and for a
+# Publishes the `modelplan-gates` commit status: the review gate (tier, one GPT VERDICT, VERDICT-CARRY, auto-carry
+# across main merges with an unchanged own diff, D243 G6)
+# plus green CI for a PR head, with GLMREV, DESIGN and scenario evidence reported as advisory (D243), and for a
 # merge-queue group the same for every PR in it plus
 # a clean-merge proof and the group's own CI. Rules: scripts/merge-gates/rules.mjs.
 # Every trigger here runs the default branch's copy of this file and of the rules, never a PR's copy.
@@ -36,6 +37,9 @@ on:
       - U7 prebuilt universal helper
       - Verification pointer helper
     types: [completed]
+  # D314: no job-level trigger (workflow_job is a webhook, not an Actions event). Hosted Mac legs never start in
+  # PR or queue runs (hosted.mjs PRE_MERGE_SKIP), so those runs complete, and fire workflow_run above, once their
+  # required jobs finish.
   workflow_dispatch:
     inputs:
       pr:
@@ -51,6 +55,7 @@ permissions:
   statuses: write
   pull-requests: read
   actions: read
+  checks: read
 jobs:
   gates:
     # Decided before a runner is taken; an event that cannot change a gate starts no job.
@@ -70,10 +75,10 @@ jobs:
     # skipping leaves the head's last evaluated state (or no status, which blocks), never a pass.
     if: >-
       ${{ (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.user.login == 'guanbear'
-      && (contains(github.event.comment.body, 'VERDICT') || contains(github.event.comment.body, 'GLMREV')
+      && (contains(github.event.comment.body, 'VERDICT') || contains(github.event.comment.body, 'REVIEWER:') || contains(github.event.comment.body, 'GLMREV')
       || contains(github.event.comment.body, 'DESIGN:') || contains(github.event.comment.body, 'DESIGN (sonnet):') || contains(github.event.comment.body, 'DESIGN-ACCEPTED') || contains(github.event.comment.body, 'REVIEW-TIER:')
       || contains(github.event.comment.body, 'VERIFIED:') || contains(github.event.comment.body, 'EVIDENCE-DEFERRED:')
-      || contains(github.event.changes.body.from, 'VERDICT') || contains(github.event.changes.body.from, 'GLMREV')
+      || contains(github.event.changes.body.from, 'VERDICT') || contains(github.event.changes.body.from, 'REVIEWER:') || contains(github.event.changes.body.from, 'GLMREV')
       || contains(github.event.changes.body.from, 'DESIGN:') || contains(github.event.changes.body.from, 'DESIGN (sonnet):') || contains(github.event.changes.body.from, 'DESIGN-ACCEPTED') || contains(github.event.changes.body.from, 'REVIEW-TIER:')
       || contains(github.event.changes.body.from, 'VERIFIED:') || contains(github.event.changes.body.from, 'EVIDENCE-DEFERRED:')))
       || (github.event_name == 'workflow_run' && contains(fromJSON('["pull_request","pull_request_review","merge_group"]'), github.event.workflow_run.event)

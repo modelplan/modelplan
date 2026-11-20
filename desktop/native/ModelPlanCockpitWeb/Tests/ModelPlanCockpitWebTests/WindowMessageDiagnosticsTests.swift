@@ -37,7 +37,7 @@ final class WindowMessageDiagnosticsTests: XCTestCase {
     let load = try controller.bridge.load(.init(theme: .day, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
     var reply = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
     reply["appearance"] = nil
-    reply["shell"] = nil; reply["redBelow"] = nil; reply["showUsedPercent"] = nil
+    reply["shell"] = nil; reply["redBelow"] = nil; reply["showUsedPercent"] = nil; reply["showAllModels"] = nil
     reply["appearanceVersion"] = 2; reply["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     reply["type"] = "ready"
     reply["sequence"] = "1"

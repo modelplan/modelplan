@@ -52,7 +52,7 @@ func main() {
 			var stored []byte
 			stored, err = os.ReadFile(path)
 			if err == nil && !bytes.Equal(stored, generated) {
-				err = fmt.Errorf("Swift drift: regenerate")
+				err = fmt.Errorf("captures stale: %s differs from the real Go producer output; run: cd cli && go run ./internal/swiftwire/cmd --write", path)
 			}
 		}
 		if err != nil {

@@ -67,10 +67,13 @@
         "DockPlacementProducerTests",
         "DockPointerObservationTests",
         "DockRasterDragTests",
+        "DockStripJourneyTests",
         "DockWakePolicyTests",
         "EngineDesignConformanceTests",
         "EngineDockInteractionBindingTests",
         "FindQuotaWidgetJourneyTests",
+        "G1PresentationHelpJourneysB",
+        "G3_122StatusTitleTests",
         "HintExecutionHostTests",
         "HostPairedProjectionTests",
         "InstrumentHelpCompositionTests",
@@ -86,11 +89,13 @@
         "ProductionConsentIdentityTests",
         "ProductionSettingsFactoryTests",
         "ProductionSettingsJourneyTests",
+        "ProfileRootTests",
         "PulseDockPositioningTests",
         "ReserveTruthNoWindowTests",
         "Respin5FreshnessPreferenceTests",
         "S1GalleryTests",
         "S4QuotaJourneyTests",
+        "SET918NotificationDeliveryJourneyTests",
         "SettingsApplicationTests",
         "SettingsWaitEventTests",
         "SettingsWindowHostTests",
@@ -147,10 +152,6 @@
         "G1SettingsJourneys/testG1_SET_9_12_CaptureVisibilityPersists": {
           "leg": "gui",
           "reason": "G1 partial journey; deferred: actual widget sharing state and relaunch require an admitted GUI session"
-        },
-        "G1SettingsJourneys/testG1_SET_9_13_SubscriptionOrderChangesAndReset": {
-          "leg": "gui",
-          "reason": "G1 partial journey; deferred: three-member drag, arrow actions, engine-column order and relaunch are not yet exercised"
         },
         "G1SettingsJourneys/testG1_SET_9_15_AppearanceAndAccessibilityApplyLive": {
           "leg": "gui",
