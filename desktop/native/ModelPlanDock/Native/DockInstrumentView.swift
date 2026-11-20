@@ -699,13 +699,14 @@ enum DockGripInk {
     public func communityRowText(_ id:String) -> String? {
         guard community,let r=readings[id] else { return nil }
         let heading=[r.alias ?? r.name,r.readout].joined(separator:"  ")
-        guard r.remainingPercent == nil else { return heading }
+        // A plugin ring has no quota percentage and is never "unavailable" (macrevb-1096-5).
+        guard r.remainingPercent == nil,r.pluginRing == nil else { return heading }
         let reason=r.unavailableReason?.trimmingCharacters(in:.whitespacesAndNewlines)
         return heading+"\n"+String((reason?.isEmpty == false ? reason! : locale.hasPrefix("zh") ? "不可用" : "Unavailable").prefix(80))
     }
     public func communityRowIsDimmed(_ id:String) -> Bool {
         guard community, let reading=readings[id] else { return false }
-        return reading.remainingPercent == nil
+        return reading.remainingPercent == nil && reading.pluginRing == nil
     }
     public override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();invalidatePresentation()}
     public override func draw(_ dirtyRect:NSRect){
@@ -730,9 +731,46 @@ enum DockGripInk {
             context?.saveGState()
             if let control = stationRect(id) { context?.clip(to: control) }
             let scale=communityRowHeight/44,paragraph=NSMutableParagraphStyle();paragraph.lineBreakMode = .byTruncatingTail
+            if let ring=r.pluginRing,let context {
+                drawCommunityPluginRow(ring,reading:r,in:CGRect(x:0,y:CGFloat(index)*communityRowHeight,width:bounds.width,height:communityRowHeight),scale:scale,context:context,paragraph:paragraph)
+                context.restoreGState();continue
+            }
             (value as NSString).draw(in:CGRect(x:12*scale,y:CGFloat(index)*communityRowHeight+8*scale,width:bounds.width-24*scale,height:communityRowHeight-12*scale),withAttributes:[.font:NSFont.monospacedSystemFont(ofSize:12*scale,weight:.regular),.foregroundColor:communityRowIsDimmed(id) ? NSColor.secondaryLabelColor : NSColor.labelColor,.paragraphStyle:paragraph])
             context?.restoreGState()
         }
+    }
+    /// macrevb-1096-5: the neutral edition draws a plugin ring with no reserved art: the two arcs in the plugin ink
+    /// (outer solid + faint, inner thin) beside the name and readout; the label stays neutral and only the number is toned.
+    public static func communityPluginGeometry(row:CGRect,scale:CGFloat)->(ring:CGRect,text:CGRect){
+        let side=row.height-12*scale
+        let ring=CGRect(x:row.minX+12*scale,y:row.minY+6*scale,width:side,height:side)
+        return (ring,CGRect(x:ring.maxX+8*scale,y:row.minY+8*scale,width:max(0,row.maxX-ring.maxX-20*scale),height:row.height-12*scale))
+    }
+    public static func communityNumberColor(_ tone:DockQuotaStatus)->NSColor{
+        tone == .critical ? .systemRed : tone == .warning ? .systemOrange : .labelColor
+    }
+    private func drawCommunityPluginRow(_ ring:DockPluginRing,reading r:DockInstrumentReading,in row:CGRect,scale:CGFloat,context c:CGContext,paragraph:NSParagraphStyle){
+        let g=Self.communityPluginGeometry(row:row,scale:scale)
+        let ink=CGColor(srgbRed:ring.red,green:ring.green,blue:ring.blue,alpha:1)
+        let centre=CGPoint(x:g.ring.midX,y:g.ring.midY),outerWidth=3*scale,innerWidth=1.5*scale
+        let outerRadius=g.ring.width/2-outerWidth/2,innerRadius=outerRadius-outerWidth-1.5*scale
+        // This view is flipped: angles run clockwise from 12 o'clock with `clockwise: false`, as in the official ring.
+        func arc(_ radius:CGFloat,_ width:CGFloat,from a:Double,to b:Double,alpha:CGFloat){
+            guard b>a,radius>0 else{return}
+            c.saveGState();c.setStrokeColor(ink.copy(alpha:alpha) ?? ink);c.setLineWidth(width);c.setLineCap(.butt)
+            c.addArc(center:centre,radius:radius,startAngle:-.pi/2+CGFloat(a)*2 * .pi,endAngle:-.pi/2+CGFloat(b)*2 * .pi,clockwise:false)
+            c.strokePath();c.restoreGState()
+        }
+        let outer=min(1,max(0,ring.outer)),faint=min(1-outer,max(0,ring.outerFaint))
+        arc(outerRadius,outerWidth,from:0,to:1,alpha:0.12)
+        arc(outerRadius,outerWidth,from:0,to:outer,alpha:1)
+        arc(outerRadius,outerWidth,from:outer,to:outer+faint,alpha:0.35)
+        if let inner=ring.inner{arc(innerRadius,innerWidth,from:0,to:1,alpha:0.12);arc(innerRadius,innerWidth,from:0,to:min(1,max(0,inner)),alpha:1)}
+        let font=NSFont.monospacedSystemFont(ofSize:12*scale,weight:.regular)
+        let parts=DockPluginRing.readoutParts(r.readout)
+        let text=NSMutableAttributedString(string:(r.alias ?? r.name)+"  "+parts.label,attributes:[.font:font,.foregroundColor:NSColor.labelColor,.paragraphStyle:paragraph])
+        text.append(NSAttributedString(string:parts.number,attributes:[.font:font,.foregroundColor:Self.communityNumberColor(ring.readoutTone),.paragraphStyle:paragraph]))
+        text.draw(in:g.text)
     }
     private func stationRect(_ id:String)->CGRect? {
         if community {

@@ -43,6 +43,8 @@ import ModelPlanResources
     static var verificationPrewarm = true
     /// Test apps leave the resource plugin out (its ring would change every Dock fixture) unless a test asks for it.
     static var verificationResourcePlugin = false
+    /// The resource journey's synthetic reader (the installed app reads this Mac with SystemResourceReader).
+    static var verificationResourceReader: (() -> ResourceReader)?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -143,7 +145,12 @@ import ModelPlanResources
         Task { @MainActor [weak application, weak owner] in
             let model = await CockpitPluginSettingsModel.load(from: store)
             guard let application else { return }
-            let sampler = ResourceSampler(reader: SystemResourceReader(),
+            #if MODELPLAN_TEST_ONLY_SPI
+            let reader: ResourceReader = verificationResourceReader?() ?? SystemResourceReader()
+            #else
+            let reader: ResourceReader = SystemResourceReader()
+            #endif
+            let sampler = ResourceSampler(reader: reader,
                                           reduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })
             let language: () -> ResourceLanguage = { [weak application] in
                 application?.composition.latestSettings?.snapshot.preferences.language == .english ? .english : .chinese
@@ -164,7 +171,8 @@ import ModelPlanResources
             model.onChange = publish
             let dock = application.composition.dock
             dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
-            host.setWidgetShown(dock.isVisible)
+            // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
+            host.setWidgetShown(dock.isWidgetShown)
             publish(model.preferences)
             application.settingsHost.cockpitPlugins = model
             application.resourcePlugin = host; application.cockpitPluginModel = model

@@ -167,7 +167,11 @@ public struct EngineMenuRefreshResult {
     public func installResourceWidget(sampler: ResourceSampler, language: @escaping () -> ResourceLanguage) -> ResourceWidgetBinding {
         let provider = ResourceDockContentProvider(base: admittedCache)
         dock.setDockContentProvider(provider)
-        return ResourceWidgetBinding(sampler: sampler, provider: provider, language: language) { [weak self] in self?.dock.refreshDockContent() }
+        let binding = ResourceWidgetBinding(sampler: sampler, provider: provider, language: language,
+                                            refreshCard: { [weak self] in self?.dock.refreshPluginCard() }) { [weak self] in self?.dock.refreshDockContent() }
+        // macrevb-1096-4: the hover card reads the latest sample, not the rows captured at the last ring redraw.
+        dock.livePluginCard = { [weak binding] id in id == ResourceDockBridge.subscriptionID ? binding?.liveCard() : nil }
+        return binding
     }
     #if DEBUG
     func installDockVisibilityTimingForChecks(clock: @escaping () -> TimeInterval, scheduler: any DockEdgeScheduling) {

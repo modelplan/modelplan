@@ -24,10 +24,16 @@ public enum ResourceDockBridge {
         return row
     }
 
+    /// The hover card's rows, footer and its "驾驶舱大屏 ›" action (D327) for the Dock.
+    public static func card(_ card: ResourceCard) -> DockPluginCard {
+        DockPluginCard(rows: card.rows.map(row), footer: card.footer, action: card.screenLink)
+    }
+
     public static func ring(face: ResourceFace, card: ResourceCard, language: ResourceLanguage) -> DockPluginRing? {
-        DockPluginRing(hex: ink, outer: min(1, max(0, face.memoryUsed)), outerFaint: min(1 - min(1, max(0, face.memoryUsed)), max(0, face.memoryCached)),
-                       inner: min(1, max(0, face.cpu)), readout: face.shown.text(language), readoutTone: tone(face.shown.tone),
-                       animates: face.animates, cardRows: card.rows.map(row), cardFooter: card.footer)
+        let live = Self.card(card)
+        return DockPluginRing(hex: ink, outer: min(1, max(0, face.memoryUsed)), outerFaint: min(1 - min(1, max(0, face.memoryUsed)), max(0, face.memoryCached)),
+                              inner: min(1, max(0, face.cpu)), readout: face.shown.text(language), readoutTone: tone(face.shown.tone),
+                              animates: face.animates, cardRows: live.rows, cardFooter: live.footer, cardAction: live.action)
     }
 
     /// The Dock input for the resource ring; nil while there is no sample yet (the ring is not shown empty).
@@ -61,20 +67,34 @@ public enum ResourceDockBridge {
 
 /// Connects the one ResourceSampler to the widget: every admitted redraw (≥ 1 point change, D324) rebuilds the
 /// resource input and asks the Dock to refresh; turning the plugin off removes the ring.
+/// macrevb-1096-4: the hover card does not wait for a redraw. The Dock reads `liveCard()` whenever it builds the card,
+/// and `refreshCard` runs after every admitted sample and cadence change so an open card follows at once.
 @MainActor public final class ResourceWidgetBinding {
     public let provider: ResourceDockContentProvider
     private let sampler: ResourceSampler
     private let language: () -> ResourceLanguage
     private let refresh: () -> Void
+    private let refreshCard: () -> Void
     public init(sampler: ResourceSampler, provider: ResourceDockContentProvider, language: @escaping () -> ResourceLanguage,
-                refresh: @escaping () -> Void) {
-        self.sampler = sampler; self.provider = provider; self.language = language; self.refresh = refresh
+                refreshCard: @escaping () -> Void = {}, refresh: @escaping () -> Void) {
+        self.sampler = sampler; self.provider = provider; self.language = language; self.refresh = refresh; self.refreshCard = refreshCard
         sampler.onRedraw = { [weak self] face in self?.redraw(face) }
+        sampler.onCardChange = { [weak self] in self?.cardChanged() }
     }
-    /// The card for the latest sample (the hover card reads it at hover time through the Dock input).
-    func card(_ face: ResourceFace) -> ResourceCard? {
+    /// The card for the latest sample, the readout shown now and the current cadence.
+    func card(_ shown: ResourceShown) -> ResourceCard? {
         guard let sample = sampler.history.samples.last, let interval = ResourceCadence.interval(sampler.visibility) else { return nil }
-        return ResourceCard(sample: sample, shown: face.shown, cpuPeak: sampler.history.peakCPU, interval: interval, language: language())
+        return ResourceCard(sample: sample, shown: shown, cpuPeak: sampler.history.peakCPU, interval: interval, language: language())
+    }
+    func card(_ face: ResourceFace) -> ResourceCard? { card(face.shown) }
+    /// What the hover card shows now (nil while there is no sample or the plugin is off).
+    public func liveCard() -> DockPluginCard? {
+        guard sampler.visibility.pluginEnabled, let shown = sampler.shown, let card = card(shown) else { return nil }
+        return ResourceDockBridge.card(card)
+    }
+    private func cardChanged() {
+        guard provider.resourceInput != nil else { return }
+        refreshCard()
     }
     private func redraw(_ face: ResourceFace) {
         provider.resourceInput = ResourceDockBridge.input(face: face, card: card(face), language: language())

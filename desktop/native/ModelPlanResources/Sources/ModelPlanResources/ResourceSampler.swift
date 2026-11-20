@@ -29,6 +29,9 @@ public struct ResourceTimerHandle {
     public var onSample: ((ResourceSample) -> Void)?
     /// The widget ring and readout, only when they changed by at least one percentage point (or the readout changed).
     public var onRedraw: ((ResourceFace) -> Void)?
+    /// macrevb-1096-4: after every admitted sample and every cadence change, whether or not the ring redraws. The hover
+    /// card's rows, tints and footer follow the latest sample and the current interval, never the last ring redraw.
+    public var onCardChange: (() -> Void)?
 
     private let reader: ResourceReader
     private let clock: Clock
@@ -56,6 +59,7 @@ public struct ResourceTimerHandle {
             history.removeAll(); readout.reset(); gate.reset(); face = nil; shown = nil
         }
         arm(delay)
+        onCardChange?()
     }
 
     public func stop() { timer?.cancel(); timer = nil }
@@ -77,6 +81,7 @@ public struct ResourceTimerHandle {
             self.face = face
             onSample?(sample)
             if gate.admit(face) { onRedraw?(face) }
+            onCardChange?()
         }
         arm(schedule.delay(now: clock()))
     }

@@ -172,7 +172,7 @@ public struct DockNozzlePose: Equatable, Sendable {
         }
         guard let backgroundImage = cachedBackground ?? c.makeImage() else { throw DockArtworkError.invalidManifest }
         var metrics=[DockGlyphMetric]()
-        func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor,fit:Bool = false) throws {
+        func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor,fit:Bool = false,numberColor:CGColor? = nil) throws {
             var recipe = recipe
             if fit, !value.isEmpty, recipe.size.isFinite, (1...128).contains(recipe.size), rect.width > 0, rect.height > 0 {
                 // G3-32: a fallback mark is shrunk to sit inside its box, never clipped by it.
@@ -203,7 +203,14 @@ public struct DockNozzlePose: Equatable, Sendable {
                 guard !language.isEmpty,language.utf8.count<=64 else{throw DockArtworkError.invalidManifest}
                 attributes[NSAttributedString.Key(kCTLanguageAttributeName as String)]=language
             }
-            let line=CTLineCreateWithAttributedString(NSAttributedString(string:value,attributes:attributes))
+            let styled=NSMutableAttributedString(string:value,attributes:attributes)
+            if let numberColor {
+                // macrevb-1096-5 (D236, D327): a plugin readout keeps its label in the readout ink; only the number is toned.
+                let label=DockPluginRing.readoutParts(value).label
+                styled.addAttribute(NSAttributedString.Key(kCTForegroundColorAttributeName as String),value:numberColor,
+                                    range:NSRange(location:(label as NSString).length,length:(value as NSString).length-(label as NSString).length))
+            }
+            let line=CTLineCreateWithAttributedString(styled)
             let runFonts=(CTLineGetGlyphRuns(line) as NSArray).compactMap{item -> String? in
                 let run=item as! CTRun,attributes=CTRunGetAttributes(run) as NSDictionary
                 guard let actual=attributes[kCTFontAttributeName] else{return nil}
@@ -268,17 +275,11 @@ public struct DockNozzlePose: Equatable, Sendable {
         /// heartbeat line, desktop/cockpit/src/resource-plugin.ts `icon`), drawn from its 16-unit outline at the vendor
         /// mark's size and stroke weight.
         func pluginIcon(_ rect: CGRect) throws {
-            let side = min(rect.width, rect.height), s = side / 16
-            guard side.isFinite, side > 0 else { throw DockArtworkError.invalidManifest }
-            let o = CGPoint(x: rect.midX - side / 2, y: rect.midY - side / 2)
-            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: o.x + x * s, y: o.y + y * s) }
+            let paths = DockPluginIcon.paths(in: rect)
+            guard !paths.isEmpty else { throw DockArtworkError.invalidManifest }
             c.saveGState(); defer { c.restoreGState() }
-            c.setStrokeColor(try ink("text")); c.setLineWidth(1.3 * s); c.setLineJoin(.round); c.setLineCap(.round)
-            c.addPath(CGPath(roundedRect: CGRect(origin: p(1, 1.5), size: CGSize(width: 14 * s, height: 13 * s)),
-                             cornerWidth: 3 * s, cornerHeight: 3 * s, transform: nil))
-            c.strokePath()
-            c.addLines(between: [p(3.5, 8.5), p(5.5, 8.5), p(6.8, 5.5), p(8.8, 10.5), p(10, 8.5), p(12.5, 8.5)])
-            c.strokePath()
+            c.setStrokeColor(try ink("text")); c.setLineWidth(DockPluginIcon.lineWidth(in: rect)); c.setLineJoin(.round); c.setLineCap(.round)
+            for path in paths { c.addPath(path); c.strokePath() }
         }
         func drawNotice(_ notice: DockNotice, _ station: DockStationRecipe) throws {
                 // D166: a confirmed reset is green; a skin without its own notice green uses its normal green.
@@ -408,7 +409,12 @@ public struct DockNozzlePose: Equatable, Sendable {
             if station.showsReadout != false {
                 let opacity=station.readoutOpacity ?? 1
                 guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
-                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try text(reading.readout,station.readout,skin.text,try ink(textColor))
+                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()}
+                if reading.pluginRing != nil {
+                    // macrevb-1096-5: the label stays in the normal readout ink; the number takes the tone.
+                    let labelInk=skin.readoutPalette?[DockQuotaStatus.normal.rawValue] ?? "text"
+                    try text(reading.readout,station.readout,skin.text,try ink(labelInk),numberColor:try ink(textColor))
+                } else { try text(reading.readout,station.readout,skin.text,try ink(textColor)) }
             }
             if let alias=reading.alias,let rect=station.aliasRect {try text(alias,rect,skin.aliasText,try ink("alias"))}
             if let notice=notices[id] { try drawNotice(notice, station) }

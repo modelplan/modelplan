@@ -48,7 +48,7 @@ public enum DockCardProjection {
         if let ring=input.pluginRing{
             // A plugin card: its own rows, then its footer line; never quota windows.
             let footer=ring.cardFooter.isEmpty ? [] : [DockCardRow(id:"plugin.footer",kind:.footnote,label:"",value:ring.cardFooter)]
-            let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:ring.cardRows+footer,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel,actionLabel:actionLabel)
+            let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:ring.cardRows+footer,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel,actionLabel:ring.cardAction.isEmpty ? actionLabel:ring.cardAction)
             try result.validate();return result
         }
         var rows=[DockCardRow]()

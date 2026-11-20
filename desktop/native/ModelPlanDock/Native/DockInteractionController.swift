@@ -9,6 +9,10 @@ public struct DockInteractionEnvironment:Sendable {
     /// A widget carry (ring or body press that has moved) is held: the card closes and nothing opens (Pulse, G3-114).
     public var carrying:Bool=false
     public var edge:DockEdge,contents:[String:DockCardContent]
+    /// macrevb-1096-8: the ids the user's subscription order covers (Settings' catalogue). A plugin ring is in
+    /// `catalogue` (hover, focus, card) but not here, so a reorder never sends its id to Settings. nil = `catalogue`.
+    public var orderCatalogue:[String]?=nil
+    public var reorderCatalogue:[String]{orderCatalogue ?? catalogue}
     public init(catalogue:[String],preferences:DockSubscriptionPreferences,targets:[DockReorderTarget],overflowIDs:Set<String>=[],bindingRevision:UInt64=0,hoverEventRevision:UInt64=0,hoveredID:String?=nil,insideShared:Bool?=nil,parentOwnsHide:Bool=true,parentExpanded:Bool=true,menuActuallyOpen:Bool=false,active:Bool=true,reducedMotion:Bool=false,edge:DockEdge = .right,contents:[String:DockCardContent]=[:]){
         self.catalogue=catalogue;self.preferences=preferences;self.targets=targets;self.overflowIDs=overflowIDs;self.bindingRevision=bindingRevision;self.hoverEventRevision=hoverEventRevision
         self.hoveredID=hoveredID;self.insideShared=insideShared;self.parentOwnsHide=parentOwnsHide;self.parentExpanded=parentExpanded;self.menuActuallyOpen=menuActuallyOpen;self.active=active;self.reducedMotion=reducedMotion;self.edge=edge;self.contents=contents
@@ -128,7 +132,8 @@ public struct DockInteractionPresentation:Equatable,Sendable {
         guard running else{return}
         do{
             let token=generation,env=read();guard running,generation==token,env.active,env.parentExpanded,
-                let request=try DockNozzleInteraction.keyboardMove(id:id,delta:delta,catalogue:env.catalogue,preferences:env.preferences) else{return}
+                env.reorderCatalogue.contains(id),
+                let request=try DockNozzleInteraction.keyboardMove(id:id,delta:delta,catalogue:env.reorderCatalogue,preferences:env.preferences) else{return}
             cards.dismiss();gesture.cancel()
             if let current=presentation{publish(.init(card:.hidden,content:nil,reorder:nil,overflowIDs:current.overflowIDs))}
             guard running,generation==token else{return};submit(request,keyboard:true)

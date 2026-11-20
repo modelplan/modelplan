@@ -15,17 +15,23 @@ public final class SystemResourceReader: ResourceReader {
     private let pageSize: UInt64
     private let memTotal: UInt64
     private let diskPath: String
-    /// Per core: user, system, idle, nice ticks at the previous read.
-    private var previous: [[UInt32]] = []
+    /// Per core: user, system, idle, nice ticks at the previous read; nil until the first admitted read.
+    private var previous: [[UInt32]]?
+    /// The CPU tick source (host_processor_info); a test passes a counting one.
+    private let tickSource: (() -> [[UInt32]]?)?
+    /// How many times the CPU ticks were read (macrevb-1096-3: zero until the sampler admits a read).
+    public private(set) var tickReads = 0
 
-    public init(diskPath: String? = nil) {
+    /// macrevb-1096-3: construction reads nothing. A saved-Off launch builds the reader and never samples, so it must
+    /// never touch the CPU ticks; the first admitted read primes them (see `readCPU`).
+    public init(diskPath: String? = nil, tickSource: (() -> [[UInt32]]?)? = nil) {
+        self.tickSource = tickSource
         host = mach_host_self()
         pageSize = UInt64(vm_kernel_page_size)
         memTotal = ProcessInfo.processInfo.physicalMemory
         // The data volume holds the user's files; "/" is the sealed system volume.
         let data = "/System/Volumes/Data"
         self.diskPath = diskPath ?? (FileManager.default.fileExists(atPath: data) ? data : "/")
-        previous = ticks() ?? []
     }
     deinit { mach_port_deallocate(mach_task_self_, host) }
 
@@ -40,6 +46,8 @@ public final class SystemResourceReader: ResourceReader {
     }
 
     private func ticks() -> [[UInt32]]? {
+        tickReads += 1
+        if let tickSource { return tickSource() }
         var cpuCount: natural_t = 0
         var info: processor_info_array_t?
         var infoCount: mach_msg_type_number_t = 0
@@ -55,7 +63,9 @@ public final class SystemResourceReader: ResourceReader {
 
     private func readCPU() -> (user: Double, system: Double)? {
         guard let now = ticks() else { return nil }
-        defer { previous = now }
+        // The first read has no earlier ticks: its share counts since boot (Stats does the same on its first read).
+        let previous = self.previous ?? []
+        defer { self.previous = now }
         var user: UInt64 = 0, system: UInt64 = 0, total: UInt64 = 0
         for (core, current) in now.enumerated() {
             // Ticks are 32-bit counters that wrap; a core seen for the first time counts from zero.

@@ -14,25 +14,50 @@ public struct DockPluginRing: Equatable, Sendable {
     public var animates: Bool
     public var cardRows: [DockCardRow]
     public var cardFooter: String
+    /// The card's action (D327: "驾驶舱大屏 ›" opens the plugin's big screen); empty = none.
+    public var cardAction: String
     public init(red: Double, green: Double, blue: Double, outer: Double, outerFaint: Double = 0, inner: Double?,
                 readout: String, readoutTone: DockQuotaStatus = .normal, animates: Bool = true,
-                cardRows: [DockCardRow] = [], cardFooter: String = "") {
+                cardRows: [DockCardRow] = [], cardFooter: String = "", cardAction: String = "") {
         self.red = red; self.green = green; self.blue = blue; self.outer = outer; self.outerFaint = outerFaint; self.inner = inner
         self.readout = readout; self.readoutTone = readoutTone; self.animates = animates; self.cardRows = cardRows; self.cardFooter = cardFooter
+        self.cardAction = cardAction
     }
     /// "#rrggbb".
     public init?(hex: String, outer: Double, outerFaint: Double = 0, inner: Double?, readout: String,
-                 readoutTone: DockQuotaStatus = .normal, animates: Bool = true, cardRows: [DockCardRow] = [], cardFooter: String = "") {
+                 readoutTone: DockQuotaStatus = .normal, animates: Bool = true, cardRows: [DockCardRow] = [], cardFooter: String = "",
+                 cardAction: String = "") {
         guard hex.count == 7, hex.first == "#", let v = UInt32(hex.dropFirst(), radix: 16) else { return nil }
         self.init(red: Double((v >> 16) & 0xff) / 255, green: Double((v >> 8) & 0xff) / 255, blue: Double(v & 0xff) / 255,
                   outer: outer, outerFaint: outerFaint, inner: inner, readout: readout, readoutTone: readoutTone,
-                  animates: animates, cardRows: cardRows, cardFooter: cardFooter)
+                  animates: animates, cardRows: cardRows, cardFooter: cardFooter, cardAction: cardAction)
+    }
+    /// The live card (macrevb-1096-4): rows, footer and action from the latest sample, replacing the ones captured at
+    /// the last ring redraw.
+    public func withCard(_ card: DockPluginCard) -> DockPluginRing {
+        var next = self; next.cardRows = card.rows; next.cardFooter = card.footer; next.cardAction = card.action; return next
+    }
+    /// The readout split for drawing (D236, D327: only the number takes a tone): "CPU 96%" → label "CPU ", number "96%".
+    /// A readout without a space is all number.
+    public static func readoutParts(_ readout: String) -> (label: String, number: String) {
+        guard let space = readout.lastIndex(of: " ") else { return ("", readout) }
+        let cut = readout.index(after: space)
+        return (String(readout[..<cut]), String(readout[cut...]))
     }
     public var valid: Bool {
         let unit: (Double) -> Bool = { $0.isFinite && (0...1).contains($0) }
         return [red, green, blue, outer, outerFaint].allSatisfy(unit) && (inner.map(unit) ?? true) && outer + outerFaint <= 1 + 1e-9 &&
             !readout.isEmpty && readout.utf8.count <= 64 && cardRows.count <= 8
     }
+}
+
+/// A plugin's hover card as it is now (macrevb-1096-4): the host reads it when the card is built, so the card never
+/// waits for a ring redraw.
+public struct DockPluginCard: Equatable, Sendable {
+    public var rows: [DockCardRow]
+    public var footer: String
+    public var action: String
+    public init(rows: [DockCardRow], footer: String, action: String = "") { self.rows = rows; self.footer = footer; self.action = action }
 }
 
 /// How a plugin card row is drawn (D327 variant A): the matched row's label and number at full ink (`emphasised`),
