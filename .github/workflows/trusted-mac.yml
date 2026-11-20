@@ -41,7 +41,7 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '24'
-    - name: Select the newest installed Xcode
+    - name: Select Xcode 26.6 (fail loudly if the runner lacks it)
       run: |
         ls -d /Applications/Xcode*.app
         python3 - <<'PYCODE'
@@ -58,7 +58,11 @@ jobs:
             candidates.append((tuple(map(int, re.findall(r"\d+", version))), str(app)))
         if not candidates:
             raise SystemExit("No installed Xcode found")
-        selected = max(candidates)[1] + "/Contents/Developer"
+        # Pinned: every runner must carry Xcode 26.6 (build 17F113); a runner without it fails here, not later in a build.
+        pinned = sorted(app for version, app in candidates if version == (26, 6))
+        if not pinned:
+            raise SystemExit("Xcode 26.6 (17F113) is not installed on this runner; refusing to build with another toolchain")
+        selected = pinned[0] + "/Contents/Developer"
         with open(os.environ["GITHUB_ENV"], "a") as output:
             output.write(f"DEVELOPER_DIR={selected}\n")
         PYCODE
@@ -212,7 +216,7 @@ jobs:
         path: .trusted-main
         sparse-checkout: scripts/mac-compile
         persist-credentials: false
-    - name: Select the newest installed Xcode
+    - name: Select Xcode 26.6 (fail loudly if the runner lacks it)
       run: |
         ls -d /Applications/Xcode*.app
         python3 - <<'PYCODE'
@@ -229,7 +233,11 @@ jobs:
             candidates.append((tuple(map(int, re.findall(r"\d+", version))), str(app)))
         if not candidates:
             raise SystemExit("No installed Xcode found")
-        selected = max(candidates)[1] + "/Contents/Developer"
+        # Pinned: every runner must carry Xcode 26.6 (build 17F113); a runner without it fails here, not later in a build.
+        pinned = sorted(app for version, app in candidates if version == (26, 6))
+        if not pinned:
+            raise SystemExit("Xcode 26.6 (17F113) is not installed on this runner; refusing to build with another toolchain")
+        selected = pinned[0] + "/Contents/Developer"
         with open(os.environ["GITHUB_ENV"], "a") as output:
             output.write(f"DEVELOPER_DIR={selected}\n")
         PYCODE
@@ -341,7 +349,8 @@ jobs:
   transport:
     if: ${{ inputs.task == 'transport' }}
     runs-on: ${{ (inputs.task == 'u11-native' && inputs.os == 'macos-15' && vars.MAC_CI_NONGUI == 'enabled' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/'))))) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac-nongui"]') || (((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (inputs.task != 'native-headless' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'native-headless') && github.event_name == 'merge_group' && startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main'))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac-nongui"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}
-    timeout-minutes: 15
+    # Heavy Go capture steps on the busy Mini ran 15-18 minutes against a 2-6 minute norm; 30 leaves headroom.
+    timeout-minutes: 30
     steps:
     - name: Refuse the GUI Mac
       shell: bash
@@ -440,7 +449,8 @@ jobs:
   sequences:
     if: ${{ inputs.task == 'sequences' }}
     runs-on: ${{ (inputs.task == 'u11-native' && inputs.os == 'macos-15' && vars.MAC_CI_NONGUI == 'enabled' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/'))))) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac-nongui"]') || (((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (inputs.task != 'native-headless' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'native-headless') && github.event_name == 'merge_group' && startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main'))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac-nongui"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}
-    timeout-minutes: 15
+    # Heavy Go capture steps on the busy Mini ran 15-18 minutes against a 2-6 minute norm; 30 leaves headroom.
+    timeout-minutes: 30
     steps:
     - name: Refuse the GUI Mac
       shell: bash

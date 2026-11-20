@@ -251,7 +251,11 @@ test("native GUI gets 70 minutes, native-headless a temporary 90, and other trus
   const text = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
   const jobs = [...text.matchAll(/^  ([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:\n|$(?![\s\S]))/gm)];
   const limits = Object.fromEntries(jobs.map(([, name, body]) => [name, Number(/^    timeout-minutes: (\d+)$/m.exec(body)?.[1])]));
-  assert.deepEqual(limits, { native: 70, "native-headless": 90, transport: 15, sequences: 15, "u11-native": 30, probe: 5, "gui-probe": 5 });
+  assert.deepEqual(limits, { native: 70, "native-headless": 90, transport: 30, sequences: 30, "u11-native": 30, probe: 5, "gui-probe": 5 });
+  const xcodeSteps = text.match(/Select Xcode 26\.6 \(fail loudly/g) || [];
+  assert.equal(xcodeSteps.length, 2, "both Swift-building jobs pin Xcode 26.6");
+  assert.match(text, /version == \(26, 6\)/);
+  assert.match(text, /xcodebuild -version/);
   // The 90 is a stopgap with a recorded way back to 60.
   const headless = text.split("\n  native-headless:\n")[1].split("\n  transport:\n")[0];
   assert.match(headless, /temporary until the seed and the Mini concurrency fixes land; revert to 60/i);
