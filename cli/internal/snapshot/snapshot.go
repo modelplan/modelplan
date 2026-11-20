@@ -26,6 +26,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
+	"github.com/modelplan/modelplan/cli/internal/tokenacct"
 )
 
 const (
@@ -38,6 +39,7 @@ const (
 )
 
 type Snapshot struct {
+	TokenAccounting map[string]tokenacct.Windows          `json:"tokenAccounting,omitempty"`
 	ContractVersion int                                   `json:"contractVersion"`
 	Capabilities    map[string]desktopcontract.Capability `json:"capabilities"`
 	QwenUsage       *qwenusage.Report                     `json:"qwenUsage,omitempty"`
@@ -269,6 +271,7 @@ func Build(in Input) Snapshot {
 	s.LiveSessions, s.TodayTotals, s.Hourly = []speed.LiveSession{}, []speed.TodayTotal{}, []speed.Hourly{}
 	if in.Perf != nil {
 		s.LiveSessions, s.TodayTotals, s.Hourly = in.Perf.LiveSessions(), in.Perf.TodayTotals(), in.Perf.Hourly()
+		s.TokenAccounting = in.Perf.AccountingWindows()
 		s.PerfStats, s.Daily, s.DailyCoverage = in.Perf.Stats(), in.Perf.Daily(), in.Perf.Coverage()
 		s.DailyLong, s.DailyLongCoverage = in.Perf.DailyLong(), in.Perf.LongCoverage()
 	}

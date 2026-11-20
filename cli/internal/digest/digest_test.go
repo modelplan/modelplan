@@ -119,6 +119,23 @@ func TestEndpointMatchAndPlanMeteringV13(t *testing.T) {
 	if d, err := Parse("client", bad); err != nil || d.PlanMetering != nil {
 		t.Fatalf("bad metering: %v %+v", err, d.PlanMetering)
 	}
+	// A planMetering or planModels of the wrong JSON type is dropped too, not the publication (macrevb-885-1 paths).
+	for name, raw := range map[string]string{
+		"metering string":     strings.Replace(string(b), `"planMetering":{"revision":"r1"`, `"planMetering":"x","unused":{"revision":"r1"`, 1),
+		"metering plans type": strings.Replace(string(b), `"pool":null,"rows":[],"futureField":1}`, `"pool":null,"rows":"none","futureField":1}`, 1),
+		"planModels type":     strings.Replace(string(b), `"speedTiers":[],`, `"speedTiers":[],"planModels":{"plans":[{"planId":"p","basis":"access","modelIds":"glm"}]},`, 1),
+	} {
+		d, err := Parse("client", []byte(raw))
+		if err != nil {
+			t.Fatalf("%s: the publication must survive: %v", name, err)
+		}
+		if d.PlanModels != nil || (name != "planModels type" && d.PlanMetering != nil) || d.Match("claude-code", "glm-5.3[1m]") != nil {
+			t.Fatalf("%s: %+v %+v", name, d.PlanMetering, d.PlanModels)
+		}
+		if name == "planModels type" && d.PlanMetering == nil {
+			t.Fatalf("%s: a good planMetering was dropped", name)
+		}
+	}
 }
 
 func TestEffortProvisionalRoundTripsOnlyWhenSet(t *testing.T) {
@@ -135,5 +152,66 @@ func TestEffortProvisionalRoundTripsOnlyWhenSet(t *testing.T) {
 	}
 	if got := string(out); strings.Count(got, `"provisional":true`) != 1 || strings.Contains(got, `"provisional":false`) {
 		t.Fatalf("encoded %s", got)
+	}
+}
+
+// D292 / client-v1.5: an effort may carry aaScore (the raw AA Intelligence Index score), a reference only. It is kept
+// when the publication is client-v1.5 or later and the value is a positive number; otherwise it is dropped, not the
+// publication. Absent stays absent.
+func TestEffortAAScoreKeptFromClientV15AndDroppedOtherwise(t *testing.T) {
+	doc := func(version, efforts string) []byte {
+		return []byte(`{"schemaVersion":1,"kind":"client","data":{"projectionVersion":"` + version + `","multipliers":[],"multiplierHorizon":{"from":"2026-10-16T00:00:00Z","to":"2026-10-18T00:00:00Z","selection":"highest-priority-no-stacking"},"speedTiers":[],` +
+			`"units":{"ability":"websiteAbility","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"},"aaIndexVersion":"4.3",` +
+			`"models":[{"id":"sol","name":"Sol","developerId":"openai","recommended":"high","harnessIds":{"api":[]},"efforts":` + efforts + `}],"lineups":[],"resets":[],"windows":[]}}`)
+	}
+	scored := `[{"effort":"high","label":"High","ability":42.8,"cost":0.375,"time":104,"aaScore":61.5},{"effort":"max","label":"Max","ability":47.5,"cost":1.056,"time":221}]`
+	d, err := Parse("client", doc("client-v1.5", scored))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := d.Models[0].Efforts; e[0].AAScore == nil || *e[0].AAScore != 61.5 || e[1].AAScore != nil || *e[0].Ability != 42.8 {
+		t.Fatalf("v1.5 efforts: %+v", e)
+	}
+	if d.AAIndexVersion != "4.3" {
+		t.Fatalf("aaIndexVersion = %q", d.AAIndexVersion)
+	}
+	for name, raw := range map[string][]byte{
+		"below v1.5": doc("client-v1.4", scored),
+		"zero":       doc("client-v1.5", strings.Replace(scored, `61.5`, `0`, 1)),
+		"negative":   doc("client-v1.5", strings.Replace(scored, `61.5`, `-3`, 1)),
+		// a value of the wrong JSON type or out of float64 range is dropped, not a decode failure (macrevb-885-1)
+		"string":       doc("client-v1.5", strings.Replace(scored, `61.5`, `"48.2"`, 1)),
+		"out of range": doc("client-v1.5", strings.Replace(scored, `61.5`, `1e400`, 1)),
+		"object":       doc("client-v1.5", strings.Replace(scored, `61.5`, `{"v":1}`, 1)),
+	} {
+		d, err := Parse("client", raw)
+		if err != nil {
+			t.Fatalf("%s: the publication must survive: %v", name, err)
+		}
+		if e := d.Models[0].Efforts[0]; e.AAScore != nil || e.Ability == nil || *e.Ability != 42.8 {
+			t.Fatalf("%s: %+v", name, e)
+		}
+	}
+	// a malformed aaIndexVersion is dropped too; the scores stay
+	d, err = Parse("client", []byte(strings.Replace(string(doc("client-v1.5", scored)), `"aaIndexVersion":"4.3"`, `"aaIndexVersion":4.3`, 1)))
+	if err != nil || d.AAIndexVersion != "" || d.Models[0].Efforts[0].AAScore == nil {
+		t.Fatalf("numeric aaIndexVersion: %v %+v", err, d)
+	}
+	out, err := json.Marshal(Effort{Effort: "high", Label: "High"})
+	if err != nil || strings.Contains(string(out), "aaScore") {
+		t.Fatalf("absent aaScore encoded: %s %v", out, err)
+	}
+}
+
+func TestLineupTieAcceptsBothDisplayScales(t *testing.T) {
+	for _, tc := range []struct {
+		tie string
+		ok  bool
+	}{{"1", true}, {"0.815", true}, {"0.5", false}, {"0", false}} {
+		b := []byte(`{"schemaVersion":1,"kind":"client","data":{"units":{"ability":"websiteAbility","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"},"models":[{"id":"opus","name":"Claude Opus 5.5","developerId":"anthropic","recommended":"medium","harnessIds":{"api":[],"claude-code":[],"codex":[]},"efforts":[{"effort":"medium","label":"Med","ability":null,"cost":null,"time":null}]}],"lineups":[{"developerId":"anthropic","costBasisId":"test","method":"lineup-v1","tie":` + tc.tie + `,"baseline":"opus","frontier":["opus"],"steps":[],"members":[]}],"resets":[],"windows":[]}}`)
+		_, err := Parse("client", b)
+		if (err == nil) != tc.ok {
+			t.Fatalf("tie %s: err=%v, want ok=%v", tc.tie, err, tc.ok)
+		}
 	}
 }

@@ -77,7 +77,7 @@ test('CKP-STRIP-08 record strip has five or three lines including the collapsed 
 test('CKP-STRIP-11 v1 session lines expose text without state-square or done indicators',async({page})=>{
  await open(page);const row=page.locator('.ck-tape .t-observed').first();
  await expect(row.locator('.t-tool')).toHaveText('Codex');await expect(row.locator('.t-proj')).toHaveText('modelPlans');
- await expect(row.locator('.t-time')).toHaveText('Running');await expect(row.locator('.session-state,.done,.error,[data-session-state]')).toHaveCount(0);
+ await expect(row.locator('.t-live')).toHaveText('●');await expect(row.locator('.session-state,.done,.error,[data-session-state]')).toHaveCount(0);
 });
 
 test('CKP-ENG-07 a monthly-only quota stays in Other and distinguishes unknown from absent',async({page})=>{
@@ -110,8 +110,8 @@ test('CKP-ENG-06 named general windows and the tightest Other quota stay separat
  await expect(col.locator('.qcell[data-row="other"] .qvalue')).toHaveText('20');
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-more','1');
  const other=col.locator('.qcell[data-row="other"]'),label=other.locator('.qtxt');
- await expect(label).toBeVisible();await expect(label).toHaveText('5h·mo reset ? +1');
- await expect(other).toHaveAccessibleName(/5h·5h · 30% left[\s\S]*5h·mo · 20% left/);
+ await expect(label).toBeVisible();await expect(label).toHaveText('5h · mo +1');// CKP-ENG-51: "MCP · 月"
+ await expect(other).toHaveAccessibleName(/5h · 5h · 30% left[\s\S]*5h · mo · 20% left/);
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-kind','extra');
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-tag',/mo/i);
 });
@@ -144,8 +144,9 @@ test('CKP-ENG-09 reserve uses reported reset counts and credits, not a public co
  const {send,receive}=await open(page,data);const col=page.locator('.eng-cols .ec[data-col]').first();
  await expect(col.locator('.qrv-c,.qrv-p')).toHaveCount(0);
  detail.resetCounts=[{kind:'tokens',count:2,expiresAt:'2026-11-10T12:00:00Z'}];detail.credits={balance:19613.957,observedAt:'2026-11-04T12:00:00Z'};
- expect(await receive(send('display',{data}))).toBe(true);await expect(col.locator('.qrv-c')).toContainText('2');await expect(col.locator('.qrv-p')).toHaveText('19,614');
- for(const [value,expected] of [[0.2,'<1'],[0,'0']]){detail.credits.balance=value;expect(await receive(send('display',{data}))).toBe(true);await expect(col.locator('.qrv-p')).toHaveText(expected);}
+ expect(await receive(send('display',{data}))).toBe(true);await expect(col.locator('.qrv-c')).toContainText('2');await expect(col.locator('.qrv-p')).toHaveText('Credits 19,614');// CKP-ENG-52 names it
+ // CKP-ENG-52: the reserve names its credits and leaves out a zero.
+ for(const [value,expected] of [[0.2,'Credits <1'],[0,null]]){detail.credits.balance=value;expect(await receive(send('display',{data}))).toBe(true);if(expected===null)await expect(col.locator('.qrv-p')).toHaveCount(0);else await expect(col.locator('.qrv-p')).toHaveText(expected);}
 });
 
 test('D88 attached shows the detach key and detached shows put back in the same strip slot',async({page})=>{
@@ -242,7 +243,7 @@ test('CKP-STRIP-05 alert lamp selects the clear, amber and red art through bridg
  for(const [value,lit] of [[25,true],[26,false],[0,true]]){data.projection.rows[0].accounts[0].windows[0].remainingPercent=value;expect(await receive(send('display',{data}))).toBe(true);if(lit)await expect(lamp).toHaveClass(/\bred\b/);else await expect(lamp).not.toHaveClass(/\blit\b/);}
  // A stale (retained) reading never lights the lamp; it is listed as a blue line.
  data.projection.rows[0].accounts[0].valueState='retained';data.projection.rows[0].accounts[0].observedAt='2026-11-04T10:00:00Z';expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\blit\b/);
- await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toContainText('Last reading 2h00 ago');await expect(page.locator('.pg-overview .mfd-alerts li.al-red')).toHaveCount(0);
+ await expect(page.locator('.pg-overview .mfd-alerts li.al-grey')).toContainText('Last reading 2h00 ago');await expect(page.locator('.pg-overview .mfd-alerts li.al-red')).toHaveCount(0);
 });
 
 test('CKP-ENG-11 alert washes a whole column without warning marks and missing cells stay blank',async({page})=>{
@@ -303,7 +304,7 @@ test('CKP-ENG-05 shortcuts appear in tooltip, accessible name and Option help an
 test('CKP-MFD-06 Overview shows delivered today total and puts threshold notices first',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);data.details.subscriptions=data.details.subscriptions.slice(0,1);const row=data.projection.rows[0],account=row.accounts[0],detail=data.details.subscriptions[0];detail.today[0].observedOutputTokens=12000;
  data.details.alerts=[{severity:'warning',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[1].id,remainingPercent:35},{severity:'critical',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[0].id,remainingPercent:20}];account.windows[0].remainingPercent=20;account.windows[0].resetsAt='2026-11-04T15:30:00Z';account.windows[1].remainingPercent=35;data.details.resetEvents=[{version:1,id:'synthetic-reset',provider:'openai',rowId:row.id,status:'confirmed',publishedAt:'2026-11-04T11:00:00Z',expiresAt:'2026-11-05T12:00:00Z',source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];const {send,receive}=await open(page,data);
- await expect(page.locator('.pg-overview .mfd-alerts')).toBeVisible();await expect(page.locator('.pg-overview .mfd-alerts li').first()).toHaveClass(/\bal-red\b/);await expect(page.locator('.pg-overview .mfd-alerts li').first()).toContainText('5h 20% left · resets in 3h30');await expect(page.locator('.pg-overview .mfd-alerts li').nth(1)).toHaveClass(/\bal-blue\b/);await expect(page.locator('.pg-overview .mfd-alerts li.al-amber')).toHaveCount(0);await expect(page.locator('.pg-overview .mfd-alerts')).toContainText('official extra reset confirmed');await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
+ await expect(page.locator('.pg-overview .mfd-alerts')).toBeVisible();await expect(page.locator('.pg-overview .mfd-alerts li').first()).toHaveClass(/\bal-red\b/);await expect(page.locator('.pg-overview .mfd-alerts li').first()).toContainText('5h 20% · resets in 3h30');await expect(page.locator('.pg-overview .mfd-alerts li').nth(1)).toHaveClass(/\bal-blue\b/);await expect(page.locator('.pg-overview .mfd-alerts li.al-amber')).toHaveCount(0);await expect(page.locator('.pg-overview .mfd-alerts')).toContainText('official extra reset confirmed');await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
  const positions=await page.locator('.pg-overview').evaluate(e=>[...e.children].map(n=>n.className));expect(positions.indexOf('mfd-alerts')).toBeLessThan(positions.indexOf('ov-top'));
  const second=visualFixture().data;data.projection.rows.push(second.projection.rows[1]);data.details.subscriptions.push({...second.details.subscriptions[1],today:[]});expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);await page.locator('.eng-keys .ek[data-sub]').first().click();await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
  detail.today=[];expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);
@@ -337,7 +338,7 @@ test('CKP-STRIP-06 a new caution blinks three times, then stays lit; a new condi
 });
 
 test('CKP-STRIP-09 last-seen records follow running sessions without claiming they ended',async({page})=>{
- const data=visualFixture().data;data.details.sessions[0].rate=58;data.details.sessions[2].rate=58;data.details.sessions.reverse();const {send,receive}=await open(page,data);const rows=page.locator('.ck-tape .t-observed');await expect(rows).toHaveCount(3);await expect(rows.nth(0).locator('.t-time')).toHaveText('Running');await expect(rows.nth(1).locator('.t-time')).toHaveText('Running');await expect(rows.nth(1).locator('.t-live')).toContainText('58');await expect(rows.nth(2).locator('.t-model')).toHaveText('GLM-5.3');await expect(rows.nth(2).locator('.t-time')).toHaveText('Last seen');await expect(rows.nth(2).locator('.t-live')).toHaveText('--');await expect(rows.nth(2)).not.toContainText(/ended|stopped/i);expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(rows.nth(2).locator('.t-time')).toHaveText('最近读数');const template=data.details.sessions.find(s=>s.state==='running');data.details.sessions=Array.from({length:7},(_,i)=>({...template,sessionRef:(i+1).toString(16).padStart(16,'0')}));expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(4);await expect(page.locator('.ck-tape .t-overflow')).toContainText('3');await expect(page.locator('.ck-tape .t-overflow')).toContainText('运行中');data.details.sessionCoverage='unavailable';expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(0);
+ const data=visualFixture().data;data.details.sessions[0].rate=58;data.details.sessions[2].rate=58;data.details.sessions.reverse();const {send,receive}=await open(page,data);const rows=page.locator('.ck-tape .t-observed');await expect(rows).toHaveCount(3);await expect(rows.nth(0).locator('.t-live')).toHaveText('●');await expect(rows.nth(1).locator('.t-live')).toHaveText('● 58 t/s');await expect(rows.nth(2).locator('.t-model')).toHaveText('GLM-5.3');await expect(rows.nth(2).locator('.t-live')).toHaveText(/^\S+ ago$/);await expect(rows.nth(2).locator('.t-live')).not.toContainText('t/s');await expect(rows.nth(2)).not.toContainText(/ended|stopped/i);expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(rows.nth(2).locator('.t-live')).toHaveText(/^\S+前$/);const template=data.details.sessions.find(s=>s.state==='running');data.details.sessions=Array.from({length:7},(_,i)=>({...template,sessionRef:(i+1).toString(16).padStart(16,'0')}));expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(4);await expect(page.locator('.ck-tape .t-overflow')).toContainText('3');await expect(page.locator('.ck-tape .t-overflow')).toHaveText('另有 3 个会话 ▸');data.details.sessionCoverage='unavailable';expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(0);
 });
 
 test('CKP-STRIP-10 running session cursors blink, stop when hidden, and stay static under Reduce Motion',async({page})=>{
@@ -362,14 +363,14 @@ test('CKP-MOT-07 active key text and quota bars meet contrast thresholds in both
  for(const theme of ['night','day']){if(theme==='day')expect(await receive(send('appearance',{...appearance,theme}))).toBe(true);const result=await audit();expect(result.keys).toHaveLength(6);for(const n of result.keys)expect(n).toBeGreaterThanOrEqual(4.5);expect(result.bars).toHaveLength(3);for(const n of result.bars)expect(n).toBeGreaterThanOrEqual(3);}
 });
 
-test('Record strip (requirement ID pending) session status text fits without ellipsis in both locales and tiers',async({page})=>{
+test('CKP-STRIP-16 record strip right-end text fits without ellipsis in both locales and tiers',async({page})=>{
  const {send,receive}=await open(page);
  for(const tier of ['tall','compact']){
   expect(await receive(send('shell',{...shell,tier}))).toBe(true);
   for(const locale of ['en','zh-CN']){
    expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);
-   const labels=page.locator('.ck-tape .t-observed .t-time');await expect(labels).toHaveCount(3);
-   await expect(labels.nth(2)).toHaveText(locale==='en'?'Last seen':'最近读数');
+   const labels=page.locator('.ck-tape .t-observed .t-live');await expect(labels).toHaveCount(3);
+   await expect(labels.nth(2)).toHaveText(locale==='en'?/ ago$/:/前$/);
    for(const label of await labels.all()){const size=await label.evaluate(e=>({scroll:e.scrollWidth,client:e.clientWidth,text:e.textContent}));expect(size.text).not.toMatch(/[\u2026]/);expect(size.scroll).toBeLessThanOrEqual(size.client);}
   }
  }

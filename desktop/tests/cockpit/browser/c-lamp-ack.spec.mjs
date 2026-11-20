@@ -195,3 +195,20 @@ test('G3-56 an id over 200 UTF-8 bytes is never persisted or accepted',async({pa
  expect(wide.length).toBeLessThan(200);
  expect(await page.evaluate(ids=>window.modelPlanCockpit.receive(ids),send('load',{appearance,shell,redBelow:25,ackedCautions:[wide]}))).toBe(false);
 });
+
+// Review 11-18 (S3): activation must judge cautions at the current time, not at the last render. A caution whose
+// reset passed while the page was inactive is gone; nobody saw it, so it must not be marked seen (or blink).
+test('G3-135 a caution that expired while the page was inactive is not marked seen on activation',async({page})=>{
+ const {data,windows}=zeroData();windows[0].remainingPercent=0;windows[0].validUntil='2026-11-04T17:00:00Z';
+ const {send,receive,lamp}=await open(page,data);await expect(lamp).toHaveClass(flash);
+ // Fresh page, host remembers nothing: go inactive, show the caution unseen, then let it expire.
+ await page.reload();await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:false,occluded:true,key:false}))).toBe(true);
+ expect(await receive(send('display',{data}))).toBe(true);
+ await page.evaluate(()=>{window.posted=[];});
+ await page.clock.setFixedTime(new Date('2026-11-04T18:00:00Z'));
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ await expect(lamp).not.toHaveClass(flash);
+ expect(await posted(page)).toEqual([]);
+});

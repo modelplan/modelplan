@@ -1,12 +1,14 @@
 # Real API Pricing observation seed and mapping
 
 The offline seed imports every adopted row from
-[FeiZhuLulu/real-api-pricing@35b06e01ea25dd0ee0d34cf43e4654042c286f84](https://github.com/FeiZhuLulu/real-api-pricing/tree/35b06e01ea25dd0ee0d34cf43e4654042c286f84).
+[Fei2411/real-api-pricing@35b06e01ea25dd0ee0d34cf43e4654042c286f84](https://github.com/Fei2411/real-api-pricing/tree/35b06e01ea25dd0ee0d34cf43e4654042c286f84) (the repository was named FeiZhuLulu/real-api-pricing at that commit).
 It contains 299 subscription model observations (76 scenario keys) and 19 metered API observations, 318 total. Chart tiers, benchmark scores and raw third-party articles/images are omitted. `seed.json` is a whitelisted source capture, not approved official plan terms. Adopted/convention hashes refer to original upstream file bytes; the seed deliberately does not recreate the original full files.
 
 `mapping.json` is a reviewed **display grouping proposal**, covering every source key. It does not approve model identities, regions, provider qualifications or official plan links. Unknown future keys remain browsable with an unmapped product. MiniMax Token Plan and M Plan remain separate; busy/idle, day/night, modes, customer groups and annual/monthly observations retain their scenario identities.
 
-Original project code/documentation license is [MIT](LICENSE), copyright 2026 FeiZhuLulu. Keep this attribution when redistributing substantial project material. Third-party research evidence has its own rights. Public output contains economic values, original-source labels/links and bounded upstream interpretation; it never republishes full third-party articles or screenshots.
+Original project code/documentation license is [MIT](LICENSE), copyright 2026 Fei2411 (the notice at the pinned commit reads FeiZhuLulu, the owner's former name). Keep this attribution when redistributing substantial project material. Third-party research evidence has its own rights. Public output contains economic values, original-source labels/links and bounded upstream interpretation; it never republishes full third-party articles or screenshots.
+
+Some rows rest on [Awesome Coding Plan](https://github.com/mahonzhan/awesome-coding-plan), by mahonzhan, licensed under the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/): `chatgpt_plus` × `gpt-5.6-sol` (source `awesome-coding-plan 2026-07-30`) and the rows derived from it (`chatgpt_plus` Terra and GPT-5.5 by credit-price ratio; the `chatgpt_pro_5x` / `chatgpt_pro_10x` rows by the official multiplier). Changes: Real API Pricing mapped the measurement to served-model identities, normalised it to four-week months and scaled it; ModelPlan divides by four for weekly pools. `shared/quota-capacity.ts` (`awesomeCodingPlanRows`) marks these pools with `attribution: "awesome-coding-plan"` in `/v1/quota-capacity`. Not endorsed by the creator.
 
 ## Public contract
 

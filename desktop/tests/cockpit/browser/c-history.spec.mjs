@@ -61,12 +61,14 @@ for(const [name,extra] of [['recording off',{coverage:'recording-off',subscripti
 const totals=page=>page.locator('.ov-bucket').evaluateAll(list=>list.map(e=>Number(e.dataset.total)));
 test('D36 ten days of record put yesterday and today in the last buckets of the 30-day view',async({page})=>{
  await open(page,fixture().data);
+ // CKP-SHELL-50 (WP-09): the app's range key; a fresh profile is at 7d.
+ await page.locator('[data-opt="range"] b',{hasText:/^30d$/}).click();
  const values=await totals(page);expect(values.length).toBe(30);expect(values.slice(-2)).toEqual([1000,200]);expect(values.slice(0,-2).every(v=>v===0)).toBe(true);
  const tips=await page.locator('.ov-bucket').evaluateAll(list=>list.slice(-1).map(e=>e.dataset.tip));expect(tips[0]).not.toContain('No record');
 });
 test('D36 fewer than seven days of record sit at the end of the 7-day view',async({page})=>{
  await open(page,fixture({dailyFrom:localDay(2)}).data);
- await page.locator('[data-opt="days"] b',{hasText:/^7$/}).click();
+ await page.locator('[data-opt="range"] b',{hasText:/^7d$/}).click();
  expect(await totals(page)).toEqual([0,0,0,0,0,1000,200]);
 });
 
@@ -99,13 +101,13 @@ for(const [zone,clock,buckets,last] of [
  test(`D36 local-hour buckets land in the right bar in ${zone}`,async({page})=>{
   const {data}=fixture({hourly:buckets.map(([at,n])=>({at,source:'codex',origin:'live',observedOutputTokens:n}))});
   await open(page,data,'en',Date.parse(clock));
-  await page.locator('[data-opt="days"] b',{hasText:/^24h$/}).click();
+  await page.locator('[data-opt="range"] b',{hasText:/^Today$/}).click();
   const values=await totals(page);expect(values.length).toBe(24);expect(values.slice(-last.length)).toEqual(last);
  });
 });
 
 test('SET-9-19 project names off: a labelled project in the ranking is named by its rank',async({page})=>{
- const {data}=fixture();data.history.projects.recent30d[0].label='desktop-secret';
+ const {data}=fixture();data.history.projects.recent30d[0].label='desktop-secret';data.history.projects.recent7d[0].label='desktop-secret';
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.clock.setFixedTime(new Date(NOW));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);

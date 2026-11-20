@@ -183,3 +183,37 @@ test('CKP-PORT-06 hovering a row lights its rocket by published name, for real p
 test('an older engine shows no HUD',async({page})=>{
  await open(page,{published:null});await expect(page.locator('.hud')).toBeHidden();
 });
+// v1 final (WP-14, V1-FINAL §5): the HUD is the legend of the user's own models. A session does not add a model its
+// subscription does not carry (a Claude Code session pointed at another vendor's model is not that subscription's model),
+// the rows stop at six (three on the short cockpit) on one solid dark backing, names 10 px white, and a small green dot
+// follows the ★ effort of every model a session is running right now.
+const running=(ref,id,state='running',source='codex')=>({sessionRef:ref.repeat(16),source,subscriptionRef:null,model:id,effort:'high',projectLabel:null,lastObservedAt:observed(),state,rate:null});
+test('CKP-PORT-50 a session on a model outside its subscription does not list that model',async({page})=>{
+ await open(page,{published:mixed(),edit:keepRows(['codex']),sessions:[running('a','claude-a'),running('b','google-a','idle')]});
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['gpt-a','gpt-b']);
+});
+const backing=page=>page.locator('.hud').evaluate(h=>{const cs=getComputedStyle(h),box=h.getBoundingClientRect(),alpha=(/rgba?\(([^)]+)\)/.exec(cs.backgroundColor)?.[1].split(',').map(Number)[3])??1;
+ return {image:cs.backgroundImage,alpha,inside:[...h.querySelectorAll('.hp')].every(r=>{const b=r.getBoundingClientRect();return b.left>=box.left-.5&&b.right<=box.right+.5&&b.top>=box.top-.5&&b.bottom<=box.bottom+.5;}),
+  names:[...h.querySelectorAll('.hp b')].map(b=>[getComputedStyle(b).fontSize,getComputedStyle(b).color])};});
+for(const [tier,cap] of [['tall',6],['compact',3]])test(`CKP-PORT-50 ${tier}: at most ${cap} rows of owned models on one solid dark backing, names 10 px white`,async({page})=>{
+ await open(page,{tier,sessions:[running('a','m6'),running('b','m7')]});
+ await expect(page.locator('.hud .hp')).toHaveCount(cap);
+ const b=await backing(page);
+ expect(b.image).toBe('none');expect(b.alpha).toBeGreaterThanOrEqual(.5);expect(b.inside).toBe(true);
+ for(const [size,colour] of b.names)expect([size,colour]).toEqual(['10px','rgb(233, 237, 240)']);
+});
+test('CKP-PORT-51 a green dot follows the ★ effort of each model a session is running now, and only those',async({page})=>{
+ await open(page,{sessions:[running('a','m7'),running('b','m6'),running('c','m5','idle')]});
+ await expect(page.locator('.hud .hp .hp-on')).toHaveCount(2);
+ for(const id of ['m7','m6']){const row=page.locator(`.hud .hp[data-hud-model=${id}]`),dot=row.locator('.hp-on');
+  await expect(dot).toHaveCSS('background-color','rgb(90, 217, 186)');
+  const [rec,mark]=await Promise.all([row.locator('.hp-rec').boundingBox(),dot.boundingBox()]);expect(mark.x).toBeGreaterThanOrEqual(rec.x+rec.width);expect(mark.width).toBeLessThanOrEqual(6);}
+ await expect(page.locator('.hud .hp[data-hud-model=m5] .hp-on')).toHaveCount(0);
+ await expect(page.locator('.hud .hp[data-hud-model=m7] .hp-on')).toHaveAttribute('aria-label','Running');
+});
+test('CKP-PORT-51 the compact strip keeps the dot inside its row',async({page})=>{
+ await open(page,{tier:'compact',sessions:[running('a','m0')]});
+ const row=page.locator('.hud.hud-strip .hp').first();await expect(row.locator('.hp-on')).toHaveCount(1);
+ const [r,d,hud]=await Promise.all([row.boundingBox(),row.locator('.hp-on').boundingBox(),page.locator('.hud').boundingBox()]);
+ expect(d.y).toBeGreaterThanOrEqual(r.y-.5);expect(d.y+d.height).toBeLessThanOrEqual(r.y+r.height+.5);expect(d.x+d.width).toBeLessThanOrEqual(hud.x+hud.width+.5);
+});

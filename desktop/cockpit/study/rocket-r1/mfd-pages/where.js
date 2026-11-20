@@ -5,19 +5,17 @@ import {t} from '../i18n.js';
 import '../strings/review49.js';
 import {scopedProject} from '../project-attribution.js';
 import {esc, tok, dhm, stamp, chip, bolt} from './fmt.js';
-import {accountOf, modelOf, poolsIn, sessionsIn, accountsIn} from './scope.js';
-import {PAGE_RANGES, rangeWord} from './page-range.js';
+import {accountOf, modelOf, poolsIn, sessionsIn, accountsIn, rangeKey, rangeOf} from './scope.js';
+import {rangeWord} from './page-range.js';
 
-// The range this page shows: the app's (ui.range, WP-09) when it exists; until then the page's own keys, as before
-// (sessions: today | 7d; projects: 7 | 30 days).
-const rangeOf = ui => PAGE_RANGES.includes(ui.range) ? ui.range : ui.where === 'time' ? (ui.time === '7d' ? '7d' : 'today') : ui.days === 7 ? '7d' : '30d';
-
+// TODO(#1050, WP-06): the ≈cost cell stays empty until the client-v1.6 price data (~11-21) reaches this page.
 // 项目 (CKP-MFD-67): one row per project: colour chip, name, model and effort, ≈cost (empty until WP-06's prices reach
 // this page), share; the row's background is as long as its share. The range is the header's (page-range.js).
 function projects(d, ui) {
   const pools = poolsIn(d, ui), range = rangeOf(ui);
-  // The ranking has 7- and 30-day figures; Today has none yet, so it reads as an empty period, not another range's rows.
-  let rows = range === 'today' ? [] : d.projectRanking[range === '7d' ? 'recent7d' : 'recent30d'];
+  // The ranking has 7- and 30-day figures; until today's arrives (WP-02) Today says so (CKP-SHELL-50) instead of another range's rows.
+  if (range === 'today') return `<p class="mp-empty">${t('mfd.rangeNoToday')}</p>`;
+  let rows = d.projectRanking[range === '7d' ? 'recent7d' : 'recent30d'];
   rows = rows.map(p => scopedProject(p, d.accounts.map(a => a.id), ui.scope)).filter(p => p.available !== false);
   if (pools) rows = rows.map(p => ({...p, configs: p.configs.filter(c => !modelOf(d,c.model)?.pool || pools.includes(modelOf(d,c.model).pool))})).filter(p => p.configs.length);
   if (!rows.length) return `<p class="mp-empty">${t('mfd.noSessions')}</p>`;
@@ -30,8 +28,7 @@ function projects(d, ui) {
 }
 
 export function sessionRows(d, ui) {
-  // sessionsIn knows Today and 7 days; 30 days reads as 7 until WP-09 (#1047) widens it.
-  const list = sessionsIn(d, ui, rangeOf(ui) === 'today' ? 'today' : '7d');
+  const list = sessionsIn(d, ui, rangeOf(ui));
   const run = list.filter(x => x.running).sort((a, b) => (b.startedAt ?? b.lastAt) - (a.startedAt ?? a.lastAt)), done = list.filter(x => !x.running).sort((a, b) => (b.lastAt ?? b.endedAt) - (a.lastAt ?? a.endedAt));
   return {run, done};
 }
@@ -48,17 +45,15 @@ function timeline(d, ui) {
 
 export const where = {
   id: 'where', title: 'mfd.pWhere',
-  // 项目 | 会话, and, until the app's own range (WP-09) reaches the page, the range key it always had (CKP-MFD-67: the
-  // page has no range key of its own once the header's range exists).
+  // 项目 | 会话 and the app's range key (CKP-SHELL-50, WP-09).
   optionKeys: ui => [
     {id: 'where', a: {value:'proj', text: t('mfd.oProj'), on: ui.where !== 'time'}, b: {value:'time', text: t('mfd.oSessions'), on: ui.where === 'time'}},
-    PAGE_RANGES.includes(ui.range) ? null
-      : ui.where === 'time' ? {id: 'time', a: {value:'today', text: t('mfd.oToday'), on: ui.time !== '7d'}, b: {value:'7d', text: t('mfd.o7d'), on: ui.time === '7d'}}
-      : {id: 'days', a: {value:7, text: '7', on: ui.days === 7}, b: {value:30, text: '30', on: ui.days !== 7}},
+    rangeKey(ui),
     null, null],
   render: (d, ui) => ui.where === 'time' ? timeline(d, ui) : projects(d, ui),
   onClick(act, val, ui) {
     if (act === 'opt' && val === 'where') return {patch: {mfdWhere: ui.optionChoice ?? (ui.where === 'time' ? 'proj' : 'time')}};
+    if (act === 'opt' && val === 'range') return {range: ui.optionChoice};
     if (act === 'session') return {open: ['session', {from: 'mfd', key: val, ref: val}]};
     return null;
   },

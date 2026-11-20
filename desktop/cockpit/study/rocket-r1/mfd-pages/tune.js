@@ -10,6 +10,7 @@ import {pageRange, rangeWord, pct} from './page-range.js';
 import {frontierSvg} from './frontier.js';
 import {withOlderLabel} from './public-helpers.js';
 
+// TODO(#1050, WP-06): the ≈cost cell stays empty until the client-v1.6 price data (~11-21) reaches this page.
 // CKP-MFD-65 (V1-FINAL 8.3): the usage list. One row per known model: colour chip, model, current effort and the
 // recommended one, a share bar, ≈cost (empty until WP-06's price data reaches this page), share. Models in use come
 // first by their share of the range's tokens; unused ones follow in the published order, dimmed. With no usage record

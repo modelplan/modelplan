@@ -49,13 +49,33 @@ html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .caution.flash
 #cockpit .mfd-alerts li.al-mark.al-flash{animation:cockpit-alert-row-flash 900ms ease-out 1}
 html[data-reduce-motion="true"] #cockpit .mfd-alerts li.al-mark.al-flash{animation:none!important}
 @media(prefers-reduced-motion:reduce){#cockpit .mfd-alerts li.al-mark.al-flash{animation:none!important}}
+/* CKP-MFD-55/56 (WP-11, V1-FINAL §8.6): the alert list. Title "提醒 · N" on the back key's line; each row is a button with
+   two lines (the shared sentence, then the help: available resets or "去设置 ›"); grey = unreadable, list-only. */
+#cockpit .pg-alerts .al-head{margin:0 0 4px;min-height:14px;text-align:right;font:10px/14px var(--f-lcd);color:var(--text)}
+#cockpit .mfd-alerts.all li{display:block}
+#cockpit .mfd-alerts .al-row{display:grid;grid-template-columns:10px minmax(0,1fr);gap:0 3px;width:100%;margin:0;padding:1px 2px;border:0;border-radius:3px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+#cockpit .mfd-alerts .al-row:hover,#cockpit .mfd-alerts .al-row:focus-visible{background:rgba(255,255,255,.06)}
+#cockpit .mfd-alerts .al-row i{font-style:normal}
+#cockpit .mfd-alerts .al-row .al-l1{overflow:hidden;white-space:normal}
+#cockpit .mfd-alerts .al-row .al-l2{grid-column:2;color:var(--muted);white-space:normal}
+#cockpit .al-grey{color:var(--muted)}
 
 @media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .caution.flash{animation:none!important}}
 
-/* Preserve room for localized session status and the running cursor. */
-.ck-tape .t-observed{grid-template-columns:6px 84px 64px 42px minmax(0,1fr) 44px 78px}
+/* D277 (CKP-STRIP-16): chip · tool · project · model + effort · elapsed · tokens · right end ("● 58 t/s" or "6m ago"). */
+.ck-tape .t-observed{grid-template-columns:6px 58px minmax(0,104px) minmax(0,1fr) 38px 40px 74px}
+.ck-tape .t-elapsed,.ck-tape .t-tok{text-align:right;color:var(--lcd-muted)}
+.ck-tape .t-me .t-eff{color:var(--lcd-muted)}
+/* G3-134: an unlisted model reads by its prettified raw name with a dim "not listed" badge. */
+.ck-tape .t-me .t-badge{color:var(--lcd-muted);opacity:.7;font-size:9px}
+/* CKP-STRIP-50: the overflow line is a button to the where page; with no session one grey line says so. */
+.ck-tape button.t-overflow{display:block;background:none;border:0;margin:0;cursor:pointer;font:inherit;text-align:left}
+.ck-tape .t-none{display:block;padding-left:10px;color:var(--lcd-muted)}
+/* CKP-STRIP-17: a model the producer could not name is dim text, not a name. */
+.ck-tape .t-model.t-unknown{color:var(--lcd-muted);opacity:.7}
+.ck-tape .t-observed[data-state="idle"] .t-live{color:var(--lcd-muted)}
 /* Running cursor uses a compositor-only blink; inactive and reduced-motion views are static. */
-.ck-tape .t-time{position:relative;padding-right:10px}
+.ck-tape .t-observed[data-state="running"] .t-live{position:relative;padding-right:10px;overflow:visible}
 .ck-tape .t-cur{position:absolute;right:0;top:2.5px;width:6px;height:11px;background:currentColor;opacity:1}
 @keyframes cockpit-running-cursor{50%{opacity:0}}
 #cockpit[data-active="true"][data-shell="open"] .ck-tape .t-cur{animation:cockpit-running-cursor 1.06s steps(1,end) infinite!important}
@@ -73,9 +93,11 @@ html[data-theme="night"] #cockpit .ek-all:not(.on)>span:not(.ki){color:#a1aab3}
 .ck-still-add{mix-blend-mode:plus-lighter;z-index:1}
 /* Flame/halo flicker (owner D39/D-H; prototype composer.js:26,34): only on an active, open page; static under the
    host's or the system's Reduce Motion. Hidden/closed pages have data-active=false or data-shell=closed. */
+/* V1-FINAL §16 / MOT-2.3-05: the flicker steps through five levels per sweep (both ends held) instead of easing every
+   frame, so the additive layers change a few times a cycle rather than each frame. Period and phase stay per rocket. */
 @keyframes cockpit-porthole-flicker{from{opacity:.94;transform:scale(.985,.98)}to{opacity:1;transform:scale(1.015,1.02)}}
 @media (prefers-reduced-motion:no-preference){
-html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker{animation:cockpit-porthole-flicker .43s ease-in-out 0s infinite alternate!important}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker{animation:cockpit-porthole-flicker .43s steps(5,jump-none) 0s infinite alternate!important}
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-p1{animation-duration:.5s!important}
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-p2{animation-duration:.57s!important}
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-p3{animation-duration:.64s!important}
@@ -118,10 +140,12 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 /* HUD B: borderless, on one scrim that fades to nothing at every edge (CKP-PORT-03, 04). The port's padding box starts at (18,14) in the window, so these are the window-local (76,24) and (58,9) less that. */
 #cockpit .hud[hidden]{display:none!important}
 #cockpit[data-layout] .hud.hud-b,#cockpit[data-layout] .hud.hud-strip{position:absolute;right:auto;bottom:auto;min-width:0;max-width:none;min-height:0;padding:0;border:0;border-radius:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:auto;cursor:default}
-#cockpit[data-layout] .hud.hud-b{left:58px;top:10px;width:180px;height:160px;display:block;background:radial-gradient(closest-side,#0b0f13cc 62%,#0b0f1300)}
+/* WP-14 (V1-FINAL §5, final-3): one solid dark backing under the whole HUD (the old radial fade left the lower rows on the
+   earth glow); the prototype's #030810 at 0.5 (final-3). */
+#cockpit[data-layout] .hud.hud-b{left:58px;top:10px;width:180px;height:160px;display:block;background:#03081080;border-radius:6px}
 #cockpit .hud-b .hud-chart{width:180px;height:86px;padding:4px 9px 5px}
 #cockpit .hud-b .hud-list{width:117px;height:74px;padding:0;gap:0;overflow:hidden}
-#cockpit[data-layout] .hud.hud-strip{left:44px;top:11px;width:216px;height:30px;display:block;background:linear-gradient(90deg,#0b0f1300,#0b0f13cc 12% 88%,#0b0f1300)}
+#cockpit[data-layout] .hud.hud-strip{left:44px;top:11px;width:216px;height:30px;display:block;background:#03081080;border-radius:6px}
 #cockpit .hud .hp{display:flex;align-items:baseline;gap:3px;padding:0 2px;min-width:0;background:none;border:0;color:inherit;font-size:10px;line-height:12px;cursor:pointer}
 #cockpit .hud .hp b{overflow:visible;text-overflow:clip;font-size:10px}
 #cockpit .hud .hp-rec{white-space:nowrap;margin-left:auto}
@@ -129,6 +153,7 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 /* G3-48: the compact strip follows the study at 640: an 86x30 chart beside three stacked 10 px rows. One block, after the
    generic .hud rules and more specific than them, so its clipping and row height are not overridden. */
 #cockpit[data-layout] .hud.hud-strip{display:grid;grid-template-columns:86px minmax(0,1fr);column-gap:2px}#cockpit[data-layout] .hud.hud-strip .hud-chart{grid-column:1;grid-row:1;width:86px;height:30px;padding:0}#cockpit[data-layout] .hud.hud-strip .hud-list{display:grid;grid-column:2;grid-row:1;grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(3,10px);gap:0;padding:0;height:100%;min-width:0;align-self:start}#cockpit[data-layout] .hud.hud-strip .hp{height:10px;line-height:10px}#cockpit[data-layout] .hud.hud-strip .hp b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:10px}#cockpit[data-layout] .hud.hud-strip .hp-rec{flex:none;font-size:9px;line-height:10px}
+#cockpit .hud .hp b{color:#e9edf0}#cockpit .hud .hp-on{display:inline-block;flex:none;width:5px;height:5px;margin-left:2px;border-radius:50%;background:#5ad9ba;align-self:center}
 #cockpit .hud .hp b.gold{color:var(--gold)}#cockpit .hud .hp-rec.on{text-shadow:0 0 6px color-mix(in srgb,var(--gold) 53%,transparent)}
 .hud-front{fill:none;stroke:var(--gold);stroke-width:1.2;stroke-dasharray:3 2}
 .hud-dot{fill:var(--gold);cursor:pointer}.hud-dot.dominated{opacity:.35}
@@ -141,7 +166,7 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 /* QA 11-08 (G3-48, CKP-PORT-04/08): the tall HUD follows the study's hud-selection style. Six 12 px rows fill the 74 px
    list (names 10 px, ranks and effort 9 px); the list widens only as far as a complete name needs, inside the HUD. */
 #cockpit .hud-b .hud-list{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(6,12px);width:max-content;min-width:117px;max-width:174px;height:74px;box-sizing:border-box;padding:1px 2px 1px 4px;align-content:start}
-#cockpit .hud-b .hp{display:grid;grid-template-columns:9px auto auto;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap}
+#cockpit .hud-b .hp{display:grid;grid-template-columns:9px auto auto 7px;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap}
 #cockpit .hud-b .hp b{font:500 10px/12px var(--f-lcd);overflow:hidden;text-overflow:ellipsis;min-width:0}
 #cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-n{color:var(--muted,#8a96a0)}
 .hud-axis{fill:none;stroke:#e9edf030;stroke-width:.7}.hud-axis-label{font:400 9px var(--f-silk);fill:#aab6bf}
@@ -262,7 +287,7 @@ html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{ani
 @keyframes cockpit-bell-flare{from{scale:1 .25}45%{scale:1 1.12}to{scale:1 1}}
 @keyframes cockpit-bell-burn{0%,100%{scale:1 1}30%{scale:1 1.08}55%{scale:1 .92}80%{scale:1 1.04}}
 @media (prefers-reduced-motion:no-preference){
-html:not([data-reduce-motion="true"]) #cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .84s steps(7,end) .22s infinite}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"][data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .84s steps(7,end) .22s infinite}
 }
 #cockpit[data-ignite="true"] .ck-base .bz .bz-sheet{opacity:0;transition:opacity .06s}
 html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::after,html[data-reduce-motion="true"] .ck-base .bz .bz-sheet{transition:none!important;animation:none!important}
@@ -283,5 +308,91 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 #cockpit .ck-head [data-close]::before{inset:.85px;background:var(--close-fill);border-radius:4px;filter:none;box-shadow:inset 0 1px 0 #ffffff26,inset 0 -1px 0 #0000004d,0 1px 2px #000a,0 0 0 1px var(--close-edge)}
 #cockpit .ck-head [data-close]::after{content:"";position:absolute;inset:10px;pointer-events:none;background:linear-gradient(45deg,transparent 43%,var(--close-ink) 43% 57%,transparent 57%),linear-gradient(-45deg,transparent 43%,var(--close-ink) 43% 57%,transparent 57%)}
 #cockpit .ck-head [data-close]:focus-visible{outline:2px solid var(--gold-lcd,#f6d38a);outline-offset:2px}
+/* Owner D277 (CKP-ENG-27): one quiet line under the engine table, on the pager's row (the pager keeps the right end) */
+/* CKP-ENG-55: the footer is right-aligned under the table; the page control (when there is one) keeps the right end. */
+.ck-eng .eng-foot{grid-row:3;grid-column:1;justify-self:end;display:flex;align-items:center;gap:10px;min-width:0;max-width:100%;height:var(--row-h,18px)}
+.ck-eng .eng-foot .eng-pg{grid-row:auto;justify-self:auto;flex:none}
+.ck-eng .eng-upd{display:flex;align-items:center;gap:8px;min-width:0;height:var(--row-h,18px);font:10px/12px var(--f-silk);color:var(--silk-dim);white-space:nowrap}
+.ck-eng .eng-upd-t{overflow:hidden;text-overflow:ellipsis}
+.ck-eng .eng-upd-r{font:inherit;color:var(--silk);background:none;border:0;padding:0 2px;cursor:pointer;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 35%,transparent);text-underline-offset:2px}
+.ck-eng .eng-upd-r:hover{color:var(--silk-hi)}.ck-eng .eng-upd-r:focus-visible{outline:2px solid var(--gold-lcd,#f6d38a);outline-offset:2px}
 /* CKP-FAD-17: the thin blue trial line belongs to the official throttle art; the community flat fader keeps its ghost cap only. */
 .dk-fad .fd-tline{display:none}
+
+/* CKP-ENG-50: the cell states. Loading is a dark block with no text; unreadable is a dim "--" with a grey word. */
+.ck-eng .qcell.loading{display:flex;align-items:center;padding:0 6px}
+.ck-eng .qph{display:block;width:70%;height:14px;border-radius:3px;background:color-mix(in srgb,var(--lcd-muted) 16%,transparent)}
+.ck-eng .qtxt.dim{color:var(--lcd-muted)}
+.ck-eng .ec[data-state="error"] .qnum{color:var(--lcd-muted);opacity:.7}
+.ck-eng .qq{font:400 10px/1 var(--f-lcd);color:var(--lcd-muted)}
+/* CKP-ENG-53: ≈cost leads and is the brightest; tokens and speed step back beside it, and drop (speed first) when narrow. */
+.ck-eng .qrow-t{overflow:hidden}
+.ck-eng .qcost{font-weight:600;color:var(--lcd-ink)}
+.ck-eng .qrow-t:has(.qcost) :is(.qtokens,.qaverage){color:var(--lcd-muted)}
+.ck-eng .qrow-t .drop{display:none}
+.ck-eng .qrv-c{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* CKP-ENG-56 (D95, folded in from #793): the first empty bay carries a quiet add affordance: an etched plus (CSS only,
+   1.5 px strokes, a dark line above and a faint highlight below, as if engraved) with the bay's own label small under it.
+   Both sit in the axis-label tone at half strength; hover and keyboard focus raise them. No border or button chrome. */
+.ck-eng .ec-bay{cursor:default}
+.ck-eng .ec-bay .ec-add{position:absolute;left:0;right:0;top:calc(50% - 24px);display:flex;flex-direction:column;align-items:center;gap:12px;font:10px/1 var(--f-lcd);color:var(--lcd-muted);opacity:.5;pointer-events:none;transition:none}
+.ck-eng .ec-bay .ec-plus{position:relative;display:block;width:20px;height:20px;color:color-mix(in srgb,var(--lcd-muted) 60%,#000);filter:drop-shadow(0 1px 0 #ffffff2e) drop-shadow(0 -1px 0 #000a)}
+.ck-eng .ec-bay .ec-plus::before,.ck-eng .ec-bay .ec-plus::after{content:"";position:absolute;left:50%;top:50%;background:currentColor;border-radius:.75px}
+.ck-eng .ec-bay .ec-plus::before{width:20px;height:1.5px;margin:-.75px 0 0 -10px}
+.ck-eng .ec-bay .ec-plus::after{width:1.5px;height:20px;margin:-10px 0 0 -.75px}
+:root[data-theme="day"] .ck-eng .ec-bay .ec-plus{color:color-mix(in srgb,var(--lcd-muted) 70%,#000);filter:drop-shadow(0 1px 0 #ffffffb0) drop-shadow(0 -1px 0 #0003)}
+.ck-eng .ec-bay:is(:hover,:focus-visible) .ec-add{opacity:.8}
+/* CKP-ENG-57: with no subscription the faders, big screen and session strip stay dark under the empty table. */
+#cockpit[data-engine-empty="true"] :is(.ck-deck,.ck-tape){filter:brightness(.5) saturate(.4)}
+/* Cockpit plugin columns (D121, D124, D293; CKP-PLG-50…53). A plugin key is a subscription key: same box, same white
+   name, a white line-art icon in the vendor-mark box, a dashed underline in the plugin's declared colour, no digit, no ×.
+   A plugin column is a subscription column: no inner frame; each row is one cell in the Other-cell grammar (small tag ·
+   large number · side value · continuous bar with a thin trend line). Only a warning level colours the number. */
+.ck-eng .eng-keys .pl-key{cursor:pointer}
+.ck-eng .ek .pl-icon{display:inline-grid;place-items:center;color:var(--silk-hi)}
+.ck-eng .ek .pl-icon svg{width:16px;height:16px;display:block}
+.ck-eng .ek .bl.pl-dash{background:repeating-linear-gradient(90deg,var(--v) 0 3px,transparent 3px 6px);box-shadow:none;opacity:.8}
+.ck-eng .pl-cell{row-gap:2px}
+.ck-eng .pl-cell .pl-tag{display:block;min-width:0;font:400 10px/11px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ck-eng .pl-cell .qline{justify-content:space-between}
+.ck-eng .pl-cell.pl-mid .qnum{color:var(--st-mid)}.ck-eng .pl-cell.pl-low .qnum{color:var(--st-low)}
+.ck-eng .pl-meter{display:grid;row-gap:2px;min-width:0}
+.ck-eng .pl-bar{position:relative;display:block;height:5px;border-radius:1px;background:var(--lcd-ghost);overflow:hidden}
+.ck-eng .pl-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:1px;background:var(--pl-ink,var(--lcd-ink))}
+.ck-eng .pl-trend{display:block;width:100%;height:6px;overflow:visible}
+.ck-eng .pl-trend path{fill:none;stroke:var(--pl-ink,var(--lcd-ink));stroke-width:1;opacity:.7;vector-effect:non-scaling-stroke}
+.ck-eng .pl-foot{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 4px;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;min-width:0}
+.ck-eng .pl-foot .pl-fit{min-width:0;overflow:hidden;text-overflow:ellipsis}.ck-eng .pl-foot .pl-foot-v{color:var(--lcd-ink)}
+.ck-eng .eng-keys .ek-bay .bay-dash{font-size:0}
+.ck-eng .eng-keys .ek-bay .bay-dash::before{content:"+";font:400 13px/1 var(--f-silk);color:var(--silk-dim)}
+.ck-eng .eng-keys .ek-bay.on{box-shadow:var(--pressed);background:linear-gradient(180deg,var(--key-p1),var(--key-p2))}
+/* CKP-PLG-53: a plugin's big screen fills the big-screen well only; the page keys above and the faders beside it stay
+   uncovered and live (pressing a page key closes it). */
+.mfd-screen .pl-screen{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;gap:8px;padding:10px 12px;background:var(--lcd-glass);color:var(--lcd-ink);overflow:hidden}
+.mfd-screen .pl-screen-h{display:flex;align-items:center;gap:6px;min-width:0;font:500 12px/16px var(--f-silk);color:var(--silk-hi)}
+.mfd-screen .pl-screen-h .pl-icon{display:inline-grid;flex:none;width:16px;height:16px}.mfd-screen .pl-screen-h .pl-icon svg{width:16px;height:16px}
+.mfd-screen .pl-screen-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mfd-screen .pl-screen-x{flex:none;padding:2px 8px;border:0;border-radius:4px;background:linear-gradient(180deg,var(--key-1),var(--key-2));box-shadow:var(--raised);font:500 10px/14px var(--f-silk);color:var(--silk-hi)}
+.mfd-screen .pl-screen-l{margin:0;display:grid;row-gap:6px}
+.mfd-screen .pl-screen-l div{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--lcd-rule);padding-top:5px;font:400 11px/14px var(--f-lcd)}
+.mfd-screen .pl-screen-l dt{color:var(--lcd-muted)}.mfd-screen .pl-screen-l dd{margin:0;color:var(--lcd-ink);font-variant-numeric:tabular-nums}
+.pl-menu{position:fixed;z-index:10020;width:238px;padding:5px;border-radius:8px;background:var(--pop-solid);box-shadow:var(--pop-shadow),inset 0 0 0 1px var(--pop-line);font:400 11px/1 var(--f-silk);color:var(--pop-ink);pointer-events:auto}
+.pl-menu .pm-h{display:block;padding:5px 7px 4px;font:500 9.5px/1 var(--f-silk);letter-spacing:.06em;color:var(--pop-ink3)}
+.pl-menu .pm-i{display:grid;grid-template-columns:16px minmax(0,1fr) auto auto;align-items:center;column-gap:7px;width:100%;height:26px;padding:0 7px;border:0;border-radius:5px;background:none;color:inherit;text-align:left;font:inherit}
+.pl-menu .pm-i:hover:not([disabled]),.pl-menu .pm-i:focus-visible{background:var(--mb-hover);outline:none}
+.pl-menu .pm-i[disabled]{opacity:1;cursor:default}
+.pl-menu .pm-n{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-menu .pm-remove{grid-template-columns:minmax(0,1fr)}
+.pl-menu .pm-mark{display:grid;place-items:center;width:16px;height:16px}
+.pl-menu .pm-mark img{width:14px;height:14px;object-fit:contain}
+.pl-menu .pm-st{font-size:9.5px;color:var(--pop-ink3);white-space:nowrap}
+.pl-menu .pm-st.pm-det{color:var(--st-ok)}
+.pl-menu .pm-go{font:500 10px/1 var(--f-silk);padding:3px 6px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--pop-btn-line);color:var(--pop-ink)}
+.pl-menu .pm-go.dim{color:var(--pop-ink3)}
+.pl-menu .pm-ok{font:500 10px/1 var(--f-silk);color:var(--pop-ink3)}
+.pl-menu .pm-more{grid-template-columns:1fr;padding-left:30px;color:var(--pop-ink2);font-size:10.5px}
+.pl-menu .pm-plugin{grid-template-columns:16px minmax(0,1fr) auto}
+.pl-menu .pm-ic{display:grid;place-items:center;width:16px;height:16px;color:var(--pop-ink2)}
+.pl-menu .pm-ic svg{width:14px;height:14px}
+.pl-menu .pm-sep{height:1px;margin:4px 6px;background:var(--pop-line)}

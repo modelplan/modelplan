@@ -20,6 +20,7 @@ async function open(page,data,locale='en'){
  expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
+ return {send,receive};
 }
 
 test('CKP-MFD-63 the page keys read Overview, Plans, Models, Breakdown in that order; the effort page has no key',async({page})=>{
@@ -60,6 +61,22 @@ function withHistory(used=true){
  return data;
 }
 
+test('CKP-MFD-65 the Models page follows the header range: its title, rows and shares change with it',async({page})=>{
+ const data=withHistory();data.history.models.recent30d=ranking([entity('gpt-6.1-terra',800),entity('gpt-6.1-sol',200)]);
+ const {send,receive}=await open(page,data);await page.locator('[data-mfd="page:tune"]').click();
+ const rows=page.locator('.mfd-page .md-list .md-row');
+ await expect(page.locator('.mfd-page .md-h')).toHaveText('7d · 2 models');
+ expect(await rows.evaluateAll(r=>r.slice(0,2).map(x=>x.dataset.model))).toEqual(['gpt-6.1-sol','gpt-6.1-terra']);
+ expect(await receive(send('shell',{...shell,range:'30d'}))).toBe(true);
+ await expect(page.locator('.mfd-page .md-h')).toHaveText('30d · 2 models');
+ expect(await rows.evaluateAll(r=>r.slice(0,2).map(x=>x.dataset.model))).toEqual(['gpt-6.1-terra','gpt-6.1-sol']);
+ await expect(rows.nth(0).locator('.md-s')).toHaveText('80%');
+ // Today has no model ranking yet: the list keeps the published order with no shares, and the title says Today.
+ expect(await receive(send('shell',{...shell,range:'today'}))).toBe(true);
+ await expect(page.locator('.mfd-page .md-h')).toContainText('Today');
+ await expect(rows.nth(0).locator('.md-s')).toHaveText('');
+});
+
 test('CKP-MFD-65 the Models page lists models by usage with a share each, and a row selects the model',async({page})=>{
  await open(page,withHistory());await page.locator('[data-mfd="page:tune"]').click();
  const rows=page.locator('.mfd-page .md-list .md-row');
@@ -88,7 +105,7 @@ test('CKP-MFD-66 the Models chart key shows the frontier and names only the sele
 test('CKP-MFD-67 the Breakdown page has one key, Projects | Sessions; project rows carry their share as a bar',async({page})=>{
  await open(page,withHistory());await page.locator('[data-mfd="page:where"]').click();
  expect(await page.locator('.ok[data-opt="where"] b').allTextContents()).toEqual(['Projects','Sessions']);
- await expect(page.locator('.mfd-page .wd-h')).toHaveText('30d · 2 projects') // until the app's range (WP-09) reaches the page, projects keep their 30-day default;
+ await expect(page.locator('.mfd-page .wd-h')).toHaveText('7d · 2 projects');
  expect(await page.locator('.mfd-page .wd').evaluateAll(r=>r.map(x=>x.dataset.p+'%'))).toEqual(['90%','10%']);
  await expect(page.locator('.mfd-page .wd .wd-s').first()).toHaveText('90%');
 });
@@ -97,7 +114,7 @@ test('CKP-MFD-67 the Sessions view titles its count; an empty period says so',as
  await open(page,withHistory(false));await page.locator('[data-mfd="page:where"]').click();
  await expect(page.locator('.mfd-page .mp-empty')).toHaveText('No sessions in this period');
  await page.locator('.ok[data-opt="where"] b[data-choice="time"]').click();
- await expect(page.locator('.mfd-page .wd-h')).toHaveText('Today · 1 session');
+ await expect(page.locator('.mfd-page .wd-h')).toHaveText('7d · 1 session');
 });
 
 test('unreadable: with no publication and no history the Models and Breakdown pages say the data is unavailable',async({page})=>{
