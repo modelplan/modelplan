@@ -885,7 +885,7 @@ struct DockHelpInteraction: Equatable {
         updateNozzleMagnification()
         if let id = value.card.subscriptionID, let content = value.content {
             showCard(id, supplied: content)
-        } else {
+        } else if cardID != Self.emptyCardID {
             dismissCard()
         }
         guard !value.overflowIDs.isEmpty, let model else {
@@ -1123,7 +1123,13 @@ struct DockHelpInteraction: Equatable {
         view.onEmptyAction = { [weak self, weak view] in
             guard let self, let view, self.permitted, !self.retired, !self.rendering,
                   view.emptyStationRectForChecks != nil, let showSettings = self.showSettings else { return false }
+            // G3-136: a click (or press) also says why there is no data, next to the ring, while Settings opens.
+            if self.interactionView === view { self.showEmptyCard() }
             showSettings(); return true
+        }
+        view.onEmptyHover = { [weak self, weak view] over in
+            guard let self, let view, self.interactionView === view else { return }
+            if over { self.showEmptyCard() } else if self.cardID == Self.emptyCardID { self.dismissCard() }
         }
         view.permitsEmptyAction = { [weak self, weak view] source in
             guard let self, let view else { return false }
@@ -1527,7 +1533,9 @@ struct DockHelpInteraction: Equatable {
         let preference = DockEdgePreference(displayID: selectedID, edge: selected, alongFraction: passPreferences.dockAlongFraction)
         if edge.preference != preference { edge.setPreference(preference) }
         guard passIsCurrent(generation) else { return }
-        if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
+        if let cardID, cardID == Self.emptyCardID { showEmptyCard() }
+        else if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
+        else if interactionView.emptyStationHovered { showEmptyCard() } // G3-136: a replacement keeps the hovered reason
         if permitted {
             edge.start(); edge.refresh()
             // Pixel/material changes can leave the geometric presentation equal. Flush that
@@ -2218,27 +2226,101 @@ struct DockHelpInteraction: Equatable {
         rebuild(); syncDisplayFollower(); edge.refresh()
     }
     /// The same read-only content used by presentation; querying it never opens a card/window.
+    /// WP-15 (V1-FINAL §2, board-3; DOCK-3.8-50…53): header = name · plan, "x 分钟前更新" on the right; one row per quota
+    /// window (the tightest lit) with "5d18h 后重置" or "约40m用完"; today; reserve; the shared alert sentence at the bottom.
+    /// Loading = row names and placeholder blocks. Unreadable = the cause, the one step, and "重新读取". Stale = the kept
+    /// numbers (dim after an hour) and the age. Pulse-style: the card is only shown while the pointer is on the ring.
     public func cardContent(for id:String,at date:Date? = nil) throws -> DockCardContent? {
         let now=date ?? currentDate()
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
         var projected = memberSafePreferences.applying(to: input)
         projected.name = projected.duplicateDisplayName
-        let row = model?.presentationRows[id]
-        let selected = row?.windowObservations == nil ? nil :
-            try DockInstrumentProjection.evaluate(projected, now: now, redBelow: effectiveRedBelow).selectedWindowID
-        return try DockCardProjection.content(input: projected, selectedWindowID: selected,
-                revision: application?.snapshot.revision ?? 0,
-                plan:model?.presentationRows[id]?.plan ?? "",
-                sourceAndAge: row?.cardSourceAndAge(at:now,english:preferences.language == .english,selectedWindowID:selected) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
-                stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
-                windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english,selectedWindowID:selected) ?? [:],
-                additionalRows: (model?.presentationRows[id]?.cardAdditionalRows(at: now, english: preferences.language == .english) ?? [])
-                    + Self.usedUpRows(projected, at: now, language: preferences.language),
-                links: currentCardSourceLinks(for: id, at: now),
-                enterLabel: (cardUsesSettings(id) ? EngineRowsText.contextSettings : EngineRowsText.cockpitAction).value(preferences.language),
-                dismissLabel: EngineRowsText.contextClose.value(preferences.language),
-                actionLabel: row?.actionLabel ?? "",
+        let language = preferences.language, english = language == .english
+        let enterLabel = (cardUsesSettings(id) ? EngineRowsText.contextSettings : EngineRowsText.cockpitAction).value(language)
+        let dismissLabel = EngineRowsText.contextClose.value(language)
+        guard let row = model?.presentationRows[id] else {
+            // No presentation row (a bare preview input): the earlier neutral card.
+            return try DockCardProjection.content(input: projected, revision: application?.snapshot.revision ?? 0,
+                sourceAndAge: CommunityDockObservation.cardHeaderText(input: projected, snapshot: snapshot, model: model, now: now, language: language),
+                stateLabel: input.dataState == .fresh ? "" : (english ? "Unavailable or stale" : "不可用或已过期"),
+                additionalRows: Self.usedUpRows(projected, at: now, language: language),
+                links: currentCardSourceLinks(for: id, at: now), enterLabel: enterLabel, dismissLabel: dismissLabel,
                 redBelow: effectiveRedBelow, at: now)
+        }
+        let selected = try DockInstrumentProjection.evaluate(projected, now: now, redBelow: effectiveRedBelow).selectedWindowID
+        let loading = row.cardReadingState == .loading, unreadable = row.cardReadingState == .error
+        let kept = row.cardReadingState == .stale || row.cardReadingState == .errorLastGood
+        var additional: [DockCardRow] = loading ? [] : row.cardAdditionalRows(at: now, english: english) + Self.usedUpRows(projected, at: now, language: language)
+        if unreadable {
+            // DOCK-3.8-53: one cause sentence and the one step to fix it; the button is "重新读取" (below).
+            if !row.reason.isEmpty { additional.append(.init(id: "cause", kind: .event, label: "", value: row.reason)) }
+            if !row.nextStep.isEmpty { additional.append(.init(id: "cause-step", kind: .footnote, label: "", value: row.nextStep)) }
+        } else if kept, !row.reason.isEmpty {
+            // V1-FINAL §12: a kept reading says quietly why it is not new; no badge, no alert.
+            additional.append(.init(id: "kept-cause", kind: .footnote, label: "", value: row.reason))
+        }
+        if !loading, !unreadable,
+           let alert = DockCardAlertRule.alert(input: projected, runOutTimes: row.runOutTimes, redBelow: effectiveRedBelow, now: now) {
+            // DOCK-3.8-52: a reset the user can spend is the one thing to do now, so its reserve line brightens.
+            if row.hasResetAvailable(at: now) {
+                additional = additional.map { r in
+                    r.id == "reserve" ? DockCardRow(id: r.id, kind: r.kind, label: r.label, value: r.value, detail: r.detail,
+                        remainingFraction: r.remainingFraction, fillFraction: .some(r.fillFraction), tone: r.tone,
+                        emphasised: true, pill: r.pill, hint: r.hint) : r
+                }
+            }
+            // A used-up window already has its own D65 line under the readout; the footer does not say it twice.
+            if !alert.usedUp {
+                additional.append(.init(id: "alert", kind: .alert, label: "", value: Self.cardAlertSentence(alert, name: projected.name, now: now, language: language),
+                                        tone: alert.severity == .critical ? .critical : .warning))
+            }
+        }
+        // "重新读取" belongs to an unreadable card only; the D41 Keychain button stays wherever it is needed.
+        let readAgain = WidgetCardText.readAgain.value(language)
+        var action = row.actionLabel
+        if unreadable && action.isEmpty { action = readAgain } else if !unreadable && action == readAgain { action = "" }
+        let content = try DockCardProjection.content(input: projected, selectedWindowID: selected,
+                revision: application?.snapshot.revision ?? 0, plan: row.plan,
+                sourceAndAge: loading ? WidgetCardText.reading.value(language) : row.cardUpdatedText(at: now, language: language, selectedWindowID: selected),
+                stateLabel: "",
+                windowDetails: loading ? [:] : row.cardRowDetails(at: now, language: language),
+                additionalRows: additional,
+                links: currentCardSourceLinks(for: id, at: now),
+                enterLabel: enterLabel, dismissLabel: dismissLabel, actionLabel: action,
+                redBelow: effectiveRedBelow, at: now)
+        guard loading else { return content }
+        // DOCK-3.8-53 loading: the window names with dark placeholder blocks (empty bars), no numbers and no "--".
+        let placeholders = content.rows.map { r -> DockCardRow in
+            guard r.kind == .quota || r.kind == .extraQuota else { return r }
+            return DockCardRow(id: r.id, kind: r.kind, label: r.label, value: "", detail: "", remainingFraction: nil, fillFraction: .some(nil), tone: .unknown)
+        }
+        return DockCardContent(subscriptionID: content.subscriptionID, revision: content.revision, name: content.name, plan: content.plan,
+                               sourceAndAge: content.sourceAndAge, stateLabel: content.stateLabel, rows: placeholders, links: content.links,
+                               enterLabel: content.enterLabel, dismissLabel: content.dismissLabel, actionLabel: content.actionLabel)
+    }
+    /// DOCK-3.8-52: the footer is the shared alert sentence (ALR-50, WP-11 `AlertSentence`), the same words as the lamp,
+    /// the alert list and the menu line: "Claude 5h 9% · out ~40m · resets in 2h00".
+    static func cardAlertSentence(_ alert: DockCardAlert, name: String, now: Date, language: SettingsLanguage) -> String {
+        func minutes(_ date: Date?) -> Double? {
+            guard let date else { return nil }
+            let seconds = date.timeIntervalSince(now)
+            return seconds.isFinite && seconds > 0 ? ceil(seconds / 60) : nil
+        }
+        return AlertSentence.quota(subscription: SettingsText(name, name), window: SettingsText(alert.label, alert.label),
+                                   remaining: alert.remaining, runOutMinutes: minutes(alert.runOutAt),
+                                   resetMinutes: minutes(alert.resetsAt)).text.value(language)
+    }
+    /// G3-136 (owner 11-18): why the widget is an empty ring, from the composition ("Still reading", "<tool> · Reading
+    /// permission needed", "No subscriptions yet"). Nil leaves the empty ring without a reason card.
+    public var emptyStationReason: (() -> String?)?
+    /// G3-136: the empty ring's card, one line saying why there is no data. Only while no subscription has a ring.
+    public func emptyCardContent() throws -> DockCardContent? {
+        guard !retired, model?.inputs.isEmpty ?? true, let reason = emptyStationReason?(), !reason.isEmpty else { return nil }
+        let content = DockCardContent(subscriptionID: Self.emptyCardID, revision: application?.snapshot.revision ?? 0, name: "ModelPlan",
+            rows: [DockCardRow(id: "empty-reason", kind: .event, label: "", value: reason)],
+            enterLabel: EngineRowsText.contextSettings.value(preferences.language), dismissLabel: EngineRowsText.contextClose.value(preferences.language))
+        try content.validate()
+        return content
     }
     /// D65: one plain line per general window at 0 % (shown numbers only), under the readout.
     static func usedUpRows(_ input: DockInstrumentInput, at now: Date, language: SettingsLanguage) -> [DockCardRow] {
@@ -2256,6 +2338,42 @@ struct DockHelpInteraction: Equatable {
         guard let expiry = attentionSignals.first(where: { $0.id == id })?.reset?.expiresAt, now < expiry else { return [] }
         return model?.presentationRows[id]?.links ?? []
     }
+    /// G3-136: the reason card's id; never a subscription id (those are 16 hex digits).
+    static let emptyCardID = "dock.empty"
+    /// G3-136: shows the empty ring's reason card (hover or click on the empty station). The card says why there is
+    /// no data; in production it has no buttons (D37), elsewhere its enter button opens Settings.
+    private func showEmptyCard() {
+        guard permitted, !retired, preferences.showDock, let content = try? emptyCardContent() else {
+            if cardID == Self.emptyCardID { dismissCard() }
+            return
+        }
+        cardGeneration &+= 1
+        let token = cardGeneration
+        cardID = Self.emptyCardID; cardPresentedRevision = content.revision; cardPresentedGeneration = inputGeneration; card.isHidden = false
+        card.appearance = NSAppearance(named: (application?.effective.darkAppearance ?? true) ? .darkAqua : .aqua)
+        card.permitsAction = { [weak self] id, _ in
+            guard let self else { return false }
+            return id == Self.emptyCardID && self.cardID == Self.emptyCardID && self.cardGeneration == token && !self.card.isHidden
+        }
+        card.onOpenURL = nil
+        card.onEnter = { [weak self] id, _ in
+            guard let self, id == Self.emptyCardID, self.cardID == Self.emptyCardID, self.cardGeneration == token else { return }
+            self.dismissCard(); self.openSettings()
+        }
+        card.onDismiss = { [weak self] in
+            guard let self, self.cardGeneration == token else { return }
+            self.dismissCard()
+        }
+        card.onAction = nil
+        card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
+        var style = Self.prototypeCardStyle
+        style.showsActions = purpose != .production
+        do { try card.apply(content, style: style) } catch { dismissCard(); return }
+        guard createsNativePanels else { return }
+        placeCardPanel(Self.emptyCardID)
+    }
+    /// G3-136: the empty reason card is open now (for checks).
+    @_spi(DockResourceChecks) public var emptyCardShownForChecks: Bool { cardID == Self.emptyCardID && !card.isHidden }
     private func interactionCardContent(_ id: String) -> DockCardContent? { try? cardContent(for:id) }
     private func showCard(_ id: String, supplied: DockCardContent? = nil) {
         guard permitted, !retired, preferences.showDock,
@@ -2321,7 +2439,8 @@ struct DockHelpInteraction: Equatable {
         guard let cardPanel, let panelFrame = panel?.frame,
               let screen = topology(of: sampleEnvironment()).display(edge.presentation?.placement?.displayID) else { dismissCard(); return }
         let view = interactionView
-        guard let local = view.cardRingAnchor(id), let window = view.window else { dismissCard(); return }
+        guard let local = id == Self.emptyCardID ? view.emptyStationAnchor : view.cardRingAnchor(id),
+              let window = view.window else { dismissCard(); return }
         let anchor = window.convertToScreen(view.convert(local, to: nil))
         let hull = view.registeredHullBounds.map { window.convertToScreen(view.convert($0, to: nil)) }
         let actualEdge = edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)

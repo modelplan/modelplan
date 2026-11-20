@@ -206,7 +206,7 @@ final class ShellLayoutTests: XCTestCase {
         let value = try placed(width: 1440, height: 900, bar: 24, macDock: 70)
         // The page is top-anchored in the whole-point web view, so the region keeps its scaled distance from the top.
         XCTAssertEqual(value.canvasHeight - value.scaledTitleDragFrame.maxY, (value.pageSize.height - value.titleDragFrame.maxY) * value.scale, accuracy: 1e-9)
-        XCTAssertEqual(value.scaledTitleDragFrame.width, 216 * value.scale, accuracy: 1e-9)
+        XCTAssertEqual(value.scaledTitleDragFrame.width, 190 * value.scale, accuracy: 1e-9)
         XCTAssertLessThanOrEqual(value.scaledTitleDragFrame.maxY, value.frame.height)
     }
     /// G3-43 / CKP-SHELL-04: the drag region sits on the strip, not on the canopy, in every shape.
@@ -216,7 +216,7 @@ final class ShellLayoutTests: XCTestCase {
             let value = try fit(height, closed: closed), canvas = value.pageSize.height
             XCTAssertEqual(canvas - value.titleDragFrame.maxY, stripTop - 3, "top of the strip keys")
             XCTAssertEqual(value.titleDragFrame.height, 32)
-            XCTAssertLessThan(value.titleDragFrame.maxX, 243, "the shutter keeps its input")
+            XCTAssertLessThanOrEqual(value.titleDragFrame.maxX, 214, "ALERT keeps its input (WP-10: page x 214)")
         }
     }
     func testShortAndNarrowDisplaysScaleTheWholeRootIncludingBaseReserve() throws {

@@ -44,7 +44,7 @@ import ModelPlanShell
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                             cockpitEntryEnabled: Bool? = nil,
-                            dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                            dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil, edition: ProductionEdition = .current,
                             deadlineNow: @escaping @MainActor () -> Date = { Date() },
                             deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
@@ -54,7 +54,7 @@ import ModelPlanShell
         // Preserve the existing injected-client/console seam used by its callers.
         if let makeClient {
             return EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-                createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,makeClient:makeClient,
+                createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,edition:edition,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,makeClient:makeClient,
                 makeSettingsSurface:makeSettingsSurface,makeConsole:makeConsole,activateSettings:activateSettings)
         }
         #if MODELPLAN_TEST_ONLY_SPI
@@ -63,7 +63,7 @@ import ModelPlanShell
         #endif
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-            createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,
+            createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,edition:edition,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,
             makeClient: { configuration, store in
                 let coordinator = EngineCockpitCoordinator { [weak owner] context in
                     #if MODELPLAN_TEST_ONLY_SPI

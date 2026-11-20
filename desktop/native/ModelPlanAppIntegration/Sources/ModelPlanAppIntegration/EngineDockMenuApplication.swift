@@ -188,14 +188,14 @@ struct StatusNoticePresentation {
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                 createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                 cockpitEntryEnabled: Bool? = nil,
-                dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil, edition: ProductionEdition = .current,
                 deadlineNow: @escaping @MainActor () -> Date = { Date() },
                 deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
                 makeClient: (@MainActor (EngineClientConfiguration, ModelPlanEngineStore.EngineStore) -> any EngineClient)? = nil,
                 makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                 makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
                 activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) {
-        let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient)
+        let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, dockEnvironment: dockEnvironment, edition: edition, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient)
         self.composition = composition
         self.engineConfiguration = configuration
         self.scopeBinding = EngineScopeConsentBinding(composition: composition)
@@ -510,17 +510,15 @@ struct StatusNoticePresentation {
         context.capabilities.loginNotInApplications = loginServiceAdapter?.observedNotInApplications ?? false
         context.notificationAuthorization = observedAuthorization
         context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
-        // D87 slice 9: the Keychain card still asks for Keychain access; any other cause opens its Subscriptions row.
+        // D41: the Keychain card still asks for Keychain access. DOCK-3.8-53 (WP-15): any other unreadable card's button is
+        // "重新读取", one foreground refresh, the same request as the menu's Refresh and a Settings row's Retry.
         composition.dock.cardActionRequested = { [weak self] id in
             guard let self else { return }
             let vendor = self.settings.editor.context.subscriptions.first { $0.id == id }?.vendor
             if self.scopeConsentEntry.controller.needsKeychainAccess, vendor == nil || vendor == "claude" {
                 Task { await self.scopeConsentEntry.controller.allowKeychain() }
             } else {
-                Task {
-                    await self.settingsHost.present(paneID: "subscriptions", origin: .userInitiated)
-                    self.scopeConsentEntry.view.revealSubscriptionRow(id)
-                }
+                Task { await self.composition.refresh() }
             }
         }
         // D87 slice 6: a row's "Retry" asks the engine for one foreground refresh, the same request as the menu's.
