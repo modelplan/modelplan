@@ -213,12 +213,12 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   };
  }
  function renderData(data:WireCockpitData,now:number){
-  const previous=lastData,previousAt=lastRenderedAt,restore=snapshot();
+  const previous=lastData,previousAt=lastRenderedAt,restore=snapshot(),restoreDeck=deck.checkpoint();
   try{renderInto(data,now);}
   catch(error){
    if(!restoring&&!disposed){
     restoring=true;
-    try{if(previous)renderInto(previous,previousAt);else{lastData=null;frame.engine.replaceChildren();setEmpty('waiting');}}
+    try{restoreDeck(); /* the refused data was already the deck's (and its held efforts'): put the committed deck back before repainting the previous data (macrevb-1052-3) */if(previous)renderInto(previous,previousAt);else{lastData=null;frame.engine.replaceChildren();setEmpty('waiting');}}
     catch{restore();}
     finally{restoring=false;}
    }

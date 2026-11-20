@@ -30,8 +30,9 @@ const NOW='2026-10-20T14:05:00Z';
 const ranking=(top,total)=>({measure:'observed-output-tokens',attribution:'unattributed',recent7d:{entities:top.length,totalObservedOutputTokens:total,top},recent30d:{entities:0,totalObservedOutputTokens:0,top:[]}});
 // The ≈cost (estCost, WP-06) is not in the wire yet, so the bridge refuses it: until then every card shows tokens large and
 // shares by tokens (V1-FINAL §7 "no public price"); the ≈$ form is covered by the unit test model-card.test.mjs.
-function cardData({opusUnused=false,unlisted=false}={}){
+function cardData({opusUnused=false,unlisted=false,sol=null}={}){
  const data=throttleData();
+ if(sol)data.details.sessions=[...sol,...data.details.sessions.filter(s=>s.model!=='sol')];
  if(unlisted)Object.assign(data.details.sessions[2],{model:'unknown',modelDisplay:'Sol 6.2'});
  // Sol 212M (17 %), Opus 480M (38 %), GLM 96M (8 %): shares of the 7-day total.
  data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:null,subscriptions:[],
@@ -51,10 +52,12 @@ async function open(page,{locale='en',tier='tall',reduceMotion=false,...o}={}){
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:cardData(o)}))).toBe(true);
  await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(3);
+ return send;
 }
 const card=(page,name)=>page.locator('.fd-ch:not(.empty)').filter({has:page.locator('.st-name',{hasText:name})});
 // The visible text lines of a card; the effort line's two parts are spaced by layout (a flex gap), so join them with a space.
 const lines=ch=>ch.locator('.fd-strip').evaluate(s=>[...s.children].filter(e=>!e.matches('.st-vend,.cd-bar,.st-pin')).map(e=>e.matches('.cd-eff')&&e.children.length?[...e.children].map(c=>c.textContent.trim()).join(' '):e.textContent.trim()));
+const solSession=(n,effort,rate,state='running',minutesAgo=1)=>({sessionRef:String(n).padStart(16,'0'),source:'codex',subscriptionRef:null,model:'sol',effort,projectLabel:'p'+n,lastObservedAt:new Date(Date.parse(NOW)-minutesAgo*60e3).toISOString().replace('.000Z','Z'),state,rate});
 const row=(page,level)=>page.locator(`.sc-l[data-level="${level}"]`).evaluate(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;});
 const centre=l=>l.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};});
 
@@ -81,6 +84,47 @@ test('CKP-FAD-50/55 cards: use large (tokens until ≈cost exists), share bar in
    return kids.flatMap((r,i)=>[...(r.right>box.right+.5||r.bottom>box.bottom+.5?['out']:[]),...(i&&r.top<kids[i-1].bottom-.5?['overlap']:[])]);}));
   expect(bad,tier).toEqual([]);
  }
+});
+
+test('CKP-FAD-52 an unaliased long model name and a long usage line stay within nine visible characters; the full name stays accessible (macrevb-1052-1)',async({page})=>{
+ const send=await open(page,{unlisted:true});
+ const data=cardData({unlisted:true});data.details.sessions[2].modelDisplay='Future Research Model';
+ data.history.models.recent7d.top[0].observedOutputTokens=1000e9;data.history.models.recent7d.top[0].share=1;data.history.models.recent7d.totalObservedOutputTokens=1000e9;
+ expect(await page.evaluate(raw=>window.modelPlanCockpit.receive(raw),send('display',{data}))).toBe(true);
+ const long=card(page,'Future');
+ await expect(long).toHaveCount(1);
+ for(const line of await lines(long))expect([...line].length,line).toBeLessThanOrEqual(9);
+ expect(await long.locator('.fd-strip').getAttribute('aria-label')).toBe('Future Research Model: Unlisted');
+ for(const ch of await page.locator('.fd-ch:not(.empty)').all())for(const line of await lines(ch))expect([...line].length,line).toBeLessThanOrEqual(9);
+});
+
+test('CKP-FAD-55 the lamp reads every verified session: a running session at position seven lights it(macrevb-1052-2)',async({page})=>{
+ const many=[...Array.from({length:6},(_,i)=>solSession(i+1,'high',null,'idle',i+2)),solSession(7,'high',null,'running',1)];
+ await open(page,{sol:many});
+ const lamp=card(page,'Sol 6.1').locator('.fd-indicator');
+ await expect(lamp).toHaveAttribute('data-state','live');
+ expect(await lamp.evaluate(e=>e.style.getPropertyValue('--lamp'))).toMatch(/^#/); // bound to the one subscription here; the unbound case is in model-card.test.mjs
+ await open(page,{sol:[solSession(1,'high',null,'idle')]});
+ await expect(card(page,'Sol 6.1').locator('.fd-indicator')).toHaveAttribute('data-state','used');
+});
+
+test('CKP-FAD-53 a refused render leaves the held current effort where it was committed, inside the 1.5x band (macrevb-1052-3)',async({page})=>{
+ const send=await open(page,{sol:[solSession(1,'high',40),solSession(2,'xhigh',30,'running',2)]}); // High leads: held High
+ const sol=card(page,'Sol 6.1'),cur=()=>sol.locator('.cd-cur').textContent();
+ expect(await cur()).toBe('High');
+ // A display where XHigh leads by 2x (held would become XHigh), refused after the deck painted.
+ const refused=await page.evaluate(raw=>{
+  const original=Element.prototype.replaceChildren;let armed=true;
+  Element.prototype.replaceChildren=function(...n){if(armed&&this.classList?.contains('hud')){armed=false;throw Error('synthetic render failure');}return original.apply(this,n);};
+  try{return window.modelPlanCockpit.receive(raw);}finally{Element.prototype.replaceChildren=original;}
+ },send('display',{data:cardData({sol:[solSession(1,'high',20),solSession(2,'xhigh',40,'running',2)]})}));
+ expect(refused).toBe(false);
+ // The repaint of the previous display: High 40 vs XHigh 30 is inside the band, so the committed High stays.
+ expect(await cur()).toBe('High');
+ // The next good display with the same ratio keeps High too (it would read XHigh had the refused render stuck).
+ const again=await page.evaluate(raw=>({ok:window.modelPlanCockpit.receive(raw),why:window.modelPlanCockpit.reject(),state:window.modelPlanCockpit.state()}),send('display',{data:cardData({sol:[solSession(1,'high',40),solSession(2,'xhigh',30,'running',2)]})}));
+ expect(again.ok).toBe(true);
+ expect(await cur()).toBe('High');
 });
 
 test('CKP-FAD-51 unused and zh: dimmed card "未使用 / ★Med", dashed lever',async({page})=>{
@@ -116,6 +160,10 @@ test('CKP-FAD-54 the five steps, with their timings',async({page})=>{
  await page.mouse.move(t.x,high);await page.mouse.down();await page.mouse.move(t.x,(high+xhigh)/2+1,{steps:3});
  await expect(ghost).toBeVisible();await expect(ghost).toHaveClass(/\bdrag\b/);
  expect(await lever.getAttribute('data-frame')).toBe(frame);
+ // macrevb-1052-4: with the pointer still down the card already shows the tentative effort.
+ await page.mouse.move(t.x,xhigh,{steps:2});
+ await expect(strip).toHaveAttribute('data-card','try');
+ expect(await lines(sol)).toEqual(['Sol 6.1','Try XHigh','Now High','Trying']);
  await page.mouse.move(t.x,xhigh+2,{steps:2});await page.mouse.up(); // released near XHigh: snaps to it
  await expect(travel).toHaveAttribute('data-trial','XHigh');
  await expect(strip).toHaveAttribute('data-card','try');
@@ -200,6 +248,10 @@ test('G3-134 an unlisted model with a readable name gets a card: its name, "Unli
  await expect(card3.locator('.fd-cap')).toBeHidden();
  await expect(card3.locator('.fd-indicator')).toHaveAttribute('data-state','used'); // its session is idle
  expect(await card3.locator('.fd-strip').getAttribute('aria-label')).toBe('Sol 6.2: Unlisted');
+ // macrevb-1052-5: no lever means no slider: out of the keyboard and accessibility trees, no out-of-range aria-valuenow.
+ const slider=card3.locator('.fd-travel');
+ await expect(slider).toBeHidden();await expect(slider).toHaveAttribute('tabindex','-1');await expect(slider).not.toHaveAttribute('role','slider');
+ await expect(slider).not.toHaveAttribute('aria-valuenow',/.*/);await expect(card3.getByRole('slider')).toHaveCount(0);
  await card3.locator('.fd-strip').click();
  await expect(page.locator('.mfd-page.pg-compare')).toHaveCount(0);
  await expect(page.locator('.fd-ch.sel')).toHaveCount(0);

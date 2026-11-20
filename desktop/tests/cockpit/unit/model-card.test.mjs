@@ -3,7 +3,7 @@
 // current effort from the last 15 minutes with hysteresis, and the use / share a card shows for the time range.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {faderModel,cardText,effortLine,CARD_LINE} from '../../../cockpit/study/rocket-r1/fader-view.js';
+import {faderModel,cardText,effortLine,stripAria,CARD_LINE} from '../../../cockpit/study/rocket-r1/fader-view.js';
 import {approxCost,tokShort} from '../../../cockpit/study/rocket-r1/mfd-pages/fmt.js';
 import {setLanguage} from '../../../cockpit/study/rocket-r1/i18n.js';
 import {cardUsage,currentEffort,CURRENT_WINDOW_MS} from '../../../cockpit/.tmp/compiled/src/model-card.js';
@@ -59,6 +59,26 @@ test('CKP-FAD-52 a trial reads "试 XHigh / 当前 High" with no multiple; every
  }
  assert.deepEqual(effortLine('XHigh','High'),{cur:'XHigh',rec:''},'"XHigh ★High" does not fit: the current effort alone');
  assert.deepEqual(effortLine('High','Med'),{cur:'High',rec:'Med'});
+});
+
+test('macrevb-1052-1 an unaliased long name and "1000B 100%" are bounded on the card; the accessible name keeps the full text',()=>{
+ setLanguage('en');
+ const c=channel(fader({name:'Future Research Model',short:'Future Research Model',use:{tokens:1000e9,share:1}}));
+ for(const line of cardText(c.card))assert.ok(chars(line)<=CARD_LINE,`"${line}"`);
+ assert.match(stripAria(c),/Future Research Model/);assert.match(stripAria(c),/1000B 100%/);
+ const u=channel(fader({name:'Future Research Model',use:null,live:false}));
+ for(const line of cardText(u.card))assert.ok(chars(line)<=CARD_LINE,`"${line}"`);
+});
+
+test('macrevb-1052-2 the lamp reads the full verified session set; an unbound running session borrows no subscription colour',()=>{
+ setLanguage('en');
+ const idle=n=>Array.from({length:n},()=>({sub:'a',active:false}));
+ const seven=channel(fader({sessions:idle(6),lamps:[...idle(6),{sub:'a',active:true}]}));
+ assert.equal(seven.session,'live');assert.equal(seven.lampColour,'#6aa8ff');
+ const unbound=channel(fader({sessions:[{sub:'',active:true}],lamps:[{sub:'',active:true}]}));
+ assert.equal(unbound.session,'live');assert.equal(unbound.lampColour,null,'not the first subscription colour');
+ const mixed=channel(fader({lamps:[{sub:'',active:true},{sub:'a',active:true}]}));
+ assert.equal(mixed.lampColour,'#6aa8ff');
 });
 
 test('CKP-FAD-53 current effort: most tokens in the last 15 minutes, with hysteresis; a notable other effort gets a dot',()=>{

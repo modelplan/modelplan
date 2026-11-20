@@ -77,9 +77,11 @@ function channel(f, ui, colour) {
     fast: tier ? {state: from === 'fast' ? 'try' : f.currentFast ? 'on' : 'off', std: f.currentFast} : null,
     sel: ui.selModel === f.id};
   // CKP-FAD-55: one session lamp. Lit in the subscription colour = a session is running; dim = used in this range; off.
-  const running = f.sessions.find(x => x.active);
-  ch.session = running ? 'live' : f.live || f.recorded || f.use ? 'used' : 'off';
-  ch.lampColour = running ? colour.get(running.sub) || segments[0] || null : null;
+  // macrevb-1052-2: from every verified session (f.lamps), not the six the tooltip lists; the colour is a bound session's
+  // subscription, never another subscription's (an unbound running session lights the lamp in the neutral ink).
+  const lamps = f.lamps || f.sessions, running = lamps.find(x => x.active && x.sub) || lamps.find(x => x.active);
+  ch.session = running ? 'live' : f.live || f.recorded || f.use || lamps.length ? 'used' : 'off';
+  ch.lampColour = running && running.sub ? colour.get(running.sub) || null : null;
   ch.card = card(ch, f);
   return ch;
 }
@@ -87,11 +89,13 @@ function channel(f, ui, colour) {
 // CKP-FAD-52 / §14: every card line is at most 9 characters in every language.
 export const CARD_LINE = 9;
 const fits = s => [...s].length <= CARD_LINE;
+// macrevb-1052-1: a visible line is never longer than the limit; the full text stays in the accessible name (stripAria).
+const clip = s => fits(s) ? s : [...s].slice(0, CARD_LINE - 1).join('') + '…';
 // The model name in at most 9 characters ("Sonnet 5.5" → "Sonnet5.5"); a name no alias shortens keeps its full text and
 // is set tighter (class "long") rather than turned into a generic word.
 function cardLabel(name) {
   const short = shortLabel(name, 'model', fits);
-  return short === 'Model' && name !== 'Model' ? shortLabel(name) : short;
+  return clip(short === 'Model' && name !== 'Model' ? shortLabel(name) : short);
 }
 // The effort line: "High ★Med"; current = ★ → "★Med"; "XHigh ★High" does not fit → the current effort alone.
 export function effortLine(cur, rec) {
@@ -118,8 +122,10 @@ export function card(c, f = {}) {
   }
   if (use) {
     const priced = typeof use.cost === 'number' && Number.isFinite(use.cost);
-    lines.big = priced ? approxCost(use.cost) : tokShort(use.tokens); lines.bigKind = priced ? 'cost' : 'tokens';
-    lines.bar = Math.max(0, Math.min(1, use.share)); lines.use = [tokShort(use.tokens), pctOf(use.share) + '%'];
+    lines.bigFull = priced ? approxCost(use.cost) : tokShort(use.tokens); lines.big = clip(lines.bigFull); lines.bigKind = priced ? 'cost' : 'tokens';
+    // "1000B 100%" is 10 characters: the share (also drawn by the bar) drops off before the tokens are cut.
+    const tok = tokShort(use.tokens), pct = pctOf(use.share) + '%';
+    lines.bar = Math.max(0, Math.min(1, use.share)); lines.useFull = [tok, pct]; lines.use = fits(`${tok} ${pct}`) ? [tok, pct] : [clip(tok)];
   } else if (f.live || f.recorded) {
     lines.state = 'norecord'; lines.big = t('fad.cardNoRecord'); lines.bigKind = 'note';
   } else {
@@ -159,7 +165,7 @@ export function stripAria(c) {
   if (c.unlisted) return `${c.name}: ${t('fad.cardUnlisted')}`;
   const current = t('fad.stripAria', {m: c.name, cur: c.cur || t('fad.unreportedAria'), rec: c.rec, x: c.recX != null ? t('fad.stripAriaX', {x: times(c.recX)}) : '',
     more: c.others.length ? t('fad.stripAriaMore', {more: c.others.map(([e, n]) => `${e}×${n}`).join(' ')}) : '',
-    use: c.card && c.card.use ? t('fad.stripAriaUse', {u: [c.card.bigKind === 'cost' ? c.card.big : '', c.card.use.join(' ')].filter(Boolean).join(' · ')}) : ''});
+    use: c.card && c.card.use ? t('fad.stripAriaUse', {u: [c.card.bigKind === 'cost' ? c.card.bigFull : '', c.card.useFull.join(' ')].filter(Boolean).join(' · ')}) : ''});
   if (!c.trial) return current;
   const tr = c.trial, fastOnly = tr.fast != null && tr.effort === c.base;
   return current + ' · ' + t('fad.stripTrialAria', {m: c.name, e: fastOnly ? t(tr.fast ? 'fad.tryFast' : 'fad.tryStd') : tr.effort + (tr.fast ? ' ⚡' : ''),

@@ -1161,7 +1161,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
             point=((try? await web.evaluateJavaScript(centre)) as? String) ?? ""
         }
         let xy=point.split(separator:",").compactMap{Double($0)}
-        XCTAssertEqual(xy.count,2,"a model card painted")
+        guard xy.count==2 else{XCTFail("a model card painted: no card centre read (\(point))");return}
         let before=((try? await web.evaluateJavaScript("document.querySelectorAll('.fd-ch.sel').length+'|'+document.querySelectorAll('.mfd-page.pg-compare').length")) as? String) ?? "?"
         XCTAssertEqual(before,"0|0","no model is selected before the click")
         let location=web.convert(NSPoint(x:xy[0],y:xy[1]),to:nil)
