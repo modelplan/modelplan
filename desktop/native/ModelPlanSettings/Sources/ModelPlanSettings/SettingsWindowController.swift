@@ -128,6 +128,8 @@ enum SettingsWords {
     private lazy var connectionsView = SettingsConnectionsView(editor: editor)
     private let scopeConsentEntry: ScopeConsentEntry?
     private var historyImportView: SettingsHistoryImportView?
+    /// The "Plugins" section on the Subscriptions pane (CKP-PLG-54), attached by the app once its plugin store is open.
+    public private(set) var cockpitPluginsView: SettingsCockpitPluginsView?
     private let heading = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
     /// G3-71: the hidden-icon notice. General pane only, dismissible; never in the status line.
@@ -206,11 +208,22 @@ enum SettingsWords {
     }
     public func selectPane(_ id: String) {
         guard let index = SettingsStructure.task65.panes.firstIndex(where: { $0.id == id }) else { return }
+        // Explicit pane targets (including a widget card's Subscriptions link) must be visible in a reused window.
+        searchField.stringValue = ""
         selectedPaneID = id
         sidebar.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         refresh()
     }
     public func refreshEnvironment() { editor.update(environment: environmentProvider()) }
+    /// CKP-PLG-54 (D293): shows the "Plugins" section on the Subscriptions pane. It sits after the catalogue rows and
+    /// the subscription rows, so row insertion indices are unchanged.
+    public func attachCockpitPlugins(_ model: CockpitPluginSettingsModel) {
+        guard cockpitPluginsView == nil else { return }
+        let view = SettingsCockpitPluginsView(model: model, language: language)
+        cockpitPluginsView = view; stack.addArrangedSubview(view)
+        view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        refresh()
+    }
     public func windowWillClose(_ notification: Notification) {
         for row in rows.values { row.diagram?.stop() }
         if scopeConsentEntry == nil { connectionsView.suspend() }
@@ -339,6 +352,7 @@ enum SettingsWords {
                 : !["import", "history", "usage", "导入", "历史", "使用"].contains(where: { query.localizedCaseInsensitiveContains($0) })
             if !view.isHidden, scopeConsentEntry?.historyImport?.status == nil { Task { await scopeConsentEntry?.historyImport?.refreshIfNeeded() } }
         }
+        cockpitPluginsView?.apply(language: language, paneID: selectedPaneID, query: query)
         if scopeConsentEntry == nil {
             if connectionContent.isHidden && !connectionsWereHidden { connectionsView.suspend() }
             connectionsView.apply(language: language)

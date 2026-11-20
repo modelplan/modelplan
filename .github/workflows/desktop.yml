@@ -285,7 +285,7 @@ jobs:
 
   cockpit-spi-tests:
     needs: [queue-scope, pr-ref, pr-scope]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') }}
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     # The ModelPlanCockpitWeb test classes (or test methods) behind #if MODELPLAN_TEST_ONLY_SPI are not compiled
     # by the pinned trusted-mac.yml U11 job, which runs `swift test` without the flag. Compile and run them here on a
     # hosted Mac, only those classes. test_spi_gated_tests_run.py (native-partition) fails if a gated class is in no workflow.
@@ -305,7 +305,7 @@ jobs:
       contents: read
       actions: read
     needs: [queue-scope, pr-ref, pr-scope]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') }}
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -326,20 +326,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Select newest installed Xcode for the release package
+      - name: Pin Xcode 26.6 (17F113)
         run: |
-          python3 - <<'PYCODE'
-          import os, plistlib, re
+          python3 - <<'PY'
+          import os, plistlib, subprocess
           from pathlib import Path
-          candidates = []
-          for app in Path('/Applications').glob('Xcode*.app'):
-              version = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
-              candidates.append((tuple(map(int, re.findall(r'\d+', version))), app))
-          if not candidates:
-              raise SystemExit('No installed Xcode')
+          WANT_VERSION, WANT_BUILD = '26.6', '17F113'
+          for app in sorted(Path('/Applications').glob('Xcode*.app')):
+              try:
+                  info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+                  build = plistlib.loads((app / 'Contents/version.plist').read_bytes())['ProductBuildVersion']
+              except (OSError, KeyError):
+                  continue
+              if info['CFBundleShortVersionString'] == WANT_VERSION and build == WANT_BUILD:
+                  developer_dir = f'{app}/Contents/Developer'
+                  break
+          else:
+              raise SystemExit(f'Pinned Xcode {WANT_VERSION} ({WANT_BUILD}) is not installed on this runner')
           with open(os.environ['GITHUB_ENV'], 'a') as output:
-              output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
-          PYCODE
+              output.write(f'DEVELOPER_DIR={developer_dir}\n')
+          print(f'DEVELOPER_DIR={developer_dir}', flush=True)
+          subprocess.run(['xcodebuild', '-version'], check=True, env={**os.environ, 'DEVELOPER_DIR': developer_dir})
+          PY
       - name: Check smoke assertions and release identity negative controls
         run: python3 -m unittest discover -s desktop/native/tools/app-smoke -p 'test_*.py' -v
       - name: Fetch the approved prebuilt credential helper

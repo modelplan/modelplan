@@ -119,6 +119,23 @@ func TestEndpointMatchAndPlanMeteringV13(t *testing.T) {
 	if d, err := Parse("client", bad); err != nil || d.PlanMetering != nil {
 		t.Fatalf("bad metering: %v %+v", err, d.PlanMetering)
 	}
+	// A planMetering or planModels of the wrong JSON type is dropped too, not the publication (macrevb-885-1 paths).
+	for name, raw := range map[string]string{
+		"metering string":     strings.Replace(string(b), `"planMetering":{"revision":"r1"`, `"planMetering":"x","unused":{"revision":"r1"`, 1),
+		"metering plans type": strings.Replace(string(b), `"pool":null,"rows":[],"futureField":1}`, `"pool":null,"rows":"none","futureField":1}`, 1),
+		"planModels type":     strings.Replace(string(b), `"speedTiers":[],`, `"speedTiers":[],"planModels":{"plans":[{"planId":"p","basis":"access","modelIds":"glm"}]},`, 1),
+	} {
+		d, err := Parse("client", []byte(raw))
+		if err != nil {
+			t.Fatalf("%s: the publication must survive: %v", name, err)
+		}
+		if d.PlanModels != nil || (name != "planModels type" && d.PlanMetering != nil) || d.Match("claude-code", "glm-5.3[1m]") != nil {
+			t.Fatalf("%s: %+v %+v", name, d.PlanMetering, d.PlanModels)
+		}
+		if name == "planModels type" && d.PlanMetering == nil {
+			t.Fatalf("%s: a good planMetering was dropped", name)
+		}
+	}
 }
 
 func TestEffortProvisionalRoundTripsOnlyWhenSet(t *testing.T) {
@@ -162,6 +179,10 @@ func TestEffortAAScoreKeptFromClientV15AndDroppedOtherwise(t *testing.T) {
 		"below v1.5": doc("client-v1.4", scored),
 		"zero":       doc("client-v1.5", strings.Replace(scored, `61.5`, `0`, 1)),
 		"negative":   doc("client-v1.5", strings.Replace(scored, `61.5`, `-3`, 1)),
+		// a value of the wrong JSON type or out of float64 range is dropped, not a decode failure (macrevb-885-1)
+		"string":       doc("client-v1.5", strings.Replace(scored, `61.5`, `"48.2"`, 1)),
+		"out of range": doc("client-v1.5", strings.Replace(scored, `61.5`, `1e400`, 1)),
+		"object":       doc("client-v1.5", strings.Replace(scored, `61.5`, `{"v":1}`, 1)),
 	} {
 		d, err := Parse("client", raw)
 		if err != nil {
@@ -171,8 +192,26 @@ func TestEffortAAScoreKeptFromClientV15AndDroppedOtherwise(t *testing.T) {
 			t.Fatalf("%s: %+v", name, e)
 		}
 	}
+	// a malformed aaIndexVersion is dropped too; the scores stay
+	d, err = Parse("client", []byte(strings.Replace(string(doc("client-v1.5", scored)), `"aaIndexVersion":"4.3"`, `"aaIndexVersion":4.3`, 1)))
+	if err != nil || d.AAIndexVersion != "" || d.Models[0].Efforts[0].AAScore == nil {
+		t.Fatalf("numeric aaIndexVersion: %v %+v", err, d)
+	}
 	out, err := json.Marshal(Effort{Effort: "high", Label: "High"})
 	if err != nil || strings.Contains(string(out), "aaScore") {
 		t.Fatalf("absent aaScore encoded: %s %v", out, err)
+	}
+}
+
+func TestLineupTieAcceptsBothDisplayScales(t *testing.T) {
+	for _, tc := range []struct {
+		tie string
+		ok  bool
+	}{{"1", true}, {"0.815", true}, {"0.5", false}, {"0", false}} {
+		b := []byte(`{"schemaVersion":1,"kind":"client","data":{"units":{"ability":"websiteAbility","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"},"models":[{"id":"opus","name":"Claude Opus 5.5","developerId":"anthropic","recommended":"medium","harnessIds":{"api":[],"claude-code":[],"codex":[]},"efforts":[{"effort":"medium","label":"Med","ability":null,"cost":null,"time":null}]}],"lineups":[{"developerId":"anthropic","costBasisId":"test","method":"lineup-v1","tie":` + tc.tie + `,"baseline":"opus","frontier":["opus"],"steps":[],"members":[]}],"resets":[],"windows":[]}}`)
+		_, err := Parse("client", b)
+		if (err == nil) != tc.ok {
+			t.Fatalf("tie %s: err=%v, want ok=%v", tc.tie, err, tc.ok)
+		}
 	}
 }

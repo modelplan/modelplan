@@ -876,6 +876,52 @@ func TestRefreshBeginningInTheMiddleOfAKeyChangeDoesNotWriteTheOldReadingBack(t 
 	}
 }
 
+// After a key replace or remove the reference-only entry has no observation time and no reading: it is "not read yet",
+// never "stale" (an age check on a zero ObservedAt), and it keeps its request deadline.
+func TestGLMReferenceOnlyEntryIsNotReadYetNotStale(t *testing.T) {
+	for _, change := range []string{"replace", "remove"} {
+		t.Run(change, func(t *testing.T) {
+			isolateHome(t)
+			ks := &keyServer{body: zaiOKBody}
+			useClient(t, ks.serve(t), "api.z.ai")
+			p := nativePaths(t)
+			t.Setenv("Z_AI_API_KEY", fakeOtherKey)
+			if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil {
+				t.Fatal(err)
+			}
+			refreshWith(t, p, "zai")
+			var err error
+			if change == "replace" {
+				err = SetManualKey(p.Cache, "zai", "replacement-key", "global")
+			} else {
+				err = RemoveManualKey(p.Cache, "zai")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry := loadNative(p.Cache).Providers[0]
+			if !entry.ObservedAt.IsZero() || entry.NativeNextAttemptAt == nil {
+				t.Fatalf("fixture is not a reference-only entry with a deadline: %+v", entry)
+			}
+			var r Report
+			applyNative(&r, p, entry.NativeNextAttemptAt.Add(-time.Minute))
+			for _, s := range r.Sources {
+				if s.Source != "native:zai" {
+					continue
+				}
+				if s.Status == "stale" || s.ErrorCode == "stale_reading" || s.Status != "missing" || s.Reason != "not read yet" {
+					t.Fatalf("reference-only entry reported as %+v", s)
+				}
+				if loadNative(p.Cache).Providers[0].NativeNextAttemptAt == nil {
+					t.Fatal("request deadline lost")
+				}
+				return
+			}
+			t.Fatalf("no native:zai source in %+v", r.Sources)
+		})
+	}
+}
+
 func TestGLMKeyChangeClearsReadingKeepsDetectedReference(t *testing.T) {
 	for _, change := range []string{"replace", "remove"} {
 		t.Run(change, func(t *testing.T) {

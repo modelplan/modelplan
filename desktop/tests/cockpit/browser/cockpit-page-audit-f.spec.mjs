@@ -48,16 +48,25 @@ test('audit F 2 (CKP-MFD-19): the comparison measures against the session effort
  const display=await open(page,fixture());
  await fader(page,'used').locator('.fd-strip').click();
  const chart=screen(page).locator('.cmp-chart');
- const current=chart.locator('.pc-band-current');
+ const current=chart.locator('.pc-band-current'),bars=screen(page).locator('svg.cmp-bars');
+ // the bars carry one current number per bar (ability, cost) and no trial lane
+ const nums=role=>bars.locator(`.pc-num[data-role="${role}"]`);
  await expect(current).toHaveAttribute('data-effort','Med');
+ await expect(nums('current')).toHaveCount(2);
+ const before=await nums('current').allTextContents();
  const data=fixture();data.details.sessions[0].effort='low';await display(data);
  await expect(current).toHaveAttribute('data-effort','Low');
+ // the bars follow the newly reported effort (Low's shares, not Med's)
+ await expect(nums('current')).toHaveCount(2);
+ expect(await nums('current').allTextContents()).not.toEqual(before);
  // No new trial of the old effort appeared; the card opened from the LCD still tries nothing.
  await expect(chart.locator('.pc-band-trial')).toHaveCount(0);
+ await expect(nums('trial')).toHaveCount(0);
  // The session ends: current is unreported (unknown), the chart has no current column or label.
  const ended=fixture();ended.details.sessions=ended.details.sessions.slice(1);await display(ended);
  await expect(current).toHaveCount(0);
  await expect(chart.locator('.pc-col-l[data-role="current"]')).toHaveCount(0);
+ await expect(nums('current')).toHaveCount(0);
 });
 
 test('audit F 5 (CKP-MFD-22): the comparison website link names the published model',async({page})=>{
@@ -71,11 +80,14 @@ test('audit F 7 (CKP-FAD-17): an empty slot never keeps a trial\'s ghost cap',as
  await fader(page,'also-used').locator('.fd-strip').click();
  await screen(page).locator('.cmp-lad [data-mfd="try:Low"]').click();
  const ghost=page.locator('.fd-ch[data-slot="1"] .fd-ghost');
- expect(await ghost.evaluate(e=>e.hidden)).toBe(false);
- await page.keyboard.press(']');await page.keyboard.press(']');
+ // the trial renders asynchronously on a loaded runner: wait for the ghost cap before switching banks
+ await expect(ghost).toBeVisible();
+ await expect(ghost).toHaveJSProperty('hidden',false);
+ await page.keyboard.press(']');await expect(page.locator('.bank-lcd')).toHaveText('Bank 2/3');
+ await page.keyboard.press(']');
  await expect(page.locator('.bank-lcd')).toHaveText('Bank 3/3');
  await expect(page.locator('.fd-ch[data-slot="1"]')).toHaveClass(/\bempty\b/);
- expect(await ghost.evaluate(e=>e.hidden)).toBe(true);
+ await expect(ghost).toHaveJSProperty('hidden',true);
  await page.keyboard.press('Escape');
- expect(await ghost.evaluate(e=>e.hidden)).toBe(true);
+ await expect(ghost).toHaveJSProperty('hidden',true);
 });

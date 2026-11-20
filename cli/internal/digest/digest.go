@@ -208,6 +208,10 @@ var DeveloperNames = map[string]string{
 	"xiaomi": "小米 MiMo", "minimax": "MiniMax", "tencent": "腾讯混元",
 }
 
+// validTie accepts the lineup tie on each published index display scale: 1 point on scale 0.3
+// and the same gap re-expressed on scale 0.4 (0.815 = 8.150 / 10). Verdicts are unchanged.
+func validTie(t float64) bool { return t == 1 || t == 0.815 }
+
 func Parse(component string, b []byte) (*Digest, error) {
 	if component != ComponentClient {
 		return nil, fmt.Errorf("unsupported component %q; client digest required", component)
@@ -229,7 +233,10 @@ func Parse(component string, b []byte) (*Digest, error) {
 	if catalogueErr != nil {
 		return nil, fmt.Errorf("client: %w", catalogueErr)
 	}
-	if err := json.Unmarshal(raw.Data, &d); err != nil {
+	// Optional fields that are dropped when invalid are screened first, so a value of the wrong JSON type (a string
+	// aaScore, a number out of float64 range, a non-object planMetering) is dropped rather than failing the decode.
+	data := sanitizeOptional(raw.Data)
+	if err := json.Unmarshal(data, &d); err != nil {
 		return nil, err
 	}
 	if d.Units.Ability != "websiteAbility" || d.Units.Cost != "usdPerReferenceTask" || d.Units.Time != "taskTimeCrossModel" || d.Models == nil || d.Lineups == nil || d.Resets == nil || d.Windows == nil {
@@ -254,7 +261,7 @@ func Parse(component string, b []byte) (*Digest, error) {
 		}
 	}
 	for _, l := range d.Lineups {
-		if l.Method != "lineup-v1" || l.Tie != 1 || l.CostBasisID == "" || l.Baseline == "" || seen[l.Baseline] == nil {
+		if l.Method != "lineup-v1" || !validTie(l.Tie) || l.CostBasisID == "" || l.Baseline == "" || seen[l.Baseline] == nil {
 			return nil, errors.New("client: invalid lineup")
 		}
 		for _, r := range l.Members {
@@ -276,11 +283,66 @@ func Parse(component string, b []byte) (*Digest, error) {
 	if d.PlanModels != nil && !validPlanModels(d.PlanModels) {
 		d.PlanModels = nil
 	}
-	if err := json.Unmarshal(raw.Data, &d.publication); err != nil {
+	if err := json.Unmarshal(data, &d.publication); err != nil {
 		return nil, err
 	}
 	d.Source = ComponentClient
 	return &d, nil
+}
+
+// sanitizeOptional removes every optional client field whose value does not decode into its Go type: an effort's
+// aaScore, aaIndexVersion, planMetering and planModels. These are references or add-ons that Parse drops when invalid;
+// a bad one must never reject the publication. Required fields are untouched, so they still fail the strict decode.
+// The original bytes are returned when nothing was removed.
+func sanitizeOptional(data json.RawMessage) json.RawMessage {
+	var top map[string]json.RawMessage
+	if json.Unmarshal(data, &top) != nil {
+		return data
+	}
+	changed := false
+	drop := func(m map[string]json.RawMessage, key string, into func() any) bool {
+		v, ok := m[key]
+		if !ok || json.Unmarshal(v, into()) == nil {
+			return false
+		}
+		delete(m, key)
+		return true
+	}
+	changed = drop(top, "aaIndexVersion", func() any { return new(string) }) || changed
+	changed = drop(top, "planMetering", func() any { return new(*PlanMetering) }) || changed
+	changed = drop(top, "planModels", func() any { return new(*PlanModels) }) || changed
+	var models []map[string]json.RawMessage
+	if raw, ok := top["models"]; ok && json.Unmarshal(raw, &models) == nil {
+		modelsChanged := false
+		for _, m := range models {
+			var efforts []map[string]json.RawMessage
+			if json.Unmarshal(m["efforts"], &efforts) != nil {
+				continue
+			}
+			effortsChanged := false
+			for _, e := range efforts {
+				effortsChanged = drop(e, "aaScore", func() any { return new(*float64) }) || effortsChanged
+			}
+			if effortsChanged {
+				if b, err := json.Marshal(efforts); err == nil {
+					m["efforts"], modelsChanged = b, true
+				}
+			}
+		}
+		if modelsChanged {
+			if b, err := json.Marshal(models); err == nil {
+				top["models"], changed = b, true
+			}
+		}
+	}
+	if !changed {
+		return data
+	}
+	b, err := json.Marshal(top)
+	if err != nil {
+		return data
+	}
+	return b
 }
 
 // dropInvalidAAScores keeps an effort's aaScore only where the public reader accepts it: a positive finite number in a

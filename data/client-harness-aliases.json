@@ -1,6 +1,6 @@
 {
-  "revision": "2026-11-09.1",
-  "checkedAt": "2026-11-09",
+  "revision": "2026-11-17.1",
+  "checkedAt": "2026-11-17",
   "records": [
     {
       "modelId": "opus",
@@ -113,6 +113,44 @@
         "https://developers.openai.com/api/docs/models",
         "https://learn.chatgpt.com/docs/models",
         "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+      ],
+      "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "sol-6.2",
+      "sourceModelId": "openai/gpt-6.2-sol",
+      "harnessIds": {
+        "api": [
+          "gpt-6.2-sol"
+        ],
+        "claude-code": [],
+        "codex": [
+          "gpt-6.2-sol"
+        ]
+      },
+      "sourceUrls": [
+        "https://developers.openai.com/api/docs/models/gpt-6.2-sol",
+        "https://learn.chatgpt.com/docs/models"
+      ],
+      "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "astra-6.2",
+      "sourceModelId": "openai/gpt-6.2-astra",
+      "harnessIds": {
+        "api": [
+          "gpt-6.2-astra"
+        ],
+        "claude-code": [],
+        "codex": [
+          "gpt-6.2-astra"
+        ]
+      },
+      "sourceUrls": [
+        "https://developers.openai.com/api/docs/models/gpt-6.2-astra",
+        "https://learn.chatgpt.com/docs/models"
       ],
       "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
       "requiredEndpoints": {}

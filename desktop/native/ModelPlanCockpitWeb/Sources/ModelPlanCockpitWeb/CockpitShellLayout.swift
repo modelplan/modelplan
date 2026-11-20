@@ -80,7 +80,12 @@ public struct CockpitShellLayout: Equatable, Sendable {
     /// How far below the window top the hull/canopy edge is at the shoulder, in page px (same measurement). The rack
     /// is visible above this line only; nothing of it is drawn below it inside the cockpit's frame (D175: nothing
     /// shows through the window).
-    public static func shoulderDrop(_ profile: CockpitAppearance.Profile) -> CGFloat { profile == .full ? 32 : 6 }
+    /// Closed (shutter closed or forced closed): the window's top edge IS the slab's top edge (G3-108 cuts the porthole
+    /// band above it), so the hull edge at the shoulder is 0 px below the top; the open hull's 32 px / 6 px would let
+    /// the rack hang that far into empty space until the cockpit covers it.
+    public static func shoulderDrop(_ profile: CockpitAppearance.Profile, closed: Bool) -> CGFloat {
+        closed ? 0 : (profile == .full ? 32 : 6)
+    }
     /// `screenWidth` is the full width of the screen the cockpit opens on; it defaults to the usable width.
     /// `forceCompact` (CKP-SHELL-33 key-detach landing, D187): the short version even where the full one fits.
     /// `basis` (G3-132): the size basis of all connected displays; without it, this display alone (as before G3-132).
@@ -124,7 +129,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let canvasHeight = Self.wholePoints((openRoot + Self.baseReserve) * scale)
         // G3-108: closed, the window leaves out the porthole band above the slab (strip top - 25 px: the 16 px slab and
         // its 9 px gutter), rounded down so the slab is never cut; the web view keeps the open canvas, bottom-anchored.
-        let porthole = closed ? ((Self.stripTop(profile) - Self.closedSlabBand) * scale).rounded(.down) : 0
+        let porthole = closed ? Self.portholeBand(profile: profile, scale: scale) : 0
         let canvas = CGSize(width: min(Self.wholePoints(Self.width * scale), usable.width.rounded(.down)),
                             height: min(canvasHeight - porthole, available.rounded(.down)))
         let x = max(usable.minX.rounded(.up), min(attachedX(anchor: anchor, width: canvas.width, scale: scale, usable: usable, profile: profile).rounded(),
@@ -154,7 +159,23 @@ public struct CockpitShellLayout: Equatable, Sendable {
     }
     /// The shoulder point in screen coordinates for this layout's frame: where the rack meets the cockpit.
     public var shoulder: CGPoint {
-        CGPoint(x: frame.minX + Self.shoulderX(profile) * scale, y: frame.maxY - Self.shoulderDrop(profile) * scale)
+        CGPoint(x: frame.minX + Self.shoulderX(profile) * scale, y: frame.maxY - rackMaskDrop)
+    }
+    /// How far below the window top the launch rack's mask line is, in points, for a settled window.
+    public var rackMaskDrop: CGFloat { rackMaskDrop(windowHeight: frame.height) }
+    /// The mask line for a window of `windowHeight`: the shutter animation resizes the attached window between the closed
+    /// height (slab at the top edge, line 0) and the open height (line at the hull's shoulder), so the line follows the
+    /// window's own height and moves with the slab, driven by the shutter's frame animation (no separate timer).
+    public func rackMaskDrop(windowHeight: CGFloat) -> CGFloat {
+        let open = Self.shoulderDrop(profile, closed: false) * scale
+        let band = Self.portholeBand(profile: profile, scale: scale)
+        guard band > 0 else { return Self.shoulderDrop(profile, closed: shutterClosed) * scale }
+        let closedHeight = canvasHeight - band
+        return open * min(1, max(0, (windowHeight - closedHeight) / band))
+    }
+    /// The porthole band the closed window leaves out above the slab (G3-108), in points.
+    static func portholeBand(profile: CockpitAppearance.Profile, scale: CGFloat) -> CGFloat {
+        ((stripTop(profile) - closedSlabBand) * scale).rounded(.down)
     }
     /// The page canvas in CSS px: the open root plus the base reserve, open or closed (G3-108).
     public var pageSize: CGSize { .init(width: Self.width, height: canvasRootHeight + Self.baseReserve) }
