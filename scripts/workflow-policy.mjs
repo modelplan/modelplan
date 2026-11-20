@@ -93,10 +93,12 @@ export function runnerSmokeProblems(text) {
   if (checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every runner-smoke.yml checkout must set persist-credentials: false");
   // The whole on: block must equal the reviewed shape, with only the smoke choices free (`- smoke-arm64-N`, optionally
   // followed by a comment). Any other line, including a multi-line or quoted list item, is a problem.
-  const onLines = significant(topLevelBlock(text, "on")).split("\n").map((l) => (/^ {10}- smoke-arm64-\d+(?:\s+#.*)?\s*$/.test(l) ? "<choice>" : l));
-  const firstChoice = onLines.indexOf("<choice>");
-  const collapsed = onLines.filter((l, i) => l !== "<choice>" || i === firstChoice).join("\n");
-  if (collapsed !== RUNNER_SMOKE_ON) problems.push("runner-smoke.yml's on: block must be the reviewed shape with only smoke-arm64-N label choices");
+  // Plain ASCII only (a non-breaking space would silently become part of a YAML scalar, e.g. the runner label).
+  if (/[^\x20-\x7e\n]/.test(text)) problems.push("runner-smoke.yml must be plain ASCII without tabs");
+  const onLines = significant(topLevelBlock(text, "on")).split("\n").map((l) => (/^ {10}- smoke-arm64-\d+(?: #[ -~]*)?$/.test(l) ? "<choice>" : l));
+  const choices = onLines.filter((l) => l === "<choice>").length;
+  const expectedOn = RUNNER_SMOKE_ON.replace("<choice>", Array(choices).fill("<choice>").join("\n"));
+  if (!choices || onLines.join("\n") !== expectedOn) problems.push("runner-smoke.yml's on: block must be the reviewed shape with only smoke-arm64-N label choices");
   // The only checkout ref is the tag-or-own-commit expression, as an effective (non-comment) line of the checkout's with: block.
   const refLines = text.split("\n").filter((l) => !/^\s*#/.test(l) && /^ {8}ref:/.test(l));
   if (refLines.length !== 1 || refLines[0] !== RUNNER_SMOKE_CHECKOUT_REF) problems.push("runner-smoke.yml must check out a tag or its own commit, never a free-form branch (expressions compare case-insensitively)");
@@ -104,6 +106,8 @@ export function runnerSmokeProblems(text) {
     const lines = text.split("\n");
     const at = lines.indexOf(refLines[0]);
     const before = lines.slice(0, at).filter((l) => !/^\s*#/.test(l));
+    const after = lines.slice(at + 1).find((l) => !/^\s*#/.test(l));
+    if (after === undefined || !/^ {0,8}\S/.test(after)) problems.push("the checkout ref must be a single-line value");
     if (before.slice(-3).join("\n") !== "    - uses: actions/checkout@v4\n      with:\n        persist-credentials: false") problems.push("the checkout ref must belong to the actions/checkout step");
   }
   const jobs = jobBlocks(text);

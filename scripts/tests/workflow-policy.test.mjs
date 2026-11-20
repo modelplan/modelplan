@@ -518,6 +518,10 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
     ["        ref: ${{ startsWith(inputs.ref, 'refs/tags/') && inputs.ref || github.sha }}", "        # ref: ${{ startsWith(inputs.ref, 'refs/tags/') && inputs.ref || github.sha }}\n        ref: refs/heads/main"],
     ["        ref: ${{ startsWith(inputs.ref, 'refs/tags/') && inputs.ref || github.sha }}", "        ref: ${{ inputs.ref }}"],
     ["          - smoke-arm64-5\n", "          - smoke-arm64-5\n          -\n            fixture-label\n"],
+    ["          - smoke-arm64-5\n", "          - smoke-arm64-5\u00a0# note\n"],
+    ["        default: main\n", "        default: main\n          - smoke-arm64-6\n"],
+    ["        ref: ${{ startsWith(inputs.ref, 'refs/tags/') && inputs.ref || github.sha }}\n", "        ref: ${{ startsWith(inputs.ref, 'refs/tags/') && inputs.ref || github.sha }}\n          fixture suffix\n"],
+    ["        # GitHub compares", "        #\u00a0GitHub compares"],
     [" && github.actor == 'guanbear'", ""],
     [" && github.ref == 'refs/heads/main'", ""],
     ["timeout-minutes: 40", "timeout-minutes: 400"],
@@ -528,7 +532,7 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
     assert.ok(workflowProblems(text.replace(from, to), RUNNER_SMOKE_PATH).length > 0, `accepted: ${from} -> ${to}`);
   }
   assert.deepEqual(runnerSmokeProblems(text.replace("          - smoke-arm64-5\n", "          - smoke-arm64-5 # first\n          - smoke-arm64-6\n")), []);
-  assert.ok(runnerSmokeProblems(text.replace("jobs:\n", "jobs:\n  smoke:\n    env:\n      T: ${{ secrets.X }}\n")).some((p) => p.includes("secrets")));
+  assert.ok(runnerSmokeProblems(text.replace("    env:\n      MACOSX_DEPLOYMENT_TARGET: '14.0'\n      T: ${{ secrets.X }}\n")).some((p) => p.includes("secrets")));
   // The smoke label and route are refused in any other workflow.
   assert.ok(workflowProblems(text, ".github/workflows/other.yml").length > 0);
   assert.ok(workflowProblems("runs-on: [self-hosted, macOS, ARM64, smoke-arm64-5]\n", ".github/workflows/other.yml").length > 0);
