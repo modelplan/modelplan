@@ -14,7 +14,7 @@ for(const locale of ['en','zh-CN'])test(`credits use rounded grouped numbers in 
  // CKP-ENG-52: the reserve row names its credits ("Credits 2,368" / "点数 2,368") and leaves out a zero; the number keeps this format.
  const named=v=>(locale==='en'?'Credits ':'点数 ')+v;
  await expect(reserve()).toHaveText(named('19,614'));
- await page.getByRole('button',{name:locale==='en'?'Subscription':'订阅',exact:true}).click();
+ await page.getByRole('button',{name:locale==='en'?'Plans':'订阅',exact:true}).click();
  await expect(page.locator('.sa-list .sa').first().locator('.sa-r i').last()).toHaveText('19,614');
  account.credits.balance=0.25;expect(await receive(send('display',{data}))).toBe(true);
  await expect(reserve()).toHaveText(named('<1'));await expect(page.locator('.sa-list .sa').first().locator('.sa-r i').last()).toHaveText('<1');

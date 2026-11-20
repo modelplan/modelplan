@@ -318,3 +318,20 @@ html[data-profile="compact"] .cmp-foot{position:absolute;left:0;top:0;width:var(
 html[data-profile="compact"] .cmp-link-i,html[data-profile="compact"] .cmp-trial-i{display:block;position:relative;flex:none;width:14px;height:16px;margin:0;padding:0;border:0;background:none;color:var(--lcd-muted);font:11px/16px var(--f-lcd);text-align:center;text-decoration:none;cursor:default}
 html[data-profile="compact"] .cmp-link-i{cursor:pointer}
 html[data-profile="compact"] .cmp-trial-i:hover::after,html[data-profile="compact"] .cmp-trial-i:focus-visible::after{content:attr(aria-label);position:absolute;left:0;bottom:100%;margin-bottom:2px;padding:2px 5px;white-space:nowrap;font:10px/11px var(--f-lcd);color:var(--lcd-ink);background:var(--lcd-bg,#000);border:1px solid var(--lcd-rule);border-radius:3px;z-index:3}
+/* WP-13 (V1-FINAL 8.3, 8.4): the Models usage list and the Where project rows. Each row's background bar is as long as
+   its share; the lists scroll when the cockpit is short (CKP-MFD-68). Appended as one block. */
+.md-h,.wd-h{font:10px/15px var(--f-lcd);color:var(--muted);border-bottom:1px solid var(--lcd-rule);flex:none}
+.md-list,.wd-list{display:flex;flex-direction:column;flex:1 1 0;min-height:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--lcd-muted) transparent}
+.md-row,.wd{position:relative;display:grid;align-items:center;column-gap:5px;width:100%;min-height:18px;text-align:left;font:11px/16px var(--f-lcd);color:var(--text);white-space:nowrap;flex:none;
+ background:linear-gradient(90deg,color-mix(in srgb,var(--lcd-ink) 16%,transparent) var(--p,0%),transparent var(--p,0%))}
+.md-row{grid-template-columns:6px minmax(0,1fr) auto auto 34px}
+.wd{grid-template-columns:6px minmax(0,1fr) auto auto 34px}
+.md-row .chip,.wd .chip{height:9px}
+.md-row .md-n,.wd .wd-n{overflow:hidden;text-overflow:ellipsis}
+.md-e,.wd-c{font-size:10px;color:var(--muted)}
+.md-star{font-style:normal;color:var(--gold);margin-left:4px}
+.md-c,.wd-m{font-size:10px;color:var(--muted);text-align:right}
+.md-s,.wd-s{text-align:right}
+.md-row.idle{opacity:.55}
+.md-row.sel{outline:1px solid var(--lcd-ink);outline-offset:-1px}
+.md-row:hover{background-color:var(--lcd-ghost)}

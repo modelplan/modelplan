@@ -9,7 +9,7 @@ test('load and appearance share the inclusive threshold across engine and deck',
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
  await expect(page.locator('.eng-cols .ec').first().locator('.qcell.lv-mid').first()).toBeVisible();
- await page.getByRole('button',{name:'Subscription',exact:true}).click();await expect(page.locator('.sa-list .sa').first().locator('.v.lv-mid')).toHaveText('20%');
+ await page.getByRole('button',{name:'Plans',exact:true}).click();await expect(page.locator('.sa-list .sa').first().locator('.v.lv-mid')).toHaveText('20%');
  expect(await receive(send('appearance',{...appearance,redBelow:20}))).toBe(true);
  await expect(page.locator('.eng-cols .ec').first().locator('.qcell.lv-low').first()).toBeVisible();
  await expect(page.locator('.sa-list .sa').first().locator('.v.lv-low')).toHaveText('20%');

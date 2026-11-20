@@ -48,12 +48,12 @@ for(const back of [29,40])test(`D63 a record of ${back+1} days keeps the plain 3
 });
 test('D63 the Subscription usage block names a record shorter than its window',async({page})=>{
  await open(page,fixture({dailyFrom:localDay(2)}).data);
- await page.keyboard.press('1');await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.keyboard.press('1');await page.getByRole('button',{name:'Plans',exact:true}).click();
  await expect(page.locator('.sp-stats .stat-h')).toHaveText('7-day usage · Linked tools · Recorded since Nov 2');
 });
 test('D63 a full week of record keeps the plain 7-day heading',async({page})=>{
  await open(page,fixture({dailyFrom:localDay(6)}).data);
- await page.keyboard.press('1');await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.keyboard.press('1');await page.getByRole('button',{name:'Plans',exact:true}).click();
  await expect(page.locator('.sp-stats .stat-h')).toHaveText('7-day usage · Linked tools');
 });
 test('D63 a calendar-invalid first day is not shown as a shifted date',async({page})=>{

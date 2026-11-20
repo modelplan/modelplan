@@ -28,7 +28,7 @@ function fixture(){
    {subscriptionRef:ref,kind:'weekly',attribution:'unattributed',cycles:[{startedAt:at(9),resetsAt:at(2),points:70,hadDrop:false,spent:[]},{startedAt:at(16),resetsAt:at(9),points:55,hadDrop:false,spent:[]}]}]};
  return data;
 }
-const subscription=async page=>{await page.keyboard.press('1');await page.getByRole('button',{name:'Subscription',exact:true}).click();};
+const subscription=async page=>{await page.keyboard.press('1');await page.getByRole('button',{name:'Plans',exact:true}).click();};
 
 test('D59 / CKP-SHELL-50 the range key switches the usage block between the 7- and 30-day records',async({page})=>{
  await open(page,fixture());await subscription(page);

@@ -53,7 +53,7 @@ register('host', {
   projectN: ['lcd', '项目 {n}', 'Project {n}'],
   moreSessions: ['line', '另有 {n} 个会话 ▸', '{n} more sessions ▸'],
   pageOverview: ['aria', '总览', 'Overview'],
-  pageSubscription: ['aria', '订阅', 'Subscription'],
+  pageSubscription: ['aria', '订阅', 'Plans'],
   pageEffort: ['aria', '模型', 'Models'],
   pageBreakdown: ['aria', '去向', 'Breakdown'],
   settingsAria: ['aria', '设置', 'Settings'],

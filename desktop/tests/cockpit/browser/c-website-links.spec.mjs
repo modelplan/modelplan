@@ -22,7 +22,7 @@ const links=page=>page.evaluate(()=>window.sent.filter(m=>m.type==='action'&&m.a
 test('CKP-MFD-24 a scoped subscription links its plans page in the reader\'s language',async({page})=>{
  const {send,receive}=await open(page);
  expect(await receive(send('shell',{...shell,scope:member(0)}))).toBe(true);
- await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.getByRole('button',{name:'Plans',exact:true}).click();
  const link=page.locator('.sp-h a.website-link');
  await expect(link).toHaveText('Plan details ↗');
  await expect(link).toHaveAttribute('href','https://modelplan.ai/plans?seller=openai');
