@@ -114,7 +114,7 @@ test('CKP-FAD-24/-17 a drag moves the blue ghost continuously and snaps it to th
  // released 70 % of the way to Low: the trial is Low, the ghost sits on the Low row and the real lever stays on High
  await expect(travel).toHaveAttribute('aria-valuetext','Low');await expect(travel).toHaveAttribute('data-trial','Low');await expect(travel).toHaveAttribute('data-lever','High');
  await expect.poll(async()=>Math.abs((await box(ghost)).y-low)).toBeLessThanOrEqual(1);
- expect(await lever.getAttribute('data-frame')).toBe('16');await expect(sol.locator('.st-try')).toContainText('Low');
+ expect(await lever.getAttribute('data-frame')).toBe('16');await expect(sol.locator('.cd-try')).toContainText('Low');
  const spans=await box(line);expect(Math.abs(spans.top-(high))).toBeLessThanOrEqual(1);expect(Math.abs(spans.bottom-low)).toBeLessThanOrEqual(1);
  // the rod is faint (a quarter of the trial blue's opacity), still visible
  expect(await line.evaluate(e=>getComputedStyle(e).backgroundColor)).toMatch(/^color\(srgb 0\.62\d* 0\.82\d* 1 \/ 0\.25\)$|^rgba\(159, 210, 255, 0\.25\)$/);

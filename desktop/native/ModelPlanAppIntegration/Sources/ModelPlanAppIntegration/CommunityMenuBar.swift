@@ -51,6 +51,15 @@ struct CommunityMenuBarProjector: CommunityMenuBarProviding {
         let resources = main.resourceURL ?? main.bundleURL.appendingPathComponent("Contents/Resources", isDirectory: true)
         return resources.appendingPathComponent(bundleName)
     }
+    /// D57: the menu-bar image. The reserved tray template when the package carries it (official edition);
+    /// otherwise a plain system symbol, so a neutral package never shows an empty status item.
+    static func statusImage(appURL: URL? = nil) -> NSImage? {
+        if let image = templateImage(appURL: appURL) { return image }
+        let image = NSImage(systemSymbolName: "gauge.with.dots.needle.33percent", accessibilityDescription: "ModelPlan")
+        image?.isTemplate = true
+        image?.size = NSSize(width: 16, height: 16)
+        return image
+    }
     static func templateImage(appURL: URL? = nil) -> NSImage? {
         let root = packagedBundleURL(appURL: appURL) ?? Bundle.module.bundleURL
         // The packaged bundle is a flat SwiftPM directory with no Info.plist: read the files by path

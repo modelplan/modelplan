@@ -40,8 +40,9 @@ not whole-window or integrated-button screenshots.
 app's `runtime/` directory. The default community build excludes this pack.
 Native Dock/cockpit consumers bind the manifest in their own integration work.
 
-- **Launch-field scene:** `field-scene/` holds the minified enlarged-field scene and, since
-  D207, the fleet round-four rocket atlases it loads (`field-scene/rockets/*.webp`); see its README.
+- **Launch-field window:** `field-scene/` holds the minified launch-field component (window mode,
+  D298) for the enlarged field, the fleet round-four rocket atlases it loads (`field-scene/rockets/*.webp`,
+  D207) and its 2D fallback's sprites (`field-scene/rockets/flat/`); see its README.
 
 The integrity check is `node scripts/check-visual-pack.mjs`. It checks the exact
 file set, hashes, dimensions, baseline associations, licence registry and public

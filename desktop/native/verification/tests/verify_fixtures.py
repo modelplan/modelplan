@@ -15,7 +15,7 @@ sys.path.insert(0, str(VERIFICATION / 'bin'))
 import preflight  # noqa: E402
 
 SHA = 'a' * 40
-APP = 'ModelPlan Community.app'
+APP = 'ModelPlan.app'
 ARM64, X86_64 = 0x0100000C, 0x01000007
 
 
@@ -25,7 +25,7 @@ def fat(*cpus):
 
 
 def info(**changes):
-    values = dict(CFBundleExecutable='ModelPlanCommunity', CFBundleIdentifier=preflight.BUNDLE_ID,
+    values = dict(CFBundleExecutable='ModelPlan', CFBundleIdentifier=preflight.BUNDLE_ID,
                   ModelPlanCockpitEntryEnabled=False, ModelPlanPublicSource=SHA)
     values.update(changes)
     return {k: v for k, v in values.items() if v is not None}
@@ -38,7 +38,7 @@ def inner_zip(plist=None, exe=None, bundles=preflight.RESOURCE_BUNDLES, marks=0,
         for app in top:
             contents = app + '/Contents/'
             archive.writestr(contents + 'Info.plist', plistlib.dumps(plist if plist is not None else info()))
-            archive.writestr(contents + 'MacOS/ModelPlanCommunity', exe if exe is not None else fat(ARM64, X86_64))
+            archive.writestr(contents + 'MacOS/ModelPlan', exe if exe is not None else fat(ARM64, X86_64))
             for bundle in bundles:
                 archive.writestr(contents + 'Resources/' + bundle + '/placeholder.txt', 'x')
             for n in range(marks):

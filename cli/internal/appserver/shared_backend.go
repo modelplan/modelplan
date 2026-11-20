@@ -302,10 +302,12 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	projection := rows.Build(in)
 	var resetEvents *[]rows.ResetEvent
 	var publicModels []digest.Model
+	var publicSpeedTiers []digest.SpeedTier
 	droppedResetConfirmations := 0
 	if !changed && b.config.ResetPublication != nil {
 		if d, err := b.config.ResetPublication(); err == nil && d != nil {
 			publicModels = d.Models
+			publicSpeedTiers = d.Speed
 			events, dropped := resetevents.ProjectWithMemo(d, projection, in.Now, b.resetMemo)
 			droppedResetConfirmations = dropped
 			resetEvents = &events
@@ -397,7 +399,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	// Evaluation time is not a displayed fact; keeping it would make every
 	// otherwise identical backend view look changed to rows subscribers.
 	report.EvaluatedAt = time.Time{}
-	return View{QuotaReport: report, PublicModels: publicModels, Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
+	return View{QuotaReport: report, PublicModels: publicModels, PublicSpeedTiers: publicSpeedTiers, Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
 }
 
 func (b *SharedBackend) paths(admission consent.Admission) quota.Paths {

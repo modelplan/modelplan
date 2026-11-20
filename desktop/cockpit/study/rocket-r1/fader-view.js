@@ -6,6 +6,8 @@
 // marker (◉ is gone), and fast mode uses the single status indicator above the LCD. Synthetic study; nothing is applied to a session.
 import {shortLabel} from './short-label.js';
 import {t} from './i18n.js';
+import {tokShort, approxCost} from './mfd-pages/fmt.js';
+import {configShare} from './mfd-pages/views.js';
 import './strings/faders.js';
 
 export const LADDER = ['Low', 'Med', 'High', 'XHigh', 'Max'];
@@ -59,65 +61,130 @@ function channel(f, ui, colour) {
     const e = trialEff || base, fast = tFast ?? f.currentFast;
     trial = {effort: e, fast: tFast, matchesCurrent: e === cur && fast === f.currentFast, matchesRec: e === f.rec && !fast, cost: costRatio(costOf(e, fast), costOf(base, f.currentFast)), abl: row(e)[1] == null || row(base)[1] == null ? null : row(e)[1] - row(base)[1], speed: speedOf(fast) / speedOf(f.currentFast)};
   }
-  // Effort bars: the published ability, normalised within the model (lowest → 3 px, highest → 11 px).
-  const ab = f.e.map(r => r[1]).filter(x => x != null), a0 = Math.min(...ab), a1 = Math.max(...ab);
-  const bars = LADDER.map(l => {
-    const r = row(l);
-    if (!r || r[1] == null) return {l, none: true};
-    return {l, h: a1 > a0 ? (r[1] - a0) / (a1 - a0) : 1, cur: l === cur, rec: l === f.rec, trial: l === trialEff};
-  });
   const others = Object.entries(f.others).filter(([e]) => row(e)).sort((a, b) => b[1] - a[1] || LADDER.indexOf(b[0]) - LADDER.indexOf(a[0]));
   const from = v ? v.from : null; // the source of this model's comparison view, lit (spec 2.5)
-  return {id: f.id, name: f.name || f.short, label: shortLabel(f.name || f.short), levels, current: f.current, cur, rec: f.rec, base, live: f.live, pinned: f.pinned, used: f.sessions.length > 0,
+  const name = f.name || f.short, segments = f.accounts.map(id => colour.get(id)).filter(Boolean);
+  const ch = {id: f.id, unlisted: !!f.unlisted, name, label: cardLabel(name), levels, current: f.current, cur, rec: f.rec, base, live: f.live, pinned: f.pinned, used: f.sessions.length > 0,
     currentFast: f.currentFast, tier, follows: !!cur && cur === f.rec && !f.currentFast,
-    recX: cur ? costRatio(costOf(cur, f.currentFast), costOf(f.rec, false)) : null, // the current cost against ★ (fast included)
-    others, segments: f.accounts.map(id => colour.get(id)).filter(Boolean), bars,
+    recX: cur ? costRatio(costOf(cur, f.currentFast), costOf(f.rec, false)) : null, // the current cost against ★ (fast included); aria only
+    others, segments,
     lamp: !tier ? null : tFast != null ? 'try' : f.currentFast ? 'on' : 'off',
     trial, tEff, tFast, src: from,
-    capK: levelK(base), parked: !cur, recK: levelK(f.rec), ticks: levels.map(levelK), dots: others.map(([e, n]) => ({k: levelK(e), n})),
+    capK: levelK(base), parked: !cur, recK: levelK(f.rec), ticks: levels.map(levelK),
+    // CKP-FAD-53: a white dot beside the slot for another effort with a notable share of the last 15 minutes.
+    dots: (f.notable || []).filter(e => row(e) && e !== cur).map(e => ({k: levelK(e), e})),
     ghostK: tEff ? levelK(tEff) : null,
     leds: f.sessions.slice(0, 6).map(x => ({...x, colour: colour.get(x.sub) || null})),
     fast: tier ? {state: from === 'fast' ? 'try' : f.currentFast ? 'on' : 'off', std: f.currentFast} : null,
     sel: ui.selModel === f.id};
+  // CKP-FAD-55: one session lamp. Lit in the subscription colour = a session is running; dim = used in this range; off.
+  // macrevb-1052-2: from every verified session (f.lamps), not the six the tooltip lists; the colour is a bound session's
+  // subscription, never another subscription's (an unbound running session lights the lamp in the neutral ink).
+  const lamps = f.lamps || f.sessions, running = lamps.find(x => x.active && x.sub) || lamps.find(x => x.active);
+  ch.session = running ? 'live' : f.live || f.recorded || f.use || lamps.length ? 'used' : 'off';
+  ch.lampColour = running && running.sub ? colour.get(running.sub) || null : null;
+  ch.card = card(ch, {...f, compact: !!ui.compact});
+  return ch;
+}
+
+// CKP-FAD-52 / §14: every card line is at most 9 characters in every language.
+export const CARD_LINE = 9;
+const fits = s => [...s].length <= CARD_LINE;
+// macrevb-1052-1: a visible line is never longer than the limit; the full text stays in the accessible name (stripAria).
+const clip = s => fits(s) ? s : [...s].slice(0, CARD_LINE - 1).join('') + '…';
+// The model name in at most 9 characters ("Sonnet 5.5" → "Sonnet5.5"); a name no alias shortens keeps its full text and
+// is set tighter (class "long") rather than turned into a generic word.
+function cardLabel(name) {
+  const short = shortLabel(name, 'model', fits);
+  return clip(short === 'Model' && name !== 'Model' ? shortLabel(name) : short);
+}
+// The effort line: "High ★Med"; current = ★ → "★Med"; "XHigh ★High" does not fit → the current effort alone.
+export function effortLine(cur, rec) {
+  if (!cur) return {cur: '', rec};
+  if (cur === rec) return {cur: '', rec};
+  return fits(`${cur} ★${rec}`) ? {cur, rec} : {cur, rec: ''};
+}
+const pctOf = share => Math.max(share > 0 ? 1 : 0, Math.round(share * 100));
+/** The card's lines as plain text (V1-FINAL §7 table), the source for both the view and the 9-character check.
+ * state: normal | unused | norecord | try. big: the large slot. bar: share 0..1 or null. use: [tokens, share %] or null.
+ * eff: {cur, rec, note}: the small last line (note replaces it: 档位未报告 / 试算中). */
+export function card(c, f = {}) {
+  const use = f.use && f.use.tokens > 0 ? f.use : null;
+  const lines = {name: c.label, state: 'normal', big: '', bigKind: '', bar: null, use: null, eff: null, tryLine: '', nowLine: ''};
+  // G3-134: a model the publication does not list has no efforts, no ★ and no lever; the card says so.
+  if (c.unlisted) { lines.state = 'unlisted'; lines.big = t('fad.cardUnlisted'); lines.bigKind = 'note'; return lines; }
+  if (c.trial) {
+    const tr = c.trial, fastOnly = tr.fast != null && tr.effort === c.base;
+    lines.state = 'try';
+    lines.tryLine = t('fad.cardTry', {e: fastOnly ? t(tr.fast ? 'fad.tryFast' : 'fad.tryStd') : tr.effort});
+    lines.nowLine = c.cur ? t('fad.cardNow', {e: c.cur}) : t('fad.cardNowUnknown');
+    // D337 (owner, closes D190): on the short cockpit's small card the trial reads with letters, not colour alone:
+    // "A92 C55" / "能92 费55" = ability and cost as shares of the top effort. Colour stays for alerts. The full figures
+    // (cost, ability change) stay in the strip's accessible label.
+    const sh = f.compact && f.e ? configShare({e: f.e, rec: f.rec}, f.tier, tr.effort, !!(tr.fast ?? c.currentFast)) : null;
+    const pc = v => v == null ? '--' : String(Math.round(v * 100));
+    lines.eff = {cur: '', rec: '', note: sh ? clip(t('fad.cardTryShare', {a: pc(sh.abl), c: pc(sh.cost)})) : t('fad.cardTrying')};
+    return lines;
+  }
+  if (use) {
+    const priced = typeof use.cost === 'number' && Number.isFinite(use.cost) && use.cost > 0;
+    lines.bigFull = priced ? approxCost(use.cost) : tokShort(use.tokens); lines.big = clip(lines.bigFull); lines.bigKind = priced ? 'cost' : 'tokens';
+    // "1000B 100%" is 10 characters: the share (also drawn by the bar) drops off before the tokens are cut.
+    const tok = tokShort(use.tokens), pct = pctOf(use.share) + '%';
+    lines.bar = Math.max(0, Math.min(1, use.share)); lines.useFull = [tok, pct]; lines.use = fits(`${tok} ${pct}`) ? [tok, pct] : [clip(tok)];
+  } else if (f.live || f.recorded) {
+    lines.state = 'norecord'; lines.big = t('fad.cardNoRecord'); lines.bigKind = 'note';
+  } else {
+    lines.state = 'unused'; lines.big = t('fad.cardUnused'); lines.bigKind = 'note';
+    lines.eff = {cur: '', rec: c.rec, note: ''};
+    return lines;
+  }
+  lines.eff = !c.cur && f.live ? {cur: '', rec: '', note: t('fad.cardUnreported')} : {...effortLine(c.cur, c.rec), note: ''};
+  return lines;
+}
+/** Every visible text line of a card, for the 9-character rule (★ counts as one character). */
+export function cardText(k) {
+  const eff = !k.eff ? '' : k.eff.note || [k.eff.cur, k.eff.rec ? '★' + k.eff.rec : ''].filter(Boolean).join(' ');
+  return [k.name, k.big, k.use ? k.use.join(' ') : '', k.tryLine, k.nowLine, eff].filter(Boolean);
 }
 
 /* ---------- views ---------- */
-// Task 44: keep the task-32 hierarchy; add only a known cost multiple below the state.
+// V1-FINAL §7 / CKP-FAD-50…52 (WP-08): the card is about use. Subscription-colour top edge, model name, ≈cost large
+// (tokens when there is no public price), a share bar in the subscription colour, "212M 17%", and a small effort line
+// "High ★Med". A trial swaps the middle for blue "试 XHigh / 当前 High". The five ability bars are gone (CKP-FAD-04).
+const STAR_TEXT = rec => `<span class="cd-rec">${STAR}${esc(rec)}</span>`;
 export function lcdView(c) {
   if (!c) return '';
+  const k = c.card;
   const strip = `<i class="st-vend" aria-hidden="true">${c.segments.map(v => `<b style="--v:${esc(v)}"></b>`).join('')}</i>`;
-  const name = `<b class="st-name ${c.label.length > 8 ? 'long' : ''}">${esc(c.label)}</b>${c.pinned ? `<i class="st-pin" role="img" aria-label="${esc(t('fad.pinnedAria'))}"></i>` : ''}`;
-  const bars = `<span class="st-bars">${c.bars.map(b => b.none ? `<i class="eb none" data-l="${b.l}"></i>`
-    : `<i class="eb${b.cur ? ' cur' : ''}${b.rec ? ' rec' : ''}${b.trial ? ' try' : ''}${Number((3 + b.h * 8).toFixed(1)) * 1.4 < 6 ? ' short' : ''}" data-l="${b.l}" style="--h:${(3 + b.h * 8).toFixed(1)}px"></i>`).join('')}</span>`;
-  let state;
-  if (c.trial) {
-    const tr = c.trial;
-    const text = tr.matchesCurrent ? t('fad.tryCurrent') : tr.matchesRec ? t('fad.tryRec') : t('fad.tryEffort', {e: tr.effort});
-    const multiple = !tr.matchesCurrent && !tr.matchesRec && c.cur ? costMultiple(tr.cost) : null;
-    state = `<span class="st-eff st-try"><em class="st-trial-value">${esc(text)}</em>${multiple ? `<small class="st-multiple st-trial-cost"><span>${multiple}</span><span class="st-cost-basis">${t('fad.costCurrent')}</span></small>` : ''}</span>`;
-  } else {
-    const multiple = !c.follows ? costMultiple(c.recX) : null;
-    const wrap = multiple && c.rec.length > 3;
-    state = `<span class="st-eff${wrap ? ' st-cost-wrap' : ''}"><em class="${c.follows ? 'rec' : ''}">${c.follows ? STAR : ''}${esc(c.cur || '--')}</em>${c.follows ? '' : `<span class="st-rec">${STAR}<span class="st-rec-label">${esc(c.rec)}</span>${multiple ? `<small class="st-multiple st-rec-cost">·${multiple}</small>` : ''}</span>`}</span>`;
-  }
-  return strip + name + bars + state;
+  // A 9-character name ("Terra 6.1") is set 1 px smaller and tighter so it never clips on the 52 px card.
+  const name = `<b class="st-name ${[...c.label].length > 8 ? 'long' : ''}">${esc(c.label)}</b>${c.pinned ? `<i class="st-pin" role="img" aria-label="${esc(t('fad.pinnedAria'))}"></i>` : ''}`;
+  const eff = !k.eff ? '' : k.eff.note ? `<span class="cd-eff cd-note">${esc(k.eff.note)}</span>`
+    : `<span class="cd-eff${k.eff.cur ? '' : ' cd-follows'}">${k.eff.cur ? `<span class="cd-cur">${esc(k.eff.cur)}</span>` : ''}${k.eff.rec ? STAR_TEXT(k.eff.rec) : ''}</span>`;
+  if (k.state === 'try') return strip + name + `<span class="cd-try">${esc(k.tryLine)}</span><span class="cd-now">${esc(k.nowLine)}</span>` + eff;
+  const bar = k.bar == null ? '' : `<i class="cd-bar" aria-hidden="true" style="--s:${(k.bar * 100).toFixed(1)}%;--v:${esc(c.segments[0] || '')}"></i>`;
+  const use = k.use ? `<span class="cd-use"><b>${esc(k.use[0])}</b> <span>${esc(k.use[1])}</span></span>` : '';
+  return strip + name + `<span class="cd-big ${k.bigKind}">${esc(k.big)}</span>` + bar + use + eff;
 }
 
 export function stripAria(c) {
+  if (c.unlisted) return `${c.name}: ${t('fad.cardUnlisted')}`;
   const current = t('fad.stripAria', {m: c.name, cur: c.cur || t('fad.unreportedAria'), rec: c.rec, x: c.recX != null ? t('fad.stripAriaX', {x: times(c.recX)}) : '',
-    more: c.others.length ? t('fad.stripAriaMore', {more: c.others.map(([e, n]) => `${e}×${n}`).join(' ')}) : ''});
+    more: c.others.length ? t('fad.stripAriaMore', {more: c.others.map(([e, n]) => `${e}×${n}`).join(' ')}) : '',
+    use: c.card && c.card.use ? t('fad.stripAriaUse', {u: [c.card.bigKind === 'cost' ? c.card.bigFull : '', c.card.useFull.join(' ')].filter(Boolean).join(' · ')}) : ''});
   if (!c.trial) return current;
   const tr = c.trial, fastOnly = tr.fast != null && tr.effort === c.base;
   return current + ' · ' + t('fad.stripTrialAria', {m: c.name, e: fastOnly ? t(tr.fast ? 'fad.tryFast' : 'fad.tryStd') : tr.effort + (tr.fast ? ' ⚡' : ''),
     cost: t('fad.cost', {x: times(tr.cost)}), d: fastOnly ? t('fad.speed', {x: times(tr.speed)}) : t('fad.abl', {d: delta(tr.abl)})});
 }
-// One indicator, centred on its fader: trial blue; selected/real-fast white; inactive dim.
-// A bolt replaces the dot in the same slot when the displayed configuration uses fast mode.
+// CKP-FAD-55 (WP-08): one session lamp per card, under the row label 会话 / Sessions: lit in the subscription colour while
+// a session runs, dim when the model was used in this range, off otherwise. The ⚡ beside it is fast mode (CKP-FAD-24).
+// Selection and trial are shown on the card (frame, blue lines), not on the lamp.
 export function indicatorView(c) {
   if (!c) return '';
   const trying = !!c.trial, fast = !!c.tier && !!(c.tFast ?? c.currentFast);
-  const tone = trying ? 'try' : c.sel || fast ? 'on' : 'off';
-  const label = t('fad.indicatorAria', {m: c.name, s: t(trying ? 'fad.indicatorTrying' : c.sel ? 'fad.indicatorSelected' : 'fad.indicatorIdle'),
+  const tone = c.session || 'off';
+  const label = t('fad.indicatorAria', {m: c.name, s: t(tone === 'live' ? 'fad.sessionLive' : tone === 'used' ? 'fad.sessionUsed' : 'fad.sessionNone'),
     fast: c.tier ? t('fad.fastLampAria', {s: trying ? t(fast ? 'fad.tryFast' : 'fad.tryStd') : t(fast ? 'fad.lampOn' : 'fad.lampOff')}) : ''});
   const sessions = c.leds.map(x => `${x.account ? x.account + ' · ' : ''}${x.tool} · ${x.project} · ${agoText(x)}`).join('\n');
   // CKP-FAD-24 / owner 11-12: fast mode is a ⚡ beside the lamp, symbol only: white = the real configuration is fast, solid blue =
@@ -128,8 +195,8 @@ export function indicatorView(c) {
 }
 // The travel's fixed marks: a tick per level the model has, the ★ detent (round D1: this fader's own ★ level, a short
 // gold notch beside the cap's lane and a tiny gold ★, because the shared scale cannot show each model's ★), and white
-// dots for other sessions.
-export const marksView = c => !c ? '' : `${c.ticks.map(k => `<i class="fd-tick" style="--k:${k}"></i>`).join('')}<i class="fd-rec" data-l="${esc(c.rec)}" style="--k:${c.recK}">${STAR}</i>${c.dots.map(d => `<i class="fd-dot" style="--k:${d.k}"><b>${d.n}</b></i>`).join('')}`;
+// dots for another effort with a notable share of the last 15 minutes (CKP-FAD-53).
+export const marksView = c => !c ? '' : `${c.ticks.map(k => `<i class="fd-tick" style="--k:${k}"></i>`).join('')}${c.unlisted ? '' : `<i class="fd-rec" data-l="${esc(c.rec)}" style="--k:${c.recK}">${STAR}</i>`}${c.dots.map(d => `<i class="fd-dot" data-l="${esc(d.e)}" style="--k:${d.k}"></i>`).join('')}`;
 // Round D1: the ⚡ lit push button above the travel is gone (the owner could not tell what it was); fast mode is tried
 // with the comparison view's own ⚡ key; its state shares the indicator above the LCD.
 // The scale beside the travels: 状态 over the indicators, and the level labels (Max … Low), which set the trial.

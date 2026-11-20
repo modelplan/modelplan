@@ -140,6 +140,10 @@ public struct CockpitShellLayout: Equatable, Sendable {
     }
     /// The strip's top in the page canvas (the open root's; the closed page keeps the strip there too, G3-108).
     static func stripTop(_ profile: CockpitAppearance.Profile) -> CGFloat { profile == .full ? 253 : 65 }
+    /// Owner 11-19 (#1062): the porthole band at the top of the web view (the page is top-anchored in it, open or closed):
+    /// the canvas above the closed slab. An activation click there only brings the cockpit forward, so it never opens the
+    /// enlarged field; below it (faders, keys, tabs) the first click still acts.
+    public var portholeActivationBand: CGFloat { Self.portholeBand(profile: profile, scale: scale) }
     /// G3-108: the closed slab (16 px) and the gutter under it (9 px) stand directly above the strip.
     public static let closedSlabBand: CGFloat = 25
     /// G3-108: the points the closed window leaves out above the slab (0 when open). Attached, the window keeps its

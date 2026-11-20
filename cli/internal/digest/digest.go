@@ -57,6 +57,9 @@ type Model struct {
 	HarnessIDs      map[string][]string `json:"harnessIds,omitempty"`
 	HarnessEvidence *HarnessEvidence    `json:"harnessEvidence"`
 	Efforts         []Effort            `json:"efforts"`
+	// Price and Evaluation are read by price.go (client-v1.6), never by the struct decoder.
+	Price      *Price `json:"-"`
+	Evaluation string `json:"-"`
 }
 
 type Units struct {
@@ -138,6 +141,7 @@ type Digest struct {
 	PlanMetering      *PlanMetering      `json:"planMetering,omitempty"`   // client-v1.3
 	PlanModels        *PlanModels        `json:"planModels,omitempty"`     // client-v1.4
 	AAIndexVersion    string             `json:"aaIndexVersion,omitempty"` // client-v1.5: the AA index version behind aaScore
+	PriceUnit         string             `json:"-"`                        // client-v1.6, set by price.go
 	Resets            []json.RawMessage  `json:"resets"`
 	Windows           []json.RawMessage  `json:"windows"`
 }
@@ -290,6 +294,7 @@ func Parse(component string, b []byte) (*Digest, error) {
 	if d.PlanModels != nil && !validPlanModels(d.PlanModels) {
 		d.PlanModels = nil
 	}
+	readPrices(&d, data)
 	if err := json.Unmarshal(data, &d.publication); err != nil {
 		return nil, err
 	}

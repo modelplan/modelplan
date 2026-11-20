@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
-import { verifyVisualPack, fieldRocketVehicles } from '../check-visual-pack.mjs';
+import { verifyVisualPack, fieldRocketVehicles, fieldFlatSprites } from '../check-visual-pack.mjs';
 
 const license = 'LicenseRef-ModelPlan-Visuals-1.0';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -26,7 +26,7 @@ function fixture(t) {
   function add(file, kind, extra = {}) {
     const bytes = kind === 'notice' ? Buffer.from(`<!-- SPDX-License-Identifier: ${license} -->\nModelPlan trademark notice.\n`)
       : kind === 'field-scene' ? Buffer.from(`/*! SPDX-License-Identifier: ${license} */\nexport {};\n`)
-      : kind === 'field-rocket-atlas' ? webp : png;
+      : kind === 'field-rocket-atlas' || kind === 'field-rocket-sprite' ? webp : png;
     mkdirSync(join(pack, file, '..'), { recursive: true });
     writeFileSync(join(pack, file), bytes);
     const entry = { file, kind, sha256: hash(bytes), bytes: bytes.length, license,
@@ -49,8 +49,10 @@ function fixture(t) {
     }
   }
   add('field-scene/README.md', 'notice');
-  add('field-scene/cockpit-scene.bundle.js', 'field-scene');
+  add('field-scene/launch-field.js', 'field-scene');
+  add('field-scene/launch-field.css', 'field-scene');
   for (const vehicle of fieldRocketVehicles) for (const part of ['512', '256', 'mat']) add(`field-scene/rockets/${vehicle}-${part}.webp`, 'field-rocket-atlas');
+  for (const sprite of fieldFlatSprites) for (const scale of [2, 3]) add(`field-scene/rockets/flat/${sprite}@${scale}x.webp`, 'field-rocket-sprite', { scale });
   function save() {
     writeFileSync(join(pack, 'manifest.json'), JSON.stringify(manifest));
     writeFileSync(join(root, 'source-policy.json'), JSON.stringify(policy));
@@ -76,6 +78,15 @@ test('D207 checks the launch-field rocket atlases as WebP: dimensions, metadata 
   assert.throws(() => verifyVisualPack(f.root), /metadata/);
   writeFileSync(join(f.pack, 'field-scene/rockets/extra-512.webp'), webp);
   assert.throws(() => verifyVisualPack(f.root), /outside manifest|metadata/);
+});
+
+test('WP-22 the launch-field window ships its script, styles and 2D fallback sprites, nothing else', t => {
+  const f = fixture(t);
+  verifyVisualPack(f.root);
+  assert.equal(fieldFlatSprites.length, 57);
+  assert.ok(!f.manifest.files.some(x => x.file === 'field-scene/cockpit-scene.bundle.js'), 'the D39 scene bundle is gone');
+  writeFileSync(join(f.pack, 'field-scene/rockets/flat/heavy-unknown@2x.webp'), webp);
+  assert.throws(() => verifyVisualPack(f.root), /outside manifest/);
 });
 
 test('rejects changed PNG bytes, dimensions and unregistered files', t => {

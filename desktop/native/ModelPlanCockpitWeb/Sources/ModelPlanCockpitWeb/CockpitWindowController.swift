@@ -855,6 +855,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
     let view = CockpitWebView(frame: .zero, configuration: config)
     view.menuProvider = { [weak self] in self?.contextMenu() }
+    // Owner 11-19 (#1062): the first click on an inactive cockpit in the porthole band only activates it; the porthole
+    // opens the enlarged field on a click, so an activation click must not reach it. The rest of the page keeps first-click.
+    view.declinesActivationClick = { [weak self] point in
+      guard let layout = self?.layout else { return false }
+      return point.y < layout.portholeActivationBand
+    }
     menuTarget.fire = { [weak self] in self?.toggleAttachment() }
     // Owner review 11-08 / CKP-SHELL-25: only the hull and canopy are drawn; the web view paints no backing of its
     // own, so the clear panel shows the desktop around the transparent page. `CockpitWebView.isOpaque` being false is
@@ -1529,6 +1535,17 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// Plugin columns: a reading for a running plugin. Dropped while the page is hidden or has no plugin state.
   public func sendPluginData(id: String, data: [String: Any]) {
     guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.pluginData(id: id, data: data) else { return }
+    send(raw, onRejected: { true })
+  }
+  /// WP-22 (macrevb-1062-3): the enlarged field's selection (a public model id, nil for a clear) selects the same model on
+  /// the page's HUD, faders and porthole. Presentation only: a page that cannot show it keeps working.
+  /// Owner 11-19 (#1062): tells the page the enlarged field closed, so a click bouncing off the close does not reopen it.
+  public func fieldClosed() {
+    guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.fieldClosed() else { return }
+    send(raw, onRejected: { true })
+  }
+  public func selectModel(_ id: String?) {
+    guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.setSelection(id) else { return }
     send(raw, onRejected: { true })
   }
   public func updateScope(_ key:String) {

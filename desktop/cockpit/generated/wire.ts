@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 513fbba491d365a4dba3125a617654f97cd55aa46585053d46ca4d839a8ff98d
+// Schema SHA-256: 3694046c4e3f9e6c13ae79b53671eb0a3856c5d329dc8ff984c32790b2e572a2
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -49,6 +49,30 @@ export type WireCockpitAlert = {
   readonly "source": string;
   readonly "subscriptionRef": string;
   readonly "windowId": string;
+};
+
+export type WireCockpitCost = {
+  readonly "basis": string;
+  readonly "currency": string;
+  readonly "daily": ReadonlyArray<WireCockpitCostBucket>;
+  readonly "hourly": ReadonlyArray<WireCockpitCostBucket>;
+  readonly "models": WireCockpitCostModels;
+  readonly "pricesAsOf": string | null;
+};
+
+export type WireCockpitCostBucket = {
+  readonly "approximate"?: boolean;
+  readonly "at": string;
+  readonly "estimatedUsd": number;
+  readonly "pricedTokens": number;
+  readonly "source": string;
+  readonly "unpricedTokens": number;
+};
+
+export type WireCockpitCostModels = {
+  readonly "recent30d": ReadonlyArray<WireCockpitModelCost>;
+  readonly "recent7d": ReadonlyArray<WireCockpitModelCost>;
+  readonly "today": ReadonlyArray<WireCockpitModelCost>;
 };
 
 export type WireCockpitCredits = {
@@ -125,6 +149,7 @@ export type WireCockpitForecast = {
 };
 
 export type WireCockpitHistory = {
+  readonly "cost"?: WireCockpitCost;
   readonly "coverage": string;
   readonly "cycles": ReadonlyArray<WireCockpitCycleGroup>;
   readonly "daily": ReadonlyArray<WireCockpitSourceBucket>;
@@ -150,6 +175,15 @@ export type WireCockpitHistorySums = {
   readonly "outputTokens": number;
   readonly "reasoningTokens"?: number;
   readonly "totalTokens"?: number;
+};
+
+export type WireCockpitModelCost = {
+  readonly "approximate"?: boolean;
+  readonly "estimatedUsd": number | null;
+  readonly "model": string;
+  readonly "pricedTokens": number;
+  readonly "source": string;
+  readonly "unpricedTokens": number;
 };
 
 export type WireCockpitPeak = {
@@ -757,6 +791,121 @@ export const definitions: Readonly<Record<string, Schema>> = {
     ],
     "type": "object"
   },
+  "CockpitCost": {
+    "additionalProperties": false,
+    "properties": {
+      "basis": {
+        "type": "string"
+      },
+      "currency": {
+        "type": "string"
+      },
+      "daily": {
+        "items": {
+          "$ref": "#/$defs/CockpitCostBucket"
+        },
+        "maxItems": 480,
+        "type": "array"
+      },
+      "hourly": {
+        "items": {
+          "$ref": "#/$defs/CockpitCostBucket"
+        },
+        "maxItems": 384,
+        "type": "array"
+      },
+      "models": {
+        "$ref": "#/$defs/CockpitCostModels"
+      },
+      "pricesAsOf": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "maxLength": 10
+      }
+    },
+    "required": [
+      "basis",
+      "currency",
+      "pricesAsOf",
+      "daily",
+      "hourly",
+      "models"
+    ],
+    "type": "object"
+  },
+  "CockpitCostBucket": {
+    "additionalProperties": false,
+    "properties": {
+      "approximate": {
+        "type": "boolean"
+      },
+      "at": {
+        "maxLength": 32,
+        "type": "string"
+      },
+      "estimatedUsd": {
+        "minimum": 0,
+        "type": "number"
+      },
+      "pricedTokens": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "source": {
+        "type": "string"
+      },
+      "unpricedTokens": {
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "at",
+      "source",
+      "estimatedUsd",
+      "pricedTokens",
+      "unpricedTokens"
+    ],
+    "type": "object"
+  },
+  "CockpitCostModels": {
+    "additionalProperties": false,
+    "properties": {
+      "recent30d": {
+        "items": {
+          "$ref": "#/$defs/CockpitModelCost"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
+      "recent7d": {
+        "items": {
+          "$ref": "#/$defs/CockpitModelCost"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
+      "today": {
+        "items": {
+          "$ref": "#/$defs/CockpitModelCost"
+        },
+        "maxItems": 64,
+        "type": "array"
+      }
+    },
+    "required": [
+      "today",
+      "recent7d",
+      "recent30d"
+    ],
+    "type": "object"
+  },
   "CockpitCredits": {
     "additionalProperties": false,
     "properties": {
@@ -1128,6 +1277,9 @@ export const definitions: Readonly<Record<string, Schema>> = {
   "CockpitHistory": {
     "additionalProperties": false,
     "properties": {
+      "cost": {
+        "$ref": "#/$defs/CockpitCost"
+      },
       "coverage": {
         "type": "string"
       },
@@ -1297,6 +1449,49 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "generationTps",
       "observedRequests",
       "eligibleRequests"
+    ],
+    "type": "object"
+  },
+  "CockpitModelCost": {
+    "additionalProperties": false,
+    "properties": {
+      "approximate": {
+        "type": "boolean"
+      },
+      "estimatedUsd": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "minimum": 0
+      },
+      "model": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "pricedTokens": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "source": {
+        "type": "string"
+      },
+      "unpricedTokens": {
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "model",
+      "source",
+      "estimatedUsd",
+      "pricedTokens",
+      "unpricedTokens"
     ],
     "type": "object"
   },

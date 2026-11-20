@@ -118,7 +118,12 @@ one-sentence Settings summary, a trusted white line-art icon at the vendor-mark 
 bar ink (only `#87939e`, `#e9edf0`, `#b9c7d6` or the resource orchid `#da66c2`), settings specs, and three pure functions: `accept` folds a host reading
 into the plugin's state (kept across repaints), `column` describes up to three cells in the subscription columns'
 Other-cell grammar (small tag · large number · side value · continuous bar with a thin trend line) plus a bottom line,
-and `screen` gives the lines of its big screen. Plugin strings live in `study/rocket-r1/strings/plugins.js`, each drawn
+and `screen` gives the lines of its big screen. Custom draw (D323): when cells cannot express a plugin (a day strip, a
+week grid), its `column` or `screen` result may also carry `draw(ctx)`. The host then gives it one clipped area (the
+column's cell rows, or the screen body under the framework's title bar) and calls `draw` with that `area`, its size, the
+cockpit `tokens`, a per-plugin `memo` shared by column and screen, `opening` and `redraw()`. The key, underline, pin,
+"+" menu, bottom line, title bar and lifecycle stay the framework's; a draw that throws falls back to the cells or lines,
+a size change draws again, and focus on a `data-focus` element survives every redraw. Plugin strings live in `study/rocket-r1/strings/plugins.js`, each drawn
 one with a `<key>Short` form. `src/plugin-layout.ts` is the pure page rule: columns = max(3, subscriptions + plugins),
 at most six per page, subscriptions first; unpinned plugins only fill free slots of the last page; up to two pinned
 plugins stay on page 1. `src/plugin-host.ts` turns empty slots into plugin keys and columns drawn like subscription keys

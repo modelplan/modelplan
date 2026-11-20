@@ -12,11 +12,16 @@
 // (`pluginsRunning`, on every change) and the host pushes readings for them (`pluginData`), which reach a plugin only
 // while it runs.
 //
+// Custom draw (owner D323): a plugin whose column or screen carries `draw` paints inside one clipped area the host gives
+// it (the column's cell rows, or the screen body under the title bar). The key, underline, pin, "+" menu, bottom line,
+// title bar and lifecycle stay here. A draw that throws falls back to the plugin's cells or lines; a size change draws
+// again; focus on a `data-focus` element survives every redraw.
+//
 // State: the host (Settings › Subscriptions › Plugins) owns the durable copy and sends it as a `plugins` message. Until
 // the host has sent one, page edits stay in this page only and nothing is posted, so an older host never sees an action
 // it does not know.
 import type {WireCockpitData,WireRow} from '../generated/wire.js';
-import {PluginRegistry,builtinPlugins,type CockpitPlugin,type PluginCell,type PluginContext,type PluginLocale,type PluginWords} from './plugin-registry.js';
+import {PLUGIN_TOKENS,PluginRegistry,builtinPlugins,type CockpitPlugin,type PluginCell,type PluginContext,type PluginDrawContext,type PluginLocale,type PluginWords} from './plugin-registry.js';
 import {pluginLayout,type LayoutPage,type PluginLayout} from './plugin-layout.js';
 import {disablePlugin,emptyPluginState,enablePlugin,enabledPlugins,parsePluginState,pluginSettings,type PluginState} from './plugin-state.js';
 import {ht} from './host-text.js';
@@ -41,6 +46,15 @@ const fitted=(className:string,words:PluginWords)=>{const e=el('span',className+
 const fitIn=(box:HTMLElement)=>{for(const e of box.querySelectorAll<HTMLElement>('.pl-fit[data-short]')){e.textContent=e.dataset.full??'';if(e.clientWidth>0&&e.scrollWidth>e.clientWidth)e.textContent=e.dataset.short??'';}};
 const icon=(plugin:CockpitPlugin,className:string)=>{const span=el('span',className);span.setAttribute('aria-hidden','true');span.innerHTML=plugin.icon;return span;};
 const clamp01=(v:number)=>Math.max(0,Math.min(1,v));
+/** The stable `data-focus` key of the focused element inside `box`, if any (D323: focus survives a redraw). */
+function focusKey(box:HTMLElement):string|null {
+  const active=document.activeElement,marked=active instanceof HTMLElement&&box.contains(active)?active.closest<HTMLElement>('[data-focus]'):null;
+  return marked&&box.contains(marked)?marked.dataset.focus??null:null;
+}
+function refocus(box:HTMLElement,key:string|null) {
+  if(key===null||!box.isConnected)return;
+  for(const e of box.querySelectorAll<HTMLElement>('[data-focus]'))if(e.dataset.focus===key){if(document.activeElement!==e)e.focus({preventScroll:true});return;}
+}
 const SVG='http://www.w3.org/2000/svg';
 function trendLine(points:readonly number[]):SVGSVGElement|null {
   const values=points.filter(Number.isFinite).slice(-48);if(values.length<2)return null;
@@ -75,6 +89,9 @@ export interface PluginHost {
   decorate(table:HTMLElement,page:LayoutPage,locale:PluginLocale):void;
   /** Nothing is placed (empty or cleared table). */
   clearPlacement():void;
+  /** The engine is about to replace its table: remember a focused drawn control (plugin id and `data-focus` key) so the
+   *  plugin's new column takes focus back once it is drawn and attached (D323 focus contract). */
+  hold():void;
   setVisible(visible:boolean):void;
   setInteractive(interactive:boolean):void;
   applyHostState(raw:unknown):boolean;
@@ -100,8 +117,40 @@ export interface PluginReports {
 }
 export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=new PluginRegistry(builtinPlugins)):PluginHost {
   let state:PluginState=emptyPluginState,negotiated=false,visible=false,interactive=false,disposed=false,locale:PluginLocale='en';
-  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement;title:HTMLElement;close:HTMLButtonElement;list:HTMLElement}|null=null;
+  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement;title:HTMLElement;close:HTMLButtonElement;list:HTMLElement;area:HTMLElement;opening:boolean}|null=null;
   const readings=new Map<string,unknown>(),columns=new Map<string,HTMLElement>(),running=new Set<string>(),placed=new Set<string>();
+  // D323 custom draw: per-plugin view memory, the size each area was last drawn at, and one observer that draws an area
+  // again when its size changes (a column is drawn before its table is attached, so the first real size arrives here).
+  const memos=new Map<string,Record<string,unknown>>(),drawnAt=new WeakMap<HTMLElement,{id:string;w:number;h:number}>();
+  let drawing=false,pending:{id:string;key:string}|null=null;
+  /** Stop watching the draw areas of the columns about to be dropped (a replaced table, cleared placement). */
+  const forget=()=>{for(const column of columns.values())for(const area of column.querySelectorAll<HTMLElement>(':scope > .pl-draw'))watch?.unobserve(area);};
+  /** Gives focus back to a held control in this plugin's new column, only when focus was dropped (not moved elsewhere). */
+  function restoreHeld(column:HTMLElement,id:string) {
+    if(!pending||pending.id!==id||!column.isConnected)return;
+    const active=document.activeElement;if(active&&active!==document.body){pending=null;return;}
+    const key=pending.key;pending=null;refocus(column,key);
+  }
+  const watch=typeof ResizeObserver==='undefined'?null:new ResizeObserver(entries=>{
+    for(const entry of entries){
+      const area=entry.target as HTMLElement,last=drawnAt.get(area);
+      if(!last||!area.isConnected||area.clientWidth===last.w&&area.clientHeight===last.h)continue;
+      if(area.classList.contains('pl-screen-d'))drawScreen();else redrawColumn(last.id);
+    }
+  });
+  const memo=(id:string)=>{let m=memos.get(id);if(!m){m={};memos.set(id,m);}return m;};
+  /** Draws one area; false (and the area left empty) when the plugin's draw throws. */
+  function paint(area:HTMLElement,id:string,draw:(context:PluginDrawContext)=>void,opening:boolean):boolean {
+    const key=focusKey(area);area.replaceChildren();
+    const w=area.clientWidth,h=area.clientHeight;drawnAt.set(area,{id,w,h});watch?.observe(area);
+    const was=drawing;drawing=true;
+    try{draw({...context(id),area,width:w,height:h,tokens:PLUGIN_TOKENS,memo:memo(id),opening,redraw:()=>redrawPlugin(id)});}
+    catch{area.replaceChildren();return false;/* The plugin's cells or lines are drawn instead. */}
+    finally{drawing=was;}
+    refocus(area,key);return true;
+  }
+  /** A plugin asked to be drawn again: its column and, when open, its screen. Ignored while a draw runs (no recursion). */
+  function redrawPlugin(id:string) {if(drawing||disposed)return;redrawColumn(id);if(screen?.id===id)drawScreen();}
   const guard=<T>(fn:()=>T,fallback:T):T=>{try{return fn();}catch{return fallback;/* A plugin failure never takes the cockpit down. */}};
   const context=(id:string):PluginContext=>({locale,settings:pluginSettings(state,registry,id),words:(key,vars)=>pluginWords(locale,key,vars)});
   const enabled=(id:string)=>enabledPlugins(state,registry).some(p=>p.id===id);
@@ -109,12 +158,21 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   /** (Re)draws one plugin column's rows in place: one cell per table row, the bottom line, and the reserve row when the table has one. */
   function fill(column:HTMLElement,plugin:CockpitPlugin,rows:number,reserve:boolean) {
     const drawn=guard(()=>plugin.column(readings.get(plugin.id),context(plugin.id)),{cells:[]});
-    const parts:HTMLElement[]=Array.from({length:rows},(_,i)=>drawCell(drawn.cells[i],i));
+    const cells=()=>Array.from({length:rows},(_,i)=>drawCell(drawn.cells?.[i],i));
+    const key=focusKey(column);
+    for(const old of column.querySelectorAll<HTMLElement>(':scope > .pl-draw'))watch?.unobserve(old);
+    // D323: a custom draw gets one clipped area over all the cell rows; the bottom line stays the framework's.
+    const area=typeof drawn.draw==='function'&&rows>0?el('div','pl-draw'):null;
+    if(area){area.style.gridRow=`1 / span ${rows}`;area.dataset.plugin=plugin.id;}
+    const parts:HTMLElement[]=area?[area]:cells();
     const foot=el('div','qrow qrow-t pl-foot');
     if(drawn.foot){foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value)foot.append(fitted('pl-foot-v',drawn.foot.value));}
     parts.push(foot);if(reserve)parts.push(el('div','qrow qrow-r'));
     column.replaceChildren(...parts);column.dataset.rows=String(rows);column.dataset.reserve=String(reserve);
     const ink=plugin.ink;if(ink)column.style.setProperty('--pl-ink',ink);else column.style.removeProperty('--pl-ink');
+    if(area){const ok=paint(area,plugin.id,drawn.draw!,false);column.dataset.draw=ok?'custom':'fallback';if(!ok){watch?.unobserve(area);area.replaceWith(...cells());}}
+    else delete column.dataset.draw;
+    refocus(column,key);restoreHeld(column,plugin.id);
   }
   function redrawColumn(id:string) {
     const column=columns.get(id),plugin=registry.get(id);
@@ -131,6 +189,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     if(!next||disposed)return false;
     state=next;if(negotiated)report.state(state);
     for(const id of [...placed])if(!enabled(id))placed.delete(id);
+    for(const id of [...memos.keys()])if(!enabled(id))memos.delete(id);
     reconcile();repaint?.();return true;
   }
   // ---- the big screen (CKP-PLG-53): drawn inside the big-screen well only, so faders and page keys stay uncovered.
@@ -144,7 +203,15 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const title=pluginWords(locale,plugin.title),close=pluginWords(locale,'plugin.close');
     screen.title.dataset.full=title.full;screen.title.dataset.short=title.short;
     screen.close.textContent=close.full;
-    const lines=guard(()=>plugin.screen(readings.get(plugin.id),context(plugin.id)).lines,[]).slice(0,12);
+    const shown=guard(()=>plugin.screen(readings.get(plugin.id),context(plugin.id)),{lines:[]});
+    // D323: a custom draw paints the body under the title bar; when it throws, the lines are shown instead.
+    const opening=screen.opening;screen.opening=false;
+    // The area is shown before the draw so the plugin measures its real size (no second draw from the observer).
+    if(typeof shown.draw==='function'){screen.area.hidden=false;screen.list.hidden=true;}
+    const custom=typeof shown.draw==='function'&&paint(screen.area,plugin.id,shown.draw,opening);
+    screen.area.hidden=!custom;screen.list.hidden=custom;screen.box.dataset.draw=typeof shown.draw!=='function'?'lines':custom?'custom':'fallback';
+    if(!custom)screen.area.replaceChildren();
+    const lines=custom?[]:(Array.isArray(shown.lines)?shown.lines:[]).slice(0,12);
     const rows=[...screen.list.children] as HTMLElement[];
     lines.forEach((line,i)=>{let row=rows[i];if(!row){row=el('div');row.append(el('dt'),el('dd'));screen!.list.append(row);}
       const [dt,dd]=[row.children[0]!,row.children[1]!];if(dt.textContent!==line.label)dt.textContent=line.label;if(dd.textContent!==line.value)dd.textContent=line.value;});
@@ -152,7 +219,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     screen.box.setAttribute('aria-label',ht(locale,'plugin.screenAria',{name:title.full}));fitIn(screen.box);
   }
   function closeScreen(restoreFocus=false) {
-    if(!screen)return;const id=screen.id;screen.box.remove();screen=null;
+    if(!screen)return;const id=screen.id;watch?.unobserve(screen.area);screen.box.remove();screen=null;
     document.removeEventListener('click',pageKeys,true);
     for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))key.setAttribute('aria-expanded','false');
     if(restoreFocus)root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`)?.focus();
@@ -166,8 +233,8 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     closeScreen();const box=el('section','pl-screen');box.dataset.plugin=id;box.setAttribute('role','region');box.tabIndex=-1;
     const head=el('div','pl-screen-h'),title=fitted('pl-screen-t',pluginWords(locale,plugin.title));
     const close=el('button','pl-screen-x');close.type='button';close.dataset.mat='part';close.onclick=e=>{if(e.isTrusted)closeScreen(true);};
-    head.append(icon(plugin,'pl-icon'),title,close);const list=el('dl','pl-screen-l');box.append(head,list);
-    well.append(box);screen={id,box,title,close,list};drawScreen();
+    head.append(icon(plugin,'pl-icon'),title,close);const list=el('dl','pl-screen-l'),area=el('div','pl-screen-d');area.hidden=true;area.dataset.plugin=id;box.append(head,list,area);
+    well.append(box);screen={id,box,title,close,list,area,opening:true};drawScreen();
     document.addEventListener('click',pageKeys,true);
     root.querySelector(`.eng-keys .pl-key[data-plugin="${id}"]`)?.setAttribute('aria-expanded','true');
     return true;
@@ -185,6 +252,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     else if(screen){e.preventDefault();e.stopPropagation();closeScreen(true);}
   };
   document.addEventListener('keydown',escape,true);
+  const moved=()=>{pending=null;};document.addEventListener('focusin',moved,true);
   function popup(anchor:HTMLElement,label:string):HTMLElement {
     const m=el('div','pl-menu');m.setAttribute('role','menu');m.setAttribute('aria-label',label);m.dataset.mat='glass';return m;
   }
@@ -210,7 +278,8 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     layout:subscriptions=>pluginLayout(subscriptions,enabledPlugins(state,registry).filter(p=>negotiated||!registry.get(p.id)?.hostSampled)),
     bindEngine(next){repaint=next;},
     decorate(table,page,value){
-      locale=value;placed.clear();columns.clear();
+      locale=value;forget();placed.clear();columns.clear();
+      if(pending&&!page.plugins.includes(pending.id))pending=null;
       const keys=[...table.querySelectorAll<HTMLElement>('.eng-keys > .ek-bay')],bays=[...table.querySelectorAll<HTMLElement>('.eng-cols > .ec-bay')];
       page.plugins.forEach((id,i)=>{
         const plugin=registry.get(id),bay=bays[i];if(!plugin||!keys[i]||!bay)return;
@@ -233,13 +302,23 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       });
       reconcile();if(screen)drawScreen();
     },
-    clearPlacement(){placed.clear();columns.clear();closeMenu();closeScreen();reconcile();},
+    clearPlacement(){forget();pending=null;placed.clear();columns.clear();closeMenu();closeScreen();reconcile();},
+    hold(){
+      // Called again while the engine rebuilds (focus already dropped): an earlier hold stays until it is used, focus
+      // moves elsewhere (focusin) or the plugin is no longer placed.
+      const active=document.activeElement;if(!(active instanceof HTMLElement))return;
+      for(const [id,column] of columns){
+        const area=column.querySelector<HTMLElement>(':scope > .pl-draw');if(!area?.contains(active))continue;
+        const key=focusKey(area);if(key!==null)pending={id,key};return;
+      }
+    },
     setVisible(value){visible=value;reconcile();},
     setInteractive(value){interactive=value;if(!value)closeMenu();},
     applyHostState(raw){
       const next=parsePluginState(raw);if(!next||disposed)return false;
       if(!negotiated)reported=null;negotiated=true;state=next;
       for(const id of [...placed])if(!enabled(id))placed.delete(id);
+      for(const id of [...memos.keys()])if(!enabled(id))memos.delete(id);
       reconcile();repaint?.();return true;
     },
     deliver(id,data){
@@ -274,7 +353,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     closeMenu:()=>closeMenu(),
     openScreen,
     running:()=>[...running],
-    dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();document.removeEventListener('keydown',escape,true);hosts.delete(root);},
+    dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();memos.clear();pending=null;watch?.disconnect();document.removeEventListener('focusin',moved,true);document.removeEventListener('keydown',escape,true);hosts.delete(root);},
   };
   hosts.set(root,host);
   return host;

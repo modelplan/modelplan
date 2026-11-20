@@ -36,7 +36,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@ee807dae7258813bac4bb58a66f7beea8eac9edd
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@789109c2567716f58eb4669e01c76b3e25f17845
     with:
       task: transport
       os: ${{ matrix.os }}

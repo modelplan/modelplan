@@ -26,7 +26,7 @@ const tried=html=>/data-role="trial"/.test(html);
 test('G3-87: pressing the LCD with current unreported opens the comparison without a trial',()=>{
  setLanguage('zh');
  const c=channel(null);
- assert.equal(c.trial,null);assert.ok(c.bars.every(b=>!b.trial));
+ assert.equal(c.trial,null);assert.notEqual(c.card.state,'try'); // WP-08: the card has no ability bars (CKP-FAD-04 superseded); no trial lines
  assert.doesNotMatch(lcdView(c),/试/);
  const html=comparison(view,ui,{modelId:'model0',current:null,currentFast:false});
  // No trial anywhere (no blue tick, number or column, no lit ladder key); ★ is still marked.

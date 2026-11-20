@@ -6,6 +6,8 @@
 // D293 (CKP-PLG-50/51): a plugin does not draw its own panel. It describes up to three cells in the Other-cell grammar of
 // the subscription columns (small tag · large number · side value · continuous bar with a thin trend line below) and an
 // optional bottom line; the host draws them in the table's own rows, so plugin columns look and align like subscriptions.
+// D323: a plugin that cells cannot express (a day strip, a week grid) may add `draw` to its column or screen and paint
+// inside the area the host gives it; everything around that area stays the framework's.
 // Pure: no DOM and no string tables here (the host resolves `plugin.*` keys), so the bridge and unit tests can load it.
 import {resourcePlugin} from './resource-plugin.js';
 export type PluginLocale='en'|'zh-CN';
@@ -34,15 +36,48 @@ export interface PluginCell {
   readonly level?:'mid'|'low'|null;
 }
 export interface PluginColumn {
-  /** Up to three cells, top row first; rows without a cell stay empty. */
+  /** Up to three cells, top row first; rows without a cell stay empty. Also the fallback when `draw` fails. */
   readonly cells:readonly PluginCell[];
   /** The bottom line (the subscriptions' "today" row): a label and an optional value. */
   readonly foot?:{readonly label:PluginWords;readonly value?:PluginWords|null}|null;
+  /** D323 custom draw: when present, the host gives the plugin the column's cell area (every cell row, above the bottom
+   *  line) and calls this instead of drawing `cells`. If it throws, the host draws `cells` instead. */
+  readonly draw?:((context:PluginDrawContext)=>void)|null;
 }
-export interface PluginScreen {readonly lines:readonly {readonly label:string;readonly value:string}[]}
+export interface PluginScreen {
+  /** Label/value lines; also the fallback when `draw` fails. */
+  readonly lines:readonly {readonly label:string;readonly value:string}[];
+  /** D323 custom draw: the big screen's body below the framework's title bar. If it throws, `lines` are shown. */
+  readonly draw?:((context:PluginDrawContext)=>void)|null;
+}
 /** D293 colours: only these instrument inks (V1-FINAL §0 white / grey, resource silver #b9c7d6) and the D327 resource
  *  plugin's orchid #da66c2 (it replaces the silver for the resource plugin; the silver stays allowed for other plugins). */
 export const PLUGIN_INKS:readonly string[]=Object.freeze(['#87939e','#e9edf0','#b9c7d6','#da66c2']);
+/** D323: the cockpit tokens a custom draw paints with (CSS values; the variables are defined by the cockpit sheets). */
+export const PLUGIN_TOKENS=Object.freeze({
+  ink:'var(--lcd-ink)',muted:'var(--lcd-muted)',ghost:'var(--lcd-ghost)',rule:'var(--lcd-rule)',
+  ok:'var(--st-ok)',mid:'var(--st-mid)',low:'var(--st-low)',
+  silk:'var(--silk-hi)',lcdFont:'var(--f-lcd)',silkFont:'var(--f-silk)',
+} as const);
+export type PluginToken=keyof typeof PLUGIN_TOKENS;
+/** D323 custom draw. The framework owns the key, its underline, pin, the "+" menu, the bottom line, the big screen's
+ *  title bar and the lifecycle; a plugin with `draw` paints only inside `area`, an empty box the host clips (overflow and
+ *  paint containment), using `tokens` and the plugin's declared inks. The host redraws on every reading, repaint, locale
+ *  change and size change; focus on an element marked `data-focus="<stable key>"` survives a redraw. */
+export interface PluginDrawContext extends PluginContext {
+  /** The empty, clipped box to draw into (type only: the registry itself never touches the DOM). */
+  readonly area:HTMLElement;
+  /** The area's size in CSS pixels at draw time (0 before it is laid out; the host draws again once it is). */
+  readonly width:number;readonly height:number;
+  readonly tokens:typeof PLUGIN_TOKENS;
+  /** The plugin's view memory (a selected day, a zoom): shared by its column and screen, kept across redraws, dropped
+   *  when the plugin is removed. Readings belong in `accept`'s state, not here. */
+  readonly memo:Record<string,unknown>;
+  /** True on the first draw of a newly opened big screen (per-open view state starts over). Always false in a column. */
+  readonly opening:boolean;
+  /** Draw the plugin again after a click inside it changed `memo`: its column and, when open, its screen. */
+  redraw():void;
+}
 export interface CockpitPlugin {
   readonly id:string;
   /** `plugin.*` string-table keys: the key name (with a Short form) and the one-sentence summary for Settings. */
