@@ -16,7 +16,7 @@ const shot=async(page,name,target=page)=>{if(shots)await target.screenshot({path
 const calendarOn={version:1,entries:[{id:'calendar',enabled:true,pinned:false}],settings:{}};
 // The mockup's sample week: four subscriptions, GLM's 22:00–02:00 peak crossing midnight, own resets, a reset card and
 // an announced GLM reset taking effect on Monday 11/16.
-const week={version:1,
+const week={version:1,peakRules:'yes',
  subs:[{abbr:'CL',colour:'#ff9a6a',name:{en:'Claude',zh:'Claude'}},{abbr:'CX',colour:'#6aa8ff',name:{en:'Codex',zh:'Codex'}},{abbr:'GL',colour:'#8f7dff',name:{en:'GLM',zh:'GLM'}},{abbr:'CU',colour:'#eef2f6',name:{en:'Cursor',zh:'Cursor'}}],
  peaks:[{sub:0,from:L(0,5),to:L(0,11),tentative:false},{sub:2,from:L(0,22),to:L(1,2),tentative:false},{sub:0,from:L(1,5),to:L(1,11),tentative:false},{sub:2,from:L(1,22),to:L(2,2),tentative:false},{sub:0,from:L(2,5),to:L(2,11),tentative:false},{sub:0,from:L(5,5),to:L(5,11),tentative:false},{sub:2,from:L(5,22),to:L(6,2),tentative:false}],
  resets:[{sub:0,at:L(0,12,30),kind:'5h'},{sub:1,at:L(0,14,10),kind:'5h'},{sub:2,at:L(0,15,50),kind:'5h'},{sub:0,at:L(1,9),kind:'week'},{sub:1,at:L(2,6),kind:'week'}],
@@ -26,8 +26,8 @@ function dataWith(count) {
  data.projection.rows=[data.projection.rows[0],...Array.from({length:count-1},(_,i)=>{const row=structuredClone(seed);row.id=`tool-${i+2}`;row.name={en:`Tool ${i+2}`,zh:`工具 ${i+2}`};row.order=i+2;return row;})];
  return data;
 }
-async function open(page,{data=dataWith(4),tier='tall',locale='en',push=week}={}) {
- await page.clock.setFixedTime(new Date(NOW));
+async function open(page,{data=dataWith(4),tier='tall',locale='en',push=week,at=NOW}={}) {
+ await page.clock.setFixedTime(new Date(at));
  await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
  if(tier==='compact')await page.setViewportSize({width:636,height:640});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
@@ -92,7 +92,7 @@ test('D328 Chinese labels, a running peak in the bottom line, and the 明 divide
 });
 
 test('D328 no peak rules: the column shows D293 cells and "Peak: no peak rules", not the strip',async({page})=>{
- const codexOnly={version:1,subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:L(0,14,10),kind:'5h'},{sub:0,at:L(2,6),kind:'week'}],spans:[]};
+ const codexOnly={version:1,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:L(0,14,10),kind:'5h'},{sub:0,at:L(2,6),kind:'week'}],spans:[]};
  await open(page,{push:codexOnly,locale:'zh-CN'});
  const col=column(page);
  expect(await col.getAttribute('data-draw')).toBeNull();
@@ -265,4 +265,42 @@ test('an older host (no plugin state) still shows the v1 table: default-on plugi
  expect(await receive(send('display',{data:dataWith(2)}))).toBe(true);
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
  await expect(page.locator('.eng-keys')).toHaveAttribute('data-slots','3');
+});
+
+// --- macrevc-844 findings -----------------------------------------------------------------------------------------
+test('macrevc-844-2: a cleared host reading does not come back when the next display arrives (host-fed takeover ends at the barrier)',async({page})=>{
+ const {send,receive}=await open(page);
+ await expect(strip(page).locator('.cal-ch')).toHaveCount(3);
+ expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);
+ expect(await receive(send('display',{viewRevision:'4',data:dataWith(4)}))).toBe(true);
+ const col=column(page);
+ await expect(col.locator('.cal-ch')).toHaveCount(0);
+ await expect(col).not.toContainText('GL');
+ // The new display is shaped afresh (no peak feed in this older-engine sample: unknown, never "No rules").
+ await expect(col.locator('.pl-foot .pl-foot-v')).toHaveText('No data');
+});
+
+test('macrevc-844-3: a peak through the fall-back repeated hour is a visible block in the week view',async({page})=>{
+ const at=Date.parse('2026-11-01T10:00:00-08:00');
+ const fall={...week,peaks:[{sub:2,from:Date.parse('2026-11-01T01:30:00-07:00'),to:Date.parse('2026-11-01T01:15:00-08:00'),tentative:false}],resets:[],spans:[]};
+ await open(page,{at,push:fall});
+ await key(page).click();
+ const block=weekView(page).locator('.wk-pk');
+ await expect(block).toHaveCount(1);
+ const style=await block.evaluate(e=>({h:parseFloat(e.style.height),t:parseFloat(e.style.top),box:e.getBoundingClientRect().height}));
+ expect(style.h).toBeGreaterThan(0);expect(style.box).toBeGreaterThan(2);
+ expect(Math.abs(style.t-1.5/24*100)).toBeLessThan(0.1);
+});
+
+test('macrevc-844-4/5/6: unknown peaks, a partial card count and an unknown card expiry are never shown as facts',async({page})=>{
+ const noRulesNoCards={...week,peakRules:'unknown',peaks:[],resets:[{sub:0,at:L(0,14,10),kind:'5h'}],spans:[{sub:0,kind:'cards',from:NOW,to:null,count:null}]};
+ await open(page,{push:noRulesNoCards});
+ const col=column(page);
+ await expect(col.locator('.pl-foot .pl-foot-v')).toHaveText('No data');
+ await expect(col).not.toContainText('No rules');
+ await expect(col).not.toContainText(/1969|1970|12\/31|×/);
+ await key(page).click();
+ const bar=weekView(page).locator('.wk-adr');
+ await expect(bar).toHaveCount(1);
+ await expect(weekView(page)).not.toContainText(/1969|1970|12\/31/);
 });

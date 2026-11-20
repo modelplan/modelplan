@@ -48,7 +48,11 @@ export function dayPieces(from:number,to:number,first:number,days:number):{day:n
  for(let i=0;i<days;i++){
   const ds=addDays(first,i),de=addDays(first,i+1),a=Math.max(from,ds),b=Math.min(to,de);
   if(a>=b)continue;
-  out.push({day:i,start:a===ds?0:wallHours(a),end:b===de?24:wallHours(b)||24,cont:from<ds});
+  const start=a===ds?0:wallHours(a);let end=b===de?24:wallHours(b)||24;
+  // The fall-back repeated hour: the wall clock runs backwards (01:30 first pass to 01:15 second pass). The piece keeps its
+  // real length from its start so it stays a positive interval (macrevc-844-3).
+  if(end<=start)end=Math.min(24,start+(b-a)/HOUR);
+  out.push({day:i,start,end,cont:from<ds});
  }
  return out;
 }

@@ -16,11 +16,14 @@ export interface CalendarPeak {readonly sub:number;readonly from:number;readonly
 export interface CalendarReset {readonly sub:number;readonly at:number;readonly kind:'5h'|'week'}
 /** An all-day item: reset cards usable until `to`, or a reset announced at `from` taking effect at `to` (null: no time). */
 export interface CalendarSpan {readonly sub:number;readonly kind:'cards'|'announced'|'confirmed';readonly from:number;readonly to:number|null;readonly count:number|null}
-export interface CalendarData {readonly version:1;readonly subs:readonly CalendarSub[];readonly peaks:readonly CalendarPeak[];readonly resets:readonly CalendarReset[];readonly spans:readonly CalendarSpan[]}
+/** Whether the user has peak rules: `no` is known (the publication's feed is present and the user has no declared plan),
+ *  `yes` means a declared plan exists (it may have no window in the next 24 h), `unknown` means the feed is missing. */
+export type PeakRules='yes'|'no'|'unknown';
+export interface CalendarData {readonly version:1;readonly peakRules:PeakRules;readonly subs:readonly CalendarSub[];readonly peaks:readonly CalendarPeak[];readonly resets:readonly CalendarReset[];readonly spans:readonly CalendarSpan[]}
 
 export const CALENDAR_MAX_BYTES=16*1024;
 export const LIMITS={subs:16,peaks:64,resets:64,spans:16} as const;
-export const emptyCalendar:CalendarData=Object.freeze({version:1,subs:[],peaks:[],resets:[],spans:[]});
+export const emptyCalendar:CalendarData=Object.freeze({version:1,peakRules:'unknown',subs:[],peaks:[],resets:[],spans:[]});
 // Times are epoch milliseconds between 2000 and 2100: anything else is not a calendar time.
 const MIN_T=946_684_800_000,MAX_T=4_102_444_800_000;
 const time=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=MIN_T&&v<=MAX_T;
@@ -30,7 +33,10 @@ const list=(v:unknown,max:number):v is unknown[]=>Array.isArray(v)&&v.length<=ma
 /** Strict structural check for calendar data from the host or the shaping below: exact keys, bounded lists and
  *  strings, known kinds, in-range times and subscription indices. Returns a frozen copy, or null. */
 export function parseCalendarData(v:unknown):CalendarData|null {
- if(!exact(v,['version','subs','peaks','resets','spans'])||v.version!==1||!list(v.subs,LIMITS.subs)||!list(v.peaks,LIMITS.peaks)||!list(v.resets,LIMITS.resets)||!list(v.spans,LIMITS.spans))return null;
+ // `peakRules` is optional on the wire (a host that does not say leaves it unknown).
+ const rules=record(v)&&'peakRules' in v?v.peakRules:'unknown';
+ if(rules!=='yes'&&rules!=='no'&&rules!=='unknown')return null;
+ if(!exact(v,record(v)&&'peakRules' in v?['version','peakRules','subs','peaks','resets','spans']:['version','subs','peaks','resets','spans'])||v.version!==1||!list(v.subs,LIMITS.subs)||!list(v.peaks,LIMITS.peaks)||!list(v.resets,LIMITS.resets)||!list(v.spans,LIMITS.spans))return null;
  const subs:CalendarSub[]=[];
  for(const s of v.subs){
   if(!exact(s,['abbr','colour','name'])||typeof s.abbr!=='string'||!/^[A-Za-z0-9]{1,3}$/.test(s.abbr)||typeof s.colour!=='string'||!/^#[0-9a-f]{6}$/i.test(s.colour)||!exact(s.name,['en','zh'])||!text(s.name.en,64)||!text(s.name.zh,64))return null;
@@ -49,7 +55,7 @@ export function parseCalendarData(v:unknown):CalendarData|null {
   if(!exact(s,['sub','kind','from','to','count'])||!index(s.sub,n)||!['cards','announced','confirmed'].includes(s.kind as string)||!time(s.from)||!(s.to===null||time(s.to)&&s.to>=s.from)||!(s.count===null||typeof s.count==='number'&&Number.isSafeInteger(s.count)&&s.count>=0&&s.count<=999))return null;
   spans.push(Object.freeze({sub:s.sub,kind:s.kind as CalendarSpan['kind'],from:s.from,to:s.to,count:s.count}));
  }
- return Object.freeze({version:1,subs:Object.freeze(subs),peaks:Object.freeze(peaks),resets:Object.freeze(resets),spans:Object.freeze(spans)});
+ return Object.freeze({version:1,peakRules:rules,subs:Object.freeze(subs),peaks:Object.freeze(peaks),resets:Object.freeze(resets),spans:Object.freeze(spans)});
 }
 
 // Two-letter tags (mockup legend: CL/CX/GL/CU) by tool row, then by vendor, else from the name.
@@ -61,6 +67,7 @@ export function abbreviation(rowId:string,vendorKey:string|null,name:string):str
 }
 /** The publication's peak windows (details.peaks, cockpitPeaksV1). Read structurally: the generated wire type of
  *  this branch's base predates the field, and an older engine omits it (then there are no peaks). */
+const peakFeed=(data:WireCockpitData)=>Array.isArray((data.details as {peaks?:unknown}|null|undefined)?.peaks);
 function wirePeaks(data:WireCockpitData):{rowId:string;startsAt:string;endsAt:string|null;status:string}[] {
  const raw=(data.details as {peaks?:unknown}|null|undefined)?.peaks;
  if(!Array.isArray(raw))return [];
@@ -103,9 +110,16 @@ export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarDat
   if(m.unstable||!verified.has(m.key))return;
   const details=data.details?.subscriptions.filter(s=>s.subscriptionRef===m.key)??[],cards=details.length===1?details[0]!.resetCards:null;
   if(!cards||cards.state==='unknown')return;
-  const expiries=(cards.items??[]).flatMap(c=>{const t=ms(c.expiresAt);return t!==null&&t>now?[t]:[];}).sort((a,b)=>a-b);
-  const to=expiries[0]??ms(cards.earliestExpiresAt);if(to===null||to<=now)return;
-  spans.push({sub,kind:'cards',from:now,to,count:expiries.length||cards.count});
+  // The producer may list only part of the cards (state partial, truncated, or a count above the items): then there is no
+  // exact count and no expiry beyond the one it states itself (macrevc-844-5/6, as the alert list does).
+  const items=cards.items??[],partial=cards.truncated||cards.state!=='complete'||cards.count!==null&&cards.count>items.length;
+  const live=items.filter(c=>{const t=ms(c.expiresAt);return t===null||t>now;});
+  const expiries=live.flatMap(c=>{const t=ms(c.expiresAt);return t!==null?[t]:[];}).sort((a,b)=>a-b);
+  const stated=ms(cards.earliestExpiresAt),to=partial?stated:(expiries[0]??stated);
+  if(to!==null&&to<=now)return;
+  if(!partial&&!live.length)return;
+  if(partial&&cards.count===0&&!live.length)return;
+  spans.push({sub,kind:'cards',from:now,to,count:partial?null:live.length});
  });
  // Announced (or confirmed) public resets for the user's rows, still current.
  for(const e of data.details?.resetEvents??[]){
@@ -115,5 +129,7 @@ export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarDat
   spans.push({sub,kind:e.status==='confirmed'?'confirmed':'announced',from:Math.min(published,now),to:at!==null&&at>=Math.min(published,now)?at:null,count:null});
  }
  const clip=<T,>(xs:T[],n:number)=>xs.slice(0,n);
- return {version:1,subs,peaks:clip(peaks.sort((a,b)=>a.from-b.from),LIMITS.peaks),resets:clip(resets.sort((a,b)=>a.at-b.at),LIMITS.resets),spans:clip(spans,LIMITS.spans)};
+ const declared=members.some(m=>m.row.id.startsWith('declared:'));
+ const peakRules:PeakRules=!peakFeed(data)?'unknown':declared?'yes':'no';
+ return {version:1,peakRules,subs,peaks:clip(peaks.sort((a,b)=>a.from-b.from),LIMITS.peaks),resets:clip(resets.sort((a,b)=>a.at-b.at),LIMITS.resets),spans:clip(spans,LIMITS.spans)};
 }

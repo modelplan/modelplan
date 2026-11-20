@@ -58,7 +58,7 @@ test('overlapping peaks sit side by side; touching ones do not share a group',()
  assert.deepEqual(by,{a:[0,3],b:[1,3],d:[2,3],c:[0,1]});
 });
 
-const week={version:1,
+const week={version:1,peakRules:'yes',
  subs:[{abbr:'CL',colour:'#ff9a6a',name:{en:'Claude',zh:'Claude'}},{abbr:'CX',colour:'#6aa8ff',name:{en:'Codex',zh:'Codex'}},{abbr:'GL',colour:'#8f7dff',name:{en:'GLM',zh:'GLM'}}],
  peaks:[{sub:2,from:local(2026,11,11,22),to:local(2026,11,12,2),tentative:false}],
  resets:[{sub:0,at:local(2026,11,11,12,30),kind:'5h'},{sub:0,at:local(2026,11,12,9),kind:'week'},{sub:1,at:local(2026,11,13,6),kind:'week'}],
@@ -111,7 +111,7 @@ test('D323/D328: the calendar draws its column and screen, and falls back to D29
 });
 
 test('D328: a user with no peak rules gets D293 cells and "Peak: no peak rules", and no strip',()=>{
- const codexOnly={...week,subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:local(2026,11,11,14,10),kind:'5h'},{sub:0,at:local(2026,11,13,6),kind:'week'}],spans:[]};
+ const codexOnly={...week,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:local(2026,11,11,14,10),kind:'5h'},{sub:0,at:local(2026,11,13,6),kind:'week'}],spans:[]};
  const column=calendarPlugin.column(calendarPlugin.accept(codexOnly,undefined),context);
  assert.equal(column.draw,null,'column() returns no draw without peak data');
  assert.deepEqual(column.cells.map(c=>c.tag.full),['plugin.calendarReset','plugin.calWeekReset']);
@@ -150,7 +150,7 @@ function display() {
  const weekly={...data.projection.rows[0].accounts[0].windows[0],id:'weekly',role:'weekly',resetsAt:iso(local(2026,11,12,9))};
  data.projection.rows[0].accounts[0].windows.push(weekly);
  const ref=data.projection.rows[0].accounts[0].subscriptionRef;
- data.details={version:1,sources:[],subscriptions:[{subscriptionRef:ref,resetCounts:[],resetCards:{state:'observed',count:2,items:[{id:'a',expiresAt:iso(local(2026,11,13,18))},{id:'b',expiresAt:iso(local(2026,11,20))}],sources:[{source:'x',observedAt:iso(NOW)}],truncated:false}}],sessions:[],sessionCoverage:'unavailable',alerts:[],
+ data.details={version:1,sources:[],subscriptions:[{subscriptionRef:ref,resetCounts:[],resetCards:{state:'complete',count:2,items:[{id:'a',expiresAt:iso(local(2026,11,13,18))},{id:'b',expiresAt:iso(local(2026,11,20))}],sources:[{source:'x',observedAt:iso(NOW)}],truncated:false}}],sessions:[],sessionCoverage:'unavailable',alerts:[],
   resetEvents:[{version:1,id:'e1',rowId:'declared:glm-coding',provider:'zhipu',status:'announced',publishedAt:iso(local(2026,11,10,10)),expiresAt:iso(local(2026,11,20)),schedule:{from:iso(local(2026,11,16)),through:iso(local(2026,11,16,1)),precision:'window'},source:{kind:'publication',publicationId:'p'}},
    {version:1,id:'e2',rowId:'not-mine',provider:'x',status:'announced',publishedAt:iso(NOW),expiresAt:iso(local(2026,11,20)),source:{kind:'publication',publicationId:'p'}}],
   peaks:[{rowId:'declared:glm-coding',startsAt:iso(local(2026,11,11,22)),endsAt:iso(local(2026,11,12,2)),status:'confirmed'},{rowId:'codex',startsAt:iso(local(2026,11,11,14)),endsAt:null,status:'tentative'},{rowId:'not-mine',startsAt:iso(NOW),endsAt:null,status:'confirmed'}]};
@@ -178,4 +178,62 @@ test('shaping without details or peaks (an older engine) gives an empty but vali
  assert.deepEqual([cal.peaks,cal.spans],[[],[]]);assert.equal(cal.resets.length,4);
  assert.ok(parseCalendarData(cal));
  assert.equal(abbreviation('tool-x',null,'Some Tool'),'SO');assert.equal(abbreviation('x',null,'工具'),'XX');
+});
+
+// --- macrevc-844 findings -----------------------------------------------------------------------------------------
+test('macrevc-844-3: a peak through the fall-back repeated hour keeps a positive, correctly placed interval; spring-forward too',()=>{
+ const fall=dayPieces(Date.parse('2026-11-01T01:30:00-07:00'),Date.parse('2026-11-01T01:15:00-08:00'),local(2026,11,1),1);
+ assert.equal(fall.length,1);assert.equal(fall[0].start,1.5);
+ assert.ok(fall[0].end>fall[0].start,'45 real minutes is not zero height');assert.ok(Math.abs(fall[0].end-fall[0].start-0.75)<1e-9);
+ // Across the transition the wall clock stays the measure (01:00 first pass to 04:00 is 01:00-04:00 on the clock).
+ const across=dayPieces(Date.parse('2026-11-01T00:30:00-07:00'),Date.parse('2026-11-01T04:00:00-08:00'),local(2026,11,1),1);
+ assert.deepEqual([across[0].start,across[0].end],[0.5,4]);
+ const spring=dayPieces(Date.parse('2026-03-08T01:30:00-08:00'),Date.parse('2026-03-08T03:30:00-07:00'),local(2026,3,8),1);
+ assert.deepEqual([spring[0].start,spring[0].end],[1.5,3.5]);assert.ok(spring[0].end>spring[0].start);
+});
+
+test('macrevc-844-4: missing peak data, no window and known no-rules are three states, and only the last says "No rules"',()=>{
+ const {data}=display();
+ // Feed absent (an older engine): unknown.
+ const noFeed=structuredClone(data);delete noFeed.details;noFeed.subscriptions=[];
+ assert.equal(calendarFromCockpit(noFeed,NOW).peakRules,'unknown');
+ // Feed present, empty, the user has a declared plan: no window in the next 24 h, rules not disproved.
+ const noWindow=structuredClone(data);noWindow.details.peaks=[];noWindow.subscriptions=[];
+ assert.equal(calendarFromCockpit(noWindow,NOW).peakRules,'yes');
+ // Feed present, empty, only tool rows (no declared plan): no peak rules.
+ const noRules=structuredClone(data);noRules.details.peaks=[];noRules.subscriptions=[];noRules.projection.rows=noRules.projection.rows.filter(r=>!r.id.startsWith('declared:'));
+ assert.equal(calendarFromCockpit(noRules,NOW).peakRules,'no');
+ const column=peakRules=>calendarPlugin.column(calendarPlugin.accept({...week,peaks:[],peakRules},undefined),context).foot.value.full;
+ assert.equal(column('no'),'plugin.calNoRules');
+ assert.notEqual(column('yes'),'plugin.calNoRules');assert.equal(column('yes'),'plugin.calendarNone');
+ assert.notEqual(column('unknown'),'plugin.calNoRules');assert.equal(column('unknown'),'plugin.calPeaksUnknown');
+ // Host data that does not say is unknown; a bad value is refused.
+ const {peakRules,...bare}={...week,peakRules:'yes'};
+ assert.equal(parseCalendarData(bare).peakRules,'unknown');assert.equal(parseCalendarData({...week,peakRules:'maybe'}),null);
+});
+
+test('macrevc-844-5: a partial, truncated or short reset-card list is never an exact count or expiry',()=>{
+ const shaped=(cards,at=NOW)=>{const {data,ref}=display();data.subscriptions=[{subscriptionRef:ref,accounts:[]}];Object.assign(data.details.subscriptions[0].resetCards,cards);return calendarFromCockpit(data,at).spans.filter(s=>s.kind==='cards');};
+ assert.deepEqual(shaped({}).map(s=>s.count),[2],'complete list: exact');
+ for(const cards of [{state:'partial'},{truncated:true},{count:3}]){
+  const [s]=shaped(cards);assert.equal(s.count,null,JSON.stringify(cards));
+ }
+ // A partial list with no producer-stated earliest expiry has no date either.
+ assert.equal(shaped({state:'partial'})[0].to,null);
+ const earliest=new Date(local(2026,11,12,18)).toISOString();
+ assert.equal(shaped({truncated:true,earliestExpiresAt:earliest})[0].to,local(2026,11,12,18));
+ // Items without an expiry are still available cards (as the alert list counts them).
+ assert.deepEqual(shaped({items:[{id:'a'},{id:'b'}]}).map(s=>[s.count,s.to]),[[2,null]]);
+ const text=calendarPlugin.column(calendarPlugin.accept({...week,spans:[{sub:0,kind:'cards',from:NOW,to:null,count:null}]},undefined),context);
+ assert.ok(!/×/.test(JSON.stringify(text.cells)));
+});
+
+test('macrevc-844-6: a card span with no expiry never becomes a date (column cell, strip text, week)',()=>{
+ const reading=calendarPlugin.accept({...week,peakRules:'yes',spans:[{sub:0,kind:'cards',from:NOW,to:null,count:2}]},undefined);
+ assert.ok(reading,'null expiry stays a valid shape');
+ const cells=calendarPlugin.column(reading,{...context,now:NOW}).cells;
+ for(const c of cells)assert.ok(!/1969|1970|12\/31|\b1\/1\b/.test(JSON.stringify(c)),JSON.stringify(c));
+ const noPeak=calendarPlugin.column(calendarPlugin.accept({...week,peaks:[],peakRules:'no',resets:[],spans:[{sub:0,kind:'cards',from:NOW,to:null,count:null}]},undefined),context).cells;
+ const card=noPeak.find(c=>c.tag.full==='plugin.calendarCards');assert.ok(card,'the cards cell is still shown');
+ assert.ok(!/\d+\/\d+/.test(JSON.stringify(card.side)),JSON.stringify(card.side));
 });

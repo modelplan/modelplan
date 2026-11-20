@@ -65,6 +65,7 @@ register('plugin', {
   calLeft: ['lcd', '还剩 {t}', '{t} left'],
   calPeakLabel: ['lcd', '高峰', 'Peak'],
   calNoRules: ['lcd', '没有时段规则', 'No rules'],
+  calPeaksUnknown: ['lcd', '暂无高峰数据', 'No data'],
   calAllDay: ['lcd', '全天', 'All day'],
   calPeak: ['lcd', '高峰', 'peak'],
   calCont: ['lcd', '（续）', ' (cont.)'],

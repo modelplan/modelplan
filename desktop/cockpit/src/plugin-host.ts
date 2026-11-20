@@ -327,7 +327,9 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       });
       reconcile();if(screen)drawScreen();
     },
-    clearPlacement(){forget();pending=null;placed.clear();columns.clear();closeMenu();closeScreen();reconcile();},
+    // The privacy barrier (clear, new view revision): readings and host takeover go with the old view, so a cleared reading
+    // never comes back and the next display is shaped afresh (macrevc-844-2). A running plugin is sampled again by the host.
+    clearPlacement(){forget();pending=null;placed.clear();columns.clear();readings.clear();hostFed.clear();closeMenu();closeScreen();reconcile();},
     hold(){
       // Called again while the engine rebuilds (focus already dropped): an earlier hold stays until it is used, focus
       // moves elsewhere (focusin) or the plugin is no longer placed.

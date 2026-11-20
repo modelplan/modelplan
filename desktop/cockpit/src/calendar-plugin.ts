@@ -42,7 +42,10 @@ function resetText(abbr:string,kind:'5h'|'week',at:number,prefix:string,w:Words,
 }
 function spanText(data:CalendarData,s:CalendarSpan,w:Words,zh:boolean,full=false){
  const sub=data.subs[s.sub]!,name=full?(zh?sub.name.zh:sub.name.en):sub.abbr;
- if(s.kind==='cards'){const n=s.count&&s.count>1?` ×${s.count}`:'';return zh?`${name} ${w.cards}${n} ${w.until}${monthDay(s.to!)}`:`${name} ${w.cards}${n} · ${w.until} ${monthDay(s.to!)}`;}
+ if(s.kind==='cards'){const n=s.count&&s.count>1?` ×${s.count}`:'';
+  // No expiry known (a partial list, or none given): no date, never an epoch (macrevc-844-6).
+  if(s.to===null)return `${name} ${w.cards}${n}`;
+  return zh?`${name} ${w.cards}${n} ${w.until}${monthDay(s.to!)}`:`${name} ${w.cards}${n} · ${w.until} ${monthDay(s.to!)}`;}
  const what=s.kind==='confirmed'?w.confirmed:w.announced;
  if(s.to===null)return `${name} ${what}`;
  return zh?`${name} ${what} · ${monthDay(s.to)} ${w.effective}`:`${name} ${what} · ${monthDay(s.to)}`;
@@ -121,7 +124,7 @@ function footOf(data:CalendarData|null,context:PluginContext):PluginColumn['foot
   const list=dayEvents(data,view.day,w).join(' · ')||context.words('plugin.calendarNone').full;
   return {label:{full:dayLabel(view.day,w,zh),short:monthDay(view.day)},value:{full:list,short:list}};
  }
- if(!data.peaks.length)return {label:context.words('plugin.calPeakLabel'),value:context.words('plugin.calNoRules')};
+ if(!data.peaks.length)return {label:context.words('plugin.calPeakLabel'),value:context.words(data.peakRules==='no'?'plugin.calNoRules':data.peakRules==='yes'?'plugin.calendarNone':'plugin.calPeaksUnknown')};
  const live=data.peaks.find(p=>p.from<=now&&(p.to===null||p.to>now));
  if(live)return {label:context.words('plugin.calPeakNow',{a:data.subs[live.sub]!.abbr}),value:live.to===null?null:context.words('plugin.calLeft',{t:duration(live.to-now)})};
  const next=data.peaks.filter(p=>p.from>now).sort((a,b)=>a.from-b.from)[0];
@@ -163,8 +166,12 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
   if(x.from>=end||x.to!==null&&x.to<today)continue;
   const sub=data.subs[x.sub]!;
   if(x.kind==='cards'){
-   const a=Math.max(0,dayOffset(now,x.from)),b=Math.min(WEEK_DAYS-1,dayOffset(now,x.to!)),row=el('div','wk-adr bar');row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);
-   place(row,a,b-a+1);row.append(el('span','',narrow?`${sub.abbr} ${w.cards}`:zh?`${sub.name.zh} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to!)}`:`${sub.name.en} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to!)}`));
+   if(x.to===null){// no expiry known: one mark on the day the cards were seen, no bar and no date
+    const row=el('div','wk-adr mark');row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);place(row,Math.max(0,dayOffset(now,x.from)));
+    row.append(el('span','',`◆ ${sub.abbr}`));allDay.append(row);rowsUsed++;continue;
+   }
+   const a=Math.max(0,dayOffset(now,x.from)),b=Math.min(WEEK_DAYS-1,dayOffset(now,x.to)),row=el('div','wk-adr bar');row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);
+   place(row,a,b-a+1);row.append(el('span','',narrow?`${sub.abbr} ${w.cards}`:zh?`${sub.name.zh} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to)}`:`${sub.name.en} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to)}`));
    allDay.append(row);rowsUsed++;
   }else if(x.to!==null&&x.to>=today&&x.to<end){
    const row=el('div','wk-adr mark');row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);place(row,dayOffset(now,x.to));
@@ -245,7 +252,7 @@ function fallbackCells(data:CalendarData|null,context:PluginContext):PluginCell[
  cells.push({tag:context.words('plugin.calendarReset'),side:reset?side(`${data.subs[reset.sub]!.abbr} ${when(reset.at)}`,`${data.subs[reset.sub]!.abbr} ${hhmm(reset.at)}`):context.words('plugin.calendarNone')});
  cells.push({tag:context.words('plugin.calWeekReset'),side:weekly?side(`${data.subs[weekly.sub]!.abbr} ${dayLabel(weekly.at,w,zh)} ${hhmm(weekly.at)}`,`${data.subs[weekly.sub]!.abbr} ${hhmm(weekly.at)}`):context.words('plugin.calendarNone')});
  if(peak)cells.push({tag:context.words('plugin.calendarPeak'),side:side(`${data.subs[peak.sub]!.abbr} ${hhmm(peak.from)}–${peak.to===null?'…':hhmm(peak.to)}`,`${data.subs[peak.sub]!.abbr} ${hhmm(peak.from)}`)});
- else if(cards)cells.push({tag:context.words('plugin.calendarCards'),side:side(spanText(data,cards,w,zh),`${data.subs[cards.sub]!.abbr} ${monthDay(cards.to!)}`)});
+ else if(cards)cells.push({tag:context.words('plugin.calendarCards'),side:side(spanText(data,cards,w,zh),`${data.subs[cards.sub]!.abbr} ${cards.to===null?w.cards:monthDay(cards.to)}`)});
  return cells;
 }
 function fallbackLines(data:CalendarData|null,context:PluginContext):{label:string;value:string}[] {
