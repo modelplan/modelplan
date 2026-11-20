@@ -27,7 +27,7 @@ The CLI is found in this order: `MODELPLAN_CLI`, the copy bundled in the app, th
 The `desktop` workflow builds an Apple Silicon `.dmg` for each pull request and push to `main`; download it from the run's artifacts. The build is not notarized, so macOS blocks the first launch. Clear the quarantine flag once:
 
 ```sh
-xattr -dr com.apple.quarantine "/Applications/ModelPlan Community.app"
+xattr -dr com.apple.quarantine "/Applications/ModelPlan.app"
 ```
 
 ## Develop

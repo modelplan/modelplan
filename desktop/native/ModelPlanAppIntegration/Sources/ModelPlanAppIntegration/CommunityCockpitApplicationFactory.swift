@@ -78,7 +78,7 @@ import ModelPlanShell
                 #endif
                 let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
-                coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
+                coordinator.currentDate = deadlineNow
                 coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
                 coordinator.cautionMemory = FileCockpitCautionMemory(url: settingsStore.directory.appendingPathComponent("cockpit-cautions.json"))
                 coordinator.pinMemory = FileCockpitPinMemory(url: settingsStore.directory.appendingPathComponent("cockpit-pins.json"))
@@ -99,6 +99,8 @@ import ModelPlanShell
                 #endif
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
+        // CKP-SHELL-50 / MENU-52: the page reads and requests the same app-owned range as the menu bar, before its load.
+        owner.coordinator?.rangeState = application.cockpitRange
         owner.systemSignals = { [weak application] in application?.cockpitSystemSignals }
         owner.presence = application.dockPresence
         application.currentCockpitPage = { [weak owner] in owner?.currentPage }
@@ -120,6 +122,7 @@ import ModelPlanShell
         }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         owner.settingsSubscriptions = { [weak application] in Task { await application?.presentSettings(paneID: "subscriptions") } }
+        owner.refreshMember = { [weak application] key in application?.refreshFromCockpit(key) }
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
         owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
         application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
@@ -140,6 +143,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var settings: (() -> Void)?
     /// CKP-SHELL-39: Settings on its Subscriptions pane, for the empty engine screen's button.
     var settingsSubscriptions: (() -> Void)?
+    /// Owner D277 (CKP-ENG-27): the engine table's Refresh; a member key, or `all`.
+    var refreshMember: ((String) -> Void)?
     /// Right-click menu hooks, set by the factory beside `settings`.
     var setSize: ((SettingsSize) -> Void)?
     var currentSize: (() -> SettingsSize?)?
@@ -275,21 +280,41 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
 }
 
-/// D64: the cockpit scope and its local day in one small file beside the settings. A consent or store change removes it.
+/// CKP-SHELL-50: the cockpit scope in one small file beside the settings, kept across restarts whatever the day (an
+/// older file's "day" is ignored). A consent or store change removes it.
 @MainActor final class FileCockpitScopeMemory: CockpitScopeMemory {
     let url: URL
     init(url: URL) { self.url = url }
-    func load() -> (key: String, day: String)? {
+    func load() -> String? {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 1024,
               let data = try? Data(contentsOf: url),
               let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let key = value["scope"] as? String, let day = value["day"] as? String else { return nil }
-        return (key, day)
+              let key = value["scope"] as? String else { return nil }
+        return key
     }
-    func save(_ value: (key: String, day: String)?) {
-        guard let value else { try? FileManager.default.removeItem(at: url); return }
-        guard let data = try? JSONSerialization.data(withJSONObject: ["scope": value.key, "day": value.day], options: [.sortedKeys]) else { return }
+    func save(_ key: String?) {
+        guard let key else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["scope": key], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+/// CKP-SHELL-50: the app's range (Today / 7d / 30d) in one small file beside the settings. A preference, not private
+/// data, so a consent or store change keeps it.
+@MainActor final class FileCockpitRangeMemory: CockpitRangeMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> CockpitRange? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let raw = value["range"] as? String else { return nil }
+        return CockpitRange(rawValue: raw)
+    }
+    func save(_ value: CockpitRange) {
+        guard let data = try? JSONSerialization.data(withJSONObject: ["range": value.rawValue], options: [.sortedKeys]) else { return }
         try? data.write(to: url, options: .atomic)
     }
 }
@@ -494,8 +519,9 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openField:openField()
         case .openFieldAt(let name):openField(focusName:name)
         case .openWebsite(let link):owner.openWebsite(link.url)
+        case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.cautionAck,.pinnedModels:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()

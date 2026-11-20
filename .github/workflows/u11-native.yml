@@ -9,6 +9,7 @@ on:
       - 'clients/swift/ModelPlanEngineClient/**'
       - 'clients/swift/ModelPlanWire/**'
       - '.github/workflows/u11-native.yml'
+      - '!**/*.md'
   push:
     branches: [main]
     paths:
@@ -30,8 +31,8 @@ jobs:
   native:
     # Runs in the pinned trusted-mac.yml (docs/mac-ci.md): the ordinary owner Macs with MAC_CI_NONGUI=enabled,
     # hosted macos-15 otherwise.
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@223defe1849c4d7498c09cd7f0f972c46317d090
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (!contains(fromJSON('["pull_request","merge_group"]'), github.event_name) || vars.MAC_CI_NONGUI == 'enabled') }}
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@789109c2567716f58eb4669e01c76b3e25f17845
     with:
       task: u11-native
       os: macos-15

@@ -1173,6 +1173,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "forbidden"
+        },
+        {
+          "field": "aaScore",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1369,6 +1377,30 @@
         },
         {
           "field": "fast",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "startedAt",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "observedTotalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "modelDisplay",
           "omission": true,
           "null": false,
           "wrongType": false,

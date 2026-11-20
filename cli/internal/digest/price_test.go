@@ -16,7 +16,7 @@ func loadPriceFixture(t *testing.T) []byte {
 	return b
 }
 
-// WP-06 / COST-50: the client-v1.6 price fields, read leniently. A bad price drops that
+// WP-06 / COST-50: the client-v1.6 price fields, read per model. A bad price drops that
 // model's price only; the publication and every other model's price stay.
 func TestClientV16PricesAreReadPerModel(t *testing.T) {
 	d, err := Parse("client", loadPriceFixture(t))
@@ -46,7 +46,7 @@ func TestClientV16PricesAreReadPerModel(t *testing.T) {
 	if d.Model("kimi").Evaluation != EvaluationPending || d.Model("mimo").Evaluation != "" || d.Model("opus").Evaluation != "" {
 		t.Fatalf("evaluation = %q %q %q", d.Model("kimi").Evaluation, d.Model("mimo").Evaluation, d.Model("opus").Evaluation)
 	}
-	if d.PriceUnit != PriceUnitUSDPerMillion {
+	if d.PriceUnit != PriceUnitUSDPer1M {
 		t.Fatalf("price unit = %q", d.PriceUnit)
 	}
 }
@@ -70,6 +70,8 @@ func TestClientV16APIPriceMultiplierOnlyWhenPublished(t *testing.T) {
 	}
 }
 
+// Prices below client-v1.6, or under another or a missing unit, are a publication-level
+// violation of the client-v1.6 contract (clientv16.go): the reader rejects the publication.
 func TestPricesNeedClientV16AndTheAgreedUnit(t *testing.T) {
 	b := string(loadPriceFixture(t))
 	for name, raw := range map[string]string{
@@ -77,12 +79,8 @@ func TestPricesNeedClientV16AndTheAgreedUnit(t *testing.T) {
 		"other unit":       strings.Replace(b, `"usd-per-1m-tokens"`, `"usd-per-1k-tokens"`, 1),
 		"no unit":          strings.Replace(b, `"priceUnit":"usd-per-1m-tokens",`, ``, 1),
 	} {
-		d, err := Parse("client", []byte(raw))
-		if err != nil {
-			t.Fatalf("%s: publication rejected: %v", name, err)
-		}
-		if d.Price("opus") != nil || d.Price("sol") != nil || d.APIPriceMultiplier("opus", "claude-code", "fast") != nil {
-			t.Fatalf("%s: price kept", name)
+		if d, err := Parse("client", []byte(raw)); err == nil {
+			t.Fatalf("%s: publication accepted with prices %+v", name, d.Price("opus"))
 		}
 	}
 	later := strings.Replace(b, `"client-v1.6"`, `"client-v1.12"`, 1)

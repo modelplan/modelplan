@@ -353,6 +353,52 @@ func TestSessionRanking(t *testing.T) {
 	}
 }
 
+// CKP-STRIP-16: a recorded session day keeps its input and cache sums, so the strip's total is real; a day without
+// them has no total and output is never substituted.
+func TestSessionDayKeepsTokenKindsForATotal(t *testing.T) {
+	utc(t)
+	cache, dir := t.TempDir(), t.TempDir()
+	seedPerf(t, cache, t0.Add(-time.Minute))
+	parent := filepath.Join(dir, "rollout-p.jsonl")
+	usage := `{"input_tokens":1000,"cached_input_tokens":900,"cache_write_input_tokens":0,"output_tokens":100}`
+	writeLines(t, parent, cx(0, "session_meta", `{"id":"p","source":"cli"}`), cx(0, "event_msg", `{"type":"task_started"}`), cx(0, "turn_context", high),
+		cx(1, "event_msg", `{"type":"item_completed","item":{"type":"AgentMessage","id":"i"},"started_at_ms":`+fmt.Sprint(t0.Add(time.Second).UnixMilli())+`}`),
+		cx(3, "event_msg", `{"type":"token_count","info":{"last_token_usage":`+usage+`}}`), cx(4, "event_msg", `{"type":"task_complete","duration_ms":4000}`))
+	if err := ObserveCodex(cache, []string{parent}, func(string) bool { return false }, Ingest{}, t0.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	l, ok := LoadPerf(cache)
+	if !ok || len(l.Sessions) != 1 || len(l.Sessions[0].Days) == 0 {
+		t.Fatalf("ledger: %+v", l)
+	}
+	day := l.Sessions[0].Days[0]
+	if day.Kinds == nil || day.Kinds.InputTokens == nil || day.Kinds.CacheReadTokens == nil || day.Kinds.CacheWriteTokens == nil || day.ObservedOutputTokens != 100 || *day.Kinds.InputTokens != 100 || *day.Kinds.CacheReadTokens != 900 {
+		t.Fatalf("the day keeps its token kinds: %+v", day)
+	}
+	want := day.ObservedOutputTokens + *day.Kinds.InputTokens + *day.Kinds.CacheReadTokens + *day.Kinds.CacheWriteTokens
+	if got, ok := day.CompleteTotal(); !ok || got != want {
+		t.Fatalf("CompleteTotal = %d, %v; want %d", got, ok, want)
+	}
+}
+
+func TestSessionDayCompleteTotalNeedsEveryPart(t *testing.T) {
+	n := func(v int64) *int64 { return &v }
+	full := SessionDay{Kinds: &TokenKinds{InputTokens: n(1000), CacheReadTokens: n(2000), CacheWriteTokens: n(0)}, ObservedOutputTokens: 30}
+	if got, ok := full.CompleteTotal(); !ok || got != 3030 {
+		t.Fatalf("full = %d, %v", got, ok)
+	}
+	for name, day := range map[string]SessionDay{
+		"no kinds":      {ObservedOutputTokens: 30},
+		"no cache read": {Kinds: &TokenKinds{InputTokens: n(1), CacheWriteTokens: n(0)}, ObservedOutputTokens: 30},
+		"overflow":      {Kinds: &TokenKinds{InputTokens: n(9223372036854775807), CacheReadTokens: n(0), CacheWriteTokens: n(0)}, ObservedOutputTokens: 1},
+		"negative":      {Kinds: &TokenKinds{InputTokens: n(-1), CacheReadTokens: n(0), CacheWriteTokens: n(0)}, ObservedOutputTokens: 1},
+	} {
+		if got, ok := day.CompleteTotal(); ok {
+			t.Errorf("%s: total %d should be unknown", name, got)
+		}
+	}
+}
+
 // grantLocalHistory points the consent store at a private HOME that allows the Codex and Claude
 // local-history scopes, so accounting tests do not depend on the developer's own consent file.
 func grantLocalHistory(t *testing.T) {
@@ -403,5 +449,52 @@ func TestGrantLocalHistoryLeavesProfileOverrideAlone(t *testing.T) {
 	after, err := os.ReadFile(p)
 	if err != nil || !bytes.Equal(after, b) {
 		t.Fatalf("profile override consent changed: %v", err)
+	}
+}
+
+// A day that carries the accounting total reports it as it is, not a sum of its parts.
+func TestSessionDayCompleteTotalPrefersTheAccountingTotal(t *testing.T) {
+	n := func(v int64) *int64 { return &v }
+	day := SessionDay{Kinds: &TokenKinds{TotalTokens: n(3030)}, ObservedOutputTokens: 30}
+	if got, ok := day.CompleteTotal(); !ok || got != 3030 {
+		t.Fatalf("CompleteTotal = %d, %v", got, ok)
+	}
+}
+
+// macrevb-1024-1: "a turn is in progress" is defined once (LiveRecord.turnOpen) and the live projection carries it,
+// so a consumer never infers it from the display status. Every state the projection can produce is covered.
+func TestLiveSessionInProgressCoversEveryProjectedState(t *testing.T) {
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	act := func(phase string, expires time.Duration) *TurnActivity {
+		return &TurnActivity{Phase: phase, RecordAt: now.Add(-30 * time.Second), ExpiresAt: now.Add(expires)}
+	}
+	cases := []struct {
+		name       string
+		rec        LiveRecord
+		wantStatus string
+		inProgress bool
+		listed     bool
+	}{
+		{"running turn", LiveRecord{Running: true, LastAt: now.Add(-time.Second)}, "running", true, true},
+		{"completed turn", LiveRecord{LastAt: now.Add(-time.Second)}, "idle", false, true},
+		{"running turn whose activity expired without a completion event", LiveRecord{Running: true, LastAt: now.Add(-time.Second), Activity: act("running", -time.Second)}, "idle", true, true},
+		{"waiting activity, not expired", LiveRecord{LastAt: now.Add(-time.Second), Activity: act("waiting", time.Minute)}, "running", true, true},
+		{"activity expired, parser sees no open turn", LiveRecord{LastAt: now.Add(-time.Second), Activity: act("running", -time.Second)}, "idle", false, true},
+		{"just ended (finished activity)", LiveRecord{LastAt: now.Add(-time.Second), Activity: act("finished", time.Minute)}, "idle", false, true},
+		{"stale record is not projected", LiveRecord{Running: true, LastAt: now.Add(-2 * LiveWithin)}, "", true, false},
+	}
+	for _, c := range cases {
+		c.rec.Ref, c.rec.Source = "1111111111111111", "codex"
+		v := PerfView{OK: true, Recording: true, Now: now, Ledger: PerfLedger{Live: []LiveRecord{c.rec}}}
+		got := v.LiveSessions()
+		if !c.listed {
+			if len(got) != 0 {
+				t.Errorf("%s: projected %+v", c.name, got)
+			}
+			continue
+		}
+		if len(got) != 1 || got[0].Status != c.wantStatus || got[0].InProgress != c.inProgress {
+			t.Errorf("%s: %+v, want status %s in progress %v", c.name, got, c.wantStatus, c.inProgress)
+		}
 	}
 }

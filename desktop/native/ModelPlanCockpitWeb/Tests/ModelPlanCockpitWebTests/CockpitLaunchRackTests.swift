@@ -80,6 +80,27 @@ final class CockpitLaunchRackTests: XCTestCase {
     }
   }
 
+  /// Owner 11-18: the rack's mask line follows the shutter. Closed, the window's top edge is the slab's top edge, so the
+  /// line is 0 pt below it; open, it is the hull's shoulder depth. A toggle while attached moves only the line (the
+  /// window top stays), so the mask's top edge is the same y apart from that depth.
+  func testTheRackMaskLineFollowsTheShutterState() throws {
+    let usable = CGRect(x: 0, y: 0, width: 1728, height: 1080)
+    let icon = CGRect(x: 900, y: 1080, width: 28, height: 37)
+    for forceCompact in [false, true] {
+      let open = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false, screenWidth: 1728, forceCompact: forceCompact))
+      let closed = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: true, screenWidth: 1728, forceCompact: forceCompact))
+      XCTAssertEqual(open.rackMaskDrop, CockpitShellLayout.shoulderDrop(open.profile, closed: false) * open.scale)
+      XCTAssertGreaterThan(open.rackMaskDrop, 0, "open: the rack meets the canopy shoulder")
+      XCTAssertEqual(closed.rackMaskDrop, 0, "closed: the rack ends at the slab's top edge, nothing hangs in empty space")
+      XCTAssertEqual(closed.shoulder.y, closed.frame.maxY)
+      XCTAssertEqual(open.shoulder.y, open.frame.maxY - open.rackMaskDrop)
+      XCTAssertEqual(open.frame.maxY, closed.frame.maxY, "attached, the top edge stays when the shutter toggles")
+      XCTAssertEqual(open.shoulder.x, closed.shoulder.x, "the icon stays over the same shoulder")
+    }
+    let forced = try XCTUnwrap(CockpitShellLayout.fit(usable: CGRect(x: 0, y: 0, width: 1728, height: 500), anchor: icon.offsetBy(dx: 0, dy: -580), shutterClosed: false, screenWidth: 1728))
+    if forced.forcedClosed { XCTAssertEqual(forced.rackMaskDrop, 0, "a forced-closed cockpit is closed too") }
+  }
+
   /// D158/D178: attached, the window top is 10 pt under the menu bar and the icon sits above the left canopy shoulder.
   func testTheAttachedCockpitHangsTenPointsUnderTheBarWithTheIconOverItsLeftShoulder() throws {
     let usable = CGRect(x: 0, y: 0, width: 1728, height: 1080)

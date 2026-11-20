@@ -6,6 +6,54 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.66 (2026-11-20)
+
+- Clients accept client-v1.6 publications: public API list prices per model (USD per 1M tokens, with optional long-context rates), a daily usage-rank trend, small and pending-evaluation models, and a fast-tier API price multiplier. These fields are validated strictly and rejected in older projection versions; a pending model has no efforts or ★ recommendation and is never part of a lineup.
+
+- The cockpit's effort page on the big screen ("Effort · <model>") is redrawn as the v1 bar version: two stereo-lane bars, ability (white) and cost (mid-grey), whose full length is the model's own top effort (100 %), over a line chart of ability, cost and time for every published effort. The whole 0-100 % track is always drawn with a 100 % end stop and notches every 10 % (a full-height one at 50 %); the recommended effort is a thin gold line with a small ★ above the bar. With no trial each bar is one solid fill with its percentage below; a trial splits it into two lanes from 0, the real configuration on top and the trial in blue underneath, and its chart column turns light blue with a blue border. Every effort key now carries two numbers under it, ability and cost with a $ ("84%", "$23%"), white for the current effort and blue for the one being tried. Ability is ModelPlan's own published score as a share of the model's best-scoring effort (named on the bar when it is not the top one; "no ability scores" when none is published), while cost and time are shares of the top effort; where the publication carries the Artificial Analysis Intelligence Index score, it appears only as an "AA official" reference in the key's tooltip. The title shows the model's 7-day use and its share of all recorded use, and a quiet line at the bottom right says how to try an effort (or that a trial changes no tool setting), with the website link to its left; on the short cockpit the line becomes an ⓘ and the link a ↗ beside the keys, and the chart gets shorter. A model with a single effort says so instead of drawing a chart. Trying is local only: nothing applies an effort. On the small fader screen, fast mode is a symbol-only bolt beside the lamp (white real, blue trial).
+
+- The first cockpit open after launch shows the last result at once again. The fresh query used to start at the same moment and compete with the page's first render, so that first open waited for the query (up to about 1.5 s); now the query starts once the last result is drawn (G3-42).
+
+- Codex session totals no longer count cache writes twice: uncached input now excludes both cache reads and cache writes, whichever usage report carries the writes.
+
+- Kiro's missing command now reads "kiro-cli was not found" on the Settings card instead of "Node.js is required", and a drag during the cockpit's opening still logs the open's animation-complete stage.
+
+- Clear a previous Settings search when opening a specific pane so a widget card's subscription row stays visible.
+
+- Cockpit plugin columns: plugins sit after your subscriptions in the engine table (at least three columns, at most six a page, up to two pinned to page 1). A plugin key looks like a subscription key, with a white line icon and a dashed underline; its column reads like a subscription column (small label, large number, side value, a continuous bar with a thin trend line). Click a plugin key to open its screen in the big-screen area; right-click it to remove it. Empty columns show a + menu to connect a detected subscription or add a plugin, and Settings › Subscriptions has a Plugins section to turn each plugin on or off, set its options and pin it. Plugins only run while the cockpit is open and their column is shown. Only a placeholder plugin (off by default) ships with the framework.
+
+- Cockpit alerts now use one sentence everywhere ("Claude Weekly 42% · out ~1d20h · resets in 2d10h"), shared by the page and the native app. The ALERT lamp always opens the alert list, which has a count title, two lines per alert, red, amber, blue then grey order, and rows that select their subscription; an unreadable subscription is a grey list-only row that opens Settings › Subscriptions. A forecast with no known reset now counts as amber. System notifications are limited to a quota reset and an official extra reset.
+
+- The porthole HUD lists only models your subscriptions carry (a session on another vendor's model no longer adds it), sits on a solid dark backing with white names, marks each model a session is running with a small green dot, and the rocket flames now step through five levels instead of animating every frame.
+
+## CLI v0.5.65 (2026-11-19)
+
+- The cockpit session strip now reads tool, project, model and effort, elapsed time and the session's total tokens for each session, and ends in the live speed ("● 58 t/s") while it runs or how long ago it was seen ("6m ago") when it is idle. A time, token total or speed that is not known is left out instead of written as "--". A model that is not in the published list but has a readable name shows that name with a dim "Not listed" badge, and a name that cannot be read reads "Unknown model". When more sessions are running than fit, the last line reads "3 more sessions" and opens the Breakdown page; with no session the strip says so in one grey line. Clicking a line again, or the empty strip, clears the model it lit. The cockpit data now carries each session's start time, total tokens and, for an unlisted model, its display name.
+
+- CI-only: the Mac compile check clears read-only scratch and seed clones before wiping them, and builds cold instead of failing when a temp directory cannot be deleted.
+
+- Forgetting a tool while a refresh is reading now waits up to two seconds for the refresh to finish instead of reporting that the reader is busy.
+
+- ZCode / GLM keeps reading after the first-run Done: allowing it no longer switches the read from ZCode's own key file to an environment variable the app does not have, so its widget ring and cockpit column appear.
+
+- With two displays, the attached cockpit and its launch rack always open under the menu bar icon's display, even when the widget's ignition is on the other display, and Put back returns a cockpit dragged to another display home under the icon. On a put back the rack starts unfolding together with the cockpit's flight. A cockpit you just detached comes to the front and takes the keyboard, and stays an ordinary window afterwards. The cockpit now has one size on every display: Auto picks 85 % when any connected display is laptop-width and 100 % only when all are wider, and every size is capped so the cockpit fits the smallest connected display, so dragging it between displays never resizes it.
+
+- Order the cockpit faders by what the history shows was used in the last 7 and 30 days, after sessions seen in the last 7 days and before unused recommendations.
+
+- Clients accept a lineup tie of 0.815 as well as 1: the index display scale moves to version 0.4, where the same one-point tie reads 0.815. Verdicts are unchanged.
+
+- The Codex Ultrafast speed line now labels the Pro $200 plan instead of dropping it.
+
+- The cockpit's launch rack no longer hangs into empty space under the menu bar when the cockpit opens or closes with the shutter closed: its mask line now follows the shutter state.
+
+- Keep the launch rack clipped to the attached cockpit when its size changes in Settings.
+
+- While you have an enabled subscription, the app now re-checks the publication for announced reset notices every 15-30 minutes (a conditional request, spread per client) instead of every six hours. Reset notices travel in the same publication, so when the pointer changes the whole publication switches with them; an unchanged cache is still force-refreshed only on the six-hour rule (DOCK-3.8-30).
+
+- Codex and Claude Code usage now counts responses independently of speed samples, including unfinished turns. The today number includes input, cached input and output tokens; generation speed remains output tokens per second. The CLI exposes local-day today/7-day/30-day accounting with separate cache and reasoning buckets, without counting reasoning twice.
+
+- OpenCode, Gemini CLI and Qwen Code now use local-day token accounting based on ccusage: OpenCode counts completed compactions and a reported total the other buckets leave out, and no longer counts the parent history a forked session copies; Gemini and Qwen local usage reports add input without cache, cache read, output and reasoning for today, the last 7 days and the last 30 days, with the total as the sum of those buckets. Qwen counts cached prompt tokens once: input excludes cache, intentionally correcting ccusage's overlap. OpenCode keeps running compactions pending so a status-only completion counts once after the cursor advances.
+
 ## CLI v0.5.64 (2026-11-17)
 
 - The cockpit's effort faders are now the top-down throttle the owner chose: each model's real lever sits in a chamfered slot plate, day and night, and dragging it moves a translucent blue ghost grip with a thin blue line along the slot that snaps to the nearest effort the model has when released, while the real lever stays on the current effort. The recommended effort is a small gold ★ tick on the slot scale, and every lever is drawn exactly on its column's centre (it looked off-centre on the GLM column before). The community edition keeps the flat fader.

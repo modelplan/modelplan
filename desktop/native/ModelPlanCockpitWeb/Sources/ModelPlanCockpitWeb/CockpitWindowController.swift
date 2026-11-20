@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanEngineClient
 import ModelPlanWire
 import WebKit
 import QuartzCore
@@ -181,6 +182,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var occlusionReported = false
   private var layout: CockpitShellLayout?
   private var scope = "all"
+  /// CKP-SHELL-50: the app's range; not private data, so a privacy clear keeps it.
+  private var range: CockpitRange = .initial
   private var outsideMonitor: Any?, localMonitor: Any?, switchMonitor: Any?
   private var closeTask: Task<Void, Never>?
   /// Walkthrough 11-17: a user put back keeps an active app active across the regular-to-accessory flip it causes.
@@ -540,6 +543,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onShellChanged: (() -> Void)?
   public var onIntent: ((CockpitIntent) -> Void)?
   public var onRendered: (() -> Void)?
+  /// G3-42: the coordinator's hook for an admitted rendered receipt; `onRendered` stays free for observers.
+  public var onDataRendered: (() -> Void)?
+  public var reportsDataRendered: Bool { true }
   /// Recovery contract: every accepted rendered receipt, for the coordinator (verified data on screen). Separate from
   /// `onRendered`, which verification and timing hooks own.
   public var onRenderVerified: (() -> Void)?
@@ -645,6 +651,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationRackMask: CGRect? { (rack.panel?.contentView as? CockpitRackView)?.maskedOut }
     /// Every ignition change sent to the page, in order.
     public var verificationIgnition: ((Bool) -> Void)?
+    /// The cockpit's put-back motion reached home; carries the rack's extension (0-1) at that exact moment, observed
+    /// directly (not sampled), before the latch waits for the rack.
+    public var verificationLanded: ((CGFloat) -> Void)?
     /// The landing a key detach chose (D187).
     public var verificationLanding: ((CockpitDetachLanding.Plan) -> Void)?
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
@@ -671,11 +680,24 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     super.init(window: nil)
   }
   required init?(coder: NSCoder) { nil }
+  private var transitionTiming = CockpitTransitionTiming()
+  /// WP-17 (G3-123): when this page's navigation started, and the bundle's served-file counters then.
+  private var pageLoadTiming: (at: TimeInterval, served: VerifiedCockpitBundle.ServedStats)?
+  /// G3-123 timing only: the fade-in entrance still running (its number), so a second open during it keeps measuring
+  /// from the first click instead of starting a new transition. Read by nothing but the timing calls.
+  private var fadeEntranceTiming: Int?
+  private var fadeEntranceTimingCount = 0
+  private func timing(_ line: String?) { if let line { CockpitTimingLog.record(line) } }
   public func prewarm() {
     guard web == nil, !bridge.disposed, !ending else { return }
     build()
   }
   public func open() {
+    // G3-123: an open during a running entrance (rack-first or fade) continues that transition's clock.
+    if closeTask != nil || !(entering || fadeEntranceTiming != nil) {
+      transitionTiming.beginOpen(requestedAt: CockpitTimingLog.clickAt)
+      timing(transitionTiming.openStage("window-start"))
+    }
     let wasVisible = isVisibleToUser
     let wasClosing = closeTask != nil
     closeTask?.cancel(); closeTask = nil
@@ -711,6 +733,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           self.rackExtension = t / 3; self.rackTarget = self.rackExtension
         }, done: { [weak self] in
           guard let self, self.window != nil else { return }
+          // G3-123: the rack is out; the cockpit itself starts to show from here (window-visible is its alpha-0 order-in).
+          self.timing(self.transitionTiming.openStage("cockpit-motion-start"))
           self.runMotion(CockpitLaunchRackTiming.cockpitOpen, step: { [weak self] t in
             guard let self, let panel = self.window, let home = self.layout?.frame else { return }
             let eased = 1 - pow(1 - t, 3)
@@ -720,6 +744,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           }, done: { [weak self] in
             guard let self, let panel = self.window else { return }
             self.entering = false; self.rackHidesInHome = false
+            self.timing(self.transitionTiming.openStage("animation-complete"))
             self.rackExtension = 1; self.rackTarget = 1
             panel.alphaValue = 1
             if let frame = self.layout?.frame { panel.setFrame(frame, display: true) }
@@ -733,9 +758,22 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         panel.alphaValue = appearance.reduceMotion ? 1 : 0
         panel.makeKeyAndOrderFront(nil)
         if !appearance.reduceMotion {
-          NSAnimationContext.runAnimationGroup { context in context.duration = Self.openFade; panel.animator().alphaValue = 1 }
+          fadeEntranceTimingCount += 1
+          let fade = fadeEntranceTimingCount
+          fadeEntranceTiming = fade
+          NSAnimationContext.runAnimationGroup({ context in context.duration = Self.openFade; panel.animator().alphaValue = 1 }, completionHandler: { [weak self] in
+            Task { @MainActor in
+              guard let self else { return }
+              if self.fadeEntranceTiming == fade { self.fadeEntranceTiming = nil }
+              guard self.closeTask == nil, !self.ending else { return }
+              self.timing(self.transitionTiming.openStage("animation-complete"))
+            }
+          })
+        } else {
+          timing(transitionTiming.openStage("animation-complete"))
         }
       }
+      timing(transitionTiming.openStage("window-visible"))
       #if MODELPLAN_TEST_ONLY_SPI
         verificationEntrance?(rackFirst ? "rack" : appearance.reduceMotion ? "instant" : "fade")
       #endif
@@ -766,6 +804,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if !wasVisible, !wasClosing, !shellSession.detached { applyLayout() }
     panel.alphaValue = 1
     bringToFront(panel)
+    timing(transitionTiming.openStage("window-visible"))
+    // A re-open during the fade-in sets full alpha above, which ends that entrance now (its own completion is then a
+    // duplicate and dropped); the stage still counts from the first click.
+    fadeEntranceTiming = nil
+    timing(transitionTiming.openStage("animation-complete"))
     applyPresentationTraits()
     if shellSession.detached { onPresenceChanged?(true) }
     lastVisibility = nil; visibilityChanged()
@@ -843,6 +886,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     self.window = panel
     web = view
     let center = NotificationCenter.default
+    // The shutter's frame animation resizes the attached window; the rack's mask line follows that height each step.
+    observers.append(
+      center.addObserver(forName: NSWindow.didResizeNotification, object: panel, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { if let self, self.shutterMoving, self.motion == nil { self.refreshRack() } }
+      })
     for name in [
       NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
       NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
@@ -891,6 +939,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       installOwnSystemObservers(center: center)
     }
     panel.alphaValue = 0
+    pageLoadTiming = (CockpitTimingLog.now, bundle.servedStats)
+    LaunchTimingLog.shared.mark("page-load-start")
     view.load(URLRequest(url: pageURL))
   }
   /// Spec item 2: one signal per OS edge from the app's source. The immediate display pass keeps the cockpit from
@@ -1138,6 +1188,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let receipt = acceptBridgeReply(raw, source: source) else { return }
       switch receipt {
       case .ready:
+        LaunchTimingLog.shared.mark("page-bridge-ready")
         bootstrapCheck?(); bootstrapCheck = nil
         web?.isHidden = false
         publishAppearance()
@@ -1166,6 +1217,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         default: onIntent?(intent)
         }
       case .rendered:
+        if shown { timing(transitionTiming.openStage("page-rendered")) }
+        // WP-17: a rendered receipt answers a display, so the first one is the first paint with data.
+        LaunchTimingLog.shared.mark("first-rendered-with-data", detail: "shown=\(shown)")
         setReadingDelayed(false, cause: "rendered")
         if !bridge.hasPendingDisplay { renderWatchdog.cancel() }
         if let id = receiptWatchdog.currentID, !bridge.awaitsDeadlineReceipt(id) {
@@ -1181,6 +1235,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         if let reason = pendingFreshnessReason { sendFreshnessTick(reason) }
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
         onRendered?()
+        onDataRendered?()
         onRenderVerified?()
       case .deadlinePending(let id):
         if receiptWatchdog.currentID != id { receiptWatchdog.wait(for: id) }
@@ -1398,6 +1453,17 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       fail(.navigationFailed)
       return
     }
+    if let started = pageLoadTiming {
+      pageLoadTiming = nil
+      let served: VerifiedCockpitBundle.ServedStats = bundle.servedStats
+      let files: Int = served.files - started.served.files
+      let nanoseconds: UInt64 = served.nanoseconds &- started.served.nanoseconds
+      let verifyMs: Int = Int((Double(nanoseconds) / 1_000_000).rounded())
+      let loadMs: Int = CockpitTimingLog.ms(since: started.at)
+      let detail: String = "files=\(files) verifyMs=\(verifyMs)"
+      CockpitTimingLog.record("page stage=navigation-finish loadMs=\(loadMs) " + detail)
+      LaunchTimingLog.shared.mark("page-navigation-finish", detail: detail)
+    }
     guard let shell = currentShell else { fail(.localEncoding); return }
     do { send(try bridge.load(appearance, shell: shell), bootstrap: true) } catch { fail(.localEncoding, error: error) }
   }
@@ -1456,6 +1522,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard key != scope, CockpitMemberScopes.isValidKey(key) else { return }
     scope=key; publishAppearance()
   }
+  /// CKP-SHELL-50: before the load this only sets what the load's shell carries, so the first render has it.
+  public func updateRange(_ value: CockpitRange) {
+    guard value != range else { return }
+    range = value; publishAppearance()
+  }
   public func updateAppearance(_ value: CockpitAppearance) {
     let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
@@ -1473,7 +1544,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #if MODELPLAN_TEST_ONLY_SPI
     if let shell = verificationNoWindowShell { return shell }
     #endif
-    return layout?.shellState(attached: !shellSession.detached, scope: scope)
+    return layout?.shellState(attached: !shellSession.detached, scope: scope, range: range)
   }
   /// `behindPendingDisplay` (glm-959-1): send while a display receipt is still pending, as an uncorrelated change
   /// that derives no deadline, so the pending display's own deadline correlation is untouched.
@@ -1626,6 +1697,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           guard let self, self.shutterMoving, self.shutterGeneration == generation else { return }
           self.shutterMoving = false
           if let size = self.layout?.frame.size { self.window?.contentView?.setBoundsSize(size) }
+          if self.motion == nil { self.refreshRack() }
         }
       })
     } else if motion && frame.height < current.height {
@@ -1777,7 +1849,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       extendRack()
       runMotion(duration, step: { [weak self] t in
         self?.window?.setFrameOrigin(CockpitPutBackPath.straight(from: p0, to: d, at: t))
-      }, done: { [weak self] in self?.window?.setFrame(home, display: true); self?.whenRackSettled { self?.latch() } })
+      }, done: { [weak self] in self?.window?.setFrame(home, display: true); self?.reportLanded(); self?.whenRackSettled { self?.latch() } })
       return
     }
     // One continuous flight whose last part runs straight up the rack: the control point sits under home. The rack
@@ -1793,6 +1865,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }, done: { [weak self] in
       guard let self else { return }
       self.window?.setFrame(home, display: true)
+      self.reportLanded()
       self.whenRackSettled { [weak self] in self?.latch() }
     })
   }
@@ -1906,6 +1979,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           self?.window?.setFrameOrigin(CockpitPutBackPath.straight(from: start.origin, to: home.origin, at: t))
         }, done: { [weak self] in
           self?.window?.setFrame(home, display: true)
+          self?.reportLanded()
           self?.whenRackSettled { [weak self] in self?.latch() }
         })
       } else {
@@ -2012,6 +2086,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func closeAnimated() {
     guard !ending, closeTask == nil else { return }
+    timing(transitionTiming.beginClose())
+    fadeEntranceTiming = nil
     freshnessDriver.hide(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
     // Audit A-2: the invalidation drops a display still queued behind an in-flight call. A re-open during the fade
     // confirms visibility on the same page, so it must ask for fresh data then, as a hidden page does.
@@ -2029,7 +2105,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     verificationEntrance?(appearance.reduceMotion ? "instant" : reverse ? "rack" : "fade")
     #endif
     guard !appearance.reduceMotion, let window else { discard(); return }
-    finishEntrance()
+    finishEntrance(completesOpen: false)
     let duration = reverse ? reverseDuration : 0.12
     if reverse, let home = layout?.frame {
       rackHidesInHome = true
@@ -2104,6 +2180,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if appearance.reduceMotion { rackExtension = 0 }
     startRackTimer()
   }
+  private func reportLanded() {
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationLanded?(rackExtension)
+    #endif
+  }
   private func whenRackSettled(_ body: @escaping @MainActor () -> Void) {
     if rackExtension == rackTarget { body(); return }
     rackSettledWaiters.append(body); startRackTimer()
@@ -2111,12 +2192,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// A put back is flying (key, menu or a drag released in the catch zone) and latches at its end.
   private var flying = false
   /// Ends a running entrance, landing or flight at once, in its final state (a drag, a close or another key press).
-  private func finishEntrance() {
+  private func finishEntrance(completesOpen: Bool = true) {
     guard entering || motion != nil || flying || !rackSettledWaiters.isEmpty else { return }
     motion = nil; rackSettledWaiters = []
     if flying { flying = false; latch(); return }
     if entering {
       entering = false; rackHidesInHome = false
+      // The ended motion's own completion no longer runs, so its receipt is given here (a drag or a key press, not a close).
+      if completesOpen { timing(transitionTiming.openStage("animation-complete")) }
       window?.alphaValue = 1
       rackExtension = rackIcon() != nil && !shellSession.detached ? 1 : 0; rackTarget = rackExtension
       if !shellSession.detached, let frame = layout?.frame { window?.setFrame(frame, display: true) }
@@ -2140,7 +2223,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     var hidden: CGRect?
     if let layout {
       let frame = rackHidesInHome ? layout.frame : window.frame
-      let drop = CockpitShellLayout.shoulderDrop(layout.profile) * layout.scale
+      let drop = layout.rackMaskDrop(windowHeight: frame.height)
       hidden = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: max(0, frame.height - drop))
     }
     // A prewarmed (never shown) page has no rack on screen.
@@ -2219,6 +2302,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     window?.delegate = nil
     window?.contentView = nil
     window?.close()
+    timing(transitionTiming.gone())
+    fadeEntranceTiming = nil
     window = nil
     web = nil
     proxy.owner = nil

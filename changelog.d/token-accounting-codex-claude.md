@@ -1,1 +1,0 @@
-Codex and Claude Code usage now counts responses independently of speed samples, including unfinished turns. The today number includes input, cached input and output tokens; generation speed remains output tokens per second. The CLI exposes local-day today/7-day/30-day accounting with separate cache and reasoning buckets, without counting reasoning twice.

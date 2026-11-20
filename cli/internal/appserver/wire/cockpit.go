@@ -193,6 +193,9 @@ type CockpitPublicationEffort struct {
 	Cost        *float64 `json:"cost" null:"coalesced"`
 	Time        *float64 `json:"time" null:"coalesced"`
 	Provisional bool     `json:"provisional,omitempty" null:"forbidden"`
+	// AAScore (D292, client-v1.5): the published AA Intelligence Index score, a reference beside Ability ("AA official"
+	// in a detail or tooltip). The effort page's ability share always reads Ability. Absent when unscored.
+	AAScore *float64 `json:"aaScore,omitempty" null:"forbidden"`
 }
 
 type CockpitSubscriptionDetails struct {
@@ -239,6 +242,16 @@ type CockpitSession struct {
 	// Fast is present (true) only for a session whose recorded speed mode is the harness's fast
 	// mode. Absent means the mode was not reported or was standard; the ledger cannot tell those apart.
 	Fast *bool `json:"fast,omitempty" null:"forbidden"`
+	// StartedAt is the start of the session's first recorded turn; the strip's elapsed time counts from it
+	// (CKP-STRIP-16, owner D277). Absent when the producer has no start for the session.
+	StartedAt *time.Time `json:"startedAt,omitempty" null:"forbidden"`
+	// ObservedTotalTokens is the session's total tokens over its recorded days: input, cache reads, cache writes and
+	// output, each counted once (CKP-STRIP-16, TOK-50). Absent while the session has no recorded turn or any part
+	// of a day is unknown; output alone is never sent in its place.
+	ObservedTotalTokens *int64 `json:"observedTotalTokens,omitempty" null:"forbidden" schema:"minimum=0"`
+	// ModelDisplay is the readable name of a model the publication does not list (G3-134), set only while Model is
+	// "unknown" and the raw ID was readable; the strip shows it with a dim "not listed" badge.
+	ModelDisplay *string `json:"modelDisplay,omitempty" null:"forbidden" schema:"minLength=1,maxLength=48"`
 }
 type CockpitAlert struct {
 	Source           string  `json:"source"`

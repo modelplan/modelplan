@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: MIT
 package digest
 
-// client-v1.6 (D291, WP-06): public API list prices. This file is the only place that
-// knows the publication's price field names, so a rename in the final shape is one edit.
+// client-v1.6 (D291, WP-06): public API list prices. clientv16.go validates the fields and
+// drops a malformed price before this runs; this file turns the screened JSON into typed
+// prices for the cost code, and is the only place that names the price fields.
 //
-// The reader is lenient. Unknown fields are ignored; a price that fails a check is dropped
-// for that model only (never the publication). A dropped or absent price is "no public API
-// price": callers count the tokens and show no estimate. Nothing here guesses a price.
+// A dropped or absent price is "no public API price": callers count the tokens and show
+// no estimate. Nothing here guesses a price. A model whose longContext was dropped by the
+// screen loses its whole price here, because pricing a long request at the short rate
+// would be a guess.
 
 import (
 	"encoding/json"
 	"math"
-	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	// PriceUnitUSDPerMillion is the one unit the reader accepts: USD per million tokens.
-	PriceUnitUSDPerMillion = "usd-per-1m-tokens"
 	// EvaluationPending marks a published model whose efforts are not scored yet (#800).
 	EvaluationPending = "pending"
 	// priceMinMinor is the first client projection that may carry prices.
@@ -99,12 +98,18 @@ func readPrices(d *Digest, data json.RawMessage) {
 		}
 	}
 	unit, _ := raw.PriceUnit.(string)
-	if unit != PriceUnitUSDPerMillion || projectionMinor(raw.ProjectionVersion) < priceMinMinor {
+	if unit != PriceUnitUSDPer1M || projectionMinor(raw.ProjectionVersion) < priceMinMinor {
 		return
 	}
 	d.PriceUnit = unit
+	lcDropped := map[string]bool{}
+	for _, f := range d.Dropped {
+		if id, ok := strings.CutSuffix(strings.TrimPrefix(f, "models["), "].price.longContext"); ok && strings.HasPrefix(f, "models[") {
+			lcDropped[id] = true
+		}
+	}
 	for i := range raw.Models {
-		if i < len(d.Models) && d.Models[i].ID == raw.Models[i].ID && len(raw.Models[i].Price) != 0 {
+		if i < len(d.Models) && d.Models[i].ID == raw.Models[i].ID && len(raw.Models[i].Price) != 0 && !lcDropped[raw.Models[i].ID] {
 			d.Models[i].Price = parsePrice(raw.Models[i].Price)
 		}
 	}
@@ -116,15 +121,6 @@ func readPrices(d *Digest, data json.RawMessage) {
 			}
 		}
 	}
-}
-
-// projectionMinor is N of "client-v1.N", or -1.
-func projectionMinor(v string) int {
-	n, err := strconv.Atoi(strings.TrimPrefix(v, "client-v1."))
-	if err != nil || !strings.HasPrefix(v, "client-v1.") || n < 0 {
-		return -1
-	}
-	return n
 }
 
 func positive(v float64) bool { return v > 0 && !math.IsInf(v, 0) && !math.IsNaN(v) }
