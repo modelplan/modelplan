@@ -28,9 +28,11 @@ public struct DockContentRow: Sendable {
     public let links: [DockCardLink]
     public let windowObservations: [String: DockWindowObservation]?
     public let cardReadingState: DockCardReadingState
+    /// WP-15: a window's admitted run-out forecast (WP-03), before its reset; the card row says "约40m用完" instead.
+    public let runOutTimes: [String: Date]
     public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
-                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],resetCountExpiry: Date? = nil,links:[DockCardLink]=[],windowObservations:[String:DockWindowObservation]?=nil,cardReadingState:DockCardReadingState?=nil) {
-        self.input = input; self.reason = reason; self.nextStep = nextStep
+                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],resetCountExpiry: Date? = nil,links:[DockCardLink]=[],windowObservations:[String:DockWindowObservation]?=nil,cardReadingState:DockCardReadingState?=nil,runOutTimes:[String:Date]=[:]) {
+        self.input = input; self.reason = reason; self.nextStep = nextStep; self.runOutTimes = runOutTimes
         self.originalObservedAt = originalObservedAt
         self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows;self.resetCountExpiry=resetCountExpiry;self.links=links
         self.windowObservations = windowObservations
@@ -57,6 +59,46 @@ public struct DockContentRow: Sendable {
         let source = fact?.sourceName ?? (english ? "Unknown source" : "未知来源")
         let age = CommunityObservationAge.cardText(observedAt: fact?.observedAt, now: now, english: english)
         return source + " · " + age
+    }
+
+    /// DOCK-3.8-50 (V1-FINAL §2, board-3 item 5): the card header's right side is only the age of the reading the ring
+    /// shows, "3 分钟前更新" / "Updated 3 min ago". The source moved to Settings' diagnostics. A kept reading names its own age.
+    public func cardUpdatedText(at now: Date, language: SettingsLanguage, selectedWindowID: String? = nil) -> String {
+        var observed = originalObservedAt
+        if let window = selectedWindowID.flatMap({ id in input.windows.first { $0.id == id } }) {
+            if case .retained(let at, _) = window.validity { observed = at }
+            else if let fact = windowObservations?[window.id]?.observedAt { observed = fact }
+        }
+        return WidgetCardText.updated(WidgetCardText.age(observedAt: observed, now: now)).value(language)
+    }
+    /// V1-FINAL §0, §2: a quota row's right side. "约40m用完" when the forecast runs out before the reset, else
+    /// "5d18h 后重置"; blank when neither is known (board-3: no "--" there). No per-row source or age.
+    public func cardRowDetails(at now: Date, language: SettingsLanguage) -> [String: String] {
+        func minutes(until date: Date) -> Double? {
+            let seconds = date.timeIntervalSince(now)
+            guard seconds.isFinite, seconds > 0, seconds < Double(Int.max / 60) else { return nil }
+            return ceil(seconds / 60)
+        }
+        return input.windows.reduce(into: [:]) { result, window in
+            var detail = ""
+            if let runOut = runOutTimes[window.id], let m = minutes(until: runOut) {
+                detail = WidgetCardText.runsOutIn(DockWidgetFigures.duration(minutes: m)).value(language)
+            } else if let reset = resetTimes[window.id] ?? window.resetsAt, let m = minutes(until: reset) {
+                detail = WidgetCardText.resetsIn(DockWidgetFigures.duration(minutes: m)).value(language)
+            }
+            if let description = windowDescriptions[window.id], !description.isEmpty, description != window.label {
+                detail = detail.isEmpty ? description : description + " · " + detail
+            }
+            result[window.id] = detail
+        }
+    }
+    /// The reserve brightens under an alert only when a reset is there to use (V1-FINAL §2 item 5).
+    /// macrevb-1051-2: judged at presentation time; a positive count whose earliest expiry has passed is not spendable.
+    func hasResetAvailable(at now: Date) -> Bool {
+        guard let value = additionalRows.first(where: { $0.id == "reset-count" })?.value,
+              Int(String(value.drop { $0 == "↺" })).map({ $0 > 0 }) ?? false else { return false }
+        if let expiry = resetCountExpiry, expiry <= now { return false }
+        return true
     }
 
     public func cardBadge(at now:Date,english:Bool) -> String {

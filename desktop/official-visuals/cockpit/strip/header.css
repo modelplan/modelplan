@@ -1,0 +1,42 @@
+/* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
+/* Copyright (c) 2026 ModelPlan. WP-10, the approved round 3 header layout (owner 2026-11-18). Loaded after strip.css, whose
+   approved rules stay byte-identical: this file only moves ALERT, settings, detach and close, swaps the old slider for the
+   porthole switch and adds the date keys. The 120 ms fades are listed in the motion policy test (MOT-2.3-01). The close key's dark red lives in cockpit.css and is not touched here.
+   Coordinates are header-content-box points (page x = header x + 24). */
+.ck-head .shutter-slider{left:248.17px;top:-2px;width:91.67px;height:30px;cursor:pointer;touch-action:manipulation;border-radius:5px}
+.ck-head .shutter-slider::before,.ck-head .shutter-slider::after{content:"";position:absolute;inset:0;background:url('./assets/porthole-switch-open@3x.png') 0 0/91.67px 30px no-repeat;pointer-events:none;transition:opacity .12s ease-out}
+.ck-head .shutter-slider::after{background-image:url('./assets/porthole-switch-closed@3x.png');opacity:0}
+.ck-head .shutter-slider[aria-pressed=true]::before{opacity:0}
+.ck-head .shutter-slider[aria-pressed=true]::after{opacity:1}
+.ck-head .shutter-slider:hover:not(:disabled){filter:brightness(1.08)}
+.ck-head .shutter-slider:active:not(:disabled){filter:brightness(.92);transform:translateY(.5px)}
+.ck-head .shutter-slider:focus-visible{outline-offset:2px;border-radius:5px}
+.ck-head .ck-lamp{left:190px}
+.ck-head [data-settings]{left:474px}
+.ck-head [data-detach]{left:512px}
+.ck-head [data-close]{left:550px}
+/* Date keys: one target per key, from the gap midpoint on each side and over the full row. */
+.ck-head .ck-range{display:flex;position:absolute;left:352.5px;top:-3px;width:109px;height:32px;display:flex}
+.ck-head .rk{position:relative;flex:0 0 36.33px;width:36.33px;height:32px;min-width:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;cursor:pointer;color:#A9B0B6;font:500 10px/12px 'DM Sans','PingFang SC','Noto Sans SC',sans-serif;letter-spacing:.02em;font-variant-numeric:tabular-nums;transition:color .12s ease-out;-webkit-tap-highlight-color:transparent}
+:root[lang="en"] .ck-head .rk{font-weight:600;font-size:10.5px;letter-spacing:.01em}
+.ck-head .rk-cap{position:absolute;left:1px;top:14.5px;width:34.33px;height:17px;pointer-events:none;background:url('./assets/date-key-normal@3x.png') 0 0/34.33px 17px no-repeat}
+.ck-head .rk-cap::after{content:"";position:absolute;inset:0;background:url('./assets/date-key-selected@3x.png') 0 0/34.33px 17px no-repeat;opacity:0;transition:opacity .12s ease-out}
+.ck-head .rk-label{position:absolute;left:50%;top:0;height:12px;width:max-content;transform:translateX(-50%);white-space:nowrap;text-align:center;pointer-events:none}
+.ck-head .rk:hover:not([aria-checked=true]){color:#C9D0D6}
+.ck-head .rk:hover:not([aria-checked=true]) .rk-cap{filter:brightness(1.1)}
+.ck-head .rk:active .rk-cap::after{opacity:1}
+.ck-head .rk:active,.ck-head .rk[aria-checked=true]{color:#DCEEFF}
+.ck-head .rk[aria-checked=true] .rk-label,.ck-head .rk:active .rk-label{text-shadow:0 0 .5px rgba(220,240,255,.85),0 0 2px rgba(140,190,240,.5),0 0 5px rgba(110,160,225,.18)}
+.ck-head .rk[aria-checked=true] .rk-cap::after{opacity:1}
+.ck-head .rk:focus-visible{outline:none}
+.ck-head .rk:focus-visible::before{content:"";position:absolute;inset:2px 0 0 0;border:2px solid #D4B994;border-radius:3px;pointer-events:none}
+:root[data-theme="day"] .ck-head .shutter-slider::after,:root[data-theme="day"] .ck-head .rk-cap,:root[data-theme="day"] .ck-head .rk-cap::after{filter:invert(.76) hue-rotate(180deg)}
+:root[data-theme="day"] .ck-head .rk{color:#4B5560}
+:root[data-theme="day"] .ck-head .rk:hover:not([aria-checked=true]){color:#2F3842}
+:root[data-theme="day"] .ck-head .rk:active,:root[data-theme="day"] .ck-head .rk[aria-checked=true]{color:#1F5FA8}
+:root[data-theme="day"] .ck-head .rk[aria-checked=true] .rk-label,:root[data-theme="day"] .ck-head .rk:active .rk-label{text-shadow:none}
+@media(prefers-contrast:more){.ck-head .rk{color:#C9D0D6}.ck-head .rk[aria-checked=true]{color:#fff;font-weight:600}.ck-head .rk[aria-checked=true] .rk-label{text-shadow:none}:root[data-theme="day"] .ck-head .rk{color:#1F2933}:root[data-theme="day"] .ck-head .rk[aria-checked=true]{color:#000}}
+body.reduced .ck-head .shutter-slider::before,body.reduced .ck-head .shutter-slider::after,body.reduced .ck-head .rk,body.reduced .ck-head .rk-cap::after,html[data-reduce-motion=true] .ck-head .shutter-slider::before,html[data-reduce-motion=true] .ck-head .shutter-slider::after,html[data-reduce-motion=true] .ck-head .rk,html[data-reduce-motion=true] .ck-head .rk-cap::after{transition:none}
+@media(prefers-reduced-motion:reduce){.ck-head .shutter-slider::before,.ck-head .shutter-slider::after,.ck-head .rk,.ck-head .rk-cap::after{transition:none}}
+/* No usage source: the date keys look dim but still accept and remember a choice (R3 section 5; header-range.ts sets data-nosource). */
+.ck-head .rk[data-nosource=true]{opacity:.4}

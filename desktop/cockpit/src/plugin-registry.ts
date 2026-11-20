@@ -9,6 +9,7 @@
 // D323: a plugin that cells cannot express (a day strip, a week grid) may add `draw` to its column or screen and paint
 // inside the area the host gives it; everything around that area stays the framework's.
 // Pure: no DOM and no string tables here (the host resolves `plugin.*` keys), so the bridge and unit tests can load it.
+import type {WireCockpitData} from '../generated/wire.js';
 export type PluginLocale='en'|'zh-CN';
 /** One per-plugin setting. `seconds` is a whole number of seconds inside [min, max] (e.g. sampling 3–30 s, D124). */
 export interface PluginSettingSpec {readonly key:string;readonly kind:'seconds';readonly min:number;readonly max:number;readonly default:number}
@@ -16,8 +17,13 @@ export interface PluginSettingSpec {readonly key:string;readonly kind:'seconds';
 export interface PluginWords {readonly full:string;readonly short:string}
 export interface PluginContext {
   readonly locale:PluginLocale;readonly settings:Readonly<Record<string,number>>;
+  /** The host's clock (epoch ms): the time of the latest display render or deadline tick; the page has no clock of its
+   *  own. 0 until the first display data arrives. */
+  readonly now:number;
   /** Long and short forms of a `plugin.*` string-table key (`<key>Short` when it exists). */
   words(key:string,vars?:Readonly<Record<string,string|number>>):PluginWords;
+  /** The plugin's view memory (D328: the week view's selected day, read by the column's bottom line). */
+  readonly memo?:Record<string,unknown>;
 }
 export interface PluginCell {
   readonly tag:PluginWords;
@@ -94,6 +100,13 @@ export interface CockpitPlugin {
   column(state:unknown,context:PluginContext):PluginColumn;
   /** The plugin's big screen, opened from its key inside the big-screen area (CKP-PLG-53). */
   screen(state:unknown,context:PluginContext):PluginScreen;
+  /** v1.1 (calendar): shape a reading from the cockpit display data the page already has (no network, no host round
+   *  trip). Called for a running plugin on each display render and deadline tick; the result goes through `accept`
+   *  exactly like a host push. A host that pushes `pluginData` for this plugin takes over: shaping stops for it. */
+  derive?(display:WireCockpitData,now:number):unknown;
+  /** v1.1 (calendar): the next time (epoch ms) this running plugin must be drawn again (a now line, a day rollover).
+   *  The page reports the earliest to the host with its own deadlines; the host's tick then redraws it. No page timers. */
+  nextDeadline?(state:unknown,now:number):number|null;
 }
 export const PLUGIN_ID=/^[a-z][a-z0-9-]{0,31}$/;
 const SETTING_KEY=/^[a-zA-Z][a-zA-Z0-9]{0,31}$/;
@@ -103,7 +116,7 @@ export class PluginRegistry {
     if(plugins.length>16)throw TypeError('Too many cockpit plugins');
     for(const plugin of plugins){
       if(!PLUGIN_ID.test(plugin.id)||this.#plugins.has(plugin.id))throw TypeError('Invalid cockpit plugin id');
-      if(!/^plugin\.\w+$/.test(plugin.title)||!/^plugin\.\w+$/.test(plugin.summary)||typeof plugin.column!=='function'||typeof plugin.screen!=='function'||typeof plugin.accept!=='function')throw TypeError('Invalid cockpit plugin');
+      if(!/^plugin\.\w+$/.test(plugin.title)||!/^plugin\.\w+$/.test(plugin.summary)||typeof plugin.column!=='function'||typeof plugin.screen!=='function'||typeof plugin.accept!=='function'||plugin.derive!==undefined&&typeof plugin.derive!=='function'||plugin.nextDeadline!==undefined&&typeof plugin.nextDeadline!=='function')throw TypeError('Invalid cockpit plugin');
       if(!PLUGIN_INKS.includes(plugin.underline)||plugin.ink!==undefined&&!PLUGIN_INKS.includes(plugin.ink))throw TypeError('Invalid cockpit plugin colour');
       const keys=new Set<string>();
       for(const s of plugin.settings){
@@ -144,4 +157,4 @@ export const placeholderPlugin:CockpitPlugin=Object.freeze({
       {label:context.words('plugin.placeholderScreenEvery').full,value:context.words('plugin.placeholderEvery',{n:context.settings.intervalSeconds}).full}]};
   },
 });
-export const builtinPlugins:readonly CockpitPlugin[]=Object.freeze([placeholderPlugin]);
+// The bundled list (placeholder, calendar) is in plugin-builtins.ts, so this module stays free of plugin drawing code.

@@ -1,1 +1,0 @@
-Cockpit plugins can draw their own column and big screen when cells are not enough (a day strip, a week grid). The key, its underline, pinning, the + menu, the bottom line and the screen's title bar stay the cockpit's; a plugin paints only inside the area it is given, and falls back to plain cells if its drawing fails. The plugin screen's Close button now answers a mouse click.

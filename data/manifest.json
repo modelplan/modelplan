@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.23.44",
+  "version": "0.23.57",
   "license": {
     "id": "CC-BY-SA-4.0",
     "url": "https://creativecommons.org/licenses/by-sa/4.0/",
@@ -20,7 +20,7 @@
       "path": "data/client-harness-aliases.json",
       "description": "Model names as Claude Code, Codex and other clients report them",
       "license": "CC-BY-SA-4.0",
-      "sha256": "a3558a42eb7a45d5e9f38b8872aa08b60739f1e0e012bb4953bcc08f50baa807"
+      "sha256": "3043be47eaeb2e3a679174d7fa46895e3034625d32595e43e33116e1b0c6a1d3"
     },
     {
       "path": "data/model-developers.json",
