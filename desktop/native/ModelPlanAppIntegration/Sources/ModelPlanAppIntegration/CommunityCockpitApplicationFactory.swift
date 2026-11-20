@@ -563,7 +563,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()
