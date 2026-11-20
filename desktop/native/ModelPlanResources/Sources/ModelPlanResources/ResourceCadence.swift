@@ -48,20 +48,22 @@ public struct ResourceSchedule: Equatable, Sendable {
     /// Applies a visibility change; returns the delay until the next sample (nil = stop).
     public mutating func update(_ visibility: ResourceVisibility, now: TimeInterval) -> TimeInterval? {
         interval = ResourceCadence.interval(visibility)
-        guard let interval else { return nil }
-        guard let lastSample else { return 0 }
-        return max(0, lastSample + interval - now)
+        return delay(now: now)
     }
     /// The delay to the next sample from `now`, given the current interval.
     public func delay(now: TimeInterval) -> TimeInterval? {
-        guard let interval else { return nil }
-        guard let lastSample else { return 0 }
-        return max(0, lastSample + interval - now)
+        guard interval != nil else { return nil }
+        guard let due else { return 0 }
+        return max(0, due - now)
     }
+    /// When the next sample is due. `delay` and `admit` both compare against this one value: computing
+    /// `now - lastSample < interval` here and `lastSample + interval - now` there can disagree in floating point,
+    /// which armed a zero-delay timer that admit kept refusing (an endless loop on the compile Mac, 11-20).
+    private var due: TimeInterval? { lastSample.flatMap { last in interval.map { last + $0 } } }
     /// True (and records the sample time) only when sampling is on and the interval has passed.
     public mutating func admit(now: TimeInterval) -> Bool {
-        guard let interval, now.isFinite else { return false }
-        if let lastSample, now - lastSample < interval { return false }
+        guard interval != nil, now.isFinite else { return false }
+        if let due, now < due { return false }
         lastSample = now
         return true
     }

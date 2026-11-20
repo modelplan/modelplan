@@ -96,6 +96,19 @@ final class ResourceCadenceTests: XCTestCase {
         }
     }
 
+    /// A zero delay always means the next read is admitted (11-20: 511.8 + 2 - 513.8 is 0 but 513.8 - 511.8 is just
+    /// under 2 in floating point; the old pair armed a zero-delay timer that admit refused, forever).
+    func testZeroDelayIsAlwaysAdmitted() {
+        var schedule = ResourceSchedule()
+        _ = schedule.update(visibility(column: true, setting: 2), now: 511.8)
+        XCTAssertTrue(schedule.admit(now: 511.8))
+        let due = 511.8 + 2.0
+        XCTAssertEqual(schedule.delay(now: due), 0)
+        XCTAssertTrue(schedule.admit(now: due), "delay 0 must be admitted")
+        XCTAssertFalse(schedule.admit(now: due + 1.9))
+        XCTAssertGreaterThan(schedule.delay(now: due + 1.9) ?? 0, 0)
+    }
+
     @MainActor func testColumnAndWidgetCadencesAndCoalescedTolerance() {
         let timers = ManualTimers(), reader = CountingReader()
         let sampler = ResourceSampler(reader: reader, clock: timers.clock, scheduler: timers.scheduler)
