@@ -525,6 +525,15 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
     [" && github.actor == 'guanbear'", ""],
     [" && github.ref == 'refs/heads/main'", ""],
     ["timeout-minutes: 40", "timeout-minutes: 400"],
+    ["      MACOSX_DEPLOYMENT_TARGET: '14.0'\n", "      MACOSX_DEPLOYMENT_TARGET: '14.0'\n      T: ${{ secrets['EXAMPLE'] }}\n"],
+    ["      MACOSX_DEPLOYMENT_TARGET: '14.0'\n", "      MACOSX_DEPLOYMENT_TARGET: '14.0'\n      T: ${{ toJSON(secrets) }}\n"],
+    ["    timeout-minutes: 40\n", "    timeout-minutes: 40\n    permissions:\n      contents: write\n"],
+    ["    timeout-minutes: 40\n", "    timeout-minutes: 40\n    permissions: { contents: write }\n"],
+    ["    timeout-minutes: 40\n", "    timeout-minutes: 40\n    permissions: write-all\n"],
+    ["    timeout-minutes: 40\n", "    timeout-minutes: 40\n    permissions:\n      contents: read\n"],
+    ["        echo \"HEADLESS_SCRATCH", "        echo \"runner ${RUNNER_NAME}\"\n        echo \"HEADLESS_SCRATCH"],
+    ["        echo \"ModelPlanCommunityApp linked\"", "        ls -l \"$bin/ModelPlanCommunityApp\""],
+    ["          echo \"runner: label", "          echo \"${{ runner.name }}\"\n          echo \"runner: label"],
     ["jobs:\n", "jobs:\n  extra:\n    runs-on: [self-hosted, macOS, ARM64, modelplan-mac-nongui]\n    steps: []\n"],
   ];
   for (const [from, to] of mutations) {
@@ -536,6 +545,12 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
   // The smoke label and route are refused in any other workflow.
   assert.ok(workflowProblems(text, ".github/workflows/other.yml").length > 0);
   assert.ok(workflowProblems("runs-on: [self-hosted, macOS, ARM64, smoke-arm64-5]\n", ".github/workflows/other.yml").length > 0);
+  // Case variants and input-driven routes cannot reach the label from another workflow (labels match case-insensitively).
+  for (const route of ["runs-on: [self-hosted, macOS, ARM64, SMOKE-ARM64-5]", "runs-on: ubuntu-latest\n    env:\n      L: Smoke-Arm64-5", "runs-on: ${{ inputs.runner }}", "runs-on: ${{ github.event.inputs.runner }}",
+    "runs-on: [${{ vars.R }}]", "runs-on:\n      - ${{ inputs.runner }}", "runs-on:\n      - macOS\n      - ${{ inputs.label }}", "runs-on: [ubuntu-latest, \"${{ inputs.label }}\"]"])
+    assert.ok(workflowProblems(`jobs:\n  a:\n    ${route}\n`, ".github/workflows/other.yml").length > 0, route);
+  // Safe hosted routes stay legal, including a static matrix (the existing u14 workflow) and the smoke route in its own file.
+  for (const route of ["runs-on: ubuntu-24.04", "runs-on: ${{ matrix.os }}", "runs-on: [ubuntu-latest]"]) assert.deepEqual(workflowProblems(`jobs:\n  a:\n    ${route}\n`, ".github/workflows/other.yml"), [], route);
 });
 
 test("the mac-compile trigger is a no-permission, no-action pull_request run", () => {

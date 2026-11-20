@@ -2,11 +2,12 @@
 # Runner acceptance smoke (owner D353, 2026-11-20): validate a new or standby Mac runner before it gets a production
 # label. The runner carries one temporary unique label (smoke-arm64-N); this workflow is the only one that names it, so
 # nothing else can reach the machine while it is under test. It runs the same non-GUI native share as the
-# native-headless leg of trusted-mac.yml on the chosen commit, then prints the timings and the runner name.
+# native-headless leg of trusted-mac.yml on the chosen commit, then prints the timings under the smoke label.
 #
 # Trust boundary (public repository: fork code must never reach these Macs):
 # - Only workflow_dispatch starts it, by the owner account, from main's definition (a branch's copy never runs here).
 # - The ref to build must be main or a tag (refs/tags/...); anything else is skipped by the job condition.
+# - Public output names the smoke label only: never the runner name (register the runner under a non-identifying name) or file owners.
 # - Read-only token, no secrets, checkouts keep no credentials, no artifacts, no seed publish.
 # Adding a runner: add its smoke-arm64-N label to the options below (scripts/workflow-policy.mjs allows only that shape).
 # Owner step after merge: add this workflow's pinned ref to the modelplan-mac runner group (D330).
@@ -45,10 +46,9 @@ jobs:
       run: |
         # Never the V1 host or a GUI Mac, whatever label it carries.
         case "${RUNNER_NAME:-}" in
-          modelplan-mac-arm64-1|*gui*) echo "::error::this job must not run on ${RUNNER_NAME}"; exit 1;;
+          modelplan-mac-arm64-1|*gui*) echo "::error::this job must not run on the V1 host or a GUI Mac"; exit 1;;
         esac
-        echo "runner: ${RUNNER_NAME:-unknown} (${RUNNER_ENVIRONMENT:-unknown})"
-        echo "T_START=$(date +%s)" >> "$GITHUB_ENV"
+        # Public log: the runner name is compared above and never printed (the report below names the smoke label only).
         echo "HEADLESS_SCRATCH=$RUNNER_TEMP/headless-build" >> "$GITHUB_ENV"
     - uses: actions/checkout@v4
       with:
@@ -59,6 +59,8 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '24'
+    - name: Start the clock (after checkout and Node setup, so the toolchain span excludes them)
+      run: echo "T_START=$(date +%s)" >> "$GITHUB_ENV"
     - name: Select Xcode (26.6 17F113 on our Macs, fail loudly)
       run: |
         ls -d /Applications/Xcode*.app
@@ -115,7 +117,7 @@ jobs:
         bin="$HEADLESS_SCRATCH/debug"
         [ -d "$bin" ] || bin=$(swift build --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$HEADLESS_SCRATCH" --show-bin-path)
         test -x "$bin/ModelPlanCommunityApp" || { echo "::error::ModelPlanCommunityApp was not linked in $bin"; exit 1; }
-        ls -l "$bin/ModelPlanCommunityApp"
+        echo "ModelPlanCommunityApp linked"
     - name: App integration tests, headless leg (classes in native-test-partition.json; no window server)
       shell: bash
       run: |
@@ -140,7 +142,7 @@ jobs:
       run: swift run --package-path desktop/native --scratch-path "$HEADLESS_SCRATCH" --skip-build ModelPlanRunLoopChecks
     - name: Synthetic fixture integrity
       run: python3 desktop/native/tools/check-fixture-manifests.py
-    - name: Timings and runner name
+    - name: Timings and smoke label
       if: ${{ always() }}
       shell: bash
       env:
@@ -150,7 +152,7 @@ jobs:
         now=$(date +%s)
         span() { if [ -n "${2:-}" ] && [ -n "${1:-}" ]; then echo "$(( $2 - $1 ))s"; else echo "not reached"; fi; }
         {
-          echo "runner: ${RUNNER_NAME:-unknown} (label $SMOKE_LABEL, ref $SMOKE_REF, $(uname -m))"
+          echo "runner: label $SMOKE_LABEL (ref $SMOKE_REF, $(uname -m))"
           echo "toolchain select:   $(span "${T_START:-}" "${T_XCODE:-}")"
           echo "native build:       $(span "${T_XCODE:-}" "${T_BUILD:-}")"
           echo "integration build:  $(span "${T_BUILD:-}" "${T_TESTBUILD:-}")"

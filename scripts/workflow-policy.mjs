@@ -88,7 +88,15 @@ export function runnerSmokeProblems(text) {
   const problems = [];
   if (onKeys(text).join(",") !== "workflow_dispatch") problems.push("runner-smoke.yml may start only from workflow_dispatch");
   if (significant(topLevelBlock(text, "permissions")) !== "permissions:\n  contents: read") problems.push("runner-smoke.yml needs top-level permissions: contents: read");
-  if (/\bsecrets\./.test(text) || /^\s+[a-z-]+:\s*write\b/m.test(text)) problems.push("runner-smoke.yml may not use secrets or write permissions");
+  // Effective (non-comment) lines only: no secrets context in any spelling (dot, index or bare), no write permission in
+  // any form (block, flow or write-all), and no job-level or step-level permissions block at all.
+  const effective = text.split("\n").filter((l) => !/^\s*#/.test(l));
+  if (effective.some((l) => /\bsecrets\b/i.test(l) || /:\s*write(?:-all)?\b/.test(l) || /\bwrite-all\b/.test(l))) problems.push("runner-smoke.yml may not use secrets or write permissions");
+  if (effective.filter((l) => /^\s*permissions\s*:/.test(l)).length !== 1) problems.push("runner-smoke.yml may have only the top-level permissions block, none in a job");
+  // Public logs and the job summary must not carry the runner's host name or the file owner: the runner name is only
+  // compared inside the refusal guard, never printed, and no long directory listing (owner and group columns) is run.
+  if (effective.some((l) => /\brunner\.name\b/.test(l) || /\bls\s+-\w*l/.test(l))) problems.push("runner-smoke.yml may not print the runner name or a long directory listing");
+  if (effective.some((l) => /\b(?:echo|printf|tee|cat)\b[^\n]*\$\{?RUNNER_NAME\b/.test(l))) problems.push("runner-smoke.yml may not print RUNNER_NAME");
   const checkouts = (text.match(/uses: actions\/checkout@/g) ?? []).length;
   if (checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every runner-smoke.yml checkout must set persist-credentials: false");
   // The whole on: block must equal the reviewed shape, with only the smoke choices free (`- smoke-arm64-N`, optionally
@@ -146,13 +154,27 @@ function decodedVariant(text) {
 
 function lineProblems(raw, problems, path = "") {
   const line = raw.trim();
-  if (/modelplans-(publish|ci)/.test(line)) problems.add("private runner label");
-  if (path !== PR_REVIEW_PATH && /modelplan-review/.test(line)) problems.add("review runner label outside pr-review.yml");
-  if (path !== RUNNER_SMOKE_PATH && /\bsmoke-arm64-\d+\b/.test(line)) problems.add("smoke runner label outside runner-smoke.yml");
-  if (path !== MAC_COMPILE_PATH && /modelplan-compile\b/.test(line)) problems.add("compile runner label outside mac-compile.yml");
+  if (/modelplans-(publish|ci)/i.test(line)) problems.add("private runner label");
+  if (path !== PR_REVIEW_PATH && /modelplan-review/i.test(line)) problems.add("review runner label outside pr-review.yml");
+  // Runner labels match case-insensitively on GitHub, so every label guard does too.
+  if (path !== RUNNER_SMOKE_PATH && /\bsmoke-arm64-\d+\b/i.test(line)) problems.add("smoke runner label outside runner-smoke.yml");
+  if (path !== MAC_COMPILE_PATH && /modelplan-compile\b/i.test(line)) problems.add("compile runner label outside mac-compile.yml");
   if (/^runs-on:.*\b(format|join)\(/.test(line)) problems.add("dynamically constructed runner label");
   if ((line.includes("self-hosted") || line.includes("pull_request_target")) && !ALLOWED_ROUTES.has(line))
     problems.add("non-canonical self-hosted route or pull_request_target");
+}
+
+// Every runs-on key with its continuation lines (a flow list or a block list), joined into one string.
+function runsOnBlocks(text) {
+  const lines = text.split("\n"), out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(\s*)runs-on:/.exec(lines[i]);
+    if (!m || /^\s*#/.test(lines[i])) continue;
+    let block = lines[i].trim();
+    for (let j = i + 1; j < lines.length && (lines[j].trim() === "" || lines[j].search(/\S/) > m[1].length); j++) block += "\n" + lines[j].trim();
+    out.push(block.trim());
+  }
+  return out;
 }
 
 export function workflowProblems(text, path = "") {
@@ -170,6 +192,11 @@ export function workflowProblems(text, path = "") {
   if (path === MAC_COMPILE_TRIGGER_PATH) for (const p of macCompileTriggerProblems(text)) problems.add(p);
   if (path !== ".github/workflows/trusted-mac.yml" && text.includes("MAC_GUI_LEND")) problems.add("GUI lending switch outside trusted-mac.yml");
   for (const raw of text.split("\n")) check(raw);
+  // A runner label chosen at run time from an input or variable could name the smoke label from any workflow.
+  if (path !== ".github/workflows/trusted-mac.yml") for (const route of runsOnBlocks(text)) {
+    if (path === RUNNER_SMOKE_PATH && route === RUNNER_SMOKE_ROUTE) continue;
+    if (/\$\{\{[^}]*\b(?:inputs|github\.event\.inputs|vars|secrets|env|needs|steps)\b/.test(route)) problems.add("runner label chosen from an input or variable outside runner-smoke.yml");
+  }
   if (text.includes("\\")) for (const raw of decodedVariant(text).split("\n")) check(raw);
   return [...problems];
 }
