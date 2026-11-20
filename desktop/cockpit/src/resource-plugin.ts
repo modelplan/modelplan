@@ -12,7 +12,7 @@
 // cached) with a pressure strip, CPU 10-second bars (user / system) with a 70 % dashed line, disk bar with a 90 % notch.
 // The label/value lines stay as the fallback when a draw fails.
 //
-// No import of plugin-registry values: the registry imports this module for builtinPlugins (type imports are erased).
+// No import of plugin-registry values needed: plugin-builtins.ts lists this plugin (type imports are erased).
 import type {CockpitPlugin,PluginCell,PluginColumn,PluginContext,PluginDrawContext,PluginScreen,PluginWords} from './plugin-registry.js';
 
 export const RESOURCE_INK='#da66c2';

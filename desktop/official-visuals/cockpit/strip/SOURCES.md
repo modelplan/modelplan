@@ -36,3 +36,14 @@ Copyright (c) 2026 ModelPlan. The owner approved these exact synthetic-design he
 | wordmark@3x.png | `d8271e66f5c80cb2e857fa4941175f1164b584f6cde09a04093618b90d319cd6` |
 
 `detach.svg` and `put-back.svg` were redrawn for the menu-bar launch rack (owner D181/D187, 2026-11-12): icon option 3, a launch tower with a swing arm, showing the key's action (attached: the arm swung down, press to detach; detached: the arm holding the rocket, press to put back). The paths are copied unchanged from the accepted demo `menubar-rack-v8.html` (confirm folder 2026-11-12).
+
+## WP-10 header assets (2026-11-18)
+
+The owner approved the round 3 header layout on 2026-11-18 (confirm folder `08-header-layout-WP-10-0`, `SPEC.md` R3). These four assets are cropped from the owner's transparent source images and area-averaged to @3x with colour premultiplied by alpha (spec R3.1 and R3.3). Crop boxes are in source pixels (left, top, right, bottom): the open switch from `exec-af2b38c8-5664-4091-a4ae-ebb6672f9f73.png` (145, 55, 2025, 671), the closed switch from `exec-acb733d3-d482-4042-9480-a098b6940be7.png` (97, 95, 1892, 703, stretched 3.4 % wider into the open frame so both states share one frame), the unselected key from the left key and the selected key from the middle key of `exec-850ac0eb-3ea6-48ac-af26-100cb61f6cca.png` ((72, 326, 740, 656) and (753, 326, 1421, 656)). The sources live in the private handoff store; the hashes below bind the exact bytes. `header.css` is the rules file and carries the reserved-licence comment; `strip.css` and its pinned hash are unchanged. The old slider art (`slider-track`, `shutter-material`, `thumb-open`, `thumb-closed`) is no longer drawn by the header and stays listed until a clean-up.
+
+| File | SHA-256 |
+| --- | --- |
+| porthole-switch-open@3x.png | `5628e2f7f97da2dbb06e15266e524969c9f958e1befe616319ce3d3756930db4` |
+| porthole-switch-closed@3x.png | `8798983b0c62bf4cc1e84b99a8bcb4cda4ef98e3ff63ce52de47b27bac76ded8` |
+| date-key-normal@3x.png | `a096e46cd80f36fac698da91770c520e0efacda07a050984ccb84bc7be8f06f1` |
+| date-key-selected@3x.png | `3a20ae9edc6c41fe343fdcb8ebab268c83da093fc6d80a82523485e75f78d1e9` |

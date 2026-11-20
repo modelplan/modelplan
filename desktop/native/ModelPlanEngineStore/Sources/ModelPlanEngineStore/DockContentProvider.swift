@@ -11,6 +11,9 @@ public struct DockContentSnapshot: Sendable {
     /// Rows that carry the Settings surface, including a failed reader with no account (SET-9-42).
     public let settingsRows: [RowsRow]
     public let summary: RowsRowsSummary?
+    /// The producer's run-out forecasts from the same delivery (WP-03), for the widget card's "out ~40m" (WP-15).
+    /// The provider admits one only for a current window of the same verified subscription.
+    public var forecasts: [WireCockpitForecast] = []
 }
 /// Presentation fanout over the native store's already-admitted rows, never a protocol reducer.
 @MainActor public final class EngineDockMenuProvider: EngineStoreSink {
@@ -49,7 +52,8 @@ public struct DockContentSnapshot: Sendable {
                             dockRows: rows?.rows.filter { $0.surfaces.contains(.dock) } ?? [],
                             menuRows: rows?.rows.filter { $0.surfaces.contains(.menu) } ?? [],
                             settingsRows: rows?.rows.filter { $0.surfaces.contains(.settings) } ?? [],
-                            summary: rows?.rowsSummary)
+                            summary: rows?.rowsSummary,
+                            forecasts: rows?.forecasts ?? [])
         dockContentDidChange?()
     }
 }

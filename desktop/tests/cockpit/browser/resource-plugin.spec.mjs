@@ -23,6 +23,7 @@ async function open(page,{plugins={version:1,entries:[],settings:{}},locale='en'
  expect(await receive(send('display',{data:data2()}))).toBe(true);
  return {send,receive,push:samples=>receive(send('pluginData',{id:'resources',data:{samples}}))};
 }
+const CAL_OFF={id:'calendar',enabled:false,pinned:false};
 const column=page=>page.locator('.eng-cols .pl-col[data-plugin="resources"]');
 const key=page=>page.locator('.eng-keys .pl-key[data-plugin="resources"]');
 const running=page=>page.evaluate(()=>window.__events.filter(e=>e.type==='action'&&e.action==='pluginsRunning').map(e=>e.ids));
@@ -32,8 +33,9 @@ test('D324 default on, drawn only for a host that sent plugin state; the column 
  const first=await open(page,{plugins:null});
  await expect(column(page)).toHaveCount(0);
  await expect(page.locator('.eng-keys .ek-bay')).toHaveCount(1);
- // The host sends its (empty) plugin state: the default-on resource plugin takes the free slot and starts running.
- expect(await first.receive(first.send('plugins',{plugins:{version:1,entries:[],settings:{}}}))).toBe(true);
+ // The host sends its plugin state without a resources entry: the default-on resource plugin takes the free slot and
+ // starts running (the calendar, also default on, is kept off here so the running set is the resource plugin's alone).
+ expect(await first.receive(first.send('plugins',{plugins:{version:1,entries:[CAL_OFF],settings:{}}}))).toBe(true);
  expect(await first.receive(first.send('display',{data:data2()}))).toBe(true);
  await expect(column(page)).toHaveCount(1);
  await expect(column(page)).toHaveAttribute('data-running','true');
@@ -44,7 +46,7 @@ test('D324 default on, drawn only for a host that sent plugin state; the column 
  expect((await running(page)).at(-1)).toEqual([]);
  // Turned off: nothing runs and nothing is drawn.
  expect(await first.receive(first.send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
- expect(await first.receive(first.send('plugins',{plugins:{version:1,entries:[{id:'resources',enabled:false,pinned:false}],settings:{}}}))).toBe(true);
+ expect(await first.receive(first.send('plugins',{plugins:{version:1,entries:[CAL_OFF,{id:'resources',enabled:false,pinned:false}],settings:{}}}))).toBe(true);
  await expect(column(page)).toHaveCount(0);
  expect((await running(page)).at(-1)).toEqual([]);
 });

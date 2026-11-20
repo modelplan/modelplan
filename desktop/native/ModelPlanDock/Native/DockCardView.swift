@@ -220,8 +220,8 @@ import CryptoKit
         var rowY=y+pad.top
         let c=style.columns,g=style.columnGap
         highlightRects=[];tintRects=[];noticeRect=nil
-        let readings=value.rows.filter{$0.kind != .notice && $0.kind != .event && $0.kind != .footnote},notices=value.rows.filter{$0.kind == .notice}
-        let events=value.rows.filter{$0.kind == .event},footnotes=value.rows.filter{$0.kind == .footnote}
+        let readings=value.rows.filter{$0.kind != .notice && $0.kind != .event && $0.kind != .footnote && $0.kind != .alert},notices=value.rows.filter{$0.kind == .notice}
+        let events=value.rows.filter{$0.kind == .event},footnotes=value.rows.filter{$0.kind == .footnote},alerts=value.rows.filter{$0.kind == .alert}
         let noticeTextWidth=inner-style.noticePadding.left-style.noticePadding.right
         for (index,row) in readings.enumerated(){
             if index>0{rowY+=style.rowGap}
@@ -237,7 +237,9 @@ import CryptoKit
             let pluginInk=row.plugin.map{NSColor(srgbRed:$0.red,green:$0.green,blue:$0.blue,alpha:1)}
             let toneColor=pluginInk ?? statusColor
             let isReading=row.kind == .quota || row.kind == .extraQuota
-            let valueColor:NSColor = row.tone == .warning || row.tone == .critical ? statusColor : row.plugin != nil ? (row.emphasised ? style.ink:style.muted) : (isReading && row.remainingFraction == nil && row.tone == .unknown ? style.muted : style.ink)
+            // DOCK-3.2-50: an unknown tone is muted, also when a retained reading over an hour old keeps its number. A plugin
+            // row's number is full ink when its row is emphasised (variant A), secondary otherwise; amber/red keep their tone.
+            let valueColor:NSColor = row.tone == .warning || row.tone == .critical ? toneColor : row.plugin != nil ? (row.emphasised ? style.ink:style.muted) : (isReading && row.tone == .unknown ? style.muted : style.ink)
             var cells:[(view:NSView,x:CGFloat,width:CGFloat)]=[]
             var detailBelow:NSTextField?
             if row.kind == .quota || row.kind == .extraQuota{
@@ -379,6 +381,18 @@ import CryptoKit
             let rowView=rowViews[rowID] ?? DockCardRowView();rowViews[rowID]=rowView;place(rowView,in:self)
             rowView.setAccessibilityElement(true);rowView.setAccessibilityRole(.staticText);rowView.setAccessibilityLabel(row.value)
             let line=label(rowID+".value",row.value,font:small,color:style.muted,wraps:true);place(line,in:rowView)
+            let h=wrapped(line,width:inner);line.frame=CGRect(x:-2,y:0,width:inner+4,height:h)
+            for child in rowView.subviews where child !== line{child.removeFromSuperview()}
+            y+=style.eventGap;rowView.frame=CGRect(x:style.padding,y:y,width:inner,height:h);y+=h
+        }
+        // DOCK-3.8-52: the shared alert sentence closes the card, in its status ink, the plate's full width.
+        for row in alerts{
+            let rowID="row."+row.id
+            usedRows.insert(rowID)
+            let rowView=rowViews[rowID] ?? DockCardRowView();rowViews[rowID]=rowView;place(rowView,in:self)
+            rowView.setAccessibilityElement(true);rowView.setAccessibilityRole(.staticText);rowView.setAccessibilityLabel(row.value)
+            let colour=row.tone == .warning || row.tone == .critical ? (style.quota[row.tone] ?? style.ink) : style.muted
+            let line=label(rowID+".value",row.value,font:readoutSmall,color:colour,wraps:true);place(line,in:rowView)
             let h=wrapped(line,width:inner);line.frame=CGRect(x:-2,y:0,width:inner+4,height:h)
             for child in rowView.subviews where child !== line{child.removeFromSuperview()}
             y+=style.eventGap;rowView.frame=CGRect(x:style.padding,y:y,width:inner,height:h);y+=h

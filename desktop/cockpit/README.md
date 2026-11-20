@@ -142,6 +142,27 @@ page. The page has no timers; the host samples. Messages, all with the common he
 - page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's right-click Remove or the "+" menu.
 - page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
 
+Defaults: a default-on plugin (D121) is on only once the host has sent `plugins`; a page whose host never did draws the
+v1 table.
+
+Framework additions for the calendar (v1.1, all generic):
+
+- Host-side shaping: a plugin may declare `derive(display, now)`. While it runs, the page shapes its reading from the
+  `display` data it already has (no network, no new host message) on each render and deadline tick, through the
+  plugin's own `accept`. A host that pushes a valid `pluginData` for that plugin takes over: shaping stops for it.
+- Tick: a running plugin may name its next redraw (`nextDeadline(state, now)`, e.g. the next whole minute). The page
+  reports the earliest of its own deadlines and the plugins' in `nextDeadline`; the host's `tick` redraws the plugin.
+  `context.now` is the host's clock. No page timers, and a stopped plugin asks for nothing.
+- Settings kinds: the calendar has no settings, so `seconds` is still the only kind.
+
+Calendar (`src/calendar-plugin.ts`, `src/calendar-data.ts`, `src/calendar-time.ts`; CKP-PLG-06/07; D323): default on, no
+settings. The day strip (column) and the 7-day week grid (its big screen, opened from the key) are custom draws; the
+bottom line shows the time now, and a failed draw falls back to next reset / next peak / reset cards cells and plain
+lines. Its accept refuses data over 16 KiB as JSON, then runs the strict parser. Its data (`version`, optional `peakRules` `yes`/`no`/`unknown` (missing is unknown), `subs` ≤16, `peaks` ≤64, `resets` ≤64, `spans` ≤16, epoch-ms times, ≤16 KiB) is shaped
+from `display`: published peak windows (`details.peaks`, cockpitPeaksV1), the user's own 5 h (`session`) and weekly
+window resets, reset cards (verified subscriptions only) and announced/confirmed reset events, for the user's own rows
+only. A reset-card list the producer marks partial or truncated has no exact count and no expiry beyond the one it states; "No rules" is shown only when the peak feed is present and the user has no declared plan. The privacy barrier (clear) drops the plugin readings and the host takeover. All times are local; day boundaries are local midnights (DST days have 23/25 hours).
+
 A plugin marked `hostSampled` (the resource plugin) is laid out only after the host has sent its plugin state, so a
 host that cannot sample never shows an empty column.
 

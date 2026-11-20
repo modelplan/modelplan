@@ -4,7 +4,8 @@
 // column (CPU · 内存 · 磁盘 cells) and the big screen. Order CPU · memory · disk everywhere a list is drawn (board 11-20).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {PluginRegistry,builtinPlugins,PLUGIN_INKS} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
+import {PluginRegistry,PLUGIN_INKS} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
+import {builtinPlugins} from '../../../cockpit/.tmp/compiled/src/plugin-builtins.js';
 import {resourcePlugin,RESOURCE_INK,RESOURCE_WINDOW_MS,resourceLevels,chartData} from '../../../cockpit/.tmp/compiled/src/resource-plugin.js';
 import {tables} from '../../../cockpit/study/rocket-r1/i18n.js';
 import '../../../cockpit/study/rocket-r1/strings/plugins.js';

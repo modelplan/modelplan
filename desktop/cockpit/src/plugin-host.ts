@@ -19,9 +19,14 @@
 //
 // State: the host (Settings › Subscriptions › Plugins) owns the durable copy and sends it as a `plugins` message. Until
 // the host has sent one, page edits stay in this page only and nothing is posted, so an older host never sees an action
-// it does not know.
+// it does not know, and default-on plugins stay off (an older host's cockpit is the v1 table).
+//
+// Shaped data and ticks (v1.1 calendar): a running plugin with `derive` gets its reading shaped here from the display
+// data the page rendered, through its own `accept`, unless the host pushes readings for it. A running plugin with
+// `nextDeadline` names its next redraw; the view reports the earliest to the host, whose `tick` redraws it.
 import type {WireCockpitData,WireRow} from '../generated/wire.js';
-import {PLUGIN_TOKENS,PluginRegistry,builtinPlugins,type CockpitPlugin,type PluginCell,type PluginContext,type PluginDrawContext,type PluginLocale,type PluginWords} from './plugin-registry.js';
+import {PLUGIN_TOKENS,PluginRegistry,type CockpitPlugin,type PluginCell,type PluginContext,type PluginDrawContext,type PluginLocale,type PluginWords} from './plugin-registry.js';
+import {builtinPlugins} from './plugin-builtins.js';
 import {pluginLayout,type LayoutPage,type PluginLayout} from './plugin-layout.js';
 import {disablePlugin,emptyPluginState,enablePlugin,enabledPlugins,parsePluginState,pluginSettings,type PluginState} from './plugin-state.js';
 import {ht} from './host-text.js';
@@ -105,6 +110,12 @@ export interface PluginHost {
   openScreen(id:string|null):boolean;
   /** Plugins currently running (for tests and diagnostics). */
   running():string[];
+  /** The display data the page rendered, at the host's time: running plugins with `derive` get their shaped reading. */
+  display(data:WireCockpitData|null,now:number):void;
+  /** The host's deadline tick: running plugins are shaped and drawn again at `now`. */
+  tick(now:number):void;
+  /** The earliest redraw a running plugin asked for, or null. */
+  nextDeadline():number|null;
   dispose():void;
 }
 const hosts=new WeakMap<HTMLElement,PluginHost>();
@@ -118,7 +129,8 @@ export interface PluginReports {
 export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=new PluginRegistry(builtinPlugins)):PluginHost {
   let state:PluginState=emptyPluginState,negotiated=false,visible=false,interactive=false,disposed=false,locale:PluginLocale='en';
   let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement;title:HTMLElement;close:HTMLButtonElement;list:HTMLElement;area:HTMLElement;opening:boolean}|null=null;
-  const readings=new Map<string,unknown>(),columns=new Map<string,HTMLElement>(),running=new Set<string>(),placed=new Set<string>();
+  const readings=new Map<string,unknown>(),columns=new Map<string,HTMLElement>(),running=new Set<string>(),placed=new Set<string>(),hostFed=new Set<string>();
+  let shown:WireCockpitData|null=null,now=0;
   // D323 custom draw: per-plugin view memory, the size each area was last drawn at, and one observer that draws an area
   // again when its size changes (a column is drawn before its table is attached, so the first real size arrives here).
   const memos=new Map<string,Record<string,unknown>>(),drawnAt=new WeakMap<HTMLElement,{id:string;w:number;h:number}>();
@@ -152,8 +164,22 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   /** A plugin asked to be drawn again: its column and, when open, its screen. Ignored while a draw runs (no recursion). */
   function redrawPlugin(id:string) {if(drawing||disposed)return;redrawColumn(id);if(screen?.id===id)drawScreen();}
   const guard=<T>(fn:()=>T,fallback:T):T=>{try{return fn();}catch{return fallback;/* A plugin failure never takes the cockpit down. */}};
-  const context=(id:string):PluginContext=>({locale,settings:pluginSettings(state,registry,id),words:(key,vars)=>pluginWords(locale,key,vars)});
-  const enabled=(id:string)=>enabledPlugins(state,registry).some(p=>p.id===id);
+  const context=(id:string):PluginContext=>({locale,settings:pluginSettings(state,registry,id),now,memo:memo(id),words:(key,vars)=>pluginWords(locale,key,vars)});
+  // Before the host sent its plugin state, defaults do not apply (D121 default-on needs a host that knows plugins).
+  const active=()=>enabledPlugins(state,registry,negotiated);
+  const enabled=(id:string)=>active().some(p=>p.id===id);
+  /** A reading (host push or shaped here) through the plugin's own `accept`; redraws on success. */
+  function take(plugin:CockpitPlugin,data:unknown):boolean {
+    const next=guard(()=>plugin.accept(data,readings.get(plugin.id)),undefined);if(next===undefined)return false;
+    readings.set(plugin.id,next);redrawColumn(plugin.id);if(screen?.id===plugin.id)drawScreen();return true;
+  }
+  /** Shapes a running plugin's reading from the rendered display data (unless the host feeds it). */
+  function derive(id:string):boolean {
+    const plugin=registry.get(id);
+    if(!plugin?.derive||!shown||hostFed.has(id)||!running.has(id))return false;
+    const data=shown;let raw:unknown,ok=false;guard(()=>{raw=plugin.derive!(data,now);ok=true;},undefined);
+    return ok&&take(plugin,raw);
+  }
   const shouldRun=(id:string)=>!disposed&&visible&&placed.has(id)&&enabled(id);
   /** (Re)draws one plugin column's rows in place: one cell per table row, the bottom line, and the reserve row when the table has one. */
   function fill(column:HTMLElement,plugin:CockpitPlugin,rows:number,reserve:boolean) {
@@ -180,10 +206,10 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   }
   function reconcile() {
     for(const id of [...running])if(!shouldRun(id))running.delete(id);
-    for(const id of placed)if(shouldRun(id))running.add(id);
+    for(const id of placed)if(!running.has(id)&&shouldRun(id)){running.add(id);derive(id);}
     for(const [id,column] of columns)column.dataset.running=String(running.has(id));
     if(screen&&!enabled(screen.id))closeScreen();
-    if(negotiated&&!disposed){const ids=enabledPlugins(state,registry).map(p=>p.id).filter(id=>running.has(id)),key=ids.join();if(key!==reported){reported=key;report.running(ids);}}
+    if(negotiated&&!disposed){const ids=active().map(p=>p.id).filter(id=>running.has(id)),key=ids.join();if(key!==reported){reported=key;report.running(ids);}}
   }
   function changed(next:PluginState|null) {
     if(!next||disposed)return false;
@@ -277,7 +303,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     registry,
     state:()=>state,
     // A host-sampled plugin is laid out only once the host has sent its plugin state (it is the one that samples).
-    layout:subscriptions=>pluginLayout(subscriptions,enabledPlugins(state,registry).filter(p=>negotiated||!registry.get(p.id)?.hostSampled)),
+    layout:subscriptions=>pluginLayout(subscriptions,active().filter(p=>negotiated||!registry.get(p.id)?.hostSampled)),
     bindEngine(next){repaint=next;},
     decorate(table,page,value){
       locale=value;forget();placed.clear();columns.clear();
@@ -304,7 +330,9 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       });
       reconcile();if(screen)drawScreen();
     },
-    clearPlacement(){forget();pending=null;placed.clear();columns.clear();closeMenu();closeScreen();reconcile();},
+    // The privacy barrier (clear, new view revision): readings and host takeover go with the old view, so a cleared reading
+    // never comes back and the next display is shaped afresh (macrevc-844-2). A running plugin is sampled again by the host.
+    clearPlacement(){forget();pending=null;placed.clear();columns.clear();readings.clear();hostFed.clear();closeMenu();closeScreen();reconcile();},
     hold(){
       // Called again while the engine rebuilds (focus already dropped): an earlier hold stays until it is used, focus
       // moves elsewhere (focusin) or the plugin is no longer placed.
@@ -328,11 +356,28 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     deliver(id,data){
       const plugin=registry.get(id);
       if(!plugin||!running.has(id))return false;
-      const next=guard(()=>plugin.accept(data,readings.get(id)),undefined);if(next===undefined)return false;
-      readings.set(id,next);redrawColumn(id);if(screen?.id===id)drawScreen();return true;
+      if(!take(plugin,data))return false;
+      hostFed.add(id);return true;
     },
-    remove:id=>changed(disablePlugin(state,registry,id)),
-    add:id=>changed(enablePlugin(state,registry,id)),
+    display(data,at){
+      shown=data;now=at;
+      for(const id of running)if(!derive(id)&&registry.get(id)?.nextDeadline){redrawColumn(id);if(screen?.id===id)drawScreen();}
+    },
+    tick(at){
+      now=at;
+      for(const id of running)if(!derive(id)&&registry.get(id)?.nextDeadline){redrawColumn(id);if(screen?.id===id)drawScreen();}
+    },
+    nextDeadline(){
+      let next=Infinity;
+      for(const id of running){
+        const plugin=registry.get(id);if(!plugin?.nextDeadline)continue;
+        const at=guard(()=>plugin.nextDeadline!(readings.get(id),now),null);
+        if(typeof at==='number'&&Number.isSafeInteger(at)&&at>now)next=Math.min(next,at);
+      }
+      return Number.isFinite(next)?next:null;
+    },
+    remove:id=>changed(disablePlugin(state,registry,id,negotiated)),
+    add:id=>changed(enablePlugin(state,registry,id,negotiated)),
     openMenu(anchor,options){
       if(disposed||!interactive)return false;
       if(menu&&menuAnchor===anchor){closeMenu();return true;}closeMenu();
@@ -357,7 +402,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     closeMenu:()=>closeMenu(),
     openScreen,
     running:()=>[...running],
-    dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();memos.clear();pending=null;watch?.disconnect();document.removeEventListener('focusin',moved,true);document.removeEventListener('keydown',escape,true);hosts.delete(root);},
+    dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();memos.clear();pending=null;hostFed.clear();shown=null;watch?.disconnect();document.removeEventListener('focusin',moved,true);document.removeEventListener('keydown',escape,true);hosts.delete(root);},
   };
   hosts.set(root,host);
   return host;
