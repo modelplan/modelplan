@@ -693,3 +693,16 @@ test("decide: a shadow or otherwise ineligible ancestor leaves the first countin
   assert.equal(decide({ comments: [rec(OLD, "macrevb")] }).since, OLD, "an eligible earlier review still selects the delta");
   assert.equal(decide({ comments: [rec(BASE, "macrevb"), rec(OLD, "ghsolshadow")] }).since, BASE, "the shadow after it does not move the scope");
 });
+
+// macrevb-1108-2 (round 2): a trusted tier change while the model runs is honoured at post time.
+test("post: a tier change between prepare and post suppresses a provider that lost eligibility", () => {
+  const items = (cs) => R.feed(cs);
+  const post = (cs, over = {}) => S.postProblem({ pr: pr(), items: items(cs), head: H, lane: "ghsol", posted: "ghglm", tier: 1, files: t1, ...over });
+  assert.equal(post([]), null, "tier 1: ghglm may post");
+  assert.match(post([comment("REVIEW-TIER: 2")]), /may not decide tier 2/, "stale prepared tier 1, fresh override 2");
+  assert.equal(post([comment("REVIEW-TIER: 2")], { posted: "ghsol" }), null, "Sol still posts on tier 2");
+  assert.match(post([comment("REVIEW-TIER: 0")], { posted: "ghsol" }), /tier 0 needs no Sol review/);
+  assert.match(post([], { files: t2 }), /may not decide tier 2/, "the files moved the tier to 2");
+  assert.equal(post([comment("REVIEW-TIER: 2")], { files: null }), null, "without a file list only the prepared tier is known (the script always passes files)");
+  assert.match(readFileSync(join(root, "scripts/pr-review/sol-post.mjs"), "utf8"), /files, glmTiers/, "sol-post passes the fresh files");
+});

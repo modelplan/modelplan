@@ -271,9 +271,13 @@ export function renderSolComment({ answer, head, lane, mode, base, tier, meta = 
 // assigned meanwhile to another reviewer (REVIEWER:) or to the other provider, and in counting mode no other counting
 // verdict may have landed unless the run was forced. posted: the lane the verdict goes out under (postLane), or null for
 // the advisory wait note, which has no lane of its own. Returns null to post, else the reason.
-export function postProblem({ pr, items, head, lane, posted = lane, force = false, tier = 1, glmTiers = DEFAULT_GLM_TIERS }) {
+export function postProblem({ pr, items, head, lane, posted = lane, force = false, tier: preparedTier = 1, files = null, glmTiers = DEFAULT_GLM_TIERS }) {
   if (pr?.state !== "open") return `PR is ${pr?.state}`;
   if (String(pr.head?.sha ?? "").toLowerCase() !== head) return `head moved to ${pr.head?.sha ?? "?"} after the review of ${head}`;
+  // The tier is read again from the fresh feed and files (a trusted REVIEW-TIER while the model ran changes which lanes
+  // may decide); the prepared tier is only the fallback when the caller has no file list.
+  const tier = files ? tierOverride(items) ?? pathTier(prPaths(files)) : Number(preparedTier);
+  if (!SOL_TIERS.includes(tier)) return `tier ${tier} needs no Sol review`;
   const atHead = verdictLines(items).filter((v) => v.sha === head);
   const own = [...ownLanes(lane, tier, glmTiers), ...(posted ? [`(${posted})`] : [])];
   if (atHead.some((v) => own.includes(v.lane))) return `(${posted ?? lane}) already has a verdict at ${head}`;
