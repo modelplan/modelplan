@@ -256,10 +256,10 @@ test('"+" menu: detected tools first, then all subscriptions; plugins below; Add
  await expect(menu.locator('.pm-connect .pm-st')).toHaveText(['Detected','Not connected']);
  await expect(menu.locator('[data-pm-all]')).toHaveText('All subscriptions…');
  await expect(menu.locator('[data-pm-plugin="placeholder"]')).toContainText('Add');
- // Escape closes and returns focus; a connect item asks the host for Settings, as the empty slot did before.
+ // Escape closes and returns focus; a connect item asks the host for Settings > Subscriptions (CKP-ENG-24).
  await page.keyboard.press('Escape');await expect(menu).toHaveCount(0);await expect(plus).toBeFocused();
  await plus.click();await menu.locator('[data-pm-row="gemini-cli"]').click();
- expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').map(e=>e.action))).toEqual(['openSettings']);
+ expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').map(e=>e.action))).toEqual(['openSettingsSubscriptions']);
  await plus.click();await menu.locator('[data-pm-plugin="placeholder"]').click();
  await expect(menu).toHaveCount(0);
  await expect(column(page)).toHaveCount(1);
