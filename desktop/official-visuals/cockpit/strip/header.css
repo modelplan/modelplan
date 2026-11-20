@@ -21,7 +21,7 @@
 :root[lang="en"] .ck-head .rk{font-weight:600;font-size:10.5px;letter-spacing:.01em}
 .ck-head .rk-cap{position:absolute;left:1px;top:14.5px;width:34.33px;height:17px;pointer-events:none;background:url('./assets/date-key-normal@3x.png') 0 0/34.33px 17px no-repeat}
 .ck-head .rk-cap::after{content:"";position:absolute;inset:0;background:url('./assets/date-key-selected@3x.png') 0 0/34.33px 17px no-repeat;opacity:0;transition:opacity .12s ease-out}
-.ck-head .rk-label{position:absolute;left:50%;top:3px;height:12px;width:max-content;transform:translateX(-50%);white-space:nowrap;text-align:center;pointer-events:none}
+.ck-head .rk-label{position:absolute;left:50%;top:0;height:12px;width:max-content;transform:translateX(-50%);white-space:nowrap;text-align:center;pointer-events:none}
 .ck-head .rk:hover:not([aria-checked=true]){color:#C9D0D6}
 .ck-head .rk:hover:not([aria-checked=true]) .rk-cap{filter:brightness(1.1)}
 .ck-head .rk:active .rk-cap::after{opacity:1}

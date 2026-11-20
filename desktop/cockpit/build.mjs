@@ -94,7 +94,7 @@ if (official) {
   css+='\n'+stripCss.toString('utf8');
   // WP-10 (owner 2026-11-18, round 3): the header layout rules, loaded after the approved strip stylesheet.
   const headerCss=await readFile(resolve(strip,'header.css'));
-  if(createHash('sha256').update(headerCss).digest('hex')!=='fd101dd9d2e29cc7b15d9520a7d0d2c8b18189790b700ce51ce66223c350e25a')throw Error('Unapproved cockpit header stylesheet');
+  if(createHash('sha256').update(headerCss).digest('hex')!=='137281e4061a6b61400f21b33a3bc37565416e8e3f90308d8b2f5ce1ea982c17')throw Error('Unapproved cockpit header stylesheet');
   css+='\n'+headerCss.toString('utf8');
   // G3-47: the released base-bell rasters (owner 2026-11-08), each checked against the reserved-visuals registry.
   const bells=resolve(assets,'cockpit/bells'),bellFiles=['bell-night-2x.png','bell-night-3x.png','bell-silver-2x.png'];

@@ -78,7 +78,7 @@ test('WP-10 the porthole switch has the same frame open and closed, a click togg
  expect([a.open.opacity,a.closed.opacity]).toEqual([1,0]);
  expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);
  await expect(page.locator('[data-shutter]')).toHaveAttribute('aria-pressed','true');
- await expect.poll(async()=>{await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));return (await frame()).closed.opacity;},{timeout:10000}).toBe(1);
+ await expect.poll(async()=>{await page.screenshot({clip:{x:0,y:0,width:8,height:8}});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));return (await frame()).closed.opacity;},{timeout:10000}).toBe(1);
  const b=await frame();
  expect([b.open.opacity,b.closed.opacity]).toEqual([0,1]);
  // the frame is identical in both states: same box, same layer geometry, same size of art
@@ -164,14 +164,23 @@ test('WP-10 the date keys are live again once a usage source reports',async({pag
 
 // macrev2-1056-2: the switch toggles on a click only; a drag that starts and ends on it does nothing.
 for(const profile of ['open','closed'])
-test(`WP-10 a drag across the porthole switch never toggles it (${profile}); click and keyboard each toggle once`,async({page})=>{
+test(`WP-10 a drag across or out and back on the porthole switch never toggles it (${profile}); click and keyboard each toggle once`,async({page})=>{
  await open(page,{profile});
  const toggles=()=>page.evaluate(()=>window.__ev.filter(e=>e.type==='action'&&e.action==='shutterToggle').length);
  const box=await page.locator('[data-shutter]').boundingBox(),y=box.y+box.height/2;
  await page.mouse.move(box.x+9,y);await page.mouse.down();await page.mouse.move(box.x+box.width/2,y,{steps:6});await page.mouse.move(box.x+box.width-9,y,{steps:6});await page.mouse.up();
  expect(await toggles()).toBe(0);
- await page.mouse.click(box.x+box.width/2,y);expect(await toggles()).toBe(1);
- await page.locator('[data-shutter]').focus();await page.keyboard.press(profile==='open'?'ArrowRight':'ArrowLeft');expect(await toggles()).toBe(2);
+ // out and back: the press travels away (over the switch and beyond it) and releases on its press point
+ await page.mouse.move(box.x+9,y);await page.mouse.down();await page.mouse.move(box.x+box.width-9,y,{steps:6});await page.mouse.move(box.x+box.width+30,y+20,{steps:4});await page.mouse.move(box.x+9,y,{steps:8});await page.mouse.up();
+ expect(await toggles()).toBe(0);
+ // a short wobble inside the 4 px threshold is still a click
+ await page.mouse.move(box.x+20,y);await page.mouse.down();await page.mouse.move(box.x+22,y+1);await page.mouse.up();
+ expect(await toggles()).toBe(1);
+ // after a drag the next stationary click works (the latch does not stick)
+ await page.mouse.move(box.x+9,y);await page.mouse.down();await page.mouse.move(box.x+60,y,{steps:4});await page.mouse.up();
+ expect(await toggles()).toBe(1);
+ await page.mouse.click(box.x+box.width/2,y);expect(await toggles()).toBe(2);
+ await page.locator('[data-shutter]').focus();await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowLeft');expect(await toggles()).toBe(3);
 });
 
 // macrev2-1056-5: the footer key and the header keys show the same range at the same time, before the host echo.
@@ -223,4 +232,10 @@ test('WP-10 the community edition header stays one row and shows no date keys',a
   await expect(page.locator('.ck-head .ck-range')).toBeHidden();
   for(const s of ['[data-shutter]','[data-settings]','[data-detach]','[data-close]'])await expect(page.locator(s)).toBeVisible();
  }finally{server.close();}
+});
+
+// macrevb-1056-5: the date label line starts 3 pt above the header content box, as in the R3 mock (y -3).
+test('WP-10 the date label line box starts at header y -3',async({page})=>{
+ await open(page);
+ for(const k of ['today','7d','30d']){const l=await rel(page,`[data-range-key="${k}"] .rk-label`);near(l.y,-3,0.6);}
 });

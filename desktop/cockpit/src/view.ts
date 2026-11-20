@@ -47,8 +47,14 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
  const shutter=root.querySelector<HTMLButtonElement>('[data-shutter]')!;
  const requestShutter=(closed:boolean)=>{if(active&&nativeShell&&!nativeShell.forcedClosed&&(nativeShell.profile==='closed')!==closed)action('shutterToggle');};
- let shutterDown:{x:number;y:number}|null=null;shutter.onpointerdown=e=>{shutterDown={x:e.clientX,y:e.clientY};};shutter.onclick=e=>{const down=shutterDown;shutterDown=null;if(!e.isTrusted||(down&&e.detail>0&&Math.hypot(e.clientX-down.x,e.clientY-down.y)>4))return;requestShutter(nativeShell?.profile!=='closed');}; // WP-10: a click toggles; the old slider drag is gone
- shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.key==='ArrowLeft'||e.key==='Home'?false:null;if(target!==null&&e.isTrusted){e.preventDefault();requestShutter(target);}};
+ // WP-10: a click toggles. A press that travels past 4 px at any moment is a drag and never toggles, even when it ends
+// back on the switch; a cancelled press is a drag too. The latch is set from window-level moves so travel outside the switch counts.
+let shutterGesture:{x:number;y:number;dragged:boolean}|null=null,shutterLatched=false;
+const shutterMove=(e:PointerEvent)=>{if(shutterGesture&&Math.hypot(e.clientX-shutterGesture.x,e.clientY-shutterGesture.y)>4)shutterGesture.dragged=true;};
+const shutterEnd=(e:PointerEvent)=>{shutterMove(e);if(shutterGesture){shutterLatched=shutterGesture.dragged||e.type==='pointercancel';shutterGesture=null;}window.removeEventListener('pointermove',shutterMove);window.removeEventListener('pointerup',shutterEnd);window.removeEventListener('pointercancel',shutterEnd);};
+shutter.onpointerdown=e=>{shutterLatched=false;shutterGesture={x:e.clientX,y:e.clientY,dragged:false};window.addEventListener('pointermove',shutterMove);window.addEventListener('pointerup',shutterEnd);window.addEventListener('pointercancel',shutterEnd);};
+shutter.onclick=e=>{const latched=e.detail>0&&shutterLatched;shutterLatched=false;if(!e.isTrusted||latched)return;requestShutter(nativeShell?.profile!=='closed');};
+shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.key==='ArrowLeft'||e.key==='Home'?false:null;if(target!==null&&e.isTrusted){e.preventDefault();requestShutter(target);}};
  // WP-10: the header date keys. Until the app-owned range (WP-09) lands the keys only show the request locally.
  const headerRange=mountHeaderRange(root,range=>{if(requestRange(range))deck.range(range);else headerRange.set(nativeShell?.range??INITIAL_RANGE);},INITIAL_RANGE);
  const attach=root.querySelector<HTMLButtonElement>('[data-detach]')!,close=root.querySelector<HTMLButtonElement>('[data-close]')!;
