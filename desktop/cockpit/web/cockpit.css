@@ -352,6 +352,12 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .mfd-screen .pl-screen-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mfd-screen .pl-screen-x{flex:none;padding:2px 8px;border:0;border-radius:4px;background:linear-gradient(180deg,var(--key-1),var(--key-2));box-shadow:var(--raised);font:500 10px/14px var(--f-silk);color:var(--silk-hi)}
 .mfd-screen .pl-screen-l{margin:0;display:grid;row-gap:6px}
+/* The screen is a <section>: take pointer events back from the prototype's `.ck:not(.open) section` rule (Close, drawn controls). */
+#cockpit .mfd-screen .pl-screen{pointer-events:auto}
+/* D323 custom draw: the one area a plugin paints in (a column's cell rows, the screen body), clipped by the host. */
+.ck-eng .pl-draw{position:relative;min-width:0;min-height:0;overflow:hidden;contain:strict;color:var(--lcd-ink)}
+.mfd-screen .pl-screen-d{position:relative;flex:1 1 auto;min-width:0;min-height:0;overflow:hidden;contain:strict}
+.mfd-screen .pl-screen-l[hidden],.mfd-screen .pl-screen-d[hidden]{display:none}
 .mfd-screen .pl-screen-l div{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--lcd-rule);padding-top:5px;font:400 11px/14px var(--f-lcd)}
 .mfd-screen .pl-screen-l dt{color:var(--lcd-muted)}.mfd-screen .pl-screen-l dd{margin:0;color:var(--lcd-ink);font-variant-numeric:tabular-nums}
 .pl-menu{position:fixed;z-index:10020;width:238px;padding:5px;border-radius:8px;background:var(--pop-solid);box-shadow:var(--pop-shadow),inset 0 0 0 1px var(--pop-line);font:400 11px/1 var(--f-silk);color:var(--pop-ink);pointer-events:auto}
