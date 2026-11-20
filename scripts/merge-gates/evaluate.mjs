@@ -12,7 +12,8 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
 import { HOSTED_WORKFLOWS } from "./hosted.mjs";
-import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
+import { createHash } from "node:crypto";
+import { CARRY_CONTEXT, CONTEXT, FAILURE, carryStatus, dataSyncRunId, parseFallbackUntil, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -20,7 +21,8 @@ const flag = (name) => { const i = argv.indexOf(name); return i < 0 ? null : arg
 const dryRun = argv.includes("--dry-run");
 const repo = env.GITHUB_REPOSITORY || "modelplan/modelplan";
 const cwd = flag("--repo-dir") ?? process.cwd();
-const gh = client({ token: env.GITHUB_TOKEN, repo });
+// GITHUB_API_URL is set by Actions (https://api.github.com); tests point it at a local fake.
+const gh = client({ token: env.GITHUB_TOKEN, repo, ...(env.GITHUB_API_URL ? { api: env.GITHUB_API_URL } : {}) });
 const conf = parseDesignConf(readFileSync(new URL("./design-paths.conf", import.meta.url), "utf8"));
 const tiers = tiersFrom(() => readFileSync(new URL(`../../${TIER_TABLE}`, import.meta.url), "utf8"));
 const MAIN = "refs/remotes/origin/main";
@@ -34,10 +36,27 @@ function log(obj) {
 
 if (!tiers.size) log({ warning: `${TIER_TABLE} unreadable: every scenario needs evidence` });
 
-async function post(sha, result) {
+async function post(sha, result, { carry = false } = {}) {
   log({ sha, ...result, dryRun });
   if (dryRun) return;
+  // A PR head gets the machine-readable carry status FIRST (round 3): a revoked carry is withdrawn before the gate state that
+  // depended on it can change, and readers never take it from the human description.
+  if (carry) await gh.post(`/statuses/${sha}`, { ...carryStatus(result), context: CARRY_CONTEXT, target_url: runUrl });
   await gh.post(`/statuses/${sha}`, { state: result.state, context: CONTEXT, description: description(result.why), target_url: runUrl });
+}
+
+// Round 3 (Sol): every input a PR evaluation reads that can change at the same head (trusted and untrusted comments with
+// their edit times, reviews, the head's commit statuses other than our own, the PR body/title/draft/base and the head),
+// as one hash. A writer publishes, then re-reads it: if it changed since the evaluation read it, the result may be stale
+// and the PR is evaluated again (at most 4 rounds). Whichever writer finishes last therefore posted from inputs that were
+// still current after its own post, so a stale result never stays on the head, whatever concurrency group it ran in.
+async function inputsKey(number) {
+  const [pr, comments, reviews] = await Promise.all([gh.get(`/pulls/${number}`), gh.all(`/issues/${number}/comments`), gh.all(`/pulls/${number}/reviews`)]);
+  const statuses = (await gh.get(`/commits/${pr.head.sha}/status`)).statuses ?? [];
+  const key = JSON.stringify([pr.head.sha, pr.state, pr.draft, pr.base?.ref, pr.title, pr.body,
+    comments.map((c) => [c.id, c.updated_at, c.user?.id, c.body]), reviews.map((r) => [r.id, r.submitted_at, r.state, r.user?.id, r.body]),
+    statuses.filter((x) => x.context !== CONTEXT && x.context !== CARRY_CONTEXT).map((x) => [x.context, x.state, x.updated_at]).sort()]);
+  return createHash("sha256").update(key).digest("hex");
 }
 
 const carryCache = new Map();
@@ -147,12 +166,19 @@ async function prResult(number) {
 }
 
 async function evaluatePrAndPost(number) {
-  const { pr, result } = await prResult(number);
-  if (pr.state !== "open") return log({ pr: number, skipped: `PR is ${pr.state}` });
-  // Never publish a verdict for a head that moved while we were reading: the newer event re-evaluates it.
-  const now = await gh.get(`/pulls/${number}`);
-  if (now.head.sha !== result.head) return log({ pr: number, skipped: "head moved during evaluation" });
-  await post(result.head, { pr: number, ...result });
+  for (let round = 1; round <= 4; round++) {
+    const before = await inputsKey(number);
+    const { pr, result } = await prResult(number);
+    if (pr.state !== "open") return log({ pr: number, skipped: `PR is ${pr.state}` });
+    // Never publish a verdict for a head that moved while we were reading: the newer event re-evaluates it.
+    const now = await gh.get(`/pulls/${number}`);
+    if (now.head.sha !== result.head) return log({ pr: number, skipped: "head moved during evaluation" });
+    await post(result.head, { pr: number, ...result }, { carry: true });
+    if (dryRun || (await inputsKey(number)) === before) return;
+    log({ pr: number, reevaluate: `inputs changed during evaluation round ${round}` });
+  }
+  // Still changing after 4 rounds: the latest change's own event re-evaluates it (its job runs after this one or reads later).
+  log({ pr: number, warning: "inputs kept changing; the next event re-evaluates" });
 }
 
 async function evaluateGroupAndPost(groupSha) {

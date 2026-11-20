@@ -12,6 +12,16 @@
 
 import referenceMap from "./reference-map.json" with { type: "json" };
 export const CONTEXT = "modelplan-gates";
+// Round 3 (Sol): the machine-readable carry signal, a second status the gate writes from the EVALUATED carry (never from
+// diagnostic text): "carried <source sha40> -> <head sha40> (<kind>)" or "none -> <head sha40>", always state success so it
+// never gates anything. Coordinator readers use only this (gate-auth.sh GATE_CARRY_JQ), and only when the head matches.
+export const CARRY_CONTEXT = "modelplan-gates-carry";
+export const CARRY_KINDS = Object.freeze(["verdict-carry", "auto-carry", "carry-forward"]);
+export function carryStatus(result) {
+  const c = result?.carry;
+  if (c && SHA.test(c.from ?? "") && CARRY_KINDS.includes(c.kind)) return { state: "success", description: `carried ${c.from} -> ${result.head} (${c.kind})` };
+  return { state: "success", description: `none -> ${result?.head}` };
+}
 // The repository whose runs count; evaluate.mjs passes GITHUB_REPOSITORY, this is the default.
 export const REPO = "modelplan/modelplan";
 // Every lane posts through this account; anybody can comment on a public repo, so nothing else counts.
@@ -242,7 +252,9 @@ export function autoCarry(items, head, prove = () => ({ ok: false })) {
 // form a producer/consumer pair across the sides (CARRY_FORWARD; the coordinator runs this same code from main, carry-proof.mjs).
 // The record counts only for the exact head it names (a moved head ignores it), and only when the latest trusted VERDICT
 // line on the PR is a merge naming the approved head. CI at the head and the merge-group CI stay required as always.
-const COCKPIT_UNIT = /^desktop\/cockpit\/|^desktop\/native\/ModelPlanCockpit(Web|Shell)\/|^desktop\/official-visuals\/cockpit|^desktop\/tests\/cockpit\/|^source-policy\.json$/;
+// Round 3 (Sol): the unit includes the cockpit payload's producer side too: the CLI wire types and schema generator, the
+// published app-cli schema and the generated Swift bindings (desktop/cockpit/generated is already inside desktop/cockpit/).
+const COCKPIT_UNIT = /^desktop\/cockpit\/|^desktop\/native\/ModelPlanCockpit(Web|Shell)\/|^desktop\/official-visuals\/cockpit|^desktop\/tests\/cockpit\/|^source-policy\.json$|^cli\/internal\/appserver\/wire(schema)?\/|^schema\/app-cli\/|^clients\/swift\/ModelPlanWire\//;
 export const CARRY_FORWARD = Object.freeze({
   // a path changed on BOTH sides that matches one of these refuses
   hot: Object.freeze([
@@ -623,7 +635,7 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], req
     else if (!OK_CONCLUSIONS.has(r.conclusion)) failed.push(`${r.name} ${r.conclusion}`);
   }
   for (const s of statuses) {
-    if (s.context === CONTEXT) continue;
+    if (s.context === CONTEXT || s.context === CARRY_CONTEXT) continue;
     if (s.state === "pending") waiting.push(s.context);
     else if (s.state !== "success") failed.push(`${s.context} ${s.state}`);
   }
@@ -758,7 +770,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   if (gap) notes.push(gap);
   const refNote = referenceProblem(pr, paths);
   if (refNote) notes.push(refNote);
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried, ...(auto ? { autoCarried: auto.from } : {}), ...(fwd ? { carriedForward: fwd.from } : {}), glmFallback: fb.used, notes };
+  const carry = chain.length ? { from: chain.at(-1), kind: "verdict-carry" } : auto ? { from: auto.from, kind: "auto-carry" } : fwd ? { from: fwd.from, kind: "carry-forward" } : null;
+  const extra = { tier, design: design.touching ? design.surfaces : [], carried, carry, ...(auto ? { autoCarried: auto.from } : {}), ...(fwd ? { carriedForward: fwd.from } : {}), glmFallback: fb.used, notes };
   // The carry note names the head whose verdicts carried; coordinator readers take it (and only it) as the gate's accepted
   // carry for this exact head.
   const chainWhy = chain.length ? [`verdict carried from ${chain.at(-1).slice(0, 8)} (VERDICT-CARRY)`] : [];

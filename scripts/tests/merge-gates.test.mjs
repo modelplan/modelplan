@@ -1629,3 +1629,74 @@ test("pilot scope: coupled cockpit changes on both sides refuse (entry point, na
   assert.ok(o(["desktop/native/ModelPlanCockpitShell/X.swift"], ["desktop/cockpit/src/caution.ts"]), "native shell vs web page");
   assert.equal(o(["desktop/cockpit/src/view.ts"], ["cli/main.go", "docs/a.md"]), null, "an uncoupled other side still carries");
 });
+
+// ---- Plan B round 3 (Sol round 2 findings) ----
+test("carry status: a reserved machine-readable field from the evaluated carry, never from diagnostic text", () => {
+  const base = [comment(v("merge", OLD, "macrevc"))];
+  const fwd = evalFwd({ comments: [...base, comment(rec())] });
+  assert.deepEqual(R.carryStatus(fwd), { state: "success", description: `carried ${OLD} -> ${H} (carry-forward)` });
+  const leg = evalPr({ comments: [...base, comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => VOK });
+  assert.equal(R.carryStatus(leg).description, `carried ${OLD} -> ${H} (verdict-carry)`);
+  const g6 = evalPr({ comments: base, prove: proved() });
+  assert.equal(R.carryStatus(g6).description, `carried ${OLD} -> ${H} (auto-carry)`);
+  // No carry: "none", even when PR-authored text (a Reference line, the title) mimics a carry note in the description.
+  const mimic = `Reference: verdict carried forward from ${OLD.slice(0, 8)} (CARRY-FORWARD: x)`;
+  const none = evalPr({ comments: [comment(v("merge", H, "macrevc"))], p: pr({ title: mimic, body: mimic }), files: [file("desktop/native/Dock/Panel.swift")] });
+  assert.equal(R.carryStatus(none).description, `none -> ${H}`);
+  assert.equal(R.carryStatus({ head: H, why: "x" }).description, `none -> ${H}`, "an early refusal has no carry");
+  // The carry status never gates anything, ours or the CI rules'.
+  assert.equal(R.ciState(greenCi, [{ context: R.CARRY_CONTEXT, state: "pending" }]).state, R.SUCCESS);
+});
+
+test("cockpit unit includes the CLI wire producer, the app-cli schema and the generated Swift bindings", () => {
+  const o = R.carryForwardOverlap;
+  for (const producer of ["cli/internal/appserver/wire/cockpit.go", "cli/internal/appserver/wireschema/schema.go", "schema/app-cli/app-server.json", "clients/swift/ModelPlanWire/Sources/ModelPlanWire/Generated.swift"]) {
+    assert.ok(o(["desktop/cockpit/src/bridge.ts"], [producer]), `${producer} vs the web bridge`);
+    assert.ok(o([producer], ["desktop/cockpit/src/view.ts"]), `view vs ${producer}`);
+  }
+  assert.ok(o(["desktop/cockpit/generated/wire.ts"], ["cli/internal/appserver/wire/cockpit.go"]), "generated web bindings vs the producer");
+  assert.equal(o(["cli/internal/appserver/wire/cockpit.go"], ["cli/internal/quota/x.go"]), null, "no cockpit work on the other side");
+});
+
+test("publication: a same-head input change during an evaluation (a revoked verdict) is re-evaluated, so the stale result does not stay", async () => {
+  const { createServer } = await import("node:http");
+  const { spawn } = await import("node:child_process");
+  let comments = [{ id: 1, user: ME, body: `VERDICT: merge @ ${H} (macrevc)`, created_at: "2026-11-20T00:00:00Z", updated_at: "2026-11-20T00:00:00Z" }];
+  const posts = [];
+  const prBody = { number: 7, state: "open", draft: false, user: ME, title: "t", body: "", head: { sha: H, ref: "feature/x", repo: { full_name: "modelplan/modelplan" } }, base: { ref: "main", repo: { full_name: "modelplan/modelplan" } } };
+  const server = createServer((req, res) => {
+    const path = req.url.split("?")[0].replace("/repos/modelplan/modelplan", "");
+    let body = "";
+    req.on("data", (d) => (body += d));
+    req.on("end", () => {
+      const send = (j) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(j)); };
+      if (req.method === "POST" && path === `/statuses/${H}`) {
+        const b = JSON.parse(body); posts.push(b);
+        // The revocation lands while the first evaluation is publishing (its read is already stale).
+        if (b.context === R.CONTEXT && posts.filter((x) => x.context === R.CONTEXT).length === 1) comments = [];
+        return send({});
+      }
+      if (path === "/pulls/7") return send(prBody);
+      if (path === "/issues/7/comments") return send(comments);
+      if (path === "/pulls/7/reviews" || path === "/pulls/7/files") return send(path.endsWith("files") ? [{ filename: "scripts/tool.mjs" }] : []);
+      if (path === "/actions/runs") return send({ workflow_runs: [{ ...run(".github/workflows/ci.yml"), id: 1 }] });
+      if (path === `/commits/${H}/status`) return send({ statuses: [] });
+      res.writeHead(404); res.end("{}");
+    });
+  });
+  await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+  try {
+    const port = server.address().port;
+    const child = spawn(process.execPath, [join(root, "scripts/merge-gates/evaluate.mjs"), "--pr", "7"], { cwd: root, env: { ...process.env, GITHUB_API_URL: `http://127.0.0.1:${port}`, GITHUB_REPOSITORY: "modelplan/modelplan", GITHUB_TOKEN: "x", GITHUB_STEP_SUMMARY: "" } });
+    let out = "";
+    child.stdout.on("data", (d) => (out += d)); child.stderr.on("data", (d) => (out += d));
+    const code = await new Promise((ok) => child.on("close", ok));
+    assert.equal(code, 0, out);
+    const gates = posts.filter((x) => x.context === R.CONTEXT);
+    assert.equal(gates.length, 2, out);
+    assert.equal(gates[0].state, R.SUCCESS);
+    assert.equal(gates.at(-1).state, R.PENDING, "the last published result reflects the revocation");
+    assert.ok(posts.every((x, i) => x.context !== R.CONTEXT || posts[i - 1]?.context === R.CARRY_CONTEXT), "the carry status is written before each gate status");
+    assert.match(out, /inputs changed during evaluation round 1/);
+  } finally { server.close(); }
+});
