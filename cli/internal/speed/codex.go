@@ -151,7 +151,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 			p.record = nil
 			if sameUsage(recorded, usage) {
 				if n := len(t.reqs); n > 0 && t.reqs[n-1].out == *usage.Output {
-					t.reqs[n-1].TokenKinds.enrich(usage.kinds())
+					t.reqs[n-1].TokenKinds.enrichCodex(usage.kinds())
 				}
 				return
 			}
@@ -159,7 +159,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		if t.used {
 			// The token_count notice may add cache fields to the preceding usage record.
 			if n := len(t.reqs); n > 0 && t.reqs[n-1].out == *usage.Output {
-				t.reqs[n-1].TokenKinds.enrich(usage.kinds())
+				t.reqs[n-1].TokenKinds.enrichCodex(usage.kinds())
 			}
 			return
 		}
