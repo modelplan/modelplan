@@ -17,6 +17,7 @@ register('fad', {
   cardTry: ['lcd', '试 {e}', 'Try {e}'],
   cardNow: ['lcd', '当前 {e}', 'Now {e}'],
   cardNowUnknown: ['lcd', '当前未报告', 'Now ?'],
+  cardTryShare: ['lcd', '能{a} 费{c}', 'A{a} C{c}'],
   cardTrying: ['lcd', '试算中', 'Trying'],
   // One LCD state; cost/ability/speed text is retained for tooltip/accessibility facts.
   tryEffort: ['lcd', '试 {e}', 'Try {e}'],

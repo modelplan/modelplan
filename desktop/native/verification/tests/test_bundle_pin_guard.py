@@ -148,12 +148,12 @@ class BundlePinGuardTests(unittest.TestCase):
             guard.write(self.root)
 
     def package(self, pin):
-        app = self.root / 'ModelPlan Community.app'
+        app = self.root / 'ModelPlan.app'
         shutil.rmtree(app, ignore_errors=True)
         (app / 'Contents/MacOS').mkdir(parents=True)
         shutil.copytree(self.root / 'desktop/cockpit/.tmp/official', app / 'Contents/Resources/Cockpit')
         (app / 'Contents/Resources/build-edition.json').write_text('{"edition": "official", "stage": "owner-test"}')
-        (app / 'Contents/MacOS/ModelPlanCommunity').write_bytes(b'\0synthetic executable\0' + pin.encode() + b'\0')
+        (app / 'Contents/MacOS/ModelPlan').write_bytes(b'\0synthetic executable\0' + pin.encode() + b'\0')
         return app
 
     def test_packaged_app_must_ship_the_built_edition_and_carry_its_pin(self):

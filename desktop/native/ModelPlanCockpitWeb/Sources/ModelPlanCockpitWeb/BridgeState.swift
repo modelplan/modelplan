@@ -78,20 +78,34 @@ public struct CockpitAppearance: Equatable, Sendable {
     self.profile = profile
   }
 }
+/// CKP-SHELL-50 (WP-09): the one time range every range-dependent figure follows (usage, ≈cost, speed, share,
+/// ranking). The app owns it and keeps it across restarts; the menu bar, the title bar and the big-screen keys only
+/// show it and ask to change it. Quota, resets, alerts and sessions are "now" and never follow it. A fresh profile
+/// starts at 7d, the range the design's totals are drawn in (V1-FINAL §8.1 "7天 ≈$383 788M").
+public enum CockpitRange: String, CaseIterable, Equatable, Sendable {
+  case today, sevenDays = "7d", thirtyDays = "30d"
+  public static let initial: CockpitRange = .sevenDays
+  /// T cycles Today → 7d → 30d → Today.
+  public var next: CockpitRange {
+    switch self { case .today: return .sevenDays; case .sevenDays: return .thirtyDays; case .thirtyDays: return .today }
+  }
+}
 public struct CockpitShellState: Equatable, Sendable {
   public enum Profile: String, Sendable { case open, closed }
   public enum Tier: String, Sendable { case tall, compact }
   public let profile: Profile
   public let tier: Tier
   public let scope: String
+  /// CKP-SHELL-50: the app's range, sent with the shell so the page has it before its first render.
+  public let range: CockpitRange
   public let attached: Bool, forcedClosed: Bool
-  public init(closed: Bool, attached: Bool, forcedClosed: Bool, tier: Tier, scope: String = "all") {
-    self.tier = tier; self.scope = scope
+  public init(closed: Bool, attached: Bool, forcedClosed: Bool, tier: Tier, scope: String = "all", range: CockpitRange = .initial) {
+    self.tier = tier; self.scope = scope; self.range = range
     self.profile = closed || forcedClosed ? .closed : .open
     self.attached = attached; self.forcedClosed = forcedClosed
   }
   var fields: [String: Any] {
-    ["profile": profile.rawValue, "attached": attached, "forcedClosed": forcedClosed, "tier": tier.rawValue, "scope": scope]
+    ["profile": profile.rawValue, "attached": attached, "forcedClosed": forcedClosed, "tier": tier.rawValue, "scope": scope, "range": range.rawValue]
   }
 }
 public struct CockpitVisibility: Equatable, Sendable {
@@ -109,6 +123,11 @@ public enum CockpitIntent: Equatable, Sendable {
   /// D63: open the enlarged field focused on the rocket with this published display name (resolved by the host).
   case openFieldAt(String)
   case scopeSelect(String)
+  /// CKP-SHELL-50: the page asks the app for this range (big-screen key or T). The app decides and echoes it in the shell.
+  case rangeSelect(CockpitRange)
+  /// Owner D277 (CKP-ENG-27): read this shown member again, or every member for `all`. The host resolves the key
+  /// against its own members and asks the engine through the widget's per-member refresh.
+  case refreshMember(String)
   /// G3-56: the caution identities the owner has acknowledged by pressing the lamp. The coordinator keeps them.
   case cautionAck([String])
   /// D136: the favourite (long-press pinned) model ids, most recent first. The coordinator keeps them across restarts.
@@ -365,6 +384,22 @@ public final class CockpitBridgeState {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
     return try envelope("ignition", extra: ["on": on])
   }
+  /// WP-22 (macrevb-1062-3): the enlarged field's selection, a public model id (the page's identity bound: 1-128
+  /// characters, no control characters) or nil when it was cleared there. No receipt: the page only shows it.
+  public func setSelection(_ model: String?) throws -> String {
+    guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    guard model.map(Self.isPublicModelID) ?? true else { throw CockpitBridgeError.invalidMessage }
+    return try envelope("select", extra: ["model": model.map { $0 as Any } ?? NSNull()])
+  }
+  /// Owner 11-19 (#1062): the enlarged field closed (any close path); the page ignores the porthole click that bounces
+  /// off it. No receipt.
+  public func fieldClosed() throws -> String {
+    guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    return try envelope("fieldClosed")
+  }
+  static func isPublicModelID(_ id: String) -> Bool {
+    !id.isEmpty && id.utf16.count <= 128 && !id.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7f }
+  }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) throws -> String {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }
     // A newer display retires all prior unacknowledged display receipts.
@@ -560,7 +595,7 @@ public final class CockpitBridgeState {
       // Strict page sequence rejects replays without a lifetime action cap.
       if let earlyDisplay, sequence <= earlyDisplay.sequence { throw CockpitBridgeError.invalidMessage }
       let action = m["action"] as? String
-      let history = action == "openHistory", scope = action == "scopeSelect", website = action == "openWebsite", ack = action == "cautionAck" || action == "pinnedModels"
+      let history = action == "openHistory", scope = action == "scopeSelect" || action == "rangeSelect" || action == "refreshMember", website = action == "openWebsite", ack = action == "cautionAck" || action == "pinnedModels"
       let focusedField = action == "openField" && m["key"] != nil
       let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack ? ["action","ids"] : ["action"]
       guard Set(m.keys) == base.union(extra), ready, !blocked,
@@ -576,6 +611,13 @@ public final class CockpitBridgeState {
         guard let key=m["key"] as? String, scopeMembers.contains(key),
           earlyDisplay.map({ pending[$0.requestID]?.members.contains(key) == true }) ?? true else { throw CockpitBridgeError.invalidMessage }
         intent = .scopeSelect(key)
+      case "rangeSelect":
+        guard let key = m["key"] as? String, let range = CockpitRange(rawValue: key) else { throw CockpitBridgeError.invalidMessage }
+        intent = .rangeSelect(range)
+      case "refreshMember":
+        guard let key=m["key"] as? String, scopeMembers.contains(key),
+          earlyDisplay.map({ pending[$0.requestID]?.members.contains(key) == true }) ?? true else { throw CockpitBridgeError.invalidMessage }
+        intent = .refreshMember(key)
       case "openWebsite":
         guard let link = CockpitWebsiteLink(page: m["page"] as? String, value: m["value"] as? String) else { throw CockpitBridgeError.invalidMessage }
         intent = .openWebsite(link)

@@ -7,6 +7,7 @@
 import {shortLabel} from './short-label.js';
 import {t} from './i18n.js';
 import {tokShort, approxCost} from './mfd-pages/fmt.js';
+import {configShare} from './mfd-pages/views.js';
 import './strings/faders.js';
 
 export const LADDER = ['Low', 'Med', 'High', 'XHigh', 'Max'];
@@ -82,7 +83,7 @@ function channel(f, ui, colour) {
   const lamps = f.lamps || f.sessions, running = lamps.find(x => x.active && x.sub) || lamps.find(x => x.active);
   ch.session = running ? 'live' : f.live || f.recorded || f.use || lamps.length ? 'used' : 'off';
   ch.lampColour = running && running.sub ? colour.get(running.sub) || null : null;
-  ch.card = card(ch, f);
+  ch.card = card(ch, {...f, compact: !!ui.compact});
   return ch;
 }
 
@@ -117,11 +118,16 @@ export function card(c, f = {}) {
     lines.state = 'try';
     lines.tryLine = t('fad.cardTry', {e: fastOnly ? t(tr.fast ? 'fad.tryFast' : 'fad.tryStd') : tr.effort});
     lines.nowLine = c.cur ? t('fad.cardNow', {e: c.cur}) : t('fad.cardNowUnknown');
-    lines.eff = {cur: '', rec: '', note: t('fad.cardTrying')};
+    // D337 (owner, closes D190): on the short cockpit's small card the trial reads with letters, not colour alone:
+    // "A92 C55" / "能92 费55" = ability and cost as shares of the top effort. Colour stays for alerts. The full figures
+    // (cost, ability change) stay in the strip's accessible label.
+    const sh = f.compact && f.e ? configShare({e: f.e, rec: f.rec}, f.tier, tr.effort, !!(tr.fast ?? c.currentFast)) : null;
+    const pc = v => v == null ? '--' : String(Math.round(v * 100));
+    lines.eff = {cur: '', rec: '', note: sh ? clip(t('fad.cardTryShare', {a: pc(sh.abl), c: pc(sh.cost)})) : t('fad.cardTrying')};
     return lines;
   }
   if (use) {
-    const priced = typeof use.cost === 'number' && Number.isFinite(use.cost);
+    const priced = typeof use.cost === 'number' && Number.isFinite(use.cost) && use.cost > 0;
     lines.bigFull = priced ? approxCost(use.cost) : tokShort(use.tokens); lines.big = clip(lines.bigFull); lines.bigKind = priced ? 'cost' : 'tokens';
     // "1000B 100%" is 10 characters: the share (also drawn by the bar) drops off before the tokens are cut.
     const tok = tokShort(use.tokens), pct = pctOf(use.share) + '%';

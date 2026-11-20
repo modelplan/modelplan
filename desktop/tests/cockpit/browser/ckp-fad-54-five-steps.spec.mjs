@@ -205,6 +205,21 @@ test('CKP-FAD-54 re-dragging an open trial: the card follows the pointer, also b
  await expect(travel).toHaveAttribute('data-trial','');
 });
 
+// D337 (closes D190): on the short cockpit the card's trial readout is letters, not colour alone: "A97 C59" / "能97 费59" (shares of the top effort).
+for(const [locale,text,tryLine] of [['en','A97 C59','Try XHigh'],['zh-CN','能97 费59','试 XHigh']])
+test('D337 short cockpit: the trial card reads ability and cost with letters ('+locale+'), within 9 characters',async({page})=>{
+ await open(page,{locale,tier:'compact'});
+ const sol=card(page,'Sol 6.1'),strip=sol.locator('.fd-strip'),travel=sol.locator('[role=slider]');
+ await strip.click();await travel.focus();await page.keyboard.press('ArrowUp');
+ await expect(strip).toHaveAttribute('data-card','try');
+ const got=await lines(sol);
+ expect(got[1]).toBe(tryLine);expect(got[3]).toBe(text);
+ for(const l of got)expect([...l].length,l).toBeLessThanOrEqual(9);
+ expect(await strip.getAttribute('aria-label')).toMatch(/XHigh/); // the full accessible text stays
+ await page.keyboard.press('Escape');
+ await expect(strip).toHaveAttribute('data-card','normal');
+});
+
 test('CKP-FAD-54 a second click on the card, or a click on empty fader space, deselects; one model at a time',async({page})=>{
  await open(page);
  const sol=card(page,'Sol 6.1'),opus=card(page,'Opus 5.5');

@@ -75,12 +75,20 @@ import XCTest
         try Data("RESERVED VISUAL NOTICE".utf8).write(to: app.appendingPathComponent("Contents/Resources/VISUAL-LICENSE.md"))
         let value = context(app)
         XCTAssertEqual(value.licenseNotices.count, 3)
-        let visual = try XCTUnwrap(value.licenseNotices.last)
-        XCTAssertEqual(visual.component, "Official visuals")
-        XCTAssertEqual(visual.license, "ModelPlan Official Visuals License 1.0")
+        // D57: the reserved visuals licence is the first entry, labelled as not MIT.
+        let visual = try XCTUnwrap(value.licenseNotices.first)
+        XCTAssertEqual(visual.component, "Official visuals © ModelPlan")
+        XCTAssertEqual(visual.license, "Reserved licence, not MIT: ModelPlan Official Visuals License 1.0")
         XCTAssertNotEqual(visual.license, "MIT")
+        XCTAssertEqual(value.licenseNotices.dropFirst().map(\.license), ["MIT", "See bundled licence notices"])
         let (_, view) = try text(value)
+        XCTAssertTrue(view.string.hasPrefix("Official visuals © ModelPlan — Reserved licence, not MIT"))
         XCTAssertTrue(view.string.contains("RESERVED VISUAL NOTICE"))
+    }
+    func testNeutralPackageWithoutTheVisualLicenseShowsNoOfficialVisualsEntry() throws {
+        let value = context(try bundle())
+        XCTAssertFalse(value.licenseNotices.contains { $0.component.hasPrefix("Official visuals") })
+        XCTAssertEqual(value.licenseNotices.first?.license, "MIT")
     }
 
 }

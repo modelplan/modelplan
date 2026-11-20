@@ -33,7 +33,7 @@ Obtain the arm64/amd64 CLI archives and `checksums.txt` selected by `desktop/nat
 For arbitrary CI/non-release source builds, pass `--unverified` as the packager's third argument. This explicitly selects the identity writer's `--mode unverified`: helper hashes and signing remain checked, but release version/source-helper admission fields are omitted (and stale fields removed), so the real consent port stays unverified with no API actions. The app-smoke job uses the current plugin CLI pin in this mode and `check-app-smoke.py --expect-unverified` asserts the actual first-run screen's human unverified-build guidance. Release distribution keeps the default `release` mode and the reviewed native pin; an unverified helper identity remains a hard packaging failure, with no automatic fallback.
 
 ```sh
-python3 desktop/native/tools/check-packaged-access.py "/path/ModelPlan Community.app" /new/receipt-directory
+python3 desktop/native/tools/check-packaged-access.py "/path/ModelPlan.app" /new/receipt-directory
 ```
 
 This supplemental app-launched probe verifies synthetic observed, missing and Unix-denied paths without changing TCC, and checks that read-only fixture homes remain unchanged. CLI version is read from `desktop`'s `cliVersion`; the app never adds a `version` fallback. The normal visible runtime separately refreshes the CLI-owned Codex account cache as described above; this direct read-only access probe does not. Public `publication --json` may maintain the CLI-owned public cache; `desktop --json --read-only` and offline publication create no cache. The app stores neither raw personal output nor a parallel personal-history database.

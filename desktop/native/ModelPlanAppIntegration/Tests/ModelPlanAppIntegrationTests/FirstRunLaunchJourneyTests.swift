@@ -307,6 +307,6 @@ private actor LaunchEngine: EngineClient {
         await again.app.beginSetupAtLaunch()
         XCTAssertTrue(firstRunWindows().isEmpty, "a returning user never sees first run")
         XCTAssertFalse(again.app.setupActive)
-        XCTAssertTrue(try menuTitles(again.app).contains("Refresh"), "the normal menu")
+        XCTAssertTrue(try menuTitles(again.app).contains("Time range"), "the normal menu (MENU-50)")
     }
 }
