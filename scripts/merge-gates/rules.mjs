@@ -218,7 +218,78 @@ export function autoCarry(items, head, prove = () => ({ ok: false })) {
   if (!proof?.ok) return null;
   const after = new Set((proof.between ?? []).filter((s) => s !== head));
   if (named.some((s) => after.has(s))) return null;
+  // Plan B guardrail (owner D325/D326, Astra 2026-11-20): an automatic carry also needs no coupled overlap between the PR
+  // side and the main side. A proof without side lists never carries (fail closed).
+  if (!proof.sides || carryForwardOverlap(proof.sides.pr, proof.sides.main)) return null;
   return { from: old, why: `verdict carried from ${old.slice(0, 8)} (main merges only, diff unchanged)` };
+}
+
+// ---- Carry-forward (plan B, owner D325/D326 2026-11-20) ----
+// A main merge that changed the PR's own patch (so neither VERDICT-CARRY nor the auto-carry above holds) still keeps its
+// review when the coordinator posts, in a trusted COMMENT, the record
+//   CARRY-FORWARD: <head> from <approved> (main <parent2>) checks=<list>
+// and the gate re-proves it (evaluate.mjs: git.verifyCarryForward): the head is a two-parent merge whose first parent is
+// the approved head and whose second parent is the named main commit on main, and Git's own clean re-merge of the two
+// parents reproduces the head's tree exactly (no conflict resolution, no extra edit). The rename-aware file lists from the
+// parents' merge base to each parent then must not overlap in the cockpit hot set or the always-review set, and must not
+// form a producer/consumer pair across the sides (CARRY_FORWARD; mirrored by the coordinator's carry-forward-paths.conf).
+// The record counts only for the exact head it names (a moved head ignores it), and only when the latest trusted VERDICT
+// line on the PR is a merge naming the approved head. CI at the head and the merge-group CI stay required as always.
+export const CARRY_FORWARD = Object.freeze({
+  // a path changed on BOTH sides that matches one of these refuses
+  hot: Object.freeze([
+    /^desktop\/cockpit\/src\/view\.ts$/, /^desktop\/cockpit\/src\/bridge\.ts$/, /^desktop\/cockpit\/src\/prototype-[^/]+\.ts$/,
+    /(^|\/)cockpit\.css$/, /^desktop\/tests\/cockpit\//, /^desktop\/official-visuals\/cockpit-baselines\//, /^source-policy\.json$/,
+  ]),
+  // tests, baselines, policy, gate and workflow files: an edit on both sides always gets a delta review
+  shared: Object.freeze([TEST_RE, /\.png$|^desktop\/official-visuals\//, /^\.github\/|^scripts\/merge-gates\/|^desktop\/native\/verification\/scenario-tiers\.tsv$/]),
+  // one side touching `a` and the other side touching `b` (either way round) refuses, shared path or not
+  pairs: Object.freeze([
+    { name: "bridge-payload", a: /^desktop\/cockpit\/src\/(bridge|schema)\.ts$|^desktop\/native\/ModelPlanCockpitWeb\//, b: /^desktop\/cockpit\/src\/(view|main|prototype-[^/]+)\.ts$/ },
+    { name: "render-baseline", a: /^desktop\/cockpit\/(src|web)\/|(^|\/)cockpit\.css$/, b: /^desktop\/official-visuals\/cockpit-baselines\/|^source-policy\.json$/ },
+  ]),
+});
+
+// prSide / mainSide: changed paths from the merge base to each parent. Returns the first refusal reason, or null.
+export function carryForwardOverlap(prSide, mainSide, policy = CARRY_FORWARD) {
+  if (!Array.isArray(prSide) || !Array.isArray(mainSide)) return "no file lists";
+  const main = new Set(mainSide);
+  for (const p of prSide) if (main.has(p)) {
+    if (policy.hot.some((re) => re.test(p))) return `both sides changed ${p} (cockpit hot set)`;
+    if (policy.shared.some((re) => re.test(p))) return `both sides changed ${p} (test, baseline, policy or gate file)`;
+  }
+  const touches = (side, re) => side.some((p) => re.test(p));
+  for (const { name, a, b } of policy.pairs)
+    if ((touches(prSide, a) && touches(mainSide, b)) || (touches(prSide, b) && touches(mainSide, a))) return `coupled change across the sides (${name})`;
+  return null;
+}
+
+// The latest trusted CARRY-FORWARD record (comments only) that names `head`, or null.
+export function carryForwardRecord(items, head) {
+  let rec = null;
+  for (const x of items) if (x.kind === "comment")
+    for (const l of lines(x.body)) {
+      const m = /^CARRY-FORWARD: ([0-9a-f]{40}) from ([0-9a-f]{40}) \(main ([0-9a-f]{40})\) checks=([a-z,]+)\s*$/.exec(l);
+      if (m && m[1] === head) rec = { from: m[2], main: m[3], checks: m[4].split(",") };
+    }
+  return rec;
+}
+
+// prove(approved, head, main) -> { ok, why, sides: { pr, main } } (evaluate.mjs: git.verifyCarryForward). Returns
+// { from, why } or null.
+export function carryForward(items, head, prove = () => ({ ok: false })) {
+  const rec = carryForwardRecord(items, head);
+  if (!rec || rec.from === head) return null;
+  let last = null;
+  for (const x of items)
+    for (const l of lines(x.body)) {
+      const m = /^VERDICT: (merge|block) @ ([0-9a-f]{40})\b/i.exec(l);
+      if (m) last = { v: m[1].toLowerCase(), sha: m[2].toLowerCase() };
+    }
+  if (!last || last.v !== "merge" || last.sha !== rec.from) return null;
+  const proof = prove(rec.from, head, rec.main);
+  if (!proof?.ok || carryForwardOverlap(proof.sides?.pr, proof.sides?.main)) return null;
+  return { from: rec.from, why: `verdict carried forward from ${rec.from.slice(0, 8)} (CARRY-FORWARD: clean re-merge with main ${rec.main.slice(0, 8)}, no coupled overlap)` };
 }
 
 // Sticky reviewer (owner 2026-11-18): "REVIEWER: <lane>" on its own line in a trusted comment names the one GPT lane
@@ -613,10 +684,11 @@ export function dataSyncProblem({ pr, files, items, sync }) {
 
 // ---- One PR head ----
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
-// verifiedEdge(old, new): carry proof; proveMainMerges(old, new): auto-carry proof (autoCarry); conf: parsed design-paths.conf; members: a train's member PRs;
+// verifiedEdge(old, new): carry proof; proveMainMerges(old, new): auto-carry proof (autoCarry); proveCarryForward(approved,
+// head, main): plan B carry-forward proof (carryForward); conf: parsed design-paths.conf; members: a train's member PRs;
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, proveCarryForward, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -636,7 +708,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const tier = override ?? pathTier(paths);
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
   const auto = chain.length ? null : autoCarry(items, head, proveMainMerges);
-  const carried = auto ? [auto.from] : chain;
+  const fwd = chain.length || auto ? null : carryForward(items, head, proveCarryForward);
+  const carried = auto ? [auto.from] : fwd ? [fwd.from] : chain;
   const fb = { until: glmFallbackUntil, now, used: [] };
 
   // One review gate (D243 step 5; amends R1/R4/R13/R14/R16 and the D161/D235 lifts). Tier 2 needs a Sol verdict
@@ -669,8 +742,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   if (gap) notes.push(gap);
   const refNote = referenceProblem(pr, paths);
   if (refNote) notes.push(refNote);
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried, ...(auto ? { autoCarried: auto.from } : {}), glmFallback: fb.used, notes };
-  const say = (why) => [why, ...(auto ? [auto.why] : []), ...(notes.length ? [`info: ${notes.join("; ")}`] : [])].join("; ");
+  const extra = { tier, design: design.touching ? design.surfaces : [], carried, ...(auto ? { autoCarried: auto.from } : {}), ...(fwd ? { carriedForward: fwd.from } : {}), glmFallback: fb.used, notes };
+  const say = (why) => [why, ...(auto ? [auto.why] : []), ...(fwd ? [fwd.why] : []), ...(notes.length ? [`info: ${notes.join("; ")}`] : [])].join("; ");
   if (pr.draft) return res(PENDING, say("draft"), extra);
 
   const blocked = [...lanes].filter(([, v]) => v === "block").map(([l]) => l);

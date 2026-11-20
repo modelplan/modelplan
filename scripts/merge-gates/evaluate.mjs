@@ -73,6 +73,24 @@ function proveMainMerges(oldSha, newSha) {
   return mainMergeCache.get(k);
 }
 
+// Plan B carry-forward proof (git.verifyCarryForward), cached like the auto-carry proof; main is refreshed once first.
+const forwardCache = new Map();
+function proveCarryForward(approved, head, mainSha) {
+  const k = `${approved}>${head}>${mainSha}`;
+  if (!forwardCache.has(k)) {
+    let r;
+    try {
+      if (!mainFresh) { G.git(cwd, ["fetch", "-q", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/main:${MAIN}`]); mainFresh = true; }
+      r = G.verifyCarryForward(cwd, approved, head, mainSha, MAIN);
+    } catch (e) {
+      r = { ok: false, why: `git error: ${String(e?.message || e).split("\n")[0]}` };
+    }
+    log({ carryForward: k, ok: r.ok, why: r.why, ...(r.sides ? { prSide: r.sides.pr.length, mainSide: r.sides.main.length } : {}) });
+    forwardCache.set(k, r);
+  }
+  return forwardCache.get(k);
+}
+
 // A train's members, read only for a train: the extra calls would otherwise run on every evaluation. A number in
 // Supersedes that is not a PR is skipped; any other read error stops the evaluation, so the gate never passes on
 // a partial member list.
@@ -123,7 +141,7 @@ async function prResult(number) {
   // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
   const now = Date.now();
   const glmFallbackUntil = parseFallbackUntil(env.GLM_FALLBACK_UNTIL || "", now);
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, proveMainMerges, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now });
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, proveMainMerges, proveCarryForward, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now });
   return { pr, result };
 }
 

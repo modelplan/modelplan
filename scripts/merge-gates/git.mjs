@@ -118,5 +118,53 @@ export function verifyMainMerges(cwd, oldSha, newSha, mainRef) {
   const reviewed = ownPatch(cwd, oldBase, oldSha);
   if (!reviewed.trim()) return no("reviewed head has no change of its own");
   if (reviewed !== ownPatch(cwd, newBase, newSha)) return no("the PR's own diff changed");
-  return { ok: true, why: "main merges only, diff unchanged", between };
+  // Plan B guardrail: the file lists of both sides for the overlap check (rules.carryForwardOverlap), from the reviewed
+  // head and the newest main commit merged in (between[0] is newSha, its second parent).
+  const s = sides(cwd, oldSha, parents(cwd, newSha)[1]);
+  if (!s) return no("no single merge base for the overlap check");
+  return { ok: true, why: "main merges only, diff unchanged", between, sides: s };
+}
+
+// Changed paths from `from` to `to`, rename-aware (old and new path of a rename or copy both count), sorted and unique.
+// Fails closed (null) on anything it cannot parse.
+export function changedPaths(cwd, from, to) {
+  const out = git(cwd, ["diff", "--name-status", "-z", "-M", "--no-ext-diff", "--no-textconv", from, to], { allowFail: true });
+  if (out === null) return null;
+  const f = out.split("\0");
+  if (f.at(-1) === "") f.pop();
+  const paths = new Set();
+  for (let i = 0; i < f.length;) {
+    const st = f[i++];
+    const n = /^[RC][0-9]*$/.test(st) ? 2 : /^[ADMTUX]$/.test(st) ? 1 : 0;
+    if (!n || i + n > f.length) return null;
+    for (let k = 0; k < n; k++) paths.add(f[i++]);
+  }
+  return [...paths].sort();
+}
+
+// The PR side and the main side of a merge: changed paths from the single merge base of the two to each. Null when there
+// is not exactly one merge base (criss-cross) or a list cannot be read.
+export function sides(cwd, prSha, mainSha) {
+  const all = (git(cwd, ["merge-base", "--all", prSha, mainSha], { allowFail: true }) ?? "").trim().split("\n").filter(Boolean);
+  if (all.length !== 1) return null;
+  const pr = changedPaths(cwd, all[0], prSha), main = changedPaths(cwd, all[0], mainSha);
+  return pr && main ? { base: all[0], pr, main } : null;
+}
+
+// Plan B CARRY-FORWARD record (rules.carryForward): `head` is a two-parent merge, its first parent is the approved head,
+// its second parent is the named main commit and is on main, and Git's own merge of the two parents reproduces its tree
+// exactly (verifyCleanMerge: a conflict or any hand edit fails). Returns the file lists of both sides for the overlap check.
+export function verifyCarryForward(cwd, approved, head, mainSha, mainRef) {
+  const no = (why) => ({ ok: false, why });
+  if (!SHA.test(mainSha) || !ensure(cwd, approved) || !ensure(cwd, head) || !ensure(cwd, mainSha)) return no("commit not found");
+  const p = parents(cwd, head);
+  if (p.length !== 2) return no("not a two-parent merge");
+  if (p[0] !== approved) return no("first parent is not the approved head");
+  if (p[1] !== mainSha) return no("second parent is not the main commit the record names");
+  if (!isAncestor(cwd, p[1], mainRef)) return no("second parent is not on main");
+  const clean = verifyCleanMerge(cwd, head);
+  if (!clean.ok) return no(clean.why);
+  const s = sides(cwd, p[0], p[1]);
+  if (!s) return no("no single merge base for the overlap check");
+  return { ok: true, why: "clean re-merge of the approved head and main", sides: s };
 }

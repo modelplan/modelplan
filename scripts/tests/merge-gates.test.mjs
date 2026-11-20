@@ -245,7 +245,9 @@ test("carry: verified edges only, followed back from the head, at most 6 hops", 
 
 // D243 G6 (owner 2026-11-14): a merge VERDICT carries across main merges without a VERDICT-CARRY comment.
 const MID = "d".repeat(40);
-const proved = (between = [H]) => (o, n) => ({ ok: true, why: "main merges only, diff unchanged", between });
+// Plan B: an auto-carry proof carries the file lists of both sides for the overlap guardrail (no lists = no carry).
+const SIDES = Object.freeze({ pr: ["scripts/tool.mjs"], main: ["README.md"] });
+const proved = (between = [H], sides = SIDES) => (o, n) => ({ ok: true, why: "main merges only, diff unchanged", between, sides });
 const unproved = () => ({ ok: false, why: "the PR's own diff changed", between: [] });
 
 test("auto-carry: a merge VERDICT carries over a proven clean main merge and says so in the description", () => {
@@ -771,7 +773,8 @@ test("auto-carry proof: main merges only and an identical own diff; own-hunk cha
     r.g("checkout", "-q", "pr"); r.g("merge", "-q", "--no-edit", "main");
     const m1 = r.sha();
     const ok = G.verifyMainMerges(r.dir, reviewed, m1, MAINREF);
-    assert.deepEqual(ok, { ok: true, why: "main merges only, diff unchanged", between: [m1] });
+    assert.deepEqual({ ...ok, sides: undefined }, { ok: true, why: "main merges only, diff unchanged", between: [m1], sides: undefined });
+    assert.deepEqual([ok.sides.pr, ok.sides.main], [["a.txt", "big.txt"], ["b.txt", "big.txt"]], "both sides' file lists come with the proof");
     // A second main merge on top still carries from the reviewed head, listing both merges.
     r.g("checkout", "-q", "main"); r.put("c.txt", "c2\n"); r.g("commit", "-qam", "main again"); r.g("update-ref", MAINREF, "HEAD");
     r.g("checkout", "-q", "pr"); r.g("merge", "-q", "--no-edit", "main");
@@ -1368,7 +1371,7 @@ test("no carry without tree equality: hand-resolved conflicts, tree tweaks, octo
 
 test("auto-carry: the latest posted verdict head is the only candidate; when it is the current head nothing carries, whatever the lane (macrevb-946-1)", () => {
   const t2 = [file("scripts/merge-gates/rules.mjs")];
-  const ok = () => ({ ok: true, between: [H] });
+  const ok = () => ({ ok: true, between: [H], sides: SIDES });
   const oldSol = comment(v("merge", OLD, "macrev2"));
   // An old Sol merge, then a current-head verdict from a lane that cannot pass tier 2: no carry, tier 2 stays unpassed.
   for (const lane of ["macrevc", "glm", "sonnet"]) {
@@ -1393,4 +1396,136 @@ test("auto-carry: the latest posted verdict head is the only candidate; when it 
   assert.equal(evalPr({ files: t2, comments: [comment("REVIEWER: macrev2"), oldSol], prove: ok }).state, R.SUCCESS);
   const cur = comment(v("merge", H, "macrevc")), later = comment(v("merge", OLD, "macrev2"));
   assert.equal(R.autoCarry(R.feed([cur, later], []), H, ok)?.from, OLD, "an old-head verdict posted after the current-head one is the candidate");
+});
+
+// ---- Plan B carry-forward (owner D325/D326, 2026-11-20) ----
+const P2 = "e".repeat(40);
+const rec = (head = H, from = OLD, main = P2) => `Coordinator carry-forward.\n\nCARRY-FORWARD: ${head} from ${from} (main ${main}) checks=parents,main,remerge,overlap`;
+const fwdOk = (sides = SIDES) => () => ({ ok: true, why: "clean re-merge of the approved head and main", sides });
+const evalFwd = ({ comments, reviews = [], files, fwd = fwdOk() }) =>
+  R.evaluatePr({ pr: pr(), items: R.feed(comments, reviews), files: files ?? [file("scripts/tool.mjs")], runs: greenCi, statuses: [], verifiedEdge: () => false, proveMainMerges: unproved, proveCarryForward: fwd, conf });
+
+test("carry-forward: a trusted record for the exact head carries the approved head's verdict when the gate re-proves it", () => {
+  const seen = [];
+  const r = evalFwd({ comments: [comment(v("merge", OLD, "macrevc")), comment(rec())], fwd: (a, h, m) => { seen.push([a, h, m]); return fwdOk()(); } });
+  assert.deepEqual(seen, [[OLD, H, P2]], "the gate re-proves approved head, head and the named main commit");
+  assert.equal(r.state, R.SUCCESS, r.why);
+  assert.equal(r.carriedForward, OLD);
+  assert.match(r.why, /verdict carried forward from bbbbbbbb \(CARRY-FORWARD: clean re-merge with main eeeeeeee, no coupled overlap\)/);
+  // Tier rules apply to the carried verdict: Terra is advice on tier 2, a Sol lane passes it.
+  const t2 = [file("clients/swift/Wire.swift")];
+  assert.equal(evalFwd({ files: t2, comments: [comment(v("merge", OLD, "macrevc")), comment(rec())] }).state, R.PENDING);
+  assert.equal(evalFwd({ files: t2, comments: [comment(v("merge", OLD, "macrevd")), comment(rec())] }).state, R.SUCCESS);
+  // A carried block still blocks (the latest line must be a merge, so this never carries; the head stays unreviewed).
+  assert.notEqual(evalFwd({ comments: [comment(v("merge", OLD, "macrevc")), comment(v("block", OLD, "macrevc")), comment(rec())] }).state, R.SUCCESS);
+});
+
+test("carry-forward: untrusted, review-borne, stale or malformed records are ignored; no record, no carry", () => {
+  const stranger = { login: "mallory", id: 1 };
+  const base = [comment(v("merge", OLD, "macrevc"))];
+  assert.equal(evalFwd({ comments: base }).state, R.PENDING, "no record");
+  assert.equal(evalFwd({ comments: [...base, comment(rec(), stranger)] }).state, R.PENDING, "an untrusted author's record is ignored");
+  assert.equal(evalFwd({ comments: [...base, comment(rec(), { login: "guanbear", id: 2 })] }).state, R.PENDING, "a login without the trusted id is ignored");
+  assert.equal(evalFwd({ comments: base, reviews: [review(rec())] }).state, R.PENDING, "records come from comments only");
+  assert.equal(evalFwd({ comments: [...base, comment(rec(MID))] }).state, R.PENDING, "a stale record (the head moved again) is ignored");
+  assert.equal(evalFwd({ comments: [...base, comment(rec().replace("checks=parents,main,remerge,overlap", "checks=ALL"))] }).state, R.PENDING, "malformed");
+  assert.equal(evalFwd({ comments: [...base, comment(rec())], fwd: () => ({ ok: false, why: "first parent is not the approved head" }) }).state, R.PENDING, "a refused proof never carries");
+  assert.equal(evalFwd({ comments: [...base, comment(rec())], fwd: () => ({ ok: true }) }).state, R.PENDING, "a proof without file lists never carries");
+});
+
+test("carry-forward: parent1 must be the head of the LATEST trusted VERDICT, and that verdict a merge", () => {
+  // A later review of another head wins over the record.
+  assert.equal(evalFwd({ comments: [comment(v("merge", OLD, "macrevc")), comment(v("merge", MID, "macrevc")), comment(rec())] }).state, R.PENDING);
+  // A stranger's later verdict does not displace the trusted one.
+  assert.equal(evalFwd({ comments: [comment(v("merge", OLD, "macrevc")), comment(v("merge", MID, "macrevc"), { login: "mallory", id: 1 }), comment(rec())] }).state, R.SUCCESS);
+  // The latest trusted verdict is a block at the approved head: nothing carries.
+  assert.equal(evalFwd({ comments: [comment(v("merge", OLD, "macrev2")), comment(v("block", OLD, "macrevc")), comment(rec())] }).state, R.PENDING);
+  // A verdict on the current head is a normal review; the record is not needed then.
+  assert.equal(R.carryForward(R.feed([comment(v("merge", H, "macrevc")), comment(rec())]), H, fwdOk()), null);
+});
+
+test("carry-forward overlap guardrail: hot set, always-review files and producer/consumer pairs refuse; it also binds the auto-carry", () => {
+  const o = R.carryForwardOverlap;
+  assert.equal(o(["lib/util.ts", "README.md"], ["lib/util.ts"]), null, "a shared ordinary file is fine");
+  assert.match(o(["desktop/cockpit/src/view.ts"], ["desktop/cockpit/src/view.ts"]), /cockpit hot set/);
+  assert.match(o(["desktop/cockpit/src/prototype-deck.ts"], ["desktop/cockpit/src/prototype-deck.ts"]), /cockpit hot set/);
+  assert.match(o(["desktop/official-visuals/cockpit/cockpit.css"], ["desktop/official-visuals/cockpit/cockpit.css"]), /cockpit hot set/);
+  assert.match(o(["source-policy.json"], ["source-policy.json"]), /cockpit hot set/);
+  assert.match(o(["desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-day-en.png"], ["desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-day-en.png"]), /cockpit hot set/);
+  assert.match(o(["desktop/tests/cockpit/browser/c-hud.spec.mjs"], ["desktop/tests/cockpit/browser/c-hud.spec.mjs"]), /cockpit hot set/);
+  assert.match(o(["cli/x_test.go"], ["cli/x_test.go"]), /test, baseline, policy or gate/);
+  assert.match(o([".github/workflows/ci.yml"], [".github/workflows/ci.yml"]), /test, baseline, policy or gate/);
+  assert.match(o(["desktop/cockpit/src/view.ts"], ["desktop/cockpit/src/bridge.ts"]), /bridge-payload/);
+  assert.match(o(["desktop/native/ModelPlanCockpitWeb/Sources/X.swift"], ["desktop/cockpit/src/prototype-hud.ts"]), /bridge-payload/);
+  assert.match(o(["desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-day-en.png"], ["desktop/cockpit/src/field-page.ts"]), /render-baseline/);
+  assert.equal(o(["desktop/cockpit/src/view.ts"], ["cli/main.go"]), null, "a hot file on one side only is fine");
+  assert.equal(o(undefined, []), "no file lists");
+  // The auto-carry (D243 G6) is bound by the same guardrail now.
+  const items = R.feed([comment(v("merge", OLD, "macrevc"))]);
+  assert.equal(R.autoCarry(items, H, proved([H], { pr: ["desktop/cockpit/src/view.ts"], main: ["desktop/cockpit/src/view.ts"] })), null);
+  assert.equal(R.autoCarry(items, H, proved([H], { pr: ["desktop/cockpit/src/view.ts"], main: ["desktop/cockpit/src/bridge.ts"] })), null);
+  assert.equal(R.autoCarry(items, H, proved())?.from, OLD);
+  // And so is the carry-forward record.
+  assert.equal(evalFwd({ comments: [comment(v("merge", OLD, "macrevc")), comment(rec())], fwd: fwdOk({ pr: ["desktop/cockpit/src/view.ts"], main: ["desktop/cockpit/src/view.ts"] }) }).state, R.PENDING);
+});
+
+test("carry-forward proof (git): clean merge passes; conflict resolution, tree mismatch, wrong parents and off-main fail", () => {
+  const r = repo();
+  try {
+    const lines = (edit = {}) => Array.from({ length: 30 }, (_, i) => edit[i] ?? `line ${i}`).join("\n") + "\n";
+    mkdirSync(join(r.dir, "desktop/cockpit/src"), { recursive: true });
+    r.put("util.ts", lines()); r.put("desktop/cockpit/src/view.ts", lines()); r.g("add", "."); r.g("commit", "-qm", "files"); r.g("update-ref", MAINREF, "HEAD");
+    r.g("checkout", "-qb", "pr"); r.put("util.ts", lines({ 10: "pr edit" })); r.put("desktop/cockpit/src/view.ts", lines({ 3: "pr view" })); r.g("commit", "-qam", "pr");
+    const approved = r.sha();
+    // Main edits a line two below the PR's hunk: Git merges cleanly, but the PR's 3-line context changes, so the auto-carry
+    // (own patch unchanged) cannot hold. The carry-forward proof does.
+    r.g("checkout", "-q", "main"); r.put("util.ts", lines({ 12: "main edit" })); r.g("commit", "-qam", "main"); r.g("update-ref", MAINREF, "HEAD");
+    const main1 = r.sha();
+    r.g("checkout", "-q", "pr"); r.g("merge", "-q", "--no-edit", "main");
+    const head = r.sha();
+    assert.equal(G.verifyMainMerges(r.dir, approved, head, MAINREF).ok, false, "context changed: no auto-carry");
+    const ok = G.verifyCarryForward(r.dir, approved, head, main1, MAINREF);
+    assert.equal(ok.ok, true, ok.why);
+    assert.deepEqual([ok.sides.pr, ok.sides.main], [["desktop/cockpit/src/view.ts", "util.ts"], ["util.ts"]]);
+    assert.equal(R.carryForwardOverlap(ok.sides.pr, ok.sides.main), null);
+    // End to end through the rules with the real proof.
+    const gate = (sha) => evalFwd({ comments: [comment(v("merge", approved, "macrev2")), comment(rec(H, approved, main1))], fwd: (a, h, m) => G.verifyCarryForward(r.dir, a, h === H ? sha : h, m, MAINREF) });
+    assert.equal(gate(head).state, R.SUCCESS, gate(head).why);
+    // The record must name the merged main commit.
+    assert.equal(G.verifyCarryForward(r.dir, approved, head, approved, MAINREF).ok, false);
+    assert.equal(G.verifyCarryForward(r.dir, head, head, main1, MAINREF).ok, false, "first parent is not the approved head");
+
+    // Tree mismatch: an extra edit hidden in the merge.
+    r.g("checkout", "-q", "-b", "tweak", approved); r.g("merge", "-q", "--no-commit", "main"); r.put("c.txt", "sneaky\n"); r.g("add", "c.txt"); r.g("commit", "-qm", "merge");
+    assert.match(G.verifyCarryForward(r.dir, approved, r.sha(), main1, MAINREF).why, /differs from a clean merge/);
+    assert.notEqual(gate(r.sha()).state, R.SUCCESS);
+
+    // Conflict resolved by hand: no carry.
+    r.g("checkout", "-q", "main"); r.put("util.ts", lines({ 10: "main same line", 12: "main edit" })); r.g("commit", "-qam", "main conflicts"); r.g("update-ref", MAINREF, "HEAD");
+    const main2 = r.sha();
+    r.g("checkout", "-q", "-b", "conflict", approved);
+    spawnSync("git", ["merge", "-q", "--no-edit", "main"], { cwd: r.dir, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
+    r.put("util.ts", lines({ 10: "resolved", 12: "main edit" })); r.g("add", "util.ts"); r.g("commit", "-qm", "resolved");
+    assert.match(G.verifyCarryForward(r.dir, approved, r.sha(), main2, MAINREF).why, /do not merge cleanly/);
+
+    // Second parent not on main.
+    r.g("checkout", "-q", "-b", "side", main1); r.put("d.txt", "side\n"); r.g("add", "d.txt"); r.g("commit", "-qm", "side");
+    const side = r.sha();
+    r.g("checkout", "-q", "-b", "pr-side", approved); r.g("merge", "-q", "--no-edit", "side");
+    assert.equal(G.verifyCarryForward(r.dir, approved, r.sha(), side, MAINREF).why, "second parent is not on main");
+
+    // Hot-set overlap: main edits view.ts far from the PR's hunk; the proof passes, the guardrail refuses.
+    r.g("checkout", "-q", "-b", "main-view", main1); r.put("desktop/cockpit/src/view.ts", lines({ 25: "main view" })); r.g("commit", "-qam", "main view"); r.g("update-ref", MAINREF, "HEAD");
+    const main3 = r.sha();
+    r.g("checkout", "-q", "-b", "pr-view", approved); r.g("merge", "-q", "--no-edit", "main-view");
+    const hv = G.verifyCarryForward(r.dir, approved, r.sha(), main3, MAINREF);
+    assert.equal(hv.ok, true, hv.why);
+    assert.match(R.carryForwardOverlap(hv.sides.pr, hv.sides.main), /view\.ts \(cockpit hot set\)/);
+    assert.equal(G.verifyMainMerges(r.dir, approved, r.sha(), MAINREF).ok, false, "context of the util.ts hunk changed too");
+
+    // Renames count by old and new path, so moving a hot file out of the hot set still overlaps.
+    assert.deepEqual(G.changedPaths(r.dir, approved, approved), []);
+    r.g("checkout", "-q", "-b", "mv", approved); r.g("mv", "desktop/cockpit/src/view.ts", "desktop/cockpit/src/view-old.ts"); r.g("commit", "-qm", "mv");
+    assert.deepEqual(G.changedPaths(r.dir, approved, r.sha()), ["desktop/cockpit/src/view-old.ts", "desktop/cockpit/src/view.ts"]);
+  } finally { r.done(); }
 });
