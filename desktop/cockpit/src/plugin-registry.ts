@@ -22,6 +22,8 @@ export interface PluginContext {
   readonly now:number;
   /** Long and short forms of a `plugin.*` string-table key (`<key>Short` when it exists). */
   words(key:string,vars?:Readonly<Record<string,string|number>>):PluginWords;
+  /** The plugin's view memory (D328: the week view's selected day, read by the column's bottom line). */
+  readonly memo?:Record<string,unknown>;
 }
 export interface PluginCell {
   readonly tag:PluginWords;

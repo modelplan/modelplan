@@ -153,7 +153,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   /** A plugin asked to be drawn again: its column and, when open, its screen. Ignored while a draw runs (no recursion). */
   function redrawPlugin(id:string) {if(drawing||disposed)return;redrawColumn(id);if(screen?.id===id)drawScreen();}
   const guard=<T>(fn:()=>T,fallback:T):T=>{try{return fn();}catch{return fallback;/* A plugin failure never takes the cockpit down. */}};
-  const context=(id:string):PluginContext=>({locale,settings:pluginSettings(state,registry,id),now,words:(key,vars)=>pluginWords(locale,key,vars)});
+  const context=(id:string):PluginContext=>({locale,settings:pluginSettings(state,registry,id),now,memo:memo(id),words:(key,vars)=>pluginWords(locale,key,vars)});
   // Before the host sent its plugin state, defaults do not apply (D121 default-on needs a host that knows plugins).
   const active=()=>enabledPlugins(state,registry,negotiated);
   const enabled=(id:string)=>active().some(p=>p.id===id);

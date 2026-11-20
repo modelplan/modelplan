@@ -3,8 +3,8 @@
 // every day boundary is a local midnight found through the calendar, never "+24 h": DST days are 23 or 25 hours.
 export const MINUTE=60_000;
 export const HOUR=3_600_000;
-/** The day view's window from now (owner D137: about 36 hours). */
-export const STRIP_HOURS=36;
+/** The column's window from now (owner D328: the next 12 hours; other days go through the week view). */
+export const STRIP_HOURS=12;
 export const WEEK_DAYS=7;
 export const startOfDay=(t:number)=>{const d=new Date(t);return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();};
 /** Local midnight `n` days after the local day of `t`. */
@@ -21,11 +21,10 @@ export const isWeekend=(t:number)=>{const day=new Date(t).getDay();return day===
 export const nextMinute=(now:number)=>Math.floor(now/MINUTE)*MINUTE+MINUTE;
 
 export interface Span {readonly from:number;readonly to:number}
-/** The day view's window: from now for 36 hours, or one whole local day (00:00 to the next local midnight). */
-export function stripWindow(now:number,day:number|null):Span {
- if(day===null)return {from:now,to:now+STRIP_HOURS*HOUR};
- const from=startOfDay(day);return {from,to:addDays(from,1)};
-}
+/** The column's window: the next 12 hours from now. */
+export const stripWindow=(now:number):Span=>({from:now,to:now+STRIP_HOURS*HOUR});
+/** One whole local day (00:00 to the next local midnight): what the week view's selected day lists in the bottom line. */
+export function dayWindow(day:number):Span {const from=startOfDay(day);return {from,to:addDays(from,1)};}
 /** Local whole-hour instants strictly inside (from, to) whose local hour is a multiple of `every`, with that hour.
  *  On a fall-back day an hour label repeats (01, 01); on a spring-forward day one is missing. */
 export function hourMarks(span:Span,every:number):{at:number;hour:number}[] {

@@ -45,7 +45,7 @@ public enum CockpitPluginCatalogue {
         /// v1.1 calendar (D137/D138/D140/D141/D145, CKP-PLG-06/07): default on; no settings. The page shapes its data from
         /// the display data the app already sends, so the app samples nothing for it.
         CockpitPluginDefinition(id: "calendar", title: .init("Calendar", "日历"),
-                                summary: .init("Peaks and resets for the next day and a half; open for 7 days.", "今明两天的高峰和重置，点开看 7 天。"),
+                                summary: .init("Peaks and resets for the next 12 hours; open for 7 days.", "未来 12 小时的高峰和重置，点开看 7 天。"),
                                 symbol: "calendar", defaultEnabled: true, settings: []),
     ]
     private static let lower: ClosedRange<Unicode.Scalar> = "a"..."z"

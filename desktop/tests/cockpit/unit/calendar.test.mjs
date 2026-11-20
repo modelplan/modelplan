@@ -5,9 +5,9 @@ process.env.TZ='America/Los_Angeles';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {capture} from '../fixture.mjs';
-import {HOUR,addDays,startOfDay,dayOffset,stripWindow,hourMarks,midnights,dayPieces,packLanes,nextMinute,wallHours,hhmm} from '../../../cockpit/.tmp/compiled/src/calendar-time.js';
+import {HOUR,addDays,startOfDay,dayOffset,stripWindow,dayWindow,hourMarks,midnights,dayPieces,packLanes,nextMinute,wallHours,hhmm} from '../../../cockpit/.tmp/compiled/src/calendar-time.js';
 import {parseCalendarData,calendarFromCockpit,abbreviation,CALENDAR_MAX_BYTES} from '../../../cockpit/.tmp/compiled/src/calendar-data.js';
-import {beyond,dayHasEvents,calendarPlugin} from '../../../cockpit/.tmp/compiled/src/calendar-plugin.js';
+import {duration,dayEvents,calendarPlugin} from '../../../cockpit/.tmp/compiled/src/calendar-plugin.js';
 import {PluginRegistry} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
 import {builtinPlugins} from '../../../cockpit/.tmp/compiled/src/plugin-builtins.js';
 
@@ -23,21 +23,21 @@ test('day boundaries are local midnights: DST days have 25 and 23 hours',()=>{
  assert.equal(addDays(spring,1)-startOfDay(spring),23*HOUR);
  assert.equal(dayOffset(local(2026,10,31,23,30),local(2026,11,1,0,30)),1);
  assert.equal(dayOffset(local(2026,11,1,0,30),local(2026,11,1,23,30)),0);
- // The 明 view of a DST day covers the whole local day.
- const w=stripWindow(local(2026,10,31,9),local(2026,11,1,15));
+ // A picked day's window covers the whole local day.
+ const w=dayWindow(local(2026,11,1,15));
  assert.deepEqual([w.from,w.to],[local(2026,11,1),local(2026,11,2)]);assert.equal(w.to-w.from,25*HOUR);
  // Hour labels: 01 twice on the fall-back day, no 02 on the spring-forward day.
  assert.deepEqual(hourMarks(w,1).slice(0,4).map(m=>m.hour),[1,1,2,3]);
- assert.deepEqual(hourMarks(stripWindow(local(2026,3,7,9),local(2026,3,8,5)),1).slice(0,3).map(m=>m.hour),[1,3,4]);
+ assert.deepEqual(hourMarks(dayWindow(local(2026,3,8,5)),1).slice(0,3).map(m=>m.hour),[1,3,4]);
 });
 
-test('the now view runs 36 hours from now with each local midnight marked',()=>{
- const w=stripWindow(NOW,null);
- assert.equal(w.to-w.from,36*HOUR);
- assert.deepEqual(midnights(w),[local(2026,11,12)]);
+test('D328: the column window is the next 12 hours from now, with a midnight marked only when one falls inside',()=>{
+ const w=stripWindow(NOW);
+ assert.equal(w.to-w.from,12*HOUR);assert.equal(w.from,NOW);
+ assert.deepEqual(midnights(w),[]);
  assert.deepEqual(hourMarks(w,3).slice(0,3).map(m=>[hhmm(m.at),m.hour]),[['12:00',12],['15:00',15],['18:00',18]]);
- // From 23:00 the window holds two midnights.
- assert.deepEqual(midnights(stripWindow(local(2026,11,11,23),null)),[local(2026,11,12),local(2026,11,13)]);
+ // From 23:00 the window holds one midnight (the 明 divider).
+ assert.deepEqual(midnights(stripWindow(local(2026,11,11,23))),[local(2026,11,12)]);
  assert.equal(nextMinute(NOW+5000),local(2026,11,11,11,21));
  assert.equal(nextMinute(local(2026,11,11,23,59,)),local(2026,11,12));
 });
@@ -64,12 +64,8 @@ const week={version:1,
  resets:[{sub:0,at:local(2026,11,11,12,30),kind:'5h'},{sub:0,at:local(2026,11,12,9),kind:'week'},{sub:1,at:local(2026,11,13,6),kind:'week'}],
  spans:[{sub:0,kind:'cards',from:NOW,to:local(2026,11,13,18),count:1},{sub:2,kind:'announced',from:local(2026,11,10,10),to:local(2026,11,16),count:null}]};
 
-test('the folded line holds what lies beyond 36 hours, earliest first; dots mark days with events',()=>{
- const later=beyond(parseCalendarData(week),stripWindow(NOW,null));
- assert.deepEqual(later.map(x=>[x.kind,x.at]),[['week',local(2026,11,13,6)],['span',local(2026,11,16)]]);
- const data=parseCalendarData(week);
- assert.deepEqual([0,1,2].map(i=>dayHasEvents(data,NOW,i)),[true,true,true]);
- assert.equal(dayHasEvents({...data,resets:[],peaks:[],spans:[]},NOW,1),false);
+test('the bottom line durations read 10h40 and 35m',()=>{
+ assert.equal(duration(10*HOUR+40*60000),'10h40');assert.equal(duration(2*HOUR+50*60000),'2h50');assert.equal(duration(35*60000),'35m');assert.equal(duration(HOUR),'1h00');
 });
 
 test('calendar data has a strict, bounded shape',()=>{
@@ -93,19 +89,48 @@ test('calendar data has a strict, bounded shape',()=>{
  assert.equal(calendarPlugin.nextDeadline(null,0),null,'no host time yet: no deadline');
 });
 
-test('D323: the calendar draws its column and screen, and falls back to D293 cells and lines',()=>{
- const words=(key,vars)=>({full:key+(vars?JSON.stringify(vars):''),short:key+'Short'});
- const context={locale:'en',settings:{},now:NOW,words};
+const words=(key,vars)=>({full:key+(vars?JSON.stringify(vars):''),short:key+'Short'});
+const context={locale:'en',settings:{},now:NOW,words};
+
+test('D323/D328: the calendar draws its column and screen, and falls back to D293 cells and lines',()=>{
  const reading=calendarPlugin.accept(week,undefined);
  const column=calendarPlugin.column(reading,context),screen=calendarPlugin.screen(reading,context);
  assert.equal(typeof column.draw,'function');assert.equal(typeof screen.draw,'function');
  assert.ok(column.cells.length>=2&&column.cells.length<=3);
- assert.deepEqual(column.cells.slice(0,2).map(c=>c.tag.full),['plugin.calendarReset','plugin.calendarPeak']);
- assert.equal(column.foot.label.full,'plugin.calendarNow');assert.equal(column.foot.value.full,'11:20');
+ assert.deepEqual(column.cells.slice(0,2).map(c=>c.tag.full),['plugin.calendarReset','plugin.calWeekReset']);
+ assert.match(column.cells[0].side.full,/^CL 12:30 · plugin\.calIn\{"t":"1h10"\}$/);
+ // The bottom line: the next peak, here GL at 22:00, 10h40 away.
+ assert.equal(column.foot.label.full,'plugin.calendarPeak');assert.equal(column.foot.value.full,'plugin.calIn{"t":"10h40"}');
  assert.ok(screen.lines.length>0&&screen.lines.every(l=>typeof l.label==='string'&&typeof l.value==='string'));
- // Before the first reading or host time: one waiting cell, no foot.
+ // While a peak runs: "GL peak now" and what is left.
+ const live=calendarPlugin.column(calendarPlugin.accept(week,undefined),{...context,now:local(2026,11,11,23)});
+ assert.equal(live.foot.label.full,'plugin.calPeakNow{"a":"GL"}');assert.equal(live.foot.value.full,'plugin.calLeft{"t":"3h00"}');
+ // Before the first reading or host time: one waiting cell, no foot, no draw.
  const waiting=calendarPlugin.column(undefined,{...context,now:0});
- assert.deepEqual(waiting.cells.map(c=>c.tag.full),['plugin.calendarWaiting']);assert.equal(waiting.foot,null);
+ assert.deepEqual(waiting.cells.map(c=>c.tag.full),['plugin.calendarWaiting']);assert.equal(waiting.foot,null);assert.equal(waiting.draw,null);
+});
+
+test('D328: a user with no peak rules gets D293 cells and "Peak: no peak rules", and no strip',()=>{
+ const codexOnly={...week,subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:local(2026,11,11,14,10),kind:'5h'},{sub:0,at:local(2026,11,13,6),kind:'week'}],spans:[]};
+ const column=calendarPlugin.column(calendarPlugin.accept(codexOnly,undefined),context);
+ assert.equal(column.draw,null,'column() returns no draw without peak data');
+ assert.deepEqual(column.cells.map(c=>c.tag.full),['plugin.calendarReset','plugin.calWeekReset']);
+ assert.match(column.cells[0].side.full,/^CX 14:10 · plugin\.calIn\{"t":"2h50"\}$/);
+ assert.match(column.cells[1].side.full,/^CX .* 06:00$/);
+ assert.equal(column.foot.label.full,'plugin.calPeakLabel');assert.equal(column.foot.value.full,'plugin.calNoRules');
+});
+
+test('D328: a day picked in the week view swaps the bottom line to that day\'s events; today (or a rolled-over day) restores it',()=>{
+ const reading=calendarPlugin.accept(week,undefined),memo={view:{day:local(2026,11,12),zoom:24,centre:null}};
+ const picked=calendarPlugin.column(reading,{...context,memo});
+ assert.match(picked.foot.label.full,/11\/12/);
+ assert.equal(picked.foot.value.full,'CL plugin.calWk 09:00');
+ assert.deepEqual(dayEvents(parseCalendarData(week),local(2026,11,12),{r5:'5h',wk:'wk',peak:'peak'}),['CL wk 09:00']);
+ // An empty day says so.
+ assert.equal(calendarPlugin.column(reading,{...context,memo:{view:{day:local(2026,11,14),zoom:24,centre:null}}}).foot.value.full,'plugin.calendarNone');
+ // The day rolled over (picked day is today now): back to the default line.
+ const rolled=calendarPlugin.column(reading,{...context,now:local(2026,11,12,3),memo});
+ assert.equal(rolled.foot.label.full,'plugin.calPeakLabel');assert.equal(memo.view.day,null);
 });
 
 test('the framework refuses a plugin whose derive or nextDeadline is not a function',()=>{

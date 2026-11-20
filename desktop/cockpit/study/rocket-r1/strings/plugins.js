@@ -44,7 +44,7 @@ register('plugin', {
   // The calendar plugin (v1.1, D137…D145, D323): key, Settings sentence, bottom line and the fallback cells.
   calendarTitle: ['lcd', '日历', 'Calendar'],
   calendarTitleShort: ['silk', '日历', 'Cal'],
-  calendarSummary: ['text', '今明两天的高峰和重置，点开看 7 天。', 'Peaks and resets for the next day and a half; open for 7 days.'],
+  calendarSummary: ['text', '未来 12 小时的高峰和重置，点开看 7 天。', 'Peaks and resets for the next 12 hours; open for 7 days.'],
   calendarNow: ['lcd', '现在', 'Now'],
   calendarNowShort: ['lcd', '现在', 'Now'],
   calendarReset: ['lcd', '下次重置', 'Next reset'],
@@ -59,7 +59,12 @@ register('plugin', {
   calendarWaitingShort: ['lcd', '等待', 'Wait'],
   // Words the calendar draws itself (day strip and week view); the plugin reads them through its context.
   calNow: ['lcd', '现在', 'Now'],
-  calBack: ['lcd', '↺ 现在', '↺ Now'],
+  calIn: ['lcd', '{t} 后', 'in {t}'],
+  calWeekReset: ['lcd', '每周重置', 'Weekly reset'],
+  calPeakNow: ['lcd', '{a} 高峰中', '{a} peak now'],
+  calLeft: ['lcd', '还剩 {t}', '{t} left'],
+  calPeakLabel: ['lcd', '高峰', 'Peak'],
+  calNoRules: ['lcd', '没有时段规则', 'No rules'],
   calAllDay: ['lcd', '全天', 'All day'],
   calPeak: ['lcd', '高峰', 'peak'],
   calCont: ['lcd', '（续）', ' (cont.)'],
