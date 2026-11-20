@@ -83,7 +83,7 @@ export const resourcePlugin:CockpitPlugin=Object.freeze({
   defaultEnabled:true,
   hostSampled:true,
   // D324: the column samples every 2, 5 or 10 s while it is shown (the host snaps other saved values to these).
-  settings:Object.freeze([Object.freeze({key:'intervalSeconds',kind:'seconds' as const,min:2,max:10,default:5})]),
+  settings:Object.freeze([Object.freeze({key:'intervalSeconds',kind:'seconds' as const,min:2,max:10,default:5,choices:Object.freeze([2,5,10])})]),
   accept(data:unknown,previous:unknown){
     if(data===null||typeof data!=='object'||Array.isArray(data)||Object.keys(data).length!==1)return undefined;
     const raw=(data as {samples?:unknown}).samples;

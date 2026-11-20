@@ -93,11 +93,30 @@ import AppKit
         let summaryLine = NSStackView(views: [summary])
         summaryLine.edgeInsets = .init(top: 0, left: 26, bottom: 0, right: 0)
         var views: [NSView] = [line, summaryLine]
-        // The per-plugin settings slot: one stepper per declared setting.
+        // The per-plugin settings slot: one stepper per declared setting, or one segmented control when the
+        // setting lists its choices (the resource plugin's 2 / 5 / 10 s, D324).
         for spec in plugin.settings {
             let value = prefs.value(plugin.id, spec.key, model.catalogue) ?? spec.defaultValue
             let label = NSTextField(labelWithString: spec.title.value(language))
             label.font = .systemFont(ofSize: 12); label.textColor = .secondaryLabelColor
+            if !spec.choices.isEmpty {
+                let control = CockpitPluginChoices(pluginID: plugin.id, key: spec.key, choices: spec.choices)
+                control.segmentCount = spec.choices.count; control.trackingMode = .selectOne
+                for (i, choice) in spec.choices.enumerated() {
+                    control.setLabel(text("\(choice) s", "\(choice) 秒"), forSegment: i)
+                    control.setWidth(0, forSegment: i)
+                }
+                control.selectedSegment = spec.choices.firstIndex(of: value) ?? -1
+                control.isEnabled = !busy && entry.enabled
+                control.target = self; control.action = #selector(chooseSetting(_:))
+                control.setAccessibilityIdentifier(base + "." + spec.key)
+                control.setAccessibilityLabel(spec.title.value(language))
+                let settingLine = NSStackView(views: [label, control])
+                settingLine.orientation = .horizontal; settingLine.spacing = 8; settingLine.alignment = .centerY
+                settingLine.edgeInsets = .init(top: 0, left: 26, bottom: 0, right: 0)
+                views.append(settingLine)
+                continue
+            }
             let shown = NSTextField(labelWithString: text("\(value) s", "\(value) 秒"))
             shown.setAccessibilityIdentifier(base + "." + spec.key + ".value")
             let stepper = CockpitPluginStepper(pluginID: plugin.id, key: spec.key)
@@ -135,6 +154,21 @@ import AppKit
     @objc private func movePluginEarlier(_ sender: NSButton) { if let id = sender.identifier?.rawValue { run(.move(id, -1)) } }
     @objc private func movePluginLater(_ sender: NSButton) { if let id = sender.identifier?.rawValue { run(.move(id, 1)) } }
     @objc private func changeSetting(_ sender: CockpitPluginStepper) { run(.setSetting(sender.pluginID, sender.key, sender.integerValue)) }
+    @objc private func chooseSetting(_ sender: CockpitPluginChoices) {
+        guard sender.choices.indices.contains(sender.selectedSegment) else { return }
+        run(.setSetting(sender.pluginID, sender.key, sender.choices[sender.selectedSegment]))
+    }
+}
+
+@MainActor final class CockpitPluginChoices: NSSegmentedControl {
+    let pluginID: String
+    let key: String
+    let choices: [Int]
+    init(pluginID: String, key: String, choices: [Int]) {
+        self.pluginID = pluginID; self.key = key; self.choices = choices
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
 }
 
 @MainActor final class CockpitPluginStepper: NSStepper {

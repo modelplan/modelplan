@@ -48,6 +48,8 @@ public struct DockInstrumentInput: Sendable {
     public var dataState: DockDataState = .unavailable
     public var unavailableReason:String?
     public var working: DockWorkingSignal?
+    /// A plugin ring (D327) instead of quota windows: evaluate draws it in the plugin ink and the card shows its rows.
+    public var pluginRing: DockPluginRing?
     public init(id: String, name: String, windows: [DockQuotaWindowInput]) {self.id=id;self.name=name;self.windows=windows}
     /// D40 / DOCK-3.5-01: a subscription that shares its name shows "name · alias" when the user
     /// gave it an alias, else the producer's "name · 2" (the first of the group stays plain).
@@ -89,6 +91,8 @@ public struct DockInstrumentReading: Sendable {
     public let isWorking: Bool, jetEligible: Bool
     /// True when the Settings choice is "used": the clock lights time elapsed instead of time left.
     public var clockShowsElapsed = false
+    /// Set for a plugin ring (DockPluginRingProjection): fixed ink, faint outer segment, no status colour.
+    public var pluginRing: DockPluginRing? = nil
     /// A transient display frame; the admitted reading and its observation time are never changed.
     /// `shown` keeps the outgoing number on screen while it fades out (G3-98).
     @_spi(DockResourceChecks) public func refreshSweepFrame(progress: Double, readout shown: String? = nil) -> DockInstrumentReading {
@@ -102,7 +106,8 @@ public struct DockInstrumentReading: Sendable {
             selectedWindowLabel: selectedWindowLabel, selectedResetAt: selectedResetAt,
             remainingPercent: remainingPercent, readout: shown ?? readout, status: status, dataState: dataState,
             unavailableReason: unavailableReason, timeLeftFraction: timeLeftFraction,
-            isWorking: isWorking, jetEligible: jetEligible, clockShowsElapsed: clockShowsElapsed)
+            isWorking: isWorking, jetEligible: jetEligible, clockShowsElapsed: clockShowsElapsed,
+            pluginRing: pluginRing.map { var r = $0; r.outerFaint *= p; return r })
     }
     /// Gallery-only fixture: the prototype varies level independently of its fixed 75% arc.
     @_spi(DockResourceChecks) public func comparisonFixture(status: DockQuotaStatus) -> DockInstrumentReading {
@@ -111,7 +116,7 @@ public struct DockInstrumentReading: Sendable {
             duplicateAccountTag:duplicateAccountTag,
             outer: fixtureOuter, inner: inner, selectedWindowID: selectedWindowID, selectedWindowLabel: selectedWindowLabel,
             selectedResetAt: selectedResetAt, remainingPercent: remainingPercent, readout: readout, status: status,
-            dataState: dataState, unavailableReason:unavailableReason, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible, clockShowsElapsed: clockShowsElapsed)
+            dataState: dataState, unavailableReason:unavailableReason, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible, clockShowsElapsed: clockShowsElapsed, pluginRing: pluginRing)
     }
 }
 
@@ -136,6 +141,7 @@ public enum DockInstrumentProjection {
     public static func evaluate(_ input: DockInstrumentInput, now: Date, redBelow: Double = 25) throws -> DockInstrumentReading {
         guard !input.id.isEmpty, input.windows.allSatisfy({!$0.id.isEmpty}), Set(input.windows.map(\.id)).count==input.windows.count else {throw DockLogicError.invalidCatalogue}
         guard now.timeIntervalSinceReferenceDate.isFinite, redBelow.isFinite, (0...100).contains(redBelow) else {throw DockLogicError.invalidTime}
+        if let ring = input.pluginRing { return try DockPluginRingProjection.reading(input, ring: ring) }
         func value(_ w: DockQuotaWindowInput) -> Double? { admittedRemaining(w, in: input, now: now) }
         func status(_ r: Double?) -> DockQuotaStatus {
             guard let r else{return .unknown}

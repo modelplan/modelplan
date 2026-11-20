@@ -90,6 +90,10 @@ test('registry defaults, enable/remove, pin limit, order and setting ranges',()=
  assert.equal(setPluginSetting(on,registry,'placeholder','intervalSeconds',31),null);
  assert.deepEqual(pluginSettings(setPluginSetting(on,registry,'placeholder','intervalSeconds',3),registry,'placeholder'),{intervalSeconds:3});
  assert.deepEqual(pluginSettings(parsePluginState({version:1,entries:[],settings:{placeholder:{intervalSeconds:99}}}),registry,'placeholder'),{intervalSeconds:10});
+ // D324: the resource column offers 2, 5 or 10 s only; another in-range value is refused and reads back as 5.
+ assert.equal(setPluginSetting(on,registry,'resources','intervalSeconds',3),null);
+ assert.deepEqual(pluginSettings(setPluginSetting(on,registry,'resources','intervalSeconds',10),registry,'resources'),{intervalSeconds:10});
+ assert.deepEqual(pluginSettings(parsePluginState({version:1,entries:[],settings:{resources:{intervalSeconds:7}}}),registry,'resources'),{intervalSeconds:5});
 });
 
 test('CKP-PLG-50/51 plugin contract: cells in the Other-cell grammar, history kept by the plugin, declared colours only',()=>{
@@ -134,6 +138,8 @@ test('CKP-PLG-54 the Swift Settings catalogue mirrors the web registry (ids, sum
  assert.deepEqual(ids,registry.list().map(p=>p.id));
  for(const plugin of registry.list())for(const s of plugin.settings)
   assert.match(swift,new RegExp(`CockpitPluginSettingSpec\\(key: "${s.key}", minimum: ${s.min}, maximum: ${s.max}, defaultValue: ${s.default}`),`${plugin.id}.${s.key}`);
+ for(const plugin of registry.list())for(const s of plugin.settings)if(s.choices)
+  assert.ok(swift.includes(`choices: [${s.choices.join(', ')}]`),`${plugin.id}.${s.key} choices`);
  // CKP-PLG-54: Settings shows the page's own one sentence, in both languages.
  for(const plugin of registry.list())assert.ok(swift.includes(`summary: .init("${tables.en[plugin.summary]}", "${tables['zh-CN'][plugin.summary]}")`),`${plugin.id} summary`);
  assert.match(swift,/maximumPinned = 2\b/);assert.match(swift,/maximumEntries = 32\b/);

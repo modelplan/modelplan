@@ -218,7 +218,7 @@ public struct DockNozzlePose: Equatable, Sendable {
             c.textPosition = .zero;CTLineDraw(line,c);c.restoreGState()
         }
         func usedUp(_ arc:DockQuotaArc?) -> Bool { arc?.remainingFraction == 0 }
-        func ring(_ recipe:DockRingRecipe,_ arc:DockQuotaArc?,_ centre:CGPoint) throws {
+        func ring(_ recipe:DockRingRecipe,_ arc:DockQuotaArc?,_ centre:CGPoint,plugin:DockPluginRing?=nil,faint:Double=0) throws {
             guard recipe.radius>0,recipe.width>0,recipe.radius.isFinite,recipe.width.isFinite,
                 recipe.opacity.isFinite,(0...1).contains(recipe.opacity),(0...1).contains(recipe.minimumVisibleFraction) else{throw DockArtworkError.invalidManifest}
             c.saveGState();c.setAlpha(recipe.opacity);c.setLineWidth(recipe.width);c.setLineCap(.butt)
@@ -236,8 +236,18 @@ public struct DockNozzlePose: Equatable, Sendable {
             } else { c.setStrokeColor(try ink("track")) }
             c.strokeEllipse(in:rect)
             c.setLineDash(phase:0,lengths:[]);c.setAlpha(recipe.opacity)
+            // D327: a plugin ring is always its own ink; the faint segment (memory cached) follows the solid one.
+            let pluginInk=plugin.map{CGColor(srgbRed:$0.red,green:$0.green,blue:$0.blue,alpha:1)}
+            if let pluginInk,faint.isFinite,faint>0 {
+                let start=CGFloat(max(0,min(1,arc?.fraction ?? 0))),end=CGFloat(min(1,Double(start)+faint))
+                if end>start {
+                    c.saveGState();c.setAlpha(recipe.opacity*0.35);c.setStrokeColor(pluginInk);c.setLineCap(.butt)
+                    c.addArc(center:centre,radius:recipe.radius,startAngle:-.pi/2+start*2 * .pi,endAngle:-.pi/2+end*2 * .pi,clockwise:false)
+                    c.strokePath();c.restoreGState()
+                }
+            }
             if let arc,let fraction=arc.fraction,fraction.isFinite,(0...1).contains(fraction),fraction>0 {
-                c.setStrokeColor(try ink(arc.status.rawValue))
+                c.setStrokeColor(try pluginInk ?? ink(arc.status.rawValue))
                 let visibleFraction = CGFloat(max(recipe.minimumVisibleFraction, fraction))
                 if visibleFraction >= 1 {
                     // A full turn through addArc is an open path with coincident endpoints; butt caps leave the
@@ -329,8 +339,8 @@ public struct DockNozzlePose: Equatable, Sendable {
                 c.setLineWidth(station.diameter/2-radius);c.setStrokeColor(try ink("case"))
                 let rr=(radius+station.diameter/2)/2
                 c.strokeEllipse(in:CGRect(x:station.centre.x-rr,y:station.centre.y-rr,width:2*rr,height:2*rr))
-                try ring(station.outer,reading.outer,station.centre)
-                if reading.inner != nil {try ring(station.inner,reading.inner,station.centre)}
+                try ring(station.outer,reading.outer,station.centre,plugin:reading.pluginRing,faint:reading.pluginRing?.outerFaint ?? 0)
+                if reading.inner != nil {try ring(station.inner,reading.inner,station.centre,plugin:reading.pluginRing)}
                 if station.notchWidth>0 {
                     c.setLineWidth(station.notchWidth);c.setStrokeColor(try ink("notch"))
                     c.move(to:CGPoint(x:station.centre.x,y:station.centre.y-station.diameter/2))

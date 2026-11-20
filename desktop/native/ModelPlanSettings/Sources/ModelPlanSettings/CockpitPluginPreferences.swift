@@ -13,9 +13,13 @@ public struct CockpitPluginSettingSpec: Equatable, Sendable {
     public let maximum: Int
     public let defaultValue: Int
     public let title: SettingsText
-    public init(key: String, minimum: Int, maximum: Int, defaultValue: Int, title: SettingsText) {
-        self.key = key; self.minimum = minimum; self.maximum = maximum; self.defaultValue = defaultValue; self.title = title
+    /// When not empty, the only values a user can pick (Settings shows one segmented control instead of a stepper).
+    public let choices: [Int]
+    public init(key: String, minimum: Int, maximum: Int, defaultValue: Int, title: SettingsText, choices: [Int] = []) {
+        self.key = key; self.minimum = minimum; self.maximum = maximum; self.defaultValue = defaultValue; self.title = title; self.choices = choices
     }
+    /// In range and, when there are choices, one of them.
+    public func allows(_ value: Int) -> Bool { (minimum...maximum).contains(value) && (choices.isEmpty || choices.contains(value)) }
 }
 public struct CockpitPluginDefinition: Equatable, Sendable {
     public let id: String
@@ -48,7 +52,8 @@ public enum CockpitPluginCatalogue {
         CockpitPluginDefinition(id: "resources", title: .init("Resources", "资源占用"),
                                 summary: .init("CPU, memory and disk of this Mac; sampled only while shown.", "显示这台 Mac 的 CPU、内存和磁盘，只在看得见时采样。"),
                                 symbol: "waveform.path.ecg.rectangle", defaultEnabled: true, settings: [
-            CockpitPluginSettingSpec(key: "intervalSeconds", minimum: 2, maximum: 10, defaultValue: 5, title: .init("Sampling interval", "采样间隔")),
+            CockpitPluginSettingSpec(key: "intervalSeconds", minimum: 2, maximum: 10, defaultValue: 5, title: .init("Sampling interval", "采样间隔"),
+                                     choices: [2, 5, 10]),
         ]),
     ]
     private static let lower: ClosedRange<Unicode.Scalar> = "a"..."z"
@@ -131,7 +136,7 @@ public struct CockpitPluginPreferences: Codable, Equatable, Sendable {
     /// A saved value inside the spec's range, else the default.
     public func value(_ id: String, _ key: String, _ catalogue: [CockpitPluginDefinition] = CockpitPluginCatalogue.builtIn) -> Int? {
         guard let spec = catalogue.first(where: { $0.id == id })?.settings.first(where: { $0.key == key }) else { return nil }
-        if let saved = settings[id]?[key], (spec.minimum...spec.maximum).contains(saved) { return saved }
+        if let saved = settings[id]?[key], spec.allows(saved) { return saved }
         return spec.defaultValue
     }
     /// Whether a pin can be added for `id` right now (on, and fewer than two others pinned).
@@ -160,7 +165,7 @@ public struct CockpitPluginPreferences: Codable, Equatable, Sendable {
             next.entries.swapAt(i, i + step)
         case let .setSetting(id, key, value):
             guard let spec = catalogue.first(where: { $0.id == id })?.settings.first(where: { $0.key == key }),
-                  (spec.minimum...spec.maximum).contains(value) else { return false }
+                  spec.allows(value) else { return false }
             next.settings[id, default: [:]][key] = value
         }
         guard (try? next.validate()) != nil else { return false }

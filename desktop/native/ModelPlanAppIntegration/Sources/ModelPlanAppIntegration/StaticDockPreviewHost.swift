@@ -2221,6 +2221,12 @@ struct DockHelpInteraction: Equatable {
     public func cardContent(for id:String,at date:Date? = nil) throws -> DockCardContent? {
         let now=date ?? currentDate()
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
+        if input.pluginRing != nil {
+            // D327: a plugin card has its own rows and footer (cadence, pressure); no source age or quota windows.
+            return try DockCardProjection.content(input: input, revision: application?.snapshot.revision ?? 0,
+                enterLabel: EngineRowsText.cockpitAction.value(preferences.language),
+                dismissLabel: EngineRowsText.contextClose.value(preferences.language), redBelow: effectiveRedBelow, at: now)
+        }
         var projected = memberSafePreferences.applying(to: input)
         projected.name = projected.duplicateDisplayName
         let row = model?.presentationRows[id]

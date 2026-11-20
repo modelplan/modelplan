@@ -10,7 +10,8 @@
 import {resourcePlugin} from './resource-plugin.js';
 export type PluginLocale='en'|'zh-CN';
 /** One per-plugin setting. `seconds` is a whole number of seconds inside [min, max] (e.g. sampling 3–30 s, D124). */
-export interface PluginSettingSpec {readonly key:string;readonly kind:'seconds';readonly min:number;readonly max:number;readonly default:number}
+/** `choices`, when given, are the only values a user can pick (Settings shows them as one segmented control). */
+export interface PluginSettingSpec {readonly key:string;readonly kind:'seconds';readonly min:number;readonly max:number;readonly default:number;readonly choices?:readonly number[]}
 /** A drawn string in its two forms (long first; the short one is used when the long one does not fit). */
 export interface PluginWords {readonly full:string;readonly short:string}
 export interface PluginContext {
@@ -77,7 +78,7 @@ export class PluginRegistry {
       if(!PLUGIN_INKS.includes(plugin.underline)||plugin.ink!==undefined&&!PLUGIN_INKS.includes(plugin.ink))throw TypeError('Invalid cockpit plugin colour');
       const keys=new Set<string>();
       for(const s of plugin.settings){
-        if(!SETTING_KEY.test(s.key)||keys.has(s.key)||!Number.isSafeInteger(s.min)||!Number.isSafeInteger(s.max)||!Number.isSafeInteger(s.default)||s.min<1||s.min>s.default||s.default>s.max||s.max>86400)throw TypeError('Invalid cockpit plugin setting');
+        if(!SETTING_KEY.test(s.key)||keys.has(s.key)||!Number.isSafeInteger(s.min)||!Number.isSafeInteger(s.max)||!Number.isSafeInteger(s.default)||s.min<1||s.min>s.default||s.default>s.max||s.max>86400||s.choices!==undefined&&(!s.choices.length||!s.choices.includes(s.default)||s.choices.some(c=>!Number.isSafeInteger(c)||c<s.min||c>s.max)))throw TypeError('Invalid cockpit plugin setting');
         keys.add(s.key);
       }
       this.#plugins.set(plugin.id,plugin);

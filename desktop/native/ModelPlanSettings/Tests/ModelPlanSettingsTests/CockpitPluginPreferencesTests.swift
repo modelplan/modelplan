@@ -32,6 +32,45 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         XCTAssertFalse(p.apply(.setSetting("resources", "intervalSeconds", 1)))
         XCTAssertFalse(p.apply(.setSetting("resources", "intervalSeconds", 11)))
         XCTAssertTrue(p.apply(.setSetting("resources", "intervalSeconds", 2)))
+        // Only the three choices: 3 s is in range but not offered (a saved 3 reads back as the default).
+        XCTAssertFalse(p.apply(.setSetting("resources", "intervalSeconds", 3)))
+        XCTAssertTrue(p.apply(.setSetting("resources", "intervalSeconds", 10)))
+        var saved = empty; saved.settings = ["resources": ["intervalSeconds": 7]]
+        XCTAssertEqual(saved.value("resources", "intervalSeconds"), 5)
+    }
+
+    /// D324 Settings row: switch, interval (2 / 5 / 10 s as one segmented control) and pin to page 1.
+    @MainActor func testResourceRowHasSwitchIntervalChoicesAndPin() async throws {
+        let model = CockpitPluginSettingsModel(store: CockpitPluginStore(directory: try directory()))
+        let view = SettingsCockpitPluginsView(model: model, language: .chinese)
+        view.apply(language: .chinese, paneID: "subscriptions", query: "")
+        func find<T: NSView>(_ id: String, _ type: T.Type) -> T? {
+            var queue: [NSView] = [view]
+            while let next = queue.first { queue.removeFirst(); if next.accessibilityIdentifier() == id, let hit = next as? T { return hit }; queue += next.subviews }
+            return nil
+        }
+        let enabled = try XCTUnwrap(find("settings.cockpitPlugins.resources.enabled", NSButton.self))
+        XCTAssertEqual(enabled.state, .on, "default on (D324)")
+        let pin = try XCTUnwrap(find("settings.cockpitPlugins.resources.pinned", NSButton.self))
+        XCTAssertEqual(pin.title, "固定到第 1 页"); XCTAssertTrue(pin.isEnabled)
+        XCTAssertNil(find("settings.cockpitPlugins.resources.intervalSeconds", NSStepper.self), "choices, not a stepper")
+        let choices = try XCTUnwrap(find("settings.cockpitPlugins.resources.intervalSeconds", NSSegmentedControl.self))
+        XCTAssertEqual((0..<choices.segmentCount).map { choices.label(forSegment: $0) }, ["2 秒", "5 秒", "10 秒"])
+        XCTAssertEqual(choices.selectedSegment, 1, "5 s by default")
+        let changed = expectation(description: "model change")
+        model.onChange = { _ in changed.fulfill() }
+        choices.selectedSegment = 2
+        XCTAssertTrue(choices.sendAction(choices.action, to: choices.target))
+        await fulfillment(of: [changed], timeout: 3)
+        XCTAssertEqual(model.preferences.value("resources", "intervalSeconds"), 10)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let pinNow = try XCTUnwrap(find("settings.cockpitPlugins.resources.pinned", NSButton.self))
+        let pinned = expectation(description: "pinned")
+        model.onChange = { _ in pinned.fulfill() }
+        pinNow.state = .on
+        XCTAssertTrue(pinNow.sendAction(pinNow.action, to: pinNow.target))
+        await fulfillment(of: [pinned], timeout: 3)
+        XCTAssertEqual(model.preferences.entries.first { $0.id == "resources" }?.pinned, true)
     }
 
     func testEditsFollowThePageRules() {

@@ -29,7 +29,7 @@ test('D327 the resource plugin is registered, default on, orchid underline and i
  assert.equal(resourcePlugin.underline,RESOURCE_INK);assert.equal(resourcePlugin.ink,RESOURCE_INK);
  assert.equal(resourcePlugin.defaultEnabled,true);
  assert.equal(resourcePlugin.hostSampled,true,'drawn only for a host that negotiated plugins (it samples)');
- assert.deepEqual(resourcePlugin.settings,[{key:'intervalSeconds',kind:'seconds',min:2,max:10,default:5}]);
+ assert.deepEqual(resourcePlugin.settings,[{key:'intervalSeconds',kind:'seconds',min:2,max:10,default:5,choices:[2,5,10]}]);
  // White line art in the vendor-mark frame: rounded screen + heartbeat line, currentColor only.
  assert.match(resourcePlugin.icon,/currentColor/);assert.doesNotMatch(resourcePlugin.icon,/#[0-9a-f]{3,6}/i);
  for(const key of [resourcePlugin.title,resourcePlugin.title+'Short',resourcePlugin.summary])assert.ok(tables.en[key]&&tables['zh-CN'][key],key);
