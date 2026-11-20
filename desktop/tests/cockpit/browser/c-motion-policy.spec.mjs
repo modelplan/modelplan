@@ -121,3 +121,18 @@ test('MOT-2.3-08 a hidden cockpit starts no transition and cancels any in flight
  expect(await running(page)).toEqual([]);
  expect(await page.locator('#cockpit').getAttribute('data-shell')).toBe('open');
 });
+
+test('MOT-2.3-08 the landing burn runs only on a shown cockpit: ignition while hidden starts no animation',async({page})=>{
+ const {send,receive}=await open(page,visualFixture().data);
+ const burn=async()=>(await running(page)).filter(m=>m.kind==='CSSAnimation'&&/cockpit-bell-(flare|burn)/.test(m.name));
+ // Positive control: ignition on a shown cockpit runs the burn.
+ expect(await receive(send('ignition',{on:true}))).toBe(true);
+ expect((await burn()).length).toBeGreaterThan(0);
+ expect(await receive(send('ignition',{on:false}))).toBe(true);
+ // Hidden: the host may still ignite, but nothing runs, and nothing starts when the ignition flips while hidden.
+ expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);
+ expect(await receive(send('ignition',{on:true}))).toBe(true);
+ expect(await page.locator('#cockpit').getAttribute('data-ignite')).toBe('true');
+ expect(await burn()).toEqual([]);
+ expect((await motions(page)).filter(m=>/cockpit-bell-(flare|burn)/.test(m.animation))).toEqual([]);
+});

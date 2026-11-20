@@ -1192,10 +1192,11 @@ actor EntrySyntheticClient: EngineClient {
         let editor = app.settingsHost.application.editor
 
         func items() throws -> [NSMenuItem] {
-            try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }
+            // MENU-50: the range's total line appears only with cockpit figures; these checks are about the other rows.
+            try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem && $0.accessibilityIdentifier() != "status.rangeTotal" }
         }
-        let english = ["Refresh", "Show Quota Widget", "Find Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "Reset Position", "About ModelPlan", "Quit ModelPlan"]
-        let chinese = ["刷新", "显示额度挂件", "找到额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "重置位置", "关于 ModelPlan", "退出 ModelPlan"]
+        let english = ["Time range", "Open Cockpit", "Show Quota Widget", "Find Quota Widget", "Reset Position", "Settings…", "Help…", "Quit ModelPlan"]
+        let chinese = ["时间段", "打开驾驶舱", "显示额度挂件", "找到额度挂件", "重置位置", "设置…", "说明…", "退出 ModelPlan"]
         XCTAssertEqual(try items().map(\.title), english)
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try items().map(\.title), chinese)

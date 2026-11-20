@@ -13,6 +13,7 @@ import (
 type CockpitToday struct {
 	SubscriptionRef string
 	Source          string
+	TotalTokens     *int64
 	OutputTokens    int64
 	GenerationTPS   *float64
 	BindingBasis    string
@@ -54,7 +55,7 @@ func CockpitTodayTotals(accounts []quota.Account, view speed.PerfView) []Cockpit
 		if c.ambiguous || c.ref == "" || total.Sums.ObservedRequests <= 0 || total.Sums.ObservedOutputTokens < 0 {
 			continue
 		}
-		item := CockpitToday{SubscriptionRef: c.ref, Source: total.Source, OutputTokens: total.Sums.ObservedOutputTokens, BindingBasis: "source-wide-current-binding"}
+		item := CockpitToday{SubscriptionRef: c.ref, Source: total.Source, TotalTokens: total.Sums.TotalTokens, OutputTokens: total.Sums.ObservedOutputTokens, BindingBasis: "source-wide-current-binding"}
 		if total.Sums.EligibleRequests >= speed.MinSamples && total.Sums.GenMs > 0 && total.Sums.EligibleOutputTokens >= 0 {
 			rate := float64(total.Sums.EligibleOutputTokens) * 1000 / float64(total.Sums.GenMs)
 			item.GenerationTPS = &rate

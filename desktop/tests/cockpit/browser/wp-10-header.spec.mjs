@@ -97,3 +97,59 @@ test('WP-10 the close button keeps its dark red caps and its 32 x 32 box',async(
  const paint=s=>page.locator(s).evaluate(e=>{const b=getComputedStyle(e,'::before');return {bg:b.backgroundImage,shadow:b.boxShadow,w:e.offsetWidth,h:e.offsetHeight};});
  const close=await paint('[data-close]');expect(close.bg).toContain('gradient');expect(close.w).toBe(32);expect(close.h).toBe(32);
 });
+
+// WP-10 after WP-09 (#1047): the date keys are wired to the app's one range (shell.range / rangeSelect).
+async function openWithData(page,{range='7d',empty=false}={}){
+ const {visualFixture}=await import('../visual-fixture.mjs');
+ await page.addInitScript(()=>{window.__ev=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__ev.push(JSON.parse(raw));}}}};});
+ await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const data=visualFixture().data;if(empty){data.projection.rows=[];data.subscriptions=[];data.details=null;}
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance,shell:{...shell,range},redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('display',{data}))).toBe(true);
+ return {send,receive};
+}
+const checked=page=>page.evaluate(()=>[...document.querySelectorAll('[data-range-key]')].filter(b=>b.getAttribute('aria-checked')==='true').map(b=>b.dataset.rangeKey));
+const asks=page=>page.evaluate(()=>window.__ev.filter(e=>e.type==='action'&&e.action==='rangeSelect').map(e=>e.key));
+
+test('WP-10 the date keys show the host range and a click asks the app with rangeSelect',async({page})=>{
+ const {send,receive}=await openWithData(page,{range:'30d'});
+ expect(await checked(page)).toEqual(['30d']);
+ await page.locator('[data-range-key="today"]').click();
+ expect(await asks(page)).toEqual(['today']);
+ expect(await checked(page)).toEqual(['today']);
+ await page.locator('[data-range-key="today"]').focus();await page.keyboard.press('ArrowRight');
+ expect(await asks(page)).toEqual(['today','7d']);
+ // the host decides: its shell is the source of truth for both the keys and the MFD footer key
+ expect(await receive(send('shell',{...shell,range:'30d'}))).toBe(true);
+ expect(await checked(page)).toEqual(['30d']);
+ await expect(page.locator('[data-opt="range"] b.on')).toHaveText('30d');
+ // T (the other surface of the same range) moves the keys too
+ await page.keyboard.press('t');
+ expect(await checked(page)).toEqual(['today']);
+});
+
+test('WP-10 a shell without a range (an older host) leaves the date keys on 7d',async({page})=>{
+ await openWithData(page,{range:undefined});
+ expect(await checked(page)).toEqual(['7d']);
+});
+
+test('WP-10 with no usage source the date keys are dimmed and ask for nothing',async({page})=>{
+ await openWithData(page,{empty:true});
+ const keys=page.locator('[data-range-key]');
+ for(const k of await keys.all()){await expect(k).toHaveAttribute('aria-disabled','true');expect(Number(await k.evaluate(e=>getComputedStyle(e).opacity))).toBeLessThan(0.6);}
+ await page.locator('[data-range-key="30d"]').click({force:true});
+ expect(await asks(page)).toEqual([]);
+ expect(await checked(page)).toEqual(['7d']);
+});
+
+test('WP-10 the date keys are live again once a usage source reports',async({page})=>{
+ const {send,receive}=await openWithData(page,{empty:true});
+ const {visualFixture}=await import('../visual-fixture.mjs');
+ expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ for(const k of await page.locator('[data-range-key]').all())await expect(k).not.toHaveAttribute('aria-disabled','true');
+ await page.locator('[data-range-key="30d"]').click();
+ expect(await asks(page)).toEqual(['30d']);
+});

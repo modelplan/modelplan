@@ -1,1 +1,2 @@
 The cockpit header has a new layout: ALERT sits left of a centred porthole switch (a click toggles; the slider drag is gone), three Today / 7d / 30d date keys with live labels (each key's click area covers its label, its cap and the halves of the gaps beside it), and the settings, detach and close buttons sit 6 pt apart. The close button, the settings and detach art, the logo and the ALERT lamp are unchanged.
+The date keys now follow the app's one time range (they show it and ask for it, like the T key), and they dim and ask for nothing while there is no usage source.

@@ -75,6 +75,9 @@ func forgetLocalSpeedLedgers(p Paths, tool string) error {
 	if err := markHistoryCleared(cache, tool); err != nil {
 		return err
 	}
+	if err := speed.ForgetAccountingLocked(cache, tool); err != nil {
+		return err
+	}
 	legacy := speed.LegacyCursorSources(cache, ledgerLogRoots(p))
 	for _, name := range []string{"speed.json", "perf.json", "daily-long.json", "imported.json"} {
 		if err := filterCachedSource(filepath.Join(observed, name), name, tool, true, legacy); err != nil {

@@ -107,9 +107,35 @@ reply with the new context. Replays and old view revisions are rejected even whe
 the consent floor itself did not change. An engine restart can adopt its new
 session only through that explicit clear, or by unloading and making a fresh page.
 
-Page responses include `ready`, `rendered`, `cleared`, `nextDeadline` and `action`, with the same context/header IDs and the independent output sequence. `ready` carries `appearanceVersion: 2` and the capabilities `appearanceUpdates`, `shellState` and `shellActions`. While visible with displayed data, display, appearance and tick can report a nullable `deadlineUnixMs` correlated to the triggering request. Fixed actions include `chooseSetup`, `openSettings`, `close`, `detach`, `putBack`, `shutterToggle`, `scopeSelect`, `openHistory`, `openField` and `openWebsite`. `openField` may carry `key`, the clicked rocket's published display name (1-64 characters); native resolves it against the published models and focuses nothing for an unknown name. `openWebsite` carries a `page` (`plans`, `effort` or `methodology`) and a short `value`; native builds the public address from them, so no URL crosses the bridge. `scopeSelect` carries `key` equal to `all` or an admitted current member; `openHistory` carries a `tool` from the current displayed rows. Clear invalidates that action membership too. Native
+Page responses include `ready`, `rendered`, `cleared`, `nextDeadline` and `action`, with the same context/header IDs and the independent output sequence. `ready` carries `appearanceVersion: 2` and the capabilities `appearanceUpdates`, `shellState` and `shellActions`. While visible with displayed data, display, appearance and tick can report a nullable `deadlineUnixMs` correlated to the triggering request. While the session strip lists a session, the next whole minute is a deadline, so its elapsed time and "6m ago" move with the host's tick (owner decision D277, CKP-STRIP-16). Fixed actions include `chooseSetup`, `openSettings`, `close`, `detach`, `putBack`, `shutterToggle`, `scopeSelect`, `openHistory`, `openField`, `openWebsite` and `refreshMember`. `openField` may carry `key`, the clicked rocket's published display name (1-64 characters); native resolves it against the published models and focuses nothing for an unknown name. `openWebsite` carries a `page` (`plans`, `effort` or `methodology`) and a short `value`; native builds the public address from them, so no URL crosses the bridge. `refreshMember` (owner D277) carries `key` equal to `all` or an admitted current member and asks native for the widget's per-member re-read. `scopeSelect` carries `key` equal to `all` or an admitted current member; `openHistory` carries a `tool` from the current displayed rows. Clear invalidates that action membership too. Native
 maps these to typed UI intents, never to a command/URL interpreter. No credential,
 consent mutation or plugin-install message exists in this protocol.
+
+## Plugin columns (D121/D124, D293; CKP-PLG-50…54)
+
+Plugins are bundled modules in `src/plugin-registry.ts`: id, string-table keys for the title (long and short) and the
+one-sentence Settings summary, a trusted white line-art icon at the vendor-mark size, the dashed underline colour and
+bar ink (only `#87939e`, `#e9edf0` or `#b9c7d6`), settings specs, and three pure functions: `accept` folds a host reading
+into the plugin's state (kept across repaints), `column` describes up to three cells in the subscription columns'
+Other-cell grammar (small tag · large number · side value · continuous bar with a thin trend line) plus a bottom line,
+and `screen` gives the lines of its big screen. Plugin strings live in `study/rocket-r1/strings/plugins.js`, each drawn
+one with a `<key>Short` form. `src/plugin-layout.ts` is the pure page rule: columns = max(3, subscriptions + plugins),
+at most six per page, subscriptions first; unpinned plugins only fill free slots of the last page; up to two pinned
+plugins stay on page 1. `src/plugin-host.ts` turns empty slots into plugin keys and columns drawn like subscription keys
+and columns (no inner frame, no ×), opens a plugin's big screen inside the big-screen well when its key is clicked
+(faders and page keys stay uncovered; a page key closes it), offers Remove on the key's right-click menu, and runs the
+empty-slot "+" menu (detected unconnected tools, then plugins). Settings keeps the durable choices in the "Plugins"
+section of Settings › Subscriptions.
+
+Lifecycle: a plugin runs only while the page is visible and not occluded (key or not) and its column is on the shown
+page. The page has no timers; the host samples. Messages, all with the common header:
+
+- host → page `{"type":"plugins","plugins":{"version":1,"entries":[{"id","enabled","pinned"}],"settings":{id:{key:int}}}}`:
+  the saved choices (Settings, `CockpitPluginPreferences.swift`). Sending it also tells the page the host accepts the
+  two actions below; without it the page posts neither and keeps page edits to itself.
+- host → page `{"type":"pluginData","id":…,"data":…}`: a reading for a running plugin; refused otherwise.
+- page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's right-click Remove or the "+" menu.
+- page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
 
 ## Animation budget and evidence
 

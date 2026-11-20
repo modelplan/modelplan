@@ -416,6 +416,12 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 		if err := markHistoryCleared(p.Cache, tool); err != nil {
 			return err
 		}
+		// The per-response accounting ledger is local history too: the boundary hides it from
+		// projections, but Forget reports deletion, so the tool's records are erased here, under
+		// the same ledger locks and before any success is reported.
+		if err := speed.ForgetAccountingLocked(p.Cache, tool); err != nil {
+			return err
+		}
 		legacy = speed.LegacyCursorSources(p.Cache, ledgerLogRoots(p))
 	}
 	if identity {

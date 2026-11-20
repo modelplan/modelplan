@@ -38,3 +38,7 @@
 @media(prefers-contrast:more){.ck-head .rk{color:#C9D0D6}.ck-head .rk[aria-checked=true]{color:#fff;font-weight:600}.ck-head .rk[aria-checked=true] .rk-label{text-shadow:none}}
 body.reduced .ck-head .shutter-slider::before,body.reduced .ck-head .shutter-slider::after,body.reduced .ck-head .rk,body.reduced .ck-head .rk-cap::after,html[data-reduce-motion=true] .ck-head .shutter-slider::before,html[data-reduce-motion=true] .ck-head .shutter-slider::after,html[data-reduce-motion=true] .ck-head .rk,html[data-reduce-motion=true] .ck-head .rk-cap::after{transition:none}
 @media(prefers-reduced-motion:reduce){.ck-head .shutter-slider::before,.ck-head .shutter-slider::after,.ck-head .rk,.ck-head .rk-cap::after{transition:none}}
+/* No usage source: the date keys stay visible but dim, and ask for nothing (header-range.ts sets aria-disabled). */
+.ck-head .rk[aria-disabled=true]{opacity:.4;cursor:default}
+.ck-head .rk[aria-disabled=true]:hover .rk-cap{filter:none}
+.ck-head .rk[aria-disabled=true]:active .rk-cap::after{opacity:0}

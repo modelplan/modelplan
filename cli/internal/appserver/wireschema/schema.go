@@ -267,6 +267,11 @@ func (b *builder) schema(t reflect.Type, ref bool) any {
 				name = field.Name
 			}
 			props[name] = b.schema(field.Type, true)
+			// null:"forbidden" means explicit null is invalid: the optional pointer is absent or a value, so the web
+			// reader and the Swift decoder refuse the same documents.
+			if field.Type.Kind() == reflect.Pointer && field.Tag.Get("null") == string(wire.NullForbidden) {
+				props[name] = b.schema(field.Type.Elem(), true)
+			}
 			for _, constraint := range strings.Split(field.Tag.Get("schema"), ",") {
 				key, value, ok := strings.Cut(constraint, "=")
 				if !ok {

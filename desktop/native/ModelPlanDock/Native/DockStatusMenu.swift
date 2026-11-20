@@ -12,10 +12,15 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
     public let action: (() -> Void)?
     public let target: AnyObject?, selector: Selector?
     public let checked: Bool?
+    /// A custom row (MENU-50's range selector); the title stays the item's accessible name.
+    public let view: NSView?
+    /// A row kept in the menu but not shown (MENU-50's total line when the range has no figure).
+    public let hidden: Bool
     public init(title: String?, accessibilityID: String? = nil, keyEquivalent: String = "",
-                target: AnyObject? = nil, selector: Selector? = nil, checked: Bool? = nil, action: (() -> Void)? = nil) {
+                target: AnyObject? = nil, selector: Selector? = nil, checked: Bool? = nil, view: NSView? = nil, hidden: Bool = false, action: (() -> Void)? = nil) {
+        self.hidden = hidden
         self.title = title; self.accessibilityID = accessibilityID; self.keyEquivalent = keyEquivalent
-        self.target = target; self.selector = selector; self.checked = checked; self.action = action
+        self.target = target; self.selector = selector; self.checked = checked; self.view = view; self.action = action
     }
 }
 
@@ -46,7 +51,9 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
             item.target = value.selector == nil ? (value.action == nil ? nil : self) : value.target
             item.representedObject = index; item.isEnabled = selector != nil
             if let id = value.accessibilityID { item.setAccessibilityIdentifier(id) }
+            item.isHidden = value.hidden
             if let checked = value.checked { item.state = checked ? .on : .off }
+            if let view = value.view { item.view = view; item.isEnabled = true }
             if let action = value.action { presentedActions[index] = action }
             menu.addItem(item)
         }
@@ -94,6 +101,7 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
             item.representedObject = index; item.isEnabled = selector != nil
             if let id = value.accessibilityID { item.setAccessibilityIdentifier(id) }
             if let checked = value.checked { item.state = checked ? .on : .off }
+            if let view = value.view { item.view = view; item.isEnabled = true }
             if let action = value.action { presentedActions[index] = action }
             menu.addItem(item)
         }

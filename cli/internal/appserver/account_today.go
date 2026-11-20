@@ -86,7 +86,7 @@ func attachAccountToday(projection *rows.Projection, accounts []quota.Account, p
 		if target == nil || target.Today != nil {
 			continue
 		}
-		stats := &rows.AccountToday{BindingBasis: rows.TodaySourceWideCurrentBinding}
+		stats := &rows.AccountToday{BindingBasis: rows.TodaySourceWideCurrentBinding, ObservedTotalTokens: total.TotalTokens}
 		if total.OutputTokens > 0 {
 			value := total.OutputTokens
 			stats.ObservedOutputTokens = &value
@@ -95,7 +95,7 @@ func attachAccountToday(projection *rows.Projection, accounts []quota.Account, p
 			value := *total.GenerationTPS
 			stats.GenerationTps = &value
 		}
-		if stats.ObservedOutputTokens != nil || stats.GenerationTps != nil || stats.RunningSessions != nil {
+		if stats.ObservedTotalTokens != nil || stats.ObservedOutputTokens != nil || stats.GenerationTps != nil || stats.RunningSessions != nil {
 			target.Today = stats
 		}
 	}

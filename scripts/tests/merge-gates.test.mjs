@@ -31,8 +31,8 @@ const pr = (over = {}) => ({
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } },
   ...over,
 });
-const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, p = pr() } = {}) =>
-  R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, conf });
+const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, prove, p = pr() } = {}) =>
+  R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, proveMainMerges: prove, conf });
 // D243 (owner 2026-11-13): scenario evidence, Scenarios lines, trains, GLMREV, DESIGN and non-GPT verdict blocks are
 // advisory. They never change the PR state; the status description names them after "info:". advisory() reads the
 // evidence part back out of a result: PENDING when the description reports missing or unreadable evidence.
@@ -241,6 +241,62 @@ test("carry: verified edges only, followed back from the head, at most 6 hops", 
   assert.equal(evalPr({ ...carried, verified: () => true }).state, R.SUCCESS);
   assert.equal(evalPr(carried).state, R.PENDING, "an unproven carry line does not carry");
   assert.equal(R.carryEdges(R.feed([], [review(`VERDICT-CARRY: ${OLD} -> ${H}`)])).length, 0, "edges come from comments only");
+});
+
+// D243 G6 (owner 2026-11-14): a merge VERDICT carries across main merges without a VERDICT-CARRY comment.
+const MID = "d".repeat(40);
+const proved = (between = [H]) => (o, n) => ({ ok: true, why: "main merges only, diff unchanged", between });
+const unproved = () => ({ ok: false, why: "the PR's own diff changed", between: [] });
+
+test("auto-carry: a merge VERDICT carries over a proven clean main merge and says so in the description", () => {
+  const seen = [];
+  const r = evalPr({ comments: [comment(v("merge", OLD, "macrevc"))], prove: (o, n) => { seen.push([o, n]); return proved()(o, n); } });
+  assert.deepEqual(seen, [[OLD, H]], "the reviewed head is proved against the current head");
+  assert.equal(r.state, R.SUCCESS);
+  assert.match(r.why, /^tier 1: gates pass; verdict carried from bbbbbbbb \(main merges only, diff unchanged\)/);
+  assert.equal(r.autoCarried, OLD);
+  assert.ok(R.description(r.why).includes("verdict carried from bbbbbbbb (main merges only, diff unchanged)"));
+  // Waiting for CI after a carry still names the carry.
+  const waiting = evalPr({ comments: [comment(v("merge", OLD, "macrevc"))], prove: proved(), runs: [run(".github/workflows/ci.yml", null, 1, "in_progress")] });
+  assert.equal(waiting.state, R.PENDING);
+  assert.match(waiting.why, /verdict carried from bbbbbbbb/);
+  // Two main merges in a row carry the same way.
+  assert.equal(evalPr({ comments: [comment(v("merge", OLD, "macrevc"))], prove: proved([H, MID]) }).state, R.SUCCESS);
+});
+
+test("auto-carry: no carry when the proof fails (own hunks changed, a non-merge commit, not on main)", () => {
+  const r = evalPr({ comments: [comment(v("merge", OLD, "macrevc"))], prove: unproved });
+  assert.equal(r.state, R.PENDING);
+  assert.doesNotMatch(r.why, /carried/);
+  assert.equal(evalPr({ comments: [comment(v("merge", OLD, "macrevc"))] }).state, R.PENDING, "no proof function, no carry");
+});
+
+test("auto-carry: no carry after a VERDICT at a later head, and a carried block still blocks", () => {
+  // A review posted at a head after the reviewed one (here a block at MID) stops the carry from OLD.
+  const later = [comment(v("merge", OLD, "macrevc")), comment(v("block", MID, "macrevc"))];
+  assert.equal(evalPr({ comments: later, prove: proved([H, MID]) }).state, R.PENDING);
+  // Only the newest reviewed head is a candidate: an older merge never skips over a newer review.
+  const seen = [];
+  evalPr({ comments: later, prove: (o, n) => { seen.push(o); return proved([H, MID])(o, n); } });
+  assert.deepEqual(seen, [MID]);
+  assert.equal(evalPr({ comments: later, prove: (o) => (o === MID ? unproved() : proved([H, MID])()) }).state, R.PENDING, "no fallback to OLD");
+  // A block at the reviewed head carries with it.
+  const blocked = evalPr({ comments: [comment(v("merge", OLD, "macrevc")), comment(v("block", OLD, "macrevc"))], prove: proved() });
+  assert.equal(blocked.state, R.FAILURE);
+  assert.match(blocked.why, /VERDICT block \(macrevc\)/);
+  // A fresh verdict at the current head still counts alongside a carried one.
+  assert.equal(evalPr({ comments: [comment(v("merge", OLD, "macrevc")), comment(v("block", H, "macrev2"))], prove: proved() }).state, R.FAILURE);
+});
+
+test("auto-carry: tier rules apply to the carried verdict; tier 2 needs a Sol lane", () => {
+  const t2 = [file("clients/swift/Wire.swift")];
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", OLD, "macrevc"))], prove: proved() }).state, R.PENDING, "Terra is advice on tier 2");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", OLD, "glm"))], prove: proved() }).state, R.PENDING, "GLM never counts");
+  for (const lane of ["macrev2", "macrevb", "macrevd"]) {
+    const r = evalPr({ files: t2, comments: [comment(v("merge", OLD, lane))], prove: proved() });
+    assert.equal(r.state, R.SUCCESS, lane);
+    assert.match(r.why, /^tier 2: gates pass; verdict carried from bbbbbbbb/);
+  }
 });
 
 test("design marker: paths, pin-only bundle updates, DESIGN lines only in design-conformance reviews (advisory, D243)", () => {
@@ -701,6 +757,62 @@ test("carry proof: object-identical contribution over a clean main merge, fail c
   } finally { r.done(); }
 });
 
+test("auto-carry proof: main merges only and an identical own diff; own-hunk changes, extra commits and side merges fail", () => {
+  const r = repo();
+  try {
+    const lines = (n, edit = {}) => Array.from({ length: n }, (_, i) => edit[i] ?? `line ${i}`).join("\n") + "\n";
+    r.put("big.txt", lines(40)); r.g("add", "big.txt"); r.g("commit", "-qm", "big"); r.g("update-ref", MAINREF, "HEAD");
+    r.g("checkout", "-qb", "pr");
+    r.put("a.txt", "a2\n"); r.put("big.txt", lines(40, { 5: "pr edit" })); r.g("commit", "-qam", "pr change");
+    const reviewed = r.sha();
+    // Main moves: another file and a far-away hunk of a file the PR also edits.
+    r.g("checkout", "-q", "main");
+    r.put("b.txt", "b2\n"); r.put("big.txt", lines(40, { 35: "main edit" })); r.g("commit", "-qam", "main change"); r.g("update-ref", MAINREF, "HEAD");
+    r.g("checkout", "-q", "pr"); r.g("merge", "-q", "--no-edit", "main");
+    const m1 = r.sha();
+    const ok = G.verifyMainMerges(r.dir, reviewed, m1, MAINREF);
+    assert.deepEqual(ok, { ok: true, why: "main merges only, diff unchanged", between: [m1] });
+    // A second main merge on top still carries from the reviewed head, listing both merges.
+    r.g("checkout", "-q", "main"); r.put("c.txt", "c2\n"); r.g("commit", "-qam", "main again"); r.g("update-ref", MAINREF, "HEAD");
+    r.g("checkout", "-q", "pr"); r.g("merge", "-q", "--no-edit", "main");
+    const m2 = r.sha();
+    assert.deepEqual(G.verifyMainMerges(r.dir, reviewed, m2, MAINREF).between, [m2, m1]);
+
+    // The merge resolution changes the PR's own hunk: no carry.
+    r.g("checkout", "-q", "-b", "pr2", reviewed);
+    r.g("merge", "-q", "--no-commit", "main"); r.put("big.txt", lines(40, { 5: "pr edit, resolved differently", 35: "main edit" })); r.g("add", "big.txt"); r.g("commit", "-qm", "merge");
+    assert.match(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).why, /differs from a clean merge of its parents/);
+    // A generated file regenerated in the merge counts as the PR's own diff too.
+    r.g("checkout", "-q", "-b", "pr2b", reviewed);
+    r.g("merge", "-q", "--no-commit", "main"); r.put("a.txt", "a2 regenerated\n"); r.g("add", "a.txt"); r.g("commit", "-qm", "merge");
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).ok, false);
+    // A mode-only change hidden in the merge is caught.
+    r.g("checkout", "-q", "-b", "pr2c", reviewed);
+    r.g("merge", "-q", "--no-commit", "main"); chmodSync(join(r.dir, "a.txt"), 0o755); r.g("add", "a.txt"); r.g("commit", "-qm", "merge");
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).ok, false);
+
+    // A non-merge commit after the reviewed head: no carry, even when it is followed by a clean main merge.
+    r.g("checkout", "-q", "-b", "pr3", m1);
+    r.put("d.txt", "new\n"); r.g("add", "d.txt"); r.g("commit", "-qm", "extra");
+    assert.match(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).why, /is not a merge of main/);
+    r.g("merge", "-q", "--no-edit", "main");
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).ok, false);
+    // An empty non-merge commit is still a non-merge commit.
+    r.g("checkout", "-q", "-b", "pr3b", m1); r.g("commit", "-q", "--allow-empty", "-m", "empty");
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).ok, false);
+
+    // A merge of a branch that is not on main: no carry.
+    r.g("checkout", "-q", "-b", "side", "main~1"); r.put("e.txt", "side\n"); r.g("add", "e.txt"); r.g("commit", "-qm", "side");
+    r.g("checkout", "-q", "-b", "pr4", reviewed); r.g("merge", "-q", "--no-edit", "side");
+    assert.match(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).why, /second parent is not on main/);
+
+    // Not a descendant, the same commit, or an unknown commit: no carry.
+    assert.equal(G.verifyMainMerges(r.dir, m1, reviewed, MAINREF).ok, false);
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, reviewed, MAINREF).ok, false);
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, "f".repeat(40), MAINREF).ok, false);
+  } finally { r.done(); }
+});
+
 test("commitsOnlyIn: the head's commits that main does not have, fail closed on a missing object", () => {
   const r = repo();
   try {
@@ -774,18 +886,18 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
   // merge_group has no paths filter: queue-scope must decide with the same list as pull_request, or a
   // group could skip a Mac check its PR run would have needed. native-headless must wait for that decision.
   const desktop = readFileSync(join(root, ".github/workflows/desktop.yml"), "utf8");
-  const prPathList = JSON.parse(/^  pull_request:\n    paths: (\[.*\])$/m.exec(desktop)[1]);
+  const prPathList = JSON.parse(/^  pull_request:\n    paths: (\[.*\])$/m.exec(desktop)[1]).filter((p) => !p.startsWith("!"));
   const scope = new RegExp(/^\s+QUEUE_PATHS: (.+)$/m.exec(desktop)[1]);
   for (const p of prPathList) assert.match(p.replace(/\*\*$/, "x"), scope, `queue-scope misses ${p}`);
   assert.doesNotMatch("docs/mac-ci.md", scope);
-  assert.match(/^  native-headless:\n(?:.*\n){1,3}/m.exec(desktop)[0], /needs: queue-scope/);
+  assert.match(/^  native-headless:\n(?:.*\n){1,3}/m.exec(desktop)[0], /needs: (queue-scope|\[queue-scope, pr-scope\])/);
   // D112: every other queue workflow is Linux-only and decides with its own pull_request path list.
   for (const path of R.QUEUE_WORKFLOWS.filter((p) => !/\/(ci|desktop)\.yml$/.test(p))) {
     const text = readFileSync(join(root, path), "utf8");
     assert.doesNotMatch(text, /macos|trusted-mac\.yml/i, `${path}: no Mac time in the merge queue`);
     const block = /^  pull_request:\n    paths:\n((?:      - .*\n)+)/m.exec(text);
     assert.ok(block, `${path}: pull_request paths list`);
-    const list = block[1].trim().split("\n").map((l) => l.replace(/^\s*- /, "").replace(/^['"]|['"]$/g, ""));
+    const list = block[1].trim().split("\n").map((l) => l.replace(/^\s*- /, "").replace(/^['"]|['"]$/g, "")).filter((p) => !p.startsWith("!"));
     const re = new RegExp(/^\s+QUEUE_PATHS: (.+)$/m.exec(text)[1]);
     for (const p of list) assert.match(p.replace(/\*\*$/, "x"), re, `${path}: queue-scope misses ${p}`);
     assert.doesNotMatch("docs/unrelated.md", re, `${path}: queue-scope is too wide`);
@@ -957,6 +1069,161 @@ test("an action_required run never ran: it is skipped when picking the latest ru
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "success", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.SUCCESS);
 });
 
+test("D239: reader, detection and metric PRs name the reference app they follow, or none with a reason (advisory, D243)", () => {
+  const ok = (body, files) => evalPr({ p: pr({ body }), files, comments: [comment(v("merge", H, "macrev2")), comment(`GLMREV: OK @ ${H}`)], verified: () => true });
+  // Scope: the reader packages and the reader-cause copy table; everything else is untouched by the rule.
+  for (const p of ["cli/internal/quota/claude.go", "cli/internal/detect/catalogue.go", "cli/internal/localusage/codex.go",
+    "cli/internal/speed/summary.go", "cli/internal/consent/consent.go", "cli/internal/quota/claude_test.go",
+    "desktop/native/ModelPlanSettings/Sources/ModelPlanSettings/ReaderCauseTable.swift", "desktop/cockpit/src/reader-causes.ts"])
+    assert.equal(R.referenceTouch([p]), true, p);
+  for (const p of ["cli/internal/quotafix/a.go", "cli/internal/rows/rows.go", "docs/readers/integration-standard.md",
+    "desktop/native/ModelPlanSettings/Sources/ModelPlanSettings/Catalogue.swift", "scripts/merge-gates/rules.mjs"])
+    assert.equal(R.referenceTouch([p]), false, p);
+
+  const reader = [file("cli/internal/quota/claude.go")];
+  // D243 step 3: a missing or malformed line is reported in the description, never a FAILURE.
+  const missing = ok("Scenarios: none", reader);
+  assert.equal(missing.state, R.SUCCESS);
+  assert.match(missing.why, /info: .*reader PR: no Reference: line \(D239\)$/);
+  const draft = evalPr({ p: pr({ draft: true, body: "Scenarios: none" }), files: reader });
+  assert.equal(draft.state, R.PENDING, "a draft only waits");
+  assert.match(draft.why, /^draft; info: .*no Reference: line/, "and sees the note at once");
+  // A renamed-away reader file counts too.
+  const renamed = ok("Scenarios: none", [file("cli/internal/old/a.go", { previous_filename: "cli/internal/detect/a.go" })]);
+  assert.equal(renamed.state, R.SUCCESS);
+  assert.match(renamed.why, /info: .*no Reference: line/);
+  // Out of scope: no line needed.
+  assert.equal(ok("Scenarios: none", [file("cli/internal/rows/rows.go")]).state, R.SUCCESS);
+  assert.doesNotMatch(ok("Scenarios: none", [file("cli/internal/rows/rows.go")]).why, /Reference/);
+
+  const good = {
+    "Reference: CodexBar@0827f30 Sources/CodexBarCore/Providers/Claude/ClaudeUsageFetcher.swift": [["CodexBar", "0827f30"]],
+    "Reference: Pulse@v1.12.4 Sources/Pulse/Providers/Kiro.swift; ccusage@e42e1b4 src/data-loader.ts": [["Pulse", "v1.12.4"], ["ccusage", "e42e1b4"]],
+    "**Reference:** Token Monitor@0c7dd85 docs/providers/codex.md": [["TokenMonitor", "0c7dd85"]],
+    "Reference: token-monitor@0c7dd85 src/providers/codex.js, src/providers/shared.js": [["TokenMonitor", "0c7dd85"]],
+    "Reference: tokei@1.2.0 README.md": [["Tokei", "1.2.0"]],
+    "Reference: none (process reasons here, long enough)": [],
+    "Reference: None (test-only refactor; behaviour unchanged)": [],
+  };
+  for (const [line, refs] of Object.entries(good)) {
+    const parsed = R.parseReference(`Intro\n${line}\nReference: nonsense`);
+    assert.equal(parsed.malformed, null, line);
+    assert.deepEqual(parsed.refs.map((r) => [r.app, r.ref]), refs, line);
+    const r = ok(`Scenarios: none\n${line}`, reader);
+    assert.equal(r.state, R.SUCCESS, `${line}: ${r.why}`);
+    assert.doesNotMatch(r.why, /Reference/, line);
+  }
+  for (const line of [
+    "Reference:",
+    "Reference: none",
+    "Reference: none ()",
+    "Reference: none, CodexBar is close",
+    "Reference: CodexBar",
+    "Reference: CodexBar@0827f30",
+    "Reference: CodexBar 0827f30 Sources/a.swift",
+    "Reference: CodexBar@main Sources/a.swift",
+    "Reference: Tokscale@abc1234 src/a.ts",
+    "Reference: OpenUsage@abc1234 src/a.ts",
+    "Reference: CodexBar@0827f30 the Claude fetcher",
+    "Reference: CodexBar@0827f30 Sources/a.swift; Pulse",
+    "References: CodexBar@0827f30 Sources/a.swift",
+  ]) {
+    const r = ok(`Scenarios: none\n${line}`, reader);
+    assert.equal(r.state, R.SUCCESS, line);
+    assert.match(r.why, /info: .*(Reference: line (malformed|none needs)|no Reference: line)/, line);
+  }
+  // none needs a reason of 20+ characters.
+  for (const line of ["Reference: none (process)", "Reference: none (too short)"]) {
+    const r = ok(`Scenarios: none\n${line}`, reader);
+    assert.match(r.why, /Reference: line none needs a reason of at least 20 characters \(D239\)/, line);
+  }
+  assert.equal(R.parseReference("Reference: none (nineteen chars!!!)").malformed !== null, true);
+  assert.equal(R.parseReference("Reference: none (exactly twenty chars)").malformed, null);
+  assert.equal(R.parseReference("no line").declared, false);
+  assert.equal(R.parseReference("References: #12").declared, false, "a References line is not the declaration");
+});
+
+test("D239: widget, menu-bar and native-shell PRs name an allowed reference (reference-map.json)", () => {
+  const ok = (body, files) => evalPr({ p: pr({ body }), files, comments: [comment(v("merge", H, "macrev2")), comment(`GLMREV: OK @ ${H}`)], verified: () => true });
+  const AI = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/";
+  const widget = [file("desktop/native/ModelPlanDock/Native/DockCardView.swift")];
+  const widgetHost = [file(`${AI}StaticDockPreviewHost.swift`)];
+  const shell = [file(`${AI}EngineLifecycleController.swift`)];
+  const names = (p) => R.referenceGroups([p]).map((g) => g.name);
+  for (const p of ["desktop/native/ModelPlanDock/Logic/DockEdgeGeometry.swift", `${AI}DockEdgeControllerBinding.swift`, `${AI}DockInteractionHostPort.swift`,
+    `${AI}CommunityPlacementBinding.swift`, `${AI}StaticDockPreviewApplication.swift`,
+    "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPanel.swift"]) assert.deepEqual(names(p), ["widget"], p);
+  for (const p of [`${AI}CommunityMenuBar.swift`, `${AI}U6StatusItemFrameSampler.swift`, `${AI}HelpOverlayRouter.swift`, `${AI}DockHelpPresenter.swift`,
+    "desktop/native/ModelPlanCockpitShell/Sources/ModelPlanCockpitShell/CockpitWindowState.swift",
+    "desktop/native/ModelPlanCockpitWeb/Sources/ModelPlanCockpitWeb/CockpitWindowController.swift",
+    "desktop/native/Sources/ModelPlanShell/SystemEvents.swift", "desktop/native/Sources/ModelPlanShell/StatusItemPlacement.swift",
+    "desktop/native/Sources/ModelPlanCommunityHost/CommunityDelegate.swift", "desktop/native/Sources/ModelPlanCommunityHost/CommunityMenuBarPresentation.swift"]) assert.deepEqual(names(p), ["menu-bar and native shell"], p);
+  for (const p of [`${AI}CommunityCockpitFactory.swift`, "desktop/native/ModelPlanSelection/Sources/a.swift", "docs/readers/integration-standard.md"]) assert.deepEqual(names(p), [], p);
+
+  for (const files of [widget, widgetHost, shell]) {
+    // missing
+    assert.match(ok("Scenarios: none", files).why, /PR: no Reference: line/);
+    // none with and without a reason
+    assert.doesNotMatch(ok("Scenarios: none\nReference: none (no Pulse equivalent exists)", files).why, /Reference/);
+    assert.match(ok("Scenarios: none\nReference: none (n/a)", files).why, /at least 20 characters/);
+    assert.match(ok("Scenarios: none\nReference: none", files).why, /needs a reason in brackets/);
+  }
+  // widget: Pulse only
+  assert.doesNotMatch(ok("Scenarios: none\nReference: Pulse@v1.12.4 Sources/Pulse/Dock.swift", widget).why, /Reference/);
+  assert.match(ok("Scenarios: none\nReference: CodexBar@0827f30 Sources/a.swift", widget).why, /widget PR must follow one of Pulse/);
+  // shell: CodexBar, Stats, Maccy or Pulse; ccusage is not a shell reference
+  for (const l of ["Stats@v2.11.0 Stats/Modules/a.swift", "Maccy@2.0.0 Maccy/Menu.swift", "CodexBar@0827f30 Sources/a.swift", "Pulse@v1.12.4 a/b.swift"])
+    assert.doesNotMatch(ok(`Scenarios: none\nReference: ${l}`, shell).why, /Reference/, l);
+  assert.match(ok("Scenarios: none\nReference: ccusage@e42e1b4 src/a.ts", shell).why, /menu-bar and native shell PR must follow one of CodexBar, Stats, Maccy, Pulse/);
+  // reader group unchanged: Stats is not a reader reference
+  assert.match(ok("Scenarios: none\nReference: Stats@v2.11.0 a/b.swift", [file("cli/internal/quota/claude.go")]).why, /reader PR must follow/);
+  // a PR across two groups needs an allowed app for each
+  assert.match(ok("Scenarios: none\nReference: Stats@v2.11.0 a/b.swift", [...widget, ...shell]).why, /widget PR must follow/);
+  assert.doesNotMatch(ok("Scenarios: none\nReference: Stats@v2.11.0 a/b.swift; Pulse@v1.12.4 c/d.swift", [...widget, ...shell]).why, /Reference/);
+});
+
+test("D239: every mapped area carries the generated AGENTS.md and CLAUDE.md for exactly the apps in reference-map.json", async () => {
+  const { readFileSync, existsSync } = await import("node:fs");
+  const { expectedFiles, mappedDirs } = await import("../merge-gates/reference-docs.mjs");
+  const map = JSON.parse(readFileSync(new URL("../merge-gates/reference-map.json", import.meta.url), "utf8"));
+  assert.ok(mappedDirs(map).size > 0);
+  for (const g of map.groups) {
+    assert.ok(g.dirs?.length && g.hint, `${g.name} needs dirs and hint`);
+    for (const a of g.apps) assert.ok(map.repos[a], `${a} needs a repos entry`);
+  }
+  for (const [path, text] of expectedFiles(map)) {
+    const full = new URL(`../../${path}`, import.meta.url);
+    assert.ok(existsSync(full), `${path} is missing: run node scripts/merge-gates/reference-docs.mjs --write`);
+    assert.equal(readFileSync(full, "utf8"), text, `${path} is stale: run node scripts/merge-gates/reference-docs.mjs --write`);
+  }
+  for (const g of map.groups) for (const d of g.dirs) {
+    const text = readFileSync(new URL(`../../${d}/AGENTS.md`, import.meta.url), "utf8");
+    for (const a of g.apps) assert.ok(text.includes(a), `${d}/AGENTS.md omits ${a}`);
+  }
+});
+
+test("D239: check-reference.mjs runs the gate rule on a local diff", async () => {
+  const { execFileSync, spawnSync } = await import("node:child_process");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "refcheck-"));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, encoding: "utf8" });
+  git("init", "-q"); git("config", "user.email", "a@b.c"); git("config", "user.name", "t");
+  writeFileSync(join(dir, "x"), "1"); git("add", "."); git("commit", "-qm", "base");
+  git("checkout", "-qb", "work");
+  execFileSync("mkdir", ["-p", join(dir, "desktop/native/ModelPlanDock/Native")]);
+  writeFileSync(join(dir, "desktop/native/ModelPlanDock/Native/DockCardView.swift"), "x"); git("add", "."); git("commit", "-qm", "dock");
+  const script = new URL("../merge-gates/check-reference.mjs", import.meta.url).pathname;
+  const run = (body) => { const f = join(dir, "body.txt"); writeFileSync(f, body); return spawnSync(process.execPath, [script, "--diff", "HEAD~1", "--body", f], { cwd: dir, encoding: "utf8" }); };
+  assert.equal(run("Reference: Pulse@v1.12.4 Sources/Dock.swift").status, 0);
+  assert.equal(run("Reference: none (no Pulse equivalent for this)").status, 0);
+  const bad = run("Reference: none (n/a)");
+  assert.equal(bad.status, 1); assert.match(bad.stderr, /at least 20 characters/);
+  assert.equal(run("nothing").status, 1);
+  assert.equal(run("Reference: CodexBar@0827f30 a/b.swift").status, 1);
+});
+
 test("merge-group gate waits for the group's GUI job, fails closed, times out", () => {
   const ok = { state: R.SUCCESS, why: "ok" };
   const steps = [{ pr: 7, prResult: ok, mergeProof: { ok: true } }];
@@ -1007,3 +1274,123 @@ test("merge-group GUI leg: skipped is ok only when desktop.yml declared the GUI 
   assert.equal(g([none, job(gui, "skipped")]).state, R.SUCCESS);
 });
 
+
+test("auto-carry proof refuses a relocated-hunk merge: same own-diff text, different code (macrevd-946)", () => {
+  const r = repo();
+  try {
+    const block = (n) => `// c1\n// c2\n// c3\n  return ${n};\n// d1\n// d2\n// d3\n`;
+    const file = (a, b) => `head\nh2\nh3\nh4\n${block(a)}mid1\nmid2\nmid3\nmid4\nmid5\n${block(b)}tail\n`;
+    r.put("policy.js", file("false", "false")); r.g("add", "."); r.g("commit", "-qm", "policy"); r.g("update-ref", MAINREF, "HEAD");
+    r.g("checkout", "-qb", "pr");
+    r.put("policy.js", file("true", "false")); r.g("commit", "-qam", "pr change");
+    const reviewed = r.sha();
+    r.g("checkout", "-q", "main"); r.put("b.txt", "b2\n"); r.g("commit", "-qam", "main change"); r.g("update-ref", MAINREF, "HEAD");
+    // Evil merge: the first block goes back to false and the second becomes true; the patch text of the PR's own
+    // change is identical because both hunks carry the same context.
+    r.g("checkout", "-q", "-b", "evil", reviewed); r.g("merge", "-q", "--no-commit", "main");
+    r.put("policy.js", file("false", "true")); r.g("add", "policy.js"); r.g("commit", "-qm", "merge");
+    const evil = r.sha();
+    assert.equal(G.ownPatch(r.dir, G.mergeBase ? G.mergeBase(r.dir, MAINREF, reviewed) : "main~1", reviewed).length > 0, true);
+    const res = G.verifyMainMerges(r.dir, reviewed, evil, MAINREF);
+    assert.equal(res.ok, false);
+    assert.match(res.why, /differs from a clean merge of its parents/);
+    // The same PR with an honest merge still carries.
+    r.g("checkout", "-q", "-b", "honest", reviewed); r.g("merge", "-q", "--no-edit", "main");
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).ok, true);
+    // No carried gate success from the refused proof.
+    const out = evalPr({ comments: [comment(v("merge", reviewed, "macrev2"))], prove: (o, n) => G.verifyMainMerges(r.dir, o, evil, MAINREF) });
+    assert.notEqual(out.state, R.SUCCESS);
+  } finally { r.done(); }
+});
+
+test("a verdict on the current head beats a carried older-head verdict from the same lane, whatever the posting order (macrevc-946-1)", () => {
+  const O = "b".repeat(40);
+  const out = evalPr({ comments: [comment(v("block", H, "macrev2")), comment(v("merge", O, "macrev2"))],
+    prove: () => ({ ok: true, between: [H] }) });
+  assert.notEqual(out.state, R.SUCCESS, out.why);
+  const sup = evalPr({ comments: [comment(v("merge", O, "macrev2")), comment(v("block", H, "macrev2")), comment(v("merge", H, "macrev2"))],
+    prove: () => ({ ok: true, between: [H] }) });
+  assert.equal(sup.state, R.SUCCESS, sup.why);
+});
+
+test("no carry without tree equality: hand-resolved conflicts, tree tweaks, octopus merges and replace refs (macrevd-946 class)", () => {
+  const r = repo();
+  try {
+    r.g("checkout", "-qb", "pr");
+    r.put("a.txt", "pr\n"); r.g("commit", "-qam", "pr change");
+    const reviewed = r.sha();
+    r.g("checkout", "-q", "main"); r.put("b.txt", "b2\n"); r.g("commit", "-qam", "main change"); r.g("update-ref", MAINREF, "HEAD");
+    const main1 = r.sha();
+    const both = (sha, re) => {
+      for (const res of [G.verifyMainMerges(r.dir, reviewed, sha, MAINREF), G.verifyCarry(r.dir, reviewed, sha, MAINREF)]) {
+        assert.equal(res.ok, false, res.why);
+        if (re) assert.match(res.why, re);
+      }
+    };
+    // Clean merge: both carry paths hold.
+    r.g("checkout", "-q", "-b", "clean", reviewed); r.g("merge", "-q", "--no-edit", "main");
+    const clean = r.sha();
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, clean, MAINREF).ok, true);
+    assert.equal(G.verifyCarry(r.dir, reviewed, clean, MAINREF).ok, true);
+    // The gate maps the synthetic head H to a real commit: a clean merge carries the verdict, a refused proof never does.
+    const gate = (sha) => evalPr({ comments: [comment(v("merge", reviewed, "macrev2"))], prove: (o, n) => G.verifyMainMerges(r.dir, o, n === H ? sha : n, MAINREF) });
+    assert.equal(gate(clean).state, R.SUCCESS, gate(clean).why);
+    assert.match(gate(clean).why, /verdict carried from/);
+
+    // Tree tweak inside the merge (main's own change reverted in the merge): no carry.
+    r.g("checkout", "-q", "-b", "tweak", reviewed); r.g("merge", "-q", "--no-commit", "main");
+    r.put("b.txt", "b\n"); r.g("add", "b.txt"); r.g("commit", "-qm", "merge");
+    both(r.sha());
+    assert.match(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).why, /differs from a clean merge of its parents/);
+
+    // Main conflicts with the PR; the merge is resolved by hand, even back to exactly the reviewed text: no carry.
+    r.g("checkout", "-q", "main"); r.put("a.txt", "main\n"); r.g("commit", "-qam", "main edits a"); r.g("update-ref", MAINREF, "HEAD");
+    r.g("checkout", "-q", "-b", "conflict", reviewed);
+    assert.equal(spawnSync("git", ["merge", "-q", "--no-edit", "main"], { cwd: r.dir, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } }).status !== 0, true, "merge conflicts");
+    r.put("a.txt", "pr\n"); r.g("add", "a.txt"); r.g("commit", "-qm", "resolved");
+    both(r.sha());
+    assert.match(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).why, /do not merge cleanly/);
+    assert.notEqual(gate(r.sha()).state, R.SUCCESS);
+
+    // Octopus merge of main commits: no carry.
+    const octo = r.g("commit-tree", `${clean}^{tree}`, "-p", reviewed, "-p", main1, "-p", "main~2", "-m", "octopus");
+    both(octo);
+
+    // A replace ref that makes the evil merge look like the clean one is ignored.
+    r.g("checkout", "-q", "-b", "evil", reviewed); r.g("merge", "-q", "--no-commit", main1);
+    r.put("c.txt", "evil\n"); r.g("add", "c.txt"); r.g("commit", "-qm", "merge");
+    const evil = r.sha();
+    r.g("replace", evil, clean);
+    both(evil);
+    assert.notEqual(gate(evil).state, R.SUCCESS);
+  } finally { r.done(); }
+});
+
+test("auto-carry: the latest posted verdict head is the only candidate; when it is the current head nothing carries, whatever the lane (macrevb-946-1)", () => {
+  const t2 = [file("scripts/merge-gates/rules.mjs")];
+  const ok = () => ({ ok: true, between: [H] });
+  const oldSol = comment(v("merge", OLD, "macrev2"));
+  // An old Sol merge, then a current-head verdict from a lane that cannot pass tier 2: no carry, tier 2 stays unpassed.
+  for (const lane of ["macrevc", "glm", "sonnet"]) {
+    const items = R.feed([oldSol, comment(v("merge", H, lane))], []);
+    assert.equal(R.autoCarry(items, H, ok), null, lane);
+    const out = evalPr({ files: t2, comments: [oldSol, comment(v("merge", H, lane))], prove: ok });
+    assert.notEqual(out.state, R.SUCCESS, `${lane}: ${out.why}`);
+    assert.doesNotMatch(out.why, /carried/);
+  }
+  // The same with a sticky reviewer assignment, before or after the verdicts.
+  for (const order of ["before", "after"]) {
+    const rv = comment("REVIEWER: macrev2"), cur = comment(v("merge", H, "macrevc"));
+    const comments = order === "before" ? [rv, oldSol, cur] : [oldSol, cur, rv];
+    const out = evalPr({ files: t2, comments, prove: ok });
+    assert.notEqual(out.state, R.SUCCESS, `${order}: ${out.why}`);
+    assert.doesNotMatch(out.why, /carried/);
+  }
+  // A current-head verdict in a review counts as posted too.
+  assert.notEqual(evalPr({ files: t2, comments: [oldSol], reviews: [review(v("merge", H, "macrevc"))], prove: ok }).state, R.SUCCESS);
+  // Control: when the old head is the latest, the proven carry still applies, with or without the sticky reviewer.
+  assert.equal(evalPr({ files: t2, comments: [oldSol], prove: ok }).state, R.SUCCESS);
+  assert.equal(evalPr({ files: t2, comments: [comment("REVIEWER: macrev2"), oldSol], prove: ok }).state, R.SUCCESS);
+  const cur = comment(v("merge", H, "macrevc")), later = comment(v("merge", OLD, "macrev2"));
+  assert.equal(R.autoCarry(R.feed([cur, later], []), H, ok)?.from, OLD, "an old-head verdict posted after the current-head one is the candidate");
+});

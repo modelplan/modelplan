@@ -337,6 +337,6 @@ func cockpitEntityWindow(w speed.EntityWindow) wire.CockpitEntityWindow {
 }
 
 func cockpitHistorySums(s snapshot.PerfWindowSums) wire.CockpitHistorySums {
-	return wire.CockpitHistorySums{InputTokens: s.InputTokens, OutputTokens: s.OutputTokens, CacheReadTokens: s.CacheReadTokens, CacheWriteTokens: s.CacheWriteTokens,
+	return wire.CockpitHistorySums{TotalTokens: s.TotalTokens, ReasoningTokens: s.ReasoningTokens, InputTokens: s.InputTokens, OutputTokens: s.OutputTokens, CacheReadTokens: s.CacheReadTokens, CacheWriteTokens: s.CacheWriteTokens,
 		CacheHitRatio: s.CacheHitRatio, GenerationTps: s.GenerationTps, ObservedRequests: s.ObservedRequests, EligibleRequests: s.EligibleRequests}
 }

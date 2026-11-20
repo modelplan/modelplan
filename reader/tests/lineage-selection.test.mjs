@@ -188,3 +188,15 @@ test('a client-v1.5 digest without any aaScore stays valid', async () => {
   await verifyClientDigest(value);
   assert.equal('aaIndexVersion' in value.component.data, false);
 });
+
+test('lineup tie is 1 on index display scale 0.3 or 0.815 on 0.4; any other value is rejected', async () => {
+  const withTie = tie => publication(c => {
+    c.data.lineups = [{
+      developerId: 'synthetic', costBasisId: 'synthetic', method: 'lineup-v1', tie,
+      baseline: 'synthetic-current', frontier: ['synthetic-current'], steps: [],
+      members: [{id: 'synthetic-current', status: 'incomplete', tags: [], dominatedBy: null}],
+    }];
+  });
+  for (const tie of [1, 0.815]) await verifyClientDigest(await withTie(tie));
+  for (const tie of [0.5, 0, 1.2, '1']) await assert.rejects(() => verifyClientDigest(withTie(tie)));
+});

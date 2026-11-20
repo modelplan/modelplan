@@ -28,11 +28,11 @@ await cp(resolve(here,'web/index.html'),resolve(output,'index.html'));
 await cp(resolve(here,'prototype'),resolve(output,'prototype'),{recursive:true});
 // Renderer code only. Visual resources are managed separately by their owner.
 const studyModules=[
-  'chart-colours.js','colour-mode.js','empty-bays.js','engine-model.js','engine-view.js','fader-view.js','help-routing.js','i18n.js',
-  'mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
+  'alert-sentence.js','chart-colours.js','colour-mode.js','empty-bays.js','engine-model.js','engine-view.js','fader-view.js','help-routing.js','i18n.js',
+  'mfd-pages/alerts.js','mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
   'mfd-pages/public-helpers.js','mfd-pages/scope.js','mfd-pages/tune.js','mfd-pages/views.js','mfd-pages/where.js',
-  'project-attribution.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
-  'strings/mfd.js','strings/review49.js','strings/host.js','window-time.js',
+  'project-attribution.js','session-line.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
+  'strings/mfd.js','strings/review49.js','strings/host.js','strings/plugins.js','window-time.js',
 ];
 for(const name of studyModules){
   const target=resolve(output,'study/rocket-r1',name);await mkdir(dirname(target),{recursive:true});
@@ -94,7 +94,7 @@ if (official) {
   css+='\n'+stripCss.toString('utf8');
   // WP-10 (owner 2026-11-18, round 3): the header layout rules, loaded after the approved strip stylesheet.
   const headerCss=await readFile(resolve(strip,'header.css'));
-  if(createHash('sha256').update(headerCss).digest('hex')!=='69d5322071ba8282949ca0509f26eb51e1391a96c5fd751df46756c099f6490e')throw Error('Unapproved cockpit header stylesheet');
+  if(createHash('sha256').update(headerCss).digest('hex')!=='62f9f93fe952c0da359528456092669f49e41d64a2ef7733a5b4c7d75987911c')throw Error('Unapproved cockpit header stylesheet');
   css+='\n'+headerCss.toString('utf8');
   // G3-47: the released base-bell rasters (owner 2026-11-08), each checked against the reserved-visuals registry.
   const bells=resolve(assets,'cockpit/bells'),bellFiles=['bell-night-2x.png','bell-night-3x.png','bell-silver-2x.png'];
