@@ -104,7 +104,8 @@ import ModelPlanSettings
             eventNumber: 1, clickCount: type == .leftMouseDown ? 1 : 0, pressure: type == .leftMouseDown ? 1 : 0))
     }
     func rows() -> [NSAccessibilityElement] {
-        host.dockView.accessibilityChildren()?.compactMap { $0 as? NSAccessibilityElement } ?? []
+        // Subscription rows only: the empty-station button (dock.empty, G3-136) is not a row.
+        host.dockView.accessibilityChildren()?.compactMap { $0 as? NSAccessibilityElement }.filter { $0.accessibilityIdentifier() != "dock.empty" } ?? []
     }
     func menuText() throws -> String { try XCTUnwrap(panel().contentView?.menu).items.map(\.title).joined(separator: " | ") }
 }

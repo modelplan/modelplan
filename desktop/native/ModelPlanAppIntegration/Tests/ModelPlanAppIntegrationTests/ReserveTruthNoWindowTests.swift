@@ -263,21 +263,21 @@ private actor ReserveJourneyClient: EngineClient {
             XCTAssertEqual(heldPair.verifiedWindows.first?.remainingPercent, 75.0)
             XCTAssertEqual(heldPair.verifiedWindows.first?.until, secondDeadline)
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: firstDeadline), .scheduled(secondDeadline, hasUnknownDeadline: false))
-            // The row-level reason and overall input remain non-fresh. The
-            // later weekly window is still time-valid on the wire, but the
-            // current Dock model cannot present it under a non-fresh input.
+            // The row-level reason and overall input remain non-fresh. WP-15 (DOCK-3.2-50, DOCK-3.3-09 amended): the
+            // weekly reading is kept, stale, until its own reset; the 5-hour window reset at this deadline and is "--".
             let heldInput = try XCTUnwrap(held.snapshot.inputs.first)
             XCTAssertNil(heldInput.windows.first { $0.period == .fiveHour }?.remainingPercent)
-            XCTAssertEqual(heldInput.dataState, .unavailable)
-            XCTAssertNil(heldInput.windows.first { $0.period == .week }?.remainingPercent)
-            XCTAssertEqual(try DockInstrumentProjection.evaluate(heldInput, now: firstDeadline).readout, "--")
+            XCTAssertEqual(heldInput.dataState, .stale)
+            XCTAssertEqual(heldInput.windows.first { $0.period == .week }?.remainingPercent, 75.0)
+            XCTAssertEqual(heldPair.retainedWindows.isEmpty, true, "the weekly window still has its current proof")
+            XCTAssertEqual(try DockInstrumentProjection.evaluate(heldInput, now: firstDeadline).readout, "75%")
             XCTAssertEqual(held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.reason, "A retained reading is shown")
             XCTAssertEqual(held.snapshot.subscriptions.first?.source, .stale)
             let heldReserve = held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve }
             XCTAssertEqual(heldReserve?.value, "13 credits"); XCTAssertEqual(heldReserve?.detail, "Last known reading")
-            // Isolate the representation gap: even an explicitly supplied valid
-            // weekly value is suppressed when overall state is stale.
+            // A stale aggregate still never revives a window that is not itself kept or proven.
             var staleProbe = heldInput
+            for index in staleProbe.windows.indices { staleProbe.windows[index].validity = .inheritAggregate }
             staleProbe.dataState = .stale
             let weeklyIndex = try XCTUnwrap(staleProbe.windows.firstIndex { $0.period == .week })
             staleProbe.windows[weeklyIndex].remainingPercent = 75.0
@@ -815,7 +815,8 @@ private actor ReserveJourneyClient: EngineClient {
         let fresh = try await projection(balance: 12.5, unit: "credits", english: true, state: .fresh)
         XCTAssertEqual(fresh.0?.dataState, .fresh); XCTAssertEqual(fresh.1?.value, "13 credits")
         let retained = try await projection(balance: 12.5, unit: "credits", english: true, state: .retained)
-        XCTAssertEqual(retained.0?.dataState, .unavailable); XCTAssertEqual(retained.1?.value, "13 credits")
+        // WP-15 (DOCK-3.2-50): the retained reading is kept, stale and dim, until its window resets.
+        XCTAssertEqual(retained.0?.dataState, .stale); XCTAssertEqual(retained.1?.value, "13 credits")
         let retainedDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
         XCTAssertLessThan(Date(timeIntervalSince1970: 1_800_000_000), retainedDeadline)
         let atExpiry = try await projection(balance: 12.5, unit: "credits", english: true, state: .atExpiry)
@@ -835,9 +836,10 @@ private actor ReserveJourneyClient: EngineClient {
         let expiredReading = try DockInstrumentProjection.evaluate(XCTUnwrap(expired.0), now: afterExpiry)
         let refreshedReading = try DockInstrumentProjection.evaluate(XCTUnwrap(refreshed.0), now: afterExpiry)
         XCTAssertEqual(freshReading.readout, "42.5%")
-        XCTAssertEqual(retainedReading.readout, "--"); XCTAssertEqual(expiredReading.readout, "--")
+        XCTAssertEqual(retainedReading.readout, "42.5%"); XCTAssertTrue(retainedReading.readoutDimmed); XCTAssertEqual(retainedReading.status, .unknown)
+        XCTAssertEqual(expiredReading.readout, "--", "a reading past its reset is never kept")
         // Pure projection sequence, not a claim about a live store update or GUI rendering.
-        XCTAssertEqual([retainedReading.readout, freshReading.readout], ["--", "42.5%"])
+        XCTAssertEqual([retainedReading.readout, freshReading.readout], ["42.5%", "42.5%"])
         XCTAssertEqual([expiredReading.readout, refreshedReading.readout], ["--", "42.5%"])
     }
 

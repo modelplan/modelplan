@@ -625,6 +625,56 @@ do {
         let stale=try DockCardProjection.content(input:input,at:now)
         try expect(stale.rows.allSatisfy{$0.value=="--" && $0.remainingFraction==nil},"stale data does not regain actionable quota")
     }
+    try test("WP-15 DOCK-3.2-50 a kept reading is normal for an hour, dim after, and -- once its window resets"){
+        let reset=now.addingTimeInterval(7200)
+        func kept(observedAgo:TimeInterval,until:Date,state:DockDataState = .stale)->DockInstrumentInput{
+            var w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:12,resetsAt:until,durationSeconds:18000)
+            w.validity = .retained(observedAt:now.addingTimeInterval(-observedAgo),until:until)
+            var i=DockInstrumentInput(id:"a",name:"Synthetic",windows:[w]);i.dataState=state;return i
+        }
+        let recent=try DockInstrumentProjection.evaluate(kept(observedAgo:30*60,until:reset),now:now)
+        try expect(recent.readout=="12%" && recent.status == .critical && !recent.readoutDimmed && recent.outer?.status == .critical,"within the hour a kept reading looks normal (D290 item 9)")
+        let old=try DockInstrumentProjection.evaluate(kept(observedAgo:3*3600,until:reset),now:now)
+        try expect(old.readout=="12%" && old.status == .unknown && old.readoutDimmed && old.outer?.status == .unknown && old.outer?.fraction==0.12,"after an hour the number stays and the ring dims")
+        let boundary=try DockInstrumentProjection.evaluate(kept(observedAgo:3600,until:reset),now:now)
+        try expect(boundary.readoutDimmed,"exactly one hour is dim")
+        let afterReset=try DockInstrumentProjection.evaluate(kept(observedAgo:30*60,until:now),now:now)
+        try expect(afterReset.readout=="--" && afterReset.remainingPercent==nil,"the window has reset: --")
+        let notStale=try DockInstrumentProjection.evaluate(kept(observedAgo:60,until:reset,state:.fresh),now:now)
+        try expect(notStale.readout=="--","a kept window is shown only for a stale member, never as current")
+        let unavailable=try DockInstrumentProjection.evaluate(kept(observedAgo:60,until:reset,state:.unavailable),now:now)
+        try expect(unavailable.readout=="--" && unavailable.status == .unknown,"unreadable keeps the ring with a dim --")
+        let future=try DockInstrumentProjection.evaluate(kept(observedAgo:-60,until:reset),now:now)
+        try expect(future.readout=="--","a reading from the future is not kept")
+        try expect(DockStaleRule.dimsAt(observedAt:now.addingTimeInterval(-600),now:now)==now.addingTimeInterval(3000) && DockStaleRule.dimsAt(observedAt:now.addingTimeInterval(-7200),now:now)==nil,"the dim boundary is a recompute time until it passes")
+        let card=try DockCardProjection.content(input:kept(observedAgo:3*3600,until:reset),selectedWindowID:"five",at:now)
+        try expect(card.rows[0].value=="12%" && card.rows[0].tone == .unknown && card.rows[0].emphasised,"the card keeps the dim number on the lit row")
+        let alert=DockCardAlertRule.alert(input:kept(observedAgo:60,until:reset),now:now)
+        try expect(alert==nil,"a kept reading never alerts (V1-FINAL §12)")
+    }
+    try test("WP-15 DOCK-3.8-51 today row halves and DOCK-3.8-52 alert choice"){
+        try expect(DockWidgetFigures.tokens(980)=="980" && DockWidgetFigures.tokens(1_200)=="1.2k" && DockWidgetFigures.tokens(33_900_000)=="33.9M" && DockWidgetFigures.tokens(212_000_000)=="212M" && DockWidgetFigures.tokens(1_500_000_000)=="1.5B" && DockWidgetFigures.tokens(999_960)=="1M" && DockWidgetFigures.tokens(2_000)=="2k","V1-FINAL §0 token figures, never truncated")
+        try expect(DockWidgetFigures.duration(minutes:40)=="40m" && DockWidgetFigures.duration(minutes:198)=="3h18" && DockWidgetFigures.duration(minutes:119.7)=="2h00" && DockWidgetFigures.duration(minutes:5*1440+18*60)=="5d18h","V1-FINAL §0 durations")
+        let both=DockTodayRow.make(label:"今日",cost:"≈$10.2",tokens:33_900_000,running:"1 个在跑",tokensPerSecond:65.6)
+        try expect(both?.value=="≈$10.2 33.9M" && both?.detail=="● 1 个在跑 · 66 t/s" && both?.kind == .statistic,"left amount, right now")
+        let noCost=DockTodayRow.make(label:"今日",cost:nil,tokens:33_900_000,running:nil,tokensPerSecond:nil)
+        try expect(noCost?.value=="33.9M" && noCost?.detail=="","until WP-06 there is no ≈$ and an absent half is left out")
+        let rightOnly=DockTodayRow.make(label:"Today",cost:nil,tokens:0,running:nil,tokensPerSecond:61)
+        try expect(rightOnly?.value=="" && rightOnly?.detail=="61 t/s","the right half alone stays on the right")
+        try expect(DockTodayRow.make(label:"Today",cost:nil,tokens:nil,running:nil,tokensPerSecond:nil)==nil,"no today row when both halves are absent, never -- · -- t/s")
+        var five=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:40,resetsAt:now.addingTimeInterval(7200),durationSeconds:18000)
+        let week=DockQuotaWindowInput(id:"week",period:.week,label:"Weekly",remainingPercent:20,resetsAt:now.addingTimeInterval(86400),durationSeconds:604800)
+        var input=DockInstrumentInput(id:"a",name:"Claude",windows:[five,week]);input.dataState = .fresh
+        let red=DockCardAlertRule.alert(input:input,runOutTimes:["five":now.addingTimeInterval(2400)],redBelow:25,now:now)
+        try expect(red?.windowID=="week" && red?.severity == .critical,"red beats amber")
+        five.remainingPercent=60;input.windows=[five,DockQuotaWindowInput(id:"week",period:.week,label:"Weekly",remainingPercent:70,resetsAt:nil,durationSeconds:nil)]
+        let amber=DockCardAlertRule.alert(input:input,runOutTimes:["five":now.addingTimeInterval(2400)],redBelow:25,now:now)
+        try expect(amber?.windowID=="five" && amber?.severity == .warning && amber?.runOutAt==now.addingTimeInterval(2400),"amber: forecast to run out before the reset")
+        try expect(DockCardAlertRule.alert(input:input,runOutTimes:["five":now.addingTimeInterval(9000)],redBelow:25,now:now)==nil,"a run-out after the reset is not an alert")
+        try expect(DockCardAlertRule.alert(input:input,redBelow:25,now:now)==nil,"a healthy card has no footer")
+        input.dataState = .stale
+        try expect(DockCardAlertRule.alert(input:input,runOutTimes:["five":now.addingTimeInterval(2400)],redBelow:25,now:now)==nil,"stale never alerts")
+    }
     try test("P04 cyclic interpolation keeps exact poses and bounded adjacent weights"){
         for index in 0..<9 {
             let s=DockTemporalSample.at(seconds:Double(index)/9,count:9)!
