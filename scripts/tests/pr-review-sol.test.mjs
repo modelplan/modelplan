@@ -597,3 +597,37 @@ test("SOL-4: resolve emits nothing when the PR moves while the mac-compile statu
     assert.match(readFileSync(outFile, "utf8"), /^pr=\nsha=\n$/, "the stale head never joins the PR's queue");
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("owner 11-20: the GLM coding-plan endpoint joins to <base>/chat/completions with model glm-5.3", async () => {
+  for (const base of ["https://open.bigmodel.cn/api/coding/paas/v4", "https://open.bigmodel.cn/api/coding/paas/v4/", "https://open.bigmodel.cn/api/coding/paas/v4//"]) {
+    const calls = [];
+    const f = async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "x" } }] }) }; };
+    await P.glmProvider({ key: "k", baseUrl: base, fetchImpl: f }).review("in");
+    assert.equal(calls[0].url, "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", base);
+    assert.equal(calls[0].body.model, "glm-5.3");
+  }
+});
+
+test("owner 11-20: schedule routes GLM first off-peak and GPT first in the Zhipu peak (06:00-10:00Z weekdays), each falling back to the other on quota", async () => {
+  const at = (iso) => P.providerOrder({ mode: "schedule", now: new Date(iso) });
+  // Weekday peak edges.
+  assert.deepEqual(at("2026-11-16T05:59:59Z"), ["glm", "openai"], "Monday before the peak");
+  assert.deepEqual(at("2026-11-16T06:00:00Z"), ["openai", "glm"], "Monday peak start");
+  assert.deepEqual(at("2026-11-20T09:59:59Z"), ["openai", "glm"], "Friday peak end");
+  assert.deepEqual(at("2026-11-20T10:00:00Z"), ["glm", "openai"], "Friday after the peak");
+  // Weekends are never peak.
+  assert.deepEqual(at("2026-11-21T07:00:00Z"), ["glm", "openai"], "Saturday");
+  assert.deepEqual(at("2026-11-22T07:00:00Z"), ["glm", "openai"], "Sunday");
+  // Each provider falls back to the other on a quota error, in both directions.
+  const tried = [];
+  const build = (out) => (name) => ({ name, model: name, review: async () => { tried.push(name); if (out.includes(name)) throw new P.ProviderError("quota", `${name}: quota`); return { text: name, usage: {} }; } });
+  assert.equal((await P.reviewInOrder({ input: "x", order: at("2026-11-18T12:00:00Z"), build: build(["glm"]) })).provider, "openai");
+  assert.deepEqual(tried.splice(0), ["glm", "openai"]);
+  assert.equal((await P.reviewInOrder({ input: "x", order: at("2026-11-18T07:00:00Z"), build: build(["openai"]) })).provider, "glm");
+  assert.deepEqual(tried.splice(0), ["openai", "glm"]);
+  // REVIEW_GLM_TIERS stays "1" by default: tier 2 then never routes to GLM, even in schedule mode off-peak.
+  const d2 = S.decideSol({ pr: pr(), files: t2, items: [], lane: S.SOL_LANE, triggerSha: H, checks: green, glmTiers: R.parseGlmTiers(undefined) });
+  assert.deepEqual(P.providerOrder({ mode: "schedule", now: new Date("2026-11-18T12:00:00Z"), allowed: d2.providers }), ["openai"]);
+  const d2eq = S.decideSol({ pr: pr(), files: t2, items: [], lane: S.SOL_LANE, triggerSha: H, checks: green, glmTiers: R.parseGlmTiers("1,2") });
+  assert.deepEqual(P.providerOrder({ mode: "schedule", now: new Date("2026-11-18T12:00:00Z"), allowed: d2eq.providers }), ["glm", "openai"], "1,2: equal treatment");
+});
