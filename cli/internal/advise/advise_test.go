@@ -480,6 +480,24 @@ func TestTaskStartBriefListsOptionsAndTheCurrentLadder(t *testing.T) {
 	}
 }
 
+// The default floor is 3 points on the old 50-centred scale, 2.445 on the published display scale (#781).
+func TestDefaultFloorOnDisplayScale(t *testing.T) {
+	d := fixtureDigest()
+	sonnet := func() *quota.Account {
+		a := claude("high", 30, 3*time.Hour, 300)
+		a.Harness.Model = "claude-sonnet-5-5"
+		return &a
+	}
+	d.Lineups[0].Members[1].Ability = d.Lineups[0].Members[0].Ability - 2.4
+	if b := TaskStart(sonnet(), quota.Report{}, d, now); b.DefaultReason != "best_value" {
+		t.Fatalf("2.4 below the strongest: default = %s", b.DefaultReason)
+	}
+	d.Lineups[0].Members[1].Ability = d.Lineups[0].Members[0].Ability - 2.5
+	if b := TaskStart(sonnet(), quota.Report{}, d, now); b.DefaultReason != "strongest" {
+		t.Fatalf("2.5 below the strongest: default = %s", b.DefaultReason)
+	}
+}
+
 func TestDefaultIsBestValueUnlessItIsMuchWeaker(t *testing.T) {
 	d := fixtureDigest()
 	sonnet := func() *quota.Account {

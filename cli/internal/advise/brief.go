@@ -51,7 +51,8 @@ type BriefModel struct {
 }
 
 // defaultFloor: how far below the strongest the best value may score and still be the default.
-const defaultFloor = 3.0
+// 3 points on the old 50-centred scale = 3 * 0.815 on the display scale (new = 34.185 + 0.815*old); #781.
+const defaultFloor = 2.445
 
 type BriefStep struct {
 	Label        string   `json:"label"`
