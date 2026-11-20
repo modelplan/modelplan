@@ -20,7 +20,7 @@ import ModelPlanDock
     }
     host.installInteraction(controller)
     controller.start()
-    clock = DockCardInteraction.entryDwell
+    clock = 0.01
     controller.refresh()
     XCTAssertFalse(host.card.isHidden, "The host must present the hovered card", file: file, line: line)
 }

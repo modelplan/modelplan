@@ -2,6 +2,7 @@
 // Maps cockpitHistoryV1 into the study pages' shapes. Sources are this device's tools, joined to a subscription only
 // through the producer's current binding (owner D-D: shown as local records). A day or hour without an observation
 // stays null, never zero, and the page says nothing about days before the recording began.
+import {ht} from './host-text.js';
 import type {WireCockpitData} from '../generated/wire.js';
 
 const HOUR=36e5,DAYS=182;
@@ -41,7 +42,7 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
   for(const b of h.hourly){const index=Math.floor((Date.parse(b.at)-instants[0]!)/HOUR);if(sources.has(b.source)&&index>=0&&index<values.length)values[index]=(values[index]??0)+b.observedOutputTokens;}
   hourly.push({accountId,instants,values});
  }
- const projects=(rows:typeof h.projects.recent7d)=>rows.map((p,i)=>({project:p.label??(locale==='en'?`Project ${i+1}`:`项目 ${i+1}`),tokens:p.observedOutputTokens,tokenScope:'combined',share:p.share,configs:[{model:p.model??'',effort:p.effort,recommendedEffort:null}]}));
+ const projects=(rows:typeof h.projects.recent7d)=>rows.map((p,i)=>({project:p.label??ht(locale,'host.projectN',{n:i+1}),tokens:p.observedOutputTokens,tokenScope:'combined',share:p.share,configs:[{model:p.model??'',effort:p.effort,recommendedEffort:null}]}));
  const paceHistory:Record<string,Record<string,unknown[]>>={};
  for(const group of h.cycles){
   const accountId=ids.get(group.subscriptionRef),kind=kinds[group.kind];if(!accountId||!kind)continue;
@@ -56,7 +57,7 @@ export function usageStats(data:WireCockpitData|null|undefined,ref:string|null|u
  const add=(a:number|null|undefined,b:number|null|undefined)=>a==null||b==null?null:a+b;
  const window=(key:'recent7d'|'recent30d')=>{
   const sums=sources.map(s=>s[key]),one=sums.length===1?sums[0]!.generationTps:null;
-  return {sums:{inputTokens:sums.map(s=>s.inputTokens).reduce(add),observedOutputTokens:sums.map(s=>s.outputTokens).reduce((a,b)=>a+b,0),cacheReadTokens:sums.map(s=>s.cacheReadTokens).reduce(add),cacheWriteTokens:sums.map(s=>s.cacheWriteTokens).reduce(add)},
+  return {sums:{totalTokens:sums.map(s=>s.totalTokens??null).reduce(add),inputTokens:sums.map(s=>s.inputTokens).reduce(add),observedOutputTokens:sums.map(s=>s.outputTokens).reduce((a,b)=>a+b,0),cacheReadTokens:sums.map(s=>s.cacheReadTokens).reduce(add),cacheWriteTokens:sums.map(s=>s.cacheWriteTokens).reduce(add)},
    metrics:{generationTps:one===null?{status:'unknown',value:null}:{status:'ok',value:one}}};
  };
  return {recent7d:window('recent7d'),recent30d:window('recent30d')};

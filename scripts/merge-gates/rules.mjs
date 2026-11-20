@@ -10,6 +10,7 @@
 // description's "info:" part); device evidence moved to the build gate. There is no stale-base check (owner 2026-11-07): a PR need not contain the latest main, because the queue's own CI on
 // the group commit (QUEUE_WORKFLOWS) tests "PR + latest main".
 
+import referenceMap from "./reference-map.json" with { type: "json" };
 export const CONTEXT = "modelplan-gates";
 // The repository whose runs count; evaluate.mjs passes GITHUB_REPOSITORY, this is the default.
 export const REPO = "modelplan/modelplan";
@@ -178,16 +179,60 @@ export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)", "(gh-terra)"]
 // reviews. Counts for the head or a carried head; per lane the latest wins. A lane name is lower-case letters,
 // digits and inner hyphens; any other parenthesised suffix leaves the verdict unnamed.
 export function verdicts(items, head, carried) {
+  // A verdict on the current head always beats a carried one from the same lane, whatever the posting order: a
+  // delayed review of an older head must not override an explicit block of this head (macrevc-946-1).
   const at = new Set([head, ...carried]);
-  const lanes = new Map();
+  const lanes = new Map(), own = new Map();
   for (const x of items)
     for (const l of lines(x.body)) {
       const m = /^VERDICT: (merge|block) @ ([0-9a-f]{40})\b(?: \(([a-z0-9]+(?:-[a-z0-9]+)*)\))?/i.exec(l);
       if (!m) continue;
       const sha = m[2].toLowerCase();
-      if (at.has(sha)) lanes.set(m[3] ? `(${m[3].toLowerCase()})` : "(unnamed)", m[1].toLowerCase());
+      if (!at.has(sha)) continue;
+      const lane = m[3] ? `(${m[3].toLowerCase()})` : "(unnamed)";
+      (sha === head ? own : lanes).set(lane, m[1].toLowerCase());
     }
+  for (const [lane, v] of own) lanes.set(lane, v);
   return lanes;
+}
+
+// ---- Auto-carry (D243 G6, owner 2026-11-14) ----
+// A PR that only merged main keeps its review without a VERDICT-CARRY comment. The candidate is the head named by
+// the most recently posted VERDICT line (any lane, merge or block); when that names the current head, nothing carries. It carries when
+// prove(old, head) (evaluate.mjs: git.verifyMainMerges) shows only main merges since it and an identical own diff,
+// and no VERDICT line names a commit between it and the head. Only the newest candidate is tried, so a later review
+// of another head is never skipped over. The carried head's verdicts then count under the same tier rules; a block
+// carries too. Returns { from, why } or null.
+export function autoCarry(items, head, prove = () => ({ ok: false })) {
+  const named = [];
+  for (const x of items)
+    for (const l of lines(x.body)) {
+      const m = /^VERDICT: (?:merge|block) @ ([0-9a-f]{40})\b/i.exec(l);
+      if (m) named.push(m[1].toLowerCase());
+    }
+  // The latest posted head across all lanes is the only candidate. When it is the current head, the PR was reviewed
+  // here and nothing carries, so an older verdict of another lane never stands in for it (macrevb-946-1).
+  const old = named.at(-1);
+  if (!old || old === head) return null;
+  const proof = prove(old, head);
+  if (!proof?.ok) return null;
+  const after = new Set((proof.between ?? []).filter((s) => s !== head));
+  if (named.some((s) => after.has(s))) return null;
+  return { from: old, why: `verdict carried from ${old.slice(0, 8)} (main merges only, diff unchanged)` };
+}
+
+// Sticky reviewer (owner 2026-11-18): "REVIEWER: <lane>" on its own line in a trusted comment names the one GPT lane
+// whose VERDICT counts for the PR; the latest such line wins. Other lanes become advisory notes. Null = no sticky.
+export function reviewerLane(items) {
+  let lane = null;
+  // Comments only: the workflow re-evaluates on issue_comment events, not on review submit/edit/dismiss, so a
+  // review-borne assignment could leave a stale gate status.
+  for (const x of items.filter((i) => i.kind === "comment"))
+    for (const l of lines(x.body)) {
+      const m = /^REVIEWER: \(?([a-z0-9]+(?:-[a-z0-9]+)*)\)?\s*$/i.exec(l);
+      if (m) lane = `(${m[1].toLowerCase()})`;
+    }
+  return lane;
 }
 
 // ---- GLM-out fallback (owner 2026-11-09: "GLM fails -> there must be a fallback; mix them") ----
@@ -348,6 +393,60 @@ export function evidenceState(pr, items, head, tiers = new Map(), { designTouchi
     : { state: SUCCESS, why: "scenario evidence verified" };
 }
 
+// ---- Reference apps (D239, owner 2026-11-13) ----
+// Reader, detection and metric work follows a named reference app (docs/readers/integration-standard.md §3).
+// A PR touching these paths must carry a body line
+//   Reference: <app>@<commit-or-tag> <path>[, <path>][; <app>@<ref> <path> ...]
+// naming at least one app allowed for the touched area (scripts/merge-gates/reference-map.json), or "Reference: none (<reason>)". D243 step 3 (owner 2026-11-13): advisory only. A
+// missing or malformed line is reported in the status description ("info:"), drafts too, and never fails.
+const REFERENCE_MAP = referenceMap;
+const REFERENCE_GROUPS = REFERENCE_MAP.groups.map((g) => ({ ...g, re: g.paths.map((p) => new RegExp(p, "i")) }));
+const NONE_MIN = REFERENCE_MAP.noneReasonMinLength;
+export const REFERENCE_APPS = Object.freeze({ codexbar: "CodexBar", pulse: "Pulse", tokenmonitor: "TokenMonitor", ccusage: "ccusage", tokei: "Tokei", stats: "Stats", maccy: "Maccy" });
+const REFERENCE_LINE = /^\s*\*{0,2}Reference(?::\*{0,2}|\*{0,2}:)\s*/i;
+const REFERENCE_REF = /^([0-9a-f]{7,40}|v?[0-9][A-Za-z0-9._-]*)$/;
+
+// The reference groups a set of changed paths touches (renamed-from paths included by the caller).
+export const referenceGroups = (paths) => REFERENCE_GROUPS.filter((g) => paths.some((p) => g.re.some((re) => re.test(p))));
+export const referenceTouch = (paths) => referenceGroups(paths).length > 0;
+
+// The first matching body line is the declaration. refs: [{app, ref, paths}]; none: true for "Reference: none (reason)".
+export function parseReference(body) {
+  const line = lines(body ?? "").find((l) => REFERENCE_LINE.test(l));
+  if (line === undefined) return { declared: false, refs: [], none: false, malformed: null };
+  const rest = line.replace(REFERENCE_LINE, "").replace(/\*+\s*$/, "").trim();
+  if (/^none\b/i.test(rest)) {
+    const reason = /^none\s*\(([^()]*)\)$/i.exec(rest)?.[1].trim();
+    if (reason === undefined || reason === "") return { declared: true, refs: [], none: true, malformed: "none needs a reason in brackets" };
+    return reason.length < NONE_MIN ? { declared: true, refs: [], none: true, malformed: `none needs a reason of at least ${NONE_MIN} characters` }
+      : { declared: true, refs: [], none: true, malformed: null };
+  }
+  const refs = [];
+  for (const entry of rest.split(";").map((e) => e.trim())) {
+    const m = /^([A-Za-z][A-Za-z -]*?)\s*@\s*(\S+)\s+(.+)$/.exec(entry);
+    const app = m && REFERENCE_APPS[m[1].toLowerCase().replace(/[\s-]/g, "")];
+    const paths = m ? m[3].split(/[,\s]+/).filter(Boolean) : [];
+    if (!m || !app || !REFERENCE_REF.test(m[2]) || !paths.length || paths.some((p) => !/[./]/.test(p)))
+      return { declared: true, refs: [], none: false, malformed: `malformed entry '${entry || "(empty)"}'` };
+    refs.push({ app, ref: m[2], paths });
+  }
+  return { declared: true, refs, none: false, malformed: null };
+}
+
+// null when the PR is out of scope or declares an allowed reference; else why it falls short.
+export function referenceProblem(pr, paths) {
+  const groups = referenceGroups(paths);
+  if (!groups.length) return null;
+  const names = groups.map((g) => g.name).join(" + ");
+  const { declared, refs, none, malformed } = parseReference(pr.body);
+  if (!declared) return `${names} PR: no Reference: line (D239)`;
+  if (malformed) return `Reference: line ${malformed} (D239)`;
+  if (none) return null;
+  const used = new Set(refs.map((r) => r.app));
+  const bad = groups.find((g) => !g.apps.some((a) => used.has(a)));
+  return bad ? `${bad.name} PR must follow one of ${bad.apps.join(", ")} (D239); got ${[...used].join(", ")}` : null;
+}
+
 // ---- Trains ----
 // A train lands many PRs under one Scenarios line, and only that line is checked for evidence, so a member's
 // scenario missing from it would land unaccounted for (#650 dropped seven). evaluate.mjs reads members only for
@@ -385,6 +484,8 @@ export function trainScenarioGap(pr, members) {
 }
 
 // ---- CI at one commit (merge-when.sh) ----
+// (An import may sit anywhere at module top level; it is here, next to its only users, to keep the file's head stable.)
+import { hostedInfo, hostedJobIds, runWithoutHostedLegs, touchesWorkflows } from "./hosted.mjs";
 // runs: Actions workflow runs whose head_sha is the commit. A head sha is not unique to us: a fork can open a PR
 // with the same head and produce its own runs, which the head_sha listing returns too. So only runs that
 // `scope` accepts count (prRunScope / queueRunScope below), and of those only the newest run per workflow, so a
@@ -420,10 +521,19 @@ export function queueRunScope(repo) {
     && String(r.head_branch).startsWith("gh-readonly-queue/main/");
 }
 
-export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], scope } = {}) {
+// D314 (hosted.mjs): with hosted = true, a run whose jobs were read (run.jobs) is judged without its GitHub-hosted
+// macOS legs; they are only reported (`info`). A run without jobs is judged whole, as before.
+export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], scope, hosted = false } = {}) {
   const latest = latestRuns(runs, scope);
-  const failed = [], waiting = [];
+  const failed = [], waiting = [], aside = [];
   for (const r of latest) {
+    const v = hosted ? runWithoutHostedLegs(r) : null;
+    if (v) {
+      aside.push(...v.hosted);
+      failed.push(...v.failed.map((j) => `${r.name}: ${j}`));
+      waiting.push(...v.waiting.map((j) => `${r.name}: ${j}`));
+      continue;
+    }
     if (r.status !== "completed") waiting.push(r.name);
     else if (r.conclusion === "cancelled") failed.push(`${r.name} cancelled upstream (timed out or stopped; re-run it)`);
     else if (!OK_CONCLUSIONS.has(r.conclusion)) failed.push(`${r.name} ${r.conclusion}`);
@@ -433,11 +543,12 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], sco
     if (s.state === "pending") waiting.push(s.context);
     else if (s.state !== "success") failed.push(`${s.context} ${s.state}`);
   }
-  if (failed.length) return { state: FAILURE, why: `failed: ${failed.join(", ")}` };
+  const info = hostedInfo(aside);
+  if (failed.length) return { state: FAILURE, why: `failed: ${failed.join(", ")}`, info };
   const missing = required.filter((p) => !latest.some((r) => r.path === p));
-  if (missing.length) return { state: PENDING, why: `waiting for ${missing.join(", ")} to start` };
-  if (waiting.length) return { state: PENDING, why: `running: ${waiting.join(", ")}` };
-  return { state: SUCCESS, why: "checks green" };
+  if (missing.length) return { state: PENDING, why: `waiting for ${missing.join(", ")} to start`, info };
+  if (waiting.length) return { state: PENDING, why: `running: ${waiting.join(", ")}`, info };
+  return { state: SUCCESS, why: "checks green", info };
 }
 
 // A finished cancelled run re-evaluates its PR only while its head is still the PR head; a run cancelled because
@@ -490,16 +601,22 @@ export function dataSyncProblem({ pr, files, items, sync }) {
   // The commit sits directly on the main commit the run checked out (this also rules out a tag or branch that merely
   // shares the name "main").
   if (commit.parents[0].sha !== run.head_sha) return "head commit is not on the commit the data-sync run checked out";
-  if (![...verdicts(items, pr.head.sha, []).values()].includes("merge")) return "needs a trusted VERDICT: merge @ the exact head";
+  // The assigned reviewer (REVIEWER:) is the only lane whose merge counts here too.
+  const sticky = reviewerLane(items);
+  if (sticky) {
+    const t = tierOverride(items) ?? pathTier(prPaths(files));
+    if (!(t === 2 ? SOL_LANES : [...SOL_LANES, ...TERRA_LANES]).includes(sticky)) return `assigned reviewer ${sticky} is not an eligible GPT lane for tier ${t}`;
+  }
+  if (![...verdicts(items, pr.head.sha, [])].some(([l, v]) => v === "merge" && (!sticky || l === sticky))) return "needs a trusted VERDICT: merge @ the exact head";
   return null;
 }
 
 // ---- One PR head ----
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
-// verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs;
+// verifiedEdge(old, new): carry proof; proveMainMerges(old, new): auto-carry proof (autoCarry); conf: parsed design-paths.conf; members: a train's member PRs;
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -517,7 +634,9 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   const paths = prPaths(files);
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
-  const carried = carryChain(carryEdges(items), head, verifiedEdge);
+  const chain = carryChain(carryEdges(items), head, verifiedEdge);
+  const auto = chain.length ? null : autoCarry(items, head, proveMainMerges);
+  const carried = auto ? [auto.from] : chain;
   const fb = { until: glmFallbackUntil, now, used: [] };
 
   // One review gate (D243 step 5; amends R1/R4/R13/R14/R16 and the D161/D235 lifts). Tier 2 needs a Sol verdict
@@ -526,9 +645,14 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   // head (or a verified carried head) stops every tier, tier 0 included. GLM, (sonnet) and other lanes are input.
   const allLanes = verdicts(items, head, carried);
   const gptLanes = tier === 2 ? [...SOL_LANES, "(unnamed)"] : [...SOL_LANES, ...TERRA_LANES, "(unnamed)"];
-  const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l)));
+  const assigned = reviewerLane(items);
+  // An assignment naming a lane that cannot review this tier (Sonnet, unknown, Terra on tier 2) is invalid: it filters
+  // nothing, so no GPT block is hidden, and it holds the PR until the coordinator fixes it.
+  const sticky = assigned && [...SOL_LANES, ...TERRA_LANES].includes(assigned) && (tier !== 2 || SOL_LANES.includes(assigned)) ? assigned : null;
+  const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l) && (!sticky || l === sticky)));
   // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
   const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);
+  if (sticky) notes.unshift(`reviewer ${sticky}`);
   if (tier !== 0 && glmInScope(paths)) {
     const g = glmVerdict(items, head, fb);
     if (g) notes.push(`GLMREV ${g}`);
@@ -543,38 +667,101 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (evidence.state !== SUCCESS) notes.push(evidence.why);
   const gap = trainScenarioGap(pr, members);
   if (gap) notes.push(gap);
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried, glmFallback: fb.used, notes };
-  const say = (why) => (notes.length ? `${why}; info: ${notes.join("; ")}` : why);
+  const refNote = referenceProblem(pr, paths);
+  if (refNote) notes.push(refNote);
+  const extra = { tier, design: design.touching ? design.surfaces : [], carried, ...(auto ? { autoCarried: auto.from } : {}), glmFallback: fb.used, notes };
+  const say = (why) => [why, ...(auto ? [auto.why] : []), ...(notes.length ? [`info: ${notes.join("; ")}`] : [])].join("; ");
   if (pr.draft) return res(PENDING, say("draft"), extra);
 
   const blocked = [...lanes].filter(([, v]) => v === "block").map(([l]) => l);
   if (blocked.length) return res(FAILURE, say(`VERDICT block ${blocked.join(" ")}`), extra);
 
   const missing = [];
+  if (assigned && !sticky) missing.push(`a valid REVIEWER (${assigned} cannot review tier ${tier})`);
   const merged = (names) => names.some((n) => lanes.get(n) === "merge");
   if (tier === 2 && !merged(SOL_LANES)) missing.push(`VERDICT ${SOL_LANES.join(" or ")} merge`);
   if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES])) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} merge`);
   // A PR opened with the workflow token starts no pull_request run, so data-sync.yml dispatches ci.yml and
   // repo-checks.yml on the branch; prRunScope accepts those same-repository runs on the PR's branch. Both are
   // required before an admitted PR can pass.
-  const ci = ciState(runs, statuses, { scope: prRunScope(pr), ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
+  // D314: hosted macOS legs are post-merge only, unless the PR changes a workflow (hosted.mjs explains why).
+  extra.hostedExempt = !touchesWorkflows(paths) && files.length < FILE_LIST_LIMIT;
+  if (!extra.hostedExempt) notes.push("workflow change: hosted legs gate");
+  const ci = ciState(runs, statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
+  if (ci.info) notes.push(ci.info);
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
   if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
   if (ci.state === PENDING) return res(PENDING, say(ci.why), extra);
-  return res(SUCCESS, say(`tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}`), extra);
+  return res(SUCCESS, say(`tier ${tier}: gates pass${chain.length ? ` (carried ${chain.length})` : ""}`), extra);
 }
 
 // ---- One merge-group commit ----
 // steps: one per PR in the group, base first: {pr, prResult, mergeProof: {ok, why}}.
 // queueRuns/queueStatuses: CI on the group commit itself; repo: the repository whose queue runs count.
-export function evaluateGroup({ steps, queueRuns, queueStatuses = [], repo = REPO }) {
+// queueCheckRuns: the group commit's check runs (GET /commits/{sha}/check-runs). A workflow run is only as current as
+// the run list read, and a reusable-workflow job (desktop.yml's GUI leg, "native (macos-latest) / native (macos-latest)")
+// can still be queued on the single GUI Mac while the list says otherwise (2026-11-15 incident: #803 and others merged
+// with that job queued). So every check run of a counted queue run must also be completed and green; it is read
+// per job, not through the run. Fail closed: failed, cancelled or timed-out jobs fail the group; unfinished ones keep
+// it pending, but past GROUP_WAIT_MS (85 min by default) since the group's first run started it fails with a timeout, so it never hangs.
+// Note: the timeout is only checked when the gate is evaluated (any workflow_run completion or dispatch); a group
+// with no further event is dropped by the queue's own check_response_timeout (follow-up #989).
+// A workflow_run of desktop completing re-evaluates the group (merge-gates.yml), so no polling is needed.
+// Coupling: the repository ruleset's merge-queue check_response_timeout is 90 min; GitHub drops a group after that, so
+// this default (85 min) must stay below it or the gate's timeout never fires. Override with env GROUP_WAIT_MINUTES.
+export const GROUP_WAIT_MS = (Number(process.env.GROUP_WAIT_MINUTES) > 0 ? Number(process.env.GROUP_WAIT_MINUTES) : 85) * 60 * 1000;
+const OK_CHECK = new Set(["success", "skipped", "neutral"]);
+// D314: with hosted = true, the check runs of hosted macOS legs (hosted.mjs; check-run id = job id) are skipped.
+export function queueCheckState(queueRuns, queueCheckRuns, repo = REPO, { hosted = false } = {}) {
+  const counted = latestRuns(queueRuns, queueRunScope(repo));
+  const suites = new Set(counted.map((r) => r.check_suite_id).filter((x) => x != null));
+  const skip = hosted ? hostedJobIds(counted) : new Set();
+  const failed = [], waiting = [];
+  for (const c of queueCheckRuns) {
+    if (!suites.has(c.check_suite?.id) || skip.has(c.id)) continue;
+    if (c.status !== "completed") waiting.push(c.name);
+    else if (!OK_CHECK.has(c.conclusion)) failed.push(`${c.name} ${c.conclusion}`);
+  }
+  if (failed.length) return { state: FAILURE, why: `failed: ${failed.join(", ")}` };
+  if (waiting.length) return { state: PENDING, why: `jobs not finished: ${waiting.join(", ")}` };
+  return { state: SUCCESS, why: "jobs green" };
+}
+
+// The GUI leg of desktop.yml's queue run, read from its jobs (GET /actions/runs/{id}/jobs). A skipped GUI job is
+// ok only when queue-scope's "GUI share not needed" step succeeded (desktop.yml's design decision); otherwise the
+// leg must have actually run: one pool green (native, or native-hosted + native-owner-gui). A skip for any other reason, or no GUI job at all, fails closed. null jobs = not read: no check.
+export const GUI_NOT_NEEDED_STEP = "GUI share not needed";
+export function guiLegState(jobs) {
+  if (jobs == null) return { state: SUCCESS, why: "GUI leg not read" };
+  if (jobs.some((j) => j.name === "queue-scope" && (j.steps ?? []).some((s) => s.name === GUI_NOT_NEEDED_STEP && s.conclusion === "success"))) return { state: SUCCESS, why: "GUI share not needed" };
+  // Only the actual GUI leg jobs count (names from a real merge-group run: the reusable workflow's job named after the
+  // task, "<caller> (os) / <task> (os)"). Its other child jobs (probe, sequences, transport, u11-native, ...) are skipped
+  // by design and ignored, and so is a whole job skipped before it expanded (its name keeps "${{ matrix.os }}").
+  const A = jobs.filter((j) => /^native \(([^)$]*)\) \/ native \(\1\)$/.test(j.name));
+  const H = jobs.filter((j) => /^native-hosted \([^)$]*\) \/ native-hosted-gui \([^)$]*\)$/.test(j.name));
+  const O = jobs.filter((j) => /^native-owner-gui \([^)$]*\) \/ native-owner-gui \([^)$]*\)$/.test(j.name));
+  const leg = [...A, ...H, ...O];
+  if (leg.some((j) => j.conclusion !== "success")) return { state: FAILURE, why: `GUI leg ${leg.filter((j) => j.conclusion !== "success").map((j) => `${j.name} ${j.conclusion}`).join(", ")}` };
+  if (A.length || (H.length && O.length)) return { state: SUCCESS, why: "GUI leg green" };
+  return { state: FAILURE, why: "GUI leg skipped or missing without queue-scope saying it is not needed" };
+}
+
+export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, repo = REPO, now = Date.now() }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
   for (const s of steps) {
     const n = `#${s.pr}`;
     if (!s.mergeProof.ok) return { state: FAILURE, why: `${n}: ${s.mergeProof.why}` };
     if (s.prResult.state !== SUCCESS) return { state: s.prResult.state === PENDING ? FAILURE : s.prResult.state, why: `${n}: ${s.prResult.why}` };
   }
-  const ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo) });
+  // D314: hosted macOS legs never gate a group, unless a member PR changes a workflow (its evaluatePr says so).
+  const hosted = steps.every((s) => s.prResult.hostedExempt === true);
+  let ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo), hosted });
+  if (ci.state === SUCCESS) ci = queueCheckState(queueRuns, queueCheckRuns, repo, { hosted });
+  if (ci.state === SUCCESS) ci = guiLegState(desktopJobs);
+  if (ci.state === PENDING) {
+    const starts = queueRuns.filter(queueRunScope(repo)).map((r) => Date.parse(r.created_at)).filter(Number.isFinite);
+    if (starts.length && now - Math.min(...starts) > GROUP_WAIT_MS) return { state: FAILURE, why: `group timed out after ${GROUP_WAIT_MS / 60000} min: ${ci.why}` };
+  }
   if (ci.state !== SUCCESS) return { state: ci.state, why: `group ${ci.why}` };
   return { state: SUCCESS, why: `group of ${steps.length}: gates pass` };
 }

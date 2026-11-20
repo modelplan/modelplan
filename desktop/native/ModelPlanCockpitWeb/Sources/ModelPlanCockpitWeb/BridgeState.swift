@@ -109,6 +109,9 @@ public enum CockpitIntent: Equatable, Sendable {
   /// D63: open the enlarged field focused on the rocket with this published display name (resolved by the host).
   case openFieldAt(String)
   case scopeSelect(String)
+  /// Owner D277 (CKP-ENG-27): read this shown member again, or every member for `all`. The host resolves the key
+  /// against its own members and asks the engine through the widget's per-member refresh.
+  case refreshMember(String)
   /// G3-56: the caution identities the owner has acknowledged by pressing the lamp. The coordinator keeps them.
   case cautionAck([String])
   /// D136: the favourite (long-press pinned) model ids, most recent first. The coordinator keeps them across restarts.
@@ -240,6 +243,14 @@ public enum CockpitCautionIdentities {
   public static func valid(_ ids: [String]) -> Bool {
     ids.count <= maxCount && ids.allSatisfy { !$0.isEmpty && $0.utf8.count <= maxBytes && $0.utf8.allSatisfy { $0 >= 32 && $0 != 127 } }
   }
+  /// G3-135: only an identity led by a verified subscription reference (16 hex) names the same account after a restart.
+  /// A fallback member's identity is kept in memory for the session and never written to disk.
+  public static func durable(_ ids: [String]) -> [String] {
+    ids.filter { id in
+      guard let data = id.data(using: .utf8), let array = (try? JSONSerialization.jsonObject(with: data)) as? [Any], let first = array.first as? String else { return false }
+      return first.utf8.count == 16 && first.utf8.allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }
+    }
+  }
 }
 
 public final class CockpitBridgeState {
@@ -350,6 +361,12 @@ public final class CockpitBridgeState {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
     guard CockpitMemberScopes.isValidKey(shell.scope), scopeMembers.isEmpty || scopeMembers.contains(shell.scope) else { throw CockpitBridgeError.invalidMessage }
     return try envelope("shell", extra: shell.fields)
+  }
+  /// CKP-SHELL-33 (D178/D186/D188): lights (or puts out) every base bell with the amber nozzle glow during a rack
+  /// put-back or a key detach. No receipt: the page only paints it.
+  public func setIgnition(_ on: Bool) throws -> String {
+    guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    return try envelope("ignition", extra: ["on": on])
   }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) throws -> String {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }
@@ -546,7 +563,7 @@ public final class CockpitBridgeState {
       // Strict page sequence rejects replays without a lifetime action cap.
       if let earlyDisplay, sequence <= earlyDisplay.sequence { throw CockpitBridgeError.invalidMessage }
       let action = m["action"] as? String
-      let history = action == "openHistory", scope = action == "scopeSelect", website = action == "openWebsite", ack = action == "cautionAck" || action == "pinnedModels"
+      let history = action == "openHistory", scope = action == "scopeSelect" || action == "refreshMember", website = action == "openWebsite", ack = action == "cautionAck" || action == "pinnedModels"
       let focusedField = action == "openField" && m["key"] != nil
       let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack ? ["action","ids"] : ["action"]
       guard Set(m.keys) == base.union(extra), ready, !blocked,
@@ -562,6 +579,10 @@ public final class CockpitBridgeState {
         guard let key=m["key"] as? String, scopeMembers.contains(key),
           earlyDisplay.map({ pending[$0.requestID]?.members.contains(key) == true }) ?? true else { throw CockpitBridgeError.invalidMessage }
         intent = .scopeSelect(key)
+      case "refreshMember":
+        guard let key=m["key"] as? String, scopeMembers.contains(key),
+          earlyDisplay.map({ pending[$0.requestID]?.members.contains(key) == true }) ?? true else { throw CockpitBridgeError.invalidMessage }
+        intent = .refreshMember(key)
       case "openWebsite":
         guard let link = CockpitWebsiteLink(page: m["page"] as? String, value: m["value"] as? String) else { throw CockpitBridgeError.invalidMessage }
         intent = .openWebsite(link)

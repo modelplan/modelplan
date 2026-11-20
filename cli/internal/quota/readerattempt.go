@@ -71,6 +71,9 @@ func legacyNativeNext(cache, provider string, e codexbarEntry) (time.Time, error
 	if err != nil || !next.IsZero() {
 		return next, err
 	}
+	if e.NativeNextAttemptAt != nil {
+		return *e.NativeNextAttemptAt, nil
+	}
 	if e.ObservedAt.IsZero() {
 		return time.Time{}, nil
 	}

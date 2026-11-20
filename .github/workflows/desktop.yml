@@ -7,7 +7,7 @@ on:
     branches: [main]
     paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml"]
   pull_request:
-    paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml"]
+    paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml", "!**/*.md"]
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
     types: [checks_requested]
@@ -143,6 +143,43 @@ jobs:
           else
             echo "run=false" >> "$GITHUB_OUTPUT"; echo "group changes no desktop path"
           fi
+      # The design decision "this group needs no GUI share", made visible to the merge gate (scripts/merge-gates/rules.mjs
+      # guiLegState): a skipped GUI job counts as ok only when this step ran and succeeded. Keep the step name.
+      - name: GUI share not needed
+        if: ${{ steps.scope.outputs.gui != 'true' }}
+        run: echo "group changes no desktop path, so the GUI share is not needed"
+
+  # Pull requests only (D254): the macOS jobs below run on a PR only when it changes something they build or
+  # test. The workflow-level paths list stays broad (it also feeds the Linux jobs), so this narrows it for
+  # the scarce hosted Macs: docs, markdown, the Tauri app and other Linux-only desktop changes skip them.
+  # merge_group, push, schedule and workflow_dispatch never read this job and keep the full suite.
+  pr-scope:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      mac: ${{ steps.scope.outputs.mac }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github
+      - id: scope
+        env:
+          MAC_PATHS: ^(desktop/(native|cockpit|official-visuals|third-party)/|desktop/package(-lock)?\.json$|clients/swift/|codex/cli-pin\.json$|schema/app-cli/|testdata/contract-v1/|cli/go\.(mod|sum)$|cli/internal/(snapshot|digest|desktopcontract|contracttest)/|(^|/)Package\.(swift|resolved)$|\.github/workflows/(desktop|trusted-mac)\.yml$)
+        run: |
+          set -eu
+          # A pull_request checkout is the merge commit, so its first parent is the base. Markdown never needs a Mac.
+          # A failed diff must not read as "no Mac path": capture it first (set -e stops the step), then filter.
+          # NUL-separated (-z) so Git never quotes a path (tab, quote, newline, non-ASCII); a quoted path would miss the
+          # anchored pattern and skip the Macs. Anything unreadable or odd falls through to mac=true (fail closed).
+          git diff --no-renames --name-only -z HEAD^1 HEAD > "$RUNNER_TEMP/changed.z"
+          if [ ! -s "$RUNNER_TEMP/changed.z" ] || grep -zvE '\.md$' "$RUNNER_TEMP/changed.z" | grep -qzE "$MAC_PATHS"; then
+            echo "mac=true" >> "$GITHUB_OUTPUT"; echo "PR changes paths the macOS jobs test"
+          else
+            echo "mac=false" >> "$GITHUB_OUTPUT"; echo "PR changes no path the macOS jobs test: macOS jobs skipped"
+          fi
 
   app:
     needs: [queue-scope, pr-ref]
@@ -247,8 +284,8 @@ jobs:
           test -z "$(git status --porcelain)"
 
   cockpit-spi-tests:
-    needs: [queue-scope, pr-ref]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    needs: [queue-scope, pr-ref, pr-scope]
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     # The ModelPlanCockpitWeb test classes (or test methods) behind #if MODELPLAN_TEST_ONLY_SPI are not compiled
     # by the pinned trusted-mac.yml U11 job, which runs `swift test` without the flag. Compile and run them here on a
     # hosted Mac, only those classes. test_spi_gated_tests_run.py (native-partition) fails if a gated class is in no workflow.
@@ -261,14 +298,14 @@ jobs:
       - name: SPI-gated cockpit tests
         run: |
           swift test --package-path desktop/native/ModelPlanCockpitWeb --scratch-path "$RUNNER_TEMP/cockpit-spi-build" --jobs 2 \
-            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter '(CockpitControllerNoWindowTests|CockpitContextMenuAndReloadTests|CockpitLifecycleAuditTests|CockpitSnapGuideDisplayTests|CockpitCloseFadeAndHostTests|CockpitDeliveryBacklogTests|CoordinatorPrewarmTests|CockpitRecoveryControllerTests|CockpitDeliveryFairnessTests)'
+            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter '(CockpitControllerNoWindowTests|CockpitContextMenuAndReloadTests|CockpitLifecycleAuditTests|CockpitCatchZoneDisplayTests|CockpitLaunchRackEntryTests|CockpitSnapGuideDisplayTests|CockpitCloseFadeAndHostTests|CockpitDeliveryBacklogTests|CoordinatorPrewarmTests|CockpitRecoveryControllerTests|CockpitDeliveryFairnessTests|CockpitScreenSelectionTests)'
 
   app-smoke:
     permissions:
       contents: read
       actions: read
-    needs: [queue-scope, pr-ref]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    needs: [queue-scope, pr-ref, pr-scope]
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -289,20 +326,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Select newest installed Xcode for the release package
+      - name: Pin Xcode 26.6 (17F113)
         run: |
-          python3 - <<'PYCODE'
-          import os, plistlib, re
+          python3 - <<'PY'
+          import os, plistlib, subprocess
           from pathlib import Path
-          candidates = []
-          for app in Path('/Applications').glob('Xcode*.app'):
-              version = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
-              candidates.append((tuple(map(int, re.findall(r'\d+', version))), app))
-          if not candidates:
-              raise SystemExit('No installed Xcode')
+          WANT_VERSION, WANT_BUILD = '26.6', '17F113'
+          for app in sorted(Path('/Applications').glob('Xcode*.app')):
+              try:
+                  info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+                  build = plistlib.loads((app / 'Contents/version.plist').read_bytes())['ProductBuildVersion']
+              except (OSError, KeyError):
+                  continue
+              if info['CFBundleShortVersionString'] == WANT_VERSION and build == WANT_BUILD:
+                  developer_dir = f'{app}/Contents/Developer'
+                  break
+          else:
+              raise SystemExit(f'Pinned Xcode {WANT_VERSION} ({WANT_BUILD}) is not installed on this runner')
           with open(os.environ['GITHUB_ENV'], 'a') as output:
-              output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
-          PYCODE
+              output.write(f'DEVELOPER_DIR={developer_dir}\n')
+          print(f'DEVELOPER_DIR={developer_dir}', flush=True)
+          subprocess.run(['xcodebuild', '-version'], check=True, env={**os.environ, 'DEVELOPER_DIR': developer_dir})
+          PY
       - name: Check smoke assertions and release identity negative controls
         run: python3 -m unittest discover -s desktop/native/tools/app-smoke -p 'test_*.py' -v
       - name: Fetch the approved prebuilt credential helper
@@ -417,9 +462,9 @@ jobs:
             && [ "$REF" != refs/heads/main ] && [[ $REF != refs/heads/release* ]]; then
             changed="$RUNNER_TEMP/d169-gui-changed.txt"
             if git fetch -q --no-tags origin main && base=$(git merge-base FETCH_HEAD HEAD) \
-              && git diff --no-renames --name-only "$base" HEAD > "$changed"; then
-              # Any selector failure falls back to the full share.
-              classes=$(python3 desktop/native/tools/ci/gui_test_selection.py select --changed "$changed") || classes=full
+              && git diff --no-renames --name-only -z "$base" HEAD > "$changed.z"; then
+              # The selector splits the NUL-separated list itself and selects the full share if any path has a control character.
+              classes=$(python3 desktop/native/tools/ci/gui_test_selection.py select --nul --changed "$changed.z") || classes=full
             else
               echo "no merge base with main: full GUI share"
             fi
@@ -441,7 +486,7 @@ jobs:
       matrix:
         os:
         - macos-latest
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@223defe1849c4d7498c09cd7f0f972c46317d090
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@ee807dae7258813bac4bb58a66f7beea8eac9edd
     with:
       task: native
       os: ${{ matrix.os }}
@@ -459,7 +504,7 @@ jobs:
       matrix:
         os:
         - macos-15
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@223defe1849c4d7498c09cd7f0f972c46317d090
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@ee807dae7258813bac4bb58a66f7beea8eac9edd
     with:
       task: native-hosted-gui
       os: ${{ matrix.os }}
@@ -471,7 +516,7 @@ jobs:
     # paired with native-hosted above: together they are exactly the GUI leg.
     needs: gui-scope
     if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@223defe1849c4d7498c09cd7f0f972c46317d090
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@ee807dae7258813bac4bb58a66f7beea8eac9edd
     with:
       task: native-owner-gui
       os: macos-latest
@@ -479,16 +524,16 @@ jobs:
 
   native-headless:
     name: native-headless (macos-latest)
-    needs: queue-scope
-    if: ${{ !cancelled() && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@223defe1849c4d7498c09cd7f0f972c46317d090
+    needs: [queue-scope, pr-scope]
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') }}
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@ee807dae7258813bac4bb58a66f7beea8eac9edd
     with:
       task: native-headless
       os: macos-latest
 
   runner-probe:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.mac_ci_probe && github.actor_id == '11829005' }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@223defe1849c4d7498c09cd7f0f972c46317d090
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@ee807dae7258813bac4bb58a66f7beea8eac9edd
     with:
       task: ${{ inputs.mac_ci_probe_mode == 'gui' && 'gui-probe' || 'probe' }}
       os: macos-latest

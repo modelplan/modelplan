@@ -68,3 +68,71 @@ func TestRunOutForecastAbstains(t *testing.T) {
 		t.Fatalf("empty window = %+v", f)
 	}
 }
+
+// CKP-ENG-26 (D277): a window whose reset time is unknown still forecasts a run-out from its
+// recent burn rate, so the cockpit can say "out in ~40m". With no reset to beat, every run-out
+// counts; one within RunsOutTight makes the window tight.
+func TestRunOutForecastWithoutAResetTime(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	used := 80.0
+	w := Window{Kind: "five_hour", UsedPercent: &used, ObservedAt: now}
+	// 10 points in 20 minutes: the last 20 points go in 40 minutes.
+	w.recent = []Sample{{At: now.Add(-20 * time.Minute), Used: 70}}
+	evalWindow(&w, now)
+	if w.RunsOutInMinutes == nil || *w.RunsOutInMinutes != 40 || w.Pace != "tight" {
+		t.Fatalf("run-out %v, pace %s", deref(w.RunsOutInMinutes), w.Pace)
+	}
+	f := w.RunOutForecast()
+	if f == nil || f.Basis != "recent-rate" || f.Pace != "tight" || f.RunsOutAt == nil || !f.RunsOutAt.Equal(now.Add(40*time.Minute)) {
+		t.Fatalf("forecast = %+v", f)
+	}
+	// The history keeps the unknown cycle's readings, so the rate survives a re-read.
+	older := Window{Kind: "five_hour", UsedPercent: ptr(70.0), ObservedAt: now.Add(-20 * time.Minute)}
+	fresh := Window{Kind: "five_hour", UsedPercent: &used, ObservedAt: now}
+	fresh = withHistory(fresh, older)
+	evalWindow(&fresh, now)
+	if fresh.RunsOutInMinutes == nil || *fresh.RunsOutInMinutes != 40 {
+		t.Fatalf("after history merge: run-out %v", deref(fresh.RunsOutInMinutes))
+	}
+}
+
+// Without a reset time a drop in the readings may be an unseen reset: the rate starts after it.
+func TestRunOutWithoutAResetTimeIgnoresReadingsBeforeADrop(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	used := 11.0
+	w := Window{Kind: "five_hour", UsedPercent: &used, ObservedAt: now}
+	// 90 then 10 (a reset), then 11: only the last rise counts, and it is under recentMinRise.
+	w.recent = []Sample{{At: now.Add(-40 * time.Minute), Used: 0}, {At: now.Add(-30 * time.Minute), Used: 90}, {At: now.Add(-15 * time.Minute), Used: 10}}
+	evalWindow(&w, now)
+	if w.RunsOutInMinutes != nil {
+		t.Fatalf("run-out across a drop: %v", deref(w.RunsOutInMinutes))
+	}
+	if f := w.RunOutForecast(); f != nil {
+		t.Fatalf("forecast = %+v", f)
+	}
+}
+
+// The history merge must not thin away the peak just before an unseen reset: merging readings one
+// by one (some under two minutes apart), only the rise after the drop counts.
+func TestRunOutWithoutAResetTimeDropSurvivesHistoryThinning(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	reads := []struct {
+		at   time.Duration
+		used float64
+	}{{-40 * time.Minute, 0}, {-39 * time.Minute, 90}, {-38 * time.Minute, 60}, {0, 62}}
+	var w Window
+	for i, r := range reads {
+		cur := Window{Kind: "five_hour", UsedPercent: ptr(r.used), ObservedAt: now.Add(r.at)}
+		if i > 0 {
+			cur = withHistory(cur, w)
+		}
+		w = cur
+	}
+	evalWindow(&w, now)
+	if w.Pace == "tight" || (w.RunsOutInMinutes != nil && *w.RunsOutInMinutes <= RunsOutTight) {
+		t.Fatalf("run-out across a lost drop: %v, pace %s", deref(w.RunsOutInMinutes), w.Pace)
+	}
+	if f := w.RunOutForecast(); f != nil {
+		t.Fatalf("forecast across a lost drop: %+v", f)
+	}
+}

@@ -117,6 +117,7 @@ type Account struct {
 
 // AccountToday contains only observed values; omission means unknown.
 type AccountToday struct {
+	ObservedTotalTokens  *int64            `json:"observedTotalTokens,omitempty" null:"forbidden" schema:"minimum=0"`
 	ObservedOutputTokens *int64            `json:"observedOutputTokens,omitempty" null:"forbidden" schema:"minimum=1"`
 	GenerationTps        *float64          `json:"generationTps,omitempty" null:"forbidden" schema:"minimum=0"`
 	RunningSessions      *int              `json:"runningSessions,omitempty" null:"forbidden" schema:"minimum=1"`
@@ -176,7 +177,8 @@ type Window struct {
 }
 
 // WindowForecast is the quota engine's outlook for one window. RunsOutAt is set only
-// when the window is forecast to be used up before its reset.
+// when the window is forecast to be used up before its reset (or, with no reset time
+// known, from its recent burn rate).
 type WindowForecast struct {
 	RunsOutAt *time.Time `null:"coalesced"`
 	Pace      string     // tight | on_track | surplus | exhausted

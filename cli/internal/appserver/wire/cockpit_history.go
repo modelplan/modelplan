@@ -88,6 +88,8 @@ type CockpitSourceHistory struct {
 	Recent30d    CockpitHistorySums `json:"recent30d"`
 }
 type CockpitHistorySums struct {
+	TotalTokens      *int64   `json:"totalTokens,omitempty" null:"forbidden"`
+	ReasoningTokens  *int64   `json:"reasoningTokens,omitempty" null:"forbidden"`
 	InputTokens      *int64   `json:"inputTokens" null:"coalesced"`
 	OutputTokens     int64    `json:"outputTokens"`
 	CacheReadTokens  *int64   `json:"cacheReadTokens" null:"coalesced"`

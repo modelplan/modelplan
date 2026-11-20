@@ -294,6 +294,7 @@ extension ProcessEngineClient {
                         protocolMismatch(); return
                     }
                     capabilities = Set(result.data.capabilities); serverVersion = result.data.serverVersion; handshaken = true
+                    LaunchTimingLog.shared.mark("engine-handshake")
                     finishRequest(key)
                     if !adopt(EngineConsentFloor(storeEpoch: envelope.storeEpoch, generation: envelope.consentGeneration)) {
                         epochUncertain = true; invalidate(.epochChanged, next: nil)
@@ -414,6 +415,7 @@ extension ProcessEngineClient {
                     return
                 }
                 rowCount = decoded.invalidRowCount
+                LaunchTimingLog.shared.mark("engine-first-rows")
                 result = .rows(EngineReply(envelope: decoded.value, delivery: context), invalidRowCount: rowCount)
             case "consent/get":
                 let decoded = try decodeEnvelope(envelope, as: WireConsentFacts.self).value

@@ -10,7 +10,7 @@ test('the faders say the data is unavailable, then fill when the publication arr
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
- const {data}=visualFixture();data.details.publication=null;
+ const {data}=visualFixture();delete data.details.publication;
  expect(await receive(send('display',{data}))).toBe(true);
  const note=page.locator('.fd-bank .mp-empty'),channels=page.locator('.fd-ch:not(.empty)');
  await expect(note).toHaveText('Data unavailable');await expect(channels).toHaveCount(0);

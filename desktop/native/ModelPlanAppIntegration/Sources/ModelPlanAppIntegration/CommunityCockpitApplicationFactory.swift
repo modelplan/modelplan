@@ -120,6 +120,7 @@ import ModelPlanShell
         }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         owner.settingsSubscriptions = { [weak application] in Task { await application?.presentSettings(paneID: "subscriptions") } }
+        owner.refreshMember = { [weak application] key in application?.refreshFromCockpit(key) }
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
         owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
         application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
@@ -140,6 +141,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var settings: (() -> Void)?
     /// CKP-SHELL-39: Settings on its Subscriptions pane, for the empty engine screen's button.
     var settingsSubscriptions: (() -> Void)?
+    /// Owner D277 (CKP-ENG-27): the engine table's Refresh; a member key, or `all`.
+    var refreshMember: ((String) -> Void)?
     /// Right-click menu hooks, set by the factory beside `settings`.
     var setSize: ((SettingsSize) -> Void)?
     var currentSize: (() -> SettingsSize?)?
@@ -165,7 +168,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
-    /// Build 14c (G3-79): where the latest open was clicked; nil opens on the menu bar icon's display.
+    /// Build 14c (G3-79): where the latest open was clicked; only a detached open uses it (G3-128: attached is always
+    /// the menu bar icon's display).
     var openPoint: (() -> CGPoint?)?
     /// D204 (G3-94): the widget ignition's frame on screen; its press is not an outside click.
     var ignitionFrame: (() -> CGRect?)?
@@ -493,6 +497,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openField:openField()
         case .openFieldAt(let name):openField(focusName:name)
         case .openWebsite(let link):owner.openWebsite(link.url)
+        case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
         case .detach,.putBack,.shutterToggle,.scopeSelect,.cautionAck,.pinnedModels:
             // The page owns shell controls; the coordinator validates and
@@ -520,8 +525,8 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     var attachmentHintAnchor: CockpitAttachmentHintAnchor? { wantsVisible ? owner.coordinator?.attachmentHintAnchor : nil }
     func show() { show(fromStatusItem: false) }
     func show(fromStatusItem: Bool) {
-        // D88: only the menu bar icon grows the cockpit out of itself; the ignition keeps its own entrance.
-        entrance = fromStatusItem ? .growFromIcon : .fade
+        // CKP-SHELL-33 (D186): the menu bar icon opens rack-first; the ignition keeps its own fade.
+        entrance = fromStatusItem ? .fromIcon : .fade
         wantsVisible=true
         attempt += 1
         // A new click starts its own grace period and opens at once. Recovery contract: it does not reset the rebuild

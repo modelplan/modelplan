@@ -420,6 +420,18 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 			kept = append(kept, e)
 		}
 		s.Providers = kept
+		// A concurrent key change may have cleared GLM while this refresh was in
+		// flight. Carry forward only the current detected-key reference, never the
+		// reading from the old generation.
+		if current["zai"] != generations["zai"] {
+			if cached := loadNative(p.Cache); cached != nil {
+				for _, e := range cached.Providers {
+					if e.Provider == "zai" {
+						s.Providers = append(s.Providers, glmReferenceOnly(e))
+					}
+				}
+			}
+		}
 		if nativePublishHook != nil {
 			nativePublishHook()
 		}
@@ -555,6 +567,9 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		case x.Provider == "minimax" && ok && !minimaxCacheMatches(p.Cache, x, e):
 			st.Status, st.Reason = "missing", "MiniMax key, region or identity setting changed; refresh required"
 		case !ok:
+			st.Status, st.Reason = "missing", "not read yet"
+		case e.ObservedAt.IsZero() && e.Status == "" && len(e.Windows) == 0:
+			// A reference-only entry (a key change cleared the reading, glmReferenceOnly) has no observation to age.
 			st.Status, st.Reason = "missing", "not read yet"
 		case x.Provider == "kimi" && now.Sub(e.ObservedAt) > staleAfter:
 			st.Status, st.Reason = "stale", "Kimi reading older than 60 minutes"

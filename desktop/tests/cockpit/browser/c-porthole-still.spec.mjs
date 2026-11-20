@@ -48,8 +48,9 @@ test('porthole flicker follows the prototype timing and stops on every gate',asy
   await expect.poll(async()=>(await state(page)).animations).toBe(14);
   const timing=await page.evaluate(()=>document.getAnimations().filter(a=>a.effect.target.closest('.ck-still')).map(a=>{const t=a.effect.getTiming(),e=a.effect.target;return {d:t.duration,delay:t.delay,unbounded:!Number.isFinite(t.iterations),dir:t.direction,ease:getComputedStyle(e).animationTimingFunction,flame:e.classList.contains('ck-still-flame')||e.classList.contains('ck-still-halo'),origin:getComputedStyle(e).transformOrigin};}));
   // Prototype composer.js:26: period 0.43 + (i mod 4) x 0.07 s, phase -(i mod 3) x 0.13 s, alternate, about the nozzle.
+  // V1-FINAL §16 / MOT-2.3-05: each sweep steps through five levels (both ends held) instead of easing every frame.
   expect(new Set(timing.map(t=>t.d))).toEqual(new Set([430,500,570,640]));expect(new Set(timing.map(t=>t.delay))).toEqual(new Set([0,-130,-260]));
-  expect(timing.every(t=>t.unbounded&&t.dir==='alternate'&&t.ease==='ease-in-out'&&t.flame&&t.origin!=='50% 50%')).toBe(true);
+  expect(timing.every(t=>t.unbounded&&t.dir==='alternate'&&t.ease==='steps(5, jump-none)'&&t.flame&&t.origin!=='50% 50%')).toBe(true);
   const frames=await page.evaluate(()=>document.getAnimations().find(a=>a.effect.target.closest('.ck-still')).effect.getKeyframes().map(k=>[k.opacity,k.transform]));
   expect(frames).toEqual([['0.94','scale(0.985, 0.98)'],['1','scale(1.015, 1.02)']]);
   // Host Reduce Motion, then the system setting, then a closed shutter and a hidden page each leave it static.

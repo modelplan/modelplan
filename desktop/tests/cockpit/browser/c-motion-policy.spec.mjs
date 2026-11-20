@@ -12,10 +12,15 @@ const ALLOWED_ANIMATIONS=new Set([
  'cockpit-running-cursor', // CKP-STRIP-10 running-row cursor
  'cockpit-state-pulse',   // two finite lamp-dot pulses on a state change (no idle loop)
  'cockpit-porthole-flicker', // owner D39/D-H flame flicker; active, open and no Reduce Motion only
- 'cockpit-mouth-shimmer', // CKP-ENG-19 base mouth light, working subscriptions only; same gates
+ 'cockpit-light-breathe', // CKP-ENG-19 (D294) base working light, working subscriptions only; same gates
+ 'cockpit-bell-flare',    // CKP-SHELL-33 (D294) landing burn thrown out of the mouth, only while the host ignites
+ 'cockpit-bell-burn',     // the burn's stepped flutter, same gate
 ]);
 // Selector fragment -> transitioned properties allowed on it (interaction feedback and fader glide).
-const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],[/\bshutter-(blind|thumb)\b/,['width','transform']]];
+const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top','--fd-frame']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],[/\bshutter-(blind|thumb)\b/,['width','transform']],
+ // CKP-SHELL-33 (D178/D186): the launch-rack ignition glow fades on the base bells (120 ms in, 220 ms out); off under Reduce Motion.
+ // D294: the burn's plume also retracts by transform; the working light yields by opacity.
+ [/\bbz(-empty)?\b/,['opacity','transform']],[/\bbz-sheet\b/,['opacity']]];
 
 async function open(page,data) {
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
@@ -51,7 +56,7 @@ test('MOT-2.3-01 only the allowed cockpit motions are live, and they run while t
  expect([...names].some(n=>n.includes('cockpit-caution-blink')||n.includes('strip-alert'))).toBe(true);
  // The fader cap transition (the CSS half of CKP-FAD-12; real caps need the publication path) is not switched off.
  expect(await page.evaluate(()=>document.body.classList.contains('reduced'))).toBe(false);
- expect(states[0].some(m=>/\bfd-cap\b/.test(m.element)&&m.transitions.includes('top'))).toBe(true);
+ expect(states[0].some(m=>/\bfd-cap\b/.test(m.element)&&(m.transitions.includes('top')||m.transitions.includes('--fd-frame')))).toBe(true);
 });
 
 for(const how of ['app setting','system setting'])test(`CKP-MOT-03 Reduce Motion (${how}) stops every cockpit animation`,async({page})=>{
@@ -114,4 +119,19 @@ test('MOT-2.3-08 a hidden cockpit starts no transition and cancels any in flight
  expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
  expect(await running(page)).toEqual([]);
  expect(await page.locator('#cockpit').getAttribute('data-shell')).toBe('open');
+});
+
+test('MOT-2.3-08 the landing burn runs only on a shown cockpit: ignition while hidden starts no animation',async({page})=>{
+ const {send,receive}=await open(page,visualFixture().data);
+ const burn=async()=>(await running(page)).filter(m=>m.kind==='CSSAnimation'&&/cockpit-bell-(flare|burn)/.test(m.name));
+ // Positive control: ignition on a shown cockpit runs the burn.
+ expect(await receive(send('ignition',{on:true}))).toBe(true);
+ expect((await burn()).length).toBeGreaterThan(0);
+ expect(await receive(send('ignition',{on:false}))).toBe(true);
+ // Hidden: the host may still ignite, but nothing runs, and nothing starts when the ignition flips while hidden.
+ expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);
+ expect(await receive(send('ignition',{on:true}))).toBe(true);
+ expect(await page.locator('#cockpit').getAttribute('data-ignite')).toBe('true');
+ expect(await burn()).toEqual([]);
+ expect((await motions(page)).filter(m=>/cockpit-bell-(flare|burn)/.test(m.animation))).toEqual([]);
 });

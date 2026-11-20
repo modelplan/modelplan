@@ -154,7 +154,8 @@ private actor CardDismissalClient: EngineClient {
         XCTAssertTrue(nozzle.beginNozzle(id: memberID, local: start))
         nozzle.moveNozzle(local: CGPoint(x: target.along + 10, y: target.along + 10))
         nozzle.endNozzle(global: .zero, currentID: memberID)
-        XCTAssertTrue(dock.card.isHidden, "Dragging must not open a card")
+        // This delegate-only gesture does not drive the edge carry; the resting pointer can open its card.
+        // DockCarryKeepsWidgetTests exercises card dismissal through the actual carry path.
         XCTAssertTrue(refresh.requests.isEmpty, "Dragging must not request refresh")
         let count = dock.dockView.refreshSweepCountForChecks
         let observed = app.composition.presentedContent.snapshot.presentationRows[memberID]?.originalObservedAt
@@ -223,8 +224,17 @@ private actor CardDismissalClient: EngineClient {
         focused.setAccessibilityFocused(false)
         var navigations = 0
         dock.showSettings = { navigations += 1 }; dock.showConsole = { navigations += 1 }
-        // Member identity rule: the same verified member ID reopens the card.
-        nozzle.hoverNozzle(nil); nozzle.hoverNozzle(memberID)
+        // A fresh pointer entry onto the same verified member reopens the card after Escape.
+        // Hover callbacks alone cannot move the sampled pointer used by the production controller.
+        pointer = CGPoint(x: 100, y: 100)
+        nozzle.hoverNozzle(nil)
+        dock.interactionControllerForChecks?.refresh()
+        let returnPlacement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let returnAnchor = try XCTUnwrap(view.interactionAnchor(memberID))
+        pointer = CGPoint(x: returnPlacement.frame.minX + returnAnchor.midX - view.bounds.minX,
+                          y: returnPlacement.frame.maxY - returnAnchor.midY + view.bounds.minY)
+        nozzle.hoverNozzle(memberID)
+        dock.interactionControllerForChecks?.refresh()
         for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(dock.card.isHidden, "The same member reopens its card")
 
@@ -363,6 +373,54 @@ private actor CardDismissalClient: EngineClient {
         XCTAssertTrue(seen.contains { $0.alpha == 0 }, "the number was hidden during the failed refresh")
         XCTAssertEqual(seen.last?.alpha, 1)
         XCTAssertEqual(seen.last?.text, newText, "a failed refresh brings back the number it hid")
+        await app.composition.stop()
+    }
+
+    /// Owner D277 (CKP-ENG-27), macrev2-1020-1 / glm-1020-1: the cockpit's Refresh reaches the normal entry's real member
+    /// refresh through `refreshFromCockpit`: `all` asks once for every stable presented member, a rendered key asks for
+    /// that member only, and an unknown key asks for nothing. Observed at the member-refresh adapter, not an owner stub.
+    func testCockpitRefreshReachesTheNormalEntrysMemberRefresh() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-refresh-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let rows = try fixture(remaining: 42.5)
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-05T12:00:00Z"))
+        let app = EngineRowsEntry.make(configuration: config,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
+            createsNativePanels: false, cockpitEntryEnabled: true, dockEnvironment: normalEntryTestEnvironment,
+            deadlineNow: { now }, makeClient: { _, store in CardDismissalClient(store: store, rows: rows) }, activateSettings: {})
+        await app.prepare()
+        let refresh = LandingMemberRefresh(); app.memberRefreshAdapter = refresh
+        let dock = app.composition.dock
+        app.allowDockPresentation()
+        await app.composition.start()
+        defer { dock.close() }
+        let memberID = "0123456789abcdef"
+        for _ in 0..<100 where !app.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == memberID }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let presented = Set(app.composition.presentedContent.snapshot.inputs.map(\.id))
+        XCTAssertTrue(presented.contains(memberID), "the fixture's member is on the widget")
+        let expected = app.composition.accountMembers.members.filter { $0.isStable && presented.contains($0.id) }.map(\.id)
+        XCTAssertFalse(expected.isEmpty)
+        func settle(_ count: Int) async throws {
+            for _ in 0..<200 where refresh.requests.count < count { try await Task.sleep(for: .milliseconds(10)) }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        app.refreshFromCockpit("all")
+        try await settle(expected.count)
+        XCTAssertEqual(refresh.requests.sorted(), expected.sorted(), "all = each stable presented member, once")
+
+        app.refreshFromCockpit("ffffffffffffffff")
+        try await settle(expected.count + 1)
+        XCTAssertEqual(refresh.requests.count, expected.count, "an unknown key reads nothing")
+
+        app.refreshFromCockpit(memberID)
+        try await settle(expected.count + 1)
+        XCTAssertEqual(refresh.requests.count, expected.count + 1)
+        XCTAssertEqual(refresh.requests.last, memberID, "a rendered key reads that member only")
         await app.composition.stop()
     }
 }

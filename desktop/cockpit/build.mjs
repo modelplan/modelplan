@@ -28,11 +28,11 @@ await cp(resolve(here,'web/index.html'),resolve(output,'index.html'));
 await cp(resolve(here,'prototype'),resolve(output,'prototype'),{recursive:true});
 // Renderer code only. Visual resources are managed separately by their owner.
 const studyModules=[
-  'chart-colours.js','colour-mode.js','empty-bays.js','engine-model.js','engine-view.js','fader-view.js','help-routing.js','i18n.js',
-  'mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
+  'alert-sentence.js','chart-colours.js','colour-mode.js','empty-bays.js','engine-model.js','engine-view.js','fader-view.js','help-routing.js','i18n.js',
+  'mfd-pages/alerts.js','mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
   'mfd-pages/public-helpers.js','mfd-pages/scope.js','mfd-pages/tune.js','mfd-pages/views.js','mfd-pages/where.js',
-  'project-attribution.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
-  'strings/mfd.js','strings/review49.js','window-time.js',
+  'project-attribution.js','session-line.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
+  'strings/mfd.js','strings/review49.js','strings/host.js','strings/plugins.js','window-time.js',
 ];
 for(const name of studyModules){
   const target=resolve(output,'study/rocket-r1',name);await mkdir(dirname(target),{recursive:true});
@@ -118,6 +118,27 @@ if (official) {
   }
   await cp(resolve(hull,'SOURCES.md'),resolve(output,'assets/hull/SOURCES.md'));
   css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8');
+  // CKP-FAD-24 / CKP-FAD-17 (D115, D122, D196): the v4 top-down throttle on every fader travel, each file checked against the
+  // reserved-visuals registry. The community edition keeps the MIT flat fader.
+  const throttle=resolve(assets,'cockpit/throttle');
+  await mkdir(resolve(output,'assets/throttle'),{recursive:true});
+  for(const name of ['plate-night.png','plate-day.png','lever-night.png','lever-day.png','ghost-night.png','ghost-day.png']){
+    const bytes=await readFile(resolve(throttle,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/throttle/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved throttle resource: '+name);
+    await writeFile(resolve(output,'assets/throttle',name),bytes);
+  }
+  await cp(resolve(throttle,'SOURCES.md'),resolve(output,'assets/throttle/SOURCES.md'));
+  css+='\n'+await readFile(resolve(throttle,'throttle.css'),'utf8');
+  // CKP-SHELL-33 (owner D160/D172/D187): the menu-bar launch rack art. The page never draws it; the native rack panel reads
+  // it from the verified bundle, each file checked against the reserved-visuals registry.
+  const rack=resolve(assets,'cockpit/rack');
+  await mkdir(resolve(output,'assets/rack'),{recursive:true});
+  for(const name of ['mast-day.png','mast-night.png']){
+    const bytes=await readFile(resolve(rack,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/rack/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved launch rack resource: '+name);
+    await writeFile(resolve(output,'assets/rack',name),bytes);
+  }
+  await cp(resolve(rack,'SOURCES.md'),resolve(output,'assets/rack/SOURCES.md'));
   // Strip logo (owner build 13): the study's rocket mark (shell6/logo.svg) is the repository logo, the same drawing.
   const logo=await readFile(resolve(assets,'logo.svg'));
   if(createHash('sha256').update(logo).digest('hex')!==policy.reservedVisuals.historicalMit['desktop/official-visuals/logo.svg'])throw Error('Unapproved logo');

@@ -345,6 +345,21 @@ final class BridgeTests: XCTestCase {
     XCTAssertEqual(try state.accept(reply(load,"action",3,extra:["action":"openSettingsSubscriptions"]),source:source),.action(.openSettingsSubscriptions))
     XCTAssertThrowsError(try state.accept(reply(load,"action",4,extra:["action":"openSettingsSubscriptions","pane":"about"]),source:source),"no pane or URL crosses")
   }
+  /// Owner D277 (CKP-ENG-27): the engine table's Refresh crosses as a current rendered member key or `all`, nothing else.
+  func testRefreshMemberRequiresARenderedMemberOrAll() throws {
+    let state=CockpitBridgeState(context:try context()),load=try ready(state)
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    XCTAssertThrowsError(try state.accept(reply(load,"action",3,extra:["action":"refreshMember","key":"0123456789abcdef"]),source:source),"no display yet")
+    let display=try state.display(fixture(),ticket:XCTUnwrap(state.queryTicket))
+    _ = try state.accept(reply(display,"rendered",2),source:source)
+    XCTAssertEqual(try state.accept(reply(load,"action",3,extra:["action":"refreshMember","key":"0123456789abcdef"]),source:source),.action(.refreshMember("0123456789abcdef")))
+    XCTAssertEqual(try state.accept(reply(load,"action",4,extra:["action":"refreshMember","key":"all"]),source:source),.action(.refreshMember("all")))
+    var sequence=5
+    for extra:[String:Any] in [["key":"/secret"],["key":"0000000000000999"],[:],["key":"all","tool":"codex"]] {
+      XCTAssertThrowsError(try state.accept(reply(load,"action",sequence,extra:extra.merging(["action":"refreshMember"]){$1}),source:source),"\(extra)")
+      sequence += 1
+    }
+  }
   /// D244 / G3-111: the saved subscription order reaches the page on load and on every appearance update, so the
   /// cockpit's tabs and columns follow it; none saved sends no order (the engine order), and only member keys cross.
   func testSavedMemberOrderReachesThePageOnLoadAndAppearance() throws {

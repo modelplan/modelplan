@@ -267,11 +267,12 @@ actor S4RowsClient: EngineClient {
         entry.composition.setForecastNotificationDelivery { deliveries.append($0) }
         await entry.prepare();await entry.composition.start()
         defer { entry.composition.dock.close() }
-        for _ in 0..<100 where deliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
-        try require(deliveries.count == 1,"normal entry must deliver one notification for the forecast episode")
+        // ALR-52 (WP-11, supersedes SET-9-18): a forecast is shown on the ALERT lamp, never sent as a notification.
+        try await Task.sleep(for:.milliseconds(200))
+        try require(deliveries.isEmpty,"normal entry must not send a forecast notification (ALR-52)")
         guard let synthetic=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
         try await synthetic.replaceRows(rows);try await Task.sleep(for:.milliseconds(50))
-        try require(deliveries.count == 1,"a repeated forecast must not produce a second notification")
+        try require(deliveries.isEmpty,"a repeated forecast must not produce a notification either")
     }
     /// G3-38 removed the Dock surface from a row with no value, and the shared fixture's Codex row has none. These
     /// journeys test how a reset event reaches the Dock and the menu, so they give that row its Dock surface back.

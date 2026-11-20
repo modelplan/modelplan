@@ -60,3 +60,17 @@ func TestCockpitTodayDoesNotInventZeroWithoutAnObservedRequest(t *testing.T) {
 		t.Fatalf("observed zero lost: %#v", got)
 	}
 }
+
+func TestCockpitTodayUsesAllTokenBucketsAndIndependentSpeed(t *testing.T) {
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.Local)
+	total := int64(33900000)
+	account := quota.Account{Source: "codex", Subscription: &quota.Binding{Ref: "0123456789abcdef", Status: "verified", ObservedAt: now}}
+	view := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{
+		Rows:      []speed.PerfRow{{Day: now.Format("2006-01-02"), Source: "codex", ObservedRequests: 5, ObservedOutputTokens: 29000, EligibleRequests: 5, EligibleOutputTokens: 132, GenMs: 2000}},
+		UsageRows: []speed.PerfRow{{Day: now.Format("2006-01-02"), Source: "codex", TokenKinds: speed.TokenKinds{TotalTokens: &total}, ObservedRequests: 10, ObservedOutputTokens: 45000}},
+	}}
+	got := CockpitTodayTotals([]quota.Account{account}, view)
+	if len(got) != 1 || got[0].TotalTokens == nil || *got[0].TotalTokens != total || got[0].OutputTokens != 45000 || got[0].GenerationTPS == nil || *got[0].GenerationTPS != 66 {
+		t.Fatalf("total, output and speed mixed: %+v", got)
+	}
+}

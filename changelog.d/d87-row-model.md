@@ -1,1 +1,0 @@
-A subscription row model merges the engine's consent facts, row state, cause code and visibility, and the first-run list shows one prerequisite line per tool from the same next-step table (kiro-cli install and sign-in, manual key entry).

@@ -4,6 +4,10 @@ import AppKit
 public struct DockInteractionEnvironment:Sendable {
     public var catalogue:[String],preferences:DockSubscriptionPreferences,targets:[DockReorderTarget],overflowIDs:Set<String>,bindingRevision:UInt64,hoverEventRevision:UInt64
     public var hoveredID:String?,insideShared:Bool?,parentOwnsHide:Bool,parentExpanded:Bool,menuActuallyOpen:Bool,active:Bool,reducedMotion:Bool
+    /// A mouse button is down outside the card's hold and no widget press is held (G3-120: closes at once).
+    public var pressedOutside:Bool=false
+    /// A widget carry (ring or body press that has moved) is held: the card closes and nothing opens (Pulse, G3-114).
+    public var carrying:Bool=false
     public var edge:DockEdge,contents:[String:DockCardContent]
     public init(catalogue:[String],preferences:DockSubscriptionPreferences,targets:[DockReorderTarget],overflowIDs:Set<String>=[],bindingRevision:UInt64=0,hoverEventRevision:UInt64=0,hoveredID:String?=nil,insideShared:Bool?=nil,parentOwnsHide:Bool=true,parentExpanded:Bool=true,menuActuallyOpen:Bool=false,active:Bool=true,reducedMotion:Bool=false,edge:DockEdge = .right,contents:[String:DockCardContent]=[:]){
         self.catalogue=catalogue;self.preferences=preferences;self.targets=targets;self.overflowIDs=overflowIDs;self.bindingRevision=bindingRevision;self.hoverEventRevision=hoverEventRevision
@@ -28,16 +32,16 @@ public struct DockInteractionPresentation:Equatable,Sendable {
     public init(clock:@escaping ()->TimeInterval,scheduler:any DockEdgeScheduling,read:@escaping ()->DockInteractionEnvironment){self.clock=clock;self.scheduler=scheduler;self.read=read}
     #if DEBUG && MODELPLAN_E2E_JOURNEY
     private var journeyTimeFloor:TimeInterval?
-    /// Advance only this controller's dwell clock; never activate a row or present a card directly.
+    /// Sample the hovered ring once through this controller; never activate a row or present a card directly.
     public func advanceJourneyHoverDwell(for id:String)->Bool {
         let env=ProcessInfo.processInfo.environment
         guard env["MODELPLAN_APP_SMOKE"] == "1",env["MODELPLAN_E2E_JOURNEY"] == "1",running else{return false}
         let input=read()
         guard input.active,input.parentExpanded,input.hoveredID == id,input.catalogue.contains(id) else{return false}
         if cards.visibility.subscriptionID == id{return true}
-        let now=currentTime()
-        guard let due=cards.nextDeadline,due-now<=DockCardInteraction.entryDwell else{return false}
-        journeyTimeFloor=max(now,due)
+        // No ring dwell (G3-120, Pulse `select`): one fresh sample opens the hovered ring's card. The floor
+        // keeps this controller's clock from running back behind the sample it has just taken.
+        journeyTimeFloor=currentTime()
         refresh()
         return cards.visibility.subscriptionID == id
     }
@@ -68,7 +72,7 @@ public struct DockInteractionPresentation:Equatable,Sendable {
             if let retiredHover, env.hoveredID != retiredHover.id || env.hoverEventRevision != retiredHover.event { self.retiredHover = nil }
             let hover = retiredHover == nil && gesture.preview == nil ? env.hoveredID : nil
             let previousCard = cards.visibility.subscriptionID
-            try cards.step(catalogue:env.catalogue,hoveredID:hover,insideShared:env.insideShared,parentOwnsHide:env.parentOwnsHide,parentExpanded:env.parentExpanded,menuActuallyOpen:env.menuActuallyOpen,at:currentTime())
+            try cards.step(catalogue:env.catalogue,hoveredID:hover,insideShared:env.insideShared,parentOwnsHide:env.parentOwnsHide,parentExpanded:env.parentExpanded,menuActuallyOpen:env.menuActuallyOpen,pressedOutside:env.pressedOutside,carrying:env.carrying,at:currentTime())
             if previousCard != nil, cards.visibility.subscriptionID == nil, env.insideShared == false, let id = env.hoveredID {
                 retiredHover = (id, env.hoverEventRevision)
             }

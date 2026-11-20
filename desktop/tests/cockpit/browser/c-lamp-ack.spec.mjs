@@ -140,17 +140,18 @@ test('G3-106 a pressed amber caution stays steady through a paused forecast and 
  set(50,reset+7*1440,3*1440);expect(await o.receive(o.send('display',{data}))).toBe(true);await expect(o.lamp).toHaveClass(flash);
 });
 
-test('G3-56 a fallback member (no verified subscription reference) is acknowledged in memory only',async({page})=>{
+test('G3-56 a fallback member (no verified subscription reference) is reported to the host, which keeps it for the session only',async({page})=>{
  const {data,windows}=zeroData();windows[0].remainingPercent=0;
  // No verified subscription: the member is keyed row#route, which names a different account after a restart.
  data.subscriptions=[];for(const a of data.projection.rows[0].accounts)a.subscriptionRef=null;
  let o=await open(page,data);await expect(o.lamp).toHaveClass(flash);await pressed(page,o.lamp);
- expect(await posted(page)).toEqual([]);
+ // G3-135: the page reports it (the page is rebuilt on every open); the host writes only verified references to disk.
+ const id=JSON.stringify([data.projection.rows[0].id+'#'+data.projection.rows[0].accounts[0].route,windows[0].id,'red']);
+ expect((await posted(page)).at(-1)).toEqual([id]);
  // This session: a refresh stays steady.
  expect(await o.receive(o.send('display',{data}))).toBe(true);await expect(o.lamp).not.toHaveClass(flash);
- // A host that was handed such an id anyway (an older build) cannot suppress a blink with it.
- const id=JSON.stringify([data.projection.rows[0].id+'#'+data.projection.rows[0].accounts[0].route,windows[0].id,'red']);
- o=await open(page,data,[id]);await expect(o.lamp).toHaveClass(flash);
+ // The next open, restored from the host's session memory, is steady too.
+ o=await open(page,data,[id]);await expect(o.lamp).not.toHaveClass(flash);
 });
 
 // glm-766-2: a store/consent barrier (a clear that adopts another epoch or generation) makes the page forget what was
@@ -166,7 +167,8 @@ test('G3-56 an epoch change forgets the acknowledged cautions, so the old store 
  await expect(lamp).toHaveClass(flash);
  for(const w of windows)w.remainingPercent=75;expect(await receive(send('display',{...next,viewRevision:'4',data}))).toBe(true);
  await expect(lamp).not.toHaveClass(/\blit\b/);
- for(const reports of (await posted(page)).slice(before))expect(reports).toEqual([]);
+ // Reports after the barrier: the new blink (one id), then the clear (empty). Nothing from the old store.
+ const after=(await posted(page)).slice(before);expect(after.length).toBeGreaterThan(0);expect(after[0]).toHaveLength(1);expect(after.at(-1)).toEqual([]);
 });
 
 test('G3-56 a generation change alone also forgets them',async({page})=>{
@@ -192,4 +194,21 @@ test('G3-56 an id over 200 UTF-8 bytes is never persisted or accepted',async({pa
  const wide=JSON.stringify(['a'.repeat(16),'窗'.repeat(70),'red']);// 70 UTF-16 units, 210+ bytes
  expect(wide.length).toBeLessThan(200);
  expect(await page.evaluate(ids=>window.modelPlanCockpit.receive(ids),send('load',{appearance,shell,redBelow:25,ackedCautions:[wide]}))).toBe(false);
+});
+
+// Review 11-18 (S3): activation must judge cautions at the current time, not at the last render. A caution whose
+// reset passed while the page was inactive is gone; nobody saw it, so it must not be marked seen (or blink).
+test('G3-135 a caution that expired while the page was inactive is not marked seen on activation',async({page})=>{
+ const {data,windows}=zeroData();windows[0].remainingPercent=0;windows[0].validUntil='2026-11-04T17:00:00Z';
+ const {send,receive,lamp}=await open(page,data);await expect(lamp).toHaveClass(flash);
+ // Fresh page, host remembers nothing: go inactive, show the caution unseen, then let it expire.
+ await page.reload();await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:false,occluded:true,key:false}))).toBe(true);
+ expect(await receive(send('display',{data}))).toBe(true);
+ await page.evaluate(()=>{window.posted=[];});
+ await page.clock.setFixedTime(new Date('2026-11-04T18:00:00Z'));
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ await expect(lamp).not.toHaveClass(flash);
+ expect(await posted(page)).toEqual([]);
 });

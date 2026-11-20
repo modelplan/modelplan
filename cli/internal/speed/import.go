@@ -48,8 +48,9 @@ const (
 // Span is the part of the timeline one source's imported rows cover: turns that started in
 // [From, Through).
 type Span struct {
-	From    time.Time `json:"from"`
-	Through time.Time `json:"through"`
+	AccountingVersion int       `json:"accountingVersion,omitempty"`
+	From              time.Time `json:"from"`
+	Through           time.Time `json:"through"`
 	// Epoch: the grant the span was imported under. After a revoke and a new grant the span no
 	// longer counts and the source is read again.
 	Epoch *GrantEpoch `json:"epoch,omitempty"`
@@ -59,6 +60,9 @@ type Span struct {
 	// Archived: the Codex span also covers archived threads (archived_sessions). An older span
 	// without it is imported again from both folders, replacing its rows (glm-967-2).
 	Archived bool `json:"archived,omitempty"`
+	// Complete: an import of the source finished under Epoch, also when the eligible interval was
+	// empty (the live ledger or a clear already reaches back past it), so there is no From.
+	Complete bool `json:"complete,omitempty"`
 }
 
 // RetryFile is one log whose read failed and the turn spans it still owes.
@@ -255,7 +259,7 @@ func owedAt(cache string, a consent.Admission, source string) (time.Time, bool) 
 		return time.Time{}, false // the user cancelled an import under this grant
 	}
 	c, has := l.Coverage[source]
-	if has && !c.From.IsZero() && sameEpoch(c.Epoch, epoch) && (source != "codex" || c.Archived) {
+	if has && (c.Complete || !c.From.IsZero()) && c.AccountingVersion == 1 && sameEpoch(c.Epoch, epoch) && (source != "codex" || c.Archived) {
 		return time.Time{}, false // imported
 	}
 	if at, tried := l.Attempts[source]; tried && sameEpoch(at.Epoch, epoch) {
@@ -374,10 +378,14 @@ type span struct{ lo, hi time.Time }
 func (s span) has(t time.Time) bool { return !t.Before(s.lo) && t.Before(s.hi) }
 
 type importJob struct {
-	pause  time.Duration
-	source string
-	root   *ImportRoot
-	dirs   []string // under the root
+	cache       string
+	usage       map[string]usageFile
+	usageRanges map[string][]span
+	now         time.Time
+	pause       time.Duration
+	source      string
+	root        *ImportRoot
+	dirs        []string // under the root
 	// reread: the source's older span is replaced, rows included, by this run's (glm-967-2).
 	reread bool
 	prefix string // file name prefix, "" for any
@@ -401,6 +409,8 @@ type importJob struct {
 }
 
 var errGrantWithdrawn = errors.New("history grant withdrawn during the import")
+
+var errImportCancelled = errors.New("import cancelled before its commit")
 
 var errClearedDuringImport = errors.New("history cleared during the import")
 
@@ -460,6 +470,12 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			c = Span{}
 		}
 		jfrom := from
+		if c.AccountingVersion < 1 {
+			if !c.From.IsZero() && c.From.Before(jfrom) {
+				jfrom = c.From
+			}
+			c, j.reread = Span{}, true
+		}
 		if j.source == "codex" && !c.From.IsZero() && !c.Archived {
 			// Written before archived threads were read: import the whole span again from both
 			// folders and replace its rows, so each turn counts once wherever its log now lies.
@@ -474,6 +490,8 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		}
 		j.ranges = missing(c, jfrom, cutoff)
 		j.pend = c.Retry
+		j.cache = cache
+		j.now = now
 		j.epoch, j.live, j.pause = currentEpoch(adm, j.source), live, o.Pause
 		active = append(active, j)
 	}
@@ -559,7 +577,11 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 				skip(j)
 				return nil
 			}
-			err := commitImport(cache, j, o.Auto, now, adm, &committed)
+			err := commitImport(ctx, cache, j, o.Auto, now, adm, &committed)
+			if errors.Is(err, errImportCancelled) {
+				res.Cancelled = true
+				return nil
+			}
 			if errors.Is(err, errClearedDuringImport) {
 				skip(j)
 				return nil
@@ -722,7 +744,9 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			cp = c
 			c.prior, c.mine = seen, map[string]bool{}
 		}
-		turns, err := readWhole(admitted, p, parser)
+		infoBefore, statErr := os.Stat(p)
+		usage := newAccountingParser(j.source, fileKey(p))
+		turns, err := readWhole(admitted, p, &accountingTee{parser: parser, usage: usage})
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -737,6 +761,21 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			}
 			j.failed = append(j.failed, rf)
 			continue
+		}
+		if j.usage == nil {
+			j.usage = map[string]usageFile{}
+			j.usageRanges = map[string][]span{}
+		}
+		if fi := infoBefore; statErr == nil {
+			records := []usageRecord{}
+			for _, r := range usage.records {
+				if inRange(it.ranges, r.At) && day(r.At) >= windowFrom(j.now, 35) && !r.At.Before(j.cleared) && !r.At.After(j.now) {
+					r.Imported = true
+					records = append(records, r)
+				}
+			}
+			j.usage[fileKey(p)] = usageFile{Source: j.source, Epoch: j.epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(usage.session), Parent: usage.parent, Started: usage.started}
+			j.usageRanges[fileKey(p)] = append([]span(nil), it.ranges...)
 		}
 		if cp != nil {
 			for id := range cp.mine {
@@ -866,7 +905,7 @@ func readWhole(admitted func() error, path string, p parser) ([]turn, error) {
 }
 
 // commitImport merges one source's rows and coverage into imported.json under perf.lock.
-func commitImport(cache string, j *importJob, auto bool, now time.Time, adm consent.Admission, committed *bool) error {
+func commitImport(ctx context.Context, cache string, j *importJob, auto bool, now time.Time, adm consent.Admission, committed *bool) error {
 	epoch := currentEpoch(adm, j.source) // re-checked inside the consent fence
 	if epoch == nil {
 		j.status = StatusNoConsent
@@ -877,6 +916,9 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		return errors.New("readings busy; retry the import")
 	}
 	defer unlock()
+	if !*committed && ctx.Err() != nil { // a cancel that arrived while waiting for perf.lock
+		return errImportCancelled
+	}
 	if !LoadCleared(cache).tool(j.source).Equal(j.cleared) { // under perf.lock, as the clear writes it
 		return errClearedDuringImport
 	}
@@ -914,7 +956,9 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		}
 	}
 	c.Epoch = epoch
+	c.AccountingVersion = 1
 	c.Archived = j.source == "codex"
+	c.Complete = true
 	// Every pending log was tried this run: the ones that read are done, the ones that failed
 	// again (and new failures) are in j.failed.
 	tried := map[string]bool{}
@@ -950,6 +994,18 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 	}
 	led.prune(now)
 	*committed = true
+	if len(j.usage) > 0 {
+		usage, ok := loadAccounting(cache)
+		if !ok {
+			return errors.New("accounting history unreadable; left as it is")
+		}
+		for key, f := range j.usage {
+			usage.Files[key] = mergeImportedUsage(usage.Files[key], f, j.usageRanges[key])
+		}
+		if err := saveAccounting(cache, usage); err != nil {
+			return err
+		}
+	}
 	return writeImported(cache, led)
 }
 
@@ -993,6 +1049,9 @@ func RemoveImportedUnder(cache string, a consent.Admission) error {
 		return errors.New("readings busy; retry")
 	}
 	defer unlock()
+	if err := removeImportedAccountingLocked(cache); err != nil {
+		return err
+	}
 	led, ok := LoadImported(cache)
 	if !ok {
 		return os.Remove(ImportPath(cache))
