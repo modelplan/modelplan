@@ -18,7 +18,7 @@ import { cautionItems,lights,readWindows } from './caution.js';
 import { createCautionMemory } from './caution-ack.js';
 import {currentWindow,withoutProjectNames} from './prototype-data-adapter.js';
 import {INITIAL_RANGE,nextCockpitRange,type CockpitRange} from './range.js';
-import {mountPluginHost,type PluginReports} from './plugin-host.js';
+import {mountPluginHost,pluginHostOf,type PluginReports} from './plugin-host.js';
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
 export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void,reportAcked:(ids:string[])=>void=()=>{},reportPins:(ids:string[])=>void=()=>{},reportPlugins:PluginReports={state:()=>{},running:()=>{}}):CockpitView {
  let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
@@ -65,7 +65,9 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  const reason=element('span');reason.id='s6-closed-reason';reason.setAttribute('role','status');cap.append(reason);root.append(cap);
  attach.onclick=e=>{if(e.isTrusted&&nativeShell)action(nativeShell.attached?'detach':'putBack');};
  close.onclick=e=>{if(e.isTrusted)action('close');};
- const unwireHud=wireHud(frame.hud,id=>{hudSelected=id;deck.showTune(id);if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());});
+ // WP-22 (macrevb-1062-3): the porthole marks the selected model's rocket by its published name (the still's one key).
+ const markPorthole=(id:string|null)=>{const name=id===null?null:lastData?.details?.publishedModels?.find(m=>m.id===id)?.name??null;root.dispatchEvent(new CustomEvent('model-select',{detail:name}));};
+ const unwireHud=wireHud(frame.hud,id=>{hudSelected=id;markPorthole(id);deck.showTune(id);if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());});
  let showProjectNames=true;
  const paintRecords=(data:WireCockpitData,at:number)=>{const shown=showProjectNames?data:withoutProjectNames(data);deck.render(shown,at);tape.render(shown,showProjectNames,at);};
  function shellControls(){
@@ -135,7 +137,7 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  const pulse=()=>{stop();if(!active||nativeShell?.profile==='closed'||reduceMotion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;void frame.lamp.offsetWidth;frame.lamp.classList.add('state-pulse');};
  // Plugin columns (D121/D124, D293): one host per page; the engine table lays its columns out through it.
  const plugins=mountPluginHost(root,reportPlugins);
- const setEmpty=(key:'waiting'|'cleared'|'empty',keepDeck=false)=>{root.dataset.engineEmpty=String(key==='empty');headerRange.dim(key==='empty');plugins.bindEngine(null);plugins.clearPlacement();base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
+ const setEmpty=(key:'waiting'|'cleared'|'empty',keepDeck=false)=>{root.dataset.engineEmpty=String(key==='empty');headerRange.dim(key==='empty');plugins.bindEngine(null);plugins.clearPlacement();base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;markPorthole(null);caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
   // CKP-SHELL-39: with no subscription read yet the screen says so in one line and offers one way in, Settings > Subscriptions.
   if(key==='empty'){const open=element('button',ht(locale,'host.emptyOpen'),'ec-empty-open');bilingual(open,ht('en','host.emptyOpen'),ht('zh-CN','host.emptyOpen'));open.type='button';open.setAttribute('aria-label',ht(locale,'host.emptyOpen'));open.onclick=e=>{if(e.isTrusted)action('openSettingsSubscriptions');};const box=element('div',undefined,'ec-empty-box');box.append(line,open);frame.engine.replaceChildren(box);}
   else frame.engine.replaceChildren(line);frame.hud.replaceChildren();if(!keepDeck){deck.clear();tape.clear();}};
@@ -193,10 +195,10 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);});}
  // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
  // returns to its waiting state when there was none) and the error goes back to the bridge, which refuses the display
- // and keeps the page. If that repaint fails too (glm-990-1, macrevb-990-1, macrev2-990-1), the whole cockpit view is
+ // and keeps the page. Whether that repaint succeeds or fails, the whole cockpit view is
  // put back as it was before the render: every element under the root gets its own child nodes, attributes, handler
  // properties and form values back, so the engine, HUD, MFD, records and lamp keep their committed nodes and controls;
- // the view's own state (engine closures, shell scope, last data) is restored with them. Nothing is repainted then, so
+ // the view's own state (engine closures, shell scope, last data) is restored with them. Nothing is repainted afterwards, so
  // a failure that persists cannot erase the view again. lastData never points at data that did not render.
  let restoring=false;
  const HANDLERS=['onclick','onchange','oninput','onkeydown','onlostpointercapture','onpointercancel','onpointerdown','onpointerleave','onpointermove','onpointerover','onpointerup'] as const;
@@ -223,14 +225,14 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   };
  }
  function renderData(data:WireCockpitData,now:number){
-  const previous=lastData,previousAt=lastRenderedAt,restore=snapshot();
+  const previous=lastData,previousAt=lastRenderedAt,restore=snapshot(),restoreDeck=deck.checkpoint();
   try{renderInto(data,now);}
   catch(error){
    if(!restoring&&!disposed){
     restoring=true;
-    try{if(previous)renderInto(previous,previousAt);else{lastData=null;frame.engine.replaceChildren();setEmpty('waiting');}}
-    catch{restore();}
-    finally{restoring=false;}
+    try{restoreDeck(); /* the refused data was already the deck's (and its held efforts'): put the committed deck back before repainting the previous data (macrevb-1052-3) */if(previous)renderInto(previous,previousAt);else{lastData=null;frame.engine.replaceChildren();setEmpty('waiting');}}
+    catch{/* The committed snapshot also covers a failed repaint. */}
+    finally{restore();restoring=false;}
    }
    throw error;
   }
@@ -238,7 +240,7 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  function renderInto(data:WireCockpitData,now:number){
   preserveFocus(()=>{
    const previousData=lastData;lastData=data;lastRenderedAt=now;
-   if(disposed)throw Error('closed');const before=displayedState();const priorPage=Number(frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??0);const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const selectedScope=nativeShell?.scope??priorButton?.dataset.scope??'all';const unstable=(previousData?cockpitMembers(previousData):[]).some(m=>m.key===selectedScope&&m.unstable)||cockpitMembers(data).some(m=>m.key===selectedScope&&m.unstable);const priorScope=unstable?'':selectedScope==='all'?'':selectedScope;if(unstable){retiredUnstableScopes.add(selectedScope);if(nativeShell)nativeShell={...nativeShell,scope:'all'};}applyScope=null;frame.engine.replaceChildren();
+   if(disposed)throw Error('closed');const before=displayedState();const priorPage=Number(frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??0);const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const selectedScope=nativeShell?.scope??priorButton?.dataset.scope??'all';const unstable=(previousData?cockpitMembers(previousData):[]).some(m=>m.key===selectedScope&&m.unstable)||cockpitMembers(data).some(m=>m.key===selectedScope&&m.unstable);const priorScope=unstable?'':selectedScope==='all'?'':selectedScope;if(unstable){retiredUnstableScopes.add(selectedScope);if(nativeShell)nativeShell={...nativeShell,scope:'all'};}applyScope=null;pluginHostOf(root)?.hold();frame.engine.replaceChildren();
    const engine=renderPrototypeEngine(data,locale,root,priorScope,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};deck.scope(key);return true;},()=>{if(!active)return false;action('openSettingsSubscriptions');return true;},priorPage,lastRenderedAt,redBelow,showUsed,key=>{if(!active)return false;action('refreshMember',key);return true;});
    // No widget subscription yet (every row still lacks a dock surface): the engine says so, but admitted sessions and
    // the publication's faders stay visible (post-merge sample 11-11, #847 finding 1).
@@ -259,6 +261,10 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   updateAppearance(value:LiveAppearance,now:number,threshold,used=false,allModels=false,order=[]){const orderChanged=setMemberOrder(order);showUsedPercent=used;deck.showAllModels(allModels);const namesChanged=showProjectNames!==value.showProjectNames;showProjectNames=value.showProjectNames;selectedRedBelow=threshold;locale=value.locale;headerRange.locale(locale);reduceMotion=value.reduceMotion;syncReduced();document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion){stop();caution.classList.remove('flash');}if(lastData){lastRenderedAt=now;preserveFocus(()=>{localise(lastRenderedAt);localiseEngine?.(locale,lastRenderedAt);paintHud(frame.hud,lastData!,tier!=='tall',locale,hudOptions());if(namesChanged)paintRecords(lastData!,lastRenderedAt);syncCaution(lastData!,lastRenderedAt);});if(orderChanged)renderData(lastData,now);}else localise();},
   shell(value:ShellState){if(retiredUnstableScopes.has(value.scope))value={...value,scope:'all'};const changed=(nativeShell?.scope??'all')!==value.scope;nativeShell=value;preserveFocus(()=>{tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');tape.layout(layout.tapeLines);shellControls();deck.range(value.range??INITIAL_RANGE);headerRange.set(value.range??INITIAL_RANGE);if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());if(changed){applyScope?.(value.scope);deck.scope(value.scope);}});},
   ignite(on){if(on)root.dataset.ignite='true';else delete root.dataset.ignite;},
+  // WP-22 (macrevb-1062-3): a rocket chosen or cleared in the enlarged field selects the same model on the HUD, the
+  // faders and the porthole. Selection only: the MFD page does not change and no tried effort arrives with it.
+  fieldClosed(){root.dispatchEvent(new CustomEvent('field-closed'));},
+  selectModel(id){hudSelected=id;markPorthole(id);deck.selectModel(id);if(lastData)preserveFocus(()=>paintHud(frame.hud,lastData!,tier!=='tall',locale,hudOptions()));},
   render:renderData,
   nextDeadline(){return lastData?nextDeadline(lastData,lastRenderedAt):null;},
   tick(now){refreshDeadlines(now);},

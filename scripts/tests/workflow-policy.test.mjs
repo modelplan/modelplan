@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, prCancelProblems, workflowProblems } from "../workflow-policy.mjs";
 import { spawnSync } from "node:child_process";
 
@@ -247,11 +249,19 @@ test("every owner-Mac route that is not a GUI task needs modelplan-mac-nongui, s
   assert.equal(pins.size, 1, [...pins].join(" "));
 });
 
-test("native GUI gets 70 minutes and other trusted Mac jobs retain their limits", () => {
+test("native GUI gets 70 minutes, native-headless a temporary 90, and other trusted Mac jobs retain their limits", () => {
   const text = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
   const jobs = [...text.matchAll(/^  ([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:\n|$(?![\s\S]))/gm)];
   const limits = Object.fromEntries(jobs.map(([, name, body]) => [name, Number(/^    timeout-minutes: (\d+)$/m.exec(body)?.[1])]));
-  assert.deepEqual(limits, { native: 70, "native-headless": 60, transport: 15, sequences: 15, "u11-native": 30, probe: 5, "gui-probe": 5 });
+  assert.deepEqual(limits, { native: 70, "native-headless": 90, transport: 30, sequences: 30, "u11-native": 30, probe: 5, "gui-probe": 5 });
+  const xcodeSteps = text.match(/Select Xcode \(26\.6 17F113 on our Macs/g) || [];
+  assert.equal(xcodeSteps.length, 2, "both Swift-building jobs pin Xcode 26.6");
+  assert.match(text, /version == \(26, 6\) and build == "17F113"/);
+  assert.match(text, /xcodebuild -version/);
+  // The 90 is a stopgap with a recorded way back to 60.
+  const headless = text.split("\n  native-headless:\n")[1].split("\n  transport:\n")[0];
+  assert.match(headless, /temporary until the seed and the Mini concurrency fixes land; revert to 60/i);
+  assert.match(headless, /TODO\(headless-cap\): set back to 60/);
 });
 
 test("D94: non-GUI jobs refuse GUI runners unless gui-2 is lent; the V1 host is never lent", () => {
@@ -527,9 +537,36 @@ test("native-headless warms from a seed script read from main, and only a main d
   assert.ok(!/bash scripts\//.test(job) && !/bash "?\$GITHUB_WORKSPACE\/scripts/.test(job), "no seed script from the workspace");
   const publish = job.split("name: Publish the build seed")[1].split("run:")[0];
   assert.ok(publish.includes("github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'") && publish.includes("success()"));
-  // restore comes before the first build, publish after the last check.
-  assert.ok(job.indexOf("headless-seed.sh\" restore") < job.indexOf("swift build --package-path desktop/native --jobs 2"));
-  assert.ok(job.indexOf("headless-seed.sh\" publish") > job.indexOf("Synthetic fixture integrity"));
+  // restore comes before the first build; publish right after the last build and before any test runs, so a later
+  // cap or cancel cannot lose the seed.
+  const at = (needle) => { const i = job.indexOf(needle); assert.ok(i >= 0, needle); return i; };
+  const publishAt = at("headless-seed.sh\" publish");
+  assert.ok(at("headless-seed.sh\" restore") < at("swift build --package-path desktop/native --scratch-path \"$HEADLESS_SCRATCH\""));
+  assert.ok(publishAt > at("--scratch-path \"$HEADLESS_SCRATCH\" --jobs 2 --build-tests"));
+  for (const later of ["swift test --package-path", "swift run --package-path", "Synthetic fixture integrity"]) assert.ok(publishAt < at(later), later);
+  assert.equal((job.replace(/^\s*#.*$/gm, "").match(/--build-tests/g) ?? []).length, 1);
+});
+
+test("native-headless builds once into one scratch path and starts SwiftPM only where it must", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  // Commands only: comment lines may name what the job no longer does.
+  const job = text.split("\n  native-headless:\n")[1].split("\n  transport:\n")[0].replace(/^\s*#.*$/gm, "");
+  const seed = fs.readFileSync(new URL("../mac-compile/headless-seed.sh", import.meta.url), "utf8");
+  // One scratch path, the one the seed script restores and publishes.
+  assert.match(job, /echo "HEADLESS_SCRATCH=\$RUNNER_TEMP\/headless-build" >> "\$GITHUB_ENV"/);
+  assert.match(seed, /\|headless_build\|\$RUNNER_TEMP\/headless-build"/);
+  const swift = [...job.matchAll(/swift (build|run|test)( list)? [^\n]*/g)].map((m) => m[0]);
+  for (const call of swift) assert.ok(call.includes('--scratch-path "$HEADLESS_SCRATCH"'), call);
+  assert.doesNotMatch(job, /app-integration-tests|swift test list|--product ModelPlanCommunityApp/);
+  // Builds: the native package once, the app integration package (tests and every product) once.
+  assert.equal(swift.filter((c) => c.startsWith("swift build") && !c.includes("--show-bin-path")).length, 2);
+  // The headless share comes from the sources and is verified against what actually ran.
+  assert.match(job, /"\$partition" static-list --package app-integration > /);
+  assert.match(job, /"\$partition" plan --static --package app-integration --leg headless/);
+  assert.match(job, /"\$partition" verify --static --package app-integration --leg headless/);
+  // The GUI leg (job native) keeps its own build and `swift test list`: its share is "everything else".
+  const gui = text.split("\n  native:\n")[1].split("\n  native-headless:\n")[0];
+  assert.match(gui, /swift test list --package-path "\$pkg" --scratch-path "\$scratch" --skip-build/);
 });
 
 const WF_DIR = new URL("../../.github/workflows/", import.meta.url);
@@ -576,12 +613,20 @@ test("D254: the PR-triggered Mac workflows carry the PR-only cancel and the shar
   }
 });
 
-test("D254: trusted-mac.yml is untouched (its SHA is pinned by callers and the runner group)", () => {
+test("D254: trusted-mac.yml changes only together with a pin to exactly that content (callers and the runner group pin its SHA)", () => {
   const r = spawnSync("git", ["diff", "--quiet", "origin/main", "--", ".github/workflows/trusted-mac.yml"], { encoding: "utf8" });
-  // Outside a checkout with origin/main the diff cannot run; a status of 128 is not a failure of this rule.
-  assert.notEqual(r.status, 1, "trusted-mac.yml differs from origin/main");
   const callers = workflows().flatMap(([, t]) => [...t.matchAll(/workflows\/trusted-mac\.yml@([0-9a-f]{40})/g)].map((m) => m[1]));
   assert.ok(callers.length > 0 && callers.every((s) => /^[0-9a-f]{40}$/.test(s)), "every caller pins trusted-mac.yml by full SHA");
+  // Outside a checkout with origin/main the diff cannot run; a status of 128 is not a failure of this rule.
+  if (r.status !== 1) return;
+  // An edit nobody pins does nothing (the callers keep running the old SHA): a change must move every pin to a commit
+  // whose trusted-mac.yml is exactly this file, and the owner adds that ref to the runner group before it merges.
+  const current = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  for (const sha of new Set(callers)) {
+    const pinned = spawnSync("git", ["show", `${sha}:.github/workflows/trusted-mac.yml`], { encoding: "utf8" });
+    assert.equal(pinned.status, 0, `pinned commit ${sha} is not in this checkout`);
+    assert.equal(pinned.stdout, current, `trusted-mac.yml differs from origin/main but the pin ${sha} does not carry this content`);
+  }
 });
 
 test("D254 pr-scope reads NUL-separated paths: tab, quote, newline and unicode names under desktop/native still run the Macs; failures fail closed", () => {
@@ -624,6 +669,32 @@ test("no workflow step asserts with a bare '! command' (bash exempts it from set
     const lines = fs.readFileSync(new URL(f, dir), "utf8").split("\n");
     lines.forEach((l, i) => assert.doesNotMatch(l, /^\s+!\s+(grep|test|\[)/, `${f}:${i + 1} use an explicit if ...; then exit 1; fi`));
   }
+});
+
+test("Xcode selector: self-hosted needs 26.6 build 17F113, hosted keeps the image's newest", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  const scripts = [...text.matchAll(/python3 - <<'PYCODE'\n([\s\S]*?)\n *PYCODE/g)].map((m) => m[1].replace(/^ {8}/gm, ""));
+  assert.equal(scripts.length, 2);
+  const run = (apps, runnerEnv) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xcode-"));
+    for (const [name, version, build] of apps) {
+      fs.mkdirSync(path.join(dir, name, "Contents"), { recursive: true });
+      const plist = (k, v) => `<?xml version="1.0"?><plist version="1.0"><dict><key>${k}</key><string>${v}</string></dict></plist>`;
+      fs.writeFileSync(path.join(dir, name, "Contents/Info.plist"), plist("CFBundleShortVersionString", version));
+      if (build) fs.writeFileSync(path.join(dir, name, "Contents/version.plist"), plist("ProductBuildVersion", build));
+    }
+    const out = path.join(dir, "env");
+    return { r: scripts.map((code) => spawnSync("python3", ["-I", "-c", code], { encoding: "utf8", env: { PATH: process.env.PATH, XCODE_APPS_DIR: dir, GITHUB_ENV: out, RUNNER_ENVIRONMENT: runnerEnv } })), out, dir };
+  };
+  const good = run([["Xcode_26.6.app", "26.6", "17F113"], ["Xcode_26.3.app", "26.3", "17C529"]], "self-hosted");
+  for (const r of good.r) assert.equal(r.status, 0, r.stderr);
+  assert.match(fs.readFileSync(good.out, "utf8"), /Xcode_26\.6\.app\/Contents\/Developer/);
+  for (const r of run([["Xcode_26.6.app", "26.6", "17F999"]], "self-hosted").r) assert.match(r.stderr, /Xcode 26\.6 \(17F113\) is not installed/);
+  for (const r of run([["Xcode_26.6.app", "26.6", ""]], "self-hosted").r) assert.notEqual(r.status, 0);
+  for (const r of run([["Xcode_26.3.app", "26.3", "17C529"]], "self-hosted").r) assert.notEqual(r.status, 0);
+  const hosted = run([["Xcode_26.3.app", "26.3", "17C529"]], "github-hosted");
+  for (const r of hosted.r) assert.equal(r.status, 0, r.stderr);
+  assert.match(fs.readFileSync(hosted.out, "utf8"), /Xcode_26\.3\.app/);
 });
 
 test("packaging workflows pin Xcode 26.6 (17F113) instead of selecting the newest installed Xcode", () => {

@@ -32,7 +32,7 @@ class FakeSession:
         FakeSession.opened.append(list(self.segment['ids']))
         if self.fail:
             raise self.fail
-        subject = dict(pid=123, bundle='/synthetic/ModelPlan Community.app', home='/synthetic/home', registeredAt=100.0)
+        subject = dict(pid=123, bundle='/synthetic/ModelPlan.app', home='/synthetic/home', registeredAt=100.0)
         subject.update(FakeSession.lease or {})  # without paths run_id fails closed on missing authority
         return subject
 

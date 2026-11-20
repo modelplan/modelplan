@@ -111,29 +111,6 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 #cockpit .website-link:hover,#cockpit .website-link:focus-visible{color:var(--lcd-ink)}
 #cockpit .sp-h .website-link{margin-left:auto;flex:none}
 
-/* The enlarged launch field's own page (src/field-page.ts): a transparent composition on the desktop (task 91 round 5).
-   A frosted card at the left; the scene at the right, masked by the feathered c01 silhouette (src/field-shape.ts). */
-html:has(body.field-page),body.field-page{background:transparent}
-body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
-/* The scene's plates and ticks use the prototype's LCD and silk faces (rocket.css .ov-porthole .wb-plates), whose
-   variables live on #cockpit and #overlay in the prototype; the field page's root carries the same values. */
-#field{position:relative;height:100vh;--field-card-top:max(20px,calc((100vh - 664px)/2));
- --f-silk:'DM Sans','PingFang SC','Noto Sans SC',system-ui,sans-serif;--f-lcd:'JetBrains Mono','PingFang SC','Noto Sans SC',ui-monospace,monospace;
- --text:var(--lcd-ink);--muted:var(--lcd-muted);--gold:var(--gold-lcd);font:11px/1.3 var(--f-silk)}
-.field-card{position:absolute;left:0;top:50%;transform:translateY(-50%);width:430px;height:min(664px,calc(100% - 40px));box-sizing:border-box;display:flex;flex-direction:column;min-height:0;padding:11px;border:1px solid #ffffff24;border-radius:12px;background:linear-gradient(145deg,#101723c9,#101217b8);box-shadow:0 12px 28px #0003;backdrop-filter:blur(18px) saturate(1.1);-webkit-backdrop-filter:blur(18px) saturate(1.1);color:#fff3df;z-index:6;overflow:hidden}
-.field-bar{display:flex;align-items:center;gap:8px;flex:none;min-height:34px}
-.field-bar .field-count{margin-left:auto;font-size:11px}
-.field-stage{position:absolute;left:458px;right:0;top:50%;transform:translateY(-50%);aspect-ratio:1000/650;max-height:100%;overflow:hidden;background:transparent;mask-image:var(--field-mask);-webkit-mask-image:var(--field-mask);mask-size:100% 100%;-webkit-mask-size:100% 100%;mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat}
-.field-stage .nogl{padding:16px;font-size:12px;position:absolute;inset:0;display:grid;place-items:center;text-align:center}
-.field-close{position:absolute;left:438px;top:calc(var(--field-card-top) - 8px);width:24px;height:24px;padding:0;border:0;border-radius:50%;background:#14151799;color:#e9eaeb;font-size:21px;line-height:1;cursor:pointer;z-index:7}
-.field-close:focus-visible{outline:1px solid #f6d38a;outline-offset:2px}
-.field-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:2px 10px;padding:6px 0;overflow:auto;font-size:11px;flex:1;min-height:0;align-content:start}
-.field-row{display:flex;align-items:center;gap:6px}
-/* Axis labels in screen-space lanes (src/field-axes.ts; prototype study style.css task 91 rounds 4-5). Unplaced ticks stay hidden
-   so the scene's own overlapping projection never flashes before the first layout. */
-.field-stage .tick3.field-axis-placed{transform:var(--field-axis-position)!important;translate:none!important;opacity:var(--field-axis-opacity)!important;transition:none!important;background:#03060a;border-radius:2px;padding:2px 4px;text-shadow:none;color:#e9edf0}
-.field-stage .tick3.field-axis-placed.time{color:#a2a4a8}
-.field-stage .tick3:not(.field-axis-placed){visibility:hidden}
 .ck-port[data-opens-field]{pointer-events:auto;cursor:zoom-in}
 /* Build 14c: the port is not focusable, so it never draws a ring round the canopy frame and never lights its ⤢ key after
    a click and a key press. Keyboard focus reaches the ⤢ key itself and shows in the strip keys' gold (button:focus-visible). */
@@ -160,7 +137,7 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 .hud-front{fill:none;stroke:var(--gold);stroke-width:1.2;stroke-dasharray:3 2}
 .hud-dot{fill:var(--gold);cursor:pointer}.hud-dot.dominated{opacity:.35}
 .hud-cur{fill:#e9edf0}.hud-link{stroke:#e9edf066;stroke-width:.8}
-.ck-still-layer.ck-hot{filter:brightness(1.4)}
+.ck-still-layer.ck-hot,.ck-still-layer.ck-sel{filter:brightness(1.4)}
 /* CKP-STRIP-15: hovering a record line lights its fader's LED and engine column. */
 #cockpit .ck-tape{pointer-events:auto}
 #cockpit .dk-fad .fd-ch.xhl .fd-indicator{color:var(--lcd-ink)}
@@ -377,6 +354,12 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .mfd-screen .pl-screen-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mfd-screen .pl-screen-x{flex:none;padding:2px 8px;border:0;border-radius:4px;background:linear-gradient(180deg,var(--key-1),var(--key-2));box-shadow:var(--raised);font:500 10px/14px var(--f-silk);color:var(--silk-hi)}
 .mfd-screen .pl-screen-l{margin:0;display:grid;row-gap:6px}
+/* The screen is a <section>: take pointer events back from the prototype's `.ck:not(.open) section` rule (Close, drawn controls). */
+#cockpit .mfd-screen .pl-screen{pointer-events:auto}
+/* D323 custom draw: the one area a plugin paints in (a column's cell rows, the screen body), clipped by the host. */
+.ck-eng .pl-draw{position:relative;min-width:0;min-height:0;overflow:hidden;contain:strict;color:var(--lcd-ink)}
+.mfd-screen .pl-screen-d{position:relative;flex:1 1 auto;min-width:0;min-height:0;overflow:hidden;contain:strict}
+.mfd-screen .pl-screen-l[hidden],.mfd-screen .pl-screen-d[hidden]{display:none}
 .mfd-screen .pl-screen-l div{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--lcd-rule);padding-top:5px;font:400 11px/14px var(--f-lcd)}
 .mfd-screen .pl-screen-l dt{color:var(--lcd-muted)}.mfd-screen .pl-screen-l dd{margin:0;color:var(--lcd-ink);font-variant-numeric:tabular-nums}
 .pl-menu{position:fixed;z-index:10020;width:238px;padding:5px;border-radius:8px;background:var(--pop-solid);box-shadow:var(--pop-shadow),inset 0 0 0 1px var(--pop-line);font:400 11px/1 var(--f-silk);color:var(--pop-ink);pointer-events:auto}
