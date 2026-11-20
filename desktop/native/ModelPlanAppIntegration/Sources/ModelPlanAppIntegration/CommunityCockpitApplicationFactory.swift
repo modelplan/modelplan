@@ -41,7 +41,7 @@ import ModelPlanResources
     public static var verificationCockpitTrace: ((String) -> Void)?
     /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
     static var verificationPrewarm = true
-    /// Test apps leave the resource plugin out (its ring would change every Dock fixture) unless a test asks for it.
+    /// SPI test apps can ask for the resource plugin (with a synthetic reader); every other test app leaves it out.
     static var verificationResourcePlugin = false
     /// The resource journey's synthetic reader (the installed app reads this Mac with SystemResourceReader).
     static var verificationResourceReader: (() -> ResourceReader)?
@@ -55,6 +55,7 @@ import ModelPlanResources
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
+                            installsResourcePlugin: Bool = false,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
         // Preserve the existing injected-client/console seam used by its callers.
         if let makeClient {
@@ -131,11 +132,16 @@ import ModelPlanResources
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
         owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
         application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
+        // macrevb-1096-9 (D324/D327): only the installed app samples this Mac. It asks for the resource plugin
+        // (`installsResourcePlugin`, ModelPlanCommunityApp); every test or fixture app, with or without the SPI flag and
+        // with or without native panels, leaves it out (no SystemResourceReader, no ring in the Dock), unless an SPI test
+        // asks for the synthetic resource journey.
         #if MODELPLAN_TEST_ONLY_SPI
-        if verificationResourcePlugin { installResourcePlugin(application: application, owner: owner, settingsStore: settingsStore) }
+        let installsResources = installsResourcePlugin || verificationResourcePlugin
         #else
-        installResourcePlugin(application: application, owner: owner, settingsStore: settingsStore)
+        let installsResources = installsResourcePlugin
         #endif
+        if installsResources { installResourcePlugin(application: application, owner: owner, settingsStore: settingsStore) }
         return application
     }
     /// D324: one ResourceSampler for the app. Its cadence follows the plugin choices (Settings or a page edit), the
