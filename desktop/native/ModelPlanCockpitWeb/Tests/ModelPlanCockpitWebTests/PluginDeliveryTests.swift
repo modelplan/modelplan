@@ -4,6 +4,7 @@ import XCTest
 import ModelPlanWire
 @testable import ModelPlanCockpitWeb
 
+#if MODELPLAN_TEST_ONLY_SPI
 /// #1104 review: the window controller's plugin delivery (macrevd-1104-2/-3, macrevb-1104-3, macrev2-1104-4/-5/-6).
 /// Drives the real controller, ordered queue and bridge on a no-window page.
 @MainActor final class PluginDeliveryTests: XCTestCase {
@@ -148,3 +149,4 @@ import ModelPlanWire
     page.discard()
   }
 }
+#endif

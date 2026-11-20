@@ -10,12 +10,12 @@ import ModelPlanSettings
 @MainActor public final class CockpitPluginSampler {
     public typealias Reader = @MainActor () -> [String: Any]?
     /// Runs `fire` once after the delay; the returned closure cancels it.
-    public typealias Schedule = @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> () -> Void
+    public typealias Schedule = @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> @MainActor () -> Void
     public static let defaultInterval = 10
     public var send: ((String, [String: Any]) -> Void)?
     private let schedule: Schedule
     private var readers: [String: Reader] = [:]
-    private var timers: [String: (interval: Int, cancel: () -> Void)] = [:]
+    private var timers: [String: (interval: Int, cancel: @MainActor () -> Void)] = [:]
     private var running: [String] = []
     private var preferences = CockpitPluginPreferences()
     private var catalogue = CockpitPluginCatalogue.builtIn
