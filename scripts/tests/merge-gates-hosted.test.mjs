@@ -31,7 +31,7 @@ const pr = { number: 7, state: "open", draft: false, user: ME, head: { sha: H, r
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } } };
 const verdict = { user: ME, body: `VERDICT: merge @ ${H} (macrev2)`, created_at: "2026-11-19T00:00:00Z" };
 const evalPr = (runs, files = [{ filename: "desktop/native/Sources/X.swift" }]) =>
-  R.evaluatePr({ pr, items: R.feed([verdict]), files, runs, statuses: [], verifiedEdge: () => false, conf });
+  R.evaluatePr({ pr, items: R.feed([verdict]), files, runs, statuses: [{ context: "mac-compile", state: "success" }], verifiedEdge: () => false, conf });
 const greenCi = () => run(CI, "success", [linux("checks")], { id: 1 });
 // desktop.yml as a PR run: app-smoke hosted, native-headless on whatever `nh` says.
 const desktop = (smoke, nh = job("native-headless (macos-latest) / native-headless (macos-latest)", "success", SELF), over = {}) => {

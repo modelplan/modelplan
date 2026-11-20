@@ -60,7 +60,10 @@ export function verifyCarry(cwd, oldSha, newSha, mainRef) {
   if (reviewed !== contribution(cwd, p[1], newSha)) return { ok: false, why: "contribution changed by the merge" };
   const clean = verifyCleanMerge(cwd, newSha);
   if (!clean.ok) return { ok: false, why: clean.why };
-  return { ok: true, why: "object-identical contribution" };
+  // Plan B (Sol round 1): both sides' file lists, so the rules apply the overlap guardrail to legacy edges too.
+  const s = sides(cwd, p[0], p[1]);
+  if (!s) return { ok: false, why: "no single merge base for the overlap check" };
+  return { ok: true, why: "object-identical contribution", sides: s };
 }
 
 // A merge-group step is clean when it is a two-parent merge and Git's own merge of the two parents
@@ -118,11 +121,12 @@ export function verifyMainMerges(cwd, oldSha, newSha, mainRef) {
   const reviewed = ownPatch(cwd, oldBase, oldSha);
   if (!reviewed.trim()) return no("reviewed head has no change of its own");
   if (reviewed !== ownPatch(cwd, newBase, newSha)) return no("the PR's own diff changed");
-  // Plan B guardrail: the file lists of both sides for the overlap check (rules.carryForwardOverlap), from the reviewed
-  // head and the newest main commit merged in (between[0] is newSha, its second parent).
-  const s = sides(cwd, oldSha, parents(cwd, newSha)[1]);
-  if (!s) return no("no single merge base for the overlap check");
-  return { ok: true, why: "main merges only, diff unchanged", between, sides: s };
+  // Plan B guardrail: the file lists of both sides for the overlap check (rules.carryForwardOverlap), accumulated over
+  // EVERY verified merge step (Sol round 1: an earlier step can import the coupled change while the last one names an
+  // ancestor that is already included).
+  const s = rangeSides(cwd, oldSha, newSha);
+  if (!s.ok) return no(s.why);
+  return { ok: true, why: "main merges only, diff unchanged", between, sides: { pr: s.pr, main: s.main } };
 }
 
 // Changed paths from `from` to `to`, rename-aware (old and new path of a rename or copy both count), sorted and unique.
@@ -149,6 +153,33 @@ export function sides(cwd, prSha, mainSha) {
   if (all.length !== 1) return null;
   const pr = changedPaths(cwd, all[0], prSha), main = changedPaths(cwd, all[0], mainSha);
   return pr && main ? { base: all[0], pr, main } : null;
+}
+
+// The overlap sides of a first-parent range oldSha..newSha: for every two-parent merge on the path, the union of its
+// sides() (PR side: merge base..first parent, main side: merge base..second parent). A one-parent commit is refused
+// unless `nonMerge` is true; then its own changed paths join the PR side (the coordinator's pin-only commits). Fails
+// closed on a missing commit, an octopus, a step without a single merge base or more than 20 commits.
+export function rangeSides(cwd, oldSha, newSha, { nonMerge = false } = {}) {
+  const no = (why) => ({ ok: false, why });
+  if (!ensure(cwd, oldSha) || !ensure(cwd, newSha)) return no("commit not found");
+  if (!isAncestor(cwd, oldSha, newSha)) return no("reviewed head is not an ancestor");
+  const pr = new Set(), main = new Set();
+  let steps = 0;
+  for (let c = newSha, hop = 0; c !== oldSha; hop++) {
+    if (hop >= 20) return no("more than 20 commits after the reviewed head");
+    const p = parents(cwd, c);
+    if (p.length === 2) {
+      const s = sides(cwd, p[0], p[1]);
+      if (!s) return no(`${c.slice(0, 8)}: no single merge base for the overlap check`);
+      s.pr.forEach((x) => pr.add(x)); s.main.forEach((x) => main.add(x)); steps++;
+    } else if (p.length === 1 && nonMerge) {
+      const own = changedPaths(cwd, p[0], c);
+      if (!own) return no(`${c.slice(0, 8)}: changed paths unreadable`);
+      own.forEach((x) => pr.add(x));
+    } else return no(`${c.slice(0, 8)} has ${p.length} parents`);
+    c = p[0];
+  }
+  return { ok: true, why: `${steps} merge step(s)`, pr: [...pr].sort(), main: [...main].sort() };
 }
 
 // Plan B CARRY-FORWARD record (rules.carryForward): `head` is a two-parent merge, its first parent is the approved head,

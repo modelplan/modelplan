@@ -33,6 +33,9 @@ export const QUEUE_WORKFLOWS = Object.freeze([
   ".github/workflows/u14-harness.yml", ".github/workflows/transport-fuzz.yml",
 ]);
 const SHA = /^[0-9a-f]{40}$/;
+// The Mac compile check's commit status (mac-compile.yml) and the paths that need it (as the coordinator's decide.py).
+export const MAC_COMPILE = "mac-compile";
+export const SWIFT_RE = /\.swift$|^desktop\/native\//;
 
 export const PENDING = "pending";
 export const SUCCESS = "success";
@@ -155,12 +158,16 @@ export function carryEdges(items) {
   return edges;
 }
 
+// verified(old, new) -> { ok, sides: { pr, main } }. Plan B (D325/D326, Sol round 1): a legacy edge is bound by the same
+// overlap guardrail as the auto-carry and the carry-forward record; a proof without side lists (or a bare boolean)
+// never carries.
+export const edgeHolds = (r) => !!r && typeof r === "object" && r.ok === true && !carryForwardOverlap(r.sides?.pr, r.sides?.main);
 export function carryChain(edges, head, verified = () => false) {
   const chain = [];
   let f = head;
   for (let hop = 0; hop < 6; hop++) {
     const e = edges.find((x) => x.new === f);
-    if (!e || !verified(e.old, e.new)) break;
+    if (!e || !edgeHolds(verified(e.old, e.new))) break;
     chain.push(e.old);
     f = e.old;
   }
@@ -232,14 +239,16 @@ export function autoCarry(items, head, prove = () => ({ ok: false })) {
 // the approved head and whose second parent is the named main commit on main, and Git's own clean re-merge of the two
 // parents reproduces the head's tree exactly (no conflict resolution, no extra edit). The rename-aware file lists from the
 // parents' merge base to each parent then must not overlap in the cockpit hot set or the always-review set, and must not
-// form a producer/consumer pair across the sides (CARRY_FORWARD; mirrored by the coordinator's carry-forward-paths.conf).
+// form a producer/consumer pair across the sides (CARRY_FORWARD; the coordinator runs this same code from main, carry-proof.mjs).
 // The record counts only for the exact head it names (a moved head ignores it), and only when the latest trusted VERDICT
 // line on the PR is a merge naming the approved head. CI at the head and the merge-group CI stay required as always.
+const COCKPIT_UNIT = /^desktop\/cockpit\/|^desktop\/native\/ModelPlanCockpit(Web|Shell)\/|^desktop\/official-visuals\/cockpit|^desktop\/tests\/cockpit\/|^source-policy\.json$/;
 export const CARRY_FORWARD = Object.freeze({
   // a path changed on BOTH sides that matches one of these refuses
   hot: Object.freeze([
     /^desktop\/cockpit\/src\/view\.ts$/, /^desktop\/cockpit\/src\/bridge\.ts$/, /^desktop\/cockpit\/src\/prototype-[^/]+\.ts$/,
     /(^|\/)cockpit\.css$/, /^desktop\/tests\/cockpit\//, /^desktop\/official-visuals\/cockpit-baselines\//, /^source-policy\.json$/,
+    /^desktop\/cockpit\/src\/main\.ts$/, /^desktop\/native\/ModelPlanCockpitWeb\//,
   ]),
   // tests, baselines, policy, gate and workflow files: an edit on both sides always gets a delta review
   shared: Object.freeze([TEST_RE, /\.png$|^desktop\/official-visuals\//, /^\.github\/|^scripts\/merge-gates\/|^desktop\/native\/verification\/scenario-tiers\.tsv$/]),
@@ -247,6 +256,10 @@ export const CARRY_FORWARD = Object.freeze({
   pairs: Object.freeze([
     { name: "bridge-payload", a: /^desktop\/cockpit\/src\/(bridge|schema)\.ts$|^desktop\/native\/ModelPlanCockpitWeb\//, b: /^desktop\/cockpit\/src\/(view|main|prototype-[^/]+)\.ts$/ },
     { name: "render-baseline", a: /^desktop\/cockpit\/(src|web)\/|(^|\/)cockpit\.css$/, b: /^desktop\/official-visuals\/cockpit-baselines\/|^source-policy\.json$/ },
+    // Pilot scope (Sol round 1): until targeted integration evidence exists, the cockpit counts as one coupled unit, so
+    // any cockpit change on BOTH sides (caller/callee such as main.ts -> view.ts, render code vs CSS, native host vs web
+    // page) refuses; only changes uncoupled from the other side's cockpit work carry.
+    { name: "cockpit", a: COCKPIT_UNIT, b: COCKPIT_UNIT },
   ]),
 });
 
@@ -594,7 +607,7 @@ export function queueRunScope(repo) {
 
 // D314 (hosted.mjs): with hosted = true, a run whose jobs were read (run.jobs) is judged without its GitHub-hosted
 // macOS legs; they are only reported (`info`). A run without jobs is judged whole, as before.
-export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], scope, hosted = false } = {}) {
+export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], requiredStatuses = [], scope, hosted = false } = {}) {
   const latest = latestRuns(runs, scope);
   const failed = [], waiting = [], aside = [];
   for (const r of latest) {
@@ -618,6 +631,9 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], sco
   if (failed.length) return { state: FAILURE, why: `failed: ${failed.join(", ")}`, info };
   const missing = required.filter((p) => !latest.some((r) => r.path === p));
   if (missing.length) return { state: PENDING, why: `waiting for ${missing.join(", ")} to start`, info };
+  // A required commit status that is absent is not a pass (fail closed while it is still being computed).
+  const absent = requiredStatuses.filter((c) => !statuses.some((s) => s.context === c && s.state === "success"));
+  if (absent.length && !waiting.length) return { state: PENDING, why: `waiting for ${absent.join(", ")}`, info };
   if (waiting.length) return { state: PENDING, why: `running: ${waiting.join(", ")}`, info };
   return { state: SUCCESS, why: "checks green", info };
 }
@@ -743,7 +759,10 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const refNote = referenceProblem(pr, paths);
   if (refNote) notes.push(refNote);
   const extra = { tier, design: design.touching ? design.surfaces : [], carried, ...(auto ? { autoCarried: auto.from } : {}), ...(fwd ? { carriedForward: fwd.from } : {}), glmFallback: fb.used, notes };
-  const say = (why) => [why, ...(auto ? [auto.why] : []), ...(fwd ? [fwd.why] : []), ...(notes.length ? [`info: ${notes.join("; ")}`] : [])].join("; ");
+  // The carry note names the head whose verdicts carried; coordinator readers take it (and only it) as the gate's accepted
+  // carry for this exact head.
+  const chainWhy = chain.length ? [`verdict carried from ${chain.at(-1).slice(0, 8)} (VERDICT-CARRY)`] : [];
+  const say = (why) => [why, ...chainWhy, ...(auto ? [auto.why] : []), ...(fwd ? [fwd.why] : []), ...(notes.length ? [`info: ${notes.join("; ")}`] : [])].join("; ");
   if (pr.draft) return res(PENDING, say("draft"), extra);
 
   const blocked = [...lanes].filter(([, v]) => v === "block").map(([l]) => l);
@@ -760,7 +779,10 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // D314: hosted macOS legs are post-merge only, unless the PR changes a workflow (hosted.mjs explains why).
   extra.hostedExempt = !touchesWorkflows(paths) && files.length < FILE_LIST_LIMIT;
   if (!extra.hostedExempt) notes.push("workflow change: hosted legs gate");
-  const ci = ciState(runs, statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
+  // Plan B (Sol round 1): a carried or freshly reviewed head that changes Swift lands only with mac-compile success at this
+  // exact head (the same paths as the coordinator's compile admission, decide.py SWIFT_RE); absent = pending.
+  const compile = paths.some((p) => SWIFT_RE.test(p)) ? [MAC_COMPILE] : [];
+  const ci = ciState(runs, statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, requiredStatuses: compile, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
   if (ci.info) notes.push(ci.info);
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
   if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);

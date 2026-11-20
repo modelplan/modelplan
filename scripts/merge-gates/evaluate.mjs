@@ -44,9 +44,10 @@ const carryCache = new Map();
 function verifiedEdge(oldSha, newSha) {
   const k = `${oldSha}>${newSha}`;
   if (!carryCache.has(k)) {
-    const r = G.verifyCarry(cwd, oldSha, newSha, MAIN);
-    log({ carry: k, ...r });
-    carryCache.set(k, r.ok);
+    let r;
+    try { r = G.verifyCarry(cwd, oldSha, newSha, MAIN); } catch (e) { r = { ok: false, why: `git error: ${String(e?.message || e).split("\n")[0]}` }; }
+    log({ carry: k, ok: r.ok, why: r.why, ...(r.sides ? { prSide: r.sides.pr.length, mainSide: r.sides.main.length } : {}) });
+    carryCache.set(k, r);
   }
   return carryCache.get(k);
 }
@@ -203,6 +204,14 @@ async function fromEvent() {
 
 // One workflow run (the workflow_run payload): its merge group or its PRs.
 async function fromRun(wr) {
+  // Plan B (Sol round 1): the gate requires mac-compile success at a Swift PR's head, and the compile status is posted
+  // with the workflow token (which starts no workflow), so the finished mac-compile run re-evaluates its PR. The run
+  // title names the PR (mac-compile.yml run-name); the evaluation re-reads everything, so the title only picks the PR.
+  if (String(wr.path ?? "").split("@")[0] === ".github/workflows/mac-compile.yml") {
+    const m = /^mac-compile PR #([0-9]+)$/.exec(wr.display_title ?? "");
+    if (!m || wr.head_branch !== "main") return log({ skipped: "mac-compile run without a PR" });
+    return evaluatePrAndPost(Number(m[1]));
+  }
   if (wr.event === "merge_group") {
     if (!String(wr.head_branch).startsWith("gh-readonly-queue/main/")) return log({ skipped: `queue branch ${wr.head_branch}` });
     return evaluateGroupAndPost(wr.head_sha);

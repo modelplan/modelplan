@@ -31,7 +31,11 @@ const pr = (over = {}) => ({
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } },
   ...over,
 });
-const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, prove, p = pr() } = {}) =>
+// Plan B (Sol round 1): a Swift head needs the mac-compile status; the default fixture has it green (its own test drops it).
+const compiled = [{ context: "mac-compile", state: "success" }];
+// A legacy VERDICT-CARRY proof carries both sides' file lists (no lists = no carry).
+const VOK = Object.freeze({ ok: true, why: "object-identical contribution", sides: { pr: ["scripts/tool.mjs"], main: ["README.md"] } });
+const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = compiled, verified = () => false, prove, p = pr() } = {}) =>
   R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, proveMainMerges: prove, conf });
 // D243 (owner 2026-11-13): scenario evidence, Scenarios lines, trains, GLMREV, DESIGN and non-GPT verdict blocks are
 // advisory. They never change the PR state; the status description names them after "info:". advisory() reads the
@@ -207,7 +211,7 @@ test("D97 AUTO-VERIFIED: trusted first line at the exact head clears the listed 
   pending([comment(av("V-01, V-02", H.toUpperCase()))], "upper-case sha");
   pending([comment(`${av("V-01, V-02")} trailing`)], "trailing text");
   pending([comment(av("V-01, v-02"))], "malformed ID");
-  assert.equal(advisory(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(av("V-01, V-02", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true })), R.PENDING, "never carried");
+  assert.equal(advisory(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(av("V-01, V-02", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => VOK })), R.PENDING, "never carried");
   assert.match(pending([comment(av("V-01"))], "only the listed ID").why, /evidence pending: V-02$/);
 
   // Design-touching PR: the line must name design (evidence-gate.sh NEED_D).
@@ -231,14 +235,14 @@ test("PR admission: trusted same-repo PRs into main only; drafts wait", () => {
 
 test("carry: verified edges only, followed back from the head, at most 6 hops", () => {
   const edges = R.carryEdges(R.feed([comment(`VERDICT-CARRY: ${OLD} -> ${H}`), comment(`VERDICT-CARRY: ${OLDER} -> ${OLD}`)]));
-  assert.deepEqual(R.carryChain(edges, H, () => true), [OLD, OLDER]);
-  assert.deepEqual(R.carryChain(edges, H, (o) => o !== OLDER), [OLD]);
+  assert.deepEqual(R.carryChain(edges, H, () => VOK), [OLD, OLDER]);
+  assert.deepEqual(R.carryChain(edges, H, (o) => (o !== OLDER ? VOK : { ok: false })), [OLD]);
   assert.deepEqual(R.carryChain(edges, H), []);
   const shas = Array.from({ length: 9 }, (_, i) => String(i).repeat(40));
   const long = shas.slice(1).map((s, i) => ({ old: s, new: shas[i] }));
-  assert.equal(R.carryChain(long, shas[0], () => true).length, 6);
+  assert.equal(R.carryChain(long, shas[0], () => VOK).length, 6);
   const carried = { comments: [comment(v("merge", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)] };
-  assert.equal(evalPr({ ...carried, verified: () => true }).state, R.SUCCESS);
+  assert.equal(evalPr({ ...carried, verified: () => VOK }).state, R.SUCCESS);
   assert.equal(evalPr(carried).state, R.PENDING, "an unproven carry line does not carry");
   assert.equal(R.carryEdges(R.feed([], [review(`VERDICT-CARRY: ${OLD} -> ${H}`)])).length, 0, "edges come from comments only");
 });
@@ -339,7 +343,7 @@ test("GLMREV marker: seams only, exact head, comment must start with the line, l
   assert.equal(marker(evalPr({ files, comments: [merge, comment(`GLMREV: OK @ ${H}0`)] }), "GLMREV"), R.PENDING);
   assert.equal(marker(evalPr({ files, comments: [merge, comment(`GLMREV: OK @ ${H}`), comment(`GLMREV: ISSUES @ ${H}\n1. x`)] }), "GLMREV"), R.FAILURE);
   assert.equal(marker(evalPr({ files, comments: [merge, comment(`GLMREV: ISSUES @ ${H}`), comment(`GLMREV-ACCEPTED @ ${H}`)] }), "GLMREV"), R.SUCCESS);
-  assert.equal(marker(evalPr({ files, comments: [merge, comment(`GLMREV: OK @ ${OLD}`), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true }), "GLMREV"), R.PENDING, "GLMREV never carries");
+  assert.equal(marker(evalPr({ files, comments: [merge, comment(`GLMREV: OK @ ${OLD}`), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => VOK }), "GLMREV"), R.PENDING, "GLMREV never carries");
   assert.equal(evalPr({ files, comments: [comment(`GLMREV: OK @ ${H}`)] }).state, R.PENDING, "GLMREV OK is not a review verdict");
 });
 
@@ -347,7 +351,7 @@ test("GLM-out fallback: (sonnet) DESIGN/GLMREV pass only inside the window, exac
   const UNTIL = "2026-11-14T12:17:50Z", until = Date.parse(UNTIL);
   const inside = Date.parse("2026-11-09T12:00:00Z"), after = until + 1000;
   const evalFb = ({ comments, files, now = inside, u = until }) => {
-    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmFallbackUntil: u, now });
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: compiled, verifiedEdge: () => false, conf, glmFallbackUntil: u, now });
     return { ...r, state: marker(r, files === seam ? "GLMREV" : "DESIGN") };
   };
   // window parsing: strict UTC form, at most 8 days ahead
@@ -388,7 +392,7 @@ test("GLM-out fallback mixing: a (sonnet) pass/OK only at the exact head and nev
   const until = Date.parse("2026-11-14T12:17:50Z"), now = Date.parse("2026-11-09T12:00:00Z");
   const ui = [file("desktop/native/ModelPlanSettings/Pane.swift")], seam = [file("cli/main.go")];
   const evalFb = ({ comments, files, verified = () => false }) => {
-    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: verified, conf, glmFallbackUntil: until, now });
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: compiled, verifiedEdge: verified, conf, glmFallbackUntil: until, now });
     return { ...r, state: marker(r, files === seam ? "GLMREV" : "DESIGN") };
   };
   const merge = comment(v("merge")), glm = comment(`GLMREV: OK @ ${H}`);
@@ -396,8 +400,8 @@ test("GLM-out fallback mixing: a (sonnet) pass/OK only at the exact head and nev
   const dglm = (r, sha = H) => comment(`Design-conformance review (GLM) @ ${sha}\n\nDESIGN: ${r} @ ${sha}`);
   const carry = comment(`VERDICT-CARRY: ${OLD} -> ${H}`);
   // exact head only: a (sonnet) pass at a carried head does not count; a GLM pass there still carries
-  assert.equal(evalFb({ comments: [merge, glm, dsn("pass", OLD), carry], files: ui, verified: () => true }).state, R.PENDING, "sonnet pass over a carry edge");
-  assert.equal(evalFb({ comments: [merge, glm, dglm("pass", OLD), carry], files: ui, verified: () => true }).state, R.SUCCESS, "GLM pass still carries");
+  assert.equal(evalFb({ comments: [merge, glm, dsn("pass", OLD), carry], files: ui, verified: () => VOK }).state, R.PENDING, "sonnet pass over a carry edge");
+  assert.equal(evalFb({ comments: [merge, glm, dglm("pass", OLD), carry], files: ui, verified: () => VOK }).state, R.SUCCESS, "GLM pass still carries");
   // DESIGN: no overriding across reviewers
   assert.equal(evalFb({ comments: [merge, glm, dglm("fail"), dsn("pass")], files: ui }).state, R.FAILURE, "sonnet pass over GLM fail");
   assert.equal(evalFb({ comments: [merge, glm, dsn("fail"), dglm("pass")], files: ui }).state, R.FAILURE, "GLM pass over sonnet fail");
@@ -415,7 +419,7 @@ test("GLM-out fallback mixing: a (sonnet) pass/OK only at the exact head and nev
 test("DESIGN-ACCEPTED: coordinator lift of a GLM or (sonnet) DESIGN fail, exact head, trusted comment first line only", () => {
   const until = Date.parse("2026-11-14T12:17:50Z"), now = Date.parse("2026-11-09T12:00:00Z");
   const evalD = ({ comments, reviews = [], verified = () => false, u = until }) => {
-    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments, reviews), files: [file("desktop/native/ModelPlanSettings/Pane.swift")], runs: greenCi, statuses: [], verifiedEdge: verified, conf, glmFallbackUntil: u, now });
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments, reviews), files: [file("desktop/native/ModelPlanSettings/Pane.swift")], runs: greenCi, statuses: compiled, verifiedEdge: verified, conf, glmFallbackUntil: u, now });
     return { ...r, state: marker(r, "DESIGN") };
   };
   const merge = comment(v("merge")), glm = comment(`GLMREV: OK @ ${H}`);
@@ -435,7 +439,7 @@ test("DESIGN-ACCEPTED: coordinator lift of a GLM or (sonnet) DESIGN fail, exact 
     ["untrusted", [comment(`DESIGN-ACCEPTED @ ${H}`, { login: "guanbear", id: 1 })], []],
     ["inside a design review", [comment(`Design-conformance review (sonnet) @ ${H}\nDESIGN-ACCEPTED @ ${H}`)], []],
     ["a review, not a comment", [], [review(`DESIGN-ACCEPTED @ ${H}`)]],
-  ]) assert.equal(evalD({ comments: [merge, glm, gFail, ...c], reviews: rv, verified: () => true }).state, R.FAILURE, why);
+  ]) assert.equal(evalD({ comments: [merge, glm, gFail, ...c], reviews: rv, verified: () => VOK }).state, R.FAILURE, why);
 });
 
 test("CI at the head: newest run per workflow, parse-time failures, statuses, anchor workflow", () => {
@@ -515,7 +519,7 @@ test("D243: evidence lines are read exactly as before but only reported; G3 ment
   assert.equal(ev({ p: pr({title:"Ordinary fix", body:""}), files: docs }), R.SUCCESS);
   assert.equal(ev({ p: pr({title:"Ordinary", body:"Scenarios: D-01", head:{sha:H, ref:"fix/g3-12", repo:{full_name:"modelplan/modelplan"}}}), files: docs }), R.PENDING);
   assert.equal(ev({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(`VERIFIED: D-01 @ ${H} evidence=`)] }), R.PENDING);
-  assert.equal(ev({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true }), R.PENDING);
+  assert.equal(ev({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => VOK }), R.PENDING);
   assert.equal(ev({ p: ledger("**Scenarios:** D-01, D-01"), files: docs, comments: [comment(mark("D-01"))] }), R.SUCCESS);
   assert.equal(ev({ p: ledger("Scenarios: D-01, V-03"), files: docs, comments: [comment(mark("D-01")), comment(mark("V-03"), {login:"guanbear",id:1})] }), R.PENDING);
   assert.equal(ev({ p: ledger("Scenarios: D-01\nScenarios: V-03"), files: docs, comments: [comment(mark("D-01"))] }), R.SUCCESS, "only the first declaration counts");
@@ -732,7 +736,8 @@ test("carry proof: object-identical contribution over a clean main merge, fail c
     r.g("update-ref", MAINREF, "HEAD");
     r.g("checkout", "-q", "pr"); r.g("merge", "-q", "--no-edit", "main");
     const carried = r.sha();
-    assert.deepEqual(G.verifyCarry(r.dir, reviewed, carried, MAINREF), { ok: true, why: "object-identical contribution" });
+    const vc = G.verifyCarry(r.dir, reviewed, carried, MAINREF);
+    assert.deepEqual([vc.ok, vc.why, vc.sides.pr, vc.sides.main], [true, "object-identical contribution", ["a.txt"], ["b.txt"]]);
     assert.equal(G.verifyCarry(r.dir, carried, reviewed, MAINREF).ok, false);
 
     // Main touched the PR's own file: the contribution is no longer the reviewed one.
@@ -1073,7 +1078,7 @@ test("an action_required run never ran: it is skipped when picking the latest ru
 });
 
 test("D239: reader, detection and metric PRs name the reference app they follow, or none with a reason (advisory, D243)", () => {
-  const ok = (body, files) => evalPr({ p: pr({ body }), files, comments: [comment(v("merge", H, "macrev2")), comment(`GLMREV: OK @ ${H}`)], verified: () => true });
+  const ok = (body, files) => evalPr({ p: pr({ body }), files, comments: [comment(v("merge", H, "macrev2")), comment(`GLMREV: OK @ ${H}`)], verified: () => VOK });
   // Scope: the reader packages and the reader-cause copy table; everything else is untouched by the rule.
   for (const p of ["cli/internal/quota/claude.go", "cli/internal/detect/catalogue.go", "cli/internal/localusage/codex.go",
     "cli/internal/speed/summary.go", "cli/internal/consent/consent.go", "cli/internal/quota/claude_test.go",
@@ -1147,7 +1152,7 @@ test("D239: reader, detection and metric PRs name the reference app they follow,
 });
 
 test("D239: widget, menu-bar and native-shell PRs name an allowed reference (reference-map.json)", () => {
-  const ok = (body, files) => evalPr({ p: pr({ body }), files, comments: [comment(v("merge", H, "macrev2")), comment(`GLMREV: OK @ ${H}`)], verified: () => true });
+  const ok = (body, files) => evalPr({ p: pr({ body }), files, comments: [comment(v("merge", H, "macrev2")), comment(`GLMREV: OK @ ${H}`)], verified: () => VOK });
   const AI = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/";
   const widget = [file("desktop/native/ModelPlanDock/Native/DockCardView.swift")];
   const widgetHost = [file(`${AI}StaticDockPreviewHost.swift`)];
@@ -1403,7 +1408,7 @@ const P2 = "e".repeat(40);
 const rec = (head = H, from = OLD, main = P2) => `Coordinator carry-forward.\n\nCARRY-FORWARD: ${head} from ${from} (main ${main}) checks=parents,main,remerge,overlap`;
 const fwdOk = (sides = SIDES) => () => ({ ok: true, why: "clean re-merge of the approved head and main", sides });
 const evalFwd = ({ comments, reviews = [], files, fwd = fwdOk() }) =>
-  R.evaluatePr({ pr: pr(), items: R.feed(comments, reviews), files: files ?? [file("scripts/tool.mjs")], runs: greenCi, statuses: [], verifiedEdge: () => false, proveMainMerges: unproved, proveCarryForward: fwd, conf });
+  R.evaluatePr({ pr: pr(), items: R.feed(comments, reviews), files: files ?? [file("scripts/tool.mjs")], runs: greenCi, statuses: compiled, verifiedEdge: () => false, proveMainMerges: unproved, proveCarryForward: fwd, conf });
 
 test("carry-forward: a trusted record for the exact head carries the approved head's verdict when the gate re-proves it", () => {
   const seen = [];
@@ -1528,4 +1533,99 @@ test("carry-forward proof (git): clean merge passes; conflict resolution, tree m
     r.g("checkout", "-q", "-b", "mv", approved); r.g("mv", "desktop/cockpit/src/view.ts", "desktop/cockpit/src/view-old.ts"); r.g("commit", "-qm", "mv");
     assert.deepEqual(G.changedPaths(r.dir, approved, r.sha()), ["desktop/cockpit/src/view-old.ts", "desktop/cockpit/src/view.ts"]);
   } finally { r.done(); }
+});
+
+// ---- Plan B round 2 (Sol round 1 findings) ----
+test("legacy VERDICT-CARRY edges are bound by the overlap guardrail (a view.ts edge over a main bridge.ts change does not carry)", () => {
+  const items = [comment(v("merge", OLD, "macrevc")), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)];
+  assert.equal(evalPr({ comments: items, verified: () => VOK }).state, R.SUCCESS);
+  const coupled = { ok: true, why: "object-identical contribution", sides: { pr: ["desktop/cockpit/src/view.ts"], main: ["desktop/cockpit/src/bridge.ts"] } };
+  const r = evalPr({ comments: items, verified: () => coupled });
+  assert.equal(r.state, R.PENDING, r.why);
+  assert.doesNotMatch(r.why, /carried/);
+  assert.equal(evalPr({ comments: items, verified: () => true }).state, R.PENDING, "a bare boolean proof never carries");
+  assert.equal(evalPr({ comments: items, verified: () => ({ ok: true }) }).state, R.PENDING, "a proof without side lists never carries");
+  // The accepted legacy carry is named in the description (coordinator readers take only this as the accepted carry).
+  assert.match(evalPr({ comments: items, verified: () => VOK }).why, /verdict carried from bbbbbbbb \(VERDICT-CARRY\)/);
+  // Real Git: the object-identical proof holds, the guardrail refuses.
+  const g = repo();
+  try {
+    mkdirSync(join(g.dir, "desktop/cockpit/src"), { recursive: true });
+    g.put("desktop/cockpit/src/view.ts", "v\n"); g.put("desktop/cockpit/src/bridge.ts", "b\n"); g.g("add", "."); g.g("commit", "-qm", "cockpit"); g.g("update-ref", MAINREF, "HEAD");
+    g.g("checkout", "-qb", "pr"); g.put("desktop/cockpit/src/view.ts", "v2\n"); g.g("commit", "-qam", "pr view");
+    const reviewed = g.sha();
+    g.g("checkout", "-q", "main"); g.put("desktop/cockpit/src/bridge.ts", "b2\n"); g.g("commit", "-qam", "main bridge"); g.g("update-ref", MAINREF, "HEAD");
+    g.g("checkout", "-q", "pr"); g.g("merge", "-q", "--no-edit", "main");
+    const proof = G.verifyCarry(g.dir, reviewed, g.sha(), MAINREF);
+    assert.equal(proof.ok, true, proof.why);
+    assert.equal(R.edgeHolds(proof), false);
+  } finally { g.done(); }
+});
+
+test("G6 overlap covers every merge step: an earlier merge that imported the coupled change is not hidden by a later one", () => {
+  const g = repo();
+  try {
+    mkdirSync(join(g.dir, "desktop/cockpit/src"), { recursive: true });
+    g.put("desktop/cockpit/src/view.ts", "v\n"); g.put("desktop/cockpit/src/bridge.ts", "b\n"); g.g("add", "."); g.g("commit", "-qm", "cockpit"); g.g("update-ref", MAINREF, "HEAD");
+    const old = g.sha();
+    g.g("checkout", "-qb", "pr"); g.put("desktop/cockpit/src/view.ts", "v2\n"); g.g("commit", "-qam", "pr view");
+    const reviewed = g.sha();
+    g.g("checkout", "-q", "main"); g.put("desktop/cockpit/src/bridge.ts", "b2\n"); g.g("commit", "-qam", "main bridge"); g.g("update-ref", MAINREF, "HEAD");
+    g.g("checkout", "-q", "pr"); g.g("merge", "-q", "--no-edit", "main");
+    // A second, clean merge of an ancestor main commit that is already included.
+    g.g("merge", "-q", "--no-ff", "--no-edit", old);
+    const head = g.sha();
+    const p = G.verifyMainMerges(g.dir, reviewed, head, MAINREF);
+    assert.equal(p.ok, true, p.why);
+    assert.ok(p.sides.main.includes("desktop/cockpit/src/bridge.ts"), `main side ${p.sides.main}`);
+    assert.equal(R.autoCarry(R.feed([comment(v("merge", reviewed, "macrevc"))]), H, () => p), null);
+    // The range sides of the coordinator variant take one-parent commits only on request.
+    assert.equal(G.rangeSides(g.dir, old, head).ok, false);
+    assert.equal(G.rangeSides(g.dir, old, head, { nonMerge: true }).ok, true);
+  } finally { g.done(); }
+});
+
+test("mac-compile: a Swift head (carried or not) needs mac-compile success at that head; absent or pending is pending", () => {
+  const swift = [file("desktop/native/ModelPlanSettings/Pane.swift")];
+  const items = [comment(v("merge", OLD, "macrevc")), comment(rec())];
+  const st = (state) => (state ? [{ context: "mac-compile", state }] : []);
+  const go = (statuses) => R.evaluatePr({ pr: pr(), items: R.feed(items), files: swift, runs: greenCi, statuses, verifiedEdge: () => false, proveMainMerges: unproved, proveCarryForward: fwdOk({ pr: ["desktop/native/ModelPlanSettings/Pane.swift"], main: ["README.md"] }), conf });
+  assert.equal(go(st("success")).state, R.SUCCESS, go(st("success")).why);
+  assert.equal(go(st(null)).state, R.PENDING);
+  assert.match(go(st(null)).why, /waiting for mac-compile/);
+  assert.equal(go(st("pending")).state, R.PENDING);
+  assert.equal(go(st("failure")).state, R.FAILURE);
+  // A fresh review needs it too; a non-Swift head does not.
+  assert.equal(evalPr({ files: swift, comments: [comment(v("merge", H, "macrevc"))], statuses: [] }).state, R.PENDING);
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "macrevc"))], statuses: [] }).state, R.SUCCESS);
+  // A merge group whose member lacks it does not pass.
+  const qci = R.QUEUE_WORKFLOWS.map((path) => qrun(path));
+  assert.notEqual(R.evaluateGroup({ steps: [{ pr: 7, prResult: go(st(null)), mergeProof: { ok: true } }], queueRuns: qci }).state, R.SUCCESS);
+  // The finished mac-compile run re-evaluates its PR: the gate listens to it and the run title names the PR.
+  const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
+  assert.match(gates, /^      - mac-compile$/m);
+  assert.match(gates, /workflow_run\.name == 'mac-compile' && github\.event\.workflow_run\.head_branch == 'main'/);
+  const mc = readFileSync(join(root, ".github/workflows/mac-compile.yml"), "utf8");
+  assert.match(mc, /^run-name: .*format\('mac-compile PR #\{0\}', github\.event\.workflow_run\.pull_requests\[0\]\.number\)/m);
+  assert.match(readFileSync(join(root, "scripts/merge-gates/evaluate.mjs"), "utf8"), /\^mac-compile PR #\(\[0-9\]\+\)\$/);
+});
+
+test("carry-forward records wake the gate (created, edited, deleted) and a removed record revokes the carry at the same head", () => {
+  const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
+  assert.match(gates, /contains\(github\.event\.comment\.body, 'CARRY-FORWARD:'\)/, "created or deleted");
+  assert.match(gates, /contains\(github\.event\.changes\.body\.from, 'CARRY-FORWARD:'\)/, "edited away");
+  const base = [comment(v("merge", OLD, "macrevc"))];
+  assert.equal(evalFwd({ comments: [...base, comment(rec())] }).state, R.SUCCESS);
+  assert.equal(evalFwd({ comments: base }).state, R.PENDING, "the record deleted: no carry at the same head");
+  assert.equal(evalFwd({ comments: [...base, comment("Coordinator carry-forward (edited away).")] }).state, R.PENDING, "edited away");
+});
+
+test("pilot scope: coupled cockpit changes on both sides refuse (entry point, native host, render code vs CSS)", () => {
+  const o = R.carryForwardOverlap;
+  assert.ok(o(["desktop/cockpit/src/main.ts"], ["desktop/cockpit/src/view.ts"]), "caller/callee");
+  assert.match(o(["desktop/cockpit/src/main.ts"], ["desktop/cockpit/src/main.ts"]), /cockpit hot set/);
+  assert.match(o(["desktop/native/ModelPlanCockpitWeb/Sources/A.swift"], ["desktop/native/ModelPlanCockpitWeb/Sources/A.swift"]), /cockpit hot set/);
+  assert.ok(o(["desktop/cockpit/src/field-page.ts"], ["desktop/cockpit/web/cockpit.css"]), "render code vs CSS");
+  assert.ok(o(["desktop/native/ModelPlanCockpitShell/X.swift"], ["desktop/cockpit/src/caution.ts"]), "native shell vs web page");
+  assert.equal(o(["desktop/cockpit/src/view.ts"], ["cli/main.go", "docs/a.md"]), null, "an uncoupled other side still carries");
 });
