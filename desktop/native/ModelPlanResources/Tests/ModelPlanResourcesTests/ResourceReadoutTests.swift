@@ -92,7 +92,7 @@ final class ResourceReadoutTests: XCTestCase {
         XCTAssertFalse(gate.admit(face(sample(at: 20, cpuUser: 19.9))), "+0.9 point since the last drawn face: no redraw")
         XCTAssertTrue(gate.admit(face(sample(at: 30, cpuUser: 20.0))), "+1 point: redraw")
         XCTAssertTrue(gate.admit(face(sample(at: 40, cpuUser: 20.0, pressure: .warn))), "a tone change always redraws")
-        XCTAssertFalse(gate.admit(face(sample(at: 50, cpuUser: 20.0, pressure: .warn, used: (9.3, 4.5, 1.4)))), "memory +0.3 point: no redraw")
+        XCTAssertFalse(gate.admit(face(sample(at: 50, cpuUser: 20.0, pressure: .warn, used: (9.25, 4.5, 1.4)))), "memory +0.16 point, readout still 47 %: no redraw")
         XCTAssertTrue(gate.admit(face(sample(at: 60, cpuUser: 20.0, pressure: .warn, used: (9.6, 4.5, 1.4)))), "memory +1.25 points: redraw")
     }
 }

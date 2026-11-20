@@ -51,7 +51,9 @@ public struct ResourceTimerHandle {
         visibility = next
         let delay = schedule.update(next, now: clock())
         if !next.pluginEnabled {
-            history.removeAll(); schedule.reset(); readout.reset(); gate.reset(); face = nil; shown = nil
+            // The last sample time stays (only a time, no reading), so switching off and on never samples sooner
+            // than the cadence allows (60 s while nothing is visible).
+            history.removeAll(); readout.reset(); gate.reset(); face = nil; shown = nil
         }
         arm(delay)
     }

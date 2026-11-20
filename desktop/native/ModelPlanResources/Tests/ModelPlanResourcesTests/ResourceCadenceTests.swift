@@ -59,6 +59,12 @@ final class ResourceCadenceTests: XCTestCase {
         timers.run(until: 10_000)
         XCTAssertEqual(reader.reads.count, 3, "turned off: no further sample")
         XCTAssertEqual(timers.armed, 0)
+        sampler.setVisibility(visibility())
+        timers.run(until: 10_000)
+        XCTAssertEqual(reader.reads.count, 4, "back on: sampled right away once the last one is 60 s old")
+        sampler.setVisibility(visibility(enabled: false)); sampler.setVisibility(visibility())
+        timers.run(until: 10_059)
+        XCTAssertEqual(reader.reads.count, 4, "off and on again: still not sooner than 60 s while hidden")
         sampler.stop()
     }
 
