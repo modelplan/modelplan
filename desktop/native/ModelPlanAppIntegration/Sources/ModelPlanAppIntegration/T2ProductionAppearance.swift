@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import CoreGraphics
 import Foundation
 @_spi(DockResourceChecks) import ModelPlanDock
@@ -23,6 +24,15 @@ import ModelPlanSettings
 
 /// Connects verified artwork and the registered T2 geometry to the production host.
 @MainActor enum T2ProductionAppearance {
+    /// G3-136: the status item's own rocket template (tray.png / tray@2x.png), at its 2x pixels, for the empty ring.
+    private static var loadedEmptyMark: CGImage??
+    static var emptyMark: CGImage? {
+        if let loaded = loadedEmptyMark { return loaded }
+        var rect = CGRect(x: 0, y: 0, width: 32, height: 32)
+        let mark = CommunityMenuBarResources.templateImage()?.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+        loadedEmptyMark = .some(mark)
+        return mark
+    }
     enum Failure: Error { case missingDisplay }
     static func apply(_ view: DockInstrumentView, _ rows: [DockInstrumentReading], _ preferences: SettingsPreferences) throws -> StaticDockGeometry {
         guard let screen = view.appearanceDisplaySize, screen.width > 0, screen.height > 0 else { throw Failure.missingDisplay }
@@ -81,6 +91,7 @@ import ModelPlanSettings
         let renderer = DockInstrumentRenderer(resources: official, supplementalResources: vendor) { supplied, scale in
             try material.render(geometry: geometry, viewport: supplied.bounds, scale: scale)
         }
+        renderer.emptyMark = Self.emptyMark
         var notices = view.appearanceNotices
         if let notice = geometry.overflow.compactMap({ notices[$0.id] }).min(by: { $0.rank < $1.rank }) {
             notices["__t2_overflow_notice__"] = notice

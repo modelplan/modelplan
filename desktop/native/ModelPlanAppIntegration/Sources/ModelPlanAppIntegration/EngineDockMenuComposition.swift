@@ -114,6 +114,13 @@ public struct EngineMenuRefreshResult {
         dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: { clock.now() })
         adapter.bindDockMenuTracking(dock)
         _ = pairedProjection
+        // G3-136: the empty ring's one line comes from the same admitted rows as the menu.
+        dock.emptyStationReason = { [weak self] in
+            guard let self else { return nil }
+            let value = self.provider.dockContent
+            return WidgetEmptyReason.text(status: value.status, rows: value.settingsRows.isEmpty ? value.dockRows : value.settingsRows,
+                                          language: self.adapter.language == "en" ? .english : .chinese)
+        }
         dock.onWillRetire = { [weak self] in
             guard let self else { return }
             self.pairedProjection.invalidate()

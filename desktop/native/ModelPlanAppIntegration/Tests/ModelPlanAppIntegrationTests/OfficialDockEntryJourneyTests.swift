@@ -18,7 +18,8 @@ import ModelPlanSettings
         XCTAssertNil(dock.lastAppearanceError)
         let skin = try XCTUnwrap(dock.dockView.presentedSkinForChecks)
         let empty = try XCTUnwrap(skin.stations.first { $0.placeholderLabel != nil })
-        XCTAssertEqual(empty.placeholderLabel, "?"); XCTAssertNil(empty.overflowCount)
+        // G3-136 (WP-15): the empty station is an empty ring with the rocket mark, never a "?".
+        XCTAssertEqual(empty.placeholderLabel, ""); XCTAssertEqual(empty.emptyRing, true); XCTAssertNil(empty.overflowCount)
         XCTAssertNotNil(empty.placeholderStyle); XCTAssertNotNil(dock.dockView.emptyStationRectForChecks)
         let children = try XCTUnwrap(dock.dockView.accessibilityChildren() as? [NSAccessibilityElement])
         let element = try XCTUnwrap(children.first { $0.accessibilityIdentifier() == "dock.empty" })
