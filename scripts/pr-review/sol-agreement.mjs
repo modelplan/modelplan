@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Shadow report before cutover (D352): for each PR, every head the shadow lane reviewed, its verdict and the verdict
-// that counts there under the gate's tier rules (REVIEW_GLM_TIERS as set in the repo, default 1). Reads public data;
+// that counts there under the gate's tier rules (REVIEW_GLM_TIERS as set in the repo, default empty). Reads public data;
 // GH_TOKEN is optional.
 //   node scripts/pr-review/sol-agreement.mjs <pr> [<pr> ...]
 import { client } from "../merge-gates/github.mjs";

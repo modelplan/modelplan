@@ -13,7 +13,7 @@
 # Providers (scripts/pr-review/providers.mjs): vars.REVIEW_PROVIDER_MODE is gpt-first (default; OpenAI Responses API,
 # gpt-6.2-sol medium), glm-first (Zhipu GLM-5.3) or schedule (GPT during the Zhipu peak 06:00-10:00 UTC on weekdays,
 # GLM otherwise). On insufficient_quota, a billing limit or a sustained 429 the other provider answers, unless
-# vars.PR_REVIEW_GLM_FALLBACK is "off". GLM is used only where (ghglm) counts: vars.REVIEW_GLM_TIERS (default "1"),
+# vars.PR_REVIEW_GLM_FALLBACK is "off". GLM is used only where (ghglm) counts: vars.REVIEW_GLM_TIERS (default empty: advisory only),
 # which modelplan-gates reads too. When every usable provider is out of quota, the head gets one advisory
 # "tier-N review waiting: GPT quota out" note (the coordinator event) and no verdict.
 #

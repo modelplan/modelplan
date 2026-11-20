@@ -9,7 +9,7 @@ import { verdictLines } from "./brief.mjs";
 export const SOL_LANE = "ghsol";
 export const SOL_SHADOW_LANE = "ghsolshadow";
 // The GLM-5.3 provider posts under its own lanes; rules.mjs counts (ghglm) on the tiers in vars.REVIEW_GLM_TIERS
-// (default 1) and (ghglmshadow) never.
+// (default empty) and (ghglmshadow) never.
 export const GLM_LANE = "ghglm";
 export const GLM_SHADOW_LANE = "ghglmshadow";
 // The lane a verdict is posted under: the run's lane (count or shadow) for the given provider.

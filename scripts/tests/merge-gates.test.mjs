@@ -1454,13 +1454,13 @@ test("gh lanes: shadow lanes never admit data-sync; ghglm counts only on its con
     assert.equal(evalSync({ comments: [comment(v("merge", H, lane))] }).state, R.FAILURE, `${lane} merge does not admit a data-sync PR`);
   assert.equal(evalSync({ comments: [comment(v("merge", H, "ghsolshadow")), comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "an eligible lane still admits beside a shadow");
   assert.equal(evalSync({ comments: [comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS, "ghsol admits");
-  assert.equal(evalSync({ comments: [comment(v("merge", H, "ghglm"))] }).state, R.SUCCESS, "ghglm admits on tier 1 (default REVIEW_GLM_TIERS)");
+  assert.equal(evalSync({ comments: [comment(v("merge", H, "ghglm"))] }).state, R.FAILURE, "ghglm never admits by default (D358/D361: GLM is advisory)");
   assert.equal(evalSync({ files: [file("cli/internal/quota/x.go")], comments: [comment(v("merge", H, "ghglm"))] }).state, R.FAILURE, "ghglm does not admit tier 2 by default");
   assert.deepEqual(R.eligibleLanes(0), R.eligibleLanes(0, [1, 2]), "tier 0 has no GLM lane for any configuration");
   assert.ok(!R.eligibleLanes(0, [1, 2]).includes("(ghglm)") && !R.eligibleLanes(0).includes("(ghglm)"));
-  assert.ok(R.eligibleLanes(1).includes("(ghglm)") && !R.eligibleLanes(2).includes("(ghglm)") && R.eligibleLanes(2, [2]).includes("(ghglm)"));
+  assert.ok(!R.eligibleLanes(1).includes("(ghglm)") && R.eligibleLanes(1, [1]).includes("(ghglm)") && !R.eligibleLanes(2, [1]).includes("(ghglm)") && R.eligibleLanes(2, [2]).includes("(ghglm)"));
   const docs = [file("docs/a.md")];
   assert.equal(evalPr({ files: docs, comments: [comment(v("block", H, "ghglm"))] }).state, R.SUCCESS, "a tier-0 ghglm block is advice");
-  assert.equal(evalPr({ files: [file("scripts/tool.mjs")], comments: [comment(v("block", H, "ghglm"))] }).state, R.FAILURE, "a tier-1 ghglm block still stops");
+  assert.equal(evalPr({ files: [file("scripts/tool.mjs")], comments: [comment(v("block", H, "ghglm"))] }).state, R.PENDING, "a ghglm block never vetoes by default");
   assert.ok(R.isShadowLane("(ghsolshadow)") && R.isShadowLane("gh-terra-shadow") && !R.isShadowLane("(ghsol)"));
 });
