@@ -292,8 +292,9 @@ import ModelPlanSettings
         try presentSyntheticHostCard(host, id: row.id)
         func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
         let labels = views(host.card).compactMap { $0 as? NSTextField }
-        XCTAssertTrue(labels.contains { $0.stringValue.contains("Reading unavailable") })
-        XCTAssertFalse(labels.contains { $0.stringValue.contains("Check reader status in Settings") }, "The card uses one error badge; its Settings action remains available")
+        XCTAssertEqual(labels.filter { $0.stringValue.contains("Reading unavailable") }.count, 1, "the card has one cause line")
+        // WP-15 DOCK-3.8-53 adds one next-step line; the separate Settings action remains available.
+        XCTAssertEqual(labels.filter { $0.stringValue.contains("Check reader status in Settings") }.count, 1)
         let button = try XCTUnwrap(views(host.card).compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "dock.card.enter" })
         XCTAssertEqual(button.title, "设置")
         _ = (try XCTUnwrap(button.target as? NSObject)).perform(try XCTUnwrap(button.action), with: button)
