@@ -14,6 +14,10 @@ export const GLM_LANE = "gh-glm";
 export const GLM_SHADOW_LANE = "gh-glm-shadow";
 // The lane a verdict is posted under: the run's lane (count or shadow) for the given provider.
 export const postLane = (lane, provider) => (provider === "glm" ? (lane === SOL_LANE ? GLM_LANE : GLM_SHADOW_LANE) : lane);
+// The lanes whose verdict at a head means this run's job is done there: the run's Sol lane, plus its GLM lane while
+// (gh-glm) may decide the tier.
+export const ownLanes = (lane, tier, glmTiers = DEFAULT_GLM_TIERS) =>
+  [`(${lane})`, ...(eligibleLanes(Number(tier), glmTiers).includes(`(${GLM_LANE})`) ? [`(${postLane(lane, "glm")})`] : [])];
 // vars.PR_REVIEW_SOL_MODE: "count" posts as (gh-sol), which modelplan-gates counts as a Sol lane; "shadow" posts as
 // (gh-sol-shadow), which counts for nothing; anything else (unset) leaves the workflow off.
 export const laneFor = (mode) => (mode === "count" ? SOL_LANE : mode === "shadow" ? SOL_SHADOW_LANE : null);
@@ -56,11 +60,12 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   if (compile && !checks.compile) return skip("mac-compile has not passed at this head");
   const all = verdictLines(items);
   const atHead = all.filter((v) => v.sha === head);
-  // The run's own lanes: its Sol lane and its GLM lane (either settles the head).
-  const own = [`(${lane})`, `(${postLane(lane, "glm")})`];
-  if (!force && atHead.some((v) => own.includes(v.lane))) return skip("this lane already reviewed this head");
   const sticky = reviewerLane(items);
   const eligible = eligibleLanes(tier, glmTiers);
+  // The run's own lanes: its Sol lane, and its GLM lane only while (gh-glm) may decide this tier (SOL-8: a GLM verdict
+  // left over from a wider REVIEW_GLM_TIERS is advice and does not settle the head).
+  const own = ownLanes(lane, tier, glmTiers);
+  if (!force && atHead.some((v) => own.includes(v.lane))) return skip("this lane already reviewed this head");
   const ownCounting = [`(${SOL_LANE})`, `(${GLM_LANE})`];
   if (lane === SOL_LANE) {
     // Counting mode spends no tokens when another lane owns or already settled this head.
@@ -214,26 +219,27 @@ export function renderSolComment({ answer, head, lane, mode, base, tier, meta = 
 
 // Right before posting (the comment token step): the PR must still be open at the reviewed head, and this lane must not
 // have posted a verdict there meanwhile (a second delivery of the same trigger). Returns null to post, else the reason.
-export function postProblem({ pr, items, head, lane, force = false }) {
+export function postProblem({ pr, items, head, lane, force = false, tier = 1, glmTiers = DEFAULT_GLM_TIERS }) {
   if (pr?.state !== "open") return `PR is ${pr?.state}`;
   if (String(pr.head?.sha ?? "").toLowerCase() !== head) return `head moved to ${pr.head?.sha ?? "?"} after the review of ${head}`;
-  const own = [`(${lane})`, `(${postLane(lane, "glm")})`];
+  const own = ownLanes(lane, tier, glmTiers);
   if (!force && verdictLines(items).some((v) => v.sha === head && own.includes(v.lane))) return `(${lane}) already has a verdict at ${head}`;
   return null;
 }
 
 // Every provider that could count here is out of quota (by default: tier 2 with the OpenAI quota out, since GLM decides
-// only the tiers in REVIEW_GLM_TIERS). The run posts this advisory note (no VERDICT) once per head; its first line is
-// the coordinator event, which the coordinator's watcher matches by WAIT_EVENT_RE.
-export const waitEvent = (tier, who = ["openai"]) => `tier-${tier} review waiting: ${who.map((p) => (p === "glm" ? "GLM" : "GPT")).join(" and ")} quota out`;
+// only the tiers in REVIEW_GLM_TIERS). The run posts this advisory note (no VERDICT) once per head, whichever lane
+// (shadow or count) posts first. Its first line is the coordinator event, always exactly
+// "tier-<n> review waiting: GPT quota out @ <sha> (<lane>)" (SOL-9); which providers were tried is in the body.
+export const waitEvent = (tier) => `tier-${tier} review waiting: GPT quota out`;
 export const WAIT_EVENT = waitEvent(2);
-export const WAIT_EVENT_RE = /^tier-[12] review waiting: (GPT|GLM)( and (GPT|GLM))? quota out @ [0-9a-f]{40} \(gh-[a-z-]+\)$/;
-const waitLine = (head, lane, event) => `${event} @ ${head} (${lane})`;
+export const WAIT_EVENT_RE = /^tier-[12] review waiting: GPT quota out @ ([0-9a-f]{40}) \(gh-[a-z-]+\)$/;
 const firstLine = (x) => String(x.body).split("\n")[0].replace(/\r$/, "");
-export const waitNoted = (items, head, lane) => items.some((x) => WAIT_EVENT_RE.test(firstLine(x)) && firstLine(x).endsWith(` @ ${head} (${lane})`));
+export const waitNoted = (items, head) => items.some((x) => WAIT_EVENT_RE.exec(firstLine(x))?.[1] === head);
 export function renderWaitNote({ head, lane, tier = 2, who = ["openai"], why = "", runUrl = "" }) {
-  const body = [waitLine(head, lane, waitEvent(tier, who)), "",
-    `_Advisory, no verdict. Every provider whose verdict counts on tier ${tier} is out of quota, so this head waits for a review (a later trigger, a dispatch, or an interactive Sol lane)._`,
+  const names = who.map((p) => (p === "glm" ? "GLM-5.3" : "GPT")).join(" and ");
+  const body = [`${waitEvent(tier)} @ ${head} (${lane})`, "",
+    `_Advisory, no verdict. Every provider whose verdict counts on tier ${tier} (${names}) is out of quota, so this head waits for a review (a later trigger, a dispatch, or an interactive Sol lane)._`,
     ...(why ? ["", `<sub>${tidy(why)}${runUrl ? ` · [run](${runUrl})` : ""}</sub>`] : [])].join("\n");
   if (body.split("\n").some((l) => MARKER.test(l))) throw new Error("wait note has a gate marker");
   return body;
@@ -265,22 +271,23 @@ export function compileStatus(statuses, repo) {
   if (!m) return { ok: false, why: "mac-compile status does not link to a run of this repository" };
   return { ok: true, runId: Number(m[1]) };
 }
-// The run behind the status must be a successful run of main's mac-compile.yml for this exact head (Sol SOL-2). A
-// workflow_run run names its head in its title ("mac-compile <sha>", set by mac-compile.yml's run-name from the trigger
-// run, which only main's definition controls); the owner's dispatch names its PR ("mac-compile PR #<n>").
+// The run behind the status must be a successful run of main's mac-compile.yml for this exact head (Sol SOL-2). Its
+// title, set by main's run-name, names the head: "mac-compile <sha>" for a workflow_run run (from the trigger run) and
+// "mac-compile PR #<n> @ <sha>" for the owner's dispatch with the sha input (the plan job refuses a sha that is not the
+// PR head). A dispatch without the sha input proves no head.
 export function compileRunProblem(run, repo, sha, pr) {
   if (!run) return "mac-compile run not found";
   if (run.repository?.full_name !== repo) return "mac-compile run is from another repository";
   if (run.path !== ".github/workflows/mac-compile.yml") return "the status run is not mac-compile.yml";
   if (run.head_branch !== "main" || !["workflow_run", "workflow_dispatch"].includes(run.event)) return "the mac-compile run is not main's definition";
   if (run.status !== "completed" || run.conclusion !== "success") return `the mac-compile run is ${run.conclusion ?? run.status}`;
-  const title = run.event === "workflow_run" ? `mac-compile ${sha}` : `mac-compile PR #${pr}`;
+  const title = run.event === "workflow_run" ? `mac-compile ${sha}` : `mac-compile PR #${pr} @ ${sha}`;
   if (run.display_title !== title) return "the mac-compile run was for another head";
   return null;
 }
-// The head a mac-compile run compiled, from its title; null for a dispatch (resolve then uses the PR number).
-export const compileRunHead = (run) => /^mac-compile ([0-9a-f]{40})$/.exec(run?.display_title ?? "")?.[1] ?? null;
-export const compileRunPr = (run) => Number(/^mac-compile PR #([1-9][0-9]*)$/.exec(run?.display_title ?? "")?.[1]) || null;
+// The head a mac-compile run compiled, and the PR a dispatch named, from its title (null when the title names none).
+export const compileRunHead = (run) => /^mac-compile (?:PR #[1-9][0-9]* @ )?([0-9a-f]{40})$/.exec(run?.display_title ?? "")?.[1] ?? null;
+export const compileRunPr = (run) => Number(/^mac-compile PR #([1-9][0-9]*) @ [0-9a-f]{40}$/.exec(run?.display_title ?? "")?.[1]) || null;
 
 // A mac-compile run names a commit, not a PR: the one open, trusted same-repository PR into main whose head it is.
 export function prForSha(pulls, sha, repo) {

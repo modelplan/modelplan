@@ -215,8 +215,8 @@ test("mac-compile trust: latest status, posted by Actions, linking to main's mac
   assert.equal(S.compileStatus([st({ target_url: `https://github.com/${repo}/actions/runs/55/x` })], repo).ok, false);
   const run = (over = {}) => ({ id: 55, repository: { full_name: repo }, path: ".github/workflows/mac-compile.yml", head_branch: "main", event: "workflow_run", status: "completed", conclusion: "success", display_title: `mac-compile ${H}`, ...over });
   assert.equal(S.compileRunProblem(run(), repo, H, 7), null);
-  assert.equal(S.compileRunProblem(run({ event: "workflow_dispatch", display_title: "mac-compile PR #7" }), repo, H, 7), null);
-  assert.equal(S.compileRunProblem(run({ event: "workflow_dispatch", display_title: "mac-compile PR #8" }), repo, H, 7), "the mac-compile run was for another head");
+  assert.equal(S.compileRunProblem(run({ event: "workflow_dispatch", display_title: `mac-compile PR #7 @ ${H}` }), repo, H, 7), null);
+  assert.equal(S.compileRunProblem(run({ event: "workflow_dispatch", display_title: `mac-compile PR #8 @ ${H}` }), repo, H, 7), "the mac-compile run was for another head");
   assert.equal(S.compileRunProblem(run({ conclusion: "failure" }), repo, H, 7), "the mac-compile run is failure", "SOL-2: a failed run never vouches");
   assert.equal(S.compileRunProblem(run({ display_title: `mac-compile ${OLD}` }), repo, H, 7), "the mac-compile run was for another head", "SOL-2: bound to the head");
   assert.ok(S.compileRunProblem(run({ path: ".github/workflows/ci.yml" }), repo, H, 7));
@@ -225,10 +225,11 @@ test("mac-compile trust: latest status, posted by Actions, linking to main's mac
   assert.ok(S.compileRunProblem(null, repo, H, 7));
   assert.equal(S.compileRunHead(run()), H);
   assert.equal(S.compileRunHead(run({ display_title: "mac-compile" })), null);
-  assert.equal(S.compileRunPr(run({ display_title: "mac-compile PR #12" })), 12);
+  assert.equal(S.compileRunPr(run({ display_title: `mac-compile PR #12 @ ${H}` })), 12);
+  assert.equal(S.compileRunPr(run({ display_title: "mac-compile PR #12" })), null, "SOL-2: a dispatch without the head proves nothing");
   // mac-compile.yml's run-name produces exactly these titles.
   const mc = readFileSync(join(root, ".github/workflows/mac-compile.yml"), "utf8");
-  assert.match(mc, /^run-name: "\$\{\{ inputs\.pr && format\('mac-compile PR #\{0\}', inputs\.pr\) \|\| github\.event\.workflow_run\.head_sha && format\('mac-compile \{0\}', github\.event\.workflow_run\.head_sha\) \|\| '' \}\}"$/m);
+  assert.match(mc, /^run-name: "\$\{\{ inputs\.pr && \(inputs\.sha && format\('mac-compile PR #\{0\} @ \{1\}', inputs\.pr, inputs\.sha\) \|\| format\('mac-compile PR #\{0\}', inputs\.pr\)\) \|\| github\.event\.workflow_run\.head_sha && format\('mac-compile \{0\}', github\.event\.workflow_run\.head_sha\) \|\| '' \}\}"$/m);
 });
 
 test("resolve: a status names a commit; exactly one open trusted PR into main must have it as head", () => {
@@ -415,15 +416,17 @@ test("tier gating: (gh-glm) counts on the REVIEW_GLM_TIERS tiers (default 1); a 
   assert.equal(body.split("\n").at(-1), v("merge", H, "gh-glm"));
   // The tier-2 wait note: no verdict, the event line first, once per head.
   const note = S.renderWaitNote({ head: H, lane: "gh-sol", tier: 2, who: ["openai"], why: "openai: HTTP 429 insufficient_quota", runUrl: "https://x/run" });
-  assert.match(S.renderWaitNote({ head: H, lane: "gh-sol", tier: 1, who: ["glm", "openai"] }).split("\n")[0], /^tier-1 review waiting: GLM and GPT quota out @ a{40} \(gh-sol\)$/);
+  const t1note = S.renderWaitNote({ head: H, lane: "gh-sol", tier: 1, who: ["glm", "openai"] });
+  assert.equal(t1note.split("\n")[0], `tier-1 review waiting: GPT quota out @ ${H} (gh-sol)`);
+  assert.match(t1note, /\(GLM-5\.3 and GPT\) is out of quota/);
   assert.equal(note.split("\n")[0], `tier-2 review waiting: GPT quota out @ ${H} (gh-sol)`);
   assert.equal(note.split("\n")[0].startsWith(S.WAIT_EVENT), true);
   const items = R.feed([comment(note)]);
   assert.deepEqual([...R.verdicts(items, H, [])], [], "the note carries no verdict");
   assert.equal(gate(t2, [comment(note)]).state, R.PENDING);
-  assert.equal(S.waitNoted(items, H, "gh-sol"), true);
-  assert.equal(S.waitNoted(items, OLD, "gh-sol"), false, "a new head raises a new event");
-  assert.equal(S.waitNoted(R.feed([comment(note, { login: "x", id: 2 })]), H, "gh-sol"), false, "only trusted notes count");
+  assert.equal(S.waitNoted(items, H), true);
+  assert.equal(S.waitNoted(items, OLD), false, "a new head raises a new event");
+  assert.equal(S.waitNoted(R.feed([comment(note, { login: "x", id: 2 })]), H), false, "only trusted notes count");
 });
 
 test("call: OpenAI quota out -> GLM where it counts, a wait marker where it does not or when the fallback is off; glm-first", async () => {
@@ -508,11 +511,89 @@ test("resolve: a stale delivery never reaches the PR's queue; a mac-compile run 
     state.statusRun = 55; state.title = "mac-compile";
     assert.deepEqual((await mc()).out, { pr: "", sha: "" }, "a run without a head or PR in its title resolves to nothing");
     state.title = "mac-compile PR #7";
-    assert.deepEqual((await mc()).out, { pr: "7", sha: H }, "the owner's dispatch: its PR at the current head");
+    assert.deepEqual((await mc()).out, { pr: "", sha: "" }, "SOL-2: a dispatch that does not name the head proves nothing");
+    state.title = `mac-compile PR #7 @ ${H}`;
+    assert.deepEqual((await mc()).out, { pr: "7", sha: H }, "the owner's dispatch with the head");
+    state.title = `mac-compile PR #8 @ ${H}`;
+    assert.deepEqual((await mc()).out, { pr: "", sha: "" }, "the dispatch named another PR");
     state.title = `mac-compile ${H}`; state.head = OLD;
     assert.deepEqual((await mc()).out, { pr: "", sha: "" }, "the compiled head is no longer the PR head");
     state.head = H;
     assert.deepEqual((await resolve({ EVENT: "workflow_dispatch", PR_INPUT: "7" })).out, { pr: "7", sha: "" });
     assert.deepEqual((await resolve({ EVENT: "workflow_dispatch", PR_INPUT: "x" })).out, { pr: "", sha: "" });
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---- R20 agreed conditions (thr1-sol-2.md) ----
+test("SOL-2: an owner dispatch proves a head only when its title names that head", () => {
+  const repo = "modelplan/modelplan";
+  const run = (over = {}) => ({ id: 55, repository: { full_name: repo }, path: ".github/workflows/mac-compile.yml", head_branch: "main", event: "workflow_dispatch", status: "completed", conclusion: "success", ...over });
+  // A dispatch that compiled head A (OLD) of PR 7 never proves head B (H).
+  assert.ok(S.compileRunProblem(run({ display_title: `mac-compile PR #7 @ ${OLD}` }), repo, H, 7), "A-to-B link rejected");
+  assert.ok(S.compileRunProblem(run({ display_title: "mac-compile PR #7" }), repo, H, 7), "a dispatch title without a head proves nothing");
+  assert.equal(S.compileRunProblem(run({ display_title: `mac-compile PR #7 @ ${H}` }), repo, H, 7), null, "a dispatch proven to have compiled B");
+  assert.ok(S.compileRunProblem(run({ display_title: `mac-compile PR #8 @ ${H}` }), repo, H, 7), "another PR's dispatch");
+  assert.equal(S.compileRunHead(run({ display_title: `mac-compile PR #7 @ ${H}` })), H);
+  assert.equal(S.compileRunPr(run({ display_title: `mac-compile PR #7 @ ${H}` })), 7);
+  const mc = readFileSync(join(root, ".github/workflows/mac-compile.yml"), "utf8");
+  assert.match(mc, /format\('mac-compile PR #\{0\} @ \{1\}', inputs\.pr, inputs\.sha\)/, "the dispatch title carries the head");
+  assert.match(mc, /\[ -z "\$SHA_INPUT" \] \|\| \[ "\$SHA_INPUT" = "\$sha" \]/, "the plan job refuses a dispatch whose sha is not the PR head");
+});
+
+test("SOL-8: a (gh-glm) verdict on a tier it may no longer decide neither settles the head nor displaces a valid carry", () => {
+  // REVIEW_GLM_TIERS went from 1,2 to 1: the tier-2 gh-glm verdict at the head is now advice.
+  const glmAtHead = comment(v("merge", H, "gh-glm"));
+  const d = S.decideSol({ pr: pr(), files: t2, items: R.feed([glmAtHead]), lane: S.SOL_LANE, triggerSha: H, checks: green, glmTiers: [1] });
+  assert.equal(d.review, true, d.why);
+  const ds = S.decideSol({ pr: pr(), files: t2, items: R.feed([comment(v("merge", H, "gh-glm-shadow"))]), lane: S.SOL_SHADOW_LANE, triggerSha: H, checks: green, glmTiers: [1] });
+  assert.equal(ds.review, true, ds.why);
+  assert.equal(S.postProblem({ pr: pr(), items: R.feed([glmAtHead]), head: H, lane: "gh-sol", tier: 2, glmTiers: [1] }), null);
+  assert.match(S.postProblem({ pr: pr(), items: R.feed([glmAtHead]), head: H, lane: "gh-sol", tier: 2, glmTiers: [1, 2] }), /already has a verdict/, "still settled while eligible");
+  // A Sol approval at the old head carries over a proven main merge; the stale-tier GLM verdict does not stop it.
+  const conf = { include: [], exclude: [], pinonly: [] };
+  const ci = [{ path: ".github/workflows/ci.yml", status: "completed", conclusion: "success", head_sha: H, head_repository: { full_name: "modelplan/modelplan" }, head_branch: "feature/x", event: "pull_request", pull_requests: [{ number: 7 }] }];
+  const gate = (cs, glmTiers) => R.evaluatePr({ pr: pr(), items: R.feed(cs), files: t2, runs: ci, statuses: [], verifiedEdge: () => false, proveMainMerges: () => ({ ok: true, between: [H] }), conf, glmTiers });
+  // Posted in this order: the Sol approval at the old head, then (after the main merge) GLM at the new head.
+  const sol = comment(v("merge", OLD, "macrevb")), glmLater = comment(v("merge", H, "gh-glm"));
+  assert.equal(gate([sol], [1]).state, R.SUCCESS);
+  const after = gate([sol, glmLater], [1]);
+  assert.equal(after.state, R.SUCCESS, after.why);
+  assert.equal(after.autoCarried, OLD);
+  assert.equal(gate([sol, glmLater], [1, 2]).autoCarried, undefined, "while eligible it is a review of this head and nothing carries");
+});
+
+test("SOL-9: the wait event is exactly 'tier-2 review waiting: GPT quota out', once per head across shadow and count", () => {
+  const both = S.renderWaitNote({ head: H, lane: "gh-sol", tier: 2, who: ["openai", "glm"] });
+  assert.equal(both.split("\n")[0], `tier-2 review waiting: GPT quota out @ ${H} (gh-sol)`);
+  assert.deepEqual([...R.verdicts(R.feed([comment(both)]), H, [])], []);
+  assert.ok(!both.split("\n").some((l) => /^\s*VERDICT/.test(l)));
+  const shadowNote = S.renderWaitNote({ head: H, lane: "gh-sol-shadow", tier: 2, who: ["openai"] });
+  assert.equal(S.waitNoted(R.feed([comment(shadowNote)]), H), true, "a count run after a shadow note adds none");
+  assert.equal(S.waitNoted(R.feed([comment(shadowNote)]), OLD), false);
+});
+
+test("SOL-4: resolve emits nothing when the PR moves while the mac-compile status is being read", async () => {
+  const dir = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "sol-resolve4-"));
+  const repo = "modelplan/modelplan";
+  const state = { head: H };
+  const server = createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    const u = req.url;
+    if (u.startsWith(`/repos/${repo}/pulls/7`)) return res.end(JSON.stringify(pr({ head: { sha: state.head, repo: { full_name: repo } } })));
+    if (u.startsWith(`/repos/${repo}/actions/runs/55`)) return res.end(JSON.stringify({ id: 55, display_title: `mac-compile ${H}` }));
+    if (u.startsWith(`/repos/${repo}/commits/${H}/pulls`)) return res.end(JSON.stringify([{ number: 7, ...pr() }]));
+    if (u.startsWith(`/repos/${repo}/commits/${H}/statuses`)) {
+      state.head = OLD; // the PR moves while the status lookup is in flight
+      return res.end(JSON.stringify([{ context: "mac-compile", state: "success", creator: { ...S.ACTIONS_BOT }, target_url: `https://github.com/${repo}/actions/runs/55` }]));
+    }
+    res.statusCode = 404; res.end("{}");
+  });
+  await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+  try {
+    const outFile = join(dir, "out");
+    writeFileSync(outFile, "");
+    const code = await new Promise((ok) => spawn(process.execPath, [join(root, "scripts/pr-review/sol-resolve.mjs")], { env: { PATH: process.env.PATH, GITHUB_OUTPUT: outFile, GITHUB_REPOSITORY: repo, GITHUB_API_URL: `http://127.0.0.1:${server.address().port}`, EVENT: "workflow_run", WORKFLOW: "mac-compile", RUN_ID: "55" } }).on("close", ok));
+    assert.equal(code, 0);
+    assert.match(readFileSync(outFile, "utf8"), /^pr=\nsha=\n$/, "the stale head never joins the PR's queue");
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });

@@ -35,12 +35,13 @@ const n = Number(env.PR);
 const pr = await gh.get(`/pulls/${n}`);
 const items = feed(await gh.all(`/issues/${n}/comments`), await gh.all(`/pulls/${n}/reviews`));
 const prAfter = await gh.get(`/pulls/${n}`);
-const late = postProblem({ pr, items, head, lane: env.LANE, force: env.FORCE === "true" }) ?? postProblem({ pr: prAfter, items, head, lane: env.LANE, force: env.FORCE === "true" });
+const check = { items, head, lane: env.LANE, force: env.FORCE === "true", tier: Number(env.TIER), glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS) };
+const late = postProblem({ pr, ...check }) ?? postProblem({ pr: prAfter, ...check });
 if (late) { say(`#${n}: ${late}; nothing posted`); process.exit(0); }
 
 if (waiting) {
   // One coordinator event per head: the note is posted once; later runs for the same head only log.
-  if (waitNoted(items, head, env.LANE)) { say(`#${n}: a review-waiting note for ${head} already exists`); process.exit(0); }
+  if (waitNoted(items, head)) { say(`#${n}: a review-waiting note for ${head} already exists`); process.exit(0); }
   const who = read(join(dir, "who")).trim().split(",").filter(Boolean);
   const note = renderWaitNote({ head, lane: env.LANE, tier: Number(env.TIER), who, why: read(join(dir, "why")).trim(), runUrl: env.RUN_URL });
   await gh.post(`/issues/${n}/comments`, { body: note });

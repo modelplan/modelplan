@@ -225,14 +225,16 @@ export function verdicts(items, head, carried) {
 // and no VERDICT line names a commit between it and the head. Only the newest candidate is tried, so a later review
 // of another head is never skipped over. The carried head's verdicts then count under the same tier rules; a block
 // carries too. Returns { from, why } or null.
-export function autoCarry(items, head, prove = () => ({ ok: false })) {
+// ignore(lane): verdict lines of these lanes are skipped too (evaluatePr: (gh-glm) on a tier it may not decide, whose
+// verdict can outlive a narrowed REVIEW_GLM_TIERS, SOL-8).
+export function autoCarry(items, head, prove = () => ({ ok: false }), ignore = () => false) {
   const named = [];
   for (const x of items)
     for (const l of lines(x.body)) {
       const m = /^VERDICT: (?:merge|block) @ ([0-9a-f]{40})\b(?: \(([a-z0-9]+(?:-[a-z0-9]+)*)\))?/i.exec(l);
       // A shadow lane (a name ending in -shadow, e.g. the workflow reviewers' pilots) counts for nothing anywhere, so it
       // must not pick or block the carry candidate either (Sol SOL-6).
-      if (m && !/-shadow$/i.test(m[2] ?? "")) named.push(m[1].toLowerCase());
+      if (m && !/-shadow$/i.test(m[2] ?? "") && !ignore(m[2] ? `(${m[2].toLowerCase()})` : "(unnamed)")) named.push(m[1].toLowerCase());
     }
   // The latest posted head across all lanes is the only candidate. When it is the current head, the PR was reviewed
   // here and nothing carries, so an older verdict of another lane never stands in for it (macrevb-946-1).
@@ -660,7 +662,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
-  const auto = chain.length ? null : autoCarry(items, head, proveMainMerges);
+  const glmAdvice = !eligibleLanes(tier, glmTiers).includes(GLM_LANE);
+  const auto = chain.length ? null : autoCarry(items, head, proveMainMerges, (lane) => glmAdvice && lane === GLM_LANE);
   const carried = auto ? [auto.from] : chain;
   const fb = { until: glmFallbackUntil, now, used: [] };
 
