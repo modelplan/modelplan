@@ -89,7 +89,7 @@ public struct EngineMenuRefreshResult {
         menuDidChange?()
     }
     public init(configuration: EngineClientConfiguration, createsNativePanels: Bool = true,
-                dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil, edition: ProductionEdition = .current,
                 deadlineNow: @escaping @MainActor () -> Date = { Date() },
                 deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
                 makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil) {
@@ -111,7 +111,7 @@ public struct EngineMenuRefreshResult {
         let provider = EngineDockMenuProvider(store: store)
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
-        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: { clock.now() })
+        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: { clock.now() }, edition: edition)
         adapter.bindDockMenuTracking(dock)
         _ = pairedProjection
         // G3-136: the empty ring's one line comes from the same admitted rows as the menu.

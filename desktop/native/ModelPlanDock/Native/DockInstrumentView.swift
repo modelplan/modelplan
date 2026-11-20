@@ -728,6 +728,12 @@ enum DockGripInk {
         if !community { NSColor.clear.setFill(); bounds.fill(using: .copy); return }
         NSColor.windowBackgroundColor.setFill();bounds.fill()
         if failed {let label=locale.hasPrefix("zh") ? "仪表暂不可用":"Instruments unavailable";(label as NSString).draw(at:CGPoint(x:12,y:12),withAttributes:[.font:NSFont.systemFont(ofSize:12),.foregroundColor:NSColor.secondaryLabelColor]);return}
+        if let rect = emptyStationRect {
+            // G3-136 in the neutral edition: a plain dashed ring marks the empty station (no reserved artwork).
+            let ring = NSBezierPath(ovalIn: rect.insetBy(dx: (rect.width - min(rect.width, rect.height)) / 2 + 2, dy: (rect.height - min(rect.width, rect.height)) / 2 + 2))
+            ring.lineWidth = 1; ring.setLineDash([3, 3], count: 2, phase: 0)
+            NSColor.secondaryLabelColor.setStroke(); ring.stroke()
+        }
         for (index,id) in orderedIDs.enumerated(){guard let r=readings[id] else{continue}
             let value=communityRowText(id) ?? [r.alias ?? r.name,r.readout].joined(separator:"  ")
             let context = NSGraphicsContext.current?.cgContext
@@ -749,7 +755,13 @@ enum DockGripInk {
         return CGRect(x:s.centre.x-s.diameter/2-origin.x,y:s.centre.y-s.diameter/2-origin.y,width:s.diameter,height:s.diameter)
     }
     private var emptyStationRect: CGRect? {
-        guard !community, !failed, let skin,
+        if community {
+            // D57/D321: the neutral edition has no skin; with no rows its one empty row is the station (same hit size as a row).
+            guard !failed, orderedIDs.isEmpty else { return nil }
+            let inset = 8 * communityRowHeight / 44
+            return CGRect(x: 0, y: 0, width: bounds.width, height: communityRowHeight).insetBy(dx: inset, dy: inset)
+        }
+        guard !failed, let skin,
               let station = skin.stations.first(where: { $0.placeholderStyle != nil && $0.placeholderLabel != nil && $0.subscriptionID == nil && $0.overflowCount == nil }) else { return nil }
         return CGRect(x: station.centre.x-station.diameter/2-layoutOrigin.x,
                       y: station.centre.y-station.diameter/2-layoutOrigin.y, width: station.diameter, height: station.diameter)

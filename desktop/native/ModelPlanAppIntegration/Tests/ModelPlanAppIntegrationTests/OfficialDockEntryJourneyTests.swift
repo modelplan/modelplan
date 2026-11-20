@@ -4,7 +4,7 @@ import XCTest
 import ModelPlanEngineClient
 import ModelPlanSettings
 @_spi(DockResourceChecks) import ModelPlanDock
-@testable import ModelPlanAppIntegration
+@_spi(DockResourceChecks) @testable import ModelPlanAppIntegration
 
 @MainActor final class OfficialDockEntryJourneyTests: XCTestCase {
     func testNormalEmptyEntryUsesStudyQuestionMarkAndOpensSettings() async throws {
@@ -35,6 +35,34 @@ import ModelPlanSettings
         XCTAssertEqual(opened, 2)
         dock.close()
         XCTAssertFalse(element.accessibilityPerformPress()); XCTAssertEqual(opened, 2)
+    }
+
+    /// G3-136 / macrev2-1051-2: the default self-built package is the NEUTRAL edition (D57/D321). With no
+    /// subscriptions its community Dock still has an empty station: visible anchor, reason on hover, Settings on click.
+    func testNeutralEditionEmptyEntryHoverCardAndClickOpensSettings() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("neutral-dock-empty-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        try await store.update { $0.language = .english; $0.autoHide = false }
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, edition: .neutral, activateSettings: {})
+        await app.prepare(); app.allowDockPresentation()
+        let dock = app.composition.dock; defer { dock.close() }
+        let view = dock.dockView
+        XCTAssertNil(view.presentedSkinForChecks, "neutral edition has no official skin")
+        let rect = try XCTUnwrap(view.emptyStationRectForChecks, "neutral empty station has a hit rect")
+        XCTAssertGreaterThan(rect.width, 8); XCTAssertEqual(view.emptyStationAnchor, rect)
+        let children = try XCTUnwrap(view.accessibilityChildren() as? [NSAccessibilityElement])
+        let element = try XCTUnwrap(children.first { $0.accessibilityIdentifier() == "dock.empty" })
+        var opened = 0; dock.showSettings = { opened += 1 }
+        XCTAssertFalse(dock.emptyCardShownForChecks)
+        view.hoverEmptyStationForChecks(atLocal: CGPoint(x: rect.midX, y: rect.midY))
+        XCTAssertTrue(dock.emptyCardShownForChecks, "hover shows the reason card")
+        view.hoverEmptyStationForChecks(atLocal: nil)
+        XCTAssertFalse(dock.emptyCardShownForChecks, "leaving dismisses it")
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertTrue(view.performPointerPress(atLocal: CGPoint(x: rect.midX, y: rect.midY)))
+        XCTAssertEqual(opened, 1)
+        XCTAssertTrue(element.accessibilityPerformPress()); XCTAssertEqual(opened, 2)
     }
 
     func testNormalEngineRowsEntryPresentsOfficialDockHull() async throws {

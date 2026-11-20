@@ -184,14 +184,14 @@ struct StatusNoticePresentation {
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                 createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                 cockpitEntryEnabled: Bool? = nil,
-                dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil, edition: ProductionEdition = .current,
                 deadlineNow: @escaping @MainActor () -> Date = { Date() },
                 deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
                 makeClient: (@MainActor (EngineClientConfiguration, ModelPlanEngineStore.EngineStore) -> any EngineClient)? = nil,
                 makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                 makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
                 activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) {
-        let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient)
+        let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, dockEnvironment: dockEnvironment, edition: edition, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient)
         self.composition = composition
         self.engineConfiguration = configuration
         self.scopeBinding = EngineScopeConsentBinding(composition: composition)
