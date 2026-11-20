@@ -78,7 +78,7 @@ enum WP15Rows {
             return w
         }
         var forecasts: [[String: Any]] = []
-        let rows = members.enumerated().map { order, member -> [String: Any] in
+        func makeRow(_ order: Int, _ member: Member) -> [String: Any] {
             var row = template, account = accountTemplate
             row["id"] = member.rawValue.lowercased(); row["order"] = order + 1; row["vendorKey"] = "openai"
             row["name"] = ["en": member.name, "zh": member.name]; row["consent"] = "allowed"; row["surfaces"] = ["dock", "menu", "settings"]
@@ -93,7 +93,8 @@ enum WP15Rows {
                 account["windows"] = [window(Self.session, remaining: 9, resets: base.addingTimeInterval(7200), observed: observed, current: true),
                                       window(Self.weekly, remaining: 42, resets: base.addingTimeInterval(2 * 86_400 + 10 * 3600), observed: observed, current: true)]
                 account["today"] = ["observedOutputTokens": 6_800_000, "runningSessions": 2, "bindingBasis": "source-wide-current-binding"]
-                let card = stamp(base.addingTimeInterval(member == .tightExpiredReserve ? -3600 : 30 * 3600))
+                let cardAge: TimeInterval = member == .tightExpiredReserve ? -3600 : 30 * 3600
+                let card = stamp(base.addingTimeInterval(cardAge))
                 account["resetCards"] = ["state": "complete", "count": 1, "earliestExpiresAt": card,
                                          "items": [["id": String(repeating: "a", count: 64), "expiresAt": card]], "truncated": false,
                                          "sources": [["source": "codex-account", "observedAt": stamp(observed)]]]
@@ -101,7 +102,14 @@ enum WP15Rows {
                                   "runsOutAt": stamp(base.addingTimeInterval(40 * 60)), "pace": "tight", "basis": "recent-rate",
                                   "observedAt": stamp(observed)])
             case .keptRecent, .keptOld, .keptReset, .keptNoReset:
-                let observed = base.addingTimeInterval(member == .keptNoReset ? -10 * 60 : member == .keptRecent ? -30 * 60 : member == .keptOld ? -3 * 3600 : -6 * 3600)
+                let keptAge: TimeInterval
+                switch member {
+                case .keptNoReset: keptAge = -10 * 60
+                case .keptRecent: keptAge = -30 * 60
+                case .keptOld: keptAge = -3 * 3600
+                default: keptAge = -6 * 3600
+                }
+                let observed = base.addingTimeInterval(keptAge)
                 row["state"] = "stale"; row["nextStep"] = refresh; row["expiresAt"] = NSNull(); row["stateAfterExpiry"] = NSNull()
                 row["reason"] = ["code": "stale_reading", "text": ["en": "A retained reading is shown", "zh": "正在显示保留的旧读数"]]
                 account["valueState"] = "retained"; account["observedAt"] = stamp(observed)
@@ -130,6 +138,8 @@ enum WP15Rows {
             row["accounts"] = [account]
             return row
         }
+        var rows: [[String: Any]] = []
+        for (order, member) in members.enumerated() { rows.append(makeRow(order, member)) }
         projection["rows"] = rows
         projection["resetEvents"] = []
         projection["forecasts"] = forecasts
