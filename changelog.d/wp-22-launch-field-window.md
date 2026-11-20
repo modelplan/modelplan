@@ -1,1 +1,0 @@
-The official app's enlarged launch field is now the website's launch field in a cockpit window: it opens at 88% of the cockpit's display over a plain dim, with the in-field menu, the full fleet and effort links to modelplan.ai, and a 2D view when 3D is unavailable. Esc, the close key or a click outside closes it; Increase Contrast and Reduce Motion apply while it is open.
