@@ -182,6 +182,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var occlusionReported = false
   private var layout: CockpitShellLayout?
   private var scope = "all"
+  /// CKP-SHELL-50: the app's range; not private data, so a privacy clear keeps it.
+  private var range: CockpitRange = .initial
   private var outsideMonitor: Any?, localMonitor: Any?, switchMonitor: Any?
   private var closeTask: Task<Void, Never>?
   /// Walkthrough 11-17: a user put back keeps an active app active across the regular-to-accessory flip it causes.
@@ -541,6 +543,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onShellChanged: (() -> Void)?
   public var onIntent: ((CockpitIntent) -> Void)?
   public var onRendered: (() -> Void)?
+  /// G3-42: the coordinator's hook for an admitted rendered receipt; `onRendered` stays free for observers.
+  public var onDataRendered: (() -> Void)?
+  public var reportsDataRendered: Bool { true }
   /// Recovery contract: every accepted rendered receipt, for the coordinator (verified data on screen). Separate from
   /// `onRendered`, which verification and timing hooks own.
   public var onRenderVerified: (() -> Void)?
@@ -850,6 +855,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
     let view = CockpitWebView(frame: .zero, configuration: config)
     view.menuProvider = { [weak self] in self?.contextMenu() }
+    // Owner 11-19 (#1062): the first click on an inactive cockpit in the porthole band only activates it; the porthole
+    // opens the enlarged field on a click, so an activation click must not reach it. The rest of the page keeps first-click.
+    view.declinesActivationClick = { [weak self] point in
+      guard let layout = self?.layout else { return false }
+      return point.y < layout.portholeActivationBand
+    }
     menuTarget.fire = { [weak self] in self?.toggleAttachment() }
     // Owner review 11-08 / CKP-SHELL-25: only the hull and canopy are drawn; the web view paints no backing of its
     // own, so the clear panel shows the desktop around the transparent page. `CockpitWebView.isOpaque` being false is
@@ -1230,6 +1241,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         if let reason = pendingFreshnessReason { sendFreshnessTick(reason) }
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
         onRendered?()
+        onDataRendered?()
         onRenderVerified?()
       case .deadlinePending(let id):
         if receiptWatchdog.currentID != id { receiptWatchdog.wait(for: id) }
@@ -1512,9 +1524,25 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
   public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }
+  /// WP-22 (macrevb-1062-3): the enlarged field's selection (a public model id, nil for a clear) selects the same model on
+  /// the page's HUD, faders and porthole. Presentation only: a page that cannot show it keeps working.
+  /// Owner 11-19 (#1062): tells the page the enlarged field closed, so a click bouncing off the close does not reopen it.
+  public func fieldClosed() {
+    guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.fieldClosed() else { return }
+    send(raw, onRejected: { true })
+  }
+  public func selectModel(_ id: String?) {
+    guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.setSelection(id) else { return }
+    send(raw, onRejected: { true })
+  }
   public func updateScope(_ key:String) {
     guard key != scope, CockpitMemberScopes.isValidKey(key) else { return }
     scope=key; publishAppearance()
+  }
+  /// CKP-SHELL-50: before the load this only sets what the load's shell carries, so the first render has it.
+  public func updateRange(_ value: CockpitRange) {
+    guard value != range else { return }
+    range = value; publishAppearance()
   }
   public func updateAppearance(_ value: CockpitAppearance) {
     let resized = value.size != appearance.size
@@ -1533,7 +1561,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #if MODELPLAN_TEST_ONLY_SPI
     if let shell = verificationNoWindowShell { return shell }
     #endif
-    return layout?.shellState(attached: !shellSession.detached, scope: scope)
+    return layout?.shellState(attached: !shellSession.detached, scope: scope, range: range)
   }
   /// `behindPendingDisplay` (glm-959-1): send while a display receipt is still pending, as an uncorrelated change
   /// that derives no deadline, so the pending display's own deadline correlation is untouched.

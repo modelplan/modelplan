@@ -32,7 +32,7 @@ const studyModules=[
   'mfd-pages/alerts.js','mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
   'mfd-pages/public-helpers.js','mfd-pages/scope.js','mfd-pages/tune.js','mfd-pages/views.js','mfd-pages/where.js',
   'project-attribution.js','session-line.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
-  'strings/mfd.js','strings/review49.js','strings/host.js','window-time.js',
+  'strings/mfd.js','strings/review49.js','strings/host.js','strings/plugins.js','window-time.js',
 ];
 for(const name of studyModules){
   const target=resolve(output,'study/rocket-r1',name);await mkdir(dirname(target),{recursive:true});
@@ -47,20 +47,22 @@ if (official) {
   verifyVisualPack(repo);
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
   await cp(resolve(here,'web/field.html'),resolve(output,'field.html'));
-  // D207: the field scene's fleet r4 rockets read their albedo/material atlases under its base URL, ./assets/art/rockets/.
-  // They move there from the copied pack (no second copy), each checked against the reserved-visuals registry.
-  const rocketPack=resolve(output,'runtime/field-scene/rockets'),rocketOut=resolve(output,'assets/art/rockets');await mkdir(rocketOut,{recursive:true});
+  // D207: the field's fleet r4 rockets read their albedo/material atlases under its asset base, ./assets/art/rockets/, and
+  // (WP-22) the 2D fallback its sprites under ./assets/art/rockets/flat/. They move there from the copied pack (no second
+  // copy), each checked against the reserved-visuals registry.
+  const rocketPack=resolve(output,'runtime/field-scene/rockets'),rocketOut=resolve(output,'assets/art/rockets');await mkdir(resolve(rocketOut,'flat'),{recursive:true});
   const visualPolicy=JSON.parse(await readFile(resolve(repo,'source-policy.json'),'utf8'));
-  for(const name of await readdir(rocketPack)){
+  for(const name of [...(await readdir(rocketPack)).filter(name=>name!=='flat'),...(await readdir(resolve(rocketPack,'flat'))).map(name=>'flat/'+name)]){
     const bytes=await readFile(resolve(rocketPack,name)),expected=visualPolicy.reservedVisuals.binaries['desktop/official-visuals/runtime/field-scene/rockets/'+name];
     if(!name.endsWith('.webp')||!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved launch-field rocket atlas: '+name);
     await writeFile(resolve(rocketOut,name),bytes);
   }
   await rm(rocketPack,{recursive:true});
-  // D43: the field scene draws vendor marks on its plates and asks for them by these names under ./assets/brands/;
+  // D43: the field draws vendor marks on its rockets and asks for them by these names under ./assets/brands/ (WP-22: the
+  // component's logo map names Alibaba's models alibaba.svg; the cockpit's mark for them is the Qwen mark);
   // the engine keys use the same folder (G3-47 review: the key marks pointed at a folder that never shipped).
   const marks=resolve(repo,'desktop/third-party/dock-resources/Resources/Marks'),brands=resolve(output,'assets/brands');await mkdir(brands,{recursive:true});
-  for(const [name,source] of Object.entries({'openai-white.svg':'openai.svg','claude-rounded.svg':'claude.svg','claude.svg':'claude.svg','zhipu.svg':'zhipu.svg','x-white.svg':'x.svg','qwen.svg':'qwen.svg','deepseek.svg':'deepseek.svg','kimi-white.svg':'kimi.svg','minimax.svg':'minimax.svg','gemini.svg':'gemini.svg','xiaomi.svg':'xiaomi.svg','cursor.svg':'cursor.svg','copilot.svg':'copilot.svg','opencode.svg':'opencode.svg','zai-white.svg':'zai-white.svg','SOURCES.md':'SOURCES.md'}))await cp(resolve(marks,source),resolve(brands,name));
+  for(const [name,source] of Object.entries({'openai-white.svg':'openai.svg','claude-rounded.svg':'claude.svg','claude.svg':'claude.svg','zhipu.svg':'zhipu.svg','x-white.svg':'x.svg','qwen.svg':'qwen.svg','alibaba.svg':'qwen.svg','deepseek.svg':'deepseek.svg','kimi-white.svg':'kimi.svg','minimax.svg':'minimax.svg','gemini.svg':'gemini.svg','xiaomi.svg':'xiaomi.svg','cursor.svg':'cursor.svg','copilot.svg':'copilot.svg','opencode.svg':'opencode.svg','zai-white.svg':'zai-white.svg','SOURCES.md':'SOURCES.md'}))await cp(resolve(marks,source),resolve(brands,name));
   // The CSP forbids fetch, so the porthole still's placement table ships as a module carrying the
   // default public fleet's four projections (src/porthole-still.ts). Derived from the reserved pack,
   // it carries the pack's licence; the community edition gets null below.
@@ -151,7 +153,7 @@ if (official) {
 } else {
   notices.push('Community edition excludes reserved artwork.');
   // The launch field is official only; its page has no place in this edition.
-  await rm(resolve(output,'src/field-page.js'),{force:true});await rm(resolve(output,'src/field-shape.js'),{force:true});
+  await rm(resolve(output,'src/field-page.js'),{force:true});
   await writeFile(resolve(output,'src/porthole-stills-data.js'),'// SPDX-License-Identifier: MIT\nexport default null;\n');
 }
 await writeFile(resolve(output,'cockpit.css'),css);

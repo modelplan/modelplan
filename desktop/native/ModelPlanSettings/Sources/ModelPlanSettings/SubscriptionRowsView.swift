@@ -183,7 +183,11 @@ import AppKit
 
     private func addedRow(_ row: SubscriptionRow) {
         // Reading by default, no engine row yet: a status line only, until the row arrives.
-        if row.isPending { _ = rowShell(row, prefix: "subscriptions.", trailing: []); return }
+        // D322: a failed reader with no account yet also offers its one next step.
+        if row.isPending {
+            _ = rowShell(row, prefix: "subscriptions.", trailing: fixButton(row, prefix: "subscriptions.").map { [$0] } ?? [])
+            return
+        }
         let locked = configuration.lockedReason(row.id)
         let editable = configuration.canSave && locked == nil
         var trailing: [NSView] = []

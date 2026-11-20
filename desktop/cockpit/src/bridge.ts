@@ -5,23 +5,33 @@ import {websiteFields} from './website-link.js';
 import { conforms, exact, parseMessage, record } from './schema.js';
 import { cockpitMembers } from './members.js';
 import {effectiveRedBelow,type RedBelow} from './threshold.js';
+import {isCockpitRange,type CockpitRange} from './range.js';
+import {parsePluginState,type PluginState} from './plugin-state.js';
+import {PLUGIN_ID} from './plugin-registry.js';
 export const MAX_MESSAGE_BYTES = 1024 * 1024;
 export interface Context { readonly sessionId:string; readonly storeEpoch:string; readonly generation:string; readonly viewRevision:string }
 export interface BridgeSource { readonly origin:string; readonly isMainFrame:boolean }
 export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly reduceMotion:boolean; readonly reduceTransparency:boolean; readonly showProjectNames:boolean }
 export type LiveAppearance = Appearance;
-export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string }
-export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'openField'|'openWebsite';
+/** CKP-SHELL-50: `range` is the app's time range, sent with every shell (absent only from an older host: 7d). */
+export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string; readonly range?:CockpitRange }
+export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'rangeSelect'|'openField'|'openWebsite'|'refreshMember';
 export interface Header extends Context { readonly version:2; readonly pageId:string; readonly requestId:string; readonly sequence:string }
 export type HostMessage = Header & (
   {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean; readonly ackedCautions?:unknown; readonly pinnedModels?:unknown; readonly memberOrder?:readonly string[]} |
   ({readonly type:'appearance'; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean; readonly memberOrder?:readonly string[]} & LiveAppearance) |
   ({readonly type:'shell'} & ShellState) |
   {readonly type:'ignition'; readonly on:boolean} |
+  {readonly type:'select'; readonly model:string|null} |
+  {readonly type:'fieldClosed'} |
   {readonly type:'display'; readonly data:WireCockpitData} |
   {readonly type:'visibility'; readonly visible:boolean; readonly occluded:boolean; readonly key:boolean} |
   {readonly type:'tick'; readonly nowUnixMs:string; readonly reason:'deadline'|'show'|'wake'|'unlock'|'clockChange'} |
-  {readonly type:'clear'} | {readonly type:'unload'});
+  {readonly type:'clear'} | {readonly type:'unload'} |
+  /** Plugin columns (D293): the host's saved plugin choices (CockpitPluginPreferences). */
+  {readonly type:'plugins'; readonly plugins:PluginState} |
+  /** Plugin columns: a reading the host sampled for a running plugin. */
+  {readonly type:'pluginData'; readonly id:string; readonly data:unknown});
 export interface CockpitView {
   /** G3-56: caution identities the host remembered as acknowledged; sent before `configure`. */
   restoreAcked?(ids:string[]):void;
@@ -34,11 +44,20 @@ export interface CockpitView {
   shell(state:ShellState):void;
   /** CKP-SHELL-33 (D178/D186): the host lights every base bell with the amber nozzle glow during a rack put-back or key detach. */
   ignite?(on:boolean):void;
+  /** WP-22 (macrevb-1062-3): the enlarged field's selection, a public model id or null when it was cleared there. */
+  selectModel?(id:string|null):void;
+  /** Owner 11-19 (#1062): the enlarged field just closed (any close path); the porthole ignores its bounce. */
+  fieldClosed?():void;
   render(data:WireCockpitData,now:number):void;
   clear():void;
   nextDeadline():number|null;
   tick(now:number):void;
   active(active:boolean,now?:number):void;
+  /** Open = visible and not occluded (key or not); plugins sample only while this is true (D124). */
+  visible?(visible:boolean):void;
+  /** Host plugin state; false when it does not fit this page's registry rules. */
+  plugins?(state:PluginState):boolean;
+  pluginData?(id:string,data:unknown):boolean;
   dispose():void;
 }
 const header=['version','pageId','requestId','sequence','sessionId','storeEpoch','generation','viewRevision'];
@@ -84,16 +103,20 @@ function message(raw:string,quarantined?:(data:unknown)=>boolean,refused?:(data:
   const validScope=(v:unknown):boolean=>{if(typeof v!=='string')return false;if(v==='all'||/^[a-f0-9]{16}$/.test(v))return true;const parts=v.split('#');let last=parts.pop()??'';if(/^\d+$/.test(last)){if(!/^[1-9]\d*$/.test(last)||Number(last)>1024)return false;last=parts.pop()??'';}return identity(parts.join('#'))&&['saved_login_api','runtime_rpc','local_log','api_key_api','local_sqlite','status_line','browser_session','manual','unknown'].includes(last);};
   // D244: the saved member order is member keys only, at most 256, no repeats.
   const validOrder=(v:unknown):boolean=>Array.isArray(v)&&v.length>0&&v.length<=256&&v.every(k=>k!=='all'&&validScope(k))&&new Set(v).size===v.length;
-  const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope'])&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
+  const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope',...(record(v)&&Object.hasOwn(v,'range')?['range']:[])])&&(!record(v)||v.range===undefined||isCockpitRange(v.range))&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
   switch(m.type) {
     case 'load': if(!keys(['appearance','shell'],['redBelow','showUsedPercent','showAllModels','ackedCautions','pinnedModels','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||!validAppearance(m.appearance)||!validShell(m.shell)||(m.ackedCautions!==undefined&&!validAcked(m.ackedCautions))||(m.pinnedModels!==undefined&&!validAcked(m.pinnedModels))) return no('load.keys'); break;
     case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow','showUsedPercent','showAllModels','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
-    case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope})) return no('shell.fields'); break;
+    case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'],['range'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope,...(Object.hasOwn(m,'range')?{range:m.range}:{})})) return no('shell.fields'); break;
     case 'ignition': if(!keys(['on'])||typeof m.on!=='boolean') return no('ignition.fields'); break;
+    case 'fieldClosed': if(!keys()) return no('fieldClosed.keys'); break;
+    case 'select': if(!keys(['model'])||(m.model!==null&&!identity(m.model))) return no('select.fields'); break;
     case 'display': if(!keys(['data']))return no('display.keys');if(quarantined?.(m.data))return no('display.quarantined');if(!validData(m.data)){refused?.(m.data);return null;} break;
     case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return no('visibility.fields'); break;
     case 'tick': if(!keys(['nowUnixMs','reason'])||!timestamp(m.nowUnixMs)||!['deadline','show','wake','unlock','clockChange'].includes(m.reason as string)) return no('tick.fields'); break;
     case 'clear': case 'unload': if(!keys()) return no('clear.keys'); break;
+    case 'plugins': if(!keys(['plugins'])||!parsePluginState(m.plugins)) return no('plugins.fields'); break;
+    case 'pluginData': if(!keys(['id','data'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return no('pluginData.fields'); break;
     default:return no('msg.type');
   }
   return m as unknown as HostMessage;
@@ -203,11 +226,20 @@ export class CockpitBridge {
         // Recovery contract: a view exception is refused, never an unload; the page keeps what it shows.
         try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow),m.showUsedPercent===true,m.showAllModels===true,m.memberOrder??[]);} catch {return this.no('appearance.view');}
         this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
-      case 'shell':
-        try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {return this.no('shell.view');}
-        this.shellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope};this.sequence=BigInt(m.sequence);return true;
+      case 'shell': {
+        const shell:ShellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope,...(m.range!==undefined?{range:m.range}:{})};
+        try {this.view.shell(shell);} catch {return this.no('shell.view');}
+        this.shellState=shell;this.sequence=BigInt(m.sequence);return true;
+      }
       case 'ignition':
         try {this.view.ignite?.(m.on);} catch {this.unload();return this.no('ignition.view');}
+        this.sequence=BigInt(m.sequence);return true;
+      case 'fieldClosed':
+        try {this.view.fieldClosed?.();} catch {return this.no('fieldClosed.view');}
+        this.sequence=BigInt(m.sequence);return true;
+      case 'select':
+        // A selection is presentation only: a view that cannot apply it is refused, never an unload.
+        try {this.view.selectModel?.(m.model);} catch {return this.no('select.view');}
         this.sequence=BigInt(m.sequence);return true;
       case 'display':
         if(!this.domReady) return this.no('display.notReady');
@@ -232,6 +264,15 @@ export class CockpitBridge {
         if(m.visible&&!m.occluded)this.hidden=false;
         this.syncActive();return true;
       case 'unload': this.sequence=BigInt(m.sequence);this.unload();return true;
+      case 'plugins':
+        // A host that sends its plugin state also accepts the page's plugin edits (pluginsEdit).
+        {const before=this.pluginsNegotiated;this.pluginsNegotiated=true;
+        if(!this.view.plugins?.(m.plugins)){this.pluginsNegotiated=before;return this.no('plugins.view');}}
+        this.sequence=BigInt(m.sequence);return true;
+      case 'pluginData':
+        // Readings are only for a host that negotiated plugins and only reach a running plugin.
+        if(!this.pluginsNegotiated||!this.isVisible()||!this.view.pluginData?.(m.id,m.data))return this.no('pluginData.refused');
+        this.sequence=BigInt(m.sequence);return true;
       default:return this.no('recv.type');
     }
   }
@@ -239,7 +280,7 @@ export class CockpitBridge {
   private pendingAck:string[]|null=null;
   private pendingPins:string[]|null=null;
   private syncActive():void {
-    this.view.active(this.isActive(),this.clock());
+    this.view.active(this.isActive(),this.clock());this.view.visible?.(this.isVisible());
     if(this.pendingAck&&this.isActive()) {const ids=this.pendingAck;this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});}
     if(this.pendingPins&&this.isActive()) {const ids=this.pendingPins;this.pendingPins=null;this.emit('action',this.requestId(),{action:'pinnedModels',ids});}
   }
@@ -256,10 +297,21 @@ export class CockpitBridge {
     this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});return true;
   }
   action(action:PageAction,tool?:string):boolean {
-    if(!this.isActive()||!['chooseSetup','openSettings','openSettingsSubscriptions','openHistory','close','detach','putBack','shutterToggle','scopeSelect','openField','openWebsite'].includes(action)) return false;
+    if(!this.isActive()||!['chooseSetup','openSettings','openSettingsSubscriptions','openHistory','close','detach','putBack','shutterToggle','scopeSelect','rangeSelect','openField','openWebsite','refreshMember'].includes(action)) return false;
+    // CKP-SHELL-50: one of the three ranges, by key; the host decides and echoes it in the shell.
+    if(action==='rangeSelect') {
+      if(!isCockpitRange(tool))return false;
+      this.emit('action',this.requestId(),{action,key:tool});return true;
+    }
     if(['close','detach','putBack','shutterToggle'].includes(action)) {
       if(!this.shellState)return false;
       if(action==='detach'&&!this.shellState.attached||action==='putBack'&&this.shellState.attached||action==='shutterToggle'&&this.shellState.forcedClosed)return false;
+    }
+    // Owner D277 (CKP-ENG-27): read one shown subscription (or all of them) again. Native asks the engine through the
+    // same per-member refresh the widget's ring uses; only a current member key or `all` crosses.
+    if(action==='refreshMember') {
+      if(!this.hasDisplay||!tool||(tool!=='all'&&!this.scopeMembers.has(tool)))return false;
+      this.emit('action',this.requestId(),{action,key:tool});return true;
     }
     if(action==='scopeSelect') {
       if(!this.hasDisplay||!tool||(tool!=='all'&&!this.scopeMembers.has(tool)))return false;
@@ -278,6 +330,17 @@ export class CockpitBridge {
     }
     if(action==='openHistory'?(!tool||!this.historyTools.has(tool)):tool!==undefined) return false;
     this.emit('action',this.requestId(),{action,...(tool?{tool}:{})});return true;
+  }
+  private pluginsNegotiated=false;
+  /** Plugin columns: a plugin edit made on the page (right-click Remove or the + menu). Posted only to a host that sent its plugin state. */
+  pluginsEdit(state:PluginState):boolean {
+    if(!this.pluginsNegotiated||!this.isActive()||!parsePluginState(state))return false;
+    this.emit('action',this.requestId(),{action:'pluginsEdit',plugins:state});return true;
+  }
+  /** Plugin columns: the plugins now running (open cockpit, column shown); the host samples exactly these. */
+  pluginsRunning(ids:string[]):boolean {
+    if(!this.pluginsNegotiated||this.ended||!this.context||ids.length>16||!ids.every(id=>PLUGIN_ID.test(id)))return false;
+    this.emit('action',this.requestId(),{action:'pluginsRunning',ids});return true;
   }
   unload():void {
     if(this.ended) return;

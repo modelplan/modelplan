@@ -6,7 +6,7 @@ the backup is taken before the subject starts and restored after it has ended. T
 here and nothing else is ever read, written or removed:
 
   ~/Library/Application Support/ModelPlan/Native/          (app state)
-  ~/Library/Preferences/org.modelplan.community.swift.scaffold.plist
+  ~/Library/Preferences/ai.modelplan.app.plist
   ~/Library/Caches/modelplan/                             (engine store, cli/internal/store)
   ~/.config/modelplan/consent.json                         (shared reader consent)
 
@@ -35,12 +35,12 @@ import time
 
 PRODUCT_PATHS = (
     'Library/Application Support/ModelPlan/Native',
-    'Library/Preferences/org.modelplan.community.swift.scaffold.plist',
+    'Library/Preferences/ai.modelplan.app.plist',
     'Library/Caches/modelplan',
     '.config/modelplan/consent.json',
 )
-PREFERENCES = 'Library/Preferences/org.modelplan.community.swift.scaffold.plist'
-PREFERENCES_DOMAIN = 'org.modelplan.community.swift.scaffold'
+PREFERENCES = 'Library/Preferences/ai.modelplan.app.plist'
+PREFERENCES_DOMAIN = 'ai.modelplan.app'
 DEFAULTS = '/usr/bin/defaults'
 ARCHIVE, MANIFEST, RESTORE = 'product.tar', 'backup-manifest.json', 'restore-manifest.json'
 # Never ModelPlan product state; refuse rather than copy. Matched on lower-cased names.

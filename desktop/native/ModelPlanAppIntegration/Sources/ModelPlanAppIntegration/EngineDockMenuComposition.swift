@@ -168,6 +168,12 @@ public struct EngineMenuRefreshResult {
             self.deadlineDriver.replace()
         }
     }
+    #if DEBUG
+    func installDockVisibilityTimingForChecks(clock: @escaping () -> TimeInterval, scheduler: any DockEdgeScheduling) {
+        dock.installVisibilityTimingForChecks(clock: clock, scheduler: scheduler)
+    }
+    #endif
+
     public var presentedContent: DockContent { presentedContent(at: deadlineWall()) }
 
     private func presentedContent(at now: Date) -> DockContent {

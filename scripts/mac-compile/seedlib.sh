@@ -29,13 +29,19 @@ clear_path() {
 # Copy $1 to $2 (must not exist): each attempt (APFS clonefile, then plain copy) gets a FRESH mktemp directory next to
 # it, copies to <tmp>/c, and renames on success. A failed attempt is wiped; if the wipe fails nothing is retried and the
 # caller builds cold. A path is never reused, so a partial copy can neither be renamed into place nor nested.
+# On macOS the first attempt is one clonefile(2) call for the whole tree (in-kernel, copy-on-write), instead of cp's
+# per-file walk; any failure there falls through to the per-file attempts.
+clone_tree() { python3 -I -c 'import ctypes, os, sys
+libc = ctypes.CDLL(None, use_errno=True)
+sys.exit(0 if libc.clonefile(os.fsencode(sys.argv[1]), os.fsencode(sys.argv[2]), 0) == 0 else 1)' "$1" "$2" 2>/dev/null; }
 clone() {
-  local flag tmp
+  local flag tmp methods=(-cR -R)
   [ ! -e "$2" ] || return 1
   mkdir -p "$(dirname "$2")" || return 1
-  for flag in -cR -R; do
+  [ "$(uname)" = Darwin ] && command -v python3 >/dev/null && methods=(tree -cR -R)
+  for flag in "${methods[@]}"; do
     tmp=$(mktemp -d "$2.tmp.XXXXXX") || return 1
-    if cp "$flag" "$1" "$tmp/c" 2>/dev/null; then
+    if { [ "$flag" = tree ] && clone_tree "$1" "$tmp/c"; } || { [ "$flag" != tree ] && cp "$flag" "$1" "$tmp/c" 2>/dev/null; }; then
       if [ ! -e "$2" ] && chmod -R u+w "$tmp/c" && mv "$tmp/c" "$2"; then rmdir "$tmp" 2>/dev/null; return 0; fi
       wipe "$tmp"; return 1
     fi
@@ -44,14 +50,22 @@ clone() {
   return 1
 }
 # Hash of every entry of a directory: type, size, nanosecond mtime, symlink target. Any error fails (cold build).
+# One line per entry, "<path>\t<type size mtime>\t<link target>", in C order of the paths. stat runs in batches (xargs),
+# not once per entry: a build tree has tens of thousands of entries, and a fork each cost minutes on a busy Mac.
 manifest() (
   set -o pipefail
   cd "$1" || exit 1
-  find . -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' f; do
-    if [ "$(uname)" = Darwin ]; then st=$(stat -f '%HT %z %Fm' -- "$f"); else st=$(stat -c '%F %s %.9Y' -- "$f"); fi || exit 1
+  list=$(mktemp) && stats=$(mktemp) || exit 1
+  trap 'rm -f "$list" "$stats"' EXIT
+  find . -print0 | LC_ALL=C sort -z >"$list" || exit 1
+  if [ "$(uname)" = Darwin ]; then fmt=(-f '%HT %z %Fm'); else fmt=(-c '%F %s %.9Y'); fi
+  # stat prints exactly one line per operand, in operand order, and its format holds no path, so line n is entry n.
+  xargs -0 stat "${fmt[@]}" -- <"$list" >"$stats" || exit 1
+  [ "$(tr -cd '\0' <"$list" | wc -c)" -eq "$(wc -l <"$stats")" ] || exit 1
+  while IFS= read -r -d '' f && IFS= read -r st <&3; do
     t=; if [ -L "$f" ]; then t=$(readlink -- "$f") || exit 1; fi
     printf '%s\t%s\t%s\n' "$f" "$st" "$t"
-  done | sha256
+  done <"$list" 3<"$stats" | sha256
 )
 # Seed key: toolchain plus the package's Package.resolved.
 seedkey() { { swift --version 2>&1; cat "$1/Package.resolved" 2>/dev/null; } | sha256; }
@@ -81,23 +95,52 @@ seed_lock() {
 
 # seed_restore <package dir> <scratch name> <dest>: clone the matching verified seed to <dest> (which must not exist
 # afterwards unless the clone succeeded). Returns 0 on a hit, 1 otherwise; the caller then builds cold.
+# The slot of a package is $SEED_ROOT/<name>; $SEED_ROOT/.<name>.old is the previous slot while a publish swaps (see
+# seed_publish). A reader uses the backup only when the slot is missing, i.e. a publish died between its two renames.
 seed_restore() {
   local key seed m
   [ -n "$SEED_ROOT" ] && [ "$SEED_WRITE" != 1 ] || return 1
   key=$(seedkey "$1"); seed="$SEED_ROOT/$2/$key"
+  [ -e "$SEED_ROOT/$2" ] || [ ! -d "$SEED_ROOT/.$2.old" ] || seed="$SEED_ROOT/.$2.old/$key"
   if [ -d "$seed" ] && m=$(manifest "$seed") && [ "$(cat "$seed.manifest" 2>/dev/null)" = "$m" ]; then
     echo "seed hit for $1: cloning"
-    if clone "$seed" "$3" && chmod -R u+w "$3"; then return 0; fi
+    # clone already made the copy owner-writable before moving it into place.
+    if clone "$seed" "$3"; then return 0; fi
     clear_path "$3" || return 2
     echo "seed clone failed: cold build"; return 1
   fi
   echo "no usable seed for $1: cold build"; return 1
 }
+# seed_recover <scratch name>: (write lock held) finish or undo an interrupted swap. Slot missing + backup present: the
+# publish died between its renames, so the backup goes back into the slot. Slot present: any backup is stale. Stages
+# of an interrupted publish are never live (we hold the lock) and are removed.
+seed_recover() {
+  local slot="${SEED_ROOT:?}/$1" old="$SEED_ROOT/.$1.old"
+  if [ ! -e "$slot" ] && [ -d "$old" ]; then mv "$old" "$slot" || return 1; echo "recovered the previous seed for $1"; fi
+  wipe "$old" "$SEED_ROOT/.$1.stage."*
+  # A swap needs the backup path ABSENT: mv onto an existing directory would nest the slot inside it.
+  [ ! -e "$old" ] && [ ! -L "$old" ]
+}
 # seed_publish <package dir> <scratch name> <built scratch>: replace every older key of the package by the new seed.
+# The new seed and its manifest are built in a staging directory first. The swap is rename-only and safe to interrupt
+# at any point: slot -> backup, stage -> slot, then delete the backup. A kill leaves either the old slot, the new slot,
+# or no slot with the old seed in the backup (readers use it; the next publish moves it back). Never an empty seed.
 seed_publish() {
-  local key seed m
-  key=$(seedkey "$1"); seed="$SEED_ROOT/$2/$key"
-  # Publish: remove every older key of this package (hidden entries included), then the new seed and its manifest.
-  wipe "${SEED_ROOT:?}/$2"; [ ! -e "$SEED_ROOT/$2" ] || { echo "::error::could not clear seed for $2"; return 1; }
-  { clone "$3" "$seed" && chmod -R a-w "$seed" && m=$(manifest "$seed") && printf '%s' "$m" >"$seed.manifest"; } || { echo "::error::could not publish seed for $2"; return 1; }
+  local key stage m slot="${SEED_ROOT:?}/$2" old="$SEED_ROOT/.$2.old"
+  key=$(seedkey "$1")
+  # Abort (keeping the current slot) unless recovery left the backup path absent.
+  seed_recover "$2" || { echo "::error::could not clear the seed backup for $2: current seed kept"; return 1; }
+  stage=$(mktemp -d "$SEED_ROOT/.$2.stage.XXXXXX") && chmod 755 "$stage" || { echo "::error::could not stage seed for $2"; return 1; }
+  { clone "$3" "$stage/$key" && chmod -R a-w "$stage/$key" && m=$(manifest "$stage/$key") && printf '%s' "$m" >"$stage/$key.manifest"; } \
+    || { wipe "$stage"; echo "::error::could not publish seed for $2"; return 1; }
+  # Re-checked right before the swap (the lock is held, so nothing recreates it in between).
+  [ ! -e "$old" ] && [ ! -L "$old" ] || { wipe "$stage"; echo "::error::seed backup for $2 present: current seed kept"; return 1; }
+  if [ -e "$slot" ]; then mv "$slot" "$old" || { wipe "$stage"; echo "::error::could not set the old seed for $2 aside"; return 1; }; fi
+  if ! mv "$stage" "$slot"; then
+    [ -e "$slot" ] || [ ! -d "$old" ] || mv "$old" "$slot"
+    wipe "$stage"; echo "::error::could not publish seed for $2"; return 1
+  fi
+  # Every older key of this package (hidden entries included) goes with the backup.
+  wipe "$old"
+  return 0
 }
