@@ -187,10 +187,10 @@ public struct CockpitShellLayout: Equatable, Sendable {
     /// whatever the window's height (G3-108).
     public var webFrame: CGRect { CGRect(x: 0, y: 0, width: frame.width, height: canvasHeight) }
     /// G3-43 / CKP-SHELL-04: the free left of the title strip in page px with Y up; the window uses
-    /// `scaledTitleDragFrame`. It stops short of the shutter so buttons keep their own input. G3-108: the closed page
+    /// `scaledTitleDragFrame`. It stops short of ALERT (page x 214, WP-10) so buttons keep their own input. G3-108: the closed page
     /// keeps the strip at its open place on the canvas (253 tall, 65 compact). Pinned on the page by b13-hull-taper.spec.mjs.
     public var titleDragFrame: CGRect {
-        CGRect(x: 24, y: pageSize.height - Self.stripTop(profile) - 29, width: 216, height: 32)
+        CGRect(x: 24, y: pageSize.height - Self.stripTop(profile) - 29, width: 190, height: 32)
     }
     public var scaledTitleDragFrame: CGRect { windowRect(page: titleDragFrame) }
     /// A page rect (CSS px, Y up from the canvas bottom) in window points: scaled, then lifted by the slack the

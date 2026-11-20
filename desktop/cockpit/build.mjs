@@ -84,7 +84,7 @@ if (official) {
   css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
   const strip=resolve(assets,'cockpit/strip'),stripCss=await readFile(resolve(strip,'strip.css'));
   if(createHash('sha256').update(stripCss).digest('hex')!=='812160e61c6ae795a6ddb15fa65106ccfb35422ee94ed4e2207e321e834d2deb')throw Error('Unapproved cockpit strip stylesheet');
-  const stripFiles=['close-hover@3x.png','close-normal@3x.png','close-pressed@3x.png','detach-hover@3x.png','detach-normal@3x.png','detach-pressed@3x.png','detach.svg','gear-hover@3x.png','gear-normal@3x.png','gear-pressed@3x.png','lamp-amber-body@3x.png','lamp-amber-glow@3x.png','lamp-amber-pressed-body@3x.png','lamp-amber-pressed-glow@3x.png','lamp-off-body@3x.png','lamp-off-glow@3x.png','lamp-off-pressed-body@3x.png','lamp-off-pressed-glow@3x.png','lamp-red-body@3x.png','lamp-red-glow@3x.png','lamp-red-pressed-body@3x.png','lamp-red-pressed-glow@3x.png','put-back.svg','shutter-material@3x.png','slider-track@3x.png','strip-panel@3x.png','thumb-closed@3x.png','thumb-open@3x.png','wordmark@3x.png'];
+  const stripFiles=['close-hover@3x.png','close-normal@3x.png','close-pressed@3x.png','detach-hover@3x.png','detach-normal@3x.png','detach-pressed@3x.png','detach.svg','gear-hover@3x.png','gear-normal@3x.png','gear-pressed@3x.png','lamp-amber-body@3x.png','lamp-amber-glow@3x.png','lamp-amber-pressed-body@3x.png','lamp-amber-pressed-glow@3x.png','lamp-off-body@3x.png','lamp-off-glow@3x.png','lamp-off-pressed-body@3x.png','lamp-off-pressed-glow@3x.png','lamp-red-body@3x.png','lamp-red-glow@3x.png','lamp-red-pressed-body@3x.png','lamp-red-pressed-glow@3x.png','put-back.svg','shutter-material@3x.png','slider-track@3x.png','strip-panel@3x.png','thumb-closed@3x.png','thumb-open@3x.png','wordmark@3x.png','porthole-switch-open@3x.png','porthole-switch-closed@3x.png','date-key-normal@3x.png','date-key-selected@3x.png'];
   const policy=JSON.parse(await readFile(resolve(repo,'source-policy.json'),'utf8'));
   await mkdir(resolve(output,'assets'),{recursive:true});
   for(const name of stripFiles){
@@ -94,6 +94,10 @@ if (official) {
   }
   await cp(resolve(strip,'SOURCES.md'),resolve(output,'assets/SOURCES.md'));
   css+='\n'+stripCss.toString('utf8');
+  // WP-10 (owner 2026-11-18, round 3): the header layout rules, loaded after the approved strip stylesheet.
+  const headerCss=await readFile(resolve(strip,'header.css'));
+  if(createHash('sha256').update(headerCss).digest('hex')!=='137281e4061a6b61400f21b33a3bc37565416e8e3f90308d8b2f5ce1ea982c17')throw Error('Unapproved cockpit header stylesheet');
+  css+='\n'+headerCss.toString('utf8');
   // G3-47: the released base-bell rasters (owner 2026-11-08), each checked against the reserved-visuals registry.
   const bells=resolve(assets,'cockpit/bells'),bellFiles=['bell-night-2x.png','bell-night-3x.png','bell-silver-2x.png'];
   await mkdir(resolve(output,'assets/bells'),{recursive:true});
