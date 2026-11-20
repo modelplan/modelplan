@@ -12,7 +12,7 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
 import { HOSTED_WORKFLOWS } from "./hosted.mjs";
-import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
+import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -120,10 +120,11 @@ async function prResult(number) {
     readTrainMembers(pr),
   ]);
   await readJobs(runs.filter((r) => !(r.status === "completed" && ["success", "skipped", "neutral"].includes(r.conclusion))));
+  // REVIEW_GLM_TIERS (repository variable, default "1"): the tiers the (gh-glm) workflow lane may decide.
   // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
   const now = Date.now();
   const glmFallbackUntil = parseFallbackUntil(env.GLM_FALLBACK_UNTIL || "", now);
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, proveMainMerges, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now });
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, proveMainMerges, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now, glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS) });
   return { pr, result };
 }
 

@@ -3,11 +3,17 @@
 // review from the interactive lanes into Actions. decideSol() picks whether one PR head gets a review, solPolicy() is
 // the coordinator's sol-consult.sh policy text, buildSolPrompt() the whole request, parseAnswer() checks the answer,
 // renderSolComment() writes the PR comment and agreement() compares a shadow verdict with the lane verdict.
-import { isTrusted, pathTier, prPaths, reviewerLane, tierOverride, verdicts, SOL_LANES, TERRA_LANES } from "../merge-gates/rules.mjs";
+import { DEFAULT_GLM_TIERS, eligibleLanes, isTrusted, pathTier, prPaths, reviewerLane, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
 import { verdictLines } from "./brief.mjs";
 
 export const SOL_LANE = "gh-sol";
 export const SOL_SHADOW_LANE = "gh-sol-shadow";
+// The GLM-5.3 provider posts under its own lanes; rules.mjs counts (gh-glm) on the tiers in vars.REVIEW_GLM_TIERS
+// (default 1) and (gh-glm-shadow) never.
+export const GLM_LANE = "gh-glm";
+export const GLM_SHADOW_LANE = "gh-glm-shadow";
+// The lane a verdict is posted under: the run's lane (count or shadow) for the given provider.
+export const postLane = (lane, provider) => (provider === "glm" ? (lane === SOL_LANE ? GLM_LANE : GLM_SHADOW_LANE) : lane);
 // vars.PR_REVIEW_SOL_MODE: "count" posts as (gh-sol), which modelplan-gates counts as a Sol lane; "shadow" posts as
 // (gh-sol-shadow), which counts for nothing; anything else (unset) leaves the workflow off.
 export const laneFor = (mode) => (mode === "count" ? SOL_LANE : mode === "shadow" ? SOL_SHADOW_LANE : null);
@@ -17,16 +23,20 @@ export const SOL_TIERS = Object.freeze([1, 2]);
 export const COMPILE_PATHS = /^desktop\/native\//;
 export const needsCompile = (paths) => paths.some((p) => COMPILE_PATHS.test(p));
 // Verdict lanes whose earlier comments (findings and R19 record) a review carries forward.
-const GPT_LANES = new Set([...SOL_LANES, ...TERRA_LANES, "(gh-terra-shadow)", `(${SOL_SHADOW_LANE})`, `(${SOL_LANE})`]);
+const GPT_LANES = new Set([...REVIEW_LANES, "(gh-terra-shadow)", `(${SOL_SHADOW_LANE})`, `(${GLM_SHADOW_LANE})`]);
 const MAX_EARLIER = 4;
 const SHA = /^[0-9a-f]{40}$/;
 
 const skip = (why) => ({ review: false, why });
 
 // pr: REST pull request; files: REST PR files; items: rules.mjs feed(); lane: SOL_LANE or SOL_SHADOW_LANE;
-// triggerSha: the head the triggering ci run or mac-compile status was for ("" for a dispatch);
-// checks: { ci: ci.yml passed at the head, compile: a trusted mac-compile success status is on the head }.
-export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { ci: false, compile: false }, force = false }) {
+// triggerSha: the head the triggering ci run or mac-compile run was for ("" for a dispatch);
+// checks: { ci: ci.yml passed at the head, compile: a trusted mac-compile success status is on the head };
+// glmTiers: parseGlmTiers(vars.REVIEW_GLM_TIERS).
+// Returns { review: true, head, tier, compile, since, earlier, record, providers } where providers lists the providers
+// whose verdict would count here ("openai" always unless (gh-glm) is the assigned reviewer; "glm" on glmTiers unless
+// (gh-sol) is assigned).
+export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { ci: false, compile: false }, force = false, glmTiers = DEFAULT_GLM_TIERS }) {
   if (lane !== SOL_LANE && lane !== SOL_SHADOW_LANE) return skip(`unknown lane ${lane}`);
   if (pr.state !== "open") return skip(`PR is ${pr.state}`);
   if (pr.draft) return skip("draft");
@@ -39,30 +49,40 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   const paths = prPaths(files);
   const tier = tierOverride(items) ?? pathTier(paths);
   if (!SOL_TIERS.includes(tier)) return skip(`tier ${tier} needs no Sol review`);
-  // Compile first (owner 11-18): a head that changes desktop/native waits for the trusted mac-compile success status
-  // on that exact head; every head needs cheap CI (ci.yml) green. Whichever finishes last starts the review.
+  // Compile first (owner 11-18): a head that changes desktop/native waits for the trusted mac-compile success on that
+  // exact head; every head needs cheap CI (ci.yml) green. Whichever finishes last starts the review.
   const compile = needsCompile(paths);
   if (!checks.ci) return skip("ci has not passed at this head");
   if (compile && !checks.compile) return skip("mac-compile has not passed at this head");
   const all = verdictLines(items);
   const atHead = all.filter((v) => v.sha === head);
-  if (!force && atHead.some((v) => v.lane === `(${lane})`)) return skip("this lane already reviewed this head");
+  // The run's own lanes: its Sol lane and its GLM lane (either settles the head).
+  const own = [`(${lane})`, `(${postLane(lane, "glm")})`];
+  if (!force && atHead.some((v) => own.includes(v.lane))) return skip("this lane already reviewed this head");
+  const sticky = reviewerLane(items);
+  const eligible = eligibleLanes(tier, glmTiers);
+  const ownCounting = [`(${SOL_LANE})`, `(${GLM_LANE})`];
   if (lane === SOL_LANE) {
     // Counting mode spends no tokens when another lane owns or already settled this head.
-    const sticky = reviewerLane(items);
-    if (sticky && sticky !== `(${SOL_LANE})`) return skip(`the assigned reviewer is ${sticky}`);
-    const counting = new Set(tier === 2 ? [...SOL_LANES, "(unnamed)"] : [...SOL_LANES, ...TERRA_LANES, "(unnamed)"]);
-    if (!force && !sticky && atHead.some((v) => counting.has(v.lane))) return skip("a counting verdict already exists at this head");
+    if (sticky && !ownCounting.includes(sticky)) return skip(`the assigned reviewer is ${sticky}`);
+    if (!force && !sticky && atHead.some((v) => eligible.includes(v.lane) || v.lane === "(unnamed)")) return skip("a counting verdict already exists at this head");
   }
+  // Shadow runs mirror what counting would do, so the comparison is fair.
+  const providers = [];
+  if (sticky !== `(${GLM_LANE})`) providers.push("openai");
+  if (sticky !== `(${SOL_LANE})` && eligible.includes(`(${GLM_LANE})`)) providers.push("glm");
+  if (!providers.length) return skip(`the assigned reviewer ${sticky} cannot review tier ${tier}`);
   const earlier = all.filter((v) => v.sha !== head && GPT_LANES.has(v.lane));
-  const since = earlier.length ? earlier[earlier.length - 1].sha : null;
-  // R19: the record of the latest earlier GPT verdict comment that has one is the cumulative per-PR record.
+  // R19: the record of the latest earlier GPT verdict comment that has one is the cumulative per-PR record. The delta
+  // starts at that record's head, so the record and the scope line up (Sol SOL-5); without any record it starts at the
+  // latest earlier GPT verdict.
   let record = null;
   for (let i = earlier.length - 1; i >= 0 && !record; i--) {
     const r = extractRecord(earlier[i].body);
     if (r) record = { sha: earlier[i].sha, lane: earlier[i].lane, text: r };
   }
-  return { review: true, head, tier, compile, since, earlier: earlier.slice(-MAX_EARLIER), record };
+  const since = record ? record.sha : earlier.length ? earlier[earlier.length - 1].sha : null;
+  return { review: true, head, tier, compile, since, earlier: earlier.slice(-MAX_EARLIER), record, providers };
 }
 
 // The R19 record block: the line "Record: <sha>" and the lines after it up to the first blank line (at most 15 lines),
@@ -160,18 +180,32 @@ const MARKER = /^\s*(\**\s*)?(VERDICT|VERDICT-CARRY|GLMREV|GLMREV-ACCEPTED|DESIG
 const tidy = (s) => String(s).replace(/@(?=[A-Za-z0-9_-])/g, "@\u2060");
 const MAX_ANSWER_CHARS = 50000;
 
+// A long answer is cut before its R19 record, never through it: the record (the last "Record:" line onward) always
+// survives, so the next review can carry it (Sol SOL-5).
+export function clipKeepingRecord(body, max = MAX_ANSWER_CHARS) {
+  if (body.length <= max) return body;
+  const ls = body.split("\n");
+  let at = -1;
+  for (let i = 0; i < ls.length; i++) if (/^\**Record:\**\s*[0-9a-f]{7,40}\b/i.test(ls[i].trim())) at = i;
+  const tail = at < 0 ? "" : ls.slice(at).join("\n");
+  const head = at < 0 ? body : ls.slice(0, at).join("\n");
+  const room = Math.max(0, max - tail.length - 40);
+  return `${head.slice(0, room)}\n[... truncated]${tail ? `\n\n${tail}` : ""}`;
+}
+
 // answer: parseAnswer() result; mode "full" | "delta"; base: merge base or the earlier reviewed head;
 // agree: agreement() line for shadow runs (optional).
 export function renderSolComment({ answer, head, lane, mode, base, tier, meta = {}, agree = "" }) {
   if (!answer?.ok) throw new Error("no valid answer: nothing is rendered");
   const kind = mode === "delta" ? `delta review since \`${base}\`` : `complete review against merge base \`${base}\``;
-  const out = [`**Sol workflow review** (${lane}) · tier ${tier} · ${kind}`, ""];
-  if (lane === SOL_SHADOW_LANE)
-    out.push("_Shadow mode: advisory only. (gh-sol-shadow) is not a gate lane, so this verdict does not count._", "");
-  out.push(...clip(tidy(answer.body), MAX_ANSWER_CHARS).split("\n").map((l) => (l ? `> ${l}` : ">")), "");
+  const glm = lane === GLM_LANE || lane === GLM_SHADOW_LANE;
+  const out = [`**${glm ? "GLM-5.3 workflow review" : "Sol workflow review"}** (${lane}) · tier ${tier} · ${kind}${meta.why ? ` · ${tidy(meta.why)}` : ""}`, ""];
+  if (lane.endsWith("-shadow"))
+    out.push(`_Shadow mode: advisory only. (${lane}) is not a gate lane, so this verdict does not count._`, "");
+  out.push(...clipKeepingRecord(tidy(answer.body)).split("\n").map((l) => (l ? `> ${l}` : ">")), "");
   if (agree) out.push(`<sub>${tidy(agree)}</sub>`, "");
   const tokens = meta.usage ? ` · tokens in ${meta.usage.input} (cached ${meta.usage.cached}) out ${meta.usage.output}` : "";
-  out.push(`<sub>workflow Sol reviewer · ${meta.model ?? "?"} ${meta.effort ?? "?"} · ${meta.seconds ?? "?"} s${tokens}${meta.runUrl ? ` · [run](${meta.runUrl})` : ""}</sub>`, "");
+  out.push(`<sub>workflow ${glm ? "GLM" : "Sol"} reviewer · ${meta.model ?? "?"} ${meta.effort ?? "?"} · ${meta.seconds ?? "?"} s${tokens}${meta.runUrl ? ` · [run](${meta.runUrl})` : ""}</sub>`, "");
   if (out.some((l) => MARKER.test(l))) throw new Error("rendered comment has a gate marker before the verdict line");
   // R19: the VERDICT line is the last line; it is the only line the gate reads.
   out.push(`VERDICT: ${answer.verdict} @ ${head} (${lane})`);
@@ -183,17 +217,37 @@ export function renderSolComment({ answer, head, lane, mode, base, tier, meta = 
 export function postProblem({ pr, items, head, lane, force = false }) {
   if (pr?.state !== "open") return `PR is ${pr?.state}`;
   if (String(pr.head?.sha ?? "").toLowerCase() !== head) return `head moved to ${pr.head?.sha ?? "?"} after the review of ${head}`;
-  if (!force && verdictLines(items).some((v) => v.sha === head && v.lane === `(${lane})`)) return `(${lane}) already has a verdict at ${head}`;
+  const own = [`(${lane})`, `(${postLane(lane, "glm")})`];
+  if (!force && verdictLines(items).some((v) => v.sha === head && own.includes(v.lane))) return `(${lane}) already has a verdict at ${head}`;
   return null;
 }
 
-// Shadow comparison: this lane's verdict at the head against the verdict that counts there (the sticky reviewer's,
-// or every counting GPT lane's). agree is null while no counting verdict exists yet.
-export function agreement(items, head, lane = SOL_SHADOW_LANE) {
+// Every provider that could count here is out of quota (by default: tier 2 with the OpenAI quota out, since GLM decides
+// only the tiers in REVIEW_GLM_TIERS). The run posts this advisory note (no VERDICT) once per head; its first line is
+// the coordinator event, which the coordinator's watcher matches by WAIT_EVENT_RE.
+export const waitEvent = (tier, who = ["openai"]) => `tier-${tier} review waiting: ${who.map((p) => (p === "glm" ? "GLM" : "GPT")).join(" and ")} quota out`;
+export const WAIT_EVENT = waitEvent(2);
+export const WAIT_EVENT_RE = /^tier-[12] review waiting: (GPT|GLM)( and (GPT|GLM))? quota out @ [0-9a-f]{40} \(gh-[a-z-]+\)$/;
+const waitLine = (head, lane, event) => `${event} @ ${head} (${lane})`;
+const firstLine = (x) => String(x.body).split("\n")[0].replace(/\r$/, "");
+export const waitNoted = (items, head, lane) => items.some((x) => WAIT_EVENT_RE.test(firstLine(x)) && firstLine(x).endsWith(` @ ${head} (${lane})`));
+export function renderWaitNote({ head, lane, tier = 2, who = ["openai"], why = "", runUrl = "" }) {
+  const body = [waitLine(head, lane, waitEvent(tier, who)), "",
+    `_Advisory, no verdict. Every provider whose verdict counts on tier ${tier} is out of quota, so this head waits for a review (a later trigger, a dispatch, or an interactive Sol lane)._`,
+    ...(why ? ["", `<sub>${tidy(why)}${runUrl ? ` · [run](${runUrl})` : ""}</sub>`] : [])].join("\n");
+  if (body.split("\n").some((l) => MARKER.test(l))) throw new Error("wait note has a gate marker");
+  return body;
+}
+
+// Shadow comparison: this lane's verdict at the head against the verdicts that count there under the gate's own rules
+// for this tier (a valid sticky reviewer only, else every eligible lane). agree is null while none exists yet.
+export function agreement(items, head, lane = SOL_SHADOW_LANE, tier = 1, glmTiers = DEFAULT_GLM_TIERS) {
   const at = verdicts(items, head, []);
   const mine = at.get(`(${lane})`) ?? null;
-  const sticky = reviewerLane(items);
-  const counting = [...at].filter(([l]) => (sticky ? l === sticky : [...SOL_LANES, ...TERRA_LANES].includes(l)) && l !== `(${lane})`);
+  const eligible = eligibleLanes(Number(tier), glmTiers);
+  const assigned = reviewerLane(items);
+  const sticky = assigned && eligible.includes(assigned) ? assigned : null;
+  const counting = [...at].filter(([l]) => (sticky ? l === sticky : eligible.includes(l)) && l !== `(${lane})`);
   const agree = mine && counting.length ? counting.every(([, v]) => v === mine) : null;
   const text = `shadow agreement @ ${head.slice(0, 12)}: (${lane}) ${mine ?? "none"} vs ${counting.length ? counting.map(([l, v]) => `${l} ${v}`).join(", ") : "no lane verdict yet"}${agree === null ? "" : agree ? " -> agree" : " -> DISAGREE"}`;
   return { mine, counting, agree, text };
@@ -211,16 +265,24 @@ export function compileStatus(statuses, repo) {
   if (!m) return { ok: false, why: "mac-compile status does not link to a run of this repository" };
   return { ok: true, runId: Number(m[1]) };
 }
-// The run behind the status must be main's mac-compile.yml (workflow_run or the owner's dispatch), never a PR's.
-export function compileRunProblem(run, repo) {
+// The run behind the status must be a successful run of main's mac-compile.yml for this exact head (Sol SOL-2). A
+// workflow_run run names its head in its title ("mac-compile <sha>", set by mac-compile.yml's run-name from the trigger
+// run, which only main's definition controls); the owner's dispatch names its PR ("mac-compile PR #<n>").
+export function compileRunProblem(run, repo, sha, pr) {
   if (!run) return "mac-compile run not found";
   if (run.repository?.full_name !== repo) return "mac-compile run is from another repository";
   if (run.path !== ".github/workflows/mac-compile.yml") return "the status run is not mac-compile.yml";
   if (run.head_branch !== "main" || !["workflow_run", "workflow_dispatch"].includes(run.event)) return "the mac-compile run is not main's definition";
+  if (run.status !== "completed" || run.conclusion !== "success") return `the mac-compile run is ${run.conclusion ?? run.status}`;
+  const title = run.event === "workflow_run" ? `mac-compile ${sha}` : `mac-compile PR #${pr}`;
+  if (run.display_title !== title) return "the mac-compile run was for another head";
   return null;
 }
+// The head a mac-compile run compiled, from its title; null for a dispatch (resolve then uses the PR number).
+export const compileRunHead = (run) => /^mac-compile ([0-9a-f]{40})$/.exec(run?.display_title ?? "")?.[1] ?? null;
+export const compileRunPr = (run) => Number(/^mac-compile PR #([1-9][0-9]*)$/.exec(run?.display_title ?? "")?.[1]) || null;
 
-// A status event names a commit, not a PR: the one open, trusted same-repository PR into main whose head it is.
+// A mac-compile run names a commit, not a PR: the one open, trusted same-repository PR into main whose head it is.
 export function prForSha(pulls, sha, repo) {
   const hits = (pulls ?? []).filter((p) => p.state === "open" && p.head?.sha === sha && p.base?.ref === "main" && p.head?.repo?.full_name === repo && isTrusted(p.user));
   return hits.length === 1 ? hits[0].number : null;

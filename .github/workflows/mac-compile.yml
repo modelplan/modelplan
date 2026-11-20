@@ -15,7 +15,8 @@
 #   statuses: write, which runs no repository code.
 # Build seed: written only by the `seed` job (workflow_dispatch of main by the owner), read-only for PR jobs.
 name: mac-compile
-run-name: "${{ inputs.pr && format('mac-compile PR #{0}', inputs.pr) || '' }}"
+# The title names what was compiled; pr-review-sol.yml binds a mac-compile success to a head through it.
+run-name: "${{ inputs.pr && format('mac-compile PR #{0}', inputs.pr) || github.event.workflow_run.head_sha && format('mac-compile {0}', github.event.workflow_run.head_sha) || '' }}"
 on:
   workflow_run:
     workflows: [mac-compile trigger]

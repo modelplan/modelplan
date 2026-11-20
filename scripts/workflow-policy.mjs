@@ -28,13 +28,15 @@ export function prReviewProblems(text) {
 }
 
 // The Sol workflow reviewer (owner D352). Hosted runners only; it may start only from events that run main's
-// definition (workflow_run, status, workflow_dispatch). Every checkout is main's, without credentials. The OpenAI key
-// and the comment token each appear exactly once, in their own step, which runs exactly the expected script; no other
-// secret is named.
+// definition (workflow_run, workflow_dispatch). Every checkout is main's, without credentials. The model
+// credentials (OpenAI key, GLM key and base URL) appear once each, only in the review step, and the comment token only
+// in the post step; each step runs exactly the expected script and no other secret is named.
 export const PR_REVIEW_SOL_PATH = ".github/workflows/pr-review-sol.yml";
-export const PR_REVIEW_SOL_TRIGGERS = Object.freeze(["workflow_run", "status", "workflow_dispatch"]);
+export const PR_REVIEW_SOL_TRIGGERS = Object.freeze(["workflow_run", "workflow_dispatch"]);
 const SOL_SECRET_STEPS = Object.freeze({
   OPENAI_API_KEY: "run: node scripts/pr-review/sol-call.mjs",
+  GLM_API_KEY: "run: node scripts/pr-review/sol-call.mjs",
+  GLM_BASE_URL: "run: node scripts/pr-review/sol-call.mjs",
   PR_REVIEW_COMMENT_TOKEN: "run: node scripts/pr-review/sol-post.mjs",
 });
 
@@ -56,7 +58,8 @@ function stepBlocks(jobLines) {
 export function prReviewSolProblems(text) {
   const problems = [];
   const keys = onKeys(text);
-  if (keys.join(",") !== PR_REVIEW_SOL_TRIGGERS.join(",")) problems.push("pr-review-sol.yml may start only from workflow_run, status and workflow_dispatch");
+  if (!/^ {4}workflows: \[ci, mac-compile\]$/m.test(topLevelBlock(text, "on") ?? "")) problems.push("pr-review-sol.yml's workflow_run follows only ci and mac-compile");
+  if (keys.join(",") !== PR_REVIEW_SOL_TRIGGERS.join(",")) problems.push("pr-review-sol.yml may start only from workflow_run and workflow_dispatch");
   if (!/^permissions: \{\}$/m.test(text)) problems.push("pr-review-sol.yml needs top-level permissions: {}");
   if (/self-hosted|pull_request_target/.test(text)) problems.push("pr-review-sol.yml runs only on GitHub-hosted runners");
   if (/^\s+[a-z-]+:\s*write\b/m.test(text)) problems.push("pr-review-sol.yml asks for no write permission (the comment token posts)");
@@ -64,7 +67,7 @@ export function prReviewSolProblems(text) {
   if (!checkouts || checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every pr-review-sol.yml checkout must set persist-credentials: false");
   if (checkouts !== (text.match(/^\s+ref: main$/gm) ?? []).length || /^\s+ref: (?!main$)/m.test(text)) problems.push("pr-review-sol.yml checks out main only");
   const named = [...text.matchAll(/\bsecrets\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
-  if (named.length !== 2 || Object.keys(SOL_SECRET_STEPS).some((s) => named.filter((x) => x === s).length !== 1)) problems.push("pr-review-sol.yml names exactly OPENAI_API_KEY and PR_REVIEW_COMMENT_TOKEN, once each");
+  if (named.length !== Object.keys(SOL_SECRET_STEPS).length || Object.keys(SOL_SECRET_STEPS).some((s) => named.filter((x) => x === s).length !== 1)) problems.push(`pr-review-sol.yml names exactly ${Object.keys(SOL_SECRET_STEPS).join(", ")}, once each`);
   const steps = jobBlocks(text).flatMap((j) => stepBlocks(j.lines));
   for (const [secret, run] of Object.entries(SOL_SECRET_STEPS)) {
     const holders = steps.filter((s) => s.some((l) => l.includes(`secrets.${secret}`)));

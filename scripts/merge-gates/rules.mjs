@@ -178,6 +178,25 @@ export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)", "(macrevd)", "
 // workflow on the owner's review runner instead of an interactive pane. Its shadow name (gh-terra-shadow) counts
 // for nothing, like any other named lane.
 export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)", "(gh-terra)"]);
+// (gh-glm) is the GLM-5.3 provider of the workflow reviewer (pr-review-sol.yml, D352): it reviews as a fallback when
+// the OpenAI quota is out, or by routing (vars.REVIEW_PROVIDER_MODE). The tiers it may decide are configuration, not a
+// constant: the repository variable REVIEW_GLM_TIERS (default "1", Terra's eligibility) reaches evaluatePr as glmTiers.
+// On a tier it may not decide, its verdict (a block too) is advice. Its shadow name (gh-glm-shadow) counts for nothing.
+export const GLM_LANE = "(gh-glm)";
+export const DEFAULT_GLM_TIERS = Object.freeze([1]);
+// "1", "1,2", "2", "none" -> tiers; empty or malformed -> the default. Tier 0 needs no verdict, so it is never listed.
+export function parseGlmTiers(value) {
+  const v = String(value ?? "").trim().toLowerCase();
+  if (v === "none") return [];
+  if (!/^[12](\s*,\s*[12])*$/.test(v)) return [...DEFAULT_GLM_TIERS];
+  return [...new Set(v.split(",").map((x) => Number(x.trim())))].sort();
+}
+// The GPT/GLM lanes whose verdict decides a head of this tier: Sol always; Terra on tier 1; (gh-glm) on glmTiers.
+export function eligibleLanes(tier, glmTiers = DEFAULT_GLM_TIERS) {
+  return [...SOL_LANES, ...(tier === 2 ? [] : TERRA_LANES), ...(glmTiers.includes(tier === 2 ? 2 : 1) ? [GLM_LANE] : [])];
+}
+// Every lane that could be eligible on some tier (an assignment to anything else is never valid).
+export const REVIEW_LANES = Object.freeze([...SOL_LANES, ...TERRA_LANES, GLM_LANE]);
 // "VERDICT: merge|block @ <40 hex> (<lane>)" on its own line, case-insensitive, in trusted comments and
 // reviews. Counts for the head or a carried head; per lane the latest wins. A lane name is lower-case letters,
 // digits and inner hyphens; any other parenthesised suffix leaves the verdict unnamed.
@@ -201,7 +220,7 @@ export function verdicts(items, head, carried) {
 
 // ---- Auto-carry (D243 G6, owner 2026-11-14) ----
 // A PR that only merged main keeps its review without a VERDICT-CARRY comment. The candidate is the head named by
-// the most recently posted VERDICT line (any lane, merge or block); when that names the current head, nothing carries. It carries when
+// the most recently posted VERDICT line (any lane except shadow lanes, merge or block); when that names the current head, nothing carries. It carries when
 // prove(old, head) (evaluate.mjs: git.verifyMainMerges) shows only main merges since it and an identical own diff,
 // and no VERDICT line names a commit between it and the head. Only the newest candidate is tried, so a later review
 // of another head is never skipped over. The carried head's verdicts then count under the same tier rules; a block
@@ -210,8 +229,10 @@ export function autoCarry(items, head, prove = () => ({ ok: false })) {
   const named = [];
   for (const x of items)
     for (const l of lines(x.body)) {
-      const m = /^VERDICT: (?:merge|block) @ ([0-9a-f]{40})\b/i.exec(l);
-      if (m) named.push(m[1].toLowerCase());
+      const m = /^VERDICT: (?:merge|block) @ ([0-9a-f]{40})\b(?: \(([a-z0-9]+(?:-[a-z0-9]+)*)\))?/i.exec(l);
+      // A shadow lane (a name ending in -shadow, e.g. the workflow reviewers' pilots) counts for nothing anywhere, so it
+      // must not pick or block the carry candidate either (Sol SOL-6).
+      if (m && !/-shadow$/i.test(m[2] ?? "")) named.push(m[1].toLowerCase());
     }
   // The latest posted head across all lanes is the only candidate. When it is the current head, the PR was reviewed
   // here and nothing carries, so an older verdict of another lane never stands in for it (macrevb-946-1).
@@ -582,7 +603,7 @@ export function dataSyncRunId(pr) {
 }
 
 // Returns null when the PR is an admitted data-sync PR, else the first reason it is not.
-export function dataSyncProblem({ pr, files, items, sync }) {
+export function dataSyncProblem({ pr, files, items, sync, glmTiers = DEFAULT_GLM_TIERS }) {
   const repo = pr.base?.repo?.full_name;
   if (!isBot(pr.user)) return "author is not the github-actions bot";
   if (repo !== REPO || pr.head?.repo?.full_name !== REPO) return `head and base must both be ${REPO}`;
@@ -608,7 +629,7 @@ export function dataSyncProblem({ pr, files, items, sync }) {
   const sticky = reviewerLane(items);
   if (sticky) {
     const t = tierOverride(items) ?? pathTier(prPaths(files));
-    if (!(t === 2 ? SOL_LANES : [...SOL_LANES, ...TERRA_LANES]).includes(sticky)) return `assigned reviewer ${sticky} is not an eligible GPT lane for tier ${t}`;
+    if (!eligibleLanes(t, glmTiers).includes(sticky)) return `assigned reviewer ${sticky} is not an eligible GPT lane for tier ${t}`;
   }
   if (![...verdicts(items, pr.head.sha, [])].some(([l, v]) => v === "merge" && (!sticky || l === sticky))) return "needs a trusted VERDICT: merge @ the exact head";
   return null;
@@ -619,7 +640,8 @@ export function dataSyncProblem({ pr, files, items, sync }) {
 // verifiedEdge(old, new): carry proof; proveMainMerges(old, new): auto-carry proof (autoCarry); conf: parsed design-paths.conf; members: a train's member PRs;
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
+// glmTiers: parseGlmTiers(vars.REVIEW_GLM_TIERS), the tiers on which (gh-glm) decides.
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now(), glmTiers = DEFAULT_GLM_TIERS }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -629,7 +651,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // Narrow exception: a data-sync PR from the github-actions bot (dataSyncProblem); the gates below still apply.
   let dataSync = false;
   if (!isTrusted(pr.user) || pr.head.repo?.full_name !== pr.base.repo.full_name) {
-    const problem = dataSyncRunId(pr) ? dataSyncProblem({ pr, files, items, sync }) : "not data-sync";
+    const problem = dataSyncRunId(pr) ? dataSyncProblem({ pr, files, items, sync, glmTiers }) : "not data-sync";
     if (problem) return res(FAILURE, dataSyncRunId(pr) ? `data-sync PR not admitted: ${problem}` : "not a trusted same-repository PR; coordinator decides");
     dataSync = true;
   }
@@ -647,11 +669,12 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // tier split: on tier 2 a macrev (Terra) verdict is advice. A block from a counting GPT lane, or an unnamed one, at the
   // head (or a verified carried head) stops every tier, tier 0 included. GLM, (sonnet) and other lanes are input.
   const allLanes = verdicts(items, head, carried);
-  const gptLanes = tier === 2 ? [...SOL_LANES, "(unnamed)"] : [...SOL_LANES, ...TERRA_LANES, "(unnamed)"];
+  const eligible = eligibleLanes(tier, glmTiers);
+  const gptLanes = [...eligible, "(unnamed)"];
   const assigned = reviewerLane(items);
   // An assignment naming a lane that cannot review this tier (Sonnet, unknown, Terra on tier 2) is invalid: it filters
   // nothing, so no GPT block is hidden, and it holds the PR until the coordinator fixes it.
-  const sticky = assigned && [...SOL_LANES, ...TERRA_LANES].includes(assigned) && (tier !== 2 || SOL_LANES.includes(assigned)) ? assigned : null;
+  const sticky = assigned && eligible.includes(assigned) ? assigned : null;
   const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l) && (!sticky || l === sticky)));
   // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
   const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);
@@ -682,8 +705,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const missing = [];
   if (assigned && !sticky) missing.push(`a valid REVIEWER (${assigned} cannot review tier ${tier})`);
   const merged = (names) => names.some((n) => lanes.get(n) === "merge");
-  if (tier === 2 && !merged(SOL_LANES)) missing.push(`VERDICT ${SOL_LANES.join(" or ")} merge`);
-  if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES])) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} merge`);
+  if (tier === 2 && !merged(eligible)) missing.push(`VERDICT ${eligible.join(" or ")} merge`);
+  if (tier === 1 && !dataSync && !merged(eligible)) missing.push(`VERDICT ${[...eligible.filter((l) => !SOL_LANES.includes(l)), ...SOL_LANES].join(" or ")} merge`);
   // A PR opened with the workflow token starts no pull_request run, so data-sync.yml dispatches ci.yml and
   // repo-checks.yml on the branch; prRunScope accepts those same-repository runs on the PR's branch. Both are
   // required before an admitted PR can pass.

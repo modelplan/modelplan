@@ -1403,6 +1403,22 @@ test("no carry without tree equality: hand-resolved conflicts, tree tweaks, octo
   } finally { r.done(); }
 });
 
+test("auto-carry: a shadow lane's verdict never changes the carry or the gate state (Sol SOL-6)", () => {
+  const base = [comment(v("merge", OLD, "macrevc"))];
+  const ref = evalPr({ comments: base, prove: proved() });
+  assert.equal(ref.state, R.SUCCESS);
+  assert.equal(ref.autoCarried, OLD);
+  for (const lane of ["gh-sol-shadow", "gh-glm-shadow", "gh-terra-shadow"])
+    for (const sha of [H, OLD])
+      for (const verdict of ["merge", "block"]) {
+        const r = evalPr({ comments: [...base, comment(v(verdict, sha, lane))], prove: proved() });
+        assert.equal(r.state, ref.state, `${lane} ${verdict} @ ${sha.slice(0, 1)}`);
+        assert.equal(r.autoCarried, ref.autoCarried, `${lane} ${verdict} @ ${sha.slice(0, 1)}`);
+      }
+  // Control: a counting or other named lane at the current head still stops the carry.
+  assert.equal(evalPr({ comments: [...base, comment(v("merge", H, "glm"))], prove: proved() }).autoCarried, undefined);
+});
+
 test("auto-carry: the latest posted verdict head is the only candidate; when it is the current head nothing carries, whatever the lane (macrevb-946-1)", () => {
   const t2 = [file("scripts/merge-gates/rules.mjs")];
   const ok = () => ({ ok: true, between: [H] });

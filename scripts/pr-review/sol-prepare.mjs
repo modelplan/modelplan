@@ -7,7 +7,7 @@ import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { client } from "../merge-gates/github.mjs";
-import { feed } from "../merge-gates/rules.mjs";
+import { feed, parseGlmTiers } from "../merge-gates/rules.mjs";
 import { buildSolPrompt, compileRunProblem, compileStatus, decideSol } from "./sol.mjs";
 
 const env = process.env;
@@ -40,12 +40,12 @@ if (/^[0-9a-f]{40}$/.test(head)) {
   checks.ci = !!last && last.status === "completed" && last.conclusion === "success";
   const st = compileStatus(await gh.get(`/commits/${head}/statuses?per_page=100`), repo);
   if (st.ok) {
-    const problem = compileRunProblem(await gh.get(`/actions/runs/${st.runId}`), repo);
+    const problem = compileRunProblem(await gh.get(`/actions/runs/${st.runId}`), repo, head, n);
     checks.compile = !problem;
     if (problem) console.log(`pr-review-sol: mac-compile status not trusted: ${problem}`);
   }
 }
-let d = decideSol({ pr, files, items, lane: env.LANE, triggerSha: env.TRIGGER_SHA ?? "", checks, force: env.FORCE === "true" });
+let d = decideSol({ pr, files, items, lane: env.LANE, triggerSha: env.TRIGGER_SHA ?? "", checks, force: env.FORCE === "true", glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS) });
 if (!d.review) stop(n, d.why);
 
 const dir = join(env.RUNNER_TEMP, "pr-review-sol");
@@ -102,3 +102,4 @@ output("head", d.head);
 output("tier", String(d.tier));
 output("mode", mode);
 output("base", base);
+output("providers", d.providers.join(","));
