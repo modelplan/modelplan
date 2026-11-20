@@ -88,8 +88,8 @@ private actor G1BEngine: EngineClient {
         let id = try XCTUnwrap(app.composition.presentedContent.snapshot.inputs.first?.id)
         let deadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2099-01-01T00:00:00Z"))
         for (language, expectations) in [
-            // D40: the prototype's compact card form (window-time.js duration, strings/card.js resetIn).
-            (SettingsLanguage.english, ["resets 45m", "resets 3h18", "resets 3d5h"]),
+            // WP-15 DOCK-3.8-51 intentionally uses WidgetCardText.resetsIn's English "resets in …" copy; the D40 relative durations remain unchanged.
+            (SettingsLanguage.english, ["resets in 45m", "resets in 3h18", "resets in 3d5h"]),
             (.chinese, ["45m 后重置", "3h18 后重置", "3d5h 后重置"])
         ] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))

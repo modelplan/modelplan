@@ -309,7 +309,9 @@ private actor G1RowsClient: EngineClient {
             let skin = try XCTUnwrap(dock.dockView.presentedSkinForChecks, "The actual Dock skin must be available")
             XCTAssertEqual(skin.stations.count, 1)
             XCTAssertNil(skin.stations.first?.subscriptionID)
-            XCTAssertEqual(skin.stations.first?.placeholderLabel, "?")
+            // D320 (owner 11-19): the empty slot is the solid rocket ring with an empty label, never "?".
+            XCTAssertEqual(skin.stations.first?.placeholderLabel, "")
+            XCTAssertEqual(skin.stations.first?.emptyRing, true)
         }
         try assertEmptySlot()
         let client = try XCTUnwrap(app.composition.client as? G1RowsClient)

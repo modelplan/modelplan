@@ -23,7 +23,7 @@ import ModelPlanEngineClient
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                             cockpitEntryEnabled: Bool? = nil,
-                            dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                            dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil, edition: ProductionEdition = .current,
                             deadlineNow: @escaping @MainActor () -> Date = { Date() },
                             deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
@@ -31,7 +31,7 @@ import ModelPlanEngineClient
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
                             isolatedResetNotificationLedger: URL? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
-        let app=CommunityCockpitApplicationFactory.make(configuration: configuration, settingsStore: settingsStore, createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled, dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient, makeSettingsSurface: makeSettingsSurface, makeConsole: makeConsole, activateSettings: activateSettings)
+        let app=CommunityCockpitApplicationFactory.make(configuration: configuration, settingsStore: settingsStore, createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled, dockEnvironment: dockEnvironment, edition: edition, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient, makeSettingsSurface: makeSettingsSurface, makeConsole: makeConsole, activateSettings: activateSettings)
         #if MODELPLAN_DOCK_NATIVE_JOURNEY
         let ledger = isolatedResetNotificationLedger ?? nativeJourneyProfile?.appendingPathComponent("reset-notifications.json")
         #else
