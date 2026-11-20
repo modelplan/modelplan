@@ -705,7 +705,10 @@ public final class CockpitBridgeState {
         guard let ids = m["ids"] as? [String], CockpitCautionIdentities.valid(ids), Set(ids).count == ids.count else { throw CockpitBridgeError.invalidMessage }
         intent = .pinnedModels(ids)
       case "pluginsRunning":
-        guard let ids = m["ids"] as? [String], CockpitPluginWire.validRunning(ids) else { throw CockpitBridgeError.invalidMessage }
+        // D124 (macrevb-1104-4): a stop is always taken; a start only from a shown page, so a report that was posted before
+        // a hide and arrives after it cannot start sampling.
+        guard let ids = m["ids"] as? [String], CockpitPluginWire.validRunning(ids),
+          ids.isEmpty || (visibility.visible && !visibility.occluded) else { throw CockpitBridgeError.invalidMessage }
         intent = .pluginsRunning(ids)
       case "pluginsEdit":
         guard let body = m["plugins"], let canonical = CockpitPluginWire.canonical(body) else { throw CockpitBridgeError.invalidMessage }

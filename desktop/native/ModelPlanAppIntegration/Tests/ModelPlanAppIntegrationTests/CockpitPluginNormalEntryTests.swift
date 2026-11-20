@@ -64,12 +64,17 @@ extension CommunityCockpitEntryTests {
     @MainActor private func js(_ page: CockpitWindowController, _ script: String) async -> Any? {
         try? await page.verificationWebView?.evaluateJavaScript(script)
     }
-    private func onPage(_ page: CockpitWindowController) -> [[String: Any]] {
-        guard let data = page.pluginsOnPage, let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+    /// macrevb-1104-5: the state the real page confirmed (its bridge `receive` returned true for that `plugins` message,
+    /// which happens only once `applyHostState` took it), never one merely queued.
+    @MainActor private func onPage(_ page: CockpitWindowController) -> [[String: Any]] {
+        guard let data = page.pluginsAccepted, let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
         return body["entries"] as? [[String: Any]] ?? []
     }
-    private let keyScript = "document.querySelector('.eng-keys .pl-key[data-plugin=\"placeholder\"]')!==null"
-    private let valueScript = "(()=>{const v=document.querySelector('.pl-col[data-plugin=\"placeholder\"] .qvalue');return v?v.textContent:null})()"
+    private var keyScript: String { "document.querySelector('.eng-keys .pl-key[data-plugin=\"placeholder\"]')!==null" }
+    private var valueScript: String { "(()=>{const v=document.querySelector('.pl-col[data-plugin=\"placeholder\"] .qvalue');return v?v.textContent:null})()" }
+    private var screenScript: String { "document.querySelector('.dk-mfd .pl-screen[data-plugin=\"placeholder\"]')!==null" }
+    /// Pinned plugins sit right after the subscriptions on page 1; the shown page's plugin keys in order.
+    private var keyOrderScript: String { "[...document.querySelectorAll('.eng-keys .pl-key')].map(k=>k.dataset.plugin).join(',')" }
 
     /// The bridge journey that needs no real click: state in, running out, readings in, Settings edits live, reopen.
     @MainActor func testPluginChoicesReachTheNormalEntryPageAndDriveItsColumn() async throws {
@@ -101,6 +106,7 @@ extension CommunityCockpitEntryTests {
                 let entries = self.onPage(page)
                 return entries.map { $0["id"] as? String } == ["zz-newer-build", "placeholder"] && entries.last?["pinned"] as? Bool == true
             }
+            try await eventually("the pinned plugin is drawn on page 1") { await self.js(page, self.keyOrderScript) as? String == "placeholder" }
             // Disable in Settings: the key leaves the open page and sampling stops.
             let disabled = await plugins.model.perform(.setEnabled("placeholder", false))
             XCTAssertTrue(disabled)
@@ -138,6 +144,7 @@ extension CommunityCockpitEntryTests {
             }
             try await eventually("the key cockpit is active") { await self.js(page, "document.getElementById('cockpit').dataset.active") as? String == "true" }
             let scale = page.verificationLayout?.scale ?? 1
+            var modifiers: NSEvent.ModifierFlags = []
             func click(_ selector: String, _ down: NSEvent.EventType, _ up: NSEvent.EventType) async throws {
                 let script = "(()=>{const e=document.querySelector('\(selector)');if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()"
                 let box = await js(page, script) as? [String: Double]
@@ -145,12 +152,27 @@ extension CommunityCockpitEntryTests {
                 let content = try XCTUnwrap(window.contentView), h = web.frame.maxY
                 let p = content.convert(CGPoint(x: at["x"]! * scale, y: h - at["y"]! * scale), to: nil)
                 for type in [down, up] {
-                    window.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    window.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: p, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
                         windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == down ? 1 : 0)))
                 }
             }
-            try await click(".eng-keys .pl-key[data-plugin=\"placeholder\"]", .rightMouseDown, .rightMouseUp)
-            try await eventually("the key's menu opens") { await self.js(page, "document.querySelector('[data-pm-remove=\"placeholder\"]')!==null") as? Bool == true }
+            func clickControl(_ selector: String) async throws {
+                modifiers = [.control]; defer { modifiers = [] }
+                try await click(selector, .leftMouseDown, .leftMouseUp)
+            }
+            let keySelector = ".eng-keys .pl-key[data-plugin=\"placeholder\"]", removeOpen = "document.querySelector('[data-pm-remove=\"placeholder\"]')!==null"
+            // CKP-PLG-53: a real click on the key opens its big screen in the MFD; its Close button closes it.
+            try await click(keySelector, .leftMouseDown, .leftMouseUp)
+            try await eventually("the key opens the plugin screen") { await self.js(page, self.screenScript) as? Bool == true }
+            try await click(".pl-screen .pl-screen-x", .leftMouseDown, .leftMouseUp)
+            try await eventually("Close closes the plugin screen") { await self.js(page, self.screenScript) as? Bool == false }
+            // macrev2-1104-3: a secondary click on the key reaches the page (its Remove menu), not the app's menu.
+            try await click(keySelector, .rightMouseDown, .rightMouseUp)
+            try await eventually("a right-click on the key opens its menu") { await self.js(page, removeOpen) as? Bool == true }
+            _ = await js(page, "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true")
+            try await eventually("Escape closes it") { await self.js(page, removeOpen) as? Bool == false }
+            try await clickControl(keySelector)
+            try await eventually("a Control-click on the key opens its menu") { await self.js(page, removeOpen) as? Bool == true }
             try await click("[data-pm-remove=\"placeholder\"]", .leftMouseDown, .leftMouseUp)
             try await eventually("the page edit is saved") { !plugins.model.preferences.enabledIDs().contains("placeholder") }
             try await eventually("the key leaves the page") { await self.js(page, self.keyScript) as? Bool == false }

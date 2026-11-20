@@ -89,4 +89,34 @@ final class CockpitPluginBridgeTests: XCTestCase {
         let after = await CockpitPluginStore(directory: dir).snapshot()
         XCTAssertEqual(after, reopened)
     }
+
+    /// macrevb-1104-3 / macrevd-1104-2 / macrev2-1104-4: a page edit that cannot be saved sends the committed choice to
+    /// the page again (the page already removed the key), and the sampler keeps following the committed choice.
+    @MainActor func testAFailedPageEditSaveRestoresTheCommittedChoice() async throws {
+        let dir = try directory()
+        let coordinator = EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+        let bridge = await CockpitPluginBridge.load(directory: dir, coordinator: coordinator)
+        let enabled = await bridge.model.perform(.setEnabled("placeholder", true))
+        XCTAssertTrue(enabled)
+        let committed = try XCTUnwrap(coordinator.pluginsJSON)
+        // The store cannot be written any more.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+        addTeardownBlock { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path) }
+        let edit = try XCTUnwrap(CockpitPluginWire.canonical(["version": 1, "entries": [["id": "placeholder", "enabled": false, "pinned": false]], "settings": [String: Any]()]))
+        // Stand-in for the page having shown its own edit: the coordinator last held the edit.
+        coordinator.pluginsJSON = edit
+        coordinator.onPluginsEdit?(edit)
+        for _ in 0..<200 where coordinator.pluginsJSON == edit { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(CockpitPluginWire.canonical(json: try XCTUnwrap(coordinator.pluginsJSON)), CockpitPluginWire.canonical(json: committed),
+                       "the committed choice goes back to the page")
+        XCTAssertTrue(bridge.model.preferences.enabledIDs().contains("placeholder"), "nothing was committed")
+        let disk = await CockpitPluginStore(directory: dir).snapshot()
+        XCTAssertEqual(disk.entries.first { $0.id == "placeholder" }?.enabled, true, "reopen shows what the page shows again")
+        // Writable again: the same edit is saved and survives a restart.
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        coordinator.onPluginsEdit?(edit)
+        for _ in 0..<200 where bridge.model.preferences.enabledIDs().contains("placeholder") { try await Task.sleep(for: .milliseconds(5)) }
+        let saved = await CockpitPluginStore(directory: dir).snapshot()
+        XCTAssertEqual(saved.entries.first { $0.id == "placeholder" }?.enabled, false)
+    }
 }

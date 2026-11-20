@@ -494,10 +494,11 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func clearKeepingWarmCount(_ page: any CockpitPageSurface, adopting context: CockpitEngineContext?) async {
     let hidden = !presented
     if hidden { releasingWarmPage = true }
+    // D124 (macrev2-1104-6): sampling stops when the clear starts (the page is hidden at once), not when its receipt
+    // arrives; the page's own [] report carries the old view revision and is refused.
+    reportPluginsRunning([])
     await page.clearPrivateViews(adopting: context)
     if hidden { releasingWarmPage = false }
-    // The cleared page drops its plugin placement; its own [] report carries the old view revision and is refused.
-    reportPluginsRunning([])
   }
   /// Discards the hidden page, never a shown one. A released page is not counted as a failure.
   public func releaseWarmPage() {

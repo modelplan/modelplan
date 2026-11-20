@@ -59,10 +59,15 @@ extension BridgeTests {
     let running = try reply(load, "action", 2, extra: ["action": "pluginsRunning", "ids": ["calendar"]])
     XCTAssertThrowsError(try state.accept(running, source: source), "an older host never sees a plugin action")
     _ = try state.setPlugins(pluginsBody)
-    // A hiding page reports that it stopped its plugins; that must reach the host or it keeps sampling.
+    // D124 (macrevb-1104-4): a start is taken only from a shown page (key or not); a stop always.
+    XCTAssertThrowsError(try state.accept(running, source: source), "a hidden page cannot start sampling")
+    _ = try state.setVisibility(.init(visible: true, occluded: false, key: false))
     XCTAssertEqual(try state.accept(running, source: source), .action(.pluginsRunning(["calendar"])))
+    _ = try state.setVisibility(.init(visible: true, occluded: true, key: false))
+    // A hiding page reports that it stopped its plugins; that must reach the host or it keeps sampling.
     XCTAssertEqual(try state.accept(reply(load, "action", 3, extra: ["action": "pluginsRunning", "ids": [String]()]), source: source),
                    .action(.pluginsRunning([])))
+    _ = try state.setVisibility(.init(visible: true, occluded: false, key: false))
     XCTAssertThrowsError(try state.accept(reply(load, "action", 4, extra: ["action": "pluginsRunning", "ids": ["a", "a"]]), source: source))
     XCTAssertThrowsError(try state.accept(reply(load, "action", 5, extra: ["action": "pluginsRunning", "ids": ["Bad"]]), source: source))
     let seventeen = (0..<17).map { "p\($0)" }
@@ -94,9 +99,10 @@ extension BridgeTests {
     let load = try ready(state)
     _ = try state.setPlugins(pluginsBody)
     _ = try state.setVisibility(.init(visible: true, occluded: false, key: true))
-    var sequence = 2
+    // macrevb-1104-5: every refusal below reuses sequence 2, and the valid edit at the end uses it too, so a refusal
+    // that consumed its sequence would make that last edit fail.
+    let sequence = 2
     func edit(_ plugins: Any, rewrite: ((String) -> String)? = nil) throws -> String {
-      defer { sequence += 1 }
       let raw = try reply(load, "action", sequence, extra: ["action": "pluginsEdit", "plugins": plugins])
       return rewrite?(raw) ?? raw
     }
@@ -108,9 +114,9 @@ extension BridgeTests {
     let many: [String: Any] = ["version": 1, "entries": (0..<33).map { ["id": "p\($0)", "enabled": false, "pinned": false] }, "settings": [String: Any]()]
     XCTAssertThrowsError(try state.accept(try edit(many), source: source), "more than 32 entries")
     XCTAssertThrowsError(try state.accept(try edit(["calendar"]), source: source), "the body is an object")
-    let other = try reply(load, "action", sequence, extra: ["action": "openSettings", "tool": ["nested": true]]); sequence += 1
+    let other = try reply(load, "action", sequence, extra: ["action": "openSettings", "tool": ["nested": true]])
     XCTAssertThrowsError(try state.accept(other, source: source), "no other key may nest")
-    // Still accepted after the refusals: the page's sequence was never advanced by them.
+    // Accepted at the same sequence after the refusals: none of them advanced the page's sequence.
     guard case .action(.pluginsEdit) = try state.accept(try edit(editBody), source: source) else { return XCTFail() }
   }
 }

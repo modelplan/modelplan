@@ -243,6 +243,23 @@ test('lifecycle: the plugin runs only while the cockpit is open and its column i
  expect(await running(page)).toEqual([[],['placeholder'],[],['placeholder'],[],['placeholder'],[],['placeholder'],[]]);
 });
 
+test('macrev2-1104-2 a privacy clear drops host readings: the next generation shows no old value until a fresh reading',async({page})=>{
+ const {send,receive}=await open(page,dataWith(1),on(true));
+ expect(await receive(send('pluginData',{id:'placeholder',data:{value:42}}))).toBe(true);
+ await expect(column(page).locator('.qvalue')).toHaveText('42');
+ expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);
+ await expect(page.locator('.pl-col')).toHaveCount(0);
+ // The native host re-sends its state after the clear, then the new generation renders before any reading.
+ expect(await receive(send('plugins',{viewRevision:'4',plugins:on(true)}))).toBe(true);
+ expect(await receive(send('display',{viewRevision:'4',data:dataWith(1)}))).toBe(true);
+ await expect(column(page)).toHaveAttribute('data-running','true');
+ await expect(column(page).locator('.qvalue')).toHaveCount(0);
+ expect(await receive(send('pluginData',{viewRevision:'4',id:'placeholder',data:{value:7}}))).toBe(true);
+ await expect(column(page).locator('.qvalue')).toHaveText('7');
+ // A reading kept from before the clear would have made a trend of two points; only the fresh one is there.
+ await expect(column(page).locator('.pl-trend')).toHaveCount(0);
+});
+
 test('"+" menu: detected tools first, then all subscriptions; plugins below; Add places the plugin',async({page})=>{
  const {send,receive}=await open(page,dataWith(1,[['grok','off'],['gemini-cli','needs_consent']]));
  const plus=page.locator('.eng-keys .ek-bay').first();

@@ -68,13 +68,21 @@ import ModelPlanSettings
     public let model: CockpitPluginSettingsModel
     public let sampler: CockpitPluginSampler
     private weak var coordinator: EngineCockpitCoordinator?
-    public init(model: CockpitPluginSettingsModel, coordinator: EngineCockpitCoordinator?, sampler: CockpitPluginSampler = .init()) {
+    /// `sampler` nil makes the app's own (macrevb-1104-1: a default argument cannot call the main-actor initializer).
+    public init(model: CockpitPluginSettingsModel, coordinator: EngineCockpitCoordinator?, sampler: CockpitPluginSampler? = nil) {
+        let sampler = sampler ?? CockpitPluginSampler()
         self.model = model; self.coordinator = coordinator; self.sampler = sampler
         sampler.send = { [weak coordinator] id, data in coordinator?.sendPluginData(id: id, data: data) }
         coordinator?.onPluginsRunning = { [weak sampler] ids in sampler?.setRunning(ids) }
-        coordinator?.onPluginsEdit = { [weak model] state in
-            guard let object = try? JSONSerialization.jsonObject(with: state) else { return }
-            Task { @MainActor in await model?.acceptPageEdit(object) }
+        // D293 (macrevb-1104-3): the page shows its edit at once. When the edit cannot be saved (bad body, unwritable
+        // store), the committed choice is sent again, so the open page and the sampler return to what reopen will show.
+        coordinator?.onPluginsEdit = { [weak self] state in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                var saved = false
+                if let object = try? JSONSerialization.jsonObject(with: state) { saved = await self.model.acceptPageEdit(object) }
+                if !saved { self.publish(self.model.preferences) }
+            }
         }
         model.onChange = { [weak self] preferences in self?.publish(preferences) }
         publish(model.preferences)

@@ -17,7 +17,8 @@ import XCTest
   func sendPluginData(id: String, data: [String: Any]) { readings.append((id, data)) }
   func open() { opened = true }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {}
-  func clearPrivateViews(adopting: CockpitEngineContext?) async {}
+  var onClearStart: (() -> Void)?
+  func clearPrivateViews(adopting: CockpitEngineContext?) async { onClearStart?() }
   func discard() { onClosed?() }
 }
 
@@ -71,9 +72,12 @@ final class PluginCoordinatorTests: XCTestCase {
     XCTAssertEqual(reports.count, 1, "an invalid report is ignored")
     page.onIntent?(.pluginsEdit(state))
     XCTAssertEqual(edits, [state])
-    // A privacy clear drops the page's placement; the host stops sampling at once.
+    // A privacy clear drops the page's placement; the host stops sampling when the clear starts (macrev2-1104-6).
+    var runningAtClear: [String]?
+    page.onClearStart = { runningAtClear = coordinator.pluginsRunning }
     await coordinator.consume(.clearPrivateViews(.init(revision: 2, reason: .connectionLost, previous: first, nextFloor: nil)))
     XCTAssertEqual(reports.last, [])
+    XCTAssertEqual(runningAtClear, [], "nothing is sampled while the page clears")
     page.onIntent?(.pluginsRunning(["placeholder"]))
     XCTAssertEqual(reports.last, ["placeholder"])
     coordinator.close()
