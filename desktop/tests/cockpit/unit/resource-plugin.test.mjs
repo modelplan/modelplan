@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PluginRegistry,builtinPlugins,PLUGIN_INKS} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
-import {resourcePlugin,RESOURCE_INK,RESOURCE_WINDOW_MS,resourceLevels} from '../../../cockpit/.tmp/compiled/src/resource-plugin.js';
+import {resourcePlugin,RESOURCE_INK,RESOURCE_WINDOW_MS,resourceLevels,chartData} from '../../../cockpit/.tmp/compiled/src/resource-plugin.js';
 import {tables} from '../../../cockpit/study/rocket-r1/i18n.js';
 import '../../../cockpit/study/rocket-r1/strings/plugins.js';
 
@@ -96,7 +96,7 @@ test('D327 levels: CPU amber from 70 %, red from 90 %; memory by pressure only; 
  assert.deepEqual(resourceLevels({cpu:90,pressure:'critical',disk:99}),{cpu:'low',memory:'low',disk:'mid'});
 });
 
-test('screen (interim lines until the D323 draw hook): CPU, memory with the four kinds, disk, sampling interval',()=>{
+test('screen lines (the draw fallback): CPU, memory with the four kinds, disk, sampling interval',()=>{
  assert.deepEqual(resourcePlugin.screen(undefined,context('en')).lines.map(l=>l.label),['Sampling']);
  let state;for(let i=0;i<3;i++)state=resourcePlugin.accept({samples:[sample(T0+i*10000)]},state);
  const lines=resourcePlugin.screen(state,context('zh-CN',10)).lines;
@@ -106,4 +106,30 @@ test('screen (interim lines until the D323 draw hook): CPU, memory with the four
  assert.equal(lines[6].value,'4.5 · 9.2 · 1.4 GB');assert.equal(lines[7].value,'12.8 · 4.1 GB');
  assert.equal(lines[8].value,'76% · 剩 120 GB');assert.equal(lines[9].value,'每 10 秒');
  assert.ok(lines.length<=12);
+});
+
+test('D323 big screen draws charts through the draw hook and keeps its lines as the fallback',()=>{
+ const state=resourcePlugin.accept({samples:[sample(T0)]},undefined);
+ const screen=resourcePlugin.screen(state,context('en'));
+ assert.equal(typeof screen.draw,'function');assert.ok(screen.lines.length>=10,'lines stay for a failed draw');
+ assert.equal(typeof resourcePlugin.column(state,context('en')).draw,'undefined','the column keeps its cells');
+});
+
+test('chartData: memory 10-minute used/cached fractions, pressure strip, CPU 10-second bars, disk bar',()=>{
+ const samples=Array.from({length:120},(_,i)=>sample(T0+i*5000,{cpuUser:10+(i%3),cpuSystem:5,pressure:i>=100?'warn':'normal',memApp:(8+i/40)*GB}));
+ const state=resourcePlugin.accept({samples},undefined);
+ const d=chartData(state.samples);
+ assert.equal(d.memory.length,state.samples.length);
+ const last=d.memory[d.memory.length-1],s=state.samples[state.samples.length-1];
+ assert.ok(Math.abs(last.used-(s.memApp+s.memWired+s.memCompressed)/s.memTotal)<1e-9);
+ assert.ok(Math.abs(last.cached-s.memCached/s.memTotal)<1e-9);
+ assert.ok(d.memory.every(p=>p.used+p.cached<=1.0001),'stack never exceeds the whole');
+ // Pressure strip: 60 ten-second cells, worst pressure in each cell, oldest first.
+ assert.equal(d.strip.length,60);assert.equal(d.strip[0],'normal');assert.equal(d.strip[59],'warn');
+ // CPU: one bar per 10 s (mean of the samples inside it), user and system stacked, at most 60 bars.
+ assert.equal(d.cpu.length,60);
+ for(const b of d.cpu){assert.ok(b.user>=0&&b.system>=0&&b.user+b.system<=100.0001);}
+ assert.equal(d.cpuLine,70);assert.equal(d.diskNotch,90);
+ assert.ok(Math.abs(d.disk-(494-120)/494*100)<1e-6);
+ assert.deepEqual(chartData([]),{memory:[],strip:[],cpu:[],disk:0,cpuLine:70,diskNotch:90});
 });

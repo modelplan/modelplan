@@ -8,12 +8,12 @@
 // (CPU from 70 % / 90 %, memory by macOS memory pressure, not by percentage, disk from 90 %), bars keep the plugin ink.
 // The widget ring, its readout switch and the hover card are native (ModelPlanResources ResourceReadout / ResourceCard).
 //
-// Interim (until the D323 custom-draw hook, modelplan#1092, is on main): the big screen is drawn as framework lines.
-// The charts (memory 10-minute stacked area + pressure strip, CPU 10-second bars with a 70 % line, disk bar with a
-// 90 % notch) switch to `draw(ctx)` once the hook lands.
+// The big screen paints its charts through the D323 draw hook (modelplan#1092): memory 10-minute stacked area (used /
+// cached) with a pressure strip, CPU 10-second bars (user / system) with a 70 % dashed line, disk bar with a 90 % notch.
+// The label/value lines stay as the fallback when a draw fails.
 //
 // No import of plugin-registry values: the registry imports this module for builtinPlugins (type imports are erased).
-import type {CockpitPlugin,PluginCell,PluginColumn,PluginContext,PluginScreen,PluginWords} from './plugin-registry.js';
+import type {CockpitPlugin,PluginCell,PluginColumn,PluginContext,PluginDrawContext,PluginScreen,PluginWords} from './plugin-registry.js';
 
 export const RESOURCE_INK='#da66c2';
 /** The page keeps what the host's ring buffer keeps: ten minutes. */
@@ -71,6 +71,71 @@ const pressureWords=(c:PluginContext,s:ResourceSample):PluginWords=>{
   const swap=c.words('plugin.resourcesSwap',{gb:gb(s.swapUsed)});
   return {full:`${name.full} · ${swap.full}`,short:name.short};
 };
+/** Chart data (pure, unit-tested): memory fractions per sample, a 60-cell pressure strip and 60 CPU bars of 10 s each
+ *  (oldest first, the cell/bar holding the newest sample last), the disk used percentage and the two thresholds. */
+export interface ChartData {
+  readonly memory:readonly {readonly t:number;readonly used:number;readonly cached:number}[];
+  readonly strip:readonly ResourcePressure[];
+  readonly cpu:readonly {readonly user:number;readonly system:number}[];
+  readonly disk:number;readonly cpuLine:number;readonly diskNotch:number;
+}
+const BINS=60,BIN_MS=10_000,RANK:Record<ResourcePressure,number>={normal:0,warn:1,critical:2};
+export function chartData(samples:readonly ResourceSample[]):ChartData {
+  const base={cpuLine:70,diskNotch:90};
+  if(!samples.length)return {memory:[],strip:[],cpu:[],disk:0,...base};
+  const newest=samples[samples.length-1]!;
+  const memory=samples.map(s=>({t:s.t,used:(s.memApp+s.memWired+s.memCompressed)/s.memTotal,cached:Math.min(1-(s.memApp+s.memWired+s.memCompressed)/s.memTotal,s.memCached/s.memTotal)}));
+  const strip:ResourcePressure[]=Array<ResourcePressure>(BINS).fill('normal'),sums=Array.from({length:BINS},()=>({user:0,system:0,n:0}));
+  for(const s of samples){
+    const age=Math.floor((newest.t-s.t)/BIN_MS);if(age>=BINS)continue;const i=BINS-1-age;
+    if(RANK[s.pressure]>RANK[strip[i]!])strip[i]=s.pressure;
+    sums[i]!.user+=s.cpuUser;sums[i]!.system+=s.cpuSystem;sums[i]!.n++;
+  }
+  const cpu=sums.map(b=>b.n?{user:b.user/b.n,system:b.system/b.n}:{user:0,system:0});
+  return {memory,strip,cpu,disk:(newest.diskTotal-newest.diskFree)/newest.diskTotal*100,...base};
+}
+const SVG='http://www.w3.org/2000/svg';
+/** Paints the charts into the host's clipped area with SVG, cockpit tokens and the orchid ink. */
+function drawCharts(c:PluginDrawContext,state:unknown):void {
+  const samples=statesOf(state);if(!samples.length||c.width<=0||c.height<=0)return;
+  const d=chartData(samples),doc=c.area.ownerDocument,W=Math.max(1,c.width),H=Math.max(1,c.height);
+  const node=(tag:string,attrs:Record<string,string|number>,parent?:Element)=>{const e=doc.createElementNS(SVG,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));parent?.append(e);return e;};
+  const svg=node('svg',{class:'pl-draw-chart',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':c.words('plugin.resourcesTitle').full});
+  const T=c.tokens,pad=6,gap=8,innerW=W-2*pad,fs=Math.max(8,Math.min(11,H/16));
+  const label=(text:string,x:number,y:number,anchor='start')=>{const t=node('text',{x,y,fill:T.muted,'font-size':fs,'font-family':T.lcdFont,'text-anchor':anchor},svg);t.textContent=text;};
+  const memH=H*0.4,stripH=Math.max(4,H*0.05),cpuH=H*0.28,diskH=Math.max(6,H*0.06);
+  let y=pad+fs;
+  // Memory: stacked area (used, then cached on top) over the ten minutes.
+  label(c.words('plugin.resourcesMemory').full,pad,y);
+  const mTop=y+3,mBot=mTop+memH-fs,span=Math.max(1,d.memory[d.memory.length-1]!.t-Math.min(d.memory[0]!.t,d.memory[d.memory.length-1]!.t-RESOURCE_WINDOW_MS));
+  const t0=d.memory[d.memory.length-1]!.t-span,X=(t:number)=>pad+(t-t0)/span*innerW,Y=(f:number)=>mBot-Math.min(1,Math.max(0,f))*(mBot-mTop);
+  const edge=(f:(p:ChartData['memory'][number])=>number)=>d.memory.map(p=>`${X(p.t).toFixed(1)},${Y(f(p)).toFixed(1)}`);
+  const area=(top:string[],bottom:string[])=>`M${top.join('L')}L${bottom.slice().reverse().join('L')}Z`;
+  const floor=d.memory.map(p=>`${X(p.t).toFixed(1)},${mBot.toFixed(1)}`),usedEdge=edge(p=>p.used),stackEdge=edge(p=>p.used+p.cached);
+  node('path',{'data-chart':'memory-cached',d:area(stackEdge,usedEdge),fill:T.ink,'fill-opacity':0.18},svg);
+  node('path',{'data-chart':'memory-used',d:area(usedEdge,floor),fill:RESOURCE_INK,'fill-opacity':0.85},svg);
+  y=mBot+gap;
+  // Pressure strip: one cell per 10 s, grey normal / amber warn / red critical.
+  const strip=node('g',{'data-chart':'pressure'},svg),cw=innerW/d.strip.length;
+  d.strip.forEach((p,i)=>node('rect',{x:(pad+i*cw).toFixed(2),y,width:Math.max(0.5,cw-0.5).toFixed(2),height:stripH,fill:p==='critical'?T.low:p==='warn'?T.mid:T.ghost,'data-pressure':p},strip));
+  y+=stripH+gap+fs;
+  // CPU: one bar per 10 s, user (ink) under system (lighter), with the 70 % dashed line.
+  label(c.words('plugin.resourcesCpu').full,pad,y);
+  const cTop=y+3,cBot=cTop+cpuH-fs,cy=(v:number)=>cBot-Math.min(100,v)/100*(cBot-cTop);
+  const cpu=node('g',{'data-chart':'cpu'},svg);
+  d.cpu.forEach((b,i)=>{const g=node('g',{'data-bar':i,'data-user':b.user.toFixed(1),'data-system':b.system.toFixed(1)},cpu);
+    node('rect',{x:(pad+i*cw).toFixed(2),y:cy(b.user).toFixed(2),width:Math.max(0.5,cw-0.5).toFixed(2),height:(cBot-cy(b.user)).toFixed(2),fill:RESOURCE_INK},g);
+    node('rect',{x:(pad+i*cw).toFixed(2),y:cy(b.user+b.system).toFixed(2),width:Math.max(0.5,cw-0.5).toFixed(2),height:(cy(b.user)-cy(b.user+b.system)).toFixed(2),fill:RESOURCE_INK,'fill-opacity':0.45},g);});
+  node('line',{'data-chart':'cpu-line',x1:pad,x2:W-pad,y1:cy(d.cpuLine),y2:cy(d.cpuLine),stroke:T.mid,'stroke-dasharray':'3 3','stroke-width':1},svg);
+  y=cBot+gap+fs;
+  // Disk: one bar with the 90 % notch.
+  label(c.words('plugin.resourcesDisk').full,pad,y);
+  const dy=y+3;
+  node('rect',{x:pad,y:dy,width:innerW,height:diskH,fill:T.ghost},svg);
+  node('rect',{'data-chart':'disk',x:pad,y:dy,width:(innerW*d.disk/100).toFixed(2),height:diskH,fill:RESOURCE_INK},svg);
+  node('line',{'data-chart':'disk-notch',x1:pad+innerW*d.diskNotch/100,x2:pad+innerW*d.diskNotch/100,y1:dy-2,y2:dy+diskH+2,stroke:T.mid,'stroke-width':1.5},svg);
+  c.area.replaceChildren(svg);
+}
 const peak=(samples:readonly ResourceSample[])=>samples.reduce((m,s)=>Math.max(m,resourceView(s).cpu),0);
 export const resourcePlugin:CockpitPlugin=Object.freeze({
   id:'resources',
@@ -114,7 +179,7 @@ export const resourcePlugin:CockpitPlugin=Object.freeze({
     const every={label:w('plugin.resourcesSampling'),value:w('plugin.resourcesEvery',{n:c.settings.intervalSeconds})};
     if(!s)return {lines:[every]};
     const v=resourceView(s),samples=statesOf(state),unit=(text:string)=>`${text} GB`;
-    return {lines:[
+    return {draw:(ctx:PluginDrawContext)=>drawCharts(ctx,state),lines:[
       {label:w('plugin.resourcesCpu'),value:`${pct(v.cpu)}%`},
       {label:w('plugin.resourcesUserSystem'),value:`${pct(s.cpuUser)}% · ${pct(s.cpuSystem)}%`},
       {label:w('plugin.resourcesLoad'),value:String(Math.round(s.load*10)/10)},

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Resource plugin (owner D324, D327) on the real cockpit through the normal bridge: the column (CPU · 内存 · 磁盘 cells,
 // orchid dashed key underline, numbers amber/red only), the lifecycle report the host samples by, and the big screen
-// (interim lines until the D323 draw hook). The host side (sampling cadence, ring buffer) is ModelPlanResources.
+// (charts on the D323 draw hook). The host side (sampling cadence, ring buffer) is ModelPlanResources.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,sample,shell,excludePortholeFlicker} from '../fixture.mjs';
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
@@ -94,23 +94,30 @@ test('D327 only numbers change colour: CPU red at ≥ 90 %, memory amber by pres
  await expect(column(page).locator('.pl-cell[data-row="1"] .qvalue')).toHaveText('94');
 });
 
-test('the big screen (interim lines): opened from the key, updated in place by readings, closed by Escape',async({page})=>{
+test('the big screen: charts on the draw hook, redrawn by readings, closed by Escape',async({page})=>{
  const {push}=await open(page,{plugins:{version:1,entries:[],settings:{resources:{intervalSeconds:10}}}});
- expect(await push([reading(T0)])).toBe(true);
+ expect(await push(Array.from({length:60},(_,i)=>reading(T0+i*10000,{cpuUser:10+i%40,pressure:i>50?'warn':'normal'})))).toBe(true);
  await key(page).click();
  const screen=page.locator('.mfd-screen .pl-screen[data-plugin="resources"]');
  await expect(screen).toBeVisible();
- await expect(screen.locator('dt')).toHaveText(['CPU','User · system','Load','Peak, 10 min','Memory','Mem pressure','Wired · app · compressed','Cached · free','Disk','Sampling']);
- await expect(screen.locator('dd').first()).toHaveText('22%');
- await expect(screen.locator('dd').last()).toHaveText('every 10 s');
+ await expect(screen).toHaveAttribute('data-draw','custom');
+ const chart=screen.locator('.pl-draw-chart');
+ await expect(chart.locator('[data-chart="memory-used"]')).toHaveCount(1);
+ await expect(chart.locator('[data-chart="memory-cached"]')).toHaveCount(1);
+ await expect(chart.locator('[data-chart="pressure"] rect')).toHaveCount(60);
+ await expect(chart.locator('[data-chart="cpu"] [data-bar]')).toHaveCount(60);
+ await expect(chart.locator('[data-chart="cpu-line"]')).toHaveCount(1);
+ await expect(chart.locator('[data-chart="disk-notch"]')).toHaveCount(1);
+ // Orchid ink for the series; amber only for the pressure cells that read warn.
+ const ink=await page.evaluate(()=>{const g=document.querySelector('[data-chart="memory-used"]');return g.getAttribute('fill');});
+ expect(ink).toBe('#da66c2');
  // Inside the big-screen well only.
  const inside=await page.evaluate(()=>{const s=document.querySelector('.pl-screen').getBoundingClientRect(),w=document.querySelector('.dk-mfd .mfd-screen').getBoundingClientRect();
   return s.left>=w.left-.5&&s.right<=w.right+.5&&s.top>=w.top-.5&&s.bottom<=w.bottom+.5;});
  expect(inside).toBe(true);
- const first=await screen.locator('dl > div').first().elementHandle();
- expect(await push([reading(T0+10000,{cpuUser:71,cpuSystem:25})])).toBe(true);
- await expect(screen.locator('dd').first()).toHaveText('96%');
- expect(await first.evaluate(e=>e.isConnected)).toBe(true);
+ const before=await chart.locator('[data-chart="cpu"] [data-bar]').last().getAttribute('data-user');
+ expect(await push([reading(T0+600000,{cpuUser:71,cpuSystem:25})])).toBe(true);
+ await expect(chart.locator('[data-chart="cpu"] [data-bar]').last()).not.toHaveAttribute('data-user',before);
  await page.keyboard.press('Escape');
  await expect(screen).toHaveCount(0);
 });
