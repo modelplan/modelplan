@@ -20,6 +20,9 @@ import sys
 import time
 
 APP_EXECUTABLE = "ModelPlan"
+# D57: a ref from before the rename packages "ModelPlan Community.app" with this executable; the walkthrough
+# still launches it, so older test builds stay walkable.
+APP_EXECUTABLES = (APP_EXECUTABLE, "ModelPlanCommunity")
 DISPLAY_CANDIDATES = ((1920, 1200), (1920, 1080), (1680, 1050), (1600, 1200), (1440, 900), (1280, 1024))
 PARK = (0.42, 0.62)  # A screen fraction clear of the widget's edges, the menu bar and the Dock.
 MIN_COLOURS = 24  # Coarse 12-bit colours: a blank, black or single-tone render has far fewer.
@@ -728,8 +731,8 @@ def read_bundle(app):
 def check_bundle(info, expected_sha):
     """Only an owner test package offers the steps this walkthrough walks."""
     problems = []
-    if info.get("CFBundleExecutable") != APP_EXECUTABLE:
-        problems.append("executable is not " + APP_EXECUTABLE)
+    if info.get("CFBundleExecutable") not in APP_EXECUTABLES:
+        problems.append("executable is not one of " + ", ".join(APP_EXECUTABLES))
     if info.get("ModelPlanCockpitEntryEnabled") is not True:
         problems.append("cockpit entry is closed: not an owner test package")
     if expected_sha and info.get("ModelPlanPublicSource") != expected_sha:
@@ -1014,7 +1017,7 @@ def run(args, host):
     seed = json.loads(Path(args.seed).read_text(encoding="utf-8"))
     facts = set_display(host)
     frame = facts["screens"][0]["frame"]
-    cli, exe = app / "Contents/Helpers/modelplan", app / "Contents/MacOS" / APP_EXECUTABLE
+    cli, exe = app / "Contents/Helpers/modelplan", app / "Contents/MacOS" / info["CFBundleExecutable"]
     walkthrough = Walkthrough(host, app, out, steps, seed, (frame[2], frame[3]))
     walkthrough.facts = facts
     fresh = fresh_profile_probe(host, walkthrough, exe, cli, Path(str(home) + "-fresh"), seed, out)

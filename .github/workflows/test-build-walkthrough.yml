@@ -58,9 +58,13 @@ jobs:
         run: |
           gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n "$ARTIFACT" -D "$RUNNER_TEMP/artifact"
           cd "$RUNNER_TEMP/artifact"
-          grep -E '^[0-9a-f]{64}  ModelPlan-native.zip$' BUILD.txt | shasum -a 256 -c -
-          ditto -x -k --noqtn ModelPlan-native.zip "$RUNNER_TEMP/subject-app"
-          echo "APP=$RUNNER_TEMP/subject-app/ModelPlan.app" >> "$GITHUB_ENV"
+          # D57: refs before the rename upload ModelPlan-Community-native.zip holding "ModelPlan Community.app".
+          zip=$(grep -oE '^[0-9a-f]{64}  ModelPlan(-Community)?-native\.zip$' BUILD.txt | head -1 | cut -c67-)
+          [ -n "$zip" ] || { echo "BUILD.txt names no native app zip" >&2; exit 1; }
+          grep -E "^[0-9a-f]{64}  $zip\$" BUILD.txt | shasum -a 256 -c -
+          ditto -x -k --noqtn "$zip" "$RUNNER_TEMP/subject-app"
+          app=$(bash "$GITHUB_WORKSPACE/desktop/native/verification/walkthrough/one-app.sh" "$RUNNER_TEMP/subject-app")
+          echo "APP=$app" >> "$GITHUB_ENV"
       # No artifact (they last three days): package the ref as desktop.yml's owner_test run does.
       - uses: actions/checkout@v4
         if: ${{ steps.find.outputs.run == '' }}
@@ -86,7 +90,9 @@ jobs:
         run: |
           python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/cli-archives"
           bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/subject-build" --owner-test
-          echo "APP=$RUNNER_TEMP/subject-build/ModelPlan.app" >> "$GITHUB_ENV"
+          # The selected ref's own packager names the app (pre-rename refs: "ModelPlan Community.app").
+          app=$(bash "$GITHUB_WORKSPACE/desktop/native/verification/walkthrough/one-app.sh" "$RUNNER_TEMP/subject-build")
+          echo "APP=$app" >> "$GITHUB_ENV"
       - name: Build the input helper
         run: swiftc -O desktop/native/verification/walkthrough/walkthrough_input.swift -o "$RUNNER_TEMP/walkthrough_input"
       - name: Walk the app

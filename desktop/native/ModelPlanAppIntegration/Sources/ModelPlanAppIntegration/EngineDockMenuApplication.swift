@@ -1157,7 +1157,7 @@ struct StatusNoticePresentation {
         liveStatusMenu = menu
         if let status { component.attach(to: status) }
         if let button = status?.button {
-            Self.configureStatusButton(button,image:CommunityMenuBarResources.templateImage(),barThickness:NSStatusBar.system.thickness); button.contentTintColor = nil
+            Self.configureStatusButton(button,image:CommunityMenuBarResources.statusImage(),barThickness:NSStatusBar.system.thickness); button.contentTintColor = nil
         }
         if let status, let button = status.button {
             applyStatusContent(to: button, item: status, detail: detail)

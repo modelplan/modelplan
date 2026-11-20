@@ -17,7 +17,7 @@ npm run build:official     # official edition from this folder
 
 The official build copies `LICENSE.md` into the app as `VISUAL-LICENSE.md`, and the app's About page lists it first. Forks and redistributed builds use the community edition.
 
-The official download of the Mac app is the official edition. A Mac app built from source is neutral by default: `desktop/native/tools/package-neutral.sh` adds the official icon and this licence only with `MODELPLAN_EDITION=official`, which the project's release flow sets. That switch is for your own use; do not redistribute what it builds.
+The official download of the Mac app is the official edition. A Mac app built from source is neutral by default: `desktop/native/tools/package-neutral.sh` adds the official icon, Dock artwork and menu-bar template only with `MODELPLAN_EDITION=official`, which the project's release flow sets. Both editions carry this licence, because both link the reserved Dock drawing code. That switch is for your own use; do not redistribute what it builds.
 
 The [runtime artwork pack](runtime/README.md) supplies the approved A5 recessed
 ignition and c01 canopy PNGs and cap-image baselines. Its manifest binds the exact

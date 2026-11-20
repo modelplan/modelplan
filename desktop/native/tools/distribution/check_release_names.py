@@ -21,6 +21,21 @@ FORBIDDEN += [s.encode('utf-16-le') for s in ('ModelPlan Community', '社区版'
 FORBIDDEN += [s.encode('utf-16-be') for s in ('ModelPlan Community', '社区版')]
 
 
+OFFICIAL_DOCK = 'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle'
+TRAY_BUNDLE = 'ModelPlanAppIntegration_ModelPlanAppIntegration.bundle'
+TRAY_FILES = ('tray.png', 'tray@2x.png')
+
+
+def reserved_art(app):
+    """Reserved-licence artwork files in the bundle: the official icon, Dock bundle and menu-bar template."""
+    resources = Path(app) / 'Contents/Resources'
+    found = [f'Contents/Resources/{name}' for name in ('AppIcon.icns', OFFICIAL_DOCK) if (resources / name).exists()]
+    tray = resources / TRAY_BUNDLE
+    if tray.is_dir():
+        found += sorted(str(p.relative_to(app)) for p in tray.rglob('*') if p.name in TRAY_FILES)
+    return found
+
+
 def problems(app, edition):
     found = []
     app = Path(app)
@@ -40,12 +55,16 @@ def problems(app, edition):
             found.append(f'Info.plist {key} still says {value!r}')
     if not (app / 'Contents/MacOS' / EXECUTABLE).is_file():
         found.append(f'missing Contents/MacOS/{EXECUTABLE}')
-    official_files = [(app / 'Contents/Resources/VISUAL-LICENSE.md').is_file(),
-                      (app / 'Contents/Resources/AppIcon.icns').is_file()]
-    if edition == 'official' and not all(official_files):
-        found.append('official edition without VISUAL-LICENSE.md and AppIcon.icns')
-    if edition == 'neutral' and any(official_files):
-        found.append('neutral edition carries the official icon or visuals licence')
+    # Every edition links reserved drawing code, so every bundle carries the reserved licence.
+    if not (app / 'Contents/Resources/VISUAL-LICENSE.md').is_file():
+        found.append('missing VISUAL-LICENSE.md')
+    reserved = reserved_art(app)
+    if edition == 'neutral' and reserved:
+        found.append('neutral edition carries reserved artwork: ' + ', '.join(reserved))
+    if edition == 'official':
+        for required in ('Contents/Resources/AppIcon.icns', 'Contents/Resources/' + OFFICIAL_DOCK):
+            if required not in reserved:
+                found.append('official edition without ' + required)
     for path in sorted(p for p in app.rglob('*') if p.is_file() and not p.is_symlink()):
         data = path.read_bytes()
         for needle in FORBIDDEN:

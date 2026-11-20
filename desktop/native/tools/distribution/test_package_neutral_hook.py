@@ -33,6 +33,10 @@ class PackageNeutralFixture:
         self.script = self.repo / 'desktop/native/tools/package-neutral.sh'
         self.script.parent.mkdir(parents=True)
         shutil.copyfile(ROOT / 'desktop/native/tools/package-neutral.sh', self.script)
+        # The real release-names check runs inside packaging (D57).
+        (self.script.parent / 'distribution').mkdir()
+        shutil.copyfile(ROOT / 'desktop/native/tools/distribution/check_release_names.py',
+                        self.script.parent / 'distribution/check_release_names.py')
         (self.repo / 'LICENSE').write_text('Synthetic MIT fixture; no product or helper bytes.')
         visuals = self.repo / json.loads((ROOT / 'source-policy.json').read_text())['reservedVisuals']['prefix']
         visuals.mkdir(parents=True)
@@ -76,6 +80,9 @@ elif name == 'swift':
     resources = build / 'ModelPlanAppIntegration_ModelPlanAppIntegration.bundle'
     resources.mkdir()
     (resources / 'fixture.txt').write_text('synthetic resource')
+    (resources / 'Resources').mkdir()
+    for tray in ('tray.png', 'tray@2x.png', 'NOTICE.md'):
+        (resources / 'Resources' / tray).write_text('synthetic reserved tray ' + tray)
     official = build / 'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle'
     official.mkdir()
     (official / 'fixture.txt').write_text('synthetic official resource')
@@ -193,10 +200,14 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.assertTrue(all('credential-agent' not in target for _, target in seals))
         self.assertEqual(self.fixture.snapshot(inputs), before)
         resources = self.fixture.output / 'ModelPlan.app' / 'Contents' / 'Resources'
-        self.assertTrue((resources / 'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle' / 'fixture.txt').is_file())
         self.assertFalse(list((resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle').rglob('zai-white.svg')))
-        # D57/D321: a build from source is the neutral edition: no official icon or visuals licence.
-        self.assertFalse((resources / 'VISUAL-LICENSE.md').exists())
+        # D57/D321: a build from source is the neutral edition: no reserved artwork (official icon, Dock
+        # bundle, menu-bar template), but the reserved licence stays because the drawing code is linked.
+        self.assertFalse((resources / 'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle').exists())
+        integration = resources / 'ModelPlanAppIntegration_ModelPlanAppIntegration.bundle'
+        self.assertTrue((integration / 'fixture.txt').is_file())
+        self.assertEqual([p.name for p in integration.rglob('*') if p.is_file()], ['fixture.txt'])
+        self.assertEqual((resources / 'VISUAL-LICENSE.md').read_text(), 'Synthetic visuals license')
         self.assertFalse((resources / 'AppIcon.icns').exists())
         self.assertNotIn('CFBundleIconFile', (resources.parent / 'Info.plist').read_text())
         self.assertTrue((resources / 'THIRD-PARTY-TRADEMARKS.md').is_file())
@@ -208,7 +219,20 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.assertEqual((resources / 'VISUAL-LICENSE.md').read_text(), 'Synthetic visuals license')
         self.assertEqual((resources / 'AppIcon.icns').read_bytes(), b'icns synthetic')
         self.assertIn('<key>CFBundleIconFile</key><string>AppIcon</string>', (resources.parent / 'Info.plist').read_text())
+        self.assertTrue((resources / 'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle' / 'fixture.txt').is_file())
+        self.assertTrue((resources / 'ModelPlanAppIntegration_ModelPlanAppIntegration.bundle/Resources/tray@2x.png').is_file())
         self.assertFalse(list((resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle').rglob('zai-white.svg')))
+
+    def test_packaging_refuses_a_neutral_bundle_that_still_carries_reserved_art(self):
+        # The packager runs the edition check before sealing: a reserved Dock bundle in a neutral app stops it.
+        script = self.fixture.script.read_text()
+        self.fixture.script.write_text(script.replace('if [ "$edition" = official ]; then\n    cp -R "$output_dir',
+                                                      'if true; then\n    cp -R "$output_dir', 1))
+        result = self.fixture.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('neutral edition carries reserved artwork', result.stderr)
+        self.assertFalse(any(c['command'] == 'codesign' and '--force' in c['args'] and c['args'][-1].endswith('.app')
+                             for c in self.fixture.commands()))
 
     def test_unknown_edition_fails_before_building(self):
         result = self.fixture.run(environment={'MODELPLAN_EDITION': 'community'})

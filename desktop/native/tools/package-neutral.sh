@@ -94,7 +94,14 @@ if [ "$cockpit_entry" = true ]; then
 fi
 # The native factory uses the reserved-licence outline tray template from this SwiftPM resource bundle.
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
-cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle" "$app/Contents/Resources/"
+# D57/D321: the reserved Dock artwork (T2 skin, flames) and the reserved menu-bar template ship only in the
+# official edition; a neutral app renders the plain community Dock and a system status symbol instead.
+if [ "$edition" = official ]; then
+    cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle" "$app/Contents/Resources/"
+else
+    find "$app/Contents/Resources/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" -type f \
+        \( -name tray.png -o -name 'tray@2x.png' -o -name NOTICE.md \) -delete
+fi
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanDockResources_ModelPlanDockResources.bundle" "$app/Contents/Resources/"
 # The Z.ai mark is authorized for beta use only; neutral distribution excludes it.
 mark_bundle="$app/Contents/Resources/ModelPlanDockResources_ModelPlanDockResources.bundle"
@@ -115,8 +122,8 @@ if [ "$edition" = official ]; then
     copyright_zh='MIT 开源软件；官方视觉另有保留许可。仅支持苹果芯片。'
 else
     display_en='ModelPlan (self-built)'; display_zh='ModelPlan（自编译）'
-    copyright_en='MIT software, built from source. Apple silicon only.'
-    copyright_zh='MIT 开源软件，从源码自行编译。仅支持苹果芯片。'
+    copyright_en='MIT software, built from source; some drawing code has a separate reserved licence. Apple silicon only.'
+    copyright_zh='MIT 开源软件，从源码自行编译；部分绘制代码另有保留许可。仅支持苹果芯片。'
 fi
 # The SwiftPM product keeps its internal name; the bundled executable is the app's name.
 cp "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" "$app/Contents/MacOS/ModelPlan"
@@ -157,10 +164,9 @@ cat > "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings" <<STRINGS
 "NSHumanReadableCopyright" = "$copyright_zh";
 STRINGS
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
-# About lists the reserved visuals licence first, and only in the official edition that ships the visuals.
-if [ "$edition" = official ]; then
-    cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"
-fi
+# Every edition links the reserved Dock drawing code, so every bundle carries the reserved licence and
+# About lists it first. Only the official edition also carries the reserved artwork files.
+cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"
 cp "$repo_root/THIRD-PARTY-TRADEMARKS.md" "$app/Contents/Resources/THIRD-PARTY-TRADEMARKS.md"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
 python3 "$credential_tools/embed_fixed_helper.py" --artifact "$credential_artifact" \
@@ -170,6 +176,8 @@ for executable in "$app/Contents/MacOS/ModelPlan" "$app/Contents/Helpers/modelpl
     architecture=$(xcrun lipo -archs "$executable")
     if [ "$architecture" != arm64 ]; then echo 'Bundled executable must contain exactly arm64' >&2; exit 1; fi
 done
+# The bundle is one app named ModelPlan and carries exactly its edition's artwork (no reserved art when neutral).
+python3 "$native_root/tools/distribution/check_release_names.py" --app "$app" --edition "$edition"
 python3 "$native_root/tools/distribution/check_app_architectures.py" --app "$app" \
     --main "$app/Contents/MacOS/ModelPlan" --approved-helper-sha256 "$credential_sha"
 codesign --force --sign - --options runtime "$app/Contents/Helpers/modelplan"

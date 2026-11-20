@@ -9,8 +9,8 @@ enum CommunityBundledNotices {
     static let visualLicense = "Reserved licence, not MIT: ModelPlan Official Visuals License 1.0"
     static func load(bundle: URL) -> [SettingsLicenseNotice] {
         let root = bundle.standardizedFileURL.resolvingSymlinksInPath()
-        // D57: the official edition lists its reserved visuals licence first, in full; a self-built
-        // neutral package ships no VISUAL-LICENSE.md and so shows no such entry.
+        // D57: the reserved visuals licence comes first, in full, whenever the package ships it (every
+        // package does, since each links the reserved Dock drawing code); a bundle without it lists none.
         let files: [(String, String, String, Bool)] = [
             ("VISUAL-LICENSE.md", visualComponent, visualLicense, false),
             ("LICENSE.txt", "ModelPlan software", "MIT", true),
