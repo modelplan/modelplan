@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Maps published public model data to the launch-field scene's model shape. No personal data.
 import {rocketColour,NEUTRAL} from './livery.js';
-export interface PublishedEffort {readonly effort:string;readonly label:string;readonly star?:boolean;readonly ability?:number|null;readonly cost?:number|null;readonly time?:number|null}
+export interface PublishedEffort {readonly effort:string;readonly label:string;readonly star?:boolean;readonly ability?:number|null;readonly cost?:number|null;readonly time?:number|null;readonly provisional?:boolean}
 export interface PublishedModel {readonly id:string;readonly name:string;readonly developerId:string;readonly recommended:string;readonly efforts:readonly PublishedEffort[]}
 export type FieldRow=readonly [string,number,number,number];
 export interface FieldModel {readonly id:string;readonly name:string;readonly short:string;readonly dev:string;readonly colour:string;readonly rec:string;readonly e:readonly FieldRow[];readonly sel:FieldRow;readonly reportedEffort:null;readonly previewEffort:null;
@@ -25,4 +25,34 @@ export function fieldModel(m:PublishedModel,short:(name:string)=>string=name=>na
 /** The rockets to fly: the chosen IDs in publication order, never more than the field's limit. */
 export function fieldFleet(models:readonly FieldModel[],chosen:ReadonlySet<string>):FieldModel[] {
  return models.filter(m=>chosen.has(m.id)).slice(0,FIELD_LIMIT);
+}
+
+/** WP-22 (D298): one effort in the launch-field component's tuple shape: label, ability, cost ratio, time ratio (null =
+ * unknown), time estimated. */
+export type WindowEffort=[string,number,number,number|null,boolean];
+/** WP-22 (D298): a published model in the launch-field component's WindowModel shape (component 1.2.0). Public data only:
+ * the component computes verdicts, grades fuel and picks the vehicle itself, and derives the site slug from the name, so
+ * no slug, fuel, racer or shape is sent. */
+export interface WindowModel {readonly id:string;readonly name:string;readonly dev:string;readonly colour:string;readonly rec:string|null;readonly e:WindowEffort[];readonly sel:WindowEffort|null}
+/** The published effort that supplies the displayed row (and so the index the component prints): the ★ effort when it
+ * has both ability and cost, else the first effort that has them. Efforts without either are never shown. */
+function displayedEffort(m:PublishedModel):PublishedEffort|null {
+ const shown=m.efforts.filter(x=>x.ability!=null&&x.cost!=null);
+ return shown.find(x=>x.star||x.effort===m.recommended)??shown[0]??null;
+}
+export function windowModel(m:PublishedModel):WindowModel|null {
+ const e:WindowEffort[]=[];let star:WindowEffort|null=null,sel:WindowEffort|null=null;const source=displayedEffort(m);
+ for(const x of m.efforts){
+  if(x.ability==null||x.cost==null)continue;
+  const row:WindowEffort=[x.label||x.effort,x.ability,x.cost,x.time??null,false];e.push(row);
+  if(x.star||x.effort===m.recommended)star=star??row;
+  if(x===source)sel=row;
+ }
+ if(!sel)return null;
+ return {id:m.id,name:m.name,dev:m.developerId,colour:rocketColour(m.developerId),rec:star?star[0]:null,e,sel};
+}
+/** The ids whose displayed index is provisional: the flag comes from the same effort that supplies the displayed row
+ * (macrevb-1062-4), so a dropped provisional ★ never marks a nonprovisional fallback row. */
+export function provisionalIds(models:readonly PublishedModel[]):string[] {
+ return models.filter(m=>displayedEffort(m)?.provisional===true).map(m=>m.id);
 }

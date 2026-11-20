@@ -80,6 +80,9 @@ jobs:
       - name: "source-policy: mac-compile runner tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/mac-compile-run.test.mjs
+      - name: "source-policy: native-headless build seed tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/mac-compile-headless-seed.test.mjs
       - name: "source-policy: changelog tests and fragment check"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/changelog.test.mjs && node scripts/changelog.mjs --check

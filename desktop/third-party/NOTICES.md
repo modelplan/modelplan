@@ -3,9 +3,10 @@
 
 Generated from [notices.json](notices.json), the canonical editable catalog.
 The full licence texts below are unmodified; the metadata and this index do not
-replace them. Licence paths in JSON are relative to this directory, so a future
-About renderer can load each text without a network request. About rendering
-and App resource integration are separate work; this change provides their data.
+replace them. Licence paths in JSON are relative to this directory, so the app's
+About page can show each text without a network request. The official ModelPlan
+visuals are not third-party material: their reserved licence ships as
+VISUAL-LICENSE.md in every app build and is listed first in About.
 
 Components are added with the PRs that ship them. The Go Kiro ACP adaptation and
 native Pulse shell port have separate entries pinned to their own source revisions.
@@ -2061,7 +2062,7 @@ Licence: `MIT`.
 
 Copyright © 2010-2026 three.js authors
 
-Used in: Official edition only: minified into the launch-field scene bundle, loaded on demand by the enlarged porthole.
+Used in: Official edition only: minified into the launch-field component bundle, loaded on demand by the enlarged porthole.
 
 Source: https://www.npmjs.com/package/three/v/0.186.1
 

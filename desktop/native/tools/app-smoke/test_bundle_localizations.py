@@ -12,7 +12,9 @@ SCRIPT = (TOOLS / 'package-neutral.sh').read_text(encoding='utf-8')
 class BundleLocalizationTests(unittest.TestCase):
     def info_plist(self):
         body = SCRIPT.split('Contents/Info.plist" <<PLIST', 1)[1].split('\nPLIST', 1)[0]
-        body = body.replace('$cockpit_entry', 'false').replace('$owner_test_plist', '')
+        for variable, value in (('$cockpit_entry', 'false'), ('$owner_test_plist', ''), ('$icon_plist', ''),
+                                ('$display_en', 'ModelPlan'), ('$copyright_en', 'MIT'), ('$edition', 'neutral')):
+            body = body.replace(variable, value)
         return plistlib.loads(body.strip().encode('utf-8'))
 
     def test_declares_english_and_simplified_chinese(self):
@@ -23,13 +25,16 @@ class BundleLocalizationTests(unittest.TestCase):
     def test_each_declared_localization_ships_user_visible_plist_strings(self):
         info = self.info_plist()
         for language in info['CFBundleLocalizations']:
-            match = re.search(r'%s\.lproj/InfoPlist\.strings" <<\'STRINGS\'\n(.*?)\nSTRINGS' % re.escape(language), SCRIPT, re.S)
+            match = re.search(r'%s\.lproj/InfoPlist\.strings" <<STRINGS\n(.*?)\nSTRINGS' % re.escape(language), SCRIPT, re.S)
             self.assertIsNotNone(match, language)
             keys = re.findall(r'^"(\w+)" = ', match.group(1), re.M)
             self.assertEqual(keys, ['CFBundleDisplayName', 'NSHumanReadableCopyright'], language)
-        # The Chinese text is Chinese.
-        zh = re.search(r"zh-Hans\.lproj/InfoPlist\.strings\" <<'STRINGS'\n(.*?)\nSTRINGS", SCRIPT, re.S).group(1)
-        self.assertRegex(zh, r'[\u4e00-\u9fff]')
+        # The Chinese strings use the Chinese text of both editions.
+        zh = re.search(r"zh-Hans\.lproj/InfoPlist\.strings\" <<STRINGS\n(.*?)\nSTRINGS", SCRIPT, re.S).group(1)
+        self.assertIn('$display_zh', zh); self.assertIn('$copyright_zh', zh)
+        for value in re.findall(r"^\s*(?:display|copyright)_zh='([^']*)'", SCRIPT, re.M):
+            self.assertRegex(value, r'[\u4e00-\u9fff]|^ModelPlan$')
+        self.assertTrue(any(re.search(r'[\u4e00-\u9fff]', v) for v in re.findall(r"copyright_zh='([^']*)'", SCRIPT)))
 
 if __name__ == '__main__':
     unittest.main()

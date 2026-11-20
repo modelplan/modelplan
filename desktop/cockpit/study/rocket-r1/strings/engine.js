@@ -9,7 +9,7 @@ register('eng', {
   resetPoint: ['lcd', '重置', 'Reset'],
   timelineAria: ['aria', '现在到重置 {reset}', 'Now to reset {reset}'],
   // Owner C01: fixed 5小时 / 每周 / 其他 labels; nonmatching windows carry their own period tag in Other.
-  today: ['silk', '今日', 'Today'],
+  today: ['silk', '今天', 'Today'], // CKP-ENG-53: the range row is labelled with its range (today until the range switch lands)
   speed: ['silk', '速度', 'Speed'],
   reserve: ['silk', '储备', 'Reserve'],
   // Owner D76: what the Reserve row holds, as a hover hint on its label (not drawn otherwise).
@@ -49,7 +49,7 @@ register('eng', {
   resetUnknown: ['lcd', '重置未知', 'reset ?'],
   runOut: ['lcd', '约 {t} 用完', 'out ~{t}'], // the pace says the window runs out before it resets (amber)
   runOutShort: ['lcd', '约{t}', '~{t}'], // the same in a narrow column (5–7 subscriptions)
-  runOutC: ['lcd', '约{t}用完', 'out ~{t}'], // round D2: the compact forecast in medium and wide cells
+  runOutC: ['lcd', '约{t}用完', 'out ~{t}'], // CKP-ENG-26 (amended, V1-FINAL §0/§14): the forecast in medium and wide cells
   resetLine: ['line', '{t} · {at}', '{t} · {at}'], // round D2: the wide cell's one line, 3h18 · 17:23
   // round D2 cell states
   drawCell: ['lcd', '扣点中', 'credits'], // used up, credits being drawn (red)
@@ -61,19 +61,24 @@ register('eng', {
   evTitle: ['aria', '官方预告约 {at} 额外重置', 'Public reset announced for about {at}'],
   evDoneTitle: ['aria', '官方已确认额外重置，等下次读数', 'Public reset confirmed, waiting for the next reading'],
   failed: ['lcd', '读取失败', 'No read'],
+  unreadable: ['lcd', '读不到', 'no reading'], // CKP-ENG-50: dim -- with this grey word; the cause is in the card, Settings and the overview
+  usedUp: ['lcd', '已用完', 'used up'], // CKP-ENG-50: red 0% with this word; the reset time is in the dots and the alert line
   failedAge: ['lcd', '失败·{a}', 'Fail·{a}'],
   failedShort: ['lcd', '失败', 'Failed'],
   loading: ['lcd', '读取中', 'Reading'],
   loadingShort: ['lcd', '读取', 'Wait'],
   ageCompact: ['lcd', '−{t}', '−{t}'],
   quotaOnly: ['lcd', '仅额度', 'Quota only'],
+  costHint: ['aria', '估算费用：按公开价格和你的用量估算，不是账单', 'Estimated cost: your usage at public prices, not a bill'], // CKP-ENG-53 ≈
   tps: ['lcd', 't/s', 't/s'],
   // 专项: extra quotas (a model's or a feature's own limit); +1 = one more extra in the column
   xMore: ['lcd', '+{n}', '+{n}'],
   // 储备: reset cards and credits
   cards: ['lcd', '↺{n}', '↺{n}'],
   credits: ['lcd', '{n}点', '{n} cr'],
-  expires: ['lcd', '{t}后到期', 'exp {t}'],
+  expires: ['lcd', '{t} 后到期', 'expires in {t}'], // CKP-ENG-52: what the reserve's time means
+  expiresShort: ['lcd', '{t}后到期', 'exp {t}'],
+  points: ['lcd', '点数 {v}', 'Credits {v}'], // CKP-ENG-52: the reserve's credits say what they are
   hours: ['lcd', '{n}h', '{n}h'],
   days: ['lcd', '{n}天', '{n}d'],
   drawing: ['line', '额度用完 · 正在扣点数', 'Used up · drawing credits'],
@@ -99,7 +104,8 @@ register('eng', {
 // Extra quotas (专项): the name with its period, shared by the engine table, the hover card, the Main screen and the
 // alerts (core.js builds the label). In a narrow column the name shrinks to a short tag (F·周, MCP).
 register('extra', {
-  name: ['lcd', '{n}·{p}', '{n}·{p}'],
+  name: ['lcd', '{n} · {p}', '{n} · {p}'], // CKP-ENG-51: MCP · 月
+  nameShort: ['lcd', '{n}·{p}', '{n}·{p}'], // the narrow tag (F·周)
   'per.5h': ['lcd', '5时', '5h'],
   'per.day': ['lcd', '日', 'day'],
   'per.week': ['lcd', '周', 'wk'],

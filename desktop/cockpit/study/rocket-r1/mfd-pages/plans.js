@@ -7,7 +7,7 @@ import {secondaryLink} from './public-helpers.js';
 // Pure view (spec 2.6).
 import {t,formatCredits} from '../i18n.js';
 import {esc, tok, dhm, hm, when, stamp, until, md, bar10, level, chip, clockIcon, tip, fill, relativeMoment, resetMoment} from './fmt.js';
-import {accountOf, modelOf} from './scope.js';
+import {accountOf, modelOf, rangeKey, rangeOf} from './scope.js';
 import {fillColour} from '../colour-mode.js';
 
 const VIA = {native: 'mfd.viaNative', codexbar: 'mfd.viaCodexbar', manual: 'mfd.viaManual'};
@@ -128,7 +128,9 @@ const cycleKind = (a, ui) => a.windows.some(w => w.kind === ui.cycle) ? ui.cycle
 
 // Exact v0.5.33 token kinds; unknown stays --, explicit zero stays 0. No cache-write double count.
 export function usageBlock(a,ui){
- const days=ui.subDays===30?30:7,w=a.usageStats?.[`recent${days}d`],s=w?.sums,rate=w?.metrics?.generationTps;
+ // CKP-SHELL-50: the app's range; the statistics have 7- and 30-day figures, so Today says so (until WP-02).
+ if(rangeOf(ui)==='today')return `<div class="sp-stats" data-days="today"><p class="mp-empty">${t('mfd.rangeNoToday')}</p></div>`;
+ const days=rangeOf(ui)==='30d'?30:7,w=a.usageStats?.[`recent${days}d`],s=w?.sums,rate=w?.metrics?.generationTps;
  const hit=s?.inputTokens!=null&&s?.cacheReadTokens!=null&&s.inputTokens+s.cacheReadTokens>0?s.cacheReadTokens/(s.inputTokens+s.cacheReadTokens):null;
  const rows=s?[[t('mfd.statInput'),tok(s.inputTokens)],[t('mfd.statOutput'),tok(s.observedOutputTokens)],
   [t('mfd.statCache'),tok(s.cacheReadTokens)],[t('mfd.statWrite'),tok(s.cacheWriteTokens)],
@@ -143,7 +145,7 @@ export const plans = {
     if (!a) return [null, null, null, null];
     const hist = ui.subTab === 'hist', ws = a.windows, k = cycleKind(a, ui);
     return [{id: 'tab', a: {value:'now', text: t('mfd.oNow'), on: !hist}, b: {value:'hist', text: t('mfd.oHist'), on: hist}},
-      hist && ws.length > 1 ? {id: 'cycle', a: {value:ws[0].kind, text: ws[0].label, on: k === ws[0].kind}, b: {value:ws[1].kind, text: ws[1].label, on: k === ws[1].kind}} : !hist ? {id:'usage',a:{value:7,text:'7',on:ui.subDays!==30},b:{value:30,text:'30',on:ui.subDays===30}} : null, null, null];
+      hist && ws.length > 1 ? {id: 'cycle', a: {value:ws[0].kind, text: ws[0].label, on: k === ws[0].kind}, b: {value:ws[1].kind, text: ws[1].label, on: k === ws[1].kind}} : !hist ? rangeKey(ui) : null, null, null];
   },
   render(d, ui) {
     const a = ui.scope && accountOf(d, ui.scope);
@@ -159,7 +161,7 @@ export const plans = {
   },
   onClick(act, val, ui, d) {
     if (act === 'scope') return {scope: val};
-    if (act === 'opt' && val === 'usage') return {patch:{mfdSubDays:ui.optionChoice!=null?Number(ui.optionChoice):ui.subDays===30?7:30}};
+    if (act === 'opt' && val === 'range') return {range: ui.optionChoice};
     if (act === 'opt' && val === 'tab') return {patch: {mfdSubTab: ui.optionChoice ?? (ui.subTab === 'hist' ? 'now' : 'hist')}};
     if (act === 'opt' && val === 'cycle') { const a = accountOf(d, ui.scope), k = cycleKind(a, ui), ws = a.windows; return {patch: {mfdCycle: ui.optionChoice ?? (k === ws[0].kind ? ws[1].kind : ws[0].kind)}}; }
     return null;

@@ -74,7 +74,7 @@ import ModelPlanSettings
                                     statusItemTitle: String = "ModelPlan",
                                     makeSettings: @escaping @MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration) -> CommunityDelegate {
         let delegate = CommunityDelegate(surfaces: surfaces, companion: companion, transport: transport,
-                                         statusItemTitle: statusItemTitle, statusItemImage: CommunityMenuBarResources.templateImage(),
+                                         statusItemTitle: statusItemTitle, statusItemImage: CommunityMenuBarResources.statusImage(),
                                          menuBarProvider: CommunityMenuBarProjector(preferences: { [weak source = companion as? any CommunityMenuBarPreferencesProviding] in
                                              source?.currentMenuBarPreferences
                                          }), makeSettings: makeSettings)

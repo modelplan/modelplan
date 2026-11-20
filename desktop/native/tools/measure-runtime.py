@@ -30,7 +30,7 @@ def children(pid,helper):
             if value: result.append(value)
     return result
 app=pathlib.Path(sys.argv[1]).resolve();out=pathlib.Path(sys.argv[2]).resolve();out.mkdir(parents=True,exist_ok=False)
-exe=app/'Contents/MacOS/ModelPlanCommunity';helper=(app/'Contents/Helpers/modelplan').resolve()
+exe=app/'Contents/MacOS/ModelPlan';helper=(app/'Contents/Helpers/modelplan').resolve()
 enumeration_probe=subprocess.Popen(['/bin/sleep','1'])
 try:
     time.sleep(.05)

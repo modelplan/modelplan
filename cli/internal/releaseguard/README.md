@@ -9,7 +9,7 @@ From `cli/`:
 ```sh
 go test -count=1 ./internal/testenv ./internal/quota ./internal/connections ./cmd/modelplan -run 'Test(ReaderReason|NativeConnectionReasons|.*ErrorOutput|RuntimeErrorsStayOutOfCLIJSONAndLogs)'
 go run ./internal/releaseguard/cmd --root ..
-go run ./internal/releaseguard/cmd --binary '/path/to/release.app/Contents/MacOS/ModelPlanCommunity'
+go run ./internal/releaseguard/cmd --binary '/path/to/release.app/Contents/MacOS/ModelPlan'
 ```
 
 The reader tables validate actual persisted/returned reason fields and captured
