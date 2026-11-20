@@ -37,6 +37,9 @@ type CostRow struct {
 	// Approximate: some priced tokens came from day totals of a model that has a
 	// long-context price, so the long-context rate could not be applied per request.
 	Approximate bool
+	// HourOnly: an hour of a tool priced by day totals, from the ledger's hourly view (the last
+	// two local days). Its use is already in that day's row, so it feeds hours only.
+	HourOnly bool
 }
 
 // Costs prices the usage view over the last 30 local days. Response-accounting rows are
@@ -48,7 +51,10 @@ func (v PerfView) Costs(p Pricer) []CostRow {
 	}
 	v = v.accounted()
 	from, today := windowFrom(v.Now, 30), day(v.Now)
-	type key struct{ day, hour, source, model, origin string }
+	type key struct {
+		day, hour, source, model, origin string
+		hourOnly                         bool
+	}
 	sums := map[key]*CostRow{}
 	add := func(k key, usd float64, tokens int64, priced, approximate bool) {
 		if tokens <= 0 {
@@ -56,7 +62,7 @@ func (v PerfView) Costs(p Pricer) []CostRow {
 		}
 		r := sums[k]
 		if r == nil {
-			r = &CostRow{Day: k.day, Hour: k.hour, Source: k.source, Model: k.model, Origin: k.origin}
+			r = &CostRow{Day: k.day, Hour: k.hour, Source: k.source, Model: k.model, Origin: k.origin, HourOnly: k.hourOnly}
 			sums[k] = r
 		}
 		if priced {
@@ -66,6 +72,10 @@ func (v PerfView) Costs(p Pricer) []CostRow {
 		} else {
 			r.UnpricedTokens = sat(r.UnpricedTokens, tokens)
 		}
+	}
+	perResponse := map[string]bool{} // sources whose hours come from their responses
+	for _, r := range v.Ledger.UsageRows {
+		perResponse[r.Source] = true
 	}
 	for i := range v.Ledger.Rows {
 		r := &v.Ledger.Rows[i]
@@ -78,7 +88,7 @@ func (v PerfView) Costs(p Pricer) []CostRow {
 					continue
 				}
 				usd, ok := p.Request(r.Source, r.Model, q.Tier, q.Buckets)
-				add(key{r.Day, localHour(q.At), r.Source, r.Model, r.Origin}, usd, q.Buckets.Sum(), ok, false)
+				add(key{r.Day, localHour(q.At), r.Source, r.Model, r.Origin, false}, usd, q.Buckets.Sum(), ok, false)
 			}
 			continue
 		}
@@ -88,11 +98,25 @@ func (v PerfView) Costs(p Pricer) []CostRow {
 			if r.TotalTokens != nil && *r.TotalTokens > tokens {
 				tokens = *r.TotalTokens
 			}
-			add(key{r.Day, "", r.Source, r.Model, r.Origin}, 0, tokens, false, false)
+			add(key{r.Day, "", r.Source, r.Model, r.Origin, false}, 0, tokens, false, false)
 			continue
 		}
 		usd, ok, approximate := p.Aggregate(r.Source, r.Model, b)
-		add(key{r.Day, "", r.Source, r.Model, r.Origin}, usd, b.Sum(), ok, approximate)
+		add(key{r.Day, "", r.Source, r.Model, r.Origin, false}, usd, b.Sum(), ok, approximate)
+	}
+	for _, h := range v.Hourly() {
+		at, err := time.Parse(time.RFC3339, h.Hour)
+		if err != nil || perResponse[h.Source] || h.Model == "" {
+			continue
+		}
+		row := PerfRow{TokenKinds: h.TokenKinds, ObservedOutputTokens: h.ObservedOutputTokens}
+		b, known := rowBuckets(&row)
+		if !known {
+			add(key{day(at), h.Hour, h.Source, h.Model, "", true}, 0, b.Sum(), false, false)
+			continue
+		}
+		usd, ok, approximate := p.Aggregate(h.Source, h.Model, b)
+		add(key{day(at), h.Hour, h.Source, h.Model, "", true}, usd, b.Sum(), ok, approximate)
 	}
 	out := make([]CostRow, 0, len(sums))
 	for _, r := range sums {
@@ -112,7 +136,10 @@ func (v PerfView) Costs(p Pricer) []CostRow {
 		if a.Model != b.Model {
 			return a.Model < b.Model
 		}
-		return a.Origin < b.Origin
+		if a.Origin != b.Origin {
+			return a.Origin < b.Origin
+		}
+		return !a.HourOnly && b.HourOnly
 	})
 	return out
 }
@@ -152,6 +179,28 @@ func sat(a, b int64) int64 {
 }
 
 // claudeTier reads Claude Code's message.usage.speed (ccusage claude/src/lib.rs).
+// storedTier is the tier as an accounting record keeps it: standard is written out, so a record
+// without a tier can only be one written before tiers were recorded.
+func storedTier(t string) string {
+	if t == "" {
+		return "standard"
+	}
+	return t
+}
+
+// responseTier is a stored tier as the pricer takes it ("" standard). A record without one is
+// unknown: its tokens count, but no price applies, since a fast response must never be priced
+// at the standard rate.
+func responseTier(t string) string {
+	switch t {
+	case "standard":
+		return ""
+	case "":
+		return "unknown"
+	}
+	return t
+}
+
 func claudeTier(speed string) string {
 	switch speed {
 	case "", "standard":

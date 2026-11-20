@@ -129,12 +129,16 @@ func cockpitCost(perf speed.PerfView, allowed map[string]bool, models []digest.M
 		if !allowed[r.Source] || r.Day < from30 || r.Day > today {
 			continue
 		}
-		addBucket(days, bucketKey{r.Day, r.Source}, r)
 		if r.Hour != "" {
-			if at, err := time.Parse(time.RFC3339, r.Hour); err == nil && !at.Before(hourFrom.Truncate(time.Hour)) && !at.After(now) {
+			// The last 48 local hours: an hour starting after now−48h and not after now.
+			if at, err := time.Parse(time.RFC3339, r.Hour); err == nil && at.After(hourFrom) && !at.After(now) {
 				addBucket(hours, bucketKey{r.Hour, r.Source}, r)
 			}
 		}
+		if r.HourOnly {
+			continue // already in that day's row
+		}
+		addBucket(days, bucketKey{r.Day, r.Source}, r)
 		k := modelKey{pricer.id(r.Source, r.Model), r.Source}
 		for i, from := range [3]string{today, from7, from30} {
 			if r.Day < from {
@@ -162,36 +166,59 @@ func cockpitCost(perf speed.PerfView, allowed map[string]bool, models []digest.M
 		at := pricer.asOf
 		out.PricesAsOf = &at
 	}
+	// Models are ranked by their ≈cost over all sources, and a model is kept or left out whole, so a
+	// ranked model never loses one source's part. The page takes shares from the range totals.
 	ranked := func(in map[modelKey]*wire.CockpitModelCost) []wire.CockpitModelCost {
-		list := make([]wire.CockpitModelCost, 0, len(in))
+		type model struct {
+			id     string
+			usd    float64
+			priced bool
+			tokens int64
+			rows   []wire.CockpitModelCost
+		}
+		byModel := map[string]*model{}
 		for _, c := range in {
+			m := byModel[c.Model]
+			if m == nil {
+				m = &model{id: c.Model}
+				byModel[c.Model] = m
+			}
 			if c.EstimatedUsd != nil {
+				m.usd += *c.EstimatedUsd
+				m.priced = true
 				usd := roundUSD(*c.EstimatedUsd)
 				c.EstimatedUsd = &usd
 			}
-			list = append(list, *c)
+			m.tokens += c.PricedTokens + c.UnpricedTokens
+			m.rows = append(m.rows, *c)
 		}
-		usd := func(c wire.CockpitModelCost) float64 {
-			if c.EstimatedUsd == nil {
+		models := make([]*model, 0, len(byModel))
+		for _, m := range byModel {
+			sort.Slice(m.rows, func(i, j int) bool { return m.rows[i].Source < m.rows[j].Source })
+			models = append(models, m)
+		}
+		usd := func(m *model) float64 {
+			if !m.priced {
 				return -1
 			}
-			return *c.EstimatedUsd
+			return m.usd
 		}
-		sort.Slice(list, func(i, j int) bool {
-			a, b := list[i], list[j]
+		sort.Slice(models, func(i, j int) bool {
+			a, b := models[i], models[j]
 			if usd(a) != usd(b) {
 				return usd(a) > usd(b)
 			}
-			if ta, tb := a.PricedTokens+a.UnpricedTokens, b.PricedTokens+b.UnpricedTokens; ta != tb {
-				return ta > tb
+			if a.tokens != b.tokens {
+				return a.tokens > b.tokens
 			}
-			if a.Model != b.Model {
-				return a.Model < b.Model
-			}
-			return a.Source < b.Source
+			return a.id < b.id
 		})
-		if len(list) > cockpitCostTop {
-			list = list[:cockpitCostTop]
+		list := []wire.CockpitModelCost{}
+		for _, m := range models {
+			if len(list)+len(m.rows) > cockpitCostTop {
+				break // the next model does not fit whole; no lower-ranked model takes its place
+			}
+			list = append(list, m.rows...)
 		}
 		return list
 	}
@@ -217,5 +244,12 @@ func costBuckets[K comparable](in map[K]*wire.CockpitCostBucket, limit int) []wi
 	return out
 }
 
-// roundUSD keeps a micro-dollar: below anything the page shows, and stable on the wire.
-func roundUSD(v float64) float64 { return math.Round(v*1e6) / 1e6 }
+// roundUSD keeps a micro-dollar: below anything the page shows, and stable on the wire. A positive
+// estimate never rounds to zero, so the page can still say "<$0.01" rather than "≈$0".
+func roundUSD(v float64) float64 {
+	r := math.Round(v*1e6) / 1e6
+	if v > 0 && r == 0 {
+		return 1e-6
+	}
+	return r
+}

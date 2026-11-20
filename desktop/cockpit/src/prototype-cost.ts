@@ -71,17 +71,22 @@ export function costView(data:WireCockpitData|null|undefined,now:number):CostVie
  }
  const hourly=new Map<string,number>();
  for(const b of c.hourly){const at=Date.parse(b.at);if(!Number.isFinite(at)||at>now||b.pricedTokens<=0)continue;const k=`${b.at}\u0000${owner.get(b.source)??''}`;hourly.set(k,(hourly.get(k)??0)+b.estimatedUsd);}
- const bars=(m:Map<string,number>)=>[...m].map(([k,usd])=>{const [at,ref]=k.split('\u0000');return {at:at!,subscriptionRef:ref||null,usd};}).sort((a,b)=>a.at<b.at?-1:a.at>b.at?1:(a.subscriptionRef??'')<(b.subscriptionRef??'')?-1:1);
- const models=(rows:WireCockpitCost['models']['today']):CostModelRow[]=>{
+ // Bars run in time order: an hour's offset-bearing timestamp sorts by its instant, so the repeated hour of a
+ // daylight-saving fall-back keeps its order.
+ const instant=(at:string)=>{const t=Date.parse(at);return Number.isFinite(t)?t:0;};
+ const bars=(m:Map<string,number>)=>[...m].map(([k,usd])=>{const [at,ref]=k.split('\u0000');return {at:at!,subscriptionRef:ref||null,usd};}).sort((a,b)=>instant(a.at)-instant(b.at)||(a.at<b.at?-1:a.at>b.at?1:0)||((a.subscriptionRef??'')<(b.subscriptionRef??'')?-1:1));
+ // Shares are of the whole range (COST-54): the producer lists at most 64 model rows, so the denominators are the
+ // range totals from the day buckets, never the sum of the listed rows.
+ const models=(rows:WireCockpitCost['models']['today'],range:Acc):CostModelRow[]=>{
   const by=new Map<string,Acc>();for(const m of rows){const a=by.get(m.model)??new Acc();by.set(m.model,a);a.add(m.estimatedUsd??0,m.pricedTokens,m.unpricedTokens,m.approximate);}
-  let usd=0,tokens=0;for(const a of by.values()){if(a.priced>0)usd+=a.usd;tokens+=a.priced+a.unpriced;}
-  return [...by].map(([model,a])=>{const s=a.sum();return {model,cost:s.cost,tokens:s.tokens,share:s.cost&&usd>0?s.cost.usd/usd:null,tokenShare:tokens>0?s.tokens/tokens:0};})
+  const usd=range.priced>0?range.usd:0,tokens=range.priced+range.unpriced;
+  return [...by].map(([model,a])=>{const s=a.sum();return {model,cost:s.cost,tokens:s.tokens,share:s.cost&&usd>0?Math.min(1,s.cost.usd/usd):null,tokenShare:tokens>0?Math.min(1,s.tokens/tokens):0};})
    .sort((a,b)=>(b.cost?.usd??-1)-(a.cost?.usd??-1)||b.tokens-a.tokens||(a.model<b.model?-1:1));
  };
  const bySubscription=new Map<string,Record<CostRange,CostSum>>();
  for(const [ref,s] of subs)bySubscription.set(ref,{today:s.today.sum(),last7d:s.last7d.sum(),last30d:s.last30d.sum()});
  return {pricesAsOf:c.pricesAsOf,total:{today:total.today.sum(),last7d:total.last7d.sum(),last30d:total.last30d.sum()},bySubscription,
-  daily:bars(daily),hourly:bars(hourly),models:{today:models(c.models.today),last7d:models(c.models.recent7d),last30d:models(c.models.recent30d)}};
+  daily:bars(daily),hourly:bars(hourly),models:{today:models(c.models.today,total.today),last7d:models(c.models.recent7d,total.last7d),last30d:models(c.models.recent30d,total.last30d)}};
 }
 
 /** One subscription's ≈cost per range, or null when the view has none for it (no ≈$ is drawn). */

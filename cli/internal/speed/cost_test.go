@@ -145,7 +145,7 @@ func TestCodexServiceTierFollowsThreadSettings(t *testing.T) {
 	for _, r := range p.records {
 		tiers = append(tiers, r.Tier)
 	}
-	if strings.Join(tiers, ",") != "fast,fast,,unknown" {
+	if strings.Join(tiers, ",") != "fast,fast,standard,unknown" {
 		t.Fatalf("tiers = %q", tiers)
 	}
 }

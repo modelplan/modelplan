@@ -21,7 +21,7 @@ function data(withCost=true){
    {at:day(0),source:'claude-code',estimatedUsd:0,pricedTokens:0,unpricedTokens:700},
    {at:day(2),source:'claude-code',estimatedUsd:5,pricedTokens:1000,unpricedTokens:0,approximate:true},
    {at:day(10),source:'codex',estimatedUsd:50,pricedTokens:5000,unpricedTokens:300},
-   {at:day(10),source:'opencode',estimatedUsd:1,pricedTokens:100,unpricedTokens:0},
+   {at:day(3),source:'opencode',estimatedUsd:1,pricedTokens:100,unpricedTokens:0},
    {at:day(40),source:'codex',estimatedUsd:999,pricedTokens:1,unpricedTokens:0}],
   hourly:[{at:new Date(2026,10,5,10).toISOString(),source:'codex',estimatedUsd:3,pricedTokens:10,unpricedTokens:0}],
   models:{today:[{model:'sol',source:'codex',estimatedUsd:10.2,pricedTokens:33900000,unpricedTokens:0},{model:'sonnet',source:'claude-code',estimatedUsd:null,pricedTokens:0,unpricedTokens:700}],
@@ -35,13 +35,13 @@ test('the ≈cost view sums each range from the wire and keeps unpriced use out 
  assert.equal(v.pricesAsOf,'2026-11-04');
  assert.deepEqual(v.total.today.cost,{usd:10.2,approximate:false});
  assert.equal(v.total.today.unpricedShare,700/33900700);
- assert.deepEqual(v.total.last7d.cost,{usd:15.2,approximate:true});
+ assert.deepEqual(v.total.last7d.cost,{usd:16.2,approximate:true});
  assert.deepEqual(v.total.last30d.cost,{usd:66.2,approximate:true},'a day before the 30-day range is left out');
  assert.deepEqual(subscriptionCost(v,refA),{today:{usd:10.2,approximate:false},last7d:{usd:10.2,approximate:false},last30d:{usd:60.2,approximate:false}});
  assert.equal(subscriptionCost(v,refB).today,null,'a subscription with only unpriced use today has no ≈$, not $0');
  assert.equal(subscriptionCost(v,'1111111111111111'),null);
  // Bars: unpriced buckets draw nothing; an unbound source stays unattributed.
- assert.deepEqual(v.daily.map(b=>[b.at,b.subscriptionRef,b.usd]),[[day(10),null,1],[day(10),refA,50],[day(2),refB,5],[day(0),refA,10.2]]);
+ assert.deepEqual(v.daily.map(b=>[b.at,b.subscriptionRef,b.usd]),[[day(10),refA,50],[day(3),null,1],[day(2),refB,5],[day(0),refA,10.2]]);
  assert.equal(v.hourly.length,1);
  // Models: one row per model across sources, ranked by ≈cost; no price → no share, token share instead.
  assert.deepEqual(v.models.last7d.map(m=>[m.model,m.cost?.usd,m.share]),[['sol',10.2,10.2/16.2],['opus',6,6/16.2]]);
@@ -57,14 +57,44 @@ test('no published prices, or "Show estimated cost" off, leaves no ≈cost anywh
  const unchanged=data(false);assert.equal(withoutEstimatedCost(unchanged),unchanged);
 });
 
-test('the engine supplement carries its own subscription ≈cost only under a verified binding',()=>{
+// macrev2-1050-4 / macrevb-1050-4. Invariant: until the "Show estimated cost" setting reaches the page (SET-9-50
+// follow-up), priced history adds no ≈$ to the usage row. The row reads only the engine supplement's estCost.
+test('priced history leaves the usage row without ≈cost (data-only delivery)',()=>{
  const account=sample().projection.rows[0].accounts[0];
  account.subscriptionRef=refA;
  const d=data();d.details={subscriptions:[]};
- assert.deepEqual(prototypeEngineSupplement(account,d,now).estCost.last7d,{usd:10.2,approximate:false});
- assert.equal(prototypeEngineSupplement(account,withoutEstimatedCost(d),now).estCost,null);
- account.subscriptionRef='1111111111111111';
- assert.equal(prototypeEngineSupplement(account,d,now).estCost,null);
+ const supplement=prototypeEngineSupplement(account,d);
+ assert.equal(Object.hasOwn(supplement,'estCost'),false);
+ assert.ok(subscriptionCost(costView(d,now),refA).last7d,'the cost view itself still has the subscription figure');
+});
+
+// macrevd-1050-2 / macrevb-1050-3 / macrev2-1050-3. Invariant: a model's share is of the whole range, even when the
+// producer listed only some models.
+test('model shares are of the range total, not of the listed rows',()=>{
+ const d=data();
+ d.history.cost.models.recent7d=[{model:'sol',source:'codex',estimatedUsd:10.2,pricedTokens:33900000,unpricedTokens:0}];
+ const [sol]=costView(d,now).models.last7d;
+ assert.equal(sol.share,10.2/16.2);
+ assert.equal(sol.tokenShare,33900000/(33900000+700+1000+100));
+ d.history.cost.models.today=[{model:'sonnet',source:'claude-code',estimatedUsd:null,pricedTokens:0,unpricedTokens:700}];
+ const [sonnet]=costView(d,now).models.today;
+ assert.equal(sonnet.share,null);assert.equal(sonnet.tokenShare,700/33900700);
+});
+
+// macrevd-1050-4 / macrev2-1050-5. Invariant: hourly bars run in time order, also through a repeated local hour.
+test('a repeated fall-back hour keeps its time order',()=>{
+ const d=data(),late=Date.parse('2026-10-25T03:00:00+01:00');
+ d.history.cost.hourly=[
+  {at:'2026-10-25T02:00:00+01:00',source:'codex',estimatedUsd:2,pricedTokens:10,unpricedTokens:0},
+  {at:'2026-10-25T02:00:00+02:00',source:'codex',estimatedUsd:1,pricedTokens:10,unpricedTokens:0}];
+ assert.deepEqual(costView(d,late).hourly.map(b=>b.usd),[1,2]);
+});
+
+// macrevd-1050-3 / macrev2-1050-6. Invariant: a positive estimate is never shown as $0.
+test('the smallest positive wire figure still reads "<$0.01"',()=>{
+ const d=data(false);
+ d.history.cost={basis:'api-list-price',currency:'USD',pricesAsOf:'2026-11-04',daily:[{at:day(0),source:'codex',estimatedUsd:0.000001,pricedTokens:1,unpricedTokens:0}],hourly:[],models:{today:[],recent7d:[],recent30d:[]}};
+ assert.equal(estCostText(costView(d,now).total.today.cost.usd),'<$0.01');
 });
 
 test('≈cost text follows V1-FINAL §0',()=>{

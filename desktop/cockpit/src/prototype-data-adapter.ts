@@ -2,15 +2,12 @@
 // Preserve the producer's nulls, empty lists and zero values; join only the
 // verified subscription references already admitted by the wire projection.
 import type {WireAccount,WireWindow,WireCockpitData,WireCockpitDetails} from '../generated/wire.js';
-import {costView,subscriptionCost,type CostRange,type EstCost} from './prototype-cost.js';
 export interface PrototypeEngineSupplement {
  readonly todayTokens:number|null; readonly todayAverageGenerationTps:number|null;
  readonly resetCards:WireCockpitDetails['subscriptions'][number]['resetCounts']|null;
  readonly reserveCredits:WireAccount['credits'];
- /** ≈cost per range for this subscription (WP-06); null when there is none to show (no prices, setting off, unverified). */
- readonly estCost:Readonly<Record<CostRange,EstCost|null>>|null;
 }
-export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitData,now=Date.now()):PrototypeEngineSupplement {
+export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitData):PrototypeEngineSupplement {
  const ref=account.subscriptionRef;
  const verified=ref!==null&&data?.subscriptions.some(s=>s.subscriptionRef===ref);
  const matches=verified?data?.details?.subscriptions.filter(s=>s.subscriptionRef===ref)??[]:[];
@@ -20,8 +17,7 @@ export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitD
  const today=eligible.length===1&&detail?.today.length===1?eligible[0]:null;
  const wireCredits=detail?.credits;
  return {todayTokens:today?.observedTotalTokens??today?.observedOutputTokens??null,todayAverageGenerationTps:today?.generationTps??null,resetCards:detail?.resetCounts??null,
-  reserveCredits:wireCredits?{balance:wireCredits.balance,unit:'credits'}:detail?null:account.credits,
-  estCost:verified&&data?subscriptionCost(costView(data,now),ref):null};
+  reserveCredits:wireCredits?{balance:wireCredits.balance,unit:'credits'}:detail?null:account.credits};
 }
 export const cockpitDetails=(data:WireCockpitData)=>data.details;
 // Settings "Project names" off: labels are dropped before any surface or accessibility text sees them.

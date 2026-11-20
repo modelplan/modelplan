@@ -45,12 +45,15 @@ type usageRecord struct {
 	Replay      string `json:"replay,omitempty"`
 	Requestless bool   `json:"requestless,omitempty"`
 	Response    bool   `json:"response,omitempty"`
-	// Tier is the response's recorded speed tier ("" standard, or fast | ultrafast | flex |
-	// unknown). It selects a published API price multiplier; it is not a timing sample.
+	// Tier is the response's recorded speed tier: standard | fast | ultrafast | flex | unknown.
+	// It selects a published API price multiplier; it is not a timing sample. Records written
+	// before tiers were recorded have none, and responseTier reads that as unknown, never as
+	// standard.
 	Tier string `json:"tier,omitempty"`
 }
 type usageFile struct {
 	LiveObserved bool          `json:"liveObserved,omitempty"` // Size/Modified describe a real live scan, not an import
+	Tiered       bool          `json:"tiered,omitempty"`       // the records carry their speed tier (WP-06); older entries are rescanned
 	Session      string        `json:"session,omitempty"`
 	Parent       string        `json:"parent,omitempty"`
 	Started      time.Time     `json:"started,omitempty"`
@@ -145,7 +148,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		}
 		key := fileKey(path)
 		old, exists := l.Files[key]
-		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() {
+		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Tiered && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() {
 			continue
 		}
 		p := newAccountingParser(source, key)
@@ -169,7 +172,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 				records = append(records, r)
 			}
 		}
-		l.Files[key] = usageFile{LiveObserved: true, Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started}
+		l.Files[key] = usageFile{LiveObserved: true, Tiered: true, Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started}
 		changed = true
 	}
 	// Retain no expired or revoked observations, even from files no longer present.
@@ -290,7 +293,7 @@ func accountingRows(cache string) ([]PerfRow, map[string]bool) {
 			rows[key] = r
 		}
 		r.TokenKinds.add(usageKinds(v.usageBuckets), r.ObservedRequests == 0)
-		r.Responses = append(r.Responses, Response{At: v.At, Tier: v.Tier, Buckets: v.usageBuckets})
+		r.Responses = append(r.Responses, Response{At: v.At, Tier: responseTier(v.Tier), Buckets: v.usageBuckets})
 		r.ObservedRequests++
 		r.ObservedOutputTokens += v.Output + v.Reasoning
 	}
@@ -434,7 +437,7 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 		if e.Message.ID != "" {
 			replay = usageHash(session, "\x00", e.Message.ID)
 		}
-		p.records = append(p.records, usageRecord{Key: key, At: e.Timestamp, Model: e.Message.Model, usageBuckets: buckets, Sidechain: e.Sidechain, Replay: replay, Requestless: e.RequestID == "", Tier: claudeTier(u.Speed)})
+		p.records = append(p.records, usageRecord{Key: key, At: e.Timestamp, Model: e.Message.Model, usageBuckets: buckets, Sidechain: e.Sidechain, Replay: replay, Requestless: e.RequestID == "", Tier: storedTier(claudeTier(u.Speed))})
 		return
 	}
 	if e.Type == "session_meta" {
@@ -516,7 +519,7 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 	if e.Payload.ResponseID != "" {
 		key = usageHash("response:", e.Payload.ResponseID)
 	}
-	record := usageRecord{Key: key, At: e.Timestamp, Model: model, usageBuckets: buckets, Response: e.Type == "token_usage_record" || e.Payload.Type == "token_usage_record", Tier: p.tier}
+	record := usageRecord{Key: key, At: e.Timestamp, Model: model, usageBuckets: buckets, Response: e.Type == "token_usage_record" || e.Payload.Type == "token_usage_record", Tier: storedTier(p.tier)}
 	if e.Type == "token_usage_record" || e.Payload.Type == "token_usage_record" {
 		id := e.Payload.ResponseID
 		if id == "" || p.emitted[id] {

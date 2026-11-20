@@ -8,7 +8,7 @@ test('study engine data adapter preserves wire credits and leaves absent metrics
  const account=sample().projection.rows[0].accounts[0];
  account.credits={balance:37,unit:'credits'};
  assert.deepEqual(prototypeEngineSupplement(account),{
-  todayTokens:null,todayAverageGenerationTps:null,resetCards:null,reserveCredits:{balance:37,unit:'credits'},estCost:null
+  todayTokens:null,todayAverageGenerationTps:null,resetCards:null,reserveCredits:{balance:37,unit:'credits'}
  });
  account.credits=null;
  assert.equal(prototypeEngineSupplement(account).reserveCredits,null);
