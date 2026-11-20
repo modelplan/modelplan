@@ -18,7 +18,8 @@ import type {CockpitPlugin,PluginCell,PluginColumn,PluginContext,PluginScreen,Pl
 export const RESOURCE_INK='#da66c2';
 /** The page keeps what the host's ring buffer keeps: ten minutes. */
 export const RESOURCE_WINDOW_MS=10*60*1000;
-const MAX_PER_READING=120,MAX_KEPT=720,TREND_POINTS=30;
+// MAX_PER_READING = ModelPlanResources ResourcePageFeed.maximumPerReading (ten minutes at 2 s is 300 samples).
+const MAX_PER_READING=360,MAX_KEPT=720,TREND_POINTS=30;
 export type ResourcePressure='normal'|'warn'|'critical';
 /** One host sample (ModelPlanResources ResourcePagePayload): percentages 0–100, sizes in bytes, `t` in Unix ms. */
 export interface ResourceSample {

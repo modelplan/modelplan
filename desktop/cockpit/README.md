@@ -115,7 +115,7 @@ consent mutation or plugin-install message exists in this protocol.
 
 Plugins are bundled modules in `src/plugin-registry.ts`: id, string-table keys for the title (long and short) and the
 one-sentence Settings summary, a trusted white line-art icon at the vendor-mark size, the dashed underline colour and
-bar ink (only `#87939e`, `#e9edf0` or `#b9c7d6`), settings specs, and three pure functions: `accept` folds a host reading
+bar ink (only `#87939e`, `#e9edf0`, `#b9c7d6` or the resource orchid `#da66c2`), settings specs, and three pure functions: `accept` folds a host reading
 into the plugin's state (kept across repaints), `column` describes up to three cells in the subscription columns'
 Other-cell grammar (small tag · large number · side value · continuous bar with a thin trend line) plus a bottom line,
 and `screen` gives the lines of its big screen. Plugin strings live in `study/rocket-r1/strings/plugins.js`, each drawn
@@ -136,6 +136,20 @@ page. The page has no timers; the host samples. Messages, all with the common he
 - host → page `{"type":"pluginData","id":…,"data":…}`: a reading for a running plugin; refused otherwise.
 - page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's right-click Remove or the "+" menu.
 - page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
+
+A plugin marked `hostSampled` (the resource plugin) is laid out only after the host has sent its plugin state, so a
+host that cannot sample never shows an empty column.
+
+### Resource plugin (D324, D327)
+
+`src/resource-plugin.ts`: CPU · Memory · Disk cells, the bottom line is memory pressure, orchid `#da66c2` for the key's
+dashed underline, bars and trend lines; only the numbers turn amber or red (CPU ≥ 70 % / ≥ 90 %, memory by macOS
+memory pressure, disk ≥ 90 %). Default on; setting `intervalSeconds` 2 / 5 / 10 (default 5). The host
+(`native/ModelPlanResources`, `ResourceSampler`) samples with system calls only and pushes
+`{"samples":[{"t","cpuUser","cpuSystem","load","memTotal","memApp","memWired","memCompressed","memCached","memFree","swapUsed","pressure","diskTotal","diskFree"}]}`
+(percentages 0–100, bytes, `t` in Unix ms, `pressure` normal / warn / critical): the whole ten-minute window when the
+column starts running (at most 360 samples), then only newer samples. The page keeps the same ten minutes in memory.
+The big screen is drawn as lines until the D323 draw hook lands; then its charts move to `draw(ctx)`.
 
 ## Animation budget and evidence
 

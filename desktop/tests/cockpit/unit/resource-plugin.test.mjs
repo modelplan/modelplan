@@ -44,9 +44,11 @@ test('accept: strict sample shape, merged by time, 10-minute window, bounded',()
  // Older than ten minutes before the newest sample: dropped (the page keeps no more than the host's ring buffer).
  const c=resourcePlugin.accept({samples:[sample(T0+RESOURCE_WINDOW_MS+5000)]},b);
  assert.deepEqual(c.samples.map(s=>s.t),[T0+10000,T0+RESOURCE_WINDOW_MS+5000]);
- const many=Array.from({length:200},(_,i)=>sample(T0+i*2000));
- assert.equal(resourcePlugin.accept({samples:many.slice(0,120)},undefined).samples.length,120);
- assert.equal(resourcePlugin.accept({samples:many},undefined),undefined,'at most 120 samples per reading');
+ // The host sends the whole ten minutes when the column starts (300 samples at 2 s); at most 360 per reading.
+ const many=Array.from({length:400},(_,i)=>sample(T0+i*2000));
+ assert.equal(resourcePlugin.accept({samples:many.slice(0,300)},undefined).samples.length,300);
+ assert.equal(resourcePlugin.accept({samples:many.slice(0,360)},undefined).samples.length,300,'still only ten minutes kept');
+ assert.equal(resourcePlugin.accept({samples:many},undefined),undefined,'at most 360 samples per reading');
  for(const bad of [null,{},{samples:[]},{samples:[sample(T0)],extra:1},{samples:[{...sample(T0),extra:1}]},
   {samples:[sample(T0,{cpuUser:101})]},{samples:[sample(T0,{cpuUser:80,cpuSystem:30})]},{samples:[sample(T0,{cpuSystem:-1})]},
   {samples:[sample(T0,{memTotal:0})]},{samples:[sample(T0,{memApp:1.5})]},{samples:[sample(T0,{memApp:40*GB})]},
