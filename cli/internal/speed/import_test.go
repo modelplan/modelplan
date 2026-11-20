@@ -20,6 +20,8 @@ const (
 	canaryPrompt = "CANARY-PROMPT-TEXT-7731"
 	canaryID     = "CANARY-SESSION-ID-4410"
 	canaryPath   = "CANARY-PROJECT-DIR-9902"
+	// canaryParent lies above a project folder in a log's working directory: it must never be kept.
+	canaryParent = "CANARY-PARENT-DIR-5521"
 )
 
 func admitted(sources ...string) *consent.Admission {
@@ -82,7 +84,7 @@ func (f *fixture) claudeLog(name string, offsets ...float64) string {
 func (f *fixture) codexLog(name string, offsets ...float64) string {
 	var lines []string
 	for _, o := range offsets {
-		lines = append(lines, cxTurnLines(o*dayS, `{"model":"codex-fixture","effort":"high","cwd":"/`+canaryPath+`"}`, 30, req{out: 300, gen: 10, ttft: 1})...)
+		lines = append(lines, cxTurnLines(o*dayS, `{"model":"codex-fixture","effort":"high","cwd":"/`+canaryParent+`/codex-proj"}`, 30, req{out: 300, gen: 10, ttft: 1})...)
 	}
 	p := filepath.Join(f.home, "sessions", "2026", "10", name)
 	writeLines(f.t, p, lines...)
@@ -136,7 +138,7 @@ func TestImportReadsBothSourcesTaggedAndPrivate(t *testing.T) {
 		}
 	}
 	b, _ := os.ReadFile(ImportPath(f.cache))
-	for _, c := range []string{canaryPrompt, canaryID, canaryPath, f.claude, f.home} {
+	for _, c := range []string{canaryPrompt, canaryID, canaryPath, canaryParent, f.claude, f.home} {
 		if strings.Contains(string(b), c) {
 			t.Fatalf("ledger holds %q", c)
 		}
@@ -144,7 +146,7 @@ func TestImportReadsBothSourcesTaggedAndPrivate(t *testing.T) {
 	// nothing else was written under the cache either
 	filepath.WalkDir(f.cache, func(p string, d os.DirEntry, _ error) error {
 		if !d.IsDir() {
-			if b, _ := os.ReadFile(p); strings.Contains(string(b), canaryPrompt) || strings.Contains(string(b), canaryPath) {
+			if b, _ := os.ReadFile(p); strings.Contains(string(b), canaryPrompt) || strings.Contains(string(b), canaryPath) || strings.Contains(string(b), canaryParent) {
 				t.Fatalf("%s holds a canary", p)
 			}
 		}
