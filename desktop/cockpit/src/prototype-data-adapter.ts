@@ -37,7 +37,7 @@ export function currentWindow(account:WireAccount,window:WireWindow,now:number):
  return account.valueState==='current' && window.current && window.remainingPercent!==null && window.validUntil!==null && Date.parse(window.validUntil)>now;
 }
 // Minutes until the engine's forecast run-out. Only a current window qualifies, and a forecast that has
-// passed or no longer falls before the reset is not shown. WP-03: the engine also forecasts a window whose reset time
+// passed or no longer falls before a known reset is not shown. WP-03: the engine also forecasts a window whose reset time
 // is unknown (from the burn rate); `unknownReset` admits that one (the alert model, ALR-51), with no reset to beat.
 export function runOutMinutes(data:WireCockpitData|null|undefined,rowId:string,account:WireAccount,window:WireWindow,now:number,unknownReset=false):number|null {
  const ref=account.subscriptionRef,f=ref?data?.details?.forecasts?.find(x=>x.source===rowId&&x.subscriptionRef===ref&&x.windowId===window.id):undefined;

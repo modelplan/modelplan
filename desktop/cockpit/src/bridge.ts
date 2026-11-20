@@ -13,7 +13,7 @@ export interface BridgeSource { readonly origin:string; readonly isMainFrame:boo
 export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly reduceMotion:boolean; readonly reduceTransparency:boolean; readonly showProjectNames:boolean }
 export type LiveAppearance = Appearance;
 export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string }
-export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'openField'|'openWebsite';
+export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'openField'|'openWebsite'|'refreshMember';
 export interface Header extends Context { readonly version:2; readonly pageId:string; readonly requestId:string; readonly sequence:string }
 export type HostMessage = Header & (
   {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean; readonly ackedCautions?:unknown; readonly pinnedModels?:unknown; readonly memberOrder?:readonly string[]} |
@@ -278,10 +278,16 @@ export class CockpitBridge {
     this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});return true;
   }
   action(action:PageAction,tool?:string):boolean {
-    if(!this.isActive()||!['chooseSetup','openSettings','openSettingsSubscriptions','openHistory','close','detach','putBack','shutterToggle','scopeSelect','openField','openWebsite'].includes(action)) return false;
+    if(!this.isActive()||!['chooseSetup','openSettings','openSettingsSubscriptions','openHistory','close','detach','putBack','shutterToggle','scopeSelect','openField','openWebsite','refreshMember'].includes(action)) return false;
     if(['close','detach','putBack','shutterToggle'].includes(action)) {
       if(!this.shellState)return false;
       if(action==='detach'&&!this.shellState.attached||action==='putBack'&&this.shellState.attached||action==='shutterToggle'&&this.shellState.forcedClosed)return false;
+    }
+    // Owner D277 (CKP-ENG-27): read one shown subscription (or all of them) again. Native asks the engine through the
+    // same per-member refresh the widget's ring uses; only a current member key or `all` crosses.
+    if(action==='refreshMember') {
+      if(!this.hasDisplay||!tool||(tool!=='all'&&!this.scopeMembers.has(tool)))return false;
+      this.emit('action',this.requestId(),{action,key:tool});return true;
     }
     if(action==='scopeSelect') {
       if(!this.hasDisplay||!tool||(tool!=='all'&&!this.scopeMembers.has(tool)))return false;
