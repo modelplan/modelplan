@@ -541,6 +541,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onShellChanged: (() -> Void)?
   public var onIntent: ((CockpitIntent) -> Void)?
   public var onRendered: (() -> Void)?
+  /// G3-42: the coordinator's hook for an admitted rendered receipt; `onRendered` stays free for observers.
+  public var onDataRendered: (() -> Void)?
+  public var reportsDataRendered: Bool { true }
   /// Recovery contract: every accepted rendered receipt, for the coordinator (verified data on screen). Separate from
   /// `onRendered`, which verification and timing hooks own.
   public var onRenderVerified: (() -> Void)?
@@ -1230,6 +1233,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         if let reason = pendingFreshnessReason { sendFreshnessTick(reason) }
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
         onRendered?()
+        onDataRendered?()
         onRenderVerified?()
       case .deadlinePending(let id):
         if receiptWatchdog.currentID != id { receiptWatchdog.wait(for: id) }
