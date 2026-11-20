@@ -81,8 +81,10 @@ export function overviewBars(d,ui,list){
  const total=Array.from({length:n},(_,i)=>ser.reduce((s,x)=>s+(x.v[i]||0),0));
  const max=Math.max(...(ui.stack?total:ser.flatMap(x=>x.v.map(v=>v||0))),0),top=12,base=Math.max(top+12,H-15);
  const pitch=W/n,bw=Math.max(.5,pitch-2),height=base-top;
- // The 2 px gaps between layers belong to the highest day's own stack: only the subscriptions with cost that day count.
- const peak=ui.stack?total.indexOf(max):-1,gaps=peak>=0?Math.max(0,ser.filter(x=>(x.v[peak]||0)>0).length-1)*2:0,scale=max>0?(height-gaps)/max:0;
+ // The 2 px gaps between layers belong to each day's own stack. The scale makes the tallest stack, gaps included, over all days
+ // exactly as high as the dashed line.
+ let scale=0;
+ if(max>0){const fits=total.map((v,i)=>v>0?(height-(ui.stack?Math.max(0,ser.filter(x=>(x.v[i]||0)>0).length-1)*2:0))/v:Infinity);scale=ui.stack?Math.min(...fits):height/max;}
  let body='';
  for(let i=0;i<n;i++){
   const at=instants?.[i], stamp=hourly?(at!=null?new Date(at).toLocaleTimeString(ui.lang,{hour:'2-digit',minute:'2-digit',hour12:false,timeZoneName:'shortOffset'}):`${String(i).padStart(2,'0')}:00`):md(daysBefore(d.now,n-1-i),ui);

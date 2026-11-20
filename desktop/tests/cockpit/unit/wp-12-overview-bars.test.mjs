@@ -97,7 +97,7 @@ test('WP-12 the ≈cost series reads the wire\'s cost buckets per subscription, 
  assert.deepEqual(c.daily[0].values.slice(-3),[0,null,15],'unpriced-only day is a recorded zero; other tools do not count');
  assert.equal(c.daily[0].accountId,'A');
  assert.equal(c.hourly[0].values.at(-2),4);
- assert.equal(overviewCost({history:{...data.history,cost:{...data.history.cost,daily:[{at:day(0),source:'codex',estimatedUsd:0,pricedTokens:0,unpricedTokens:5}],hourly:[]}}},ids,now),null,'no priced usage: no series, no fallback');
+ assert.equal(overviewCost({history:{...data.history,cost:{...data.history.cost,daily:[],hourly:[]}}},ids,now),null,'no cost buckets at all: no series, no fallback');
  assert.equal(overviewCost({history:{...data.history,cost:undefined}},ids,now),null);
 });
 
@@ -184,4 +184,26 @@ test('macrevc-1057-9 a recorded day with no cost bucket is a recorded zero; days
  assert.deepEqual(v.slice(-4),[null,0,null,4]);
  const svg=overviewBars({now,accounts:[A],daily:[],cost:{daily:[],hourly:[]}},ui,[{a:A,daily:{values:v.slice(-7)}}]);
  assert.equal((svg.match(/class="ov-stub"/g)||[]).length,1);
+});
+
+// ---- macrevc-1057 second round (R20 acceptance conditions) ----
+test('macrevc-1057-6/7 all-unpriced usage keeps a cost object: the full token total and the note show, no ≈cost, no bars',()=>{
+ const wire=wireOf({daily:[bucket(1,'codex',0,0,6000),bucket(0,'codex',0,0,4000)]});
+ const c=overviewCost(wire,refs,now);
+ assert.ok(c,'no bucket has priced tokens, yet the cost object stays');
+ const html=overview.render({...viewData(wire),cost:c},{...ui,days:7});
+ assert.match(html,/class="ov-total">10k</,'all tokens, not the output-only 1');
+ assert.doesNotMatch(html,/≈\$/);assert.doesNotMatch(html,/ov-per|class="ov-chart"/);
+ assert.match(html,/100% of use has no public price/);
+});
+
+test('macrevc-1057-8 a lower day with more layers never grows taller than the dashed line',()=>{
+ const six=['A','B','C','D','E','F'].map((n,i)=>acc(n,['#6aa8ff','#ff9a6a','#9a6aff','#6affb0','#ffd86a','#ff6a9a'][i]));
+ // Day 6: one subscription, the $50 maximum. Day 5: six subscriptions, $49 in total (five gaps).
+ const list=six.map((a,i)=>({a,daily:dailyOf(a,[null,null,null,null,null,i===0?9:8,i===0?50:0])}));
+ const svg=overviewBars({now,accounts:six,daily:[],cost:{daily:[],hourly:[]}},ui,list);
+ const line=Number(/class="ov-grid" d="M0 ([\d.]+)H/.exec(svg)[1]);
+ const tops=[...svg.matchAll(/class="ov-bar"[^>]*d="M[\d.]+,[\d.]+V[\d.]+Q[\d.]+,([\d.]+) /g)].map(m=>Number(m[1]));
+ assert.ok(tops.length>=6);
+ assert.ok(Math.min(...tops)>=line-0.1,`a bar top ${Math.min(...tops)} is above the line ${line}`);
 });

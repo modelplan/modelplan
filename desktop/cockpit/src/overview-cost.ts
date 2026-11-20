@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Overview bars (WP-12, V1-FINAL §8.1): one ≈cost value per local day and per local hour for each subscription, read from the
 // wire's cost section (WP-06: history.cost, API list price). A day with no record is null, never zero; a recorded day
-// whose use has no public price is a recorded zero (it keeps the 3 px base). Without any priced usage there is no
-// series at all: the page then draws no bars and builds no fallback from tokens.
+// whose use has no public price is a recorded zero (it keeps the 3 px base). Without any cost bucket there is no
+// series at all; with buckets but no priced usage the page draws no ≈cost and no bars.
 import type {WireCockpitCost} from '../generated/wire.js';
 interface HistoryLike {readonly coverage?:string;readonly daily?:readonly {readonly at:string;readonly source:string}[];readonly subscriptions?:readonly {readonly subscriptionRef:string;readonly sources:readonly {readonly source:string}[]}[];readonly cost?:WireCockpitCost|null}
 export interface OverviewCost {
@@ -17,7 +17,9 @@ export function overviewCost(data:{readonly history?:HistoryLike|null}|null|unde
  const h=data?.history,c=h?.cost;
  if(!h||h.coverage!=='local-history'||!c||c.basis!=='api-list-price'||c.currency!=='USD'||!h.subscriptions)return null;
  const daily=c.daily,hourly=c.hourly;
- if(!daily.some(b=>b.pricedTokens>0)&&!hourly.some(b=>b.pricedTokens>0))return null;
+ // No cost bucket at all means no series. All-unpriced usage keeps the object (priced 0, unpriced totals), so the page still
+ // shows the full token total and the unpriced note, with no ≈cost and no bars.
+ if(!daily.length&&!hourly.length)return null;
  const clock=new Date(now),top=now-clock.getMinutes()*6e4-clock.getSeconds()*1e3-clock.getMilliseconds();
  const instants=Array.from({length:24},(_,i)=>top-(23-i)*HOUR);
  const days=Array.from({length:DAYS},(_,i)=>dayKey(new Date(clock.getFullYear(),clock.getMonth(),clock.getDate()-(DAYS-1-i)).getTime()));
