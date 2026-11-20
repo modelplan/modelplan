@@ -127,7 +127,7 @@ test('D323 the screen draw knows its first draw per opening; view memory is shar
  await expect(page.locator('.pl-screen .pl-screen-d .probe-b')).toHaveText('n0');
  await page.evaluate(()=>window.__host.deliver('probe',{v:2}));
  const screens=(await probe(page)).draws.filter(d=>d.where==='screen');
- expect(screens[0].opening).toBe(true);expect(screens.slice(1).every(d=>!d.opening)).toBe(true);expect(screens.at(-1).h).toBeGreaterThan(40);
+ expect(screens[0].opening).toBe(true);expect(screens[0].h).toBeGreaterThan(40);expect(screens.slice(1).every(d=>!d.opening)).toBe(true);
  // A click in the column changes the shared memory; the plugin's redraw updates its column and its open screen.
  await column(page).locator('.probe-b').click();
  await expect(column(page).locator('.probe-b')).toHaveText('n1');
@@ -136,8 +136,11 @@ test('D323 the screen draw knows its first draw per opening; view memory is shar
  await expect(column(page).locator('.probe-b')).toHaveText('n2');
  // Reopened: opening again.
  await key(page).click();await expect(page.locator('.pl-screen')).toHaveCount(0);
- await key(page).click();
- expect((await probe(page)).draws.filter(d=>d.where==='screen').at(-1).opening).toBe(true);
+ const before=(await probe(page)).draws.length;
+ await key(page).click();await expect(page.locator('.pl-screen .probe-b')).toHaveText('n2');
+ // The first screen draw of the new opening has `opening` and the area's real size; any later draw does not.
+ const reopened=(await probe(page)).draws.slice(before).filter(d=>d.where==='screen');
+ expect(reopened[0].opening).toBe(true);expect(reopened[0].h).toBeGreaterThan(40);expect(reopened.slice(1).every(d=>!d.opening)).toBe(true);
 });
 
 test('D323 keyboard focus on a data-focus element survives host-driven redraws',async({page})=>{
