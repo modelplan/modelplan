@@ -41,7 +41,7 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '24'
-    - name: Select Xcode (26.6 17F113 on self-hosted, fail loudly; image Xcode on github-hosted)
+    - name: Select Xcode (26.6 17F113 on our Macs, fail loudly; image Xcode on hosted)
       run: |
         ls -d /Applications/Xcode*.app
         python3 - <<'PYCODE'
@@ -70,7 +70,7 @@ jobs:
             print(f"github-hosted runner: keeping the image's newest Xcode {version} ({build}) at {app}", flush=True)
             selected = app + "/Contents/Developer"
         else:
-            # Pinned: our self-hosted runners must carry Xcode 26.6 build 17F113; version alone is not enough.
+            # Pinned: our own Mac runners must carry Xcode 26.6 build 17F113; version alone is not enough.
             pinned = sorted(app for version, build, app in candidates if version == (26, 6) and build == "17F113")
             if not pinned:
                 raise SystemExit("Xcode 26.6 (17F113) is not installed on this runner; refusing to build with another toolchain")
@@ -228,7 +228,7 @@ jobs:
         path: .trusted-main
         sparse-checkout: scripts/mac-compile
         persist-credentials: false
-    - name: Select Xcode (26.6 17F113 on self-hosted, fail loudly; image Xcode on github-hosted)
+    - name: Select Xcode (26.6 17F113 on our Macs, fail loudly; image Xcode on hosted)
       run: |
         ls -d /Applications/Xcode*.app
         python3 - <<'PYCODE'
@@ -257,7 +257,7 @@ jobs:
             print(f"github-hosted runner: keeping the image's newest Xcode {version} ({build}) at {app}", flush=True)
             selected = app + "/Contents/Developer"
         else:
-            # Pinned: our self-hosted runners must carry Xcode 26.6 build 17F113; version alone is not enough.
+            # Pinned: our own Mac runners must carry Xcode 26.6 build 17F113; version alone is not enough.
             pinned = sorted(app for version, build, app in candidates if version == (26, 6) and build == "17F113")
             if not pinned:
                 raise SystemExit("Xcode 26.6 (17F113) is not installed on this runner; refusing to build with another toolchain")
