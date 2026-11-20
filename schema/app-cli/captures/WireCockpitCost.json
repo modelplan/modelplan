@@ -1,0 +1,52 @@
+{
+  "basis": "synthetic",
+  "currency": "USD",
+  "pricesAsOf": "synthetic",
+  "daily": [
+    {
+      "at": "synthetic",
+      "source": "synthetic",
+      "estimatedUsd": 42.5,
+      "pricedTokens": 1,
+      "unpricedTokens": 1
+    }
+  ],
+  "hourly": [
+    {
+      "at": "synthetic",
+      "source": "synthetic",
+      "estimatedUsd": 42.5,
+      "pricedTokens": 1,
+      "unpricedTokens": 1
+    }
+  ],
+  "models": {
+    "today": [
+      {
+        "model": "synthetic",
+        "source": "synthetic",
+        "estimatedUsd": 42.5,
+        "pricedTokens": 1,
+        "unpricedTokens": 1
+      }
+    ],
+    "recent7d": [
+      {
+        "model": "synthetic",
+        "source": "synthetic",
+        "estimatedUsd": 42.5,
+        "pricedTokens": 1,
+        "unpricedTokens": 1
+      }
+    ],
+    "recent30d": [
+      {
+        "model": "synthetic",
+        "source": "synthetic",
+        "estimatedUsd": 42.5,
+        "pricedTokens": 1,
+        "unpricedTokens": 1
+      }
+    ]
+  }
+}
