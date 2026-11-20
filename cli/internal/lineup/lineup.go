@@ -6,7 +6,8 @@ package lineup
 import "encoding/json"
 
 // Tie is the fixed product comparison tolerance in points, not a confidence interval.
-const Tie = 1.0
+// 1 point on the old 50-centred scale is 0.815 on the display scale (new = 34.185 + 0.815*old); #781.
+const Tie = 0.815
 
 type Member struct {
 	ID      string

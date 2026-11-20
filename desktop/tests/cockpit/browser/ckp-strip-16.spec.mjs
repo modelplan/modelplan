@@ -100,10 +100,10 @@ test('CKP-STRIP-50 overflow reads "N more sessions", opens the where page; no se
 test('CKP-STRIP-51 the strip never shows money; a line lights its model, a second click or empty space clears it',async({page})=>{
  const {data}=visualFixture(),session=data.details.sessions[0];session.subscriptionRef=null;session.model='model-b';session.lastObservedAt=new Date().toISOString();
  const model=(id,name)=>({id,name,developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]});
- data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[model('model-a','Synthetic A'),model('model-b','Synthetic B')]};
+ data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[model('model-a','Alpha'),model('model-b','Bravo')]};
  await open(page,data);
  expect(await page.locator('.ck-tape').textContent()).not.toMatch(/[$¥€]|\bUSD\b/);
- const line=page.locator(`.ck-tape .t-observed[data-session="${session.sessionRef}"]`),fader=page.locator('.fd-ch:not(.empty)').filter({hasText:'Synthetic B'});
+ const line=page.locator(`.ck-tape .t-observed[data-session="${session.sessionRef}"]`),fader=page.locator('.fd-ch:not(.empty)').filter({hasText:'Bravo'});
  await expect(fader).not.toHaveClass(/\bsel\b/);
  await line.click();await expect(fader).toHaveClass(/\bsel\b/);
  await line.click();await expect(fader).not.toHaveClass(/\bsel\b/);

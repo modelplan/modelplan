@@ -137,7 +137,7 @@ for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p)
   }
   if (p === "desktop/third-party/notices.json") {
     assert.equal(code.split("official-visuals").length, 2, "one attribution reference in the notice catalog");
-    assert.ok(code.includes('"desktop/official-visuals/runtime/field-scene/cockpit-scene.bundle.js"'), "exact three.js attribution path");
+    assert.ok(code.includes('"desktop/official-visuals/runtime/field-scene/launch-field.js"'), "exact three.js attribution path");
     continue;
   }
   assert.ok(["desktop/build.mjs", "desktop/cockpit/build.mjs"].includes(p), "community build must not read the reserved visuals: " + p);

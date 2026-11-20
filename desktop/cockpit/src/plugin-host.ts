@@ -94,6 +94,9 @@ export interface PluginHost {
   decorate(table:HTMLElement,page:LayoutPage,locale:PluginLocale):void;
   /** Nothing is placed (empty or cleared table). */
   clearPlacement():void;
+  /** The engine is about to replace its table: remember a focused drawn control (plugin id and `data-focus` key) so the
+   *  plugin's new column takes focus back once it is drawn and attached (D323 focus contract). */
+  hold():void;
   setVisible(visible:boolean):void;
   setInteractive(interactive:boolean):void;
   applyHostState(raw:unknown):boolean;
@@ -131,7 +134,15 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   // D323 custom draw: per-plugin view memory, the size each area was last drawn at, and one observer that draws an area
   // again when its size changes (a column is drawn before its table is attached, so the first real size arrives here).
   const memos=new Map<string,Record<string,unknown>>(),drawnAt=new WeakMap<HTMLElement,{id:string;w:number;h:number}>();
-  let drawing=false;
+  let drawing=false,pending:{id:string;key:string}|null=null;
+  /** Stop watching the draw areas of the columns about to be dropped (a replaced table, cleared placement). */
+  const forget=()=>{for(const column of columns.values())for(const area of column.querySelectorAll<HTMLElement>(':scope > .pl-draw'))watch?.unobserve(area);};
+  /** Gives focus back to a held control in this plugin's new column, only when focus was dropped (not moved elsewhere). */
+  function restoreHeld(column:HTMLElement,id:string) {
+    if(!pending||pending.id!==id||!column.isConnected)return;
+    const active=document.activeElement;if(active&&active!==document.body){pending=null;return;}
+    const key=pending.key;pending=null;refocus(column,key);
+  }
   const watch=typeof ResizeObserver==='undefined'?null:new ResizeObserver(entries=>{
     for(const entry of entries){
       const area=entry.target as HTMLElement,last=drawnAt.get(area);
@@ -187,7 +198,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const ink=plugin.ink;if(ink)column.style.setProperty('--pl-ink',ink);else column.style.removeProperty('--pl-ink');
     if(area){const ok=paint(area,plugin.id,drawn.draw!,false);column.dataset.draw=ok?'custom':'fallback';if(!ok){watch?.unobserve(area);area.replaceWith(...cells());}}
     else delete column.dataset.draw;
-    refocus(column,key);
+    refocus(column,key);restoreHeld(column,plugin.id);
   }
   function redrawColumn(id:string) {
     const column=columns.get(id),plugin=registry.get(id);
@@ -267,6 +278,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     else if(screen){e.preventDefault();e.stopPropagation();closeScreen(true);}
   };
   document.addEventListener('keydown',escape,true);
+  const moved=()=>{pending=null;};document.addEventListener('focusin',moved,true);
   function popup(anchor:HTMLElement,label:string):HTMLElement {
     const m=el('div','pl-menu');m.setAttribute('role','menu');m.setAttribute('aria-label',label);m.dataset.mat='glass';return m;
   }
@@ -291,7 +303,8 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     layout:subscriptions=>pluginLayout(subscriptions,active()),
     bindEngine(next){repaint=next;},
     decorate(table,page,value){
-      locale=value;placed.clear();columns.clear();
+      locale=value;forget();placed.clear();columns.clear();
+      if(pending&&!page.plugins.includes(pending.id))pending=null;
       const keys=[...table.querySelectorAll<HTMLElement>('.eng-keys > .ek-bay')],bays=[...table.querySelectorAll<HTMLElement>('.eng-cols > .ec-bay')];
       page.plugins.forEach((id,i)=>{
         const plugin=registry.get(id),bay=bays[i];if(!plugin||!keys[i]||!bay)return;
@@ -314,7 +327,16 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       });
       reconcile();if(screen)drawScreen();
     },
-    clearPlacement(){placed.clear();columns.clear();closeMenu();closeScreen();reconcile();},
+    clearPlacement(){forget();pending=null;placed.clear();columns.clear();closeMenu();closeScreen();reconcile();},
+    hold(){
+      // Called again while the engine rebuilds (focus already dropped): an earlier hold stays until it is used, focus
+      // moves elsewhere (focusin) or the plugin is no longer placed.
+      const active=document.activeElement;if(!(active instanceof HTMLElement))return;
+      for(const [id,column] of columns){
+        const area=column.querySelector<HTMLElement>(':scope > .pl-draw');if(!area?.contains(active))continue;
+        const key=focusKey(area);if(key!==null)pending={id,key};return;
+      }
+    },
     setVisible(value){visible=value;reconcile();},
     setInteractive(value){interactive=value;if(!value)closeMenu();},
     applyHostState(raw){
@@ -373,7 +395,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     closeMenu:()=>closeMenu(),
     openScreen,
     running:()=>[...running],
-    dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();memos.clear();hostFed.clear();shown=null;watch?.disconnect();document.removeEventListener('keydown',escape,true);hosts.delete(root);},
+    dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();memos.clear();pending=null;hostFed.clear();shown=null;watch?.disconnect();document.removeEventListener('focusin',moved,true);document.removeEventListener('keydown',escape,true);hosts.delete(root);},
   };
   hosts.set(root,host);
   return host;

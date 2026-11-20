@@ -57,8 +57,8 @@ export async function excludePortholeFlicker(page){
 export function sampleWithDetails(){
  const data=sample();
  data.details={version:1,sources:['quota-reserve','quota-thresholds'],subscriptions:[],sessions:[],sessionCoverage:'unavailable',resetEvents:[],alerts:[],publication:{contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[
-  {id:'model-a',name:'Synthetic A',developerId:'openai',recommended:'medium',efforts:[{effort:'low',label:'Low',star:false,ability:30,cost:1,time:null},{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]},
-  {id:'model-b',name:'Synthetic B',developerId:'anthropic',recommended:'high',efforts:[{effort:'high',label:'High',star:true,ability:50,cost:3,time:null}]},
+  {id:'model-a',name:'Alpha',developerId:'openai',recommended:'medium',efforts:[{effort:'low',label:'Low',star:false,ability:30,cost:1,time:null},{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]},
+  {id:'model-b',name:'Bravo',developerId:'anthropic',recommended:'high',efforts:[{effort:'high',label:'High',star:true,ability:50,cost:3,time:null}]},
  ]}};
  return data;
 }

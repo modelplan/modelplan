@@ -9,7 +9,12 @@ test.beforeEach(async({page})=>excludePortholeFlicker(page));
 
 async function open(page) {
  await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
- await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.addInitScript(()=>{
+  window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};
+  // Count the plugin draw areas any ResizeObserver still watches (black box: the host's own observer is not exposed).
+  const Native=window.ResizeObserver,watched=new Set();window.__watchedAreas=()=>[...watched].filter(e=>e.matches('.pl-draw,.pl-screen-d')).length;
+  window.ResizeObserver=class extends Native{observe(e,o){watched.add(e);return super.observe(e,o);}unobserve(e){watched.delete(e);return super.unobserve(e);}disconnect(){watched.clear();return super.disconnect();}};
+ });
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const data=sample();data.projection.rows=[data.projection.rows[0]];
@@ -155,4 +160,51 @@ test('D323 keyboard focus on a data-focus element survives host-driven redraws',
  await key(page).click();const inScreen=page.locator('.pl-screen .probe-b');await inScreen.focus();
  await page.evaluate(()=>window.__host.deliver('probe',{v:4}));
  await expect(inScreen).toBeFocused();
+});
+
+test('D323 focus on a drawn control survives full engine repaints that replace the table (host state, tick, locale, new data), column and screen',async({page})=>{
+ const {send,receive,repaint}=await open(page);
+ const button=column(page).locator('.probe-b');
+ const keep=async(label,act)=>{
+  await button.focus();await expect(button,label).toBeFocused();
+  const old=await button.elementHandle();
+  await act();
+  // The table really was replaced: the focused element is a new one.
+  await expect.poll(()=>old.evaluate(e=>e.isConnected),label).toBe(false);
+  await expect(button,label).toBeFocused();
+ };
+ // A plugin-state change from the host (Settings) repaints the engine directly, outside the view's own focus keeping.
+ await keep('host plugin state',()=>page.evaluate(()=>window.__host.applyHostState({version:1,entries:[{id:'probe',enabled:true,pinned:false}],settings:{}})));
+ await keep('host tick',()=>receive(send('tick',{nowUnixMs:String(Date.parse('2026-11-04T12:01:00Z')),reason:'deadline'})));
+ await keep('locale',()=>receive(send('appearance',{...appearance,locale:'zh-CN'})));
+ await keep('new display data',repaint);
+ // The open screen keeps focus on its drawn control across the same repaints.
+ await key(page).click();const inScreen=page.locator('.pl-screen .probe-b');await inScreen.focus();
+ expect(await receive(send('appearance',{...appearance,locale:'en'}))).toBe(true);
+ expect(await repaint()).toBe(true);
+ await expect(inScreen).toBeFocused();
+ // Focus somewhere else is never taken back by a later repaint.
+ await page.locator('.eng-keys .ek[data-sub]').first().focus();
+ expect(await repaint()).toBe(true);
+ await expect(page.locator('.eng-keys .ek[data-sub]').first()).toBeFocused();
+});
+
+test('D323 the size observer only watches draw areas that are on the page: repeated full repaints, removal and screen close',async({page})=>{
+ const {send,receive,repaint}=await open(page);
+ const watched=()=>page.evaluate(()=>window.__watchedAreas());
+ await expect.poll(watched).toBe(1);
+ for(let i=0;i<4;i++){expect(await repaint()).toBe(true);expect(await receive(send('tick',{nowUnixMs:String(Date.parse('2026-11-04T12:00:00Z')+(i+1)*60000),reason:'deadline'}))).toBe(true);}
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ await expect.poll(watched).toBe(1);
+ await key(page).click();await expect.poll(watched).toBe(2);
+ expect(await repaint()).toBe(true);await expect.poll(watched).toBe(2);
+ await key(page).click();await expect(page.locator('.pl-screen')).toHaveCount(0);await expect.poll(watched).toBe(1);
+ // Removed: nothing left to watch. Cleared readings: the same.
+ expect(await page.evaluate(()=>window.__host.remove('probe'))).toBe(true);
+ expect(await repaint()).toBe(true);
+ await expect(column(page)).toHaveCount(0);await expect.poll(watched).toBe(0);
+ expect(await page.evaluate(()=>window.__host.add('probe'))).toBe(true);expect(await repaint()).toBe(true);await expect.poll(watched).toBe(1);
+ // Cleared readings: the view clears its host's placement (in the app that host is this one; the probe host is extra).
+ expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await page.evaluate(()=>window.__host.clearPlacement());
+ await expect(column(page)).toHaveCount(0);await expect.poll(watched).toBe(0);
 });

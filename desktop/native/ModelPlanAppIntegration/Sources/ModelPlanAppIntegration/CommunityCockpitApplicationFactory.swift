@@ -78,7 +78,7 @@ import ModelPlanShell
                 #endif
                 let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
-                coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
+                coordinator.currentDate = deadlineNow
                 coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
                 coordinator.cautionMemory = FileCockpitCautionMemory(url: settingsStore.directory.appendingPathComponent("cockpit-cautions.json"))
                 coordinator.pinMemory = FileCockpitPinMemory(url: settingsStore.directory.appendingPathComponent("cockpit-pins.json"))
@@ -99,6 +99,8 @@ import ModelPlanShell
                 #endif
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
+        // CKP-SHELL-50 / MENU-52: the page reads and requests the same app-owned range as the menu bar, before its load.
+        owner.coordinator?.rangeState = application.cockpitRange
         owner.systemSignals = { [weak application] in application?.cockpitSystemSignals }
         owner.presence = application.dockPresence
         application.currentCockpitPage = { [weak owner] in owner?.currentPage }
@@ -278,21 +280,41 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
 }
 
-/// D64: the cockpit scope and its local day in one small file beside the settings. A consent or store change removes it.
+/// CKP-SHELL-50: the cockpit scope in one small file beside the settings, kept across restarts whatever the day (an
+/// older file's "day" is ignored). A consent or store change removes it.
 @MainActor final class FileCockpitScopeMemory: CockpitScopeMemory {
     let url: URL
     init(url: URL) { self.url = url }
-    func load() -> (key: String, day: String)? {
+    func load() -> String? {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 1024,
               let data = try? Data(contentsOf: url),
               let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let key = value["scope"] as? String, let day = value["day"] as? String else { return nil }
-        return (key, day)
+              let key = value["scope"] as? String else { return nil }
+        return key
     }
-    func save(_ value: (key: String, day: String)?) {
-        guard let value else { try? FileManager.default.removeItem(at: url); return }
-        guard let data = try? JSONSerialization.data(withJSONObject: ["scope": value.key, "day": value.day], options: [.sortedKeys]) else { return }
+    func save(_ key: String?) {
+        guard let key else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["scope": key], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+/// CKP-SHELL-50: the app's range (Today / 7d / 30d) in one small file beside the settings. A preference, not private
+/// data, so a consent or store change keeps it.
+@MainActor final class FileCockpitRangeMemory: CockpitRangeMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> CockpitRange? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let raw = value["range"] as? String else { return nil }
+        return CockpitRange(rawValue: raw)
+    }
+    func save(_ value: CockpitRange) {
+        guard let data = try? JSONSerialization.data(withJSONObject: ["range": value.rawValue], options: [.sortedKeys]) else { return }
         try? data.write(to: url, options: .atomic)
     }
 }
@@ -468,10 +490,12 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     }
     /// Public model data only: the launch field never receives personal readings. The official page is
     /// the only one that asks; a community bundle has no field page, so the panel is not offered.
+    /// WP-22 (D298): `mine` is the published models the connected tools can run (CockpitFieldFleet), `asOf` the
+    /// publication's date for the menu header.
     private struct FieldPayload:Encodable {
-        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
+        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?,asOf:String?
     }
-    private var fieldPanel:CockpitFieldPanel?
+    private(set) var fieldPanel:CockpitFieldPanel? // read by tests (WP-22 site keys)
     /// G3-80 seams: where the pointer is, the cockpit's frame and the displays the field is placed on.
     var pointerLocation: @MainActor () -> CGPoint = { NSEvent.mouseLocation }
     var cockpitFrameForField: (@MainActor () -> CGRect?)?
@@ -482,10 +506,11 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     /// focuses nothing. Only the matching public model ID crosses.
     /// `lowPower` is the Low Power Mode state at open (D63): the scene mounts quiet and on demand when it is on.
     func fieldPayload(focusName:String?=nil,lowPower:Bool=ProcessInfo.processInfo.isLowPowerModeEnabled) -> String? {
-        guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
-        let mine=details.publication?.models.map(\.id) ?? []
+        guard let data=composition.store.snapshot.cockpit,let details=data.details,let models=details.publishedModels,!models.isEmpty else { return nil }
+        let mine=CockpitFieldFleet.runnable(data)
         let focus=focusName.flatMap { name in models.first { $0.name == name }?.id }
-        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:focus)
+        let asOf=details.publication.map { String($0.publishedAt.rawValue.prefix(10)) }
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:focus,asOf:asOf)
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {
@@ -499,7 +524,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.cautionAck,.pinnedModels:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()
@@ -510,10 +535,25 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
         guard let payload=fieldPayload(focusName:focusName,lowPower:panel.isLowPower) else { return }
         if let fieldScreens { panel.screens=fieldScreens }
+        // WP-22: the field's site keys open the allowlisted modelplan.ai pages in the default browser (CockpitFieldPanel.siteURL).
+        panel.openURL={ [weak self] url in self?.owner.openWebsite(url) }
+        // macrevb-1062-3: the field's selection is the cockpit's (HUD, faders, porthole); only a published model id passes.
+        panel.onSelect={ [weak self] id in self?.fieldSelected(id) }
+        // Owner 11-19 (#1062): every close path (Esc, ×, outside click, losing key, idle, failure, the cockpit's hide) runs
+        // the panel's one close funnel; the page then ignores a porthole click bouncing off it.
+        panel.onClosed={ [weak self] in self?.owner.coordinator?.fieldClosed() }
         // Build 14c (G3-80): on the cockpit's display. The intent does not say whether a click or a key opened it, so
         // the pointer counts only while it is over the cockpit (macrev2-845-2).
         let cockpit=cockpitFrameForField?() ?? owner.coordinator?.cockpitFrame
         fieldPanel=panel;panel.open(payload:payload,cockpit:cockpit,pointer:pointerLocation(),fallback:owner.anchor?())
+    }
+    /// WP-22 (macrevb-1062-3): a published model id from the field, or nil for a clear, selects on the cockpit page. An id
+    /// the publication does not list is ignored.
+    func fieldSelected(_ id:String?) {
+        if let id {
+            guard composition.store.snapshot.cockpit?.details?.publishedModels?.contains(where: { $0.id == id }) == true else { return }
+        }
+        owner.coordinator?.selectModel(id)
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.
     func applySettings(_ value: SettingsApplication) {

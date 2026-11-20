@@ -47,7 +47,7 @@ test('CKP-MFD-08 the Grid key draws the 26-week heatmap with five neutral steps 
  // The record began inside the 26 weeks: the started-on line says so.
  await expect(page.locator('.pg-overview .hm-since')).toHaveText('Recorded since Sep 26');
  // The 7/30 and split/stacked keys belong to the bars only.
- await expect(page.locator('[data-opt="days"]')).toHaveCount(0);await expect(page.locator('[data-opt="stack"]')).toHaveCount(0);
+ await expect(page.locator('[data-opt="range"]')).toHaveCount(0);await expect(page.locator('[data-opt="stack"]')).toHaveCount(0);
 });
 
 test('CKP-MFD-08 hovering a heatmap cell shows its date and the tokens per subscription',async({page})=>{

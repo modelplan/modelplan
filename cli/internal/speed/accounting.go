@@ -45,9 +45,15 @@ type usageRecord struct {
 	Replay      string `json:"replay,omitempty"`
 	Requestless bool   `json:"requestless,omitempty"`
 	Response    bool   `json:"response,omitempty"`
+	// Tier is the response's recorded speed tier: standard | fast | ultrafast | flex | unknown.
+	// It selects a published API price multiplier; it is not a timing sample. Records written
+	// before tiers were recorded have none, and responseTier reads that as unknown, never as
+	// standard.
+	Tier string `json:"tier,omitempty"`
 }
 type usageFile struct {
 	LiveObserved bool          `json:"liveObserved,omitempty"` // Size/Modified describe a real live scan, not an import
+	Tiered       bool          `json:"tiered,omitempty"`       // the records carry their speed tier (WP-06); older entries are rescanned
 	Session      string        `json:"session,omitempty"`
 	Parent       string        `json:"parent,omitempty"`
 	Started      time.Time     `json:"started,omitempty"`
@@ -142,7 +148,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		}
 		key := fileKey(path)
 		old, exists := l.Files[key]
-		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() {
+		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Tiered && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() {
 			continue
 		}
 		p := newAccountingParser(source, key)
@@ -166,7 +172,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 				records = append(records, r)
 			}
 		}
-		l.Files[key] = usageFile{LiveObserved: true, Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started}
+		l.Files[key] = usageFile{LiveObserved: true, Tiered: true, Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started}
 		changed = true
 	}
 	// Retain no expired or revoked observations, even from files no longer present.
@@ -287,6 +293,7 @@ func accountingRows(cache string) ([]PerfRow, map[string]bool) {
 			rows[key] = r
 		}
 		r.TokenKinds.add(usageKinds(v.usageBuckets), r.ObservedRequests == 0)
+		r.Responses = append(r.Responses, Response{At: v.At, Tier: responseTier(v.Tier), Buckets: v.usageBuckets})
 		r.ObservedRequests++
 		r.ObservedOutputTokens += v.Output + v.Reasoning
 	}
@@ -333,6 +340,7 @@ type accountingParser struct {
 	latest                       string
 	compacted, emitted           map[string]bool
 	source, file, session, model string
+	tier                         string // Codex: the latest thread_settings_applied service tier
 	previous                     map[string]int64
 	records                      []usageRecord
 	occurrences                  map[string]int
@@ -350,6 +358,9 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 		SessionID string    `json:"sessionId"`
 		Sidechain bool      `json:"isSidechain"`
 		Payload   struct {
+			ThreadSettings *struct {
+				ServiceTier *string `json:"service_tier"`
+			} `json:"thread_settings"`
 			ForkedFrom           string           `json:"forked_from_id"`
 			Source               json.RawMessage  `json:"source"`
 			Type                 string           `json:"type"`
@@ -370,7 +381,7 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 			Usage json.RawMessage `json:"usage"`
 		} `json:"message"`
 	}
-	if p.source == "codex" && !bytes.Contains(b, []byte("token_count")) && !bytes.Contains(b, []byte("token_usage_record")) && !bytes.Contains(b, []byte("turn_context")) && !bytes.Contains(b, []byte("session_meta")) && !bytes.Contains(b, []byte("compacted")) {
+	if p.source == "codex" && !bytes.Contains(b, []byte("token_count")) && !bytes.Contains(b, []byte("token_usage_record")) && !bytes.Contains(b, []byte("turn_context")) && !bytes.Contains(b, []byte("session_meta")) && !bytes.Contains(b, []byte("compacted")) && !bytes.Contains(b, []byte("thread_settings_applied")) {
 		return
 	}
 	if json.Unmarshal(b, &e) != nil {
@@ -393,6 +404,7 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 			return
 		}
 		var u struct {
+			Speed  string `json:"speed"`
 			Input  *int64 `json:"input_tokens"`
 			Read   int64  `json:"cache_read_input_tokens"`
 			Write  int64  `json:"cache_creation_input_tokens"`
@@ -425,7 +437,7 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 		if e.Message.ID != "" {
 			replay = usageHash(session, "\x00", e.Message.ID)
 		}
-		p.records = append(p.records, usageRecord{Key: key, At: e.Timestamp, Model: e.Message.Model, usageBuckets: buckets, Sidechain: e.Sidechain, Replay: replay, Requestless: e.RequestID == ""})
+		p.records = append(p.records, usageRecord{Key: key, At: e.Timestamp, Model: e.Message.Model, usageBuckets: buckets, Sidechain: e.Sidechain, Replay: replay, Requestless: e.RequestID == "", Tier: storedTier(claudeTier(u.Speed))})
 		return
 	}
 	if e.Type == "session_meta" {
@@ -446,6 +458,13 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 		}
 		if parent != "" {
 			p.parent = usageHash(parent)
+		}
+		return
+	}
+	if e.Type == "event_msg" && e.Payload.Type == "thread_settings_applied" {
+		// ccusage codex/src/parser.rs: an event without service_tier says nothing about the tier.
+		if s := e.Payload.ThreadSettings; s != nil && s.ServiceTier != nil {
+			p.tier = codexTier(*s.ServiceTier)
 		}
 		return
 	}
@@ -500,7 +519,7 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 	if e.Payload.ResponseID != "" {
 		key = usageHash("response:", e.Payload.ResponseID)
 	}
-	record := usageRecord{Key: key, At: e.Timestamp, Model: model, usageBuckets: buckets, Response: e.Type == "token_usage_record" || e.Payload.Type == "token_usage_record"}
+	record := usageRecord{Key: key, At: e.Timestamp, Model: model, usageBuckets: buckets, Response: e.Type == "token_usage_record" || e.Payload.Type == "token_usage_record", Tier: storedTier(p.tier)}
 	if e.Type == "token_usage_record" || e.Payload.Type == "token_usage_record" {
 		id := e.Payload.ResponseID
 		if id == "" || p.emitted[id] {
@@ -747,6 +766,9 @@ func mergeImportedUsage(old, incoming usageFile, ranges []span) usageFile {
 	incoming.LiveObserved = old.LiveObserved
 	if old.LiveObserved {
 		incoming.Size, incoming.Modified = old.Size, old.Modified
+		// The live records kept below are as tier-aware as the live scan that wrote them; an import
+		// must not mark an older scan's records as tiered, or the next observation skips the rescan.
+		incoming.Tiered = old.Tiered
 	}
 	for _, r := range old.Records {
 		// Pre-release caches without live-scan provenance cannot prove live ownership.

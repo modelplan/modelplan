@@ -153,7 +153,12 @@ test('CKP-PLG-54 the Swift Settings catalogue mirrors the web registry (ids, sum
 test('D323 custom draw: the registry stays DOM-free and the draw tokens are cockpit variables the sheets define',()=>{
  const source=readFileSync(new URL('../../../cockpit/src/plugin-registry.ts',import.meta.url),'utf8');
  assert.doesNotMatch(source,/\bdocument\.|\bwindow\.|^import (?!type)[^;]*from '\.\/(?:plugin-host|view|prototype-[a-z]+)\.js'/m);
- const sheets=['web/cockpit.css',...['theme','engine','mfd'].map(n=>`prototype/prototype-${n}.css`)].map(f=>readFileSync(new URL('../../../cockpit/'+f,import.meta.url),'utf8')).join('\n');
+ // The stylesheets the bundle actually ships: build.mjs's prototype sheet list plus web/cockpit.css.
+ const build=readFileSync(new URL('../../../cockpit/build.mjs',import.meta.url),'utf8'),list=/const sheets=\[([^\]]+)\]/.exec(build)?.[1];
+ assert.ok(list,'build.mjs lists its sheets');
+ const shipped=['web/cockpit.css',...[...list.matchAll(/'([a-z0-9-]+)'/g)].map(m=>`prototype/prototype-${m[1]}.css`)];
+ assert.ok(shipped.length>3,'the shipped sheet list was read');
+ const sheets=shipped.map(f=>readFileSync(new URL('../../../cockpit/'+f,import.meta.url),'utf8')).join('\n');
  for(const [name,value] of Object.entries(PLUGIN_TOKENS)){
   const variable=/^var\((--[a-z0-9-]+)\)$/.exec(value)?.[1];
   assert.ok(variable,name);assert.match(sheets,new RegExp(variable+':'),`${name} ${variable} is defined`);

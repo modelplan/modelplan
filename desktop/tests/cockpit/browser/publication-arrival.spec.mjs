@@ -14,9 +14,9 @@ test('the faders say the data is unavailable, then fill when the publication arr
  expect(await receive(send('display',{data}))).toBe(true);
  const note=page.locator('.fd-bank .mp-empty'),channels=page.locator('.fd-ch:not(.empty)');
  await expect(note).toHaveText('Data unavailable');await expect(channels).toHaveCount(0);
- const model={id:'model-a',name:'Synthetic A',developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]};
+ const model={id:'model-a',name:'Alpha',developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]};
  data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[model]};
  expect(await receive(send('display',{data}))).toBe(true);
- await expect(channels).toHaveCount(1);await expect(channels.first().locator('.fd-strip')).toContainText('Synthetic A');
+ await expect(channels).toHaveCount(1);await expect(channels.first().locator('.fd-strip')).toContainText('Alpha');
  await expect(note).toHaveCount(0);
 });

@@ -4,3 +4,5 @@ export function tok(n:number|null):string;
 export function until(ms:number,ui:{now:number;lang:'en'|'zh-CN'}):string;
 export function dhm(minutes:number|null):string;
 export function md(ms:number,ui:{lang:'en'|'zh-CN'}):string;
+export function tokShort(n:number):string;
+export function approxCost(usd:number):string;

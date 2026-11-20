@@ -120,6 +120,23 @@ final class SubscriptionRowModelTests: XCTestCase {
         XCTAssertEqual(without.added[0].fix?.target, .explain, "no key area: the plain explanation stays")
     }
 
+    /// D322 (reader-fail-no-account): a tool that reads by default whose reader fails before any account exists shows
+    /// the table's one cause plus one next step in its own row, not a bare "Reading...".
+    func testD322FailedReaderWithNoAccountShowsItsCauseInTheToolRow() throws {
+        let facts = ["codex": ToolRowFacts(state: .failed, code: "runtime_missing")]
+        let model = build([], order: [], tools: [tool("codex")], facts: facts, reading: ["codex"])
+        let row = try XCTUnwrap(model.added.first { $0.id == "codex" })
+        let entry = try XCTUnwrap(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex", toolName: "Codex"))
+        XCTAssertEqual(row.status, entry.reason)
+        XCTAssertEqual(row.fix?.action, entry.action)
+        XCTAssertTrue(row.needsAttention)
+        XCTAssertEqual(row.causeCode, "runtime_missing")
+        // A reader with no failure keeps the plain "Reading..." line.
+        let calm = build([], order: [], tools: [tool("codex")], facts: ["codex": ToolRowFacts(state: .fresh, code: "ok")], reading: ["codex"])
+        XCTAssertEqual(calm.added[0].status, SettingsText("Reading…", "正在读取…"))
+        XCTAssertNil(calm.added[0].fix)
+    }
+
     func testDetectedNotAddedAndNotInstalledSections() {
         let tools = [tool("claude"), tool("codex"), tool("cursor"), tool("grok", block: .notSignedIn, readable: false), tool("gemini", detected: false)]
         let model = build([sub("claude", vendor: "claude")], order: ["claude"], tools: tools, reading: ["codex"])

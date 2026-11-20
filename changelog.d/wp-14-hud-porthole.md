@@ -1,1 +1,0 @@
-The porthole HUD lists only models your subscriptions carry (a session on another vendor's model no longer adds it), sits on a solid dark backing with white names, marks each model a session is running with a small green dot, and the rocket flames now step through five levels instead of animating every frame.

@@ -128,6 +128,9 @@ type PerfRow struct {
 	LastAt *time.Time `json:"lastAt,omitempty"`
 	// Origin: "import" on rows the history importer made (import.go); empty on live rows.
 	Origin string `json:"origin,omitempty"`
+	// Responses: on response-accounting rows only, each counted response in the row, so a
+	// price can be applied per request (cost.go). Never stored; rebuilt from the ledger.
+	Responses []Response `json:"-"`
 }
 
 // PerfPath is the ledger file.
