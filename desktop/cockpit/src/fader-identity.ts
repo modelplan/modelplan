@@ -23,14 +23,14 @@ export function refreshComparison<T extends {current:string|null;currentFast:boo
  return next;
 }
 
-type ComparedFader={id:string;sourceId:string;name:string;short:string;rec:string;e:unknown[];current:string|null;currentFast:boolean};
+type ComparedFader={id:string;sourceId:string;name:string;short:string;rec:string;e:unknown[];current:string|null;currentFast:boolean;u7?:{tokens:number;share:number}};
 type OpenComparison={modelId:string;trial?:string;fast?:boolean};
 /** The comparison card's model and arguments from the latest fader input: the current effort and Fast mode are the
  * session's as reported now (CKP-MFD-19: unreported stays unreported), only the trial is the user's. The model carries
  * its published id for the website link. */
 export function comparisonInput(f:ComparedFader,compare:OpenComparison,pool:string|null){
  return {
-  model:{id:f.id,publishedId:f.sourceId,name:f.name,short:f.short||f.name,rec:f.rec,e:f.e,pool},
+  model:{id:f.id,publishedId:f.sourceId,name:f.name,short:f.short||f.name,rec:f.rec,e:f.e,pool,...(f.u7?{u7:f.u7}:{})},
   args:{modelId:f.id,current:f.current??null,...(compare.trial?{trial:compare.trial}:{}),...(compare.fast!==undefined?{fast:compare.fast}:{}),currentFast:!!f.currentFast},
  };
 }

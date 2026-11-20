@@ -152,3 +152,11 @@ test('macrevd-1039-1 historyUsage sums rows that map to one canonical model',()=
  assert.deepEqual(usage.get('sol'),{d7:500,d30:15});
  assert.deepEqual(usage.get('terra'),{d7:400,d30:0});
 });
+
+// WP-05 (D292, owner 11-17): aaScore rides along as a fifth reading only when published; ability (index 1) stays our score.
+test('WP-05 carries a published aaScore as a reference after time, never in place of ability',()=>{
+ const p={contractVersion:1,models:[{id:'m',name:'M',recommended:'high',efforts:[
+  {effort:'high',star:true,ability:42.8,cost:.375,time:104,aaScore:61.5},{effort:'max',star:false,ability:47.5,cost:1.056,time:221},
+  {effort:'low',star:false,ability:33.9,cost:.132,time:38,aaScore:-1}]}]};
+ assert.deepEqual(publicationFaders(p).faders[0].e,[['Low',33.9,.132,38],['High',42.8,.375,104,61.5],['Max',47.5,1.056,221]]);
+});
