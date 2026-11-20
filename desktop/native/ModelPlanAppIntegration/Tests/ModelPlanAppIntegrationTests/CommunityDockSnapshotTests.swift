@@ -399,7 +399,8 @@ import ModelPlanSettings
         var ready = StoreDiagnostics(); ready.personal = nil
         host.render(snapshot: joined, diagnostics: ready)
         XCTAssertNil(host.dockView.window)
-        XCTAssertEqual(host.dockView.accessibilityChildren()?.count ?? 0, 0, "no editable default pixels before authoritative Settings restore")
+        // The empty-station button (dock.empty, G3-136) is not an editable row.
+        XCTAssertEqual((host.dockView.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }.filter { $0.accessibilityIdentifier() != "dock.empty" }.count, 0, "no editable default pixels before authoritative Settings restore")
         var context = SettingsPageContext(); context.subscriptions = adapt(joined).subscriptions
         let coordinator = SettingsApplicationCoordinator(store: store, context: context) { host.apply($0) }
         await coordinator.reload()
