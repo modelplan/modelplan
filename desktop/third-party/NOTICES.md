@@ -2062,7 +2062,7 @@ Licence: `MIT`.
 
 Copyright © 2010-2026 three.js authors
 
-Used in: Official edition only: minified into the launch-field scene bundle, loaded on demand by the enlarged porthole.
+Used in: Official edition only: minified into the launch-field component bundle, loaded on demand by the enlarged porthole.
 
 Source: https://www.npmjs.com/package/three/v/0.186.1
 
