@@ -502,7 +502,8 @@ import ModelPlanSettings
                 try presentSyntheticHostCard(host, id: id)
                 let labels = descendants(host.card).compactMap { $0 as? NSTextField }
                 let source = try XCTUnwrap(labels.first { $0.accessibilityIdentifier() == "dock.card.text.source" })
-                XCTAssertEqual(source.stringValue, accountRow ? "刚刚" : "读数时间未知")
+                // WP-15 DOCK-3.8-50 uses WidgetCardText's updated/unknown card-header copy.
+                XCTAssertEqual(source.stringValue, accountRow ? "刚刚更新" : "未读取")
                 XCTAssertEqual(source.accessibilityLabel(), source.stringValue)
                 if !accountRow { XCTAssertTrue(labels.contains { $0.stringValue.contains("Keychain") }) }
                 let button = try XCTUnwrap(descendants(host.card).compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "dock.card.enter" })

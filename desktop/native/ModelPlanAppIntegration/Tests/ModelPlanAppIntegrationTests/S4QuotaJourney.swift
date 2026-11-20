@@ -548,7 +548,7 @@ actor S4RowsClient: EngineClient {
         try require(card.rows.contains{$0.id == "quota:extra" && $0.kind == .extraQuota && $0.value == "1%"},"extra quota belongs in the card only")
         let afterReset=Date(timeIntervalSince1970:4_102_444_800) // 2100-01-01
         let expired=try entry.composition.dock.cardContent(for:input.id,at:afterReset)
-        try require(expired?.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("Reset time passed") == true,"relative reset text must use presentation time, not cached projection time")
+        try require(expired?.rows.first(where:{$0.id == "quota:five"})?.detail == "","relative reset text must use presentation time, not cached projection time: no reset text once the reset has passed (WP-15, V1-FINAL §0)")
         var old=SettingsPreferences();old.subscriptionSettings["codex"] = .init(alias:"Saved",percentagePin:.week)
         old.subscriptions = .init(order:["codex"],hiddenIDs:["codex"])
         let migrated=entry.composition.accountMembers.migratingRowPreferences(old)
@@ -619,7 +619,8 @@ actor S4RowsClient: EngineClient {
         guard let firstCard=try entry.composition.dock.cardContent(for:"0123456789abcdef"),
               let secondCard=try entry.composition.dock.cardContent(for:"fedcba9876543210") else { throw Failure(description:"normal Dock must expose the actual member card content") }
         try require(firstCard.plan == "synthetic","card must carry the reported plan name")
-        try require(firstCard.sourceAndAge.hasPrefix("Local history · "),"card header must use the admitted window source, even when the account route differs")
+        // WP-15 (DOCK-3.8-50, amends DOCK-3.8-05): the header is only the reading's age; the source moved to Settings.
+        try require(firstCard.sourceAndAge.hasPrefix("Updated "),"card header must state the admitted reading's age")
         func reserveParts(_ row:DockCardRow)->[String]{row.value.components(separatedBy:" · ")}
         try require(firstCard.rows.contains{$0.kind == .reserve && reserveParts($0).contains("Credits 43")},"first card needs its own rounded credits")
         try require(secondCard.rows.contains{$0.kind == .reserve && reserveParts($0).contains("Credits 7")},"second card needs its own reported credits")
@@ -661,9 +662,8 @@ actor S4RowsClient: EngineClient {
               let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"unknown-facts member/card missing") }
         try require(card.plan.isEmpty && !card.rows.contains{$0.kind == .reserve},"unavailable plan/reserve must stay absent, not become zero or an inferred current value")
         try require(card.rows.first(where:{$0.kind == .quota})?.value == "--","unknown quota must not become zero fuel")
-        try require(card.rows.first(where:{$0.kind == .quota})?.detail == "--","unknown reset time must stay unknown")
-        try require(card.sourceAndAge == "Unknown source · Reading time unknown","unproved provenance must stay unknown in the header")
-        try require(card.sourceAndAge.contains("Reading time unknown"),"missing reading time must not use rendering time")
+        try require(card.rows.first(where:{$0.kind == .quota})?.detail == "","unknown reset time stays blank, never invented (board-3)")
+        try require(card.sourceAndAge == "Not read yet","missing reading time must not use rendering time")
         await entry.composition.stop()
     }
     static func collisions(capture:URL) async throws {

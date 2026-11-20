@@ -13,11 +13,23 @@ struct HostVerifiedWindowFact: Equatable, Sendable {
     let until: Date
 }
 
+/// A value-only copy of a kept (retained) reading from the same accepted Provider projection (WP-15, DOCK-3.2-50).
+/// It never proves currency: it is shown only for a stale, stable member and only before `until`.
+struct HostRetainedWindowFact: Equatable, Sendable {
+    let memberID: String
+    let windowID: String
+    let remainingPercent: Double
+    let resetsAt: Date?
+    let observedAt: Date
+    let until: Date
+}
+
 /// One synchronous accepted Provider result, captured with the Host generation and evaluation time.
 struct HostVerifiedContentFacts: Sendable {
     let content: DockContent
     let deadline: DockContentRecomputeDeadline?
     let verifiedWindows: [HostVerifiedWindowFact]
+    var retainedWindows: [HostRetainedWindowFact] = []
     let evaluatedAt: Date
     let sourceToken: UInt64
     var language: String = "en"
@@ -32,7 +44,7 @@ enum HostVerifiedWindowError: Error, Equatable {
 @MainActor enum HostVerifiedWindowAdapter {
     private struct Key: Hashable { let member: String, window: String }
 
-    static func apply(_ content: DockContent, proofs: [HostVerifiedWindowFact], now: Date,
+    static func apply(_ content: DockContent, proofs: [HostVerifiedWindowFact], retained: [HostRetainedWindowFact] = [], now: Date,
                       sourceToken: UInt64, language: String = "en", sourceIsCurrent: @MainActor (UInt64) -> Bool) throws -> DockContent {
         guard sourceIsCurrent(sourceToken) else { throw HostVerifiedWindowError.staleSnapshot }
         guard now.timeIntervalSinceReferenceDate.isFinite else { throw HostVerifiedWindowError.invalidProof }
@@ -54,6 +66,18 @@ enum HostVerifiedWindowError: Error, Equatable {
             guard facts.updateValue(proof, forKey: key) == nil else { throw HostVerifiedWindowError.duplicateIdentity }
         }
         var pending = Set(facts.keys)
+        var kept: [Key: HostRetainedWindowFact] = [:]
+        for fact in retained {
+            guard !fact.memberID.isEmpty, !fact.windowID.isEmpty,
+                  fact.remainingPercent.isFinite, (0...100).contains(fact.remainingPercent),
+                  fact.observedAt.timeIntervalSinceReferenceDate.isFinite, fact.until.timeIntervalSinceReferenceDate.isFinite,
+                  fact.observedAt < fact.until, fact.resetsAt.map({ $0.timeIntervalSinceReferenceDate.isFinite }) ?? true else {
+                throw HostVerifiedWindowError.invalidProof
+            }
+            let key = Key(member: fact.memberID, window: fact.windowID)
+            guard facts[key] == nil, kept.updateValue(fact, forKey: key) == nil else { throw HostVerifiedWindowError.duplicateIdentity }
+        }
+        var keptIDsByMember: [String: Set<String>] = [:]
         let subscriptions = Dictionary(uniqueKeysWithValues: original.subscriptions.map { ($0.id, $0) })
         var inputs: [DockInstrumentInput] = []
         for var input in original.inputs {
@@ -72,6 +96,16 @@ enum HostVerifiedWindowError: Error, Equatable {
             for index in input.windows.indices {
                 let key = Key(member: input.id, window: input.windows[index].id)
                 guard let proof = facts[key] else {
+                    // DOCK-3.2-50: a kept reading of this same stale, stable member stays until its window resets. It is
+                    // not proof of currency: the input stays stale, so it never alerts or lights a notice.
+                    if let fact = kept[key], let subscription, !subscription.isUnstable, subscription.source == .stale,
+                       input.dataState == .stale, fact.observedAt <= now, now < fact.until,
+                       input.windows[index].remainingPercent == fact.remainingPercent {
+                        input.windows[index].resetsAt = fact.resetsAt
+                        input.windows[index].validity = .retained(observedAt: fact.observedAt, until: fact.until)
+                        keptIDsByMember[input.id, default: []].insert(fact.windowID)
+                        continue
+                    }
                     // A raw window value is not proof, even when its aggregate row says fresh.
                     input.windows[index].remainingPercent = nil; input.windows[index].resetsAt = nil
                     input.windows[index].validity = .unavailable
@@ -112,7 +146,9 @@ enum HostVerifiedWindowError: Error, Equatable {
                       window.remainingPercent != nil else { return nil }
                 return window.id
             })
-            let safeResetTimes = row.resetTimes.filter { provenIDs.contains($0.key) && $0.value > now }
+            let keptIDs = keptIDsByMember[input.id] ?? []
+            let shownIDs = provenIDs.union(keptIDs)
+            let safeResetTimes = row.resetTimes.filter { shownIDs.contains($0.key) && $0.value > now }
             let admitted = subscriptions[input.id].map {
                 !$0.isUnstable && ($0.source == .fresh || $0.source == .stale)
             } ?? false
@@ -123,16 +159,18 @@ enum HostVerifiedWindowError: Error, Equatable {
                 originalObservedAt: admitted ? row.originalObservedAt : nil,
                 plan: admitted ? row.plan : "", sourceName: admitted ? row.sourceName : "",
                 resetTimes: safeResetTimes,
-                windowDescriptions: row.windowDescriptions.filter { provenIDs.contains($0.key) },
+                windowDescriptions: row.windowDescriptions.filter { shownIDs.contains($0.key) },
                 // Public reset notices are independently admitted by the Provider;
                 // missing private quota proof must not erase that public status.
                 additionalRows: admitted ? row.additionalRows : row.additionalRows.filter { $0.kind == .notice && $0.id.hasPrefix("reset-event:") },
                 resetCountExpiry: admitted ? row.resetCountExpiry : nil,
                 links: row.links,
                 windowObservations: row.windowObservations.map { observations in
-                    admitted ? observations.filter { provenIDs.contains($0.key) || $0.value.verifiedRetained } : [:]
+                    admitted ? observations.filter { shownIDs.contains($0.key) || $0.value.verifiedRetained } : [:]
                 },
-                cardReadingState: unproved ? .error : (admitted || row.cardReadingState == .loading ? row.cardReadingState : .error))
+                cardReadingState: unproved ? .error : (admitted || row.cardReadingState == .loading ? row.cardReadingState : .error),
+                // A forecast is about a current reading only.
+                runOutTimes: row.runOutTimes.filter { provenIDs.contains($0.key) })
             rows[input.id]?.actionLabel = row.actionLabel
         }
         let snapshot = CommunityDockSnapshot(inputs: inputs, subscriptions: original.subscriptions,
@@ -166,7 +204,7 @@ enum HostVerifiedWindowError: Error, Equatable {
                           sourceIsCurrent: @MainActor (UInt64) -> Bool) throws -> HostDeadlineDriver<DockContent>.Candidate {
         let content = facts.content, deadline = facts.deadline, proofs = facts.verifiedWindows
         let now = facts.evaluatedAt, sourceToken = facts.sourceToken
-        let checked = try apply(content, proofs: proofs, now: now, sourceToken: sourceToken, language: facts.language, sourceIsCurrent: sourceIsCurrent)
+        let checked = try apply(content, proofs: proofs, retained: facts.retainedWindows, now: now, sourceToken: sourceToken, language: facts.language, sourceIsCurrent: sourceIsCurrent)
         let active = proofs.filter { now < $0.until }
         let bounded: DockContentRecomputeDeadline?
         switch deadline {

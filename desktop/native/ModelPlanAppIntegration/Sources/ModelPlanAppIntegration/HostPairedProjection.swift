@@ -57,9 +57,13 @@ import ModelPlanDock
                 remainingPercent: fact.remainingPercent, resetsAt: fact.resetsAt,
                 issuedAt: fact.issuedAt, until: fact.until)
         }
+        let retained = pair.retainedWindows.map { fact in
+            HostRetainedWindowFact(memberID: fact.memberID, windowID: fact.windowID, remainingPercent: fact.remainingPercent,
+                resetsAt: fact.resetsAt, observedAt: fact.observedAt, until: fact.until)
+        }
         do {
             let result = try HostVerifiedWindowAdapter.candidate(.init(content: pair.content,
-                deadline: deadline, verifiedWindows: proofs, evaluatedAt: context.now,
+                deadline: deadline, verifiedWindows: proofs, retainedWindows: retained, evaluatedAt: context.now,
                 sourceToken: token, language: provider.language), sourceIsCurrent: isCurrent)
             guard isCurrent(token) else { throw HostVerifiedWindowError.staleSnapshot }
             evaluatedAt = context.now
