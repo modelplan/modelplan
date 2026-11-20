@@ -3,7 +3,7 @@
 // through its normal bridge. Synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell,currentSample,excludePortholeFlicker} from '../fixture.mjs';
-import {build13Profile} from '../build13-fixture.mjs';
+import {build13Profile,CODEX_REF} from '../build13-fixture.mjs';
 
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 // n subscriptions: the first n of the sample's four tool rows (each one a column of the quota table).
@@ -78,6 +78,61 @@ test('CKP-MFD-65 without price data the Models cost cells and title stay free of
  await expect(page.locator('.mfd-page .md-h')).toHaveText('7d · 2 models');
 });
 
+// macrevc-1058-10: ≈cost reads the price rows themselves, not only models the output-token ranking lists (input-only use).
+test('CKP-MFD-65 a priced model with no output-token ranking still shows its ≈cost; a zero price shows none',async({page})=>{
+ const data=withHistory(true,true);data.history.models.recent7d=ranking([entity('gpt-6.1-sol',900)]);
+ data.history.cost.models.recent7d.push({model:'gpt-6-luna',source:'codex',estimatedUsd:0,pricedTokens:50,unpricedTokens:0});
+ await open(page,data);await page.locator('[data-mfd="page:tune"]').click();
+ const cell=id=>page.locator(`.mfd-page .md-row[data-model="${id}"] .md-c`);
+ await expect(cell('gpt-6.1-terra')).toHaveText('≈$3');await expect(cell('gpt-6-luna')).toHaveText('');
+});
+
+// macrevc-1058-3: a subscription scope has no scoped attribution for the ranking or the prices, so they stay unknown.
+test('CKP-MFD-65 under a selected subscription the Models shares and ≈cost stay unknown',async({page})=>{
+ const {send,receive}=await open(page,withHistory(true,true));await page.locator('[data-mfd="page:tune"]').click();
+ expect(await receive(send('shell',{...shell,scope:CODEX_REF}))).toBe(true);
+ await expect(page.locator('.mfd-page .md-row').first()).toBeVisible();
+ expect((await page.locator('.mfd-page .md-s').allTextContents()).join('')).toBe('');
+ expect((await page.locator('.mfd-page .md-c').allTextContents()).join('')).toBe('');
+ await expect(page.locator('.mfd-page .md-h')).not.toContainText('≈$');
+});
+
+// macrevc-1058-5: after opening a model from the HUD, a list pick selects the picked row.
+test('CKP-MFD-65 a list pick after opening a model from the HUD selects the picked row',async({page})=>{
+ await open(page,withHistory());await page.locator('.hud .hp').first().click();
+ await page.locator('.ok[data-opt="models"] b[data-choice="list"]').click();
+ const rows=page.locator('.mfd-page .md-row'),other=await rows.evaluateAll(r=>r.map(x=>x.dataset.model));
+ const sel=await page.locator('.mfd-page .md-row.sel').getAttribute('data-model'),pick=other.find(id=>id!==sel);
+ await page.locator(`.mfd-page .md-row[data-model="${pick}"]`).click();
+ await expect(page.locator('.mfd-page .md-row.sel')).toHaveAttribute('data-model',pick);
+});
+
+// macrevc-1058-4: a model the history ranks as used stays listed even outside the ten-model field.
+test('CKP-MFD-65 a used model outside the ten-model field is still listed and selectable',async({page})=>{
+ const data=withHistory();
+ for(let i=0;i<12;i++)data.details.publishedModels.push({...structuredClone(data.details.publishedModels[0]),id:'gpt-x'+i,name:'GPT X'+i});
+ data.history.models.recent7d=ranking([entity('gpt-6.1-sol',900),entity('gpt-x11',50)]);
+ await open(page,data);await page.locator('[data-mfd="page:tune"]').click();
+ const row=page.locator('.mfd-page .md-row[data-model="gpt-x11"]');await expect(row).toBeVisible();await row.click();
+ await expect(page.locator('.mfd-page .md-row.sel')).toHaveAttribute('data-model','gpt-x11');
+});
+
+// macrevc-1058-6: every project in the title is a row (the list scrolls).
+test('CKP-MFD-67 ten projects give ten rows',async({page})=>{
+ const data=withHistory();
+ data.history.projects.recent7d=Array.from({length:10},(_,i)=>({ref:'p'+i,label:'proj'+i,model:'gpt-6.1-sol',effort:'high',observedOutputTokens:10,share:.1}));
+ await open(page,data);await page.locator('[data-mfd="page:where"]').click();
+ await expect(page.locator('.mfd-page .wd-h')).toHaveText('7d · 10 projects');await expect(page.locator('.mfd-page .wd')).toHaveCount(10);
+});
+
+// macrevc-1058-7: Today has no per-model ranking, so the list says so instead of showing the published order.
+test('CKP-MFD-65 the Models list says Today has no statistics yet',async({page})=>{
+ const {send,receive}=await open(page,withHistory());await page.locator('[data-mfd="page:tune"]').click();
+ expect(await receive(send('shell',{...shell,range:'today'}))).toBe(true);
+ await expect(page.locator('.mfd-page .mp-empty',{hasText:/No statistics for today/})).toBeVisible();
+ await expect(page.locator('.mfd-page .md-row')).toHaveCount(0);
+});
+
 test('CKP-MFD-65 the Models page follows the header range: its title, rows and shares change with it',async({page})=>{
  const data=withHistory();data.history.models.recent30d=ranking([entity('gpt-6.1-terra',800),entity('gpt-6.1-sol',200)]);
  const {send,receive}=await open(page,data);await page.locator('[data-mfd="page:tune"]').click();
@@ -88,10 +143,9 @@ test('CKP-MFD-65 the Models page follows the header range: its title, rows and s
  await expect(page.locator('.mfd-page .md-h')).toHaveText('30d · 2 models');
  expect(await rows.evaluateAll(r=>r.slice(0,2).map(x=>x.dataset.model))).toEqual(['gpt-6.1-terra','gpt-6.1-sol']);
  await expect(rows.nth(0).locator('.md-s')).toHaveText('80%');
- // Today has no model ranking yet: the list keeps the published order with no shares, and the title says Today.
+ // Today has no model ranking yet: the page says so (macrevc-1058-7).
  expect(await receive(send('shell',{...shell,range:'today'}))).toBe(true);
- await expect(page.locator('.mfd-page .md-h')).toContainText('Today');
- await expect(rows.nth(0).locator('.md-s')).toHaveText('');
+ await expect(page.locator('.mfd-page .mp-empty')).toBeVisible();
 });
 
 test('CKP-MFD-65 the Models page lists models by usage with a share each, and a row selects the model',async({page})=>{

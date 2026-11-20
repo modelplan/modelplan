@@ -3,7 +3,6 @@
 // through the producer's current binding (owner D-D: shown as local records). A day or hour without an observation
 // stays null, never zero, and the page says nothing about days before the recording began.
 import {ht} from './host-text.js';
-import {cardUsage} from './model-card.js';
 import {costView} from './prototype-cost.js';
 import type {WireCockpitData} from '../generated/wire.js';
 
@@ -55,9 +54,10 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
   (paceHistory[accountId]??={})[kind]=group.cycles.map(c=>({start:c.startedAt,end:c.resetsAt,points:c.points,hadDrop:c.hadDrop,spent:c.spent.map(s=>({model:s.model??'',effort:s.effort,fast:s.fast,points:s.points}))}));
  }
  const models=(w:{top:ReadonlyArray<{name:string;observedOutputTokens:number}>})=>({top:w.top.map(e=>({name:e.name,tokens:e.observedOutputTokens}))});
- const costOf=(range:'7d'|'30d')=>Object.fromEntries([...cardUsage(h,range)].flatMap(([id,u])=>u.cost!==undefined&&u.cost>0?[[id,u.cost] as const]:[])),cv=costView(data,now);
+ const cv=costView(data,now),costOf=(range:'last7d'|'last30d')=>Object.fromEntries((cv?.models[range]??[]).flatMap(r=>r.cost&&r.cost.usd>0&&r.model!=='unknown'?[[r.model,r.cost.usd] as const]:[]));
+
  return {daily,hourly,projectRanking:{recent7d:projects(h.projects.recent7d),recent30d:projects(h.projects.recent30d)},paceHistory,modelRanking:{recent7d:models(h.models.recent7d),recent30d:models(h.models.recent30d)},
-  modelCost:{recent7d:costOf('7d'),recent30d:costOf('30d'),total:{recent7d:cv?.total.last7d.cost?.usd??null,recent30d:cv?.total.last30d.cost?.usd??null}}};
+  modelCost:{recent7d:costOf('last7d'),recent30d:costOf('last30d'),total:{recent7d:cv?.total.last7d.cost?.usd??null,recent30d:cv?.total.last30d.cost?.usd??null}}};
 }
 
 /** The 7|30 usage block for one subscription: several linked tools add up; an unknown kind stays unknown. */

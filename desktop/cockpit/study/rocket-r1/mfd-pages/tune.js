@@ -15,9 +15,14 @@ import {withOlderLabel} from './public-helpers.js';
 // first by their share of the range's tokens; unused ones follow in the published order, dimmed. With no usage record
 // at all the list is in the published (recommendation) order and the share and ≈cost columns stay empty.
 export function usageRows(d, ui) {
-  const range = pageRange(ui), ranking = range === '30d' ? d.modelRanking?.recent30d : range === '7d' ? d.modelRanking?.recent7d : null;
+  const range = pageRange(ui), scoped = !!ui.scope;
+  // A subscription scope has no scoped attribution for the ranking or the price data, so shares and ≈cost stay unknown there.
+  const ranking = scoped ? null : range === '30d' ? d.modelRanking?.recent30d : range === '7d' ? d.modelRanking?.recent7d : null;
   const used = new Map((ranking?.top ?? []).map(r => [r.name, r]));
-  const ms = chartModels(d, ui).map(m => withOlderLabel(m, t('mfd.olderBadge')));
+  const field = chartModels(d, ui);
+  // A model the history ranks as used stays listed even when it falls outside the ten-model field (macrevc-1058-4).
+  const extra = (d.listModels ?? []).filter(m => used.has(m.id) && !field.some(f => f.id === m.id));
+  const ms = [...field, ...extra].map(m => withOlderLabel(m, t('mfd.olderBadge')));
   const rows = ms.map((m, order) => ({m, order, tokens: used.get(m.id)?.tokens ?? null}));
   rows.sort((a, b) => (b.tokens ?? -1) - (a.tokens ?? -1) || a.order - b.order);
   // The share's whole is every known model's tokens, so the shares of the rows shown add up.
@@ -25,9 +30,10 @@ export function usageRows(d, ui) {
   return {rows, total, hasUsage: rows.some(r => r.tokens != null)};
 }
 // The price data has 7- and 30-day model rows; Today has none on this page yet, so it shows no ≈$ rather than another range's.
-const costKey = ui => ({'7d': 'recent7d', '30d': 'recent30d'})[pageRange(ui)];
+const costKey = ui => ui.scope ? undefined : ({'7d': 'recent7d', '30d': 'recent30d'})[pageRange(ui)];
 const totalCost = (d, ui) => { const v = approxCost(d.modelCost?.total?.[costKey(ui)]); return v ? ` · ${esc(v)}` : ''; };
 function list(d, ui) {
+  if (pageRange(ui) === 'today') return `<p class="mp-empty period">${t('mfd.rangeNoToday')}</p>`; // no per-model ranking for Today yet (macrevc-1058-7)
   const {rows, total, hasUsage} = usageRows(d, ui);
   if (!rows.length) return `<p class="mp-empty">${t('mfd.noModels')}</p>`;
   const inUse = rows.filter(r => r.tokens != null).length, accounts = accountsIn(d, ui);

@@ -20,8 +20,8 @@ function projects(d, ui) {
   if (pools) rows = rows.map(p => ({...p, configs: p.configs.filter(c => !modelOf(d,c.model)?.pool || pools.includes(modelOf(d,c.model).pool))})).filter(p => p.configs.length);
   if (!rows.length) return `<p class="mp-empty">${t('mfd.noSessions')}</p>`;
   const accounts = accountsIn(d, ui);
-  return `<div class="wd-h">${esc(t('mfd.whProjTitle', {r: rangeWord({range: rangeOf(ui)}), n: rows.length}))}</div><div class="wd-list">${rows.slice(0, 8).map(p => {
-    const c = p.configs[0], m = modelOf(d, c.model), share = Number.isFinite(p.share) ? Math.round(p.share * 100) : null;
+  return `<div class="wd-h">${esc(t('mfd.whProjTitle', {r: rangeWord({range: rangeOf(ui)}), n: rows.length}))}</div><div class="wd-list">${rows.map(p => {
+    const c = p.configs[0], m = modelOf(d, c.model), share = p.tokenScope !== 'unknown' && Number.isFinite(p.share) ? Math.round(p.share * 100) : null;
     const colour = accounts.find(a => a.pool && m?.pool === a.pool)?.colour || 'var(--lcd-muted)';
     return `<div class="wd" data-p="${share ?? 0}"><i class="chip" data-v="${esc(colour)}"></i><span class="wd-n">${esc(p.project)}</span><span class="wd-c">${esc(m?.short || c.model)} ${esc(c.effort || '--')}</span><span class="wd-m" data-cost></span><span class="wd-s">${share == null ? '' : share + '%'}</span></div>`;
   }).join('')}</div>`;
