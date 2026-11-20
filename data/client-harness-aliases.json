@@ -1,6 +1,6 @@
 {
-  "revision": "2026-11-17.1",
-  "checkedAt": "2026-11-17",
+  "revision": "2026-11-20.1",
+  "checkedAt": "2026-11-20",
   "records": [
     {
       "modelId": "opus",
@@ -46,6 +46,25 @@
         "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
       ],
       "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "auto:anthropic:a24a93ceda35e3ae",
+      "sourceModelId": "anthropic/claude-fable-5-2",
+      "harnessIds": {
+        "api": [
+          "claude-fable-5-2"
+        ],
+        "claude-code": [
+          "claude-fable-5-2"
+        ],
+        "codex": []
+      },
+      "sourceUrls": [
+        "https://platform.claude.com/docs/en/models/overview",
+        "https://code.claude.com/docs/en/model-config"
+      ],
+      "qualification": "Anthropic provider; needs Claude Code v2.1.321 or later; compatible client and managed allowlists still apply.",
       "requiredEndpoints": {}
     },
     {
