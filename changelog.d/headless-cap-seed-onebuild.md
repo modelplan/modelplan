@@ -1,0 +1,1 @@
+CI-only: native-headless builds both native packages once into one scratch path, publishes its build seed before the tests run, reads its test share from the sources instead of `swift test list`, and has a temporary 90-minute limit.

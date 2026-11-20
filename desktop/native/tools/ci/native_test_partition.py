@@ -9,6 +9,15 @@ the conservative default is the slow leg, never the unsafe one.
   check   static rules for the manifest against the test sources (Linux CI and both Mac legs)
   plan    from `swift test list`, write the exact swift-test arguments and expected test IDs of a leg
   verify  from the leg's XCTest log, require executed IDs == expected IDs and audit every skip
+  static-list  the headless share's test IDs read from the sources, in `swift test list` format
+
+`static-list` lets the headless leg skip `swift test list` (one more SwiftPM start, 1-19 minutes on a busy Mac).
+It is exact because `check` already forbids conditional compilation in headless class files and requires every
+headless class to inherit XCTestCase directly (no inherited tests). It is not trusted blindly: the headless leg runs
+`--filter` on the class selector, so it executes every compiled test of those classes, and `verify --static`
+requires the executed IDs to equal the static list; any drift between sources and binary is a red job, never a
+silently smaller share. The GUI legs keep `swift test list` (their share is "everything else", which only the
+built suite can enumerate).
 
 Because `plan` derives both legs from the same listed suite (headless = listed & manifest,
 gui = listed - headless) and `verify` requires each leg to execute exactly its own set, a green
@@ -36,6 +45,10 @@ CASE_RE = re.compile(r"Test Case '-\[(\w+)\.(\w+) (\w+)\]' (passed|failed|skippe
 
 class PartitionError(Exception):
     pass
+
+
+STRING_RE = re.compile(r'#+"""[\s\S]*?"""#+|"""[\s\S]*?"""|#+"(?:[^"\n]|"(?!#))*"#+|"(?:\\.|[^"\\\n])*"')
+TEST_FUNC_RE = re.compile(r"(?:^|[;\n{}])\s*((?:@[\w.]+(?:\([^)]*\))?\s*)*)((?:\w+[ \t]+)*)func\s+(test\w*)\s*\(\s*\)")
 
 
 def load_manifest(path: Path = MANIFEST) -> dict:
@@ -127,6 +140,83 @@ def check(root: Path, manifest: dict) -> list[str]:
             if not rule.get("reason"):
                 errors.append(f"{key}: allowed skip {test_id} needs a reason")
     return errors
+
+
+def _strip_code(text: str) -> str:
+    """Comments and string literal contents removed, so braces inside them cannot unbalance a body."""
+    return STRING_RE.sub('""', strip_comments(text))
+
+
+def _bodies(code: str, header: re.Pattern) -> list[str]:
+    """The text between the braces of each declaration that `header` matches (header ends at its '{')."""
+    out = []
+    for m in header.finditer(code):
+        depth, i = 1, m.end()
+        while i < len(code) and depth:
+            depth += {"{": 1, "}": -1}.get(code[i], 0)
+            i += 1
+        if depth:
+            raise PartitionError(f"unbalanced braces after {m.group(0).strip()!r}")
+        out.append(code[m.end():i - 1])
+    return out
+
+
+def _top_level(body: str) -> str:
+    """The body with every nested block emptied: only the declaration's own members remain."""
+    out, depth = [], 0
+    for ch in body:
+        if ch == "}":
+            depth -= 1
+        if depth == 0:
+            out.append(ch)
+        if ch == "{":
+            depth += 1
+    return "".join(out)
+
+
+def static_ids(root: Path, pkg: dict) -> list[str]:
+    """Test IDs of the headless classes, from their declarations and every extension of them in the test module.
+
+    A test is what XCTest discovers: an instance method named test*, no parameters, not private, at the top level of
+    the class or of an extension of it.
+    """
+    module = pkg["testModule"]
+    codes = [_strip_code(f.read_text()) for f in sorted((root / pkg["testSources"]).rglob("*.swift"))]
+    ids: list[str] = []
+    for name in pkg["headless"]:
+        header = re.compile(r"\b(?:class\s+" + re.escape(name) + r"\s*:\s*XCTestCase|extension\s+" + re.escape(name) + r")\b[^{;]*\{")
+        found = []
+        for code in codes:
+            for body in _bodies(code, header):
+                for m in TEST_FUNC_RE.finditer(_top_level(body)):
+                    modifiers = m.group(2).split()
+                    if not {"static", "class", "private", "fileprivate"} & set(modifiers):
+                        found.append(f"{module}.{name}/{m.group(3)}")
+        if not found:
+            raise PartitionError(f"headless class {name} has no statically visible test method")
+        ids += found
+    duplicates = sorted({i for i in ids if ids.count(i) > 1})
+    if duplicates:
+        raise PartitionError("test methods declared twice: " + ", ".join(duplicates))
+    return ids
+
+
+def plan_static(pkg: dict, listed: list[str], leg: str) -> tuple[list[str], list[str], dict]:
+    """The headless leg from a static-list: same arguments as plan(), expected = the listed share itself."""
+    if leg != "headless":
+        raise PartitionError("a static list covers only the headless leg")
+    module, headless = pkg["testModule"], pkg["headless"]
+    selector = class_regex(module, headless)
+    suite = [i for i in listed if not any(re.search(s, i) for s in pkg.get("preexistingSkip", []))]
+    stray = [i for i in suite if not re.search(selector, i)]
+    if stray:
+        raise PartitionError("static list names tests outside the headless share: " + ", ".join(stray[:5]))
+    present = {i.split("/")[0] for i in suite}
+    missing = [n for n in headless if f"{module}.{n}" not in present]
+    if missing:
+        raise PartitionError("headless classes absent from the static list: " + ", ".join(missing))
+    args = [a for s in pkg.get("preexistingSkip", []) for a in ("--skip", s)] + ["--filter", selector]
+    return args, suite, {"suite": len(suite), "headless": len(suite), "list": "static"}
 
 
 def listed_ids(text: str, module: str) -> list[str]:
@@ -241,6 +331,9 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     c = sub.add_parser("check")
     c.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[4])
+    sl = sub.add_parser("static-list")
+    sl.add_argument("--package", required=True)
+    sl.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[4])
     for name in ("plan", "verify"):
         p = sub.add_parser(name)
         p.add_argument("--package", required=True)
@@ -251,6 +344,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             p.add_argument("--log", required=True, type=Path, help="the leg's swift test output")
         p.add_argument("--only", help="D169: full (default), none, or comma-separated classes of the test module")
+        p.add_argument("--static", action="store_true", help="--list is static-list output (headless leg only)")
     ns = parser.parse_args(argv)
     try:
         manifest = load_manifest()
@@ -261,11 +355,20 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             for key, pkg in manifest["packages"].items():
                 total = len(source_classes(ns.root, pkg))
-                print(f"{key}: {len(pkg['headless'])} headless classes, {total - len(pkg['headless'])} GUI-leg classes")
+                print(f"{key}: {len(pkg['headless'])} headless classes ({len(static_ids(ns.root, pkg))} tests), "
+                      f"{total - len(pkg['headless'])} GUI-leg classes")
             return 0
         pkg = package(manifest, ns.package)
+        if ns.command == "static-list":
+            print("\n".join(static_ids(ns.root, pkg)))
+            return 0
         listed = listed_ids(ns.list.read_text(), pkg["testModule"])
-        args, expected, summary = plan(pkg, listed, ns.leg, parse_only(ns.only))
+        if ns.static:
+            if ns.only not in (None, "full"):
+                raise PartitionError("--static takes the whole headless share; --only narrows a swift test list")
+            args, expected, summary = plan_static(pkg, listed, ns.leg)
+        else:
+            args, expected, summary = plan(pkg, listed, ns.leg, parse_only(ns.only))
         if ns.command == "plan":
             ns.args.write_text("".join(a + "\n" for a in args))
             print(json.dumps({"leg": ns.leg, **summary}))
