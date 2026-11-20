@@ -156,7 +156,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  function dragCard(c:Channel&{label?:string},level:string){
   const ch=channels.querySelector<HTMLElement>(`.fd-ch[data-model="${c.id}"]`),strip=ch?.querySelector<HTMLElement>('.fd-strip');if(!ch||!strip)return;
   if(level===c.base)delete previews[c.id];else previews[c.id]=level;
-  const model=faderModel(faderInput(),{bank:bankIndex,bankSize:3,selModel:selectedModel,previews,view:compare?{modelId:compare.modelId,trial:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true}),next=model.all.find((x:{id:string})=>x.id===c.id);
+  const model=faderModel(faderInput(),{bank:bankIndex,bankSize:3,selModel:selectedModel,previews,view:compare?{modelId:compare.modelId,trial:compare.modelId===c.id?level:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true}),next=model.all.find((x:{id:string})=>x.id===c.id);
   if(!next)return;strip.innerHTML=lcdView(next);strip.dataset.card=next.card.state;strip.setAttribute('aria-label',stripAria(next));ch.classList.toggle('trying',!!next.trial);
   const shareBar=strip.querySelector<HTMLElement>('.cd-bar');if(shareBar&&next.card.bar!=null){shareBar.style.setProperty('--s',(next.card.bar*100).toFixed(1)+'%');if(next.segments[0])shareBar.style.setProperty('--v',next.segments[0]);}
   for(const [j,el] of [...strip.querySelectorAll<HTMLElement>('.st-vend b')].entries())el.style.setProperty('--v',next.segments[j]);

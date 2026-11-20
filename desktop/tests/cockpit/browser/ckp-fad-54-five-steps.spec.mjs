@@ -186,6 +186,25 @@ test('CKP-FAD-54 the five steps, with their timings',async({page})=>{
  expect(await page.locator('#cockpit').getAttribute('data-sel-model')).toBeNull();
 });
 
+test('CKP-FAD-54 re-dragging an open trial: the card follows the pointer, also back onto the real detent, before release (macrevb-1052-4)',async({page})=>{
+ await open(page);
+ const sol=card(page,'Sol 6.1'),strip=sol.locator('.fd-strip'),travel=sol.locator('[role=slider]');
+ await strip.click();
+ const t=await centre(travel),high=await row(page,'High'),xhigh=await row(page,'XHigh'),med=await row(page,'Med');
+ await page.mouse.move(t.x,high);await page.mouse.down();await page.mouse.move(t.x,xhigh,{steps:3});await page.mouse.up();
+ await expect(travel).toHaveAttribute('data-trial','XHigh');
+ expect((await lines(sol))[1]).toBe('Try XHigh');
+ // Second drag of the same fader: the open XHigh trial must not outrank the pointer.
+ await page.mouse.move(t.x,xhigh);await page.mouse.down();await page.mouse.move(t.x,med,{steps:4});
+ expect((await lines(sol))[1]).toBe('Try Med');
+ await page.mouse.move(t.x,high,{steps:4}); // the real High detent, pointer still down
+ await expect(strip).toHaveAttribute('data-card','normal');
+ expect((await lines(sol))[1]).not.toContain('Try');
+ await page.mouse.up();
+ await expect(strip).toHaveAttribute('data-card','normal');
+ await expect(travel).toHaveAttribute('data-trial','');
+});
+
 test('CKP-FAD-54 a second click on the card, or a click on empty fader space, deselects; one model at a time',async({page})=>{
  await open(page);
  const sol=card(page,'Sol 6.1'),opus=card(page,'Opus 5.5');
