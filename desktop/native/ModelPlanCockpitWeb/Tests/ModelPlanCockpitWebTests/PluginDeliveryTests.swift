@@ -88,6 +88,23 @@ import ModelPlanWire
     page.discard()
   }
 
+  /// #1096 card action: the controller holds a screen request until the page has its plugin state, then sends it after.
+  func testPluginScreenRequestWaitsForThePluginState() throws {
+    let (page, box) = try readyPage()
+    var done = box.sent.count
+    page.openPluginScreen("placeholder")
+    XCTAssertEqual(box.sent.count, done, "no plugin state yet: held")
+    XCTAssertEqual(page.pluginScreenWanted, "placeholder")
+    page.setPlugins(stateA)
+    let types = box.sent[done...].map { type($0.0) ?? "?" }
+    XCTAssertEqual(types, ["plugins", "pluginScreen"], "sent right after the state the page needs to open it")
+    XCTAssertNil(page.pluginScreenWanted, "sent once")
+    completeAll(box, from: &done)
+    page.openPluginScreen("placeholder")
+    XCTAssertEqual(type(box.sent.last!.0), "pluginScreen", "with state on the page, a request goes at once")
+    page.discard()
+  }
+
   /// macrevb-1104-3 / macrevd-1104-2: a page edit is not echoed, but a failed save's committed state reaches the page.
   func testPageEditIsNotEchoedAndAFailedSaveRestoresTheCommittedState() throws {
     let (page, box) = try readyPage()

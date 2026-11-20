@@ -73,7 +73,12 @@ import ModelPlanSettings
         let sampler = sampler ?? CockpitPluginSampler()
         self.model = model; self.coordinator = coordinator; self.sampler = sampler
         sampler.send = { [weak coordinator] id, data in coordinator?.sendPluginData(id: id, data: data) }
-        coordinator?.onPluginsRunning = { [weak sampler] ids in sampler?.setRunning(ids) }
+        // The coordinator and model have one callback each; the bridge owns both and fans out to every observer.
+        coordinator?.onPluginsRunning = { [weak self] ids in
+            guard let self else { return }
+            self.sampler.setRunning(ids)
+            for observer in self.runningObservers { observer(ids) }
+        }
         // D293 (macrevb-1104-3): the page shows its edit at once. When the edit cannot be saved (bad body, unwritable
         // store), the committed choice is sent again, so the open page and the sampler return to what reopen will show.
         coordinator?.onPluginsEdit = { [weak self] state in
@@ -91,8 +96,27 @@ import ModelPlanSettings
     public static func load(directory: URL, coordinator: EngineCockpitCoordinator?) async -> CockpitPluginBridge {
         CockpitPluginBridge(model: await CockpitPluginSettingsModel.load(from: CockpitPluginStore(directory: directory)), coordinator: coordinator)
     }
+    private var runningObservers: [([String]) -> Void] = []
+    private var choiceObservers: [(CockpitPluginPreferences) -> Void] = []
+    /// The page's running plugins ([] without a shown page), now and on every change. Plugin hosts (the resource
+    /// plugin's) observe here; nothing else may replace `EngineCockpitCoordinator.onPluginsRunning`.
+    public func observeRunning(_ observer: @escaping ([String]) -> Void) {
+        runningObservers.append(observer); observer(coordinator?.pluginsRunning ?? [])
+    }
+    /// The committed plugin choices, now and after every change (Settings or a page edit); never replace `model.onChange`.
+    public func observeChoices(_ observer: @escaping (CockpitPluginPreferences) -> Void) {
+        choiceObservers.append(observer); observer(model.preferences)
+    }
+    /// Shows the cockpit (the app's own open path); set by the factory.
+    public var showCockpit: (() -> Void)?
+    /// #1096 card action: open this plugin's big screen in the cockpit, showing the cockpit first if needed.
+    public func openScreen(_ id: String) {
+        coordinator?.openPluginScreen(id)
+        showCockpit?()
+    }
     private func publish(_ preferences: CockpitPluginPreferences) {
         sampler.apply(preferences, catalogue: model.catalogue)
         if let json = try? preferences.bridgeJSON() { coordinator?.pluginsJSON = json }
+        for observer in choiceObservers { observer(preferences) }
     }
 }

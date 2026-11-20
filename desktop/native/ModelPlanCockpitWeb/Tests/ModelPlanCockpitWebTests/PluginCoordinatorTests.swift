@@ -11,9 +11,12 @@ import XCTest
   var onReady: (() -> Void)?, onIntent: ((CockpitIntent) -> Void)?, onClosed: (() -> Void)?
   var queryTicket: CockpitQueryTicket? { nil }
   var plugins: [Data] = [], readings: [(String, [String: Any])] = [], opened = false
+  /// Plugin calls in order: "plugins" and "screen:<id>".
+  var calls: [String] = []
+  func openPluginScreen(_ id: String) { calls.append("screen:" + id) }
   /// Whether the state arrived before the page was opened (it must be there before the load).
   var pluginsBeforeOpen: [Bool] = []
-  func setPlugins(_ json: Data) { plugins.append(json); pluginsBeforeOpen.append(!opened) }
+  func setPlugins(_ json: Data) { plugins.append(json); pluginsBeforeOpen.append(!opened); calls.append("plugins") }
   func sendPluginData(id: String, data: [String: Any]) { readings.append((id, data)) }
   func open() { opened = true }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {}
@@ -46,6 +49,26 @@ final class PluginCoordinatorTests: XCTestCase {
     coordinator.close(); coordinator.open()
     XCTAssertEqual(pages.count, 2)
     XCTAssertEqual(pages[1].plugins, [off], "a reopened page starts from the saved choices")
+    await coordinator.shutdown(); await client.stop()
+  }
+
+  /// #1096 card action: a screen request reaches the current page, or is held for the next page after its state.
+  @MainActor func testPluginScreenRequestReachesTheCurrentOrNextPage() async {
+    var pages: [PluginPage] = []
+    let coordinator = EngineCockpitCoordinator { _ in let page = PluginPage(); pages.append(page); return page }
+    let client = HeldClient(); coordinator.bind(client: client)
+    coordinator.pluginsJSON = state
+    coordinator.openPluginScreen("Bad id")
+    XCTAssertNil(coordinator.pluginScreenRequest)
+    coordinator.openPluginScreen("placeholder")
+    XCTAssertEqual(coordinator.pluginScreenRequest, "placeholder", "held while there is no page")
+    await coordinator.consume(.context(delivery()))
+    coordinator.open()
+    XCTAssertEqual(pages.first?.calls, ["plugins", "screen:placeholder"], "the next page gets it after its plugin state")
+    XCTAssertNil(coordinator.pluginScreenRequest)
+    coordinator.openPluginScreen("placeholder")
+    XCTAssertEqual(pages.first?.calls.last, "screen:placeholder", "the current page gets it at once")
+    XCTAssertEqual(pages.count, 1)
     await coordinator.shutdown(); await client.stop()
   }
 

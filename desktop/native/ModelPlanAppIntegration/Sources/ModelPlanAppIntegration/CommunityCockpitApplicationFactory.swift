@@ -136,6 +136,7 @@ import ModelPlanShell
         let directory = settingsStore.directory
         Task { @MainActor [weak application, weak owner] in
             let bridge = await CockpitPluginBridge.load(directory: directory, coordinator: owner?.coordinator)
+            bridge.showCockpit = { [weak application] in application?.showConsole() }
             application?.cockpitPlugins = bridge
             application?.cockpitPluginsReady?(bridge)
         }

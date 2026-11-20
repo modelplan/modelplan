@@ -560,6 +560,13 @@ public final class CockpitBridgeState {
     guard CockpitPluginWire.validID(id), JSONSerialization.isValidJSONObject(data) else { throw CockpitBridgeError.invalidMessage }
     return try envelope("pluginData", extra: ["id": id, "data": data])
   }
+  /// Plugin columns: open this plugin's big screen (the widget card's action, #1096). Only after `plugins`; the page
+  /// refuses it for a plugin that is not enabled. No receipt: presentation only.
+  public func openPluginScreen(id: String) throws -> String {
+    guard ready, !blocked, pluginsSent else { throw CockpitBridgeError.unavailable }
+    guard CockpitPluginWire.validID(id) else { throw CockpitBridgeError.invalidMessage }
+    return try envelope("pluginScreen", extra: ["id": id])
+  }
   public func setVisibility(_ value: CockpitVisibility) throws -> String {
     guard ready, !blocked else { throw CockpitBridgeError.unavailable }
     if !value.visible || value.occluded { cancelDeadlineReports() }

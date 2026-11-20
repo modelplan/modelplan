@@ -101,8 +101,9 @@ export interface PluginHost {
   add(id:string):boolean;
   openMenu(anchor:HTMLElement,options:MenuOptions):boolean;
   closeMenu():void;
-  /** CKP-PLG-53: the plugin's big screen inside the big-screen area; null closes it. */
-  openScreen(id:string|null):boolean;
+  /** CKP-PLG-53: the plugin's big screen inside the big-screen area; null closes it. The key toggles; `keep` (a host
+   *  request such as the widget card's action) leaves an already open screen open. */
+  openScreen(id:string|null,keep?:boolean):boolean;
   /** Plugins currently running (for tests and diagnostics). */
   running():string[];
   dispose():void;
@@ -224,11 +225,11 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))key.setAttribute('aria-expanded','false');
     if(restoreFocus)root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`)?.focus();
   }
-  function openScreen(id:string|null):boolean {
+  function openScreen(id:string|null,keep=false):boolean {
     if(id===null){closeScreen();return true;}
     const plugin=registry.get(id);
     if(disposed||!enabled(id)||!plugin)return false;
-    if(screen?.id===id){closeScreen();return true;}
+    if(screen?.id===id){if(!keep)closeScreen();return true;}
     const well=root.querySelector<HTMLElement>('.dk-mfd .mfd-screen');if(!well)return false;
     closeScreen();const box=el('section','pl-screen');box.dataset.plugin=id;box.setAttribute('role','region');box.tabIndex=-1;
     const head=el('div','pl-screen-h'),title=fitted('pl-screen-t',pluginWords(locale,plugin.title));

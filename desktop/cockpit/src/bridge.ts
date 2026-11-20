@@ -31,7 +31,9 @@ export type HostMessage = Header & (
   /** Plugin columns (D293): the host's saved plugin choices (CockpitPluginPreferences). */
   {readonly type:'plugins'; readonly plugins:PluginState} |
   /** Plugin columns: a reading the host sampled for a running plugin. */
-  {readonly type:'pluginData'; readonly id:string; readonly data:unknown});
+  {readonly type:'pluginData'; readonly id:string; readonly data:unknown} |
+  /** Plugin columns: open this plugin's big screen (a native action such as the widget card's "Cockpit screen ›"). */
+  {readonly type:'pluginScreen'; readonly id:string});
 export interface CockpitView {
   /** G3-56: caution identities the host remembered as acknowledged; sent before `configure`. */
   restoreAcked?(ids:string[]):void;
@@ -58,6 +60,8 @@ export interface CockpitView {
   /** Host plugin state; false when it does not fit this page's registry rules. */
   plugins?(state:PluginState):boolean;
   pluginData?(id:string,data:unknown):boolean;
+  /** Opens an enabled plugin's big screen (CKP-PLG-53); false when it is not enabled or the page cannot show it. */
+  openPluginScreen?(id:string):boolean;
   dispose():void;
 }
 const header=['version','pageId','requestId','sequence','sessionId','storeEpoch','generation','viewRevision'];
@@ -117,6 +121,7 @@ function message(raw:string,quarantined?:(data:unknown)=>boolean,refused?:(data:
     case 'clear': case 'unload': if(!keys()) return no('clear.keys'); break;
     case 'plugins': if(!keys(['plugins'])||!parsePluginState(m.plugins)) return no('plugins.fields'); break;
     case 'pluginData': if(!keys(['id','data'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return no('pluginData.fields'); break;
+    case 'pluginScreen': if(!keys(['id'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return no('pluginScreen.fields'); break;
     default:return no('msg.type');
   }
   return m as unknown as HostMessage;
@@ -272,6 +277,10 @@ export class CockpitBridge {
       case 'pluginData':
         // Readings are only for a host that negotiated plugins and only reach a running plugin.
         if(!this.pluginsNegotiated||!this.isVisible()||!this.view.pluginData?.(m.id,m.data))return this.no('pluginData.refused');
+        this.sequence=BigInt(m.sequence);return true;
+      case 'pluginScreen':
+        // Only for a host that negotiated plugins; presentation only, so a screen the page cannot open is refused, never an unload.
+        if(!this.pluginsNegotiated||!this.view.openPluginScreen?.(m.id))return this.no('pluginScreen.refused');
         this.sequence=BigInt(m.sequence);return true;
       default:return this.no('recv.type');
     }

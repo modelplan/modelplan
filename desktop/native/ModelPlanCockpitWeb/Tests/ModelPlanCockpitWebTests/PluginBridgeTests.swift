@@ -37,6 +37,19 @@ extension BridgeTests {
     }
   }
 
+  /// #1096 card action: open a plugin's big screen. Only after `plugins`, with a valid id.
+  func testPluginScreenEnvelopeNeedsSentStateAndAValidID() throws {
+    let state = CockpitBridgeState(context: try context())
+    XCTAssertThrowsError(try state.openPluginScreen(id: "placeholder"), "not before ready")
+    _ = try ready(state)
+    XCTAssertThrowsError(try state.openPluginScreen(id: "placeholder"), "not before the plugin state")
+    _ = try state.setPlugins(pluginsBody)
+    let sent = try object(state.openPluginScreen(id: "placeholder"))
+    XCTAssertEqual(sent["type"] as? String, "pluginScreen")
+    XCTAssertEqual(sent["id"] as? String, "placeholder")
+    XCTAssertThrowsError(try state.openPluginScreen(id: "Bad id"))
+  }
+
   func testPluginDataNeedsSentStateAVisiblePageAndAValidID() throws {
     let state = CockpitBridgeState(context: try context())
     _ = try ready(state)

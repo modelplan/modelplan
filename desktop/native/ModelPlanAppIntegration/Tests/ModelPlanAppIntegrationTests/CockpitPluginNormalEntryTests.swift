@@ -123,6 +123,13 @@ extension CommunityCockpitEntryTests {
             let reopened = try await shownPage(probe, other: page)
             try await eventually("the reopened page shows the saved plugin") { await self.js(reopened, self.keyScript) as? Bool == true }
             XCTAssertEqual(onPage(reopened).map { $0["id"] as? String }, ["zz-newer-build", "placeholder"])
+            // #1096 card action: the app opens the plugin's big screen; asked again, it stays open.
+            plugins.openScreen("placeholder")
+            try await eventually("the app opens the plugin screen in the MFD") { await self.js(reopened, self.screenScript) as? Bool == true }
+            plugins.openScreen("placeholder")
+            try await Task.sleep(for: .milliseconds(300))
+            let stillOpen = await js(reopened, screenScript) as? Bool
+            XCTAssertEqual(stillOpen, true, "a second request does not toggle it closed")
         }
     }
 

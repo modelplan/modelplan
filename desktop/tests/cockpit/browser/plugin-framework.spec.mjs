@@ -260,6 +260,24 @@ test('macrev2-1104-2 a privacy clear drops host readings: the next generation sh
  await expect(column(page).locator('.pl-trend')).toHaveCount(0);
 });
 
+test('#1104 a host pluginScreen message opens an enabled plugin\'s big screen and leaves an open one open',async({page})=>{
+ const {send,receive}=await open(page,dataWith(1));
+ const screen=page.locator('.dk-mfd .mfd-screen .pl-screen[data-plugin="placeholder"]');
+ expect(await receive(send('pluginScreen',{id:'placeholder'}))).toBe(false);
+ expect(await page.evaluate(()=>window.modelPlanCockpit.reject())).toBe('pluginScreen.refused');
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'placeholder',enabled:false,pinned:false}],settings:{}}}))).toBe(true);
+ expect(await receive(send('pluginScreen',{id:'placeholder'}))).toBe(false);
+ await expect(screen).toHaveCount(0);
+ expect(await receive(send('plugins',{plugins:on(true)}))).toBe(true);
+ expect(await receive(send('pluginScreen',{id:'placeholder'}))).toBe(true);
+ await expect(screen).toHaveCount(1);
+ expect(await receive(send('pluginScreen',{id:'placeholder'}))).toBe(true);
+ await expect(screen).toHaveCount(1);
+ expect(await receive(send('pluginScreen',{id:'Bad id'}))).toBe(false);
+ expect(await receive(send('pluginScreen',{id:'placeholder',extra:1}))).toBe(false);
+ await expect(screen).toHaveCount(1);
+});
+
 test('"+" menu: detected tools first, then all subscriptions; plugins below; Add places the plugin',async({page})=>{
  const {send,receive}=await open(page,dataWith(1,[['grok','off'],['gemini-cli','needs_consent']]));
  const plus=page.locator('.eng-keys .ek-bay').first();

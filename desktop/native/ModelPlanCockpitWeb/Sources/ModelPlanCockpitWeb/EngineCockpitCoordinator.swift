@@ -46,6 +46,8 @@ import ModelPlanWire
   /// running plugin.
   func setPlugins(_ json: Data)
   func sendPluginData(id: String, data: [String: Any])
+  /// Open this plugin's big screen once the page can (after its plugin state).
+  func openPluginScreen(_ id: String)
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket)
   func clearPrivateViews(adopting: CockpitEngineContext?) async
   func discard()
@@ -71,6 +73,7 @@ public extension CockpitPageSurface {
   func setPinnedModels(_ ids:[String]) {}
   func setPlugins(_ json: Data) {}
   func sendPluginData(id: String, data: [String: Any]) {}
+  func openPluginScreen(_ id: String) {}
 }
 extension CockpitWindowController: CockpitPageSurface {}
 
@@ -130,6 +133,13 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func reportPluginsRunning(_ ids: [String]) {
     guard ids != pluginsRunning else { return }
     pluginsRunning = ids; onPluginsRunning?(ids)
+  }
+  /// A request to open a plugin's big screen (the widget card's action) that no page has taken yet.
+  public private(set) var pluginScreenRequest: String?
+  /// Opens this plugin's big screen on the current page, or on the next page made (the app shows the cockpit itself).
+  public func openPluginScreen(_ id: String) {
+    guard CockpitPluginWire.validID(id) else { return }
+    if let page { page.openPluginScreen(id); pluginScreenRequest = nil } else { pluginScreenRequest = id }
   }
   /// One reading for a running plugin, to the current page only.
   public func sendPluginData(id: String, data: [String: Any]) {
@@ -365,6 +375,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     newPage.setAckedCautions(ackedCautions)
     newPage.setPinnedModels(pinnedModels)
     if let pluginsJSON { newPage.setPlugins(pluginsJSON) }
+    if let id = pluginScreenRequest { newPage.openPluginScreen(id); pluginScreenRequest = nil }
     newPage.updateRange(selectedRange)
     let generation = UUID()
     pageGeneration = generation

@@ -139,6 +139,8 @@ page. The page has no timers; the host samples. Messages, all with the common he
   the saved choices (Settings, `CockpitPluginPreferences.swift`). Sending it also tells the page the host accepts the
   two actions below; without it the page posts neither and keeps page edits to itself.
 - host → page `{"type":"pluginData","id":…,"data":…}`: a reading for a running plugin; refused otherwise.
+- host → page `{"type":"pluginScreen","id":…}`: open that enabled plugin's big screen (a native action such as the
+  widget card's); an open one stays open. Refused before `plugins` or for a plugin that is off.
 - page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's right-click Remove or the "+" menu.
 - page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
 

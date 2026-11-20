@@ -1205,7 +1205,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         web?.isHidden = false
         publishAppearance()
         visibilityChanged()
-        publishPlugins(force: true)
+        publishPlugins(force: true); publishPluginScreen()
         onReady?()
         if !shown { warmPaint() }
       case .cleared:
@@ -1218,7 +1218,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           publishAppearance()
           lastVisibility = nil
           visibilityChanged()
-          publishPlugins(force: true)
+          publishPlugins(force: true); publishPluginScreen()
         }
         waiter?.resume()
       case .action(let intent):
@@ -1546,7 +1546,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private(set) var pluginsAccepted: Data?
   public func setPlugins(_ json: Data) {
     guard let canonical = CockpitPluginWire.canonical(json: json) else { return }
-    pluginsWanted = canonical; publishPlugins()
+    pluginsWanted = canonical; publishPlugins(); publishPluginScreen()
   }
   private func publishPlugins(force: Bool = false) {
     guard let wanted = pluginsWanted, bridge.ready, !bridge.blocked, !ending,
@@ -1569,6 +1569,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// D124 (macrevb-1104-4, macrev2-1104-6): the host stops sampling the moment the page stops being shown (hidden,
   /// occluded, closing, clearing); the page's own `[]` report may come late or under an old view revision.
   private func stopPluginSampling() { if bridge.pluginsSent { onIntent?(.pluginsRunning([])) } }
+  /// Plugin columns: a request to open a plugin's big screen. Held until this page is ready and has its plugin state (it
+  /// is sent after that state), then sent once; a newer request replaces a held one.
+  private(set) var pluginScreenWanted: String?
+  public func openPluginScreen(_ id: String) {
+    guard CockpitPluginWire.validID(id) else { return }
+    pluginScreenWanted = id; publishPluginScreen()
+  }
+  private func publishPluginScreen() {
+    guard let id = pluginScreenWanted, bridge.ready, !bridge.blocked, bridge.pluginsSent, !ending,
+      let raw = try? bridge.openPluginScreen(id: id) else { return }
+    pluginScreenWanted = nil
+    send(raw, coalesce: "pluginScreen", onRejected: { true })
+  }
   /// Plugin columns: one reading for a running plugin. Dropped while the page is hidden or has no plugin state.
   public func sendPluginData(id: String, data: [String: Any]) {
     guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.pluginData(id: id, data: data) else { return }

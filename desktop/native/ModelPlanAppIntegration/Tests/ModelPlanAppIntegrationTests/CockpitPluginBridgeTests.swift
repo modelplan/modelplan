@@ -119,4 +119,34 @@ final class CockpitPluginBridgeTests: XCTestCase {
         let saved = await CockpitPluginStore(directory: dir).snapshot()
         XCTAssertEqual(saved.entries.first { $0.id == "placeholder" }?.enabled, false)
     }
+
+    /// #1096 moved here: the bridge owns the coordinator's and model's single callbacks and fans out to every observer
+    /// (the resource plugin host among them); the sampler keeps working beside them.
+    @MainActor func testRunningAndChoicesFanOutToEveryObserver() async throws {
+        let coordinator = EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+        let bridge = await CockpitPluginBridge.load(directory: try directory(), coordinator: coordinator)
+        var first: [[String]] = [], second: [[String]] = [], choices: [[String]] = [], reads = 0
+        bridge.observeRunning { first.append($0) }
+        bridge.observeRunning { second.append($0) }
+        bridge.observeChoices { choices.append($0.enabledIDs()) }
+        bridge.sampler.register("placeholder") { reads += 1; return ["value": 1] }
+        XCTAssertEqual(first, [[]]); XCTAssertEqual(second, [[]]); XCTAssertEqual(choices, [[]], "observers start from the current values")
+        let enabled = await bridge.model.perform(.setEnabled("placeholder", true))
+        XCTAssertTrue(enabled)
+        XCTAssertEqual(choices.last, ["placeholder"])
+        coordinator.onPluginsRunning?(["placeholder"])
+        XCTAssertEqual(first.last, ["placeholder"]); XCTAssertEqual(second.last, ["placeholder"])
+        XCTAssertEqual(reads, 1, "the sampler still follows the running set")
+    }
+
+    /// #1096 card action (moved here): open the plugin's big screen and show the cockpit.
+    @MainActor func testOpenScreenAsksTheCockpitAndShowsIt() async throws {
+        let coordinator = EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+        let bridge = await CockpitPluginBridge.load(directory: try directory(), coordinator: coordinator)
+        var shown = 0
+        bridge.showCockpit = { shown += 1 }
+        bridge.openScreen("placeholder")
+        XCTAssertEqual(shown, 1)
+        XCTAssertEqual(coordinator.pluginScreenRequest, "placeholder", "held for the page the show makes")
+    }
 }
