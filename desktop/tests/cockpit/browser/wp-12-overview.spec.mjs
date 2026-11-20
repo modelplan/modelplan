@@ -9,12 +9,12 @@ import {visualFixture} from '../visual-fixture.mjs';
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 const NOW=new Date(2026,10,4,12).getTime(),H=36e5;
 const localDay=back=>{const d=new Date(2026,10,4-back);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
-async function open(page,data,locale='en'){
+async function open(page,data,locale='en',tier='tall'){
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.clock.setFixedTime(new Date(NOW));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,tier},redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
  return {send,receive};
@@ -100,4 +100,34 @@ test('WP-12 CKP-MFD-60 wire cost draws one bar per day, the ≈cost total and th
  await expect(page.locator('.pg-overview .ov-bucket')).toHaveCount(7);
  await expect(page.locator('.pg-overview .ov-top .ov-total')).toContainText('9');
  await expect(page.locator('.pg-overview .ov-note')).toContainText('has no public price');
+});
+
+// macrevc-1057-2: the alert budget follows the measured screen, tall and compact, and a change of size.
+test('macrevc-1057-2 the compact screen shows one alert plus "+N ▸"; the tall one four lines; a size change redraws',async({page})=>{
+ const {send,receive}=await open(page,resets(5),'en','compact');
+ await expect(rows(page)).toHaveCount(2);await expect(rows(page).last()).toHaveClass(/\bal-more\b/);await expect(rows(page).last()).toHaveText('+4 ▸');
+ await expect(rows(page)).toHaveCount(2);
+});
+test('macrevc-1057-2 a change of the screen size redraws the alert budget',async({page})=>{
+ await open(page,resets(5));
+ await expect(rows(page)).toHaveCount(4);
+ const full=await page.locator('.pg-overview').evaluate(e=>e.clientHeight);
+ await page.evaluate(h=>{const e=document.querySelector('.mfd-screen');e.style.setProperty('max-height',h+'px','important');e.style.setProperty('height',h+'px','important');},Math.round(full/2));
+ await expect(rows(page)).toHaveCount(2);
+});
+
+// macrevc-1057-3: retained readings are not "cannot be read"; three truly unreadable ones merge.
+function quiet(kind){
+ const data=visualFixture().data;data.details.resetEvents=[];data.details.forecasts=[];
+ for(const row of data.projection.rows)for(const w of row.accounts[0].windows){w.remainingPercent=90;w.resetsAt=new Date(NOW+6e5*60).toISOString();}
+ for(const row of data.projection.rows.slice(0,3)){const c=row.accounts[0];
+  if(kind==='retained'){c.valueState='retained';c.observedAt=new Date(NOW-125*6e4).toISOString();}
+  else{c.valueState='none';c.windows=[];c.lastFailure={at:new Date(NOW-6e4).toISOString(),code:'not_signed_in'};}}
+ return data;
+}
+test('macrevc-1057-3 three retained readings keep their own lines; three unreadable ones merge',async({page})=>{
+ await open(page,quiet('retained'));
+ await expect(rows(page)).toHaveCount(3);await expect(page.locator('.pg-overview .mfd-alerts')).not.toContainText('not read');
+ await open(page,quiet('unreadable'));
+ await expect(rows(page)).toHaveCount(1);await expect(rows(page).first()).toContainText('3 subscriptions not read');
 });

@@ -15,9 +15,10 @@ const daysBefore = (ms, back) => { const x = new Date(ms); return new Date(x.get
 
 export function alertList(d, {max = 4} = {}) {
   let a = statusItems(d.alerts);
-  // Three or more subscriptions that cannot be read merge into one grey line (V1-FINAL §8.1).
-  const grey = a.filter(x => x.level === 'grey');
-  if (grey.length >= 3) a = [...a.filter(x => x.level !== 'grey'), {level: 'grey', text: t('mfd.ovUnreadN', {n: grey.length})}];
+  // Three or more subscriptions that cannot be read merge into one grey line (V1-FINAL §8.1). A retained (stale) reading is
+  // not unreadable: it keeps its own line with the reading's age.
+  const grey = a.filter(x => x.level === 'grey' && x.kind === 'unreadable');
+  if (grey.length >= 3) a = [...a.filter(x => !grey.includes(x)), {level: 'grey', kind: 'unreadable', text: t('mfd.ovUnreadN', {n: grey.length})}];
   if (!a.length) return '';
   const shown = a.length > max ? a.slice(0, max - 1) : a;
   return `<ul class="mfd-alerts">${shown.map(x => statusRow(x)||`<li class="al-${x.level}" data-tip="${esc(x.text)}"><i>●</i><span>${esc(x.text)}</span></li>`).join('')}${
@@ -40,7 +41,18 @@ export function usd(v) {
 }
 const startOfDay = ms => { const x = new Date(ms); return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
 const mmdd = ms => { const x = new Date(ms); return `${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
-const sumLast = (rows, n) => { let any = false, sum = 0; for (const r of rows) for (const v of r.slice(-n)) if (v != null) { any = true; sum += v; } return any ? sum : null; };
+const sums = (costs, n) => {
+  let recorded = false, usdSum = 0, priced = 0, unpriced = 0;
+  for (const {daily} of costs) daily.values.slice(-n).forEach((v, i, all) => {
+    const at = daily.values.length - all.length + i;
+    if (v != null) { recorded = true; usdSum += v; }
+    priced += daily.priced?.[at] ?? (v > 0 ? 1 : 0); unpriced += daily.unpriced?.[at] ?? 0;
+  });
+  return {recorded, usd: priced > 0 ? usdSum : null, tokens: priced + unpriced, unpricedShare: priced + unpriced > 0 ? unpriced / (priced + unpriced) : null};
+};
+// The range's cost figures for the selected subscriptions. Today is the local calendar day's daily bucket, not the last
+// 24 hourly ones (a producer may have day-only cost); a range without priced usage has no cost at all.
+const rangeCost = (costs, ui) => costs.length ? sums(costs, ui.days === 24 ? 1 : ui.days) : null;
 
 // The totals row. Today's tokens are known only when every selected subscription has a reading; an unknown one is not a
 // zero, and an unknown total is left out rather than written "--".
@@ -48,9 +60,10 @@ function totals(d, ui, list, costs) {
   const todays = accountsIn(d, ui).map(a => a.todayTokens), todayTokens = todays.length && todays.every(Number.isFinite) ? todays.reduce((s, v) => s + v, 0) : null;
   // Without any daily record only Today's reading exists: the row then says Today, whatever the range key shows.
   const n = ui.days, today = n === 24 || !list.length;
-  const tokens = today ? todayTokens : list.length ? list.reduce((s, x) => s + x.daily.values.slice(-n).reduce((p, v) => p + (v || 0), 0), 0) : null;
-  const ids = new Set(costs.map(c => c.a.id));
-  const money = !costs.length ? null : today ? sumLast((d.cost.hourly || []).filter(h => ids.has(h.accountId)).map(h => h.values), 24) : sumLast(costs.map(x => x.daily.values), n);
+  const c = rangeCost(costs, {days: today ? 24 : n});
+  // With a cost section the tokens are the ones the cost counts (priced or not, input and output); else the output tokens.
+  const tokens = c?.recorded ? c.tokens : today ? todayTokens : list.length ? list.reduce((s, x) => s + x.daily.values.slice(-n).reduce((p, v) => p + (v || 0), 0), 0) : null;
+  const money = c?.usd ?? null;
   const since = !today && d.recordStart != null && d.recordStart > daysBefore(startOfDay(d.now), n - 1) ? d.recordStart : null;
   const covered = since == null ? n : Math.max(1, Math.round((startOfDay(d.now) - since) / 864e5) + 1);
   if (money == null && tokens == null) return '';
@@ -64,10 +77,12 @@ function totals(d, ui, list, costs) {
 export function overviewBars(d,ui,list){
  const {w:W,h:H}=fill(ui,'ov',{w:260,h:110}),hourly=ui.days===24,instants=d.cost?.hourly?.[0]?.instants,n=hourly?(instants?.length||24):ui.days;
  const palette=chartPalette(d.accounts.filter(a=>list.some(x=>x.a.id===a.id))),byId=new Map(palette.map(x=>[x.id,x]));
- const ser=list.map(x=>({a:x.a,fill:byId.get(x.a.id).fill,v:hourly?d.cost?.hourly?.find(h=>h.accountId===x.a.id)?.values||Array(24).fill(null):x.daily.values.slice(-n)}));
+ const ser=list.map(x=>({a:x.a,fill:byId.get(x.a.id).fill,v:hourly?(d.cost?.hourly?.find(h=>h.accountId===x.a.id)?.values||Array(24).fill(null)).map((v,i)=>instants?.[i]!=null&&instants[i]<startOfDay(d.now)?null:v):x.daily.values.slice(-n)}));
  const total=Array.from({length:n},(_,i)=>ser.reduce((s,x)=>s+(x.v[i]||0),0));
  const max=Math.max(...(ui.stack?total:ser.flatMap(x=>x.v.map(v=>v||0))),0),top=12,base=Math.max(top+12,H-15);
- const pitch=W/n,bw=Math.max(.5,pitch-2),height=base-top,gaps=ui.stack?Math.max(0,ser.length-1)*2:0,scale=max>0?(height-gaps)/max:0;
+ const pitch=W/n,bw=Math.max(.5,pitch-2),height=base-top;
+ // The 2 px gaps between layers belong to the highest day's own stack: only the subscriptions with cost that day count.
+ const peak=ui.stack?total.indexOf(max):-1,gaps=peak>=0?Math.max(0,ser.filter(x=>(x.v[peak]||0)>0).length-1)*2:0,scale=max>0?(height-gaps)/max:0;
  let body='';
  for(let i=0;i<n;i++){
   const at=instants?.[i], stamp=hourly?(at!=null?new Date(at).toLocaleTimeString(ui.lang,{hour:'2-digit',minute:'2-digit',hour12:false,timeZoneName:'shortOffset'}):`${String(i).padStart(2,'0')}:00`):md(daysBefore(d.now,n-1-i),ui);
@@ -155,10 +170,13 @@ export const overview = {
     if (!list.length && !todayKnown)
       return `${alerts}<div class="mp-empty ov-empty"><b>${t('mfd.ovNoRecord1')}</b><span>${t('mfd.ovNoRecord2')}</span><span>${t('mfd.ovNoRecord3')}</span></div>`;
     const row = totals(d, ui, list, costs);
-    // Bars exist only with ≈cost. The line under them says how much use had no public price and so is not counted.
-    const share = d.cost?.unpriced?.[ui.days === 24 ? 'today' : ui.days === 7 ? 'd7' : 'd30'];
-    const chart = costs.length && ui.chart !== 'grid' ? `<div class="mfd-fill" data-fill="ov">${overviewBars(d, ui, costs)}</div>${share > 0 ? `<p class="ov-note">${t('mfd.ovUnpriced', {p: share < .01 ? '<1' : Math.round(share * 100)})}</p>` : ''}`
-      : ui.chart === 'grid' && list.length ? `<div class="mfd-fill" data-fill="ov">${heatmap(d, ui, list)}</div>` : '';
+    // Bars exist only with ≈cost for the selected subscriptions and range. The line under them says how much of that use had
+    // no public price and so is not counted.
+    const c = rangeCost(costs, ui), share = c?.unpricedShare;
+    const instants = d.cost?.hourly?.[0]?.instants, ids = new Set(costs.map(x => x.a.id));
+    const bars = c?.usd != null && (ui.days !== 24 || (d.cost.hourly || []).some(h => ids.has(h.accountId) && h.values.some((v, i) => v != null && !(instants?.[i] < startOfDay(d.now)))));
+    const chart = (bars && ui.chart !== 'grid' ? `<div class="mfd-fill" data-fill="ov">${overviewBars(d, ui, costs)}</div>` : ui.chart === 'grid' && list.length ? `<div class="mfd-fill" data-fill="ov">${heatmap(d, ui, list)}</div>` : '')
+      + (share > 0 ? `<p class="ov-note">${t('mfd.ovUnpriced', {p: share < .01 ? '<1' : Math.round(share * 100)})}</p>` : '');
     return `${alerts}${row}${chart}`;
   },
   onClick(act, val, ui) {

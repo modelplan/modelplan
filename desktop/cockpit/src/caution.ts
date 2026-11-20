@@ -35,6 +35,8 @@ export interface CautionItem {
  readonly detail?:Both;
  /** CKP-MFD-56: a grey row opens Settings › Subscriptions instead of selecting the subscription. */
  readonly settings?:true;
+ /** A grey row is either a retained (stale) reading or one that cannot be read at all (WP-12: only the latter merge). */
+ readonly kind?:'stale'|'unreadable';
  /** G3-106: the reset moment of the window cycle an amber forecast caution belongs to. The forecast comes and goes with
   *  the recent usage rate, so for amber only a new cycle (or a red escalation) is a recurrence, never a paused forecast. */
  readonly cycle?:number;
@@ -72,12 +74,12 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
  for(const {key,row,account,unstable} of members){
   if(account.valueState==='retained'){
    const at=account.observedAt?Date.parse(account.observedAt):NaN,age=Number.isFinite(at)?span((now-at)/60000):null;
-   grey.push({id:JSON.stringify(['stale',key]),stable:JSON.stringify(['stale',key]),level:'grey',member:key,settings:true,detail:openSettingsAction(),text:age?both('host.alStaleAge',lang=>({s:nameOf(row,lang),age})):both('host.alStale',lang=>({s:nameOf(row,lang)}))});
+   grey.push({id:JSON.stringify(['stale',key]),stable:JSON.stringify(['stale',key]),level:'grey',kind:'stale',member:key,settings:true,detail:openSettingsAction(),text:age?both('host.alStaleAge',lang=>({s:nameOf(row,lang),age})):both('host.alStale',lang=>({s:nameOf(row,lang)}))});
    continue;
   }
   if(account.valueState==='none'){
    const code=account.lastFailure?.code??null;
-   if(isUnreadable(code)){const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code});grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});}
+   if(isUnreadable(code)){const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code});grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});}
    continue;
   }
   const extra=available(key,unstable),detail=extra?{detail:resetsAvailable(extra.partial?null:extra.n)}:{};
@@ -109,7 +111,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
    if(!isUnreadable(code))continue;
    taken.add(key);
    const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code});
-   grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});
+   grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});
   }
  }
  // CKP-MFD-28 (study mfd-adapter.js resetAlert): an announced public reset is placed at its window's middle, to the
