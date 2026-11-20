@@ -16,7 +16,7 @@ import { mountPrototypeBase } from './prototype-base.js';
 import { cautionItems,lights,readWindows } from './caution.js';
 import { createCautionMemory } from './caution-ack.js';
 import {currentWindow,withoutProjectNames} from './prototype-data-adapter.js';
-import {mountPluginHost,type PluginReports} from './plugin-host.js';
+import {mountPluginHost,pluginHostOf,type PluginReports} from './plugin-host.js';
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
 export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void,reportAcked:(ids:string[])=>void=()=>{},reportPins:(ids:string[])=>void=()=>{},reportPlugins:PluginReports={state:()=>{},running:()=>{}}):CockpitView {
  let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
@@ -228,7 +228,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  function renderInto(data:WireCockpitData,now:number){
   preserveFocus(()=>{
    const previousData=lastData;lastData=data;lastRenderedAt=now;
-   if(disposed)throw Error('closed');const before=displayedState();const priorPage=Number(frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??0);const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const selectedScope=nativeShell?.scope??priorButton?.dataset.scope??'all';const unstable=(previousData?cockpitMembers(previousData):[]).some(m=>m.key===selectedScope&&m.unstable)||cockpitMembers(data).some(m=>m.key===selectedScope&&m.unstable);const priorScope=unstable?'':selectedScope==='all'?'':selectedScope;if(unstable){retiredUnstableScopes.add(selectedScope);if(nativeShell)nativeShell={...nativeShell,scope:'all'};}applyScope=null;frame.engine.replaceChildren();
+   if(disposed)throw Error('closed');const before=displayedState();const priorPage=Number(frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??0);const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const selectedScope=nativeShell?.scope??priorButton?.dataset.scope??'all';const unstable=(previousData?cockpitMembers(previousData):[]).some(m=>m.key===selectedScope&&m.unstable)||cockpitMembers(data).some(m=>m.key===selectedScope&&m.unstable);const priorScope=unstable?'':selectedScope==='all'?'':selectedScope;if(unstable){retiredUnstableScopes.add(selectedScope);if(nativeShell)nativeShell={...nativeShell,scope:'all'};}applyScope=null;pluginHostOf(root)?.hold();frame.engine.replaceChildren();
    const engine=renderPrototypeEngine(data,locale,root,priorScope,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};deck.scope(key);return true;},()=>{if(!active)return false;action('openSettings');return true;},priorPage,lastRenderedAt,redBelow,showUsed);
    // No widget subscription yet (every row still lacks a dock surface): the engine says so, but admitted sessions and
    // the publication's faders stay visible (post-merge sample 11-11, #847 finding 1).
