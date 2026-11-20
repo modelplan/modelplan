@@ -16,7 +16,7 @@ import {cautionItems} from './caution.js';
 import {prototypeEngineSupplement,currentWindow,displayWindow,scopedWindow,runOutMinutes,runOutFields,forecastOf,moneyText} from './prototype-data-adapter.js';
 import {historyView,resetHistory,usageStats} from './prototype-history.js';
 import {publishedFleet} from './prototype-hud.js';
-import {cardUsage,currentEffort,type CardRange,type CardUse} from './model-card.js';
+import {cardUsage,currentEffort,type CardUse} from './model-card.js';
 import {approxCost} from '../study/rocket-r1/mfd-pages/fmt.js';
 import {scaleView,levelK,bankView,faderModel,lcdView,indicatorView,marksView,stripAria} from '../study/rocket-r1/fader-view.js';
 import {setLanguage,t,formatCredits} from '../study/rocket-r1/i18n.js';
@@ -57,9 +57,9 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   // The event path, not target.closest: a card click repaints the card, so its target is detached by the time it bubbles here.
   if(e.composedPath().some(n=>n instanceof Element&&n.matches('.fd-strip,.fd-travel,button,a,input')))return;closeCompare();};fadPanel?.addEventListener('click',emptyClick);
  const ladder=['Low','Med','High','XHigh','Max'] as const,BANK_SIZE=3;let bankIndex=0,selectedModel:string|null=null,previews:Record<string,string>={};
- // WP-08: cards follow the time range (V1-FINAL §0: use, ≈cost and shares follow it); 7d until the app-owned range (WP-09)
- // reaches the deck. heldCurrent keeps each model's current effort for the hysteresis (CKP-FAD-53).
- const cardRange:CardRange='7d',heldCurrent=new Map<string,string>();
+ // WP-08 / WP-09: cards follow the app's time range (uiRange, from shell.range; V1-FINAL §0: use, ≈cost and shares follow it).
+ // heldCurrent keeps each model's current effort for the hysteresis (CKP-FAD-53).
+ const heldCurrent=new Map<string,string>();
  let showAllModels=false,pins:string[]=[],unpinned=new Set<string>(),press:{pointer:number;started:number;sourceId:string;pinned:boolean}|null=null,suppressClick=false;
  // CKP-FAD-24/-17 (D115, D122): a drag moves only the trial ghost, continuously; the release snaps it to the nearest effort
  // the model has (back on the real lever = no trial). The real lever shows one of 33 baked frames (Low 0 .. Max 32) and
@@ -130,9 +130,9 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // carry its own `use` on a fader; the normal entry reads the local history ranking. `recorded` = a recorded session of
  // this model in the range (the 7-day ledger), so a model in use without token history reads "no usage record".
  function cardInput(id:string,fixtureUse:unknown):{use:CardUse|null;recorded:boolean}{
-  const u=cardUsage(data?.history,cardRange).get(id)??null,fx=record(fixtureUse),tokens=number(fx?.tokens),share=number(fx?.share),cost=number(fx?.cost);
+  const u=cardUsage(data?.history,uiRange).get(id)??null,fx=record(fixtureUse),tokens=number(fx?.tokens),share=number(fx?.share),cost=number(fx?.cost);
   const use=u??(tokens!==null&&share!==null&&share<=1?{tokens,share,...(cost!==null?{cost}:{})}:null);
-  const span=cardRange==='today'?86_400_000:cardRange==='7d'?7*86_400_000:30*86_400_000,now=renderedNow||Date.now();
+  const span=uiRange==='today'?86_400_000:uiRange==='7d'?7*86_400_000:30*86_400_000,now=renderedNow||Date.now();
   const recorded=(data?.details?.recentSessions??[]).some(x=>x.model===id&&now-Date.parse(x.lastObservedAt)<=span);
   return {use,recorded};
  }

@@ -220,6 +220,25 @@ test('D337 short cockpit: the trial card reads ability and cost with letters ('+
  await expect(strip).toHaveAttribute('data-card','normal');
 });
 
+// macrevc-1052-1: the card's use, share and cost follow the app's range (shell.range), through the normal bridge.
+test('CKP-FAD-50 / LBL-2.2-51 the card follows the app range: 7d, 30d, Today',async({page})=>{
+ const send=await open(page,{});
+ const data=cardData();
+ data.history.models.recent30d={entities:1,totalObservedOutputTokens:2000e6,top:[{name:'sol',observedOutputTokens:999e6,observedRequests:9,share:.5}]};
+ const receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),sol=card(page,'Sol 6.1');
+ expect(await receive(send('display',{data}))).toBe(true);
+ expect((await lines(sol)).slice(1,3)).toEqual(['212M','212M 17%']);
+ for(const [range,big,use] of [['30d','999M','999M 50%'],['7d','212M','212M 17%']]){
+  expect(await receive(send('shell',{...shell,range}))).toBe(true);
+  await expect(sol.locator('.cd-big')).toHaveText(big);
+  expect((await lines(sol)).slice(1,3)).toEqual([big,use]);
+ }
+ // Today: the wire ranks no tokens for it yet (WP-06), so the card never falls back to another period's figure.
+ expect(await receive(send('shell',{...shell,range:'today'}))).toBe(true);
+ await expect(sol.locator('.cd-big')).not.toHaveText(/\d+M/);
+ await expect(sol.locator('.fd-strip')).toHaveAttribute('data-card','norecord');
+});
+
 test('CKP-FAD-54 a second click on the card, or a click on empty fader space, deselects; one model at a time',async({page})=>{
  await open(page);
  const sol=card(page,'Sol 6.1'),opus=card(page,'Opus 5.5');
