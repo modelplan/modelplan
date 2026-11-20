@@ -2223,7 +2223,7 @@ struct DockHelpInteraction: Equatable {
         guard let row = model?.presentationRows[id] else {
             // No presentation row (a bare preview input): the earlier neutral card.
             return try DockCardProjection.content(input: projected, revision: application?.snapshot.revision ?? 0,
-                sourceAndAge: CommunityDockObservation.text(input: projected, snapshot: snapshot, model: model, now: now, language: language),
+                sourceAndAge: CommunityDockObservation.cardHeaderText(input: projected, snapshot: snapshot, model: model, now: now, language: language),
                 stateLabel: input.dataState == .fresh ? "" : (english ? "Unavailable or stale" : "不可用或已过期"),
                 additionalRows: Self.usedUpRows(projected, at: now, language: language),
                 links: currentCardSourceLinks(for: id, at: now), enterLabel: enterLabel, dismissLabel: dismissLabel,
