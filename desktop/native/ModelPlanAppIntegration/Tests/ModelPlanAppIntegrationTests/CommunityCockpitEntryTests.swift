@@ -1232,6 +1232,10 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertTrue(ready,"the real page becomes ready")
         let web=try XCTUnwrap(page.verificationWebView)
         let window=try XCTUnwrap(page.window)
+        window.makeKeyAndOrderFront(nil)
+        guard NSApp.isActive,window.isKeyWindow else{
+            throw XCTSkip("A trusted card click needs an active app and key cockpit window (GUI Mac); this runner has app active \(NSApp.isActive), key \(window.isKeyWindow)")
+        }
         // The centre of the first filled card, in page (CSS pixel) coordinates; wait for the first paint.
         let centre="""
         (()=>{const s=document.querySelector('.fd-ch:not(.empty) .fd-strip');if(!s)return '';const r=s.getBoundingClientRect();return (r.left+r.width/2)+','+(r.top+r.height/2);})()
