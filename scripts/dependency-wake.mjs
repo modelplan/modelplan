@@ -1,17 +1,23 @@
 // SPDX-License-Identifier: MIT
-// Dependency wake (throughput D352, change 5a). On every push to main, find the open pull requests (drafts included)
-// whose body has a `Depends-on: #N` or `Blocked-by: #N` line naming a pull request that the push merged. When none of
-// that pull request's named blockers is still unmerged, post ONE comment "Unblocked: #N merged at <sha>; ready to
-// continue", deduplicated by a hidden marker. The local coordinator raises its own event from the same lines
-// (stuck-scan.sh --unblocked), because a comment alone may sit unread.
+// Dependency wake (throughput D352, change 5a). On every push to main, reconcile the open pull requests (drafts included)
+// whose body has a `Depends-on: #N` or `Blocked-by: #N` line: when every named pull request has merged (the last one within
+// the last 72 hours), post ONE comment "Unblocked: #N merged at <sha>; ready to continue" on that pull request. The local
+// coordinator raises its own event from the same lines (stuck-scan.sh --unblocked), because a comment alone may sit unread.
+//
+// The decision reads the current state of GitHub, never the range of one push, so a run that GitHub replaced in its
+// concurrency queue loses nothing: the next run sees the same pull requests. A reference that cannot be read (mistyped,
+// deleted) keeps that one pull request blocked and never stops the others. The "already told" marker names the pull
+// request and its exact blocker set and counts only when the comment was posted by this workflow's token (a bot), so a
+// human quoting it does not suppress the notice and a pull request whose blockers merged in separate pushes is told once.
 //
 // Read-only except for that comment: the token needs contents: read and pull-requests: write, nothing else. A body is
 // untrusted text: it is only parsed for `#N` numbers here, never run or passed to a shell.
 //
-// Usage (workflow): GITHUB_TOKEN=... GITHUB_REPOSITORY=owner/repo node scripts/dependency-wake.mjs <before-sha> <after-sha>
+// Usage (workflow): GITHUB_TOKEN=... GITHUB_REPOSITORY=owner/repo node scripts/dependency-wake.mjs
 
 const LINE = /^[ \t]*(?:[-*][ \t]+)?(?:depends-on|blocked-by)[ \t]*:[ \t]*(.*)$/gim;
-export const MARKER = (pr, merged) => `<!-- dependency-wake:unblocked:${pr}:${merged} -->`;
+export const WINDOW_HOURS = 72;
+export const MARKER = (pr, blockers) => `<!-- dependency-wake:unblocked:${pr}:${blockers.join(",")} -->`;
 
 /** Pull request numbers named by the Depends-on / Blocked-by lines of a body (sorted, unique). */
 export function blockersOf(body) {
@@ -22,57 +28,46 @@ export function blockersOf(body) {
   return [...found].sort((a, b) => a - b);
 }
 
-/**
- * What to do for one open PR after `mergedNow` (a Set of PR numbers) merged.
- * `isMerged(n)` says whether blocker n has merged (before or in this push). Returns null when the PR does not name a
- * merged PR of this push; otherwise { cleared: [..], remaining: [..] } (remaining empty = unblocked).
- */
-export async function assess(body, mergedNow, isMerged) {
-  const blockers = blockersOf(body);
-  const cleared = blockers.filter((n) => mergedNow.has(n));
-  if (!cleared.length) return null;
-  const remaining = [];
-  for (const n of blockers) if (!mergedNow.has(n) && !(await isMerged(n))) remaining.push(n);
-  return { cleared, remaining };
+export function commentText(prNumber, blockers, last) {
+  return `${MARKER(prNumber, blockers)}\nUnblocked: #${last.number} merged at ${last.sha.slice(0, 12)}; ready to continue`;
 }
 
-export function commentText(prNumber, mergedPr, sha) {
-  return `${MARKER(prNumber, mergedPr)}\nUnblocked: #${mergedPr} merged at ${sha.slice(0, 12)}; ready to continue`;
+/** A comment counts as this workflow's own notice only when a bot posted it and it starts with the marker. */
+export function isOurNotice(comment, marker) {
+  return comment?.user?.type === "Bot" && String(comment.body ?? "").startsWith(marker);
 }
 
-/** Run one wake. `api(method, path, body?)` returns parsed JSON (GET list pages are handled by `pages`). */
-export async function wake({ api, pages, before, after, log = () => {} }) {
-  const shas = new Set([after]);
-  if (before && !/^0+$/.test(before)) {
-    const cmp = await api("GET", `/compare/${before}...${after}?per_page=250`);
-    for (const c of cmp.commits ?? []) shas.add(c.sha);
-  }
-  const merged = new Map(); // PR number -> merge commit sha
-  for (const sha of shas) {
-    for (const p of await api("GET", `/commits/${sha}/pulls`)) {
-      if (p.merged_at && p.base?.ref === "main" && (p.merge_commit_sha === sha || sha === after)) merged.set(p.number, p.merge_commit_sha || sha);
-    }
-  }
-  if (!merged.size) { log("no merged pull request in this push"); return []; }
-  const mergedNow = new Set(merged.keys());
+/** Run one reconcile. `api(method, path, body?)` returns parsed JSON; `pages(path)` lists every page. */
+export async function wake({ api, pages, now = Date.now(), log = () => {} }) {
   const open = await pages("/pulls?state=open&per_page=100");
-  const state = new Map();
-  const isMerged = async (n) => {
-    if (!state.has(n)) state.set(n, Boolean((await api("GET", `/pulls/${n}`)).merged_at));
-    return state.get(n);
+  const cache = new Map();
+  const blocker = async (n) => { // { merged, at, sha } or null when it cannot be read
+    if (!cache.has(n)) {
+      try {
+        const p = await api("GET", `/pulls/${n}`);
+        cache.set(n, { merged: Boolean(p.merged_at), at: p.merged_at ? Date.parse(p.merged_at) : 0, sha: p.merge_commit_sha || "" });
+      } catch (e) { log(`#${n}: ${e.message}`); cache.set(n, null); }
+    }
+    return cache.get(n);
   };
   const posted = [];
   for (const pr of open) {
-    const r = await assess(pr.body, mergedNow, isMerged);
-    if (!r) continue;
-    if (r.remaining.length) { log(`#${pr.number} still blocked by ${r.remaining.map((n) => `#${n}`).join(", ")}`); continue; }
-    const last = r.cleared[r.cleared.length - 1];
-    const marker = MARKER(pr.number, last);
-    const comments = await pages(`/issues/${pr.number}/comments?per_page=100`);
-    if (comments.some((c) => String(c.body ?? "").includes(marker))) { log(`#${pr.number} already told`); continue; }
-    await api("POST", `/issues/${pr.number}/comments`, { body: commentText(pr.number, last, merged.get(last)) });
-    log(`#${pr.number} unblocked by #${last}`);
-    posted.push(pr.number);
+    const blockers = blockersOf(pr.body);
+    if (!blockers.length) continue;
+    try {
+      const infos = [];
+      for (const n of blockers) infos.push([n, await blocker(n)]);
+      const waiting = infos.filter(([, i]) => !i || !i.merged).map(([n]) => n);
+      if (waiting.length) { log(`#${pr.number} still blocked by ${waiting.map((n) => `#${n}`).join(", ")}`); continue; }
+      const [number, last] = infos.reduce((a, b) => (b[1].at > a[1].at ? b : a));
+      if (now - last.at > WINDOW_HOURS * 3600e3) continue; // long unblocked: nobody is waiting for this news
+      const marker = MARKER(pr.number, blockers);
+      const comments = await pages(`/issues/${pr.number}/comments?per_page=100`);
+      if (comments.some((c) => isOurNotice(c, marker))) { log(`#${pr.number} already told`); continue; }
+      await api("POST", `/issues/${pr.number}/comments`, { body: commentText(pr.number, blockers, { number, sha: last.sha }) });
+      log(`#${pr.number} unblocked by #${number}`);
+      posted.push(pr.number);
+    } catch (e) { log(`#${pr.number}: ${e.message}`); } // one pull request never stops the others
   }
   return posted;
 }
@@ -98,8 +93,7 @@ export function githubApi(repo, token, fetchImpl = fetch) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const [before, after] = process.argv.slice(2);
   const { GITHUB_TOKEN: token, GITHUB_REPOSITORY: repo } = process.env;
-  if (!token || !repo || !after) { console.error("usage: GITHUB_TOKEN= GITHUB_REPOSITORY= dependency-wake.mjs <before> <after>"); process.exit(2); }
-  await wake({ ...githubApi(repo, token), before, after, log: (m) => console.log(m) });
+  if (!token || !repo) { console.error("usage: GITHUB_TOKEN= GITHUB_REPOSITORY= dependency-wake.mjs"); process.exit(2); }
+  await wake({ ...githubApi(repo, token), log: (m) => console.log(m) });
 }

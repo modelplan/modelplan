@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Dependency wake (throughput D352 change 5a): when a pull request merges to main, tell the open pull requests whose body
-# says `Depends-on: #N` or `Blocked-by: #N` that they are unblocked (one comment, deduplicated by a hidden marker).
+# says `Depends-on: #N` or `Blocked-by: #N` that they are unblocked (one comment, deduplicated by a hidden marker). Each run reconciles the
+# current state, so a run replaced in the concurrency queue loses nothing.
 # The coordinator starts the author from the same lines (stuck-scan.sh --unblocked on the local box).
 # No secrets beyond GITHUB_TOKEN. Pull request bodies are only parsed for numbers, never executed.
 name: dependency wake
@@ -26,10 +27,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Wake dependents of the merged pull requests
+      - name: Reconcile the dependents of merged pull requests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.sha }}
-        run: node scripts/dependency-wake.mjs "$BEFORE" "$AFTER"
+        run: node scripts/dependency-wake.mjs
