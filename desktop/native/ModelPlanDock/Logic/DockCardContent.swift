@@ -4,7 +4,8 @@ import Foundation
 public struct DockCardRow:Equatable,Sendable {
     /// `event`: a plain sentence under the readout (prototype card.js .cd-events), such as D65's used-up line.
     /// `footnote`: D233 informational cause that needs no action; a small grey line at the bottom of the card.
-    public enum Kind:Equatable,Sendable {case quota,extraQuota,reserve,statistic,notice,event,footnote}
+    /// `alert`: DOCK-3.8-52, the shared alert sentence (ALR-50) at the very bottom, in its status ink.
+    public enum Kind:Equatable,Sendable {case quota,extraQuota,reserve,statistic,notice,event,footnote,alert}
     public let id:String,kind:Kind,label:String,value:String,detail:String
     /// `remainingFraction` is the remaining truth; `fillFraction` is the bar length (D130: used in used mode). Tone follows remaining.
     public let remainingFraction:Double?,fillFraction:Double?,tone:DockQuotaStatus

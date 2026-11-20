@@ -56,6 +56,10 @@ public struct DockStationRecipe: Codable, Sendable {
     public var showsReadout:Bool?,placeholderLabel:String?,placeholderText:DockTextRecipe?
     public var placeholderStyle: DockPlaceholderStyle?
     public var fallbackVendorName:Bool?
+    /// G3-136 (owner 11-18, WP-15): the station shown when there is nothing to read yet is an empty quota ring on the
+    /// regular nozzle backdrop, with the menu-bar rocket mark (`DockInstrumentRenderer.emptyMark`) in its centre: no "?",
+    /// no number. Its placeholder label stays empty; its placeholder style only marks it as the empty station.
+    public var emptyRing:Bool?
 }
 public struct DockInstrumentSkin: Codable, Sendable {
     public var schemaVersion:Int
@@ -95,6 +99,9 @@ public struct DockNozzlePose: Equatable, Sendable {
     private let resources:DockArtworkStore
     private let supplementalResources:DockArtworkStore?
     private let material:Material?
+    /// G3-136: the status item's rocket template image, drawn in the `emptyText` ink at the centre of an empty ring.
+    /// The same image as the menu bar, never a second variant; nil draws the empty ring without a mark.
+    public var emptyMark:CGImage?
     public init(resources:DockArtworkStore, supplementalResources:DockArtworkStore? = nil, material:Material? = nil){self.resources=resources;self.supplementalResources=supplementalResources;self.material=material}
     public func render(skin:DockInstrumentSkin,readings:[String:DockInstrumentReading],notices:[String:DockNotice]=[:],scale:Int, poses: [String: DockNozzlePose] = [:], cachedBackground: CGImage? = nil, viewport: CGRect? = nil) throws -> DockRenderResult {
         func finite(_ p:CGPoint)->Bool{p.x.isFinite && p.y.isFinite && abs(p.x)<=1_000_000 && abs(p.y)<=1_000_000}
@@ -273,6 +280,33 @@ public struct DockNozzlePose: Equatable, Sendable {
                     c.setStrokeColor(try ink(palette));c.setLineWidth(stroke);c.strokeEllipse(in:r.insetBy(dx:stroke/2,dy:stroke/2))
                 }
         }
+        func overlay(_ station: DockStationRecipe, _ frame: CGRect) throws {
+            guard let overlay = station.radialOverlay else { return }
+            guard overlay.radius.isFinite, overlay.radius > 0, overlay.radius <= station.diameter,
+                  overlay.alphas.count >= 2, overlay.alphas.count <= 128,
+                  overlay.alphas.allSatisfy({ $0.isFinite && (0...1).contains($0) }) else { throw DockArtworkError.invalidManifest }
+            let space = CGColorSpace(name: CGColorSpace.sRGB)!
+            let colors = overlay.alphas.map { CGColor(colorSpace: space, components: [0,0,0,$0])! }
+            let locations = overlay.alphas.indices.map { CGFloat($0) / CGFloat(overlay.alphas.count - 1) }
+            guard let gradient = CGGradient(colorsSpace: space, colors: colors as CFArray, locations: locations) else { throw DockArtworkError.invalidManifest }
+            c.saveGState(); c.clip(to: frame)
+            c.drawRadialGradient(gradient, startCenter: station.centre, startRadius: 0,
+                                 endCenter: station.centre, endRadius: overlay.radius,
+                                 options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+            c.restoreGState()
+        }
+        /// A template image keeps only its shape: it is filled with one ink, upright, aspect-fitted in `rect`.
+        func tinted(_ mark: CGImage, _ rect: CGRect, _ color: CGColor) {
+            guard mark.width > 0, mark.height > 0 else { return }
+            let fit = min(rect.width / CGFloat(mark.width), rect.height / CGFloat(mark.height))
+            let size = CGSize(width: CGFloat(mark.width) * fit, height: CGFloat(mark.height) * fit)
+            let target = CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height)
+            c.saveGState(); c.beginTransparencyLayer(in: target, auxiliaryInfo: nil)
+            c.saveGState(); c.translateBy(x: target.minX, y: target.maxY); c.scaleBy(x: 1, y: -1)
+            c.draw(mark, in: CGRect(origin: .zero, size: target.size)); c.restoreGState()
+            c.setBlendMode(.sourceIn); c.setFillColor(color); c.fill(target)
+            c.endTransparencyLayer(); c.restoreGState()
+        }
         let stations = skin.stations.enumerated().sorted { left, right in
             let lhs = left.element.subscriptionID.flatMap { poses[$0]?.scale } ?? 1
             let rhs = right.element.subscriptionID.flatMap { poses[$0]?.scale } ?? 1
@@ -281,6 +315,19 @@ public struct DockNozzlePose: Equatable, Sendable {
         for station in stations {
             guard station.diameter.isFinite,(8...256).contains(station.diameter),station.clock.positions>0,station.clock.positions<=128 else{throw DockArtworkError.invalidManifest}
             let frame=CGRect(x:station.centre.x-station.diameter/2,y:station.centre.y-station.diameter/2,width:station.diameter,height:station.diameter)
+            if station.emptyRing == true, station.subscriptionID == nil, station.overflowCount == nil {
+                // G3-136: the same nozzle backdrop and case as a ring, an empty grey track, the rocket in the middle.
+                for layer in station.layers { try image(layer,frame) }
+                try overlay(station, frame)
+                let radius = station.singleWindowCaseInnerRadius ?? station.caseInnerRadius
+                guard radius.isFinite,radius>=0,radius<station.diameter/2 else{throw DockArtworkError.invalidManifest}
+                c.setLineWidth(station.diameter/2-radius);c.setStrokeColor(try ink("case"))
+                let rr=(radius+station.diameter/2)/2
+                c.strokeEllipse(in:CGRect(x:station.centre.x-rr,y:station.centre.y-rr,width:2*rr,height:2*rr))
+                try ring(station.outer,nil,station.centre)
+                if let emptyMark { tinted(emptyMark, station.glyphRect, try ink(skin.palette["emptyText"] != nil ? "emptyText" : "unknown")) }
+                continue
+            }
             if let label = station.placeholderLabel, let style = station.placeholderStyle {
                 guard style.strokeWidth.isFinite, style.strokeWidth > 0, style.strokeWidth <= station.diameter,
                       !style.dash.isEmpty, style.dash.count <= 16,

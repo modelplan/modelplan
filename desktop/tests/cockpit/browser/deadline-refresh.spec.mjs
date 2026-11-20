@@ -43,11 +43,11 @@ test('expiry tick preserves scope, page, focus and fader node identity',async({p
  expect(await tick(at)).toBe(true);await expect(plans).toBeFocused();await expect(plans).toHaveAttribute('aria-pressed','true');await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');expect(await page.evaluate(()=>window.__channel===document.querySelector('.fd-ch'))).toBe(true);
  const windows=page.locator('.mfd-page .sp-w');await expect(windows.filter({hasText:'Session'})).toContainText('--');await expect(windows.filter({hasText:'Weekly'})).toContainText('80%');
 });
-test('native expiry preserves an active shutter drag',async({page})=>{
+test('native expiry preserves an active shutter press (WP-10: the switch has no drag)',async({page})=>{
  const {tick}=await open(page,dataFor());const shutter=page.locator('[data-shutter]'),box=await shutter.boundingBox();expect(box).not.toBeNull();
- await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+20,box.y+box.height/2);
- const before=await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'));expect(before).not.toBe('');expect(await tick(at)).toBe(true);
- expect(await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'))).toBe(before);await page.mouse.up();
+ await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
+ expect(await shutter.evaluate(e=>e.matches(':active'))).toBe(true);expect(await tick(at)).toBe(true);
+ expect(await shutter.evaluate(e=>e.matches(':active'))).toBe(true);await page.mouse.up();
 });
 test('document hidden blocks ticks and show resumes only on native event',async({page})=>{
  const {tick}=await open(page,dataFor());await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
@@ -90,11 +90,11 @@ test('appearance at expiry preserves engine page, scope and focused control',asy
  expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
  await expect(page.getByRole('button',{name:'Page 2'})).toHaveAttribute('aria-current','true');await expect(page.getByRole('button',{name:'Page 2'})).toBeFocused();await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');
 });
-test('appearance repaint preserves an active shutter drag',async({page})=>{
+test('appearance repaint preserves an active shutter press (WP-10: the switch has no drag)',async({page})=>{
  const {send,receive}=await open(page,dataFor()),shutter=page.locator('[data-shutter]'),box=await shutter.boundingBox();expect(box).not.toBeNull();
- await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+20,box.y+box.height/2);
- const before=await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'));expect(before).not.toBe('');await page.clock.setSystemTime(new Date(at));expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
- expect(await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'))).toBe(before);await page.mouse.up();
+ await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
+ expect(await shutter.evaluate(e=>e.matches(':active'))).toBe(true);await page.clock.setSystemTime(new Date(at));expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
+ expect(await shutter.evaluate(e=>e.matches(':active'))).toBe(true);await page.mouse.up();
 });
 for(const [from,to,fromLabel,toLabel] of [['en','zh-CN','＋ Add a subscription','＋ 添加订阅'],['zh-CN','en','＋ 添加订阅','＋ Add a subscription']])test(`Add subscription focus survives ${from} to ${to} and expiry`,async({page})=>{
  const {send,receive,tick}=await open(page,dataFor());
