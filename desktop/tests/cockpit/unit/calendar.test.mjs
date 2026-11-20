@@ -237,3 +237,19 @@ test('macrevc-844-6: a card span with no expiry never becomes a date (column cel
  const card=noPeak.find(c=>c.tag.full==='plugin.calendarCards');assert.ok(card,'the cards cell is still shown');
  assert.ok(!/\d+\/\d+/.test(JSON.stringify(card.side)),JSON.stringify(card.side));
 });
+
+test('macrevc-844-8: after the producer\'s earliest expiry passes, a partial list keeps its live cards (no total, no later exact date)',()=>{
+ const shaped=(at)=>{const {data,ref}=display();data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
+  const iso=t=>new Date(t).toISOString(),first=NOW+60_000,later=NOW+3*HOUR;
+  Object.assign(data.details.subscriptions[0].resetCards,{state:'partial',truncated:true,count:65,earliestExpiresAt:iso(first),items:Array.from({length:64},(_,i)=>({id:'c'+i,expiresAt:iso(i?later:first)}))});
+  return calendarFromCockpit(data,at).spans.filter(x=>x.kind==='cards');};
+ assert.deepEqual(shaped(NOW).map(x=>[x.count,x.to]),[[null,NOW+60_000]],'before the deadline: the stated earliest expiry');
+ // Two minutes later the first card is gone; 63 listed cards are live.
+ assert.deepEqual(shaped(NOW+120_000).map(x=>[x.count,x.to]),[[null,null]],'after: still shown, no total, no invented date');
+ // Everything listed expired and the stated expiry passed: nothing known to be live.
+ assert.deepEqual(shaped(NOW+4*HOUR),[]);
+ // A complete list whose live cards have no expiry keeps them after the stated earliest passes.
+ const {data,ref}=display();data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
+ Object.assign(data.details.subscriptions[0].resetCards,{count:1,earliestExpiresAt:new Date(NOW-1000).toISOString(),items:[{id:'z'}]});
+ assert.deepEqual(calendarFromCockpit(data,NOW).spans.filter(x=>x.kind==='cards').map(x=>[x.count,x.to]),[[1,null]]);
+});

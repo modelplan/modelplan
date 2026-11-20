@@ -4,7 +4,7 @@
 // `draw` hook. Times are local (America/Los_Angeles here).
 // Set CAL_SHOTS=<dir> to also write review screenshots.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
-import {appearance,commands,pageId,sample,shell,excludePortholeFlicker} from '../fixture.mjs';
+import {appearance,capture,commands,pageId,sample,shell,excludePortholeFlicker} from '../fixture.mjs';
 test.use({timezoneId:'America/Los_Angeles'});
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 
@@ -303,4 +303,15 @@ test('macrevc-844-4/5/6: unknown peaks, a partial card count and an unknown card
  const bar=weekView(page).locator('.wk-adr');
  await expect(bar).toHaveCount(1);
  await expect(weekView(page)).not.toContainText(/1969|1970|12\/31/);
+});
+
+test('macrevc-844-8: through the bridge, the earliest card expiring at the host tick leaves the live cards shown without a total or date',async({page})=>{
+ const data=dataWith(4),iso=t=>new Date(t).toISOString(),first=NOW+60_000,later=NOW+3*3_600_000;
+ data.details=capture().details;data.details.peaks=[];data.details.resetEvents=[];
+ Object.assign(data.details.subscriptions[0].resetCards,{state:'partial',truncated:true,count:65,earliestExpiresAt:iso(first),items:Array.from({length:64},(_,i)=>({id:String(i).padStart(64,'a'),expiresAt:iso(i?later:first)}))});
+ const {send,receive}=await open(page,{data,push:null});
+ await expect(column(page)).toContainText('Reset cards');await expect(column(page)).toContainText(/until \d+\/\d+/);
+ expect(await receive(send('tick',{nowUnixMs:String(NOW+120_000),reason:'deadline'}))).toBe(true);
+ await expect(column(page)).toContainText('Reset cards');
+ await expect(column(page)).not.toContainText(/×|until|\d+\/\d+/);
 });

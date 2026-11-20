@@ -115,10 +115,11 @@ export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarDat
   const items=cards.items??[],partial=cards.truncated||cards.state!=='complete'||cards.count!==null&&cards.count>items.length;
   const live=items.filter(c=>{const t=ms(c.expiresAt);return t===null||t>now;});
   const expiries=live.flatMap(c=>{const t=ms(c.expiresAt);return t!==null?[t]:[];}).sort((a,b)=>a-b);
-  const stated=ms(cards.earliestExpiresAt),to=partial?stated:(expiries[0]??stated);
-  if(to!==null&&to<=now)return;
-  if(!partial&&!live.length)return;
-  if(partial&&cards.count===0&&!live.length)return;
+  // A stated earliest expiry that has passed is not a reason to drop the cards: any listed card still live keeps the
+  // span, with no date beyond a stated future one (macrevc-844-8).
+  const stated=ms(cards.earliestExpiresAt),statedFuture=stated!==null&&stated>now;
+  const to=partial?(statedFuture?stated:null):(expiries[0]??(statedFuture?stated:null));
+  if(!live.length&&!statedFuture&&(!partial||stated!==null||cards.count===0))return;
   spans.push({sub,kind:'cards',from:now,to,count:partial?null:live.length});
  });
  // Announced (or confirmed) public resets for the user's rows, still current.
