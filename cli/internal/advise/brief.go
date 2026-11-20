@@ -28,7 +28,7 @@ type Brief struct {
 	Models      []BriefModel `json:"models"`
 	Ladder      []BriefStep  `json:"ladder,omitempty"`
 	// Default is the configuration for ordinary tasks: the published best value at ★, unless
-	// it scores more than defaultFloor below the strongest, then the strongest at ★.
+	// it scores more than defaultFloorTies ties below the strongest, then the strongest at ★.
 	Default       *BriefModel `json:"default,omitempty"`
 	DefaultReason string      `json:"defaultReason,omitempty"` // best_value | strongest
 	AtDefault     bool        `json:"atDefault,omitempty"`
@@ -51,8 +51,9 @@ type BriefModel struct {
 }
 
 // defaultFloor: how far below the strongest the best value may score and still be the default.
-// 3 points on the old 50-centred scale = 3 * 0.815 on the display scale (new = 34.185 + 0.815*old); #781.
-const defaultFloor = 2.445
+// defaultFloorTies: the floor is 3 lineup ties (3 points on the old scale where tie is 1, 2.445 on the 0.4
+// display scale where tie is 0.815), so it follows the publication's scale; #781.
+const defaultFloorTies = 3.0
 
 type BriefStep struct {
 	Label        string   `json:"label"`
@@ -88,6 +89,7 @@ func TaskStart(a *quota.Account, r quota.Report, d *digest.Digest, now time.Time
 		dev = "anthropic"
 	}
 	var models []*digest.Model
+	floor := defaultFloorTies * tie(d.Lineup(dev))
 	if l := d.Lineup(dev); l != nil {
 		for _, r := range l.Members {
 			m := d.Model(r.ID)
@@ -122,7 +124,7 @@ func TaskStart(a *quota.Account, r quota.Report, d *digest.Digest, now time.Time
 	}
 	def := best
 	b.DefaultReason = "best_value"
-	if best < 0 || (strong >= 0 && b.Models[strong].Ability-b.Models[best].Ability > defaultFloor) {
+	if best < 0 || (strong >= 0 && b.Models[strong].Ability-b.Models[best].Ability > floor) {
 		def, b.DefaultReason = strong, "strongest"
 	}
 	var defModel *digest.Model

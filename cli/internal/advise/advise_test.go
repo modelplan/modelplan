@@ -480,21 +480,20 @@ func TestTaskStartBriefListsOptionsAndTheCurrentLadder(t *testing.T) {
 	}
 }
 
-// The default floor is 3 points on the old 50-centred scale, 2.445 on the published display scale (#781).
-func TestDefaultFloorOnDisplayScale(t *testing.T) {
-	d := fixtureDigest()
-	sonnet := func() *quota.Account {
-		a := claude("high", 30, 3*time.Hour, 300)
-		a.Harness.Model = "claude-sonnet-5-5"
-		return &a
-	}
-	d.Lineups[0].Members[1].Ability = d.Lineups[0].Members[0].Ability - 2.4
-	if b := TaskStart(sonnet(), quota.Report{}, d, now); b.DefaultReason != "best_value" {
-		t.Fatalf("2.4 below the strongest: default = %s", b.DefaultReason)
-	}
-	d.Lineups[0].Members[1].Ability = d.Lineups[0].Members[0].Ability - 2.5
-	if b := TaskStart(sonnet(), quota.Report{}, d, now); b.DefaultReason != "strongest" {
-		t.Fatalf("2.5 below the strongest: default = %s", b.DefaultReason)
+// The default floor is 3 lineup ties: 3 points on the old scale (tie 1), 2.445 on the 0.4 display scale (#781).
+func TestDefaultFloorFollowsPublicationScale(t *testing.T) {
+	for _, c := range []struct {
+		tie, gap float64
+		want     string
+	}{{0.815, 2.4, "best_value"}, {0.815, 2.5, "strongest"}, {1, 2.9, "best_value"}, {1, 3.1, "strongest"}} {
+		d := fixtureDigest()
+		sonnet := claude("high", 30, 3*time.Hour, 300)
+		sonnet.Harness.Model = "claude-sonnet-5-5"
+		d.Lineups[0].Tie = c.tie
+		d.Lineups[0].Members[1].Ability = d.Lineups[0].Members[0].Ability - c.gap
+		if b := TaskStart(&sonnet, quota.Report{}, d, now); b.DefaultReason != c.want {
+			t.Fatalf("tie %v gap %v: default = %s, want %s", c.tie, c.gap, b.DefaultReason, c.want)
+		}
 	}
 }
 
