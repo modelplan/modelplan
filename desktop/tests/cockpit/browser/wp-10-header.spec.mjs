@@ -78,7 +78,7 @@ test('WP-10 the porthole switch has the same frame open and closed, a click togg
  expect([a.open.opacity,a.closed.opacity]).toEqual([1,0]);
  expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);
  await expect(page.locator('[data-shutter]')).toHaveAttribute('aria-pressed','true');
- await expect.poll(async()=>(await frame()).closed.opacity).toBe(1);
+ await expect.poll(async()=>{await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));return (await frame()).closed.opacity;},{timeout:10000}).toBe(1);
  const b=await frame();
  expect([b.open.opacity,b.closed.opacity]).toEqual([0,1]);
  // the frame is identical in both states: same box, same layer geometry, same size of art
@@ -136,20 +136,91 @@ test('WP-10 a shell without a range (an older host) leaves the date keys on 7d',
  expect(await checked(page)).toEqual(['7d']);
 });
 
-test('WP-10 with no usage source the date keys are dimmed and ask for nothing',async({page})=>{
- await openWithData(page,{empty:true});
- const keys=page.locator('[data-range-key]');
- for(const k of await keys.all()){await expect(k).toHaveAttribute('aria-disabled','true');expect(Number(await k.evaluate(e=>getComputedStyle(e).opacity))).toBeLessThan(0.6);}
- await page.locator('[data-range-key="30d"]').click({force:true});
- expect(await asks(page)).toEqual([]);
- expect(await checked(page)).toEqual(['7d']);
+test('WP-10 with no usage source the date keys are dimmed but still accept and remember a choice (R3 section 5)',async({page})=>{
+ const {send,receive}=await openWithData(page,{empty:true});
+ const {visualFixture}=await import('../visual-fixture.mjs');
+ for(const k of await page.locator('[data-range-key]').all()){await expect(k).toHaveAttribute('data-nosource','true');expect(Number(await k.evaluate(e=>getComputedStyle(e).opacity))).toBeLessThan(0.6);await expect(k).not.toHaveAttribute('aria-disabled','true');}
+ await page.locator('[data-range-key="30d"]').click();
+ expect(await asks(page)).toEqual(['30d']);
+ expect(await checked(page)).toEqual(['30d']);
+ await page.locator('[data-range-key="30d"]').focus();await page.keyboard.press('ArrowLeft');
+ expect(await asks(page)).toEqual(['30d','7d']);
+ await page.locator('[data-range-key="today"]').click();
+ // the choice is remembered when the source arrives (the host echoes it in its shell)
+ expect(await receive(send('shell',{...shell,range:'today'}))).toBe(true);
+ expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ expect(await checked(page)).toEqual(['today']);
+ for(const k of await page.locator('[data-range-key]').all())await expect(k).not.toHaveAttribute('data-nosource','true');
 });
 
 test('WP-10 the date keys are live again once a usage source reports',async({page})=>{
  const {send,receive}=await openWithData(page,{empty:true});
  const {visualFixture}=await import('../visual-fixture.mjs');
  expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
- for(const k of await page.locator('[data-range-key]').all())await expect(k).not.toHaveAttribute('aria-disabled','true');
+ for(const k of await page.locator('[data-range-key]').all())await expect(k).not.toHaveAttribute('data-nosource','true');
  await page.locator('[data-range-key="30d"]').click();
  expect(await asks(page)).toEqual(['30d']);
+});
+
+// macrev2-1056-2: the switch toggles on a click only; a drag that starts and ends on it does nothing.
+for(const profile of ['open','closed'])
+test(`WP-10 a drag across the porthole switch never toggles it (${profile}); click and keyboard each toggle once`,async({page})=>{
+ await open(page,{profile});
+ const toggles=()=>page.evaluate(()=>window.__ev.filter(e=>e.type==='action'&&e.action==='shutterToggle').length);
+ const box=await page.locator('[data-shutter]').boundingBox(),y=box.y+box.height/2;
+ await page.mouse.move(box.x+9,y);await page.mouse.down();await page.mouse.move(box.x+box.width/2,y,{steps:6});await page.mouse.move(box.x+box.width-9,y,{steps:6});await page.mouse.up();
+ expect(await toggles()).toBe(0);
+ await page.mouse.click(box.x+box.width/2,y);expect(await toggles()).toBe(1);
+ await page.locator('[data-shutter]').focus();await page.keyboard.press(profile==='open'?'ArrowRight':'ArrowLeft');expect(await toggles()).toBe(2);
+});
+
+// macrev2-1056-5: the footer key and the header keys show the same range at the same time, before the host echo.
+test('WP-10 a footer range choice moves the header keys at once, before the host echo',async({page})=>{
+ await openWithData(page,{range:'7d'});
+ await page.locator('[data-opt="range"] b',{hasText:/^30d$/}).click();
+ expect(await asks(page)).toEqual(['30d']);
+ expect(await checked(page)).toEqual(['30d']);
+ await page.locator('[data-range-key="today"]').click();
+ await expect(page.locator('[data-opt="range"] b.on')).toHaveText('Today');
+});
+
+// macrev2-1056-6: Increase Contrast wins over the day palette for the date keys.
+for(const theme of ['night','day'])
+test(`WP-10 Increase Contrast sets the date key colours (${theme})`,async({page})=>{
+ await page.emulateMedia({contrast:'more'});
+ await open(page,{theme});
+ const colours=await page.evaluate(()=>['today','7d'].map(k=>getComputedStyle(document.querySelector(`[data-range-key="${k}"]`)).color));
+ expect(colours[1],'the selected key is white').toBe(theme==='day'?'rgb(0, 0, 0)':'rgb(255, 255, 255)');
+ expect(colours[0]).toBe(theme==='day'?'rgb(31, 41, 51)':'rgb(201, 208, 214)');
+});
+
+// macrev2-1056-7: Tab follows the displayed order: ALERT, porthole switch, date keys (one stop), settings, detach, close.
+test('WP-10 the header tab order is ALERT, porthole switch, the selected date key, settings, detach, close',async({page})=>{
+ await open(page);
+ await page.evaluate(()=>{document.activeElement?.blur();document.querySelector('.ck-brand')?.setAttribute('tabindex','-1');});
+ const seen=[];
+ for(let i=0;i<8;i++){await page.keyboard.press('Tab');const id=await page.evaluate(()=>{const e=document.activeElement;if(!e||!e.closest('.ck-head'))return 'out';return e.closest('.caution,.s6-alert')?'alert':e.matches('[data-shutter]')?'shutter':e.matches('[data-range-key]')?'range:'+e.dataset.rangeKey:e.matches('[data-settings]')?'settings':e.matches('[data-detach]')?'detach':e.matches('[data-close]')?'close':'other';});if(id==='out'&&seen.length)break;if(id!=='out')seen.push(id);}
+ expect(seen).toEqual(['alert','shutter','range:7d','settings','detach','close']);
+});
+
+// macrev2-1056-3: the community edition keeps its art-free one-row header; the date keys are an official-edition control.
+test('WP-10 the community edition header stays one row and shows no date keys',async({page})=>{
+ const {execFileSync}=await import('node:child_process'),{createServer}=await import('node:http'),{readFile}=await import('node:fs/promises'),{resolve,extname}=await import('node:path'),{fileURLToPath}=await import('node:url');
+ const cockpit=fileURLToPath(new URL('../../../cockpit/',import.meta.url));
+ execFileSync(process.execPath,['build.mjs'],{cwd:cockpit,stdio:'ignore'});
+ const root=resolve(cockpit,'.tmp/community'),mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2','.png':'image/png','.svg':'image/svg+xml','.json':'application/json'};
+ const server=createServer(async(req,res)=>{try{const path=new URL(req.url,'http://x').pathname,file=resolve(root,'.'+(path==='/'?'/index.html':path));res.setHeader('Content-Type',mime[extname(file)]??'text/plain');res.end(await readFile(file));}catch{res.writeHead(404);res.end();}});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{
+  await page.addInitScript(()=>{window.__ev=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__ev.push(JSON.parse(raw));}}}};});
+  await page.goto(`http://127.0.0.1:${server.address().port}/?pageId=${pageId}`);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands();
+  expect(await page.evaluate(raw=>window.modelPlanCockpit.receive(raw),send('load',{appearance,shell,redBelow:25}))).toBe(true);
+  expect(await page.evaluate(raw=>window.modelPlanCockpit.receive(raw),send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  const head=await page.locator('.ck-head').boundingBox();
+  const rows=await page.evaluate(()=>[...document.querySelectorAll('.ck-head > *')].filter(e=>e.getBoundingClientRect().width>0).map(e=>{const r=e.getBoundingClientRect();return [r.top,r.bottom];}));
+  for(const [t,b] of rows){expect(t).toBeGreaterThanOrEqual(head.y-1);expect(b).toBeLessThanOrEqual(head.y+head.height+1);}
+  await expect(page.locator('.ck-head .ck-range')).toBeHidden();
+  for(const s of ['[data-shutter]','[data-settings]','[data-detach]','[data-close]'])await expect(page.locator(s)).toBeVisible();
+ }finally{server.close();}
 });

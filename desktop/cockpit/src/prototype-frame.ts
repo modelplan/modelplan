@@ -9,9 +9,9 @@ export function prototypeFrame(root:HTMLElement) {
   root.innerHTML=`<div class="ck-shell" aria-hidden="true"><i class="hull-crown"></i><i class="hull-upper"></i><i class="hull-cone"></i><i class="hull-lower"></i><i class="hull-record"></i><i class="ck-booster l"></i><i class="ck-booster r"></i></div>
   <header class="ck-head">
     <span class="ck-brand"><span class="s6-brand-mark brand-mark" role="img" aria-label="ModelPlan"></span><span class="silk wordmark">Model<b>Plan</b></span></span>
+    <span class="ck-lamp"></span>
     <button type="button" class="shutter-slider" data-shutter data-mat="part" aria-label="${t('port.shutterAria')}" aria-pressed="false"></button>
     ${headerRangeMarkup()}
-    <span class="ck-lamp"></span>
     <button type="button" class="key" data-settings data-mat="part" aria-label="${t('ck.settingsAria')}"></button>
     <button type="button" class="key detach-toggle" data-detach data-mat="part" aria-label="${t('ck.detachAria')}" aria-pressed="false"><span class="detach-glyph" aria-hidden="true"></span></button>
     <button type="button" class="key key-x" data-close data-mat="part" aria-label="${t('ck.closeAria')}"></button></header>

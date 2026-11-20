@@ -398,3 +398,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .pl-menu .pm-ic{display:grid;place-items:center;width:16px;height:16px;color:var(--pop-ink2)}
 .pl-menu .pm-ic svg{width:14px;height:14px}
 .pl-menu .pm-sep{height:1px;margin:4px 6px;background:var(--pop-line)}
+
+/* WP-10: the header date keys and the header focus order are official-edition controls; the community header stays the one-row layout it had (the footer range key is its control). DOM order is ALERT, switch, date keys, buttons; `order` keeps the community visual order. */
+.ck-head .ck-range{display:none}
+.ck-head>*{order:3}.ck-head>.ck-brand{order:0}.ck-head>.shutter-slider{order:1}.ck-head>.ck-lamp{order:2}
