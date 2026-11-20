@@ -1,0 +1,157 @@
+# SPDX-License-Identifier: MIT
+# Runner acceptance smoke (owner D353, 2026-11-20): validate a new or standby Mac runner before it gets a production
+# label. The runner carries one temporary unique label (smoke-arm64-N); this workflow is the only one that names it, so
+# nothing else can reach the machine while it is under test. It runs the same non-GUI native share as the
+# native-headless leg of trusted-mac.yml on the chosen commit, then prints the timings and the runner name.
+#
+# Trust boundary (public repository: fork code must never reach these Macs):
+# - Only workflow_dispatch starts it, by the owner account, from main's definition (a branch's copy never runs here).
+# - The ref to build must be main or a tag (refs/tags/...); anything else is skipped by the job condition.
+# - Read-only token, no secrets, checkouts keep no credentials, no artifacts, no seed publish.
+# Adding a runner: add its smoke-arm64-N label to the options below (scripts/workflow-policy.mjs allows only that shape).
+# Owner step after merge: add this workflow's pinned ref to the modelplan-mac runner group (D330).
+name: runner-smoke
+run-name: "runner-smoke ${{ inputs.label }} @ ${{ inputs.ref }}"
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: "Temporary unique smoke label of the runner under test"
+        type: choice
+        required: true
+        options:
+          - smoke-arm64-5
+      ref:
+        description: "What to build: main (default) or a tag as refs/tags/<name>"
+        type: string
+        required: false
+        default: main
+permissions:
+  contents: read
+concurrency:
+  group: runner-smoke-${{ inputs.label }}
+  cancel-in-progress: false
+jobs:
+  smoke:
+    name: smoke (${{ inputs.label }})
+    if: ${{ github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && (inputs.ref == 'main' || startsWith(inputs.ref, 'refs/tags/')) }}
+    runs-on: [self-hosted, macOS, ARM64, "${{ inputs.label }}"]
+    timeout-minutes: 40
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+    steps:
+    - name: Runner identity and clock
+      shell: bash
+      run: |
+        # Never the V1 host or a GUI Mac, whatever label it carries.
+        case "${RUNNER_NAME:-}" in
+          modelplan-mac-arm64-1|*gui*) echo "::error::this job must not run on ${RUNNER_NAME}"; exit 1;;
+        esac
+        echo "runner: ${RUNNER_NAME:-unknown} (${RUNNER_ENVIRONMENT:-unknown})"
+        echo "T_START=$(date +%s)" >> "$GITHUB_ENV"
+        echo "HEADLESS_SCRATCH=$RUNNER_TEMP/headless-build" >> "$GITHUB_ENV"
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        ref: ${{ inputs.ref }}
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - name: Select Xcode (26.6 17F113 on our Macs, fail loudly)
+      run: |
+        ls -d /Applications/Xcode*.app
+        python3 - <<'PYCODE'
+        import plistlib
+        import re
+        import os
+        from pathlib import Path
+
+        apps = Path(os.environ.get("XCODE_APPS_DIR", "/Applications"))
+        candidates = []
+        for app in apps.glob("Xcode*.app"):
+            with (app / "Contents/Info.plist").open("rb") as metadata:
+                version = plistlib.load(metadata)["CFBundleShortVersionString"]
+            try:
+                with (app / "Contents/version.plist").open("rb") as metadata:
+                    build = plistlib.load(metadata).get("ProductBuildVersion", "")
+            except OSError:
+                build = ""
+            print(f"{app}: Xcode {version} ({build or 'build unknown'})", flush=True)
+            candidates.append((tuple(map(int, re.findall(r"\d+", version))), build, str(app)))
+        if not candidates:
+            raise SystemExit("No installed Xcode found")
+        # Pinned: our own Mac runners must carry Xcode 26.6 build 17F113; version alone is not enough.
+        pinned = sorted(app for version, build, app in candidates if version == (26, 6) and build == "17F113")
+        if not pinned:
+            raise SystemExit("Xcode 26.6 (17F113) is not installed on this runner; refusing to build with another toolchain")
+        selected = pinned[0] + "/Contents/Developer"
+        with open(os.environ["GITHUB_ENV"], "a") as output:
+            output.write(f"DEVELOPER_DIR={selected}\n")
+        PYCODE
+        echo "T_XCODE=$(date +%s)" >> "$GITHUB_ENV"
+    - name: Record OS and selected toolchain
+      run: |
+        sw_vers
+        xcode-select --print-path
+        xcodebuild -version
+        swift --version
+        launchctl managername
+    - name: Build the neutral app and all native checks
+      run: |
+        swift build --package-path desktop/native --scratch-path "$HEADLESS_SCRATCH" --jobs 2
+        echo "T_BUILD=$(date +%s)" >> "$GITHUB_ENV"
+    - name: Native test partition rules
+      run: python3 desktop/native/tools/ci/native_test_partition.py check
+    - name: Build the app integration tests and the integrated Community entry
+      run: |
+        swift build --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$HEADLESS_SCRATCH" --jobs 2 --build-tests
+        echo "T_TESTBUILD=$(date +%s)" >> "$GITHUB_ENV"
+    - name: The integrated Community entry is built and linked (no launching or packaging)
+      shell: bash
+      run: |
+        set -euo pipefail
+        bin="$HEADLESS_SCRATCH/debug"
+        [ -d "$bin" ] || bin=$(swift build --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$HEADLESS_SCRATCH" --show-bin-path)
+        test -x "$bin/ModelPlanCommunityApp" || { echo "::error::ModelPlanCommunityApp was not linked in $bin"; exit 1; }
+        ls -l "$bin/ModelPlanCommunityApp"
+    - name: App integration tests, headless leg (classes in native-test-partition.json; no window server)
+      shell: bash
+      run: |
+        pkg=desktop/native/ModelPlanAppIntegration
+        partition=desktop/native/tools/ci/native_test_partition.py
+        python3 "$partition" static-list --package app-integration > "$RUNNER_TEMP/app-integration-list.txt"
+        python3 "$partition" plan --static --package app-integration --leg headless --list "$RUNNER_TEMP/app-integration-list.txt" --args "$RUNNER_TEMP/app-integration-args.txt"
+        selection=()
+        while IFS= read -r argument; do selection+=("$argument"); done < "$RUNNER_TEMP/app-integration-args.txt"
+        swift test --package-path "$pkg" --scratch-path "$HEADLESS_SCRATCH" --jobs 2 --skip-build "${selection[@]}" 2>&1 | tee "$RUNNER_TEMP/app-integration-headless.log"
+        python3 "$partition" verify --static --package app-integration --leg headless --list "$RUNNER_TEMP/app-integration-list.txt" --log "$RUNNER_TEMP/app-integration-headless.log"
+        echo "T_TESTS=$(date +%s)" >> "$GITHUB_ENV"
+    - name: Field bridge protocol checks (synthetic page adapter)
+      run: node --test desktop/native/ModelPlanField/WebTests/field-bridge.test.mjs
+    - name: Dock logic unit checks
+      run: swift run --package-path desktop/native --scratch-path "$HEADLESS_SCRATCH" --skip-build ModelPlanDockLogicChecks
+    - name: Native contract suite
+      run: swift run --package-path desktop/native --scratch-path "$HEADLESS_SCRATCH" --skip-build ModelPlanContractChecks
+    - name: Frozen CLI desktop contract v1 goldens
+      run: swift run --package-path desktop/native --scratch-path "$HEADLESS_SCRATCH" --skip-build ModelPlanContractV1Checks "$GITHUB_WORKSPACE/testdata/contract-v1"
+    - name: Common-run-loop deadline check
+      run: swift run --package-path desktop/native --scratch-path "$HEADLESS_SCRATCH" --skip-build ModelPlanRunLoopChecks
+    - name: Synthetic fixture integrity
+      run: python3 desktop/native/tools/check-fixture-manifests.py
+    - name: Timings and runner name
+      if: ${{ always() }}
+      shell: bash
+      env:
+        SMOKE_LABEL: ${{ inputs.label }}
+        SMOKE_REF: ${{ inputs.ref }}
+      run: |
+        now=$(date +%s)
+        span() { if [ -n "${2:-}" ] && [ -n "${1:-}" ]; then echo "$(( $2 - $1 ))s"; else echo "not reached"; fi; }
+        {
+          echo "runner: ${RUNNER_NAME:-unknown} (label $SMOKE_LABEL, ref $SMOKE_REF, $(uname -m))"
+          echo "toolchain select:   $(span "${T_START:-}" "${T_XCODE:-}")"
+          echo "native build:       $(span "${T_XCODE:-}" "${T_BUILD:-}")"
+          echo "integration build:  $(span "${T_BUILD:-}" "${T_TESTBUILD:-}")"
+          echo "headless tests:     $(span "${T_TESTBUILD:-}" "${T_TESTS:-}")"
+          echo "total:              $(span "${T_START:-}" "$now")"
+        } | tee -a "$GITHUB_STEP_SUMMARY"

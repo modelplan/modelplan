@@ -40,6 +40,14 @@ export const MAC_COMPILE_ROUTE = "runs-on: [self-hosted, macOS, ARM64, modelplan
 export const MAC_COMPILE_GATE = "github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005'))";
 export const MAC_COMPILE_IF = `if: \${{ needs.plan.outputs.run == 'true' && ${MAC_COMPILE_GATE} }}`;
 
+// Runner acceptance smoke (owner D353, 2026-11-20). Only runner-smoke.yml may take a runner by its temporary smoke
+// label, with exactly this line, in one job gated to the owner on main's definition. It starts only from
+// workflow_dispatch, and the label choice may list only smoke-arm64-N names, so it can never name a production label.
+export const RUNNER_SMOKE_PATH = ".github/workflows/runner-smoke.yml";
+export const RUNNER_SMOKE_ROUTE = 'runs-on: [self-hosted, macOS, ARM64, "${{ inputs.label }}"]';
+export const RUNNER_SMOKE_GATE = "github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && (inputs.ref == 'main' || startsWith(inputs.ref, 'refs/tags/'))";
+export const RUNNER_SMOKE_IF = `if: \${{ ${RUNNER_SMOKE_GATE} }}`;
+
 const onKeys = (text) => {
   const on = topLevelBlock(text, "on");
   return on ? [...on.matchAll(/^ {2}([A-Za-z_]+):/gm)].map((m) => m[1]) : [];
@@ -64,6 +72,25 @@ export function macCompileProblems(text) {
   const routed = jobs.filter((j) => j.lines.some((l) => l.trim() === MAC_COMPILE_ROUTE));
   if (routed.length !== 1 || text.split("\n").filter((l) => l.trim() === MAC_COMPILE_ROUTE).length !== 1) problems.push("mac-compile.yml has exactly one compile-runner job");
   else if (routed[0].lines.filter((l) => /^    if:/.test(l)).join("\n") !== "    " + MAC_COMPILE_IF) problems.push("the compile-runner job's condition must be exactly MAC_COMPILE_IF");
+  return problems;
+}
+
+export function runnerSmokeProblems(text) {
+  const problems = [];
+  if (onKeys(text).join(",") !== "workflow_dispatch") problems.push("runner-smoke.yml may start only from workflow_dispatch");
+  if (significant(topLevelBlock(text, "permissions")) !== "permissions:\n  contents: read") problems.push("runner-smoke.yml needs top-level permissions: contents: read");
+  if (/\bsecrets\./.test(text) || /^\s+[a-z-]+:\s*write\b/m.test(text)) problems.push("runner-smoke.yml may not use secrets or write permissions");
+  const checkouts = (text.match(/uses: actions\/checkout@/g) ?? []).length;
+  if (checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every runner-smoke.yml checkout must set persist-credentials: false");
+  const options = [...(topLevelBlock(text, "on") ?? "").matchAll(/^ {10}- (\S+)\s*$/gm)].map((m) => m[1]);
+  if (!options.length || options.some((o) => !/^smoke-arm64-\d+$/.test(o))) problems.push("runner-smoke.yml label options must all be smoke-arm64-N");
+  const jobs = jobBlocks(text);
+  const routed = jobs.filter((j) => j.lines.some((l) => l.trim() === RUNNER_SMOKE_ROUTE));
+  if (jobs.length !== 1 || routed.length !== 1) problems.push("runner-smoke.yml has exactly one job, on the smoke route");
+  else {
+    if (routed[0].lines.filter((l) => /^    if:/.test(l)).join("\n") !== "    " + RUNNER_SMOKE_IF) problems.push("the smoke job's condition must be exactly RUNNER_SMOKE_IF");
+    if (!routed[0].lines.some((l) => l === "    timeout-minutes: 40")) problems.push("the smoke job needs timeout-minutes: 40");
+  }
   return problems;
 }
 
@@ -95,6 +122,7 @@ function lineProblems(raw, problems, path = "") {
   const line = raw.trim();
   if (/modelplans-(publish|ci)/.test(line)) problems.add("private runner label");
   if (path !== PR_REVIEW_PATH && /modelplan-review/.test(line)) problems.add("review runner label outside pr-review.yml");
+  if (path !== RUNNER_SMOKE_PATH && /\bsmoke-arm64-\d+\b/.test(line)) problems.add("smoke runner label outside runner-smoke.yml");
   if (path !== MAC_COMPILE_PATH && /modelplan-compile\b/.test(line)) problems.add("compile runner label outside mac-compile.yml");
   if (/^runs-on:.*\b(format|join)\(/.test(line)) problems.add("dynamically constructed runner label");
   if ((line.includes("self-hosted") || line.includes("pull_request_target")) && !ALLOWED_ROUTES.has(line))
@@ -107,10 +135,12 @@ export function workflowProblems(text, path = "") {
     if (path === ".github/workflows/trusted-mac.yml" && raw.trim() === TRUSTED_MAC_ROUTE) return;
     if (path === PR_REVIEW_PATH && raw.trim() === PR_REVIEW_ROUTE) return;
     if (path === MAC_COMPILE_PATH && raw.trim() === MAC_COMPILE_ROUTE) return;
+    if (path === RUNNER_SMOKE_PATH && raw.trim() === RUNNER_SMOKE_ROUTE) return;
     lineProblems(raw, problems, path);
   };
   if (path === PR_REVIEW_PATH) for (const p of prReviewProblems(text)) problems.add(p);
   if (path === MAC_COMPILE_PATH) for (const p of macCompileProblems(text)) problems.add(p);
+  if (path === RUNNER_SMOKE_PATH) for (const p of runnerSmokeProblems(text)) problems.add(p);
   if (path === MAC_COMPILE_TRIGGER_PATH) for (const p of macCompileTriggerProblems(text)) problems.add(p);
   if (path !== ".github/workflows/trusted-mac.yml" && text.includes("MAC_GUI_LEND")) problems.add("GUI lending switch outside trusted-mac.yml");
   for (const raw of text.split("\n")) check(raw);

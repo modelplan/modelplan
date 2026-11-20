@@ -4,7 +4,7 @@ import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, prCancelProblems, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, RUNNER_SMOKE_IF, RUNNER_SMOKE_PATH, RUNNER_SMOKE_ROUTE, runnerSmokeProblems, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, prCancelProblems, workflowProblems } from "../workflow-policy.mjs";
 import { spawnSync } from "node:child_process";
 
 test("trusted Mac route is confined to the reviewed reusable workflow path", () => {
@@ -500,6 +500,32 @@ test("the compile runner is confined to mac-compile.yml, started only through wo
     assert.ok(workflowProblems(text.replace(from, to), MAC_COMPILE_PATH).length > 0, `accepted: ${from} -> ${to}`);
   }
   assert.ok(macCompileProblems(text.replace("    if: ${{ needs.plan.outputs.run == 'true' && github.repository", "    if: ${{ true || github.repository")).length > 0);
+});
+
+test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on main, read-only, 40 minutes", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/runner-smoke.yml", import.meta.url), "utf8");
+  assert.deepEqual(workflowProblems(text, RUNNER_SMOKE_PATH), []);
+  assert.ok(text.includes(RUNNER_SMOKE_ROUTE) && text.includes(RUNNER_SMOKE_IF));
+  for (const part of ["github.actor_id == '11829005'", "github.actor == 'guanbear'", "github.triggering_actor == 'guanbear'", "github.ref == 'refs/heads/main'", "startsWith(inputs.ref, 'refs/tags/')"]) assert.ok(RUNNER_SMOKE_IF.includes(part), part);
+  assert.ok(text.startsWith("# SPDX-License-Identifier: MIT\n"));
+  const mutations = [
+    ["  workflow_dispatch:\n", "  pull_request:\n  workflow_dispatch:\n"],
+    ["  contents: read\n", "  contents: write\n"],
+    ["persist-credentials: false", "persist-credentials: true"],
+    ["          - smoke-arm64-5\n", "          - smoke-arm64-5\n          - modelplan-mac\n"],
+    [" && github.actor == 'guanbear'", ""],
+    [" && github.ref == 'refs/heads/main'", ""],
+    ["timeout-minutes: 40", "timeout-minutes: 400"],
+    ["jobs:\n", "jobs:\n  extra:\n    runs-on: [self-hosted, macOS, ARM64, modelplan-mac-nongui]\n    steps: []\n"],
+  ];
+  for (const [from, to] of mutations) {
+    assert.ok(text.includes(from), from);
+    assert.ok(workflowProblems(text.replace(from, to), RUNNER_SMOKE_PATH).length > 0, `accepted: ${from} -> ${to}`);
+  }
+  assert.ok(runnerSmokeProblems(text.replace("secrets", "x")).length === 0);
+  // The smoke label and route are refused in any other workflow.
+  assert.ok(workflowProblems(text, ".github/workflows/other.yml").length > 0);
+  assert.ok(workflowProblems("runs-on: [self-hosted, macOS, ARM64, smoke-arm64-5]\n", ".github/workflows/other.yml").length > 0);
 });
 
 test("the mac-compile trigger is a no-permission, no-action pull_request run", () => {
