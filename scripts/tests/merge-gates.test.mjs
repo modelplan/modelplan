@@ -1464,3 +1464,52 @@ test("gh lanes: shadow lanes never admit data-sync; ghglm counts only on its con
   assert.equal(evalPr({ files: [file("scripts/tool.mjs")], comments: [comment(v("block", H, "ghglm"))] }).state, R.PENDING, "a ghglm block never vetoes by default");
   assert.ok(R.isShadowLane("(ghsolshadow)") && R.isShadowLane("gh-terra-shadow") && !R.isShadowLane("(ghsol)"));
 });
+
+// owner D367 addendum: on a PR labelled review:gpt the GPT verdict decides; (ghglm) is advisory whatever REVIEW_GLM_TIERS says.
+test("review:gpt: GLM is advisory and a REVIEWER: ghglm assignment pins nothing on a labelled PR", () => {
+  const labelled = pr({ labels: [{ name: "review:gpt" }] });
+  const files = [file("cli/internal/quota/x.go")];   // tier 2
+  const glmTiers = [1, 2];
+  const ev = (p, comments) => R.evaluatePr({ pr: p, items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers });
+  // labelled: GLM block + GPT merge -> merge
+  assert.equal(ev(labelled, [comment(v("block", H, "ghglm")), comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  // labelled: GLM merge only -> pending (does not count for merge, even on a tier GLM may decide)
+  assert.equal(ev(labelled, [comment(v("merge", H, "ghglm"))]).state, R.PENDING);
+  // labelled: GLM block alone does not block either
+  assert.equal(ev(labelled, [comment(v("block", H, "ghglm"))]).state, R.PENDING);
+  // unlabelled: unchanged (GLM counts on its tiers: its block vetoes, its merge decides)
+  assert.equal(ev(pr(), [comment(v("merge", H, "ghglm"))]).state, R.SUCCESS);
+  assert.notEqual(ev(pr(), [comment(v("block", H, "ghglm")), comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  // sticky: REVIEWER: ghglm pins an unlabelled PR, but not a labelled one, where ghsol's merge counts
+  const pin = comment("REVIEWER: ghglm");
+  assert.equal(R.reviewerLane(R.feed([pin])), "(ghglm)");
+  assert.equal(R.reviewerLane(R.feed([pin]), true), null);
+  assert.equal(ev(labelled, [pin, comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  assert.notEqual(ev(pr(), [pin, comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  // a REVIEWER: assignment to another lane still pins a labelled PR
+  assert.equal(R.reviewerLane(R.feed([comment("REVIEWER: ghsol")]), true), "(ghsol)");
+});
+
+// owner 2026-11-21: on a review:gpt PR whose GPT is out of quota, the workflow's marked GLM verdict counts.
+test("review:gpt: the GLM fallback verdict counts only with the workflow's marker line at the exact head", () => {
+  const labelled = pr({ labels: [{ name: "review:gpt" }] });
+  const files = [file("cli/internal/quota/x.go")];
+  const ev = (p, comments) => R.evaluatePr({ pr: p, items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf });   // REVIEW_GLM_TIERS empty
+  const M = R.GPT_FALLBACK_MARKER;
+  assert.equal(M, "REVIEW-GPT-FALLBACK: GPT quota out; GLM verdict counts; mandatory nightly sampling");
+  const marked = (verdict, sha = H) => comment(`GLM review\n\n${M}\n\nVERDICT: ${verdict} @ ${sha} (ghglm)`);
+  assert.equal(ev(labelled, [marked("merge")]).state, R.SUCCESS, "marked merge counts");
+  assert.equal(ev(labelled, [marked("block")]).state, R.FAILURE, "marked block blocks");
+  assert.equal(ev(labelled, [comment(v("merge", H, "ghglm"))]).state, R.PENDING, "no marker: advisory");
+  assert.equal(ev(labelled, [comment(v("block", H, "ghglm"))]).state, R.PENDING);
+  // the marker must be in the same comment as the verdict, exact, and at the exact head
+  assert.equal(ev(labelled, [comment(M), comment(v("merge", H, "ghglm"))]).state, R.PENDING, "marker in another comment");
+  assert.equal(ev(labelled, [comment(`${M} extra\n\nVERDICT: merge @ ${H} (ghglm)`)]).state, R.PENDING, "inexact marker line");
+  assert.equal(ev(labelled, [marked("merge", OLD)]).state, R.PENDING, "other head");
+  assert.equal(ev(labelled, [{ ...marked("merge"), user: { login: "x", id: 2 } }]).state, R.PENDING, "untrusted author");
+  // unlabelled: the marker changes nothing (GLM counts only on REVIEW_GLM_TIERS)
+  assert.equal(ev(pr(), [marked("merge")]).state, R.PENDING);
+  assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers: [2] }).state, R.SUCCESS, "unlabelled unchanged");
+  // GPT still decides when it answered: GPT merge beats nothing, a GPT block beats a marked GLM merge
+  assert.equal(ev(labelled, [marked("merge"), comment(v("block", H, "ghsol"))]).state, R.FAILURE);
+});

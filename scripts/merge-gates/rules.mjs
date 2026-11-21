@@ -252,7 +252,8 @@ export function autoCarry(items, head, prove = () => ({ ok: false }), ignore = (
 
 // Sticky reviewer (owner 2026-11-18): "REVIEWER: <lane>" on its own line in a trusted comment names the one GPT lane
 // whose VERDICT counts for the PR; the latest such line wins. Other lanes become advisory notes. Null = no sticky.
-export function reviewerLane(items) {
+// gpt: the PR carries review:gpt (gptLabelled); then an assignment to (ghglm) pins nothing, so ghsol reviews it.
+export function reviewerLane(items, gpt = false) {
   let lane = null;
   // Comments only: the workflow re-evaluates on issue_comment events, not on review submit/edit/dismiss, so a
   // review-borne assignment could leave a stale gate status.
@@ -261,8 +262,27 @@ export function reviewerLane(items) {
       const m = /^REVIEWER: \(?([a-z0-9]+(?:-[a-z0-9]+)*)\)?\s*$/i.exec(l);
       if (m) lane = `(${m[1].toLowerCase()})`;
     }
-  return lane;
+  return gpt && lane === GLM_LANE ? null : lane;
 }
+// Per-PR override (owner D367 addendum): the label review:gpt, read from the trusted REST pull request, never from a PR
+// file. On such a PR the GPT verdict decides: (ghglm) is advisory (counts for nothing, blocks nothing) whatever
+// REVIEW_GLM_TIERS says, and a REVIEWER: ghglm assignment pins nothing.
+export const GPT_LABEL = "review:gpt";
+// The one exception: when GPT is out of quota the workflow's GLM fallback verdict counts. It is a normal (ghglm) verdict
+// whose own comment also carries this exact marker line (posted by the workflow only: the model's text is defused),
+// at the exact head. Without the marker (ghglm) stays advisory on a labelled PR. Returns "merge" | "block" | null.
+export const GPT_FALLBACK_MARKER = "REVIEW-GPT-FALLBACK: GPT quota out; GLM verdict counts; mandatory nightly sampling";
+export function gptFallbackVerdict(items, head) {
+  let out = null;
+  for (const x of items) {
+    const ls = lines(x.body);
+    if (!ls.includes(GPT_FALLBACK_MARKER)) continue;
+    const m = verdicts([x], head, []).get(GLM_LANE);
+    if (m) out = m;
+  }
+  return out;
+}
+export const gptLabelled = (pr) => (pr?.labels ?? []).some((l) => l?.name === GPT_LABEL);
 
 // ---- GLM-out fallback (owner 2026-11-09: "GLM fails -> there must be a fallback; mix them") ----
 // D243: GLMREV and DESIGN no longer gate. The rules below still decide which marker the description reports.
@@ -632,11 +652,15 @@ export function dataSyncProblem({ pr, files, items, sync, glmTiers = DEFAULT_GLM
   if (commit.parents[0].sha !== run.head_sha) return "head commit is not on the commit the data-sync run checked out";
   // The assigned reviewer (REVIEWER:) is the only lane whose merge counts here too. A shadow lane never admits, and
   // (ghglm) only on a tier it may decide.
-  const sticky = reviewerLane(items);
+  if (gptLabelled(pr)) glmTiers = [];
+  const sticky = reviewerLane(items, gptLabelled(pr));
   const t = tierOverride(items) ?? pathTier(prPaths(files));
   if (sticky && !eligibleLanes(t, glmTiers).includes(sticky)) return `assigned reviewer ${sticky} is not an eligible GPT lane for tier ${t}`;
-  const admits = (l) => !isShadowLane(l) && (l !== GLM_LANE || eligibleLanes(t, glmTiers).includes(GLM_LANE));
-  if (![...verdicts(items, pr.head.sha, [])].some(([l, v]) => v === "merge" && admits(l) && (!sticky || l === sticky))) return "needs a trusted VERDICT: merge @ the exact head";
+  const fbGlm = gptLabelled(pr) ? gptFallbackVerdict(items, pr.head.sha) : null;
+  const admits = (l) => !isShadowLane(l) && (l !== GLM_LANE || fbGlm !== null || eligibleLanes(t, glmTiers).includes(GLM_LANE));
+  const dsVerdicts = verdicts(items, pr.head.sha, []);
+  if (fbGlm) dsVerdicts.set(GLM_LANE, fbGlm);
+  if (![...dsVerdicts].some(([l, v]) => v === "merge" && admits(l) && (!sticky || l === sticky))) return "needs a trusted VERDICT: merge @ the exact head";
   return null;
 }
 
@@ -648,6 +672,8 @@ export function dataSyncProblem({ pr, files, items, sync, glmTiers = DEFAULT_GLM
 // glmTiers: parseGlmTiers(vars.REVIEW_GLM_TIERS), the tiers on which (ghglm) decides.
 export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now(), glmTiers = DEFAULT_GLM_TIERS }) {
   const head = pr.head.sha;
+  const gpt = gptLabelled(pr);
+  if (gpt) glmTiers = [];
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
   if (pr.state !== "open") return res(FAILURE, `PR is ${pr.state}`);
@@ -665,7 +691,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
-  const glmAdvice = !eligibleLanes(tier, glmTiers).includes(GLM_LANE);
+  const fbGlm = gpt ? gptFallbackVerdict(items, head) : null;   // labelled PR, GPT out of quota: the marked GLM verdict counts
+  const glmAdvice = !eligibleLanes(tier, glmTiers).includes(GLM_LANE) && fbGlm === null;
   const auto = chain.length ? null : autoCarry(items, head, proveMainMerges, (lane) => glmAdvice && lane === GLM_LANE);
   const carried = auto ? [auto.from] : chain;
   const fb = { until: glmFallbackUntil, now, used: [] };
@@ -675,9 +702,10 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // tier split: on tier 2 a macrev (Terra) verdict is advice. A block from a counting GPT lane, or an unnamed one, at the
   // head (or a verified carried head) stops every tier, tier 0 included. GLM, (sonnet) and other lanes are input.
   const allLanes = verdicts(items, head, carried);
-  const eligible = eligibleLanes(tier, glmTiers);
+  if (fbGlm) allLanes.set(GLM_LANE, fbGlm);
+  const eligible = [...eligibleLanes(tier, glmTiers), ...(fbGlm ? [GLM_LANE] : [])];
   const gptLanes = [...eligible, "(unnamed)"];
-  const assigned = reviewerLane(items);
+  const assigned = reviewerLane(items, gpt);
   // An assignment naming a lane that cannot review this tier (Sonnet, unknown, Terra on tier 2) is invalid: it filters
   // nothing, so no GPT block is hidden, and it holds the PR until the coordinator fixes it.
   const sticky = assigned && eligible.includes(assigned) ? assigned : null;

@@ -35,7 +35,9 @@ if (env.EVENT === "workflow_dispatch") {
   await current(n, "");
   out(n, "");
 }
-if (env.WORKFLOW === "ci") {
+// "review-label": the label-trigger run of a pull_request (it only records that review:gpt was added); the label itself
+// is read later from the REST pull request, never from this event.
+if (env.WORKFLOW === "ci" || env.WORKFLOW === "review-label") {
   const n = String(env.PR_INPUT ?? ""), sha = String(env.TRIGGER_SHA ?? "");
   if (!/^[1-9][0-9]*$/.test(n) || !isSha(sha)) out("", "", "ci run without a PR or head");
   await current(n, sha);

@@ -103,3 +103,6 @@ output("tier", String(d.tier));
 output("mode", mode);
 output("base", base);
 output("providers", d.providers.join(","));
+// Per-PR override (label review:gpt, read from the REST pull request above): GPT first whatever REVIEW_PROVIDER_MODE says.
+output("gpt", String(d.gpt));
+output("provider_mode", d.gpt ? "gpt-first" : "");

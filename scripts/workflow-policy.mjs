@@ -59,7 +59,7 @@ function stepBlocks(jobLines) {
 export function prReviewSolProblems(text) {
   const problems = [];
   const keys = onKeys(text);
-  if (!/^ {4}workflows: \[ci, mac-compile\]$/m.test(topLevelBlock(text, "on") ?? "")) problems.push("pr-review-sol.yml's workflow_run follows only ci and mac-compile");
+  if (!/^ {4}workflows: \[ci, mac-compile, review-label\]$/m.test(topLevelBlock(text, "on") ?? "")) problems.push("pr-review-sol.yml's workflow_run follows only ci, mac-compile and review-label");
   if (keys.join(",") !== PR_REVIEW_SOL_TRIGGERS.join(",")) problems.push("pr-review-sol.yml may start only from workflow_run and workflow_dispatch");
   if (!/^permissions: \{\}$/m.test(text)) problems.push("pr-review-sol.yml needs top-level permissions: {}");
   if (/self-hosted|pull_request_target/.test(text)) problems.push("pr-review-sol.yml runs only on GitHub-hosted runners");
@@ -86,6 +86,7 @@ export function prReviewSolProblems(text) {
 // no checkout and no actions. The enforced boundary is the modelplan-compile runner group, restricted to
 // mac-compile.yml@refs/heads/main.
 export const MAC_COMPILE_PATH = ".github/workflows/mac-compile.yml";
+export const REVIEW_LABEL_PATH = ".github/workflows/review-label.yml";
 export const MAC_COMPILE_TRIGGER_PATH = ".github/workflows/mac-compile-trigger.yml";
 export const MAC_COMPILE_ROUTE = "runs-on: [self-hosted, macOS, ARM64, modelplan-compile]";
 export const MAC_COMPILE_GATE = "github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005'))";
@@ -344,6 +345,16 @@ export function macCompileTriggerProblems(text) {
   return problems;
 }
 
+// review-label.yml: the no-op trigger of pr-review-sol.yml for the review:gpt label (same shape as the compile trigger).
+export function reviewLabelProblems(text) {
+  const problems = [];
+  if (onKeys(text).join(",") !== "pull_request") problems.push("review-label.yml may start only from pull_request");
+  if (!/^permissions: \{\}$/m.test(text)) problems.push("review-label.yml needs top-level permissions: {}");
+  if (/^\s*(?:-\s*)?(?:uses|permissions):/m.test(text.replace(/^permissions: \{\}$/m, ""))) problems.push("review-label.yml may not use actions or ask for permissions");
+  if (/\bsecrets\./.test(text)) problems.push("review-label.yml may not use secrets");
+  return problems;
+}
+
 // GitHub runs top-level .yml and .yaml files under .github/workflows/.
 export function isWorkflowFile(path) {
   return /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path);
@@ -397,6 +408,7 @@ export function workflowProblems(text, path = "") {
   if (path === PR_REVIEW_SOL_PATH) for (const p of prReviewSolProblems(text)) problems.add(p);
   if (path === MAC_COMPILE_PATH) for (const p of macCompileProblems(text)) problems.add(p);
   if (path === RUNNER_SMOKE_PATH) for (const p of runnerSmokeProblems(text)) problems.add(p);
+  if (path === REVIEW_LABEL_PATH) for (const p of reviewLabelProblems(text)) problems.add(p);
   if (path === MAC_COMPILE_TRIGGER_PATH) for (const p of macCompileTriggerProblems(text)) problems.add(p);
   if (path !== ".github/workflows/trusted-mac.yml" && text.includes("MAC_GUI_LEND")) problems.add("GUI lending switch outside trusted-mac.yml");
   for (const raw of text.split("\n")) check(raw);
