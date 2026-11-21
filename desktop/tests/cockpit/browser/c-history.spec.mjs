@@ -41,14 +41,14 @@ test('D-D the Chinese label names the records as local',async({page})=>{
 
 test('D36 the Subscription usage block reads the linked tools, and unknown kinds stay --',async({page})=>{
  await open(page,fixture().data);
- await page.keyboard.press('1');await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.keyboard.press('1');await page.getByRole('button',{name:'Plans',exact:true}).click();
  const stats=page.locator('.sp-stats');await expect(stats).toContainText('1k');await expect(stats).toContainText('40 t/s');await expect(stats).toContainText('--');
 });
 
 test('D36 an unlabelled project is named by its rank',async({page})=>{
  await open(page,fixture().data);
  await page.getByRole('button',{name:'Breakdown',exact:true}).click();
- await expect(page.locator('.wh-n').first()).toHaveText('Project 1');
+ await expect(page.locator('.wd-n').first()).toHaveText('Project 1');
 });
 
 for(const [name,extra] of [['recording off',{coverage:'recording-off',subscriptions:[],daily:[]}],['no history',null]])
@@ -89,9 +89,9 @@ test('SET-9-19 project names off: a labelled project in the ranking is named by 
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
  await page.getByRole('button',{name:'Breakdown',exact:true}).click();
- await expect(page.locator('.wh-n').first()).toHaveText('Project 1');
+ await expect(page.locator('.wd-n').first()).toHaveText('Project 1');
  expect(await receive(send('appearance',{...appearance,showProjectNames:true}))).toBe(true);
- await expect(page.locator('.wh-n').first()).toHaveText('desktop-secret');
+ await expect(page.locator('.wd-n').first()).toHaveText('desktop-secret');
 });
 
 // H6/H7: closed cycles and their resets under the subscription, never a reset card claimed from a drop.
@@ -101,7 +101,7 @@ test('D36 the Subscription history shows closed cycles and reset rows',async({pa
   {startedAt:at(3),resetsAt:at(2.8),points:40,hadDrop:false,spent:[{model:null,effort:'high',fast:false,points:40}]},
   {startedAt:at(2),resetsAt:at(1.8),points:60,hadDrop:true,spent:[]}]}];
  await open(page,data);
- await page.keyboard.press('1');await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.keyboard.press('1');await page.getByRole('button',{name:'Plans',exact:true}).click();
  await page.locator('[data-opt="tab"] b').nth(1).click();
  await expect(page.locator('.cy')).toHaveCount(2);await expect(page.locator('.cy .drop')).toHaveCount(1);
  // The wire is oldest first and the chart runs left to right, so the later cycle (with the drop) is on the right.
