@@ -48,6 +48,15 @@ test('CKP-PORT-03 D371 the whole HUD stays inside the safe area, 10 px in from t
  expect(hud.x-port.x).toBeGreaterThanOrEqual(10);expect(hud.y-port.y).toBeGreaterThanOrEqual(10);
  expect(port.x+port.width-(hud.x+hud.width)).toBeGreaterThanOrEqual(10);expect(port.y+port.height-(hud.y+hud.height)).toBeGreaterThanOrEqual(10);
 });
+test('CKP-PORT-03 D371 variant B: a half-opacity scrim reaching 48 pt left and right and 16 pt above and below the list; grey #aab6bf reads',async({page})=>{
+ await open(page);
+ const look=await page.locator('.hud').evaluate(h=>{const box=h.getBoundingClientRect(),s=getComputedStyle(h,'::before'),lum=c=>{const [r,g,b]=c.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;},ratio=c=>(lum(c)+.05)/(lum('rgb(3, 8, 16)')+.05);
+  return {inset:[s.top,s.right,s.bottom,s.left],image:s.backgroundImage,rank:getComputedStyle(h.querySelector('.hp-n')).color,rec:getComputedStyle(h.querySelector('.hp-rec')).color,rankRatio:ratio(getComputedStyle(h.querySelector('.hp-n')).color),recRatio:ratio(getComputedStyle(h.querySelector('.hp-rec')).color)};});
+ expect(look.inset).toEqual(['-16px','-48px','-16px','-48px']);
+ expect(look.image).toContain('rgba(0, 0, 0, 0.25)');expect(look.image).not.toContain('rgba(0, 0, 0, 0.5)');
+ expect(look.rank).toBe('rgb(170, 182, 191)');
+ expect(look.rankRatio).toBeGreaterThan(7);expect(look.recRatio).toBeGreaterThan(7);
+});
 test('CKP-PORT-04 D371 the ★ effort column lines up across rows whatever the name length',async({page})=>{
  const names=['A','GPT-6.1 Terra Max','Luna','Gemini 4 Argon','MiMo','Sol'];
  await open(page,{published:names.map((name,i)=>({...model('q'+i,40+i,.1*(i+1)),name}))});

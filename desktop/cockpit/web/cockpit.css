@@ -123,7 +123,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
    text, and every letter carries a 1 px dark outline so it reads on the bright earth limb. The HUD block itself stays at
    (76,24) 180x160, inside the safe area (10 px in from the glass's curved edge); the scrim never grows past the port. */
 #cockpit[data-layout] .hud.hud-b{left:58px;top:10px;width:180px;height:160px;display:block;background:none;border-radius:0}
-#cockpit .hud::before{content:"";position:absolute;inset:-8px -26px -8px;z-index:-1;pointer-events:none;background:radial-gradient(ellipse closest-side at 50% 50%,rgba(0,0,0,.5) 0,rgba(0,0,0,.32) 65%,rgba(0,0,0,0) 100%)}
+#cockpit .hud::before{content:"";position:absolute;inset:-16px -48px;z-index:-1;pointer-events:none;background:radial-gradient(ellipse closest-side at 50% 50%,rgba(0,0,0,.25) 0,rgba(0,0,0,.16) 65%,rgba(0,0,0,0) 100%)}
 #cockpit .hud{isolation:isolate}
 #cockpit .hud .hp,#cockpit .hud .hp b,#cockpit .hud .hp-n,#cockpit .hud .hp-rec,#cockpit .hud .hud-axis-label,#cockpit .hud .hud-rank{-webkit-text-stroke:1px rgba(0,0,0,.6);paint-order:stroke fill}
 #cockpit .hud .hud-axis-label,#cockpit .hud .hud-rank{stroke:rgba(0,0,0,.6);stroke-width:1px;-webkit-text-stroke:0}
@@ -154,7 +154,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
    auto tracks used to split its free width and moved the ★ by the name's length. */
 #cockpit .hud-b .hp{display:grid;grid-column:1/-1;grid-template-columns:subgrid;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap}
 #cockpit .hud-b .hp b{font:500 10px/12px var(--f-lcd);overflow:hidden;text-overflow:clip;min-width:0}
-#cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-rec{margin-left:0;justify-self:start}#cockpit .hud-b .hp-n{color:var(--muted,#aab6bf)}
+#cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-rec{margin-left:0;justify-self:start}#cockpit .hud-b .hp-n{color:#aab6bf}
 .hud-axis{fill:none;stroke:#e9edf030;stroke-width:.7}.hud-axis-label{font:400 9px var(--f-silk);fill:#aab6bf}
 .hud-rank{font:500 9px var(--f-lcd);fill:#f3e8d5}.hud-rank.dominated{fill:#aab6bf}
 
@@ -342,19 +342,22 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 /* Owner badcase 11-21 (B8): tag (11) + number line + bar and trend (13) must fit the 44-46 px row; the tag's clipped box
    let the grid squeeze it to nothing first. The tag never shrinks, the number line takes 18 px (the 20 px digits keep their
    size), and only the trend line may give way at the meter's bottom. */
-.ck-eng .pl-cell{row-gap:1px}
-.ck-eng .pl-cell .pl-tag{display:block;min-width:0;min-height:11px;font:400 10px/11px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ck-eng .pl-cell .qnum{line-height:18px}
-.ck-eng .pl-cell .pl-meter{min-height:0;overflow:hidden}
-.ck-eng .pl-cell .qline{justify-content:space-between}
+/* D371 Q5 (owner 11-21): a plugin cell is two layers like the quota cells, 31 pt: the 22 pt number line ("39% CPU", the 10 px grey tag
+   inline after the %, never hidden; the side value right-aligned at the 4 pt cell padding, given way full, short, then gone) and a
+   6 pt bar 3 pt below, its trend a 1 px line inside the track. The subscription table owns the row height; the cell centres in it. */
+.ck-eng .pl-cell{row-gap:3px;overflow:visible}
+.ck-eng .pl-cell .qline{display:flex;align-items:baseline;justify-content:flex-start;gap:4px;height:22px;min-width:0}
+.ck-eng .pl-cell .pl-lead{display:inline-flex;align-items:baseline;flex:none;gap:3px;white-space:nowrap}
+.ck-eng .pl-cell .pl-tag{display:inline;flex:none;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}
+.ck-eng .pl-cell .qnum{line-height:22px}
+.ck-eng .pl-cell .qtxt.pl-side{flex:1 1 0;min-width:0;overflow:hidden;white-space:nowrap;text-align:right;text-overflow:clip}
 .ck-eng .pl-cell.pl-mid .qnum{color:var(--st-mid)}.ck-eng .pl-cell.pl-low .qnum{color:var(--st-low)}
-.ck-eng .pl-meter{display:grid;row-gap:2px;min-width:0}
-.ck-eng .pl-bar{position:relative;display:block;height:5px;border-radius:1px;background:var(--lcd-ghost);overflow:hidden}
+.ck-eng .pl-meter{display:block;min-width:0}
+.ck-eng .pl-bar{position:relative;display:block;height:6px;border-radius:1px;background:var(--lcd-ghost);overflow:hidden}
 .ck-eng .pl-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:1px;background:var(--pl-ink,var(--lcd-ink))}
 .ck-eng .pl-bar.pl-tone i{background:var(--st-ok)}.ck-eng .pl-cell.pl-mid .pl-bar.pl-tone i{background:var(--st-mid)}.ck-eng .pl-cell.pl-low .pl-bar.pl-tone i{background:var(--st-low)}
-.ck-eng .pl-cell:has(.pl-tone) .pl-trend path{stroke:var(--st-ok)}.ck-eng .pl-cell.pl-mid:has(.pl-tone) .pl-trend path{stroke:var(--st-mid)}.ck-eng .pl-cell.pl-low:has(.pl-tone) .pl-trend path{stroke:var(--st-low)}
-.ck-eng .pl-trend{display:block;width:100%;height:6px;overflow:visible}
-.ck-eng .pl-trend path{fill:none;stroke:var(--pl-ink,var(--lcd-ink));stroke-width:1;opacity:.7;vector-effect:non-scaling-stroke}
+.ck-eng .pl-trend{display:block;position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
+.ck-eng .pl-trend path{fill:none;stroke:var(--lcd-ink);stroke-width:1;opacity:.6;vector-effect:non-scaling-stroke}
 .ck-eng .pl-foot{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 4px;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;min-width:0}
 .ck-eng .pl-foot .pl-fit{min-width:0;overflow:hidden;text-overflow:ellipsis}.ck-eng .pl-foot .pl-foot-v{color:var(--lcd-ink)}
 .ck-eng .eng-keys .ek-bay .bay-dash{font-size:0}
