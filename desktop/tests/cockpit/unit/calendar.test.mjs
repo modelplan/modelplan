@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {capture} from '../fixture.mjs';
 import {HOUR,addDays,startOfDay,dayOffset,stripWindow,dayWindow,hourMarks,midnights,dayPieces,packLanes,nextMinute,wallHours,hhmm} from '../../../cockpit/.tmp/compiled/src/calendar-time.js';
-import {parseCalendarData,calendarFromCockpit,abbreviation,CALENDAR_MAX_BYTES} from '../../../cockpit/.tmp/compiled/src/calendar-data.js';
+import {parseCalendarData,calendarFromCockpit,abbreviation,shortName,CALENDAR_MAX_BYTES} from '../../../cockpit/.tmp/compiled/src/calendar-data.js';
 import {duration,dayEvents,calendarPlugin} from '../../../cockpit/.tmp/compiled/src/calendar-plugin.js';
 import {PluginRegistry} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
 import {builtinPlugins} from '../../../cockpit/.tmp/compiled/src/plugin-builtins.js';
@@ -98,13 +98,14 @@ test('D323/D328: the calendar draws its column and screen, and falls back to D29
  assert.equal(typeof column.draw,'function');assert.equal(typeof screen.draw,'function');
  assert.ok(column.cells.length>=2&&column.cells.length<=3);
  assert.deepEqual(column.cells.slice(0,2).map(c=>c.tag.full),['plugin.calendarReset','plugin.calWeekReset']);
- assert.match(column.cells[0].side.full,/^CL 12:30 · plugin\.calIn\{"t":"1h10"\}$/);
+ assert.equal(column.cells[0].big,'12:30');assert.equal(column.cells[0].side.full,'plugin.calIn{"t":"1h10"}');
+ assert.deepEqual([column.cells[0].subline.colour,column.cells[0].subline.text.full.startsWith('Claude '),column.cells[0].subline.text.short],['#ff9a6a',true,'Claude']);
  // The bottom line: the next peak, here GL at 22:00, 10h40 away.
  assert.equal(column.foot.label.full,'plugin.calendarPeak');assert.equal(column.foot.value.full,'plugin.calIn{"t":"10h40"}');
  assert.ok(screen.lines.length>0&&screen.lines.every(l=>typeof l.label==='string'&&typeof l.value==='string'));
  // While a peak runs: "GL peak now" and what is left.
  const live=calendarPlugin.column(calendarPlugin.accept(week,undefined),{...context,now:local(2026,11,11,23)});
- assert.equal(live.foot.label.full,'plugin.calPeakNow{"a":"GL"}');assert.equal(live.foot.value.full,'plugin.calLeft{"t":"3h00"}');
+ assert.equal(live.foot.label.full,'plugin.calPeakNow{"a":"GLM"}');assert.equal(live.foot.value.full,'plugin.calLeft{"t":"3h00"}');
  // Before the first reading or host time: one waiting cell, no foot, no draw.
  const waiting=calendarPlugin.column(undefined,{...context,now:0});
  assert.deepEqual(waiting.cells.map(c=>c.tag.full),['plugin.calendarWaiting']);assert.equal(waiting.foot,null);assert.equal(waiting.draw,null);
@@ -115,8 +116,8 @@ test('D328: a user with no peak rules gets D293 cells and "Peak: no peak rules",
  const column=calendarPlugin.column(calendarPlugin.accept(codexOnly,undefined),context);
  assert.equal(column.draw,null,'column() returns no draw without peak data');
  assert.deepEqual(column.cells.map(c=>c.tag.full),['plugin.calendarReset','plugin.calWeekReset']);
- assert.match(column.cells[0].side.full,/^CX 14:10 · plugin\.calIn\{"t":"2h50"\}$/);
- assert.match(column.cells[1].side.full,/^CX .* 06:00$/);
+ assert.equal(column.cells[0].big,'14:10');assert.equal(column.cells[0].side.full,'plugin.calIn{"t":"2h50"}');
+ assert.equal(column.cells[1].big,'06:00');assert.equal(column.cells[1].subline.text.short,'Codex');
  assert.equal(column.foot.label.full,'plugin.calPeakLabel');assert.equal(column.foot.value.full,'plugin.calNoRules');
 });
 
@@ -124,8 +125,8 @@ test('D328: a day picked in the week view swaps the bottom line to that day\'s e
  const reading=calendarPlugin.accept(week,undefined),memo={view:{day:local(2026,11,12),zoom:24,centre:null}};
  const picked=calendarPlugin.column(reading,{...context,memo});
  assert.match(picked.foot.label.full,/11\/12/);
- assert.equal(picked.foot.value.full,'CL plugin.calWk 09:00');
- assert.deepEqual(dayEvents(parseCalendarData(week),local(2026,11,12),{r5:'5h',wk:'wk',peak:'peak'}),['CL wk 09:00']);
+ assert.equal(picked.foot.value.full,'Claude plugin.calWk 09:00');
+ assert.deepEqual(dayEvents(parseCalendarData(week),local(2026,11,12),{r5:'5h',wk:'wk',peak:'peak'}),['Claude wk 09:00']);
  // An empty day says so.
  assert.equal(calendarPlugin.column(reading,{...context,memo:{view:{day:local(2026,11,14),zoom:24,centre:null}}}).foot.value.full,'plugin.calendarNone');
  // The day rolled over (picked day is today now): back to the default line.
@@ -252,4 +253,39 @@ test('macrevc-844-8: after the producer\'s earliest expiry passes, a partial lis
  const {data,ref}=display();data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
  Object.assign(data.details.subscriptions[0].resetCards,{count:1,earliestExpiresAt:new Date(NOW-1000).toISOString(),items:[{id:'z'}]});
  assert.deepEqual(calendarFromCockpit(data,NOW).spans.filter(x=>x.kind==='cards').map(x=>[x.count,x.to]),[[1,null]]);
+});
+
+// --- D375: names, not codes; big time; distinct moments; no rules ------------------------------------------------------
+test('D375: a long name keeps 6 characters and an ellipsis; a short one stays whole',()=>{
+ assert.equal(shortName('Codex'),'Codex');assert.equal(shortName('OpenCode'),'OpenCo…');assert.equal(shortName('MiniMax'),'MiniMax');
+ assert.equal(shortName('OpenCode Go'),'OpenCo…');
+});
+
+test('D375: no text the calendar writes carries a two-letter code (cells, bottom line, day events, titles)',()=>{
+ const reading=calendarPlugin.accept(week,undefined),col=calendarPlugin.column(reading,context);
+ const text=JSON.stringify([col.cells,col.foot,calendarPlugin.screen(reading,context).lines,dayEvents(parseCalendarData(week),local(2026,11,12),{r5:'5h',wk:'wk',peak:'peak'})]);
+ assert.ok(!/\b(CL|CX|GL|CU)\b/.test(text),text);
+ assert.match(text,/Claude/);
+});
+
+test('D375: two rows are two moments; the same moment is written once',()=>{
+ const own=resets=>calendarPlugin.column(calendarPlugin.accept({...week,peakRules:'no',peaks:[],spans:[],subs:[week.subs[1]],resets},undefined),context);
+ // 5 h and weekly reset: two rows, two times, each with the subscription's colour and name.
+ const two=own([{sub:0,at:local(2026,11,11,14,10),kind:'5h'},{sub:0,at:local(2026,11,13,6),kind:'week'}]);
+ assert.deepEqual(two.cells.map(c=>c.big),['14:10','06:00']);assert.deepEqual(two.cells.map(c=>c.subline.colour),['#6aa8ff','#6aa8ff']);
+ // The 5 h window is over (nothing to read): the next reset IS the weekly one; it is written once, not under both rows.
+ const one=own([{sub:0,at:local(2026,11,13,6),kind:'week'}]);
+ assert.deepEqual(one.cells.map(c=>[c.tag.full,c.big]),[['plugin.calendarReset','06:00']]);
+ assert.equal(one.cells[0].subline.text.full.startsWith('Codex plugin.calWinWeek'),true);
+ // Nothing known: the "none" word, never a code.
+ assert.deepEqual(own([]).cells.map(c=>c.tag.full),['plugin.calendarReset','plugin.calWeekReset']);
+});
+
+test('D375: an empty peaks list is "no rules"; a missing field is unknown (never the same line)',()=>{
+ const {data}=display();data.subscriptions=[];data.projection.rows=data.projection.rows.filter(r=>!r.id.startsWith('declared:'));
+ data.details.peaks=[];
+ const foot=d=>calendarPlugin.column(calendarPlugin.accept(calendarFromCockpit(d,NOW),undefined),context).foot.value.full;
+ assert.equal(foot(data),'plugin.calNoRules');
+ delete data.details.peaks;
+ assert.equal(foot(data),'plugin.calPeaksUnknown');
 });
