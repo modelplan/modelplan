@@ -122,6 +122,31 @@ import ModelPlanShell
     XCTAssertNil(f.page.window, "an external click closes the cockpit once, with no widget hold")
   }
 
+  /// S15 (post-merge sampling 11-20, #1114 MP-1114-A): a Control-click on the expanded widget opens its context menu
+  /// (DockInstrumentView.mouseDown); menu tracking swallows the release. The local monitor took it as a widget press
+  /// with an untimed `.drag` hold that no release ever cleared, so the next desktop click left the cockpit open. It
+  /// is now the widget's right press: no carry hold. Fails before: the hold suppresses the next outside press.
+  func testAControlClickOnTheWidgetIsAContextPressNotACarry() throws {
+    let f = try open()
+    let widget = CGRect(x: f.usable.minX + 40, y: f.usable.minY + 40, width: 160, height: 60)
+    f.page.widgetFrame = { widget }
+    let press = CGPoint(x: widget.midX, y: widget.midY)
+    f.page.localPress(in: nil, at: press, eventType: .leftMouseDown, contextClick: true)
+    // No mouse-up follows (the menu took it). Whatever the menu did, no carry hold is left on this show.
+    XCTAssertNotEqual(f.page.dismissal.request(.outsidePress), .suppressed(.drag), "no widget carry hold after a Control-click")
+    XCTAssertNil(f.page.window, "the cockpit closes as for a right press on the widget")
+  }
+
+  /// S15: a plain left press on the widget still waits for its release (the carry path is unchanged).
+  func testAPlainLeftPressOnTheWidgetStillHoldsUntilItsRelease() throws {
+    let f = try open()
+    let widget = CGRect(x: f.usable.minX + 40, y: f.usable.minY + 40, width: 160, height: 60)
+    f.page.widgetFrame = { widget }
+    f.page.localPress(in: nil, at: CGPoint(x: widget.midX, y: widget.midY), eventType: .leftMouseDown, contextClick: false)
+    XCTAssertNotNil(f.page.window)
+    XCTAssertEqual(f.page.dismissal.request(.keyResigned), .suppressed(.drag))
+  }
+
   /// The widget press hold never outlives the show: a release that never arrives cannot keep a later show open.
   func testALostWidgetReleaseDoesNotHoldTheNextShow() throws {
     let f = try open()
