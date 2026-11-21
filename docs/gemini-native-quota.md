@@ -34,7 +34,7 @@ most two bearer-authenticated POST requests: `v1internal:loadCodeAssist` in
 onboarding, client-secret extraction, Google token refresh, inference, reset-credit
 consumption, Antigravity fallback or additional endpoint attempt. No unknown
 project/tier is replaced with an invented default. Redirects/cookie jars are
-disabled; the App's injected proxy transport is preserved.
+disabled; the CLI's shared proxy policy (`cli/internal/netproxy`) is preserved.
 
 Stable same-credential project/tier metadata lasts at most 24 hours. Raw project
 selectors stay in bounded transient process memory; persisted metadata contains

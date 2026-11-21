@@ -123,3 +123,30 @@ func TestEveryClassHasAPlainReasonInBothLanguages(t *testing.T) {
 		t.Fatal("an old saved error must not pass through")
 	}
 }
+
+// A connection that drops mid-transfer is a network failure, not an unexplained sync failure (glm-693-2).
+func TestBodyCutMidTransferIsANetworkFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "4096")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"partial":`))
+		w.(http.Flusher).Flush()
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err == nil {
+			_ = conn.Close()
+		}
+	}))
+	defer srv.Close()
+	st := &store.Store{Dir: t.TempDir()}
+	c, err := New(srv.URL, st, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Sync(context.Background(), true)
+	if s, _ := st.State(); s.LastError != store.LastErrorNetwork {
+		t.Fatalf("cut body: %q", s.LastError)
+	}
+	if !strings.Contains(Explain(err, "en"), "network") {
+		t.Fatalf("reason %q", Explain(err, "en"))
+	}
+}

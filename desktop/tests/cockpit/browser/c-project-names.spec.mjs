@@ -47,3 +47,30 @@ test('SET-9-19 the bridge refuses an appearance without the setting',async({page
  const {send,receive}=await open(page,true);const {showProjectNames,...older}=appearance;
  expect(await receive(send('appearance',older))).toBe(false);
 });
+
+test('G3-100 a session with no project reads "No project" while names are on, and "--" when names are off',async({page})=>{
+ const {send,receive,data}=await open(page,true);
+ const bare=structuredClone(data);bare.details.sessions[0].projectLabel=null;
+ expect(await receive(send('display',{data:bare}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('No project');
+ expect(await receive(send('appearance',{...appearance,showProjectNames:false}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('--');
+ const unnamed=structuredClone(data);unnamed.details.sessions[0].projectLabel='Unnamed project';
+ expect(await receive(send('appearance',{...appearance,showProjectNames:true}))).toBe(true);
+ expect(await receive(send('display',{data:unnamed}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('Unnamed project');
+});
+
+test('glm-909-1 a project whose name the CLI hides reads "--", not "No project", while names are on',async({page})=>{
+ const {send,receive,data}=await open(page,true);
+ const hidden=structuredClone(data);hidden.details.sessions[0].projectLabel=null;hidden.details.sessions[0].projectState='hidden';
+ expect(await receive(send('display',{data:hidden}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('--');
+ const none=structuredClone(data);none.details.sessions[0].projectLabel=null;none.details.sessions[0].projectState='none';
+ expect(await receive(send('display',{data:none}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('No project');
+ const unnamed=structuredClone(data);unnamed.details.sessions[0].projectLabel='Unnamed project';unnamed.details.sessions[0].projectState='unnamed';
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ expect(await receive(send('display',{data:unnamed}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('未命名项目');
+});

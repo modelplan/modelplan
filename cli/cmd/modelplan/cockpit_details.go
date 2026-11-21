@@ -16,6 +16,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/modeldisplay"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
@@ -38,6 +39,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	result.Publication = selectCockpitPublication(published, view.Projection, nil)
 	if appserver.CockpitModelsEnabled(ctx) {
 		result.PublishedModels = allCockpitModels(published)
+		result.PlanModels = cockpitPlanModels(published, result.PublishedModels)
 	}
 	now := time.Now()
 	redBelow := admission.RedBelow
@@ -79,6 +81,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		out := byRef[account.Subscription.Ref]
 		if out == nil {
 			continue
+		}
+		if len(account.ReportedModels) > 0 && len(result.PublishedModels) > 0 {
+			out.ReportedModels = reportedPublishedModels(published, reportedHarnessKey(account.Source), account.ReportedModels, result.PublishedModels)
 		}
 		for _, card := range account.Cards {
 			if card.ExpiresAt != nil && !now.Before(*card.ExpiresAt) {
@@ -162,6 +167,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			}
 		}
 	}
+	if appserver.CockpitPeaksEnabled(ctx) {
+		result.Peaks = cockpitPeaks(published, view, now)
+	}
 	if appserver.CockpitForecastEnabled(ctx) {
 		result.Forecasts = wire.ProjectForecasts(view.Projection, func(ref string) bool { return byRef[ref] != nil }, now)
 	}
@@ -207,7 +215,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	for _, today := range appserver.CockpitTodayTotals(view.QuotaReport.Accounts, perf) {
 		out := byRef[today.SubscriptionRef]
 		if out != nil && allowed[sourceScope[today.Source]] && len(out.Today) < 4 {
-			out.Today = append(out.Today, wire.CockpitToday{Source: today.Source, ObservedOutputTokens: today.OutputTokens, GenerationTps: today.GenerationTPS, BindingBasis: today.BindingBasis})
+			out.Today = append(out.Today, wire.CockpitToday{Source: today.Source, ObservedTotalTokens: today.TotalTokens, ObservedOutputTokens: today.OutputTokens, GenerationTps: today.GenerationTPS, BindingBasis: today.BindingBasis})
 		}
 	}
 	labels := projectLabels()
@@ -237,13 +245,36 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 				}
 			}
 		}
+		// G3-100: a real project whose records hold no readable name is not "no project"; glm-909-1: neither is
+		// one whose name `project-labels off` withholds. The state says which, so the strip never guesses.
+		state := wire.ProjectNone
+		switch {
+		case session.ProjectRef == nil:
+		case !labels:
+			state = wire.ProjectHidden
+		case label != nil:
+			state = wire.ProjectNamed
+		default:
+			state, label = wire.ProjectUnnamed, unnamedProjectLabel(*session.ProjectRef)
+		}
 		// The live record's account is the same evidence the working signal binds on. A reference
 		// outside this cockpit's subscriptions stays unbound; never substitute a source-wide one.
 		var subscription *string
 		if session.SubscriptionRef != nil && byRef[*session.SubscriptionRef] != nil {
 			subscription = session.SubscriptionRef
 		}
-		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
+		// CKP-FAD-11 / CKP-MFD-19: a recorded Fast session compares as Fast; any other mode stays unreported.
+		var fast *bool
+		if session.Speed == "fast" {
+			v := true
+			fast = &v
+		}
+		// CKP-STRIP-16 (owner D277): the strip shows how long the session has run and what it has produced.
+		started, tokens := cockpitSessionExtent(session, perf.Ledger.Sessions)
+		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, ProjectState: state, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast, StartedAt: started, ObservedTotalTokens: tokens, ModelDisplay: cockpitUnlistedModelDisplay(model, session.Model)})
+	}
+	if appserver.CockpitSessionsEnabled(ctx) {
+		result.RecentSessions = cockpitRecentSessions(perf.Ledger.Sessions, allowed, sourceScope, byRef, labels, view.PublicModels, now)
 	}
 	inUse := map[string]bool{}
 	for _, session := range result.Sessions {
@@ -253,6 +284,54 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		result.Publication = selectCockpitPublication(published, view.Projection, inUse)
 	}
 	return result, ctx.Err()
+}
+
+// cockpitUnlistedModelDisplay is the one place a raw model ID the publication does not list becomes a readable name
+// (G3-134). It applies only to a model that read as "unknown" and only when the raw ID is a readable model name.
+func cockpitUnlistedModelDisplay(id, raw string) *string {
+	if id != "unknown" {
+		return nil
+	}
+	if name, ok := modeldisplay.Display(raw); ok {
+		return &name
+	}
+	return nil
+}
+
+// cockpitSessionExtent returns a live session's start and its total tokens over the recorded days of the same
+// session. A start that is missing or later than the last reading is withheld; tokens are absent until the session
+// has a recorded turn with every part known, and a sum that would overflow is withheld rather than wrapped.
+func cockpitSessionExtent(session speed.LiveSession, recorded []speed.PerfSession) (*time.Time, *int64) {
+	var started *time.Time
+	if !session.StartedAt.IsZero() && !session.StartedAt.After(session.LastAt) {
+		v := session.StartedAt.UTC()
+		started = &v
+	}
+	// The ledger holds completed turns only (a turn's usage is recorded when it completes). While a turn is open
+	// (speed.LiveSession.InProgress, the live projection's own predicate, not the display status) a total would
+	// undercount, so none is shown until the turn is recorded (macrevb-1024-1).
+	if session.InProgress {
+		return started, nil
+	}
+	for _, saved := range recorded {
+		if saved.Ref != session.Ref || saved.Source != session.Source {
+			continue
+		}
+		if len(saved.Days) == 0 {
+			return started, nil
+		}
+		const maxInt64 = int64(^uint64(0) >> 1)
+		var sum int64
+		for _, day := range saved.Days {
+			total, ok := day.CompleteTotal()
+			if !ok || total > maxInt64-sum {
+				return started, nil
+			}
+			sum += total
+		}
+		return started, &sum
+	}
+	return started, nil
 }
 
 func safeCockpitLabel(s string) bool {
@@ -280,4 +359,11 @@ func cockpitModelID(raw, source string, models []digest.Model) string {
 		}
 	}
 	return "unknown"
+}
+
+// unnamedProjectLabel: the label of a project that has a reference but no readable name. The page shows it
+// in the viewer's language (prototype-tape.ts matches this exact text).
+func unnamedProjectLabel(string) *string {
+	v := "Unnamed project"
+	return &v
 }

@@ -1,0 +1,1 @@
+The cockpit overview now follows the v1 design: up to four alert lines with "+N ▸", one totals row (the range's estimated cost, its tokens and the cost per day, or "since MM-DD" when the record is shorter than the range), and one stacked bar per day sized by estimated cost. Without public price data it draws no bars, and the heatmap key stays unlit.

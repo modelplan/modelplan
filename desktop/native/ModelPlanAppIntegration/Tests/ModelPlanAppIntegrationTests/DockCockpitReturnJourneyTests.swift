@@ -22,11 +22,11 @@ import ModelPlanWire
 }
 
 @MainActor final class DockCockpitReturnJourneyTests: XCTestCase {
-    func testD22NormalCockpitCloseRestoresTheCorrectSurface() async throws {
+    func testD49WidgetStaysThroughNormalCockpitOpenAndClose() async throws {
         try await exercise(native: false)
     }
 
-    func testD22NativeDockReturnsFromCockpit() async throws {
+    func testD49NativeWidgetStaysThroughCockpitOpenAndClose() async throws {
         try await exercise(native: true)
     }
 
@@ -147,26 +147,31 @@ import ModelPlanWire
             move(to: outside)
             try await Task.sleep(for: .milliseconds(550))
             XCTAssertEqual(dock.edgePresentation?.state, .sliver, "Continuous absence hides after the grace period")
-            let panelOnly = try XCTUnwrap(placement.globalHoverRects.map {
-                CGPoint(x: $0.midX, y: $0.midY)
-            }.first { display.usableFrame.contains($0) && !placement.wakeFrame.contains($0) })
-            for (point, expected) in [(outside, DockSurfaceState.sliver), (wake, .expanded), (panelOnly, .expanded)] {
+            // D49: in both surface states the widget stays visible under the cockpit and is unchanged after close.
+            for (point, expected) in [(outside, DockSurfaceState.sliver), (wake, .expanded)] {
+                move(to: point)
+                try await waitForSurface(expected)
+                let before = try XCTUnwrap(dock.edgePresentation)
+                XCTAssertNotNil(before.paintedFrame)
                 app.showConsole()
-                XCTAssertNil(dock.edgePresentation?.paintedFrame, "Opening must withdraw the Dock synchronously")
-                if native { XCTAssertFalse(dock.nativePanel?.isVisible == true) }
+                XCTAssertEqual(dock.edgePresentation, before, "Opening leaves the widget in place")
                 let end = ContinuousClock.now + .seconds(2)
                 while !page.visible && ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(5)) }
                 XCTAssertTrue(page.visible)
-                move(to: point)
-                XCTAssertNil(dock.edgePresentation?.paintedFrame, "Pointer movement cannot reveal over an open cockpit")
-                cockpit.requestClose()
-                XCTAssertFalse(page.visible)
-                let restored = try XCTUnwrap(dock.edgePresentation)
-                XCTAssertEqual(restored.state, expected, "\(size) at \(point)")
-                let frame = expected == .expanded ? placement.frame : placement.sliverFrame
-                XCTAssertEqual(restored.paintedFrame, frame)
+                XCTAssertEqual(dock.edgePresentation, before, "The widget stays while the cockpit is open")
                 if native {
                     let panel = try XCTUnwrap(dock.nativePanel)
+                    XCTAssertTrue(panel.isVisible)
+                    XCTAssertLessThan(panel.level.rawValue, CockpitWindowController.panelLevel.rawValue, "The cockpit opens above the widget")
+                }
+                cockpit.requestClose()
+                XCTAssertFalse(page.visible)
+                let after = try XCTUnwrap(dock.edgePresentation)
+                XCTAssertEqual(after.state, expected, "\(size) at \(point)")
+                XCTAssertEqual(after.placement, placement)
+                XCTAssertEqual(after.paintedFrame, before.paintedFrame)
+                if native {
+                    let panel = try XCTUnwrap(dock.nativePanel), frame = try XCTUnwrap(before.paintedFrame)
                     XCTAssertTrue(panel.isVisible)
                     XCTAssertEqual(panel.frame.minX, frame.minX, accuracy: 1)
                     XCTAssertEqual(panel.frame.minY, frame.minY, accuracy: 1)

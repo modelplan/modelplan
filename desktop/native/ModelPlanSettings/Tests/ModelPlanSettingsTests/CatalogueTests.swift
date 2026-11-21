@@ -63,8 +63,8 @@ final class CatalogueTests: XCTestCase {
         XCTAssertEqual(try row(.login).value, .login(LoginSetting(preferences: .init(), capabilities: c.capabilities)))
         XCTAssertEqual(try row(.captureHiding).availability, .unsupportedCaptureHiding)
         // DOCK-3.3-11: the percentage switch's own name.
-        XCTAssertEqual(try row(.showPercentages).title.value(.english), "Quota widget percentages")
-        XCTAssertEqual(try row(.showPercentages).title.value(.chinese), "挂件额度百分比")
+        XCTAssertEqual(try row(.showPercentages).title.value(.english), "Quota Widget percentages")
+        XCTAssertEqual(try row(.showPercentages).title.value(.chinese), "额度挂件百分比")
         XCTAssertEqual(try row(.clearCLI).availability, .cliOwned); XCTAssertEqual(try row(.clearCLI).value, .action(nil))
         XCTAssertEqual(try row(.retention).value, .text("sessions=35d; dailyTotals=371d; owner=CLI"))
         XCTAssertEqual(try row(.clearAppCache).availability, .cacheUnavailable)
@@ -82,6 +82,7 @@ final class CatalogueTests: XCTestCase {
     func testDiagnosticsNeverIncludePersonalInputsOrRawErrors() throws {
         var c = context(), p = SettingsPreferences()
         p.subscriptionSettings["one"] = .init(alias: "private-project")
+        p.language = .chinese // the default is English now (SET-9-39); this test reads the Chinese note
         c.about = .init(appVersion: "/Users/private/account@example.com", cliVersion: "error: secret", cliState: .denied, architecture: .intelUntested)
         let text = c.about.diagnosticText
         XCTAssertEqual(text, "app=unknown\ncli=unknown\nmacOS=unknown\nreaders=\nerrors=")

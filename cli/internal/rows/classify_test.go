@@ -210,7 +210,11 @@ func TestMembershipAndNoReappearingDeniedValues(t *testing.T) {
 			id = "claude"
 		}
 		row := rowByID(t, out, id)
-		if len(out.Rows) != 1 || !reflect.DeepEqual(row.Surfaces, []Surface{SurfaceDock, SurfaceMenu, SurfaceSettings}) || row.Reason.Code != code {
+		want := []Surface{SurfaceDock, SurfaceMenu, SurfaceSettings}
+		if code != CodeOK && !hasValue(row.Accounts) { // G3-38 (D76): nothing readable, no ring; Settings and the menu keep the row
+			want = []Surface{SurfaceMenu, SurfaceSettings}
+		}
+		if len(out.Rows) != 1 || !reflect.DeepEqual(row.Surfaces, want) || row.Reason.Code != code {
 			t.Fatalf("%s lost membership/state: %+v", code, out)
 		}
 	}

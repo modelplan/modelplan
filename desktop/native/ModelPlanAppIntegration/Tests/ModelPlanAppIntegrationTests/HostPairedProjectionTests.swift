@@ -77,7 +77,7 @@ actor EntrySyntheticClient: EngineClient {
         var restarted = false
     }
 
-    static func rows(weekly: Double, fiveHour: Double? = nil, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, reserveUnit: String = "unknown", resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured, readerFailed: Bool = false, includeSession: Bool = true, extraWindow: Bool = false) throws -> WireRowsSnapshot {
+    static func rows(weekly: Double, fiveHour: Double? = nil, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", accountFreshUntil: String? = nil, resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, reserveUnit: String = "unknown", resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured, readerFailed: Bool = false, includeSession: Bool = true, extraWindow: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -102,7 +102,7 @@ actor EntrySyntheticClient: EngineClient {
         if unbound { account["subscriptionRef"] = NSNull() }
         else { account["subscriptionRef"] = "aaaaaaaaaaaaaaaa" }
         account["valueState"] = readerFailed ? "retained" : "current"
-        account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = weeklyDeadline
+        account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = accountFreshUntil ?? weeklyDeadline
         account["lastFailure"] = NSNull()
         if let reserveBalance { account["credits"] = ["balance": reserveBalance, "unit": reserveUnit] }
         session["id"] = "session:18000:main:main"; session["role"] = "session"
@@ -220,7 +220,7 @@ actor EntrySyntheticClient: EngineClient {
     func testD18NormalOptionArrowsSaveAndAnnounceWithEitherReduceMotionSource() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-keyboard-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, secondWeekly: 55)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -270,7 +270,7 @@ actor EntrySyntheticClient: EngineClient {
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 25, secondWeekly: 20)
         func start() async throws -> EngineDockMenuApplication {
-            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
             let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
                 applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
                 dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
@@ -336,7 +336,7 @@ actor EntrySyntheticClient: EngineClient {
     func testS11PulseBandsReachTheRenderedRingsReadoutsAndCardRows() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-bands-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let fixture = try Self.rows(weekly: 50, secondWeekly: 51)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -392,7 +392,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryReprojectsAtVerifiedDeadlineWithoutNewRowsAndClearsOnRevoke() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-entry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z")), elapsed = 0.0
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75)
         var acceptedStore: EngineStore?
@@ -421,7 +421,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryPreservesTwoStableAccountsAndClearsBothOnRevocation() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-multi-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z")), elapsed = 0.0
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, secondWeekly: 33)
         var acceptedStore: EngineStore?
@@ -490,7 +490,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardShowsEachAdmittedWindowsOwnSourceAndAge() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("window-provenance-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let readings = try Self.rows(weekly: 75, windowSources: .distinct)
         var elapsed = 0.0
@@ -517,23 +517,24 @@ actor EntrySyntheticClient: EngineClient {
             if let field = root as? NSTextField, field.accessibilityIdentifier() == "dock.card.text." + name { return field.stringValue }
             return root.subviews.lazy.compactMap { text($0, named: name) }.first
         }
-        XCTAssertEqual(text(dock.card, named: "source"), "Local history · 37m ago")
+        XCTAssertEqual(text(dock.card, named: "source"), "Updated 37 min ago")
         // The header names the selected window's source and age; only a row that differs repeats it.
+        // WP-15 (DOCK-3.8-50, V1-FINAL §2): the header carries only the age; no row repeats a source or age.
         XCTAssertFalse(text(dock.card, named: "row.quota:session:18000:main:main.detail")?.contains("Local history") == true)
-        XCTAssertTrue(text(dock.card, named: "row.quota:weekly:604800:main:main.detail")?.contains("Tool runtime · 11m ago") == true)
-        XCTAssertTrue(text(dock.card, named: "row.quota:missing-provenance.detail")?.contains("Unknown source · Reading time unknown") == true)
+        XCTAssertFalse(text(dock.card, named: "row.quota:weekly:604800:main:main.detail")?.contains("Tool runtime · 11m ago") == true)
+        XCTAssertFalse(text(dock.card, named: "row.quota:missing-provenance.detail")?.contains("Unknown source · Reading time unknown") == true)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertEqual(text(dock.card, named: "source"), "本地历史 · 37分钟前")
-        XCTAssertTrue(text(dock.card, named: "row.quota:weekly:604800:main:main.detail")?.contains("工具运行时 · 11分钟前") == true)
-        XCTAssertTrue(text(dock.card, named: "row.quota:missing-provenance.detail")?.contains("未知来源 · 读数时间未知") == true)
+        XCTAssertEqual(text(dock.card, named: "source"), "37 分钟前更新")
+        XCTAssertFalse(text(dock.card, named: "row.quota:weekly:604800:main:main.detail")?.contains("工具运行时 · 11分钟前") == true)
+        XCTAssertFalse(text(dock.card, named: "row.quota:missing-provenance.detail")?.contains("未知来源 · 读数时间未知") == true)
         _ = try await app.settingsHost.application.editor.commit(SettingsB20Edit.percentagePin(id, .week))
-        XCTAssertEqual(text(dock.card, named: "source"), "工具运行时 · 11分钟前")
+        XCTAssertEqual(text(dock.card, named: "source"), "11 分钟前更新")
     }
 
     func testNormalCardRetainsAccountProvenanceForRestrictedAndSourceLessMembers() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-restricted-provenance-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, secondWeekly: 55, windowSources: .restrictedWithLegacyMember)
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
@@ -567,24 +568,24 @@ actor EntrySyntheticClient: EngineClient {
         let restricted = "aaaaaaaaaaaaaaaa"
         XCTAssertNil(try XCTUnwrap(view.presentedReadingsForChecks[restricted]).outer)
         try open(restricted)
-        XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 24h ago")
+        XCTAssertEqual(text("source", in: dock.card), "Updated 24 h ago")
         XCTAssertEqual(text("row.quota:restricted-runtime.value", in: dock.card), "38%")
-        XCTAssertTrue(text("row.quota:restricted-runtime.detail", in: dock.card)?.contains("Local history · 37m ago") == true)
+        XCTAssertFalse(text("row.quota:restricted-runtime.detail", in: dock.card)?.contains("Local history · 37m ago") == true)
         let editor = app.settingsHost.application.editor
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertEqual(text("source", in: dock.card), "已有登录 · 24小时前")
+        XCTAssertEqual(text("source", in: dock.card), "24 小时前更新")
         XCTAssertEqual(text("row.quota:restricted-runtime.value", in: dock.card), "38%")
-        XCTAssertTrue(text("row.quota:restricted-runtime.detail", in: dock.card)?.contains("本地历史 · 37分钟前") == true)
+        XCTAssertFalse(text("row.quota:restricted-runtime.detail", in: dock.card)?.contains("本地历史 · 37分钟前") == true)
         XCTAssertNil(try XCTUnwrap(view.presentedReadingsForChecks[restricted]).outer)
         _ = try await editor.commit(SettingsB21Edit.language(.english))
 
         dock.interactionControllerForChecks?.dismissCard()
         events.hoverNozzle(nil)
         try open("bbbbbbbbbbbbbbbb")
-        XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 23m ago")
+        XCTAssertEqual(text("source", in: dock.card), "Updated 23 min ago")
         XCTAssertNil(text("row.source.label", in: dock.card), "The header names the source")
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertEqual(text("source", in: dock.card), "已有登录 · 23分钟前")
+        XCTAssertEqual(text("source", in: dock.card), "23 分钟前更新")
         _ = try await editor.commit(SettingsB21Edit.language(.english))
 
         dock.interactionControllerForChecks?.dismissCard()
@@ -596,17 +597,17 @@ actor EntrySyntheticClient: EngineClient {
             consentGeneration: delivery.floor.generation, data: legacy), delivery: delivery)
         await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: legacy.projection.invalidRowCount))
         try open(restricted)
-        XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 24h ago")
+        XCTAssertEqual(text("source", in: dock.card), "Updated 24 h ago")
         XCTAssertNil(text("row.source.value", in: dock.card), "provenance lives in the header (card.js cd-h), not a second row")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertEqual(text("source", in: dock.card), "已有登录 · 24小时前")
+        XCTAssertEqual(text("source", in: dock.card), "24 小时前更新")
     }
 
     /// DOCK-3.8-07 / D40: the card's reset time uses the prototype's compact form in both languages.
     func testNormalCardResetTimeUsesTheCompactPrototypeFormat() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-copy-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let resets = ISO8601DateFormatter().string(from: wall.addingTimeInterval(2 * 3600 + 14 * 60))
         let snapshot = try Self.rows(weekly: 75, weeklyDeadline: resets)
@@ -622,7 +623,7 @@ actor EntrySyntheticClient: EngineClient {
             return try XCTUnwrap(content.rows.first { $0.id == "quota:weekly:604800:main:main" }?.detail)
         }
         let english = try weekly()
-        XCTAssertTrue(english.hasPrefix("resets 2h14"), english)
+        XCTAssertTrue(english.hasPrefix("resets in 2h14"), english)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         let chinese = try weekly()
         XCTAssertTrue(chinese.hasPrefix("2h14 后重置"), chinese)
@@ -633,7 +634,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardShowsAMoneyBalanceWithoutTheRawFloat() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("money-balance-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, reserveBalance: 14_207.8550653333, reserveUnit: "money")
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -647,19 +648,19 @@ actor EntrySyntheticClient: EngineClient {
             let content = try XCTUnwrap(try dock.cardContent(for: id, at: wall))
             return try XCTUnwrap(content.rows.first { $0.id == "reserve" })
         }
-        XCTAssertEqual(try balance().label, "Balance")
-        XCTAssertEqual(try balance().value, "↺1 · 14,207.86")
+        XCTAssertEqual(try balance().label, "Reserve")
+        XCTAssertEqual(try balance().value, "Resets 1 · Balance 14,207.86")
         XCTAssertEqual(try balance().detail, "expired · Currency not reported")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertEqual(try balance().label, "余额")
-        XCTAssertEqual(try balance().value, "↺1 · 14,207.86")
+        XCTAssertEqual(try balance().label, "储备")
+        XCTAssertEqual(try balance().value, "重置次数 1 · 余额 14,207.86")
     }
 
     /// DOCK-3.6-18: an open card, including its scoped extra-quota rows, shows no native tooltip.
     func testNormalCardShowsNoNativeTooltips() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("card-tooltips-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let readings = try Self.rows(weekly: 75, extraWindow: true)
         var elapsed = 0.0
@@ -692,7 +693,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalReserveLabelAndNumberHaveVisibleRoomInBothLanguages() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reserve-extent-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, reserveBalance: 19_613.9573653333)
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
@@ -735,10 +736,93 @@ actor EntrySyntheticClient: EngineClient {
             let name = try XCTUnwrap(field(dock.card, id: "row.reserve.label"))
             let value = try XCTUnwrap(field(dock.card, id: "row.reserve.value"))
             try assertVisible(name, text: title)
-            try assertVisible(value, text: "↺1 · 19,614")
+            // The line wraps inside its column when long, so check the text and that it is on the card, not its one-line width.
+            XCTAssertEqual(value.stringValue, language == .english ? "Resets 1 · Reserve 19,614" : "重置次数 1 · 储备 19,614")
+            XCTAssertFalse(value.isHiddenOrHasHiddenAncestor)
+            XCTAssertTrue(dock.card.bounds.contains(dock.card.convert(value.bounds, from: value)), "the reserve text is not clipped by the card")
             XCTAssertLessThanOrEqual(dock.card.convert(name.bounds, from: name).maxX,
                 dock.card.convert(value.bounds, from: value).minX)
         }
+    }
+
+    /// G3-75 (build 14b): the reserve line is plain labelled text that hovering never changes, with no native tooltip,
+    /// and VoiceOver reads it once. Unit-level copy for every case lives in `testReserveLineNamesEachFigureInBothLanguages`.
+    func testNormalReserveRowHoverLeavesTheTextAndSpeechUnchanged() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("reserve-hover-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try Self.rows(weekly: 75, reserveBalance: 19_613.9573653333, reserveUnit: "credits")
+        let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 820))
+        var pointer = CGPoint(x: 700, y: 450)
+        var elapsed = 0.0
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let dock = app.composition.dock, view = dock.dockView
+        let id = "aaaaaaaaaaaaaaaa"
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let nozzle = try XCTUnwrap(view.interactionAnchor(id))
+        pointer = CGPoint(x: placement.frame.minX + nozzle.midX - view.bounds.minX,
+            y: placement.frame.maxY - nozzle.midY + view.bounds.minY)
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
+        elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
+        XCTAssertFalse(dock.card.isHidden)
+        func texts(_ root: NSView) -> [String] {
+            ((root as? NSTextField).flatMap { $0.isHiddenOrHasHiddenAncestor ? nil : [$0.stringValue] } ?? []) + root.subviews.flatMap(texts)
+        }
+        func tooltips(_ root: NSView) -> [String] { (root.toolTip.map { [$0] } ?? []) + root.subviews.flatMap(tooltips) }
+        for (language, expected) in [(SettingsLanguage.english, "Resets 1 · Credits 19,614"), (.chinese, "重置次数 1 · 点数 19,614")] {
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
+            let before = texts(dock.card)
+            XCTAssertTrue(before.contains(expected), "the labelled reserve text is on the card without any hover: \(before)")
+            // Pointer onto the row: a real mouse-entered on the row view, and the pointer inside the card.
+            var rowView: NSView?
+            func find(_ root: NSView) { if !(root is NSTextField), root !== dock.card, root.accessibilityLabel()?.contains(expected) == true { rowView = root }; root.subviews.forEach(find) }
+            find(dock.card)
+            let row = try XCTUnwrap(rowView, "the reserve row is an accessibility group carrying the text")
+            let event = try XCTUnwrap(NSEvent.enterExitEvent(with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+            row.mouseEntered(with: event)
+            elapsed += 0.5; dock.interactionControllerForChecks?.refresh()
+            XCTAssertEqual(texts(dock.card), before, "hovering the reserve row does not replace its text")
+            XCTAssertEqual(tooltips(dock.card), [], "no tooltip appears on the reserve row")
+            row.mouseExited(with: event)
+            XCTAssertEqual(texts(dock.card), before)
+            // VoiceOver: the row speaks the text once; its text fields are not read again.
+            let speech = try XCTUnwrap(dock.card.rowSpeechForChecks("reserve"))
+            XCTAssertEqual(speech.label?.components(separatedBy: expected).count, 2, "the labelled text is spoken once: \(speech)")
+            XCTAssertEqual(speech.spokenChildren, [], "the row's text fields are not read a second time")
+        }
+    }
+
+    /// G3-75: every shape of the reserve line, in both languages: resets only, credits only, both, and a money balance.
+    func testReserveLineNamesEachFigureInBothLanguages() {
+        func text(_ resets: String?, _ credits: String?, _ cls: String, _ english: Bool) -> String {
+            DockContentRow.reserveText(resets: resets, credits: credits, creditsClass: cls, creditsLabel: english ? "Reserve" : "储备", english: english)
+        }
+        // Resets only.
+        XCTAssertEqual(text("↺3", nil, "", true), "Resets 3"); XCTAssertEqual(text("↺3", nil, "", false), "重置次数 3")
+        // Credits only (the producer's value carries a unit suffix that the label replaces).
+        XCTAssertEqual(text(nil, "19,614 credits", "credits", true), "Credits 19,614")
+        XCTAssertEqual(text(nil, "19,614 点数", "credits", false), "点数 19,614")
+        // Both.
+        XCTAssertEqual(text("↺1", "19,614 credits", "credits", true), "Resets 1 · Credits 19,614")
+        XCTAssertEqual(text("↺1", "19,614 点数", "credits", false), "重置次数 1 · 点数 19,614")
+        // Money balance keeps the currency formatting it arrived with, and is never called credits.
+        XCTAssertEqual(text("↺1", "14,207.86", "money", true), "Resets 1 · Balance 14,207.86")
+        XCTAssertEqual(text(nil, "$14,207.86", "money", true), "Balance $14,207.86")
+        XCTAssertEqual(text("↺1", "14,207.86", "money", false), "重置次数 1 · 余额 14,207.86")
+        XCTAssertEqual(text(nil, "¥14,207.86", "money", false), "余额 ¥14,207.86")
+        // An unclassified unit makes no claim about what it is.
+        XCTAssertEqual(text(nil, "19,614", "", true), "Reserve 19,614"); XCTAssertEqual(text(nil, "19,614", "", false), "储备 19,614")
+        // A reset line with no count.
+        XCTAssertEqual(text("↺", nil, "", true), "Resets --")
     }
 
     func testResetSourceURLRejectsUnsafeAddressParts() throws {
@@ -761,7 +845,7 @@ actor EntrySyntheticClient: EngineClient {
         ] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-expiry-" + UUID().uuidString)
             addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: [language])
+            let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: [language])
             let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T16:00:00Z"))
             var wall = start
             let snapshot = try Self.rows(weekly: 75, resetCardClock: start, resetFacts: .init(count: 1, expiresIn: 12 * 60))
@@ -815,7 +899,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardAdmitsOnlyVerifiedResetFactsAndLinks() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-card-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 12, day: 2, hour: 16)))
         let snapshot = try Self.rows(weekly: 75, resetCardClock: wall)
         let officialURL = "https://status.openai.com/incidents/demo-reset"
@@ -862,7 +946,7 @@ actor EntrySyntheticClient: EngineClient {
         }
         XCTAssertTrue(text(dock.card).contains("Reset 17:00 announced"))
         // card.js:79-81: the count leads the one reserve line, its earliest expiry on the right.
-        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺2") })
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Resets 2") })
         XCTAssertTrue(text(dock.card).contains("exp in 30h"))
         // DOCK-3.8-11: the announced reset is its own section: the title spans the readout window in reset blue.
         func fields(_ root: NSView) -> [NSTextField] { ((root as? NSTextField).map { [$0] } ?? []) + root.subviews.flatMap(fields) }
@@ -893,7 +977,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(opened.count, 1)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertTrue(text(dock.card).contains("预告 17:00 重置"))
-        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺2") })
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("重置次数 2") })
         XCTAssertTrue(text(dock.card).contains("30h 后到期"))
         let chinese = try XCTUnwrap(dock.cardContent(for: id, at: wall))
         XCTAssertEqual(chinese.links.map(\.url.absoluteString), [aihotURL, officialURL, originalURL, publicationURL])
@@ -915,17 +999,21 @@ actor EntrySyntheticClient: EngineClient {
             XCTAssertFalse(dock.card.isHidden)
         }
         try await render(Self.rows(weekly: 75, sequence: 8, resetCardClock: wall, resetConfirmed: true))
-        XCTAssertTrue(text(dock.card).contains("已重置 · 等读数"))
+        // D166: a confirmation shows its time; the balance stays the local reading.
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("已确认 · ") })
+        XCTAssertTrue(text(dock.card).contains("余量以本机读数为准"))
+        XCTAssertTrue(text(dock.card).contains("↺ 额度重置"))
         XCTAssertFalse(text(dock.card).contains("预告 17:00 重置"))
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
         try await render(Self.rows(weekly: 75, sequence: 9, resetCardClock: wall, resetConfirmed: true,
             resetFacts: .init(count: 1, expiresIn: 12 * 60, retainedPartial: true)))
-        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺1") })
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Resets 1") })
         XCTAssertTrue(text(dock.card).contains("exp in 12m · Reported subset · Details truncated · Last known reading"))
         try await render(Self.rows(weekly: 75, sequence: 10, resetCardClock: wall, resetConfirmed: true,
             resetFacts: .init(count: 1, expiresIn: -60, restarted: true)))
-        XCTAssertTrue(text(dock.card).contains("Reset confirmed"))
-        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺1") })
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Confirmed · ") })
+        XCTAssertTrue(text(dock.card).contains("Local reading rose · your balance is the local reading"), "a restarted local reading is shown as an observation")
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Resets 1") })
         XCTAssertTrue(text(dock.card).contains("expired"))
         let confirmedAction = try XCTUnwrap(dock.card.onOpenURL)
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: delivery, nextFloor: nil)))
@@ -937,7 +1025,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryMagnifiesNozzleWithoutMovingItsReadout() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-magnification-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         // Keep the tightest window above the 50 % amber band (#562), so the readout is neutral
         // ink, with ink-heavy digits ("58%") like the original 42.5 % fixture had.
@@ -1030,13 +1118,11 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(view.helpReadoutAnchor(id), restingReadout)
         let subtle = try XCTUnwrap(view.nozzlePosesForChecks[id])
         XCTAssertEqual(subtle.scale, 1.15)
-        XCTAssertEqual(hypot(subtle.offset.x, subtle.offset.y), 6, accuracy: 0.001)
+        // G3-74: concentric, no travel.
+        XCTAssertEqual(subtle.offset.x, 0); XCTAssertEqual(subtle.offset.y, 0)
         // R64 D-2: the pose eases over 0.12 s (prototype dock.css:38), not an instant swap.
         XCTAssertTrue(view.animatesPoses)
         XCTAssertEqual(try XCTUnwrap(view.lastPoseTransitionForChecks), 0.12, accuracy: 0.0001)
-        // G3-29: on the right edge the ring moves left, away from the edge, not down onto its text.
-        XCTAssertLessThan(subtle.offset.x, -5.5, "subtle hover grows outward from the screen edge")
-        XCTAssertLessThan(abs(subtle.offset.y), 1.5, "subtle hover does not slide along the edge")
         let grown = CGRect(x: nozzle.midX + subtle.offset.x - nozzle.width * subtle.scale / 2,
                            y: nozzle.midY + subtle.offset.y - nozzle.height * subtle.scale / 2,
                            width: nozzle.width * subtle.scale, height: nozzle.height * subtle.scale)
@@ -1091,7 +1177,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalMenuKeepsActionsAndLocalizesOneLinePerFailedReader() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-menu-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let healthy = try Self.rows(weekly: 75, secondWeekly: 55)
         let failed = try Self.rows(weekly: 75, secondWeekly: 55, sequence: 8, readerFailed: true)
@@ -1107,10 +1193,11 @@ actor EntrySyntheticClient: EngineClient {
         let editor = app.settingsHost.application.editor
 
         func items() throws -> [NSMenuItem] {
-            try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }
+            // MENU-50: the range's total line appears only with cockpit figures; these checks are about the other rows.
+            try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem && $0.accessibilityIdentifier() != "status.rangeTotal" }
         }
-        let english = ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"]
-        let chinese = ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"]
+        let english = ["Time range", "Open Cockpit", "Show Quota Widget", "Find Quota Widget", "Reset Position", "Settings…", "Help…", "Quit ModelPlan"]
+        let chinese = ["时间段", "打开驾驶舱", "显示额度挂件", "找到额度挂件", "重置位置", "设置…", "说明…", "退出 ModelPlan"]
         XCTAssertEqual(try items().map(\.title), english)
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try items().map(\.title), chinese)
@@ -1135,7 +1222,7 @@ actor EntrySyntheticClient: EngineClient {
     func testS07NormalEntryDistinguishesPaintedHelpTargetsAndFocus() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-help-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, resetID: "synthetic-dock-help")
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -1214,7 +1301,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-language-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         var interactionElapsed=0.0
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, secondWeekly: 55)
@@ -1238,7 +1325,9 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(surface.pane, "diagnostics")
         let id = "aaaaaaaaaaaaaaaa"
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account")
-        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · over 30 days ago")
+        // WP-15 (DOCK-3.8-50): no stale badge; the header carries the reading's age.
+        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "")
+        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.sourceAndAge, "Updated over 30 days ago")
         let dockView = app.composition.dock.dockView
         let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
         let anchor = try XCTUnwrap(dockView.interactionAnchor(id))
@@ -1253,7 +1342,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertFalse(app.composition.dock.card.isHidden, "A same-delivery language change preserves the hovered card")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
         XCTAssertEqual(card.name, "合成账户")
-        XCTAssertEqual(card.stateLabel, "过期 · 超过 30 天前", "The stale badge follows the Chinese prototype while preserving the original observation age")
+        XCTAssertEqual(card.sourceAndAge, "超过 30 天前更新", "The header keeps the original observation age in Chinese")
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("合成账户"))
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
@@ -1265,7 +1354,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryUniqueUnboundMemberUsesSnapshotScopedProofAndClears() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-unbound-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, unbound: true)
         var acceptedStore: EngineStore?
@@ -1288,7 +1377,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalHostCloseCancelsDeadlineAndRetiresCachedContent() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-close-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
@@ -1310,7 +1399,7 @@ actor EntrySyntheticClient: EngineClient {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-display-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let fixture = try Self.rows(weekly: 15, fiveHour: 9)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
@@ -1362,12 +1451,161 @@ actor EntrySyntheticClient: EngineClient {
         assertStatus("")
     }
 
+    /// G3-93 / MENU-05: a fresh profile shows the tightest number beside the icon without anyone choosing it
+    /// (the other entry tests commit the choice first), and a profile that saved "icon" keeps it.
+    func testG3_93FreshProfileShowsTheTightestNumberAndAnExistingChoiceStays() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g393-default-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let fixture = try Self.rows(weekly: 15)
+        func launch() async throws -> (EngineDockMenuApplication, NSButton) {
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+                dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+                makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+            await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+            let button = NSButton()
+            EngineDockMenuApplication.configureStatusButton(button, image: NSImage(size: .init(width: 16, height: 16)), barThickness: 22)
+            app.applyStatusContent(to: button, detail: "")
+            return (app, button)
+        }
+        let (fresh, freshButton) = try await launch()
+        XCTAssertEqual(freshButton.title, "15%", "a fresh profile shows the tightest number by default")
+        XCTAssertEqual(freshButton.imagePosition, .imageLeading)
+        _ = try await fresh.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.icon))
+        await fresh.composition.stop()
+        let (kept, keptButton) = try await launch()
+        XCTAssertEqual(keptButton.title, "", "an existing profile keeps its icon-only choice")
+        XCTAssertEqual(keptButton.imagePosition, .imageOnly)
+        await kept.composition.stop()
+    }
+
+    /// Build 13 owner review (ledger: none): with the pointer on the menu-bar item the "0%" kept turning into "0".
+    /// Every refresh re-set the title, image and position, and the reset dot was then placed from the button's
+    /// previous bounds, so it landed on the "%" and moved back on the next refresh. A refresh that changes nothing
+    /// now writes nothing, and the dot's place does not depend on the bounds the button happens to hold.
+    func testMenuBarItemDoesNotJumpWhenAnUnchangedReadingIsRefreshed() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-stable-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let fixture = try Self.rows(weekly: 15)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.tightest))
+
+        final class CountingButton: NSButton {
+            var titleWrites = 0, imageWrites = 0, positionWrites = 0
+            override var title: String { didSet { titleWrites += 1 } }
+            override var image: NSImage? { didSet { imageWrites += 1 } }
+            override var imagePosition: NSControl.ImagePosition { didSet { positionWrites += 1 } }
+        }
+        let button = CountingButton()
+        let icon = NSImage(size: .init(width: 16, height: 16))
+        EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+        app.applyStatusContent(to: button, detail: "detail")
+        XCTAssertEqual(button.title, "15%")
+        let (title, image, position) = (button.titleWrites, button.imageWrites, button.positionWrites)
+        for _ in 0..<3 {
+            EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+            app.applyStatusContent(to: button, detail: "detail")
+        }
+        XCTAssertEqual(button.titleWrites, title, "an unchanged title is not written again")
+        XCTAssertEqual(button.imageWrites, image, "an unchanged image is not replaced")
+        XCTAssertEqual(button.positionWrites, position, "an unchanged image position is not written again")
+        XCTAssertEqual(button.title, "15%")
+    }
+
+    /// G3-57 (owner build 14b): the percentage vanished from the menu bar next to the icon. The path of a refresh
+    /// after the #756 change (configure, apply, place the dot) must leave "15%" in the title, the icon leading it, and
+    /// must show it again when the item first rendered icon-only (no reading yet) and a reading arrives afterwards.
+    func testPercentageTextStaysAfterTheStablePathAndAfterAnIconOnlyStart() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-percent-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let fixture = try Self.rows(weekly: 15)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let button = NSButton(frame: .zero), dot = DockNoticeIndicatorView(frame: .zero)
+        let icon = NSImage(size: .init(width: 16, height: 16))
+        func render() {
+            EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+            app.applyStatusContent(to: button, detail: "detail")
+            dot.attach(to: button)
+        }
+        // First render: the display style shows no percentage yet, so the item is icon only.
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.icon))
+        render()
+        XCTAssertEqual(button.title, ""); XCTAssertEqual(button.imagePosition, .imageOnly)
+        // A reading style arrives: the title comes back with the icon leading it.
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.tightest))
+        render()
+        XCTAssertEqual(button.title, "15%", "the percentage shows after an icon-only start")
+        XCTAssertEqual(button.imagePosition, .imageLeading)
+        for _ in 0..<3 { render() }
+        XCTAssertEqual(button.title, "15%", "unchanged refreshes keep the percentage")
+        XCTAssertEqual(button.imagePosition, .imageLeading)
+        XCTAssertNotNil(button.image)
+    }
+
+    /// The reset dot stays on the icon's top right whatever size the button still holds from before a refresh.
+    func testResetDotStaysOnTheIconWhateverBoundsTheButtonHolds() throws {
+        let button = NSButton(frame: .zero)
+        EngineDockMenuApplication.configureStatusButton(button, image: NSImage(size: .init(width: 16, height: 16)), barThickness: 22)
+        button.title = "0%"; button.imagePosition = .imageLeading
+        let dot = DockNoticeIndicatorView(frame: .zero)
+        var placed = [CGFloat]()
+        for width: CGFloat in [14, 48, 96, 240] { // stale: narrower than the content, about right, then much wider
+            button.frame = NSRect(x: 0, y: 0, width: width, height: 22)
+            dot.attach(to: button)
+            placed.append(dot.frame.minX)
+        }
+        XCTAssertEqual(Set(placed.map { ($0 * 2).rounded() }).count, 1, "the dot does not move with the button's bounds: \(placed)")
+        let content = NSRect(x: 0, y: 0, width: ceil(try XCTUnwrap(button.cell).cellSize.width), height: 22)
+        XCTAssertLessThan(dot.frame.maxX, content.maxX - 8, "the dot never sits on the percentage")
+    }
+
+    /// Build 14 crash: placing the reset dot from a copy of the button's cell over-released the button's image, and the
+    /// next render read a freed object. Percentage plus icon is rendered many times, each inside its own autorelease
+    /// pool so any over-release is paid back inside the loop; the image must stay the same object and readable.
+    func testRepeatedPercentPlusIconRendersDoNotOverReleaseTheButtonImage() throws {
+        let button = NSButton(frame: .zero)
+        let icon = NSImage(size: .init(width: 16, height: 16))
+        EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+        button.title = "15%"; button.imagePosition = .imageLeading
+        let dot = DockNoticeIndicatorView(frame: .zero)
+        let identity = ObjectIdentifier(try XCTUnwrap(button.image))
+        for round in 0..<500 {
+            autoreleasepool {
+                EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+                button.frame = NSRect(x: 0, y: 0, width: CGFloat(14 + round % 200), height: 22)
+                dot.attach(to: button)
+                _ = button.cell?.cellSize
+                button.display()
+            }
+        }
+        let after = try XCTUnwrap(button.image, "the image survives repeated renders")
+        XCTAssertEqual(ObjectIdentifier(after), identity, "an unchanged image keeps its identity")
+        XCTAssertEqual(after.size, NSSize(width: 16, height: 16))
+        XCTAssertTrue(after.isTemplate)
+    }
+
     func testV17ExpiredOnlyReadingLeavesAnIconWithoutRevocation() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-expiry-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let iso = ISO8601DateFormatter()
         var wall = try XCTUnwrap(iso.date(from: "2026-12-02T00:00:00Z"))
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let fixture = try Self.rows(weekly: 15, weeklyDeadline: "2026-12-02T00:01:00Z", includeSession: false)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
@@ -1392,10 +1630,49 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertNotNil(app.composition.store.snapshot.rows)
     }
 
+    /// glm-632-1: the two-window title uses the Dock's expiry rule, so a window that expired leaves the title.
+    func testV17TwoWindowTitleDropsAnExpiredWindow() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-two-expiry-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let iso = ISO8601DateFormatter()
+        var wall = try XCTUnwrap(iso.date(from: "2026-12-02T00:00:00Z"))
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let fixture = try Self.rows(weekly: 15, fiveHour: 9, weeklyDeadline: "2026-12-02T00:01:00Z", accountFreshUntil: "2028-12-01T00:00:00Z")
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare()
+        app.allowDockPresentation()
+        await app.composition.start()
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.twoWindows))
+        let button = NSButton()
+        EngineDockMenuApplication.configureStatusButton(button, image: NSImage(size: .init(width: 16, height: 16)), barThickness: 22)
+        app.applyStatusContent(to: button, detail: "")
+        XCTAssertEqual(button.title, "5h 9% wk 15%")
+
+        wall = try XCTUnwrap(iso.date(from: "2026-12-02T00:02:00Z"))
+        app.applyStatusContent(to: button, detail: "")
+        XCTAssertEqual(button.title, "5h 9%", "the expired weekly window must not keep its old percentage")
+    }
+
+    /// glm-632-1: the title applies the Dock's own rule to each window. The provider blanks most expired windows
+    /// first, so the rule is checked here on the inputs the title receives: a number whose reset has passed.
+    func testV17TwoWindowTitleRefusesANumberTheDockRefuses() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var input = DockInstrumentInput(id: "synthetic", name: "Synthetic", windows: [
+            .init(id: "session", period: .fiveHour, label: "5h", remainingPercent: 9, resetsAt: now.addingTimeInterval(3600), durationSeconds: 18000),
+            .init(id: "week", period: .week, label: "Weekly", remainingPercent: 15, resetsAt: now.addingTimeInterval(-60), durationSeconds: 604800)])
+        input.dataState = .fresh
+        var preferences = SettingsPreferences(); preferences.menuDisplay = .twoWindows; preferences.language = .english
+        XCTAssertEqual(EngineMenuBarTitle.make(inputs: [input], preferences: preferences, now: now), "5h 9%")
+    }
+
     func testNormalEntryKeepsLoadingAndFailureOutOfMenusWithoutAdmittedRows() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-first-open-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,

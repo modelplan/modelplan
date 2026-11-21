@@ -104,16 +104,17 @@ import XCTest
             app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "codex" }
         }
         func items() throws -> [NSMenuItem] {
-            try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }
+            // MENU-50: the range's total line appears only with cockpit figures; these checks are about the other rows.
+            try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem && $0.accessibilityIdentifier() != "status.rangeTotal" }
         }
         XCTAssertEqual(row()?.state, .fresh)
         XCTAssertEqual(row()?.accounts.first?.windows.first?.remainingPercent, 75)
         let editor = app.settingsHost.application.editor
         let english = try items().map(\.title)
-        XCTAssertEqual(english, ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"])
+        XCTAssertEqual(english, ["Time range", "Open Cockpit", "Show Quota Widget", "Find Quota Widget", "Reset Position", "Settings…", "Help…", "Quit ModelPlan"])
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         let chinese = try items().map(\.title)
-        XCTAssertEqual(chinese, ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"])
+        XCTAssertEqual(chinese, ["时间段", "打开驾驶舱", "显示额度挂件", "找到额度挂件", "重置位置", "设置…", "说明…", "退出 ModelPlan"])
 
         // Backdate the synthetic fixture and reservation to exercise a second
         // real reader call without changing the production refresh interval.

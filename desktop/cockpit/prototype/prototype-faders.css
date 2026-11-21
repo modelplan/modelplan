@@ -20,17 +20,26 @@
 .dk-fad .fd-ch{display:grid;grid-template-rows:var(--fd-rows);justify-items:center;min-width:0;min-height:0}
 
 
-.dk-fad .fd-leds{grid-row:1;display:grid;place-items:center;height:var(--row-h,18px)}
+.dk-fad .fd-leds{grid-row:1;position:relative;display:grid;place-items:center;height:var(--row-h,18px)}
 .dk-fad .fd-indicator{display:grid;place-items:center;width:12px;height:12px;color:var(--fd-unlit)}
 .dk-fad .fd-indicator:not(.fast)::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 4px currentColor}
-.dk-fad .fd-indicator.on{color:var(--lcd-ink)}
-.dk-fad .fd-indicator.try{color:var(--trial)}
-.dk-fad .fd-indicator svg{width:6px;height:9px;fill:currentColor;filter:drop-shadow(0 0 2px currentColor)}
+/* CKP-FAD-55: lit in the subscription colour = a session runs; dim = used in this range; off = none. */
+.dk-fad .fd-indicator.live{color:var(--lamp,var(--lcd-ink))}
+.dk-fad .fd-indicator.used{color:color-mix(in srgb,var(--lcd-muted) 55%,transparent)}
+.dk-fad .fd-indicator.used::before{box-shadow:none}
+/* owner 11-12: fast mode = a symbol-only bolt beside the lamp (white real, solid blue trial on, blue outline trial off) */
+.dk-fad .fd-fast{position:absolute;left:calc(50% + 6px);top:50%;width:6px;height:9px;margin-top:-4.5px;overflow:visible;pointer-events:none}
+.dk-fad .fd-fast.on path{fill:var(--lcd-ink)}
+.dk-fad .fd-fast.try path{fill:var(--trial)}.dk-fad .fd-fast.try{filter:drop-shadow(0 0 2px color-mix(in srgb,var(--trial) 67%,transparent))}
+.dk-fad .fd-fast.off path{fill:none;stroke:var(--trial);stroke-width:1.1;stroke-linejoin:round}
 
 
 
-.dk-fad .fd-strip{grid-row:3;position:relative;width:100%;height:100%;display:grid;grid-template-rows:12px 25px 30px;row-gap:8px;align-content:center;
-  padding:6px 2px 3px;overflow:hidden;text-align:left;background:var(--lcd-glass);box-shadow:var(--bezel);font:11px/1 var(--f-lcd);color:var(--text)}
+/* WP-08 (V1-FINAL §7, CKP-FAD-50…52): the model card. Inner width ~52 px; top to bottom: subscription-colour edge, name,
+   ≈cost large (tokens without a public price), share bar, "212M 17%", and the small effort line pinned to the bottom.
+   Every line ≤ 9 characters; text never below 10 px. */
+.dk-fad .fd-strip{grid-row:3;position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:stretch;
+  padding:7px 2px 4px 3px;overflow:hidden;text-align:left;background:var(--lcd-glass);box-shadow:var(--bezel);font:10px/11px var(--f-lcd);color:var(--text)}
 .dk-fad .fd-strip::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(115deg,var(--lcd-glare),#ffffff02 34%,transparent 35%)}
 .dk-fad .fd-ch.empty .fd-strip{cursor:default}
 .dk-fad .fd-ch.sel .fd-strip{box-shadow:var(--bezel),0 0 0 2px color-mix(in srgb,var(--lcd-ink) 36%,transparent),0 0 8px color-mix(in srgb,var(--lcd-ink) 13%,transparent)}
@@ -38,24 +47,24 @@
 .dk-fad .fd-ch.trying .fd-strip{background:linear-gradient(color-mix(in srgb,var(--trial) 10%,transparent),color-mix(in srgb,var(--trial) 4%,transparent)),var(--lcd-glass)}
 .dk-fad .st-vend{position:absolute;left:0;right:0;top:0;height:3px;display:flex;gap:1px;pointer-events:none}
 .dk-fad .st-vend b{flex:1;background:var(--v);box-shadow:0 0 4px color-mix(in srgb,var(--v) 70%,transparent)}
-.dk-fad .st-name{font-weight:400;font-size:11px;line-height:12px;white-space:nowrap;overflow:hidden}
+.dk-fad .st-name{flex:none;font-weight:400;font-size:11px;line-height:12px;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;color:var(--lcd-ink)}
 .dk-fad .st-name.long{font-size:10px;letter-spacing:-.05em}
 .dk-fad .st-pin{position:absolute;right:4px;top:9px;width:5px;height:5px;border-radius:50%;background:var(--text);box-shadow:0 5px 0 -1.5px var(--text)}
-.dk-fad .st-bars{display:flex;align-items:flex-end;gap:3px;height:25px;padding-top:3px;padding-bottom:0}
-.dk-fad .eb{position:relative;flex:none;width:6px;height:calc(var(--h,3px) * 1.4);border-radius:.5px;background:var(--fd-eb)}
-.dk-fad .eb.none{height:1px;background:var(--lcd-rule)}
-.dk-fad .eb.cur{background:var(--lcd-ink);box-shadow:0 0 4px color-mix(in srgb,var(--lcd-ink) 45%,transparent)}
-.dk-fad .eb.try::after{content:"";position:absolute;left:1px;right:1px;bottom:1px;height:2px;background:var(--trial);box-shadow:0 0 3px var(--trial)}
-.dk-fad .eb.rec::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:var(--gold)}
-.dk-fad .eb.rec.short::before{bottom:0;height:auto;background:transparent;border:1px solid var(--gold);box-sizing:border-box}
-.dk-fad .eb.rec.short.try::after{left:2px;right:2px;height:1px;box-shadow:none}
-.dk-fad .st-eff{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:4px;white-space:nowrap;min-width:0;font:13px/15px var(--f-lcd);letter-spacing:0}
-.dk-fad .st-eff em{font:inherit;color:var(--lcd-ink)}
-.dk-fad .st-eff em.rec,.dk-fad .st-rec{display:inline-flex;align-items:center;gap:1px;color:var(--gold)}
-.dk-fad .st-eff.st-try{color:var(--trial);letter-spacing:-.15em}
-.dk-fad .st-eff .g-star{flex:none;width:7px;height:7px;fill:var(--gold)}
-.dk-fad .st-eff em .g-star{width:9px;height:9px}
-.dk-fad .st-rec{font:10px/11px var(--f-lcd)}
+.dk-fad .cd-big{flex:none;margin-top:5px;font:600 14px/16px var(--f-lcd);letter-spacing:-.03em;white-space:nowrap;color:var(--lcd-ink)}
+.dk-fad .cd-big.note{font:400 10px/16px var(--f-lcd);letter-spacing:0;color:var(--lcd-muted)}
+.dk-fad .cd-bar{flex:none;position:relative;height:2px;margin:3px 2px 0 0;border-radius:1px;background:var(--lcd-rule)}
+.dk-fad .cd-bar::before{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--s,0%);min-width:2px;border-radius:1px;background:var(--v,var(--lcd-ink))}
+.dk-fad .cd-use{flex:none;margin-top:3px;font:10px/11px var(--f-lcd);letter-spacing:-.02em;white-space:nowrap;color:var(--lcd-muted)}
+.dk-fad .cd-use b{font-weight:400;color:var(--lcd-ink)}
+.dk-fad .cd-eff{flex:none;margin-top:auto;display:flex;align-items:center;gap:4px;font:10px/11px var(--f-lcd);letter-spacing:-.02em;white-space:nowrap;color:var(--lcd-muted)}
+.dk-fad .cd-rec{display:inline-flex;align-items:center;gap:1px;color:var(--gold)}
+.dk-fad .cd-follows .cd-rec{color:color-mix(in srgb,var(--gold) 72%,var(--lcd-glass,#000))}
+.dk-fad .cd-rec .g-star{flex:none;width:7px;height:7px;fill:currentColor}
+.dk-fad .cd-try{flex:none;margin-top:5px;font:600 12px/14px var(--f-lcd);letter-spacing:-.03em;white-space:nowrap;color:var(--trial)}
+.dk-fad .cd-now{flex:none;margin-top:1px;font:10px/11px var(--f-lcd);letter-spacing:-.02em;white-space:nowrap;color:var(--lcd-muted)}
+/* Unused: the whole card dims (the edge keeps its colour so the subscription still reads); the lever is drawn dashed. */
+.dk-fad .fd-strip[data-card="unused"]>:not(.st-vend){opacity:.5}
+.dk-fad .fd-cap.unused{opacity:.55;outline:1px dashed color-mix(in srgb,var(--lcd-ink) 75%,transparent);outline-offset:1px;box-shadow:none}
 
 
 .dk-fad .fd-travel{grid-row:5;position:relative;width:100%;height:100%;min-height:0;touch-action:none;cursor:ns-resize;outline-offset:2px}
@@ -94,27 +103,13 @@ body.reduced #cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s line
 
 
 #cockpit[data-layout="640"] .dk-fad{--fd-lcd:73px}
-#cockpit[data-layout="640"] .dk-fad .fd-strip{grid-template-rows:12px 20px 26px;row-gap:1px}
-#cockpit[data-layout="640"] .dk-fad .st-bars{height:20px}
-#cockpit[data-layout="640"] .dk-fad .st-eff{gap:0}
+#cockpit[data-layout="640"] .dk-fad .fd-strip{padding:6px 2px 3px 3px}
+#cockpit[data-layout="640"] .dk-fad .cd-big,#cockpit[data-layout="640"] .dk-fad .cd-try{margin-top:2px}
+#cockpit[data-layout="640"] .dk-fad .cd-bar,#cockpit[data-layout="640"] .dk-fad .cd-use{margin-top:2px}
 #cockpit[data-layout="640"] .dk-fad .st-pin{top:9px}
 
-
-.dk-fad .st-multiple{font:9px/11px var(--f-lcd);letter-spacing:0;color:var(--lcd-muted)}
-.dk-fad .st-rec-cost{margin-left:0;font-size:8px}
-.dk-fad .st-eff.st-try{gap:0}
-.dk-fad .st-eff.st-try em{color:var(--trial)}
-.dk-fad .st-trial-cost{display:inline-flex;gap:3px}
-.dk-fad .st-trial-cost:lang(en){display:flex;flex-direction:column;gap:0;font-size:8px;line-height:8px}
-.dk-fad .st-try:lang(en) em{line-height:14px}
-
-#cockpit[data-layout="640"] .st-trial-cost:lang(en){display:none}
-
-
-.dk-fad .st-cost-wrap{gap:0}
-.dk-fad .st-cost-wrap>em{line-height:14px}
-.dk-fad .st-cost-wrap .st-rec{width:100%;flex-wrap:wrap;font-size:8px;line-height:8px;gap:0 1px}
-.dk-fad .st-cost-wrap .st-rec-cost{flex-basis:100%;line-height:8px}
-#cockpit[data-layout="640"] .st-cost-wrap .st-rec-cost{display:none}
-#cockpit[data-layout="640"] .st-cost-wrap>em{line-height:15px}
-#cockpit[data-layout="640"] .st-cost-wrap .st-rec{width:auto;flex-wrap:nowrap;font-size:10px;line-height:11px}
+/* CKP-FAD-54 step 2: the effort page comes in over 150 ms when a card is clicked (none with reduced motion). */
+@keyframes cd-page-in{from{opacity:0}to{opacity:1}}
+.dk-mfd .mfd-page.pg-compare{animation:cd-page-in .15s ease-out}
+body.reduced #cockpit .dk-mfd .mfd-page.pg-compare{animation:none}
+@media(prefers-reduced-motion:reduce){#cockpit .dk-mfd .mfd-page.pg-compare{animation:none}}

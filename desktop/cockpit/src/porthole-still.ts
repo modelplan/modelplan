@@ -6,33 +6,90 @@
 // Reduce Motion; web/cockpit.css gates it on an active, open, visible page). No WebGL, no personal data:
 // the roster is the public study fleet.
 // Prototype: rocket-r1/porthole.js:187-192 (syncStill) and study/porthole-sprites/composer.js:13-31,34.
+import {ht} from './host-text.js';
 export type StillLayer={left:number;top:number;width:number;height:number;file:string};
 export type StillModel={id:string;name?:string;nozzle:{x:number;y:number};body?:StillLayer;flame?:StillLayer;halo?:StillLayer};
 export type StillProjection={id:string;theme:'night'|'day';layout:890|640;width:number;height:number;background:string;models:StillModel[]};
 export type StillPack={base:string;projections:StillProjection[]};
-export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:StillPack|null,enlarge?:()=>void):{dispose():void}|null{
+// A click within 28 px of a rocket's centre names that rocket (prototype hud-selection/still.js:hitStillRocket); nearest wins.
+export function stillRocketAt(field:HTMLElement,x:number,y:number,radius=28):string|null {
+  let nearest:string|null=null,best=radius*radius;
+  for(const e of field.querySelectorAll<HTMLElement>('.ck-still-body[data-model-name]')){
+    const r=e.getBoundingClientRect();if(!(r.width>0&&r.height>0))continue;
+    const inside=x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom,d=inside?0:(x-(r.left+r.width/2))**2+(y-(r.top+r.height/2))**2;
+    if(d<=best){best=d;nearest=e.dataset.modelName??null;}
+  }
+  return nearest;
+}
+/** Owner 11-19 (#1062): a press that travels more than this before release is a drag, not a click (CSS px). */
+export const PORT_CLICK_SLOP=4;
+/** Owner 11-19 (#1062): porthole clicks this soon after the enlarged field closes are the close's bounce (ms). */
+export const PORT_REOPEN_GUARD_MS=300;
+export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:StillPack|null,enlarge?:(focus?:string)=>void):{dispose():void}|null{
   if(!pack?.projections.length)return null;
-  // The port opens the enlarged field by click, Enter or Space (the community edition has no field).
-  const port=field.parentElement,opener=new AbortController();
+  // The port opens the enlarged field by click or double-click, and its ⤢ key opens it by click, Enter or Space (the
+  // community edition has no field). A click on a rocket focuses that rocket. The second click of a double-click and the
+  // dblclick itself do not ask again (prototype porthole.js bindPorthole: "idempotent after the first click").
+  // Build 14c: the port itself is not focusable. As a tabIndex=0 role=button div it kept focus after a click (or after the
+  // field closed), and the next key press made WebKit match :focus-visible, which lit the ⤢ key gold without it being
+  // pressed. The ⤢ key is the one keyboard control: Tab reaches it and its own :focus-visible draws the ring. A pointer
+  // press on the key does not move focus to it, so a later key press cannot light it either.
+  const port=field.parentElement,opener=new AbortController();let big:HTMLButtonElement|null=null;
+  // Owner 11-19 (#1062): the field must not open by accident. A press released more than PORT_CLICK_SLOP px from where it
+  // started is a drag; a click within PORT_REOPEN_GUARD_MS of the field closing (the host's `fieldClosed`, sent from the
+  // field panel's single close funnel: Esc, ×, an outside click, losing key, idle, the cockpit's own hide) is the
+  // close's bounce. The activation click on an inactive cockpit is native's (CockpitWebView.declinesActivationClick).
+  // Keyboard presses (detail 0) are never a drag or a bounce.
+  let pressed:{x:number;y:number}|null=null,closedAt=-Infinity;
+  const accidental=(e:MouseEvent)=>{
+   if(e.detail===0)return false;
+   const from=pressed;pressed=null;
+   if(from&&Math.hypot(e.clientX-from.x,e.clientY-from.y)>PORT_CLICK_SLOP)return true;
+   return performance.now()-closedAt<PORT_REOPEN_GUARD_MS;
+  };
+  const open=(focus?:string)=>{if(focus===undefined)enlarge?.();else enlarge?.(focus);};
   if(port&&enlarge){
-   port.tabIndex=0;port.setAttribute('role','button');
-   const name=()=>port.setAttribute('aria-label',document.documentElement.lang==='en'?'Open the 3D view':'打开 3D 视图');name();
-   port.addEventListener('focus',name,{signal:opener.signal});
+   port.addEventListener('pointerdown',e=>{if(e.isPrimary)pressed={x:e.clientX,y:e.clientY};},{signal:opener.signal,capture:true});
+   cockpit.addEventListener('field-closed',()=>{closedAt=performance.now();},{signal:opener.signal});
+   port.dataset.opensField='';
+   big=document.createElement('button');big.type='button';big.className='hud-x port-big';big.dataset.bigfield='';big.textContent='⤢';port.append(big);
+   const name=()=>{big?.setAttribute('aria-label',ht(document.documentElement.lang==='en'?'en':'zh-CN','host.portBig'));};name();
+   big.addEventListener('focus',name,{signal:opener.signal});
+   big.addEventListener('mousedown',e=>e.preventDefault(),{signal:opener.signal});
+   big.addEventListener('click',e=>{e.stopPropagation();if(e.isTrusted&&e.detail<2&&!accidental(e))open();},{signal:opener.signal});
+   big.addEventListener('dblclick',e=>e.stopPropagation(),{signal:opener.signal});
    // The HUD lives inside the port and has its own actions; they must not open the field too.
    // A HUD click repaints the rows before it bubbles here, so the event's path is read, not the detached target.
    const inHud=(e:Event)=>e.composedPath().some(n=>n instanceof Element&&n.classList.contains('hud'));
-   port.addEventListener('click',e=>{if(e.isTrusted&&!inHud(e))enlarge();},{signal:opener.signal});
-   port.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&!inHud(e)){e.preventDefault();enlarge();}},{signal:opener.signal});
+   port.addEventListener('click',e=>{if(!e.isTrusted||inHud(e)||e.detail>1||accidental(e))return;const rocket=stillRocketAt(field,e.clientX,e.clientY);open(rocket??undefined);},{signal:opener.signal});
   }
   // A HUD row lights its rocket by published display name, the one key the still's roster and the publication share.
   const lit=(event:Event)=>{const name=(event as CustomEvent<string|null>).detail;for(const e of field.querySelectorAll<HTMLElement>('[data-model-name]'))e.classList.toggle('ck-hot',e.dataset.modelName===name);};
   cockpit.addEventListener('hud-hover',lit,{signal:opener.signal});
+  // WP-22 (macrevb-1062-3): the cockpit's selected model (the HUD, or the enlarged field) stays marked until it changes.
+  let chosen:string|null=null;const mark=()=>{for(const e of field.querySelectorAll<HTMLElement>('[data-model-name]'))e.classList.toggle('ck-sel',chosen!==null&&e.dataset.modelName===chosen);};
+  cockpit.addEventListener('model-select',event=>{chosen=(event as CustomEvent<string|null>).detail??null;mark();},{signal:opener.signal});
   const host=document.createElement('div');host.className='ck-still';host.setAttribute('aria-hidden','true');field.prepend(host);
   const base=new URL(pack.base,document.baseURI).href;let painted='';
+  // The ⤢ key sits inside the glass of the c01 canopy, never on its frame (owner, 11-09). Positions are measured on the
+  // canopy aperture mask (runtime/canopy-c01/aperture-<layout>-1x.png, in the port's page coordinates): at least 8 px of
+  // glass on every side at both layouts, in both themes, and clear of the HUD at the left. Measured against the final
+  // masks of the redrawn canopy (D74, #801): the clearance is 8.1 px at 890 and 8.0 px at 640. Offsets are from the port's
+  // padding box.
+  const BIG_KEY={890:{right:38,top:52},640:{right:38,top:7}} as const;
+  const placeBig=()=>{
+    if(!big||!port)return;const size=22;if(!port.clientWidth||!port.clientHeight)return;
+    const at=BIG_KEY[cockpit.dataset.layout==='640'?640:890];
+    Object.assign(big.style,{right:at.right+'px',top:at.top+'px',width:size+'px',height:size+'px',display:'grid',placeItems:'center',zIndex:'3'});
+  };
   const paint=()=>{
+    placeBig();
     const theme=document.documentElement.dataset.theme==='day'?'day':'night',layout=cockpit.dataset.layout==='640'?640:890;
     const frame=pack.projections.find(p=>p.theme===theme&&p.layout===layout);
-    const port=field.parentElement??field,W=port.clientWidth,H=port.clientHeight;
+    // The field may reach past the port's padding box (official edition, G3-82: the canopy art box); its
+    // computed insets hold even while it is hidden, so the still is sized to the box it will fill.
+    const port=field.parentElement??field,cs=getComputedStyle(field),inset=(v:string)=>parseFloat(v)||0;
+    const W=port.clientWidth-inset(cs.left)-inset(cs.right),H=port.clientHeight-inset(cs.top)-inset(cs.bottom);
     if(!frame||!W||!H){field.dataset.still=frame?'sizing':'none';return;}
     const key=`${frame.id}:${W}x${H}`;if(key===painted)return;painted=key;
     // Cover the field like a background: scale to the larger ratio and centre; the port clips the rest.
@@ -54,12 +111,12 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
       if(kind==='body'&&m.name)e.dataset.modelName=m.name;
       if(flicker)e.style.transformOrigin=`${m.nozzle.x-l.left}px ${m.nozzle.y-l.top}px`;
     }
-    host.replaceChildren(stage);host.dataset.projection=frame.id;field.dataset.still='ready';
+    host.replaceChildren(stage);host.dataset.projection=frame.id;field.dataset.still='ready';mark();
   };
   paint();
   const resize=new ResizeObserver(paint);resize.observe(field.parentElement??field);
   const attributes=new MutationObserver(paint);
   attributes.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   attributes.observe(cockpit,{attributes:true,attributeFilter:['data-layout']});
-  return {dispose(){opener.abort();if(port&&enlarge){port.removeAttribute('tabindex');port.removeAttribute('role');port.removeAttribute('aria-label');}resize.disconnect();attributes.disconnect();host.remove();delete field.dataset.still;}};
+  return {dispose(){opener.abort();big?.remove();if(port&&enlarge){port.removeAttribute('tabindex');port.removeAttribute('role');port.removeAttribute('aria-label');}resize.disconnect();attributes.disconnect();host.remove();delete field.dataset.still;}};
 }

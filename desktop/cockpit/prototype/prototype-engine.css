@@ -46,7 +46,7 @@
 .ck-eng .qline{display:flex;align-items:baseline;justify-content:space-between;gap:3px;min-width:0}
 .ck-eng .qnum{display:inline-flex;align-items:baseline;flex:none;font:600 20px/22px var(--f-lcd);font-variant-numeric:tabular-nums;color:var(--qn,var(--lcd-ink));white-space:nowrap}
 .ck-eng .qnum small{font:400 10px/1 var(--f-lcd);opacity:.55;margin-left:1px}
-.ck-eng .qtxt{display:block;min-width:0;max-width:100%;font:400 11px/13px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;text-align:right}
+.ck-eng .qtxt{display:block;min-width:0;max-width:100%;font:400 11px/13px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .ck-eng .qtxt.warn{color:var(--st-mid)}.ck-eng .qtxt.crit{color:var(--st-low)}.ck-eng .qtxt.qev{color:var(--trial)}
 .ck-eng .qmeter{display:grid;row-gap:3px;min-width:0}
 .ck-eng .qbar{display:flex;gap:1.5px;height:5px;min-width:0}
@@ -64,7 +64,7 @@
 .ck-eng .qaverage{margin-left:auto;font-size:11px}
 .ck-eng .qrow-r{flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:2px;padding-top:2px;font-size:11px;line-height:13px}
 .ck-eng .qrv-c.warn{color:var(--st-mid)}
-.ck-eng .qrv-p{display:block;max-width:100%}
+.ck-eng .qrv-p{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ck-eng .ec.grey .qbar i.on{background:var(--lcd-muted);opacity:.6;box-shadow:none}
 .ck-eng .ec.grey :is(.qnum,.qtxt,.qrow){color:var(--lcd-muted)}
 .cls-narrow .qnum{font-size:16px;line-height:19px}

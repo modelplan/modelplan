@@ -70,7 +70,8 @@ class EngineProcess:
         self.stderr_digest = hashlib.sha256()
         self.process = None
         self.environment = {'HOME': str(self.home), 'PATH': str(self.home / 'bin'),
-                            'TMPDIR': str(self.home / '.u14-tmp'), 'LANG': 'C.UTF-8'}
+                            'TMPDIR': str(self.home / '.u14-tmp'), 'LANG': 'C.UTF-8',
+                            'MODELPLAN_BASE': 'http://127.0.0.1:1'}
         (self.home / '.u14-tmp').mkdir(mode=0o700, exist_ok=True)
 
     def __enter__(self):

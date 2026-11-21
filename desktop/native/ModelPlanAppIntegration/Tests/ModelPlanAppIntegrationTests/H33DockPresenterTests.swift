@@ -73,7 +73,9 @@ import ModelPlanSettings
         defer { host.close() }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("h33-host-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+        let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
         await app.reload()
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         let value = try snapshot(connections: [["id": "codex", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "missing"]]])
@@ -111,7 +113,9 @@ import ModelPlanSettings
         defer { withExtendedLifetime(delegate) {} }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("h33-factory-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+        let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
         await app.reload()
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         host.render(snapshot: try snapshot(connections: [["id": "codex", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "missing"]]]), diagnostics: diagnostics)
@@ -136,7 +140,9 @@ import ModelPlanSettings
                 defer { host.close() }
                 let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-failure-host-" + UUID().uuidString)
                 defer { try? FileManager.default.removeItem(at: root) }
-                let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+                let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+                try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+                let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
                 await app.reload()
                 var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
                 host.updateDockConsent(try consent(["claude"]))
@@ -272,7 +278,9 @@ import ModelPlanSettings
         defer { host.close() }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("h37-grok-host-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+        let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
         await app.reload()
         var opens = 0; host.showSettings = { opens += 1 }
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
@@ -284,12 +292,49 @@ import ModelPlanSettings
         try presentSyntheticHostCard(host, id: row.id)
         func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
         let labels = views(host.card).compactMap { $0 as? NSTextField }
-        XCTAssertTrue(labels.contains { $0.stringValue.contains("Reading unavailable") })
-        XCTAssertFalse(labels.contains { $0.stringValue.contains("Check reader status in Settings") }, "The card uses one error badge; its Settings action remains available")
+        XCTAssertEqual(labels.filter { $0.stringValue.contains("Reading unavailable") }.count, 1, "the card has one cause line")
+        // WP-15 DOCK-3.8-53 adds one next-step line; the separate Settings action remains available.
+        XCTAssertEqual(labels.filter { $0.stringValue.contains("Check reader status in Settings") }.count, 1)
         let button = try XCTUnwrap(views(host.card).compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "dock.card.enter" })
         XCTAssertEqual(button.title, "设置")
         _ = (try XCTUnwrap(button.target as? NSObject)).perform(try XCTUnwrap(button.action), with: button)
         XCTAssertEqual(opens, 1); XCTAssertNil(host.nativePanel)
+    }
+
+    /// D87 slice 4 (ledger G3-72): a Codex snapshot that failed for a missing Node.js says so on the card
+    /// instead of the lumped "Reading unavailable".
+    func testD87CodexRuntimeMissingShowsNeedNodeOnTheActualHostCard() async throws {
+        _ = NSApplication.shared
+        let value = try snapshot(sources: [["source": "codex-account", "status": "binary_found_but_runtime_missing",
+                                            "reason": "Install Node.js, or make node available beside the tool CLI, then retry in Settings",
+                                            "errorCode": "runtime_missing"]])
+        let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
+        defer { host.close() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("d87-codex-host-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+        let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
+        await app.reload() // same host wiring as the Grok host-card test beside it
+        var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
+        host.updateDockConsent(try consent(["codex"])); host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
+        let row = try XCTUnwrap(model(value, consent: try consent(["codex"])).inputs.first)
+        XCTAssertTrue(model(value, consent: try consent(["codex"])).presentationRows.values.allSatisfy { $0.reason.contains("需要 Node.js") && !$0.reason.contains("Reading unavailable") })
+        try presentSyntheticHostCard(host, id: row.id)
+        func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
+        let labels = views(host.card).compactMap { $0 as? NSTextField }
+        XCTAssertTrue(labels.contains { $0.stringValue.contains("需要 Node.js") }, "the card names the cause")
+        XCTAssertFalse(labels.contains { $0.stringValue.contains("Reading unavailable") })
+    }
+    func testD87CardCauseComesFromTheEngineCodeNotTheLumpedReason() throws {
+        for (code, expected) in [("not_found", "命令"), ("timeout", "读取超时"), ("rpc_error", "后台服务出错"), ("closed", "意外退出")] {
+            let value = try snapshot(sources: [["source": "codex-account", "status": "error", "errorCode": code]])
+            let row = try XCTUnwrap(model(value, consent: try consent(["codex"])).presentationRows.values.first)
+            XCTAssertTrue(row.reason.contains(expected), "\(code): \(row.reason)")
+            XCTAssertFalse(row.reason.contains("Reading unavailable"))
+        }
+        let generic = try snapshot(sources: [["source": "native:grok", "status": "error", "reason": "reader_error"]])
+        XCTAssertTrue(try XCTUnwrap(model(generic, consent: try consent(["grok"])).presentationRows.values.first).reason.contains("Reading unavailable"))
     }
 
     func testH37ActualHumanSourceReasonsDoNotOverrideMachineStatusOnHost() async throws {
@@ -308,7 +353,9 @@ import ModelPlanSettings
             defer { host.close() }
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("human-source-" + UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: root) }
-            let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+            let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+            try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+            let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
             await app.reload()
             var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
             host.updateDockConsent(try consent([provider])); host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)

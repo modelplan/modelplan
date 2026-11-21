@@ -6,6 +6,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { releaseAssetText } from "./release-asset.mjs";
 
 const file = path.join(fileURLToPath(new URL("..", import.meta.url)), "cli/internal/quota/codexbar-pin.json");
 const repo = "steipete/CodexBar";
@@ -15,9 +16,7 @@ async function pinFor(tag) {
   const v = tag.replace(/^v/, "");
   const rows = await Promise.all(Object.entries(assets).map(async ([plat, suffix]) => {
     const name = `CodexBarCLI-v${v}-${suffix}.tar.gz`;
-    const res = await fetch(`https://github.com/${repo}/releases/download/v${v}/${name}.sha256`);
-    if (!res.ok) throw Error(`${tag}: ${name}.sha256 ${res.status}`);
-    const [sum, listed] = (await res.text()).trim().split(/\s+/);
+    const [sum, listed] = (await releaseAssetText(repo, `v${v}`, `${name}.sha256`)).trim().split(/\s+/);
     if (!/^[0-9a-f]{64}$/.test(sum) || (listed && listed !== name)) throw Error(`${tag}: bad checksum line for ${name}`);
     return [plat, [suffix, sum]];
   }));

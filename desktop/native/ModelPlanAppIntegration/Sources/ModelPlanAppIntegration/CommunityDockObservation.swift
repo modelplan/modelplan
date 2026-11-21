@@ -39,6 +39,21 @@ enum CommunityObservationAge {
         case .older: return english ? "over 30 days ago" : "超过 30 天前"
         }
     }
+    private static func widgetCardAge(_ age: Age) -> WidgetCardText.Age {
+        switch age {
+        case .unknown: return .unknown
+        case .justNow: return .justNow
+        case .minutes(let n): return .minutes(n)
+        case .hours(let n): return .hours(n)
+        case .days(let n): return .days(n)
+        case .older: return .older
+        }
+    }
+    static func cardHeaderText(observedAt: Date?, now: Date, english: Bool) -> String {
+        let observedAge = age(observedAt, now: now)
+        if case .unknown = observedAge { return unknown(language: english ? .english : .chinese) }
+        return WidgetCardText.updated(widgetCardAge(observedAge)).value(english ? .english : .chinese)
+    }
     static func text(observedAt: Date?, now: Date, language: SettingsLanguage = .english) -> String {
         let english = language == .english
         switch age(observedAt, now: now) {
@@ -52,22 +67,35 @@ enum CommunityObservationAge {
     }
 }
 enum CommunityDockObservation {
-    static func text(input: DockInstrumentInput, snapshot: JoinedSnapshot?, model: CommunityDockSnapshot?, now: Date,
-                     language: SettingsLanguage = .english) -> String {
+    private static func originalObservedAt(input: DockInstrumentInput, snapshot: JoinedSnapshot?, model: CommunityDockSnapshot?, now: Date) -> Date? {
         let accounts = Array((snapshot?.personal.accounts ?? []).enumerated().filter { $0.element.subscription?.subscriptionRef == input.id })
         if !accounts.isEmpty {
             if let selected = (try? DockInstrumentProjection.evaluate(input, now: now))?.selectedWindowID {
                 for (accountIndex, account) in accounts {
                     for windowIndex in (account.windows ?? []).indices {
                         if CommunityDockWindowIdentity.make(account: accountIndex, window: windowIndex) == selected {
-                            return CommunityObservationAge.cardText(observedAt: account.observedAt?.date, now: now, english: language == .english)
+                            return account.observedAt?.date
                         }
                     }
                 }
-                return CommunityObservationAge.unknown(language: language)
+                return nil
             }
-            return CommunityObservationAge.cardText(observedAt: accounts.count == 1 ? accounts[0].element.observedAt?.date : nil, now: now, english: language == .english)
+            return accounts.count == 1 ? accounts[0].element.observedAt?.date : nil
         }
-        return CommunityObservationAge.cardText(observedAt: model?.presentationRows[input.id]?.originalObservedAt, now: now, english: language == .english)
+        return model?.presentationRows[input.id]?.originalObservedAt
+    }
+
+    /// Source age for callers that present a reading timestamp, without card-specific copy.
+    static func text(input: DockInstrumentInput, snapshot: JoinedSnapshot?, model: CommunityDockSnapshot?, now: Date,
+                     language: SettingsLanguage = .english) -> String {
+        CommunityObservationAge.cardText(observedAt: originalObservedAt(input: input, snapshot: snapshot, model: model, now: now),
+                                         now: now, english: language == .english)
+    }
+
+    /// WP-15's card header copy for the same original observation timestamp.
+    static func cardHeaderText(input: DockInstrumentInput, snapshot: JoinedSnapshot?, model: CommunityDockSnapshot?, now: Date,
+                               language: SettingsLanguage = .english) -> String {
+        CommunityObservationAge.cardHeaderText(observedAt: originalObservedAt(input: input, snapshot: snapshot, model: model, now: now),
+                                               now: now, english: language == .english)
     }
 }

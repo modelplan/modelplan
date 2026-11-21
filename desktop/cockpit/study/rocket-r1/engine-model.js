@@ -21,7 +21,8 @@ export const widthClass = n => n <= 2 ? 'wide' : n <= 4 ? 'medium' : 'narrow';
 export const levelOf = (r, redAt = 25) => r == null ? 'none' : r <= redAt ? 'low' : r <= 50 ? 'mid' : 'ok';
 // Lit segments of the 10-segment bar: tens, rounded, but a window with anything left keeps one segment lit, so only a
 // used-up window shows an empty bar.
-export const litSegments = r => r == null || r <= 0 ? 0 : clamp(Math.round(r / 10), 1, 10);
+// In used mode (Settings "used", D130) the bar fills with what is used, 100 - r, by the same rule; colours stay keyed to r.
+export const litSegments = (r, used = false) => { const v = r == null ? null : used ? 100 - r : r; return v == null || v <= 0 ? 0 : clamp(Math.round(v / 10), 1, 10); };
 export const pageCount = n => Math.max(1, Math.ceil(n / PER));
 // An extra quota's period as the study's window kinds name it (the snapshot says weekly / monthly).
 const PERIODS = {'5h': '5h', day: 'day', daily: 'day', week: 'week', weekly: 'week', month: 'month', monthly: 'month'};
@@ -43,9 +44,9 @@ export const runOutWindow = a => a.forecast ? a.windows.find(w => w.trend != nul
 // added by the view and positional().
 function cellOf(a, w, ui, runOutW, grey) {
   const r = a.state === 'loading' || a.state === 'error' ? null : w.remaining ?? null, level = levelOf(r, ui.redAt);
-  return {focusIdentity: w.focusIdentity ?? null, kind: w.kind, period: PERIODS[w.kind] || w.kind, remaining: r, value: r == null ? null : ui.pctMode === 'used' ? 100 - r : r, level, lit: litSegments(r),
+  return {focusIdentity: w.focusIdentity ?? null, kind: w.kind, period: PERIODS[w.kind] || w.kind, remaining: r, value: r == null ? null : ui.pctMode === 'used' ? 100 - r : r, level, lit: litSegments(r, ui.pctMode === 'used'),
     drawing: r === 0 && !grey && !!a.credits?.drawing, noData: r == null && a.state === 'ok',
-    runOutMin: w === runOutW && r != null && !grey ? a.forecast.runOutMin : null,
+    runOutMin: w === runOutW && r != null && !grey && a.state !== 'stale' ? a.forecast.runOutMin : null,
     timeLeft: grey || a.state === 'loading' || a.state === 'error' ? null : timeLeft(w),
     timeLit: grey || a.state === 'loading' || a.state === 'error' ? null : litTimeDots(timeLeft(w)),
     resetIn: w.resetIn ?? null, resetAt: w.resetAt ?? null, resetText: w.resetText ?? null};
@@ -54,7 +55,7 @@ function cellOf(a, w, ui, runOutW, grey) {
 // narrow tag used next to +1: a name of up to three characters as it is, else its initial (which then takes the period).
 function extraCell(a, w, ui, grey) {
   const period = PERIODS[w.period || w.kind] || w.kind, c = cellOf(a, {...w, kind: period}, ui, null, grey);
-  c.runOutMin = w.trend != null && w.trend < 0 && w.runOutMin != null && c.remaining != null && !grey ? w.runOutMin : null;
+  c.runOutMin = w.trend != null && w.trend < 0 && w.runOutMin != null && c.remaining != null && !grey && a.state !== 'stale' ? w.runOutMin : null;
   const name = w.name || w.scope?.label || '';
   return {...c, extra: true, period, name, label: w.label || name, tag: name.length <= 3 ? name : [...name][0], tagPeriod: name.length > 3};
 }
@@ -80,15 +81,20 @@ function reserveOf(a, now) {
   const expiries = cards.map(c => c.expiresAt).filter(v => Number.isFinite(v));
   const first = expiries.length ? Math.min(...expiries) : null;
   const count = cards.some(c => c.count === null) ? null : cards.reduce((n,c) => n + (c.count ?? 1), 0);
-  return {cards: cards.length ? count : null, warn: expiries.some(v => (v - now) / H <= 48), firstExpiry: first,
-    credits: cr ? cr.balance : null, drawing: !!cr?.drawing};
+  // CKP-ENG-52: a zero carries no information and is not shown; nothing left at all means no reserve.
+  const credits = cr && cr.balance !== 0 ? cr.balance ?? null : null, money = cr?.money ?? null;
+  if (!(cards.length && count !== 0) && credits == null && money == null) return null;
+  return {cards: cards.length && count !== 0 ? count : null, warn: expiries.some(v => (v - now) / H <= 48), firstExpiry: first,
+    credits, money, drawing: !!cr?.drawing};
 }
+// CKP-ENG-50/54: a stale reading is drawn like a current one; only failed readings are grey. Neither washes its column.
 function columnOf(a, i, ui, status, now) {
-  const grey = GREY.has(a.state), st = grey ? null : status.get(a.id) || null;
+  const quiet = GREY.has(a.state), grey = quiet && a.state !== 'stale', st = quiet ? null : status.get(a.id) || null;
   return {id: a.id, name: a.name, short: a.short, alias:a.alias, colour: a.colour, logo: a.logo, key: i + 1,
     on: ui.scope === a.id, off: !!ui.scope && ui.scope !== a.id,
     state: a.state, grey, ageMin: a.ageMin ?? null, status: st, tint: ui.tint && st ? st : null,
-    quotaOnly: a.support === 'quota-only', today: a.todayTokens ?? null,
+    quotaOnly: a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), today: a.todayTokens ?? null,
+    cost: a.state === 'ok' || a.state === 'stale' ? a.rangeCost ?? null : null,
     // Never substitute the current/recent-seven-day rate for today's subscription average.
     speed: a.state === 'ok' && a.support !== 'quota-only' ? a.todayAverageGenerationTps ?? null : null,
     usage7: a.state === 'ok' ? a.usage7 ?? null : null,

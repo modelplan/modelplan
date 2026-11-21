@@ -26,27 +26,27 @@ function fixture(forecast={}) {
 }
 const lamp=page=>page.locator('[data-caution]');
 
-test('D38 a forecast run-out lights the amber lamp and the won\'t-last row',async({page})=>{
+test('D38 a forecast run-out lights the amber lamp and the shared run-out sentence (ALR-50)',async({page})=>{
  const {data,row,w}=fixture();
  await open(page,data);
  await expect(lamp(page)).toHaveClass(/\bamber\b/);await expect(lamp(page)).not.toHaveClass(/\bred\b/);
  await lamp(page).click();
- await expect(page.getByText(`${row.name.en} ${w.label.en} 60% · won't last 5h00`)).toBeVisible();
+ await expect(page.getByText(`${row.name.en} ${w.label.en} 60% · out ~40m · resets in 5h00`)).toBeVisible();
 });
 
-test('D38 the Chinese row reads 撑不到 and uses the same rule',async({page})=>{
+test('D38 the Chinese row reads 约40m用完 and uses the same rule (ALR-50)',async({page})=>{
  const {data,row,w}=fixture();
  await open(page,data,'zh-CN');
  await expect(lamp(page)).toHaveClass(/\bamber\b/);
  await lamp(page).click();
- await expect(page.getByText(`${row.name.zh} ${w.label.zh} 60% · 撑不到 5h00 后重置`)).toBeVisible();
+ await expect(page.getByText(`${row.name.zh} ${w.label.zh} 60% · 约40m用完 · 5h00 后重置`)).toBeVisible();
 });
 
 test('D38 the engine cell and the Subscription page name the run-out',async({page})=>{
  await open(page,fixture().data);
  await expect(page.locator('.qcell').filter({hasText:'out ~40m'}).first()).toBeVisible();
  await page.keyboard.press('1');
- await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.getByRole('button',{name:'Plans',exact:true}).click();
  await expect(page.locator('.sp-w em.amber').first()).toHaveText('out ~40m');
 });
 
@@ -78,6 +78,8 @@ test('D38 a retained reading never forecasts',async({page})=>{
 // macrev2-631-1: a passed run-out needs a repaint at that moment, not at the next reading.
 test('D38 the page asks for a tick at the run-out, and the amber clears there with no new reading',async({page})=>{
  const {data,w}=fixture({runsOutAt:iso(20)});w.validUntil=iso(60);
+ // D277: a listed session adds a minute tick for the strip's elapsed time; this check is about the run-out alone.
+ data.details.sessions=[];
  const {send,receive}=await open(page,data);
  await expect(lamp(page)).toHaveClass(/\bamber\b/);
  expect(await lastDeadline(page)).toBe(String(NOW+20*60000));

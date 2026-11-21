@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/profile"
 )
 
 // State is the cache's index. It only ever names a fully verified publication.
@@ -51,7 +53,8 @@ func CleanLastError(saved string) string {
 
 type Store struct{ Dir string }
 
-// Open uses $MODELPLAN_CACHE, else os.UserCacheDir()/modelplan, and creates it.
+// Open uses the profile cache folder (profile.CacheDir: the fresh-profile root, else
+// $MODELPLAN_CACHE, else the user cache folder/modelplan) and creates it.
 func Open() (*Store, error) {
 	s, err := Locate()
 	if err != nil {
@@ -65,18 +68,17 @@ func Open() (*Store, error) {
 
 // Locate is Open without creating anything, for readers that must not write.
 func Locate() (*Store, error) {
-	dir := os.Getenv("MODELPLAN_CACHE")
-	if dir == "" {
-		base, err := os.UserCacheDir()
-		if err != nil {
-			return nil, err
-		}
-		dir = filepath.Join(base, "modelplan")
+	dir, err := profile.CacheDir()
+	if err != nil {
+		return nil, err
 	}
 	return &Store{Dir: dir}, nil
 }
 
 func (s *Store) statePath() string { return filepath.Join(s.Dir, "state.json") }
+
+// StatePath is where State is kept (WP-17: the engine watches it to know the cache changed).
+func (s *Store) StatePath() string { return s.statePath() }
 
 // State returns the zero State when nothing has been synced yet.
 func (s *Store) State() (State, error) {

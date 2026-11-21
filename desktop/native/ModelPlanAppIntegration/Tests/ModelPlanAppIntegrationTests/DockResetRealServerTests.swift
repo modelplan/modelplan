@@ -144,7 +144,7 @@ import ModelPlanSettings
         XCTAssertNil(app.notificationAuthorizationService)
         var delivered: [String] = []
         app.composition.setResetNotificationDelivery { event, title in
-            XCTAssertEqual(title, "Official extra reset")
+            XCTAssertEqual(title, "Codex limit reset confirmed")
             delivered.append(event)
         }
         app.allowDockPresentation()
@@ -187,14 +187,15 @@ import ModelPlanSettings
         let initial = try strip()
         let announcement = try XCTUnwrap(initial.noticeMarks.first?.notice)
         XCTAssertEqual(announcement.key.kind, .resetAnnounced)
-        XCTAssertEqual(announcement.tone, .blue)
+        XCTAssertEqual(announcement.tone, DockNotice.resetAnnouncedTone)
         XCTAssertEqual(announcement.shape, .hollow)
         XCTAssertEqual(face(), announcement)
         XCTAssertEqual(app.noticeIndicator.notice, announcement)
         let quota = initial.quotaSegmentColorRolesForChecks
         XCTAssertEqual(quota.first?.remainingPercent, 30)
         XCTAssertEqual(quota.first?.quotaRole, .warning, "The fixture must have quota paint before acknowledging the notice")
-        try await wait("Announced notice is delivered once") { delivered == [eventID] }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(delivered, [], "D166: an announced reset (a forecast) never notifies")
 
         XCTAssertTrue(initial.accessibilityPerformPress())
         XCTAssertEqual(dock.edgePresentation?.state, .expanded)
@@ -219,14 +220,15 @@ import ModelPlanSettings
         try await waitForEvent(eventID, "confirmed")
         let confirmation = try XCTUnwrap(face())
         XCTAssertEqual(confirmation.key.kind, .resetConfirmed)
-        XCTAssertEqual(confirmation.tone, .blue)
+        XCTAssertEqual(confirmation.tone, DockNotice.resetConfirmedTone)
         XCTAssertEqual(confirmation.shape, .solid)
         XCTAssertEqual(try strip().noticeMarks.first?.notice, confirmation)
         XCTAssertEqual(app.noticeIndicator.notice, confirmation)
         XCTAssertEqual(try strip().quotaSegmentColorRolesForChecks, quota)
-        XCTAssertEqual(delivered, [eventID], "Confirmation must not deliver the same event a second time")
+        try await wait("The confirmation is delivered exactly once") { delivered == [eventID] }
 
-        try writeReading(used: 30, observed: at(-10), reset: at(10_800))
+        // A real restart: the five-hour window began after the confirmation (macrev2-862-3).
+        try writeReading(used: 30, observed: at(-5), reset: at(18_000 - 10))
         try await subscribe()
         XCTAssertEqual(dock.dockView.presentedReadingsForChecks[member]?.remainingPercent, 70)
         XCTAssertNil(try strip().quotaSegmentColorRolesForChecks.first?.quotaRole, "The improved reading clears quota paint")
@@ -242,7 +244,8 @@ import ModelPlanSettings
         try publish([expiring])
         try await subscribe()
         try await waitForEvent(expiryID, "announced")
-        try await wait("A distinct event receives its own delivery") { delivered == [eventID, expiryID] }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(delivered, [eventID], "A distinct forecast does not notify")
         let expiringNotice = try XCTUnwrap(face())
         XCTAssertEqual(app.noticeIndicator.notice, expiringNotice)
         app.showConsole()
@@ -253,7 +256,7 @@ import ModelPlanSettings
         dock.refreshDockContent()
         XCTAssertNil(face())
         XCTAssertTrue(try strip().noticeMarks.isEmpty)
-        XCTAssertEqual(delivered, [eventID, expiryID], "Expiry must not publish another notification")
+        XCTAssertEqual(delivered, [eventID], "Expiry must not publish another notification")
     }
 }
 #endif

@@ -126,7 +126,7 @@ export function verifyPortholePack(root = fileURLToPath(new URL('..', import.met
     const data = readFileSync(join(directory, file)); const text = data.toString();
     assert.ok(!privateText.test(text), 'private text in porthole metadata');
     assert.ok(text.includes('SPDX-License-Identifier' + (file.endsWith('.json') ? '"' : '') + ':') && text.includes(license), 'metadata licence');
-    if (file === 'BADGE-NOTICE.txt') assert.ok(text.includes('Badge interiors are abstract colour fields containing no recognisable third-party logos.'), 'badge notice missing');
+    if (file === 'BADGE-NOTICE.txt') assert.ok(text.includes('Vendor marks are third-party trademarks of their owners, used only to identify each maker; they are not covered by the reserved visuals licence.'), 'badge notice missing');
     descriptors.push({ file, kind, sha256: sha256(data), bytes: data.length, license, size: null });
   }
   assert.deepEqual(walk(directory).sort(), [...files.keys(), ...Object.keys(metadata)].sort(), 'file outside porthole manifest');

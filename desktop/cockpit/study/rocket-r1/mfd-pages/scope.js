@@ -1,4 +1,6 @@
 import {scopeSelection} from './public-helpers.js';
+import {t} from '../i18n.js';
+import '../strings/mfd.js';
 // Scope helpers for the public-screen views (r7 P4). Pure: they read only (d = mfdData(), ui = mfdUi()).
 export const accountsIn = (d, ui) => ui.scope ? d.accounts.filter(a => a.id === ui.scope) : d.accounts;
 export const accountOf = (d, id) => d.accounts.find(a => a.id === id) || null;
@@ -7,9 +9,9 @@ export const modelOf = (d, id) => d.models.find(m => m.id === id) || null;
 export const rowOf = (m, label) => m?.e.find(e => e[0] === label) || null;
 export const recRow = m => rowOf(m, m.rec) || m.e.at(-1);
 const midnight = now => { const x = new Date(now); x.setHours(0, 0, 0, 0); return x.getTime(); };
-// Sessions in scope: today (since local midnight) or the last 7 days.
+// Sessions in scope: today (since local midnight), the last 7 days or the last 30 days.
 export function sessionsIn(d, ui, period = 'today') {
-  const ids = new Set(accountsIn(d, ui).map(a => a.id)), from = period === '7d' ? d.now - 7 * 864e5 : midnight(d.now);
+  const ids = new Set(accountsIn(d, ui).map(a => a.id)), from = period === '30d' ? d.now - 30 * 864e5 : period === '7d' ? d.now - 7 * 864e5 : midnight(d.now);
   // Public port: a session the producer could not bind to a subscription still belongs to 全部 / All; a last-seen
   // session (lastAt) counts by its last observation, which is not an end time.
   return d.sessionRanking.filter(x => (ids.has(x.sub) || (!ui.scope && x.sub == null)) && (x.running || (x.lastAt ?? x.endedAt) >= from || x.startedAt >= from));
@@ -26,3 +28,10 @@ export function chartModels(d, ui) {
   return scopeSelection({models:d.models,accounts:d.accounts,sessions:d.sessionRanking,
     now:d.now,scope:ui.scope||null,lineup:d.lineup}).field;
 }
+// CKP-SHELL-50 / MENU-52 (WP-09): the big-screen time key. One key, three choices (今天 / 7天 / 30天, Today / 7d /
+// 30d), showing the app's one range; a press asks the app for it (the deck sends it), so the menu bar, the title bar
+// and every page show the same range.
+export const RANGES = ['today', '7d', '30d'];
+const rangeLabel = {today: 'mfd.rToday', '7d': 'mfd.r7d', '30d': 'mfd.r30d'};
+export const rangeOf = ui => RANGES.includes(ui.range) ? ui.range : '7d';
+export const rangeKey = ui => ({id: 'range', items: RANGES.map(r => ({value: r, text: t(rangeLabel[r]), on: rangeOf(ui) === r}))});

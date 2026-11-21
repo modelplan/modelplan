@@ -102,6 +102,7 @@ await build({
 let css = await readFile(here("app/style.css"), "utf8");
 if (visual) {
   css += "\n" + (await readFile(resolve(visual, "theme.css"), "utf8"));
+  css += "\n" + (await readFile(here("app/livery.css"), "utf8"));
   await copyFile(resolve(visual, "LICENSE.md"), dist + "VISUAL-LICENSE.md");
 }
 if (official) {

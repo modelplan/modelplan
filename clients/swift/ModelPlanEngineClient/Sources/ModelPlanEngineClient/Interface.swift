@@ -18,7 +18,12 @@ public enum EngineInvalidationReason: Sendable, Equatable {
 }
 
 public enum EngineFeature: Sendable, Equatable {
-    case rows, consent, history, cockpit, publication, pluginInstall, diagnostics
+    case rows, consent, history, cockpit, publication, pluginInstall, diagnostics, historyImport, readerKey
+}
+
+/// D90: the three manual-key methods. The key travels only in the request params.
+public enum EngineReaderKeyMethod: String, Sendable, Equatable {
+    case set = "readerkey/set", test = "readerkey/test", remove = "readerkey/remove", status = "readerkey/status"
 }
 
 public enum EngineRequestDisposition: Sendable, Equatable {
@@ -51,6 +56,8 @@ public enum EngineResponse: Sendable {
     case pluginInstall(EngineReply<WirePluginInstallResult>)
     case publication(EngineReply<WirePublicationResult>)
     case diagnostics(EngineReply<WireDiagnostics>)
+    case readerKey(EngineReply<WireReaderKeyResult>)
+    case historyImport(EngineReply<WireHistoryImportStatus>)
 }
 
 public enum EngineClientEvent: Sendable {
@@ -101,6 +108,8 @@ public protocol EngineClient: Actor {
     /// This does not grant scope, reserve validity or cancel an OS operation.
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool
     func supportsCapability(_ capability: String) async -> Bool
+    /// The server version from the accepted initialize reply of the current session; nil until one is accepted.
+    func acceptedServerVersion() async -> String?
     func start() async throws -> EngineDeliveryContext
     func stop() async
     func retry() async throws -> EngineDeliveryContext
@@ -121,10 +130,29 @@ public protocol EngineClient: Actor {
                        timeout: Duration?) async throws -> EngineRequestCompletion
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion
+    func readerKey(_ method: EngineReaderKeyMethod, _ params: WireReaderKeyParams,
+                   timeout: Duration?) async throws -> EngineRequestCompletion
+    /// Local usage-history import (metadata only). Start answers at once with the running status;
+    /// poll `historyImportStatus`; cancel stops it without writing; remove deletes exactly the
+    /// imported rows. Each reply is a `.historyImport` response.
+    func historyImportStart(_ request: WireHistoryImportStartParams, timeout: Duration?) async throws -> EngineRequestCompletion
+    func historyImportStatus(timeout: Duration?) async throws -> EngineRequestCompletion
+    func historyImportCancel(timeout: Duration?) async throws -> EngineRequestCompletion
+    func historyImportRemove(timeout: Duration?) async throws -> EngineRequestCompletion
 }
 
 extension EngineClient {
+    /// A client without the manual-key methods reports them unsupported.
+    public func readerKey(_ method: EngineReaderKeyMethod, _ params: WireReaderKeyParams,
+                          timeout: Duration?) async throws -> EngineRequestCompletion {
+        throw EngineClientError.unsupportedCapability
+    }
     public func supportsCapability(_ capability: String) async -> Bool { false }
+    public func acceptedServerVersion() async -> String? { nil }
+    public func historyImportStart(_ request: WireHistoryImportStartParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    public func historyImportStatus(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    public func historyImportCancel(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    public func historyImportRemove(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     public func refresh(_ request: WireRefreshRequestParams, timeout: Duration?,
                         prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion {
         // A client without the pre-send seam must not invent a correlation ID.

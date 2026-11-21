@@ -16,9 +16,8 @@ enum SettingsDiagramWords {
 @MainActor public final class SettingsDiagramView: NSView {
     public private(set) var input: SettingsDiagramInput
     public private(set) var reduceMotion = false
-    public var language: SettingsLanguage = .chinese { didSet { needsDisplay = true } }
+    public var language: SettingsLanguage = .fallback { didSet { needsDisplay = true } }
     private var tracking: NSTrackingArea?
-    var playsOnHover = true
     public override var isFlipped: Bool { true }
     public override var intrinsicContentSize: NSSize { .init(width: 96, height: 40) }
     public init(input: SettingsDiagramInput) {
@@ -57,7 +56,7 @@ enum SettingsDiagramWords {
         let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(next); tracking = next
     }
-    public override func mouseEntered(with event: NSEvent) { if playsOnHover { play() } }
+    public override func mouseEntered(with event: NSEvent) { play() }
     public override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
     public override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); needsDisplay = true }
 

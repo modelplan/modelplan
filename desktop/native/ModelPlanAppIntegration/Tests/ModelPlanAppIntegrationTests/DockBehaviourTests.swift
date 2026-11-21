@@ -104,7 +104,8 @@ import ModelPlanSettings
             eventNumber: 1, clickCount: type == .leftMouseDown ? 1 : 0, pressure: type == .leftMouseDown ? 1 : 0))
     }
     func rows() -> [NSAccessibilityElement] {
-        host.dockView.accessibilityChildren()?.compactMap { $0 as? NSAccessibilityElement } ?? []
+        // Subscription rows only: the empty-station button (dock.empty, G3-136) is not a row.
+        host.dockView.accessibilityChildren()?.compactMap { $0 as? NSAccessibilityElement }.filter { $0.accessibilityIdentifier() != "dock.empty" } ?? []
     }
     func menuText() throws -> String { try XCTUnwrap(panel().contentView?.menu).items.map(\.title).joined(separator: " | ") }
 }
@@ -304,6 +305,19 @@ import ModelPlanSettings
         print("placement-producer saved=right effective=right recovery=false restored-right=true unknown-cleared=true retired-cleared=true durable-unchanged=true panels-closed=true")
     }
 
+    func testSET_9_12TheDockStaysSharedWithScreenCaptureByDefault() async throws {
+        // SET-9-12 (owner decision C19, 2026-11-01): hide-from-screen-capture is OFF by default —
+        // "off, so screenshots show the Dock as users expect" — and v1 ships no switch for it.
+        // The dock panel must never exclude itself from screen capture.
+        let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
+        await f.start()
+        let panel = try f.panel()
+        XCTAssertNotEqual(panel.sharingType, .none, "SET-9-12: the Dock must appear in screen capture by default")
+        try f.reveal()
+        XCTAssertNotEqual(try f.panel().sharingType, .none, "SET-9-12: reveal must not turn capture exclusion on")
+        report(1, "sharingType=\(panel.sharingType == .none ? "none" : "shared")")
+    }
+
     func testItem1FirstLaunchIsInsideMainVisibleFrame() async throws {
         let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
         await f.start()
@@ -381,11 +395,13 @@ import ModelPlanSettings
             XCTAssertEqual(from.m42, 0, accuracy: 0.0001)
         }
         f.tick(0.301)
+        let collapsed = expectation(description: "the collapse ghost has finished and been removed")
+        f.host.collapseCompletedForChecks = { collapsed.fulfill() }
         f.leave()
         XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
         XCTAssertTrue(panel.contentView is DockSliverView, "the sliver is presented at once")
         XCTAssertTrue(f.host.collapseAnimatingForChecks, "the collapse plays in its own click-through panel")
-        try await Task.sleep(for: .milliseconds(250))
+        await fulfillment(of: [collapsed], timeout: 5)
         XCTAssertFalse(f.host.collapseAnimatingForChecks, "the collapse ends after 0.12 s")
         let motion = DockRevealMotion.animations(revealing: false, edge: .bottom, flipped: true, reduceMotion: false)
         XCTAssertEqual(motion["dock.reveal.opacity"]?.duration ?? 0, 0.12, accuracy: 0.0001)
@@ -552,8 +568,10 @@ import ModelPlanSettings
         XCTAssertThrowsError(try SettingsB21Edit(key: .captureHiding, value: "true"))
         let covered: Set<SettingKey> = [.showDock, .autoHide, .reveal, .magnification, .size, .showPercentages,
             .percentageMode, .percentagePin, .redBelow, .sliverAlert, .dockDisplay, .dockEdge, .dockPosition,
-            .fullscreen, .captureHiding, .activeDisplay, .order]
+            .fullscreen, .captureHiding, .activeDisplay]
         XCTAssertEqual(Set(Settings65Homes.dock.flatMap(\.keys)), covered)
+        // G3-68 / D87 (1): subscription order lives in Settings > Subscriptions, not in the Quota Widget pane.
+        XCTAssertFalse(Settings65Homes.dock.flatMap(\.keys).contains(.order))
         try await editor.commit(.moveSubscription("synthetic-second", to: 0,
                                                  expectedOrder: ["synthetic-local", "synthetic-second"]))
         XCTAssertEqual(f.rows().map { $0.accessibilityIdentifier() },

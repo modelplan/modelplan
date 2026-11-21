@@ -5,25 +5,30 @@ import {t} from '../i18n.js';
 import '../strings/review49.js';
 import {scopedProject} from '../project-attribution.js';
 import {esc, tok, dhm, stamp, chip, bolt} from './fmt.js';
-import {accountOf, modelOf, poolsIn, sessionsIn} from './scope.js';
+import {accountOf, modelOf, poolsIn, sessionsIn, accountsIn, rangeOf} from './scope.js';
+import {rangeWord} from './page-range.js';
 
+// TODO(#1050, WP-06): the ≈cost cell stays empty until the client-v1.6 price data (~11-21) reaches this page.
+// 项目 (CKP-MFD-67): one row per project: colour chip, name, model and effort, ≈cost (empty until WP-06's prices reach
+// this page), share; the row's background is as long as its share. The range is the header's (page-range.js).
 function projects(d, ui) {
-  const pools = poolsIn(d, ui);
-  let rows = d.projectRanking[ui.days === 7 ? 'recent7d' : 'recent30d'];
+  const pools = poolsIn(d, ui), range = rangeOf(ui);
+  // The ranking has 7- and 30-day figures; until today's arrives (WP-02) Today says so (CKP-SHELL-50) instead of another range's rows.
+  if (range === 'today') return `<p class="mp-empty">${t('mfd.rangeNoToday')}</p>`;
+  let rows = d.projectRanking[range === '7d' ? 'recent7d' : 'recent30d'];
   rows = rows.map(p => scopedProject(p, d.accounts.map(a => a.id), ui.scope)).filter(p => p.available !== false);
   if (pools) rows = rows.map(p => ({...p, configs: p.configs.filter(c => !modelOf(d,c.model)?.pool || pools.includes(modelOf(d,c.model).pool))})).filter(p => p.configs.length);
   if (!rows.length) return `<p class="mp-empty">${t('mfd.noSessions')}</p>`;
-  const max = Math.max(...rows.map(p => p.tokens), 1);
-  // polish A: the rows spread over the screen's height (spacers of 4–14 px between them)
-  return `<div class="wh-list">${rows.slice(0, 5).map(p => {
-    const c = p.configs[0], m = modelOf(d, c.model), on = c.effort && c.effort === c.recommendedEffort;
-    return `<div class="wh"><span class="wh-n">${esc(p.project)}</span><span class="wh-t" title="${esc(t(p.tokenScope === 'unknown' ? 'mfd.projectUnknown' : p.tokenScope === 'combined' ? 'mfd.projectCombined' : 'mfd.projectScoped', {n:tok(p.combinedTokens)}))}">${tok(p.tokens)}</span><i class="wh-bar" ${p.tokens == null ? 'hidden' : ''} style="--p:${p.tokens == null ? 0 : (p.tokens / max * 100).toFixed(0)}%"></i>
-      <span class="wh-c">${esc(m?.short || c.model)} ${esc(c.effort || '--')}</span><span class="wh-m ${on ? 'on' : ''}">★${esc(c.recommendedEffort || '')}</span></div>`;  // round D1: ◉★ became a glowing ★
-  }).join('<i class="vg" aria-hidden="true"></i>')}</div>`;
+  const accounts = accountsIn(d, ui);
+  return `<div class="wd-h">${esc(t('mfd.whProjTitle', {r: rangeWord({range: rangeOf(ui)}), n: rows.length}))}</div><div class="wd-list">${rows.map(p => {
+    const c = p.configs[0], m = modelOf(d, c.model), share = p.tokenScope !== 'unknown' && Number.isFinite(p.share) ? Math.round(p.share * 100) : null;
+    const colour = accounts.find(a => a.pool && m?.pool === a.pool)?.colour || 'var(--lcd-muted)';
+    return `<div class="wd" data-p="${share ?? 0}"><i class="chip" data-v="${esc(colour)}"></i><span class="wd-n">${esc(p.project)}</span><span class="wd-c">${esc(m?.short || c.model)} ${esc(c.effort || '--')}</span><span class="wd-m" data-cost></span><span class="wd-s">${share == null ? '' : share + '%'}</span></div>`;
+  }).join('')}</div>`;
 }
 
 export function sessionRows(d, ui) {
-  const list = sessionsIn(d, ui, ui.time === '7d' ? '7d' : 'today');
+  const list = sessionsIn(d, ui, rangeOf(ui));
   const run = list.filter(x => x.running).sort((a, b) => (b.startedAt ?? b.lastAt) - (a.startedAt ?? a.lastAt)), done = list.filter(x => !x.running).sort((a, b) => (b.lastAt ?? b.endedAt) - (a.lastAt ?? a.endedAt));
   return {run, done};
 }
@@ -35,21 +40,19 @@ function timeline(d, ui) {
     const time = x.running ? (x.startedAt == null ? '▶' : `▶${dhm((d.now - x.startedAt) / 6e4)}`) : stamp(x.lastAt ?? x.endedAt, ui);
     return `<button class="ws ${x.running ? 'run' : ''}" type="button" aria-disabled="true" tabindex="-1" data-mfd="session:${x.ref}" data-tip="${esc(`${x.tool} · ${x.project}`)}">${chip(a?.colour || 'var(--lcd-muted)')}<span class="ws-m">${esc(m?.short || x.model)} ${esc(x.effort || '--')}${x.fast ? ` ${bolt(t('mfd.fastRow'))}` : ''}</span><span class="ws-p">${esc(x.project)}</span><span class="ws-at">${time}</span><span class="ws-tk">${tok(x.tokens)}</span></button>`;
   };
-  return `<div class="ws-list" tabindex="0">${run.length ? `<div class="ws-h">${t('mfd.running')} ${run.length}</div>${run.map(row).join('')}` : ''}${done.length ? `<div class="ws-h">${t(done.every(x => x.lastAt != null) ? 'mfd.lastSeen' : 'mfd.ended')} ${done.length}</div>${done.map(row).join('')}` : ''}</div>`;
+  return `<div class="wd-h">${esc(t('mfd.whSessTitle', {r: rangeWord({range: rangeOf(ui)}), n: run.length + done.length}))}</div><div class="ws-list" tabindex="0">${run.length ? `<div class="ws-h">${t('mfd.running')} ${run.length}</div>${run.map(row).join('')}` : ''}${done.length ? `<div class="ws-h">${t(done.every(x => x.lastAt != null) ? 'mfd.lastSeen' : 'mfd.ended')} ${done.length}</div>${done.map(row).join('')}` : ''}</div>`;
 }
 
 export const where = {
   id: 'where', title: 'mfd.pWhere',
+  // 项目 | 会话 only: the page has no range key of its own; it follows the header range (V1-FINAL 8.4, CKP-MFD-67).
   optionKeys: ui => [
-    {id: 'where', a: {value:'proj', text: t('mfd.oProj'), on: ui.where !== 'time'}, b: {value:'time', text: t('mfd.oTime'), on: ui.where === 'time'}},
-    ui.where === 'time' ? {id: 'time', a: {value:'today', text: t('mfd.oToday'), on: ui.time !== '7d'}, b: {value:'7d', text: t('mfd.o7d'), on: ui.time === '7d'}}
-      : {id: 'days', a: {value:7, text: '7', on: ui.days === 7}, b: {value:30, text: '30', on: ui.days !== 7}},
+    {id: 'where', a: {value:'proj', text: t('mfd.oProj'), on: ui.where !== 'time'}, b: {value:'time', text: t('mfd.oSessions'), on: ui.where === 'time'}},
     null, null],
   render: (d, ui) => ui.where === 'time' ? timeline(d, ui) : projects(d, ui),
   onClick(act, val, ui) {
     if (act === 'opt' && val === 'where') return {patch: {mfdWhere: ui.optionChoice ?? (ui.where === 'time' ? 'proj' : 'time')}};
-    if (act === 'opt' && val === 'time') return {patch: {mfdTime: ui.optionChoice ?? (ui.time === '7d' ? 'today' : '7d')}};
-    if (act === 'opt' && val === 'days') return {patch: {mfdDays: ui.optionChoice != null ? Number(ui.optionChoice) : ui.days === 30 ? 7 : 30}};
+    if (act === 'opt' && val === 'range') return {range: ui.optionChoice};
     if (act === 'session') return {open: ['session', {from: 'mfd', key: val, ref: val}]};
     return null;
   },

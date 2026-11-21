@@ -59,6 +59,7 @@ def assertions(report, helper, home, *, expect_unverified=False):
         ('bundled-cli', report.get('cliPath') == str(helper) and report.get('cliHelpExitCode') == 0
          and type(report.get('cliSupportsConsentJSON')) is bool and report['cliSupportsConsentJSON'] == consent,
          {'path': report.get('cliPath'), 'helpExit': report.get('cliHelpExitCode'), 'consentJSON': consent}),
+        # D114 (owner 2026-11-10, supersedes D56): a fresh install shows the widget expanded at the right edge.
         ('dock-defaults', defaults == {'showDock': True, 'autoHide': False, 'edge': 'right'}, defaults),
         ('synthetic-home', report.get('home') == str(home), report.get('home')),
         ('no-visible-ui', report.get('visibleWindows') == 0, report.get('visibleWindows')),
@@ -96,7 +97,7 @@ def print_results(results):
 
 
 def launch(app, output, *, expect_unverified=False):
-    executable = app / 'Contents/MacOS/ModelPlanCommunity'
+    executable = app / 'Contents/MacOS/ModelPlan'
     helper = app / 'Contents/Helpers/modelplan'
     subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(app)], check=True)
     problem = icon_problem(app)
@@ -143,7 +144,7 @@ def launch(app, output, *, expect_unverified=False):
             diagnostics = [Path.home() / 'Library/Logs/DiagnosticReports',
                            home / 'Library/Logs/DiagnosticReports', Path('/Library/Logs/DiagnosticReports')]
             for _ in range(5):
-                reports = [path for directory in diagnostics for path in directory.glob('ModelPlanCommunity*.ips')
+                reports = [path for directory in diagnostics for path in directory.glob('ModelPlan*.ips')
                            if path.stat().st_mtime >= started and path.stat().st_size <= 2 * 1024 * 1024]
                 if reports:
                     for index, path in enumerate(reports):
@@ -152,7 +153,7 @@ def launch(app, output, *, expect_unverified=False):
                 time.sleep(1)
             try:
                 diagnostic = subprocess.run(['/usr/bin/log', 'show', '--last', '2m', '--style', 'compact',
-                                             '--predicate', f'processIdentifier == {process.pid} OR (process == "ReportCrash" AND eventMessage CONTAINS "ModelPlanCommunity")'],
+                                             '--predicate', f'processIdentifier == {process.pid} OR (process == "ReportCrash" AND eventMessage CONTAINS "ModelPlan")'],
                                             capture_output=True, timeout=10)
                 (output / 'process.system.log').write_bytes(diagnostic.stdout + diagnostic.stderr)
             except (OSError, subprocess.TimeoutExpired):

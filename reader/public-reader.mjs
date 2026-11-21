@@ -221,7 +221,10 @@ var clientSpeedTierSchema = speedTierSchema.safeExtend({
       modelId: text2.nullable(),
       speed: speedTierSchema.shape.models.element.shape.speed
     }).strict()
-  ).min(1)
+  ).min(1),
+  // client-v1.6: the public API price of this tier as a multiple of Standard (fast-tier requests
+  // multiply the model's token prices by it). Absent when the vendor publishes none.
+  apiPriceMultiplier: z2.number().finite().gt(1).optional()
 });
 
 // shared/client-digest.ts
@@ -600,6 +603,40 @@ var tags = z3.array(
     "dominated"
   ])
 );
+// client-v1.6: public API list prices in USD per 1M tokens and a daily usage-rank trend.
+var isoDay = z3.string().refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v);
+var tokenPrices = {
+  input: scalar.positive(),
+  output: scalar.positive(),
+  // Never null: an unpublished cache rate is absent.
+  cacheRead: scalar.nonnegative().optional(),
+  cacheWrite: scalar.nonnegative().optional()
+};
+var modelPriceSchema = z3.object({
+  ...tokenPrices,
+  source: z3.enum(["litellm", "modelsdev"]),
+  asOf: isoDay,
+  // Applies per request: a request whose input tokens exceed aboveInputTokens is priced at
+  // these rates as a whole. Readers only validate; they never choose the tier.
+  longContext: z3.object({ aboveInputTokens: z3.number().int().positive(), ...tokenPrices }).strict().optional()
+}).strict();
+var USAGE_TREND_LIMIT = 8192;
+var usageTrendSchema = z3.object({
+  source: z3.literal("openrouter-paid-daily"),
+  asOf: isoDay,
+  days: z3.number().int().min(1).max(90),
+  ranks: z3.record(text3, z3.array(z3.number().int().min(1).nullable()))
+}).strict();
+var harnessIdsSchema = z3.object({
+  api: ids2,
+  "claude-code": ids2,
+  codex: ids2,
+  gemini: ids2.optional(),
+  antigravity: ids2.optional(),
+  grok: ids2.optional(),
+  copilot: ids2.optional(),
+  kimi: ids2.optional()
+}).strict();
 var clientAliasRegistrySchema = z3.object({
   revision: text3,
   checkedAt: text3,
@@ -607,7 +644,7 @@ var clientAliasRegistrySchema = z3.object({
     z3.object({
       modelId: text3,
       sourceModelId: text3,
-      harnessIds: z3.object({ api: ids2, "claude-code": ids2, codex: ids2 }).strict(),
+      harnessIds: harnessIdsSchema,
       sourceUrls: z3.array(z3.url()),
       qualification: text3,
       requiredEndpoints: z3.record(z3.string(), z3.url())
@@ -629,6 +666,12 @@ var clientDigestSchema = z3.object({
   // exact by the publication replay check.
   projectionVersion: z3.string().regex(/^client-v1\.[1-9]\d*$/).optional(),
   multipliers: z3.array(clientMultiplierSchema).optional(),
+  // client-v1.5: AA Intelligence Index version behind every effort aaScore.
+  aaIndexVersion: text3.optional(),
+  // client-v1.6: present exactly when some model carries a price.
+  priceUnit: z3.literal("usd-per-1m-tokens").optional(),
+  // client-v1.6: OpenRouter paid-usage daily rank per model (null = unranked that day), oldest first.
+  usageTrend: usageTrendSchema.optional(),
   // client-v1.2 (#347): Fast / Ultrafast and their billing multipliers per harness.
   speedTiers: z3.array(clientSpeedTierSchema).optional(),
   multiplierHorizon: z3.object({
@@ -660,7 +703,7 @@ var clientDigestSchema = z3.object({
       recommended: text3.nullable(),
       // ADR 0033; optional so digests published before it still validate.
       recommendationBasis: z3.enum(["balanced", "single-configuration", "assumed-highest"]).nullable().optional(),
-      harnessIds: z3.object({ api: ids2, "claude-code": ids2, codex: ids2 }).strict(),
+      harnessIds: harnessIdsSchema,
       harnessEvidence: z3.object({
         checkedAt: text3,
         sourceUrls: z3.array(z3.url()),
@@ -687,9 +730,18 @@ var clientDigestSchema = z3.object({
           // Present only when true: the ability rests on evidence outside the range its
           // cross-source link was fitted on. Shown within its own model's ladder only;
           // the producer already leaves it out of every cross-model lineup.
-          provisional: z3.literal(true).optional()
+          provisional: z3.literal(true).optional(),
+          // client-v1.5: the raw AA Intelligence Index score for this model and effort.
+          // Absent when unscored; never null or 0. Provisional efforts still carry it.
+          aaScore: scalar.positive().optional()
         }).strict()
-      )
+      ),
+      // client-v1.6: a small (fast, cheap) model.
+      small: z3.boolean().optional(),
+      // client-v1.6: listed but not yet evaluated; no efforts, recommendation or lineup place.
+      evaluation: z3.literal("pending").optional(),
+      // client-v1.6: public API list price per 1M tokens (priceUnit).
+      price: modelPriceSchema.optional()
     }).strict()
   ),
   lineups: z3.array(
@@ -697,7 +749,8 @@ var clientDigestSchema = z3.object({
       developerId: text3,
       costBasisId: text3,
       method: z3.literal(LINEUP_METHOD),
-      tie: z3.literal(LINEUP_TIE),
+      // 1 on index display scale 0.3, 0.815 on 0.4 (same gap re-expressed); verdicts unchanged.
+      tie: z3.union([z3.literal(LINEUP_TIE), z3.literal(0.815)]),
       baseline: text3,
       frontier: ids2,
       steps: z3.array(
@@ -756,6 +809,26 @@ var clientDigestSchema = z3.object({
     fail("incomplete_multiplier_projection");
   if (d.projectionVersion === "client-v1.2" && d.speedTiers === void 0 || d.speedTiers !== void 0 && (d.projectionVersion === void 0 || d.projectionVersion === "client-v1.1"))
     fail("incomplete_speed_tier_projection");
+  const minor = d.projectionVersion ? Number(d.projectionVersion.slice("client-v1.".length)) : 0;
+  const aaScored = d.models.some((m) => m.efforts.some((e) => e.aaScore !== void 0));
+  if (d.aaIndexVersion !== void 0 !== aaScored || aaScored && minor < 5)
+    fail("invalid_client_aa_score");
+  if (minor < 6 && (d.priceUnit !== void 0 || d.usageTrend !== void 0 || d.models.some((m) => m.small !== void 0 || m.price !== void 0 || m.evaluation !== void 0) || (d.speedTiers ?? []).some((t) => t.apiPriceMultiplier !== void 0)))
+    fail("invalid_client_v16_projection");
+  if (d.priceUnit !== void 0 !== d.models.some((m) => m.price !== void 0))
+    fail("invalid_client_price_unit");
+  if (d.usageTrend !== void 0) {
+    const modelIds = new Set(d.models.map((m) => m.id));
+    const ranks = Object.entries(d.usageTrend.ranks);
+    if (ranks.some(([id3, days]) => !modelIds.has(id3) || days.length !== d.usageTrend.days) || new TextEncoder().encode(JSON.stringify(d.usageTrend)).length > USAGE_TREND_LIMIT)
+      fail("invalid_client_usage_trend");
+  }
+  const pending = new Set(d.models.filter((m) => m.evaluation === "pending").map((m) => m.id));
+  for (const m of d.models)
+    if (pending.has(m.id) && (m.efforts.length > 0 || m.recommended !== null || m.recommendationBasis !== null || m.defaultSelected === true))
+      fail("invalid_client_pending_model");
+  if (d.lineups.some((l) => pending.has(l.baseline) || l.frontier.some((id3) => pending.has(id3)) || l.members.some((r) => pending.has(r.id))))
+    fail("invalid_client_pending_model");
   const models = new Map(d.models.map((m) => [m.id, m]));
   for (const t of d.speedTiers ?? [])
     for (const m of t.models)
@@ -2180,7 +2253,9 @@ function validateComponent(kind, value, manifest) {
     throw Object.assign(new Error(`publication_invalid_data_${kind}`), {
       validationIssues: validation.error.issues.map((issue) => ({
         path: issue.path.join("."),
-        code: issue.code
+        code: issue.code,
+        // Custom issues carry the rule code (e.g. invalid_client_pending_model), never data.
+        ...issue.code === "custom" ? { message: issue.message } : {}
       }))
     });
   if (kind === "display" && !schemas.registry.safeParse(d.registry).success) throw Error("publication_invalid_display_registry");

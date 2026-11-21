@@ -130,6 +130,19 @@ type Result struct {
 }
 
 // Sync refreshes the cache. On any failure the last verified publication stays current.
+// minCheckOverride replaces MinCheckInterval; only a test build of the command sets it (see SetTestMinCheckInterval).
+var minCheckOverride time.Duration
+
+func minCheck() time.Duration {
+	if minCheckOverride > 0 {
+		return minCheckOverride
+	}
+	return MinCheckInterval
+}
+
+// SetTestMinCheckInterval is called only from the command's modelplan_test_cadence test build.
+func SetTestMinCheckInterval(d time.Duration) { minCheckOverride = d }
+
 func (c *Client) Sync(ctx context.Context, force bool) (Result, error) {
 	unlock, err := c.Store.Lock()
 	if err != nil {
@@ -141,13 +154,14 @@ func (c *Client) Sync(ctx context.Context, force bool) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	cached := st
 	if st.Base != c.Base { // another source: nothing cached is comparable
 		st = store.State{Base: c.Base}
 	}
 	now := c.Now()
 	nextCheck := st.NextCheckAt
 	if nextCheck.IsZero() { // caches written before interval jitter
-		nextCheck = st.CheckedAt.Add(MinCheckInterval)
+		nextCheck = st.CheckedAt.Add(minCheck())
 	}
 	if !force && st.PublicationID != "" && now.Before(nextCheck) {
 		return Result{PublicationID: st.PublicationID, Skipped: true}, nil
@@ -164,12 +178,16 @@ func (c *Client) Sync(ctx context.Context, force bool) (Result, error) {
 	st.LastAttemptAt = now
 	res, err := c.sync(ctx, &st)
 	if err != nil {
+		if cached.Base != c.Base && cached.PublicationID != "" {
+			st = cached // the failed source must not cost the verified publication
+			st.LastAttemptAt = now
+		}
 		st.LastError = Class(err, c.ProxySource())
 		err = &syncError{st.LastError, err}
 	} else {
 		st.LastError = ""
 		st.CheckedAt = now
-		st.NextCheckAt = now.Add(MinCheckInterval + c.Jitter())
+		st.NextCheckAt = now.Add(minCheck() + c.Jitter())
 	}
 	if serr := c.Store.SaveState(st); err == nil {
 		err = serr
@@ -207,8 +225,14 @@ func waitForCheck(ctx context.Context, delay time.Duration) error {
 }
 
 func (c *Client) sync(ctx context.Context, st *store.State) (Result, error) {
-	etag := ""
+	// The unchanged-publication shortcuts below hold only while the cached copy still verifies;
+	// a missing or damaged object is fetched again through the full verification path.
+	etag, cacheOK := "", false
 	if st.PublicationID != "" {
+		_, _, err := Load(c.Store)
+		cacheOK = err == nil
+	}
+	if cacheOK {
 		etag = st.ETag
 	}
 	body, newTag, status, err := c.get(ctx, "/publications/current.json", etag)
@@ -229,7 +253,7 @@ func (c *Client) sync(ctx context.Context, st *store.State) (Result, error) {
 	if p.SchemaVersion != 1 || !idRe.MatchString(p.PublicationID) || !hashRe.MatchString(p.ManifestHash) {
 		return Result{}, errors.New("pointer: unsupported schema or malformed ids")
 	}
-	if p.PublicationID == st.PublicationID && p.ManifestHash == st.ManifestHash {
+	if cacheOK && p.PublicationID == st.PublicationID && p.ManifestHash == st.ManifestHash {
 		if _, _, err := Load(c.Store); err != nil {
 			return Result{}, err
 		}
@@ -355,7 +379,10 @@ func (c *Client) getLimit(ctx context.Context, path, etag string, budget int64) 
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, budget+1))
 	if err != nil {
-		return nil, "", 0, err
+		if ctx.Err() != nil {
+			return nil, "", 0, ctx.Err()
+		}
+		return nil, "", 0, classifyRequest(err) // a dropped transfer is a network failure; the cause is not kept
 	}
 	if int64(len(b)) > budget {
 		return nil, "", 0, fmt.Errorf("GET %s: response too large", path)

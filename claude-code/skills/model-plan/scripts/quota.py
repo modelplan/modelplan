@@ -554,6 +554,8 @@ def eval_window(w, now):
     recent = w.pop("_recent", [])
     w["remainingPercent"] = w["resetsInMinutes"] = w["elapsedPercent"] = w["projectedPercent"] = None
     w["ageMinutes"] = int(max(0, (now - observed).total_seconds() / 60)) if observed else None
+    if observed and (now - observed).total_seconds() / 60 > STALE_AFTER:
+        w["stale"] = True
     w["recentPercentPerHour"] = w["runsOutInMinutes"] = None
     if not w.get("windowMinutes"):
         if DEFAULT_MINUTES.get(w["kind"]):

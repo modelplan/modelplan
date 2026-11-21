@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -259,5 +261,119 @@ func TestEligibleCockpitVendorsConsentStates(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestCockpitPublicationCarriesPublishedSpeedTiers(t *testing.T) {
+	const speed = `[{"id":"codex-fast","harness":"codex","tier":"fast","label":"Fast","toggle":"/fast","eligibility":{"plans":["chatgpt-sign-in"],"note":"n"},"models":[{"vendorModelId":"v1","modelId":"m1","speed":{"ratio":1.5,"qualifier":"up-to"}},{"vendorModelId":"v2","modelId":null,"speed":{"ratio":null,"qualifier":"unstated"}}],"billing":[{"account":"subscription","billsTo":"plan-quota","basis":"included-usage","ratio":2}],"caveats":["not-task-time"],"sources":["https://example.test/fast"]}]`
+	d := &digest.Digest{Source: digest.ComponentClient, PublicationID: "0123456789abcdef01234567", PublishedAt: "2026-10-24T12:00:00Z"}
+	if err := json.Unmarshal([]byte(speed), &d.Speed); err != nil {
+		t.Fatal(err)
+	}
+	got := materializeCockpitPublication(d, nil, false)
+	if got == nil || len(got.SpeedTiers) != 1 {
+		t.Fatalf("speed tiers dropped: %+v", got)
+	}
+	out, err := json.Marshal(got.SpeedTiers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want, have any
+	_ = json.Unmarshal([]byte(speed), &want)
+	_ = json.Unmarshal(out, &have)
+	if !reflect.DeepEqual(want, have) {
+		t.Fatalf("shape changed:\n%s\n%s", speed, out)
+	}
+	for _, none := range [][]digest.SpeedTier{nil, {}} {
+		d.Speed = none
+		got = materializeCockpitPublication(d, nil, false)
+		raw, _ := json.Marshal(got)
+		if got == nil || len(got.SpeedTiers) != 0 || bytes.Contains(raw, []byte("speedTiers")) {
+			t.Fatalf("empty speed tiers must be absent: %s", raw)
+		}
+	}
+	bad := math.Inf(1)
+	d.Speed = []digest.SpeedTier{{ID: "x", Billing: []digest.SpeedBilling{{Ratio: bad}}}}
+	if got = materializeCockpitPublication(d, nil, false); got == nil || len(got.SpeedTiers) != 0 {
+		t.Fatalf("non-finite tier admitted: %+v", got)
+	}
+}
+
+func TestCockpitPlanModelsCopyOnlyPublishedPlanLists(t *testing.T) {
+	d := &digest.Digest{Source: digest.ComponentClient, PlanModels: &digest.PlanModels{Plans: []digest.PlanModelList{
+		{PlanID: "openai-plus", Generation: "current", Basis: "access", ModelIDs: []string{"astra", "gone", "sol"}},
+		{PlanID: "claude-pro", Basis: "listing", ModelIDs: []string{"gone"}},
+		{PlanID: "cursor-pro", Basis: "invented", ModelIDs: []string{"astra"}},
+	}}}
+	published := []wire.CockpitPublicationModel{{ID: "astra"}, {ID: "sol"}}
+	got := cockpitPlanModels(d, published)
+	want := []wire.CockpitPlanModels{{PlanID: "openai-plus", Generation: "current", Basis: "access", ModelIDs: []string{"astra", "sol"}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	// An older publication has no planModels: nothing is invented.
+	if cockpitPlanModels(&digest.Digest{Source: digest.ComponentClient}, published) != nil || cockpitPlanModels(nil, published) != nil {
+		t.Fatal("a publication without planModels must yield none")
+	}
+}
+
+func TestReportedModelsMapThroughPublishedHarnessAliases(t *testing.T) {
+	d := &digest.Digest{Source: digest.ComponentClient, Models: []digest.Model{
+		{ID: "astra", HarnessIDs: map[string][]string{"codex": {"native-astra", "native-astra-old"}}},
+		{ID: "sol", HarnessIDs: map[string][]string{"codex": {"native-sol"}}},
+		{ID: "opus", HarnessIDs: map[string][]string{"claude-code": {"native-astra"}}},
+		{ID: "unpublished", HarnessIDs: map[string][]string{"codex": {"native-x"}}},
+	}}
+	published := []wire.CockpitPublicationModel{{ID: "astra"}, {ID: "sol"}, {ID: "opus"}}
+	got := reportedPublishedModels(d, "codex", []string{"native-astra-old", "native-x", "native-unknown"}, published)
+	if !reflect.DeepEqual(got, []string{"astra"}) {
+		t.Fatalf("got %v: only a codex alias of a published model maps; unknown ids are dropped, not guessed", got)
+	}
+	if reportedPublishedModels(d, "codex", []string{"native-unknown"}, published) != nil || reportedPublishedModels(nil, "codex", []string{"native-sol"}, published) != nil {
+		t.Fatal("nothing maps: nothing reported")
+	}
+}
+
+func TestReportedModelsMapUnderEachToolKey(t *testing.T) {
+	if reportedHarnessKey("native:gemini") != "gemini" || reportedHarnessKey("claude-code") != "claude-code" || reportedHarnessKey("codex") != "codex" {
+		t.Fatal("tool key")
+	}
+	d := &digest.Digest{Source: digest.ComponentClient, Models: []digest.Model{
+		{ID: "flash", HarnessIDs: map[string][]string{"gemini": {"gemini-2.5-flash"}, "copilot": {}}},
+		{ID: "gpt", HarnessIDs: map[string][]string{"copilot": {"gpt-5.1"}}},
+	}}
+	published := []wire.CockpitPublicationModel{{ID: "flash"}, {ID: "gpt"}}
+	if got := reportedPublishedModels(d, reportedHarnessKey("native:gemini"), []string{"gemini-2.5-flash", "gpt-5.1"}, published); !reflect.DeepEqual(got, []string{"flash"}) {
+		t.Fatalf("got %v: an id maps only under its own tool key", got)
+	}
+	// No harnessIds published for the tool yet: nothing maps, the plan list stays.
+	if reportedPublishedModels(d, reportedHarnessKey("native:grok"), []string{"grok-build-1"}, published) != nil {
+		t.Fatal("unmapped ids must be dropped")
+	}
+}
+
+// WP-05 (D292, owner 11-17): the cockpit carries the published aaScore only as a reference beside our own ability
+// score; it never replaces ability. Absent (or not a positive finite number) = the field is absent on the wire.
+func TestPublishedCockpitModelCarriesAAScoreOnlyWhenPublished(t *testing.T) {
+	ability, aa, zero, nan := 42.8, 61.5, 0.0, math.NaN()
+	model := digest.Model{ID: "model", Name: "Synthetic model", DeveloperID: "openai", Recommended: "high", Efforts: []digest.Effort{
+		{Effort: "high", Label: "High", Ability: &ability, AAScore: &aa}, {Effort: "max", Label: "Max"}, {Effort: "low", Label: "Low", AAScore: &zero}}}
+	got, ok := publishedCockpitModel(model)
+	if !ok || len(got.Efforts) != 3 {
+		t.Fatalf("projection: %+v", got)
+	}
+	if got.Efforts[0].AAScore == nil || *got.Efforts[0].AAScore != 61.5 || got.Efforts[0].Ability != &ability || got.Efforts[1].AAScore != nil || got.Efforts[2].AAScore != nil {
+		t.Fatalf("aaScore copy: %+v", got.Efforts)
+	}
+	raw, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Count(raw, []byte(`"aaScore"`)) != 1 || bytes.Contains(raw, []byte(`"aaScore":null`)) {
+		t.Fatalf("aaScore on the wire: %s", raw)
+	}
+	model.Efforts[0].AAScore = &nan
+	if got, ok := publishedCockpitModel(model); !ok || got.Efforts[0].AAScore != nil {
+		t.Fatalf("non-finite aaScore: %+v %v", got.Efforts, ok)
 	}
 }

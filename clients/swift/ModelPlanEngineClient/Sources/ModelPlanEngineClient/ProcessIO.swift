@@ -7,6 +7,30 @@ import Darwin
 import Glibc
 #endif
 
+/// Splits the child's stderr into lines. A line longer than `limit` bytes keeps its first `limit` bytes and drops
+/// the rest up to the newline (marked " [cut]"), so the whole kept part is redacted together and no continuation
+/// of a sensitive field is ever written as a line of its own.
+struct EngineStderrLines {
+    var limit = 4096
+    private var pending: [UInt8] = []
+    private var overflow = false
+    init(limit: Int = 4096) { self.limit = limit }
+    mutating func append<Bytes: Sequence>(_ bytes: Bytes) -> [String] where Bytes.Element == UInt8 {
+        var out: [String] = []
+        for byte in bytes {
+            if byte == UInt8(ascii: "\n") { out.append(take()); continue }
+            if pending.count >= limit { overflow = true; continue }
+            pending.append(byte)
+        }
+        return out
+    }
+    mutating func finish() -> String? { pending.isEmpty && !overflow ? nil : take() }
+    private mutating func take() -> String {
+        defer { pending.removeAll(keepingCapacity: true); overflow = false }
+        return String(decoding: pending, as: UTF8.self) + (overflow ? " [cut]" : "")
+    }
+}
+
 /// One owned child. Blocking pipe work runs on dedicated queues, never an actor executor.
 final class EngineProcess: @unchecked Sendable {
     let id: UUID
@@ -44,7 +68,13 @@ final class EngineProcess: @unchecked Sendable {
             throw EngineClientError.invalidConfiguration
         }
         #endif
-        process.terminationHandler = { _ in
+        // Diagnostics: the child's stderr, start and exit go to engine.log (redacted) so a Go panic trace or a
+        // signal survives the process. With no log configured, stderr is drained and discarded as before.
+        let log = configuration.engineLog ?? DiagnosticsLog.shared.engine
+        process.terminationHandler = { finished in
+            let reason = finished.terminationReason == .uncaughtSignal ? "signal" : "exit"
+            DiagnosticsLog.shared.engineEvent(pid: finished.processIdentifier,
+                "exited reason=\(reason) status=\(finished.terminationStatus)", into: log)
             // Let stdout drain before classifying exit, especially a final
             // protocol_mismatch error. A leaked child pipe cannot wait forever.
             Task { try? await Task.sleep(for: .seconds(1)); await ended(id, false) }
@@ -55,6 +85,8 @@ final class EngineProcess: @unchecked Sendable {
                            errors.fileHandleForReading, errors.fileHandleForWriting] { try? handle.close() }
             throw EngineClientError.interrupted(.notSent)
         }
+        let pid = process.processIdentifier
+        DiagnosticsLog.shared.engineEvent(pid: pid, "started" + (configuration.offline ? " offline" : "") + (configuration.readOnly ? " read-only" : ""), into: log)
         // These parent copies must not keep the child's stdin/stdout alive.
         try? input.fileHandleForReading.close()
         try? output.fileHandleForWriting.close()
@@ -89,12 +121,16 @@ final class EngineProcess: @unchecked Sendable {
             let handle = errors.fileHandleForReading
             defer { try? handle.close() }
             var buffer = [UInt8](repeating: 0, count: 4096)
+            var lines = EngineStderrLines()
             while true {
                 let size = read(handle.fileDescriptor, &buffer, buffer.count)
-                if size == 0 { return }
-                if size < 0 && errno != EINTR { return }
-                // Never retain/log raw child stderr or include it in an Error.
+                if size == 0 { break }
+                if size < 0 { if errno == EINTR { continue }; break }
+                // Stderr never reaches an Error or the UI; with a log configured each line is redacted into engine.log.
+                guard let log else { continue }
+                for line in lines.append(buffer[0..<size]) { DiagnosticsLog.shared.engineOutput(pid: pid, line: line, into: log) }
             }
+            if let log, let rest = lines.finish() { DiagnosticsLog.shared.engineOutput(pid: pid, line: rest, into: log) }
         }
     }
 

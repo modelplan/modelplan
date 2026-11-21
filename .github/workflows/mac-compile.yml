@@ -1,0 +1,185 @@
+# SPDX-License-Identifier: MIT
+# Mac compile check (owner 2026-11-15): swift build plus the XCTest classes of the Swift packages a PR touches, on the
+# owner's compile Macs (runner label modelplan-compile, its own runner group). It replaces the coordinator's compile
+# clerk, which briefed a Mac agent with the same selection (scripts/mac-compile/plan.mjs).
+#
+# Trust boundary (public repository: fork code must never reach these Macs):
+# - Only workflow_run (after "mac-compile trigger" on a pull_request) and workflow_dispatch start it; both run main's
+#   definition, never a PR's copy, so a PR cannot drop the conditions below. The runner group admits only
+#   modelplan/modelplan/.github/workflows/mac-compile.yml@refs/heads/main.
+# - The plan job re-reads the PR from the API: open, targets main, from this repository, by the owner account, not a
+#   draft, and (for workflow_run) still at the head the trigger ran for. Nothing from the trigger run is used.
+# - The PR head sha is checked out explicitly (the head, not the merge with main: enough for a compile check). Only the
+#   Mac job runs PR code; it holds a read-only token, no secrets, and checkouts keep no credentials.
+# - The result is posted as the commit status "mac-compile" on the PR head by a separate hosted job, the only one with
+#   statuses: write, which runs no repository code.
+# Build seed: written only by the `seed` job (workflow_dispatch of main by the owner), read-only for PR jobs.
+name: mac-compile
+# The title names what was compiled; pr-review-sol.yml binds a mac-compile success to a head through it.
+run-name: "${{ inputs.pr && (inputs.sha && format('mac-compile PR #{0} @ {1}', inputs.pr, inputs.sha) || format('mac-compile PR #{0}', inputs.pr)) || github.event.workflow_run.head_sha && format('mac-compile {0}', github.event.workflow_run.head_sha) || '' }}"
+on:
+  workflow_run:
+    workflows: [mac-compile trigger]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number: compile the PR at its current head (drafts allowed). Empty with seed=true."
+        type: string
+        required: false
+      sha:
+        description: "Optional: the PR head sha expected; the run refuses another head and its title then proves this head to pr-review-sol.yml"
+        type: string
+        required: false
+      seed:
+        description: "Build main and publish this runner's read-only build seed (trusted; no PR code)"
+        type: boolean
+        default: false
+permissions:
+  contents: read
+# One run per PR (a dispatch joins the PR's group); a newer head cancels the older run.
+concurrency:
+  group: mac-compile-${{ github.event_name == 'workflow_dispatch' && (inputs.seed && 'seed' || inputs.pr) || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    if: ${{ github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.pr.outputs.pr }}
+      sha: ${{ steps.pr.outputs.sha }}
+      seed: ${{ steps.pr.outputs.seed }}
+      run: ${{ steps.plan.outputs.run }}
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.workflow_run.pull_requests[0].number }}
+          RUN_HEAD: ${{ github.event.workflow_run.head_sha }}
+          SEED: ${{ github.event_name == 'workflow_dispatch' && inputs.seed }}
+          SHA_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || '' }}
+        run: |
+          set -eu
+          # Seed run (owner dispatch of main): no PR; main's own head is built and published to the runner's read-only seed.
+          if [ "$SEED" = true ]; then
+            [ -z "$PR" ] || { echo "::error::seed runs take no PR"; exit 1; }
+            sha=$(gh api "repos/$REPO/commits/main" -q .sha)
+            [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no sha for main"; exit 1; }
+            echo "pr=0" >> "$GITHUB_OUTPUT"; echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "seed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case $PR in ''|*[!0-9]*) echo "::error::pr must be a PR number, got '$PR'"; exit 1;; esac
+          j=$(gh api "repos/$REPO/pulls/$PR")
+          [ "$(jq -r .state <<<"$j")" = open ] || { echo "::error::PR #$PR is not open"; exit 1; }
+          [ "$(jq -r .base.ref <<<"$j")" = main ] || { echo "::error::PR #$PR does not target main"; exit 1; }
+          [ "$(jq -r .head.repo.full_name <<<"$j")" = "$REPO" ] || { echo "::error::PR #$PR is not from this repository"; exit 1; }
+          [ "$(jq -r .user.id <<<"$j")" = 11829005 ] || { echo "::error::PR #$PR is not by the owner account"; exit 1; }
+          sha=$(jq -r .head.sha <<<"$j")
+          [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no head sha for PR #$PR"; exit 1; }
+          [ -z "$SHA_INPUT" ] || [ "$SHA_INPUT" = "$sha" ] || { echo "::error::PR #$PR is at $sha, not the requested $SHA_INPUT"; exit 1; }
+          if [ "$EVENT" = workflow_run ]; then
+            [ "$(jq -r .draft <<<"$j")" = false ] || { echo "::error::PR #$PR is a draft"; exit 1; }
+            [ "$sha" = "$RUN_HEAD" ] || { echo "::error::PR #$PR moved from $RUN_HEAD to $sha; the newer head's trigger compiles it"; exit 1; }
+          fi
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"; echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      # main's plan script; the PR head is fetched as data and read with git show, never checked out here.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - id: plan
+        env:
+          SHA: ${{ steps.pr.outputs.sha }}
+          SEED: ${{ steps.pr.outputs.seed }}
+        run: |
+          set -eu
+          git fetch -q --no-tags --filter=blob:none origin "$SHA"
+          if [ "$SEED" = true ]; then
+            # Every package a PR run can build, tests built (not run), each in its own scratch (plan.mjs --seed).
+            plan=$(node scripts/mac-compile/plan.mjs --seed "$SHA")
+          else
+            plan=$(node scripts/mac-compile/plan.mjs "$(git merge-base origin/main "$SHA")" "$SHA")
+          fi
+          { echo "plan<<MAC_COMPILE_PLAN_EOF"; printf '%s\n' "$plan"; echo "MAC_COMPILE_PLAN_EOF"; } >> "$GITHUB_OUTPUT"
+          if [ -n "$plan" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; fi
+          { if [ -n "$plan" ]; then echo "Packages to compile at ${SHA:0:8}:"; echo '```'; printf '%s\n' "$plan" | cut -f1,3; echo '```'
+            else echo "No Swift change under desktop/native at ${SHA:0:8}: nothing to compile."; fi; } >> "$GITHUB_STEP_SUMMARY"
+
+  compile:
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' && github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005')) }}
+    runs-on: [self-hosted, macOS, ARM64, modelplan-compile]
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - name: Check out main's runner script
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          path: .mac-compile-main
+          sparse-checkout: scripts/mac-compile
+          persist-credentials: false
+      - name: Check out the PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          path: pr
+          persist-credentials: false
+      - name: Compile and test the touched packages
+        working-directory: pr
+        env:
+          PR: ${{ needs.plan.outputs.pr }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          PLAN: ${{ needs.plan.outputs.plan }}
+          SEED_WRITE: ${{ needs.plan.outputs.seed == 'true' && '1' || '0' }}
+          # A cold scratch build of ModelPlanAppIntegration alone took 12.7 min on these runners (11-15), which
+          # left too little of a 25-minute budget for its ~930 tests (#981/#795 stopped at exit 143 with 0 failures).
+          PACKAGE_MINUTES: "45"
+        run: |
+          set -eu
+          [ "$(git rev-parse HEAD)" = "$SHA" ] || { echo "::error::checked out $(git rev-parse HEAD), expected $SHA"; exit 1; }
+          case $PR in ''|*[!0-9]*) echo "::error::bad PR number '$PR'"; exit 1;; esac
+          # SwiftPM build state: a PR job only READS the per-runner seed (SEED_ROOT, written by a seed run (owner dispatch with seed=true) from
+          # main) by cloning it into its own scratch under runner temp, which the runner empties after the job. A PR can
+          # therefore never promote its build output into state another PR consumes. No seed is a cold build.
+          root=$RUNNER_TEMP/mac-compile
+          export SEED_ROOT=$HOME/mac-compile-seed/${RUNNER_NAME:-runner}
+          printf '%s\n' "$PLAN" > "$RUNNER_TEMP/mac-compile-plan.tsv"
+          swift --version
+          bash "$GITHUB_WORKSPACE/.mac-compile-main/scripts/mac-compile/run.sh" "$RUNNER_TEMP/mac-compile-plan.tsv" "$root" "$SHA"
+
+  # The result as the commit status "mac-compile" on the PR head. Runs no repository code; the only job with a write scope.
+  report:
+    needs: [plan, compile]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.seed != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      statuses: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          RESULT: ${{ needs.compile.result }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          case $RESULT in
+            success) state=success; desc="COMPILE ok @ ${SHA:0:8}";;
+            skipped) state=success; desc="no Swift change under desktop/native";;
+            *) state=failure; desc="COMPILE fail @ ${SHA:0:8} ($RESULT)";;
+          esac
+          gh api "repos/$REPO/statuses/$SHA" -f state="$state" -f context=mac-compile -f description="$desc" -f target_url="$URL" >/dev/null
+          echo "mac-compile: $state ($desc)"

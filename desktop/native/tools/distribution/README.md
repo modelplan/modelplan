@@ -29,7 +29,7 @@ the candidate's own `cli/` (a stale engine). The neutral build and the packaged
 smoke build run `--app` alone; they are not candidates and make no source-tree
 claim. PRs labelled `release-candidate`, on a `candidate/` or
 `release-candidate/` branch, titled `Release candidate:`, or changing the native
-pin also run the tree check in `cli-pin-candidate.yml`. Missing tags, differing
+pin also run the tree check in `repo-checks.yml`. Missing tags, differing
 trees and unreadable helpers fail closed; nothing is tagged or published.
 
 `release.py` retains older signing, notarization and appcast helper routines for

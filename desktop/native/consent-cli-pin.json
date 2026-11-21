@@ -1,14 +1,14 @@
 {
-  "version": "0.5.52",
-  "release": "https://github.com/modelplan/modelplan/releases/download/v0.5.52",
+  "version": "0.5.65",
+  "release": "https://github.com/modelplan/modelplan/releases/download/v0.5.65",
   "sha256": {
-    "darwin_arm64": "7d763207d81f43419f0574726e767c7828b6ea061b028337cfe246f37c301bfa",
-    "darwin_amd64": "704ca5e24fd48014777dfb3814d0e2f9811c23f726a0015c437faf73584a9e0a",
-    "linux_arm64": "6afd1d86d9ac6b85c27166f78a1f6b6a57b9261adf294a0cd960fd14fdee49c0",
-    "linux_amd64": "aede8278bfea73d759080117b5e56c1e5a21b7166b92d683ccf9d7207ec0f16e"
+    "darwin_arm64": "d8c0f45d81da0faa1973ba1e08d8203279e6fcdd5fda18084c07f9e03a444c62",
+    "darwin_amd64": "cd4ca9991a94ef8a24380ea22e1163f6f14914c4a37e0bcf79a6c114a4277a3b",
+    "linux_arm64": "a6625d514d7b73dde15241ae4d9dd6b743e2d9a21e77acf84300912daa074541",
+    "linux_amd64": "9a9f6e02eaf60ac2d89d1b8f0d7eb4d9ca1caaa91b121af2ffb10bbd3073a30f"
   },
   "sourceSHA256ByArchitecture": {
-    "arm64": "c5a707bc5e8a970e50b1cae5794bc29283336be3ecc42f93004ae98007fe9506",
-    "x86_64": "ebee844724594f761c5430eab43d9f5e94e8bbdab4900822f2b19c063fecfc30"
+    "arm64": "58b8ff2e58a4c352bd7a9fca923cfa93db1c84e4f581fcbb5a354a682ac679d0",
+    "x86_64": "413012a0add63c7b36e1c8ddc12ac6688823a73eafbff294683a1bf34d7a3b1d"
   }
 }

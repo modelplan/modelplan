@@ -7,7 +7,7 @@ import {secondaryLink} from './public-helpers.js';
 // Pure view (spec 2.6).
 import {t,formatCredits} from '../i18n.js';
 import {esc, tok, dhm, hm, when, stamp, until, md, bar10, level, chip, clockIcon, tip, fill, relativeMoment, resetMoment} from './fmt.js';
-import {accountOf, modelOf} from './scope.js';
+import {accountOf, modelOf, rangeKey, rangeOf} from './scope.js';
 import {fillColour} from '../colour-mode.js';
 
 const VIA = {native: 'mfd.viaNative', codexbar: 'mfd.viaCodexbar', manual: 'mfd.viaManual'};
@@ -21,9 +21,9 @@ const qbar = (r, lv, colour) => { const f = fillColour(lv, colour); return f ? b
 export const glyph = a => (a.colourLogo || ['nozzle-p1/zai-white.svg', 'zhipu.svg'].includes(a.logo)) ? `<img class="mg orig" src="assets/brands/${esc(a.logo)}" alt="">`
   : `<i class="mg" style="--v:${a.colour};-webkit-mask-image:url('assets/brands/${esc(a.logo)}');mask-image:url('assets/brands/${esc(a.logo)}')"></i>`;
 
-function header(a) {
+function header(a, ui) {
   const age = a.ageMin == null ? t('mfd.ageNow') : a.ageMin >= 60 ? t('age.hours', {h: Math.round(a.ageMin / 60)}) : t('mfd.ageMin', {m: a.ageMin});
-  return `<div class="sp-h">${glyph(a)}<b>${esc(a.name)}</b>${secondaryLink(planUrl(a.vendor),websiteWords().plans)}</div><div class="sp-sub"><em class="pl">${esc(a.plan)}</em><em title="${esc(a.source === 'native' || !VIA[a.source] ? 'modelplan CLI' : t(VIA[a.source]))}" class="src ${a.state === 'ok' ? '' : 'amber'}">${t(VIA[a.source] || 'mfd.viaNative')} · ${esc(age)}</em></div>`;
+  return `<div class="sp-h">${glyph(a)}<b>${esc(a.name)}</b>${a.vendor === 'unknown' ? '' : secondaryLink(planUrl(a.vendor),websiteWords(ui.lang).plans)}</div><div class="sp-sub"><em class="pl">${esc(a.plan)}</em><em title="${esc(a.source === 'native' || !VIA[a.source] ? 'modelplan CLI' : t(VIA[a.source]))}" class="src ${a.state === 'ok' ? '' : 'amber'}">${t(VIA[a.source] || 'mfd.viaNative')} · ${esc(age)}</em></div>`;
 }
 
 /* ---------- 概况 ---------- */
@@ -128,7 +128,9 @@ const cycleKind = (a, ui) => a.windows.some(w => w.kind === ui.cycle) ? ui.cycle
 
 // Exact v0.5.33 token kinds; unknown stays --, explicit zero stays 0. No cache-write double count.
 export function usageBlock(a,ui){
- const days=ui.subDays===30?30:7,w=a.usageStats?.[`recent${days}d`],s=w?.sums,rate=w?.metrics?.generationTps;
+ // CKP-SHELL-50: the app's range; the statistics have 7- and 30-day figures, so Today says so (until WP-02).
+ if(rangeOf(ui)==='today')return `<div class="sp-stats" data-days="today"><p class="mp-empty">${t('mfd.rangeNoToday')}</p></div>`;
+ const days=rangeOf(ui)==='30d'?30:7,w=a.usageStats?.[`recent${days}d`],s=w?.sums,rate=w?.metrics?.generationTps;
  const hit=s?.inputTokens!=null&&s?.cacheReadTokens!=null&&s.inputTokens+s.cacheReadTokens>0?s.cacheReadTokens/(s.inputTokens+s.cacheReadTokens):null;
  const rows=s?[[t('mfd.statInput'),tok(s.inputTokens)],[t('mfd.statOutput'),tok(s.observedOutputTokens)],
   [t('mfd.statCache'),tok(s.cacheReadTokens)],[t('mfd.statWrite'),tok(s.cacheWriteTokens)],
@@ -136,32 +138,37 @@ export function usageBlock(a,ui){
  return `<div class="sp-stats" data-days="${days}"><span class="stat-h" title="${esc(t('mfd.statsBasis'))}">${t('mfd.statsTitle',{d:days})} · ${t('mfd.statsScope')}</span>${rows.length?rows.map(([k,v])=>`<span class="stat"><span>${esc(k)}</span><b>${esc(v)}</b></span>`).join(''):`<span class="missing">${t('mfd.statsMissing')}</span>`}</div>`;
 }
 
+// CKP-MFD-64 (V1-FINAL 8.2): the subscription the page expands. A chosen scope wins; with fewer than 3 subscriptions
+// and none chosen, the first one opens expanded (nothing to choose between); with 3 or more, none (the list).
+export const AUTO_EXPAND_BELOW = 3;
+export const subjectOf = (d, ui) => (ui.scope && accountOf(d, ui.scope)) || (d.accounts.length && d.accounts.length < AUTO_EXPAND_BELOW ? d.accounts[0] : null);
+
 export const plans = {
   id: 'sub', title: 'mfd.pSub',
   optionKeys(ui, d) {
-    const a = ui.scope && accountOf(d, ui.scope);
+    const a = subjectOf(d, ui);
     if (!a) return [null, null, null, null];
     const hist = ui.subTab === 'hist', ws = a.windows, k = cycleKind(a, ui);
     return [{id: 'tab', a: {value:'now', text: t('mfd.oNow'), on: !hist}, b: {value:'hist', text: t('mfd.oHist'), on: hist}},
-      hist && ws.length > 1 ? {id: 'cycle', a: {value:ws[0].kind, text: ws[0].label, on: k === ws[0].kind}, b: {value:ws[1].kind, text: ws[1].label, on: k === ws[1].kind}} : !hist ? {id:'usage',a:{value:7,text:'7',on:ui.subDays!==30},b:{value:30,text:'30',on:ui.subDays===30}} : null, null, null];
+      hist && ws.length > 1 ? {id: 'cycle', a: {value:ws[0].kind, text: ws[0].label, on: k === ws[0].kind}, b: {value:ws[1].kind, text: ws[1].label, on: k === ws[1].kind}} : !hist ? rangeKey(ui) : null, null, null];
   },
   render(d, ui) {
-    const a = ui.scope && accountOf(d, ui.scope);
+    const a = subjectOf(d, ui);
     if (!a) return list(d, ui);
     if (ui.subTab === 'hist') {
       const k = cycleKind(a, ui), w = a.windows.find(x => x.kind === k), cy = cycles(d, a, ui, k);
-      return `${header(a)}<div class="sec"><span class="lbl">${t('mfd.resets')}</span><em>${esc(w?.label || '')}</em></div>${resets(a, ui, k)}
+      return `${header(a, ui)}<div class="sec"><span class="lbl">${t('mfd.resets')}</span><em>${esc(w?.label || '')}</em></div>${resets(a, ui, k)}
         ${cy ? `<div class="sec"><span class="lbl">${t('mfd.cycles')}</span><em>${esc(w?.label || '')}</em></div><div class="mfd-fill" data-fill="cyc">${cy}</div>` : ''}`;
     }
     // polish A: the blocks spread over the screen's height (spacers of 4–24 px between them)
     const blocks = [`<div class="sp-ws"${a.extras.length ? ' style="--lbw:54px"' : ''}>${windows(a, ui)}</div>`, cardsBlock(a, ui), creditsBlock(a, ui), peak(a, ui), usageBlock(a,ui)].filter(Boolean);
-    return `<div class="sp-now">${header(a)}${VG}${blocks.join(VG)}</div>`;
+    return `<div class="sp-now">${header(a, ui)}${VG}${blocks.join(VG)}</div>`;
   },
   onClick(act, val, ui, d) {
     if (act === 'scope') return {scope: val};
-    if (act === 'opt' && val === 'usage') return {patch:{mfdSubDays:ui.optionChoice!=null?Number(ui.optionChoice):ui.subDays===30?7:30}};
+    if (act === 'opt' && val === 'range') return {range: ui.optionChoice};
     if (act === 'opt' && val === 'tab') return {patch: {mfdSubTab: ui.optionChoice ?? (ui.subTab === 'hist' ? 'now' : 'hist')}};
-    if (act === 'opt' && val === 'cycle') { const a = accountOf(d, ui.scope), k = cycleKind(a, ui), ws = a.windows; return {patch: {mfdCycle: ui.optionChoice ?? (k === ws[0].kind ? ws[1].kind : ws[0].kind)}}; }
+    if (act === 'opt' && val === 'cycle') { const a = subjectOf(d, ui), k = cycleKind(a, ui), ws = a.windows; return {patch: {mfdCycle: ui.optionChoice ?? (k === ws[0].kind ? ws[1].kind : ws[0].kind)}}; }
     return null;
   },
 };

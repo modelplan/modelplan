@@ -15,7 +15,7 @@ async function open(page,published) {
  expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
- await page.getByRole('button',{name:'Effort',exact:true}).click();
+ await page.getByRole('button',{name:'Models',exact:true}).click(); await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
 }
 test('D-B the frontier plots published points, stars each model and dims the dominated one',async({page})=>{
  await open(page,models);
@@ -30,5 +30,5 @@ test('D-B an effort without a published cost is not plotted',async({page})=>{
 });
 test('D-B an older engine shows no chart and says so',async({page})=>{
  await open(page,null);
- await expect(page.locator('.fc')).toHaveCount(0);await expect(page.locator('.mp-empty')).toHaveText('Data unavailable');
+ await expect(page.locator('.fc')).toHaveCount(0);await expect(page.locator('.mfd-page .mp-empty')).toHaveText('Data unavailable');
 });

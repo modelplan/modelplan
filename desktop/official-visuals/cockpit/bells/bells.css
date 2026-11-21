@@ -1,0 +1,26 @@
+/* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
+/* Copyright (c) 2026 ModelPlan. G3-47 base bells in the 34 px reserve, written for this page from the base-bells
+   notes (see SOURCES.md); the images are the released, unchanged base-bell rasters. */
+/* G3-131 (owner D294, 2026-11-18): the bell is a fixed 10 px high; its width is the column x 0.7 clamped to 81-101 px,
+   so the whole raster is stretched horizontally by at most 1.25x (natural shape 81:10, drawn center/100% 100%).
+   Every vertical position derives from the height (--bell-m = height x 0.4515, the lower-lip offset), never the width. */
+.ck-base :is(.bz,.bz-empty){--bell-w:clamp(81px,calc(var(--cw) * .7),101px);--bell-h:10px;--bell-m:calc(var(--bell-h) * .4515)}
+.ck-base :is(.bz,.bz-empty) .bz-line{top:0;width:var(--bell-w);height:var(--bell-h);border-radius:0;background:transparent url('./assets/bells/bell-silver-2x.png') center/100% 100% no-repeat;opacity:1}
+/* One dark finish for every bell, subscribed or empty (D294): the silver raster through the gunmetal transfer. The
+   silver 2x source is the largest that exists, so it serves both densities. Hover keeps it (D70). */
+.ck-base :is(.bz,.bz-empty) .bz-line{filter:saturate(.12) brightness(.36)}
+.ck-base .bz-glow{display:none}
+.ck[data-active="true"] .ck-base .bz:hover .bz-line{filter:saturate(.12) brightness(.36)}
+/* Working light (CKP-ENG-17/18, D294): no flame. The sheet is only a container; the idle/empty bells have none.
+   Its own opacity yields to the landing burn (cockpit.css), the breathing runs on the two pseudo-elements, so the
+   animation can never override that yield. The colour is the subscription's vendor colour (--v, the livery table). */
+.ck-base .bz .bz-sheet{top:0;width:calc(var(--bell-w) * 1.2);height:34px;opacity:1;z-index:2;transition:opacity .3s ease-out .45s}
+/* In-mouth wash. */
+.ck-base .bz .bz-sheet::before{border-radius:0;inset:auto;left:50%;top:calc(var(--bell-m) - .5px);width:calc(var(--bell-w) * .9);height:calc(var(--bell-h) - var(--bell-m) + 1.5px);transform:translateX(-50%);opacity:.85;
+  background:radial-gradient(ellipse 50% 70% at 50% 40%,color-mix(in srgb,var(--v) 55%,white) 0%,color-mix(in srgb,var(--v) 80%,transparent) 40%,color-mix(in srgb,var(--v) 30%,transparent) 75%,transparent 100%) no-repeat}
+/* Faint downward cone from the lower lip to the window edge, no tip. */
+.ck-base .bz .bz-sheet::after{content:"";position:absolute;left:0;right:0;top:calc(var(--bell-h) - 1px);bottom:0;opacity:.9;
+  clip-path:polygon(12.5% 0,87.5% 0,100% 100%,0 100%);
+  background:radial-gradient(ellipse 45% 100% at 50% 0,color-mix(in srgb,var(--v) 30%,transparent) 0%,color-mix(in srgb,var(--v) 12%,transparent) 55%,transparent 100%) no-repeat,
+    linear-gradient(180deg,color-mix(in srgb,var(--v) 16%,transparent),transparent 85%) no-repeat;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent)}

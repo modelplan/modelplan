@@ -53,13 +53,29 @@ The backend owns consent, migration, receipts, reader admission, publication
 fences, budgets and shared-store synchronization. The transport does not create
 a second store. `CredentialReceiver` repeats admission/fence/budget checks before
 in-memory use. Operations are bound to their session, generation and expiry,
-consumed once, and limited to one per provider. Background requests are
+consumed once, and limited to one open operation per provider. Opening a background operation
+also returns Busy while an explicit operation's read runs after its result arrives, or while a
+Keychain Allow is committing. Opening an explicit operation returns Busy only for an open one: its read may start
+while an earlier explicit read runs, and the reader lock serialises the two. An automatic saved-login refresh stays off the
+provider until 15 seconds after that read and is reported as deferred; a requested one waits
+only for the read, and takes over an automatic job already in the provider's slot. A Keychain Allow holds the provider from before the consent commit, so a
+background read cannot take the operation and drop the user's prompt. Background requests are
 non-interactive; foreground requests arise only from an explicit Keychain grant.
 
 `Handler` is the seam for the refresh/plugin and cockpit/history units. Results
 carry their admission stamp; private queries also carry scopes. Results are
 reserved before admission, and stale results produce `consent_changed` without
 items. A query failure does not mutate rows.
+
+The publication is public data. After the first session starts, the ordinary
+command fetches it with `publication.Client.Sync` (same lock, interval and
+verification as `modelplan sync`). The backend's `state.json` watcher then gives
+subscribers a rows event and the cockpit re-queries. It needs no consent scope and ignores
+`MODELPLAN_READERS`. `--offline` and `--read-only` fetch nothing. With an empty
+cache a failure retries after 30 seconds, backing off to 10 minutes; a cached
+publication follows the shared rule (stale after 6 hours, at most one attempt per
+10 minutes across clients). A failure never reaches the protocol: queries keep
+answering from the cache, and `publication/get` and the cockpit stay unavailable.
 
 ## Bounds and supervision
 

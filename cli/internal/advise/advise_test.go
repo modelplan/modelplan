@@ -352,6 +352,10 @@ func TestAnnouncedResetSpendsAheadAndSwitchesBackOnlyOnProof(t *testing.T) {
 		"beyond a day":          {withResets(ann("r-far", "upstream-announced", 30*time.Hour)), codex("medium", now.Add(-time.Minute), 48, weekReset)},
 		"withdrawn":             {withResets(ann("r-w", "withdrawn", 6*time.Hour)), codex("medium", now.Add(-time.Minute), 48, weekReset)},
 		"announced time passed": {withResets(ann("r-past", "upstream-announced", -time.Hour)), codex("medium", now.Add(-time.Minute), 48, weekReset)},
+		// D166: extra resets issued are redeemable credits, not a window restart; never spend ahead for them.
+		"reset credit": {withResets(json.RawMessage(`{"id":"r-card","provider":"openai","eventType":"reset_credit_issued","status":"upstream-announced","publishedAt":"` +
+			now.Add(-time.Hour).Format(time.RFC3339) + `","url":"https://x.com/r","schedule":{"precision":"window","from":"` + now.Add(time.Hour).Format(time.RFC3339) +
+			`","through":"` + now.Add(6*time.Hour).Format(time.RFC3339) + `","label":"today"}}`)), codex("medium", now.Add(-time.Minute), 48, weekReset)},
 	} {
 		for _, e := range derive(t, nil, c.d, c.a) {
 			if e.Type == AnnouncedSurplus {
@@ -473,6 +477,23 @@ func TestTaskStartBriefListsOptionsAndTheCurrentLadder(t *testing.T) {
 	s := Load(t.TempDir())
 	if !s.Once("task_start|t1", now) || s.Once("task_start|t1", now) {
 		t.Fatal("once per thread")
+	}
+}
+
+// The default floor is 3 lineup ties: 3 points on the old scale (tie 1), 2.445 on the 0.4 display scale (#781).
+func TestDefaultFloorFollowsPublicationScale(t *testing.T) {
+	for _, c := range []struct {
+		tie, gap float64
+		want     string
+	}{{0.815, 2.4, "best_value"}, {0.815, 2.5, "strongest"}, {1, 2.9, "best_value"}, {1, 3.1, "strongest"}} {
+		d := fixtureDigest()
+		sonnet := claude("high", 30, 3*time.Hour, 300)
+		sonnet.Harness.Model = "claude-sonnet-5-5"
+		d.Lineups[0].Tie = c.tie
+		d.Lineups[0].Members[1].Ability = d.Lineups[0].Members[0].Ability - c.gap
+		if b := TaskStart(&sonnet, quota.Report{}, d, now); b.DefaultReason != c.want {
+			t.Fatalf("tie %v gap %v: default = %s, want %s", c.tie, c.gap, b.DefaultReason, c.want)
+		}
 	}
 }
 

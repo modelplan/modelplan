@@ -38,7 +38,7 @@ private actor ReserveJourneyClient: EngineClient {
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
     private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, currentWindowMissingObservation, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues, retiredWithValues }
     private enum ProofMutation { case fallbackMember, unknownBound, unrecognizedBound, unknownUnbound, duplicateFallback, duplicateRef, missingLatch, nonStaleLatch, missingReset, absentReset, malformedReset, missingWeeklyReset, absentWeeklyReset, malformedWeeklyReset, mismatchReset, laterReset, missingValidUntil, malformedValidUntil, futureAccountObservation, malformedAccountObservation, futureWindowObservation, malformedWindowObservation, duplicateWindowID }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, mixedOneRetained: Bool = false, multiWindowTransition: Bool = false, proofTwoWindows: Bool = false, proofMutation: ProofMutation? = nil, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, mixedOneRetained: Bool = false, multiWindowTransition: Bool = false, proofTwoWindows: Bool = false, proofMutation: ProofMutation? = nil, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, currency: String? = nil, usageNotReported: Bool = false, balanceOnlyNoWindows: Bool = false, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -55,7 +55,7 @@ private actor ReserveJourneyClient: EngineClient {
         let isRetained = state == .retained || state == .retainedExpired || (unknownDeadline && !currentUnknown)
         let isRevoked = state == .revoked || state == .revokedWithValues || state == .revokedFreshWithValues
         row["state"] = isRetained ? "stale" : "fresh"
-        row["reason"] = isRetained ? staleReason : ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
+        row["reason"] = isRetained ? staleReason : ["code": "ok", "text": ["en": "Reading available", "zh": "已读到用量"]]
         if isRetained {
             row["nextStep"] = refresh; row["expiresAt"] = NSNull(); row["stateAfterExpiry"] = NSNull()
         } else {
@@ -73,6 +73,10 @@ private actor ReserveJourneyClient: EngineClient {
         window["resetsAt"] = deadline; window["remainingPercent"] = 42.5
         account["windows"] = [window]
         account["credits"] = ["balance": balance ?? NSNull(), "unit": unit]
+        if let currency { account["credits"] = ["balance": balance ?? NSNull(), "unit": unit, "currency": currency] }
+        if usageNotReported { row["reason"] = ["code": "usage_not_reported", "text": ["en": "engine text", "zh": "engine text"]] }
+        // Owner build 14e Grok reply: a current USD balance and no window at all.
+        if balanceOnlyNoWindows { account["windows"] = [[String: Any]]() }
         if multiWindowTransition || proofTwoWindows {
             account["freshUntil"] = "2028-12-01T00:00:00Z"
             var weekly = window
@@ -83,7 +87,7 @@ private actor ReserveJourneyClient: EngineClient {
         }
         if unknownDeadline {
             if isRetained {
-                row["reason"] = ["code": "observation_time_unknown", "text": ["en": "The observation time is unknown", "zh": "观测时间未知"]]
+                row["reason"] = ["code": "observation_time_unknown", "text": ["en": "The reading time is unknown", "zh": "读取时间未知"]]
                 account["observedAt"] = NSNull(); window["observedAt"] = NSNull()
             }
             row["expiresAt"] = malformed ? "invalid-deadline" as Any : NSNull()
@@ -259,21 +263,21 @@ private actor ReserveJourneyClient: EngineClient {
             XCTAssertEqual(heldPair.verifiedWindows.first?.remainingPercent, 75.0)
             XCTAssertEqual(heldPair.verifiedWindows.first?.until, secondDeadline)
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: firstDeadline), .scheduled(secondDeadline, hasUnknownDeadline: false))
-            // The row-level reason and overall input remain non-fresh. The
-            // later weekly window is still time-valid on the wire, but the
-            // current Dock model cannot present it under a non-fresh input.
+            // The row-level reason and overall input remain non-fresh. WP-15 (DOCK-3.2-50, DOCK-3.3-09 amended): the
+            // weekly reading is kept, stale, until its own reset; the 5-hour window reset at this deadline and is "--".
             let heldInput = try XCTUnwrap(held.snapshot.inputs.first)
             XCTAssertNil(heldInput.windows.first { $0.period == .fiveHour }?.remainingPercent)
-            XCTAssertEqual(heldInput.dataState, .unavailable)
-            XCTAssertNil(heldInput.windows.first { $0.period == .week }?.remainingPercent)
-            XCTAssertEqual(try DockInstrumentProjection.evaluate(heldInput, now: firstDeadline).readout, "--")
+            XCTAssertEqual(heldInput.dataState, .stale)
+            XCTAssertEqual(heldInput.windows.first { $0.period == .week }?.remainingPercent, 75.0)
+            XCTAssertEqual(heldPair.retainedWindows.isEmpty, true, "the weekly window still has its current proof")
+            XCTAssertEqual(try DockInstrumentProjection.evaluate(heldInput, now: firstDeadline).readout, "75%")
             XCTAssertEqual(held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.reason, "A retained reading is shown")
             XCTAssertEqual(held.snapshot.subscriptions.first?.source, .stale)
             let heldReserve = held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve }
             XCTAssertEqual(heldReserve?.value, "13 credits"); XCTAssertEqual(heldReserve?.detail, "Last known reading")
-            // Isolate the representation gap: even an explicitly supplied valid
-            // weekly value is suppressed when overall state is stale.
+            // A stale aggregate still never revives a window that is not itself kept or proven.
             var staleProbe = heldInput
+            for index in staleProbe.windows.indices { staleProbe.windows[index].validity = .inheritAggregate }
             staleProbe.dataState = .stale
             let weeklyIndex = try XCTUnwrap(staleProbe.windows.firstIndex { $0.period == .week })
             staleProbe.windows[weeklyIndex].remainingPercent = 75.0
@@ -424,6 +428,51 @@ private actor ReserveJourneyClient: EngineClient {
         XCTAssertEqual(largeOther?.value, "1,000,000,000,000,001")
     }
 
+    /// Owner build 14e (Grok card): "余额 0 · 未报告币种" although the Grok reader reports USD. A reported
+    /// currency is shown; only a balance without one keeps the note.
+    func testReportedCurrencyIsShownInsteadOfCurrencyNotReported() async throws {
+        let usd = try await projection(balance: 0, unit: "money", english: true, currency: "USD").1
+        XCTAssertEqual(usd?.value, "$0.00"); XCTAssertEqual(usd?.detail, "")
+        let zh = try await projection(balance: 12.5, unit: "money", english: false, currency: "USD").1
+        XCTAssertTrue(zh?.value.contains("$12.50") == true, zh?.value ?? "nil"); XCTAssertEqual(zh?.detail, "")
+        let none = try await projection(balance: 12.5, unit: "money", english: false).1
+        XCTAssertEqual(none?.detail, "未报告币种")
+    }
+
+    /// D228/D233: a fresh reading with only a balance (Grok's X Subscription) says so in one small grey footnote
+    /// at the bottom of the card. The fixture is the decoded owner shape: zero windows and a current USD balance.
+    func testUsageNotReportedRowIsAFootnoteOnASuccessfulCard() async throws {
+        _ = try await projection(balance: 0, unit: "money", english: false, currency: "USD", usageNotReported: true, balanceOnlyNoWindows: true,
+            providerProbe: { _, content, now in
+                let presented = content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]
+                let rows = presented?.additionalRows ?? []
+                let line = rows.first { $0.id == "usage-not-reported" }
+                XCTAssertEqual(line?.kind, .footnote)
+                XCTAssertEqual(line?.value, "Codex 不提供用量百分比，只显示余额")
+                XCTAssertEqual(rows.last?.id, "usage-not-reported", "the footnote sits below the balance and today rows")
+                XCTAssertEqual(rows.filter { $0.kind == .event || $0.kind == .notice }.count, 0, "no fix line")
+                // A successful read: no failure badge, no action button, and the quota stays unknown.
+                XCTAssertEqual(presented?.cardReadingState, .ok)
+                XCTAssertEqual(presented?.cardBadge(at: now, english: false), "")
+                XCTAssertEqual(presented?.actionLabel, "")
+                let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
+                XCTAssertEqual(input?.dataState, .fresh)
+                XCTAssertEqual(input?.windows.count, 0)
+                XCTAssertEqual(try? input.map { try DockInstrumentProjection.evaluate($0, now: now).readout }, "--")
+                // The host's verified-window pass keeps the successful balance-only card.
+                let hosted = try? HostVerifiedWindowAdapter.apply(content, proofs: [], now: now, sourceToken: 1, language: "zh-CN", sourceIsCurrent: { _ in true })
+                let hostedRow = hosted?.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]
+                XCTAssertEqual(hostedRow?.cardReadingState, .ok)
+                XCTAssertEqual(hostedRow?.additionalRows.last?.id, "usage-not-reported")
+            })
+        _ = try await projection(balance: 0, unit: "money", english: false, currency: "USD", balanceOnlyNoWindows: true,
+            providerProbe: { _, content, _ in
+                XCTAssertNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "usage-not-reported" })
+                XCTAssertEqual(content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }?.dataState, .unavailable,
+                               "without the producer's balance-only reason an empty reading is still unavailable")
+            })
+    }
+
     func testLastKnownReserveRemainsLabeledAndRevokedDoesNotExposeIt() async throws {
         for unit in ["credits", "other", "money"] {
             let expired = try await projection(balance: 12.5, unit: unit, english: true, state: .expired)
@@ -501,7 +550,7 @@ private actor ReserveJourneyClient: EngineClient {
         XCTAssertEqual(retained.value, "13 credits"); XCTAssertEqual(retained.detail, "Last known reading")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: "aaaaaaaaaaaaaaaa"))
         // The card folds credits into the one reserve line (card.js:76-81); a stale reading stays labelled there.
-        XCTAssertEqual(card.rows.first { $0.id == "reserve" && $0.kind == .reserve }?.value, "↺1 · 13 credits")
+        XCTAssertEqual(card.rows.first { $0.id == "reserve" && $0.kind == .reserve }?.value, "Resets 1 · Credits 13")
         XCTAssertEqual(card.rows.first { $0.id == "reserve" && $0.kind == .reserve }?.detail, "expired · Last known reading")
         let delivery = EngineDeliveryContext(sessionID: "reserve-synthetic", floor: .init(storeEpoch: "reserve-synthetic", generation: 1), revision: 1)
         await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: delivery,
@@ -766,7 +815,8 @@ private actor ReserveJourneyClient: EngineClient {
         let fresh = try await projection(balance: 12.5, unit: "credits", english: true, state: .fresh)
         XCTAssertEqual(fresh.0?.dataState, .fresh); XCTAssertEqual(fresh.1?.value, "13 credits")
         let retained = try await projection(balance: 12.5, unit: "credits", english: true, state: .retained)
-        XCTAssertEqual(retained.0?.dataState, .unavailable); XCTAssertEqual(retained.1?.value, "13 credits")
+        // WP-15 (DOCK-3.2-50): the retained reading is kept, stale and dim, until its window resets.
+        XCTAssertEqual(retained.0?.dataState, .stale); XCTAssertEqual(retained.1?.value, "13 credits")
         let retainedDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
         XCTAssertLessThan(Date(timeIntervalSince1970: 1_800_000_000), retainedDeadline)
         let atExpiry = try await projection(balance: 12.5, unit: "credits", english: true, state: .atExpiry)
@@ -786,9 +836,10 @@ private actor ReserveJourneyClient: EngineClient {
         let expiredReading = try DockInstrumentProjection.evaluate(XCTUnwrap(expired.0), now: afterExpiry)
         let refreshedReading = try DockInstrumentProjection.evaluate(XCTUnwrap(refreshed.0), now: afterExpiry)
         XCTAssertEqual(freshReading.readout, "42.5%")
-        XCTAssertEqual(retainedReading.readout, "--"); XCTAssertEqual(expiredReading.readout, "--")
+        XCTAssertEqual(retainedReading.readout, "42.5%"); XCTAssertTrue(retainedReading.readoutDimmed); XCTAssertEqual(retainedReading.status, .unknown)
+        XCTAssertEqual(expiredReading.readout, "--", "a reading past its reset is never kept")
         // Pure projection sequence, not a claim about a live store update or GUI rendering.
-        XCTAssertEqual([retainedReading.readout, freshReading.readout], ["--", "42.5%"])
+        XCTAssertEqual([retainedReading.readout, freshReading.readout], ["42.5%", "42.5%"])
         XCTAssertEqual([expiredReading.readout, refreshedReading.readout], ["--", "42.5%"])
     }
 

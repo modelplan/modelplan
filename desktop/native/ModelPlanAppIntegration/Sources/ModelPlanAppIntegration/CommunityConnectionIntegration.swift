@@ -4,12 +4,29 @@ import ModelPlanCore
 import ModelPlanSettings
 import ModelPlanCommunityHost
 
-@MainActor private final class ConnectionFirstRunSurface: SettingsWindowSurface {
+/// G3-37: macOS 14+ ignores an accessory app's activate() while another app is active (hosted
+/// macOS 15 evidence, #690), so the first-run window is also ordered above other apps' windows.
+/// It does not take key focus from the front app.
+@MainActor protocol FirstRunFrontRaising: AnyObject { func raiseToFront() }
+/// Owner 11-12: a surface that can say its window was closed before Done (nothing was saved).
+@MainActor protocol FirstRunClosing: AnyObject { var onClosedBeforeDone: (@MainActor () -> Void)? { get set } }
+
+@MainActor private final class ConnectionFirstRunSurface: SettingsWindowSurface, FirstRunFrontRaising, FirstRunClosing {
     private let controller: SettingsFirstRunController
-    init(editor: SettingsEditor, scopeConsentEntry: ScopeConsentEntry?) { controller = SettingsFirstRunController(editor: editor, scopeConsentEntry: scopeConsentEntry) }
+    init(editor: SettingsEditor, scopeConsentEntry: ScopeConsentEntry?, learnMore: (@MainActor () -> Void)? = nil,
+         presence: FirstRunPresenceDetector? = nil) {
+        controller = SettingsFirstRunController(editor: editor, scopeConsentEntry: scopeConsentEntry)
+        controller.onLearnMore = learnMore
+        if let presence { controller.presence = presence }
+    }
+    var onClosedBeforeDone: (@MainActor () -> Void)? {
+        get { controller.onClosedBeforeDone }
+        set { controller.onClosedBeforeDone = newValue }
+    }
     func prepare() async { await controller.prepare() }
     func show(paneID: String?) { controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil) }
     func hide() { controller.suspend(); controller.window?.orderOut(nil) }
+    func raiseToFront() { controller.window?.orderFrontRegardless() }
 }
 
 /// App composition retains this module over its existing editor. Construction has no backend/UI effects.
@@ -23,19 +40,31 @@ import ModelPlanCommunityHost
     private var generation: UInt64 = 0
     private var navigation: UUID?
     private var disposed = false
+    /// FR-9-09: the launch's first presentation comes to the front. Later restores follow a wake
+    /// or an engine restart and must not take focus from another app.
+    private var presentedThisLaunch = false
+    /// Owner 11-12 (first run v1): the page is up now, and whether the user closed it before Done this launch
+    /// (nothing saved; the guide returns from the menu bar icon or on the next launch, not by itself).
+    public private(set) var isPresentingSetup = false
+    private var dismissedBeforeDone = false
+    /// Called when the user closes the page before Done.
+    public var onSetupClosed: (@MainActor () -> Void)?
 
     public init(application: SettingsApplicationCoordinator, backend: (any SettingsConnectionAllowing)? = nil,
                 canPresent: @escaping @MainActor () -> Bool,
                 showSettings: @escaping @MainActor (String?) async -> Void,
                 activate: @escaping @MainActor () -> Void = {}, scopeConsentEntry: ScopeConsentEntry? = nil,
                 makeFirstRun: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
-                makeFirstRunWithConsent: (@MainActor (SettingsEditor, ScopeConsentEntry) -> any SettingsWindowSurface)? = nil) throws {
+                makeFirstRunWithConsent: (@MainActor (SettingsEditor, ScopeConsentEntry) -> any SettingsWindowSurface)? = nil,
+                presence: FirstRunPresenceDetector? = nil) throws {
         self.application = application; self.canPresent = canPresent; self.showSettings = showSettings
         self.activate = activate
         self.makeFirstRun = { editor in
             if let scopeConsentEntry, let makeFirstRunWithConsent { return makeFirstRunWithConsent(editor, scopeConsentEntry) }
             if let makeFirstRun { return makeFirstRun(editor) }
-            return ConnectionFirstRunSurface(editor: editor, scopeConsentEntry: scopeConsentEntry)
+            // FR-9-11: "Learn more ›" opens Settings › Data & Privacy beside the first-run window.
+            return ConnectionFirstRunSurface(editor: editor, scopeConsentEntry: scopeConsentEntry,
+                                             learnMore: { Task { await showSettings("privacy") } }, presence: presence)
         }
         let editor = application.editor
         navigation = editor.bindFirstRunPresentation({ [weak self] in Task { await self?.openFirstRun() } },
@@ -64,6 +93,11 @@ import ModelPlanCommunityHost
     // Canonical consent observers update the connection controller, not subscription membership.
     // The retained Dock catalogue callback owns that context; full runtime facts use apply(...) explicitly.
     public func restoreFirstRunIfNeeded() async {
+        // The page is already up (it was shown at launch, before the reader was ready) or the user closed it:
+        // only restore canonical admission, never re-prepare the page over the user's choices.
+        if isPresentingSetup || dismissedBeforeDone {
+            await application.editor.connections.refresh(); return
+        }
         generation &+= 1; let token = generation
         guard !disposed, !Task.isCancelled else { return }
         await application.reload()
@@ -72,9 +106,27 @@ import ModelPlanCommunityHost
         await application.editor.connections.refresh()
         guard !disposed, generation == token, !Task.isCancelled,
               application.editor.snapshot?.preferences.onboarding.completed == false else { return }
-        await showFirstRun(token: token, userInitiated: false, inspect: false)
+        await showFirstRun(token: token, activating: !presentedThisLaunch, inspect: false)
     }
-    public func openFirstRun() async { await route(.allowUsage, forceFirstRun: true) }
+    /// Owner 11-12 (E1): the first-run page comes up at launch from the local "setup not finished" mark, without
+    /// waiting for the reader. The reader's answers fill it in afterwards.
+    public func presentSetupAtLaunch() async {
+        guard !disposed, !isPresentingSetup else { return }
+        generation &+= 1; let token = generation
+        guard eligible(token) else { return }
+        await application.reload()
+        guard eligible(token), application.editor.snapshot?.preferences.onboarding.completed == false else { return }
+        await showFirstRun(token: token, activating: true, inspect: false)
+    }
+    /// The menu bar icon and a second launch bring the page back (E6).
+    public func reopenSetup() async {
+        dismissedBeforeDone = false
+        if isPresentingSetup, let surface {
+            activate(); surface.show(paneID: nil); (surface as? FirstRunFrontRaising)?.raiseToFront(); return
+        }
+        await openFirstRun()
+    }
+    public func openFirstRun() async { dismissedBeforeDone = false; await route(.allowUsage, forceFirstRun: true) }
     public func openSettings() async { await route(nil) }
     public func perform(_ destination: CommunityConnectionDestination) async { await route(destination) }
     public func action(for step: CommunityConnectionNextStep) -> @MainActor () -> Void {
@@ -93,26 +145,32 @@ import ModelPlanCommunityHost
             await showSettings(destination == .about ? "about" : destination == nil ? nil : "subscriptions")
             return
         }
-        await showFirstRun(token: token, userInitiated: userInitiated, inspect: true)
+        await showFirstRun(token: token, activating: userInitiated, inspect: true)
     }
-    private func showFirstRun(token: UInt64, userInitiated: Bool, inspect: Bool) async {
+    private func showFirstRun(token: UInt64, activating: Bool, inspect: Bool) async {
         // Presence/preview only; the injected backend owns canonical gate restoration.
         if inspect { await application.editor.connections.refresh() }
         guard eligible(token) else { return }
         if surface == nil { surface = makeFirstRun(application.editor) }
         guard let surface, eligible(token) else { return }
+        (surface as? FirstRunClosing)?.onClosedBeforeDone = { [weak self] in
+            guard let self else { return }
+            self.isPresentingSetup = false; self.dismissedBeforeDone = true; self.onSetupClosed?()
+        }
         await surface.prepare()
         guard eligible(token) else { return }
-        if userInitiated { activate() }
+        if activating { activate() }
         guard eligible(token) else { return }
+        presentedThisLaunch = true; isPresentingSetup = true
         surface.show(paneID: nil)
+        if activating { (surface as? FirstRunFrontRaising)?.raiseToFront() }
     }
     private func eligible(_ token: UInt64) -> Bool { !disposed && generation == token && canPresent() && !disposed && generation == token }
     public func requireBackend() throws {
         guard application.editor.connections.hasAllowanceBackend else { throw CommunityConnectionWiringError.backendMissing }
     }
     public func suspend() {
-        generation &+= 1; application.editor.connections.suspend(); surface?.hide()
+        generation &+= 1; isPresentingSetup = false; application.editor.connections.suspend(); surface?.hide()
     }
     public func dispose() {
         guard !disposed else { return }; disposed = true; suspend()
@@ -122,7 +180,8 @@ import ModelPlanCommunityHost
 }
 
 /// Wrap the existing session in the private entry; no root-host protocol or second editor is needed.
-@MainActor public final class CommunityConnectionIntegration: NSObject, CommunityUsageRemediation, CommunitySubscriptionsSettingsPresenting {
+@MainActor public final class CommunityConnectionIntegration: NSObject, CommunityUsageRemediation, CommunitySubscriptionsSettingsPresenting, CommunityLanguageReporting {
+    public var prefersChinese: Bool { (flow.application.editor.snapshot?.preferences.language ?? .fallback) == .chinese }
     public let flow: CommunityConnectionFlow
     private let base: any CommunitySettingsIntegration
     private var restoration: Task<Void, Never>?
@@ -131,7 +190,7 @@ import ModelPlanCommunityHost
     public private(set) var currentUsageNextStep: CommunityConnectionNextStep? = .forReason(.notLoaded)
     public private(set) var currentUsageMessage = SettingsText("Personal readings have not loaded.", "个人读数尚未加载。")
     public private(set) lazy var usageAccessMenuItem: NSMenuItem = {
-        let item = NSMenuItem(title: "Usage access… / 用量授权…", action: #selector(openUsageAccess), keyEquivalent: "")
+        let item = NSMenuItem(title: SettingsText("Usage access…", "用量授权…").value(flow.application.editor.snapshot?.preferences.language ?? .fallback), action: #selector(openUsageAccess), keyEquivalent: "")
         item.target = self; return item
     }()
     public private(set) lazy var settingsMenuItem: NSMenuItem = {
@@ -162,11 +221,11 @@ import ModelPlanCommunityHost
                 currentUsageMessage = .init(reason.english, reason.chinese)
                 currentUsageNextStep = .forReason(reason.category)
             } else {
-                currentUsageMessage = .init("Current readings are available.", "当前读数可用。")
+                currentUsageMessage = .init("Current readings are available.", "已读到当前用量。")
                 currentUsageNextStep = nil
             }
         }
-        let language = editor.snapshot?.preferences.language ?? .chinese
+        let language = editor.snapshot?.preferences.language ?? .fallback
         usageAccessMenuItem.title = currentUsageMessage.value(language)
             + (currentUsageNextStep.map { " — " + $0.title.value(language) } ?? "")
     }

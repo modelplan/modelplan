@@ -7,6 +7,7 @@ import ModelPlanWire
 import ModelPlanCommunityHost
 import ModelPlanSettings
 import ModelPlanDock
+import ModelPlanResources
 
 @MainActor private final class EngineDockClock {
     var now: @MainActor () -> Date = { Date() }
@@ -89,7 +90,7 @@ public struct EngineMenuRefreshResult {
         menuDidChange?()
     }
     public init(configuration: EngineClientConfiguration, createsNativePanels: Bool = true,
-                dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil, edition: ProductionEdition = .current,
                 deadlineNow: @escaping @MainActor () -> Date = { Date() },
                 deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
                 makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil) {
@@ -111,9 +112,16 @@ public struct EngineMenuRefreshResult {
         let provider = EngineDockMenuProvider(store: store)
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
-        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: { clock.now() })
+        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: { clock.now() }, edition: edition)
         adapter.bindDockMenuTracking(dock)
         _ = pairedProjection
+        // G3-136: the empty ring's one line comes from the same admitted rows as the menu.
+        dock.emptyStationReason = { [weak self] in
+            guard let self else { return nil }
+            let value = self.provider.dockContent
+            return WidgetEmptyReason.text(status: value.status, rows: value.settingsRows.isEmpty ? value.dockRows : value.settingsRows,
+                                          language: self.adapter.language == "en" ? .english : .chinese)
+        }
         dock.onWillRetire = { [weak self] in
             guard let self else { return }
             self.pairedProjection.invalidate()
@@ -161,6 +169,23 @@ public struct EngineMenuRefreshResult {
             self.deadlineDriver.replace()
         }
     }
+    /// D324/D327: puts the resource ring in front of the admitted subscription rings and keeps it current from the
+    /// one ResourceSampler. The caller reports visibility (plugin on, cockpit column, widget shown) on the binding.
+    public func installResourceWidget(sampler: ResourceSampler, language: @escaping () -> ResourceLanguage) -> ResourceWidgetBinding {
+        let provider = ResourceDockContentProvider(base: admittedCache)
+        dock.setDockContentProvider(provider)
+        let binding = ResourceWidgetBinding(sampler: sampler, provider: provider, language: language,
+                                            refreshCard: { [weak self] in self?.dock.refreshPluginCard() }) { [weak self] in self?.dock.refreshDockContent() }
+        // macrevb-1096-4: the hover card reads the latest sample, not the rows captured at the last ring redraw.
+        dock.livePluginCard = { [weak binding] id in id == ResourceDockBridge.subscriptionID ? binding?.liveCard() : nil }
+        return binding
+    }
+    #if DEBUG
+    func installDockVisibilityTimingForChecks(clock: @escaping () -> TimeInterval, scheduler: any DockEdgeScheduling) {
+        dock.installVisibilityTimingForChecks(clock: clock, scheduler: scheduler)
+    }
+    #endif
+
     public var presentedContent: DockContent { presentedContent(at: deadlineWall()) }
 
     private func presentedContent(at now: Date) -> DockContent {
@@ -219,8 +244,7 @@ public struct EngineMenuRefreshResult {
         if let isolatedLedger {
             base = isolatedLedger.deletingLastPathComponent()
         } else if live {
-            guard let appSupport=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask).first else { return }
-            base=appSupport.appendingPathComponent("ModelPlan",isDirectory:true)
+            base=ProfileRoot.current.modelPlanSupport
         } else { base=FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-s4-"+UUID().uuidString,isDirectory:true);resetScratch=base }
         do {
             let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:isolatedLedger ?? base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live && isolatedLedger == nil)
@@ -228,10 +252,14 @@ public struct EngineMenuRefreshResult {
         } catch {
             Logger(subsystem:"ai.modelplan.notifications",category:"reset-ledger").error("Reset notification service could not be started.")
         }
-        let forecasts=EngineForecastNotifier(settings:settings,cacheURL:base.appendingPathComponent("forecast-notifications.json"),deliverToSystem:live,now:{ [weak self] in self?.currentDate() ?? Date() })
-        forecastNotifier=forecasts;_=store.attach(forecasts)
+        // ALR-52 (WP-11): v1 sends only reset and official-extra-reset notifications. A forecast is shown on the ALERT
+        // lamp and in its list, never as a system notification, so no forecast notifier is attached.
+        if NotificationKind.delivered.contains(.forecast) {
+            let forecasts=EngineForecastNotifier(settings:settings,cacheURL:base.appendingPathComponent("forecast-notifications.json"),deliverToSystem:live,now:{ [weak self] in self?.currentDate() ?? Date() })
+            forecastNotifier=forecasts;_=store.attach(forecasts)
+        }
     }
-    /// The same seam for forecast notices.
+    /// The same seam for forecast notices (unused while ALR-52 sends no forecast notifications).
     public func setForecastNotificationDelivery(_ delivery:@escaping @MainActor (String) async throws -> Void) {
         forecastNotifier?.deliveryOverride=delivery
         forecastNotifier?.apply(store.snapshot)
@@ -269,6 +297,18 @@ public struct EngineMenuRefreshResult {
             fallback = english ? "Readings unavailable. Check Settings." : "读数不可用，请检查设置。"
         }
         return fallback
+    }
+    /// G3-122: the menu-bar title as a reading, so the status item can keep its number across a projection gap.
+    /// Definitive (`.none` or a value): icon mode, a privacy clear, no rows, and whatever an admitted content says.
+    /// A gap (`.unavailable`): no Settings yet, or no admitted content (between the clear and the install of an
+    /// engine delivery, a withdrawn or suspended projection).
+    var menuTitleReading: StatusTitleReading {
+        guard let settings = latestSettings else { return .unavailable }
+        guard settings.snapshot.preferences.menuDisplay != .icon else { return .none }
+        if provider.dockContent.status == .cleared || provider.dockContent.status == .empty { return .none }
+        let now = deadlineWall()
+        guard let content = admittedCache.admittedContent(.init(snapshot: nil, diagnostics: .init(), now: now)) else { return .unavailable }
+        return EngineMenuBarTitle.reading(inputs: content.snapshot.inputs, preferences: settings.snapshot.preferences, now: now)
     }
     public var menuPresentation: CommunityMenuBarPresentation {
         let now = deadlineWall()

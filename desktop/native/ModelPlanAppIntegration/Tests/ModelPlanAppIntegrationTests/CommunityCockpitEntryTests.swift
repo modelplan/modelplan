@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CryptoKit
+import WebKit
 import XCTest
 import ModelPlanSettings
 import ModelPlanEngineClient
@@ -9,7 +11,7 @@ import ModelPlanDock
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
-private actor RouteClient: EngineClient {
+actor RouteClient: EngineClient { // internal: the real-page size test (OwnerTestCockpitPageTests) routes through it too
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
     var stops=0
     var holdCockpit=false
@@ -56,7 +58,7 @@ private actor RouteClient: EngineClient {
     func open(){
         let raw=try! state.load(.init(theme:.day,locale:.en,profile:.full),shell:.init(closed:false,attached:true,forcedClosed:false,tier:.tall))
         var value=try! JSONSerialization.jsonObject(with:Data(raw.utf8)) as! [String:Any]
-        value["appearance"]=nil;value["shell"]=nil;value["redBelow"]=nil;value["type"]="ready";value["sequence"]="1"
+        value["appearance"]=nil;value["shell"]=nil;value["redBelow"] = nil; value["showUsedPercent"] = nil; value["showAllModels"] = nil;value["type"]="ready";value["sequence"]="1"
         value["appearanceVersion"]=2;value["capabilities"]=["appearanceUpdates","shellState","shellActions"]
         _=try! state.accept(String(decoding:try! JSONSerialization.data(withJSONObject:value),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"));onReady?()
     }
@@ -69,9 +71,227 @@ private actor RouteClient: EngineClient {
     func discard(){state.dispose();onClosed?()}
     var appearances:[CockpitAppearance]=[]
     func updateAppearance(_ appearance:CockpitAppearance){appearances.append(appearance)}
+    var selections:[String?]=[]
+    func selectModel(_ id:String?){selections.append(id)}
+    var fieldCloses=0
+    func fieldClosed(){fieldCloses+=1}
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
+    // verificationPlacement is test-only SPI; u11-native defines MODELPLAN_TEST_ONLY_SPI and runs this class.
+    #if MODELPLAN_TEST_ONLY_SPI
+    private func d88Bundle() throws -> VerifiedCockpitBundle {
+      let root = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-d88-" + UUID().uuidString)
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+      let html = Data("synthetic".utf8); try html.write(to: root.appendingPathComponent("index.html"))
+      let manifest = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "edition": "community", "interfaceOnly": true, "files": ["index.html": VerifiedCockpitBundle.digest(html)]])
+      try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
+      return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
+    }
+
+    /// CKP-SHELL-07 with D88: at 85 % a resize (grow animation, snap-back) must keep the scaled canvas and page
+    /// zoom, and the one-time hint anchor must sit on the detach key as drawn at that scale.
+    @MainActor func testD88ScaledCockpitKeepsBoundsZoomAndHintAnchorAfterResize() throws {
+      guard NSScreen.main != nil else { throw XCTSkip("needs a display") }
+      _ = NSApplication.shared
+      let usable = CGRect(x: 0, y: 0, width: 1440, height: 876)
+      let icon = CGRect(x: 700, y: usable.maxY, width: 28, height: 24)
+      let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
+      let session = CockpitShellSession()
+      let page = CockpitWindowController(bundle: try d88Bundle(), context: context,
+        appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: true, size: .percent85),
+        shellSession: session, anchor: { icon })
+      page.verificationPlacement = (usable: usable, anchor: icon)
+      defer { page.discard() }
+      session.nextEntrance = .fade
+      page.open()
+      let window = try XCTUnwrap(page.window)
+      (window.contentView?.subviews.first as? WKWebView)?.navigationDelegate = nil
+      let layout = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false, size: .percent85, screenWidth: usable.width))
+      XCTAssertEqual(layout.scale, 0.85, accuracy: 0.001)
+      let content = try XCTUnwrap(window.contentView)
+      let web = try XCTUnwrap(content.subviews.first as? WKWebView)
+      // A resize (as the grow animation and a snap-back do) must not undo the scaled canvas.
+      window.setFrame(layout.frame.insetBy(dx: 40, dy: 40), display: true)
+      window.setFrame(layout.frame, display: true)
+      XCTAssertEqual(content.bounds.size, window.frame.size, "bounds stay the scaled frame after a resize")
+      XCTAssertEqual(web.pageZoom, 0.85, accuracy: 0.001, "the page zoom stays the layout scale")
+      // The anchor lands on the detach key at the page position times the scale; the page is top-anchored in the
+      // whole-point window, so the key is measured from the window's top edge (2 CSS px below the canvas top).
+      let anchor = try XCTUnwrap(page.attachmentHintAnchor)
+      let size = CockpitWindowController.attachmentKeySize
+      let key = CGRect(x: window.frame.minX + CockpitWindowController.attachmentKeyX * 0.85, y: window.frame.maxY - (size + 2) * 0.85,
+                       width: size * 0.85, height: size * 0.85)
+      XCTAssertEqual(anchor.frame.midX, key.midX, accuracy: 0.5)
+      XCTAssertEqual(anchor.frame.midY, key.midY, accuracy: 0.5)
+      XCTAssertTrue(window.frame.contains(anchor.frame))
+    }
+    #endif
+    @MainActor private func shellFixture() throws -> (CockpitConsoleOwner, VerifiedCockpitBundle, CockpitEngineContext, CGRect) {
+        guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true", let screen=NSScreen.main,
+              screen.visibleFrame.height > 706, screen.visibleFrame.width > 700 else {
+            throw XCTSkip("Requires the CI graphical session and a display large enough for the shell")
+        }
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("shell-entry-"+UUID().uuidString)
+        try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+        addTeardownBlock { try? FileManager.default.removeItem(at:root) }
+        func digest(_ data:Data) -> String { SHA256.hash(data:data).map { String(format:"%02x",$0) }.joined() }
+        let html=Data("<html>synthetic</html>".utf8)
+        try html.write(to:root.appendingPathComponent("index.html"))
+        let manifest=try JSONSerialization.data(withJSONObject:["schemaVersion":1,"edition":"community","interfaceOnly":true,"files":["index.html":digest(html)]])
+        try manifest.write(to:root.appendingPathComponent("bundle-manifest.json"))
+        let verified=try VerifiedCockpitBundle(root:root,manifestSHA256:digest(manifest))
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root.appendingPathComponent("settings"))
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        owner.appearance = .init(theme:.night,locale:.en,profile:.full,reduceMotion:true)
+        let anchor=CGRect(x:screen.visibleFrame.midX,y:screen.visibleFrame.maxY,width:20,height:20)
+        owner.anchor = { anchor }
+        let context=try CockpitEngineContext(sessionID:UUID(),storeEpoch:"synthetic",generation:1)
+        return (owner,verified,context,anchor)
+    }
+    @MainActor func testNormalFactoryReopenRetainsDetachedPositionAndShutter() throws {
+        let (owner,bundle,context,anchor)=try shellFixture()
+        let first=owner.makePage(context:context,verified:bundle)
+        first.open()
+        let window=try XCTUnwrap(first.window)
+        first.setAttached(false)
+        first.toggleShutter()
+        // The scaled cockpit (D51) fills the room above the Dock, so the open window's bottom edge is the screen's lowest allowed y;
+        // move up, not down, or the remembered origin would be clamped back and the position could not be told from a clamp.
+        let origin=CGPoint(x:window.frame.minX-20,y:window.frame.minY+20)
+        window.setFrameOrigin(origin)
+        first.discard()
+        let second=owner.makePage(context:context,verified:bundle)
+        defer { second.discard() }
+        second.open()
+        XCTAssertTrue(owner.shell.detached)
+        XCTAssertTrue(owner.shell.shutterClosed)
+        let reopened=try XCTUnwrap(second.window)
+        XCTAssertEqual(reopened.frame.origin.x,origin.x,accuracy:1)
+        XCTAssertEqual(reopened.frame.origin.y,origin.y,accuracy:1)
+        let fit=try XCTUnwrap(CockpitShellLayout.fit(usable:try XCTUnwrap(NSScreen.main).visibleFrame,anchor:anchor,shutterClosed:true))
+        XCTAssertEqual(reopened.frame.height,fit.frame.height,accuracy:1)
+    }
+    @MainActor func testNormalFactoryTrayPressDoesNotCloseButOutsidePressDoes() throws {
+        let (owner,bundle,context,anchor)=try shellFixture()
+        let page=owner.makePage(context:context,verified:bundle)
+        defer { page.discard() }
+        page.open()
+        page.outsidePress(CGPoint(x:anchor.midX,y:anchor.midY),eventType:.leftMouseDown)
+        XCTAssertFalse(page.bridge.disposed)
+        page.outsidePress(CGPoint(x:anchor.maxX+40,y:anchor.midY),eventType:.leftMouseDown)
+        XCTAssertTrue(page.bridge.disposed)
+    }
+    @MainActor func testNormalEntryDockAndMenuToggleRestoresDetachedShell() async throws {
+        let (owner,bundle,context,anchor)=try shellFixture()
+        let client=RouteClient()
+        var pages:[CockpitWindowController]=[]
+        let coordinator=EngineCockpitCoordinator { context in
+            let page=owner.makePage(context:context,verified:bundle);pages.append(page);return page
+        }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let delivery=EngineDeliveryContext(sessionID:"s-"+context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:context.storeEpoch,generation:context.generation),revision:1)
+        await coordinator.consume(.context(delivery))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:owner.settingsStore,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 1 { break }; await Task.yield() }
+        let first=try XCTUnwrap(pages.first)
+        let window=try XCTUnwrap(first.window)
+        first.setAttached(false);first.toggleShutter()
+        // The scaled cockpit (D51) fills the room above the Dock, so the open window's bottom edge is the screen's lowest allowed y;
+        // move up, not down, or the remembered origin would be clamped back and the position could not be told from a clamp.
+        let origin=CGPoint(x:window.frame.minX-20,y:window.frame.minY+20)
+        window.setFrameOrigin(origin)
+        app.toggleConsole() // G3-40: only the status icon toggles; the menu item only opens
+        for _ in 0..<200 where !first.bridge.disposed { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertTrue(first.bridge.disposed)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 2 { break }; await Task.yield() }
+        XCTAssertEqual(pages.count,2)
+        let second=try XCTUnwrap(pages.last)
+        let reopened=try XCTUnwrap(second.window)
+        XCTAssertTrue(owner.shell.detached);XCTAssertTrue(owner.shell.shutterClosed)
+        XCTAssertEqual(reopened.frame.origin.x,origin.x,accuracy:1)
+        XCTAssertEqual(reopened.frame.origin.y,origin.y,accuracy:1)
+        let fit=try XCTUnwrap(CockpitShellLayout.fit(usable:try XCTUnwrap(NSScreen.main).visibleFrame,anchor:anchor,shutterClosed:true))
+        XCTAssertEqual(reopened.frame.height,fit.frame.height,accuracy:1)
+        second.discard();await coordinator.shutdown();await app.composition.stop()
+    }
+    /// G3-108 (owner, build 14e) through the normal entry: the Dock's console button opens the cockpit through the real
+    /// composition with the cockpit entry enabled, and the page's shutterToggle intent (the controller's handler) closes
+    /// and reopens the porthole. Attached, the top edge stays under the icon and the body slides by the porthole band
+    /// in one motion; detached, the body (bottom edge) never moves and only the top edge does. Never rescaled: the
+    /// content bounds follow the live frame and the web view keeps the open canvas. CKP-PORT-09 (amended G3-108, 250 ms),
+    /// CKP-SHELL-07 (closing keeps the open scale), CKP-SHELL-05.
+    @MainActor func testG3_108NormalEntryShutterMovesOnlyWhereTheOwnerAsked() async throws {
+        let (owner,bundle,context,_)=try shellFixture()
+        owner.appearance = .init(theme:.night,locale:.en,profile:.full,reduceMotion:false)
+        let client=RouteClient()
+        var pages:[CockpitWindowController]=[]
+        let coordinator=EngineCockpitCoordinator { context in
+            let page=owner.makePage(context:context,verified:bundle);pages.append(page);return page
+        }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let delivery=EngineDeliveryContext(sessionID:"s-"+context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:context.storeEpoch,generation:context.generation),revision:1)
+        await coordinator.consume(.context(delivery))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:owner.settingsStore,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 1 { break }; await Task.yield() }
+        let page=try XCTUnwrap(pages.first), window=try XCTUnwrap(page.window)
+        let content=try XCTUnwrap(window.contentView), web=try XCTUnwrap(content.subviews.first as? WKWebView)
+        web.navigationDelegate=nil
+        try await Task.sleep(for:.milliseconds(400))
+        let scale=web.pageZoom, canvas=web.frame.size
+        let band=((253-CockpitShellLayout.closedSlabBand)*scale).rounded(.down)
+        func toggle() async throws -> [CGRect] {
+            var frames=[window.frame]
+            page.toggleShutter()
+            let deadline=ContinuousClock.now + .seconds(2)
+            var still=0
+            while ContinuousClock.now < deadline, still < 20 {
+                frames.append(window.frame)
+                XCTAssertEqual(content.bounds.size.width,window.frame.width,accuracy:0.5,"never rescaled")
+                XCTAssertEqual(content.bounds.size.height,window.frame.height,accuracy:0.5,"never rescaled")
+                XCTAssertEqual(web.frame.size,canvas,"the page canvas never changes");XCTAssertEqual(web.frame.minY,0)
+                still = frames[frames.count-2]==window.frame && !page.shutterMoving && !page.shutterPending ? still+1 : 0
+                try await Task.sleep(for:.milliseconds(5))
+            }
+            XCTAssertEqual(web.pageZoom,scale,"the toggle never changes the fit scale")
+            return frames
+        }
+        // Attached.
+        let start=window.frame
+        let closing=try await toggle()
+        XCTAssertTrue(owner.shell.shutterClosed)
+        for frame in closing { XCTAssertEqual(frame.maxY,start.maxY,accuracy:0.5,"attached, the top edge stays under the icon") }
+        XCTAssertEqual(window.frame.minY-start.minY,band,accuracy:0.5,"the body rose by the porthole band")
+        XCTAssertTrue(closing.contains { $0.minY > start.minY+1 && $0.minY < start.minY+band-1 },"one motion, not a jump: \(closing.map(\.minY))")
+        let opening=try await toggle()
+        for frame in opening { XCTAssertEqual(frame.maxY,start.maxY,accuracy:0.5) }
+        XCTAssertEqual(window.frame,start)
+        // Detached, lowered so the porthole has room above in both states, but only inside the visible frame (the scaled
+        // cockpit fills the room above the Dock; below it the replay clamps the body back, G3-79).
+        page.setAttached(false)
+        let usable=try XCTUnwrap(window.screen ?? NSScreen.main).visibleFrame
+        window.setFrameOrigin(.init(x:window.frame.minX,y:max(usable.minY.rounded(.up),window.frame.minY-60)))
+        let floating=window.frame
+        let detachedClose=try await toggle()
+        for frame in detachedClose { XCTAssertEqual(frame.minY,floating.minY,accuracy:0.5,"detached, the body never moves") }
+        XCTAssertEqual(window.frame.maxY,floating.maxY-band,accuracy:0.5,"only the top edge came down")
+        let detachedOpen=try await toggle()
+        for frame in detachedOpen { XCTAssertEqual(frame.minY,floating.minY,accuracy:0.5) }
+        XCTAssertEqual(window.frame,floating)
+        page.discard();await coordinator.shutdown();await app.composition.stop()
+    }
     // G3-13 / R-06: exercise the ordinary entry and real CLI transport. No
     // refresh or second subscription is sent after the synthetic local update.
     @MainActor func testG313RealCLIRecoversRetainedWeeklyCard() async throws {
@@ -111,17 +331,18 @@ final class CommunityCockpitEntryTests:XCTestCase {
             var oldCard: DockCardContent?
             for _ in 0..<300 {
                 if let member = app.composition.accountMembers.members.first(where: { $0.rowID == "codex" }),
-                   let card = try app.composition.dock.cardContent(for: member.id), card.stateLabel.contains("Stale") {
+                   let card = try app.composition.dock.cardContent(for: member.id), card.sourceAndAge.contains("3 h ago") {
                     memberID = member.id; oldCard = card; break
                 }
                 try await Task.sleep(for: .milliseconds(50))
             }
             let id = try XCTUnwrap(memberID, "the real CLI must deliver a retained Codex card")
             let before = try XCTUnwrap(oldCard)
-            XCTAssertTrue(before.sourceAndAge.contains("Local history"), before.sourceAndAge)
-            XCTAssertTrue(before.sourceAndAge.contains("3h ago"), before.sourceAndAge)
-            XCTAssertTrue(before.stateLabel.contains("Stale"), before.stateLabel)
-            XCTAssertTrue(before.rows.contains { $0.label == "Weekly" }, "the retained card must have a weekly row")
+            // WP-15 (DOCK-3.8-50, DOCK-3.2-50): the header is the age only, no stale badge, and the kept weekly reading
+            // stays (dim after an hour) until its window resets.
+            XCTAssertEqual(before.sourceAndAge, "Updated 3 h ago")
+            XCTAssertEqual(before.stateLabel, "")
+            XCTAssertTrue(before.rows.contains { $0.label == "Weekly" && $0.value == "20%" && $0.tone == .unknown }, "the retained card keeps its dim weekly reading")
             let file = try FileHandle(forWritingTo: log)
             try file.seekToEnd()
             let updatedAt = Date()
@@ -130,14 +351,13 @@ final class CommunityCockpitEntryTests:XCTestCase {
             var recovered: DockCardContent?
             for _ in 0..<300 {
                 if let card = try app.composition.dock.cardContent(for: id), card.stateLabel.isEmpty,
-                   card.rows.contains(where: { $0.label == "Weekly" && $0.value == "70%" }) {
+                   card.rows.contains(where: { $0.label == "Weekly" && $0.value == "70%" && $0.tone != .unknown }) {
                     recovered = card; break
                 }
                 try await Task.sleep(for: .milliseconds(50))
             }
             let after = try XCTUnwrap(recovered, "new local observation did not automatically recover the card")
-            XCTAssertTrue(after.sourceAndAge.contains("Local history"), after.sourceAndAge)
-            XCTAssertTrue(after.sourceAndAge.contains("just now"), after.sourceAndAge)
+            XCTAssertEqual(after.sourceAndAge, "Updated just now")
             let observed = try XCTUnwrap(app.composition.presentedContent.snapshot.presentationRows[id]?.originalObservedAt)
             XCTAssertLessThan(abs(observed.timeIntervalSince(updatedAt)), 2)
             // R-01: two more real local observations show 4% then 3% on the
@@ -157,8 +377,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
                     try await Task.sleep(for: .milliseconds(50))
                 }
                 let card = try XCTUnwrap(current, "subscribed card did not deliver \(expected)")
-                XCTAssertTrue(card.sourceAndAge.contains("Local history"), card.sourceAndAge)
-                XCTAssertTrue(card.sourceAndAge.contains("just now"), card.sourceAndAge)
+                XCTAssertEqual(card.sourceAndAge, "Updated just now")
                 let actual = try XCTUnwrap(app.composition.presentedContent.snapshot.presentationRows[id]?.originalObservedAt)
                 XCTAssertLessThan(abs(actual.timeIntervalSince(nextAt)), 2)
             }
@@ -193,16 +412,23 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertNil(app.composition.store.snapshot.rows)
         await app.composition.stop()
     }
+    /// The manifest pins are generated at build time from the canonical build (check-bundle-pins.py) into a
+    /// gitignored Swift file; U11 native builds and generates before it compiles this test. Without them
+    /// the factory has no pins, so it admits no cockpit page at all.
     @MainActor func testProductionPinsAdmitCanonicalBundles() async throws {
+        guard !CommunityCockpitApplicationFactory.manifestPins.isEmpty else {
+            throw XCTSkip("Built without generated cockpit pins (check-bundle-pins.py)")
+        }
+        XCTAssertEqual(Set(CommunityCockpitApplicationFactory.manifestPins.keys), ["community", "official"])
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
             if FileManager.default.fileExists(atPath: repo.appendingPathComponent("desktop/cockpit/build.mjs").path) { break }
             repo.deleteLastPathComponent()
         }
         let builds = repo.appendingPathComponent("desktop/cockpit/.tmp")
-        guard FileManager.default.fileExists(atPath: builds.appendingPathComponent("community/bundle-manifest.json").path),
-              FileManager.default.fileExists(atPath: builds.appendingPathComponent("official/bundle-manifest.json").path)
-        else { throw XCTSkip("Build both canonical cockpit editions before running the admission check") }
+        // The generated pins exist only after both editions were built, so a missing build is a failure here.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: builds.appendingPathComponent("community/bundle-manifest.json").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: builds.appendingPathComponent("official/bundle-manifest.json").path))
         for edition in ["community", "official"] {
             let pin = try XCTUnwrap(CommunityCockpitApplicationFactory.manifestPins[edition])
             let bundle = try VerifiedCockpitBundle(root: builds.appendingPathComponent(edition), manifestSHA256: pin, allowOfficial: edition == "official")
@@ -229,6 +455,30 @@ final class CommunityCockpitEntryTests:XCTestCase {
         _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
         XCTAssertEqual(surface.shows,2)
         await app.composition.stop()
+    }
+    @MainActor func testNormalEntryRapidDockMenuToggleRetainsShellSession() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("shell-toggle-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:root) }
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        owner.shell.detached=true;owner.shell.shutterClosed=true
+        let origin=CGPoint(x:123,y:456);owner.shell.remember(origin,arrangement:"synthetic")
+        let client=RouteClient();var surface:SharedEngineCockpitConsole?
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:settings,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                let value=SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
+                surface=value;return value
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        XCTAssertTrue(try XCTUnwrap(surface).wantsVisible)
+        app.toggleConsole() // G3-40: the status icon closes; a menu item only opens
+        XCTAssertFalse(try XCTUnwrap(surface).wantsVisible)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        XCTAssertTrue(try XCTUnwrap(surface).wantsVisible)
+        XCTAssertTrue(owner.shell.detached);XCTAssertTrue(owner.shell.shutterClosed)
+        XCTAssertEqual(owner.shell.origin(for:"synthetic"),origin)
+        surface?.hide();await app.composition.stop()
     }
     // #403 normal-entry journey: use the actual menu actions with a synthetic
     // console/client, without opening a panel or launching an engine process.
@@ -363,8 +613,12 @@ final class CommunityCockpitEntryTests:XCTestCase {
         capture=capture.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
         var data=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
         var details=try XCTUnwrap(data["details"] as? [String:Any])
+        // WP-22: the capture's Codex account reports the model "synthetic" (D98), so that one is "mine"; the publication's
+        // lineup model is not, since the tool did not report it.
         details["publishedModels"]=[["id":"synthetic-model","name":"Synthetic","developerId":"openai","recommended":"medium",
-            "efforts":[["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]]]]
+            "efforts":[["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]]],
+            ["id":"synthetic","name":"Synthetic reported","developerId":"google","recommended":"medium",
+            "efforts":[["effort":"medium","label":"Med","star":true,"ability":42.0,"cost":0.3,"time":30.0]]]]
         data["details"]=details
         let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
         let context=EngineDeliveryContext(sessionID:"s-field",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
@@ -372,14 +626,139 @@ final class CommunityCockpitEntryTests:XCTestCase {
         await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:wire),delivery:context))))
         let payload=try XCTUnwrap(surface.fieldPayload())
         XCTAssertTrue(payload.contains("synthetic-model"));XCTAssertFalse(payload.contains("subscriptionRef"),"Only public model data crosses")
+        XCTAssertTrue(payload.contains(#""lowPower":"#),"D63: the payload says whether Low Power Mode is on")
+        XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(lowPower:true)).contains(#""lowPower":true"#))
+        XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(lowPower:false)).contains(#""lowPower":false"#))
+        XCTAssertTrue(payload.contains(#""focus":null"#) || !payload.contains(#""focus""#),"No rocket clicked, no focus")
+        XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(focusName:"Synthetic")).contains(#""focus":"synthetic-model""#),"D63: the clicked rocket's name resolves to its published ID")
+        XCTAssertFalse(try XCTUnwrap(surface.fieldPayload(focusName:"Not published")).contains("Not published"),"An unknown name focuses nothing")
+        // CKP-PORT-11D: the payload is exactly presentation plus published models; no account or local field is in it.
+        let object=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(payload.utf8)) as? [String:Any])
+        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","lowPower","models","mine","focus","asOf"]),"only presentation and published models: \(object.keys.sorted())")
+        XCTAssertEqual(object["mine"] as? [String],["synthetic"],"WP-22: mine is what the connected tools can run, not the publication's lineup")
+        XCTAssertEqual(object["asOf"] as? String,"2026-10-29","the publication's date for the menu header")
+        for forbidden in ["account","email","subscriptionRef","usedPercent","remaining","projectName","token"] { XCTAssertFalse(payload.contains(forbidden),"no \(forbidden) in the field payload") }
+        var opened:[URL]=[]
+        owner.openWebsite={ opened.append($0) }
         surface.handle(.openField)
         XCTAssertTrue(surface.fieldIsOpen)
+        // WP-22: the component's site keys reach the default browser through the console, allowlisted only.
+        let panel=try XCTUnwrap(surface.fieldPanel)
+        panel.receive(#"{"type":"openSite","target":"effort","params":{"m":"synthetic-model"}}"#)
+        panel.receive(#"{"type":"openSite","target":"effort","params":{"m":"Synthetic Model"}}"#)
+        XCTAssertEqual(opened.map(\.absoluteString),["https://modelplan.ai/models/synthetic-model"],"a bad slug is ignored")
         surface.hide()
         XCTAssertFalse(surface.fieldIsOpen,"Closing the cockpit closes the field")
         await composition.stop()
     }
 
+    /// G3-80 / macrev2-845-2: the openField intent carries no pointer, and Enter or Space on the enlarge key sends the
+    /// same intent as a click. The field opens on the cockpit's display; the pointer decides only while it is over the
+    /// cockpit (a click), never when it rests on another display (a keyboard open).
+    @MainActor func testOpenFieldUsesTheCockpitDisplayUnlessThePointerIsOnTheCockpit() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-field-screen-"+UUID().uuidString)
+        try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let html=Data("<!doctype html><title>synthetic field</title>".utf8)
+        for name in ["index.html","field.html"] { try html.write(to:root.appendingPathComponent(name)) }
+        let manifest=try JSONSerialization.data(withJSONObject:["schemaVersion":1,"edition":"community","interfaceOnly":true,
+            "files":["index.html":VerifiedCockpitBundle.digest(html),"field.html":VerifiedCockpitBundle.digest(html)]])
+        try manifest.write(to:root.appendingPathComponent("bundle-manifest.json"))
+        let support=FileManager.default.temporaryDirectory.appendingPathComponent("u11-field-screen-support-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:support)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:support)
+        let client=RouteClient()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        owner.verifiedBundle=try VerifiedCockpitBundle(root:root,manifestSHA256:VerifiedCockpitBundle.digest(manifest))
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        var capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent()
+        while !FileManager.default.fileExists(atPath:capture.appendingPathComponent("schema/app-cli/captures").path) { capture.deleteLastPathComponent() }
+        capture=capture.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        var data=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
+        var details=try XCTUnwrap(data["details"] as? [String:Any])
+        details["publishedModels"]=[["id":"synthetic-model","name":"Synthetic","developerId":"openai","recommended":"medium",
+            "efforts":[["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]]]]
+        data["details"]=details
+        let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
+        let context=EngineDeliveryContext(sessionID:"s-field-screen",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await composition.store.consume(.connection(.ready(context)));await composition.store.consume(.context(context))
+        await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:wire),delivery:context))))
+        // A: the built-in display with the menu bar icon; B: a larger display to its right.
+        let a=CockpitScreen(frame:CGRect(x:0,y:0,width:1512,height:982),visibleFrame:CGRect(x:0,y:0,width:1512,height:949))
+        let b=CockpitScreen(frame:CGRect(x:1512,y:0,width:2560,height:1440),visibleFrame:CGRect(x:1512,y:0,width:2560,height:1415))
+        let displays=[a,b]
+        var cockpit=CGRect(x:3000,y:400,width:636,height:900)
+        var pointer=CGPoint(x:300,y:300)
+        surface.fieldScreens={ displays }
+        surface.cockpitFrameForField={ cockpit }
+        surface.pointerLocation={ pointer }
+        owner.anchor={ CGRect(x:1100,y:949,width:28,height:24) }
+        func open() throws -> CGRect {
+            surface.wantsVisible=true
+            surface.handle(.openField)
+            XCTAssertTrue(surface.fieldIsOpen)
+            let frame=try XCTUnwrap(surface.fieldWindowFrame)
+            surface.hide()
+            return frame
+        }
+        // Keyboard: cockpit on B, pointer resting on A.
+        var frame=try open()
+        XCTAssertTrue(b.visibleFrame.contains(frame),"a keyboard open lands on the cockpit's display B, not the pointer's A: \(NSStringFromRect(frame))")
+        // WP-22 (D298): 88% of B's visible frame, capped at 1600×1000, centred.
+        XCTAssertEqual(frame,CGRect(x:1992,y:207,width:1600,height:1000))
+        // Click on the cockpit on B.
+        pointer=CGPoint(x:3100,y:800)
+        frame=try open()
+        XCTAssertTrue(b.visibleFrame.contains(frame),"a click on the cockpit on B: \(NSStringFromRect(frame))")
+        // A cockpit straddling A and B, clicked on its A part: the click's display A.
+        cockpit=CGRect(x:1300,y:300,width:636,height:600)
+        pointer=CGPoint(x:1400,y:600)
+        frame=try open()
+        XCTAssertTrue(a.visibleFrame.contains(frame),"a click on the cockpit's A part opens on A: \(NSStringFromRect(frame))")
+        XCTAssertEqual(frame.size,CGSize(width:1331,height:835),"88% of A's 1512×949 visible frame")
+        await composition.stop()
+    }
+
+    /// WP-22 (D298): the field's "Mine" follows the cockpit's subscription rule: the models the tool reports, else the
+    /// published plan's list, else the tool's developer; a row the widget does not show is not a member.
+    func testTheFieldsMineIsTheModelsTheConnectedToolsCanRun() throws {
+        var capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent()
+        while !FileManager.default.fileExists(atPath:capture.appendingPathComponent("schema/app-cli/captures").path) { capture.deleteLastPathComponent() }
+        let base=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))) as? [String:Any])
+        let effort:[String:Any]=["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]
+        func wire(reported:[String]?,plans:[[String:Any]]?,surfaces:[String]=["dock"]) throws -> WireCockpitData {
+            var data=base,details=try XCTUnwrap(data["details"] as? [String:Any])
+            details["publishedModels"]=[["id":"gpt","name":"GPT","developerId":"openai","recommended":"medium","efforts":[effort]],
+                ["id":"claude","name":"Claude","developerId":"anthropic","recommended":"medium","efforts":[effort]],
+                ["id":"synthetic","name":"Synthetic","developerId":"google","recommended":"medium","efforts":[effort]]]
+            var subscriptions=try XCTUnwrap(details["subscriptions"] as? [[String:Any]])
+            if let reported { subscriptions[0]["reportedModels"]=reported } else { subscriptions[0].removeValue(forKey:"reportedModels") }
+            details["subscriptions"]=subscriptions
+            if let plans { details["planModels"]=plans } else { details.removeValue(forKey:"planModels") }
+            data["details"]=details
+            var projection=try XCTUnwrap(data["projection"] as? [String:Any]),rows=try XCTUnwrap(projection["rows"] as? [[String:Any]])
+            rows[0]["surfaces"]=surfaces;projection["rows"]=rows;data["projection"]=projection
+            return try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
+        }
+        XCTAssertEqual(CockpitFieldFleet.runnable(try wire(reported:["synthetic"],plans:nil)),["synthetic"],"the tool's own report decides")
+        XCTAssertEqual(CockpitFieldFleet.runnable(try wire(reported:nil,plans:[["planId":"openai-codex","basis":"published","modelIds":["claude"]]])),["claude"],"then the published plan's list")
+        XCTAssertEqual(CockpitFieldFleet.runnable(try wire(reported:nil,plans:nil)),["gpt"],"then the tool's developer: Codex runs OpenAI models")
+        XCTAssertEqual(CockpitFieldFleet.runnable(try wire(reported:["synthetic"],plans:nil,surfaces:["menu"])),[],"a row the widget does not show is not connected")
+    }
+
     /// glm-660-3: the cockpit's own close button ends in the page's onClosed, not in `hide()`; the field panel closes with it.
+    /// D49 review (#695): the widget stays at `.floating` under the cockpit, and every window the cockpit
+    /// brings up is not hidden behind it. (The snap guide is gone; the launch rack panel uses the cockpit's level.)
+    @MainActor func testD49WindowsAroundTheCockpitStackInOrder() {
+        let cockpit = CockpitWindowController.panelLevel.rawValue
+        XCTAssertGreaterThan(cockpit, NSWindow.Level.floating.rawValue, "the cockpit opens above the widget")
+        XCTAssertLessThan(cockpit, NSWindow.Level.statusBar.rawValue, "a widget being dragged still rises above it")
+        XCTAssertGreaterThan(CockpitFieldPanel.level.rawValue, cockpit, "the launch field opens above the cockpit")
+        XCTAssertGreaterThan(DockHelpPresenter.overlayLevel.rawValue, cockpit, "Help draws above the cockpit")
+        XCTAssertEqual(CockpitWindowController.aboveCockpitLevel.rawValue, cockpit + 1, "the launch rack shares the cockpit level and the field and Help stack just above it")
+    }
+
     @MainActor func testTheCockpitsOwnCloseAlsoClosesTheField() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-field-close-"+UUID().uuidString)
         try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
@@ -418,8 +797,51 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertNotNil(page.onClosed,"The cockpit page opened")
         surface.handle(.openField)
         XCTAssertTrue(surface.fieldIsOpen)
+        // macrevb-1062-3: through the normal entry, a rocket chosen in the field and the clear reach the open cockpit page
+        // by public model id; an id the publication does not list never does.
+        let panel=try XCTUnwrap(surface.fieldPanel)
+        panel.receive(#"{"type":"select","model":"synthetic-model"}"#)
+        panel.receive(#"{"type":"select","model":"not-published"}"#)
+        panel.receive(#"{"type":"select","model":null}"#)
+        XCTAssertEqual(page.selections,["synthetic-model",nil])
+        // #1062: the field's close (here its × key) reaches the cockpit page, which guards the porthole against the bounce.
+        XCTAssertEqual(page.fieldCloses,0)
+        panel.receive(#"{"type":"close","reason":"key"}"#)
+        XCTAssertFalse(surface.fieldIsOpen);XCTAssertEqual(page.fieldCloses,1)
+        surface.handle(.openField)
+        XCTAssertTrue(surface.fieldIsOpen)
         page.discard()
         XCTAssertFalse(surface.fieldIsOpen,"The cockpit's own close closes the field")
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
+    /// G3-40 / MENU-07: the production console behind the icon. The toggle goes through the page's close,
+    /// a close during the wait for a page cancels the open, and the console can open again afterwards.
+    @MainActor func testG3_40ConsoleToggleClosesThePageAndOpensAgain() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-toggle-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        let sessionID=UUID(),sink=ClearSink();var made=0
+        let coordinator=EngineCockpitCoordinator { _ in made+=1;return ClearingPage(try .init(sessionID:sessionID,storeEpoch:"synthetic",generation:1),sink:sink) }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        let context=EngineDeliveryContext(sessionID:"s-"+sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context))
+        XCTAssertFalse(surface.isShowing)
+        surface.show();XCTAssertTrue(surface.isShowing)
+        surface.requestClose();XCTAssertFalse(surface.isShowing,"A close before the page exists cancels the open")
+        try await Task.sleep(for:.milliseconds(50));XCTAssertEqual(made,0)
+        surface.show()
+        for _ in 0..<200 where made==0 { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertEqual(made,1);XCTAssertTrue(surface.isShowing)
+        surface.requestClose()
+        XCTAssertFalse(surface.isShowing,"The second click closes the open page")
+        surface.show()
+        for _ in 0..<200 where made==1 { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertEqual(made,2,"The next click opens a new page");XCTAssertTrue(surface.isShowing)
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
 
@@ -455,6 +877,78 @@ final class CommunityCockpitEntryTests:XCTestCase {
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
 
+    /// CKP-MFD-24: a website link from the page opens the typed public address, built natively.
+    @MainActor func testWebsiteLinkFromThePageOpensTheTypedPublicAddress() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-website-link-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        var opened:[URL]=[]
+        owner.openWebsite = { opened.append($0) }
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        for (name,value) in [("plans","openai"),("effort","gpt-6.1-sol"),("methodology","effort-ladder")] {
+            page.onIntent?(.openWebsite(try XCTUnwrap(CockpitWebsiteLink(page:name,value:value))))
+        }
+        XCTAssertEqual(opened.map(\.absoluteString),["https://modelplan.ai/plans?seller=openai","https://modelplan.ai/effort?model=gpt-6.1-sol","https://modelplan.ai/methodology#effort-ladder"])
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
+    /// CKP-SHELL-39: the empty engine screen's button reaches the owner as Settings on its Subscriptions pane, and the
+    /// plain Settings key keeps opening Settings as before.
+    @MainActor func testEmptyScreenButtonOpensSettingsOnTheSubscriptionsPane() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("ckp-shell-39-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        var opened:[String]=[]
+        owner.settings = { opened.append("settings") }
+        owner.settingsSubscriptions = { opened.append("subscriptions") }
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        page.onIntent?(.openSettingsSubscriptions)
+        page.onIntent?(.openSettings)
+        XCTAssertEqual(opened,["subscriptions","settings"])
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
+    /// Owner D277 (CKP-ENG-27): the engine table's Refresh reaches the owner's member refresh with the page's key.
+    @MainActor func testEngineRefreshReachesTheOwnersMemberRefresh() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("ckp-eng-27-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        var refreshed:[String]=[]
+        owner.refreshMember = { refreshed.append($0) }
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        page.onIntent?(.refreshMember("all"))
+        page.onIntent?(.refreshMember("0123456789abcdef"))
+        XCTAssertEqual(refreshed,["all","0123456789abcdef"])
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
     /// SET-9-19: the committed setting reaches the appearance the page is given.
     @MainActor func testProjectNamesSettingReachesTheCockpitAppearance() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-project-names-"+UUID().uuidString)
@@ -475,6 +969,29 @@ final class CommunityCockpitEntryTests:XCTestCase {
         await composition.stop()
     }
 
+    /// CKP-ENG-23 / SET-9-10: Settings "Percentage mode" reaches the appearance the page is given, at open and on change.
+    @MainActor func testPercentageModeSettingReachesTheCockpitAppearanceAtOpenAndLive() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("ckp-eng-23-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        var applied:[SettingsApplication]=[]
+        let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
+        _=try await settings.update { $0.percentageMode = .used }
+        await app.reload()
+        let client=RouteClient()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        XCTAssertFalse(owner.appearance.showUsedPercent, "Default is remaining")
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        XCTAssertTrue(owner.appearance.showUsedPercent)
+        _=try await settings.update { $0.percentageMode = .remaining }
+        await app.reload()
+        surface.applySettings(try XCTUnwrap(applied.last))
+        XCTAssertFalse(owner.appearance.showUsedPercent)
+        await composition.stop()
+    }
+
     @MainActor func testForegroundFeatureFailureRequestsExactlyOneRecoveryNoticeInBothOrders() async throws {
         for eventFirst in [true,false] {
             let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-failure-order-"+UUID().uuidString)
@@ -488,7 +1005,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
             let coordinator=EngineCockpitCoordinator { _ in page }
             coordinator.bind(client:client);owner.coordinator=coordinator
             var notices:[CockpitUnavailableNotice]=[]
-            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)})
+            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.zero)
             let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
             await coordinator.consume(.context(context));surface.show()
             for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
@@ -511,4 +1028,362 @@ final class CommunityCockpitEntryTests:XCTestCase {
         }
     }
 
+    /// CKP-SHELL-33: the normal factory opens beneath the icon with the rack gap and shoulder alignment,
+    /// clamped to the screen at either edge.
+    @MainActor func testNormalFactoryOpensDirectlyBelowTheMenuBarIcon() throws {
+        let (owner,bundle,context,_)=try shellFixture()
+        let usable=try XCTUnwrap(NSScreen.main).visibleFrame
+        let cases:[(String,CGFloat)]=[("near the left edge",usable.minX+2),("middle",usable.midX),("near the right edge",usable.maxX-22)]
+        for (name,x) in cases {
+            let anchor=CGRect(x:x,y:usable.maxY,width:20,height:20)
+            owner.anchor={ anchor }
+            let page=owner.makePage(context:context,verified:bundle)
+            page.open()
+            let window=try XCTUnwrap(page.window,name)
+            XCTAssertEqual(window.frame.maxY,anchor.minY-10,accuracy:1,"\(name): top is 10 pt under the icon")
+            XCTAssertLessThanOrEqual(window.frame.maxY,anchor.minY,"\(name): never above the icon")
+            let expected = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: anchor, shutterClosed: false))
+            XCTAssertEqual(window.frame.minX,expected.frame.minX,accuracy:1,"\(name): shoulder aligned and clamped to the screen")
+            XCTAssertGreaterThanOrEqual(window.frame.minX,usable.minX-1,name)
+            XCTAssertLessThanOrEqual(window.frame.maxX,usable.maxX+1,name)
+            page.discard()
+        }
+    }
+
+    /// macrev2-435-1 (D118): the Reduce transparency setting is read back by the cockpit at open and on change, as reduceMotion is.
+    @MainActor func testReduceTransparencySettingReachesTheCockpitAtOpenAndOnChange() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-reduce-transparency-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        _=try await settings.update { $0.transparency = .on }
+        var applied:[SettingsApplication]=[]
+        let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
+        await app.reload()
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        XCTAssertFalse(owner.appearance.reduceTransparency)
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertTrue(owner.appearance.reduceTransparency,"Opening keeps the setting")
+        _=try await settings.update { $0.transparency = .system }
+        await app.reload()
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let delivered=try XCTUnwrap(page.appearances.last,"A change reaches the open page")
+        XCTAssertFalse(delivered.reduceTransparency,"System follows the (unreduced) CI display setting")
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
+    /// CKP-PORT-12 (D118): the three porthole gestures, through the Swift path from the page's intent to the panel. The
+    /// page sends an unfocused openField for the ⤢ key and for a double-click, and openField with the rocket's published
+    /// name for a click on a rocket; the console opens the field, focused only when the name is published.
+    /// (The bridge's own message validation is covered by V2BridgeContractTests.)
+    @MainActor func testPortholeGesturesOpenTheFieldThroughTheProductionConsole() async throws {
+        let cases:[(String,CockpitIntent,String?)]=[("expand key",.openField,nil),("double-click",.openField,nil),
+            ("rocket click",.openFieldAt("Synthetic"),"synthetic-model"),("unpublished rocket",.openFieldAt("Not published"),nil)]
+        for (name,intent,focus) in cases {
+            let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-port12-"+UUID().uuidString)
+            // The bundle sits in its own folder: the verified bundle refuses any file its manifest does not list, so the
+            // settings store's support folder must not share the bundle's root.
+            let bundleRoot=root.appendingPathComponent("bundle")
+            try FileManager.default.createDirectory(at:bundleRoot,withIntermediateDirectories:true)
+            defer{try? FileManager.default.removeItem(at:root)}
+            let html=Data("<!doctype html><title>synthetic field</title>".utf8)
+            for file in ["index.html","field.html"] { try html.write(to:bundleRoot.appendingPathComponent(file)) }
+            let manifest=try JSONSerialization.data(withJSONObject:["schemaVersion":1,"edition":"community","interfaceOnly":true,
+                "files":["index.html":VerifiedCockpitBundle.digest(html),"field.html":VerifiedCockpitBundle.digest(html)]])
+            try manifest.write(to:bundleRoot.appendingPathComponent("bundle-manifest.json"))
+            let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root.appendingPathComponent("support"))
+            let client=RouteClient();await client.suspendCockpit()
+            let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+            let owner=CockpitConsoleOwner(bundle:bundleRoot,settingsStore:settings)
+            owner.verifiedBundle=try VerifiedCockpitBundle(root:bundleRoot,manifestSHA256:VerifiedCockpitBundle.digest(manifest))
+            let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+            let coordinator=EngineCockpitCoordinator { _ in page }
+            coordinator.bind(client:client);owner.coordinator=coordinator
+            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+            var capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent()
+            while !FileManager.default.fileExists(atPath:capture.appendingPathComponent("schema/app-cli/captures").path) { capture.deleteLastPathComponent() }
+            capture=capture.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+            var data=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
+            var details=try XCTUnwrap(data["details"] as? [String:Any])
+            details["publishedModels"]=[["id":"synthetic-model","name":"Synthetic","developerId":"openai","recommended":"medium",
+                "efforts":[["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]]]]
+            data["details"]=details
+            let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
+            let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+            await composition.store.consume(.connection(.ready(context)));await composition.store.consume(.context(context))
+            await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:wire),delivery:context))))
+            await coordinator.consume(.context(context));surface.show()
+            for _ in 0..<200 where page.onClosed == nil { try await Task.sleep(for:.milliseconds(10)) }
+            XCTAssertNotNil(page.onClosed,"\(name): the cockpit page opened")
+            XCTAssertFalse(surface.fieldIsOpen,name)
+            let deliver=try XCTUnwrap(page.onIntent,"\(name): the coordinator listens to the page")
+            deliver(intent)
+            XCTAssertTrue(surface.fieldIsOpen,"\(name): the gesture opens the enlarged field")
+            let payload=try XCTUnwrap(surface.fieldPayload(focusName:{ if case .openFieldAt(let n)=intent { return n }; return nil }()))
+            if let focus { XCTAssertTrue(payload.contains(#""focus":"\#(focus)""#),"\(name): \(payload)") }
+            else { XCTAssertTrue(payload.contains(#""focus":null"#) || !payload.contains(#""focus""#),"\(name): no focus") }
+            surface.hide()
+            XCTAssertFalse(surface.fieldIsOpen,"\(name): closing the cockpit closes the field")
+            await coordinator.shutdown();await composition.stop()
+        }
+    }
+
+#if MODELPLAN_TEST_ONLY_SPI
+    /// CKP-FAD-50 (WP-08; was CKP-FAD-04, D118): on the real official page opened by the normal factory, a published model's
+    /// fader shows its model card (the five effort bars are gone) and the recommended-effort star marker. Needs the
+    /// canonical official cockpit and the synthetic CLI.
+    @MainActor func testFaderBarsAndStarShowOnTheRealPageThroughTheNormalEntry() async throws {
+        let official=Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path=ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],FileManager.default.isExecutableFile(atPath:path),
+              FileManager.default.fileExists(atPath:official.appendingPathComponent("bundle-manifest.json").path),
+              !CommunityCockpitApplicationFactory.manifestPins.isEmpty else {
+            throw XCTSkip("The real page needs the canonical official cockpit, its pins and the synthetic-test CLI")
+        }
+        _ = NSApplication.shared
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("fad04-"+UUID().uuidString).resolvingSymlinksInPath()
+        defer{try? FileManager.default.removeItem(at:root)}
+        let helper=URL(fileURLWithPath:path)
+        let app=try Self.ownerTestShapedApp(at:root,helper:helper,ownerTest:true,official:official)
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root.appendingPathComponent("support"),preferredLanguages:["en"])
+        let owner=CockpitConsoleOwner(bundle:app,settingsStore:settings)
+        let capture=Self.repoRoot().appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        var json=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
+        let details=try XCTUnwrap(json["details"] as? [String:Any])
+        let publication=try XCTUnwrap(details["publication"] as? [String:Any])
+        let model=try XCTUnwrap((publication["models"] as? [[String:Any]])?.first)
+        XCTAssertEqual(model["id"] as? String,"synthetic-model","the capture's one published model")
+        let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:json))
+        let context=try CockpitEngineContext(sessionID:UUID(),storeEpoch:"synthetic-fad04",generation:1)
+        let page=try owner.makePage(context:context,executable:app.appendingPathComponent("Contents/Helpers/modelplan"))
+        defer{page.discard()}
+        var ready=false;page.onReady={ready=true}
+        // The page takes data only once it is confirmed visible (a hidden page drops it), so send it from onShown, as the
+        // coordinator does, instead of repeating display while the first receipt is pending.
+        var trace=[String]()
+        page.onShown={ trace.append("onShown ticket=\(page.queryTicket != nil)"); if let ticket=page.queryTicket { page.display(wire,ticket:ticket); trace.append("display sent") } }
+        page.onRendered={ trace.append("onRendered") }
+        page.open()
+        let deadline=ContinuousClock.now + .seconds(30)
+        while !ready && ContinuousClock.now<deadline { try await Task.sleep(for:.milliseconds(20)) }
+        XCTAssertTrue(ready,"the real page becomes ready")
+        let paintDeadline=ContinuousClock.now + .seconds(30)
+        let web=try XCTUnwrap(page.verificationWebView)
+        let script="""
+        (()=>{const ch=document.querySelector('.fd-ch:not(.empty)');if(!ch)return 'no-fader';
+        const strip=ch.querySelector('.fd-strip');const bars=strip&&strip.dataset.card&&(strip.querySelector('.st-name')?.textContent??'').trim()?1:0;
+        const rec=ch.querySelector('.fd-marks .fd-rec');const k=rec?rec.style.getPropertyValue('--k'):'';
+        return bars+'|'+(rec?'rec':'norec')+'|'+(k!==''&&Number.isFinite(Number(k))?'k':'nok');})()
+        """
+        var result="none"
+        while ContinuousClock.now<paintDeadline {
+            try await Task.sleep(for:.milliseconds(200))
+            result=((try? await web.evaluateJavaScript(script)) as? String) ?? "none"
+            if result != "none" && result != "no-fader" { break }
+        }
+        // Diagnostics for a failed paint: the controller's own flags and the page's raw DOM state.
+        let dom=((try? await web.evaluateJavaScript("""
+        (()=>{const all=document.querySelectorAll('.fd-ch').length,filled=document.querySelectorAll('.fd-ch:not(.empty)').length,
+        models=[...document.querySelectorAll('.fd-ch')].map(e=>e.dataset.model).join(','),root=document.querySelector('#cockpit');
+        return 'fd-ch='+all+' filled='+filled+' models=['+models+'] hidden='+document.hidden+' detailsAvailable='+(root?root.dataset.detailsAvailable:'noroot')
+        +' bank='+(document.querySelector('.bank-lcd')?.textContent??'none')+' waiting='+(document.querySelector('.mp-empty')?.textContent??'none');})()
+        """)) as? String) ?? "unreadable"
+        let diagnostics="trace=\(trace) dom={\(dom)} windowVisible=\(page.window?.isVisible ?? false) occlusion=\(page.window?.occlusionState.contains(.visible) ?? false) appActive=\(NSApp.isActive) key=\(page.window?.isKeyWindow ?? false)"
+        let parts=result.split(separator:"|").map(String.init)
+        XCTAssertEqual(parts.count,3,"the fader painted: \(result) \(diagnostics)")
+        XCTAssertGreaterThan(Int(parts.first ?? "0") ?? 0,0,"the fader shows its model card (WP-08 replaced the effort bars, CKP-FAD-04) (\(result))")
+        XCTAssertEqual(parts.dropFirst().first,"rec","the recommended-effort star marker is on the fader (\(result))")
+        XCTAssertEqual(parts.last,"k","and sits at a numeric travel position (\(result))")
+    }
+    /// CKP-FAD-54 step 2 (WP-08): on the real official page opened by the normal factory, a real pointer click on a model
+    /// card (a trusted mouse down and up delivered to the web view through its window) selects that model and opens the
+    /// effort page. Page JS cannot make a trusted click, so this is the one place the whole path is proved. Needs the
+    /// canonical official cockpit and the synthetic CLI.
+    @MainActor func testClickingAModelCardOpensTheEffortPageThroughTheNormalEntry() async throws {
+        let official=Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path=ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],FileManager.default.isExecutableFile(atPath:path),
+              FileManager.default.fileExists(atPath:official.appendingPathComponent("bundle-manifest.json").path),
+              !CommunityCockpitApplicationFactory.manifestPins.isEmpty else {
+            throw XCTSkip("The real page needs the canonical official cockpit, its pins and the synthetic-test CLI")
+        }
+        _ = NSApplication.shared
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("fad54-"+UUID().uuidString).resolvingSymlinksInPath()
+        defer{try? FileManager.default.removeItem(at:root)}
+        let app=try Self.ownerTestShapedApp(at:root,helper:URL(fileURLWithPath:path),ownerTest:true,official:official)
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root.appendingPathComponent("support"),preferredLanguages:["en"])
+        let owner=CockpitConsoleOwner(bundle:app,settingsStore:settings)
+        let capture=Self.repoRoot().appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        let wire=try WireDecoder.decode(WireCockpitData.self,from:Data(contentsOf:capture))
+        let context=try CockpitEngineContext(sessionID:UUID(),storeEpoch:"synthetic-fad54",generation:1)
+        let page=try owner.makePage(context:context,executable:app.appendingPathComponent("Contents/Helpers/modelplan"))
+        defer{page.discard()}
+        var ready=false;page.onReady={ready=true}
+        page.onShown={ if let ticket=page.queryTicket { page.display(wire,ticket:ticket) } }
+        page.open()
+        let deadline=ContinuousClock.now + .seconds(30)
+        while !ready && ContinuousClock.now<deadline { try await Task.sleep(for:.milliseconds(20)) }
+        XCTAssertTrue(ready,"the real page becomes ready")
+        let web=try XCTUnwrap(page.verificationWebView)
+        let window=try XCTUnwrap(page.window)
+        window.makeKeyAndOrderFront(nil)
+        guard NSApp.isActive,window.isKeyWindow else{
+            throw XCTSkip("A trusted card click needs an active app and key cockpit window (GUI Mac); this runner has app active \(NSApp.isActive), key \(window.isKeyWindow)")
+        }
+        // The centre of the first filled card, in page (CSS pixel) coordinates; wait for the first paint.
+        let centre="""
+        (()=>{const s=document.querySelector('.fd-ch:not(.empty) .fd-strip');if(!s)return '';const r=s.getBoundingClientRect();return (r.left+r.width/2)+','+(r.top+r.height/2);})()
+        """
+        var point=""
+        let paint=ContinuousClock.now + .seconds(30)
+        while point.isEmpty && ContinuousClock.now<paint {
+            try await Task.sleep(for:.milliseconds(200))
+            point=((try? await web.evaluateJavaScript(centre)) as? String) ?? ""
+        }
+        let xy=point.split(separator:",").compactMap{Double($0)}
+        guard xy.count==2 else{XCTFail("a model card painted: no card centre read (\(point))");return}
+        let before=((try? await web.evaluateJavaScript("document.querySelectorAll('.fd-ch.sel').length+'|'+document.querySelectorAll('.mfd-page.pg-compare').length")) as? String) ?? "?"
+        XCTAssertEqual(before,"0|0","no model is selected before the click")
+        let location=web.convert(NSPoint(x:xy[0],y:xy[1]),to:nil)
+        func event(_ type:NSEvent.EventType)throws->NSEvent{
+            try XCTUnwrap(NSEvent.mouseEvent(with:type,location:location,modifierFlags:[],timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:window.windowNumber,context:nil,eventNumber:0,clickCount:1,pressure:1))
+        }
+        window.sendEvent(try event(.leftMouseDown))
+        try await Task.sleep(for:.milliseconds(60))
+        window.sendEvent(try event(.leftMouseUp))
+        var after="?"
+        let opened=ContinuousClock.now + .seconds(10)
+        while after != "1|1" && ContinuousClock.now<opened {
+            try await Task.sleep(for:.milliseconds(100))
+            after=((try? await web.evaluateJavaScript("document.querySelectorAll('.fd-ch.sel').length+'|'+document.querySelectorAll('.mfd-page.pg-compare').length")) as? String) ?? "?"
+        }
+        XCTAssertEqual(after,"1|1","a real click on the card selects its model and opens the effort page")
+    }
+    /// Cockpit recovery step 1 (G3-96, G3-116; CKP-SHELL-27, #470 staging) through the normal entry: the Dock's console
+    /// button opens the cockpit through the real composition with the cockpit entry enabled, and the coordinator presents
+    /// real CockpitWindowController pages. A late render receipt keeps the presented page and marks the reading delayed;
+    /// a page whose content process ends is rebuilt after 1 s, then 4 s, silently; only the third dead page inside the
+    /// budget brings the generic notice, never the repair one. The console runs on a fake scheduler, so no rebuild waits.
+    @MainActor func testRecoveryThroughTheNormalEntryKeepsASlowPageAndRebuildsADeadOneWithinTheBudget() async throws {
+        let (owner,bundle,context,_)=try shellFixture()
+        let client=RouteClient(),clock=FakeRecoveryClock()
+        var pages:[CockpitWindowController]=[],notices:[CockpitUnavailableNotice]=[],lines:[String]=[]
+        CockpitFailureLog.verificationLine={ lines.append($0) }
+        defer{CockpitFailureLog.verificationLine=nil}
+        let coordinator=EngineCockpitCoordinator { context in
+            let page=owner.makePage(context:context,verified:bundle);pages.append(page);return page
+        }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let delivery=EngineDeliveryContext(sessionID:"s-"+context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:context.storeEpoch,generation:context.generation),revision:1)
+        await coordinator.consume(.context(delivery))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:owner.settingsStore,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},
+                    now:{clock.now},schedule:{clock.arm($0,$1)})
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 1 { break }; await Task.yield() }
+        let first=try XCTUnwrap(pages.first)
+        XCTAssertTrue(coordinator.presented,"the normal entry presented the real page")
+        // The presented page, driven through its own bridge with a held delivery and fake receipt timers.
+        var sent:[(String,(CockpitDeliveryResult)->Void)]=[],timers:[(UInt64,@MainActor ()->Void)]=[]
+        first.verificationNoWindowDelivery={ raw,complete in sent.append((raw,complete)) }
+        first.verificationNoWindowArm={ delay,fire in timers.append((delay,fire));return {} }
+        first.verificationNoWindowClock={ 1_000 }
+        let shell=CockpitShellState(closed:false,attached:true,forcedClosed:false,tier:.tall)
+        first.verificationNoWindowShell=shell
+        var ready=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(first.bridge.load(owner.appearance,shell:shell).utf8)) as? [String:Any])
+        for key in ["appearance","shell","redBelow","showUsedPercent","showAllModels","ackedCautions","pinnedModels","memberOrder"] { ready[key]=nil }
+        ready["type"]="ready";ready["sequence"]="1";ready["appearanceVersion"]=2;ready["capabilities"]=["appearanceUpdates","shellState","shellActions"]
+        _=try first.bridge.accept(String(decoding:JSONSerialization.data(withJSONObject:ready),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"))
+        try first.verificationConfirmVisible()
+        let capture=Self.repoRoot().appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        first.display(try WireDecoder.decode(WireCockpitData.self,from:Data(contentsOf:capture)),ticket:try XCTUnwrap(first.queryTicket))
+        try XCTUnwrap(sent.last).1(.accepted) // the page took the call; its rendered receipt is late
+        try XCTUnwrap(timers.last { $0.0 == CockpitPageHealth.delayedAfterMs }).1()
+        XCTAssertTrue(first.readingDelayed,"a late receipt marks the reading delayed")
+        XCTAssertFalse(first.bridge.disposed,"and keeps the presented page")
+        XCTAssertTrue(coordinator.presented)
+        // The content process ends: a dead page, rebuilt after 1 s, then 4 s, without a notice.
+        first.webViewWebContentProcessDidTerminate(try XCTUnwrap(first.verificationWebView))
+        XCTAssertTrue(first.bridge.disposed)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("page-rebuild attempt=1 delayMs=1000 after=page.contentTerminated") },lines.joined(separator:"\n"))
+        clock.advance(by:999);XCTAssertEqual(pages.count,1)
+        clock.advance(by:1);XCTAssertEqual(pages.count,2,"the first rebuild opens a new real page after 1 s")
+        let second=try XCTUnwrap(pages.last)
+        second.webViewWebContentProcessDidTerminate(try XCTUnwrap(second.verificationWebView))
+        clock.advance(by:3_999);XCTAssertEqual(pages.count,2)
+        clock.advance(by:1);XCTAssertEqual(pages.count,3,"the second after 4 s")
+        XCTAssertTrue(notices.isEmpty,"rebuilds inside the budget are silent")
+        let third=try XCTUnwrap(pages.last)
+        third.webViewWebContentProcessDidTerminate(try XCTUnwrap(third.verificationWebView))
+        XCTAssertEqual(notices.count,1,"the third dead page in 10 minutes is announced")
+        XCTAssertFalse(notices.first?.bundleProblem ?? true,"with the generic notice, never the repair one")
+        XCTAssertFalse(lines.contains { $0.contains("page-failure failure=bundleResource") },lines.joined(separator:"\n"))
+        app.toggleConsole();await coordinator.shutdown();await app.composition.stop()
+    }
+    /// Cockpit recovery step 3 (G3-96, G3-116; CKP-SHELL-27, #470 staging) through the normal entry: the Dock's console
+    /// button opens the cockpit on the real composition with the cockpit entry enabled and the coordinator presents a
+    /// real CockpitWindowController. Behind one call that never completes, a stream of replies keeps one display in
+    /// flight and only the newest waiting; nothing is refused, the page is never failed or rebuilt, and when the held
+    /// call completes only the newest display is delivered.
+    @MainActor func testDeliveryThroughTheNormalEntryKeepsOneActiveAndTheNewestDisplay() async throws {
+        let (owner,bundle,context,_)=try shellFixture()
+        let client=RouteClient()
+        var pages:[CockpitWindowController]=[],lines:[String]=[]
+        CockpitFailureLog.verificationLine={ lines.append($0) }
+        defer{CockpitFailureLog.verificationLine=nil}
+        let coordinator=EngineCockpitCoordinator { context in
+            let page=owner.makePage(context:context,verified:bundle);pages.append(page);return page
+        }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let delivery=EngineDeliveryContext(sessionID:"s-"+context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:context.storeEpoch,generation:context.generation),revision:1)
+        await coordinator.consume(.context(delivery))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:owner.settingsStore,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{ _ in XCTFail("no notice") })
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 1 { break }; await Task.yield() }
+        let page=try XCTUnwrap(pages.first)
+        XCTAssertTrue(coordinator.presented,"the normal entry presented the real page")
+        var sent:[(String,(CockpitDeliveryResult)->Void)]=[],failures:[CockpitWindowFailure]=[]
+        page.verificationNoWindowDelivery={ raw,complete in sent.append((raw,complete)) }
+        page.verificationNoWindowArm={ _,_ in {} }
+        page.verificationNoWindowClock={ 1_000 }
+        let previousFailure=page.onFailure
+        page.onFailure={ failures.append($0); previousFailure?($0) }
+        let shell=CockpitShellState(closed:false,attached:true,forcedClosed:false,tier:.tall)
+        page.verificationNoWindowShell=shell
+        var ready=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(page.bridge.load(owner.appearance,shell:shell).utf8)) as? [String:Any])
+        for key in ["appearance","shell","redBelow","showUsedPercent","showAllModels","ackedCautions","pinnedModels","memberOrder"] { ready[key]=nil }
+        ready["type"]="ready";ready["sequence"]="1";ready["appearanceVersion"]=2;ready["capabilities"]=["appearanceUpdates","shellState","shellActions"]
+        _=try page.bridge.accept(String(decoding:JSONSerialization.data(withJSONObject:ready),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"))
+        try page.verificationConfirmVisible()
+        let capture=Self.repoRoot().appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        let data=try WireDecoder.decode(WireCockpitData.self,from:Data(contentsOf:capture))
+        page.display(data,ticket:try XCTUnwrap(page.queryTicket))
+        XCTAssertEqual(sent.count,1,"one display in flight; its call never completes")
+        for _ in 0..<40 { page.display(data,ticket:try XCTUnwrap(page.queryTicket)) }
+        XCTAssertLessThanOrEqual(page.verificationOutstanding,2,"one active display and the newest replacement")
+        XCTAssertEqual(sent.count,1)
+        XCTAssertFalse(lines.contains { $0.hasPrefix("delivery-skipped") },"nothing is refused")
+        XCTAssertEqual(failures,[]);XCTAssertFalse(page.bridge.disposed);XCTAssertTrue(coordinator.presented)
+        sent[0].1(.accepted)
+        XCTAssertEqual(sent.count,2,"the held call completes; only the newest display follows")
+        sent[1].1(.accepted)
+        XCTAssertEqual(sent.count,2)
+        XCTAssertEqual(failures,[]);XCTAssertEqual(pages.count,1,"never rebuilt")
+        XCTAssertFalse(lines.contains { $0.hasPrefix("page-failure") },lines.joined(separator:"\n"))
+        app.toggleConsole();await coordinator.shutdown();await app.composition.stop()
+    }
+#endif
 }

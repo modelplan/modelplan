@@ -82,7 +82,7 @@ private actor V13SyntheticClient: EngineClient {
             var account = accounts[0], windows = try XCTUnwrap(account["windows"] as? [[String: Any]])
             row["vendorKey"] = vendor; row["id"] = "codex"; row["state"] = "fresh"; row["consent"] = "allowed"; row["surfaces"] = ["dock"]
             row["expiresAt"] = "2028-12-01T00:00:00Z"
-            row["reason"] = ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
+            row["reason"] = ["code": "ok", "text": ["en": "Reading available", "zh": "已读到用量"]]
             row["nextStep"] = ["action": "open_settings_consent", "text": ["en": "Check read access in Settings", "zh": "在设置检查读取权限"], "availableAt": NSNull(), "disabledReason": NSNull()]
             account["subscriptionRef"] = "aaaaaaaaaaaaaaaa"; account["valueState"] = "current"
             account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = "2028-12-01T00:00:00Z"

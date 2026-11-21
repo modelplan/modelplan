@@ -17,7 +17,7 @@ public struct SettingsDockPlacementObservation: Equatable, Sendable {
 public enum SettingsDockPlacementText {
     public static func current(_ observation: SettingsDockPlacementObservation?, displays: [SettingsDisplayChoice]) -> SettingsText {
         guard let observation else {
-            return .init("Current Quota Widget placement has not been observed.", "尚未观测到额度挂件的实际位置。")
+            return .init("The Quota Widget's current position is not known yet.", "还不知道额度挂件的实际位置。")
         }
         let edge: SettingsText
         switch observation.edge {

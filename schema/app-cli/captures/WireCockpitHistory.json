@@ -13,6 +13,8 @@
           "source": "synthetic",
           "bindingBasis": "synthetic",
           "recent7d": {
+            "totalTokens": 1,
+            "reasoningTokens": 1,
             "inputTokens": 1,
             "outputTokens": 1,
             "cacheReadTokens": 1,
@@ -23,6 +25,8 @@
             "eligibleRequests": 1
           },
           "recent30d": {
+            "totalTokens": 1,
+            "reasoningTokens": 1,
             "inputTokens": 1,
             "outputTokens": 1,
             "cacheReadTokens": 1,
@@ -97,6 +101,7 @@
     {
       "at": "synthetic",
       "source": "synthetic",
+      "origin": "synthetic",
       "observedOutputTokens": 1
     }
   ],
@@ -104,6 +109,7 @@
     {
       "at": "synthetic",
       "source": "synthetic",
+      "origin": "synthetic",
       "observedOutputTokens": 1
     }
   ],
@@ -151,5 +157,57 @@
         }
       ]
     }
-  ]
+  ],
+  "cost": {
+    "basis": "synthetic",
+    "currency": "USD",
+    "pricesAsOf": "synthetic",
+    "daily": [
+      {
+        "at": "synthetic",
+        "source": "synthetic",
+        "estimatedUsd": 42.5,
+        "pricedTokens": 1,
+        "unpricedTokens": 1
+      }
+    ],
+    "hourly": [
+      {
+        "at": "synthetic",
+        "source": "synthetic",
+        "estimatedUsd": 42.5,
+        "pricedTokens": 1,
+        "unpricedTokens": 1
+      }
+    ],
+    "models": {
+      "today": [
+        {
+          "model": "synthetic",
+          "source": "synthetic",
+          "estimatedUsd": 42.5,
+          "pricedTokens": 1,
+          "unpricedTokens": 1
+        }
+      ],
+      "recent7d": [
+        {
+          "model": "synthetic",
+          "source": "synthetic",
+          "estimatedUsd": 42.5,
+          "pricedTokens": 1,
+          "unpricedTokens": 1
+        }
+      ],
+      "recent30d": [
+        {
+          "model": "synthetic",
+          "source": "synthetic",
+          "estimatedUsd": 42.5,
+          "pricedTokens": 1,
+          "unpricedTokens": 1
+        }
+      ]
+    }
+  }
 }

@@ -2,15 +2,23 @@
 import Foundation
 
 public struct DockCardRow:Equatable,Sendable {
-    public enum Kind:Equatable,Sendable {case quota,extraQuota,reserve,statistic,notice}
+    /// `event`: a plain sentence under the readout (prototype card.js .cd-events), such as D65's used-up line.
+    /// `footnote`: D233 informational cause that needs no action; a small grey line at the bottom of the card.
+    /// `alert`: DOCK-3.8-52, the shared alert sentence (ALR-50) at the very bottom, in its status ink.
+    public enum Kind:Equatable,Sendable {case quota,extraQuota,reserve,statistic,notice,event,footnote,alert}
     public let id:String,kind:Kind,label:String,value:String,detail:String
-    public let remainingFraction:Double?,tone:DockQuotaStatus
+    /// `remainingFraction` is the remaining truth; `fillFraction` is the bar length (D130: used in used mode). Tone follows remaining.
+    public let remainingFraction:Double?,fillFraction:Double?,tone:DockQuotaStatus
     /// The window the ring shows: lit row and ink label (face.css .selected-window).
     public let emphasised:Bool
     /// A notice's state pill: 已预告 / 已确认.
     public let pill:String
-    public init(id:String,kind:Kind,label:String,value:String,detail:String="",remainingFraction:Double?=nil,tone:DockQuotaStatus = .unknown,emphasised:Bool=false,pill:String=""){
-        self.id=id;self.kind=kind;self.label=label;self.value=value;self.detail=detail;self.remainingFraction=remainingFraction;self.tone=tone;self.emphasised=emphasised;self.pill=pill
+    /// Producer classification of a credits figure ("credits", "money" or ""). Never shown or spoken.
+    public let hint:String
+    /// A plugin row (D327 variant A, see DockCardPluginStyle); nil for every quota row.
+    public var plugin:DockCardPluginStyle?=nil
+    public init(id:String,kind:Kind,label:String,value:String,detail:String="",remainingFraction:Double?=nil,fillFraction:Double?? = nil,tone:DockQuotaStatus = .unknown,emphasised:Bool=false,pill:String="",hint:String=""){
+        self.hint=hint;self.id=id;self.kind=kind;self.label=label;self.value=value;self.detail=detail;self.remainingFraction=remainingFraction;self.fillFraction=fillFraction ?? remainingFraction;self.tone=tone;self.emphasised=emphasised;self.pill=pill
     }
 }
 public struct DockCardLink:Equatable,Sendable {
@@ -29,8 +37,8 @@ public struct DockCardContent:Equatable,Sendable {
         self.rows=rows;self.links=links;self.enterLabel=enterLabel;self.dismissLabel=dismissLabel;self.actionLabel=actionLabel
     }
     public func validate()throws{
-        let strings=[subscriptionID,name,plan,sourceAndAge,stateLabel,enterLabel,dismissLabel,actionLabel]+rows.flatMap{[$0.id,$0.label,$0.value,$0.detail]}+links.map(\.label)
-        guard !subscriptionID.isEmpty,rows.count<=64,links.count<=8,Set(rows.map(\.id)).count==rows.count,!rows.contains(where:{$0.id.isEmpty}),strings.allSatisfy({$0.utf8.count<=2048}),links.allSatisfy(\.allowed),rows.allSatisfy({r in r.remainingFraction.map{$0.isFinite && (0...1).contains($0)} ?? true}) else{throw DockLogicError.invalidCatalogue}
+        let strings=[subscriptionID,name,plan,sourceAndAge,stateLabel,enterLabel,dismissLabel,actionLabel]+rows.flatMap{[$0.id,$0.label,$0.value,$0.detail,$0.hint]}+links.map(\.label)
+        guard !subscriptionID.isEmpty,rows.count<=64,links.count<=8,Set(rows.map(\.id)).count==rows.count,!rows.contains(where:{$0.id.isEmpty}),strings.allSatisfy({$0.utf8.count<=2048}),links.allSatisfy(\.allowed),rows.allSatisfy({r in (r.remainingFraction.map{$0.isFinite && (0...1).contains($0)} ?? true) && (r.fillFraction.map{$0.isFinite && (0...1).contains($0)} ?? true)}) else{throw DockLogicError.invalidCatalogue}
     }
 }
 
@@ -38,12 +46,18 @@ public enum DockCardProjection {
     /// Reuse the canonical Dock quota truth/readout rules. Other facts/copy come from the validated owner.
     public static func content(input:DockInstrumentInput,selectedWindowID:String?=nil,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",actionLabel:String="",redBelow:Double=25,at now:Date)throws->DockCardContent{
         _=try DockInstrumentProjection.evaluate(input,now:now,redBelow:redBelow)
+        if let ring=input.pluginRing{
+            // A plugin card: its own rows, then its footer line; never quota windows.
+            let footer=ring.cardFooter.isEmpty ? [] : [DockCardRow(id:"plugin.footer",kind:.footnote,label:"",value:ring.cardFooter)]
+            let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:ring.cardRows+footer,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel,actionLabel:ring.cardAction.isEmpty ? actionLabel:ring.cardAction)
+            try result.validate();return result
+        }
         var rows=[DockCardRow]()
         for window in input.windows{
             var scoped=input,cardWindow=window;cardWindow.isGeneral=true
             scoped.windows=[cardWindow];scoped.selectedWindowID=window.id
             let reading=try DockInstrumentProjection.evaluate(scoped,now:now,redBelow:redBelow)
-            rows.append(.init(id:"quota:"+window.id,kind:window.isGeneral && (window.period == .fiveHour || window.period == .week || window.period == .month) ? .quota:.extraQuota,label:window.label,value:reading.readout,detail:windowDetails[window.id] ?? "",remainingFraction:reading.remainingPercent.map{$0/100},tone:reading.status,emphasised:window.id == selectedWindowID))
+            rows.append(.init(id:"quota:"+window.id,kind:window.isGeneral && (window.period == .fiveHour || window.period == .week || window.period == .month) ? .quota:.extraQuota,label:window.label,value:reading.readout,detail:windowDetails[window.id] ?? "",remainingFraction:reading.remainingPercent.map{$0/100},fillFraction:.some(reading.outer?.fraction),tone:reading.status,emphasised:window.id == selectedWindowID))
         }
         let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:rows+additionalRows,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel,actionLabel:actionLabel)
         try result.validate();return result

@@ -248,7 +248,7 @@ test('a panel from an older plugin version says the plugin was updated', async (
 
 test('after compaction the pinned CLI gets the SessionStart input; nothing else runs or is recorded', async () => {
   const { hooks } = JSON.parse(await readFile(join(root, 'hooks/hooks.json'), 'utf8'));
-  assert.deepEqual(Object.keys(hooks), ['UserPromptSubmit', 'SessionStart']);
+  assert.deepEqual(Object.keys(hooks), ['UserPromptSubmit', 'SessionStart', 'PreToolUse']);
   const [{ matcher, hooks: [s] }] = hooks.SessionStart;
   assert.equal(matcher, 'compact|resume');
   assert.equal(s.command, 'sh "$PLUGIN_ROOT/hooks/session-start.sh"');
@@ -277,5 +277,36 @@ test('after compaction the pinned CLI gets the SessionStart input; nothing else 
   await mkdir(join(h, '.config/modelplan/codex'), { recursive: true });
   await writeFile(join(h, '.config/modelplan/codex/automatic-hints'), 'off');
   assert.equal(start(), '', 'automatic hints off');
+  await rm(h, { recursive: true });
+});
+
+test('a subagent spawn gives the pinned CLI the PreToolUse input; nothing else runs or is recorded', async () => {
+  const { hooks } = JSON.parse(await readFile(join(root, 'hooks/hooks.json'), 'utf8'));
+  const [{ matcher, hooks: [p] }] = hooks.PreToolUse;
+  assert.equal(matcher, 'spawn_agent');
+  assert.equal(p.command, 'sh "$PLUGIN_ROOT/hooks/pre-tool.sh"');
+  assert.ok(p.timeout <= 3, 'never holds the spawn long');
+  const h = await home();
+  const input = '{"session_id":"t","hook_event_name":"PreToolUse","tool_name":"spawn_agent","tool_input":{"message":"x"}}';
+  const run = () => execFileSync('sh', [join(root, 'hooks/pre-tool.sh')], { env: { PATH: '/usr/bin:/bin', HOME: h, PLUGIN_ROOT: root }, input, encoding: 'utf8' });
+  assert.equal(run(), '', 'no CLI yet: silent');
+  await put(join(h, '.local/bin'), script('0.0.1'));
+  assert.equal(run(), '', 'an older CLI would read the input as a prompt');
+  const spendCli = (await readFile(join(root, 'hooks/pre-tool.sh'), 'utf8')).match(/^spend_cli=(\S+)$/m)[1];
+  await put(pinnedDir(h), script('0.5.55', 'echo bad'));
+  assert.equal(run(), '', 'a CLI before PreToolUse support is never asked, even when pinned');
+  await rm(join(pinnedDir(h), 'modelplan'));
+  const eligible = [spendCli, pin.version].sort((a, b) => {
+    const av = a.split('.').map(Number), bv = b.split('.').map(Number);
+    return av[0] - bv[0] || av[1] - bv[1] || av[2] - bv[2];
+  })[1];
+  await put(join(h, '.cache/modelplan-cli', eligible), script(eligible, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"warned":1}'`));
+  assert.deepEqual(JSON.parse(run()), { warned: 1 });
+  assert.equal(await readFile(join(h, 'input'), 'utf8'), input);
+  assert.equal(await readFile(join(h, 'args'), 'utf8'), 'advise\n--hook\ncodex\n');
+  await assert.rejects(stat(join(h, '.cache/modelplan-codex')), 'records nothing');
+  await mkdir(join(h, '.config/modelplan/codex'), { recursive: true });
+  await writeFile(join(h, '.config/modelplan/codex/automatic-hints'), 'off');
+  assert.equal(run(), '', 'automatic hints off');
   await rm(h, { recursive: true });
 });

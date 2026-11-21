@@ -17,6 +17,9 @@ import AppKit
     private var canReset = false
     private var drag: (token: String, id: String, order: [String])?
     private var scrollHeight: NSLayoutConstraint?
+    private var scrollWidth: NSLayoutConstraint?
+    /// The list's width; the Settings row sets it to its control column (G3-26).
+    var listWidth: CGFloat = 230 { didSet { scrollWidth?.constant = listWidth } }
     static let dragType = NSPasteboard.PasteboardType("ai.modelplan.settings.order-token")
 
     override init(frame: NSRect) {
@@ -24,7 +27,7 @@ import AppKit
         orientation = .vertical; alignment = .trailing; spacing = 6
         let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.borderType = .bezelBorder
         scroll.documentView = table; addArrangedSubview(scroll)
-        scroll.widthAnchor.constraint(equalToConstant: 230).isActive = true
+        scrollWidth = scroll.widthAnchor.constraint(equalToConstant: listWidth); scrollWidth?.isActive = true
         scrollHeight = scroll.heightAnchor.constraint(equalToConstant: 80); scrollHeight?.isActive = true
         table.addTableColumn(NSTableColumn(identifier: .init("subscription")))
         table.headerView = nil; table.rowHeight = 26; table.allowsMultipleSelection = false

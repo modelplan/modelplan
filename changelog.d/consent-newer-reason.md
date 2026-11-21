@@ -1,1 +1,0 @@
-`modelplan quota` now says why it read nothing. With reading off it names the cause in text as well as `--json`, and a consent record written by a newer ModelPlan has its own reason, `consent-newer`, with the fix: update the plugin or the CLI.

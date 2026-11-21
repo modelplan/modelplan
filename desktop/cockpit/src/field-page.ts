@@ -1,60 +1,84 @@
 // SPDX-License-Identifier: MIT
-// The enlarged launch field: a page of its own in a separate native panel, official edition only. The reserved
-// scene loads with a dynamic import when the view opens, and the panel destroys this page on close, which
-// releases the WebGL context. The 180 s idle close and the outside-click close live in the native panel.
-// Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) for behaviour; the code is written here.
-import {FIELD_LIMIT,fieldFleet,fieldModel,type FieldModel,type PublishedModel} from './field-model.js';
+// The enlarged launch field (WP-22, owner D298): a page of its own in a separate native panel, official edition only.
+// The panel is one transparent rectangle (88% of the cockpit screen's visible frame) over the native dim. The reserved
+// launch-field component (runtime/field-scene/launch-field.js, version 1.1.0, window mode) draws everything inside it: the
+// soft-canopy window, the in-field menu, the × and site keys and the 3D field. It loads with a dynamic import when the view
+// opens, and the panel destroys this page on close, which releases the WebGL context and resets a tried effort.
+// Native paints the dim, so the component's own is off (dim:false). Without WebGL the window shows its own 2D field. Esc belongs to the component (clear search, leave the
+// fly-in, then close); a click outside the rectangle, the 180 s idle close and losing key are native's.
+// Low Power Mode (spike 11-08, D63): the page cannot read it, so native passes it in the payload and through `power`;
+// it quiets the field like Reduce Motion. Increase Contrast and Reduce Motion arrive live through `options`.
+// Spec: the component's INTEGRATION-SPEC 1.1.0 and the r7 FINAL SPEC (confirm 2026-11-18/03).
+import {FIELD_LIMIT,provisionalIds,windowModel,type PublishedModel,type WindowModel} from './field-model.js';
 
-interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null}
-interface Scene {update(models:readonly FieldModel[],focus:string|null,path?:boolean):void;renderFor?(ms:number):void;dispose():void}
-declare global {interface Window {modelPlanField?:{show(raw:string):boolean;dispose():void}}}
+interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly lowPower?:boolean;readonly contrast?:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null;readonly asOf?:string|null}
+interface Live {readonly contrast?:boolean;readonly reduceMotion?:boolean}
+type Language='en'|'zh';
+interface LaunchWindow {update(next:Record<string,unknown>):void;setOptions(next:{contrast?:'more'|'normal';reducedMotion?:boolean|null;language?:Language}):void;setSelection(id:string|null):void;dispose():void}
+interface Component {createLaunchWindow(options:Record<string,unknown>):LaunchWindow}
+export interface FieldState {readonly mode:'loading'|'window'|'none';readonly flat:boolean;readonly contrast:'more'|'normal';readonly reducedMotion:boolean;readonly shown:readonly string[]}
+declare global {interface Window {modelPlanField?:{show(raw:string):boolean;power(lowPower:boolean):boolean;options(raw:string):boolean;state():FieldState|null;dispose():void}}}
 
-const words={en:{close:'Close',mine:'Mine',all:'All',search:'Search models',noGl:'The 3D view needs WebGL, which is not available here.',empty:'No published models yet.'},
- zh:{close:'关闭',mine:'我的',all:'全部',search:'搜索模型',noGl:'3D 视图需要 WebGL，当前不可用。',empty:'暂无已发布模型。'}} as const;
 const post=(message:Record<string,unknown>)=>(window.webkit?.messageHandlers as Record<string,{postMessage(m:string):void}>|undefined)?.field?.postMessage(JSON.stringify(message));
-const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
-const webgl=()=>{try{return !!document.createElement('canvas').getContext('webgl2');}catch{return false;}};
 
 function mount(root:HTMLElement) {
- let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false;
- const bar=el('header','field-bar'),stage=el('div','ov-porthole field-stage'),list=el('div','field-list');
- const close=el('button','field-close');close.type='button';close.onclick=()=>post({type:'close'});
- const mineKey=el('button','field-preset'),allKey=el('button','field-preset'),count=el('span','field-count');mineKey.type=allKey.type='button';
- const search=el('input','field-search');search.type='search';
- bar.append(mineKey,allKey,search,count,close);root.append(bar,stage,list);
- const fleet=()=>fieldFleet(models,chosen);
- const refresh=()=>{
-  const flown=fleet();if(focus===null||!flown.some(m=>m.id===focus))focus=flown[0]?.id??null;
-  count.textContent=`${flown.length}/${FIELD_LIMIT}`;scene?.update(flown,focus,true);scene?.renderFor?.(700);
-  const q=search.value.trim().toLowerCase();list.replaceChildren(...models.filter(m=>!q||m.name.toLowerCase().includes(q)).map(m=>{
-   const label=el('label','field-row'),box=el('input');box.type='checkbox';box.checked=chosen.has(m.id);box.disabled=!box.checked&&chosen.size>=FIELD_LIMIT;
-   box.onchange=()=>{if(box.checked)chosen.add(m.id);else chosen.delete(m.id);refresh();};label.append(box,el('span',undefined,m.name));return label;
-  }));
- };
- const preset=(ids:readonly string[])=>{chosen=new Set(ids.slice(0,FIELD_LIMIT));refresh();};
- mineKey.onclick=()=>preset(mine.length?mine:models.map(m=>m.id));allKey.onclick=()=>preset(models.map(m=>m.id));search.oninput=refresh;
- const fallback=(text:string)=>{stage.replaceChildren(el('p','nogl',text));};
+ let view:LaunchWindow|null=null,mode:FieldState['mode']='none',flat=false,disposed=false,language:Language='en';
+ let models:WindowModel[]=[],shown:string[]=[],mine:string[]=[],focus:string|null=null,provisional:string[]=[],asOf:string|null=null;
+ let appReduce=false,systemReduce=false,lowPower=false,contrast=false;
+ // The component's asset base: the atlases and 2D sprites under assets/art/rockets/, its default maker logos under
+ // assets/brands/ (the official cockpit's vendor marks, D43).
+ const assets=new URL('assets/',document.baseURI).href;
+ const reducedMotion=()=>appReduce||systemReduce||lowPower;
+ const live=()=>({contrast:contrast?'more' as const:'normal' as const,reducedMotion:reducedMotion()});
  for(const type of ['pointerdown','keydown','wheel'])root.addEventListener(type,()=>post({type:'activity'}),{passive:true});
- window.addEventListener('keydown',e=>{if(e.key==='Escape')post({type:'close'});});
  return {
   async show(value:Show) {
-   language=value.language;const w=words[language];document.documentElement.lang=language==='en'?'en':'zh-CN';
-   close.textContent='×';close.setAttribute('aria-label',w.close);mineKey.textContent=w.mine;allKey.textContent=w.all;search.placeholder=w.search;search.setAttribute('aria-label',w.search);
-   models=value.models.flatMap(m=>{const f=fieldModel(m);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
-   chosen=new Set((mine.length?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT));
-   if(!models.length){fallback(w.empty);refresh();post({type:'ready'});return;}
-   if(!webgl()){fallback(w.noGl);refresh();post({type:'ready'});return;}
-   const host=el('div','r1-field p2-field'),canvas=el('div','wb-canvas'),plates=el('div','wb-plates'),voyage=el('div','wb-voyage');
-   host.append(canvas,document.createElementNS('http://www.w3.org/2000/svg','svg'),plates,voyage);host.children[1]!.setAttribute('class','wb-leaders');stage.replaceChildren(host);
-   const url='../runtime/field-scene/cockpit-scene.bundle.js';
-   const {mountWorkbenchField}=await import(url) as {mountWorkbenchField(host:HTMLElement,options:Record<string,unknown>):Scene};
+   language=value.language==='zh'?'zh':'en';document.documentElement.lang=language==='en'?'en':'zh-CN';
+   appReduce=value.reduceMotion===true;lowPower=value.lowPower===true;contrast=value.contrast===true;
+   models=value.models.flatMap(m=>{const w=windowModel(m);return w?[w]:[];});
+   const known=new Set(models.map(m=>m.id));
+   mine=value.mine.filter(id=>known.has(id));provisional=provisionalIds(value.models).filter(id=>known.has(id));
+   asOf=typeof value.asOf==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value.asOf)?value.asOf:null;
+   focus=value.focus!==null&&known.has(value.focus)?value.focus:null;
+   // My models first, else the publication's order; a rocket clicked in the porthole joins (the last of a full fleet makes room).
+   shown=(mine.length?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT);
+   if(focus!==null&&!shown.includes(focus))shown=[...shown.slice(0,FIELD_LIMIT-1),focus];
+   if(!models.length){post({type:'failed'});return;}
+   mode='loading';
+   const url='../runtime/field-scene/launch-field.js';
+   const component=await import(url) as Component;
    if(disposed)return;
-   const flown=fleet();focus=focus&&flown.some(m=>m.id===focus)?focus:flown[0]?.id??null;
-   scene=mountWorkbenchField(host,{models:flown,focus,quiet:value.reduceMotion,showPath:true,language,onDemand:true,noIntro:true,
-    onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{scene=null;fallback(w.noGl);}});
-   scene.renderFor?.(1400);refresh();post({type:'ready'});
+   // Without WebGL, or on a later 3D failure, the window swaps in its own 2D field (menu, keys and card kept) and then
+   // reports it: onFail and onSlow are informational here, never a close.
+   view=component.createLaunchWindow({container:root,language,assetBase:assets,dim:false,limit:FIELD_LIMIT,...live(),
+    onClose:(reason:string)=>post({type:'close',reason}),
+    onOpenSite:(target:unknown,params:unknown)=>post({type:'openSite',target,params}),
+    // Retracting the selected rocket ends the component's selection without an onSelect; the host hears the clear.
+    onShownChange:(ids:string[])=>{shown=[...ids];if(focus!==null&&!shown.includes(focus)){focus=null;post({type:'select',model:null});}},
+    // macrevb-1062-3: a rocket chosen (or the choice cleared) in the field becomes the cockpit's selection too, so the HUD,
+    // the faders and the porthole follow it. Only a known public model id crosses; a tried effort stays in the field.
+    onSelect:(id:string|null)=>{focus=id!==null&&known.has(id)?id:null;post({type:'select',model:focus});},
+    onFail:()=>{flat=true;console.info('launch field: 3D unavailable, the window shows the 2D field');},
+    onSlow:()=>{console.info('launch field: 3D is slow');}});
+   mode='window';
+   view.update({models,shown,focus,mine,provisional,language,...(asOf?{asOf}:{})});
+   post({type:'ready'});
+   // The rocket the field opened on (a porthole click) is the field's selection from the start: the host follows it.
+   if(focus!==null)post({type:'select',model:focus});
   },
-  dispose(){disposed=true;scene?.dispose();scene=null;root.replaceChildren();},
+  /** A Low Power Mode change: the field goes quiet like Reduce Motion, live. */
+  power(next:boolean) {
+   if(disposed||next===lowPower)return;lowPower=next;view?.setOptions({reducedMotion:reducedMotion()});
+  },
+  /** Increase Contrast and Reduce Motion from macOS, live (component setOptions). */
+  options(next:Live) {
+   if(disposed)return;
+   if(typeof next.contrast==='boolean')contrast=next.contrast;
+   if(typeof next.reduceMotion==='boolean')systemReduce=next.reduceMotion;
+   view?.setOptions(live());
+  },
+  state():FieldState {return {mode,flat,...live(),shown:[...shown]};},
+  dispose(){disposed=true;view?.dispose();view=null;mode='none';root.replaceChildren();},
  };
 }
 const root=document.getElementById('field');
@@ -62,6 +86,9 @@ if(root&&window.top===window){
  const page=mount(root);
  window.modelPlanField=Object.freeze({
   show(raw:string){try{void page.show(JSON.parse(raw) as Show).catch(()=>post({type:'failed'}));return true;}catch{return false;}},
+  power(lowPower:boolean){if(typeof lowPower!=='boolean')return false;page.power(lowPower);return true;},
+  options(raw:string){try{const value=JSON.parse(raw) as unknown;if(!value||typeof value!=='object')return false;page.options(value as Live);return true;}catch{return false;}},
+  state(){return page.state();},
   dispose(){page.dispose();delete window.modelPlanField;},
  });
  post({type:'loaded'});

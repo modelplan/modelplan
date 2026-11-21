@@ -66,12 +66,36 @@ class VerifyTests(unittest.TestCase):
         self.assertTrue(any("failed: Mod.Fast/testA" in e for e in
                             partition.verify(PKG, self.expected, log([("Mod.Fast/testA", "failed"), ("Mod.Fast/testEnvGated", "passed")]), "headless")))
 
-    def test_repository_admits_only_the_cli_missing_headless_skip(self):
+    def test_repository_admits_exactly_the_deferred_g1_settings_skips_on_the_gui_leg(self):
+        import re
+        pkg = MANIFEST["packages"]["app-integration"]
+        source = (ROOT / "desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/G1SettingsJourneys.swift").read_text()
+        methods = re.findall(r"func (testG1_\w+)\(\) async throws \{(.*?)\n    \}\n", source, re.S)
+        deferred = sorted(name for name, body in methods if "throw XCTSkip(" in body)
+        complete = sorted(name for name, body in methods if "throw XCTSkip(" not in body)
+        admitted = sorted(k.split("/", 1)[1] for k in pkg["allowedSkips"] if k.startswith("G1SettingsJourneys/"))
+        self.assertEqual(admitted, deferred)
+        self.assertEqual(len(deferred), 10)
+        cases = [f"ModelPlanAppIntegrationTests.G1SettingsJourneys/{name}" for name in deferred]
+        complete_cases = [f"ModelPlanAppIntegrationTests.G1SettingsJourneys/{name}" for name in complete]
+        # The actual CI shape: deferred journeys skip, complete journeys pass, on the GUI leg.
+        self.assertEqual(partition.verify(pkg, cases + complete_cases,
+                                          log([(c, "skipped") for c in cases] + [(c, "passed") for c in complete_cases]), "gui"), [])
+        # A deferred journey is not admitted on the other leg, a complete journey may not skip, and failures stay red.
+        self.assertTrue(any("allowed-skip entry for the headless leg" in e for e in
+                            partition.verify(pkg, cases[:1], log([(cases[0], "skipped")]), "headless")))
+        self.assertTrue(any("allowed-skip entry for the gui leg" in e for e in
+                            partition.verify(pkg, complete_cases[:1], log([(complete_cases[0], "skipped")]), "gui")))
+        self.assertTrue(any("failed:" in e for e in
+                            partition.verify(pkg, cases[:1], log([(cases[0], "failed")]), "gui")))
+
+
+    def test_repository_admits_only_the_cli_missing_gui_skip(self):
         pkg = MANIFEST["packages"]["app-integration"]
         case = "ModelPlanAppIntegrationTests.CommunityCockpitEntryTests/testNormalEntryRejectsOutdatedCLI"
-        self.assertEqual(partition.verify(pkg, [case], log([(case, "skipped")]), "headless"), [])
+        self.assertEqual(partition.verify(pkg, [case], log([(case, "skipped")]), "gui"), [])
         self.assertTrue(any("skipped without an allowed-skip entry" in e for e in
-                            partition.verify(pkg, [case], log([(case, "skipped")]), "gui")))
+                            partition.verify(pkg, [case], log([(case, "skipped")]), "headless")))
 
     def test_a_skip_allowed_on_the_other_leg_is_not_allowed_here(self):
         pkg = {**PKG, "headless": ["Fast", "Window"]}
@@ -112,3 +136,135 @@ class CheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+OWNER = {**PKG, "ownerGui": ["Window"],
+         "allowedSkips": {**PKG["allowedSkips"], "FastLater/testOwnerOnly": {"leg": "gui", "reason": "synthetic"}}}
+
+
+class OwnerGuiTests(unittest.TestCase):
+    """D62: the GUI share splits into a hosted part and the classes that need the owner's GUI Mac."""
+
+    def test_hosted_and_owner_legs_split_the_gui_share_exactly(self):
+        _, gui, _ = partition.plan(OWNER, LISTED, "gui")
+        _, hosted, summary = partition.plan(OWNER, LISTED, "hosted-gui")
+        _, owner, _ = partition.plan(OWNER, LISTED, "owner-gui")
+        self.assertEqual(owner, ["Mod.Window/testC", "Mod.Window/testHostedOnly"])
+        self.assertEqual(hosted, ["Mod.FastLater/testB"])
+        self.assertEqual(sorted(hosted + owner), gui)
+        self.assertEqual(summary["owner-gui"], 2)
+
+    def test_owner_and_hosted_legs_use_one_selector(self):
+        hosted, _, _ = partition.plan(OWNER, LISTED, "hosted-gui")
+        owner, _, _ = partition.plan(OWNER, LISTED, "owner-gui")
+        self.assertEqual(hosted, ["--skip", "GeneratedPortTests", "--skip", r"^Mod\.(Fast)/", "--skip", r"^Mod\.(Window)/"])
+        self.assertEqual(owner, ["--skip", "GeneratedPortTests", "--filter", r"^Mod\.(Window)/"])
+
+    def test_no_owner_list_means_no_owner_leg(self):
+        with self.assertRaises(partition.PartitionError):
+            partition.plan(PKG, LISTED, "owner-gui")
+        _, hosted, _ = partition.plan(PKG, LISTED, "hosted-gui")
+        _, gui, _ = partition.plan(PKG, LISTED, "gui")
+        self.assertEqual(hosted, gui)
+
+    def test_gui_skips_count_on_both_halves_of_the_gui_share(self):
+        _, owner, _ = partition.plan(OWNER, LISTED, "owner-gui")
+        self.assertEqual([], partition.verify(OWNER, owner, log([("Mod.Window/testC", "passed"), ("Mod.Window/testHostedOnly", "skipped")]), "owner-gui"))
+        _, hosted, _ = partition.plan(OWNER, LISTED, "hosted-gui")
+        self.assertEqual([], partition.verify(OWNER, hosted, log([("Mod.FastLater/testB", "passed")]), "hosted-gui"))
+
+    def test_owner_list_rules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); (root / "Tests").mkdir()
+            (root / "Tests/A.swift").write_text("class Fast: XCTestCase {}\nclass Window: XCTestCase {}\nclass Other: XCTestCase {}\n")
+            manifest = {**MANIFEST, "packages": {"m": {**OWNER, "allowedSkips": {}, "ownerGui": ["Window", "Fast"]}}}
+            errors = partition.check(root, manifest)
+            self.assertTrue(any("ownerGui" in e and "sorted" in e for e in errors), errors)
+            self.assertTrue(any("both headless and ownerGui" in e for e in errors), errors)
+            manifest["packages"]["m"]["ownerGui"] = ["Missing"]
+            self.assertTrue(any("ownerGui class Missing" in e for e in partition.check(root, manifest)))
+
+
+STATIC_SOURCE = '''import XCTest
+final class Fast: XCTestCase {
+    let json = "{\\"a\\": {}"            // a brace inside a string
+    let block = """
+    } not a closing brace {
+    """
+    struct Helper { func testNotATest() {} }   // nested type: not a test of Fast
+    func testA() { if true { } }
+    @MainActor func testEnvGated() async throws {}
+    private func testHidden() {}
+    static func testStatic() {}
+    func testWithArgument(_ value: Int) {}
+    func helper() {}
+    // func testCommentedOut() {}
+}
+final class FastLater: XCTestCase { func testB() {} }
+'''
+STATIC_EXTENSION = '''extension Fast {
+    nonisolated func testFromExtension() {}
+}
+'''
+
+
+class StaticListTests(unittest.TestCase):
+    def tree(self, extra=None):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name); (root / "Tests").mkdir()
+        (root / "Tests/Fast.swift").write_text(STATIC_SOURCE)
+        (root / "Tests/FastMore.swift").write_text(STATIC_EXTENSION if extra is None else extra)
+        return root
+
+    def test_reads_what_xctest_discovers_for_the_headless_classes_only(self):
+        ids = partition.static_ids(self.tree(), PKG)
+        self.assertEqual(sorted(ids), ["Mod.Fast/testA", "Mod.Fast/testEnvGated", "Mod.Fast/testFromExtension"])
+
+    def test_a_headless_class_without_tests_or_declared_twice_fails(self):
+        with self.assertRaisesRegex(partition.PartitionError, "Gone"):
+            partition.static_ids(self.tree(), {**PKG, "headless": ["Fast", "Gone"]})
+        with self.assertRaisesRegex(partition.PartitionError, "declared twice"):
+            partition.static_ids(self.tree("extension Fast { func testA() {} }\n"), PKG)
+
+    def test_static_plan_runs_the_same_arguments_as_the_listed_plan(self):
+        static_args, expected, summary = partition.plan_static(PKG, ["Mod.Fast/testA", "Mod.Fast/testEnvGated"], "headless")
+        listed_args, listed_expected, _ = partition.plan(PKG, LISTED, "headless")
+        self.assertEqual(static_args, listed_args)
+        self.assertEqual(expected, listed_expected)
+        self.assertEqual(summary["headless"], 2)
+
+    def test_static_plan_refuses_other_legs_stray_ids_and_missing_classes(self):
+        with self.assertRaises(partition.PartitionError):
+            partition.plan_static(PKG, ["Mod.Fast/testA"], "gui")
+        with self.assertRaisesRegex(partition.PartitionError, "outside the headless share"):
+            partition.plan_static(PKG, ["Mod.Fast/testA", "Mod.Window/testC"], "headless")
+        with self.assertRaisesRegex(partition.PartitionError, "absent"):
+            partition.plan_static({**PKG, "headless": ["Fast", "Gone"]}, ["Mod.Fast/testA"], "headless")
+
+    def test_drift_between_sources_and_binary_is_red(self):
+        # The binary ran a test the sources did not show (or missed one they did): verify fails either way.
+        _, expected, _ = partition.plan_static(PKG, ["Mod.Fast/testA"], "headless")
+        self.assertTrue(partition.verify(PKG, expected, log([("Mod.Fast/testA", "passed"), ("Mod.Fast/testNew", "passed")]), "headless"))
+        self.assertTrue(partition.verify(PKG, expected, log([]), "headless"))
+        self.assertEqual([], partition.verify(PKG, expected, log([("Mod.Fast/testA", "passed")]), "headless"))
+
+    def test_cli_static_list_round_trip(self):
+        import contextlib, io
+        with tempfile.TemporaryDirectory() as tmp:
+            listing, args, test_log = Path(tmp, "list"), Path(tmp, "args"), Path(tmp, "log")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(0, partition.main(["static-list", "--package", "app-integration", "--root", str(ROOT)]))
+            listing.write_text(out.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(0, partition.main(["plan", "--package", "app-integration", "--leg", "headless", "--static",
+                                                    "--list", str(listing), "--args", str(args)]))
+                self.assertEqual(1, partition.main(["plan", "--package", "app-integration", "--leg", "gui", "--static",
+                                                    "--list", str(listing), "--args", str(args)]))
+            self.assertIn("--filter", args.read_text().splitlines())
+            ids = [line for line in listing.read_text().splitlines() if line]
+            test_log.write_text(log([(i, "passed") for i in ids]))
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(0, partition.main(["verify", "--package", "app-integration", "--leg", "headless", "--static",
+                                                    "--list", str(listing), "--log", str(test_log)]))

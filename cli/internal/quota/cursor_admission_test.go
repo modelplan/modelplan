@@ -55,6 +55,10 @@ func cursorPeriodServer(t *testing.T, token string, mode *string, paths *[]strin
 			if !strings.Contains(r.Header.Get("Cookie"), token) || r.Header.Get("Authorization") != "" {
 				t.Error("incorrect plan authentication")
 			}
+			if *mode == "free-plan" || *mode == "hobby-plan" {
+				_, _ = w.Write([]byte(`{"planInfo":{"planName":"` + map[bool]string{true: "Free", false: "Hobby"}[*mode == "free-plan"] + `"}}`))
+				return
+			}
 			file = "merged-plan.json"
 		case "/aiserver.v1.DashboardService/GetCurrentPeriodUsage":
 			if r.Header.Get("Authorization") != "Bearer "+token || r.Header.Get("Cookie") != "" || r.Header.Get("Connect-Protocol-Version") != "1" {

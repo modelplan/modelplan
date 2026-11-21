@@ -6,10 +6,10 @@ import ModelPlanEngineClient
 import ModelPlanSettings
 
 /// SET-9-09 defaults through the normal entry: on a fresh profile the packaged app's Settings
-/// show the Quota Widget visible with auto-collapse off, and the Dock receives the same
-/// committed values. The hover-magnification control itself is enabled by #537 (its consumer).
+/// show the Quota Widget visible with auto-collapse on (D56, owner 2026-11-08, reversed the
+/// earlier "off"), and the Dock receives the same committed values. The hover-magnification control itself is enabled by #537 (its consumer).
 @MainActor final class SET909DockDefaultsJourneyTests: XCTestCase {
-    func testSET_9_09FreshProfileWidgetVisibleAndAutoCollapseOff() async throws {
+    func testSET_9_09FreshProfileWidgetVisibleAndExpanded() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set-9-09-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
         let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic",
@@ -21,7 +21,7 @@ import ModelPlanSettings
         let editor = app.settingsHost.application.editor
         let preferences = try XCTUnwrap(editor.snapshot).preferences
         XCTAssertTrue(preferences.showDock, "SET-9-09: the Quota Widget is visible by default")
-        XCTAssertFalse(preferences.autoHide, "SET-9-09: auto-collapse is off by default")
+        XCTAssertFalse(preferences.autoHide, "SET-9-09 / D114: auto-collapse is off by default")
         let rows = try SettingsCatalogue.rows(preferences: preferences, context: editor.context, paneID: "dock")
         func row(_ key: SettingKey) throws -> SettingsRow { try XCTUnwrap(rows.first { $0.key == key }, "Quota Widget pane lacks \(key)") }
         XCTAssertEqual(try row(.showDock).value, .toggle(true))

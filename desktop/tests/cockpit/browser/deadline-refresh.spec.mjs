@@ -11,7 +11,7 @@ function dataFor(details=false){
 }
 async function open(page,data){
  await page.addInitScript(()=>{window.__messages=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__messages.push(JSON.parse(raw));}}}};});
- await page.clock.install({time:new Date(start)});await page.clock.pauseAt(new Date(start));await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ await page.clock.install({time:new Date(Date.parse(start)-60000)});await page.clock.pauseAt(new Date(start));await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit?.receive(raw)??false,raw),tick=(time,reason='deadline',extra={})=>receive(send('tick',{nowUnixMs:String(Date.parse(time)),reason,...extra}));
  expect(await receive(send('load',{appearance,shell}))).toBe(true);expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);expect(await receive(send('display',{data}))).toBe(true);return {send,receive,tick};
 }
@@ -25,7 +25,7 @@ for(const details of [false,true])test(`native tick withdraws elapsed current ze
 });
 test('reset event has its own deadline and tick',async({page})=>{
  const data=dataFor(true),a=data.projection.rows[0].accounts[0];a.windows[0].remainingPercent=80;a.windows[0].validUntil=week;a.windows[0].resetsAt=week;data.projection.rows[0].expiresAt=week;data.details.alerts=[];data.details.resetEvents=[{version:1,id:'synthetic-reset',provider:'openai',rowId:data.projection.rows[0].id,status:'announced',publishedAt:start,expiresAt:at,source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];
- const {tick}=await open(page,data);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(at)));await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toContainText('Reset announced');expect(await tick(at)).toBe(true);await expect(page.locator('.pg-overview .mfd-alerts li')).toHaveCount(0);await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(week)));
+ const {tick}=await open(page,data);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(at)));await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toContainText('official extra reset · time TBA');expect(await tick(at)).toBe(true);await expect(page.locator('.pg-overview .mfd-alerts li')).toHaveCount(0);await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(week)));
 });
 test('replacement, stale context, hidden and show tick preserve current data',async({page})=>{
  const data=dataFor(),{send,receive,tick}=await open(page,data);data.projection.rows[0].accounts[0].windows[0].resetsAt=week;data.projection.rows[0].accounts[0].windows[0].validUntil=week;data.projection.rows[0].expiresAt=week;expect(await receive(send('display',{data}))).toBe(true);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(week)));
@@ -39,15 +39,15 @@ for(const end of ['clear','unload'])test(`${end} forbids later tick or deadline 
 });
 test('expiry tick preserves scope, page, focus and fader node identity',async({page})=>{
  const data=dataFor(true),{send,receive,tick}=await open(page,data);expect(await receive(send('shell',{...shell,scope:data.projection.rows[0].accounts[0].subscriptionRef}))).toBe(true);
- const plans=page.getByRole('button',{name:'Subscription',exact:true});await plans.click();await plans.focus();await page.evaluate(()=>window.__channel=document.querySelector('.fd-ch'));
+ const plans=page.getByRole('button',{name:'Plans',exact:true});await plans.click();await plans.focus();await page.evaluate(()=>window.__channel=document.querySelector('.fd-ch'));
  expect(await tick(at)).toBe(true);await expect(plans).toBeFocused();await expect(plans).toHaveAttribute('aria-pressed','true');await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');expect(await page.evaluate(()=>window.__channel===document.querySelector('.fd-ch'))).toBe(true);
  const windows=page.locator('.mfd-page .sp-w');await expect(windows.filter({hasText:'Session'})).toContainText('--');await expect(windows.filter({hasText:'Weekly'})).toContainText('80%');
 });
-test('native expiry preserves an active shutter drag',async({page})=>{
+test('native expiry preserves an active shutter press (WP-10: the switch has no drag)',async({page})=>{
  const {tick}=await open(page,dataFor());const shutter=page.locator('[data-shutter]'),box=await shutter.boundingBox();expect(box).not.toBeNull();
- await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+20,box.y+box.height/2);
- const before=await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'));expect(before).not.toBe('');expect(await tick(at)).toBe(true);
- expect(await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'))).toBe(before);await page.mouse.up();
+ await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
+ expect(await shutter.evaluate(e=>e.matches(':active'))).toBe(true);expect(await tick(at)).toBe(true);
+ expect(await shutter.evaluate(e=>e.matches(':active'))).toBe(true);await page.mouse.up();
 });
 test('document hidden blocks ticks and show resumes only on native event',async({page})=>{
  const {tick}=await open(page,dataFor());await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
@@ -90,11 +90,11 @@ test('appearance at expiry preserves engine page, scope and focused control',asy
  expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
  await expect(page.getByRole('button',{name:'Page 2'})).toHaveAttribute('aria-current','true');await expect(page.getByRole('button',{name:'Page 2'})).toBeFocused();await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');
 });
-test('appearance repaint preserves an active shutter drag',async({page})=>{
+test('appearance repaint preserves an active shutter press (WP-10: the switch has no drag)',async({page})=>{
  const {send,receive}=await open(page,dataFor()),shutter=page.locator('[data-shutter]'),box=await shutter.boundingBox();expect(box).not.toBeNull();
- await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+20,box.y+box.height/2);
- const before=await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'));expect(before).not.toBe('');await page.clock.setSystemTime(new Date(at));expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
- expect(await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'))).toBe(before);await page.mouse.up();
+ await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
+ expect(await shutter.evaluate(e=>e.matches(':active'))).toBe(true);await page.clock.setSystemTime(new Date(at));expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
+ expect(await shutter.evaluate(e=>e.matches(':active'))).toBe(true);await page.mouse.up();
 });
 for(const [from,to,fromLabel,toLabel] of [['en','zh-CN','＋ Add a subscription','＋ 添加订阅'],['zh-CN','en','＋ 添加订阅','＋ Add a subscription']])test(`Add subscription focus survives ${from} to ${to} and expiry`,async({page})=>{
  const {send,receive,tick}=await open(page,dataFor());
@@ -173,9 +173,9 @@ test('focused quota cell follows its verified member across reorder and never an
  await expect(page.locator('.eng-cols .ec .qcell[data-row="other"]')).not.toBeFocused();expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
 test('MFD focus follows its verified member across reorder and never a replacement',async({page})=>{
- const data=twoVerified(),{send,receive}=await open(page,data);await page.getByRole('button',{name:'Subscription',exact:true}).click();const first=page.locator('.mfd-page .sa').first();await first.focus();await expect(first).toBeFocused();
- data.projection.rows[0].accounts.reverse();expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.mfd-page .sa').nth(1)).toBeFocused();
- data.projection.rows[0].accounts=data.projection.rows[0].accounts.filter(a=>a.subscriptionRef!=='0123456789abcdef');data.subscriptions=data.subscriptions.filter(s=>s.subscriptionRef!=='0123456789abcdef');expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.mfd-page .sa').first()).not.toBeFocused();expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
+ const data=plusThird(twoVerified(),true),{send,receive}=await open(page,data);await page.getByRole('button',{name:'Plans',exact:true}).click();const first=page.locator('.mfd-page .sa').first();await first.focus();await expect(first).toBeFocused();
+ data.projection.rows[0].accounts.reverse();expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.mfd-page .sa').nth(2)).toBeFocused();
+ data.projection.rows[0].accounts=data.projection.rows[0].accounts.filter(a=>a.subscriptionRef!=='0123456789abcdef');data.subscriptions=data.subscriptions.filter(s=>s.subscriptionRef!=='0123456789abcdef');expect(await receive(send('display',{data}))).toBe(true);expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true); // two subscriptions are left: the page expands the first, so there is no list row to look at
 });
 test('off-page unstable selected scope falls back on replacement',async({page})=>{
  const data=dataFor(),row=data.projection.rows[0],dup=structuredClone(row.accounts[0]);row.accounts[0].subscriptionRef=null;dup.subscriptionRef=null;row.accounts.push(dup);data.subscriptions=[];
@@ -196,13 +196,20 @@ test('focus moved externally during redraw is not stolen back',async({page})=>{
  await page.evaluate(()=>{const host=document.querySelector('.ck-eng'),original=host.replaceChildren.bind(host);host.replaceChildren=(...nodes)=>{original(...nodes);document.querySelector('.ck-head button[aria-label="Settings"]').focus();};});
  expect(await receive(send('display',{data}))).toBe(true);await expect(page.getByRole('button',{name:'Settings',exact:true})).toBeFocused();
 });
+// WP-13: with fewer than 3 subscriptions the Plans page opens the first one expanded, so the focus tests that read the
+// list add a third account (ref 'aaaaaaaaaaaaaaaa' when the others are verified).
+function plusThird(data,verified){
+ const row=data.projection.rows[0],c=structuredClone(row.accounts[0]);c.plan.name={en:'Plan C',zh:'方案 C'};
+ if(verified){const ref='aaaaaaaaaaaaaaaa';c.subscriptionRef=ref;const sub=structuredClone(data.subscriptions[0]);sub.subscriptionRef=ref;data.subscriptions.push(sub);}else c.subscriptionRef=null;
+ row.accounts.push(c);return data;
+}
 function twoUnverified(){const data=dataFor(),row=data.projection.rows[0],a=row.accounts[0],b=structuredClone(a);a.subscriptionRef=null;b.subscriptionRef=null;a.plan.name={en:'Plan A',zh:'方案 A'};b.plan.name={en:'Plan B',zh:'方案 B'};row.accounts.push(b);data.subscriptions=[];return data;}
 test('unstable duplicate Engine focus is not reassigned on reorder',async({page})=>{
  const data=twoUnverified(),{send,receive}=await open(page,data),key=page.locator('.eng-keys button[data-scope="codex#unknown#2"]');await key.focus();await expect(key).toBeFocused();
  data.projection.rows[0].accounts.reverse();expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.eng-keys button[data-scope="codex#unknown#2"]')).not.toBeFocused();expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
 test('unstable duplicate MFD focus is not reassigned on reorder',async({page})=>{
- const data=twoUnverified(),{send,receive}=await open(page,data);await page.getByRole('button',{name:'Subscription',exact:true}).click();const second=page.locator('.mfd-page .sa').nth(1);await second.focus();await expect(second).toBeFocused();
+ const data=plusThird(twoUnverified(),false),{send,receive}=await open(page,data);await page.getByRole('button',{name:'Plans',exact:true}).click();const second=page.locator('.mfd-page .sa').nth(1);await second.focus();await expect(second).toBeFocused();
  data.projection.rows[0].accounts.reverse();expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.mfd-page .sa').nth(1)).not.toBeFocused();expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
 test('changed quota identity with the same label does not inherit focus',async({page})=>{
@@ -298,7 +305,7 @@ test('appearance followed by unchanged selected shell preserves page and Add foc
  expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);await expect(page.getByRole('button',{name:'第 2 页'})).toHaveAttribute('aria-current','true');await expect(page.locator('.eng-keys button[data-add-subscription]').nth(1)).toBeFocused();await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');
 });
 test('appearance followed by unchanged All shell preserves focused MFD member',async({page})=>{
- const data=twoVerified(),{send,receive}=await open(page,data);await page.getByRole('button',{name:'Subscription',exact:true}).click();await page.locator('.mfd-page .sa').first().focus();
+ const data=plusThird(twoVerified(),true),{send,receive}=await open(page,data);await page.getByRole('button',{name:'Plans',exact:true}).click();await page.locator('.mfd-page .sa').first().focus();
  expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);await expect(page.locator('.mfd-page .sa').first()).toBeFocused();expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(page.locator('.mfd-page .sa').first()).toBeFocused();
 });
 test('actual scope change retains its page behavior without moving focus to another bay',async({page})=>{

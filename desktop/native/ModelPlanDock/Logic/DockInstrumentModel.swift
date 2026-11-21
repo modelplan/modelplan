@@ -13,6 +13,10 @@ public enum DockQuotaPeriod: String, Codable, Sendable {
 public enum DockWindowValidity: Sendable, Equatable {
     case inheritAggregate
     case verifiedCurrent(until: Date)
+    /// DOCK-3.2-50 / DOCK-3.3-09 (amended, D290 item 9): an earlier reading of this same member, kept after a refresh
+    /// did not land. Shown only while the input is stale and before `until` (the window's reset); an hour after
+    /// `observedAt` the ring and the card dim it. Never current, never an alert, never fresh.
+    case retained(observedAt: Date, until: Date)
     case unavailable
 }
 public struct DockQuotaWindowInput: Sendable {
@@ -48,6 +52,8 @@ public struct DockInstrumentInput: Sendable {
     public var dataState: DockDataState = .unavailable
     public var unavailableReason:String?
     public var working: DockWorkingSignal?
+    /// A plugin ring (D327) instead of quota windows: evaluate draws it in the plugin ink and the card shows its rows.
+    public var pluginRing: DockPluginRing?
     public init(id: String, name: String, windows: [DockQuotaWindowInput]) {self.id=id;self.name=name;self.windows=windows}
     /// D40 / DOCK-3.5-01: a subscription that shares its name shows "name · alias" when the user
     /// gave it an alias, else the producer's "name · 2" (the first of the group stays plain).
@@ -60,7 +66,15 @@ public struct DockInstrumentInput: Sendable {
 }
 public enum DockQuotaStatus: String, Codable, Hashable, Sendable {case unknown, normal, warning, critical}
 public struct DockQuotaArc: Equatable, Sendable {
-    public let windowID: String, fraction: Double?, status: DockQuotaStatus
+    /// `fraction` is the drawn arc length (D130: remaining in remaining mode, used in used mode).
+    /// `remainingFraction` is always the remaining truth (used-up detection, never reversed); `status` is keyed to it too.
+    public let windowID: String, fraction: Double?, status: DockQuotaStatus, remainingFraction: Double?
+    public init(windowID: String, fraction: Double?, status: DockQuotaStatus, remainingFraction: Double?) {
+        self.windowID = windowID; self.fraction = fraction; self.status = status; self.remainingFraction = remainingFraction
+    }
+    public init(windowID: String, fraction: Double?, status: DockQuotaStatus) {
+        self.init(windowID: windowID, fraction: fraction, status: status, remainingFraction: fraction)
+    }
 }
 public struct DockInstrumentReading: Sendable {
     public let subscriptionID: String, name: String, alias: String?, vendorResourceKey: String?
@@ -74,58 +88,78 @@ public struct DockInstrumentReading: Sendable {
     /// Position count comes from the frozen appearance provider, not quota percentage or a ten-point helper.
     public func litTimePoints(positions: Int) -> Int? {
         guard (1...128).contains(positions),let timeLeftFraction else{return nil}
-        return max(0,min(positions,Int(ceil(timeLeftFraction*Double(positions)))))
+        // D129: the clock follows the remaining/used choice: time left in remaining mode, time elapsed in used mode.
+        let shown = clockShowsElapsed ? 1-timeLeftFraction : timeLeftFraction
+        return max(0,min(positions,Int(ceil(shown*Double(positions)))))
     }
     public let isWorking: Bool, jetEligible: Bool
+    /// True when the Settings choice is "used": the clock lights time elapsed instead of time left.
+    public var clockShowsElapsed = false
+    /// DOCK-3.2-50: the shown window is a retained reading an hour old or older. Its number stays, in the dim ink.
+    public var readoutDimmed = false
+    /// Set for a plugin ring (DockPluginRingProjection): fixed ink, faint outer segment, no status colour.
+    public var pluginRing: DockPluginRing? = nil
     /// A transient display frame; the admitted reading and its observation time are never changed.
-    func refreshSweepFrame(progress: Double) -> DockInstrumentReading {
+    /// `shown` keeps the outgoing number on screen while it fades out (G3-98).
+    @_spi(DockResourceChecks) public func refreshSweepFrame(progress: Double, readout shown: String? = nil) -> DockInstrumentReading {
         let p = progress.isFinite ? min(1, max(0, progress)) : 1
         func scaled(_ arc: DockQuotaArc?) -> DockQuotaArc? {
-            arc.map { .init(windowID: $0.windowID, fraction: $0.fraction.map { $0 * p }, status: $0.status) }
+            arc.map { .init(windowID: $0.windowID, fraction: $0.fraction.map { $0 * p }, status: $0.status, remainingFraction: ($0.remainingFraction.map { $0 * p })) }
         }
-        let displayed = readout.hasSuffix("%") ? Double(readout.dropLast()) : nil
-        let text = displayed.map { String(Int(($0 * p).rounded())) + "%" } ?? readout
         return DockInstrumentReading(subscriptionID: subscriptionID, name: name, alias: alias,
             vendorResourceKey: vendorResourceKey, duplicateAccountTag: duplicateAccountTag,
             outer: scaled(outer), inner: scaled(inner), selectedWindowID: selectedWindowID,
             selectedWindowLabel: selectedWindowLabel, selectedResetAt: selectedResetAt,
-            remainingPercent: remainingPercent, readout: text, status: status, dataState: dataState,
+            remainingPercent: remainingPercent, readout: shown ?? readout, status: status, dataState: dataState,
             unavailableReason: unavailableReason, timeLeftFraction: timeLeftFraction,
-            isWorking: isWorking, jetEligible: jetEligible)
+            isWorking: isWorking, jetEligible: jetEligible, clockShowsElapsed: clockShowsElapsed, readoutDimmed: readoutDimmed,
+            pluginRing: pluginRing.map { var r = $0; r.outerFaint *= p; return r })
     }
     /// Gallery-only fixture: the prototype varies level independently of its fixed 75% arc.
     @_spi(DockResourceChecks) public func comparisonFixture(status: DockQuotaStatus) -> DockInstrumentReading {
-        let fixtureOuter = outer.map { DockQuotaArc(windowID: $0.windowID, fraction: $0.fraction, status: status) }
+        let fixtureOuter = outer.map { DockQuotaArc(windowID: $0.windowID, fraction: $0.fraction, status: status, remainingFraction: ($0.remainingFraction)) }
         return DockInstrumentReading(subscriptionID: subscriptionID, name: name, alias: alias, vendorResourceKey: vendorResourceKey,
             duplicateAccountTag:duplicateAccountTag,
             outer: fixtureOuter, inner: inner, selectedWindowID: selectedWindowID, selectedWindowLabel: selectedWindowLabel,
             selectedResetAt: selectedResetAt, remainingPercent: remainingPercent, readout: readout, status: status,
-            dataState: dataState, unavailableReason:unavailableReason, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible)
+            dataState: dataState, unavailableReason:unavailableReason, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible, clockShowsElapsed: clockShowsElapsed, readoutDimmed: readoutDimmed, pluginRing: pluginRing)
     }
 }
 
 /// Truth/identity projection only. Fixed artwork/ring geometry belongs to the injected appearance source.
 public enum DockInstrumentProjection {
+    /// The one rule for whether a window's number may be shown now: every surface reads it through here.
+    public static func admittedRemaining(_ w: DockQuotaWindowInput, in input: DockInstrumentInput, now: Date) -> Double? {
+        switch w.validity {
+        case .inheritAggregate:
+            guard input.dataState == .fresh else { return nil }
+        case .verifiedCurrent(let deadline):
+            // An unavailable/loading source cannot be revived by a window flag.
+            guard input.dataState == .fresh || input.dataState == .stale,
+                  deadline.timeIntervalSinceReferenceDate.isFinite, now < deadline else { return nil }
+        case .retained(let observed, let until):
+            // A kept reading never outlives its window: after the reset it is "--" (V1-FINAL §1).
+            guard input.dataState == .stale, observed.timeIntervalSinceReferenceDate.isFinite,
+                  until.timeIntervalSinceReferenceDate.isFinite, observed <= now, now < until else { return nil }
+        case .unavailable:
+            return nil
+        }
+        guard w.resetsAt.map({$0 > now}) ?? true,
+              let r=w.remainingPercent, r.isFinite, (0...100).contains(r) else {return nil}
+        return r
+    }
     public static func evaluate(_ input: DockInstrumentInput, now: Date, redBelow: Double = 25) throws -> DockInstrumentReading {
         guard !input.id.isEmpty, input.windows.allSatisfy({!$0.id.isEmpty}), Set(input.windows.map(\.id)).count==input.windows.count else {throw DockLogicError.invalidCatalogue}
         guard now.timeIntervalSinceReferenceDate.isFinite, redBelow.isFinite, (0...100).contains(redBelow) else {throw DockLogicError.invalidTime}
-        func value(_ w: DockQuotaWindowInput) -> Double? {
-            switch w.validity {
-            case .inheritAggregate:
-                guard input.dataState == .fresh else { return nil }
-            case .verifiedCurrent(let deadline):
-                // An unavailable/loading source cannot be revived by a window flag.
-                guard input.dataState == .fresh || input.dataState == .stale,
-                      deadline.timeIntervalSinceReferenceDate.isFinite, now < deadline else { return nil }
-            case .unavailable:
-                return nil
-            }
-            guard w.resetsAt.map({$0 > now}) ?? true,
-                  let r=w.remainingPercent, r.isFinite, (0...100).contains(r) else {return nil}
-            return r
+        if let ring = input.pluginRing { return try DockPluginRingProjection.reading(input, ring: ring) }
+        func value(_ w: DockQuotaWindowInput) -> Double? { admittedRemaining(w, in: input, now: now) }
+        /// DOCK-3.2-50: a retained reading an hour old keeps its number but loses its colour.
+        func dimmed(_ w: DockQuotaWindowInput?) -> Bool {
+            guard let w, value(w) != nil, case .retained(let observed, _) = w.validity else { return false }
+            return DockStaleRule.isDimmed(observedAt: observed, now: now)
         }
-        func status(_ r: Double?) -> DockQuotaStatus {
-            guard let r else{return .unknown}
+        func status(_ r: Double?, _ w: DockQuotaWindowInput? = nil) -> DockQuotaStatus {
+            guard let r, !dimmed(w) else{return .unknown}
             return r <= redBelow ? .critical : r <= 50 ? .warning : .normal
         }
         let general=input.windows.filter(\.isGeneral)
@@ -139,7 +173,7 @@ public enum DockInstrumentProjection {
         let inner=rest.first { $0.period == .week } ?? rest.last
         let selected=input.selectedWindowID.flatMap{id in general.first{$0.id==id}}
             ?? general.filter{value($0) != nil}.min{value($0)!<value($1)!} ?? general.first
-        let remaining=selected.flatMap(value), selectedStatus=status(remaining)
+        let remaining=selected.flatMap(value), selectedStatus=status(remaining, selected)
         let shown=remaining.map{input.showUsedPercent ? 100-$0:$0}
         let text=shown.map{v in (v.rounded()==v ? String(Int(v)):String(v))+"%"} ?? "--"
         var time:Double?
@@ -152,11 +186,11 @@ public enum DockInstrumentProjection {
             (signal.observedOutput || (signal.observedInFlight && signal.expiresAt != nil)) &&
             (signal.expiresAt.map { now < $0 } ?? true)
         } == true && input.dataState == .fresh
-        func arc(_ w:DockQuotaWindowInput?) -> DockQuotaArc? {w.map{let r=value($0);return DockQuotaArc(windowID:$0.id,fraction:r.map{$0/100},status:status(r))}}
+        func arc(_ w:DockQuotaWindowInput?) -> DockQuotaArc? {w.map{let r=value($0);return DockQuotaArc(windowID:$0.id,fraction:r.map{(input.showUsedPercent ? 100-$0:$0)/100},status:status(r,$0),remainingFraction:(r.map{$0/100}))}}
         return DockInstrumentReading(subscriptionID:input.id,name:input.name,alias:input.alias,vendorResourceKey:input.vendorResourceKey,duplicateAccountTag:input.duplicateAccountTag,
             outer:arc(outer),inner:arc(inner),selectedWindowID:selected?.id,selectedWindowLabel:selected?.label,
             selectedResetAt:selected.flatMap { value($0) == nil ? nil : $0.resetsAt },
             remainingPercent:remaining,readout:text,status:selectedStatus,dataState:input.dataState,
-            unavailableReason:(remaining == nil || input.dataState == .stale) ? input.unavailableReason : nil,timeLeftFraction:time,isWorking:working,jetEligible:working && remaining != nil)
+            unavailableReason:(remaining == nil || input.dataState == .stale) ? input.unavailableReason : nil,timeLeftFraction:time,isWorking:working,jetEligible:working && remaining != nil,clockShowsElapsed:input.showUsedPercent,readoutDimmed:dimmed(selected))
     }
 }

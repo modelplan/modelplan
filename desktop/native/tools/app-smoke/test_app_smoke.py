@@ -163,7 +163,8 @@ class AppSmokeAssertionsTests(unittest.TestCase):
         self.report.pop('showDock')
         self.assertFalse(self.results()['dock-defaults'])
 
-    def test_visible_fresh_default_and_explicit_autohide_are_distinct(self):
+    def test_expanded_fresh_default_and_saved_collapse_are_distinct(self):
+        # D114: a fresh install starts expanded; auto-collapse on here is not the fresh default.
         self.report['autoHide'] = False
         self.assertTrue(self.results()['dock-defaults'])
         self.report['autoHide'] = True
