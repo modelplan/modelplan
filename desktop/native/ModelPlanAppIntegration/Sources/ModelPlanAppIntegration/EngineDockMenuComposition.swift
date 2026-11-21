@@ -169,10 +169,12 @@ public struct EngineMenuRefreshResult {
             self.deadlineDriver.replace()
         }
     }
-    /// D324/D327: puts the resource ring in front of the admitted subscription rings and keeps it current from the
+    /// D324/D327: puts the resource ring after the admitted subscription rings (B4, the cockpit's order) and keeps it current from the
     /// one ResourceSampler. The caller reports visibility (plugin on, cockpit column, widget shown) on the binding.
     public func installResourceWidget(sampler: ResourceSampler, language: @escaping () -> ResourceLanguage) -> ResourceWidgetBinding {
         let provider = ResourceDockContentProvider(base: admittedCache)
+        // B9: the ring is added only to admitted content, never to the empty gap of a replacement.
+        provider.baseAdmitted = { [weak cache = admittedCache] in cache?.hasAdmittedContent == true }
         dock.setDockContentProvider(provider)
         let binding = ResourceWidgetBinding(sampler: sampler, provider: provider, language: language,
                                             refreshCard: { [weak self] in self?.dock.refreshPluginCard() }) { [weak self] in self?.dock.refreshDockContent() }

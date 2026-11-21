@@ -302,6 +302,33 @@ import ModelPlanWire
     page.discard()
   }
 
+  /// Sample S3 (#1104 PLG-A1): cover then uncover while a WebKit call is in flight. The host stops sampling at once; the
+  /// queued hidden update is replaced by the visible one, so the page never sees the hide and reports nothing new.
+  /// Once the page accepts the visible update the host samples the page's running set again.
+  func testACoalescedHideAndShowResumesThePagesRunningPlugins() throws {
+    let (page, box) = try readyPage()
+    var done = box.sent.count
+    page.setPlugins(stateA); completeAll(box, from: &done)
+    let header = box.sent.last!.0
+    page.verificationReceive(try pageMessage(header, "action", extra: ["action": "pluginsRunning", "ids": ["placeholder"]]), source: source)
+    XCTAssertEqual(box.intents.last, .pluginsRunning(["placeholder"]))
+    // A call in flight (a key change), then cover and uncover before it completes.
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: false))
+    page.verificationSetHostVisibility(.init(visible: true, occluded: true, key: false))
+    XCTAssertEqual(box.intents.last, .pluginsRunning([]), "the host stops before the page has answered")
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: true))
+    completeAll(box, from: &done)
+    XCTAssertEqual(box.intents.last, .pluginsRunning(["placeholder"]), "sampling resumes without a new page report")
+    // A page that did take a hide reported [] itself; its later visible update restores nothing.
+    page.verificationSetHostVisibility(.init(visible: false, occluded: false, key: false))
+    completeAll(box, from: &done)
+    page.verificationReceive(try pageMessage(header, "action", extra: ["action": "pluginsRunning", "ids": [String]()]), source: source)
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: true))
+    completeAll(box, from: &done)
+    XCTAssertEqual(box.intents.last, .pluginsRunning([]))
+    page.discard()
+  }
+
   /// macrev2-1104-6: a privacy clear stops sampling when it starts; afterwards the state is sent to the cleared page.
   func testClearStopsSamplingAtItsStartAndResendsTheState() async throws {
     let (page, box) = try readyPage()

@@ -300,7 +300,7 @@ struct DockHelpInteraction: Equatable {
         didSet {
             guard spotlightHold != oldValue, !retired else { return }
             for window in [panel, cardPanel, overflowPanel] { window?.collectionBehavior = panelCollectionBehavior }
-            if spotlightHold { dismissCard() }
+            if spotlightHold { closeHeldCardEverywhere() }
             Task { @MainActor [weak self] in
                 guard let self, !self.retired else { return }
                 self.edge.refresh()
@@ -1202,7 +1202,8 @@ struct DockHelpInteraction: Equatable {
                 let dropped = HeldDockDrop.Fields(displayID: value.displayID ?? before.displayID, edge: next,
                                                   alongFraction: value.alongFraction)
                 // T3: drops A -> B -> C before any save lands keep every earlier placement held, not only the last.
-                self.heldDrop = HeldDockDrop.after(drop: dropped, showing: before, previous: self.heldDrop, now: .now)
+                self.heldDrop = HeldDockDrop.after(drop: dropped, showing: before, previous: self.heldDrop,
+                                                   revision: self.application?.snapshot.revision ?? 0, now: .now)
                 dropped.write(to: &self.preferences)
             }
             if let id = value.displayID, let commit = self.commitDisplayPlacement {
@@ -1223,7 +1224,8 @@ struct DockHelpInteraction: Equatable {
             // A placement from before the latest drop (the pre-drop one, or an earlier drop whose save lands late):
             // this snapshot predates the latest drop's save, so that drop stands. Any other placement (the latest
             // drop's own save, or a later choice) ends the hold.
-            let admitted = held.admit(HeldDockDrop.Fields(preferences), now: .now)
+            // S11: a republish of the still-saved placement at the drop's own revision is not the drop's receipt.
+            let admitted = held.admit(HeldDockDrop.Fields(preferences), revision: value.snapshot.revision, now: .now)
             admitted.show.write(to: &preferences); heldDrop = admitted.hold
         }
         // A panel keeps its Spaces behaviour until told otherwise, and the edge may not re-present.
@@ -1231,7 +1233,7 @@ struct DockHelpInteraction: Equatable {
         if value.effective.reduceMotion { locateLayer?.removeAnimation(forKey: "locate-pulse") }
         empty.stringValue = preferences.language == .english ? "No local subscriptions" : "暂无本地订阅"
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
-        if !preferences.showDock { pendingUserReveal = false; clearLocateHighlight(); dismissCard() }
+        if !preferences.showDock { pendingUserReveal = false; clearLocateHighlight(); closeHeldCardEverywhere() }
         if preferences.revealMilliseconds != oldReveal {
             let saved = edge.preference
             edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
@@ -1571,6 +1573,12 @@ struct DockHelpInteraction: Equatable {
         guard passIsCurrent(generation) else { return }
         if let cardID, cardID == Self.emptyCardID { showEmptyCard() }
         else if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
+        // B4d (owner 11-21, Pulse: a card stays while the pointer is on its ring or the card): a content replacement
+        // (withdrawAdmittedContent) closes a card it does not keep, and the plugin ring's card is never kept (only
+        // engine members are). The controller still presents it and its publish is de-duplicated, so nothing else
+        // shows it again; the card the active controller holds is shown again here, with every showCard guard.
+        else if let controller = interactionController, controller.isActive,
+                let held = controller.presentation?.card.subscriptionID, held != Self.emptyCardID, order.contains(held) { showCard(held) }
         else if interactionView.emptyStationHovered { showEmptyCard() } // G3-136: a replacement keeps the hovered reason
         if permitted {
             edge.start(); edge.refresh()
@@ -2193,7 +2201,7 @@ struct DockHelpInteraction: Equatable {
     func prepareForCockpit() {
         guard !retired else { return }
         clearLocateHighlight()
-        dismissCard()
+        closeHeldCardEverywhere()
     }
 
     /// `highlight: false` is the Find Quota Widget reveal: its spotlight draws the ring instead.
@@ -2244,11 +2252,11 @@ struct DockHelpInteraction: Equatable {
     @objc private func ignitionPressed() {
         guard cockpitEntryEnabled, permitted, !retired else { return }
         guard let pressIgnition else { openConsole(); return }
-        dismissCard(); pressIgnition(NSEvent.mouseLocation)
+        closeHeldCardEverywhere(); pressIgnition(NSEvent.mouseLocation)
     }
     @objc private func openConsole() {
         guard cockpitEntryEnabled, permitted, !retired, let showConsole else { return }
-        acknowledgeCockpitOpening(); dismissCard(); showConsole()
+        acknowledgeCockpitOpening(); closeHeldCardEverywhere(); showConsole()
     }
     @objc private func openSettings() {
         guard permitted, !retired, !retiring else { return }
@@ -2592,6 +2600,12 @@ struct DockHelpInteraction: Equatable {
         defer { pressObservedSinceSample = false }
         controller.refresh()
     }
+    /// B4d: an intended close (cockpit opening, ignition, Spotlight hold, widget hidden) also ends the controller's
+    /// card, so the rebuild re-sync (rebuildPass) never brings back a card the user's action closed.
+    private func closeHeldCardEverywhere() {
+        if let controller = interactionController, controller.isActive { controller.dismissCard() }
+        dismissCard()
+    }
     private func dismissCard() {
         fallbackCardLeaveTask?.cancel(); fallbackCardLeaveTask = nil
         removeOutsidePressMonitors()
@@ -2684,19 +2698,29 @@ struct HeldDockDrop {
     }
     static let limit: Duration = .seconds(10)
     let dropped: Fields, superseded: [Fields], until: ContinuousClock.Instant
+    /// S11: the Settings revision the host showed when `dropped` was made. The latest drop's save lands at a later
+    /// revision; a republish at this revision or before (a context update re-sends the snapshot without a save) is
+    /// not its receipt, even when it carries the same placement (a drop back onto the still-saved placement).
+    var revision: UInt64 = 0
 
-    /// The hold after a drop onto `dropped` while the host shows `showing`; nil when no earlier placement is pending.
+    /// The hold after a drop onto `dropped` while the host shows `showing` at Settings `revision`; nil when no
+    /// earlier placement is pending.
     static func after(drop dropped: Fields, showing: Fields, previous: HeldDockDrop?,
-                      now: ContinuousClock.Instant) -> HeldDockDrop? {
+                      revision: UInt64 = 0, now: ContinuousClock.Instant) -> HeldDockDrop? {
         var superseded = previous.flatMap { now < $0.until ? $0.superseded : nil } ?? []
         if !superseded.contains(showing) { superseded.append(showing) }
         superseded.removeAll { $0 == dropped }
-        return superseded.isEmpty ? nil : HeldDockDrop(dropped: dropped, superseded: superseded, until: now + limit)
+        return superseded.isEmpty ? nil
+            : HeldDockDrop(dropped: dropped, superseded: superseded, until: now + limit, revision: revision)
     }
 
-    /// A Settings snapshot carries `placed`: the placement to show, and the hold that remains.
-    func admit(_ placed: Fields, now: ContinuousClock.Instant) -> (show: Fields, hold: HeldDockDrop?) {
-        if now < until, superseded.contains(placed) { return (dropped, self) }
+    /// A Settings snapshot at `revision` carries `placed`: the placement to show, and the hold that remains. Only a
+    /// snapshot newer than the latest drop that carries it (its save receipt) or another placement ends the hold.
+    /// A nil revision is treated as newer than the drop.
+    func admit(_ placed: Fields, revision snapshot: UInt64? = nil, now: ContinuousClock.Instant) -> (show: Fields, hold: HeldDockDrop?) {
+        guard now < until else { return (placed, nil) }
+        if superseded.contains(placed) { return (dropped, self) }
+        if placed == dropped, let snapshot, snapshot <= revision { return (dropped, self) }
         return (placed, nil)
     }
 }
