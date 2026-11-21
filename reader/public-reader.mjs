@@ -715,8 +715,13 @@ var clientDigestSchema = z3.object({
           effort: text3,
           label: text3,
           available: z3.boolean(),
+          // client-v1.7: ability is the cross-model abilityIndex ("abilityIndex"); before, the
+          // within-model chain ("abilityWithinModel"). "capability" is the fallback in both.
           ability: nullable,
-          abilityBasis: z3.enum(["abilityWithinModel", "capability"]),
+          abilityBasis: z3.enum(["abilityWithinModel", "abilityIndex", "capability"]),
+          // client-v1.7: the within-model chain, on every effort (null where no bridge reaches it).
+          // Differences between two efforts of one model read this; ability compares models.
+          abilityWithinModel: nullable.optional(),
           cost: scalar.nonnegative().nullable(),
           costBasisId: text3.nullable(),
           time: scalar.nonnegative().nullable(),
@@ -817,6 +822,9 @@ var clientDigestSchema = z3.object({
     fail("invalid_client_v16_projection");
   if (d.priceUnit !== void 0 !== d.models.some((m) => m.price !== void 0))
     fail("invalid_client_price_unit");
+  const efforts = d.models.flatMap((m) => m.efforts);
+  if (minor < 7 ? efforts.some((e) => e.abilityBasis === "abilityIndex" || e.abilityWithinModel !== void 0) : efforts.some((e) => e.abilityBasis === "abilityWithinModel" || e.abilityWithinModel === void 0))
+    fail("invalid_client_v17_projection");
   if (d.usageTrend !== void 0) {
     const modelIds = new Set(d.models.map((m) => m.id));
     const ranks = Object.entries(d.usageTrend.ranks);

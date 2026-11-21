@@ -542,8 +542,8 @@ func session(a *quota.Account, d *digest.Digest) (Session, bool) {
 	}
 	if cur != nil && rec != nil && cur != rec {
 		dl := &Delta{}
-		if cur.Ability != nil && rec.Ability != nil {
-			v := round1(*cur.Ability - *rec.Ability)
+		if g := digest.Gain(rec, cur); cur.Ability != nil && rec.Ability != nil && g != nil {
+			v := round1(*g) // the within-model step (client-v1.7: the published chain)
 			dl.AbilityDelta = &v
 		}
 		if cur.Cost != nil && rec.Cost != nil && *rec.Cost > 0 {
