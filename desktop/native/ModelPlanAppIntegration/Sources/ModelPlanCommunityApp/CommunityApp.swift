@@ -143,7 +143,8 @@ import ModelPlanWire
     @MainActor private static func runEngineRows() {
         do {
             let profile = ProfileRoot.current
-            let preferences = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.applicationSupport)
+            let preferences = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.applicationSupport,
+                                                                 defaultOpenAtLogin: profile.firstRunOpenAtLogin)
             let app = EngineRowsEntry.make(configuration: .init(
                 executableURL: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"),
                 applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "community",

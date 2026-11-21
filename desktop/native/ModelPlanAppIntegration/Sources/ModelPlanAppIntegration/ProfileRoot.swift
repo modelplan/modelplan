@@ -54,6 +54,10 @@ public struct ProfileRoot: Sendable, Equatable {
     public var statusItemAutosaveName: String? { isFresh ? nil : Self.statusItemAutosaveName }
     /// A fresh profile never registers or unregisters the real login item (SMAppService is per app, not per profile).
     public var allowsLoginItem: Bool { !isFresh }
+    /// A fresh profile starts with "open at login" unticked: it never registers the login item, so the first-run
+    /// page must not ask the person (or a walkthrough driver) to untick a persistent launch setting to finish.
+    /// nil on the real profile keeps the product default. Only a brand-new settings file takes it.
+    public var firstRunOpenAtLogin: Bool? { isFresh ? false : nil }
     /// The engine's config and cache folders under a fresh profile (cli/internal/profile mirrors these).
     public var engineConfig: URL? { root?.appendingPathComponent("engine/config", isDirectory: true) }
     public var engineCache: URL? { root?.appendingPathComponent("engine/cache", isDirectory: true) }

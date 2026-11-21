@@ -181,7 +181,8 @@ enum FoundationPreferenceFile {
         } catch { _ = unlinkat(parent, name, 0); throw error }
     }
     static func open(_ location: FoundationPreferenceLocation, rowIDMap: [String: String] = [:],
-                     defaultLanguage: SettingsLanguage? = nil, hooks: Hooks = .init()) throws -> Opened {
+                     defaultLanguage: SettingsLanguage? = nil, defaultOpenAtLogin: Bool? = nil,
+                     hooks: Hooks = .init()) throws -> Opened {
         if let fd = try directory(location, create: false) {
             defer { Darwin.close(fd) }
             if let value = try existing(read(fd, "settings.json", limit: maximumBytes), location: location, identity: identity(fd)) { return value }
@@ -204,9 +205,13 @@ enum FoundationPreferenceFile {
             var initialBytes = candidate.document
             // Only a brand-new default gets the OS language. A migrated or
             // existing choice is never replaced by a later system preference.
-            if candidate.selection.settings == .defaults, let defaultLanguage {
-                document.settings.language = defaultLanguage
-                document.settings.followsSystemLanguage = true
+            if candidate.selection.settings == .defaults, defaultLanguage != nil || defaultOpenAtLogin != nil {
+                if let defaultLanguage {
+                    document.settings.language = defaultLanguage
+                    document.settings.followsSystemLanguage = true
+                }
+                // A brand-new default only; a saved choice either way is never replaced.
+                if let defaultOpenAtLogin { document.settings.openAtLogin = defaultOpenAtLogin }
                 initialBytes = try document.encoded()
             }
             let temporary = try stage(initialBytes, in: fd); defer { _ = unlinkat(fd, temporary, 0) }
