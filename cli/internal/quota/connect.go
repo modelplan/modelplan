@@ -388,6 +388,12 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 	if !consent.ValidTool(tool) {
 		return errors.New("invalid tool")
 	}
+	if tool == "codex" {
+		// Sampling 11-20 S1 follow-up: disconnecting Codex or erasing any of its scopes leaves
+		// nothing decoded from its rollouts in memory, and voids the memo writes of scans begun
+		// before (even when ModelPlan has no observed cache yet).
+		forgetCodexRollouts()
+	}
 	observed := filepath.Join(p.Cache, "observed")
 	if _, err := os.Stat(observed); os.IsNotExist(err) {
 		return nil
