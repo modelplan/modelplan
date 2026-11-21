@@ -119,19 +119,6 @@ import AppKit
     }
     private func divider() { fullWidth(SettingsGrid.divider()) }
 
-    /// The small column titles above the first row, on the same widths as the cells below.
-    private func columnHeader() {
-        let lead = NSView(); lead.translatesAutoresizingMaskIntoConstraints = false
-        lead.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let order = SettingsGrid.headerLabel(SettingsWords.text("Order", "顺序", language), width: SettingsGrid.orderColumns, alignment: .center)
-        let views: [NSView] = [lead,
-            SettingsGrid.headerLabel(SettingsWords.text("Alias", "别名", language), width: SettingsGrid.alias, alignment: .left),
-            SettingsGrid.headerLabel(SettingsWords.text("Show", "显示", language), width: SettingsGrid.toggle, alignment: .center), order]
-        let line = NSStackView(views: views); line.orientation = .horizontal; line.alignment = .centerY; line.spacing = SettingsGrid.gap
-        line.setAccessibilityIdentifier("subscriptions.columns")
-        fullWidth(line)
-    }
-
     private func build() {
         let model = configuration.model
         heading(.init("My subscriptions", "我的订阅"), id: "subscriptions.added.heading")
@@ -139,7 +126,7 @@ import AppKit
                    "顺序同时决定额度挂件的圈和驾驶舱的列。别名只改显示名。"), id: "subscriptions.added.note")
         if model.added.isEmpty {
             note(.init("Nothing is being read yet. Add a detected tool below.", "目前没有在读取的订阅，可以从下面添加已检测到的工具。"), id: "subscriptions.added.empty")
-        } else { columnHeader() }
+        }
         for (index, row) in model.added.enumerated() {
             addedRow(row)
             if index < model.added.count - 1 { divider() }
@@ -213,12 +200,12 @@ import AppKit
             column.addArrangedSubview(field); wrappingLabels.append(field)
             field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
-        column.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        column.setContentHuggingPriority(.init(1), for: .horizontal)
         column.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let line = SubscriptionDropRow(frame: .zero)
         for view in [mark, column] + cells { line.addArrangedSubview(view) }
         line.rowID = row.id
-        line.orientation = .horizontal; line.alignment = .centerY; line.spacing = SettingsGrid.gap
+        line.orientation = .horizontal; line.alignment = .centerY; line.distribution = .fill; line.spacing = SettingsGrid.gap
         line.heightAnchor.constraint(greaterThanOrEqualToConstant: SettingsGrid.rowHeight).isActive = true
         line.setAccessibilityIdentifier(prefix + "row." + row.id)
         rowViews[row.id] = line

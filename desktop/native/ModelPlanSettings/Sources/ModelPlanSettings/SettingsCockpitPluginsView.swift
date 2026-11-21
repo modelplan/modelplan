@@ -137,14 +137,14 @@ import AppKit
         summary.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         wrapping.append(summary)
         let column = NSStackView(views: [name, summary]); column.orientation = .vertical; column.alignment = .leading; column.spacing = 2
-        column.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        column.setContentHuggingPriority(.init(1), for: .horizontal)
         column.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         summary.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         let main = SubscriptionDropRow(frame: .zero)
         main.dragType = Self.dragType; main.rowID = plugin.id
         let cells: [NSView] = [SettingsGrid.cell(icon, width: SettingsGrid.mark), column, SettingsGrid.spacer(SettingsGrid.alias), on, handle, up, down]
         for view in cells { main.addArrangedSubview(view) }
-        main.orientation = .horizontal; main.alignment = .centerY; main.spacing = SettingsGrid.gap
+        main.orientation = .horizontal; main.alignment = .centerY; main.distribution = .fill; main.spacing = SettingsGrid.gap
         main.heightAnchor.constraint(greaterThanOrEqualToConstant: SettingsGrid.rowHeight).isActive = true
         if !busy {
             main.onDrop = { [weak self] source, target in
@@ -191,7 +191,7 @@ import AppKit
         flexible.setContentCompressionResistancePriority(.init(1), for: .horizontal)
         subViews += [flexible, label(pin.title), pin, SettingsGrid.spacer(SettingsGrid.orderColumns)]
         let sub = NSStackView(views: subViews)
-        sub.orientation = .horizontal; sub.alignment = .centerY; sub.spacing = SettingsGrid.gap
+        sub.orientation = .horizontal; sub.alignment = .centerY; sub.distribution = .fill; sub.spacing = SettingsGrid.gap
         sub.setAccessibilityIdentifier(base + ".options")
         let rowColumn = NSStackView(views: [main, sub])
         rowColumn.orientation = .vertical; rowColumn.alignment = .leading; rowColumn.spacing = 2
