@@ -109,6 +109,8 @@ public actor ProcessEngineClient: EngineClient {
     var seenCredentialOperations: Set<String> = []
     var credentialRequests: [String: CredentialWaiting] = [:]
     var credentialWorkers: [String: CredentialWorker] = [:]
+    /// WP-17: public calls answered by the session's own bootstrap request instead of a second one (test seam).
+    var coalescedRequests = 0
 
     public init(configuration: EngineClientConfiguration, initialFloor: EngineConsentFloor? = nil,
                 credentialAgent: (any CredentialAgent)? = nil,
@@ -452,6 +454,12 @@ public actor ProcessEngineClient: EngineClient {
         if entry.purpose == .initialize { initializationFailed(id, error: error) }
         if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, .staleValue)); scheduleEpochProbeRetry() }
     }
+    /// A cancelled caller that was answered by a bootstrap request lets it go on without it.
+    func detachCoalesced(_ key: String) {
+        guard let continuation = pending[key]?.continuation else { return }
+        pending[key]?.continuation = nil
+        continuation.resume(throwing: EngineClientError.interrupted(.cancelled))
+    }
     func cancelRequest(_ key: String) {
         guard let entry = pending[key] else { return }
         if entry.sent { sendCancel(entry.id) }
@@ -491,6 +499,21 @@ public actor ProcessEngineClient: EngineClient {
         guard bound > .zero else { throw EngineClientError.deadlineExceeded(.notSent) }
         if let refresh = params as? WireRefreshRequestParams, refresh.member != nil, !capabilities.contains("memberRefreshV1") {
             throw EngineClientError.unsupportedCapability
+        }
+        // WP-17: right after start() the session's own bootstrap has already asked for the rows and the consent facts.
+        // A caller asking the same thing with no deadline of its own (EngineDockMenuComposition.start) waits for that
+        // request's completion instead of sending a duplicate and waiting for its delivery too. Same request, same
+        // ordered delivery and consent fence; a cancelled caller only detaches, the bootstrap keeps going.
+        if timeout == nil, grant == nil, prepared == nil, method == "rows/subscribe" || method == "consent/get",
+           let key = pending.first(where: { $0.value.method == method && $0.value.purpose == .bootstrap && $0.value.continuation == nil })?.key {
+            let cancellation = RequestCancellation()
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    pending[key]?.continuation = continuation
+                    coalescedRequests += 1
+                    cancellation.install { [weak self] in Task { await self?.detachCoalesced(key) } }
+                }
+            } onCancel: { cancellation.cancel() }
         }
         let parameters = try wireJSON(params)
         if let grant, let userAction { try registerIntent(grant, action: userAction) }
