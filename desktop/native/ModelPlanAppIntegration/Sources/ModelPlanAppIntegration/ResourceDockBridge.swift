@@ -65,10 +65,16 @@ public enum ResourceDockBridge {
     private let base: any DockContentProvider
     /// Set by the host on every admitted redraw; nil hides the ring (plugin off or no sample yet).
     public var resourceInput: DockInstrumentInput?
+    /// B9 (owner 11-21): whether the base has admitted content now. Between a content clear and the next install
+    /// (a rows refresh, a deadline replacement) the base is empty on purpose; the ring alone would then be painted and
+    /// the subscription rings would vanish for a moment. nil = always admitted.
+    var baseAdmitted: (() -> Bool)?
     public init(base: any DockContentProvider) { self.base = base }
     public func makeContent(_ context: DockContentContext) -> DockContent {
         let content = base.makeContent(context)
-        guard let extra = resourceInput else { return content }
+        // B9: no admitted subscription content, no ring: the widget is never redrawn with the plugin ring alone in a
+        // replacement gap. Invariant: a shown subscription ring is removed only when its row is really gone.
+        guard let extra = resourceInput, baseAdmitted?() ?? true else { return content }
         let s = content.snapshot
         let snapshot = CommunityDockSnapshot(inputs: s.inputs.filter { $0.id != extra.id } + [extra], subscriptions: s.subscriptions,
             presentationRows: s.presentationRows, unavailableReason: s.unavailableReason,
@@ -109,13 +115,17 @@ public enum ResourceDockBridge {
         guard provider.resourceInput != nil else { return }
         refreshCard()
     }
+    /// B9: no widget redraw while the subscription content is between a clear and its next install; that install
+    /// redraws with the latest ring. A redraw in the gap painted the plugin ring alone and the subscription rings
+    /// vanished for a moment.
+    private var baseAdmitted: Bool { provider.baseAdmitted?() ?? true }
     private func redraw(_ face: ResourceFace) {
         provider.resourceInput = ResourceDockBridge.input(face: face, card: card(face), language: language())
-        refresh()
+        if baseAdmitted { refresh() }
     }
     /// Plugin state, cockpit column and widget visibility; off removes the ring at once.
     public func setVisibility(_ v: ResourceVisibility) {
         sampler.setVisibility(v)
-        if !v.pluginEnabled, provider.resourceInput != nil { provider.resourceInput = nil; refresh() }
+        if !v.pluginEnabled, provider.resourceInput != nil { provider.resourceInput = nil; if baseAdmitted { refresh() } }
     }
 }

@@ -106,6 +106,61 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         XCTAssertEqual(provider.makeContent(context).snapshot.inputs.map(\.id), ["codex", "zai"])
     }
 
+    /// B9 (owner 11-21, regression from the plugin ring): a subscription ring, once shown, is removed only when its
+    /// row is really gone. Between a content clear and its install (a rows refresh, a deadline replacement) the base is
+    /// empty on purpose; a plugin redraw there painted the Resources ring alone and the Codex ring vanished for a moment.
+    /// Fails before: the gap redrew the widget and the content was the plugin ring alone.
+    func testAPluginRedrawInAReplacementGapNeverPaintsTheRingAlone() throws {
+        final class Reader: ResourceReader {
+            var cpu: Double = 22
+            func read(uptime: TimeInterval, unixMs: Int64) -> ResourceSample? { resourceSample(at: uptime, cpu: cpu) }
+        }
+        var now: TimeInterval = 0
+        var timers: [(deadline: TimeInterval, fire: @MainActor () -> Void)] = []
+        let reader = Reader()
+        let sampler = ResourceSampler(reader: reader, clock: { now }, scheduler: { delay, _, fire in
+            timers.append((now + delay, fire)); let i = timers.count - 1
+            return ResourceTimerHandle { timers[i].fire = {} }
+        })
+        func run(until end: TimeInterval) {
+            while let i = timers.indices.filter({ timers[$0].deadline <= end }).min(by: { timers[$0].deadline < timers[$1].deadline }) {
+                let t = timers[i]; timers[i].deadline = .infinity; now = max(now, t.deadline); t.fire()
+            }
+            now = end
+        }
+        // The composition's admitted cache with one subscription ring (the production base of the provider).
+        let cache = HostPairedContentCache()
+        cache.isCurrent = { true }
+        let codex = DockContent(snapshot: .init(inputs: [DockInstrumentInput(id: "codex", name: "Codex", windows: [])]), emptyText: "x")
+        let at = Date(timeIntervalSince1970: 1_795_000_000)
+        cache.install(codex, evaluatedAt: at)
+        let provider = ResourceDockContentProvider(base: cache)
+        provider.baseAdmitted = { [weak cache] in cache?.hasAdmittedContent == true }
+        let context = DockContentContext(snapshot: nil, diagnostics: .init(), now: at.addingTimeInterval(1))
+        var painted: [[String]] = []
+        let binding = ResourceWidgetBinding(sampler: sampler, provider: provider, language: { .chinese }) {
+            painted.append(provider.makeContent(context).snapshot.inputs.map(\.id))
+        }
+        binding.setVisibility(.init(pluginEnabled: true, columnShown: false, widgetShown: true, columnSetting: 5))
+        run(until: 0)
+        XCTAssertEqual(painted.last, ["codex", ResourceDockBridge.subscriptionID], "plugin update with admitted rows")
+        // A rows refresh clears the cache; a plugin update lands before the install.
+        cache.clear()
+        let before = painted.count
+        reader.cpu = 60
+        run(until: 10)
+        XCTAssertEqual(painted.count, before, "no widget redraw in the replacement gap")
+        XCTAssertFalse(provider.makeContent(context).snapshot.inputs.map(\.id) == [ResourceDockBridge.subscriptionID],
+                       "the plugin ring is never the whole widget while the subscription content is being replaced")
+        // The install redraws with both rings and the latest plugin reading.
+        cache.install(codex, evaluatedAt: at)
+        let content = provider.makeContent(context)
+        XCTAssertEqual(content.snapshot.inputs.map(\.id), ["codex", ResourceDockBridge.subscriptionID])
+        XCTAssertEqual(content.snapshot.inputs.last?.pluginRing?.inner ?? 0, 0.60, accuracy: 0.001)
+        // Every painted widget kept the subscription ring.
+        XCTAssertTrue(painted.allSatisfy { $0.contains("codex") }, "\(painted)")
+    }
+
     func testBindingRedrawsFromTheSamplerAndDropsTheRingWhenOff() throws {
         final class Reader: ResourceReader {
             var cpu: Double = 22
