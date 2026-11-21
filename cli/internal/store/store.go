@@ -56,6 +56,9 @@ func Locate() (*Store, error) {
 
 func (s *Store) statePath() string { return filepath.Join(s.Dir, "state.json") }
 
+// StatePath is where State is kept (WP-17: the engine watches it to know the cache changed).
+func (s *Store) StatePath() string { return s.statePath() }
+
 // State returns the zero State when nothing has been synced yet.
 func (s *Store) State() (State, error) {
 	var st State

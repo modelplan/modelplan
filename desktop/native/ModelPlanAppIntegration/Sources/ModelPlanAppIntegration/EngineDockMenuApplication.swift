@@ -786,6 +786,14 @@ struct StatusNoticePresentation {
     func reopenSetup() async { await firstRunFlow?.reopenSetup() }
     /// The same restore used by the real launch; it never grants access itself.
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
+    /// WP-17: starts the engine client for a profile whose setup is done, without waiting for it.
+    func startEngineAlongsidePreparation() async {
+        guard !terminating, lifecycleController == nil,
+              await foundationStore.snapshot().preferences.onboarding.completed else { return }
+        LaunchTimingLog.shared.mark("engine-early-start")
+        let client = composition.client
+        Task { _ = try? await client.start() }
+    }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         LaunchTimingLog.shared.mark("did-finish-launching")
         // Spec 5.3 D: off unless MODELPLAN_MAIN_THREAD_HANG_WATCHDOG=1 (or the debug default); never in test runs.
@@ -827,6 +835,11 @@ struct StatusNoticePresentation {
         LaunchTimingLog.shared.mark("status-item")
         watchStatusItemVisibility()
         Task {
+            // WP-17 (Fable perf plan 5.1 row 2, CKP-SHELL-54): the engine no longer waits for the permission queries in
+            // prepare(); for a set-up profile its process starts and handshakes alongside them. Nothing is shown from it
+            // before the lifecycle starts below, which takes this session over (start() returns it). A first launch keeps
+            // E1's order: the guide window first, the reader behind it.
+            await startEngineAlongsidePreparation()
             await prepare(); guard !terminating else { return }
             LaunchTimingLog.shared.mark("prepared")
             // Owner 11-12 (E1): the guide window comes first, from the local mark; the reader starts behind it.

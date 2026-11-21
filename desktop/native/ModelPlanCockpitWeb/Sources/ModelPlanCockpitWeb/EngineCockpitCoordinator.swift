@@ -173,7 +173,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       else { stopWatchingMemoryPressure(); releaseWarmPage() }
     }
   }
-  public var prewarmDelay: Duration = .milliseconds(500)
+  /// WP-17 (Fable perf plan 5.1 row 2, CKP-SHELL-54): the hidden page is built as soon as there is an engine session; it no
+  /// longer waits 0.5 s. After a close the next one waits `rebuildAfterCloseDelay`, so the close's last steps run first.
+  public var prewarmDelay: Duration = .zero
+  public var rebuildAfterCloseDelay: Duration = .milliseconds(100)
   private var prewarmTask: Task<Void, Never>?
   /// Hidden pages that ended on their own (a failure, not a release or a clear) since the last open.
   /// Three stop prewarming until the next open, so a page that cannot load is not rebuilt in a loop.
@@ -389,7 +392,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         self.warmFailures += 1
         CockpitTimingLog.record("prewarm ended failures=\(self.warmFailures)")
       }
-      self.schedulePrewarm()
+      self.schedulePrewarm(after: self.rebuildAfterCloseDelay)
     }
     return newPage
   }
@@ -431,12 +434,12 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     trace("query.released")
     refresh()
   }
-  private func schedulePrewarm() {
+  private func schedulePrewarm(after delay: Duration? = nil) {
     guard prewarmEnabled, !memoryPressured, warmFailures < 3, page == nil, prewarmTask == nil,
       client != nil, delivery != nil else { return }
-    let delay = prewarmDelay
+    let delay = delay ?? prewarmDelay
     prewarmTask = Task { @MainActor [weak self] in
-      do { try await Task.sleep(for: delay) } catch { return }
+      if delay > .zero { do { try await Task.sleep(for: delay) } catch { return } }
       guard let self, !Task.isCancelled else { return }
       self.prewarmTask = nil
       self.prewarmNow()

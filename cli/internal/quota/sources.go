@@ -361,6 +361,7 @@ func readCodex(home, thread string) ([]Account, SourceStatus) {
 	}
 	root := filepath.Join(home, "sessions")
 	files := CodexRollouts(home, thread, codexFiles)
+	keepCodexRollouts(files)
 	own := ""
 	if thread = clip(thread); thread != "" {
 		own = findThread(root, thread)
@@ -597,13 +598,38 @@ func originOf(raw json.RawMessage) string {
 
 // scanRollout reads the first line (session_meta) and the file's tail. It keeps the latest
 // snapshot per limit id and the latest turn context; it decodes nothing else from the log.
+// WP-17: what a file holds is decoded once while the file is unchanged (codexRolloutEvents);
+// every call builds its own rollout from it, so no caller shares values with another.
 func scanRollout(path string) *rollout {
-	fh, err := os.Open(path)
-	if err != nil {
+	scan, ok := codexRolloutEvents(path)
+	if !ok {
 		return nil
 	}
+	return buildRollout(path, scan)
+}
+
+// rolloutScan is what one rollout file says, decoded and in file order: its origin and the
+// turn contexts and rate-limit snapshots of its tail. It is never changed after it is made.
+type rolloutScan struct {
+	origin string
+	events []rolloutEvent
+}
+
+type rolloutEvent struct {
+	at      time.Time
+	harness *Harness     // turn_context: model, effort and tier only
+	limits  *codexLimits // token_count
+}
+
+// readRolloutEvents reads the first line (session_meta) and the file's tail.
+func readRolloutEvents(path string) (rolloutScan, bool) {
+	fh, err := os.Open(path)
+	if err != nil {
+		return rolloutScan{}, false
+	}
 	defer fh.Close()
-	r := &rollout{path: path, windows: map[string]Window{}}
+	rolloutReads.Add(1)
+	var scan rolloutScan
 	head := bufio.NewReaderSize(io.LimitReader(fh, codexHead), 64<<10)
 	if first, err := head.ReadBytes('\n'); err == nil || err == io.EOF {
 		var l rolloutLine
@@ -612,7 +638,7 @@ func scanRollout(path string) *rollout {
 				Source json.RawMessage `json:"source"`
 			}
 			if json.Unmarshal(l.Payload, &meta) == nil && len(meta.Source) > 0 {
-				r.origin = originOf(meta.Source)
+				scan.origin = originOf(meta.Source)
 			}
 		}
 	}
@@ -649,10 +675,8 @@ func scanRollout(path string) *rollout {
 				if h.Effort == "" {
 					h.Effort = clip(tc.Mode.Settings.Effort)
 				}
-				t := ts.UTC()
-				h.ObservedAt = &t
 				if h.Model != "" || h.Effort != "" {
-					r.harness = &h
+					scan.events = append(scan.events, rolloutEvent{at: ts.UTC(), harness: &h})
 				}
 			}
 		case "event_msg":
@@ -663,39 +687,63 @@ func scanRollout(path string) *rollout {
 			if json.Unmarshal(l.Payload, &ev) != nil || ev.Type != "token_count" || ev.RateLimits == nil || ts.IsZero() {
 				continue
 			}
-			rl := ev.RateLimits
-			r.observed = ts.UTC()
-			r.pool = codexLimit(rl.LimitID, rl.LimitName) // the allowance this thread's latest turn drew from
-			if p := clip(rl.PlanType); p != "" {
-				r.plan = p
+			scan.events = append(scan.events, rolloutEvent{at: ts.UTC(), limits: ev.RateLimits})
+		}
+	}
+	return scan, true
+}
+
+// buildRollout replays a scan into a new rollout. Every pointer it hands out is its own copy.
+func buildRollout(path string, scan rolloutScan) *rollout {
+	r := &rollout{path: path, origin: scan.origin, windows: map[string]Window{}}
+	own := func(v *float64) *float64 {
+		if v == nil {
+			return nil
+		}
+		x := *v
+		return &x
+	}
+	for _, ev := range scan.events {
+		ts := ev.at
+		if ev.harness != nil {
+			h := *ev.harness
+			t := ts
+			h.ObservedAt = &t
+			r.harness = &h
+			continue
+		}
+		rl := ev.limits
+		r.observed = ts
+		r.pool = codexLimit(rl.LimitID, rl.LimitName) // the allowance this thread's latest turn drew from
+		if p := clip(rl.PlanType); p != "" {
+			r.plan = p
+		}
+		if c := rl.Credits; c != nil {
+			r.credits = creditsFrom(c.Has, c.Unlimited, c.Balance, ts) // the latest turn's say, none included
+		}
+		for _, cw := range []*codexWindow{rl.Primary, rl.Secondary} {
+			if cw == nil {
+				continue
 			}
-			if c := rl.Credits; c != nil {
-				r.credits = creditsFrom(c.Has, c.Unlimited, c.Balance, ts) // the latest turn's say, none included
+			w := Window{UsedPercent: own(finite(cw.UsedPercent, 0, 1000)), ResetMode: "fixed", ObservedAt: ts, Limit: r.pool}
+			if cw.WindowMinutes != nil && *cw.WindowMinutes > 0 && *cw.WindowMinutes < 1e6 {
+				w.WindowMinutes = *cw.WindowMinutes
 			}
-			for _, cw := range []*codexWindow{rl.Primary, rl.Secondary} {
-				if cw == nil {
-					continue
-				}
-				w := Window{UsedPercent: finite(cw.UsedPercent, 0, 1000), ResetMode: "fixed", ObservedAt: ts.UTC(), Limit: r.pool}
-				if cw.WindowMinutes != nil && *cw.WindowMinutes > 0 && *cw.WindowMinutes < 1e6 {
-					w.WindowMinutes = *cw.WindowMinutes
-				}
-				w.Kind = kindOf(w.WindowMinutes)
-				switch {
-				case cw.ResetsAt != nil:
-					w.ResetsAt = unixTime(cw.ResetsAt)
-				case cw.ResetsIn != nil && *cw.ResetsIn >= 0:
-					t := ts.Add(time.Duration(*cw.ResetsIn) * time.Second).UTC()
-					w.ResetsAt = &t
-				}
-				key := w.Limit + "/" + w.Kind + "/" + itoa(w.WindowMinutes)
-				if prev, seen := r.windows[key]; !seen {
-					r.order = append(r.order, key)
-				} else {
-					w = withHistory(w, prev)
-				}
-				r.windows[key] = w
+			w.Kind = kindOf(w.WindowMinutes)
+			switch {
+			case cw.ResetsAt != nil:
+				w.ResetsAt = unixTime(cw.ResetsAt)
+			case cw.ResetsIn != nil && *cw.ResetsIn >= 0:
+				t := ts.Add(time.Duration(*cw.ResetsIn) * time.Second).UTC()
+				w.ResetsAt = &t
 			}
+			key := w.Limit + "/" + w.Kind + "/" + itoa(w.WindowMinutes)
+			if prev, seen := r.windows[key]; !seen {
+				r.order = append(r.order, key)
+			} else {
+				w = withHistory(w, prev)
+			}
+			r.windows[key] = w
 		}
 	}
 	if r.observed.IsZero() && r.harness == nil {
