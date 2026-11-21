@@ -10,6 +10,19 @@ public enum CockpitLaunchRackTiming {
   public static let rackOpen: TimeInterval = 0.25
   /// ...then the cockpit comes out from under the menu bar while the rest of the rack extends behind it.
   public static let cockpitOpen: TimeInterval = 0.25
+  /// D299 (amends D188, WP-17, CKP-SHELL-53): the two phases overlap. The rack still leads; the cockpit starts this long
+  /// after the click, before the rack's visible part is out, so the whole open takes `overlappedOpen` (about 0.37 s)
+  /// instead of 0.25 + 0.25 s.
+  public static let cockpitOpenDelay: TimeInterval = 0.12
+  public static var overlappedOpen: TimeInterval { cockpitOpenDelay + cockpitOpen }
+  /// D299: at `elapsed` seconds into a rack-first open, the rack's extension (0-1) and the cockpit's own progress (0-1).
+  /// The rack's visible part (its first third) extends over `rackOpen`; the cockpit's progress also carries the rest of
+  /// the rack behind it, so the rack is fully out exactly when the cockpit lands. Both only grow, without a jump.
+  public static func openProgress(elapsed: TimeInterval) -> (rack: CGFloat, cockpit: CGFloat) {
+    let visible = CGFloat(min(1, max(0, elapsed / rackOpen)))
+    let cockpit = CGFloat(min(1, max(0, (elapsed - cockpitOpenDelay) / cockpitOpen)))
+    return (min(1, visible / 3 + 2.0 / 3 * cockpit), cockpit)
+  }
   /// The cockpit starts this far above its attached place (under the menu bar) and slides down.
   public static let openRise: CGFloat = 60
   /// A full extend or retract of the rack (tear-off, put back).

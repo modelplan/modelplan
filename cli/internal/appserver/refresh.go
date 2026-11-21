@@ -38,6 +38,10 @@ type RefreshConfig struct {
 	Observe func(time.Time) []ObserveResult
 	// ObserveEvery overrides the 30-second observation cadence (tests); zero keeps it.
 	ObserveEvery time.Duration
+	// ObserveAfter holds the first observation back this long after the automatic start, so its
+	// walk of the log directories does not run with the first views and reads (WP-17). The app
+	// sets ObserveFirstDelay; zero observes at once.
+	ObserveAfter time.Duration
 	Now          func() time.Time
 	Plan         func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)
 }

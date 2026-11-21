@@ -11,7 +11,7 @@ import (
 
 func detection(st *store.Store) detect.Report {
 	cat, source := detect.Fallback(), "built-in"
-	if d, _, err := publication.Load(st); err == nil && d.Catalogue != nil {
+	if d, _, err := publication.LoadShared(st); err == nil && d.Catalogue != nil { // read only (WP-17)
 		cat, source = d.Catalogue, "publication"
 	}
 	return detect.Run(cat, detect.Local(), version, source)

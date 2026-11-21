@@ -64,7 +64,10 @@ type SharedBackend struct {
 	config        SharedConfig
 	resetMemo     *resetevents.Memo
 	changes       chan struct{}
-	once          sync.Once
+	// changeSeq counts every change notification; a view built under one count is not reused
+	// after the next (WP-17).
+	changeSeq atomic.Uint64
+	once      sync.Once
 	// Bound by the constructor before Serve. Credentials remain in the
 	// scheduler's one-use memory callback and are never persisted here.
 	CredentialSink  CredentialReceiver
@@ -105,6 +108,7 @@ func (b *SharedBackend) Capabilities() []string {
 	return caps
 }
 func (b *SharedBackend) notify() {
+	b.changeSeq.Add(1)
 	select {
 	case b.changes <- struct{}{}:
 	default:
@@ -144,6 +148,18 @@ func (b *SharedBackend) Publish(ctx context.Context, stamp Stamp, enqueue func()
 		}
 	}
 	return nil
+}
+
+// CurrentStamp is the consent fence as it is now; no view is built (WP-17).
+func (b *SharedBackend) CurrentStamp(ctx context.Context) (Stamp, error) {
+	if err := ctx.Err(); err != nil {
+		return Stamp{}, err
+	}
+	stamp := stampOf(consent.Capture().Fence())
+	if stamp.Epoch == "" {
+		return Stamp{}, ProtocolError{wire.CodeInternal}
+	}
+	return stamp, nil
 }
 
 func (b *SharedBackend) Get(ctx context.Context) (View, error) {
@@ -555,6 +571,77 @@ func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFil
 	return stamps
 }
 
+// watchedStamps is the metadata of every file whose change makes a new snapshot: the consent
+// store, the reader state, the local file, the observed captures and the permitted Codex rollouts.
+func watchedStamps(paths quota.Paths, codexStamps []localFileStamp) []fileStamp {
+	files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
+	current := make([]fileStamp, 0, len(files)+len(codexStamps))
+	for _, file := range files {
+		info, err := os.Stat(file)
+		stamp := fileStamp{}
+		if err == nil {
+			stamp = fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}
+		}
+		current = append(current, stamp)
+	}
+	for _, stamp := range codexStamps {
+		observed := stamp.fileStamp
+		observed.path = stamp.path
+		current = append(current, observed)
+	}
+	return current
+}
+
+// viewReuseWindow bounds how long a view may answer requests in place of a new one, about the
+// watch loop's own poll interval, so nothing it does not watch can be older than that.
+const viewReuseWindow = 250 * time.Millisecond
+
+// viewToken is what a view depends on that can be checked without building it (WP-17).
+type viewToken struct {
+	seq       uint64
+	stamp     Stamp
+	inputs    []fileStamp
+	detection detect.Report
+	at        time.Time // monotonic
+}
+
+func (b *SharedBackend) captureViewToken() viewToken {
+	t := viewToken{seq: b.changeSeq.Load(), at: time.Now()}
+	admission := consent.Capture()
+	t.stamp = stampOf(admission.Fence())
+	t.inputs = watchedStamps(b.paths(admission), b.codexLocalStamps(admission))
+	t.detection = b.config.Detect()
+	return t
+}
+
+// ViewToken is taken just before a Get (Server's ViewReuse).
+func (b *SharedBackend) ViewToken() any { return b.captureViewToken() }
+
+// ViewCurrent: the view built after token is what Get would build now. It holds only within
+// viewReuseWindow, with no change notification since, the same consent fence, the same watched
+// files (checked now, not at the watch loop's next poll) and the same detected tools.
+func (b *SharedBackend) ViewCurrent(token any) bool {
+	held, ok := token.(viewToken)
+	if !ok || held.stamp.Epoch == "" || time.Since(held.at) >= viewReuseWindow || b.config.LaterInstalled != nil && b.laterPending(held.detection) {
+		return false
+	}
+	now := b.captureViewToken()
+	return now.seq == held.seq && now.stamp == held.stamp && reflect.DeepEqual(now.inputs, held.inputs) && reflect.DeepEqual(now.detection, held.detection)
+}
+
+// laterPending: a later-installed tool still owes its D240 grant, which only a Get applies.
+func (b *SharedBackend) laterPending(detection detect.Report) bool {
+	if b.config.ReadOnly {
+		return false
+	}
+	later := b.config.LaterInstalled(detection)
+	if len(later) == 0 {
+		return false
+	}
+	state := consent.Capture().State()
+	return len(consent.AutoLocalLogScopes(state, later)) > 0 || len(consent.AutoLaterClosedScopes(state, consent.LaterLocalLogScopes(state, later))) > 0
+}
+
 func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 	b.once.Do(func() {
 		if b.config.Activity != nil {
@@ -603,21 +690,7 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 						codexStamps = b.codexLocalStamps(admission)
 						nextCodexCheck = now.Add(time.Second)
 					}
-					files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
-					current := make([]fileStamp, 0, len(files))
-					for _, file := range files {
-						info, err := os.Stat(file)
-						stamp := fileStamp{}
-						if err == nil {
-							stamp = fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}
-						}
-						current = append(current, stamp)
-					}
-					for _, stamp := range codexStamps {
-						observed := stamp.fileStamp
-						observed.path = stamp.path
-						current = append(current, observed)
-					}
+					current := watchedStamps(paths, codexStamps)
 					if !reflect.DeepEqual(last, current) || (!todayDeadline.IsZero() && !now.Before(todayDeadline)) {
 						last = current
 						todayDeadline = nextAccountTodayDeadline(paths, admission, now)

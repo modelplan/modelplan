@@ -25,7 +25,7 @@ func loadCockpitPublication(ctx context.Context, st *store.Store) (*digest.Diges
 	if st == nil {
 		return nil, nil
 	}
-	d, _, err := publication.Load(st)
+	d, _, err := publication.LoadShared(st) // read only (WP-17)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

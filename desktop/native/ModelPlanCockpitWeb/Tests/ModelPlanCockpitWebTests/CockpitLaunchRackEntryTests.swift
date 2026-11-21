@@ -147,9 +147,10 @@ import XCTest
     XCTAssertEqual(failures, [])
   }
 
-  /// D186/D188: from the icon, the page is ordered in at the click (alpha 0, so it prepares) while the rack's visible part
-  /// extends for 0.25 s; then the cockpit comes out from under the bar for 0.25 s. Attached: 10 pt under the bar, the rack
-  /// hanging from the icon over the left shoulder. The close reverses it.
+  /// D186/D188 as amended by D299: from the icon, the page is ordered in at the click (alpha 0, so it prepares) while the
+  /// rack's visible part extends; the cockpit comes out from under the bar before the rack is out, and the whole open
+  /// takes about 0.37 s. Attached: 10 pt under the bar, the rack hanging from the icon over the left shoulder. The close
+  /// reverses it.
   func testIconOpenExtendsTheRackFirstThenTheCockpitAndTheCloseReverses() async throws {
     let fixture = try make()
     defer { fixture.page.discard() }
@@ -159,14 +160,12 @@ import XCTest
     let home = try XCTUnwrap(fixture.home)
     XCTAssertEqual(entrances, ["rack"])
     XCTAssertTrue(window.isVisible, "the page is prepared from the click")
-    XCTAssertEqual(window.alphaValue, 0, "but not shown while the rack extends")
+    XCTAssertEqual(window.alphaValue, 0, "but not shown at the click: the rack leads")
     XCTAssertNil(fixture.page.attachmentHintAnchor)
-    try await wait(150)
-    XCTAssertEqual(window.alphaValue, 0, "still the rack's turn")
+    try await wait(50)
     XCTAssertGreaterThan(fixture.page.verificationRack.ext, 0, "the rack's visible part is extending")
-    XCTAssertLessThanOrEqual(fixture.page.verificationRack.ext, 1.0 / 3 + 0.001, "only its visible part")
-    try await wait(250)
-    XCTAssertGreaterThan(window.alphaValue, 0, "then the cockpit comes out")
+    try await wait(170)
+    XCTAssertGreaterThan(window.alphaValue, 0, "the cockpit comes out while the rack still extends (D299)")
     try await wait(400)
     XCTAssertEqual(window.alphaValue, 1)
     XCTAssertEqual(window.frame, home, "settled at its attached place")

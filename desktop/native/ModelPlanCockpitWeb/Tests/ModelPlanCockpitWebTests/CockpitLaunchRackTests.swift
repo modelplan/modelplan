@@ -239,4 +239,31 @@ final class CockpitLaunchRackTests: XCTestCase {
       }
     }
   }
+  /// D299 (amends D188; WP-17, CKP-SHELL-53): the open from the icon overlaps the rack and cockpit phases. The rack leads
+  /// (nothing of the cockpit at the click), the cockpit starts before the rack's visible part is out, the whole open takes
+  /// about 0.37 s (within the 400 ms budget), and rack and cockpit only grow, ending together, fully out.
+  func testIconOpenOverlapsTheRackAndTheCockpitInAbout037Seconds() {
+    let total = CockpitLaunchRackTiming.overlappedOpen
+    XCTAssertEqual(total, 0.37, accuracy: 0.005)
+    XCTAssertLessThanOrEqual(total, 0.4, "the open animation budget")
+    XCTAssertGreaterThan(CockpitLaunchRackTiming.cockpitOpenDelay, 0, "the rack still leads")
+    XCTAssertLessThan(CockpitLaunchRackTiming.cockpitOpenDelay, CockpitLaunchRackTiming.rackOpen,
+                      "the cockpit starts before the rack's visible part is out")
+    let start = CockpitLaunchRackTiming.openProgress(elapsed: 0)
+    XCTAssertEqual(start.rack, 0); XCTAssertEqual(start.cockpit, 0)
+    let led = CockpitLaunchRackTiming.openProgress(elapsed: CockpitLaunchRackTiming.cockpitOpenDelay)
+    XCTAssertGreaterThan(led.rack, 0); XCTAssertEqual(led.cockpit, 0, "the cockpit has not started yet")
+    let overlap = CockpitLaunchRackTiming.openProgress(elapsed: 0.2)
+    XCTAssertGreaterThan(overlap.cockpit, 0, "both move at 0.2 s")
+    XCTAssertLessThan(overlap.rack, 1)
+    let end = CockpitLaunchRackTiming.openProgress(elapsed: total)
+    XCTAssertEqual(end.rack, 1, accuracy: 1e-9); XCTAssertEqual(end.cockpit, 1, accuracy: 1e-9)
+    var last = start
+    for step in 1...100 {
+      let now = CockpitLaunchRackTiming.openProgress(elapsed: total * Double(step) / 100)
+      XCTAssertGreaterThanOrEqual(now.rack, last.rack); XCTAssertGreaterThanOrEqual(now.cockpit, last.cockpit)
+      XCTAssertLessThan(now.rack - last.rack, 0.05, "no jump in the rack")
+      last = now
+    }
+  }
 }

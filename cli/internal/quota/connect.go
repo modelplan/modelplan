@@ -127,7 +127,7 @@ func (s QuotaSource) check() error {
 
 // Selections: the effective backend of every provider that is configured anywhere, sorted.
 var loadReaderCatalogue = func(cache string) *detect.Catalogue {
-	if d, _, err := publication.Load(&store.Store{Dir: cache}); err == nil {
+	if d, _, err := publication.LoadShared(&store.Store{Dir: cache}); err == nil { // read only (WP-17)
 		return d.Catalogue
 	}
 	return nil
@@ -324,6 +324,10 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	p.Admission = &admission
 	s, mode := admission.State(), admission.Mode()
 	r := Report{ConsentStoreEpoch: s.StoreEpoch, ConsentGeneration: s.Generation, SchemaVersion: 1, EvaluatedAt: now.UTC(), Note: note, Accounts: []Account{}}
+	if mode == consent.Off || !s.Allows("codex", consent.Local, mode) {
+		// WP-17: nothing decoded from Codex rollouts outlives the admission to read them.
+		forgetCodexRollouts()
+	}
 	if mode == consent.Off {
 		reason := "reader-privacy"
 		if consent.NewerStore() {

@@ -200,6 +200,30 @@ final class CoordinatorPrewarmTests: XCTestCase {
     }
   }
 
+  /// WP-17 (Fable perf plan 5.1 row 2, CKP-SHELL-54): with the app's defaults the hidden page is built as soon as the
+  /// session is known (no 0.5 s wait), and after a close the next one follows after about 0.1 s, not at once and not 0.5 s.
+  @MainActor func testPrewarmStartsAtOnceAndRebuildsShortlyAfterAClose() async throws {
+    var pages: [WarmProbe] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    XCTAssertEqual(coordinator.prewarmDelay, .zero)
+    XCTAssertEqual(coordinator.rebuildAfterCloseDelay, .milliseconds(100))
+    coordinator.prewarmEnabled = true
+    let start = ContinuousClock.now
+    await coordinator.consume(.context(delivery()))
+    await settle { pages.count == 1 }
+    XCTAssertEqual(pages.count, 1)
+    XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(400), "no half-second wait before the hidden page")
+    coordinator.open()
+    coordinator.requestClose()
+    let closed = ContinuousClock.now
+    XCTAssertEqual(pages.count, 1, "the close's last steps run before the next page is built")
+    await settle { pages.count == 2 }
+    XCTAssertEqual(pages.count, 2, "the next hidden page follows the close")
+    XCTAssertGreaterThanOrEqual(ContinuousClock.now - closed, .milliseconds(100))
+    await coordinator.shutdown(); await client.complete()
+  }
+
   /// CKP-SHELL-20: the app's coordinator builds one hidden page after the session is known, without
   /// telling the console a page opened, fills the last reply once, and the click shows that page.
   @MainActor func testPrewarmBuildsOneHiddenPageThatTheClickShowsWithTheLastReplyFirst() async throws {

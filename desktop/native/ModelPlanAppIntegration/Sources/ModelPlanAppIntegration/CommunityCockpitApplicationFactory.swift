@@ -242,7 +242,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     /// G3-42: hashing the helper and every bundle file took the main thread on each click. The app's identity and
     /// bundle are checked once per launch, away from the click; every served file is still checked again as it loads.
-    /// A click before this finishes checks on the spot, and a failure here is reported by that click.
+    /// WP-17 (CKP-SHELL-54): a click or the prewarm before this finishes waits for it (`awaitPreparedBundle`) instead of
+    /// checking again on the main thread; only a failed check is repeated by the click, which then reports it.
     func prepare() {
         guard verifiedBundle == nil, preparation == nil else { return }
         let bundle=self.bundle,pins=CommunityCockpitApplicationFactory.manifestPins
@@ -256,6 +257,12 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         }
     }
     private var preparation: Task<VerifiedCockpitBundle?,Never>?
+    /// WP-17: waits for the launch check if it is still running, so the page that follows is made from its result.
+    func awaitPreparedBundle() async {
+        guard verifiedBundle == nil, let preparation else { return }
+        let verified = await preparation.value
+        if verifiedBundle == nil { verifiedBundle = verified }
+    }
     nonisolated private static func admit(bundle: URL,pins: [String:String]) throws -> VerifiedCockpitBundle {
         guard CommunityConsentBundleIdentity.matches(bundle:bundle) || CommunityConsentBundleIdentity.matchesOwnerTest(bundle:bundle)
         else { throw CockpitBridgeError.unavailable }
@@ -293,7 +300,12 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
     private func beginPrewarm(_ snapshot: SettingsSnapshot) {
         if coordinator?.presented != true { adoptAppearance(snapshot, applied: prewarmApplied?()) }
-        coordinator?.prewarmEnabled = true
+        // WP-17: the prewarm no longer waits 0.5 s; it waits for the launch check of the bundle instead, so the hidden page
+        // never hashes the bundle on the main thread.
+        Task { @MainActor [weak self] in
+            await self?.awaitPreparedBundle()
+            self?.coordinator?.prewarmEnabled = true
+        }
     }
     func adoptAppearance(_ snapshot: SettingsSnapshot, applied: SettingsApplication?) {
         let theme:CockpitAppearance.Theme
@@ -645,6 +657,10 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
             guard !Task.isCancelled else { return }
             guard wantsVisible else { showTask = nil; return }
             owner.adoptAppearance(snapshot,applied:appliedSettings)
+            // WP-17 (CKP-SHELL-54): a click during the launch check of the bundle waits for it, off the main thread.
+            await owner.awaitPreparedBundle()
+            guard !Task.isCancelled else { return }
+            guard wantsVisible else { showTask = nil; return }
             // A prewarmed page was made before this open; it shows with the settings of this moment.
             if owner.coordinator?.presented == false { owner.coordinator?.updateAppearance(owner.appearance) }
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }

@@ -729,36 +729,39 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       openedFromIcon = entrance == .fromIcon
       occlusionReported = false
       if rackFirst {
-        // CKP-SHELL-33 (D186/D188): the page is prepared from the click (ordered in at alpha 0, so it loads, takes its
-        // visibility and asks for data) while the rack's visible part extends; then the cockpit comes out from under the
-        // menu bar with whatever it has (the last reply until the fresh one lands), never waiting for data.
+        // CKP-SHELL-33 (D186/D188, D299): the page is prepared from the click (ordered in at alpha 0, so it loads, takes its
+        // visibility and asks for data) while the rack's visible part extends; the cockpit comes out from under the menu bar
+        // before the rack is out, with whatever it has (the last reply until the fresh one lands), never waiting for data.
         entering = true; rackHidesInHome = true
         panel.alphaValue = 0
         panel.setFrame(target.offsetBy(dx: 0, dy: CockpitLaunchRackTiming.openRise), display: false)
         panel.makeKeyAndOrderFront(nil)
         rackExtension = 0; rackTarget = 0
-        runMotion(CockpitLaunchRackTiming.rackOpen, step: { [weak self] t in
+        // D299 (amends D188; WP-17, CKP-SHELL-53): one overlapped motion. The rack leads; the cockpit starts
+        // `cockpitOpenDelay` after the click, before the rack's visible part is out, and both end together.
+        let total = CockpitLaunchRackTiming.overlappedOpen
+        var cockpitStarted = false
+        runMotion(total, step: { [weak self] t in
           guard let self else { return }
-          self.rackExtension = t / 3; self.rackTarget = self.rackExtension
+          let progress = CockpitLaunchRackTiming.openProgress(elapsed: Double(t) * total)
+          self.rackExtension = progress.rack; self.rackTarget = self.rackExtension
+          guard progress.cockpit > 0, let panel = self.window, let home = self.layout?.frame else { return }
+          if !cockpitStarted {
+            cockpitStarted = true
+            // G3-123: the cockpit itself starts to show from here (window-visible is its alpha-0 order-in).
+            self.timing(self.transitionTiming.openStage("cockpit-motion-start"))
+          }
+          let c = progress.cockpit, eased = 1 - pow(1 - c, 3)
+          panel.alphaValue = min(1, c * 2.2)
+          panel.setFrame(home.offsetBy(dx: 0, dy: CockpitLaunchRackTiming.openRise * (1 - eased)), display: true)
         }, done: { [weak self] in
-          guard let self, self.window != nil else { return }
-          // G3-123: the rack is out; the cockpit itself starts to show from here (window-visible is its alpha-0 order-in).
-          self.timing(self.transitionTiming.openStage("cockpit-motion-start"))
-          self.runMotion(CockpitLaunchRackTiming.cockpitOpen, step: { [weak self] t in
-            guard let self, let panel = self.window, let home = self.layout?.frame else { return }
-            let eased = 1 - pow(1 - t, 3)
-            self.rackExtension = 1.0 / 3 + 2.0 / 3 * t; self.rackTarget = self.rackExtension
-            panel.alphaValue = min(1, t * 2.2)
-            panel.setFrame(home.offsetBy(dx: 0, dy: CockpitLaunchRackTiming.openRise * (1 - eased)), display: true)
-          }, done: { [weak self] in
-            guard let self, let panel = self.window else { return }
-            self.entering = false; self.rackHidesInHome = false
-            self.timing(self.transitionTiming.openStage("animation-complete"))
-            self.rackExtension = 1; self.rackTarget = 1
-            panel.alphaValue = 1
-            if let frame = self.layout?.frame { panel.setFrame(frame, display: true) }
-            self.onShellChanged?()
-          })
+          guard let self, let panel = self.window else { return }
+          self.entering = false; self.rackHidesInHome = false
+          self.timing(self.transitionTiming.openStage("animation-complete"))
+          self.rackExtension = 1; self.rackTarget = 1
+          panel.alphaValue = 1
+          if let frame = self.layout?.frame { panel.setFrame(frame, display: true) }
+          self.onShellChanged?()
         })
       } else {
         // The rack is simply there when the attached cockpit hangs under the icon.

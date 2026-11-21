@@ -41,6 +41,10 @@ type ObserveDecision struct {
 // observers write, so "nothing was written" can be told apart from "never ran".
 const ObserveLogFile = "observe-decisions.json"
 
+// ObserveFirstDelay is how long the app's engine waits after its automatic start before the
+// first ledger observation (WP-17, Fable perf plan 5.1 row 2: 2-3 s after the handshake).
+const ObserveFirstDelay = 2500 * time.Millisecond
+
 // observeBusyRetry: the reader lock was held by another process; a read in this one wakes the loop
 // as soon as it ends.
 const observeBusyRetry = 15 * time.Second
@@ -64,6 +68,15 @@ func validObserveResult(r ObserveResult) bool {
 func (s *RefreshScheduler) observeLoop() {
 	if s.config.Observe == nil || s.config.Offline || s.config.ReadOnly {
 		return
+	}
+	if s.config.ObserveAfter > 0 {
+		timer := time.NewTimer(s.config.ObserveAfter)
+		select {
+		case <-s.ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
 	}
 	for s.ctx.Err() == nil {
 		now := s.now()
