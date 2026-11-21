@@ -53,7 +53,7 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         let enabled = try XCTUnwrap(find("settings.cockpitPlugins.resources.enabled", NSButton.self))
         XCTAssertEqual(enabled.state, .on, "default on (D324)")
         let pin = try XCTUnwrap(find("settings.cockpitPlugins.resources.pinned", NSButton.self))
-        XCTAssertEqual(pin.title, "固定到第 1 页"); XCTAssertTrue(pin.isEnabled)
+        XCTAssertEqual(pin.title, "固定到驾驶舱第 1 页"); XCTAssertTrue(pin.isEnabled); XCTAssertEqual(pin.state, .off, "off by default (D371)")
         XCTAssertNil(find("settings.cockpitPlugins.resources.intervalSeconds", NSStepper.self), "choices, not a stepper")
         let choices = try XCTUnwrap(find("settings.cockpitPlugins.resources.intervalSeconds", NSSegmentedControl.self))
         XCTAssertEqual((0..<choices.segmentCount).map { choices.label(forSegment: $0) }, ["2 秒", "5 秒", "10 秒"])
@@ -196,7 +196,7 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         XCTAssertNotNil(find("settings.cockpitPlugins.placeholder.icon", NSImageView.self)?.image, "the plugin's line icon")
         XCTAssertEqual(find("settings.cockpitPlugins.placeholder.summary", NSTextField.self)?.stringValue,
                        "Shows the last number the app sent; for trying plugins.")
-        XCTAssertEqual(find("settings.cockpitPlugins.placeholder.pinned", NSButton.self)?.title, "Pin to page 1")
+        XCTAssertEqual(find("settings.cockpitPlugins.placeholder.pinned", NSButton.self)?.title, "Pin to cockpit page 1")
         let enabled = try XCTUnwrap(find("settings.cockpitPlugins.placeholder.enabled", NSButton.self))
         let pin = try XCTUnwrap(find("settings.cockpitPlugins.placeholder.pinned", NSButton.self))
         let stepper = try XCTUnwrap(find("settings.cockpitPlugins.placeholder.intervalSeconds", NSStepper.self))
