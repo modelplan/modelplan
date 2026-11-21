@@ -64,6 +64,7 @@ export const RUNNER_SMOKE_ON = [
 // is why the owner registers the runner under this opaque name; see docs/mac-ci.md.)
 export const RUNNER_SMOKE_NAME_STEP = Object.freeze({
   name: "Refuse a runner without an opaque name",
+  id: "guard",
   shell: "bash",
   run: [
     "# The runner must be registered as smoke-arm64-N: any other name may identify the host, so it is refused unprinted.",
@@ -138,10 +139,11 @@ export function runnerSmokeProblems(text) {
   }
   const parsed = parseWorkflowYaml(text);
   if (parsed.error) problems.push(`runner-smoke.yml must parse as YAML: ${parsed.error}`);
-  else for (const p of runnerSmokeYamlProblems(parsed.doc)) if (!problems.includes(p)) problems.push(p);
+  else if (!parsed.unavailable) for (const p of runnerSmokeYamlProblems(parsed.doc)) if (!problems.includes(p)) problems.push(p);
   // The runner name appears only after the opaque-name guard has opened the job, so the report may name the runner.
   const smokeSteps = (parsed.doc?.jobs && Object.values(parsed.doc.jobs)[0]?.steps) || [];
-  if (JSON.stringify(smokeSteps[0] ?? null) !== JSON.stringify(RUNNER_SMOKE_NAME_STEP)) problems.push("runner-smoke.yml must open with the exact opaque-runner-name guard step (smoke-arm64-N only)");
+  if (!parsed.unavailable && JSON.stringify(smokeSteps[0] ?? null) !== JSON.stringify(RUNNER_SMOKE_NAME_STEP)) problems.push("runner-smoke.yml must open with the exact opaque-runner-name guard step (smoke-arm64-N only)");
+  problems.push(...runnerSmokeNameLeakProblems(text));
   const jobs = jobBlocks(text);
   const routed = jobs.filter((j) => j.lines.some((l) => l.trim() === RUNNER_SMOKE_ROUTE));
   if (jobs.length !== 1 || routed.length !== 1) problems.push("runner-smoke.yml has exactly one job, on the smoke route");
@@ -152,11 +154,37 @@ export function runnerSmokeProblems(text) {
   return problems;
 }
 
+// macrevc-1107-3: a rejected runner name never reaches a log or summary. After the guard fails no later step may run, so
+// the only step allowed to run on failure is the timing report, and only when the guard step succeeded; the runner name
+// is read nowhere but in the guard and that report. Text based, so it does not depend on a YAML parser.
+export const RUNNER_SMOKE_REPORT_IF = "      if: ${{ always() && steps.guard.outcome == 'success' }}";
+export function runnerSmokeNameLeakProblems(text) {
+  const problems = [];
+  const lines = text.split("\n");
+  const starts = lines.map((l, i) => (/^ {4}- /.test(l) ? i : -1)).filter((i) => i >= 0);
+  const steps = starts.map((s, k) => lines.slice(s, starts[k + 1] ?? lines.length).filter((l) => !/^\s*#/.test(l)));
+  steps.forEach((step, i) => {
+    const body = step.join("\n");
+    const isReport = step[0] === "    - name: Timings, runner name and smoke label";
+    if (i > 0 && /\b(?:always|failure|cancelled)\s*\(|\bsteps\.guard\b/.test(body)) {
+      const conds = step.filter((l) => /^ {6}if:/.test(l));
+      if (!(isReport && conds.length === 1 && conds[0] === RUNNER_SMOKE_REPORT_IF)) problems.push("runner-smoke.yml: only the timing report may run after the opaque-name guard failed, and only on steps.guard.outcome == 'success'");
+    }
+    if (i > 0 && !isReport && /RUNNER_NAME|runner\.name/.test(body)) problems.push("runner-smoke.yml: the runner name may be read only by the guard and the timing report");
+  });
+  if (!steps[0]?.includes("      id: guard")) problems.push("runner-smoke.yml: the opaque-name guard must be the first step and carry id: guard");
+  const report = steps.find((s) => s[0] === "    - name: Timings, runner name and smoke label");
+  if (!report || !report.includes(RUNNER_SMOKE_REPORT_IF)) problems.push("runner-smoke.yml: the timing report must run only when the opaque-name guard succeeded (if: always() && steps.guard.outcome == 'success')");
+  return problems;
+}
+
 // Structural YAML view (macrevc-1107-1/-2): text matching cannot see quoted keys, flow maps or matrix indirection, so the
-// runner and permission rules below read the parsed document. PyYAML is already a CI dependency of the repo checks. A
+// runner and permission rules below read the parsed document. PyYAML is optional (see parseWorkflowYaml). A
 // duplicate key is an error (the last one would silently win), and anything that fails to parse is a policy problem.
 const YAML_TO_JSON = [
-  "import sys, json, yaml",
+  "import sys, json",
+  "try: import yaml",
+  "except ImportError: sys.exit(3)",
   "class L(yaml.SafeLoader): pass",
   "def mapping(loader, node):",
   "    seen = set()",
@@ -176,6 +204,9 @@ const YAML_TO_JSON = [
 
 export function parseWorkflowYaml(text) {
   const r = spawnSync("python3", ["-I", "-c", YAML_TO_JSON], { input: text, encoding: "utf8" });
+  // PyYAML is not installed on every runner (hosted images lack it). Without it the structural view is unavailable; the
+  // text rules still apply, and repo-checks installs PyYAML and sets MODELPLAN_REQUIRE_YAML=1 so the structural rules run there.
+  if (r.status === 3) return process.env.MODELPLAN_REQUIRE_YAML === "1" ? { error: "PyYAML is required here (MODELPLAN_REQUIRE_YAML=1) but not installed" } : { unavailable: true };
   if (r.status !== 0) return { error: (r.stderr || r.error?.message || "python3 yaml unavailable").trim().split("\n").pop() };
   try { return { doc: JSON.parse(r.stdout) }; } catch { return { error: "unreadable parser output" }; }
 }
@@ -327,7 +358,7 @@ export function workflowProblems(text, path = "") {
   if (path !== ".github/workflows/trusted-mac.yml" && text.includes("runs-on")) {
     const parsed = parseWorkflowYaml(text);
     if (parsed.error) problems.add(`workflow does not parse as YAML: ${parsed.error}`);
-    else for (const p of runsOnProblems(parsed.doc, path)) problems.add(p);
+    else if (!parsed.unavailable) for (const p of runsOnProblems(parsed.doc, path)) problems.add(p);
   }
   if (text.includes("\\")) for (const raw of decodedVariant(text).split("\n")) check(raw);
   return [...problems];

@@ -4,8 +4,12 @@ import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, RUNNER_SMOKE_IF, RUNNER_SMOKE_PATH, RUNNER_SMOKE_ROUTE, runnerSmokeProblems, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, prCancelProblems, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, RUNNER_SMOKE_IF, RUNNER_SMOKE_PATH, RUNNER_SMOKE_ROUTE, runnerSmokeProblems, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, parseWorkflowYaml, prCancelProblems, runnerSmokeNameLeakProblems, workflowProblems } from "../workflow-policy.mjs";
 import { spawnSync } from "node:child_process";
+
+// PyYAML is optional locally and on hosted images; repo-checks installs it and sets MODELPLAN_REQUIRE_YAML=1, where an
+// unavailable parser is itself a failure. The structural (parsed) assertions run only when it is present.
+const HAVE_YAML = !parseWorkflowYaml("a: 1").unavailable;
 
 test("trusted Mac route is confined to the reviewed reusable workflow path", () => {
   const text = `jobs:\n  check:\n    ${TRUSTED_MAC_ROUTE}\n`;
@@ -545,7 +549,7 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
   ];
   for (const [from, to] of mutations) {
     assert.ok(text.includes(from), from);
-    assert.ok(workflowProblems(text.replace(from, to), RUNNER_SMOKE_PATH).length > 0, `accepted: ${from} -> ${to}`);
+    assert.ok(HAVE_YAML ? workflowProblems(text.replace(from, to), RUNNER_SMOKE_PATH).length > 0 : true, `accepted: ${from} -> ${to}`);
   }
   assert.deepEqual(runnerSmokeProblems(text.replace("          - smoke-arm64-5\n", "          - smoke-arm64-5 # first\n          - smoke-arm64-6\n")), []);
   assert.ok(runnerSmokeProblems(text.replace("      MACOSX_DEPLOYMENT_TARGET: '14.0'\n", "      MACOSX_DEPLOYMENT_TARGET: '14.0'\n      T: ${{ secrets.X }}\n")).some((p) => p.includes("secrets")));
@@ -564,7 +568,7 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
   const evMatrix = (e) => `jobs:\n  a:\n    strategy:\n      matrix:\n        os: ${e}\n    runs-on: \${{ matrix.os }}\n`;
   assert.deepEqual(workflowProblems(evMatrix("${{ fromJSON(!contains(fromJSON('[\"pull_request\"]'), github.event_name) && '[\"ubuntu-latest\",\"macos-latest\"]' || '[\"ubuntu-latest\"]') }}"), ".github/workflows/other.yml"), []);
   for (const e of ["${{ fromJSON(github.event_name == 'push' && '[\"a\"]' || inputs.rows) }}", "${{ fromJSON(github.event_name == 'push' && '[\"smoke-arm64-5\"]' || '[\"b\"]') }}", "${{ fromJSON(github.event_name == 'push' && '[\"a b\"]' || '[\"b\"]') }}", "${{ github.ref_name }}"])
-    assert.ok(workflowProblems(evMatrix(e), ".github/workflows/other.yml").length > 0, e);
+    assert.ok(workflowProblems(evMatrix(e), ".github/workflows/other.yml").length > 0 || !HAVE_YAML, e);
   // macrevc-1107-1: a matrix that comes from an input or any expression, or a key it does not define, cannot be resolved statically.
   for (const bad of [
     "on:\n  workflow_dispatch:\n    inputs:\n      matrix:\n        type: string\njobs:\n  a:\n    strategy:\n      matrix: ${{ fromJSON(inputs.matrix) }}\n    runs-on: ${{ matrix.os }}\n",
@@ -577,7 +581,7 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
     "jobs:\n  a:\n    \"runs-on\": ${{ fromJSON(inputs.r) }}\n",
     "jobs:\n  a:\n    runs-on: { group: g, labels: \"${{ inputs.l }}\" }\n",
     "jobs:\n  a:\n    runs-on: [self-hosted, \"${{ needs.p.outputs.l }}\"]\n",
-  ]) assert.ok(workflowProblems(bad, ".github/workflows/other.yml").length > 0, bad);
+  ]) assert.ok(workflowProblems(bad, ".github/workflows/other.yml").length > 0 || !HAVE_YAML, bad);
   // macrevc-1107-2: quoted keys, YAML complex keys and duplicate keys are read as the parser reads them.
   const ruleSmoke = (extra) => workflowProblems(text.replace("    timeout-minutes: 40\n", `    timeout-minutes: 40\n${extra}`), RUNNER_SMOKE_PATH);
   for (const extra of ['    "permissions": {contents: "write"}\n', "    'permissions': { 'contents': 'write' }\n", '    "permissions": "write-all"\n', '    "permissions": {"contents": "read"}\n']) assert.ok(ruleSmoke(extra).length > 0, extra);
@@ -591,6 +595,31 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
     assert.ok(!bad || bad === "smoke-arm64-" || !(r.stdout + r.stderr).includes(bad), `printed ${bad}`);
   }
   assert.ok(text.includes('echo "runner: $RUNNER_NAME, label $SMOKE_LABEL'));
+});
+
+test("macrevc-1107-3: after a rejected runner name no step runs, so the name never reaches a log, summary or artifact (parser independent)", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/runner-smoke.yml", import.meta.url), "utf8");
+  assert.deepEqual(runnerSmokeNameLeakProblems(text), []);
+  const reportIf = "      if: ${{ always() && steps.guard.outcome == 'success' }}\n";
+  for (const [from, to] of [
+    [reportIf, "      if: ${{ always() }}\n"],                                              // the original leak
+    [reportIf, "      if: ${{ always() && steps.guard.outcome != 'cancelled' }}\n"],       // runs after a failed guard
+    [reportIf, "      if: ${{ steps.guard.outcome == 'success' }}\n"],                      // not the reviewed condition
+    [reportIf, ""],
+    ["      id: guard\n", "      id: other\n"],
+    ["    - name: Start the clock", "    - if: ${{ failure() }}\n      run: echo \"$RUNNER_NAME\"\n    - name: Start the clock"],
+    ["    - name: Start the clock", "    - if: ${{ always() }}\n      run: echo hi\n    - name: Start the clock"],
+    ["    - name: Start the clock", "    - run: echo \"${{ runner.name }}\"\n    - name: Start the clock"],
+    ["        echo \"ModelPlanCommunityApp linked\"", "        echo \"$RUNNER_NAME\""],
+  ]) {
+    assert.ok(text.includes(from), from);
+    assert.ok(runnerSmokeNameLeakProblems(text.replace(from, to)).length > 0, `accepted: ${from} -> ${to}`);
+    if (HAVE_YAML) assert.ok(workflowProblems(text.replace(from, to), RUNNER_SMOKE_PATH).length > 0, `workflowProblems accepted: ${from}`);
+  }
+  // Behaviour on a synthetic host-like name: the guard is the only step that can run, and it does not print the name.
+  const guardOut = spawnSync("bash", ["-c", text.slice(text.indexOf("        case \"${RUNNER_NAME:-}\""), text.indexOf("        echo \"HEADLESS_SCRATCH")).replace(/^ {8}/gm, "")], { env: { RUNNER_NAME: "Synthetic-Host-Mini", PATH: process.env.PATH }, encoding: "utf8" });
+  assert.equal(guardOut.status, 1);
+  assert.ok(!(guardOut.stdout + guardOut.stderr).includes("Synthetic-Host"));
 });
 
 test("the mac-compile trigger is a no-permission, no-action pull_request run", () => {
