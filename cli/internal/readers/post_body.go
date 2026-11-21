@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 )
 
@@ -85,6 +86,8 @@ func validPOSTBody(kind string, b []byte) bool {
 	case "gemini_quota":
 		top, ok := object(b, "project")
 		return ok && validProject(top["project"])
+	case "gemini_refresh":
+		return validGeminiRefresh(b)
 	}
 	return false
 }
@@ -99,4 +102,33 @@ func (p requestPin) validBody(r *http.Request) bool {
 	r.Body.Close()
 	r.Body = io.NopCloser(bytes.NewReader(b))
 	return err == nil && len(b) <= 4096 && r.ContentLength == int64(len(b)) && validPOSTBody(p.body, b)
+}
+
+// GeminiCLIClientID and GeminiCLIClientSecret are the Gemini CLI's installed-app OAuth
+// client, published in its open-source repository: google-gemini/gemini-cli
+// b9776560ea5710bc673891499aaec68c737d160a, packages/core/src/code_assist/oauth2.ts
+// lines 76-85 (Apache-2.0). That file notes the secret is not treated as a secret for an
+// installed application (developers.google.com/identity/protocols/oauth2#installed).
+// ModelPlan never reads a client secret from the installed Gemini binary or its files.
+const (
+	GeminiCLIClientID     = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+	GeminiCLIClientSecret = "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"
+)
+
+var refreshToken = regexp.MustCompile(`^[A-Za-z0-9._/~+-]+$`)
+
+// validGeminiRefresh accepts exactly the four refresh-grant fields, each once, with the
+// published client. A duplicate, extra or empty field (scope, code, password, ...) fails.
+func validGeminiRefresh(b []byte) bool {
+	values, err := url.ParseQuery(string(b))
+	if err != nil || len(values) != 4 {
+		return false
+	}
+	for _, name := range []string{"client_id", "client_secret", "grant_type", "refresh_token"} {
+		if len(values[name]) != 1 {
+			return false
+		}
+	}
+	return values.Get("grant_type") == "refresh_token" && values.Get("client_id") == GeminiCLIClientID &&
+		values.Get("client_secret") == GeminiCLIClientSecret && len(values.Get("refresh_token")) <= 2048 && refreshToken.MatchString(values.Get("refresh_token"))
 }
