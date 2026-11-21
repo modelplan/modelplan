@@ -71,14 +71,22 @@ function trendLine(points:readonly number[]):SVGSVGElement|null {
 function drawCell(cell:PluginCell|undefined,row:number):HTMLElement {
   if(!cell){const empty=el('div','qcell none');empty.dataset.row=String(row);return empty;}
   const box=el('div','qcell pl-cell'+(cell.level?' pl-'+cell.level:''));box.dataset.row=String(row);
-  // D371 Q5 (owner 11-21): two layers, 31 pt in all. The number line (22 pt) reads "39% CPU": the tag follows the % inline in
-  // 10 px grey and is never hidden; the side value sits at the right edge and gives way (full, short, then gone), never cut.
-  const line=el('span','qline'),lead=el('span','pl-lead');
-  if(typeof cell.value==='number'&&Number.isFinite(cell.value)){const num=el('b','qnum'),value=el('span','qvalue',String(Math.round(cell.value)));num.append(value);if(cell.unit)num.append(el('small','',cell.unit));lead.append(num);}
-  else if(cell.big)lead.append(el('b','pl-big',cell.big));
-  lead.append(el('span','pl-tag',cell.tag.full));
-  line.append(lead);
-  if(cell.side){const side=fitted('qtxt pl-side',cell.side);side.dataset.small=cell.side.short;line.append(side);}
+  const line=el('span','qline');
+  if(cell.big||cell.subline){
+    // The calendar's cells keep the three-row form (tag above, big value with the side value, colour mark below).
+    box.classList.add('pl-cal');
+    box.append(fitted('pl-tag',cell.tag));
+    if(cell.big)line.append(el('b','pl-big',cell.big));
+    if(cell.side){const side=fitted('qtxt',cell.side);side.dataset.small=cell.side.short;line.append(side);}
+  }else{
+    // D371 Q5 (owner 11-21): two layers, 31 pt in all. The number line (22 pt) reads "39% CPU": the tag follows the % inline in
+    // 10 px grey and is never hidden; the side value sits at the right edge and gives way (full, short, then gone), never cut.
+    const lead=el('span','pl-lead');
+    if(typeof cell.value==='number'&&Number.isFinite(cell.value)){const num=el('b','qnum'),value=el('span','qvalue',String(Math.round(cell.value)));num.append(value);if(cell.unit)num.append(el('small','',cell.unit));lead.append(num);}
+    lead.append(el('span','pl-tag',cell.tag.full));
+    line.append(lead);
+    if(cell.side){const side=fitted('qtxt pl-side',cell.side);side.dataset.small=cell.side.short;line.append(side);}
+  }
   box.append(line);
   // D375: the subscription's colour mark with its name, so a colour is never alone.
   if(cell.subline&&/^#[0-9a-f]{6}$/i.test(cell.subline.colour)){

@@ -345,12 +345,12 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 /* D371 Q5 (owner 11-21): a plugin cell is two layers like the quota cells, 31 pt: the 22 pt number line ("39% CPU", the 10 px grey tag
    inline after the %, never hidden; the side value right-aligned at the 4 pt cell padding, given way full, short, then gone) and a
    6 pt bar 3 pt below, its trend a 1 px line inside the track. The subscription table owns the row height; the cell centres in it. */
-.ck-eng .pl-cell{row-gap:3px;overflow:visible}
-.ck-eng .pl-cell .qline{display:flex;align-items:baseline;justify-content:flex-start;gap:4px;height:22px;min-width:0}
-.ck-eng .pl-cell .pl-lead{display:inline-flex;align-items:baseline;flex:none;gap:3px;white-space:nowrap}
-.ck-eng .pl-cell .pl-tag{display:inline;flex:none;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}
-.ck-eng .pl-cell .qnum{line-height:22px}
-.ck-eng .pl-cell .qtxt.pl-side{flex:1 1 0;min-width:0;overflow:hidden;white-space:nowrap;text-align:right;text-overflow:clip}
+.ck-eng .pl-cell:not(.pl-cal){row-gap:3px;overflow:visible}
+.ck-eng .pl-cell:not(.pl-cal) .qline{display:flex;align-items:baseline;justify-content:flex-start;gap:4px;height:22px;min-width:0}
+.ck-eng .pl-cell:not(.pl-cal) .pl-lead{display:inline-flex;align-items:baseline;flex:none;gap:3px;white-space:nowrap}
+.ck-eng .pl-cell:not(.pl-cal) .pl-tag{display:inline;flex:none;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}
+.ck-eng .pl-cell:not(.pl-cal) .qnum{line-height:22px}
+.ck-eng .pl-cell:not(.pl-cal) .qtxt.pl-side{flex:1 1 0;min-width:0;overflow:hidden;white-space:nowrap;text-align:right;text-overflow:clip}
 .ck-eng .pl-cell .pl-big{display:inline-block;flex:none;font:600 20px/22px var(--f-lcd);font-variant-numeric:tabular-nums;color:var(--lcd-ink);white-space:nowrap}
 .cls-narrow .pl-cell .pl-big{font-size:16px;line-height:19px}
 .ck-eng .pl-cell .pl-sub{display:flex;align-items:center;gap:4px;min-width:0}
@@ -500,3 +500,10 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
    that focus; keyboard focus (Tab, arrows) keeps every ring below. */
 #cockpit [data-pointer-focus]:focus-visible,body [data-pointer-focus]:focus-visible{outline:none}
 .ck-head .rk[data-pointer-focus]:focus-visible::before{content:none}
+
+/* The calendar's cells (D375) keep the three-row form from before the Q5 two-layer Resources cell. */
+.ck-eng .pl-cell.pl-cal{row-gap:1px}
+.ck-eng .pl-cell.pl-cal .pl-tag{display:block;min-width:0;min-height:11px;font:400 10px/11px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ck-eng .pl-cell.pl-cal .qnum{line-height:18px}
+.ck-eng .pl-cell.pl-cal .pl-meter{min-height:0;overflow:hidden}
+.ck-eng .pl-cell.pl-cal .qline{justify-content:space-between}
