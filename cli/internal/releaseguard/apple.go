@@ -3,6 +3,8 @@
 package releaseguard
 
 import (
+	_ "embed"
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/build/constraint"
@@ -33,9 +35,12 @@ const spiLiteral = "(?:(?:@|#+)?\"|`)"
 // Harmless grouping parentheses do not turn a literal into a computed key.
 const spiGrouping = `(?:\(\s*)*`
 
-var privateSPI = regexp.MustCompile(`\b_webProcessIdentifier\b|\b[Vv]alueForKey(?:Path)?\s*[:(]\s*` + spiGrouping + spiLiteral + `_|\bsetValue\s*:[^;]*\bforKey(?:Path)?\s*:\s*` + spiGrouping + spiLiteral + `_|\b(?:NSSelectorFromString|Selector|sel_registerName|sel_getUid)\s*\(\s*` + spiGrouping + spiLiteral + `_|@selector\s*\(\s*_`)
+// Any string-literal key-value-coding key reaches properties the SDK does not
+// declare, so every literal key is flagged unless allow-listed (kvc-allowlist.json).
+var kvcLiteralKey = regexp.MustCompile(`\b[Vv]alueForKey(?:Path)?\s*[:(]\s*` + spiGrouping + spiLiteral + `([^"\x60]*)|\bsetValue\s*:[^;]*\bforKey(?:Path)?\s*:\s*` + spiGrouping + spiLiteral + `([^"\x60]*)`)
+var privateSPI = regexp.MustCompile(`\b_webProcessIdentifier\b|\b(?:NSSelectorFromString|Selector|sel_registerName|sel_getUid)\s*\(\s*` + spiGrouping + spiLiteral + `_|@selector\s*\(\s*_`)
 var swiftKVCCall = regexp.MustCompile(`\b(?:value|setValue)\s*\(`)
-var privateKeyLiteral = regexp.MustCompile(`^\s*` + spiGrouping + spiLiteral + `_`)
+var privateKeyLiteral = regexp.MustCompile(`^\s*` + spiGrouping + spiLiteral + `([^"\x60]*)`)
 var branchDirective = regexp.MustCompile(`^#\s*(if|ifdef|ifndef|elif|elseif|else|endif)\b(.*)$`)
 var definedTag = regexp.MustCompile(`\bdefined\s*(?:\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)|\s+([A-Za-z_][A-Za-z0-9_]*))`)
 
@@ -104,7 +109,22 @@ func AppleSPI(path, source string) []Finding {
 	for _, match := range privateSPI.FindAllStringIndex(text, -1) {
 		positions = append(positions, match[0])
 	}
-	positions = append(positions, swiftPrivateKeyPositions(text)...)
+	for _, match := range kvcLiteralKey.FindAllStringSubmatchIndex(text, -1) {
+		key := ""
+		for _, g := range []int{2, 4} {
+			if match[g] >= 0 {
+				key = text[match[g]:match[g+1]]
+			}
+		}
+		if !kvcAllowed(path, key) {
+			positions = append(positions, match[0])
+		}
+	}
+	for _, p := range swiftPrivateKeyPositions(text) {
+		if !kvcAllowed(path, p.key) {
+			positions = append(positions, p.pos)
+		}
+	}
 	sort.Ints(positions)
 	previousLine := 0
 	for _, position := range positions {
@@ -113,7 +133,7 @@ func AppleSPI(path, source string) []Finding {
 			continue
 		}
 		previousLine = line
-		findings = append(findings, Finding{path, line, "private Apple SPI outside " + TestSPIFlag})
+		findings = append(findings, Finding{path, line, "private Apple SPI or non-allow-listed KVC string key outside " + TestSPIFlag})
 	}
 	return findings
 }
@@ -309,8 +329,13 @@ func exposeCgoPreamble(path, source string) string {
 // Swift's value expression may contain arbitrary nested calls. Walk balanced
 // argument delimiters and inspect only a top-level forKey/forKeyPath label;
 // stopping at the first ')' misses ordinary setters such as makeValue().
-func swiftPrivateKeyPositions(text string) []int {
-	var positions []int
+type keyPosition struct {
+	pos int
+	key string
+}
+
+func swiftPrivateKeyPositions(text string) []keyPosition {
+	var positions []keyPosition
 	for _, match := range swiftKVCCall.FindAllStringIndex(text, -1) {
 		depth, braces, brackets := 1, 0, 0
 		for i := match[1]; i < len(text) && depth > 0; i++ {
@@ -359,8 +384,12 @@ func swiftPrivateKeyPositions(text string) []int {
 				for end < len(text) && strings.ContainsRune(" \t\r\n", rune(text[end])) {
 					end++
 				}
-				if end < len(text) && text[end] == ':' && privateKeyLiteral.MatchString(text[end+1:]) {
-					positions = append(positions, match[0])
+				if end < len(text) && text[end] == ':' {
+					m := privateKeyLiteral.FindStringSubmatch(text[end+1:])
+					if m == nil {
+						continue
+					}
+					positions = append(positions, keyPosition{match[0], m[1]})
 					depth = 0
 					break
 				}
@@ -371,4 +400,32 @@ func swiftPrivateKeyPositions(text string) []int {
 }
 func identifierByte(b byte) bool {
 	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '_'
+}
+
+// kvc-allowlist.json lists the only string-key KVC uses a release build may
+// contain. Each entry names a file suffix, a key and the owner decision.
+//
+//go:embed kvc-allowlist.json
+var kvcAllowlistJSON []byte
+
+type kvcAllow struct {
+	Path, Key, Decision string
+}
+
+func kvcAllowlist() []kvcAllow {
+	var entries []kvcAllow
+	if err := json.Unmarshal(kvcAllowlistJSON, &entries); err != nil {
+		panic("kvc-allowlist.json: " + err.Error())
+	}
+	return entries
+}
+
+func kvcAllowed(path, key string) bool {
+	path = filepath.ToSlash(path)
+	for _, e := range kvcAllowlist() {
+		if e.Decision != "" && e.Key == key && strings.HasSuffix(path, e.Path) {
+			return true
+		}
+	}
+	return false
 }

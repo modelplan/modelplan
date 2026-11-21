@@ -1,0 +1,5 @@
+[
+  {"path": "ModelPlanCockpitWeb/CockpitWindowController.swift", "key": "drawsBackground", "decision": "D237"},
+  {"path": "ModelPlanCockpitWeb/CockpitFieldPanel.swift", "key": "drawsBackground", "decision": "D237"},
+  {"path": "ModelPlanCockpitWebTests/CockpitFieldBudgetTests.swift", "key": "drawsBackground", "decision": "D237"}
+]
