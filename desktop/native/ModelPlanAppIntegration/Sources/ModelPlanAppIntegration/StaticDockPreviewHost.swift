@@ -256,7 +256,7 @@ struct DockHelpInteraction: Equatable {
     public var requestAutoCollapse: ((Bool) -> Void)?
     /// Set only when the member-scoped refresh adapter is actually installed.
     public var ringRefreshAvailable = false
-    public var catalogueChanged: (([SettingsSubscription]) -> Void)?
+    public var catalogueChanged: (([SettingsSubscription]) -> Void)? { didSet { catalogueReportedEmpty = false } }
     public var displayChoicesChanged: (([SettingsDisplayChoice]) -> Void)?
     public var commitDisplayPlacement: ((String, SettingsDockEdge, Double) -> Void)?
     public var commitPlacement: ((SettingsDockEdge, Double) -> Void)?
@@ -584,6 +584,20 @@ struct DockHelpInteraction: Equatable {
         preferences.withoutUnstableMemberChoices(model?.subscriptions ?? [])
     }
     private var catalogueKey = ""
+    /// WP-17: whether the settings catalogue was last told "no subscriptions". Re-sending [] reapplied the settings
+    /// and redrew every official face once more per withdrawal, with nothing to retire.
+    private(set) var catalogueReportedEmpty = false
+    #if DEBUG
+    var catalogueReportsForChecks = 0
+    #endif
+    private func reportCatalogue(_ subscriptions: [SettingsSubscription]) {
+        #if DEBUG
+        catalogueReportsForChecks += 1
+        #endif
+        // Only a report someone received counts: a binding installed later still gets its first [] on a withdrawal.
+        catalogueReportedEmpty = subscriptions.isEmpty && catalogueChanged != nil
+        catalogueChanged?(subscriptions)
+    }
     private var geometry = StaticDockGeometry(hoverRects: [])
     /// Internal-only registration read used by synthetic offscreen evidence.
     @_spi(DockResourceChecks) public var registeredConsoleButtonForChecks: CGRect? { geometry.consoleButton }
@@ -1309,7 +1323,7 @@ struct DockHelpInteraction: Equatable {
         workingSignals = [:]; attentionSignals = []
         if privacy { attention = DockAttentionState() }
         menuNotice = nil; menuNoticeDidChange?(nil, false)
-        if !keepCard { catalogueKey = ""; catalogueChanged?([]) }
+        if !keepCard { catalogueKey = ""; if !catalogueReportedEmpty { reportCatalogue([]) } }
         try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
         // G3-98: a plain replacement keeps a ring click's hidden number so the landed value fades in (#906);
         // a privacy withdrawal drops it with everything else.
@@ -1423,7 +1437,7 @@ struct DockHelpInteraction: Equatable {
         contentMenuStatusLines = content.menuStatusLines
         contentEmptyText = content.emptyText
         let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)|\($0.isUnstable)|\($0.causeCode ?? "")" }.joined(separator: "\n")
-        if carriedTo == nil, key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
+        if carriedTo == nil, key != catalogueKey { catalogueKey = key; reportCatalogue(next.subscriptions) }
         guard passIsCurrent(generation) else { return }
         let byID = Dictionary(uniqueKeysWithValues: next.inputs.map { ($0.id, $0) })
         let canonicalOrder = (try? passPreferences.presentedSubscriptionIDs(next.inputs.map(\.id))) ?? next.inputs.map(\.id)
