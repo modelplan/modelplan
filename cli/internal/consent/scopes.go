@@ -31,3 +31,8 @@ const (
 	ScopeDroidLocalHistory            = "droid.local_history"
 	ScopeQwenLocalHistory             = "qwen.local_history"
 )
+
+// ScopeGeminiAccountUsageTokenRefresh (D232) is an opt-in extension of the Gemini saved-login
+// scope: when the Gemini CLI's one-hour access token has lapsed, the reader may exchange the
+// saved refresh token for a new access token held in memory. Nothing is written back.
+const ScopeGeminiAccountUsageTokenRefresh = "gemini.account_usage.token_refresh"

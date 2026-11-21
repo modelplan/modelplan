@@ -321,7 +321,7 @@ func syncScopeTool(s *State, tool string) {
 	for _, class := range []string{Local, Runtime, Credential, ExplicitKey} {
 		for _, d := range Definitions() {
 			r, ok := s.Scopes[d.ID]
-			if ok && d.Tool == tool && d.Class == class && r.Allowed {
+			if ok && d.Tool == tool && d.Class == class && d.Requires == "" && r.Allowed {
 				record = r
 				record.Allowed = true
 			}
