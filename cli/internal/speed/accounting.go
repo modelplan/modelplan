@@ -161,14 +161,32 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		if err != nil {
 			continue
 		}
+		// A legacy (untiered) file is rescanned once to learn its speed tiers. The recording-day start is
+		// computed in today's time zone and may be later than when the file was first recorded, so an
+		// unchanged legacy file keeps every record it already has and only gains tiers by response identity.
+		legacy := exists && old.LiveObserved && !old.Tiered && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano()
+		known := map[string]bool{}
+		if legacy {
+			for _, r := range old.Records {
+				known[r.Key] = true
+			}
+		}
 		records := p.records[:0]
 		for _, r := range p.records {
-			if day(r.At) >= windowFrom(now, 35) && !r.At.Before(floor) && !r.At.Before(start) && !r.At.After(now) {
+			if day(r.At) >= windowFrom(now, 35) && !r.At.Before(floor) && (known[r.Key] || !r.At.Before(start)) && !r.At.After(now) {
 				records = append(records, r)
 			}
 		}
+		fresh := map[string]bool{}
+		for _, r := range records {
+			fresh[r.Key] = true
+		}
 		for _, r := range old.Records {
-			if old.Source == source && sameEpoch(old.Epoch, epoch) && r.Imported && !r.At.Before(floor) && day(r.At) >= windowFrom(now, 35) {
+			keep := r.Imported
+			if legacy && !fresh[r.Key] {
+				keep = true // no longer parsed (or filtered): never delete a recorded response
+			}
+			if keep && old.Source == source && sameEpoch(old.Epoch, epoch) && !r.At.Before(floor) && day(r.At) >= windowFrom(now, 35) {
 				records = append(records, r)
 			}
 		}

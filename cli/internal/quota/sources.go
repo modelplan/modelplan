@@ -354,6 +354,12 @@ const codexHead = 1 << 20 // session_meta is the first line; it carries the inst
 // one named by thread (CODEX_THREAD_ID or a hook's session id) when its log is found, else the
 // most recent interactive thread, marked as such. Background threads never supply them.
 func readCodex(home, thread string) ([]Account, SourceStatus) {
+	return readCodexFenced(home, thread, codexRolloutFence())
+}
+
+// readCodexFenced is readCodex for a caller that took the memo fence before evaluating its
+// consent (codexRolloutFence), so a Forget during the read leaves nothing decoded behind.
+func readCodexFenced(home, thread string, fence uint64) ([]Account, SourceStatus) {
 	st := SourceStatus{Source: "codex"}
 	if home == "" {
 		st.Status, st.Reason = "missing", "not read"
@@ -372,7 +378,7 @@ func readCodex(home, thread string) ([]Account, SourceStatus) {
 	}
 	var rs []*rollout
 	for _, f := range files {
-		if r := scanRollout(f); r != nil {
+		if r := scanRollout(f, fence); r != nil {
 			rs = append(rs, r)
 		}
 	}
@@ -600,8 +606,8 @@ func originOf(raw json.RawMessage) string {
 // snapshot per limit id and the latest turn context; it decodes nothing else from the log.
 // WP-17: what a file holds is decoded once while the file is unchanged (codexRolloutEvents);
 // every call builds its own rollout from it, so no caller shares values with another.
-func scanRollout(path string) *rollout {
-	scan, ok := codexRolloutEvents(path)
+func scanRollout(path string, fence uint64) *rollout {
+	scan, ok := codexRolloutEvents(path, fence)
 	if !ok {
 		return nil
 	}

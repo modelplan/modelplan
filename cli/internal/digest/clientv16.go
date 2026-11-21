@@ -50,7 +50,11 @@ type v16Data struct {
 	Lineups []struct {
 		Baseline string   `json:"baseline"`
 		Frontier []string `json:"frontier"`
-		Members  []struct {
+		Steps    []struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		} `json:"steps"`
+		Members []struct {
 			ID string `json:"id"`
 		} `json:"members"`
 	} `json:"lineups"`
@@ -124,6 +128,11 @@ func screenClientV16(data json.RawMessage) (json.RawMessage, []string, error) {
 		}
 		for _, id := range l.Frontier {
 			if pending[id] {
+				return nil, nil, errPendingModel
+			}
+		}
+		for _, st := range l.Steps {
+			if pending[st.From] || pending[st.To] {
 				return nil, nil, errPendingModel
 			}
 		}

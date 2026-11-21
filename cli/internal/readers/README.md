@@ -26,6 +26,7 @@ tests. Services that require HTTP/2 cannot be read through this guarded path.
 | `opencodego.account_usage.api_key` | `opencode.ai` | GET `/zen/go/v1/usage` | 1 |
 | `grok.account_usage.saved_login` | `cli-chat-proxy.grok.com` | GET `/v1/billing?format=credits` | 1 |
 | `gemini.account_usage.saved_login` | `cloudcode-pa.googleapis.com` | optional POST `/v1internal:loadCodeAssist`, POST `/v1internal:retrieveUserQuota` | 2 |
+| `gemini.account_usage.token_refresh` (D232, extends the saved-login scope) | `oauth2.googleapis.com` | POST `/token`, form body with exactly the refresh-grant fields and the published Gemini CLI client, no bearer, only when the saved access token lapsed | 1 |
 | `cursor.account_usage.saved_login` | `cursor.com`, then `api2.cursor.sh` | optional POST `/api/dashboard/get-plan-info`, POST `/aiserver.v1.DashboardService/GetCurrentPeriodUsage` | 2 |
 
 The owner approved exactly the Gemini Code Assist and Cursor POST sets on
