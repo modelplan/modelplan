@@ -50,6 +50,8 @@ extension CommunityCockpitEntryTests {
         let app = try Self.ownerTestShapedApp(at: root.appendingPathComponent("package"), helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
         let helper = app.appendingPathComponent("Contents/Helpers/modelplan")
         let environment = try await Self.syntheticHome(root, helper: helper)
+        // The resource column sits beside a subscription column; with none the page shows the CKP-ENG-57 empty engine.
+        try Self.seedCodexSubscription(root)
 
         let reader = JourneyReader()
         let probe = ResourcePageProbe()
@@ -103,12 +105,22 @@ extension CommunityCockpitEntryTests {
         }
         try await waitFor("the click shows the real cockpit page", seconds: 30) { shown() != nil }
         let page = try XCTUnwrap(shown()), web = try XCTUnwrap(page.verificationWebView)
+        try await waitFor("the synthetic Codex subscription draws the engine table") { await self.js(web, "String(\(Self.engineDrawnScript))") == "true" }
         try await waitFor("the page runs the resource column") { host.visibility.columnShown }
         XCTAssertEqual(ResourceCadence.interval(host.visibility), 2, "column shown: the column setting")
         let key = ".eng-keys .pl-key[data-plugin=\"resources\"]"
         try await waitFor("the resource key is on the page") { await self.js(web, "String(document.querySelectorAll('\(key)').length)") == "1" }
+        // The key answers only a trusted click (plugin-host.ts; the real click is CKP-PLG-53 in
+        // testPluginKeyRemoveOnTheNormalEntryPageIsSaved, GUI Mac): a script click leaves the screen closed.
+        let screenOpen = "String(document.querySelectorAll('.dk-mfd .pl-screen[data-plugin=\"resources\"]').length>0)"
         _ = await js(web, "(()=>{document.querySelector('\(key)')?.click();return 'ok'})()")
-        try await waitFor("the key opens the resource big screen") {
+        try await Task.sleep(for: .milliseconds(300))
+        let scriptClick = await js(web, screenOpen)
+        XCTAssertEqual(scriptClick, "false", "an untrusted script click does not open the screen")
+        // macrevb-1096-6: the widget card's "Cockpit screen ›" action (card.onAction) opens it on the shown page.
+        let open = try XCTUnwrap(dock.pluginScreenRequested, "the installed plugin wires the card action")
+        open(ResourcePluginHost.pluginID)
+        try await waitFor("the card action opens the resource big screen") {
             await self.js(web, "String(document.querySelectorAll('.dk-mfd .mfd-screen .pl-draw-chart').length>0)") == "true"
         }
         XCTAssertGreaterThan(reader.reads, 0)

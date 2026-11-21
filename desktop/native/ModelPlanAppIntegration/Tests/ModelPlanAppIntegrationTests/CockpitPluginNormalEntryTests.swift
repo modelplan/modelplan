@@ -29,6 +29,8 @@ extension CommunityCockpitEntryTests {
         let app = try Self.ownerTestShapedApp(at: root.appendingPathComponent("package"), helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
         let helper = app.appendingPathComponent("Contents/Helpers/modelplan")
         let environment = try await Self.syntheticHome(root, helper: helper)
+        // Plugin columns sit beside subscription columns; with none the page shows the CKP-ENG-57 empty engine.
+        try Self.seedCodexSubscription(root)
         let probe = PluginPageProbe()
         let saved = CommunityCockpitApplicationFactory.verificationPage
         CommunityCockpitApplicationFactory.verificationPage = { [weak probe] page in probe?.made.append(page) }
@@ -53,7 +55,9 @@ extension CommunityCockpitEntryTests {
             return page
         }
         for _ in 0..<3000 where shown() == nil { try await Task.sleep(for: .milliseconds(10)) }
-        return try XCTUnwrap(shown(), "the click shows the real cockpit page")
+        let page = try XCTUnwrap(shown(), "the click shows the real cockpit page")
+        try await eventually("the synthetic Codex subscription draws the engine table") { await self.js(page, Self.engineDrawnScript) as? Bool == true }
+        return page
     }
     @MainActor private func eventually(_ what: String, seconds: Int = 15, _ condition: () async -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(seconds)
@@ -79,9 +83,11 @@ extension CommunityCockpitEntryTests {
     /// The bridge journey that needs no real click: state in, running out, readings in, Settings edits live, reopen.
     @MainActor func testPluginChoicesReachTheNormalEntryPageAndDriveItsColumn() async throws {
         try await withPluginCockpit { entry, plugins, probe, _ in
-            // The calendar (default on since #844) is turned off, so the placeholder's key and order are its own.
+            // The calendar (default on since #844) and the resource plugin (default on since #1096) are turned off, so
+            // the placeholder's key and order are its own.
             let calendarOff = await plugins.model.perform(.setEnabled("calendar", false))
-            XCTAssertTrue(calendarOff)
+            let resourcesOff = await plugins.model.perform(.setEnabled("resources", false))
+            XCTAssertTrue(calendarOff); XCTAssertTrue(resourcesOff)
             // Pinned, so the column is on page 1 whatever the synthetic subscriptions fill (plugin-layout.ts).
             let enabled = await plugins.model.perform(.setEnabled("placeholder", true))
             let pinnedFirst = await plugins.model.perform(.setPinned("placeholder", true))
@@ -99,7 +105,7 @@ extension CommunityCockpitEntryTests {
             // Settings-side unpin, pin and move reach the open page (a plugin from a newer build keeps its place).
             let future: [String: Any] = ["version": 1, "settings": [String: Any](), "entries": [
                 ["id": "placeholder", "enabled": true, "pinned": false], ["id": "zz-newer-build", "enabled": false, "pinned": false],
-                ["id": "calendar", "enabled": false, "pinned": false]]]
+                ["id": "calendar", "enabled": false, "pinned": false], ["id": "resources", "enabled": false, "pinned": false]]]
             let accepted = await plugins.model.acceptPageEdit(future)
             XCTAssertTrue(accepted)
             try await eventually("an unpin reaches the page") { self.onPage(page).first?["pinned"] as? Bool == false }
@@ -108,7 +114,7 @@ extension CommunityCockpitEntryTests {
             XCTAssertTrue(pinned); XCTAssertTrue(moved)
             try await eventually("pin and move reach the page") {
                 let entries = self.onPage(page)
-                return entries.map { $0["id"] as? String } == ["zz-newer-build", "placeholder", "calendar"]
+                return entries.map { $0["id"] as? String } == ["zz-newer-build", "placeholder", "calendar", "resources"]
                     && entries.first { $0["id"] as? String == "placeholder" }?["pinned"] as? Bool == true
             }
             try await eventually("the pinned plugin is drawn on page 1") { await self.js(page, self.keyOrderScript) as? String == "placeholder" }
@@ -127,7 +133,7 @@ extension CommunityCockpitEntryTests {
             entry.showConsole()
             let reopened = try await shownPage(probe, other: page)
             try await eventually("the reopened page shows the saved plugin") { await self.js(reopened, self.keyScript) as? Bool == true }
-            XCTAssertEqual(onPage(reopened).map { $0["id"] as? String }, ["zz-newer-build", "placeholder", "calendar"])
+            XCTAssertEqual(onPage(reopened).map { $0["id"] as? String }, ["zz-newer-build", "placeholder", "calendar", "resources"])
             // #1096 card action: the app opens the plugin's big screen; asked again, it stays open.
             plugins.openScreen("placeholder")
             try await eventually("the app opens the plugin screen in the MFD") { await self.js(reopened, self.screenScript) as? Bool == true }
