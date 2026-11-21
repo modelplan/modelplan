@@ -81,6 +81,12 @@ class PerfReportTests(unittest.TestCase):
         self.assertIn("attached open window-visible: n=9 < 10", text)
         self.assertIn("coldStart first-rendered-with-data: n=9 < 10", text)
 
+    def test_a_log_with_no_recognised_lines_is_a_problem(self):
+        d = self.directory()
+        with open(os.path.join(d, "attached.log"), "w") as handle:
+            handle.write("open stage=request elapsedMs=0\nopen stage=window-visible elapsedMs=2\n")  # no "timing " prefix
+        self.assertIn("attached open window-visible: n=0 < 10", " ".join(perf_report.build(d, cores=10)["problems"]))
+
     def test_short_idle_and_missing_files_are_problems(self):
         self.assertIn("idle CPU: 30 samples < 60", " ".join(perf_report.build(self.directory(idle=30), cores=10)["problems"]))
         missing = perf_report.build(self.directory(drop="detached.log"), cores=10)

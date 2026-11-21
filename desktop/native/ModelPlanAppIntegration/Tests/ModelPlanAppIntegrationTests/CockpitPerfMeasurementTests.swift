@@ -47,6 +47,7 @@ extension CommunityCockpitEntryTests {
         CommunityCockpitApplicationFactory.verificationCockpitTrace = { probe.trace.append((step: $0, at: ContinuousClock.now)) }
         CommunityCockpitApplicationFactory.verificationConsoleNotice = { _ in }
         CockpitFailureLog.verificationLine = { _ in }
+        // The hook receives the bare line; ModelPlan.log carries it after "timing ", the form summarize_timing.py reads.
         CockpitTimingLog.verificationLine = { probe.timing.append((line: $0, at: ContinuousClock.now)) }
         CommunityCockpitApplicationFactory.verificationPage = { [weak probe] page in
             probe?.made.append(page)
@@ -124,12 +125,13 @@ extension CommunityCockpitEntryTests {
                    (try? await web.evaluateJavaScript(Self.engineDrawnScript)) as? Bool == true { data = Self.perfMs(launch) }
                 try await Task.sleep(for: .milliseconds(5))
             }
+            if firstRender < 0, let first = probe.renders.first(where: { $0 > launch }) { firstRender = Self.perfMs(launch, first) }
             print("WP17-COLD run=\(run) handshakeMs=\(handshake) firstRenderedMs=\(firstRender) firstRenderedWithDataMs=\(data)")
             if data >= 0 {
                 coldValid += 1
                 cold += ["timing launch stage=main uptimeMs=0 sinceStartMs=0",
                          "timing launch stage=engine-handshake uptimeMs=0 sinceStartMs=\(max(handshake, 0))",
-                         "timing launch stage=first-rendered uptimeMs=0 sinceStartMs=\(max(firstRender, 0))",
+                         "timing launch stage=first-rendered uptimeMs=0 sinceStartMs=\(firstRender >= 0 ? firstRender : data)",
                          "timing launch stage=first-rendered-with-data uptimeMs=0 sinceStartMs=\(data)"]
             }
             if let page = probe.made.last { try await Self.perfClose(page, probe) }
@@ -175,8 +177,10 @@ extension CommunityCockpitEntryTests {
             try await Self.perfClose(page, probe)
             for _ in 0..<500 where probe.timed("close stage=gone", after: click) == nil { try await Task.sleep(for: .milliseconds(10)) }
             closedAt = .now
-            let lines = probe.timing.filter { $0.at > click }.map(\.line)
-            return attachmentOK && page.verificationWebView == nil ? lines : nil
+            let bare = probe.timing.filter { $0.at > click }.map(\.line)
+            // A cycle counts only with the stages the report needs.
+            let complete = ["open stage=window-visible", "open stage=animation-complete", "close stage=gone"].allSatisfy { stage in bare.contains { $0.hasPrefix(stage) } }
+            return attachmentOK && complete && page.verificationWebView == nil ? bare.map { "timing " + $0 } : nil
         }
         func section(_ name: String, detached: Bool) async throws {
             _ = try await cycle(detached: detached) // the first open and close warms the page and does not count

@@ -69,18 +69,18 @@ def build(directory: str, cores: int = 0, meta: dict | None = None) -> dict:
     sections["coldStart"] = {}
     for key, stage in COLD_STAGES:
         row = sections["coldStart"][key] = stats(pick(cold, "launch", stage))
-        if key == "firstRenderedWithData" and cold and row["n"] < REQUIRED:
+        if key == "firstRenderedWithData" and os.path.exists(os.path.join(directory, "cold-start.log")) and row["n"] < REQUIRED:
             problems.append(f"coldStart first-rendered-with-data: n={row['n']} < {REQUIRED}")
     for scenario in ("attached", "detached"):
         groups = timing(f"{scenario}.log")
         sections[scenario] = {"open": {}, "close": {}}
         for key, stage in OPEN_STAGES:
             row = sections[scenario]["open"][key] = stats(pick(groups, "open", stage))
-            if groups and key in ("windowVisible", "animationComplete") and row["n"] < REQUIRED:
+            if os.path.exists(os.path.join(directory, f"{scenario}.log")) and key in ("windowVisible", "animationComplete") and row["n"] < REQUIRED:
                 problems.append(f"{scenario} open {stage}: n={row['n']} < {REQUIRED}")
         for key, stage in CLOSE_STAGES:
             row = sections[scenario]["close"][key] = stats(pick(groups, "close", stage))
-            if groups and row["n"] < REQUIRED:
+            if os.path.exists(os.path.join(directory, f"{scenario}.log")) and row["n"] < REQUIRED:
                 problems.append(f"{scenario} close {stage}: n={row['n']} < {REQUIRED}")
     idle_path = os.path.join(directory, "idle-cpu.txt")
     if os.path.exists(idle_path):
