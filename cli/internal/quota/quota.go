@@ -90,6 +90,9 @@ type Window struct {
 	observedUsedPercent *float64 // retained only in memory for clock-independent snapshot revisions
 	observedUsedUSD     *float64
 	recent              []Sample // earlier readings of this window in its current cycle, oldest first
+	// cycleStart: with no reset time, the first reading after a drop that stood for an unseen
+	// reset. Readings before it belong to an earlier cycle, whichever history merge brings them back.
+	cycleStart time.Time
 }
 
 // MarshalJSON protects all quota JSON and cache output, including legacy
@@ -376,13 +379,18 @@ func Boundaries(a *Account) []time.Time {
 	}
 	for i := range a.Windows {
 		w := &a.Windows[i]
-		if w.UsedPercent == nil || w.ResetsAt == nil {
+		if w.UsedPercent == nil {
+			continue
+		}
+		// The reading's own freshness expires with or without a reset time: its recent rate (and a
+		// run-out forecast from it) lapses, and later the window goes stale.
+		if !w.ObservedAt.IsZero() {
+			out = append(out, w.ObservedAt.Add(recentFresh), w.ObservedAt.Add(staleAfter))
+		}
+		if w.ResetsAt == nil {
 			continue
 		}
 		out = append(out, *w.ResetsAt)
-		if !w.ObservedAt.IsZero() {
-			out = append(out, w.ObservedAt.Add(recentFresh))
-		}
 		length := w.WindowMinutes
 		if length == 0 {
 			length = defaultMinutes[w.Kind]
@@ -517,7 +525,7 @@ func unknownCycleBase(w *Window) Sample {
 	base := Sample{At: w.ObservedAt, Used: *w.UsedPercent}
 	var in []Sample
 	for _, s := range w.recent {
-		if s.ResetsAt == nil && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= recentLook {
+		if s.ResetsAt == nil && !s.At.Before(w.cycleStart) && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= recentLook {
 			in = append(in, s)
 		}
 	}
@@ -552,31 +560,40 @@ const (
 )
 
 // withHistory is w, which replaces older, keeping older's readings (and older itself) as samples.
+// Without a reset time, the later of the two inferred cycle starts holds: a merge never brings
+// back readings from before a drop either side has seen.
 func withHistory(w, older Window) Window {
 	rec := append(append([]Sample(nil), older.recent...), w.recent...)
 	if s, ok := older.sampleOf(); ok {
 		rec = append(rec, s)
 	}
-	w.recent = thin(rec, w)
+	if w.ResetsAt != nil {
+		w.cycleStart = time.Time{}
+	} else if older.ResetsAt == nil && older.cycleStart.After(w.cycleStart) {
+		w.cycleStart = older.cycleStart
+	}
+	w.recent, w.cycleStart = thin(rec, w)
 	return w
 }
 
 // thin keeps this cycle's readings, oldest first: ten minutes apart before
-// the recent hour, two minutes apart within it. History off keeps only the hour.
-func thin(ss []Sample, w Window) []Sample {
+// the recent hour, two minutes apart within it. History off keeps only the hour. It also returns
+// the cycle start, moved forward when a drop in the readings shows an unseen reset.
+func thin(ss []Sample, w Window) ([]Sample, time.Time) {
 	keep := recentKeep
 	if os.Getenv("MODELPLAN_HISTORY") == "off" {
 		keep = time.Hour
 	}
 	var in []Sample
 	for _, s := range ss {
-		if sameOrUnknownCycle(s.ResetsAt, w.ResetsAt) && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= keep {
+		if sameOrUnknownCycle(s.ResetsAt, w.ResetsAt) && !s.At.Before(w.cycleStart) && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= keep {
 			in = append(in, s)
 		}
 	}
 	sort.SliceStable(in, func(i, j int) bool { return in[i].At.Before(in[j].At) })
+	start := w.cycleStart
 	if w.ResetsAt == nil {
-		in = afterLastDrop(in, w)
+		in, start = afterLastDrop(in, w)
 	}
 	var out []Sample
 	for _, s := range in {
@@ -588,13 +605,15 @@ func thin(ss []Sample, w Window) []Sample {
 			out = append(out, s)
 		}
 	}
-	return out
+	return out, start
 }
 
 // afterLastDrop: with no reset time, a drop in the readings (the latest included) stands for an
 // unseen reset. Readings before it are of an earlier cycle; cut them before the sparse sampling
-// can thin the peak that marks the drop and leave a rate spanning two cycles.
-func afterLastDrop(in []Sample, w Window) []Sample {
+// can thin the peak that marks the drop and leave a rate spanning two cycles. It returns the
+// readings kept and the cycle start: the first reading after the last drop (w's own when w drops),
+// or w's earlier cycle start when there is no drop.
+func afterLastDrop(in []Sample, w Window) ([]Sample, time.Time) {
 	cut := 0
 	for i := 1; i < len(in); i++ {
 		if in[i].Used < in[i-1].Used {
@@ -604,7 +623,13 @@ func afterLastDrop(in []Sample, w Window) []Sample {
 	if n := len(in); n > 0 && w.UsedPercent != nil && *w.UsedPercent < in[n-1].Used {
 		cut = n
 	}
-	return in[cut:]
+	switch {
+	case cut == len(in) && cut > 0:
+		return in[cut:], w.ObservedAt
+	case cut > 0:
+		return in[cut:], in[cut].At
+	}
+	return in, w.cycleStart
 }
 
 // addSample appends a reading to a window's history: the readers attach what they kept.
