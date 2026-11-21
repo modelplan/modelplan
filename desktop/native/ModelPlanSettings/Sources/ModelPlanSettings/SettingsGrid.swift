@@ -79,6 +79,7 @@ import AppKit
     static func configure(_ button: NSButton) {
         button.setButtonType(.switch); button.isBordered = false; button.title = ""
         button.imagePosition = .noImage; button.focusRingType = .exterior
+        button.setAccessibilityRole(.checkBox)
         button.setAccessibilitySubrole(NSAccessibility.Subrole(rawValue: "AXSwitch"))
     }
 }
