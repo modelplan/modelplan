@@ -1592,8 +1592,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// D124 (macrevb-1104-4, macrev2-1104-6): the host stops sampling the moment the page stops being shown (hidden,
   /// occluded, closing, clearing); the page's own `[]` report may come late or under an old view revision.
   private func stopPluginSampling() { if bridge.pluginsSent { onIntent?(.pluginsRunning([])) } }
-  /// Plugin columns: a request to open a plugin's big screen. Held until this page is ready and has confirmed its plugin
-  /// state (macrevb-1104-8), then sent once; a newer request replaces a held one. A failed or dropped call is held
+  /// Plugin columns: a request to open a plugin's big screen. Held until this page is ready and has confirmed the NEWEST
+  /// committed plugin state (macrevb-1104-8: an earlier confirmation is not enough while a newer state is in flight,
+  /// failed or queued; the page would refuse the screen under older preferences), then sent once; a newer request replaces a held one. A failed or dropped call is held
   /// again and resent when the queue moves; a refusal from a negotiated page (the plugin is off) ends the request.
   private(set) var pluginScreenWanted: String?
   private var pluginScreenInFlight: String?
@@ -1605,7 +1606,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   private func publishPluginScreen() {
     guard let id = pluginScreenWanted, pluginScreenInFlight == nil, bridge.ready, !bridge.blocked, bridge.pluginsSent,
-      pluginsConfirmedOnPage, !ending, let raw = try? bridge.openPluginScreen(id: id) else { return }
+      pluginsConfirmedOnPage, pluginsWanted != nil, pluginsAccepted == pluginsWanted, !ending,
+      let raw = try? bridge.openPluginScreen(id: id) else { return }
     pluginScreenWanted = nil; pluginScreenInFlight = id
     let retry: () -> Void = { [weak self] in
       guard let self, self.pluginScreenInFlight == id else { return }

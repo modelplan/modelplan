@@ -149,6 +149,31 @@ import ModelPlanWire
     page.discard()
   }
 
+  /// macrevb-1104-8 (round 3): the page already confirmed B (plugin off). A (plugin on) is committed and the screen is
+  /// requested while A is in flight; A's delivery fails. The screen must not reach the page under B (it would refuse it
+  /// and the request would be lost); once A is resent and confirmed it opens exactly once, without a new request.
+  func testAScreenRequestedDuringAFailedEnablingUpdateOpensOnceAfterTheRetry() throws {
+    let (page, box) = try readyPage()
+    var done = box.sent.count
+    page.setPlugins(stateB); completeAll(box, from: &done)
+    XCTAssertEqual(page.pluginsAccepted, CockpitPluginWire.canonical(json: stateB))
+    page.setPlugins(stateA)
+    XCTAssertEqual(type(box.sent[done].0), "plugins")
+    page.openPluginScreen("placeholder")
+    XCTAssertFalse(box.sent.contains { type($0.0) == "pluginScreen" }, "held while the newer state is in flight")
+    box.sent[done].1(.failed); done += 1
+    XCTAssertFalse(box.sent.contains { type($0.0) == "pluginScreen" }, "never sent under the older state")
+    XCTAssertEqual(page.heldPluginScreen, "placeholder")
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: false))
+    completeAll(box, from: &done)
+    XCTAssertEqual(page.pluginsAccepted, CockpitPluginWire.canonical(json: stateA))
+    let types = box.sent.compactMap { type($0.0) }.filter { $0 == "plugins" || $0 == "pluginScreen" }
+    XCTAssertEqual(types.filter { $0 == "pluginScreen" }.count, 1, "the requested screen opens exactly once")
+    XCTAssertEqual(types.last, "pluginScreen", "after the enabling state")
+    XCTAssertNil(page.heldPluginScreen)
+    page.discard()
+  }
+
   /// macrevb-1104-6 (CKP-PLG-50/54): with A confirmed, B is committed and A again before the page answers B. The page
   /// accepts B, then A reaches it without another edit or visibility event.
   func testAReturnToTheConfirmedStateWhileAnotherIsInFlightReachesThePage() throws {
