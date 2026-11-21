@@ -22,9 +22,9 @@ for this run. Copy the returned booking ID into `BOOKING_ID` and the run config.
 ```sh
 set -e  # any failed step before launch stops the sequence (no release, no launch)
 python3 desktop/native/verification/bin/book.py request \
-  --lane M1 --unit U11a --scenario cold --minutes 20
+  --lane M1 --unit U11a --scenario cold --minutes 20 --host dev-mac
 python3 desktop/native/verification/bin/book.py start \
-  --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" > "$LEASE_PATH"
+  --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --host dev-mac > "$LEASE_PATH"
 # Guardian: heartbeat, stop/deadline, and it stops the subject on any exit path (background).
 python3 desktop/native/verification/bin/guardian.py --lease "$LEASE_PATH" \
   --stop "$STOP_PATH" --subject-pid-file "$SUBJECT_PID_PATH" > "$GUARDIAN_OUT" &
@@ -60,7 +60,7 @@ fi
 SUBJECT=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("subject", ""))' "$GUARDIAN_OUT" 2>/dev/null)
 if [ "$GUARDIAN_STATUS" -eq 0 ] && [ "$DRIVE_CLEAN" -eq 0 ] && { [ "$CONTROLLER_STATUS" -eq 0 ] || [ "$CONTROLLER_STATUS" -eq 3 ] || [ "$SUBJECT" = never-started ]; }; then
   python3 desktop/native/verification/bin/book.py finish \
-    --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned
+    --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned --host dev-mac
 else
   # Do not finish: the booking stays started (the Mac stays held) until the coordinator verifies
   # closure or the documented expiry recovery applies.
