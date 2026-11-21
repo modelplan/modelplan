@@ -318,9 +318,9 @@ import ModelPlanWire
     await clearing.value
     let clearIndex = try XCTUnwrap(box.sent.firstIndex(where: { type($0.0) == "clear" }))
     // Deliveries are serial: the receipt sends appearance and visibility first, and the state follows each answer.
-    var next = clearIndex + 1
-    while next < box.sent.count, type(box.sent[next].0) != "plugins" {
-      let i = next; next += 1; box.sent[i].1(.accepted)
+    var queueIndex = clearIndex + 1
+    while queueIndex < box.sent.count, type(box.sent[queueIndex].0) != "plugins" {
+      let i = queueIndex; queueIndex += 1; box.sent[i].1(.accepted)
     }
     let resent = box.sent[(clearIndex + 1)...].filter { type($0.0) == "plugins" }
     XCTAssertEqual(resent.count, 1, "the cleared page gets the plugin state again, once")
