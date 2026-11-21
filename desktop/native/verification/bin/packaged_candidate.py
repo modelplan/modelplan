@@ -23,7 +23,7 @@ import subject_options
 SOURCE = re.compile(r"[0-9a-f]{40}\Z")
 
 
-def prepare(archive, manifest, template, parent, registry_path, readers=None, backup=None):
+def prepare(archive, manifest, template, parent, registry_path, readers=None, backup=None, hold_seconds=None):
     with Path(manifest).open(encoding="utf-8") as stream:
         pin = json.load(stream)
     source, digest = pin.get("sourceSHA"), pin.get("sha256")
@@ -33,7 +33,7 @@ def prepare(archive, manifest, template, parent, registry_path, readers=None, ba
     with Path(template).open(encoding="utf-8") as stream:
         config = json.load(stream)
     # --readers/--backup fill the template's fields; a different value already there is refused.
-    config = subject_options.merge_flags(config, readers=readers, backup=backup)
+    config = subject_options.merge_flags(config, readers=readers, backup=backup, holdSeconds=hold_seconds)
     if config.get("backup") == "product":
         # Outside the scratch root, which cleanup removes: an unrestored backup must survive.
         config.setdefault("backupDir", str(registry_path) + ".product-backup")
@@ -153,12 +153,13 @@ def main():
         prep.add_argument("--" + flag, required=True)
     prep.add_argument("--readers", help="off | passive | comma list of tool IDs (zcode = zai)")
     prep.add_argument("--backup", choices=subject_options.BACKUPS)
+    prep.add_argument("--hold-seconds", type=int, help="keep the subject open this long, then close normally")
     execute = sub.add_parser("run")
     execute.add_argument("--registry", required=True); execute.add_argument("--receipt", required=True)
     args = parser.parse_args()
     if args.action == "prepare":
         result = prepare(args.archive, args.manifest, args.template, args.scratch_parent, args.registry,
-                         readers=args.readers, backup=args.backup)
+                         readers=args.readers, backup=args.backup, hold_seconds=args.hold_seconds)
     else:
         with Path(args.registry).open(encoding="utf-8") as stream:
             result = run(json.load(stream), args.receipt)

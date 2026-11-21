@@ -13,6 +13,7 @@ the candidate's engine reads but never widen it:
   subjectEnv: {KEY: value}   extra keys from ALLOWED only, e.g. {"MODELPLAN_HISTORY": "off"};
                              a reader list has this one spelling, `readers`
   backup: "product"          real profile only: product_backup.py around the subject
+  holdSeconds: N             keep the subject open N seconds, then close normally (hold.py)
 
 Every inherited MODELPLAN_* variable is removed from a real-profile environment (names recorded),
 so only these reviewed values reach the candidate. Values here are switches and tool IDs, never
@@ -118,6 +119,9 @@ def validate(config):
             raise ValueError('backup product needs an absolute backupDir')
     if VERIFY_READERS in subject_overrides(config) and config.get('subjectKind', 'binary') != 'app-zip':
         raise ValueError('a reader list needs an app-zip subject (its bundled engine is checked)')
+    hold = config.get('holdSeconds')
+    if hold is not None and (type(hold) is not int or hold < 1):
+        raise ValueError('holdSeconds must be a positive whole number')
     manifest = config.get('runManifestPath')
     if manifest is not None and (not isinstance(manifest, str) or not manifest.startswith('/')):
         raise ValueError('runManifestPath must be absolute')
