@@ -135,7 +135,7 @@ import AppKit
     private func build() {
         let model = configuration.model
         heading(.init("My subscriptions", "我的订阅"), id: "subscriptions.added.heading")
-        note(.init("The order sets the widget rings and the cockpit columns. An alias changes only the displayed name.",
+        note(.init("The order sets the Quota Widget rings and the cockpit columns. An alias changes only the displayed name.",
                    "顺序同时决定额度挂件的圈和驾驶舱的列。别名只改显示名。"), id: "subscriptions.added.note")
         if model.added.isEmpty {
             note(.init("Nothing is being read yet. Add a detected tool below.", "目前没有在读取的订阅，可以从下面添加已检测到的工具。"), id: "subscriptions.added.empty")
