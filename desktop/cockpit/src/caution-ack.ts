@@ -89,6 +89,9 @@ export function createCautionMemory(onChange:(ids:string[])=>void=()=>{}):Cautio
    const fresh=canBlink?lit.filter(x=>!acked.has(x.stable)&&!shown.has(x.stable)):[];
    const before=durable().join('|');
    for(const x of fresh){shown.set(x.stable,x.cycle??null);acked.set(x.stable,x.cycle??null);newest=x.stable;const w=window_(x.stable),rem=w===null?undefined:read.get(w)?.remaining;if(typeof rem==='number'&&x.cycle===undefined)floor.set(x.stable,rem);}
+   // The baseline is the lowest reading while the forecast is lit, also when it cannot blink yet: a press before the first
+   // blink, or a refill straight after, would otherwise make the refill reading itself the baseline (#1045 MP1045-2).
+   for(const x of lit){if(x.cycle!==undefined||!amberStable(x.stable)||floor.has(x.stable))continue;const w=window_(x.stable),rem=w===null?undefined:read.get(w)?.remaining;if(typeof rem==='number')floor.set(x.stable,rem);}
    if(durable().join('|')!==before)report();
    current=lit;if(newest!==null&&!litIds.includes(newest))newest=litIds.find(id=>!acked.has(id))??litIds[0]??null;
    return fresh.length>0;

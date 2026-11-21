@@ -201,6 +201,11 @@ import ModelPlanWire
         let name = ["gemini": "Gemini", "cursor": "Cursor", "codex": "Codex", "claude": "Claude Code",
                     "zai": "Z.ai", "opencode": "OpenCode", "minimax": "MiniMax", "kimi": "Kimi"][scope.tool]
         let tool = name.map { SettingsText($0, $0) } ?? .init("Other tool", "其他工具")
+        if ScopeConsentController.separateOptInScopes.contains(scope.scope) {
+            // D232: the separate refresh choice names the endpoint it reaches.
+            return .init(tool.english + " · Renew the Gemini CLI sign-in when it lapses (Google's token endpoint; the new token stays in memory)",
+                         tool.chinese + " · Gemini CLI 登录过期时自动续期（访问 Google 的令牌接口，新令牌只保存在内存中）")
+        }
         let route: SettingsText
         switch scope.route {
         case .savedLoginApi: route = .init("Existing sign-in usage", "使用已有登录读取用量")

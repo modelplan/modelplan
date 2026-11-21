@@ -28,7 +28,8 @@ func CheckAdmission(scope string) error {
 		consent.ScopeMiniMaxAccountUsageAPIKey, consent.ScopeClaudeAccountUsageSavedLogin,
 		consent.ScopeKimiAccountUsageAPIKey, consent.ScopeKimiAccountUsageSavedLogin,
 		consent.ScopeZaiAccountUsageAPIKey, consent.ScopeOpenCodeGoAccountUsageAPIKey,
-		consent.ScopeGrokAccountUsageSavedLogin, consent.ScopeGeminiAccountUsageTokenRefresh:
+		consent.ScopeGrokAccountUsageSavedLogin, consent.ScopeZaiAccountUsageSavedLogin,
+		consent.ScopeGeminiAccountUsageTokenRefresh:
 		return nil
 	default:
 		return ErrUnsupportedScope

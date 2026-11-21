@@ -291,7 +291,7 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 	// D232 refresh scope is granted, a refreshed token held in memory replaces it.
 	bearer, idToken := credential.AccessToken, credential.IDToken
 	if credential.Expiry <= r.Now.Add(time.Minute).UnixMilli() {
-		tokenKey := readerHash(r.Paths.Cache, "gemini:transient-token", r.ProfileKey+"\x00"+credentialKey+"\x00"+r.Grant.Generation)
+		tokenKey := readerHash(r.Paths.Cache, "gemini:transient-token", r.ProfileKey+"\x00"+credentialKey+"\x00"+r.Grant.Generation+"\x00"+r.Grant.TokenGeneration)
 		if !r.Grant.TokenRefresh || credential.RefreshToken == "" || tokenKey == "" {
 			out := fail("expired", "Open Gemini CLI to refresh")
 			out.Entry.NextStep = out.Entry.Notice

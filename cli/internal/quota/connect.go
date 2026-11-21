@@ -193,9 +193,13 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 		by[id] = x
 	}
 	// ZCode's own Coding Plan key, on by default when no GLM source is configured (G3-21).
-	if g, ok := p.ReaderAccessGrant("zai"); ok && g.ConfigSource != nil && g.ConfigSource.Tool == "zcode" {
+	if g, ok := p.ReaderAccessGrant("zai"); ok && g.ConfigSource != nil && (g.ConfigSource.Tool == "zcode" || g.ConfigSource.Tool == zcodeLoginTool) {
 		if _, configured := by["zai"]; !configured {
-			by["zai"] = Selection{Provider: "zai", Backend: BackendNative, Origin: "zcode-config"}
+			origin := "zcode-config"
+			if g.ConfigSource.Tool == zcodeLoginTool {
+				origin = "zcode-login" // D369: ZCode's QR-code sign-in
+			}
+			by["zai"] = Selection{Provider: "zai", Backend: BackendNative, Origin: origin}
 		}
 	}
 	// D90: a pasted key makes the provider a selection too. Consent still decides below whether it is read.
@@ -269,6 +273,10 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 			class = consent.ExplicitKey
 		}
 		allowed := policy.Allows(x.Provider, class, mode)
+		if zcodeLoginRoute(p, x.Provider) && (x.Origin == "zcode-login" || x.Origin == "consent.json") {
+			// D369: ZCode's sign-in is read only under its own saved-login scope.
+			allowed = policy.AllowsScope(consent.ScopeZaiAccountUsageSavedLogin, mode)
+		}
 		if _, decided := policy.Tools[x.Provider]; !decided && !policy.ScopeDecided(x.Provider, class) && !policy.RequireConsent && mode == consent.Automatic && (x.Origin == "connections.json" || x.Origin == "codexbar.json") {
 			allowed = true
 		}
@@ -344,7 +352,7 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	if s.Allows("claude", consent.Local, mode) {
 		add(readClaudeCode(p.Cache, p.ClaudeSession, now))
 	}
-	if s.Allows("codex", consent.Local, mode) {
+	if s.Allows("codex", consent.Local, mode) && codexHistoryStillAllowed() {
 		add(readCodexFenced(p.CodexHome, p.CodexThread, codexFence))
 	}
 	if s.Allows("codex", consent.Runtime, mode) && p.CodexHome != "" {
@@ -360,6 +368,16 @@ func ReadPermitted(p Paths, now time.Time) Report {
 		return Report{SchemaVersion: 1, EvaluatedAt: now.UTC(), Accounts: []Account{}, Sources: []SourceStatus{{Source: "readers", Status: "off", Reason: "consent-changed"}}}
 	}
 	return r
+}
+
+// codexHistoryStillAllowed re-reads consent after the memo fence was taken (sampling 11-21 S6).
+// A captured admission can predate a Forget of Codex local history that has since completed;
+// that Forget already bumped the fence this read took, so only this check keeps the read from
+// opening and memoizing rollouts. A Forget that lands after this check bumps the fence again
+// and voids the read's memo writes.
+func codexHistoryStillAllowed() bool {
+	current, mode := consent.Current()
+	return current.Allows("codex", consent.Local, mode)
 }
 
 // ReadDeclared reads only the user's bounded local.json. It is independent of

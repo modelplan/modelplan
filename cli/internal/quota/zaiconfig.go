@@ -201,6 +201,25 @@ func fetchZaiConfigKey(ctx context.Context, c *http.Client, now time.Time) (code
 	if !ok {
 		return codexbarEntry{Status: "error", ErrorCode: "unsupported_login", Error: zaiConfigNext("not_supported_yet")}, ""
 	}
+	if source.Tool == zcodeLoginTool {
+		// D369: ZCode's sign-in. Its credential never leaves fetchZCodeLogin: no key is returned,
+		// so no subscription reference (a keyed hash) is derived from it or stored.
+		e := fetchZCodeLogin(ctx, c, source, now)
+		if e.Status != "ok" {
+			state := "upstream_changed"
+			switch e.ErrorCode {
+			case "login_expired":
+				state = "expired_login"
+			case "not_signed_in", "file_missing":
+				state = "not_detected"
+			case "unsupported_login", "region_refused", "no_plan":
+				state = "not_supported_yet"
+			}
+			e.Error = zaiConfigNext(state)
+		}
+		e.Plan = ""
+		return e, ""
+	}
 	region, key, state, code := zaiConfiguredKeyCode(source)
 	if state != "" {
 		return codexbarEntry{Status: "error", ErrorCode: code, Error: zaiConfigNext(state)}, ""

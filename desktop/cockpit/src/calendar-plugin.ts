@@ -9,12 +9,12 @@
 // plain lines.
 // All times are local. The page has no timers: the host's minute tick moves the now line and rolls the day over.
 import {PLUGIN_ICON_FRAME,type CockpitPlugin,type PluginCell,type PluginColumn,type PluginContext,type PluginDrawContext,type PluginLocale} from './plugin-registry.js';
-import {CALENDAR_MAX_BYTES,calendarFromCockpit,emptyCalendar,parseCalendarData,type CalendarData,type CalendarSpan} from './calendar-data.js';
+import {CALENDAR_MAX_BYTES,calendarFromCockpit,emptyCalendar,parseCalendarData,shortName,type CalendarData,type CalendarSpan} from './calendar-data.js';
 import {HOUR,WEEK_DAYS,addDays,dayOffset,dayPieces,dayWindow,hhmm,hourMarks,isWeekend,midnights,monthDay,nextMinute,packLanes,startOfDay,stripWindow,wallHours} from './calendar-time.js';
 
 // Every word the calendar draws comes from the plugin string table (strings/plugins.js, `plugin.cal*`), in the locale
 // of the draw context; nothing here picks a language's text inline.
-const WORDS=['now','allDay','peak','cont','r5','week5','weekly','weeklyLong','wk','cards','until','announced','confirmed','effective','empty','waiting','zoomed','tentative','announcedOn'] as const;
+const WORDS=['now','allDay','peak','cont','r5','week5','weekly','weeklyLong','wk','cards','until','announced','confirmed','effective','empty','waiting','zoomed','tentative','announcedOn','winWeek','win5'] as const;
 type Words={readonly [k in typeof WORDS[number]]:string}&{readonly days:readonly string[];readonly weekdays:readonly string[];readonly narrow:readonly string[]};
 function wordsOf(context:PluginContext):Words {
  const word=(key:string)=>context.words('plugin.'+key).full,out:Record<string,unknown>={};
@@ -41,7 +41,7 @@ function resetText(abbr:string,kind:'5h'|'week',at:number,prefix:string,w:Words,
  const what=kind==='5h'?(long?w.week5:w.r5):(long?w.weeklyLong:w.weekly);return `${abbr} ${what} ${prefix}${hhmm(at)}`;
 }
 function spanText(data:CalendarData,s:CalendarSpan,w:Words,zh:boolean,full=false){
- const sub=data.subs[s.sub]!,name=full?(zh?sub.name.zh:sub.name.en):sub.abbr;
+ const sub=data.subs[s.sub]!,name=full?(zh?sub.name.zh:sub.name.en):shortName(zh?sub.name.zh:sub.name.en);
  if(s.kind==='cards'){const n=s.count&&s.count>1?` ×${s.count}`:'';
   // No expiry known (a partial list, or none given): no date, never an epoch (macrevc-844-6).
   if(s.to===null)return `${name} ${w.cards}${n}`;
@@ -50,7 +50,9 @@ function spanText(data:CalendarData,s:CalendarSpan,w:Words,zh:boolean,full=false
  if(s.to===null)return `${name} ${what}`;
  return zh?`${name} ${what} · ${monthDay(s.to)} ${w.effective}`:`${name} ${what} · ${monthDay(s.to)}`;
 }
-const peakTitle=(data:CalendarData,p:{sub:number;from:number;to:number|null;tentative:boolean},w:Words)=>`${data.subs[p.sub]!.abbr} ${w.peak} ${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}${p.tentative?` · ${w.tentative}`:''}`;
+const peakTitle=(data:CalendarData,p:{sub:number;from:number;to:number|null;tentative:boolean},w:Words,zh:boolean)=>`${nameOf(data,p.sub,zh)} ${w.peak} ${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}${p.tentative?` · ${w.tentative}`:''}`;
+/** The name the calendar writes for a subscription (D375): its full name in the locale, kept short for narrow places. */
+const nameOf=(data:CalendarData,sub:number,zh:boolean)=>{const s=data.subs[sub]!;return shortName(zh?s.name.zh:s.name.en);};
 const colourOf=(data:CalendarData,sub:number)=>data.subs[sub]?.colour??'#c6ccd4';
 
 // --- the column (the next 12 hours) ------------------------------------------------------------------------------
@@ -81,15 +83,16 @@ function paintStrip(context:PluginDrawContext,reading:CalendarData) {
   const {p,start,end}=item,block=el('div','cal-pk'+(p.tentative?' tent':''));block.style.setProperty('--c',colourOf(data,p.sub));
   block.style.top=pct(Y(start));block.style.height=pct(Y(end)-Y(start));
   block.style.left=`calc(var(--cal-g) + (100% - var(--cal-g) - 2px) * ${lane/lanes})`;block.style.width=`calc((100% - var(--cal-g) - 2px) / ${lanes} - 2px)`;
-  const abbr=data.subs[p.sub]!.abbr;
-  block.title=peakTitle(data,p,w);block.append(el('b','',p.from<=now?(p.to===null?`${abbr} ${w.peak}`:`${abbr} ${w.until} ${hhmm(p.to)}`):`${abbr} ${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}`));
+  const abbr=nameOf(data,p.sub,zh);
+  block.title=peakTitle(data,p,w,zh);block.append(el('b','',p.from<=now?(p.to===null?`${abbr} ${w.peak}`:`${abbr} ${w.until} ${hhmm(p.to)}`):`${abbr} ${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}`));
   axis.append(block);
  }
  // The user's own resets: capsules with the time only after the subscription and kind ("CL 周 09:00").
  const chips=data.resets.filter(r=>r.at>=span.from&&r.at<span.to);
  for(const r of chips){
   const c=el('div','cal-ch'+(r.kind==='week'?' wk':'')),sub=data.subs[r.sub]!;c.style.setProperty('--c',sub.colour);c.dataset.y=String(Y(r.at));c.style.top=pct(Y(r.at));
-  c.textContent=`${sub.abbr} ${r.kind==='5h'?w.r5:w.wk} ${hhmm(r.at)}`;c.title=`${zh?sub.name.zh:sub.name.en} · ${resetText(sub.abbr,r.kind,r.at,'',w,true)} · ${dayLabel(r.at,w,zh)}`;axis.append(c);
+  // Name + window + time; a narrow column drops the window (D375). The chip's colour and the name appear together.
+  const wide=(context.width||0)>=100;c.textContent=`${nameOf(data,r.sub,zh)} ${wide?`${r.kind==='5h'?w.r5:w.wk} `:''}${hhmm(r.at)}`;c.title=`${zh?sub.name.zh:sub.name.en} · ${resetText(zh?sub.name.zh:sub.name.en,r.kind,r.at,'',w,true)} · ${dayLabel(r.at,w,zh)}`;axis.append(c);
  }
  // Now: the line, with the time in the gutter to its left.
  const line=el('div','cal-nl');line.style.top='0%';axis.append(line,el('div','cal-nt',hhmm(now)));
@@ -108,11 +111,11 @@ function settleChips(axis:HTMLElement) {
 /** "2h50", "35m": a duration the way the bottom line writes it. */
 export const duration=(ms:number)=>{const m=Math.max(0,Math.round(ms/60_000)),h=Math.floor(m/60);return h?`${h}h${String(m%60).padStart(2,'0')}`:`${m}m`;};
 /** What the week view's picked day holds, for the bottom line: its resets and peaks in time order, one short phrase each. */
-export function dayEvents(data:CalendarData,day:number,w:Words):string[] {
+export function dayEvents(data:CalendarData,day:number,w:Words,zh=false):string[] {
  const {from,to}=dayWindow(day),inside=(t:number)=>t>=from&&t<to;
  return [
-  ...data.resets.filter(r=>inside(r.at)).map(r=>({at:r.at,text:`${data.subs[r.sub]!.abbr} ${r.kind==='5h'?w.r5:w.wk} ${hhmm(r.at)}`})),
-  ...data.peaks.filter(p=>inside(p.from)).map(p=>({at:p.from,text:`${data.subs[p.sub]!.abbr} ${w.peak} ${hhmm(p.from)}`})),
+  ...data.resets.filter(r=>inside(r.at)).map(r=>({at:r.at,text:`${nameOf(data,r.sub,zh)} ${r.kind==='5h'?w.r5:w.wk} ${hhmm(r.at)}`})),
+  ...data.peaks.filter(p=>inside(p.from)).map(p=>({at:p.from,text:`${nameOf(data,p.sub,zh)} ${w.peak} ${hhmm(p.from)}`})),
  ].sort((a,b)=>a.at-b.at).map(x=>x.text);
 }
 /** The bottom line (D328): the picked day's events, else the peak now / the next peak, else "no peak rules". */
@@ -121,12 +124,12 @@ function footOf(data:CalendarData|null,context:PluginContext):PluginColumn['foot
  const now=context.now,w=wordsOf(context),zh=context.locale==='zh-CN',view=context.memo?viewOf(context.memo):null;
  if(view&&view.day!==null&&dayOffset(now,view.day)<=0)view.day=null;// the day rolled over: back to now
  if(view&&view.day!==null){
-  const list=dayEvents(data,view.day,w).join(' · ')||context.words('plugin.calendarNone').full;
+  const list=dayEvents(data,view.day,w,zh).join(' · ')||context.words('plugin.calendarNone').full;
   return {label:{full:dayLabel(view.day,w,zh),short:monthDay(view.day)},value:{full:list,short:list}};
  }
  if(!data.peaks.length)return {label:context.words('plugin.calPeakLabel'),value:context.words(data.peakRules==='no'?'plugin.calNoRules':data.peakRules==='yes'?'plugin.calendarNone':'plugin.calPeaksUnknown')};
  const live=data.peaks.find(p=>p.from<=now&&(p.to===null||p.to>now));
- if(live)return {label:context.words('plugin.calPeakNow',{a:data.subs[live.sub]!.abbr}),value:live.to===null?null:context.words('plugin.calLeft',{t:duration(live.to-now)})};
+ if(live)return {label:context.words('plugin.calPeakNow',{a:nameOf(data,live.sub,zh)}),value:live.to===null?null:context.words('plugin.calLeft',{t:duration(live.to-now)})};
  const next=data.peaks.filter(p=>p.from>now).sort((a,b)=>a.from-b.from)[0];
  return next?{label:context.words('plugin.calendarPeak'),value:context.words('plugin.calIn',{t:duration(next.from-now)})}:{label:context.words('plugin.calPeakLabel'),value:context.words('plugin.calendarNone')};
 }
@@ -168,14 +171,14 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
   if(x.kind==='cards'){
    if(x.to===null){// no expiry known: one mark on the day the cards were seen, no bar and no date
     const row=el('div','wk-adr mark');row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);place(row,Math.max(0,dayOffset(now,x.from)));
-    row.append(el('span','',`◆ ${sub.abbr}`));allDay.append(row);rowsUsed++;continue;
+    row.append(el('span','',`◆ ${nameOf(data,x.sub,zh)}`));allDay.append(row);rowsUsed++;continue;
    }
    const a=Math.max(0,dayOffset(now,x.from)),b=Math.min(WEEK_DAYS-1,dayOffset(now,x.to)),row=el('div','wk-adr bar');row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);
-   place(row,a,b-a+1);row.append(el('span','',narrow?`${sub.abbr} ${w.cards}`:zh?`${sub.name.zh} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to)}`:`${sub.name.en} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to)}`));
+   place(row,a,b-a+1);row.append(el('span','',narrow?`${nameOf(data,x.sub,zh)} ${w.cards}`:zh?`${sub.name.zh} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to)}`:`${sub.name.en} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to)}`));
    allDay.append(row);rowsUsed++;
   }else if(x.to!==null&&x.to>=today&&x.to<end){
    const row=el('div','wk-adr mark');row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);place(row,dayOffset(now,x.to));
-   row.append(el('span','',`◆ ${sub.abbr}`));allDay.append(row);rowsUsed++;
+   row.append(el('span','',`◆ ${nameOf(data,x.sub,zh)}`));allDay.append(row);rowsUsed++;
   }
  }
  if(!rowsUsed)allDay.classList.add('none');
@@ -192,7 +195,7 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
   const {p,start,end:stop,cont}=item,block=el('div','wk-pk'+(p.tentative?' tent':''));block.style.setProperty('--c',colourOf(data,p.sub));
   block.style.top=Y(start);block.style.height=pct((stop-start)/24);
   block.style.left=`calc(${col(i)} + 2px + (${colW} - 4px) * ${lane/lanes})`;block.style.width=`calc((${colW} - 4px) / ${lanes} - 1px)`;
-  const abbr=data.subs[p.sub]!.abbr;block.title=peakTitle(data,p,w);
+  const abbr=nameOf(data,p.sub,zh);block.title=peakTitle(data,p,w,zh);
   block.append(el('b','',fit?abbr:`${abbr} ${w.peak}${cont?w.cont:''}`),el('i','',`${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}`));
   inner.append(block);items.push({day:i,start,end:stop,label:`${abbr} ${w.peak} ${hhmm(p.from)}`,kind:'peak'});
  }
@@ -201,8 +204,8 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
  for(const r of data.resets){
   const i=dayOffset(now,r.at);if(i<0||i>=WEEK_DAYS)continue;if(r.kind==='5h'&&next5.get(r.sub)!==r.at)continue;
   const sub=data.subs[r.sub]!,h=wallHours(r.at),c=el('div','wk-ch'+(r.kind==='week'?' wk':''));c.style.setProperty('--c',sub.colour);c.style.top=Y(h);c.style.left=`calc(${col(i)} + ${narrow?3:10}px)`;c.style.maxWidth=`calc(${colW} - ${narrow?5:14}px)`;
-  const short=r.kind==='5h'?`${sub.abbr} 5h ${hhmm(r.at)}`:`${sub.abbr} ${w.wk} ${hhmm(r.at)}`;
-  c.textContent=hhmm(r.at);c.title=`${zh?sub.name.zh:sub.name.en} · ${resetText(sub.abbr,r.kind,r.at,'',w,true)} · ${dayLabel(r.at,w,zh)}`;
+  const short=r.kind==='5h'?`${nameOf(data,r.sub,zh)} 5h ${hhmm(r.at)}`:`${nameOf(data,r.sub,zh)} ${w.wk} ${hhmm(r.at)}`;
+  c.textContent=hhmm(r.at);c.title=`${zh?sub.name.zh:sub.name.en} · ${resetText(zh?sub.name.zh:sub.name.en,r.kind,r.at,'',w,true)} · ${dayLabel(r.at,w,zh)}`;
   inner.append(c);items.push({day:i,start:h,end:h,label:short,kind:'chip'});
  }
  // Now: today's past is dimmed, the now line crosses today's column and the time sits in the gutter.
@@ -244,23 +247,29 @@ function nextReset(data:CalendarData,now:number) {const r=data.resets.find(x=>x.
 function fallbackCells(data:CalendarData|null,context:PluginContext):PluginCell[] {
  if(!data||!context.now)return [{tag:context.words('plugin.calendarWaiting')}];
  const w=wordsOf(context),now=context.now,zh=context.locale==='zh-CN',side=(full:string,short=full)=>({full,short});
- // D293 cells: the next reset ("14:10 · 2h50 后"), the next weekly reset, then the next peak and the reset cards when there are any.
- const reset=data.resets.find(x=>x.at>now&&x.kind==='5h')??data.resets.find(x=>x.at>now),weekly=data.resets.find(x=>x.at>now&&x.kind==='week');
+ // D293 cells, D375: the soonest reset of any kind with its time as the big text, then the weekly reset when it is another
+ // moment (the same moment is written once). Each carries the subscription's colour mark and its name.
+ const first=data.resets.find(x=>x.at>now),weekly=data.resets.find(x=>x.at>now&&x.kind==='week'&&(!first||x.at!==first.at));
  const peak=data.peaks.find(p=>(p.to??p.from+1)>now),cards=data.spans.find(x=>x.kind==='cards');
  const cells:PluginCell[]=[];
- const when=(at:number)=>`${hhmm(at)} · ${context.words('plugin.calIn',{t:duration(at-now)}).full}`;
- cells.push({tag:context.words('plugin.calendarReset'),side:reset?side(`${data.subs[reset.sub]!.abbr} ${when(reset.at)}`,`${data.subs[reset.sub]!.abbr} ${hhmm(reset.at)}`):context.words('plugin.calendarNone')});
- cells.push({tag:context.words('plugin.calWeekReset'),side:weekly?side(`${data.subs[weekly.sub]!.abbr} ${dayLabel(weekly.at,w,zh)} ${hhmm(weekly.at)}`,`${data.subs[weekly.sub]!.abbr} ${hhmm(weekly.at)}`):context.words('plugin.calendarNone')});
- if(peak)cells.push({tag:context.words('plugin.calendarPeak'),side:side(`${data.subs[peak.sub]!.abbr} ${hhmm(peak.from)}–${peak.to===null?'…':hhmm(peak.to)}`,`${data.subs[peak.sub]!.abbr} ${hhmm(peak.from)}`)});
- else if(cards)cells.push({tag:context.words('plugin.calendarCards'),side:side(spanText(data,cards,w,zh),`${data.subs[cards.sub]!.abbr} ${cards.to===null?w.cards:monthDay(cards.to)}`)});
+ const resetCell=(tag:PluginCell['tag'],r:CalendarData['resets'][number]):PluginCell=>{
+  const name=nameOf(data,r.sub,zh),win=context.words(r.kind==='5h'?'plugin.calWin5':'plugin.calWinWeek').full,day=dayOffset(now,r.at)>0?` · ${dayLabel(r.at,w,zh)}`:'';
+  return {tag,big:hhmm(r.at),side:context.words('plugin.calIn',{t:duration(r.at-now)}),subline:{colour:colourOf(data,r.sub),text:side(`${name} ${win}${day}`,name)}};
+ };
+ cells.push(first?resetCell(context.words('plugin.calendarReset'),first):{tag:context.words('plugin.calendarReset'),side:context.words('plugin.calendarNone')});
+ if(weekly)cells.push(resetCell(context.words('plugin.calWeekReset'),weekly));
+ else if(first&&first.kind==='week'){/* the next reset is the weekly one: written once, above */}
+ else cells.push({tag:context.words('plugin.calWeekReset'),side:context.words('plugin.calendarNone')});
+ if(peak)cells.push({tag:context.words('plugin.calendarPeak'),side:side(`${hhmm(peak.from)}–${peak.to===null?'…':hhmm(peak.to)}`),subline:{colour:colourOf(data,peak.sub),text:side(nameOf(data,peak.sub,zh))}});
+ else if(cards)cells.push({tag:context.words('plugin.calendarCards'),side:side(spanText(data,cards,w,zh),`${nameOf(data,cards.sub,zh)} ${cards.to===null?w.cards:monthDay(cards.to)}`)});
  return cells;
 }
 function fallbackLines(data:CalendarData|null,context:PluginContext):{label:string;value:string}[] {
  if(!data||!context.now)return [{label:context.words('plugin.calendarWaiting').full,value:''}];
  const w=wordsOf(context),zh=context.locale==='zh-CN',now=context.now,end=addDays(now,WEEK_DAYS);
  const lines=[
-  ...data.resets.filter(r=>r.at>now&&r.at<end).map(r=>({at:r.at,label:resetText(data.subs[r.sub]!.abbr,r.kind,r.at,'',w,true),value:`${dayLabel(r.at,w,zh)} ${hhmm(r.at)}`})),
-  ...data.peaks.filter(p=>(p.to??p.from+1)>now&&p.from<end).map(p=>({at:p.from,label:`${data.subs[p.sub]!.abbr} ${w.peak}`,value:`${dayLabel(p.from,w,zh)} ${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}`})),
+  ...data.resets.filter(r=>r.at>now&&r.at<end).map(r=>({at:r.at,label:resetText(nameOf(data,r.sub,zh),r.kind,r.at,'',w,true),value:`${dayLabel(r.at,w,zh)} ${hhmm(r.at)}`})),
+  ...data.peaks.filter(p=>(p.to??p.from+1)>now&&p.from<end).map(p=>({at:p.from,label:`${nameOf(data,p.sub,zh)} ${w.peak}`,value:`${dayLabel(p.from,w,zh)} ${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}`})),
  ].sort((a,b)=>a.at-b.at).map(({label,value})=>({label,value}));
  return lines.length?lines:[{label:w.empty,value:''}];
 }

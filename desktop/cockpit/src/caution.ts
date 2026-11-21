@@ -117,7 +117,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
  // CKP-MFD-28 (study mfd-adapter.js resetAlert): an announced public reset is placed at its window's middle, to the
  // half hour; a date-only or missing schedule has no time to show. Never the user's own reset.
  for(const e of data.details?.resetEvents??[]){
-  if(!(Date.parse(e.expiresAt)>now))continue;const m=members.find(m=>m.row.id===e.rowId);if(!m)continue;
+  if(!(Date.parse(e.expiresAt)>now))continue;const m=members.find(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id)));if(!m)continue;// a plan-scoped announcement belongs to that plan's subscription only (CKP-MFD-56)
   const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['reset',e.id]),stable=id;
   if(e.status==='confirmed'){list.push({id,stable,level:'blue',member:m.key,text:both('mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
   const from=e.schedule?Date.parse(e.schedule.from):NaN,through=e.schedule?Date.parse(e.schedule.through):NaN;

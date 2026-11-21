@@ -91,10 +91,11 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 		if route, exists := routes[id]; exists && (route.Preferred != "native" || !strings.HasPrefix(route.ReaderID, "native:") || !detect.Compatible(version, route.MinCLI)) {
 			continue
 		}
-		generation := state.Generation
 		fence := state.Fence()
 		scope := state.ScopeFor(id, consent.Credential)
-		g := ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) }, Generation: fence.StoreEpoch + ":" + strconv.FormatUint(generation, 10), Region: record.Region,
+		// Generation keys retained readings; it ignores commits that change only an extension
+		// scope (S2). Writes stay fenced by the full consent fence below.
+		g := ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) }, Generation: state.ReadingKey(), Region: record.Region,
 			Publish: func(write func() error) error { return consent.Publish(fence, write) },
 			StillValid: func() bool {
 				current, effective := consent.Current()
@@ -119,6 +120,11 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 			}
 			g.SavedLogin = true
 			g.TokenRefresh = id == "gemini" && state.AllowsScope(consent.ScopeGeminiAccountUsageTokenRefresh, mode)
+			if g.TokenRefresh {
+				// A refreshed token is keyed to the full consent fence, so revoking or re-granting
+				// the extension drops it even though the reading key stays (S2).
+				g.TokenGeneration = fence.StoreEpoch + ":" + strconv.FormatUint(fence.Generation, 10)
+			}
 			g.KeychainConsent = state.KeychainStatus(id, mode)
 			g.Keychain = g.KeychainConsent == "allowed"
 			g.KeychainPriorGrant = g.Keychain
@@ -164,7 +170,51 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 			p.ZCodeNoProviderFile = true
 		}
 	}
+	applyZCodeLogin(&p, home, state, mode, configured)
 	return p
+}
+
+// applyZCodeLogin: ZCode's QR-code sign-in route (D369). It applies only where ZCode keeps no
+// provider-file key (the key route stays first) and no other GLM source or key is set, and only
+// behind its own saved-login scope, off by default. Without that consent the row says the sign-in
+// was found and needs consent; nothing inside ZCode's folder is opened. Construction reads file
+// metadata only.
+func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, configured bool) {
+	if configured || home == "" || mode != consent.Automatic || !ZCodeLoginPresent(home) {
+		return
+	}
+	if _, err := os.Lstat(ZCodeProviderConfig(home)); !os.IsNotExist(err) {
+		return // ZCode's provider-file key route comes first
+	}
+	if g, granted := p.ReaderAccess.Grants["zai"]; granted && g.ConfigSource != nil {
+		return
+	}
+	if r, decided := state.Tools["zai"]; decided && (!r.Allowed || zaiRecordChoseSource(r)) {
+		return
+	}
+	if os.Getenv(nativeReaders["zai"].KeyEnv) != "" || ManualKeyPresent(p.Cache, "zai") {
+		return
+	}
+	if !detect.LocalRoot(ZCodeLoginDir(home)) {
+		return
+	}
+	scope := consent.ScopeZaiAccountUsageSavedLogin
+	// A bare GLM allow (no key, profile or source) is no route of its own here.
+	delete(p.ReaderAccess.Grants, "zai")
+	p.ZCodeNoProviderFile = false
+	if !state.AllowsScope(scope, mode) {
+		p.ZCodeLoginConsent = true
+		return
+	}
+	fence := state.Fence()
+	p.ReaderAccess.Grants["zai"] = ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
+		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Generation, 10) + ":zcode-login:" + zcodeLoginStamp(home),
+		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
+		StillValid: func() bool {
+			current, effective := consent.Current()
+			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence && current.AllowsScope(scope, effective)
+		},
+		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: ZCodeLoginDir(home)}}
 }
 
 // zcodeRoots are ZCode's data folders, the same path signals detection lists for it
@@ -212,7 +262,7 @@ func defaultZCodeGrant(home string, state consent.State, mode string, configured
 	// a refusal releases the held "sign-in rejected" state at the next due read.
 	stamp := strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
 	return ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
-		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Generation, 10) + ":zcode:" + stamp,
+		Generation: state.ReadingKey() + ":zcode:" + stamp,
 		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
 		StillValid: func() bool {
 			current, effective := consent.Current()

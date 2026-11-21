@@ -342,6 +342,11 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .pl-cell .qnum{line-height:18px}
 .ck-eng .pl-cell .pl-meter{min-height:0;overflow:hidden}
 .ck-eng .pl-cell .qline{justify-content:space-between}
+.ck-eng .pl-cell .pl-big{display:inline-block;flex:none;font:600 20px/22px var(--f-lcd);font-variant-numeric:tabular-nums;color:var(--lcd-ink);white-space:nowrap}
+.cls-narrow .pl-cell .pl-big{font-size:16px;line-height:19px}
+.ck-eng .pl-cell .pl-sub{display:flex;align-items:center;gap:4px;min-width:0}
+.ck-eng .pl-cell .pl-sw{flex:none;width:7px;height:7px;border-radius:1.5px}
+.ck-eng .pl-cell .pl-subt{display:block;min-width:0;font:400 10px/11px var(--f-lcd);color:var(--lcd-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ck-eng .pl-cell.pl-mid .qnum{color:var(--st-mid)}.ck-eng .pl-cell.pl-low .qnum{color:var(--st-low)}
 .ck-eng .pl-meter{display:grid;row-gap:2px;min-width:0}
 .ck-eng .pl-bar{position:relative;display:block;height:5px;border-radius:1px;background:var(--lcd-ghost);overflow:hidden}
@@ -420,7 +425,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .cal-pk b{display:block;font:700 9px/11px var(--f-silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ck-eng .cal-pk.short i,.ck-eng .cal-pk.tiny b{display:none}
 .ck-eng .cal-pk i{display:block;font:400 9px/11px var(--f-lcd);font-style:normal;opacity:.85;white-space:nowrap;overflow:hidden}
-.ck-eng .cal-ch{position:absolute;right:2px;z-index:3;max-width:calc(100% - var(--cal-g) - 6px);height:12px;padding:0 4px;border-radius:5.5px;background:var(--c);color:var(--cal-chip-ink);font:700 9px/12px var(--f-silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ck-eng .cal-ch{position:absolute;right:2px;z-index:3;max-width:calc(100% - 14px);height:12px;padding:0 4px;border-radius:5.5px;background:var(--c);color:var(--cal-chip-ink);font:700 9px/12px var(--f-silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ck-eng .cal-ch.wk{background:transparent;box-shadow:inset 0 0 0 1px var(--c);color:var(--c)}
 .ck-eng .cal-nt{position:absolute;left:0;top:0;width:calc(var(--cal-g) - 4px);transform:translateY(-50%);border-radius:2px;background:var(--cal-now);color:#06120f;text-align:center;font:700 9px/11px var(--f-lcd);z-index:5}
 .ck-eng .cal-nl{position:absolute;left:calc(var(--cal-g) - 2px);right:2px;height:0;border-top:1.8px solid var(--cal-now);z-index:4}

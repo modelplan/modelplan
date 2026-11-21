@@ -54,6 +54,7 @@ type usageRecord struct {
 type usageFile struct {
 	LiveObserved bool          `json:"liveObserved,omitempty"` // Size/Modified describe a real live scan, not an import
 	Tiered       bool          `json:"tiered,omitempty"`       // the records carry their speed tier (WP-06); older entries are rescanned
+	Pending      bool          `json:"pending,omitempty"`      // the file holds a response dated after the scan; it is read again until the clock passes it
 	Session      string        `json:"session,omitempty"`
 	Parent       string        `json:"parent,omitempty"`
 	Started      time.Time     `json:"started,omitempty"`
@@ -95,6 +96,14 @@ func loadAccounting(cache string) (accountingLedger, bool) {
 	}
 	return l, true
 }
+
+// sameUsageFile compares entries as they are stored (parsed times carry no location).
+func sameUsageFile(a, b usageFile) bool {
+	x, errA := json.Marshal(a)
+	y, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(x, y)
+}
+
 func saveAccounting(cache string, l accountingLedger) error {
 	raw, err := json.Marshal(l)
 	if err != nil {
@@ -148,7 +157,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		}
 		key := fileKey(path)
 		old, exists := l.Files[key]
-		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Tiered && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() {
+		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Tiered && !old.Pending && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() {
 			continue
 		}
 		p := newAccountingParser(source, key)
@@ -165,10 +174,25 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		// computed in today's time zone and may be later than when the file was first recorded, so an
 		// unchanged legacy file keeps every record it already has and only gains tiers by response identity.
 		legacy := exists && old.LiveObserved && !old.Tiered && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano()
+		// A response this file already recorded live, under this grant, stays eligible on every reparse (an append
+		// too, sampling 11-21 S12): the recomputed recording-day start never drops it. Only live records count: an
+		// imported copy never makes its response live, so "Remove imported history" still removes it (S11).
 		known := map[string]bool{}
-		if legacy {
+		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) {
 			for _, r := range old.Records {
-				known[r.Key] = true
+				if !r.Imported {
+					known[r.Key] = true
+				}
+			}
+		}
+		// A response dated ahead of this clock is not recorded yet; the unchanged file must be read
+		// again until it is, so it is not skipped by size and time (G3-147 review). Checked
+		// before the filter below, which reuses p.records.
+		pending := false
+		for _, r := range p.records {
+			if r.At.After(now) {
+				pending = true
+				break
 			}
 		}
 		records := p.records[:0]
@@ -190,8 +214,16 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 				records = append(records, r)
 			}
 		}
-		l.Files[key] = usageFile{LiveObserved: true, Tiered: true, Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started}
-		changed = true
+		next := usageFile{LiveObserved: true, Tiered: true, Pending: pending, Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started}
+		// Re-reading a pending file changes nothing until the clock passes its response; an
+		// identical entry is not a change, so the ledger is not rewritten meanwhile.
+		if len(records) == 0 {
+			next.Session, next.Parent, next.Started = "", "", time.Time{} // as the retention below keeps it
+		}
+		if !exists || !sameUsageFile(old, next) {
+			changed = true
+		}
+		l.Files[key] = next
 	}
 	// Retain no expired or revoked observations, even from files no longer present.
 	a = consent.Capture()
@@ -212,7 +244,17 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 			changed = true
 		}
 		f.Records = records
-		if len(records) == 0 {
+		if len(records) == 0 && f.LiveObserved && day(time.Unix(0, f.Modified)) >= windowFrom(now, 35) {
+			// A live-scanned file with nothing in the window keeps only its size and time, so the
+			// next observation skips it while it is unchanged. Dropping it made every 30 s pass
+			// parse the whole file again and rewrite the ledger, which woke the change watcher
+			// into a new snapshot (G3-147). It holds no record or session reference.
+			if f.Session != "" || f.Parent != "" || !f.Started.IsZero() {
+				f.Session, f.Parent, f.Started = "", "", time.Time{}
+				changed = true
+			}
+			l.Files[key] = f
+		} else if len(records) == 0 {
 			delete(l.Files, key)
 		} else {
 			l.Files[key] = f
@@ -787,6 +829,7 @@ func mergeImportedUsage(old, incoming usageFile, ranges []span) usageFile {
 		// The live records kept below are as tier-aware as the live scan that wrote them; an import
 		// must not mark an older scan's records as tiered, or the next observation skips the rescan.
 		incoming.Tiered = old.Tiered
+		incoming.Pending = old.Pending
 	}
 	for _, r := range old.Records {
 		// Pre-release caches without live-scan provenance cannot prove live ownership.

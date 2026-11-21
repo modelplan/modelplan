@@ -8,6 +8,9 @@ func captureScope(p Paths, provider string, bridge bool) string {
 	if bridge {
 		return state.ScopeFor(provider, consent.Bridge)
 	}
+	if g, ok := p.ReaderAccessGrant(provider); ok && provider == "zai" && g.ConfigSource != nil && g.ConfigSource.Tool == zcodeLoginTool {
+		return consent.ScopeZaiAccountUsageSavedLogin // D369: ZCode's sign-in has its own scope
+	}
 	class := consent.Credential
 	if n := nativeReaders[provider]; n != nil && n.KeyEnv != "" {
 		g, _ := p.ReaderAccessGrant(provider)

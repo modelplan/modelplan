@@ -1102,7 +1102,7 @@ func TestGLMKeyChangeCacheFailureKeepsCredential(t *testing.T) {
 			}
 			used := 61.0
 			at := time.Now().UTC()
-			seed := nativeSnap{SchemaVersion: 1, Providers: []codexbarEntry{{Provider: "zai", Source: "api", Plan: "Synthetic old account", Status: "ok", ObservedAt: at, DetectedKeyRef: "detected-ref", SubscriptionRef: "0123456789abcdef", Windows: []Window{{Kind: "five_hour", UsedPercent: &used, ObservedAt: at}}}}}
+			seed := nativeSnap{SchemaVersion: 1, Providers: []codexbarEntry{{Provider: "zai", Source: "api", Plan: "Synthetic old account", Status: "ok", ObservedAt: at, DetectedKeyRef: "detected-ref", SubscriptionRef: "0123456789abcdef", ManualKeyGeneration: manualKeyGenerations(p.Cache)["zai"], Windows: []Window{{Kind: "five_hour", UsedPercent: &used, ObservedAt: at}}}}}
 			b, _ := json.Marshal(seed)
 			if err := writeAtomic(nativePath(p.Cache), b); err != nil {
 				t.Fatal(err)

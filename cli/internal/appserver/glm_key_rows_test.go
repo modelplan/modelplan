@@ -49,7 +49,8 @@ func TestGLMKeyChangeClearsSubscribedRows(t *testing.T) {
 			used := 25.0
 			snapshot := map[string]any{"schemaVersion": 1, "providers": []any{map[string]any{
 				"provider": "zai", "status": "ok", "observedAt": at, "detectedKeyRef": "0123456789abcdef",
-				"subscriptionRef": "fedcba9876543210", "admission": state.CaptureStamp(consent.ScopeZaiAccountUsageAPIKey),
+				// manualKeyGeneration: read with the key saved above, its first generation (sampling 11-21 S8).
+				"subscriptionRef": "fedcba9876543210", "admission": state.CaptureStamp(consent.ScopeZaiAccountUsageAPIKey), "manualKeyGeneration": 1,
 				"windows": []quota.Window{{Kind: "five_hour", UsedPercent: &used, ObservedAt: at}},
 			}}}
 			data, _ := json.Marshal(snapshot)

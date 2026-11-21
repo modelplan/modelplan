@@ -28,7 +28,7 @@ func Definitions() []ScopeDefinition {
 		ScopeGrokLocalHistory, ScopeGrokAccountUsageSavedLogin,
 		ScopeKimiLocalHistory, ScopeKimiAccountUsageSavedLogin, ScopeKimiAccountUsageAPIKey,
 		ScopeKiroRuntimeUsage, ScopeCopilotLocalHistory, ScopeCopilotRuntimeUsage,
-		ScopeAntigravityRuntimeUsage, ScopeZaiLocalHistory, ScopeZaiAccountUsageAPIKey,
+		ScopeAntigravityRuntimeUsage, ScopeZaiLocalHistory, ScopeZaiAccountUsageAPIKey, ScopeZaiAccountUsageSavedLogin,
 		ScopeOpenCodeGoLocalHistory, ScopeOpenCodeGoAccountUsageAPIKey,
 		ScopeMiniMaxAccountUsageAPIKey, ScopeAmpLocalHistory, ScopeDroidLocalHistory, ScopeQwenLocalHistory,
 	} {
@@ -58,6 +58,10 @@ func Definitions() []ScopeDefinition {
 		// appears by default; a Keychain-only login waits for that choice.
 		if id == ScopeZaiAccountUsageAPIKey || id == ScopeClaudeAccountUsageSavedLogin {
 			d.DefaultCheck = true
+		}
+		// ZCode's QR-code sign-in (D369) is a credential read: opt-in, off by default (D240).
+		if id == ScopeZaiAccountUsageSavedLogin {
+			d.DefaultCheck = false
 		}
 		d.Keychain = id == ScopeClaudeAccountUsageSavedLogin
 		out = append(out, d)
