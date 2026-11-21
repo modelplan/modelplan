@@ -107,6 +107,7 @@ import ModelPlanShell
         owner.anchor = { [weak application] in application?.cockpitAnchor }
         owner.openPoint = { [weak application] in application?.cockpitOpenPoint }
         owner.ignitionFrame = { [weak application] in application?.composition.dock.ignitionScreenFrame }
+        owner.widgetFrame = { [weak application] in application?.composition.dock.widgetScreenFrame }
         if application.cockpitEntryEnabled {
             owner.prepare()
             // CKP-SHELL-20: a synthetic page from a test factory is made only by a click.
@@ -175,6 +176,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var openPoint: (() -> CGPoint?)?
     /// D204 (G3-94): the widget ignition's frame on screen; its press is not an outside click.
     var ignitionFrame: (() -> CGRect?)?
+    var widgetFrame: (() -> CGRect?)?
     var verifiedBundle: VerifiedCockpitBundle?
     let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
@@ -264,6 +266,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() },openPoint:{ [weak self] in self?.openPoint?() },
             systemSignals:systemSignals?())
         page.ignitionFrame = { [weak self] in self?.ignitionFrame?() }
+        page.widgetFrame = { [weak self] in self?.widgetFrame?() }
         // Spec item 4: a detached cockpit gives the app its Dock icon and Cmd-Tab entry, through the one presence.
         if let presence {
             let adapter = DetachedCockpitPresence(page: page)

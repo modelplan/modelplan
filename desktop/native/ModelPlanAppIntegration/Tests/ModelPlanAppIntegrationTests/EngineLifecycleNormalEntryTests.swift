@@ -155,6 +155,32 @@ private actor LifecycleEngine: EngineClient {
         await app.stopLifecycle()
     }
 
+    /// Native-shell spec item 2 (tail): the cockpit page is usually prewarmed before the lifecycle exists. It still
+    /// subscribes to the app's one source then (before, it got nil and kept its own observers for its whole life), and
+    /// from the start of the lifecycle on it gets one `.wake` per system wake (didWake and screensDidWake together).
+    func testAPageSubscribedBeforeTheLifecycleGetsTheAppsSignals() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lifecycle-signals-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"]), createsNativePanels: false, makeClient: { _, store in LifecycleEngine(store: store, rows: fixture) }, activateSettings: {})
+        await app.prepare()
+        let source = try XCTUnwrap(app.cockpitSystemSignals, "the app's source exists before the lifecycle starts")
+        var received: [CockpitSystemSignal] = []
+        let cancel = source { received.append($0) }
+        let workspace = NotificationCenter(), local = NotificationCenter(), lockEvents = NotificationCenter()
+        app.startLifecycle(workspace: workspace, local: local, lockEvents: lockEvents, displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
+        workspace.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        lockEvents.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        local.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        XCTAssertEqual(received, [.wake, .unlock, .displaysChanged], "the early page is fed by the lifecycle; one wake per system wake")
+        cancel()
+        workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
+        XCTAssertEqual(received.count, 3, "a closed page gets nothing")
+        await app.stopLifecycle()
+    }
+
     /// G3-116 (build 14f): the engine crashed past its restart budget, so the client accepts only an explicit retry.
     /// Each later wake or unlock resumed the lifecycle with start(), which failed at once ("Engine restart or consent
     /// failed" at 20:48 and 20:50), and the widget kept "?" until the app was quit. A resume retries instead.

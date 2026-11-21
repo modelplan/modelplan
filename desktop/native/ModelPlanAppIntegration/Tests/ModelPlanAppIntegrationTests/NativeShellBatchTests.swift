@@ -90,6 +90,39 @@ import ModelPlanShell
     XCTAssertEqual(f.page.dismissal.request(.outsidePress), .ignored, "one close per show")
   }
 
+  /// Spec 1.7 d (D244): a press on the widget while the attached cockpit is open is decided at its release. A carry
+  /// (ring or body, moved past the widget's 5 pt threshold) keeps the cockpit open, also through the carry's own key
+  /// change; a click on the widget closes it, at the release. Before, the press closed it at mouse-down, before any
+  /// carry could begin.
+  func testAWidgetCarryKeepsTheAttachedCockpitOpen() throws {
+    let f = try open()
+    let widget = CGRect(x: f.usable.minX + 40, y: f.usable.minY + 40, width: 160, height: 60)
+    XCTAssertFalse(try XCTUnwrap(f.page.window).frame.intersects(widget), "fixture: the widget is outside the cockpit")
+    f.page.widgetFrame = { widget }
+    let press = CGPoint(x: widget.midX, y: widget.midY)
+    f.page.outsidePress(press, eventType: .leftMouseDown)
+    XCTAssertNotNil(f.page.window, "a press on the widget does not close the cockpit at mouse-down")
+    XCTAssertEqual(f.page.dismissal.request(.keyResigned), .suppressed(.drag), "the carry's key change does not close it")
+    f.page.widgetPointer(.leftMouseDragged, at: CGPoint(x: press.x + 60, y: press.y + 20))
+    f.page.widgetPointer(.leftMouseDragged, at: press)
+    f.page.widgetPointer(.leftMouseUp, at: press)
+    XCTAssertNotNil(f.page.window, "a carry, even one dropped back where it started, keeps the cockpit open")
+    f.page.outsidePress(press, eventType: .leftMouseDown)
+    f.page.widgetPointer(.leftMouseDragged, at: CGPoint(x: press.x + 3, y: press.y))
+    f.page.widgetPointer(.leftMouseUp, at: CGPoint(x: press.x + 3, y: press.y))
+    XCTAssertNil(f.page.window, "a click on the widget (within the threshold) closes it at the release, as any outside press")
+  }
+
+  /// The widget press hold never outlives the show: a release that never arrives cannot keep a later show open.
+  func testALostWidgetReleaseDoesNotHoldTheNextShow() throws {
+    let f = try open()
+    let widget = CGRect(x: f.usable.minX + 40, y: f.usable.minY + 40, width: 160, height: 60)
+    f.page.widgetFrame = { widget }
+    f.page.outsidePress(CGPoint(x: widget.midX, y: widget.midY), eventType: .leftMouseDown)
+    f.page.setAttached(false); f.page.setAttached(true)
+    XCTAssertEqual(f.page.dismissal.request(.outsidePress), .closed, "the put back re-arms without the old press's hold")
+  }
+
   /// Spec 1.3: while one of our menus is tracked nothing closes the attached cockpit.
   func testMenuTrackingHoldsTheCockpitOpen() throws {
     let f = try open()

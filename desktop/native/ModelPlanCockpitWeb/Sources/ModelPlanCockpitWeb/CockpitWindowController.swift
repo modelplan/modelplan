@@ -177,6 +177,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// D204 (G3-94): the widget ignition's frame on screen. A press on it is the ignition's own toggle, decided on
   /// mouse-up; its mouse-down is not an outside click that closes the attached cockpit first.
   public var ignitionFrame: (@MainActor () -> CGRect?)?
+  /// Spec item 1 (1.7 d, D244): the widget's frame on screen. A left press there is decided at its release: a carry
+  /// keeps the attached cockpit open, a click closes it as any outside press does.
+  public var widgetFrame: (@MainActor () -> CGRect?)?
+  /// The widget press in progress: where it started, whether it moved past the carry threshold, and the `.drag` hold
+  /// that keeps the carry's own key and activation changes from closing the cockpit.
+  private var widgetPress: (start: CGPoint, moved: Bool, hold: DismissalHold)?
+  /// The widget's own click threshold (PulsePanelDrag: a press that moves more than 5 pt is a carry).
+  static let widgetCarryThreshold: CGFloat = 5
   /// D204: the occlusion state counts only once the window server has reported it since the last order-front;
   /// until then a freshly ordered-in window is not mistaken for a covered one.
   private var occlusionReported = false
@@ -280,8 +288,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       if window.level != level { window.level = level }
       if window.collectionBehavior != behavior { window.collectionBehavior = behavior }
     }
-    if detached || !shown || ending || closeTask != nil { if dismissal.isArmed { dismissal.disarm() } }
-    else if !dismissal.isArmed { dismissal.rearm() }
+    // A widget press left over from before (its release never reached us) does not decide anything after this.
+    if detached || !shown || ending || closeTask != nil { if dismissal.isArmed { dismissal.disarm(); endWidgetPress() } }
+    else if !dismissal.isArmed { endWidgetPress(); dismissal.rearm() }
   }
   private var freshnessHasRendered = false
   private var refreshAfterHiddenDisplay = false
@@ -2053,10 +2062,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       if event.modifierFlags.contains(.command) { MainActor.assumeIsolated { self?.userSwitchesAway() } }
       return event
     }
-    localMonitor = NSEvent.addLocalMonitorForEvents(matching: events) { [weak self] event in
+    localMonitor = NSEvent.addLocalMonitorForEvents(matching: events.union([.leftMouseDragged, .leftMouseUp])) { [weak self] event in
       MainActor.assumeIsolated {
         let point = event.window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
-        self?.localPress(in: event.window, at: point, eventType: event.type)
+        switch event.type {
+        case .leftMouseDragged, .leftMouseUp: self?.widgetPointer(event.type, at: point)
+        default: self?.localPress(in: event.window, at: point, eventType: event.type)
+        }
       }
       return event
     }
@@ -2093,8 +2105,24 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if eventType == .leftMouseDown, isTray || ignitionFrame?()?.contains(point) == true { return }
     // Spec item 1 (1.7 c): a right or other press on the icon opens the status menu; the cockpit stays while it is up.
     if isTray { return }
+    // Spec item 1 (1.7 d): the widget press waits for its release (a ring carry starts only once the press moves).
+    if eventType == .leftMouseDown, dismissal.isArmed, widgetFrame?()?.contains(point) == true {
+      widgetPress?.hold.release()
+      widgetPress = (point, false, dismissal.hold(.drag))
+      return
+    }
     _ = dismissal.request(.outsidePress)
   }
+  /// The rest of a widget press (local monitor): a move past the threshold makes it a carry, which never closes the
+  /// cockpit; a release without one is a click on the widget, an outside press.
+  func widgetPointer(_ eventType: NSEvent.EventType, at point: CGPoint) {
+    guard var press = widgetPress else { return }
+    if hypot(point.x - press.start.x, point.y - press.start.y) > Self.widgetCarryThreshold { press.moved = true }
+    guard eventType == .leftMouseUp else { widgetPress = press; return }
+    widgetPress = nil; press.hold.release()
+    if !press.moved { _ = dismissal.request(.outsidePress) }
+  }
+  private func endWidgetPress() { widgetPress?.hold.release(); widgetPress = nil }
   public func requestClose() {
     #if MODELPLAN_TEST_ONLY_SPI
     verificationCloseOrigin?("requested")
@@ -2280,7 +2308,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func discard() {
     guard !ending else { return }
     // Spec item 1: a late monitor or observer event cannot start a close during teardown.
-    dismissal.disarm(); menuTrackingHold = nil; menuTrackingDepth = 0
+    dismissal.disarm(); menuTrackingHold = nil; menuTrackingDepth = 0; endWidgetPress()
     cancelSystemSignals?(); cancelSystemSignals = nil
     ending = true
     warmPaintEnd?.cancel(); warmPaintEnd = nil; warmPainting = false
