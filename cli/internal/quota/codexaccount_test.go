@@ -225,7 +225,7 @@ func TestUsageCreditsFromAccountAndLogs(t *testing.T) {
 	}
 	_ = os.WriteFile(p, []byte(line("2026-10-16T07:00:00Z", `{"has_credits":true,"unlimited":false,"balance":"900"}`)+
 		line("2026-10-16T07:30:00Z", `{"has_credits":true,"unlimited":false,"balance":"880.25"}`)), 0o600)
-	if got := scanRollout(p).credits; got == nil || *got.Balance != 880.25 {
+	if got := scanRollout(p, codexRolloutFence()).credits; got == nil || *got.Balance != 880.25 {
 		t.Fatalf("log credits = %+v", got)
 	}
 	for credits, want := range map[string]string{
@@ -235,7 +235,7 @@ func TestUsageCreditsFromAccountAndLogs(t *testing.T) {
 		`{"has_credits":true,"unlimited":false,"balance":12.5}`:  "12.5",
 	} {
 		_ = os.WriteFile(p, []byte(line("2026-10-16T07:00:00Z", credits)), 0o600)
-		got, c := "none", scanRollout(p).credits
+		got, c := "none", scanRollout(p, codexRolloutFence()).credits
 		switch {
 		case c != nil && c.Unlimited:
 			got = "unlimited"

@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -28,7 +27,7 @@ func defaultClaudeGrant(state consent.State, mode, version string, routes map[st
 	}
 	fence := state.Fence()
 	g := ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
-		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Generation, 10),
+		Generation: state.ReadingKey(),
 		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
 		StillValid: func() bool {
 			current, effective := consent.Current()

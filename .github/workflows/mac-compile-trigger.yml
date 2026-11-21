@@ -8,14 +8,17 @@ on:
   pull_request:
     branches: [main]
     paths: ["desktop/native/**"]
-    types: [opened, synchronize, reopened, ready_for_review]
+    # "edited" only counts when the base changed (the job's if): a PR stacked on another branch, or opened elsewhere, is
+    # retargeted to main after its head events, and none of the types above fires then. #1129 head 4ec0791 never had a
+    # trigger run for that reason: it was ready_for_review while based on another branch, then base_ref_changed to main.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 permissions: {}
 concurrency:
   group: mac-compile-trigger-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
   trigger:
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ !github.event.pull_request.draft && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

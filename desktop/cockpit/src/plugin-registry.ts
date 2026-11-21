@@ -33,6 +33,11 @@ export interface PluginCell {
   /** Small unit after the number, e.g. "%". */
   readonly unit?:string;
   readonly side?:PluginWords|null;
+  /** D375: the large text (a time such as "14:10"), drawn where `value` would be; `value` wins when both are given. */
+  readonly big?:string|null;
+  /** D375: a line under the number: the subscription's colour mark and its name (a colour is never alone). `text.full` is
+   *  name + window + day; `text.short` is the name alone, taken when the long one does not fit. */
+  readonly subline?:{readonly colour:string;readonly text:PluginWords}|null;
   /** Continuous bar fill, 0–1; absent draws no bar. */
   readonly bar?:number|null;
   /** Thin trend line under the bar, oldest first, each 0–1; fewer than two points draws none. */
@@ -96,6 +101,10 @@ export interface CockpitPlugin {
   readonly ink?:string;
   /** D121: plugins are default on once they ship; the framework placeholder is not. */
   readonly defaultEnabled:boolean;
+  /** Owner 11-21: a framework fixture (the placeholder). It stays registered for tests and saved states, but no user-facing
+   *  list offers it (the empty-slot "+" menu here). Settings › Plugins hides it natively through CockpitPluginDefinition
+   *  frameworkOnly, which lands with #1134 (ghglm-1135-3). */
+  readonly frameworkOnly?:boolean;
   /** The host samples this plugin's readings (e.g. the resource plugin). Such a plugin is drawn only for a host that sent
    *  its plugin state, so a host that cannot sample never shows an empty column. */
   readonly hostSampled?:boolean;
@@ -143,6 +152,7 @@ export const placeholderPlugin:CockpitPlugin=Object.freeze({
   summary:'plugin.placeholderSummary',
   icon:`<svg viewBox="0 0 16 16" aria-hidden="true">${PLUGIN_ICON_FRAME}<circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`,
   underline:'#87939e',
+  frameworkOnly:true,
   defaultEnabled:false,
   settings:Object.freeze([Object.freeze({key:'intervalSeconds',kind:'seconds' as const,min:3,max:30,default:10})]),
   accept(data:unknown,previous:unknown){

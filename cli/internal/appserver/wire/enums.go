@@ -160,6 +160,7 @@ const (
 	DecisionZai          RefreshDecisionScope = "zai.account_usage.api_key"
 	DecisionMiniMax      RefreshDecisionScope = "minimax.account_usage.api_key"
 	DecisionOpenCodeGo   RefreshDecisionScope = "opencodego.account_usage.api_key"
+	DecisionZaiLogin     RefreshDecisionScope = "zai.account_usage.saved_login"
 )
 
 type RefreshDecisionOutcome string

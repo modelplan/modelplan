@@ -17,6 +17,9 @@ final class ReaderCauseTableTests: XCTestCase {
             ("region_refused", "zai", "GLM", "This address is a third-party relay, so its quota can't be read", "这个地址是第三方转发服务，查不到额度", "Use the official address to read its quota", "改用官方地址才能读取额度", .guidance),
             ("no_plan", "zai", "GLM", "This key has no GLM Coding Plan", "这个密钥没有开通 GLM 编程套餐", "Use a key with a GLM Coding Plan, or subscribe to one", "换用已开通 GLM 编程套餐的密钥，或开通套餐", .guidance),
             ("consent_required", nil, nil, "Reading permission needed", "需要读取授权", "Review permission in Settings", "在设置检查授权", .openSettings),
+            // D369: ZCode's QR-code sign-in.
+            ("consent_required", "zai", "GLM", "ZCode sign-in found; reading it needs your permission", "已找到 ZCode 登录，读取需要你的授权", "Allow reading it in Settings", "在设置中允许读取", .openSettings),
+            ("login_expired", "zai", "GLM", "The ZCode sign-in has ended", "ZCode 登录已失效", "Sign in to ZCode again; it is read after that", "请重新登录 ZCode，之后会自动读取", .guidance),
         ]
         for (code, tool, name, reasonEN, reasonZH, actionEN, actionZH, target) in cases {
             let entry = try XCTUnwrap(ReaderCauseTable.entry(code: code, tool: tool, toolName: name), code)

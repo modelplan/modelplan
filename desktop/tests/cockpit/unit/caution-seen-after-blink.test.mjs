@@ -113,3 +113,26 @@ test('macrev2 repro: an unknown-reset forecast acknowledged by a press before it
  assert.equal(show(p2,unknownReset({remaining:95,level:null}),true),false);
  assert.equal(show(p2,unknownReset({remaining:90,level:'amber'}),true),true,'recurrence after a press');
 });
+
+// #1045 MP1045-2. Invariant: the first refill after an amber acknowledgement is detected whatever reading sequence
+// preceded it; the refill reading itself is never the baseline it is compared with.
+test('MP1045-2 a press before the first blink, then a refill straight away, blinks the next forecast once',()=>{
+ const p=entry({ids:[]});
+ show(p,unknownReset({remaining:48,level:'amber'}),false);p.acknowledge();
+ assert.equal(show(p,unknownReset({remaining:95,level:null}),true),false,'refill reading');
+ assert.equal(show(p,unknownReset({remaining:90,level:'amber'}),true),true,'recurrence blinks');
+ assert.equal(show(p,unknownReset({remaining:89,level:'amber'}),true),false,'once');
+});
+test('MP1045-2 a restored acknowledgement whose first reading is the lit one, then a refill, blinks the next forecast',()=>{
+ const host={ids:[]};show(entry(host),unknownReset({remaining:48,level:'amber'}));
+ const page=entry({ids:[...host.ids]});
+ assert.equal(show(page,unknownReset({remaining:48,level:'amber'})),false,'restored: steady');
+ assert.equal(show(page,unknownReset({remaining:95,level:null})),false);
+ assert.equal(show(page,unknownReset({remaining:90,level:'amber'})),true);
+});
+test('MP1045-2 a pause then a return without a refill stays steady after a press before the blink',()=>{
+ const p=entry({ids:[]});
+ show(p,unknownReset({remaining:48,level:'amber'}),false);p.acknowledge();
+ assert.equal(show(p,unknownReset({remaining:47,level:null}),true),false);
+ assert.equal(show(p,unknownReset({remaining:46,level:'amber'}),true),false);
+});

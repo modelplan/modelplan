@@ -104,6 +104,9 @@ export function effortLine(cur, rec) {
   if (cur === rec) return {cur: '', rec};
   return fits(`${cur} ★${rec}`) ? {cur, rec} : {cur, rec: ''};
 }
+// G3-145: the large slot is 52 px wide, so a small cost has a short form: "<$0.01" under a cent, two decimals under a dollar
+// ("≈$0.004" and "≈$0.012" are seven characters and clipped). The accessible text keeps the full estimate (bigFull).
+const cardCost = v => v < 0.01 ? '<$0.01' : v < 1 ? `≈$${v.toFixed(2)}` : approxCost(v);
 const pctOf = share => Math.max(share > 0 ? 1 : 0, Math.round(share * 100));
 /** The card's lines as plain text (V1-FINAL §7 table), the source for both the view and the 9-character check.
  * state: normal | unused | norecord | try. big: the large slot. bar: share 0..1 or null. use: [tokens, share %] or null.
@@ -128,7 +131,7 @@ export function card(c, f = {}) {
   }
   if (use) {
     const priced = typeof use.cost === 'number' && Number.isFinite(use.cost) && use.cost > 0;
-    lines.bigFull = priced ? approxCost(use.cost) : tokShort(use.tokens); lines.big = clip(lines.bigFull); lines.bigKind = priced ? 'cost' : 'tokens';
+    lines.bigFull = priced ? approxCost(use.cost) : tokShort(use.tokens); lines.big = clip(priced ? cardCost(use.cost) : lines.bigFull); lines.bigKind = priced ? 'cost' : 'tokens';
     // "1000B 100%" is 10 characters: the share (also drawn by the bar) drops off before the tokens are cut.
     const tok = tokShort(use.tokens), pct = pctOf(use.share) + '%';
     lines.bar = Math.max(0, Math.min(1, use.share)); lines.useFull = [tok, pct]; lines.use = fits(`${tok} ${pct}`) ? [tok, pct] : [clip(tok)];

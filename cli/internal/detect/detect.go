@@ -35,6 +35,8 @@ type Tool struct {
 	// Subscription: for a tool whose app and subscription differ (OpenCode / OpenCode Go), whether
 	// the subscription's own evidence was found ("found" / "not-found"); empty otherwise.
 	Subscription string `json:"subscription,omitempty"`
+	// zcodeLogin: ZCode's sign-in files are there (D369); presence only, never exported.
+	zcodeLogin bool
 }
 type Report struct {
 	SchemaVersion     int    `json:"schemaVersion"`
@@ -74,6 +76,9 @@ func Run(c *Catalogue, e Env, version, source string) Report {
 		}
 		if !t.Detected && unknown {
 			t.Status = "unknown"
+		}
+		if t.Detected && entry.ProviderID == "zai" {
+			t.zcodeLogin = ZCodeLoginPresent(e.Home)
 		}
 		if t.Detected && entry.ProviderID == "opencodego" {
 			t.Subscription = e.openCodeGoSubscription()

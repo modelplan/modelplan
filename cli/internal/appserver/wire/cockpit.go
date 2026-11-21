@@ -56,8 +56,9 @@ type CockpitDetails struct {
 	RecentSessions []CockpitRecentSession `json:"recentSessions,omitempty" schema:"maxItems=200" null:"forbidden"`
 	// Peaks is present only for a client that negotiated cockpitPeaksV1: for each declared plan row, its current
 	// or next published time-of-day window with a raised rate within 24 hours. EndsAt is null when the window does
-	// not end within the published horizon.
-	Peaks []CockpitPeak `json:"peaks,omitempty" schema:"maxItems=32" null:"forbidden"`
+	// not end within the published horizon. A negotiated client with no declared plan gets an empty list, which is
+	// "no rules"; an absent field is "unknown" (an older engine). Hence the pointer: omitempty alone drops [].
+	Peaks *[]CockpitPeak `json:"peaks,omitempty" schema:"maxItems=32" null:"forbidden"`
 }
 
 // CockpitPeak is one declared plan's peak-rate window from the publication's multiplier windows.

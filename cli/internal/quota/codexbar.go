@@ -386,6 +386,10 @@ type codexbarEntry struct {
 	// DetectedKeyRef (D90, owner 2026-11-14): the local reference (identity.go) of the GLM key detected on
 	// this Mac at this reading, "" when none. Compared with the entered key's reference; never a key.
 	DetectedKeyRef string `json:"detectedKeyRef,omitempty"`
+	// ManualKeyGeneration (sampling 11-21 S8): the pasted-key generation (manualKeyGenerations, at least 1 once a key
+	// is saved) this GLM entry was read with; 0 when it was not read with a pasted key. While a key is pasted, only an
+	// entry of the current generation is shown.
+	ManualKeyGeneration uint64 `json:"manualKeyGeneration,omitempty"`
 	// NativeNextAttemptAt preserves a legacy request deadline when a key change erases its reading.
 	NativeNextAttemptAt *time.Time `json:"nativeNextAttemptAt,omitempty"`
 	ObservedAt          time.Time  `json:"observedAt"`

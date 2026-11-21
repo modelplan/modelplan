@@ -88,7 +88,7 @@ func validRefreshDecision(scope string, outcome refreshOutcome, reason refreshRe
 		consent.ScopeKimiAccountUsageSavedLogin, consent.ScopeGrokAccountUsageSavedLogin,
 		consent.ScopeKiroRuntimeUsage, consent.ScopeAntigravityRuntimeUsage,
 		consent.ScopeZaiAccountUsageAPIKey, consent.ScopeMiniMaxAccountUsageAPIKey,
-		consent.ScopeOpenCodeGoAccountUsageAPIKey:
+		consent.ScopeOpenCodeGoAccountUsageAPIKey, consent.ScopeZaiAccountUsageSavedLogin:
 	default:
 		return false
 	}

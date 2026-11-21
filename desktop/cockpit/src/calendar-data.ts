@@ -58,7 +58,9 @@ export function parseCalendarData(v:unknown):CalendarData|null {
  return Object.freeze({version:1,peakRules:rules,subs:Object.freeze(subs),peaks:Object.freeze(peaks),resets:Object.freeze(resets),spans:Object.freeze(spans)});
 }
 
-// Two-letter tags (mockup legend: CL/CX/GL/CU) by tool row, then by vendor, else from the name.
+/** D375: the calendar writes subscription names, never codes. A name over 7 characters keeps 6 and an ellipsis. */
+export const shortName=(name:string)=>{const chars=[...name];return chars.length>7?chars.slice(0,6).join('')+'…':name;};
+// `abbr` is a legacy field of the seam (a host may still send it): nothing draws it. By tool row, then vendor, else from the name.
 const ROW_ABBR:Readonly<Record<string,string>>={claude:'CL',codex:'CX',zai:'GL',glm:'GL',cursor:'CU',copilot:'CP',gemini:'GE',grok:'GR',kimi:'KI',qwen:'QW',minimax:'MM',opencodego:'OC',opencode:'OC'};
 const VENDOR_ABBR:Readonly<Record<string,string>>={claude:'CL',openai:'CX',glm:'GL',cursor:'CU',copilot:'CP',kimi:'KI',opencode:'OC'};
 export function abbreviation(rowId:string,vendorKey:string|null,name:string):string {

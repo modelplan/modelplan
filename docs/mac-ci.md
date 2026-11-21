@@ -63,7 +63,7 @@ the task from the owner-Mac branch (`inputs.task != 'native-headless'`). The D94
 stays; it is harmless on a hosted runner. Only the GUI legs (`native`, `native-owner-gui`, `gui-probe`) use
 the GUI Mac.
 
-D246 (2026-11-13): in the merge queue only, `native-headless` goes back to the non-GUI Macs
+D246 (2026-11-13, REVERTED 2026-11-21: the merge queue is hosted again, because the single non-GUI Mac queued it ~50 min; a merge-queue-only guard step requires Xcode 26.6 (17F113)): in the merge queue only, `native-headless` went back to the non-GUI Macs
 (`modelplan-mac-nongui`, under the same owner gate and `MAC_CI_RUNNER_V2 == 'self-hosted'`), because hosted
 macOS allows five concurrent jobs and queue groups waited behind PR runs while those Macs sat idle. The
 expression admits it with `(inputs.task != 'native-headless' || github.event_name == 'merge_group')` and the
@@ -97,7 +97,7 @@ until the PR has merged, and merge it with a merge commit so the pinned commit s
 
 The native suite runs as two parallel legs. `task: native` keeps the GUI
 label and runs everything that may need a window server. `task: native-headless`
-runs on a hosted Mac (D198; non-GUI Macs in the merge queue, D246) and runs the app-integration XCTest classes listed in
+runs on a hosted Mac (D198; also in the merge queue, D246 reverted) and runs the app-integration XCTest classes listed in
 `desktop/native/tools/ci/native-test-partition.json`, plus the pure contract,
 logic and packaging-binary checks. The list is opt-in: a new class runs on the
 GUI leg until it is added. `native_test_partition.py check` (Linux and both Mac
@@ -171,7 +171,7 @@ and `transport-fuzz` workflows to pass there (`QUEUE_WORKFLOWS` in `scripts/merg
 of those paths or its tree equals the PR head. Otherwise `app`, `shell`,
 `native-partition`, `app-smoke` and `native-headless` run on the group commit. The
 pinned `trusted-mac.yml` routes only the GUI tasks of a `merge_group` run to the self-hosted
-group, and `native-headless` to the non-GUI Macs (D246); every other event runs `native-headless` hosted (D198). The full GUI leg runs in the
+group, and `native-headless` hosted like every other event (D198; D246 reverted). The full GUI leg runs in the
 queue whenever the group changes a desktop path, even when its tree equals the PR head (D169,
 below); the five Linux workflows have their own `queue-scope` job and no Mac job.
 

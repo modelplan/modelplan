@@ -42,6 +42,13 @@ for(const [lang,text] of [['en','out ~40m'],['zh-CN','约40m用完']])test(`CKP-
  assert.deepEqual(checkTables().missing.filter(k=>/^eng\.|^host\./.test(k)),[]);
 });
 
+// Invariant: a cell's run-out line is its own window's validated forecast; another window's forecast never replaces it.
+test('CKP-ENG-26 a five-hour forecast does not hide the weekly forecast of the same subscription',()=>{
+ const html=view([account('a',[win('5h',60,null,{trend:-1,runOutMin:40}),win('week',50,100,{trend:-1,runOutMin:30})],{runOutMin:40})],'en');
+ const [first,second]=lines(html);
+ assert.equal(first.full,'out ~40m');assert.equal(second.full,'out ~30m');
+});
+
 test('CKP-ENG-26 a forecast run-out counts when the window has no reset time; a known later reset still bounds it',()=>{
  const data=capture(),row=data.projection.rows[0],acct=row.accounts[0],w=acct.windows[0],iso=m=>new Date(NOW+m*60000).toISOString();
  acct.valueState='current';Object.assign(w,{current:true,remainingPercent:60,validUntil:iso(30),resetsAt:null});

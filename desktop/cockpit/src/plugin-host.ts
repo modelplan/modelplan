@@ -74,13 +74,19 @@ function drawCell(cell:PluginCell|undefined,row:number):HTMLElement {
   box.append(fitted('pl-tag',cell.tag));
   const line=el('span','qline');
   if(typeof cell.value==='number'&&Number.isFinite(cell.value)){const num=el('b','qnum'),value=el('span','qvalue',String(Math.round(cell.value)));num.append(value);if(cell.unit)num.append(el('small','',cell.unit));line.append(num);}
+  else if(cell.big)line.append(el('b','pl-big',cell.big));
   if(cell.side){const side=fitted('qtxt',cell.side);side.dataset.small=cell.side.short;line.append(side);}
   box.append(line);
+  // D375: the subscription's colour mark with its name, so a colour is never alone.
+  if(cell.subline&&/^#[0-9a-f]{6}$/i.test(cell.subline.colour)){
+    const sub=el('span','pl-sub'),mark=el('i','pl-sw');mark.style.background=cell.subline.colour;mark.setAttribute('aria-hidden','true');
+    sub.append(mark,fitted('pl-subt',cell.subline.text));box.append(sub);
+  }
   if(typeof cell.bar==='number'&&Number.isFinite(cell.bar)){
     const meter=el('span','pl-meter'),bar=el('span','pl-bar'),fill=el('i');fill.style.width=(clamp01(cell.bar)*100).toFixed(1)+'%';bar.append(fill);meter.append(bar);
     const trend=trendLine(cell.trend??[]);if(trend)meter.append(trend);box.append(meter);
   }
-  const words=[cell.tag.full,typeof cell.value==='number'?String(Math.round(cell.value))+(cell.unit??''):'',cell.side?.full??''].filter(Boolean).join(' · ');
+  const words=[cell.tag.full,typeof cell.value==='number'?String(Math.round(cell.value))+(cell.unit??''):cell.big??'',cell.side?.full??'',cell.subline?.text.full??''].filter(Boolean).join(' · ');
   box.setAttribute('aria-label',words);return box;
 }
 export interface MenuOptions {readonly data:WireCockpitData|null;readonly locale:PluginLocale;readonly mark:(vendorKey:string|null)=>string|null;readonly connect:()=>boolean}
@@ -397,7 +403,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       }
       const more=item('pm-more',()=>{options.connect();});more.dataset.pmAll='';more.append(fitted('pm-n',w('plugin.allSubscriptions')));m.append(more);
       m.append(el('div','pm-sep'),fitted('pm-h',w('plugin.addPlugin')));
-      for(const plugin of registry.list()){
+      for(const plugin of registry.list().filter(p=>!p.frameworkOnly)){
         const added=enabled(plugin.id),b=item('pm-plugin'+(added?' on':''),()=>{host.add(plugin.id);},added);b.dataset.pmPlugin=plugin.id;
         b.append(icon(plugin,'pm-ic'),fitted('pm-n',pluginWords(options.locale,plugin.title)),added?fitted('pm-ok',w('plugin.added')):el('b','pm-go',w('plugin.addGo').full));m.append(b);
       }

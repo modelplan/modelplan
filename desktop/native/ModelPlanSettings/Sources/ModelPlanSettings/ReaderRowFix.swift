@@ -46,9 +46,13 @@ extension ReaderCauseTable {
         let canon = canonical(rawCode)
         if rowIsKiro(tool) {
             switch canon {
-            case "not_found", "runtime_missing":
+            case "not_found":
                 return .init(reason: .init("kiro-cli was not found", "没有找到 Kiro 命令行工具"),
                              action: .init("Install kiro-cli", "安装 Kiro 命令行工具"), target: .installTool)
+            case "runtime_missing":
+                // Also the cause when the configured kiro-cli path names a file that cannot start: reinstalling would not help.
+                return .init(reason: .init("kiro-cli was not found or could not start", "没有找到 Kiro 命令行工具，或它无法启动"),
+                             action: .init("Install kiro-cli, or check the kiro-cli path you configured", "安装 Kiro 命令行工具，或检查你配置的 Kiro 命令行工具路径"), target: .installTool)
             case "not_signed_in", "login_expired", "unsupported_login":
                 return .init(reason: .init("Not signed in to kiro-cli", "尚未登录 Kiro 命令行工具"),
                              action: .init("Sign in to kiro-cli", "登录 Kiro 命令行工具"), target: .explain)
@@ -119,6 +123,11 @@ extension ReaderCauseTable {
             return .init(reason: .init("Not signed in", "未登录"),
                          action: .init(name.map { "Open \($0)" } ?? "Open the tool", name.map { "打开 \($0)" } ?? "打开工具"), target: .openTool)
         case "login_expired":
+            if rowIsGLM(tool) {
+                // D369: ZCode's QR-code sign-in has ended; ModelPlan never renews it.
+                return .init(reason: .init("The ZCode sign-in has ended", "ZCode 登录已失效"),
+                             action: .init("Sign in to ZCode again", "重新登录 ZCode"), target: .openTool)
+            }
             return .init(reason: .init("The sign-in has expired", "登录已过期"),
                          action: .init(name.map { "Open \($0)" } ?? "Open the tool", name.map { "打开 \($0)" } ?? "打开工具"), target: .openTool)
         case "keychain_unset", "keychain_unavailable", "keychain_not_found":
@@ -145,6 +154,11 @@ extension ReaderCauseTable {
             return .init(reason: .init("This address is a third-party relay, so its quota can't be read", "这个地址是第三方转发服务，查不到额度"),
                          action: .init("Why?", "了解原因"), target: .explain)
         case "consent_required":
+            if rowIsGLM(tool) {
+                // D369: ZCode's QR-code sign-in was found; its own permission is off by default.
+                return .init(reason: .init("ZCode sign-in found; reading it needs your permission", "已找到 ZCode 登录，读取需要你的授权"),
+                             action: .init("Allow in Settings", "在设置中允许"), target: .openSettings)
+            }
             return .init(reason: .init("Reading permission needed", "需要读取授权"),
                          action: .init("Review permission in Settings", "在设置检查授权"), target: .openSettings)
         default:

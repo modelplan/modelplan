@@ -97,6 +97,16 @@ func zaiConfigNext(state string) string {
 		return "Check ZaiConfig connectivity and wait until the next eligible read"
 	}
 }
+
+// zaiConfigScope: the consent scope a ZaiConfig reading is captured under. ZCode's sign-in has its
+// own (D369); every configured key shares the GLM key scope.
+func zaiConfigScope(ctx context.Context) string {
+	if source, ok := ctx.Value(zaiConfigSourceKey{}).(ZaiConfigSource); ok && source.Tool == zcodeLoginTool {
+		return consent.ScopeZaiAccountUsageSavedLogin
+	}
+	return consent.ScopeZaiAccountUsageAPIKey
+}
+
 func zaiConfigAdmission(ctx context.Context) (ZaiConfigAccess, string) {
 	a, ok := ctx.Value(zaiConfigAccessKey{}).(ZaiConfigAccess)
 	if !ok {
@@ -137,7 +147,7 @@ func ReadZaiConfigCache(ctx context.Context, cache string, now time.Time) ZaiCon
 		return r
 	}
 	s := loadZaiConfigState(cache)
-	if s.Good != nil && !typedCaptureAllowed(s.Good.Admission, consent.ScopeZaiAccountUsageAPIKey, access.CaptureAllowed) {
+	if s.Good != nil && !typedCaptureAllowed(s.Good.Admission, zaiConfigScope(ctx), access.CaptureAllowed) {
 		s.Good = nil
 	}
 	r.Availability = s.Availability
@@ -177,7 +187,10 @@ func ReadZaiConfigCache(ctx context.Context, cache string, now time.Time) ZaiCon
 	return r
 }
 func zaiConfigCachedEntry(s zaiConfigState, now time.Time, generation string) codexbarEntry {
-	if s.Good != nil && !typedCaptureAllowed(s.Good.Admission, consent.ScopeZaiAccountUsageAPIKey, nil) {
+	return zaiConfigCachedEntryScope(s, now, generation, consent.ScopeZaiAccountUsageAPIKey)
+}
+func zaiConfigCachedEntryScope(s zaiConfigState, now time.Time, generation, scope string) codexbarEntry {
+	if s.Good != nil && !typedCaptureAllowed(s.Good.Admission, scope, nil) {
 		s.Good = nil
 	}
 	availability := s.Availability
@@ -219,7 +232,7 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 	access, blocked := zaiConfigAdmission(ctx)
 	if access.Admission == nil {
 		state, _ := consent.Current()
-		access.Admission = state.CaptureStamp(consent.ScopeZaiAccountUsageAPIKey)
+		access.Admission = state.CaptureStamp(zaiConfigScope(ctx))
 	}
 	if blocked != "" {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext(blocked)}
@@ -229,21 +242,21 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 	}
 	unlock, ok := lockFile(filepath.Join(cache, "observed", "zai.lock"), time.Now(), 2*nativeTimeout)
 	if !ok {
-		return zaiConfigCachedEntry(loadZaiConfigState(cache), now, access.LoginGeneration)
+		return zaiConfigCachedEntryScope(loadZaiConfigState(cache), now, access.LoginGeneration, zaiConfigScope(ctx))
 	}
 	defer unlock()
 	s := loadZaiConfigState(cache)
 	if last, ok := zaiConfigAttempts.Load(cache); ok && now.Sub(last.(time.Time)) < 5*time.Minute {
-		return zaiConfigCachedEntry(s, now, access.LoginGeneration)
+		return zaiConfigCachedEntryScope(s, now, access.LoginGeneration, zaiConfigScope(ctx))
 	}
 	if now.Before(s.NextAt) || now.Before(s.AttemptAt.Add(5*time.Minute)) {
-		return zaiConfigCachedEntry(s, now, access.LoginGeneration)
+		return zaiConfigCachedEntryScope(s, now, access.LoginGeneration, zaiConfigScope(ctx))
 	}
 	// A supplied generation permits an authentication hold until a proven tool
 	// state change/Settings Retry. Legacy dispatch has no generation handoff:
 	// retry only after its persisted adaptive backoff, never hold it forever.
 	if s.Availability == "expired_login" && access.LoginGeneration != "" && s.LoginGeneration == access.LoginGeneration {
-		return zaiConfigCachedEntry(s, now, access.LoginGeneration)
+		return zaiConfigCachedEntryScope(s, now, access.LoginGeneration, zaiConfigScope(ctx))
 	}
 	s.AttemptAt = now.UTC()
 	s.NextAt = now.Add(5 * time.Minute).UTC()
@@ -286,5 +299,5 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 	if !publishReaderCache(access.Publish, func() bool { return saveZaiConfigState(cache, s) }) {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "ZaiConfig result cache unavailable"}
 	}
-	return zaiConfigCachedEntry(s, now, access.LoginGeneration)
+	return zaiConfigCachedEntryScope(s, now, access.LoginGeneration, zaiConfigScope(ctx))
 }

@@ -5,10 +5,13 @@
 # for nothing, and logs agreement with the lane verdict; "count" is the cutover; unset (or anything else) keeps the
 # workflow off.
 #
-# When: compile first (owner 11-18). A head that changes desktop/native is reviewed after main's mac-compile.yml run for
-# that exact head succeeds (its completion is the trigger: the status it posts with the job token starts no workflow);
-# every other head after ci.yml passes. Each run re-checks both conditions for the PR's current head, so whichever
-# finishes last starts the review.
+# When (owner D374, 11-21): every ready PR head is reviewed once ci.yml passes at it, whether or not it changes
+# desktop/native; the review no longer waits for the Mac compile. The mac-compile workflow_run stays an extra trigger
+# (harmless after the review: one verdict per lane per head), and the merge gate (scripts/merge-gates/rules.mjs) still
+# requires a mac-compile success status at the head of a native PR before it can merge.
+#
+# A dropped answer (no final VERDICT, no Record, a block without a blocker) is asked for once more with the reason; a
+# second invalid answer posts one advisory "review answer invalid, no verdict" note for the head (sol-call.mjs, sol-post.mjs).
 #
 # Per-PR override: a PR labelled review:gpt is always tried with GPT first, whatever REVIEW_PROVIDER_MODE says (the
 # label is read from the REST pull request in the prepare step, never from a PR file). Adding the label starts
@@ -144,6 +147,7 @@ jobs:
       - name: Review (model credentials only here)
         if: steps.prep.outputs.review == 'true'
         env:
+          HEAD_SHA: ${{ steps.prep.outputs.head }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
           GLM_BASE_URL: ${{ secrets.GLM_BASE_URL }}

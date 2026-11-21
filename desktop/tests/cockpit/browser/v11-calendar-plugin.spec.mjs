@@ -61,11 +61,11 @@ test('D328 column: the next 12 hours only; peaks, capsules with the time, the no
  await expect(col.locator('.pl-foot .pl-foot-l')).toHaveAttribute('data-full','Next peak');await expect(col.locator('.pl-foot .pl-foot-v')).toHaveText('in 10h40');
  const s=strip(page);
  for(const gone of ['.cal-d','.cal-pick','.cal-back','.cal-fold','.cal-more','.cal-hd'])await expect(s.locator(gone)).toHaveCount(0);
- await expect(s.locator('.cal-adr')).toHaveText(['CL reset card · until 11/13 +1']);
+ await expect(s.locator('.cal-adr')).toHaveText(['Claude reset card · until 11/13 +1']);
  // 12 hours end at 23:20 on Wednesday: no midnight divider; GLM's peak is the only block, on one line.
  await expect(s.locator('.cal-mid')).toHaveCount(0);
- await expect(s.locator('.cal-pk b')).toHaveText(['GL 22:00–02:00']);
- await expect(s.locator('.cal-ch')).toHaveText(['CL 5h 12:30','CX 5h 14:10','GL 5h 15:50']);
+ await expect(s.locator('.cal-pk b')).toHaveText(['GLM 22:00–02:00']);
+ await expect(s.locator('.cal-ch')).toHaveText(['Claude 5h 12:30','Codex 5h 14:10','GLM 5h 15:50']);
  await expect(s.locator('.cal-ch.wk')).toHaveCount(0);
  const boxes=await s.locator('.cal-ch').evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect();return [r.top,r.bottom];}));
  for(let i=1;i<boxes.length;i++)expect(boxes[i][0]).toBeGreaterThanOrEqual(boxes[i-1][1]);
@@ -83,12 +83,12 @@ test('D328 column: the next 12 hours only; peaks, capsules with the time, the no
 test('D328 Chinese labels, a running peak in the bottom line, and the 明 divider when midnight falls inside',async({page})=>{
  const {send,receive}=await open(page,{locale:'zh-CN'});
  await expect(column(page).locator('.pl-foot .pl-foot-l')).toHaveText('下个高峰');await expect(column(page).locator('.pl-foot .pl-foot-v')).toHaveText('10h40 后');
- await expect(strip(page).locator('.cal-adr')).toHaveText(['CL 重置卡 至11/13 +1']);
+ await expect(strip(page).locator('.cal-adr')).toHaveText(['Claude 重置卡 至11/13 +1']);
  await shot(page,'A-strip-zh',page.locator('.ck-eng'));
  // 23:00: GLM's peak is running (until 02:00) and the 12 h window now holds midnight.
  expect(await receive(send('tick',{nowUnixMs:String(L(0,23)),reason:'deadline'}))).toBe(true);
- await expect(column(page).locator('.pl-foot .pl-foot-l')).toHaveText('GL 高峰中');await expect(column(page).locator('.pl-foot .pl-foot-v')).toHaveText('还剩 3h00');
- await expect(strip(page).locator('.cal-pk b')).toHaveText(['GL 至 02:00','CL 05:00–11:00']);
+ await expect(column(page).locator('.pl-foot .pl-foot-l')).toHaveText('GLM 高峰中');await expect(column(page).locator('.pl-foot .pl-foot-v')).toHaveText('还剩 3h00');
+ await expect(strip(page).locator('.cal-pk b')).toHaveText(['GLM 至 02:00','Claude 05:00–11:00']);
  await expect(strip(page).locator('.cal-mid b')).toHaveText(['明']);
 });
 
@@ -98,7 +98,7 @@ test('D328 no peak rules: the column shows D293 cells and "Peak: no peak rules",
  const col=column(page);
  expect(await col.getAttribute('data-draw')).toBeNull();
  await expect(col.locator('.pl-draw')).toHaveCount(0);await expect(col.locator('.cal')).toHaveCount(0);
- await expect(col).toContainText('下次重置');await expect(col).toContainText('CX 14:10 · 2h50 后');
+ await expect(col).toContainText('下次重置');await expect(col).toContainText('14:10');await expect(col).toContainText('2h50 后');await expect(col).toContainText('Codex 5 小时');
  await expect(col).toContainText('每周重置');
  await expect(col.locator('.pl-foot .pl-foot-l')).toHaveText('高峰');await expect(col.locator('.pl-foot .pl-foot-v')).toHaveText('没有时段规则');
  await shot(page,'D-cells-zh',page.locator('.ck-eng'));
@@ -153,12 +153,12 @@ test('CKP-PLG-07 week view opens from the key inside the MFD screen only; the ke
  await expect(w.locator('.wk-dh.we')).toHaveCount(2);await expect(w.locator('.wk-col.we')).toHaveCount(2);
  await expect(w.locator('.wk-dh.today')).toHaveCount(1);
  // D328: all-day in one row; the announced reset is a ◆ on its effective day only; capsules show the time (solid 5 h, hollow weekly).
- await expect(w.locator('.wk-adr')).toHaveText([/CL reset card/,'◆ GL']);
+ await expect(w.locator('.wk-adr')).toHaveText([/Claude reset card/,'◆ GLM']);
  await expect(w.locator('.wk-adr.mark')).toHaveCount(1);
  expect(await w.locator('.wk-ad').evaluate(e=>e.getBoundingClientRect().height)).toBeLessThan(20);
  await expect(w.locator('.wk-ch')).toHaveText(['12:30','14:10','15:50','09:00','06:00']);
  await expect(w.locator('.wk-ch.wk')).toHaveCount(2);
- await expect(w.locator('.wk-ch').first()).toHaveAttribute('title',/CL 5h reset 12:30/);
+ await expect(w.locator('.wk-ch').first()).toHaveAttribute('title',/Claude · Claude 5h reset 12:30/);
  await expect(w.locator('.wk-nt')).toHaveText('11:20');
  // Whole day fitted: no scrolling.
  expect(await w.locator('.wk-sc').evaluate(e=>e.scrollHeight<=e.clientHeight+1)).toBe(true);
@@ -186,9 +186,9 @@ test('CKP-PLG-07 zoom: ⌘+ / pinch to about 8 h with a scrollbar and edge hints
  const sc=w.locator('.wk-sc');
  expect(await sc.evaluate(e=>Math.round(e.scrollHeight/e.clientHeight))).toBe(3);// 24 h / 8 h
  // Centred on now; peaks and chips outside the view are hinted at the column edges.
- await expect(w.locator('.wk-hints i.down').first()).toHaveText('↓ GL 5h 15:50');
- await expect(w.locator('.wk-hints i.down',{hasText:'↓ GL peak 22:00'})).toHaveCount(2);
- await expect(w.locator('.wk-pk b').first()).toHaveText('CL peak');
+ await expect(w.locator('.wk-hints i.down').first()).toHaveText('↓ GLM 5h 15:50');
+ await expect(w.locator('.wk-hints i.down',{hasText:'↓ GLM peak 22:00'})).toHaveCount(2);
+ await expect(w.locator('.wk-pk b').first()).toHaveText('Claude peak');
  await shot(page,'E3-week-zoom',page.locator('.ck-deck'));
  await sc.evaluate(e=>{e.scrollTop=0;e.dispatchEvent(new Event('scroll'));});
  await expect(w.locator('.wk-hints i.down').first()).toBeVisible();
@@ -210,11 +210,11 @@ test('D328 a day pressed in the week view swaps the column\'s bottom line to tha
  await expect(screen(page).locator('.pl-screen-t')).toHaveText('日历');
  await w.locator('.wk-dh').nth(1).click();
  await expect(w.locator('.wk-dh').nth(1)).toHaveAttribute('aria-pressed','true');
- await expect(foot.locator('.pl-foot-l')).toHaveText('11/12 周四');await expect(foot.locator('.pl-foot-v')).toHaveText('CL 高峰 05:00 · CL 周 09:00 · GL 高峰 22:00');
+ await expect(foot.locator('.pl-foot-l')).toHaveText('11/12 周四');await expect(foot.locator('.pl-foot-v')).toHaveText('Claude 高峰 05:00 · Claude 周 09:00 · GLM 高峰 22:00');
  await w.locator('.wk-col').nth(4).click({position:{x:10,y:20}});
  await expect(foot.locator('.pl-foot-l')).toHaveText('11/15 周日');await expect(foot.locator('.pl-foot-v')).toHaveText('暂无');
  // The strip itself does not change (it is always the next 12 hours) and the screen stays open.
- await expect(strip(page).locator('.cal-pk b')).toHaveText(['GL 22:00–02:00']);
+ await expect(strip(page).locator('.cal-pk b')).toHaveText(['GLM 22:00–02:00']);
  await expect(screen(page)).toBeVisible();
  // Today restores the default line.
  await w.locator('.wk-dh').first().click();
@@ -241,14 +241,14 @@ test('calendar data is checked against the plugin shape and size bound; the disp
  const s=strip(page);
  // No peak data yet (D328): the D293 cells show the reset; the strip is not drawn.
  await expect(column(page).locator('.pl-draw')).toHaveCount(0);
- await expect(column(page)).toContainText(/(CX|TO) 13:00 · in 1h40/);
+ await expect(column(page)).toContainText(/13:00in 1h40(Codex|Tool \d) 5h/);
  // Bad shapes and oversized data are refused and change nothing.
  const bad=[{...week,extra:1},{...week,version:2},{...week,peaks:[{sub:9,from:NOW,to:null,tentative:false}]},{...week,resets:[{sub:0,at:NOW,kind:'month'}]},{...week,subs:[{...week.subs[0],colour:'red'}]},{...week,resets:Array.from({length:65},()=>({sub:0,at:NOW,kind:'5h'}))}];
  for(const d of bad)expect(await receive(send('pluginData',{id:'calendar',data:d}))).toBe(false);
  // Over the 16 KiB bound: refused before the shape check runs.
  const big={...week,subs:[{...week.subs[0],name:{en:'x'.repeat(20000),zh:'y'}}]};
  expect(await receive(send('pluginData',{id:'calendar',data:big}))).toBe(false);
- await expect(column(page)).toContainText(/(CX|TO) 13:00 · in 1h40/);
+ await expect(column(page)).toContainText(/13:00in 1h40(Codex|Tool \d) 5h/);
  // A valid host push takes over from the page's own shaping.
  expect(await receive(send('pluginData',{id:'calendar',data:week}))).toBe(true);
  await expect(s.locator('.cal-ch')).toHaveCount(3);
@@ -315,4 +315,50 @@ test('macrevc-844-8: through the bridge, the earliest card expiring at the host 
  expect(await receive(send('tick',{nowUnixMs:String(NOW+120_000),reason:'deadline'}))).toBe(true);
  await expect(column(page)).toContainText('Reset cards');
  await expect(column(page)).not.toContainText(/×|until|\d+\/\d+/);
+});
+
+// D375: names, not codes; the big time; two distinct moments (or one); colour always beside the name.
+const bothOn={version:1,entries:[{id:'calendar',enabled:true,pinned:false},{id:'resources',enabled:true,pinned:false}],settings:{}};
+async function openWith(page,{count,push,locale='zh-CN',at=NOW,plugins=bothOn}) {
+ await page.clock.setFixedTime(new Date(at));
+ await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,tier:'tall'},redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('plugins',{plugins}))).toBe(true);
+ expect(await receive(send('display',{data:dataWith(count)}))).toBe(true);
+ expect(await receive(send('pluginData',{id:'calendar',data:push}))).toBe(true);
+ return {send,receive};
+}
+test('D375 3 columns, no peak rules: big time, the subscription colour mark with its full name, no code',async({page})=>{
+ const codexOnly={version:1,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:L(0,14,10),kind:'5h'},{sub:0,at:L(2,6),kind:'week'}],spans:[]};
+ const {send,receive}=await openWith(page,{count:1,push:codexOnly});
+ const col=column(page);
+ await expect(col.locator('.pl-big')).toHaveText(['14:10','06:00']);
+ await expect(col.locator('.pl-sub .pl-subt')).toHaveText(['Codex 5 小时','Codex 每周 · 11/13 周五']);
+ await expect(col.locator('.pl-sub .pl-sw').first()).toHaveCSS('background-color','rgb(106, 168, 255)');
+ expect(await col.innerText()).not.toMatch(/\b(CX|CL|GL|CU)\b/);
+ await expect(col.locator('.pl-foot .pl-foot-v')).toHaveText('没有时段规则');
+ await shot(page,'N-3col-no-rules-zh',page.locator('.ck-eng'));
+ // The next reset is the weekly one (nothing to read for the 5 h window): written once.
+ const only={...codexOnly,resets:[{sub:0,at:L(0,12,30),kind:'week'}]};
+ expect(await receive(send('pluginData',{id:'calendar',data:only}))).toBe(true);
+ await expect(col.locator('.pl-big')).toHaveText(['12:30']);
+ await expect(col.locator('.pl-sub .pl-subt')).toHaveText(['Codex 每周']);
+ await shot(page,'N-3col-same-moment-zh',page.locator('.ck-eng'));
+});
+test('D375 3 columns with a peak day strip, and 6 columns: names beside colours, the window dropped when narrow',async({page})=>{
+ const two={...week,subs:[week.subs[1],week.subs[2]],peaks:[{sub:1,from:L(0,22),to:L(1,2),tentative:false}],resets:[{sub:0,at:L(0,23,10),kind:'5h'},{sub:1,at:L(0,21,40),kind:'5h'}],spans:[]};
+ await openWith(page,{count:2,push:two,locale:'zh-CN',plugins:{...bothOn,entries:[{id:'calendar',enabled:true,pinned:false},{id:'resources',enabled:false,pinned:false}]}});
+ await expect(strip(page).locator('.cal-ch')).toHaveText(['Codex 5h 23:10','GLM 5h 21:40']);
+ await expect(strip(page).locator('.cal-pk b')).toHaveText(['GLM 22:00–02:00']);
+ await shot(page,'N-3col-peaks-zh',page.locator('.ck-eng'));
+});
+test('D375 6 columns: chips drop the window, keep the name',async({page})=>{
+ await openWith(page,{count:4,push:week,locale:'zh-CN'});
+ await expect(page.locator('.eng-keys')).toHaveAttribute('data-slots','6');
+ await expect(strip(page).locator('.cal-ch')).toHaveText(['Claude 12:30','Codex 14:10','GLM 15:50']);
+ expect(await strip(page).innerText()).not.toMatch(/\b(CX|CL|GL|CU)\b/);
+ await shot(page,'N-6col-zh',page.locator('.ck-eng'));
 });

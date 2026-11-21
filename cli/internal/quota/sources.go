@@ -354,6 +354,12 @@ const codexHead = 1 << 20 // session_meta is the first line; it carries the inst
 // one named by thread (CODEX_THREAD_ID or a hook's session id) when its log is found, else the
 // most recent interactive thread, marked as such. Background threads never supply them.
 func readCodex(home, thread string) ([]Account, SourceStatus) {
+	return readCodexFenced(home, thread, codexRolloutFence())
+}
+
+// readCodexFenced is readCodex for a caller that took the memo fence before evaluating its
+// consent (codexRolloutFence), so a Forget during the read leaves nothing decoded behind.
+func readCodexFenced(home, thread string, fence uint64) ([]Account, SourceStatus) {
 	st := SourceStatus{Source: "codex"}
 	if home == "" {
 		st.Status, st.Reason = "missing", "not read"
@@ -372,7 +378,7 @@ func readCodex(home, thread string) ([]Account, SourceStatus) {
 	}
 	var rs []*rollout
 	for _, f := range files {
-		if r := scanRollout(f); r != nil {
+		if r := scanRollout(f, fence); r != nil {
 			rs = append(rs, r)
 		}
 	}
@@ -457,16 +463,20 @@ func mergeCodex(rs []*rollout) *Account {
 		for _, k := range r.order {
 			w := r.windows[k]
 			if i, ok := pos[k]; ok {
+				// Rollouts arrive in file order, not reading order: thin once all are in (S7).
 				if w.ObservedAt.After(a.Windows[i].ObservedAt) {
-					a.Windows[i] = withHistory(w, a.Windows[i])
+					a.Windows[i] = mergeHistory(w, a.Windows[i], false)
 				} else if r != newest {
-					a.Windows[i] = withHistory(a.Windows[i], w) // another thread's readings of the same meter
+					a.Windows[i] = mergeHistory(a.Windows[i], w, false) // another thread's readings of the same meter
 				}
 				continue
 			}
 			pos[k] = len(a.Windows)
 			a.Windows = append(a.Windows, w)
 		}
+	}
+	for i := range a.Windows {
+		a.Windows[i] = thinHistory(a.Windows[i])
 	}
 	return a
 }
@@ -600,8 +610,8 @@ func originOf(raw json.RawMessage) string {
 // snapshot per limit id and the latest turn context; it decodes nothing else from the log.
 // WP-17: what a file holds is decoded once while the file is unchanged (codexRolloutEvents);
 // every call builds its own rollout from it, so no caller shares values with another.
-func scanRollout(path string) *rollout {
-	scan, ok := codexRolloutEvents(path)
+func scanRollout(path string, fence uint64) *rollout {
+	scan, ok := codexRolloutEvents(path, fence)
 	if !ok {
 		return nil
 	}

@@ -23,6 +23,7 @@ func liveRefreshScopes(state consent.State, mode string) []string {
 		consent.ScopeKiroRuntimeUsage,
 		consent.ScopeAntigravityRuntimeUsage,
 		consent.ScopeZaiAccountUsageAPIKey,
+		consent.ScopeZaiAccountUsageSavedLogin,
 		consent.ScopeMiniMaxAccountUsageAPIKey,
 		consent.ScopeOpenCodeGoAccountUsageAPIKey,
 	}

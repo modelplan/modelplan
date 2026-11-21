@@ -201,6 +201,8 @@
         "team_unsupported",
         "policy_pending",
         "no_plan",
+        "login_expired",
+        "consent_required",
         "other"
       ]
     },

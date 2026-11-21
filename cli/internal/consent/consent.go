@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,6 +62,11 @@ type State struct {
 	// Requests is keyed by (storeEpoch, requestId). Schema-1 receipts migrate
 	// from their reserved Hinted namespace without changing their hashes/results.
 	Requests map[string]Receipt `json:"requests,omitempty"`
+	// ReadingGeneration pins the reading key (ReadingKey) across commits that change only
+	// an extension scope (D232, sampling 11-21 S2). Zero means it follows Generation.
+	ReadingGeneration uint64 `json:"readingGeneration,omitempty"`
+	// extensionOnly marks the pending commit as touching only extension scopes; never stored.
+	extensionOnly bool
 }
 
 // Receipt is committed with permissions. Results contain only public consent
@@ -253,7 +259,17 @@ func transaction(file string, change, finalize func(*State) error, wait bool) er
 	if s.Generation == ^uint64(0) {
 		return errors.New("consent generation exhausted")
 	}
+	// A commit that changes only an extension scope keeps the reading key: the extension
+	// stores no reading, so it never invalidates the readings of the scope it extends.
+	// Every other commit moves the reading key with Generation.
+	reading := s.readingGeneration()
 	s.Generation++
+	if s.extensionOnly {
+		s.ReadingGeneration = reading
+	} else {
+		s.ReadingGeneration = 0
+	}
+	s.extensionOnly = false
 	if err = save(file, s); err != nil {
 		return err
 	}
@@ -371,6 +387,19 @@ type Fence struct {
 
 func (s State) Fence() Fence    { return Fence{s.StoreEpoch, s.Generation} }
 func CurrentFence(f Fence) bool { s, err := Load(Path()); return err == nil && s.Fence() == f }
+
+func (s State) readingGeneration() uint64 {
+	if s.ReadingGeneration != 0 && s.ReadingGeneration <= s.Generation {
+		return s.ReadingGeneration
+	}
+	return s.Generation
+}
+
+// ReadingKey invalidates retained readings: it changes with every consent commit except one
+// that changes only extension scopes (sampling 11-21 S2). Writes stay fenced by Fence.
+func (s State) ReadingKey() string {
+	return s.StoreEpoch + ":" + strconv.FormatUint(s.readingGeneration(), 10)
+}
 
 // lockConsent takes the consent lock for something the user asked for. A background reader can
 // be saving a finished read, so a brief hold must not fail the request; it waits as publish does.
