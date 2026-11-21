@@ -141,6 +141,9 @@ enum SettingsWords {
     /// D371: with the Subscriptions rows, each verified subscription's alias field sits in its own row. The window owns
     /// the fields (so a draft survives a redraw of the rows) and they commit through the same alias edit.
     private var inlineAliases: [String: SettingsAliasControl] = [:]
+    /// SET-9-16: true while the catalogue lists the per-subscription alias setting for this pane or search, even though
+    /// the inline row fields draw it instead of a separate block. Acceptance reports it as a visible key.
+    private var aliasServedInline = false
     private var displayedKeys: [SettingKey] = []
     private var sectionHeadings: [String: NSTextField] = [:]
     private var observers: [NSObjectProtocol] = []
@@ -387,7 +390,9 @@ enum SettingsWords {
         do {
             let catalogued = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
                                                      paneID: query.isEmpty ? selectedPaneID : nil, query: query)
-            let visible = (scopeConsentEntry?.retainingNonConsentRows(catalogued) ?? catalogued)
+            let consentRows = scopeConsentEntry?.retainingNonConsentRows(catalogued) ?? catalogued
+            aliasServedInline = scopeConsentEntry != nil && !editor.context.subscriptions.isEmpty && consentRows.contains { $0.key == .alias }
+            let visible = consentRows
                 .filter { row in
                     return !editor.connections.isAvailable || (row.key != .detectedReaders && row.key != .optionalReaders)
                 }
@@ -624,7 +629,7 @@ enum SettingsWords {
             consistentRevision:before==current && current==stored.revision,isSaving:editor.isSaving,
             windowVisible:window?.isVisible ?? false,windowKey:window?.isKeyWindow ?? false,
             focus:settingsAcceptanceFocus(window:window,controls:controls),
-            settings:.init(selectedPane:selectedPaneID,searchLength:searchField.stringValue.count,visibleKeys:displayedKeys.map(\.rawValue),editingAliases:editing,unsavedAliases:unsaved,popups:popups),
+            settings:.init(selectedPane:selectedPaneID,searchLength:searchField.stringValue.count,visibleKeys:displayedKeys.map(\.rawValue)+(aliasServedInline&&!displayedKeys.contains(.alias) ? [SettingKey.alias.rawValue] : []),editingAliases:editing,unsavedAliases:unsaved,popups:popups),
             firstRun:nil,loginStateFromContext:editor.context.capabilities.login.rawValue)
     }
     func choice(key: SettingKey, subscriptionID: String = "") -> SettingsChoiceControl? { rows[key]?.choices[subscriptionID] }
