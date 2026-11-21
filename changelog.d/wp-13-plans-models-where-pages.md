@@ -1,1 +1,0 @@
-The cockpit's page keys now read Overview, Plans, Models and Breakdown; the Subscription page opens the first subscription expanded when there are fewer than 3; the Models page lists models by usage (with a List | Chart key for the ability-cost frontier); and the Breakdown page shows projects or sessions with each row's share as a bar.
