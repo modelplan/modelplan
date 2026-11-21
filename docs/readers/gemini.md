@@ -205,6 +205,10 @@ The owner asked for CodexBar parity on the one-hour access token. A separate sco
 `gemini.account_usage.token_refresh`, extends the saved-login scope above. It is
 unchecked (`defaultCheck: false`), has no effect unless `gemini.account_usage.saved_login`
 is also allowed, follows the same consent text version and is never allowed in Passive mode.
+It is a separate choice: the engine refuses a grant that allows it together with any other
+scope, so first-run Done, a Gemini switch turned on and Select all never grant it; the app
+leaves it out of those choices and labels its own path with Google's token endpoint
+(sampling 11-21 S1). Switching Gemini off refuses it with the rest.
 
 | Slot | Method | Host | Path | Application-set header names | Body |
 | --- | --- | --- | --- | --- | --- |
@@ -223,8 +227,10 @@ is also allowed, follows the same consent text version and is never allowed in P
   the read still checks that `oauth_creds.json` did not change during the read.
 - A refused refresh (HTTP 400/401, for example `invalid_grant`) ends the read as expired with
   `http_401`; a malformed reply is `schema_changed`; neither keeps response text. Revoking
-  the scope erases nothing (it stores nothing) and changes the grant generation, which drops
-  the in-memory token.
+  the scope erases nothing (it stores nothing) and moves the consent fence, which drops the
+  in-memory token. A commit that changes only this scope keeps the reading key
+  (`consent.State.ReadingKey`), so the saved-login reading stays shown and is not cleared
+  (sampling 11-21 S2).
 - Behaviour reference: CodexBar `GeminiStatusProbe.swift` at
   `7447bc77c2497323d9c41e40164ce705533493c8` (MIT). CodexBar also writes the refreshed token
   back to `oauth_creds.json` and can read the client from the installed CLI; ModelPlan does neither.

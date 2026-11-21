@@ -91,10 +91,11 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 		if route, exists := routes[id]; exists && (route.Preferred != "native" || !strings.HasPrefix(route.ReaderID, "native:") || !detect.Compatible(version, route.MinCLI)) {
 			continue
 		}
-		generation := state.Generation
 		fence := state.Fence()
 		scope := state.ScopeFor(id, consent.Credential)
-		g := ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) }, Generation: fence.StoreEpoch + ":" + strconv.FormatUint(generation, 10), Region: record.Region,
+		// Generation keys retained readings; it ignores commits that change only an extension
+		// scope (S2). Writes stay fenced by the full consent fence below.
+		g := ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) }, Generation: state.ReadingKey(), Region: record.Region,
 			Publish: func(write func() error) error { return consent.Publish(fence, write) },
 			StillValid: func() bool {
 				current, effective := consent.Current()
@@ -119,6 +120,11 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 			}
 			g.SavedLogin = true
 			g.TokenRefresh = id == "gemini" && state.AllowsScope(consent.ScopeGeminiAccountUsageTokenRefresh, mode)
+			if g.TokenRefresh {
+				// A refreshed token is keyed to the full consent fence, so revoking or re-granting
+				// the extension drops it even though the reading key stays (S2).
+				g.TokenGeneration = fence.StoreEpoch + ":" + strconv.FormatUint(fence.Generation, 10)
+			}
 			g.KeychainConsent = state.KeychainStatus(id, mode)
 			g.Keychain = g.KeychainConsent == "allowed"
 			g.KeychainPriorGrant = g.Keychain
@@ -256,7 +262,7 @@ func defaultZCodeGrant(home string, state consent.State, mode string, configured
 	// a refusal releases the held "sign-in rejected" state at the next due read.
 	stamp := strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
 	return ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
-		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Generation, 10) + ":zcode:" + stamp,
+		Generation: state.ReadingKey() + ":zcode:" + stamp,
 		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
 		StillValid: func() bool {
 			current, effective := consent.Current()

@@ -165,10 +165,15 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		// computed in today's time zone and may be later than when the file was first recorded, so an
 		// unchanged legacy file keeps every record it already has and only gains tiers by response identity.
 		legacy := exists && old.LiveObserved && !old.Tiered && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano()
+		// A response this file already recorded live, under this grant, stays eligible on every reparse (an append
+		// too, sampling 11-21 S12): the recomputed recording-day start never drops it. Only live records count: an
+		// imported copy never makes its response live, so "Remove imported history" still removes it (S11).
 		known := map[string]bool{}
-		if legacy {
+		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) {
 			for _, r := range old.Records {
-				known[r.Key] = true
+				if !r.Imported {
+					known[r.Key] = true
+				}
 			}
 		}
 		records := p.records[:0]

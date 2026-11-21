@@ -352,7 +352,7 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	if s.Allows("claude", consent.Local, mode) {
 		add(readClaudeCode(p.Cache, p.ClaudeSession, now))
 	}
-	if s.Allows("codex", consent.Local, mode) {
+	if s.Allows("codex", consent.Local, mode) && codexHistoryStillAllowed() {
 		add(readCodexFenced(p.CodexHome, p.CodexThread, codexFence))
 	}
 	if s.Allows("codex", consent.Runtime, mode) && p.CodexHome != "" {
@@ -368,6 +368,16 @@ func ReadPermitted(p Paths, now time.Time) Report {
 		return Report{SchemaVersion: 1, EvaluatedAt: now.UTC(), Accounts: []Account{}, Sources: []SourceStatus{{Source: "readers", Status: "off", Reason: "consent-changed"}}}
 	}
 	return r
+}
+
+// codexHistoryStillAllowed re-reads consent after the memo fence was taken (sampling 11-21 S6).
+// A captured admission can predate a Forget of Codex local history that has since completed;
+// that Forget already bumped the fence this read took, so only this check keeps the read from
+// opening and memoizing rollouts. A Forget that lands after this check bumps the fence again
+// and voids the read's memo writes.
+func codexHistoryStillAllowed() bool {
+	current, mode := consent.Current()
+	return current.Allows("codex", consent.Local, mode)
 }
 
 // ReadDeclared reads only the user's bounded local.json. It is independent of

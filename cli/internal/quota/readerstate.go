@@ -28,7 +28,8 @@ type ReaderGrant struct {
 	CaptureAllowed     func(*consent.CaptureStamp) bool
 	Generation         string
 	SavedLogin         bool
-	TokenRefresh       bool // D232: the opt-in Gemini token-refresh scope is also allowed
+	TokenRefresh       bool   // D232: the opt-in Gemini token-refresh scope is also allowed
+	TokenGeneration    string // S2: keys refreshed in-memory tokens to the full consent fence
 	Keychain           bool
 	KeychainConsent    string // preserves unset versus denied for an actionable reader notice
 	KeychainPriorGrant bool

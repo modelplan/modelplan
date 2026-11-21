@@ -372,6 +372,9 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		if x.Provider == "copilot" {
 			e.Source = "runtime"
 		}
+		if x.Provider == "zai" && hasManual {
+			e.ManualKeyGeneration = generations["zai"] // S8: read with this pasted key
+		}
 		if x.Provider == "zai" && !IdentityOff() {
 			// One row (owner 2026-11-14): Settings says when the entered key differs from a detected one.
 			// Only the detected key's local reference is kept (the keyed-hash identity map, as for every
@@ -560,6 +563,12 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		if ok && e.Status == "ok" && !captureAllowed(p, x.Provider, e.Admission, false) {
 			ok = false
 		}
+		if ok && x.Provider == "zai" {
+			// S8: while a pasted GLM key is saved, a cache-only read shows only that key's reading.
+			if _, pasted, err := loadManualKeyChecked(p.Cache, x.Provider); err == nil && pasted && !glmEntryOfPastedKey(p.Cache, e) {
+				ok = false
+			}
+		}
 		switch {
 		case x.Blocked == "no-native-reader":
 			st.Status, st.Reason = "unsupported_schema", "no native reader for "+x.Provider+"; set its backend to codexbar-compat"
@@ -627,6 +636,14 @@ func kimiCacheMatches(cache string, x Selection, e codexbarEntry) bool {
 	return ref != "" && ref == e.SubscriptionRef
 }
 
+// glmEntryOfPastedKey: e is reference-only, or was read with the pasted GLM key saved now.
+func glmEntryOfPastedKey(cache string, e codexbarEntry) bool {
+	if e.ObservedAt.IsZero() && e.Status == "" && len(e.Windows) == 0 {
+		return true
+	}
+	return e.ManualKeyGeneration != 0 && e.ManualKeyGeneration == manualKeyGenerations(cache)["zai"]
+}
+
 // A throttled sweep still applies current generation/admission to typed caches.
 // It must not call a collector just to invalidate an old aggregate account.
 func projectLegacyNativeCache(ctx context.Context, p Paths, provider string, old codexbarEntry, now time.Time) codexbarEntry {
@@ -635,8 +652,14 @@ func projectLegacyNativeCache(ctx context.Context, p Paths, provider string, old
 	// Sampling 11-20 S5: a saved (or unreadable) pasted GLM key is the only GLM route, so the
 	// configured-tool cache (another key, possibly another account) is never projected over it;
 	// the entry that the key change or the pasted key's own read left stands.
+	// Sampling 11-21 S8: an entry a parent build left (another key's reading projected over the pasted key) is not
+	// the pasted key's: only a reading of the current pasted-key generation stays; any other becomes reference-only,
+	// keeping its deadline, so nothing is shown and no request is made before it.
 	if provider == "zai" {
 		if _, pasted, err := loadManualKeyChecked(p.Cache, provider); pasted || err != nil {
+			if err == nil && !glmEntryOfPastedKey(p.Cache, old) {
+				return glmReferenceOnly(old)
+			}
 			return old
 		}
 	}
