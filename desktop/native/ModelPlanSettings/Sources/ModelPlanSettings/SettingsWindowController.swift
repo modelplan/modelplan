@@ -629,7 +629,7 @@ enum SettingsWords {
             consistentRevision:before==current && current==stored.revision,isSaving:editor.isSaving,
             windowVisible:window?.isVisible ?? false,windowKey:window?.isKeyWindow ?? false,
             focus:settingsAcceptanceFocus(window:window,controls:controls),
-            settings:.init(selectedPane:selectedPaneID,searchLength:searchField.stringValue.count,visibleKeys:displayedKeys.map(\.rawValue)+(aliasServedInline&&!displayedKeys.contains(.alias) ? [SettingKey.alias.rawValue] : []),editingAliases:editing,unsavedAliases:unsaved,popups:popups),
+            settings:.init(selectedPane:selectedPaneID,searchLength:searchField.stringValue.count,visibleKeys:displayedKeys.map(\.rawValue)+(aliasServedInline && !displayedKeys.contains(.alias) ? [SettingKey.alias.rawValue] : []),editingAliases:editing,unsavedAliases:unsaved,popups:popups),
             firstRun:nil,loginStateFromContext:editor.context.capabilities.login.rawValue)
     }
     func choice(key: SettingKey, subscriptionID: String = "") -> SettingsChoiceControl? { rows[key]?.choices[subscriptionID] }
