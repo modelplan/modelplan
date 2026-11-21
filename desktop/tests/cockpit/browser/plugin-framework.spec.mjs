@@ -282,7 +282,8 @@ test('#1104 a host pluginScreen message opens an enabled plugin\'s big screen an
  await expect(screen).toHaveCount(1);
 });
 
-test('"+" menu: detected tools first, then all subscriptions; plugins below; Add places the plugin',async({page})=>{
+test('"+" menu: detected tools first, then all subscriptions; plugins below (never the framework placeholder); Add places the plugin',async({page})=>{
+ const calendarColumn=page.locator('.eng-cols .pl-col[data-plugin="calendar"]'),calendarKey=page.locator('.eng-keys .pl-key[data-plugin="calendar"]');
  const {send,receive}=await open(page,dataWith(1,[['grok','off'],['gemini-cli','needs_consent']]));
  const plus=page.locator('.eng-keys .ek-bay').first();
  await expect(plus).toHaveAttribute('aria-label','＋ Add a subscription');
@@ -292,26 +293,29 @@ test('"+" menu: detected tools first, then all subscriptions; plugins below; Add
  await expect(menu.locator('.pm-connect .pm-n')).toHaveText(['gemini-cli','grok']);
  await expect(menu.locator('.pm-connect .pm-st')).toHaveText(['Detected','Not connected']);
  await expect(menu.locator('[data-pm-all]')).toHaveText('All subscriptions…');
- await expect(menu.locator('[data-pm-plugin="placeholder"]')).toContainText('Add');
+ // Owner 11-21: the placeholder is a framework fixture; no user-facing list offers it. The shipped plugins are offered.
+ await expect(menu.locator('[data-pm-plugin="placeholder"]')).toHaveCount(0);
+ await expect(menu.locator('[data-pm-plugin]')).toHaveCount(2);
+ await expect(menu.locator('[data-pm-plugin="calendar"]')).toContainText('Add');
  // Escape closes and returns focus; a connect item asks the host for Settings > Subscriptions (CKP-ENG-24).
  await page.keyboard.press('Escape');await expect(menu).toHaveCount(0);await expect(plus).toBeFocused();
  await plus.click();await menu.locator('[data-pm-row="gemini-cli"]').click();
  expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').map(e=>e.action))).toEqual(['openSettingsSubscriptions']);
- await plus.click();await menu.locator('[data-pm-plugin="placeholder"]').click();
+ await plus.click();await menu.locator('[data-pm-plugin="calendar"]').click();
  await expect(menu).toHaveCount(0);
- await expect(column(page)).toHaveCount(1);
- await expect(column(page)).toHaveAttribute('data-running','true');
+ await expect(calendarColumn).toHaveCount(1);
+ await expect(calendarColumn).toHaveAttribute('data-running','true');
  // This host never sent plugin state, so the page keeps the edit to itself (an older host would reject the action).
  expect(await pluginEdits(page)).toEqual([]);expect(await running(page)).toEqual([]);
  await page.locator('.eng-keys .ek-bay').first().click();
- await expect(menu.locator('[data-pm-plugin="placeholder"]')).toBeDisabled();
- await expect(menu.locator('[data-pm-plugin="placeholder"]')).toContainText('✓ Added');
+ await expect(menu.locator('[data-pm-plugin="calendar"]')).toBeDisabled();
+ await expect(menu.locator('[data-pm-plugin="calendar"]')).toContainText('✓ Added');
  // Chinese labels.
  await page.keyboard.press('Escape');
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN',redBelow:25}))).toBe(true);
  await page.locator('.eng-keys .ek-bay').first().click();
  await expect(page.locator('.pl-menu .pm-h')).toHaveText(['连接一个订阅','添加一个插件']);
- await expect(key(page).locator('.ek-name')).toHaveText('占位插件');
+ await expect(calendarKey.locator('.ek-name')).toHaveText('日历');
 });
 
 test('host plugin state is validated: a bad message is refused and changes nothing',async({page})=>{
