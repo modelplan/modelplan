@@ -50,9 +50,9 @@ extension ReaderCauseTable {
                 return .init(reason: .init("kiro-cli was not found", "没有找到 Kiro 命令行工具"),
                              action: .init("Install kiro-cli", "安装 Kiro 命令行工具"), target: .installTool)
             case "runtime_missing":
-                // Also the cause when MODELPLAN_KIRO names a file that cannot start: reinstalling would not help.
+                // Also the cause when the configured kiro-cli path names a file that cannot start: reinstalling would not help.
                 return .init(reason: .init("kiro-cli was not found or could not start", "没有找到 Kiro 命令行工具，或它无法启动"),
-                             action: .init("Install kiro-cli, or check the executable MODELPLAN_KIRO points to", "安装 Kiro 命令行工具，或检查 MODELPLAN_KIRO 指向的可执行文件"), target: .installTool)
+                             action: .init("Install kiro-cli, or check the kiro-cli path you configured", "安装 Kiro 命令行工具，或检查你配置的 Kiro 命令行工具路径"), target: .installTool)
             case "not_signed_in", "login_expired", "unsupported_login":
                 return .init(reason: .init("Not signed in to kiro-cli", "尚未登录 Kiro 命令行工具"),
                              action: .init("Sign in to kiro-cli", "登录 Kiro 命令行工具"), target: .explain)

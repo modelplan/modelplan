@@ -184,10 +184,10 @@ final class SubscriptionRowModelTests: XCTestCase {
         XCTAssertEqual(card?.reason.english, "kiro-cli was not found or could not start")
         XCTAssertFalse(card?.action.english.contains("Node") ?? true)
         // S10 (#1081): a missing command keeps install guidance; a configured override that cannot start (the same
-        // runtime_missing cause) also points at the executable MODELPLAN_KIRO names.
+        // runtime_missing cause) also points at the configured path.
         for guidance in [row?.action.english, card?.action.english] {
             XCTAssertTrue(guidance?.contains("Install kiro-cli") ?? false)
-            XCTAssertTrue(guidance?.contains("MODELPLAN_KIRO") ?? false)
+            XCTAssertTrue(guidance?.contains("path you configured") ?? false)
         }
         XCTAssertEqual(ReaderCauseTable.rowEntry(code: "not_found", tool: "kiro", toolName: "Kiro")?.action.english, "Install kiro-cli")
         // Other tools keep the Node.js cause.

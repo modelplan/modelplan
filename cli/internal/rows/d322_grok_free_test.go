@@ -35,6 +35,7 @@ func TestD322FreeGrokHasSettingsSurfaceOnly(t *testing.T) {
 	if other := build("codex", 0); !hasSurface(other, SurfaceDock) {
 		t.Fatalf("only Grok is dropped at $0: %v", other.Surfaces)
 	}
+}
 
 // An expired $0 reading is retained and the row goes stale; it must stay Settings-only, while a retained
 // funded balance keeps its Dock surface.
