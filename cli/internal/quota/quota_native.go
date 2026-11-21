@@ -632,6 +632,14 @@ func kimiCacheMatches(cache string, x Selection, e codexbarEntry) bool {
 func projectLegacyNativeCache(ctx context.Context, p Paths, provider string, old codexbarEntry, now time.Time) codexbarEntry {
 	ctx = productionReaderContext(ctx, p, provider)
 	e := old
+	// Sampling 11-20 S5: a saved (or unreadable) pasted GLM key is the only GLM route, so the
+	// configured-tool cache (another key, possibly another account) is never projected over it;
+	// the entry that the key change or the pasted key's own read left stands.
+	if provider == "zai" {
+		if _, pasted, err := loadManualKeyChecked(p.Cache, provider); pasted || err != nil {
+			return old
+		}
+	}
 	switch provider {
 	case "copilot":
 		access, blocked := copilotAdmission(ctx)

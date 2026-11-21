@@ -47,8 +47,9 @@ public enum ReaderCauseTable {
         case "runtime_missing":
             // Kiro's reader needs the kiro-cli command itself, not Node.js (same text as its row, ReaderRowFix).
             if (tool ?? "").lowercased() == "kiro" {
-                return .init(reason: .init("kiro-cli was not found", "没有找到 Kiro 命令行工具"),
-                             action: .init("Install kiro-cli, then refresh", "安装 Kiro 命令行工具后刷新"), target: .guidance)
+                // The same cause covers a configured kiro-cli path that cannot start, so reinstalling is not the only fix.
+                return .init(reason: .init("kiro-cli was not found or could not start", "没有找到 Kiro 命令行工具，或它无法启动"),
+                             action: .init("Install kiro-cli, or check the kiro-cli path you configured, then refresh", "安装 Kiro 命令行工具，或检查你配置的 Kiro 命令行工具路径，然后刷新"), target: .guidance)
             }
             return .init(reason: .init("Node.js is required", "需要 Node.js"),
                          action: .init("Install Node.js, then refresh", "安装 Node.js 后刷新"), target: .guidance)

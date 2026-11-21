@@ -46,7 +46,7 @@ export function renderEffort(m,lang="zh",tiers=[],measured=[]) {
   const t=words[lang],rec=recommendation(m),ri=m.configurations.indexOf(rec);
   const out=[`${m.name}  ${m.configurations.length} · ★ ${rec?.label??"—"} ${t.recommended} · ${t.vs} · ${t.step}`];
   for(let i=m.configurations.length-1;i>=0;i--){const c=m.configurations[i];
-    const a=c.ability===null?"—":rec?.ability==null?c.ability.toFixed(1):`${c.ability.toFixed(1)} (${c.ability-rec.ability>=0?"+":""}${(c.ability-rec.ability).toFixed(1)}${t.pts})`;
+    const g=gain(rec,c),a=c.ability===null?"—":rec?.ability==null||g===null?c.ability.toFixed(1):`${c.ability.toFixed(1)} (${g>=0?"+":""}${g.toFixed(1)}${t.pts})`;
     const cost=c.cost===null||!rec?.cost?"—":ratio(c.cost/rec.cost);
     const value=timeRatio(c,rec);
     const time=value===null?"—":ratio(value)+((c.timeEstimated||rec.timeEstimated)?" "+t.estimated:"");
@@ -86,11 +86,17 @@ export function renderMeasured(m,rows,lang="zh",tiers=[]) {
   return out.join("\n")+"\n";
 }
 
+// What moving between two efforts of one model buys, as the CLI's digest.Gain: from client-v1.7 the difference of
+// the published within-model chain (null without a bridge); before, ability was that chain.
+export function gain(from,to) {
+  if(!from||!to)return null;const key=("abilityWithinModel" in from||"abilityWithinModel" in to)?"abilityWithinModel":"ability";
+  const a=from[key],b=to[key];return typeof a==="number"&&typeof b==="number"?b-a:null;
+}
 // One effort against the next lower one, as in the CLI: "↑ +3.7分 ×1.45".
 export function stepUp(es,i,pts) {
-  if(i===0)return "";const lo=es[i-1],hi=es[i];
-  if(![lo.ability,hi.ability,lo.cost,hi.cost].every(v=>typeof v==="number"&&Number.isFinite(v))||lo.cost<=0)return "↑ —";
-  const d=hi.ability-lo.ability;return `↑ ${d>=0?"+":""}${d.toFixed(1)}${pts} ×${(hi.cost/lo.cost).toFixed(2)}`;
+  if(i===0)return "";const lo=es[i-1],hi=es[i],d=gain(lo,hi);
+  if(![lo.ability,hi.ability,lo.cost,hi.cost,d].every(v=>typeof v==="number"&&Number.isFinite(v))||lo.cost<=0)return "↑ —";
+  return `↑ ${d>=0?"+":""}${d.toFixed(1)}${pts} ×${(hi.cost/lo.cost).toFixed(2)}`;
 }
 
 export const quotaWords = {

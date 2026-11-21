@@ -140,6 +140,28 @@ const fence = (s) => "````text\n" + String(s).replaceAll("````", "` ` ` `") + "\
 const MAX_BODY_CHARS = 8000;
 const MAX_EARLIER_CHARS = 6000;
 
+// Generated, reproducible files whose diff is left out of the review request (the request budget is characters and a
+// bundle diff alone can be larger than all of it). Each entry names the CI check that proves the committed file matches
+// its sources: ci.yml job `codex`, steps "The Node 22/24 bundle and its notices are committed as built"
+// (`npm run build` in codex/, then `git diff --exit-code`). Keep this list explicit; never match by pattern.
+export const GENERATED_DIFF_OMITTED = Object.freeze({
+  "codex/server.bundle.mjs": "`npm run build` in codex/ and checked by the ci.yml `codex` job (committed-as-built steps)",
+});
+
+// Replaces the per-file section of each listed generated file in a `git diff` text with a one-line note. Every other
+// section is kept byte for byte.
+export function omitGeneratedDiffs(diff, listed = GENERATED_DIFF_OMITTED) {
+  if (!diff) return diff;
+  const parts = String(diff).split(/^(?=diff --git )/m);
+  return parts.map((part) => {
+    const m = /^diff --git a\/(\S+) b\/(\S+)/.exec(part);
+    if (!m || m[1] !== m[2] || !Object.hasOwn(listed, m[2])) return part;
+    const lines = part.split("\n").filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---) /.test(l)).length;
+    return `${m[2]}: generated file, ${lines} lines changed, omitted from review; reproducible with ${listed[m[2]]}\n`;
+  }).join("");
+}
+
+
 // d: decideSol() result with mode ("full" | "delta") and base (merge base, or d.since on a delta) filled in.
 // diff: the PR diff against its merge base; delta: the diff since d.since (delta only); stat: `git diff --stat`;
 // contents: [{ path, text }] changed files at the head, already cut to the budget; omitted: paths left out.

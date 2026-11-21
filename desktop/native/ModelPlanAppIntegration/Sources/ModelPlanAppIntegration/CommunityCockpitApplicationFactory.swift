@@ -178,7 +178,12 @@ import ModelPlanResources
                 bridge.observeRunning { [weak host] ids in host?.pageRunning(ids) }
                 bridge.observeChoices { [weak host] preferences in host?.apply(preferences) }
                 let dock = application.composition.dock
-                dock.pluginScreenRequested = { [weak bridge] id in bridge?.openScreen(id) }
+                // Sample S17 (macrevb-1096-6): the card sends its ring's Dock ID ("plugin:resources"); the cockpit takes the
+                // plugin ID. Every route to the card action (pointer click, keyboard, VoiceOver press) passes here.
+                dock.pluginScreenRequested = { [weak bridge, weak application] dockID in
+                    guard let id = ResourceDockBridge.pluginID(dockID: dockID) else { application?.showConsole(); return }
+                    bridge?.openScreen(id)
+                }
                 dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
                 // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
                 host.setWidgetShown(dock.isWidgetShown)

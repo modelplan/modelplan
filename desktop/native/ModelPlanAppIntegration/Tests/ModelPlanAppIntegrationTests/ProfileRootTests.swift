@@ -95,6 +95,34 @@ import ModelPlanSettings
 
     /// Every app store goes through ProfileRoot: a new call to the system folders, a hard-coded status-item
     /// autosave name or another SMAppService user would escape a fresh profile.
+    /// v1-firstrun-loginitem: a walkthrough driver must not have to untick a persistent launch setting to finish
+    /// first run. A fresh profile never registers the login item, so its first-run page starts unticked; the real
+    /// profile keeps the product default, and a saved choice is never replaced.
+    func testAFreshProfileStartsFirstRunWithOpenAtLoginUnticked() async throws {
+        let root = try freshRoot()
+        let fresh = try ProfileRoot.resolve(environment: [ProfileRoot.environmentKey: root.path])
+        XCTAssertEqual(fresh.firstRunOpenAtLogin, false)
+        XCTAssertNil(ProfileRoot.real().firstRunOpenAtLogin, "the real profile keeps the product default")
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: fresh.applicationSupport,
+                                                          defaultOpenAtLogin: fresh.firstRunOpenAtLogin)
+        let created = await store.snapshot().preferences.openAtLogin
+        XCTAssertFalse(created, "the first-run page must not need an untick in a fresh profile")
+        // The real-profile path is unchanged.
+        let other = try freshRoot()
+        let normal = try EngineRowsEntry.makeSettingsStore(applicationSupport: other, defaultOpenAtLogin: nil)
+        let normalValue = await normal.snapshot().preferences.openAtLogin
+        XCTAssertTrue(normalValue)
+    }
+
+    func testASavedOpenAtLoginChoiceIsNotReplacedByTheFreshDefault() async throws {
+        let root = try freshRoot()
+        let first = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, defaultOpenAtLogin: nil)
+        _ = try await first.update { $0.openAtLogin = true; $0.showDock = false }
+        let again = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, defaultOpenAtLogin: false)
+        let kept = await again.snapshot().preferences.openAtLogin
+        XCTAssertTrue(kept, "only a brand-new settings file takes the fresh default")
+    }
+
     func testNoStoreBypassesTheResolver() throws {
         var native = URL(fileURLWithPath: #filePath)
         for _ in 0..<4 { native.deleteLastPathComponent() }

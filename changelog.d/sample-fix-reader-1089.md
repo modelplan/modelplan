@@ -1,0 +1,1 @@
+The public reader now rejects a publication whose lineup step starts or ends at a model that is still pending evaluation, and one whose usage-trend ranks carry an unpublished `__proto__` key, instead of showing them as measured data.

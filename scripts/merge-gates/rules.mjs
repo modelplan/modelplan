@@ -83,6 +83,13 @@ export function pathTier(paths) {
   return 0;
 }
 
+// R13 (2026-11-12): a ledger PR (its body has a "Ledger: ... G3-nn" line) is at least tier 2 whatever it touches, so it
+// needs a Sol verdict (macrev2/macrevb). Before this, tier-1 files let Terra alone land #785 #788 #848 #863 #865 #870
+// #884 #887. A REVIEW-TIER override can raise it but never lower it below 2.
+export function ledgerPr(pr) {
+  return /^[ \t>*-]*Ledger:.*\bG3-[0-9]+/im.test(pr?.body ?? "");
+}
+
 export function prPaths(files) {
   const out = [];
   for (const f of files) {
@@ -689,7 +696,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const design = designTouch(files, conf);
   const paths = prPaths(files);
   const override = tierOverride(items);
-  const tier = override ?? pathTier(paths);
+  const tier = ledgerPr(pr) ? Math.max(2, override ?? pathTier(paths)) : (override ?? pathTier(paths));
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
   const fbGlm = gpt ? gptFallbackVerdict(items, head) : null;   // labelled PR, GPT out of quota: the marked GLM verdict counts
   const glmAdvice = !eligibleLanes(tier, glmTiers).includes(GLM_LANE) && fbGlm === null;

@@ -427,26 +427,40 @@ func index(m *digest.Model, e *digest.Effort) int {
 	return -1
 }
 
-func ratio(hi, lo *digest.Effort) (*float64, *float64) {
+// ratio: ability points and cost multiple of hi against lo. Two efforts of one model (same) differ by
+// digest.Gain, the published within-model step, which can be unknown while the cost ratio is known.
+func ratio(hi, lo *digest.Effort, same bool) (*float64, *float64) {
 	if hi == nil || lo == nil || hi.Ability == nil || lo.Ability == nil || hi.Cost == nil || lo.Cost == nil || *lo.Cost <= 0 || hi.CostBasisID != lo.CostBasisID {
 		return nil, nil
 	}
-	a := math.Round((*hi.Ability-*lo.Ability)*10) / 10
 	r := math.Round(*hi.Cost / *lo.Cost * 100) / 100
-	return &a, &r
+	return delta(hi, lo, same), &r
+}
+
+// delta: hi minus lo in points, rounded to one decimal; the within-model step when same.
+func delta(hi, lo *digest.Effort, same bool) *float64 {
+	var d *float64
+	if same {
+		d = digest.Gain(lo, hi)
+	} else if hi.Ability != nil && lo.Ability != nil {
+		v := *hi.Ability - *lo.Ability
+		d = &v
+	}
+	if d == nil {
+		return nil
+	}
+	v := math.Round(*d*10) / 10
+	return &v
 }
 
 // ratioTo: ability and cost of (m, e) against the current configuration; the cost in the
 // declared plan's units when the session is linked to one (nil where the plan gives no number).
 func (c config) ratioTo(m *digest.Model, e *digest.Effort) (*float64, *float64) {
+	same := c.model != nil && m.ID == c.model.ID
 	if c.plan == nil {
-		return ratio(e, c.cur)
+		return ratio(e, c.cur, same)
 	}
-	var a *float64
-	if e.Ability != nil && c.cur.Ability != nil {
-		x := math.Round((*e.Ability-*c.cur.Ability)*10) / 10
-		a = &x
-	}
+	a := delta(e, c.cur, same)
 	hi, lo := c.plan.cost(m, e, c.now, m.ID != c.model.ID), c.plan.cost(c.model, c.cur, c.now, false)
 	if hi == nil || lo == nil || *lo <= 0 {
 		return a, nil
@@ -469,7 +483,7 @@ func (c config) up(d *digest.Digest) *Step {
 	i := index(c.model, c.cur)
 	for j := i + 1; i >= 0 && j < len(c.model.Efforts); j++ {
 		e := &c.model.Efforts[j]
-		if e.Ability != nil && c.cur.Ability != nil && *e.Ability > *c.cur.Ability {
+		if g := digest.Gain(c.cur, e); e.Ability != nil && g != nil && *g > 0 {
 			return c.step("step_up", e)
 		}
 	}
@@ -534,7 +548,7 @@ func (c config) better(d *digest.Digest, harness string) *Step {
 		return nil
 	}
 	s := &Step{Action: "better_model", Model: m.ID, ModelName: m.Name, Effort: best.Effort, Label: best.Label, Recommended: best == m.Rec(), Kind: kindOf(*best.Ability-*c.cur.Ability, t)}
-	s.AbilityDelta, s.CostRatio = ratio(best, c.cur)
+	s.AbilityDelta, s.CostRatio = ratio(best, c.cur, false)
 	return s
 }
 
@@ -585,7 +599,7 @@ func (c config) cheaper(d *digest.Digest, harness string) *Step {
 		return nil
 	}
 	s := &Step{Action: "cheaper_model", Model: bestModel.ID, ModelName: bestModel.Name, Effort: best.Effort, Label: best.Label, Recommended: best == bestModel.Rec(), Kind: kindOf(*best.Ability-*c.cur.Ability, tie(l))}
-	s.AbilityDelta, s.CostRatio = ratio(best, c.cur)
+	s.AbilityDelta, s.CostRatio = ratio(best, c.cur, false)
 	return s
 }
 

@@ -159,8 +159,8 @@ func ladder(m *digest.Model, rec, base *digest.Effort, plan *Plan) []BriefStep {
 	for i := range m.Efforts {
 		e := &m.Efforts[i]
 		s := BriefStep{Label: e.Label, Recommended: e == rec, Current: e == base}
-		s.AbilityDelta, s.CostRatio = ratio(e, base)
-		if plan != nil && plan.Basis == digest.BasisRequest && s.AbilityDelta != nil {
+		s.AbilityDelta, s.CostRatio = ratio(e, base, true)
+		if plan != nil && plan.Basis == digest.BasisRequest && s.CostRatio != nil {
 			one := 1.0
 			s.CostRatio = &one
 		} else if plan != nil && plan.Basis != digest.BasisAPI && plan.Basis != digest.BasisTariff && plan.Basis != digest.BasisRelative && plan.Basis != digest.BasisPool {

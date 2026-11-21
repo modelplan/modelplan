@@ -620,14 +620,15 @@ func hasValue(accounts []Account) bool {
 	return false
 }
 
-// freeGrok reports a Grok row whose every current reading is a $0 balance with no usage percentage.
+// freeGrok reports a Grok row whose every reading, current or retained, is a $0 balance with no usage
+// percentage. An expired reading is still the same free account, so it keeps the Settings-only surface.
 func freeGrok(row Row) bool {
-	if row.ID != "grok" || row.State != StateFresh {
+	if row.ID != "grok" || (row.State != StateFresh && row.State != StateStale) {
 		return false
 	}
-	current := false
+	seen := false
 	for _, a := range row.Accounts {
-		if a.ValueState != ValueStateCurrent {
+		if a.ValueState != ValueStateCurrent && a.ValueState != ValueStateRetained {
 			continue
 		}
 		if a.Credits == nil || a.Credits.Balance == nil || *a.Credits.Balance != 0 {
@@ -638,7 +639,7 @@ func freeGrok(row Row) bool {
 				return false
 			}
 		}
-		current = true
+		seen = true
 	}
-	return current
+	return seen
 }

@@ -1,0 +1,1 @@
+A free Grok Build account whose $0 reading has expired stays out of the Dock and cockpit, the first scan after an upgrade no longer drops usage recorded under a different time zone, the Kiro cause says when a configured `MODELPLAN_KIRO` cannot start, and the CLI rejects a lineup step that starts or ends at a pending model.
