@@ -128,9 +128,12 @@ extension CommunityCockpitEntryTests {
         try await Task.sleep(for: .milliseconds(300))
         let scriptClick = await js(web, screenOpen)
         XCTAssertEqual(scriptClick, "false", "an untrusted script click does not open the screen")
-        // macrevb-1096-6: the widget card's "Cockpit screen ›" action (card.onAction) opens it on the shown page.
+        // macrevb-1096-6 / sample S17: the widget card's "Cockpit screen ›" action (card.onAction, the same closure for a
+        // pointer click, Return/Space and a VoiceOver press) passes the ring's Dock ID, "plugin:resources", not the
+        // plugin ID; the installed callback must still open the screen on the shown page.
         let open = try XCTUnwrap(dock.pluginScreenRequested, "the installed plugin wires the card action")
-        open(ResourcePluginHost.pluginID)
+        XCTAssertEqual(id, "plugin:resources")
+        open(id)
         try await waitFor("the card action opens the resource big screen") {
             await self.js(web, "String(document.querySelectorAll('.dk-mfd .mfd-screen .pl-draw-chart').length>0)") == "true"
         }

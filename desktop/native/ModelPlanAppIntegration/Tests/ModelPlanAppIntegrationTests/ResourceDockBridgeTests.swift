@@ -73,6 +73,14 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         XCTAssertEqual(spikeRows.map(\.tone), [.critical, .normal, .warning], "amber/red numbers keep their tone, emphasised or not")
     }
 
+    /// Sample S17 (macrevb-1096-6): the card action carries the Dock ID; the cockpit bridge takes the plugin ID only.
+    func testDockIDConvertsToTheCockpitPluginID() {
+        XCTAssertEqual(ResourceDockBridge.subscriptionID, "plugin:resources")
+        XCTAssertEqual(ResourceDockBridge.pluginID(dockID: ResourceDockBridge.subscriptionID), ResourcePluginHost.pluginID)
+        XCTAssertNil(ResourceDockBridge.pluginID(dockID: "codex"), "a subscription ring is not a plugin")
+        XCTAssertNil(ResourceDockBridge.pluginID(dockID: "plugin:"))
+    }
+
     /// B4 (owner 11-21): the widget order matches the cockpit's (plugin-layout.ts: subscriptions first, plugins after
     /// them). Fails before: the ring was put in front of the subscription rings.
     func testProviderPutsTheRingAfterTheSubscriptionsAndRemovesIt() throws {

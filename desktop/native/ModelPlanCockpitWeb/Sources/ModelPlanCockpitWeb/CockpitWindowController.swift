@@ -1067,7 +1067,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func clearPrivateViews(adopting context: CockpitEngineContext? = nil) async {
     freshnessDriver.hide(); freshnessDriver.invalidate(); bridge.cancelDeadlineReports(); visibilityFence.invalidate()
     orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); cancelAppearanceWait()
-    forgetPluginDelivery(); stopPluginSampling()
+    // A clear empties the page's placement: nothing it ran before is restored by a later visible update (S3).
+    forgetPluginDelivery(); stopPluginSampling(); pageRunning = []
     receiptWatchdog.cancel(); renderWatchdog.cancel(); backlog = BacklogResync()
     visibilityTimeout?.cancel(); visibilityTimeout = nil
     freshnessHasRendered = false; pendingFreshnessReason = nil
@@ -1252,6 +1253,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           // completes meanwhile (or a show) does not send the older committed state back over it.
           pluginsAccepted = state; pluginsWanted = state; pluginsConfirmedOnPage = true
           onIntent?(intent); publishPluginScreen()
+        case .pluginsRunning(let ids):
+          pageRunning = ids; onIntent?(intent)
         default: onIntent?(intent)
         }
       case .rendered:
@@ -1460,6 +1463,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           else { self.watchDeferredAppearance() }
           if let id = self.bridge.currentDisplayRequest, self.bridge.awaitsDisplayReceipt(id) { self.renderWatchdog.wait(for: id) }
           self.publishPluginState()
+          if visible { self.resumePluginSampling() }
           self.freshnessDriver.show()
           if self.awaitingShown, let onShown = self.onShown {
             self.awaitingShown = false; self.refreshAfterHiddenDisplay = false; onShown()
@@ -1609,6 +1613,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// D124 (macrevb-1104-4, macrev2-1104-6): the host stops sampling the moment the page stops being shown (hidden,
   /// occluded, closing, clearing); the page's own `[]` report may come late or under an old view revision.
   private func stopPluginSampling() { if bridge.pluginsSent { onIntent?(.pluginsRunning([])) } }
+  /// Sample S3 (#1104 PLG-A1): the running set the page last reported. The host stops sampling on its own hidden or
+  /// occluded fact at once (`stopPluginSampling`), before the page answers. When that hidden update is replaced in the
+  /// queue by a visible one, the page never sees the hide, keeps running and reports nothing new, so the host restores
+  /// the page's own set once the page accepts the visible update. A page that did take the hide reported [] first.
+  private var pageRunning: [String] = []
+  private func resumePluginSampling() {
+    guard bridge.pluginsSent, !pageRunning.isEmpty else { return }
+    onIntent?(.pluginsRunning(pageRunning))
+  }
   /// Plugin columns: a request to open a plugin's big screen. Held until this page is ready and has confirmed the NEWEST
   /// committed plugin state (macrevb-1104-8: an earlier confirmation is not enough while a newer state is in flight,
   /// failed or queued; the page would refuse the screen under older preferences), then sent once; a newer request replaces a held one. A failed or dropped call is held

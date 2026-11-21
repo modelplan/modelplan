@@ -9,6 +9,15 @@ import ModelPlanResources
 /// the readout under the ring is the percentage alone ("77%"); VoiceOver reads "内存 77%" (`spokenReadout`).
 public enum ResourceDockBridge {
     public static let subscriptionID = "plugin:resources"
+    /// A plugin ring's Dock ID is this prefix and the cockpit plugin ID.
+    static let dockIDPrefix = "plugin:"
+    /// Sample S17 (#1096 macrevb-1096-6): the cockpit plugin ID ("resources") for a plugin ring's Dock ID
+    /// ("plugin:resources"). The cockpit bridge takes plugin IDs only (CockpitPluginWire.validID refuses the colon).
+    public static func pluginID(dockID: String) -> String? {
+        guard dockID.hasPrefix(dockIDPrefix) else { return nil }
+        let id = String(dockID.dropFirst(dockIDPrefix.count))
+        return id.isEmpty ? nil : id
+    }
     public static let ink = "#da66c2"
     static let rgb = (red: Double(0xda) / 255, green: Double(0x66) / 255, blue: Double(0xc2) / 255)
 
