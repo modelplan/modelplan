@@ -10,6 +10,11 @@ public struct DockPluginRing: Equatable, Sendable {
     public var red: Double, green: Double, blue: Double
     public var outer: Double, outerFaint: Double, inner: Double?
     public var readout: String, readoutTone: DockQuotaStatus
+    /// B4f (owner 11-21): what VoiceOver reads for the ring when the drawn readout is the number alone ("77%" is drawn,
+    /// "内存 77%" is read). Empty = `readout`.
+    public var spokenReadout: String
+    /// The readout VoiceOver reads: `spokenReadout`, else the drawn `readout`.
+    public var accessibilityReadout: String { spokenReadout.isEmpty ? readout : spokenReadout }
     /// False under Reduce Motion.
     public var animates: Bool
     public var cardRows: [DockCardRow]
@@ -18,19 +23,19 @@ public struct DockPluginRing: Equatable, Sendable {
     public var cardAction: String
     public init(red: Double, green: Double, blue: Double, outer: Double, outerFaint: Double = 0, inner: Double?,
                 readout: String, readoutTone: DockQuotaStatus = .normal, animates: Bool = true,
-                cardRows: [DockCardRow] = [], cardFooter: String = "", cardAction: String = "") {
+                cardRows: [DockCardRow] = [], cardFooter: String = "", cardAction: String = "", spokenReadout: String = "") {
         self.red = red; self.green = green; self.blue = blue; self.outer = outer; self.outerFaint = outerFaint; self.inner = inner
         self.readout = readout; self.readoutTone = readoutTone; self.animates = animates; self.cardRows = cardRows; self.cardFooter = cardFooter
-        self.cardAction = cardAction
+        self.cardAction = cardAction; self.spokenReadout = spokenReadout
     }
     /// "#rrggbb".
     public init?(hex: String, outer: Double, outerFaint: Double = 0, inner: Double?, readout: String,
                  readoutTone: DockQuotaStatus = .normal, animates: Bool = true, cardRows: [DockCardRow] = [], cardFooter: String = "",
-                 cardAction: String = "") {
+                 cardAction: String = "", spokenReadout: String = "") {
         guard hex.count == 7, hex.first == "#", let v = UInt32(hex.dropFirst(), radix: 16) else { return nil }
         self.init(red: Double((v >> 16) & 0xff) / 255, green: Double((v >> 8) & 0xff) / 255, blue: Double(v & 0xff) / 255,
                   outer: outer, outerFaint: outerFaint, inner: inner, readout: readout, readoutTone: readoutTone,
-                  animates: animates, cardRows: cardRows, cardFooter: cardFooter, cardAction: cardAction)
+                  animates: animates, cardRows: cardRows, cardFooter: cardFooter, cardAction: cardAction, spokenReadout: spokenReadout)
     }
     /// The live card (macrevb-1096-4): rows, footer and action from the latest sample, replacing the ones captured at
     /// the last ring redraw.
@@ -47,7 +52,7 @@ public struct DockPluginRing: Equatable, Sendable {
     public var valid: Bool {
         let unit: (Double) -> Bool = { $0.isFinite && (0...1).contains($0) }
         return [red, green, blue, outer, outerFaint].allSatisfy(unit) && (inner.map(unit) ?? true) && outer + outerFaint <= 1 + 1e-9 &&
-            !readout.isEmpty && readout.utf8.count <= 64 && cardRows.count <= 8
+            !readout.isEmpty && readout.utf8.count <= 64 && spokenReadout.utf8.count <= 64 && cardRows.count <= 8
     }
 }
 

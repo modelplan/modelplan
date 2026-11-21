@@ -30,7 +30,9 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
 
     func testRingIsTwoOrchidArcsThatNeverChangeColour() throws {
         let normal = try DockInstrumentProjection.evaluate(try input(sample(), key: .memory), now: Date())
-        XCTAssertEqual(normal.readout, "内存 47%")
+        // B4f (owner 11-21): the ring draws the percentage alone; VoiceOver still reads what it measures.
+        XCTAssertEqual(normal.readout, "47%")
+        XCTAssertEqual(normal.pluginRing?.accessibilityReadout, "内存 47%")
         XCTAssertEqual(normal.status, .normal)
         XCTAssertEqual(normal.outer?.fraction ?? 0, 15.1 / 32, accuracy: 0.001, "outer = memory used")
         XCTAssertEqual(normal.pluginRing?.outerFaint ?? 0, 12.8 / 32, accuracy: 0.001, "faint segment = cached")
@@ -41,7 +43,8 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         XCTAssertFalse(normal.jetEligible)
 
         let spike = try DockInstrumentProjection.evaluate(try input(sample(cpu: 96), key: .cpu, tone: .critical), now: Date())
-        XCTAssertEqual(spike.readout, "CPU 96%")
+        XCTAssertEqual(spike.readout, "96%")
+        XCTAssertEqual(spike.pluginRing?.accessibilityReadout, "CPU 96%")
         XCTAssertEqual(spike.status, .critical, "only the readout number turns red")
         XCTAssertEqual(spike.outer?.status, .normal, "the ring keeps its ink")
         XCTAssertEqual(spike.inner?.status, .normal)
@@ -78,21 +81,84 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         XCTAssertNil(ResourceDockBridge.pluginID(dockID: "plugin:"))
     }
 
-    func testProviderPutsTheRingFirstAndRemovesIt() throws {
+    /// B4 (owner 11-21): the widget order matches the cockpit's (plugin-layout.ts: subscriptions first, plugins after
+    /// them). Fails before: the ring was put in front of the subscription rings.
+    func testProviderPutsTheRingAfterTheSubscriptionsAndRemovesIt() throws {
         final class Base: DockContentProvider {
             func makeContent(_ context: DockContentContext) -> DockContent {
-                .init(snapshot: .init(inputs: [DockInstrumentInput(id: "codex", name: "Codex", windows: [])]), emptyText: "x")
+                .init(snapshot: .init(inputs: [DockInstrumentInput(id: "codex", name: "Codex", windows: []),
+                                               DockInstrumentInput(id: "zai", name: "ZCode", windows: [])]), emptyText: "x")
             }
         }
         let provider = ResourceDockContentProvider(base: Base())
         let context = DockContentContext(snapshot: nil, diagnostics: .init(), now: Date())
-        XCTAssertEqual(provider.makeContent(context).snapshot.inputs.map(\.id), ["codex"], "no sample yet: no ring")
+        XCTAssertEqual(provider.makeContent(context).snapshot.inputs.map(\.id), ["codex", "zai"], "no sample yet: no ring")
         provider.resourceInput = try input(sample(), key: .memory)
         let content = provider.makeContent(context)
-        XCTAssertEqual(content.snapshot.inputs.map(\.id), [ResourceDockBridge.subscriptionID, "codex"])
+        XCTAssertEqual(content.snapshot.inputs.map(\.id), ["codex", "zai", ResourceDockBridge.subscriptionID])
+        // The widget's presented order: the saved subscription order first, ids it does not cover after it in catalogue
+        // order. With no saved order, or one covering the subscriptions, the ring still comes last.
+        let ids = content.snapshot.inputs.map(\.id)
+        XCTAssertEqual(try DockSubscriptionPreferences().orderedIDs(in: ids).last, ResourceDockBridge.subscriptionID)
+        XCTAssertEqual(try DockSubscriptionPreferences(order: ["zai", "codex"]).orderedIDs(in: ids), ["zai", "codex", ResourceDockBridge.subscriptionID])
         XCTAssertEqual(content.emptyText, "x")
         provider.resourceInput = nil
-        XCTAssertEqual(provider.makeContent(context).snapshot.inputs.map(\.id), ["codex"])
+        XCTAssertEqual(provider.makeContent(context).snapshot.inputs.map(\.id), ["codex", "zai"])
+    }
+
+    /// B9 (owner 11-21, regression from the plugin ring): a subscription ring, once shown, is removed only when its
+    /// row is really gone. Between a content clear and its install (a rows refresh, a deadline replacement) the base is
+    /// empty on purpose; a plugin redraw there painted the Resources ring alone and the Codex ring vanished for a moment.
+    /// Fails before: the gap redrew the widget and the content was the plugin ring alone.
+    func testAPluginRedrawInAReplacementGapNeverPaintsTheRingAlone() throws {
+        final class Reader: ResourceReader {
+            var cpu: Double = 22
+            func read(uptime: TimeInterval, unixMs: Int64) -> ResourceSample? { resourceSample(at: uptime, cpu: cpu) }
+        }
+        var now: TimeInterval = 0
+        var timers: [(deadline: TimeInterval, fire: @MainActor () -> Void)] = []
+        let reader = Reader()
+        let sampler = ResourceSampler(reader: reader, clock: { now }, scheduler: { delay, _, fire in
+            timers.append((now + delay, fire)); let i = timers.count - 1
+            return ResourceTimerHandle { timers[i].fire = {} }
+        })
+        func run(until end: TimeInterval) {
+            while let i = timers.indices.filter({ timers[$0].deadline <= end }).min(by: { timers[$0].deadline < timers[$1].deadline }) {
+                let t = timers[i]; timers[i].deadline = .infinity; now = max(now, t.deadline); t.fire()
+            }
+            now = end
+        }
+        // The composition's admitted cache with one subscription ring (the production base of the provider).
+        let cache = HostPairedContentCache()
+        cache.isCurrent = { true }
+        let codex = DockContent(snapshot: .init(inputs: [DockInstrumentInput(id: "codex", name: "Codex", windows: [])]), emptyText: "x")
+        let at = Date(timeIntervalSince1970: 1_795_000_000)
+        cache.install(codex, evaluatedAt: at)
+        let provider = ResourceDockContentProvider(base: cache)
+        provider.baseAdmitted = { [weak cache] in cache?.hasAdmittedContent == true }
+        let context = DockContentContext(snapshot: nil, diagnostics: .init(), now: at.addingTimeInterval(1))
+        var painted: [[String]] = []
+        let binding = ResourceWidgetBinding(sampler: sampler, provider: provider, language: { .chinese }) {
+            painted.append(provider.makeContent(context).snapshot.inputs.map(\.id))
+        }
+        binding.setVisibility(.init(pluginEnabled: true, columnShown: false, widgetShown: true, columnSetting: 5))
+        run(until: 0)
+        XCTAssertEqual(painted.last, ["codex", ResourceDockBridge.subscriptionID], "plugin update with admitted rows")
+        // A rows refresh clears the cache; a plugin update lands before the install.
+        cache.clear()
+        let before = painted.count
+        reader.cpu = 60
+        run(until: 10)
+        XCTAssertEqual(painted.count, before, "no widget redraw in the replacement gap")
+        XCTAssertFalse(provider.makeContent(context).snapshot.inputs.map(\.id) == [ResourceDockBridge.subscriptionID],
+                       "the plugin ring is never the whole widget while the subscription content is being replaced")
+        // The install redraws with both rings and the latest plugin reading.
+        cache.install(codex, evaluatedAt: at)
+        let content = provider.makeContent(context)
+        XCTAssertEqual(content.snapshot.inputs.map(\.id), ["codex", ResourceDockBridge.subscriptionID])
+        XCTAssertEqual(content.snapshot.inputs.last?.pluginRing?.inner ?? 0, 0.60, accuracy: 0.001)
+        // Every painted widget kept the subscription ring.
+        XCTAssertTrue(painted.allSatisfy { $0.contains("codex") }, "\(painted)")
     }
 
     func testBindingRedrawsFromTheSamplerAndDropsTheRingWhenOff() throws {
@@ -121,7 +187,8 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         }
         run(until: 0)
         XCTAssertEqual(refreshes, 1)
-        XCTAssertEqual(provider.resourceInput?.pluginRing?.readout, "内存 47%")
+        XCTAssertEqual(provider.resourceInput?.pluginRing?.readout, "47%")
+        XCTAssertEqual(provider.resourceInput?.pluginRing?.accessibilityReadout, "内存 47%")
         XCTAssertEqual(provider.resourceInput?.pluginRing?.cardFooter, "内存压力 正常 · 每 10 秒", "widget shown: every 10 s")
         run(until: 10)
         XCTAssertEqual(refreshes, 1, "no redraw without a ≥ 1 point change")
@@ -187,7 +254,8 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         // CPU takes the readout, then memory pressure changes: the readout stays CPU, so again no redraw.
         reader.cpu = 75
         run(until: 40)
-        XCTAssertEqual(provider.resourceInput?.pluginRing?.readout, "CPU 75%")
+        XCTAssertEqual(provider.resourceInput?.pluginRing?.readout, "75%", "B4f: the number alone")
+        XCTAssertEqual(provider.resourceInput?.pluginRing?.accessibilityReadout, "CPU 75%")
         let drawn = redraws
         reader.pressure = .warn
         run(until: 50)
@@ -236,7 +304,7 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         let reading = try DockInstrumentProjection.evaluate(try input(sample(cpu: 96), key: .cpu, tone: .critical), now: Date())
         let view = DockInstrumentView(frame: .zero)
         try view.applyCommunity([reading], locale: "zh-Hans")
-        XCTAssertEqual(view.communityRowText(ResourceDockBridge.subscriptionID), "资源占用  CPU 96%", "no 'unavailable' line")
+        XCTAssertEqual(view.communityRowText(ResourceDockBridge.subscriptionID), "资源占用  96%", "no 'unavailable' line; B4f: the number alone")
         XCTAssertFalse(view.communityRowIsDimmed(ResourceDockBridge.subscriptionID))
         let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: rep)

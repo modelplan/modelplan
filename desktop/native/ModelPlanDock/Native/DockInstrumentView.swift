@@ -40,6 +40,8 @@ enum DockGripInk {
     @_spi(DockResourceChecks) public var zaiMarkEnabled = (Bundle.main.object(forInfoDictionaryKey: "zaiMarkEnabled") as? Bool) ?? false
     @_spi(DockResourceChecks) public var presentedNoticesForChecks: [String: DockNotice] { failed ? [:] : notices }
     @_spi(DockResourceChecks) public var presentedReadingsForChecks: [String: DockInstrumentReading] { failed ? [:] : readings }
+    /// The rings in the order they are painted (B4: subscriptions first, plugin rings after them).
+    @_spi(DockResourceChecks) public var presentedOrderForChecks: [String] { failed ? [] : orderedIDs }
     /// Read-only capture of the currently presented synthetic test surface.
     @_spi(DockResourceChecks) public var presentedSkinForChecks: DockInstrumentSkin? { failed || community ? nil : skin }
     /// Skin-space origin of the view's local coordinates (the hover viewport when one is reserved).
@@ -857,7 +859,9 @@ enum DockGripInk {
         }
         for id in orderedIDs {guard let reading=readings[id],let rect=stationRect(id) else{continue}
             let stale = reading.dataState == .stale ? (reading.unavailableReason ?? (locale.hasPrefix("zh") ? "部分读数已过期" : "Some readings are stale")) : nil
-            append("subscription."+id,reading.alias ?? reading.name,reading.readout,[reading.selectedWindowLabel,reading.readout,stale].compactMap{$0}.joined(separator:" · "),rect,.subscription(id))
+            // B4f: a plugin ring draws its number alone; VoiceOver still reads what it measures ("内存 77%").
+            let spoken=reading.pluginRing?.accessibilityReadout ?? reading.readout
+            append("subscription."+id,reading.alias ?? reading.name,spoken,[reading.selectedWindowLabel,spoken,stale].compactMap{$0}.joined(separator:" · "),rect,.subscription(id))
             if !community,let notice=notices[id],let station=skin?.stations.first(where:{$0.subscriptionID==id}) {
                 let origin = layoutOrigin
                 let zh=locale.hasPrefix("zh"),label:String
