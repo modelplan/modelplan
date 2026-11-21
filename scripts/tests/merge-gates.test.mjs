@@ -1464,3 +1464,28 @@ test("gh lanes: shadow lanes never admit data-sync; ghglm counts only on its con
   assert.equal(evalPr({ files: [file("scripts/tool.mjs")], comments: [comment(v("block", H, "ghglm"))] }).state, R.PENDING, "a ghglm block never vetoes by default");
   assert.ok(R.isShadowLane("(ghsolshadow)") && R.isShadowLane("gh-terra-shadow") && !R.isShadowLane("(ghsol)"));
 });
+
+// owner D367 addendum: on a PR labelled review:gpt the GPT verdict decides; (ghglm) is advisory whatever REVIEW_GLM_TIERS says.
+test("review:gpt: GLM is advisory and a REVIEWER: ghglm assignment pins nothing on a labelled PR", () => {
+  const labelled = pr({ labels: [{ name: "review:gpt" }] });
+  const files = [file("cli/internal/quota/x.go")];   // tier 2
+  const glmTiers = [1, 2];
+  const ev = (p, comments) => R.evaluatePr({ pr: p, items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers });
+  // labelled: GLM block + GPT merge -> merge
+  assert.equal(ev(labelled, [comment(v("block", H, "ghglm")), comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  // labelled: GLM merge only -> pending (does not count for merge, even on a tier GLM may decide)
+  assert.equal(ev(labelled, [comment(v("merge", H, "ghglm"))]).state, R.PENDING);
+  // labelled: GLM block alone does not block either
+  assert.equal(ev(labelled, [comment(v("block", H, "ghglm"))]).state, R.PENDING);
+  // unlabelled: unchanged (GLM counts on its tiers: its block vetoes, its merge decides)
+  assert.equal(ev(pr(), [comment(v("merge", H, "ghglm"))]).state, R.SUCCESS);
+  assert.notEqual(ev(pr(), [comment(v("block", H, "ghglm")), comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  // sticky: REVIEWER: ghglm pins an unlabelled PR, but not a labelled one, where ghsol's merge counts
+  const pin = comment("REVIEWER: ghglm");
+  assert.equal(R.reviewerLane(R.feed([pin])), "(ghglm)");
+  assert.equal(R.reviewerLane(R.feed([pin]), true), null);
+  assert.equal(ev(labelled, [pin, comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  assert.notEqual(ev(pr(), [pin, comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  // a REVIEWER: assignment to another lane still pins a labelled PR
+  assert.equal(R.reviewerLane(R.feed([comment("REVIEWER: ghsol")]), true), "(ghsol)");
+});

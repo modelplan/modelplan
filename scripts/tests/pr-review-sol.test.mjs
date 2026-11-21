@@ -763,8 +763,10 @@ test("review:gpt: a GLM verdict at the head does not settle a labelled PR; a GPT
   const base = { head: H, lane: S.SOL_LANE, posted: S.SOL_LANE, tier: 1, files: t1, glmTiers };
   assert.equal(S.postProblem({ pr: pr(labelled), items: R.feed(glm), ...base }), null);
   assert.match(S.postProblem({ pr: pr(), items: R.feed(glm), ...base }), /already|exists/);
-  // a labelled PR whose reviewer is assigned to GLM keeps that assignment
-  assert.equal(decide({ pr: labelled, glmTiers, comments: [comment("REVIEWER: ghglm")] }).gpt, false);
+  // an old REVIEWER: ghglm assignment no longer pins a labelled PR: ghsol reviews it (an unlabelled one stays pinned)
+  const pinned = decide({ pr: labelled, glmTiers, comments: [comment("REVIEWER: ghglm")] });
+  assert.deepEqual([pinned.review, pinned.gpt, pinned.providers[0]], [true, true, "openai"]);
+  assert.equal(decide({ glmTiers, comments: [comment("REVIEWER: ghglm")] }).providers.includes("openai"), false);
 });
 
 test("review:gpt: GPT quota out -> GLM answers and the provider line says so; GPT answering adds nothing", async () => {

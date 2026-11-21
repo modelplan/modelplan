@@ -3,7 +3,7 @@
 // review from the interactive lanes into Actions. decideSol() picks whether one PR head gets a review, solPolicy() is
 // the coordinator's sol-consult.sh policy text, buildSolPrompt() the whole request, parseAnswer() checks the answer,
 // renderSolComment() writes the PR comment and agreement() compares a shadow verdict with the lane verdict.
-import { DEFAULT_GLM_TIERS, eligibleLanes, isShadowLane, isTrusted, pathTier, prPaths, reviewerLane, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
+import { DEFAULT_GLM_TIERS, eligibleLanes, gptLabelled, isShadowLane, isTrusted, pathTier, prPaths, reviewerLane, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
 import { verdictLines } from "./brief.mjs";
 
 export const SOL_LANE = "ghsol";
@@ -35,8 +35,8 @@ const skip = (why) => ({ review: false, why });
 
 // Per-PR override (owner D367 addendum): a PR carrying this label is reviewed by GPT whatever REVIEW_PROVIDER_MODE says.
 // The labels come from the REST pull request the workflow fetches itself, never from a file of the PR.
-export const GPT_LABEL = "review:gpt";
-export const wantsGpt = (pr) => (pr?.labels ?? []).some((l) => l?.name === GPT_LABEL);
+export { GPT_LABEL } from "../merge-gates/rules.mjs";
+export const wantsGpt = gptLabelled;
 // A labelled PR is never settled by a GLM verdict: only the GPT lane's own verdict (or a counting verdict from another
 // non-GLM lane) means the head is done.
 const gptOwn = (lane) => [`(${lane})`];
@@ -68,11 +68,11 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   if (compile && !checks.compile) return skip("mac-compile has not passed at this head");
   const all = verdictLines(items);
   const atHead = all.filter((v) => v.sha === head);
-  const sticky = reviewerLane(items);
+  const gpt = wantsGpt(pr);
+  const sticky = reviewerLane(items, gpt);
   const eligible = eligibleLanes(tier, glmTiers);
   // The run's own lanes: its Sol lane, and its GLM lane only while (ghglm) may decide this tier (SOL-8: a GLM verdict
   // left over from a wider REVIEW_GLM_TIERS is advice and does not settle the head).
-  const gpt = wantsGpt(pr) && sticky !== `(${GLM_LANE})`;
   const own = gpt ? gptOwn(lane) : ownLanes(lane, tier, glmTiers);
   const settles = (v) => (eligible.includes(v.lane) && !(gpt && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)";
   // Once per lane per head, forced or not: force only lifts the "another counting lane already reviewed" skip below.
@@ -126,6 +126,7 @@ export function solPolicy(base, sha) {
   return `Consult policy (sol-consult.sh, rules R18-R20 of rules/gate-rules.md; the wrapper adds it, do not skip it).
 - Scope: the delta since ${base || "the first commit"} up to ${sha} (git diff ${base || "<root>"}..${sha} in the checkout). Unchanged code is reopened only for a demonstrated material defect or an invalidated assumption, and then say why it was missed before.
 - Block only for a violated stated requirement, or a concrete reachable failure with material impact. Each blocker states its trigger, its consequence and an acceptance test. Everything else is a non-blocking line starting with 'FOLLOW-UP:'.
+- Material (D364) = an outcome the owner or a user sees as wrong: wrong merge or a PR blocked for good, lost or deleted data or work, security/privacy/credential, user-visible failure. Wrong alert text, wording or an extra event is a FOLLOW-UP. Reachable = a real input can produce it; untrusted input always counts, a format our own trusted tooling never emits does not, unless the PR is what starts emitting it. After the second repair round, a new finding in the repair delta blocks only if at least as severe as the one being repaired; a security, privacy, credential or data-loss finding always blocks.
 - Say closed/open for every earlier finding you were given. After two failed repairs of one finding, propose a reproducer and an acceptance condition instead of another patch (R20).
 - Before the verdict write a compact Record block of at most 15 lines starting 'Record: <reviewed SHA>': each criterion as 'criterion -> disposition + evidence pointer', the open finding IDs and their closure tests. For a delta, list only the dispositions that changed plus one line 'unchanged: all other criteria as in the record at <earlier SHA>' (R19).
 - The very last line of your answer is exactly 'VERDICT: merge' or 'VERDICT: block'; nothing follows it.`;
@@ -289,11 +290,11 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
   const tier = files ? tierOverride(items) ?? pathTier(prPaths(files)) : Number(preparedTier);
   if (!SOL_TIERS.includes(tier)) return `tier ${tier} needs no Sol review`;
   const atHead = verdictLines(items).filter((v) => v.sha === head);
-  const gpt = wantsGpt(pr) && reviewerLane(items) !== `(${GLM_LANE})`;
+  const gpt = wantsGpt(pr);
   const own = [...(gpt ? gptOwn(lane) : ownLanes(lane, tier, glmTiers)), ...(posted ? [`(${posted})`] : [])];
   if (atHead.some((v) => own.includes(v.lane))) return `(${posted ?? lane}) already has a verdict at ${head}`;
   if (lane === SOL_LANE) {
-    const sticky = reviewerLane(items);
+    const sticky = reviewerLane(items, gpt);
     const eligible = eligibleLanes(Number(tier), glmTiers);
     if (sticky && (posted ? sticky !== `(${posted})` : ![`(${SOL_LANE})`, `(${GLM_LANE})`].includes(sticky))) return `the assigned reviewer is ${sticky}`;
     if (posted === GLM_LANE && !eligible.includes(`(${GLM_LANE})`)) return `(${GLM_LANE}) may not decide tier ${tier}`;

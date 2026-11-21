@@ -252,7 +252,8 @@ export function autoCarry(items, head, prove = () => ({ ok: false }), ignore = (
 
 // Sticky reviewer (owner 2026-11-18): "REVIEWER: <lane>" on its own line in a trusted comment names the one GPT lane
 // whose VERDICT counts for the PR; the latest such line wins. Other lanes become advisory notes. Null = no sticky.
-export function reviewerLane(items) {
+// gpt: the PR carries review:gpt (gptLabelled); then an assignment to (ghglm) pins nothing, so ghsol reviews it.
+export function reviewerLane(items, gpt = false) {
   let lane = null;
   // Comments only: the workflow re-evaluates on issue_comment events, not on review submit/edit/dismiss, so a
   // review-borne assignment could leave a stale gate status.
@@ -261,8 +262,13 @@ export function reviewerLane(items) {
       const m = /^REVIEWER: \(?([a-z0-9]+(?:-[a-z0-9]+)*)\)?\s*$/i.exec(l);
       if (m) lane = `(${m[1].toLowerCase()})`;
     }
-  return lane;
+  return gpt && lane === GLM_LANE ? null : lane;
 }
+// Per-PR override (owner D367 addendum): the label review:gpt, read from the trusted REST pull request, never from a PR
+// file. On such a PR the GPT verdict decides: (ghglm) is advisory (counts for nothing, blocks nothing) whatever
+// REVIEW_GLM_TIERS says, and a REVIEWER: ghglm assignment pins nothing.
+export const GPT_LABEL = "review:gpt";
+export const gptLabelled = (pr) => (pr?.labels ?? []).some((l) => l?.name === GPT_LABEL);
 
 // ---- GLM-out fallback (owner 2026-11-09: "GLM fails -> there must be a fallback; mix them") ----
 // D243: GLMREV and DESIGN no longer gate. The rules below still decide which marker the description reports.
@@ -632,7 +638,8 @@ export function dataSyncProblem({ pr, files, items, sync, glmTiers = DEFAULT_GLM
   if (commit.parents[0].sha !== run.head_sha) return "head commit is not on the commit the data-sync run checked out";
   // The assigned reviewer (REVIEWER:) is the only lane whose merge counts here too. A shadow lane never admits, and
   // (ghglm) only on a tier it may decide.
-  const sticky = reviewerLane(items);
+  if (gptLabelled(pr)) glmTiers = [];
+  const sticky = reviewerLane(items, gptLabelled(pr));
   const t = tierOverride(items) ?? pathTier(prPaths(files));
   if (sticky && !eligibleLanes(t, glmTiers).includes(sticky)) return `assigned reviewer ${sticky} is not an eligible GPT lane for tier ${t}`;
   const admits = (l) => !isShadowLane(l) && (l !== GLM_LANE || eligibleLanes(t, glmTiers).includes(GLM_LANE));
@@ -648,6 +655,8 @@ export function dataSyncProblem({ pr, files, items, sync, glmTiers = DEFAULT_GLM
 // glmTiers: parseGlmTiers(vars.REVIEW_GLM_TIERS), the tiers on which (ghglm) decides.
 export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now(), glmTiers = DEFAULT_GLM_TIERS }) {
   const head = pr.head.sha;
+  const gpt = gptLabelled(pr);
+  if (gpt) glmTiers = [];
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
   if (pr.state !== "open") return res(FAILURE, `PR is ${pr.state}`);
@@ -677,7 +686,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const allLanes = verdicts(items, head, carried);
   const eligible = eligibleLanes(tier, glmTiers);
   const gptLanes = [...eligible, "(unnamed)"];
-  const assigned = reviewerLane(items);
+  const assigned = reviewerLane(items, gpt);
   // An assignment naming a lane that cannot review this tier (Sonnet, unknown, Terra on tier 2) is invalid: it filters
   // nothing, so no GPT block is hidden, and it holds the PR until the coordinator fixes it.
   const sticky = assigned && eligible.includes(assigned) ? assigned : null;
