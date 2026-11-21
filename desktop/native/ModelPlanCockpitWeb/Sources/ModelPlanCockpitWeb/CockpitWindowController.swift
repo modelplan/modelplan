@@ -2079,7 +2079,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// the resign that click causes can reach the observer; the outside-press decision follows on the main actor as before.
   func globalPress(eventType: NSEvent.EventType) {
     userSwitchesAway()
-    Task { @MainActor [weak self] in self?.outsidePress(NSEvent.mouseLocation, eventType: eventType) }
+    Task { @MainActor [weak self] in self?.outsidePress(NSEvent.mouseLocation, eventType: eventType, external: true) }
   }
   private var commandKeyHeld: Bool {
     #if MODELPLAN_TEST_ONLY_SPI
@@ -2093,7 +2093,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if let id = target?.identifier, id == Self.helpOverlayIdentifier || id == Self.fieldWindowIdentifier { return }
     outsidePress(point, eventType: eventType)
   }
-  func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType) {
+  /// macrevd-1114-1: `external` is a press delivered to another app (the global monitor). The widget is this app's own
+  /// window, so such a press is never a widget press, wherever the cursor is sampled afterwards.
+  func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType,external:Bool = false) {
     guard !shellSession.detached, let window, !window.frame.contains(point) else { return }
     // The owned tray completes one toggle on mouse-up. Its mouse-down is not
     // a competing outside dismissal, including with Reduce Motion/long holds.
@@ -2106,7 +2108,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // Spec item 1 (1.7 c): a right or other press on the icon opens the status menu; the cockpit stays while it is up.
     if isTray { return }
     // Spec item 1 (1.7 d): the widget press waits for its release (a ring carry starts only once the press moves).
-    if eventType == .leftMouseDown, dismissal.isArmed, widgetFrame?()?.contains(point) == true {
+    if eventType == .leftMouseDown, !external, dismissal.isArmed, widgetFrame?()?.contains(point) == true {
       widgetPress?.hold.release()
       widgetPress = (point, false, dismissal.hold(.drag))
       return

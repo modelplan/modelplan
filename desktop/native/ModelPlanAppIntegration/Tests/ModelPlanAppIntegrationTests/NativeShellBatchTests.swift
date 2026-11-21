@@ -113,6 +113,15 @@ import ModelPlanShell
     XCTAssertNil(f.page.window, "a click on the widget (within the threshold) closes it at the release, as any outside press")
   }
 
+  /// macrevd-1114-1: a press delivered to another app is never a widget press, even with the cursor inside the widget.
+  func testAnExternalPressInsideTheWidgetRectangleClosesOnce() throws {
+    let f = try open()
+    let widget = CGRect(x: f.usable.minX + 40, y: f.usable.minY + 40, width: 160, height: 60)
+    f.page.widgetFrame = { widget }
+    f.page.outsidePress(CGPoint(x: widget.midX, y: widget.midY), eventType: .leftMouseDown, external: true)
+    XCTAssertNil(f.page.window, "an external click closes the cockpit once, with no widget hold")
+  }
+
   /// The widget press hold never outlives the show: a release that never arrives cannot keep a later show open.
   func testALostWidgetReleaseDoesNotHoldTheNextShow() throws {
     let f = try open()
