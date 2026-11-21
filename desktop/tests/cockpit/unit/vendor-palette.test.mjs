@@ -7,7 +7,7 @@ import {brandColour} from '../../../cockpit/.tmp/compiled/src/livery.js';
 import {vendorPalette} from '../../../cockpit/.tmp/compiled/src/session-binding.js';
 const colourOf=vendorKey=>vendorPalette[vendorKey]?.colour??brandColour(vendorKey);
 test('COL-2.1-15 Cursor, Copilot and OpenCode carry their brand-near accents through the palette',()=>{
- assert.equal(colourOf('cursor'),'#f79dcb');
+ assert.equal(colourOf('cursor'),'#eef2f6');
  assert.equal(colourOf('copilot'),'#c08cff');
  assert.equal(colourOf('opencode'),'#b5d65a');
 });

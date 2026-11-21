@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import XCTest
 
 @testable import ModelPlanCockpitWeb
 
 /// The enlarged field's lifetime: nothing exists before open, and every close path destroys the page.
+/// WP-22 (owner D298): the panel is one transparent rectangle, 88% of the cockpit display's visible frame within
+/// 820×560–1600×1000 pt, over a plain full-display dim; the launch-field component draws everything inside it.
 final class CockpitFieldPanelTests: XCTestCase {
   @MainActor private func bundle(_ root: URL) throws -> VerifiedCockpitBundle {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -18,10 +21,23 @@ final class CockpitFieldPanelTests: XCTestCase {
     try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
+  @MainActor private func makePanel(_ name: String, idleSeconds: TimeInterval = CockpitFieldPanel.defaultIdleSeconds,
+                                lowPower: @escaping @MainActor () -> Bool = { false }, notifications: NotificationCenter = NotificationCenter(),
+                                workspace: NotificationCenter = NotificationCenter()) throws -> CockpitFieldPanel {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(name + "-" + UUID().uuidString)
+    addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+    let panel = CockpitFieldPanel(bundle: try bundle(root), idleSeconds: idleSeconds, lowPower: lowPower,
+                                  notifications: notifications, workspaceNotifications: workspace)
+    panel.accessibility = { (false, false) }
+    panel.openURL = { _ in XCTFail("no website opens unless a test asks") }
+    return panel
+  }
+  // A: the built-in display with the menu bar icon; B: a larger display to its right.
+  private let screenA = CockpitScreen(frame: NSRect(x: 0, y: 0, width: 1512, height: 982), visibleFrame: NSRect(x: 0, y: 0, width: 1512, height: 949))
+  private let screenB = CockpitScreen(frame: NSRect(x: 1512, y: 0, width: 2560, height: 1440), visibleFrame: NSRect(x: 1512, y: 0, width: 2560, height: 1415))
+
   @MainActor func testIdleClosesThePanelOnceAndCloseIsIdempotent() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-panel-" + UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let panel = CockpitFieldPanel(bundle: try bundle(root), idleSeconds: 0.05)
+    let panel = try makePanel("field-panel", idleSeconds: 0.05)
     var closed = 0
     panel.onClosed = { closed += 1 }
     XCTAssertFalse(panel.isOpen)
@@ -31,6 +47,7 @@ final class CockpitFieldPanelTests: XCTestCase {
     XCTAssertTrue(panel.isOpen)
     for _ in 0..<100 where panel.isOpen { try await Task.sleep(for: .milliseconds(20)) }
     XCTAssertFalse(panel.isOpen, "The idle timer closes the panel")
+    XCTAssertEqual(panel.lastCloseReason, .idle)
     XCTAssertEqual(closed, 1)
     panel.close()
     XCTAssertEqual(closed, 1)
@@ -39,14 +56,167 @@ final class CockpitFieldPanelTests: XCTestCase {
     panel.close()
     XCTAssertEqual(closed, 2)
   }
+
+  // MARK: WP-22 (D298) container, dim and closing
+
+  /// D298 size rule on common visible frames: 88% within 820×560–1600×1000, never larger than the visible frame, centred
+  /// on whole points.
+  func testTheContainerIs88PercentOfTheVisibleFrameClampedAndCentred() {
+    let cases: [(NSRect, NSRect, String)] = [
+      (NSRect(x: 0, y: 0, width: 1470, height: 919), NSRect(x: 88, y: 55, width: 1294, height: 809), "a 14-inch laptop: 88% each way"),
+      (NSRect(x: 0, y: 25, width: 1920, height: 977), NSRect(x: 160, y: 83, width: 1600, height: 860), "1920×1080 with menu bar and Dock: the 1600 pt width cap"),
+      (NSRect(x: 2000, y: 25, width: 2560, height: 1415), NSRect(x: 2480, y: 232, width: 1600, height: 1000), "a large display: the 1600×1000 cap"),
+      (NSRect(x: 0, y: 0, width: 900, height: 600), NSRect(x: 40, y: 20, width: 820, height: 560), "the 820×560 floor"),
+      (NSRect(x: -800, y: 0, width: 800, height: 500), NSRect(x: -800, y: 0, width: 800, height: 500), "a display smaller than the floor: the whole visible frame"),
+    ]
+    for (visible, expected, label) in cases {
+      let frame = CockpitFieldPanel.frame(in: visible)
+      XCTAssertEqual(frame, expected, label)
+      XCTAssertTrue(visible.contains(frame), label)
+      XCTAssertEqual(frame.minX, frame.minX.rounded(), label); XCTAssertEqual(frame.minY, frame.minY.rounded(), label)
+    }
+  }
+  /// The normal entry opens the panel on the cockpit's display with the clamped size, over a plain dim (#0B0F1A at 0.52,
+  /// no blur) that covers that whole display, menu bar and Dock included.
+  @MainActor func testOpeningTheFieldCreatesTheClampedPanelOverAFullDisplayDim() throws {
+    let panel = try makePanel("field-open")
+    let displays = [screenA, screenB]
+    panel.screens = { displays }
+    let cockpit = NSRect(x: 3000, y: 400, width: 636, height: 900)
+    panel.open(payload: "{}", cockpit: cockpit, pointer: CGPoint(x: 300, y: 300), fallback: NSRect(x: 1100, y: 949, width: 28, height: 24))
+    defer { panel.close() }
+    let window = try XCTUnwrap(panel.verificationWindow)
+    XCTAssertEqual(window.frame, NSRect(x: 1992, y: 207, width: 1600, height: 1000), "on the cockpit's display B, 88% capped at 1600×1000, centred")
+    XCTAssertEqual(panel.windowFrame, window.frame)
+    XCTAssertFalse(window.isOpaque); XCTAssertEqual(window.backgroundColor.alphaComponent, 0); XCTAssertFalse(window.hasShadow)
+    let web = try XCTUnwrap(panel.verificationWebView)
+    XCTAssertTrue((window.firstResponder as? NSView)?.isDescendant(of: web) == true, "the page has the keys, so Esc reaches the component")
+    let dim = try XCTUnwrap(panel.verificationDimWindow)
+    XCTAssertEqual(dim.frame, screenB.frame, "the dim covers the whole display")
+    XCTAssertEqual(dim.level, window.level, "directly under the panel, above the cockpit")
+    XCTAssertGreaterThan(window.level.rawValue, CockpitWindowController.panelLevel.rawValue)
+    XCTAssertFalse(dim.canBecomeKey, "the dim never takes key")
+    XCTAssertFalse(dim.isOpaque); XCTAssertFalse(dim.hasShadow)
+    let colour = try XCTUnwrap(dim.backgroundColor.usingColorSpace(.sRGB))
+    XCTAssertEqual(colour.redComponent * 255, 11, accuracy: 0.01)
+    XCTAssertEqual(colour.greenComponent * 255, 15, accuracy: 0.01)
+    XCTAssertEqual(colour.blueComponent * 255, 26, accuracy: 0.01)
+    XCTAssertEqual(colour.alphaComponent, 0.52, accuracy: 0.001)
+    XCTAssertFalse(dim.contentView?.subviews.contains { $0 is NSVisualEffectView } ?? true, "plain dim, no blur")
+    XCTAssertEqual(dim.identifier, CockpitWindowController.fieldWindowIdentifier, "a press on the dim closes the field, not the cockpit")
+    panel.close()
+    XCTAssertNil(panel.verificationDimWindow, "closing removes the dim")
+    XCTAssertFalse(dim.isVisible)
+  }
+  /// D298: a press outside the rectangle (on the dim) closes the field once; the whole rectangle counts as inside.
+  @MainActor func testAPressOutsideTheRectangleClosesTheFieldAndInsideDoesNot() throws {
+    let panel = try makePanel("field-outside")
+    let displays = [screenA]
+    panel.screens = { displays }
+    var closed = 0
+    panel.onClosed = { closed += 1 }
+    panel.open(payload: "{}", near: nil)
+    let window = try XCTUnwrap(panel.verificationWindow), web = try XCTUnwrap(panel.verificationWebView)
+    let dim = try XCTUnwrap(panel.verificationDimWindow), surface = try XCTUnwrap(dim.contentView)
+    // Inside the rectangle, corners included, a press reaches the page (the component), never the dim.
+    let content = try XCTUnwrap(window.contentView)
+    for point in [CGPoint(x: 1, y: 1), CGPoint(x: content.bounds.maxX - 1, y: content.bounds.maxY - 1), CGPoint(x: content.bounds.midX, y: content.bounds.midY)] {
+      XCTAssertTrue(content.hitTest(point)?.isDescendant(of: web) == true, "a press at \(point) is the page's")
+    }
+    XCTAssertTrue(panel.isOpen)
+    // Outside: a press on the dim, through the window's normal event path.
+    let outside = CGPoint(x: 10, y: 10)
+    XCTAssertFalse(window.frame.contains(dim.convertPoint(toScreen: outside)))
+    XCTAssertTrue(surface.hitTest(outside) is FieldDimView)
+    let press = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: outside, modifierFlags: [], timestamp: 0,
+                                                 windowNumber: dim.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+    dim.sendEvent(press)
+    XCTAssertFalse(panel.isOpen, "a press outside the rectangle closes the field")
+    XCTAssertEqual(panel.lastCloseReason, .outside)
+    XCTAssertEqual(closed, 1)
+    dim.sendEvent(press)
+    XCTAssertEqual(closed, 1, "a second press does nothing")
+  }
+  /// Esc and × come from the component (onClose); losing key still closes as before.
+  @MainActor func testTheComponentsCloseAndLosingKeyCloseTheField() throws {
+    let panel = try makePanel("field-key")
+    var closed = 0
+    panel.onClosed = { closed += 1 }
+    for (message, reason) in [(#"{"type":"close","reason":"esc"}"#, CockpitFieldPanel.CloseReason.esc), (#"{"type":"close","reason":"key"}"#, .key)] {
+      panel.open(payload: "{}", near: nil)
+      panel.receive(message)
+      XCTAssertFalse(panel.isOpen); XCTAssertEqual(panel.lastCloseReason, reason)
+    }
+    panel.open(payload: "{}", near: nil)
+    panel.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification))
+    XCTAssertFalse(panel.isOpen, "losing key closes the field")
+    XCTAssertEqual(panel.lastCloseReason, .resign)
+    panel.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification))
+    XCTAssertEqual(closed, 3, "a second resign does nothing")
+  }
+  /// The component's onOpenSite: only the spec's four addresses open, in the default browser; a slug outside
+  /// ^[a-z0-9.-]+$, extra parameters or another target are ignored.
+  @MainActor func testTheSiteKeysOpenOnlyTheAllowlistedAddresses() throws {
+    let panel = try makePanel("field-site")
+    var opened: [String] = []
+    panel.openURL = { opened.append($0.absoluteString) }
+    panel.open(payload: "{}", near: nil)
+    defer { panel.close() }
+    for message in [
+      #"{"type":"openSite","target":"fleet","params":{}}"#,
+      #"{"type":"openSite","target":"effort","params":{}}"#,
+      #"{"type":"openSite","target":"effort","params":{"m":"claude-opus-5.5"}}"#,
+      #"{"type":"openSite","target":"methodology","params":{}}"#,
+      #"{"type":"openSite","target":"effort","params":{"m":"Claude_Opus"}}"#,
+      #"{"type":"openSite","target":"effort","params":{"m":"../../admin"}}"#,
+      #"{"type":"openSite","target":"effort","params":{"m":"a/b"}}"#,
+      #"{"type":"openSite","target":"effort","params":{"m":"x?y=1"}}"#,
+      #"{"type":"openSite","target":"effort","params":{"m":""}}"#,
+      #"{"type":"openSite","target":"effort","params":{"m":7}}"#,
+      #"{"type":"openSite","target":"effort","params":{"m":"opus","x":"1"}}"#,
+      #"{"type":"openSite","target":"fleet","params":{"m":"opus"}}"#,
+      #"{"type":"openSite","target":"compare","params":{"m":["a","b"]}}"#,
+      #"{"type":"openSite","target":"https://example.invalid","params":{}}"#,
+      #"{"type":"openSite","target":"fleet","params":[]}"#,
+    ] { panel.receive(message) }
+    XCTAssertEqual(opened, ["https://modelplan.ai/", "https://modelplan.ai/effort", "https://modelplan.ai/models/claude-opus-5.5",
+                            "https://modelplan.ai/methodology"])
+    XCTAssertTrue(panel.isOpen, "opening the website leaves the field open")
+    XCTAssertNil(CockpitFieldPanel.siteURL(target: "effort", params: ["m": "é"]))
+    XCTAssertEqual(CockpitFieldPanel.siteURL(target: "fleet", params: nil)?.absoluteString, "https://modelplan.ai/")
+  }
+
+  /// macrevb-1062-3: the field's selection reaches the host as a public model id, or nil for a clear. Anything else
+  /// (a malformed id, an effort, another shape) is ignored, and a closed panel reports nothing.
+  @MainActor func testTheFieldsSelectionAndClearReachTheHostByPublicModelID() throws {
+    let panel = try makePanel("field-select")
+    var selected: [String?] = []
+    panel.onSelect = { selected.append($0) }
+    panel.open(payload: "{}", near: nil)
+    for message in [
+      #"{"type":"select","model":"sonnet-5.5"}"#,
+      #"{"type":"select","model":null}"#,
+      #"{"type":"select","model":""}"#,
+      #"{"type":"select","model":7}"#,
+      #"{"type":"select"}"#,
+      #"{"type":"select","model":"a\u0001b"}"#,
+      "{\"type\":\"select\",\"model\":\"" + String(repeating: "x", count: 129) + "\"}",
+    ] { panel.receive(message) }
+    XCTAssertEqual(selected, ["sonnet-5.5", nil])
+    XCTAssertTrue(panel.isOpen, "a selection leaves the field open")
+    panel.close()
+    panel.receive(#"{"type":"select","model":"opus"}"#)
+    XCTAssertEqual(selected, ["sonnet-5.5", nil], "a closed field reports nothing")
+  }
+
+  // MARK: Live settings
+
   /// Spike 11-08 / D63: native tells the page about Low Power Mode, which the page cannot read. Changes while open go
   /// to `power` once the page has loaded and only when the state changes; a closed panel stops listening.
   @MainActor func testLowPowerChangesReachTheOpenPageOnce() throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-power-" + UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
     var low = false
     let center = NotificationCenter()
-    let panel = CockpitFieldPanel(bundle: try bundle(root), lowPower: { low }, notifications: center)
+    let panel = try makePanel("field-power", lowPower: { low }, notifications: center)
     var scripts: [String] = []
     panel.scriptSink = { scripts.append($0) }
     let changed = {
@@ -58,217 +228,100 @@ final class CockpitFieldPanelTests: XCTestCase {
     low = true; changed()
     XCTAssertTrue(scripts.isEmpty, "Nothing reaches a page that has not loaded")
     panel.receive(#"{"type":"loaded"}"#)
-    XCTAssertEqual(scripts.count, 2)
+    XCTAssertEqual(scripts.count, 3)
     XCTAssertTrue(scripts[0].hasPrefix("window.modelPlanField?.show("))
     XCTAssertEqual(scripts[1], "window.modelPlanField?.power(true)", "The change before load catches up after show")
+    XCTAssertTrue(scripts[2].hasPrefix("window.modelPlanField?.options("))
     changed()
-    XCTAssertEqual(scripts.count, 2, "No change, nothing sent")
+    XCTAssertEqual(scripts.count, 3, "No change, nothing sent")
     low = false; changed()
     XCTAssertEqual(scripts.last, "window.modelPlanField?.power(false)")
     panel.close()
     low = true; changed()
-    XCTAssertEqual(scripts.count, 3, "A closed panel stops listening")
+    XCTAssertEqual(scripts.count, 4, "A closed panel stops listening")
   }
   /// D63 (review of #734): a field opened while Low Power Mode is already on is quiet from the start, whatever the
   /// payload said: right after `show` the page gets `power(true)`.
   @MainActor func testAFieldOpenedInLowPowerModeIsQuietFromTheStart() throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-power-open-" + UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
     let center = NotificationCenter()
-    let panel = CockpitFieldPanel(bundle: try bundle(root), lowPower: { true }, notifications: center)
+    let panel = try makePanel("field-power-open", lowPower: { true }, notifications: center)
     var scripts: [String] = []
     panel.scriptSink = { scripts.append($0) }
     XCTAssertTrue(panel.isLowPower)
     panel.open(payload: #"{"lowPower":false}"#, near: nil)
     defer { panel.close() }
     panel.receive(#"{"type":"loaded"}"#)
-    XCTAssertEqual(scripts.count, 2)
+    XCTAssertEqual(scripts.count, 3)
     XCTAssertTrue(scripts[0].hasPrefix("window.modelPlanField?.show("))
     XCTAssertEqual(scripts[1], "window.modelPlanField?.power(true)")
     center.post(name: .NSProcessInfoPowerStateDidChange, object: nil)
     RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-    XCTAssertEqual(scripts.count, 2, "still on, nothing more")
+    XCTAssertEqual(scripts.count, 3, "still on, nothing more")
   }
-  /// CKP-PORT-11E: a click outside the field makes its panel resign key, which closes it once and destroys the page.
-  @MainActor func testLosingKeyClosesTheField() throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-key-" + UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let panel = CockpitFieldPanel(bundle: try bundle(root))
-    var closed = 0
-    panel.onClosed = { closed += 1 }
-    panel.open(payload: "{}", near: nil)
-    XCTAssertTrue(panel.isOpen)
-    panel.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification))
-    XCTAssertFalse(panel.isOpen, "the outside click closes the field")
-    XCTAssertEqual(closed, 1)
-    panel.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification))
-    XCTAssertEqual(closed, 1, "a second resign does nothing")
-  }
-  /// CKP-PORT-11 (D63, task 91 round 5): the composition's bounds follow the prototype's fieldFrame.
-  func testCompositionBoundsFollowThePrototypeFrame() {
-    XCTAssertEqual(CockpitFieldPanel.frame(in: NSRect(x: 0, y: 0, width: 1470, height: 919)),
-                   NSRect(x: 73.5, y: 92, width: 1323, height: 735), "a 14-inch laptop: 90% wide, 80% high")
-    XCTAssertEqual(CockpitFieldPanel.frame(in: NSRect(x: 0, y: 0, width: 1024, height: 743)),
-                   NSRect(x: 32, y: 71.5, width: 960, height: 600), "the 960 x 600 floor")
-    XCTAssertEqual(CockpitFieldPanel.frame(in: NSRect(x: 0, y: 0, width: 900, height: 600)),
-                   NSRect(x: 16, y: 16, width: 868, height: 568), "16 pt from every edge on a tiny screen")
-    XCTAssertEqual(CockpitFieldPanel.frame(in: NSRect(x: 2000, y: 25, width: 2560, height: 1415)).size,
-                   NSSize(width: 1440, height: 900))
-  }
-  /// CKP-PORT-11 in the native panel: the frosted card blurs the desktop. A transparent web view cannot do that with
-  /// CSS, so the page reports its card and the panel puts a behind-window blur exactly there; junk is ignored.
-  @MainActor func testTheFrostedCardBlursTheDesktopWhereThePageSaysItIs() throws {
-    XCTAssertEqual(CockpitFieldPanel.cardFrame(x: 0, y: 35.5, width: 430, height: 664, in: NSRect(x: 0, y: 0, width: 1323, height: 735)),
-                   NSRect(x: 0, y: 35.5, width: 430, height: 664), "top-left page coordinates become bottom-left points")
-    XCTAssertEqual(CockpitFieldPanel.cardFrame(x: 0, y: 20, width: 430, height: 600, in: NSRect(x: 0, y: 0, width: 960, height: 700)),
-                   NSRect(x: 0, y: 80, width: 430, height: 600))
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-card-" + UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let panel = CockpitFieldPanel(bundle: try bundle(root))
-    panel.open(payload: "{}", near: nil)
-    defer { panel.close() }
-    XCTAssertNil(panel.cardBlurFrame, "no blur before the page has laid out its card")
-    panel.receive(#"{"type":"card","x":"left","y":0,"width":430,"height":664}"#)
-    XCTAssertNil(panel.cardBlurFrame, "a malformed rect is ignored")
-    panel.receive(#"{"type":"card","x":0,"y":20,"width":430,"height":500,"radius":12}"#)
-    let frame = try XCTUnwrap(panel.cardBlurFrame)
-    XCTAssertEqual(frame.size, NSSize(width: 430, height: 500))
-    XCTAssertEqual(frame.minX, 0)
-  }
-
-  // MARK: Build 14c, G3-80: placement, moving and refitting across displays
-
-  private let screenA = CockpitScreen(frame: NSRect(x: 0, y: 0, width: 1512, height: 982), visibleFrame: NSRect(x: 0, y: 0, width: 1512, height: 949))
-  private let screenB = CockpitScreen(frame: NSRect(x: 1512, y: 0, width: 2560, height: 1440), visibleFrame: NSRect(x: 1512, y: 0, width: 2560, height: 1415))
-  private func assertInside(_ frame: NSRect, _ visible: NSRect, margin: CGFloat = 16, _ message: String,
-                            file: StaticString = #filePath, line: UInt = #line) {
-    XCTAssertTrue(visible.insetBy(dx: margin, dy: margin).contains(frame),
-                  "\(message): \(NSStringFromRect(frame)) is not \(margin) pt inside \(NSStringFromRect(visible))", file: file, line: line)
-  }
-  /// The size rule (90% wide within 960-1440, 80% high within 600-900) on common visible frames, wherever the display
-  /// sits in the arrangement, always at least 16 pt inside.
-  func testTheSizeRuleStaysSixteenPointsInsideCommonDisplays() {
-    let cases: [(NSRect, NSSize)] = [
-      (NSRect(x: 0, y: 0, width: 1280, height: 800), NSSize(width: 1152, height: 640)),
-      (NSRect(x: -1512, y: 0, width: 1512, height: 982), NSSize(width: 1361, height: 786)),
-      (NSRect(x: 1280, y: 25, width: 2560, height: 1440), NSSize(width: 1440, height: 900)),
-    ]
-    for (visible, size) in cases {
-      let frame = CockpitFieldPanel.frame(in: visible)
-      XCTAssertEqual(frame.size, size, NSStringFromRect(visible))
-      assertInside(frame, visible, "centred")
-      for corner in [CGPoint(x: visible.minX, y: visible.minY), CGPoint(x: visible.maxX, y: visible.maxY), CGPoint(x: visible.minX - 500, y: visible.maxY + 500)] {
-        let kept = CockpitFieldPanel.frame(in: visible, centredAt: corner)
-        XCTAssertEqual(kept.size, size)
-        assertInside(kept, visible, "centred toward \(corner)")
-      }
+  /// D298: macOS Increase Contrast and Reduce Motion reach the component live (setOptions), once per change.
+  @MainActor func testIncreaseContrastAndReduceMotionReachThePageLive() throws {
+    let workspace = NotificationCenter()
+    let panel = try makePanel("field-a11y", workspace: workspace)
+    var settings = (contrast: false, reduceMotion: true)
+    panel.accessibility = { settings }
+    var scripts: [String] = []
+    panel.scriptSink = { scripts.append($0) }
+    let changed = {
+      workspace.post(name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+      RunLoop.main.run(until: Date().addingTimeInterval(0.05))
     }
+    panel.open(payload: "{}", near: nil)
+    changed()
+    XCTAssertTrue(scripts.isEmpty, "nothing before the page has loaded")
+    panel.receive(#"{"type":"loaded"}"#)
+    XCTAssertEqual(scripts.last, #"window.modelPlanField?.options("{\"contrast\":false,\"reduceMotion\":true}")"#)
+    let sent = scripts.count
+    changed()
+    XCTAssertEqual(scripts.count, sent, "no change, nothing sent")
+    settings = (true, true); changed()
+    XCTAssertEqual(scripts.last, #"window.modelPlanField?.options("{\"contrast\":true,\"reduceMotion\":true}")"#)
+    settings = (true, false); changed()
+    XCTAssertEqual(scripts.last, #"window.modelPlanField?.options("{\"contrast\":true,\"reduceMotion\":false}")"#)
+    panel.close()
+    settings = (false, false); changed()
+    XCTAssertEqual(scripts.count, sent + 2, "a closed panel stops listening")
   }
-  func testTheDragStripSitsAboveTheCardAndClearOfTheCloseKey() {
-    let bounds = NSRect(x: 0, y: 0, width: 1323, height: 735)
-    let card = CockpitFieldPanel.cardFrame(x: 0, y: 35.5, width: 430, height: 664, in: bounds)
-    let strip = CockpitFieldPanel.dragStripFrame(card: card, in: bounds)
-    XCTAssertEqual(strip, NSRect(x: 0, y: card.maxY, width: 430, height: 20), "the bare band above the card")
-    // The page's × is at left 438 px, top card-top - 8 px: right of the card, never under the strip.
-    let close = NSRect(x: 438, y: bounds.height - (35.5 - 8) - 24, width: 24, height: 24)
-    XCTAssertFalse(strip.intersects(close))
-    XCTAssertEqual(CockpitFieldPanel.dragStripFrame(card: NSRect(x: 0, y: 0, width: 430, height: 731), in: bounds), .zero, "no room, no strip")
-  }
-  /// The owner's 14c report: the field opened on the menu bar icon's display and could not be moved.
-  @MainActor func testTheFieldOpensOnTheClickDisplayAndMovesToAnotherDisplay() throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-move-" + UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let panel = CockpitFieldPanel(bundle: try bundle(root))
+
+  // MARK: Build 14c, G3-80: placement and refitting across displays
+
+  /// The owner's 14c report: the field opened on the menu bar icon's display. It opens where the user clicked.
+  @MainActor func testTheFieldOpensOnTheClickDisplay() throws {
+    let panel = try makePanel("field-click")
     let displays = [screenA, screenB]
     panel.screens = { displays }
     panel.open(payload: "{}", near: NSRect(x: 1100, y: 949, width: 28, height: 24), at: CGPoint(x: 2800, y: 700))
     defer { panel.close() }
     let window = try XCTUnwrap(panel.verificationWindow)
-    XCTAssertTrue(window.isMovable)
-    XCTAssertEqual(window.frame, CockpitFieldPanel.frame(in: screenB.visibleFrame, centredAt: nil), "opens on the click's display B, not the icon's A")
-    XCTAssertEqual(window.frame.size, NSSize(width: 1440, height: 900), "whole points: the window server keeps the size exact")
-    XCTAssertNil(panel.dragRegionFrame, "no strip before the page has laid out its card")
-    let height = window.frame.height
-    panel.receive(#"{"type":"card","x":0,"y":118,"width":430,"height":664,"radius":12}"#)
-    let strip = try XCTUnwrap(panel.dragRegionFrame)
-    XCTAssertEqual(strip.minY, height - 118, accuracy: 0.5, "the strip starts at the card's top edge")
-    let from = CGPoint(x: window.frame.minX + 200, y: window.frame.maxY - 108)
-    panel.drag(.began, point: from)
-    panel.drag(.moved, point: CGPoint(x: from.x + 1, y: from.y))
-    XCTAssertEqual(window.frame, CockpitFieldPanel.frame(in: screenB.visibleFrame, centredAt: nil), "under 3 pt nothing moves")
-    panel.drag(.moved, point: CGPoint(x: 600, y: 500))
-    panel.drag(.ended, point: CGPoint(x: 600, y: 500))
-    XCTAssertTrue(panel.isOpen, "a drag does not close the field")
-    assertInside(window.frame, screenA.visibleFrame, "dropped on A")
-    XCTAssertEqual(window.frame.size, CockpitFieldPanel.frame(in: screenA.visibleFrame).size, "refitted to A's size rule")
+    XCTAssertEqual(window.frame, CockpitFieldPanel.frame(in: screenB.visibleFrame), "opens on the click's display B, not the icon's A")
+    XCTAssertEqual(window.frame.size, NSSize(width: 1600, height: 1000), "whole points: the window server keeps the size exact")
+    XCTAssertEqual(panel.verificationDimWindow?.frame, screenB.frame)
   }
-  /// Owner 11-11: a drag in the 3D scene rotates the rocket, so only the strip moves the window. The panel is not
-  /// movable by its background, a press in the scene reaches the page's web view (never the strip), and a press on the
-  /// strip reaches the strip.
-  @MainActor func testADragInTheSceneNeverMovesTheWindow() throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-scene-" + UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let panel = CockpitFieldPanel(bundle: try bundle(root))
-    let displays = [screenA, screenB]
-    panel.screens = { displays }
-    panel.open(payload: "{}", near: nil, at: CGPoint(x: 2800, y: 700))
-    defer { panel.close() }
-    let window = try XCTUnwrap(panel.verificationWindow)
-    let web = try XCTUnwrap(panel.verificationWebView)
-    let content = try XCTUnwrap(window.contentView)
-    XCTAssertFalse(window.isMovableByWindowBackground, "no background drag anywhere in the field")
-    panel.receive(#"{"type":"card","x":0,"y":118,"width":430,"height":664,"radius":12}"#)
-    let strip = try XCTUnwrap(panel.dragRegionFrame)
-    let before = window.frame
-    // The scene starts 458 px from the left (cockpit.css .field-stage); its middle, its top edge level with the strip,
-    // and a point on the card all go to the page.
-    for point in [CGPoint(x: 900, y: content.bounds.midY), CGPoint(x: 900, y: strip.midY), CGPoint(x: 200, y: content.bounds.midY)] {
-      let hit = content.hitTest(point)
-      XCTAssertFalse(hit is CockpitTitleDrag, "a press at \(point) is the page's, not the strip's")
-      XCTAssertTrue(hit?.isDescendant(of: web) == true, "a press at \(point) reaches the web view")
-    }
-    XCTAssertTrue(content.hitTest(CGPoint(x: strip.midX, y: strip.midY)) is CockpitTitleDrag, "the strip takes its own presses")
-    XCTAssertEqual(window.frame, before, "nothing moved the window")
-  }
-  /// A press on the strip that never moves is a click on bare desktop: it closes the field, as the page does.
-  @MainActor func testAClickOnTheStripClosesLikeBareDesktop() throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-strip-click-" + UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let panel = CockpitFieldPanel(bundle: try bundle(root))
-    let displays = [screenA]
-    panel.screens = { displays }
-    var closed = 0
-    panel.onClosed = { closed += 1 }
-    panel.open(payload: "{}", near: nil)
-    let point = CGPoint(x: 700, y: 800)
-    panel.drag(.began, point: point)
-    panel.drag(.ended, point: point)
-    XCTAssertFalse(panel.isOpen)
-    XCTAssertEqual(closed, 1)
-  }
-  /// Unplugging the display the field is on, or the field landing on another display, refits it there.
+  /// Unplugging the display the field is on, or the field landing on another display, refits it and its dim there.
   @MainActor func testADisplayChangeRefitsTheFieldOnTheDisplayItIsOn() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-refit-" + UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let panel = CockpitFieldPanel(bundle: try bundle(root))
+    let panel = try makePanel("field-refit")
     var displays = [screenA, screenB]
     panel.screens = { displays }
     panel.open(payload: "{}", near: nil, at: CGPoint(x: 2800, y: 700))
     defer { panel.close() }
-    let window = try XCTUnwrap(panel.verificationWindow)
-    XCTAssertEqual(window.frame.size, NSSize(width: 1440, height: 900), "B's size rule")
+    let window = try XCTUnwrap(panel.verificationWindow), dim = try XCTUnwrap(panel.verificationDimWindow)
+    XCTAssertEqual(window.frame.size, NSSize(width: 1600, height: 1000), "B's size rule")
     displays = [screenA]
     NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
-    for _ in 0..<50 where !screenA.visibleFrame.insetBy(dx: 16, dy: 16).contains(window.frame) {
+    for _ in 0..<50 where window.frame != CockpitFieldPanel.frame(in: screenA.visibleFrame) {
       try await Task.sleep(for: .milliseconds(20))
     }
-    assertInside(window.frame, screenA.visibleFrame, "B unplugged: back on A")
-    XCTAssertEqual(window.frame.size, CockpitFieldPanel.frame(in: screenA.visibleFrame).size)
+    XCTAssertEqual(window.frame, CockpitFieldPanel.frame(in: screenA.visibleFrame), "B unplugged: back on A, A's size rule")
+    XCTAssertEqual(dim.frame, screenA.frame, "the dim follows")
     // Moved onto another display without a drag: the window's screen changes and the size rule follows.
     displays = [screenA, screenB]
     window.setFrame(NSRect(x: 2000, y: 300, width: window.frame.width, height: window.frame.height), display: false)
     panel.windowDidChangeScreen(Notification(name: NSWindow.didChangeScreenNotification))
-    assertInside(window.frame, screenB.visibleFrame, "now on B")
-    XCTAssertEqual(window.frame.size, NSSize(width: 1440, height: 900), "B's size rule again")
+    XCTAssertEqual(window.frame, CockpitFieldPanel.frame(in: screenB.visibleFrame), "now on B, centred")
+    XCTAssertEqual(dim.frame, screenB.frame)
   }
 }

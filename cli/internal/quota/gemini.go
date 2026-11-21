@@ -36,7 +36,12 @@ import (
 	"time"
 )
 
-var geminiReader = &nativeReader{Name: "Gemini CLI", Regions: []string{"oauth"}, Profiles: geminiProfiles, Managed: collectGemini}
+var geminiReader = &nativeReader{Name: "Gemini CLI", Regions: []string{"oauth"}, Profiles: geminiProfiles, Managed: collectGemini, LoginFiles: geminiLoginFiles}
+
+func geminiLoginFiles(profile ReaderProfile) []string {
+	return []string{filepath.Join(profile.Root, "oauth_creds.json")}
+}
+
 var geminiHost = "https://cloudcode-pa.googleapis.com"
 var geminiTokenEndpoint = "https://oauth2.googleapis.com/token"
 var geminiIdentifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
@@ -401,6 +406,11 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Gemini sign-in changed during the read; refresh required"}, Invalidate: true}
 	}
 	a := &Account{Source: "native:gemini", Via: "native", Plan: meta.Plan, ObservedAt: r.Now.UTC(), Windows: windows, Credits: wallet}
+	// D99: the modelIds of the quota buckets just parsed, the tool's own access signal; no extra request.
+	var bucketModels []string
+	for _, b := range quota.Buckets {
+		bucketModels = append(bucketModels, b.Model)
+	}
 	if subject := geminiSubject(idToken, r.Now); subject != "" {
 		meta.AccountKey = readerHash(r.Paths.Cache, "gemini:account", subject)
 		if !IdentityOff() {
@@ -411,7 +421,7 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 	}
 	// Publish transient metadata only with a complete consistent reading.
 	geminiRemember(projectCacheKey, project, r.Now)
-	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta}}
+	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta, ReportedModels: cleanReportedModels(bucketModels)}}
 }
 
 type geminiAvailableCredit struct {

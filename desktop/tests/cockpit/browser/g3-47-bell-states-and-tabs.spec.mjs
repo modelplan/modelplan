@@ -24,29 +24,29 @@ async function open(page){
 }
 const lum=([r,g,b])=>0.2126*r+0.7152*g+0.0722*b;
 
-// D70 (owner 2026-11-08), CKP-ENG-16/17, CKP-SHELL-15: subscribed bells are the study's bells exactly: the silver
-// bell under the shared gunmetal transfer (measured on opus-r7: saturate(.12) brightness(.78)), idle and working
-// alike. A working subscription is shown only by the light from its bell mouth in the quota-status colour; an idle
-// bell's mouth stays dark. Supersedes the D68 darkened idle bells.
-test('G3-47 subscribed bells match the study; only the working bell lights its mouth',async({page})=>{
+// D294 (owner 2026-11-18), CKP-ENG-16/17, CKP-SHELL-15: one dark finish for every bell, subscribed or empty: the silver
+// bell under the gunmetal transfer at brightness .36. A working subscription is shown only by its subscription-colour
+// light (mouth wash + faint downward cone); an idle bell's mouth stays dark. Supersedes D70 (.78 / night .9).
+const FINISH='saturate(0.12) brightness(0.36)';
+test('G3-131 every bell has one dark finish; only the working bell lights its mouth',async({page})=>{
  await open(page);
  const bells=await page.evaluate(()=>[...document.querySelectorAll('.ck-base .bz')].map(b=>{const l=b.querySelector('.bz-line'),r=l.getBoundingClientRect(),c=getComputedStyle(l);
   return {cls:b.className,filter:c.filter,image:c.backgroundImage,x:r.left+r.width/2,top:r.top,h:r.height,sheet:!!b.querySelector('.bz-sheet')};}));
  expect(bells.map(b=>b.cls)).toEqual(['bz work','bz idle','bz idle','bz idle']);
- for(const b of bells){expect(b.filter).toBe('saturate(0.12) brightness(0.78)');expect(b.image).toContain('assets/bells/bell-silver-2x.png');}
+ for(const b of bells){expect(b.filter).toBe(FINISH);expect(b.image).toContain('assets/bells/bell-silver-2x.png');}
  expect(bells.map(b=>b.sheet)).toEqual([true,false,false,false]);
- // Hover keeps the study's finish: the column light and the name show it, not a brighter bell.
+ // Hover keeps the finish: the column light and the name show it, not a brighter bell.
  await page.locator('.ck-base .bz').nth(1).hover();
- expect(await page.locator('.ck-base .bz').nth(1).locator('.bz-line').evaluate(l=>getComputedStyle(l).filter)).toBe('saturate(0.12) brightness(0.78)');
+ expect(await page.locator('.ck-base .bz').nth(1).locator('.bz-line').evaluate(l=>getComputedStyle(l).filter)).toBe(FINISH);
  await page.mouse.move(5,5);
  const mouth=async b=>firstPixel(await page.screenshot({clip:{x:Math.round(b.x),y:Math.round(b.top+b.h*0.62),width:1,height:1},omitBackground:true}));
  const lit=await mouth(bells[0]);
- expect(lum(lit),`working mouth ${JSON.stringify(lit)}`).toBeGreaterThan(80);expect(lit[0]).toBeGreaterThan(lit[2]+40);
+ expect(lum(lit),`working mouth ${JSON.stringify(lit)}`).toBeGreaterThan(60);expect(lit[2]).toBeGreaterThan(lit[0]+20);
  for(const b of bells.slice(1)){const dark=await mouth(b);expect(lum(dark),`idle mouth ${JSON.stringify(dark)}`).toBeLessThan(60);}
 });
 
-// D70: only an empty slot (no subscription) is darker: the study's night/black bell, quietly dimmed, with no light.
-test('G3-47 an empty slot shows the darker night bell',async({page})=>{
+// D294: an empty slot has the same finish (the silver raster, no night bell) and no light.
+test('G3-131 an empty slot shows the same dark finish and no light',async({page})=>{
  await page.setViewportSize({width:636,height:939});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
@@ -56,7 +56,8 @@ test('G3-47 an empty slot shows the darker night bell',async({page})=>{
  expect(await receive(send('display',{data:d}))).toBe(true);
  await page.waitForFunction(()=>document.querySelectorAll('.ck-base .bz-empty').length>0);
  const empty=await page.evaluate(()=>[...document.querySelectorAll('.ck-base .bz-empty')].map(b=>{const c=getComputedStyle(b.querySelector('.bz-line'));return {filter:c.filter,image:c.backgroundImage,sheet:!!b.querySelector('.bz-sheet')};}));
- for(const e of empty){expect(e.filter).toBe('brightness(0.9)');expect(e.image).toContain('assets/bells/bell-night-');expect(e.sheet).toBe(false);}
+ expect(empty.length).toBeGreaterThan(0);
+ for(const e of empty){expect(e.filter).toBe(FINISH);expect(e.image).toContain('assets/bells/bell-silver-2x.png');expect(e.image).not.toContain('night');expect(e.sheet).toBe(false);}
 });
 
 // COL-2.1-07: vendor colour is identity on the key strip, and the key shows its vendor mark (official edition).
@@ -66,8 +67,8 @@ test('G3-47 vendor keys keep their identity colour and mark',async({page})=>{
  const keys=await page.evaluate(()=>[...document.querySelectorAll('.eng-keys .ek[data-sub]')].map(k=>{const i=k.querySelector('img.lamp');
   const n=k.querySelector('.ek-name').getBoundingClientRect(),m=i?.getBoundingClientRect();
   return {name:k.querySelector('.ek-name')?.textContent,strip:getComputedStyle(k.querySelector('.bl')).backgroundColor,mark:i?{src:i.getAttribute('src'),loaded:i.complete&&i.naturalWidth>0,beside:m.left+m.width/2+7<=n.left&&Math.abs((m.top+m.height/2)-(n.top+n.height/2))<=1.5}:null};}));
- // COL-2.1-18 Set 1: Codex green, Claude orange, Cursor rose (no two of them collide, so no alternate shade); unbound stays neutral.
- expect(keys.map(k=>k.strip)).toEqual(['rgb(16, 163, 127)','rgb(217, 119, 87)','rgb(247, 157, 203)','rgb(198, 204, 212)']);
+ // COL-2.1-18 D250: Codex blue, Claude peach, Cursor light grey (no two of them collide, so no alternate shade); unbound stays neutral.
+ expect(keys.map(k=>k.strip)).toEqual(['rgb(106, 168, 255)','rgb(255, 154, 106)','rgb(238, 242, 246)','rgb(198, 204, 212)']);
  expect(keys.slice(0,3).map(k=>k.mark?.loaded)).toEqual([true,true,true]);
  // The mark sits beside the name on one centre line, as in the study.
  expect(keys.slice(0,3).map(k=>k.mark?.beside)).toEqual([true,true,true]);

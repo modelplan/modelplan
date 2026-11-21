@@ -172,23 +172,41 @@ func Compatible(current, minimum string) bool {
 // route is audited by this seed, and nothing is enabled by detection.
 func Fallback() *Catalogue {
 	c := &Catalogue{SchemaVersion: 1, Revision: 1, Detectors: []Entry{}}
-	for _, tool := range []struct{ id, name, command, path string }{
-		{"claude", "Claude Code", "claude", ".claude"}, {"codex", "Codex", "codex", ".codex"},
-		{"zai", "ZCode / GLM", "zcode", ".zcode"}, {"cursor", "Cursor", "cursor", ".cursor"},
-		{"copilot", "GitHub Copilot", "copilot", ".copilot"}, {"gemini", "Gemini CLI", "gemini", ".gemini"},
-		{"kimi", "Kimi Code", "kimi", ".kimi-code"}, {"qwen", "Qwen Code", "qwen", ".qwen"},
-		{"opencodego", "OpenCode", "opencode", ".config/opencode"}, {"kiro", "Kiro", "kiro-cli", ".kiro"},
-		{"amp", "Amp", "amp", ".local/share/amp"}, {"droid", "Droid", "droid", ".factory"}, {"grok", "Grok Build", "grok", ".grok"},
+	cmd := func(name string) Signal { return Signal{Type: "command", Name: name} }
+	path := func(value string) Signal { return Signal{Type: "path", Value: value} }
+	// Each signal names something only that tool creates (G3-104/G3-105 review, owner 2026-11-13;
+	// table in handoffs/shared/research/tool-detection.md). A folder another tool also creates is
+	// never a signal on its own.
+	for _, tool := range []struct {
+		id, name string
+		signals  []Signal
+	}{
+		{"claude", "Claude Code", []Signal{cmd("claude"), path(".claude")}},
+		{"codex", "Codex", []Signal{cmd("codex"), path(".codex")}},
+		// ZCode ships as Desktop and as the zcode-app-cli package; a host may install the
+		// latter as `zcode-cli` with its own data under ~/.local/share/zcode-community (G3-21).
+		{"zai", "ZCode / GLM", []Signal{cmd("zcode"), path(".zcode"), cmd("zcode-cli"), path(".local/share/zcode-community"),
+			path(".local/share/zcode-cli"), path("Library/Application Support/ZCode")}},
+		{"cursor", "Cursor", []Signal{cmd("cursor"), path(".cursor")}},
+		{"copilot", "GitHub Copilot", []Signal{cmd("copilot"), path(".copilot")}},
+		// G3-104: Google Antigravity also creates ~/.gemini (antigravity/, GEMINI.md), so the
+		// Gemini CLI signals are its command, its sign-in file and its chat history directory.
+		{"gemini", "Gemini CLI", []Signal{cmd("gemini"), path(".gemini/oauth_creds.json"), path(".gemini/tmp")}},
+		{"kimi", "Kimi Code", []Signal{cmd("kimi"), path(".kimi-code")}},
+		{"qwen", "Qwen Code", []Signal{cmd("qwen"), path(".qwen")}},
+		// G3-105: these find the OpenCode app, which says nothing about an OpenCode Go
+		// subscription; Settings labels the row "OpenCode installed" and says when no key is set.
+		{"opencodego", "OpenCode", []Signal{cmd("opencode"), path(".config/opencode")}},
+		// The Kiro reader asks the Kiro CLI; the Kiro IDE alone also creates ~/.kiro but cannot be read.
+		{"kiro", "Kiro", []Signal{cmd("kiro-cli")}},
+		{"amp", "Amp", []Signal{cmd("amp"), path(".local/share/amp")}},
+		{"droid", "Droid", []Signal{cmd("droid"), path(".factory")}},
+		{"grok", "Grok Build", []Signal{cmd("grok"), path(".grok")}},
+		// Antigravity keeps its data in ~/.gemini/antigravity and installs an `antigravity` launcher.
+		{"antigravity", "Antigravity", []Signal{cmd("antigravity"), path(".gemini/antigravity")}},
 	} {
 		e := Entry{ProviderID: tool.id, DisplayName: tool.name, ReaderID: "native:" + tool.id, Preferred: "native", MinCLI: "0.0.0", Beta: true, DetectionStatus: "signals"}
-		signals := []Signal{{Type: "command", Name: tool.command}, {Type: "path", Value: tool.path}}
-		if tool.id == "zai" {
-			// ZCode ships as Desktop and as the zcode-app-cli package; a host may install the
-			// latter as `zcode-cli` with its own data under ~/.local/share/zcode-community (G3-21).
-			signals = append(signals, Signal{Type: "command", Name: "zcode-cli"}, Signal{Type: "path", Value: ".local/share/zcode-community"},
-				Signal{Type: "path", Value: ".local/share/zcode-cli"}, Signal{Type: "path", Value: "Library/Application Support/ZCode"})
-		}
-		for _, s := range signals {
+		for _, s := range tool.signals {
 			b, _ := json.Marshal(s)
 			e.Signals = append(e.Signals, b)
 		}

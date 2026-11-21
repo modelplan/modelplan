@@ -1,0 +1,1 @@
+A window with no known reset time no longer forecasts a false early run-out when another Codex thread still holds readings from before an unseen reset, and its "runs out soon" warning now expires with its recent burn rate instead of staying on in cached views.

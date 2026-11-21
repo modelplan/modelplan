@@ -14,17 +14,18 @@ final class SettingsV1NotificationKindsTests: XCTestCase {
         XCTAssertTrue(full.contains { $0.key == .expiring } && full.contains { $0.key == .stale })
         XCTAssertEqual(SettingsPreferences().notifications.kinds, Set(NotificationKind.allCases), "The saved preference keeps every kind")
     }
-    func testSET_9_29ForecastKindFollowsTheEngineForecastProducer() throws {
+    /// ALR-52 (WP-11, supersedes SET-9-29): v1 sends only the reset and official-extra-reset kinds, so the forecast
+    /// kind has no v1 row even when the engine reports its forecast producer (the forecast shows on the ALERT lamp).
+    func testALR_52V1OffersOnlyTheTwoDeliveredKinds() throws {
+        XCTAssertEqual(NotificationKind.delivered, [.reset, .official])
         var v1 = SettingsPageContext(); v1.configureV1NormalEntry()
-        XCTAssertFalse(try SettingsCatalogue.rows(preferences: .init(), context: v1).contains { $0.key == .forecast })
-        v1.observeForecastProducer(true)
-        let shown = try XCTUnwrap(try SettingsCatalogue.rows(preferences: .init(), context: v1).first { $0.key == .forecast })
-        XCTAssertEqual(shown.availability, .available)
-        XCTAssertEqual(shown.value, .toggle(true))
-        v1.observeForecastProducer(false)
-        XCTAssertFalse(try SettingsCatalogue.rows(preferences: .init(), context: v1).contains { $0.key == .forecast })
-        XCTAssertNotNil(v1.unavailableControls[.forecast])
-        // Outside the v1 entry nothing is hidden.
+        for producer in [false, true] {
+            v1.observeForecastProducer(producer)
+            let kinds = try SettingsCatalogue.rows(preferences: .init(), context: v1).compactMap { NotificationKind(rawValue: $0.key.rawValue) }
+            XCTAssertEqual(Set(kinds), NotificationKind.delivered, "producer \(producer)")
+        }
+        // Outside the v1 entry nothing is hidden, and the saved preference keeps every kind.
         XCTAssertTrue(try SettingsCatalogue.rows(preferences: .init(), context: .init()).contains { $0.key == .forecast })
+        XCTAssertEqual(SettingsPreferences().notifications.kinds, Set(NotificationKind.allCases))
     }
 }

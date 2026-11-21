@@ -383,11 +383,18 @@ type codexbarEntry struct {
 	Status      string                `json:"status"`           // ok | estimated | error
 	Error       string                `json:"error,omitempty"`
 	Plan        string                `json:"plan,omitempty"`
-	ObservedAt  time.Time             `json:"observedAt"`
-	Windows     []Window              `json:"windows,omitempty"`
+	// DetectedKeyRef (D90, owner 2026-11-14): the local reference (identity.go) of the GLM key detected on
+	// this Mac at this reading, "" when none. Compared with the entered key's reference; never a key.
+	DetectedKeyRef string `json:"detectedKeyRef,omitempty"`
+	// NativeNextAttemptAt preserves a legacy request deadline when a key change erases its reading.
+	NativeNextAttemptAt *time.Time `json:"nativeNextAttemptAt,omitempty"`
+	ObservedAt          time.Time  `json:"observedAt"`
+	Windows             []Window   `json:"windows,omitempty"`
 	// SubscriptionRef: the account's reference (identity.go), from CodexBar's account id or, for a
 	// native reader, the API key; neither is kept.
 	SubscriptionRef string `json:"subscriptionRef,omitempty"`
+	// ReportedModels (D99): model slugs the tool itself lists for the signed-in account; slugs only.
+	ReportedModels []string `json:"reportedModels,omitempty"`
 
 	identity string
 }

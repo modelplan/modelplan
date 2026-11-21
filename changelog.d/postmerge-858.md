@@ -1,1 +1,0 @@
-Revoking or re-granting a history source while another one is still importing no longer restores the revoked source's rows or aborts the other import, and first-run Done can no longer finish without saving the reading choices after a privacy reset.

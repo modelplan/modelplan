@@ -31,12 +31,19 @@ func (s sharedCockpit) AdmitCockpit(ctx context.Context, stamp appserver.Stamp) 
 	}
 	scopes := append([]string{}, view.Scopes...)
 	sort.Strings(scopes)
-	return queries.CockpitAdmission{Stamp: stamp, Scopes: scopes}, nil
+	// WP-17: the view the admission was decided on is the one the read uses.
+	return queries.CockpitAdmission{Stamp: stamp, Scopes: scopes, View: &view}, nil
 }
 func (s sharedCockpit) ReadCockpit(ctx context.Context, a queries.CockpitAdmission) (wire.CockpitData, error) {
-	view, err := s.backend.Get(ctx)
-	if err != nil {
-		return wire.CockpitData{}, err
+	var view appserver.View
+	if a.View != nil {
+		view = *a.View
+	} else {
+		v, err := s.backend.Get(ctx)
+		if err != nil {
+			return wire.CockpitData{}, err
+		}
+		view = v
 	}
 	scopes := append([]string{}, view.Scopes...)
 	sort.Strings(scopes)

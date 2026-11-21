@@ -3,7 +3,9 @@ import Foundation
 
 public struct DockCardRow:Equatable,Sendable {
     /// `event`: a plain sentence under the readout (prototype card.js .cd-events), such as D65's used-up line.
-    public enum Kind:Equatable,Sendable {case quota,extraQuota,reserve,statistic,notice,event}
+    /// `footnote`: D233 informational cause that needs no action; a small grey line at the bottom of the card.
+    /// `alert`: DOCK-3.8-52, the shared alert sentence (ALR-50) at the very bottom, in its status ink.
+    public enum Kind:Equatable,Sendable {case quota,extraQuota,reserve,statistic,notice,event,footnote,alert}
     public let id:String,kind:Kind,label:String,value:String,detail:String
     /// `remainingFraction` is the remaining truth; `fillFraction` is the bar length (D130: used in used mode). Tone follows remaining.
     public let remainingFraction:Double?,fillFraction:Double?,tone:DockQuotaStatus
@@ -13,6 +15,8 @@ public struct DockCardRow:Equatable,Sendable {
     public let pill:String
     /// Producer classification of a credits figure ("credits", "money" or ""). Never shown or spoken.
     public let hint:String
+    /// A plugin row (D327 variant A, see DockCardPluginStyle); nil for every quota row.
+    public var plugin:DockCardPluginStyle?=nil
     public init(id:String,kind:Kind,label:String,value:String,detail:String="",remainingFraction:Double?=nil,fillFraction:Double?? = nil,tone:DockQuotaStatus = .unknown,emphasised:Bool=false,pill:String="",hint:String=""){
         self.hint=hint;self.id=id;self.kind=kind;self.label=label;self.value=value;self.detail=detail;self.remainingFraction=remainingFraction;self.fillFraction=fillFraction ?? remainingFraction;self.tone=tone;self.emphasised=emphasised;self.pill=pill
     }
@@ -42,6 +46,12 @@ public enum DockCardProjection {
     /// Reuse the canonical Dock quota truth/readout rules. Other facts/copy come from the validated owner.
     public static func content(input:DockInstrumentInput,selectedWindowID:String?=nil,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",actionLabel:String="",redBelow:Double=25,at now:Date)throws->DockCardContent{
         _=try DockInstrumentProjection.evaluate(input,now:now,redBelow:redBelow)
+        if let ring=input.pluginRing{
+            // A plugin card: its own rows, then its footer line; never quota windows.
+            let footer=ring.cardFooter.isEmpty ? [] : [DockCardRow(id:"plugin.footer",kind:.footnote,label:"",value:ring.cardFooter)]
+            let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:ring.cardRows+footer,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel,actionLabel:ring.cardAction.isEmpty ? actionLabel:ring.cardAction)
+            try result.validate();return result
+        }
         var rows=[DockCardRow]()
         for window in input.windows{
             var scoped=input,cardWindow=window;cardWindow.isGeneral=true

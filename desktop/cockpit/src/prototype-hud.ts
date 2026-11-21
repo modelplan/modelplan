@@ -2,9 +2,11 @@
 // The porthole HUD from public published data: on the tall profile a mini frontier above the first six chart models,
 // on the compact profile one strip: a small frontier beside three stacked rows. It reads no scores of its own and shows nothing personal except which
 // effort a running session last reported. Prototype: rocket-r1/porthole.js:49-76 for behaviour; the code is written here.
+import {ht} from './host-text.js';
 import type {WireCockpitData} from '../generated/wire.js';
 import {FIELD_LIMIT,fieldModel,type FieldModel} from './field-model.js';
 import {cockpitMembers} from './members.js';
+import {memberModelList} from './plan-models.js';
 import {sessionMember} from './session-binding.js';
 import {shortLabel} from '../study/rocket-r1/short-label.js';
 
@@ -15,27 +17,36 @@ const svg=<K extends keyof SVGElementTagNameMap>(tag:K,attributes:Record<string,
 const toolDevelopers:Readonly<Record<string,string>>={codex:'openai',claude:'anthropic',gemini:'google',grok:'xai',kimi:'kimi',zai:'zhipuai',minimax:'minimax',qwen:'alibaba'};
 const WEEK=7*864e5,USED_LIMIT=3;
 export interface HudOptions {readonly scope?:string;readonly now?:number;readonly selected?:string|null;readonly closed?:boolean}
-export type HudModel=FieldModel&{readonly dominated:boolean;readonly latestEffort?:string|null};
+export type HudModel=FieldModel&{readonly dominated:boolean;readonly latestEffort?:string|null;readonly running?:boolean};
 function roundRobin(list:readonly HudModel[]) {
  const groups=new Map<string,HudModel[]>();for(const m of list)(groups.get(m.dev)??groups.set(m.dev,[]).get(m.dev)!).push(m);
  const out:HudModel[]=[];for(let slot=0;slot<Math.max(0,...[...groups.values()].map(g=>g.length));slot++)for(const g of groups.values())if(g[slot])out.push(g[slot]!);
  return out;
 }
 /** One order for the scope (hud-selection/selection.js): models used this week, the lineup, then developers in turn; dominated last. */
-export function publishedFleet(data:WireCockpitData|null|undefined,scope='all',now=Date.now()):HudModel[] {
+export function publishedFleet(data:WireCockpitData|null|undefined,scope='all',now=Date.now(),limit=FIELD_LIMIT):HudModel[] {
  const published=data?.details?.publishedModels??[],developerOf=new Map(published.map(m=>[m.id,m.developerId]));
  const members=data?cockpitMembers(data):[],member=scope==='all'?null:members.find(m=>m.key===scope)??null;
  if(scope!=='all'&&!member)return [];
- const recent=[...(data?.details?.sessions??[])].filter(s=>{const at=Date.parse(s.lastObservedAt);return (!member||sessionMember(members,s)?.key===member.key)&&at>=now-WEEK&&at<=now;}).sort((a,b)=>Date.parse(b.lastObservedAt)-Date.parse(a.lastObservedAt));
+ // D86: "All" is the union of the user's own subscriptions, never the whole published field. A model counts when its plan lists it (planModels), or, without a list, when its
+ // developer is one of those subscriptions' developers, or a session bound to one of them used it this week (on a model that subscription carries).
+ const owned=member?[member]:members;
+ // The models the tool reports for the account (D98), else a published plan model list the member's plan matches, decide for that subscription; otherwise its developer does.
+ const lists=new Map(data?owned.map(m=>[m.key,{list:memberModelList(data,m.row.id,m.account.plan.id,m.account.subscriptionRef),developer:toolDevelopers[m.row.id]}]):[]);
+ const carries=(l:{list:ReadonlySet<string>|null|undefined;developer:string|undefined},id:string)=>l.list?l.list.has(id):l.developer!==undefined&&l.developer===developerOf.get(id);
+ const usable=(id:string)=>[...lists.values()].some(l=>carries(l,id));
+ // WP-14 (V1-FINAL §5): a session adds its model only when its subscription carries it; a subscription that names neither a model list nor a developer
+ // (OpenCode Go, Cursor) cannot say, so its sessions still count. A Claude Code session pointed at another vendor's model is not that subscription's model.
+ const recent=[...(data?.details?.sessions??[])].filter(s=>{const at=Date.parse(s.lastObservedAt),bound=sessionMember(members,s),l=bound?lists.get(bound.key):undefined;return !!l&&(!l.list&&l.developer===undefined||carries(l,s.model))&&at>=now-WEEK&&at<=now;}).sort((a,b)=>Date.parse(b.lastObservedAt)-Date.parse(a.lastObservedAt));
  const latest=new Map<string,string|null>();for(const s of recent)if(!latest.has(s.model))latest.set(s.model,s.effort);
- const developer=member?toolDevelopers[member.row.id]:undefined;
- const candidates=published.flatMap(m=>{const f=fieldModel(m,shortLabel);return f&&(!member||developerOf.get(m.id)===developer||latest.has(m.id))?[f]:[];});
+ const running=new Set(recent.filter(s=>s.state==='running').map(s=>s.model));
+ const candidates=published.flatMap(m=>{const f=fieldModel(m,shortLabel);return f&&(usable(m.id)||latest.has(m.id))?[f]:[];});
  const beaten=(m:FieldModel)=>candidates.some(n=>n.id!==m.id&&n.sel[2]>0&&m.sel[2]>0&&n.sel[1]>=m.sel[1]&&n.sel[2]<=m.sel[2]&&(n.sel[1]>m.sel[1]||n.sel[2]<m.sel[2]));
- const models=candidates.map((m):HudModel=>({...m,dominated:beaten(m),...(latest.has(m.id)?{latestEffort:latest.get(m.id)??null}:{})}));
+ const models=candidates.map((m):HudModel=>({...m,dominated:beaten(m),...(latest.has(m.id)?{latestEffort:latest.get(m.id)??null}:{}),...(running.has(m.id)?{running:true}:{})}));
  const byId=new Map(models.map(m=>[m.id,m]));
  const used=[...latest.keys()].flatMap(id=>{const m=byId.get(id);return m?[m]:[];}).slice(0,USED_LIMIT),taken=new Set(used.map(m=>m.id));
  const rest=models.filter(m=>!taken.has(m.id)),lineup=(data?.details?.publication?.models??[]).flatMap(p=>{const m=rest.find(x=>x.id===p.id&&!x.dominated);return m?[m]:[];}),picked=new Set(lineup.map(m=>m.id));
- return [...used,...lineup,...roundRobin(rest.filter(m=>!m.dominated&&!picked.has(m.id))),...roundRobin(rest.filter(m=>m.dominated&&!picked.has(m.id)))].slice(0,FIELD_LIMIT);
+ return [...used,...lineup,...roundRobin(rest.filter(m=>!m.dominated&&!picked.has(m.id))),...roundRobin(rest.filter(m=>m.dominated&&!picked.has(m.id)))].slice(0,limit);
 }
 /** Each model's most recently seen effort, when a session reported one that the model publishes. */
 function seenEfforts(models:readonly HudModel[]) {
@@ -79,9 +90,9 @@ export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,r
 export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,compact:boolean,locale:string,options:HudOptions={}) {
  const fleet=publishedFleet(data,options.scope,options.now),rows=fleet.slice(0,compact?COMPACT_ROWS:TALL_ROWS);
  host.replaceChildren();host.hidden=!!options.closed||!rows.length;host.classList.toggle('hud-b',!compact);host.classList.toggle('hud-strip',compact);if(host.hidden)return;
- host.setAttribute('role','group');host.setAttribute('aria-label',locale==='en'?'Published models':'已发布模型');
+ host.setAttribute('role','group');host.setAttribute('aria-label',ht(locale,'host.hudAria'));
  // G3-48: the compact strip follows the study at 640 (86x30 chart, then three 10 px rows), not three columns.
- const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),compact?86:162,compact?30:77,locale==='en'?'Ability against cost at each recommended effort':'各推荐档位的能力与成本',locale==='en'?{ability:'Ability',cost:'Cost'}:{ability:'能力',cost:'成本'}));host.append(chart);
+ const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),compact?86:162,compact?30:77,ht(locale,'host.hudChartLabel'),{ability:ht(locale,'host.hudAbility'),cost:ht(locale,'host.hudCost')}));host.append(chart);
  const list=document.createElement('div');list.className='hud-list';
  for(const [i,m] of rows.entries()){
   const row=document.createElement('button');row.type='button';row.className='hp'+(m.id===options.selected?' selected':'')+(!compact&&m.dominated?' dominated':'');row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;
@@ -90,11 +101,14 @@ export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,co
   const atStar=m.latestEffort!==undefined&&m.latestEffort?.toLowerCase()===m.rec.toLowerCase(),elsewhere=m.latestEffort!==undefined&&!atStar;
   const name=document.createElement('b');name.textContent=m.short;if(elsewhere)name.className='gold';
   const rec=document.createElement('span');rec.className='hp-rec'+(atStar?' on':'');rec.textContent='★'+m.rec;
-  row.append(n,name,rec);list.append(row);
+  row.append(n,name,rec);
+  // CKP-PORT-51: a small green dot after the ★ effort (final-3: at the row's end) while a session runs this model now.
+  if(m.running){const on=document.createElement('i');on.className='hp-on';on.setAttribute('role','img');on.setAttribute('aria-label',ht(locale,'host.running'));row.append(on);}
+  list.append(row);
  }
  host.append(list);
 }
-/** A row or point opens the model on 档位; hovering one tells the porthole which rocket to light. */
+/** A row or point opens the model on 模型; hovering one tells the porthole which rocket to light. */
 export function wireHud(host:HTMLElement,pick:(id:string)=>void):()=>void {
  const controller=new AbortController(),{signal}=controller,idOf=(e:Event)=>(e.target as Element).closest?.('[data-hud-model]')?.getAttribute('data-hud-model')??null;
  const hover=(name:string|null)=>host.dispatchEvent(new CustomEvent('hud-hover',{detail:name,bubbles:true})),nameOf=(e:Event)=>(e.target as Element).closest?.('[data-hud-name]')?.getAttribute('data-hud-name')??null;

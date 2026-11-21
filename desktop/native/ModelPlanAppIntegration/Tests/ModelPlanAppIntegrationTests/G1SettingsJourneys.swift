@@ -11,11 +11,15 @@ import ModelPlanWire
 private actor G1SettingsEngine: EngineClient {
     let store: EngineStore
     let rows: WireRowsSnapshot
+    /// The reader's handshake answer. First run v1 (#881, FR-9-10/FR-9-11, owner 11-12 answer 3) keeps Done disabled
+    /// until it arrives, so the first-run journeys need it; nil keeps the other journeys as they were.
+    let facts: WireConsentFacts?
     let context = EngineDeliveryContext(sessionID: "g1-settings", floor: .init(storeEpoch: "g1-settings", generation: 1), revision: 1)
-    init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
+    init(store: EngineStore, rows: WireRowsSnapshot, facts: WireConsentFacts? = nil) { self.store = store; self.rows = rows; self.facts = facts }
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context))); await store.consume(.context(context))
+        if let facts { await store.consume(.consentChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: facts), delivery: context))) }
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: rows.projection.invalidRowCount))
         return context
     }
@@ -32,10 +36,24 @@ private actor G1SettingsEngine: EngineClient {
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
 }
 
+/// Waits on concrete state: yields first so a state that is already true costs nothing, then polls every 2 ms.
+/// On timeout it fails with what was awaited and stops the test; it never falls through to the next step.
+private struct G1WaitTimedOut: Error {}
+@MainActor private func g1Wait(_ what: String, seconds: Double = 5, file: StaticString = #filePath, line: UInt = #line,
+                          _ ready: () async -> Bool) async throws {
+    let end = ContinuousClock.now + .seconds(seconds)
+    var spins = 0
+    while !(await ready()) {
+        if ContinuousClock.now >= end { XCTFail("Timed out after \(seconds) s waiting for \(what)", file: file, line: line); throw G1WaitTimedOut() }
+        spins += 1
+        if spins < 50 { await Task.yield() } else { try await Task.sleep(for: .milliseconds(2)) }
+    }
+}
+
 /// Window journeys are compiled locally; execution requires an admitted GUI CI runner.
 @MainActor final class G1SettingsJourneys: XCTestCase {
     private func entry(locale: String, discoveredMembers: Int? = nil, profileURL: URL? = nil,
-                       startsComposition: Bool = true) async throws -> EngineDockMenuApplication {
+                       startsComposition: Bool = true, handshake: Bool = false) async throws -> EngineDockMenuApplication {
         let profile = profileURL ?? FileManager.default.temporaryDirectory.appendingPathComponent("g1-settings-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
@@ -59,14 +77,27 @@ private actor G1SettingsEngine: EngineClient {
             projection["rows"] = rows; root["projection"] = projection
         }
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        var facts: WireConsentFacts?
+        if handshake {
+            // The captured facts with no tool scopes: the reader answered and found nothing to tick, so Done needs no choice.
+            let factsCapture = capture.deletingLastPathComponent().appendingPathComponent("WireConsentFacts.json")
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: factsCapture)) as? [String: Any])
+            object["scopes"] = [[String: Any]]()
+            facts = try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: object))
+        }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
-        let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"), makeClient: { _, target in G1SettingsEngine(store: target, rows: rows) }, activateSettings: {})
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"), makeClient: { _, target in G1SettingsEngine(store: target, rows: rows, facts: facts) }, activateSettings: {})
         addTeardownBlock { @MainActor in await app.composition.stop() }
         await app.prepare()
         if startsComposition { await app.composition.start() }
         return app
     }
     private func flatten(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(flatten) }
+    /// First run v1 (#881, owner 11-12 answer 3): Done opens with the reader's handshake. Wait for that state change.
+    private func waitUntilEnabled(_ button: NSButton, file: StaticString = #filePath, line: UInt = #line) async throws {
+        try await g1Wait("the first-run Done button to enable (reader handshake answered)", file: file, line: line) { button.isEnabled }
+        XCTAssertTrue(button.isEnabled, "Done opens once the reader answered the handshake", file: file, line: line)
+    }
     private func firstRun(_ app: EngineDockMenuApplication) async throws -> NSWindow {
         let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
         await app.restoreFirstRunIfNeeded()
@@ -144,19 +175,20 @@ private actor G1SettingsEngine: EngineClient {
 
     func testG1_FR_9_06_LoginChoiceDefaultAndCompletion() async throws {
         for enabled in [true, false] {
-            let app = try await entry(locale: "en-US")
+            let app = try await entry(locale: "en-US", handshake: true)
             let window = try await firstRun(app)
             let login = try control("firstRun.login", in: window, as: NSButton.self)
             let done = try control("firstRun.done", in: window, as: NSButton.self)
+            try await waitUntilEnabled(done)
             XCTAssertEqual(login.state, .on)
             XCTAssertEqual(login.accessibilityHelp(), "You can turn this off in Settings")
-            XCTAssertGreaterThan(login.convert(login.bounds, to: nil).midY, done.convert(done.bounds, to: nil).midY)
+            // FR-9-11: the login choice and Done share the footer row, the choice on the left.
+            XCTAssertLessThan(login.convert(login.bounds, to: nil).minX, done.convert(done.bounds, to: nil).minX)
+            XCTAssertLessThan(abs(login.convert(login.bounds, to: nil).midY - done.convert(done.bounds, to: nil).midY), 40)
             if !enabled { XCTAssertTrue(login.isEnabled); login.performClick(nil) }
-            XCTAssertTrue(done.isEnabled); done.performClick(nil)
-            var saved = await app.foundationStore.snapshot()
-            for _ in 0..<1000 where !saved.preferences.onboarding.completed {
-                await Task.yield(); saved = await app.foundationStore.snapshot()
-            }
+            done.performClick(nil)
+            try await g1Wait("onboarding to be saved as completed") { await app.foundationStore.snapshot().preferences.onboarding.completed }
+            let saved = await app.foundationStore.snapshot()
             XCTAssertTrue(saved.preferences.onboarding.completed)
             XCTAssertEqual(saved.preferences.openAtLogin, enabled)
         }
@@ -170,13 +202,17 @@ private actor G1SettingsEngine: EngineClient {
         app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(),
                            displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
     }
+    private func firstRunWindowNow(after before: Set<ObjectIdentifier>) -> NSWindow? {
+        NSApplication.shared.windows.first(where: { window in
+            !before.contains(ObjectIdentifier(window)) && window.isVisible &&
+                (window.contentView.map { flatten($0).contains { $0.accessibilityIdentifier() == "firstRun.done" } } ?? false)
+        })
+    }
+    /// Absence check: the relaunch is already at its ready step, and the sheet must still not appear within 1.5 s.
     private func firstRunWindow(after before: Set<ObjectIdentifier>, seconds: Double) async throws -> NSWindow? {
         let end = ContinuousClock.now + .seconds(seconds)
         repeat {
-            if let window = NSApplication.shared.windows.first(where: { window in
-                !before.contains(ObjectIdentifier(window)) && window.isVisible &&
-                    (window.contentView.map { flatten($0).contains { $0.accessibilityIdentifier() == "firstRun.done" } } ?? false)
-            }) { return window }
+            if let window = firstRunWindowNow(after: before) { return window }
             try await Task.sleep(for: .milliseconds(20))
         } while ContinuousClock.now < end
         return nil
@@ -185,27 +221,24 @@ private actor G1SettingsEngine: EngineClient {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-g3-24-" + UUID().uuidString)
         XCTAssertFalse(FileManager.default.fileExists(atPath: profile.path), "Precondition: a fresh synthetic profile")
         let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
-        let app = try await entry(locale: "en-US", profileURL: profile, startsComposition: false)
+        let app = try await entry(locale: "en-US", profileURL: profile, startsComposition: false, handshake: true)
         XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.onboarding.completed, false)
         launch(app)
-        let presented = try await firstRunWindow(after: before, seconds: 5)
-        let window = try XCTUnwrap(presented, "The normal launch must present the first-run sheet on a fresh profile")
+        try await g1Wait("the normal launch to present the first-run sheet on a fresh profile") { firstRunWindowNow(after: before) != nil }
+        let window = try XCTUnwrap(firstRunWindowNow(after: before), "The normal launch must present the first-run sheet on a fresh profile")
         addTeardownBlock { @MainActor in window.close() }
         XCTAssertFalse(app.lifecyclePaused)
         let done = try control("firstRun.done", in: window, as: NSButton.self)
-        XCTAssertTrue(done.isEnabled); done.performClick(nil)
-        var saved = await app.foundationStore.snapshot()
-        for _ in 0..<1000 where !saved.preferences.onboarding.completed {
-            await Task.yield(); saved = await app.foundationStore.snapshot()
-        }
+        try await waitUntilEnabled(done); done.performClick(nil)
+        try await g1Wait("onboarding to be saved as completed") { await app.foundationStore.snapshot().preferences.onboarding.completed }
+        let saved = await app.foundationStore.snapshot()
         XCTAssertTrue(saved.preferences.onboarding.completed)
         window.close(); await app.stopLifecycle(); await app.composition.stop()
 
         let relaunchBefore = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
-        let reopened = try await entry(locale: "en-US", profileURL: profile, startsComposition: false)
+        let reopened = try await entry(locale: "en-US", profileURL: profile, startsComposition: false, handshake: true)
         launch(reopened)
-        let end = ContinuousClock.now + .seconds(5)
-        while reopened.lifecyclePaused && ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(20)) }
+        try await g1Wait("the relaunch to reach the ready step") { !reopened.lifecyclePaused }
         XCTAssertFalse(reopened.lifecyclePaused, "Precondition: the relaunch reached the ready step that restores first run")
         let again = try await firstRunWindow(after: relaunchBefore, seconds: 1.5)
         XCTAssertNil(again, "A completed profile must not get the first-run sheet again")
@@ -236,7 +269,19 @@ private actor G1SettingsEngine: EngineClient {
                 guard let field = field as? NSTextField, !field.isHiddenOrHasHiddenAncestor else { return nil }
                 return field.stringValue
             }
-            XCTAssertTrue(subscriptionLabels.contains { isHeading($0, order) }, "D87: Settings > Subscriptions has the Order section (\(locale))")
+            // D87/D89: the Order section is replaced by the order controls on the Subscriptions rows; the legacy heading is gone there too.
+            XCTAssertFalse(subscriptionLabels.contains { isHeading($0, order) }, "D87: Subscriptions shows order on its rows, not a separate Order section (\(locale))")
+        }
+    }
+
+    /// WP-16 / SET-9-51: the Subscriptions pane shows the "My subscriptions" section and, when there are detected tools, its siblings.
+    func testG1_WP16_SubscriptionsPaneSectionHeadings() async throws {
+        for (locale, mine) in [("en-US", "My subscriptions"), ("zh-CN", "我的订阅")] {
+            let app = try await entry(locale: locale)
+            let window = try await settings(app, pane: "subscriptions")
+            let labels = flatten(try XCTUnwrap(window.contentView)).compactMap { ($0 as? NSTextField)?.stringValue }
+            XCTAssertTrue(labels.contains { $0 == mine || $0.hasSuffix(" · " + mine) }, "Missing \(mine) (\(locale))")
+            XCTAssertFalse(labels.contains("Detected, not added"), "old heading text is gone (\(locale))")
         }
     }
 
@@ -394,10 +439,43 @@ private actor G1SettingsEngine: EngineClient {
 
     func testG1_SET_9_13_SubscriptionOrderChangesAndReset() async throws {
         let app = try await entry(locale: "en-US", discoveredMembers: 3)
-        // D87 item 1 (G3-68, #788): the order control lives in Settings > Subscriptions.
+        // D87 item 1 (G3-68, #788) and slice 6: the order and visibility controls live in Settings > Subscriptions. This
+        // journey presses the production window's own buttons; nothing here replaces the rows context or its actions.
         let window = try await settings(app, pane: "subscriptions")
-        try assertControls(["settings.order.list"], in: window)
-        throw XCTSkip("Three-member drag, arrow actions, engine-column order and relaunch are not yet exercised")
+        let editor = app.settingsHost.application.editor
+        var ids: [String] = []
+        try await g1Wait("two verified subscriptions and the first Down button", seconds: 5) {
+            ids = editor.context.subscriptions.filter { !$0.isUnstable }.map(\.id)
+            return ids.count >= 2 && (window.contentView.map { flatten($0).contains { $0.accessibilityIdentifier() == "subscriptions.down." + ids[0] } } ?? false)
+        }
+        XCTAssertGreaterThanOrEqual(ids.count, 2, "the app's own rows give at least two verified subscriptions")
+        guard ids.count >= 2 else { return }
+        let controller = try XCTUnwrap(window.windowController as? SettingsWindowController)
+        func press(_ id: String) async throws {
+            let button = try control(id, in: window, as: NSButton.self)
+            XCTAssertTrue(button.isEnabled, "\(id) is enabled")
+            button.performClick(nil)
+            await controller.waitForPendingSave()
+        }
+        func order() async -> [String] {
+            let saved = await app.foundationStore.snapshot().preferences
+            return (try? saved.presentedSubscriptionIDs(editor.context.subscriptions.filter { !$0.isUnstable }.map(\.id), includingHidden: true)) ?? []
+        }
+        let initial = await order()
+        XCTAssertEqual(Array(initial.prefix(2)), Array(ids.prefix(2)))
+        // SET-9-13: down moves the first subscription one place; Reset order restores the default.
+        try await press("subscriptions.down." + ids[0])
+        let moved = await order()
+        XCTAssertEqual(moved.first, ids[1], "the second subscription is now first")
+        try await press("subscriptions.resetOrder")
+        let reset = await order()
+        XCTAssertEqual(reset, initial, "Reset order restores the shared order")
+        // SET-9-16: the visibility switch is a display edit saved in the preferences; it never touches reading consent.
+        let consentBefore = app.scopeConsentEntry.controller.phase
+        try await press("subscriptions.visible." + ids[0])
+        let hidden = await app.foundationStore.snapshot().preferences.subscriptions.hiddenIDs
+        XCTAssertTrue(hidden.contains(ids[0]), "switching a row off hides it from the widget list")
+        if case .idle = consentBefore, case .idle = app.scopeConsentEntry.controller.phase {} else { XCTFail("visibility and order never ask for reading consent") }
     }
 
     func testG1_SET_9_15_AppearanceAndAccessibilityApplyLive() async throws {

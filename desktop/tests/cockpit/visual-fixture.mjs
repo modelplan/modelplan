@@ -23,11 +23,12 @@ export function visualFixture(){
  ];
  data.details={version:1,sources:['local-history'],subscriptions,sessions,sessionCoverage:'local-last-seen',resetEvents:[],alerts:[]};
  const faders=[
-  {id:'sol',name:'GPT-6.1 Sol',short:'Sol 6.1',rec:'Med',e:[['Low',33.9,.132,38],['Med',39.8,.248,70],['High',42.8,.375,104],['XHigh',46,.63,162],['Max',47.5,1.056,221]],accounts:['study-codex'],sessions:[{ref:sessions[0].sessionRef}]},
-  {id:'opus',name:'Claude Opus 5.5',short:'Opus 5.5',rec:'Med',e:[['Low',45.6,1.2,94],['Med',55.4,2.9,228],['High',58.1,3.95,310],['XHigh',60.1,7.5,515],['Max',62.4,13,891]],accounts:['study-claude'],sessions:[{ref:sessions[1].sessionRef}]},
-  {id:'glm',name:'GLM-5.3',short:'GLM-5.3',rec:'Max',e:[['Max',49.4,4.2,424]],accounts:['study-glm'],sessions:[{ref:sessions[2].sessionRef}]},
+  {id:'sol',name:'GPT-6.1 Sol',short:'Sol 6.1',rec:'Med',e:[['Low',33.9,.132,38],['Med',39.8,.248,70],['High',42.8,.375,104],['XHigh',46,.63,162],['Max',47.5,1.056,221]],accounts:['study-codex'],sessions:[{ref:sessions[0].sessionRef}],use:{tokens:212e6,share:.17}},
+  {id:'opus',name:'Claude Opus 5.5',short:'Opus 5.5',rec:'Med',e:[['Low',45.6,1.2,94],['Med',55.4,2.9,228],['High',58.1,3.95,310],['XHigh',60.1,7.5,515],['Max',62.4,13,891]],accounts:['study-claude'],sessions:[{ref:sessions[1].sessionRef}],use:{tokens:480e6,share:.81}},
+  {id:'glm',name:'GLM-5.3',short:'GLM-5.3',rec:'Max',e:[['Max',49.4,4.2,424]],accounts:['study-glm'],sessions:[{ref:sessions[2].sessionRef}],use:{tokens:96e6,share:.02}},
  ];
- const accounts=[{id:'study-codex',colour:'#10a37f'},{id:'study-claude',colour:'#d97757'},{id:'study-glm',colour:'#3859ff'}];
+ // WP-08: each card's use in the range (the normal entry reads it from the local history ranking).
+ const accounts=[{id:'study-codex',colour:'#6aa8ff'},{id:'study-claude',colour:'#ff9a6a'},{id:'study-glm',colour:'#8f7dff'}];
  return {data,publication:{accounts,faders,selectedModel:'glm'}};
 }
 

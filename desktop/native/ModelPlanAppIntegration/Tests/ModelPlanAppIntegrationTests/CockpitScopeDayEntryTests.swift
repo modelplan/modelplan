@@ -27,7 +27,7 @@ import ModelPlanWire
             var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
             value["appearance"] = nil
             value["shell"] = nil
-            value["redBelow"] = nil; value["showUsedPercent"] = nil
+            value["redBelow"] = nil; value["showUsedPercent"] = nil; value["showAllModels"] = nil
             value["type"] = "ready"
             value["sequence"] = "1"
             value["appearanceVersion"] = 2
@@ -38,6 +38,9 @@ import ModelPlanWire
         } catch { XCTFail("Synthetic page failed to become ready: \(error)") }
     }
     func updateScope(_ key: String) { scopes.append(key) }
+    private(set) var ranges: [CockpitRange] = []
+    /// CKP-SHELL-50: the app hands its range over before the page loads.
+    func updateRange(_ value: CockpitRange) { ranges.append(value) }
     func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) { self.data = data }
     func clearPrivateViews(adopting context: CockpitEngineContext?) async { data = nil; _ = try? bridge.clear(adopting: context) }
     private(set) var closed = false
@@ -54,10 +57,10 @@ import ModelPlanWire
 }
 
 extension CommunityCockpitEntryTests {
-    /// CKP-ENTRY-04 (C-35): through the normal entry and the real app-server, a scope chosen in the cockpit is
-    /// still selected when it is opened again later that day, and the first open on the next day starts at All.
-    /// D64: the same holds across quitting and reopening the app that day. The day comes from the app's own clock.
-    @MainActor func testNormalEntryKeepsTheScopeForTheDayAndStartsTheNextDayAtAll() async throws {
+    /// CKP-SHELL-50 (supersedes CKP-ENTRY-04): through the normal entry and the real app-server, a scope and a range
+    /// chosen in the cockpit are still selected when it is opened again, after quitting and reopening the app, and on
+    /// a later day. The range reaches each new page before it loads.
+    @MainActor func testNormalEntryKeepsTheScopeAndRangeAcrossRestartsAndDays() async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
               FileManager.default.isExecutableFile(atPath: path) else {
             throw XCTSkip("The real synthetic-test CLI is not available")
@@ -176,21 +179,23 @@ extension CommunityCockpitEntryTests {
 
             wall = noon.addingTimeInterval(24 * 3600)
             let nextDay = try await openAndWaitForData()
-            XCTAssertEqual(nextDay.scopes.first, "all", "The first open on the next day starts at All")
-            XCTAssertEqual(nextDay.scopes.last, "all")
+            XCTAssertEqual(nextDay.scopes.first, key, "CKP-SHELL-50: the next day keeps the scope")
+            XCTAssertEqual(nextDay.scopes.last, key)
+            // MENU-52: the page's range key asks the app; the app keeps it for every surface.
+            XCTAssertEqual(nextDay.ranges.first, .sevenDays, "A fresh profile starts at 7d")
+            nextDay.onIntent?(.rangeSelect(.thirtyDays))
+            XCTAssertEqual(app.cockpitRange.value, .thirtyDays)
+            XCTAssertEqual(nextDay.ranges.last, .thirtyDays, "The app echoes the range to the open page")
             close(nextDay)
 
-            // D64: a launch on a later day ignores the scope saved on an earlier one.
+            // A launch on a later day restores both.
             await app.composition.stop()
-            wall = noon
+            wall = noon.addingTimeInterval(49 * 3600)
             (app, settings) = try await launch()
-            let earlier = try await openAndWaitForData()
-            earlier.onIntent?(.scopeSelect(key)); close(earlier)
-            await app.composition.stop()
-            wall = noon.addingTimeInterval(25 * 3600)
-            (app, settings) = try await launch()
+            XCTAssertEqual(app.cockpitRange.value, .thirtyDays, "The range is kept across a restart")
             let laterDay = try await openAndWaitForData()
-            XCTAssertEqual(laterDay.scopes.first, "all", "A restart on a later day starts at All")
+            XCTAssertEqual(laterDay.scopes.first, key, "A restart on a later day keeps the scope")
+            XCTAssertEqual(laterDay.ranges.first, .thirtyDays, "The page has the range before it loads")
             close(laterDay)
             await app.composition.stop()
         } catch {

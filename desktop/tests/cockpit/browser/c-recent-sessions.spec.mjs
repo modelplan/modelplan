@@ -15,6 +15,7 @@ async function open(page,data,{locale='en',names=true}={}){
  expect(await receive(send('load',{appearance:{...appearance,locale,showProjectNames:names},shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
+ page.ctx={send,receive};
 }
 function fixture(){
  const data=visualFixture().data,ref=data.projection.rows[0].accounts[0].subscriptionRef;
@@ -29,7 +30,8 @@ function fixture(){
 async function timeView(page,period){
  await page.getByRole('button',{name:'Breakdown',exact:true}).click();
  await page.locator('[data-opt="where"] b').nth(1).click();
- await page.locator('[data-opt="time"] b').nth(period==='7d'?1:0).click();
+ // The range is the header's (WP-09), not a key on the Breakdown page: the host sets it.
+ expect(await page.ctx.receive(page.ctx.send('shell',{...shell,range:period}))).toBe(true);
 }
 const rows=page=>page.locator('.ws-list .ws').evaluateAll(list=>list.map(e=>e.dataset.mfd.slice('session:'.length)));
 
@@ -47,7 +49,7 @@ test('D63 the Today view keeps only today’s sessions',async({page})=>{
  expect(await rows(page)).toEqual(['00000000000000a1']);
 });
 test('D63 a subscription scope keeps its own recorded sessions; unbound ones stay under All',async({page})=>{
- await open(page,fixture());await page.keyboard.press('1');await timeView(page,'7d');
+ await open(page,fixture());await timeView(page,'7d');await page.keyboard.press('1');
  expect(await rows(page)).toEqual(['00000000000000a1','00000000000000b2']);
 });
 test('D63 project names off hide the recorded sessions’ labels too',async({page})=>{

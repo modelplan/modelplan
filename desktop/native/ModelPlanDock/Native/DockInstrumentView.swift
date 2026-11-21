@@ -64,6 +64,10 @@ enum DockGripInk {
     /// Separate empty-state action; never routed through subscription/overflow interaction.
     public var onEmptyAction: (() -> Bool)? { didSet { refreshNodes() } }
     public var permitsEmptyAction: ((DockActionSource) -> Bool)?
+    /// G3-136: true when the pointer comes onto the painted empty station, false when it leaves, so the host can show
+    /// the one-line reason card on hover (as a ring's card shows on hover).
+    public var onEmptyHover: ((Bool) -> Void)?
+    private var emptyHovered = false
     public weak var backgroundDragDelegate:(any DockBackgroundDragHandling)?
     public weak var nozzleEventDelegate:(any DockNozzleEventHandling)?
     public var keyboardNavigationEnabled=false
@@ -274,6 +278,8 @@ enum DockGripInk {
     private var refreshSweepOriginal: (image: CGImage, usesHoverViewport: Bool)?
     private var refreshSweepGeneration: UInt64 = 0
     @_spi(DockResourceChecks) public private(set) var refreshSweepCountForChecks = 0
+    /// G3-98: (member, readout alpha, readout text) of every held number in every sweep frame, for checks.
+    @_spi(DockResourceChecks) public private(set) var refreshSweepReadoutFramesForChecks: [(id: String, alpha: Double, text: String)] = []
     @_spi(DockResourceChecks) public var refreshSweepAnimatingForChecks: Bool { refreshSweepTask != nil }
     /// The effect driver only receives a currently successful official skin.
     var workingEffectSkin: DockInstrumentSkin? { failed || community ? nil : skin }
@@ -476,9 +482,18 @@ enum DockGripInk {
             imageUsesHoverViewport = false
             appliedGeometryScale = factor
             let values=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)}),result=try renderer.render(skin:skin,readings:values,notices:notices,scale:renderScale)
+            // G3-98: a landed result releases the hold; until then the new render keeps the number hidden.
+            // A hold whose member is absent from this render is kept: the engine replaces content by clearing and
+            // reinstalling it in one turn, so the member can be missing from the intermediate render. The sweep loop
+            // drops it once the settled readings lack the member, and its own clock ends it in any case.
+            for (id,hold) in readoutHolds where hold.resolvedAt==nil {
+                if let new=values[id],hold.outgoing.readout != new.readout || hold.outgoing.remainingPercent != new.remainingPercent || hold.outgoing.dataState != new.dataState {resolveRefreshReadout(id)}
+            }
+            var held:DockRenderResult?
+            if !readoutHolds.isEmpty || refreshSweepRing != nil {let (heldReadings,heldSkin)=heldFrame(values,skin:skin,at:now);held=try renderer.render(skin:heldSkin,readings:heldReadings,notices:notices,scale:renderScale)}
             community=false;failed=false;self.skin=skin;self.scale=renderScale;self.locale=locale;self.notices=notices
             self.officialRenderer=renderer
-            presentedTextMetricsForChecks=result.metrics;orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;restingInstrumentImage=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
+            presentedTextMetricsForChecks=result.metrics;orderedIDs=rows.map(\.subscriptionID);readings=values;image=held?.image ?? result.image;restingInstrumentImage=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
             frame.size = viewport?.size ?? skin.bounds.size
             CATransaction.begin();CATransaction.setDisableActions(true);layer?.contentsScale=CGFloat(renderScale)
             let visible=Set(skin.stations.compactMap(\.subscriptionID))
@@ -489,13 +504,18 @@ enum DockGripInk {
                 if parent.superlayer == nil{layer?.addSublayer(parent)};workingLayerParents[id]=parent
             }
             CATransaction.commit();refreshNodes();needsDisplay=true
+            if !readoutHolds.isEmpty || refreshSweepRing != nil { runRefreshSweep(original: (result.image, false)) }
         } catch {
             retireOfficialPresentation()
             throw error
         }
     }
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
-    public func retireOfficialPresentation() {
+    /// `keepingRefreshHolds`: a content replacement (clear, then reinstall with the landed value) keeps the G3-98
+    /// ring-click holds, so the reinstalled render fades the new number in instead of popping it. A privacy
+    /// withdrawal, a failed render and the view leaving its window still drop them.
+    public func retireOfficialPresentation(keepingRefreshHolds: Bool = false) {
+        if !keepingRefreshHolds { readoutHolds = [:]; refreshSweepRing = nil }
         setAccessibilityValue(nil)
         clearFocusedHelpExplanation(); resetVisuals(); focusedGripIndex = nil; registeredGripRects = []; registeredGripArtRects = []; community = false; failed = true
         restingInstrumentImage = nil
@@ -505,7 +525,7 @@ enum DockGripInk {
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){ringPress=nil;readoutHolds=[:];refreshSweepRing=nil;onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onEmptyHover=nil;emptyHovered=false;onVisualReset=nil}
     private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
@@ -563,39 +583,91 @@ enum DockGripInk {
         onNozzlePosesChanged?()
     }
 
+    /// G3-98: each refreshed ring's number is hidden from its click until its own result lands. Holds are
+    /// per member, so refreshing another ring never releases one still waiting.
+    private struct ReadoutHold { let started: TimeInterval; let outgoing: DockInstrumentReading; var resolvedAt: TimeInterval? }
+    private var readoutHolds: [String: ReadoutHold] = [:]
+    /// The ring of the latest click sweeps for 0.6 s; earlier holds keep their own clocks.
+    private var refreshSweepRing: (id: String, started: TimeInterval)?
+    private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+    private func heldAlpha(_ hold: ReadoutHold, at time: TimeInterval) -> Double {
+        DockRefreshSweep.readoutAlpha(elapsed: max(0, time - hold.started), resolvedAt: hold.resolvedAt, reduceMotion: false)
+    }
+    /// The frame shown at `time`: the swept ring, each held number at its alpha, and the outgoing text kept
+    /// until that number has fully faded out (a result landing during the fade-out never swaps visible text).
+    private func heldFrame(_ readings: [String: DockInstrumentReading], skin: DockInstrumentSkin, at time: TimeInterval) -> ([String: DockInstrumentReading], DockInstrumentSkin) {
+        var frame = readings, copy = skin
+        if let ring = refreshSweepRing, let reading = frame[ring.id],
+           let progress = DockRefreshSweep.fraction(elapsed: max(0, time - ring.started), target: 1, reduceMotion: false) {
+            frame[ring.id] = reading.refreshSweepFrame(progress: progress)
+        }
+        for (id, hold) in readoutHolds {
+            if time - hold.started < DockRefreshSweep.readoutFadeOut, let shown = frame[id] {
+                frame[id] = shown.refreshSweepFrame(progress: 1, readout: hold.outgoing.readout)
+            }
+            if let i = copy.stations.firstIndex(where: { $0.subscriptionID == id }) { copy.stations[i].readoutOpacity = heldAlpha(hold, at: time) }
+        }
+        return (frame, copy)
+    }
+    /// The host reports that the refresh failed or never started; the number may return now.
+    public func resolveRefreshReadout(_ id: String) {
+        guard var hold = readoutHolds[id], hold.resolvedAt == nil else { return }
+        hold.resolvedAt = now - hold.started; readoutHolds[id] = hold
+    }
+
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
     @discardableResult public func playRefreshSweep(_ id: String, reduceMotion: Bool) -> Bool {
+        guard !failed, !community, skin != nil, officialRenderer != nil,
+              let reading = readings[id], reading.remainingPercent != nil else { return false }
         cancelRefreshSweep()
-        guard !failed, !community, let skin, let renderer = officialRenderer, let original = image,
-              let reading = readings[id], reading.remainingPercent != nil,
-              original.width <= 4096, original.height <= 4096,
-              original.width * original.height <= 4_194_304 else { return false }
+        guard let original = image, original.width <= 4096, original.height <= 4096,
+              original.width * original.height <= 4_194_304 else { readoutHolds = [:]; refreshSweepRing = nil; return false }
         refreshSweepCountForChecks += 1
-        if reduceMotion { return true }
-        refreshSweepOriginal = (original, imageUsesHoverViewport)
+        refreshSweepReadoutFramesForChecks.removeAll { $0.id == id }
+        let time = now
+        if reduceMotion { readoutHolds[id] = nil; refreshSweepRing = nil }
+        else {
+            // A repeated click on a ring still waiting keeps that hold and its outgoing number.
+            if readoutHolds[id]?.resolvedAt != nil || readoutHolds[id] == nil {
+                readoutHolds[id] = ReadoutHold(started: time, outgoing: reading, resolvedAt: nil)
+            }
+            refreshSweepRing = (id, time)
+        }
+        runRefreshSweep(original: (original, imageUsesHoverViewport))
+        return true
+    }
+    private func runRefreshSweep(original: (image: CGImage, usesHoverViewport: Bool)) {
+        guard !readoutHolds.isEmpty || refreshSweepRing != nil else { return }
+        refreshSweepOriginal = original
         refreshSweepGeneration &+= 1
-        let token = refreshSweepGeneration, base = readings, notices = self.notices, scale = self.scale
-        let started = ProcessInfo.processInfo.systemUptime
+        let token = refreshSweepGeneration
         refreshSweepTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                guard let self, self.refreshSweepGeneration == token else { return }
-                let elapsed = max(0, ProcessInfo.processInfo.systemUptime - started)
-                guard let progress = DockRefreshSweep.fraction(elapsed: elapsed, target: 1, reduceMotion: false) else { break }
-                var frame = base; frame[id] = reading.refreshSweepFrame(progress: progress)
+                guard let self, self.refreshSweepGeneration == token,
+                      let skin = self.skin, let renderer = self.officialRenderer else { return }
+                let time = self.now
+                self.readoutHolds = self.readoutHolds.filter { self.readings[$0.key] != nil }
+                let (frame, sweepSkin) = self.heldFrame(self.readings, skin: skin, at: time)
+                for (id, hold) in self.readoutHolds {
+                    self.refreshSweepReadoutFramesForChecks.append((id, self.heldAlpha(hold, at: time), frame[id]?.readout ?? ""))
+                }
                 let viewport = self.nozzlePosesForChecks.isEmpty ? nil : self.hoverViewport
                 do {
-                    self.image = try renderer.render(skin: skin, readings: frame, notices: notices, scale: scale,
+                    self.image = try renderer.render(skin: sweepSkin, readings: frame, notices: self.notices, scale: self.scale,
                         poses: self.nozzlePosesForChecks, cachedBackground: self.backgroundImage, viewport: viewport).image
                     self.imageUsesHoverViewport = viewport != nil
                 } catch { break }
                 self.needsDisplay = true
-                if elapsed >= DockRefreshSweep.duration { break }
+                // A hold ends once its number is fully back; the ring sweep ends after its 0.6 s.
+                self.readoutHolds = self.readoutHolds.filter { time - $0.value.started < DockRefreshSweep.readoutEnd(resolvedAt: $0.value.resolvedAt) }
+                if let ring = self.refreshSweepRing, time - ring.started >= DockRefreshSweep.duration { self.refreshSweepRing = nil }
+                if self.readoutHolds.isEmpty && self.refreshSweepRing == nil { break }
                 try? await Task.sleep(for: .milliseconds(50))
             }
             guard let self, self.refreshSweepGeneration == token else { return }
+            self.readoutHolds = [:]; self.refreshSweepRing = nil
             self.cancelRefreshSweep()
         }
-        return true
     }
     private func cancelRefreshSweep() {
         refreshSweepGeneration &+= 1; refreshSweepTask?.cancel(); refreshSweepTask = nil
@@ -604,8 +676,8 @@ enum DockGripInk {
             refreshSweepOriginal = nil; needsDisplay = true
         }
     }
-    public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
-    public override func viewDidHide(){clearFocusedHelpExplanation();focusedGripIndex=nil;focusedNoticeID=nil;resetVisuals();super.viewDidHide()}
+    public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{readoutHolds=[:];refreshSweepRing=nil;resetVisuals()};super.viewWillMove(toWindow:newWindow)}
+    public override func viewDidHide(){readoutHolds=[:];refreshSweepRing=nil;clearFocusedHelpExplanation();focusedGripIndex=nil;focusedNoticeID=nil;resetVisuals();super.viewDidHide()}
     private func clearObservers(){
         windowObservers.forEach{NotificationCenter.default.removeObserver($0)};windowObservers=[]
         if let workspaceObserver{NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver);self.workspaceObserver=nil}
@@ -631,13 +703,14 @@ enum DockGripInk {
     public func communityRowText(_ id:String) -> String? {
         guard community,let r=readings[id] else { return nil }
         let heading=[r.alias ?? r.name,r.readout].joined(separator:"  ")
-        guard r.remainingPercent == nil else { return heading }
+        // A plugin ring has no quota percentage and is never "unavailable" (macrevb-1096-5).
+        guard r.remainingPercent == nil,r.pluginRing == nil else { return heading }
         let reason=r.unavailableReason?.trimmingCharacters(in:.whitespacesAndNewlines)
         return heading+"\n"+String((reason?.isEmpty == false ? reason! : locale.hasPrefix("zh") ? "不可用" : "Unavailable").prefix(80))
     }
     public func communityRowIsDimmed(_ id:String) -> Bool {
         guard community, let reading=readings[id] else { return false }
-        return reading.remainingPercent == nil
+        return reading.remainingPercent == nil && reading.pluginRing == nil
     }
     public override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();invalidatePresentation()}
     public override func draw(_ dirtyRect:NSRect){
@@ -656,15 +729,58 @@ enum DockGripInk {
         if !community { NSColor.clear.setFill(); bounds.fill(using: .copy); return }
         NSColor.windowBackgroundColor.setFill();bounds.fill()
         if failed {let label=locale.hasPrefix("zh") ? "仪表暂不可用":"Instruments unavailable";(label as NSString).draw(at:CGPoint(x:12,y:12),withAttributes:[.font:NSFont.systemFont(ofSize:12),.foregroundColor:NSColor.secondaryLabelColor]);return}
+        if let rect = emptyStationRect {
+            // G3-136 in the neutral edition: a plain dashed ring marks the empty station (no reserved artwork).
+            let ring = NSBezierPath(ovalIn: rect.insetBy(dx: (rect.width - min(rect.width, rect.height)) / 2 + 2, dy: (rect.height - min(rect.width, rect.height)) / 2 + 2))
+            ring.lineWidth = 1; ring.setLineDash([3, 3], count: 2, phase: 0)
+            NSColor.secondaryLabelColor.setStroke(); ring.stroke()
+        }
         for (index,id) in orderedIDs.enumerated(){guard let r=readings[id] else{continue}
             let value=communityRowText(id) ?? [r.alias ?? r.name,r.readout].joined(separator:"  ")
             let context = NSGraphicsContext.current?.cgContext
             context?.saveGState()
             if let control = stationRect(id) { context?.clip(to: control) }
             let scale=communityRowHeight/44,paragraph=NSMutableParagraphStyle();paragraph.lineBreakMode = .byTruncatingTail
+            if let ring=r.pluginRing,let context {
+                drawCommunityPluginRow(ring,reading:r,in:CGRect(x:0,y:CGFloat(index)*communityRowHeight,width:bounds.width,height:communityRowHeight),scale:scale,context:context,paragraph:paragraph)
+                context.restoreGState();continue
+            }
             (value as NSString).draw(in:CGRect(x:12*scale,y:CGFloat(index)*communityRowHeight+8*scale,width:bounds.width-24*scale,height:communityRowHeight-12*scale),withAttributes:[.font:NSFont.monospacedSystemFont(ofSize:12*scale,weight:.regular),.foregroundColor:communityRowIsDimmed(id) ? NSColor.secondaryLabelColor : NSColor.labelColor,.paragraphStyle:paragraph])
             context?.restoreGState()
         }
+    }
+    /// macrevb-1096-5: the neutral edition draws a plugin ring with no reserved art: the two arcs in the plugin ink
+    /// (outer solid + faint, inner thin) beside the name and readout; the label stays neutral and only the number is toned.
+    public static func communityPluginGeometry(row:CGRect,scale:CGFloat)->(ring:CGRect,text:CGRect){
+        let side=row.height-12*scale
+        let ring=CGRect(x:row.minX+12*scale,y:row.minY+6*scale,width:side,height:side)
+        return (ring,CGRect(x:ring.maxX+8*scale,y:row.minY+8*scale,width:max(0,row.maxX-ring.maxX-20*scale),height:row.height-12*scale))
+    }
+    public static func communityNumberColor(_ tone:DockQuotaStatus)->NSColor{
+        tone == .critical ? .systemRed : tone == .warning ? .systemOrange : .labelColor
+    }
+    private func drawCommunityPluginRow(_ ring:DockPluginRing,reading r:DockInstrumentReading,in row:CGRect,scale:CGFloat,context c:CGContext,paragraph:NSParagraphStyle){
+        let g=Self.communityPluginGeometry(row:row,scale:scale)
+        let ink=CGColor(srgbRed:ring.red,green:ring.green,blue:ring.blue,alpha:1)
+        let centre=CGPoint(x:g.ring.midX,y:g.ring.midY),outerWidth=3*scale,innerWidth=1.5*scale
+        let outerRadius=g.ring.width/2-outerWidth/2,innerRadius=outerRadius-outerWidth-1.5*scale
+        // This view is flipped: angles run clockwise from 12 o'clock with `clockwise: false`, as in the official ring.
+        func arc(_ radius:CGFloat,_ width:CGFloat,from a:Double,to b:Double,alpha:CGFloat){
+            guard b>a,radius>0 else{return}
+            c.saveGState();c.setStrokeColor(ink.copy(alpha:alpha) ?? ink);c.setLineWidth(width);c.setLineCap(.butt)
+            c.addArc(center:centre,radius:radius,startAngle:-.pi/2+CGFloat(a)*2 * .pi,endAngle:-.pi/2+CGFloat(b)*2 * .pi,clockwise:false)
+            c.strokePath();c.restoreGState()
+        }
+        let outer=min(1,max(0,ring.outer)),faint=min(1-outer,max(0,ring.outerFaint))
+        arc(outerRadius,outerWidth,from:0,to:1,alpha:0.12)
+        arc(outerRadius,outerWidth,from:0,to:outer,alpha:1)
+        arc(outerRadius,outerWidth,from:outer,to:outer+faint,alpha:0.35)
+        if let inner=ring.inner{arc(innerRadius,innerWidth,from:0,to:1,alpha:0.12);arc(innerRadius,innerWidth,from:0,to:min(1,max(0,inner)),alpha:1)}
+        let font=NSFont.monospacedSystemFont(ofSize:12*scale,weight:.regular)
+        let parts=DockPluginRing.readoutParts(r.readout)
+        let text=NSMutableAttributedString(string:(r.alias ?? r.name)+"  "+parts.label,attributes:[.font:font,.foregroundColor:NSColor.labelColor,.paragraphStyle:paragraph])
+        text.append(NSAttributedString(string:parts.number,attributes:[.font:font,.foregroundColor:Self.communityNumberColor(ring.readoutTone),.paragraphStyle:paragraph]))
+        text.draw(in:g.text)
     }
     private func stationRect(_ id:String)->CGRect? {
         if community {
@@ -677,12 +793,29 @@ enum DockGripInk {
         return CGRect(x:s.centre.x-s.diameter/2-origin.x,y:s.centre.y-s.diameter/2-origin.y,width:s.diameter,height:s.diameter)
     }
     private var emptyStationRect: CGRect? {
-        guard !community, !failed, let skin,
+        if community {
+            // D57/D321: the neutral edition has no skin; with no rows its one empty row is the station (same hit size as a row).
+            guard !failed, orderedIDs.isEmpty else { return nil }
+            let inset = 8 * communityRowHeight / 44
+            return CGRect(x: 0, y: 0, width: bounds.width, height: communityRowHeight).insetBy(dx: inset, dy: inset)
+        }
+        guard !failed, let skin,
               let station = skin.stations.first(where: { $0.placeholderStyle != nil && $0.placeholderLabel != nil && $0.subscriptionID == nil && $0.overflowCount == nil }) else { return nil }
         return CGRect(x: station.centre.x-station.diameter/2-layoutOrigin.x,
                       y: station.centre.y-station.diameter/2-layoutOrigin.y, width: station.diameter, height: station.diameter)
     }
     @_spi(DockResourceChecks) public var emptyStationRectForChecks: CGRect? { emptyStationRect }
+    /// G3-136: where the empty station's reason card points (view-local), nil when no empty station is painted.
+    public var emptyStationAnchor: CGRect? { emptyStationRect }
+    /// G3-136: the pointer is over the painted empty station now (last mouseMoved/mouseExited).
+    public var emptyStationHovered: Bool { emptyHovered && emptyStationRect != nil }
+    private func updateEmptyHover(atLocal p: NSPoint?) {
+        let over = p.map { isPainted(atLocal: $0) && emptyStationRect?.contains($0) == true } ?? false
+        guard over != emptyHovered else { return }
+        emptyHovered = over; onEmptyHover?(over)
+    }
+    /// The same hover path mouseMoved/mouseExited take, for checks without a window event source.
+    @_spi(DockResourceChecks) public func hoverEmptyStationForChecks(atLocal p: NSPoint?) { updateEmptyHover(atLocal: p) }
     /// AppKit adds a node's parent-space frame to the parent's lower-left corner, whatever the
     /// parent's isFlipped says, so the top-down rects this view works in have to be turned over.
     private func accessibilityParentRect(_ rect:CGRect)->CGRect {
@@ -811,26 +944,70 @@ enum DockGripInk {
         let grip = isPainted(atLocal: p) ? registeredGripRects.firstIndex { $0.contains(p) } : nil
         if hoveredGripIndex != grip { hoveredGripIndex = grip; updateGripEmphasis() }
         nozzleEventDelegate?.hoverNozzle(hoverUnitID(atLocal:p))
+        updateEmptyHover(atLocal: p)
         onHelpPointerMoved?()
     }
     public override func mouseEntered(with event:NSEvent){mouseMoved(with:event)}
-    public override func mouseExited(with event:NSEvent){hoveredGripIndex=nil;updateGripEmphasis();nozzleEventDelegate?.hoverNozzle(nil);onHelpPointerMoved?()}
+    public override func mouseExited(with event:NSEvent){hoveredGripIndex=nil;updateGripEmphasis();nozzleEventDelegate?.hoverNozzle(nil);updateEmptyHover(atLocal:nil);onHelpPointerMoved?()}
     public override func mouseDragged(with event:NSEvent){
-        if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.moveNozzle(local:convert(event.locationInWindow,from:nil));return}
-        guard let window,let handler=backgroundDragDelegate else{super.mouseDragged(with:event);return}
-        handler.updateBackgroundMove(global:window.convertPoint(toScreen:event.locationInWindow))
+        if ringPress != nil || nozzleEventDelegate?.hasCapture == true{
+            pointerDragged(local:convert(event.locationInWindow,from:nil),global:window?.convertPoint(toScreen:event.locationInWindow));return
+        }
+        guard let window,backgroundDragDelegate != nil else{super.mouseDragged(with:event);return}
+        pointerDragged(local:convert(event.locationInWindow,from:nil),global:window.convertPoint(toScreen:event.locationInWindow))
+    }
+    /// D244 (owner 2026-11-13): rings never reorder. A press on a ring that moves more than 5 pt carries the
+    /// whole widget, exactly as a press on its body does (Pulse); a stationary press stays the ring's click.
+    /// The order is set in Settings › Subscriptions; Option-arrow keyboard reorder is unchanged.
+    /// The admitted ring press is kept here, apart from the controller's nozzle capture: a content refresh
+    /// (engine delivery, presentation tick, context update) cancels that capture, but must not cancel the
+    /// press, so the carry and the stationary click both survive a refresh between press and move.
+    private var ringPress:(global:CGPoint,id:String)?
+    private func pointerDragged(local:CGPoint,global:CGPoint?){
+        if let press=ringPress{
+            if let global,let handler=backgroundDragDelegate,hypot(global.x-press.global.x,global.y-press.global.y)>5{
+                ringPress=nil
+                if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.cancelNozzle()}
+                if handler.beginCarry(global:press.global){handler.updateBackgroundMove(global:global)}
+                if handler.isBackgroundMoving{NSCursor.closedHand.set()}
+                return
+            }
+            if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.moveNozzle(local:local)}
+            return
+        }
+        if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.moveNozzle(local:local);return}
+        guard let global,let handler=backgroundDragDelegate else{return}
+        handler.updateBackgroundMove(global:global)
         if handler.isBackgroundMoving{NSCursor.closedHand.set()}
     }
     public override func mouseUp(with event:NSEvent){
-        if let handler=nozzleEventDelegate,handler.hasCapture,let window{
-            let p=convert(event.locationInWindow,from:nil),id:String?
-            if case .subscription(let current)?=pointerAction(atLocal:p),isPainted(atLocal:p){id=current}else{id=nil}
-            handler.endNozzle(global:window.convertPoint(toScreen:event.locationInWindow),currentID:id);return
-        }
-        if let window{backgroundDragDelegate?.endBackgroundMove(global:window.convertPoint(toScreen:event.locationInWindow))}
+        if let window{pointerUp(local:convert(event.locationInWindow,from:nil),global:window.convertPoint(toScreen:event.locationInWindow));return}
+        ringPress=nil
         NSCursor.arrow.set()
     }
-    public override func cancelOperation(_ sender:Any?){nozzleEventDelegate?.cancelNozzle();backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
+    private func pointerUp(local p:CGPoint,global:CGPoint){
+        let press=ringPress;ringPress=nil
+        let current:String?
+        if case .subscription(let id)?=pointerAction(atLocal:p),isPainted(atLocal:p){current=id}else{current=nil}
+        if let handler=nozzleEventDelegate,handler.hasCapture{handler.endNozzle(global:global,currentID:current);return}
+        // A refresh dropped the capture of a press that never moved: it is still the ring's click.
+        if let press{
+            if current==press.id,let onAction,permitsAction?(.subscription(press.id),.pointer) ?? true{onAction(.subscription(press.id))}
+            NSCursor.arrow.set();return
+        }
+        backgroundDragDelegate?.endBackgroundMove(global:global)
+        NSCursor.arrow.set()
+    }
+    /// Windowless checks drive the same press, drag and release path as the mouse handlers, with the
+    /// screen point a native window would report. Returns whether the press was taken.
+    @_spi(DockResourceChecks) @discardableResult public func performPointerDown(atLocal p:CGPoint,global:CGPoint)->Bool{
+        guard !failed else{return false}
+        if backgroundDragDelegate?.beginBackgroundMove(local:p,global:global) == true{return true}
+        return dispatchPointer(currentPoint:{p},nozzleGlobal:global)
+    }
+    @_spi(DockResourceChecks) public func performPointerDrag(atLocal p:CGPoint,global:CGPoint){pointerDragged(local:p,global:global)}
+    @_spi(DockResourceChecks) public func performPointerUp(atLocal p:CGPoint,global:CGPoint){pointerUp(local:p,global:global)}
+    public override func cancelOperation(_ sender:Any?){ringPress=nil;nozzleEventDelegate?.cancelNozzle();backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
     public override func keyDown(with event:NSEvent){
         let modifiers=event.modifierFlags.intersection([.option,.control,.command])
         if modifiers.isEmpty, event.keyCode == 53, keyboardTargetID != nil, onEscape?() == true { return }
@@ -884,6 +1061,9 @@ enum DockGripInk {
         return orderedIDs.first{stationRect($0)?.contains(p)==true}
     }
     @_spi(DockResourceChecks) public func hoverUnitIDForChecks(atLocal p:NSPoint)->String?{hoverUnitID(atLocal:p)}
+    /// G3-120: the ring unit under a sampled pointer (view-local), so card hover is read from the
+    /// same pointer sample that decides leaving (Pulse `pointerMoved`), not only from tracking events.
+    public func ringUnitID(atLocal p:NSPoint)->String?{hoverUnitID(atLocal:p)}
     private func pointerAction(atLocal p:NSPoint)->DockInstrumentAction?{
         if let skin,!community {
             let global=CGPoint(x:p.x+layoutOrigin.x,y:p.y+layoutOrigin.y)
@@ -906,7 +1086,11 @@ enum DockGripInk {
         // A gate can replace/reorder stations without removing their readings. Re-hit-test the
         // original physical pointer against the current presentation, rather than validating only ID existence.
         guard let current=currentPoint(),isPainted(atLocal:current),pointerAction(atLocal:current)==action else{return false}
-        if nozzleGlobal != nil,case .subscription(let id)=action,let handler=nozzleEventDelegate{return handler.beginNozzle(id:id,local:current)}
+        if let nozzleGlobal,case .subscription(let id)=action,let handler=nozzleEventDelegate{
+            let taken=handler.beginNozzle(id:id,local:current)
+            if taken{ringPress=(global:nozzleGlobal,id:id)}else{ringPress=nil}
+            return taken
+        }
         guard let onAction else{return false};onAction(action);return true
     }
     /// Neutral checks exercise the same dispatcher without creating a native window/event source.

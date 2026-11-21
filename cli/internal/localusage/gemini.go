@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/localday"
 	"io"
 	"math"
 	"os"
@@ -17,6 +18,9 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/modelplan/modelplan/cli/internal/profile"
+	"github.com/modelplan/modelplan/cli/internal/tokenacct"
 )
 
 const (
@@ -36,7 +40,7 @@ type setting struct {
 }
 
 func SettingsPath(home string) string {
-	return filepath.Join(home, ".config", "modelplan", "local-usage.json")
+	return profile.ConfigFile(home, "local-usage.json")
 }
 func GeminiHome(home string) string {
 	if p := os.Getenv("MODELPLAN_GEMINI_HOME"); p != "" && filepath.IsAbs(p) {
@@ -157,6 +161,10 @@ type Report struct {
 	Coverage       Coverage   `json:"coverage"`
 	Rows           []Row      `json:"rows"`
 	Sessions       []Session  `json:"sessions"`
+	// Accounting is ccusage's accounting of the same files (tokenacct): input
+	// without cache, cache read, output and reasoning, by local day; totals are
+	// the sum of the buckets. Rows and Sessions keep the tool's native counts.
+	Accounting *tokenacct.Windows `json:"accounting,omitempty"`
 }
 
 // GeminiStatus reads only modelplan's own consent setting, never Gemini data.
@@ -266,9 +274,10 @@ func readHistory(home string, now time.Time, tool historyTool) Report {
 		return files[i].at.After(files[j].at)
 	})
 	observations := map[string]observation{}
+	acct := accounting{root: tool.home(home), source: tool.source}
 	readBytes := int64(0)
 	localNow := now.Local()
-	cutoff := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, localNow.Location()).AddDate(0, 0, -HistoryDays+1)
+	cutoff := localday.Start(localNow.Year(), localNow.Month(), localNow.Day()-HistoryDays+1, localNow.Location())
 	for i, f := range files {
 		if i >= maxFiles || readBytes+f.size > maxReadBytes {
 			r.Coverage.Truncated = true
@@ -284,6 +293,7 @@ func readHistory(home string, now time.Time, tool historyTool) Report {
 			r.Coverage.FilesSkipped++
 			continue
 		}
+		acct.read(f, b)
 		records, err := tool.parse(b, strings.HasSuffix(f.path, ".jsonl"))
 		if err != nil {
 			r.Coverage.FilesSkipped++
@@ -404,6 +414,7 @@ func readHistory(home string, now time.Time, tool historyTool) Report {
 		}
 		return r.Sessions[i].LastAt.After(r.Sessions[j].LastAt)
 	})
+	r.Accounting = acct.windows(now)
 	r.Status, r.Reason = "ok", ""
 	if len(r.Rows) == 0 {
 		r.Status, r.Reason = "empty", "no-supported-local-usage"
