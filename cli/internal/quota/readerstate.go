@@ -145,6 +145,15 @@ func readerHash(cache, domain, value string) string {
 	if cache == "" || value == "" {
 		return ""
 	}
+	// The installation key never changes once written (identity cleanup keeps it) and
+	// writers replace the map atomically, so an existing key is read without the lock.
+	// Taking the lock for a read created and removed a file in the observed directory,
+	// which woke the app-server's own change watcher into another read (G3-147).
+	if m, ok := readSubscriptionMap(cache); ok {
+		if key := m.installationKey(); key != nil {
+			return keyedReaderHash(key, domain, value)
+		}
+	}
 	unlock, ok := lockFile(filepath.Join(cache, "observed", "subscriptions.lock"), time.Now(), 10*time.Second)
 	if !ok {
 		return ""
@@ -174,6 +183,10 @@ func readerHash(cache, domain, value string) string {
 			return ""
 		}
 	}
+	return keyedReaderHash(key, domain, value)
+}
+
+func keyedReaderHash(key []byte, domain, value string) string {
 	h := hmac.New(sha256.New, key)
 	_, _ = h.Write([]byte("reader:" + domain + "\x00" + value))
 	return hex.EncodeToString(h.Sum(nil))

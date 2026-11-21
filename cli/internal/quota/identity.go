@@ -67,6 +67,32 @@ type subscriptionItem struct {
 	LastAt time.Time `json:"lastAt"`
 }
 
+func subscriptionID(key []byte, basis, identity string) string {
+	h := hmac.New(sha256.New, key)
+	h.Write([]byte(basis + "\x00" + identity))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// readSubscriptionMap reads the map as it is, without the lock. Writers replace it
+// atomically, so a reader sees one whole version. ok is false when it is missing or invalid.
+func readSubscriptionMap(cache string) (subscriptionMap, bool) {
+	var m subscriptionMap
+	b, status := readBounded(subscriptionsPath(cache), 256<<10)
+	if status != "" || json.Unmarshal(b, &m) != nil || m.SchemaVersion != 1 || m.Refs == nil {
+		return subscriptionMap{}, false
+	}
+	return m, true
+}
+
+// installationKey is the existing 32-byte key, or nil when none has been made yet.
+func (m subscriptionMap) installationKey() []byte {
+	key, err := hex.DecodeString(m.Key)
+	if err != nil || len(key) != 32 {
+		return nil
+	}
+	return key
+}
+
 func subscriptionsPath(cache string) string {
 	return filepath.Join(cache, "observed", "subscriptions.json")
 }
@@ -77,6 +103,14 @@ func assignSubscription(cache, basis, identity string, now time.Time) string {
 	identity = strings.TrimSpace(identity)
 	if cache == "" || identity == "" {
 		return ""
+	}
+	// A fresh reference needs no write, so it is answered without the lock (G3-147).
+	if m, ok := readSubscriptionMap(cache); ok {
+		if key := m.installationKey(); key != nil {
+			if it, seen := m.Refs[subscriptionID(key, basis, identity)]; seen && now.Sub(it.LastAt) < time.Hour {
+				return it.Ref
+			}
+		}
 	}
 	unlock, ok := lockFile(filepath.Join(cache, "observed", "subscriptions.lock"), now, 10*time.Second)
 	if !ok {
@@ -105,9 +139,7 @@ func assignSubscription(cache, basis, identity string, now time.Time) string {
 		}
 		m.Key = hex.EncodeToString(key)
 	}
-	h := hmac.New(sha256.New, key)
-	h.Write([]byte(basis + "\x00" + identity))
-	id := hex.EncodeToString(h.Sum(nil))
+	id := subscriptionID(key, basis, identity)
 	it, seen := m.Refs[id]
 	if !seen {
 		r := randomBytes(8)

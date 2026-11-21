@@ -212,7 +212,17 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 			changed = true
 		}
 		f.Records = records
-		if len(records) == 0 {
+		if len(records) == 0 && f.LiveObserved && day(time.Unix(0, f.Modified)) >= windowFrom(now, 35) {
+			// A live-scanned file with nothing in the window keeps only its size and time, so the
+			// next observation skips it while it is unchanged. Dropping it made every 30 s pass
+			// parse the whole file again and rewrite the ledger, which woke the change watcher
+			// into a new snapshot (G3-147). It holds no record or session reference.
+			if f.Session != "" || f.Parent != "" || !f.Started.IsZero() {
+				f.Session, f.Parent, f.Started = "", "", time.Time{}
+				changed = true
+			}
+			l.Files[key] = f
+		} else if len(records) == 0 {
 			delete(l.Files, key)
 		} else {
 			l.Files[key] = f

@@ -488,6 +488,15 @@ func getJSONAuthorization(ctx context.Context, c *http.Client, url, authorizatio
 	return nil
 }
 
+func nativeProviderIDs() []string {
+	ids := make([]string, 0, len(nativeReaders))
+	for id := range nativeReaders {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
 // applyNative adds one account per native provider with a recent usable reading, and one source
 // status per native provider saying what was read or why not.
 func applyNative(r *Report, p Paths, now time.Time) {
@@ -506,8 +515,10 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			legacySelections[s.Provider] = true
 		}
 	}
-	for provider, n := range nativeReaders {
-		if n.Managed != nil && !legacySelections[provider] {
+	// Sorted, so the report (and every snapshot built from it) has one order; map order
+	// changed the sources between identical reads and published a new snapshot (G3-147).
+	for _, provider := range nativeProviderIDs() {
+		if n := nativeReaders[provider]; n.Managed != nil && !legacySelections[provider] {
 			if _, pending := PolicyPending(provider); pending {
 				if p.ReaderAccess == nil {
 					// Legacy cache-only readers report the veto only when a retained capture
