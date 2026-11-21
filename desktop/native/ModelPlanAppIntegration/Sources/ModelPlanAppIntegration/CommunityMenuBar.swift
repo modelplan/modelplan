@@ -15,10 +15,10 @@ extension StaticDockPreviewHost: CommunityMenuBarPreferencesProviding {}
 struct CommunityMenuBarProjector: CommunityMenuBarProviding {
     let preferences: @MainActor () -> SettingsPreferences?
     func make(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date) -> CommunityMenuBarPresentation {
-        guard let preferences = preferences() else { return .empty }
-        let inputs = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now).inputs
+        guard let preferences = preferences() else { return .emptyReading(chinese: SettingsLanguage.fallback == .chinese) }
+        let inputs = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now, language: preferences.language).inputs
         let ids = inputs.map(\.id)
-        guard Set(ids).count == ids.count, let order = try? preferences.presentedSubscriptionIDs(ids) else { return .empty }
+        guard Set(ids).count == ids.count, let order = try? preferences.presentedSubscriptionIDs(ids) else { return .emptyReading(chinese: preferences.language == .chinese) }
         let byID = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id, $0) })
         var lowest: (reading: DockInstrumentReading, remaining: Double, used: Bool)?
         for id in order {
@@ -29,7 +29,7 @@ struct CommunityMenuBarProjector: CommunityMenuBarProviding {
                   let remaining = reading.remainingPercent else { continue }
             if lowest.map({ remaining < $0.remaining }) ?? true { lowest = (reading, remaining, input.showUsedPercent) }
         }
-        guard let lowest else { return .empty }
+        guard let lowest else { return .emptyReading(chinese: preferences.language == .chinese) }
         let shown = lowest.used ? 100 - lowest.remaining : lowest.remaining
         let basis = lowest.used
             ? (preferences.language == .english ? "Used" : "已用")
@@ -50,6 +50,15 @@ struct CommunityMenuBarProjector: CommunityMenuBarProviding {
         guard main.bundleURL.pathExtension == "app" else { return nil }
         let resources = main.resourceURL ?? main.bundleURL.appendingPathComponent("Contents/Resources", isDirectory: true)
         return resources.appendingPathComponent(bundleName)
+    }
+    /// D57: the menu-bar image. The reserved tray template when the package carries it (official edition);
+    /// otherwise a plain system symbol, so a neutral package never shows an empty status item.
+    static func statusImage(appURL: URL? = nil) -> NSImage? {
+        if let image = templateImage(appURL: appURL) { return image }
+        let image = NSImage(systemSymbolName: "gauge.with.dots.needle.33percent", accessibilityDescription: "ModelPlan")
+        image?.isTemplate = true
+        image?.size = NSSize(width: 16, height: 16)
+        return image
     }
     static func templateImage(appURL: URL? = nil) -> NSImage? {
         let root = packagedBundleURL(appURL: appURL) ?? Bundle.module.bundleURL

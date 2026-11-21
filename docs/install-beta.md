@@ -7,7 +7,9 @@ The v1 Mac beta requires macOS 15 or later and is Apple silicon only. Intel-base
 
 Download the Mac app ZIP and its matching `SHA256SUMS` from the beta announcement or [ModelPlan's releases](https://github.com/modelplan/modelplan/releases). A CLI archive or GitHub's source-code ZIP is not the Mac app. Check the downloaded ZIP's SHA-256 against the published value before extracting it. You can calculate it in Terminal with `shasum -a 256`, followed by a space and the ZIP dragged from Finder.
 
-Extract the ZIP and drag the app into **Applications**. The community build is named **ModelPlan Community.app**; a beta release may use **ModelPlan.app**. Use the name of the app you downloaded in the steps below.
+Extract the ZIP and drag the app into **Applications**. The app is named **ModelPlan.app**.
+
+If an older build named "ModelPlan Community" is installed, quit it and move it to the Trash, and remove its entry under **System Settings > General > Login Items**. ModelPlan keeps your settings and history; it shows the same reminder when it finds the older app running. macOS asks again for notification permission and Open at Login, because the new app has a new identifier.
 
 ## What ad-hoc signing means
 

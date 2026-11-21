@@ -15,8 +15,9 @@ async function open(page,data,locale='en'){
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
 }
+// WP-08: the current effort is read from the card's effort line (the five ability bars are gone, CKP-FAD-04 superseded).
 const channels=page=>page.locator('.fd-ch:not(.empty)').evaluateAll(list=>list.map(ch=>({name:ch.querySelector('.st-name')?.textContent,
- clipped:(e=>e.scrollWidth>e.clientWidth+.5)(ch.querySelector('.st-name')),current:ch.querySelector('.eb.cur')?.dataset.l??null,
+ clipped:(e=>e.scrollWidth>e.clientWidth+.5)(ch.querySelector('.st-name')),current:ch.querySelector('.cd-cur')?.textContent??null,
  strip:[...ch.querySelectorAll('.st-vend b')].map(b=>getComputedStyle(b).getPropertyValue('--v').trim())})));
 
 test('B13 the model in use leads the faders with its short name, its brand strip and its current effort lit',async({page})=>{
@@ -49,6 +50,8 @@ test('B13 the HUD and the Effort page use short names',async({page})=>{
  const hud=await page.locator('.hud-list b').allTextContents();
  expect(hud).toContain('Sol 6.1');expect(hud).toContain('Terra 6.1');for(const name of hud)expect(name).not.toMatch(/^GPT-|^Claude /);
  await page.locator('[data-mfd="page:tune"]').click();
- const labels=await page.locator('.mfd-page text').allTextContents();
- expect(labels.join(' ')).toContain('Terra 6.1');expect(labels.join(' ')).not.toContain('GPT-6.1 Terra');
+ const names=await page.locator('.mfd-page .md-n').allTextContents();
+ expect(names).toContain('Terra 6.1');expect(names.join(' ')).not.toContain('GPT-6.1 Terra');
+ await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
+ expect((await page.locator('.mfd-page text').allTextContents()).join(' ')).not.toContain('GPT-6.1');
 });

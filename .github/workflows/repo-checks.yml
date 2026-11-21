@@ -61,6 +61,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # The workflow policy reads workflows as parsed YAML; hosted images do not ship PyYAML, so it is installed here and
+      # MODELPLAN_REQUIRE_YAML makes a missing parser a failure instead of a silent skip.
+      - name: Install PyYAML for the workflow policy
+        run: python3 -m pip install --disable-pip-version-check pyyaml==6.0.2
       - uses: actions/setup-go@v5
         if: steps.scope.outputs.notices == 'true'
         with:
@@ -70,10 +74,23 @@ jobs:
       # Each check below runs even when an earlier one failed, so one run reports every failure.
       - name: "source-policy: check-source-policy"
         if: ${{ !cancelled() }}
+        env:
+          MODELPLAN_REQUIRE_YAML: '1'
         run: node scripts/check-source-policy.mjs
       - name: "source-policy: workflow policy tests"
         if: ${{ !cancelled() }}
+        env:
+          MODELPLAN_REQUIRE_YAML: '1'
         run: node --test scripts/tests/workflow-policy.test.mjs
+      - name: "source-policy: mac-compile plan tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/mac-compile-plan.test.mjs
+      - name: "source-policy: mac-compile runner tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/mac-compile-run.test.mjs
+      - name: "source-policy: native-headless build seed tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/mac-compile-headless-seed.test.mjs
       - name: "source-policy: changelog tests and fragment check"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/changelog.test.mjs && node scripts/changelog.mjs --check
@@ -86,6 +103,18 @@ jobs:
       - name: "source-policy: merge-gates tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/merge-gates.test.mjs
+      - name: "source-policy: merge-gates hosted-leg tests (D314)"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/merge-gates-hosted.test.mjs
+      - name: "source-policy: dependency wake tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/dependency-wake.test.mjs
+      - name: "source-policy: workflow reviewer tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/pr-review.test.mjs
+      - name: "source-policy: Sol workflow reviewer tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/pr-review-sol.test.mjs
       - name: "source-policy: no sound or haptics (MOT-2.3-12)"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/no-sound-haptics.test.mjs
@@ -135,7 +164,7 @@ jobs:
   # the notices inputs changed; main pushes and manual runs always do.
   notices-macos:
     needs: checks
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'pull_request' || needs.checks.outputs.notices-mac == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'pull_request' || needs.checks.outputs.notices-mac == 'true') && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     runs-on: macos-latest
     timeout-minutes: 10
     steps:

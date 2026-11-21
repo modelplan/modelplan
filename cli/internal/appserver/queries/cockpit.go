@@ -17,6 +17,9 @@ type CockpitAdmission struct {
 	RedBelow int
 	Stamp    appserver.Stamp
 	Scopes   []string
+	// View, when set, is the engine view the admission was decided on; the handler and the
+	// read use it instead of building the same view again (WP-17). Never sent anywhere.
+	View *appserver.View
 }
 
 // CockpitSource admits every covered scope before reading display values.
@@ -63,9 +66,13 @@ func CockpitHandler(config CockpitConfig) (appserver.Handler, error) {
 		if !ok {
 			return appserver.Reply{}, protocol(wire.CodeConsentRejected)
 		}
-		view, err := config.State.Get(ctx)
-		if err != nil {
-			return appserver.Reply{}, err
+		view := admission.View
+		if view == nil {
+			v, err := config.State.Get(ctx)
+			if err != nil {
+				return appserver.Reply{}, err
+			}
+			view = &v
 		}
 		if view.Stamp != stamp {
 			return appserver.Reply{}, protocol(wire.CodeConsentChanged)
@@ -86,14 +93,27 @@ func CockpitHandler(config CockpitConfig) (appserver.Handler, error) {
 		if err := ctx.Err(); err != nil {
 			return appserver.Reply{}, err
 		}
-		view, err = config.State.Get(ctx)
+		// A consent change during the read refuses the reply. A backend that can tell its
+		// consent fence on its own is asked for that; every consent change moves the fence
+		// (WP-17). Any other backend builds the view again, as before.
+		if fence, ok := config.State.(appserver.StampReader); ok {
+			current, err := fence.CurrentStamp(ctx)
+			if err != nil {
+				return appserver.Reply{}, err
+			}
+			if current != stamp {
+				return appserver.Reply{}, protocol(wire.CodeConsentChanged)
+			}
+			return appserver.Reply{Stamp: stamp, Scopes: scopes, Data: data}, nil
+		}
+		after, err := config.State.Get(ctx)
 		if err != nil {
 			return appserver.Reply{}, err
 		}
-		if view.Stamp != stamp {
+		if after.Stamp != stamp {
 			return appserver.Reply{}, protocol(wire.CodeConsentChanged)
 		}
-		current, ok = cockpitScopes(view.Scopes)
+		current, ok = cockpitScopes(after.Scopes)
 		if !ok || !slices.Equal(scopes, current) {
 			return appserver.Reply{}, protocol(wire.CodeConsentChanged)
 		}

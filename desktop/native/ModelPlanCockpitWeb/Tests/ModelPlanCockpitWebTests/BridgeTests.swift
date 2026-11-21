@@ -20,7 +20,7 @@ final class BridgeTests: XCTestCase {
     -> String
   {
     var value = try object(outgoing)
-    for key in ["data", "appearance", "shell", "visible", "occluded", "key", "nowUnixMs", "reason", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "visible", "occluded", "key", "nowUnixMs", "reason", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels", "memberOrder"] { value[key] = nil }
     if type == "ready" {
       value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     }
@@ -71,6 +71,30 @@ final class BridgeTests: XCTestCase {
       XCTAssertThrowsError(try state.accept(encode(value), source: source))
     }
     _ = try state.accept(raw, source: source)
+  }
+  /// WP-22 (macrevb-1062-3): the enlarged field's selection goes to the page as a strict `select` message: a public
+  /// model id, or null for a clear. No receipt; nothing before the page is ready; malformed ids never leave.
+  func testFieldSelectionIsAStrictSelectMessage() throws {
+    let state = CockpitBridgeState(context: try context())
+    XCTAssertThrowsError(try state.setSelection("sonnet-5.5"), "not before the page is ready")
+    _ = try ready(state)
+    let chosen = try object(state.setSelection("sonnet-5.5"))
+    XCTAssertEqual(chosen["type"] as? String, "select"); XCTAssertEqual(chosen["model"] as? String, "sonnet-5.5")
+    let cleared = try object(state.setSelection(nil))
+    XCTAssertEqual(cleared["type"] as? String, "select"); XCTAssertTrue(cleared["model"] is NSNull)
+    XCTAssertEqual(Set(cleared.keys), ["version", "pageId", "requestId", "sessionId", "storeEpoch", "generation", "viewRevision", "sequence", "type", "model"])
+    for bad in ["", String(repeating: "x", count: 129), "a\u{1}b", "a\u{7f}b"] {
+      XCTAssertThrowsError(try state.setSelection(bad))
+    }
+  }
+  /// #1062: the field's close goes to the page as a header-only `fieldClosed` message, never before the page is ready.
+  func testFieldClosedIsAHeaderOnlyMessage() throws {
+    let state = CockpitBridgeState(context: try context())
+    XCTAssertThrowsError(try state.fieldClosed())
+    _ = try ready(state)
+    let closed = try object(state.fieldClosed())
+    XCTAssertEqual(closed["type"] as? String, "fieldClosed")
+    XCTAssertEqual(Set(closed.keys), ["version", "pageId", "requestId", "sessionId", "storeEpoch", "generation", "viewRevision", "sequence", "type"])
   }
   func testClearBarrierUnknownFloorAndStaleQueryCannotBeRetagged() throws {
     let state = CockpitBridgeState(context: try context())
@@ -336,6 +360,46 @@ final class BridgeTests: XCTestCase {
       sequence += 1
     }
   }
+  /// CKP-SHELL-39: the empty engine screen's button is one fixed action with no payload.
+  func testOpenSettingsSubscriptionsIsAFixedActionWithNoPayload() throws {
+    let state=CockpitBridgeState(context:try context()),load=try ready(state)
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    let display=try state.display(fixture(),ticket:XCTUnwrap(state.queryTicket))
+    _ = try state.accept(reply(display,"rendered",2),source:source)
+    XCTAssertEqual(try state.accept(reply(load,"action",3,extra:["action":"openSettingsSubscriptions"]),source:source),.action(.openSettingsSubscriptions))
+    XCTAssertThrowsError(try state.accept(reply(load,"action",4,extra:["action":"openSettingsSubscriptions","pane":"about"]),source:source),"no pane or URL crosses")
+  }
+  /// Owner D277 (CKP-ENG-27): the engine table's Refresh crosses as a current rendered member key or `all`, nothing else.
+  func testRefreshMemberRequiresARenderedMemberOrAll() throws {
+    let state=CockpitBridgeState(context:try context()),load=try ready(state)
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    XCTAssertThrowsError(try state.accept(reply(load,"action",3,extra:["action":"refreshMember","key":"0123456789abcdef"]),source:source),"no display yet")
+    let display=try state.display(fixture(),ticket:XCTUnwrap(state.queryTicket))
+    _ = try state.accept(reply(display,"rendered",2),source:source)
+    XCTAssertEqual(try state.accept(reply(load,"action",3,extra:["action":"refreshMember","key":"0123456789abcdef"]),source:source),.action(.refreshMember("0123456789abcdef")))
+    XCTAssertEqual(try state.accept(reply(load,"action",4,extra:["action":"refreshMember","key":"all"]),source:source),.action(.refreshMember("all")))
+    var sequence=5
+    for extra:[String:Any] in [["key":"/secret"],["key":"0000000000000999"],[:],["key":"all","tool":"codex"]] {
+      XCTAssertThrowsError(try state.accept(reply(load,"action",sequence,extra:extra.merging(["action":"refreshMember"]){$1}),source:source),"\(extra)")
+      sequence += 1
+    }
+  }
+  /// D244 / G3-111: the saved subscription order reaches the page on load and on every appearance update, so the
+  /// cockpit's tabs and columns follow it; none saved sends no order (the engine order), and only member keys cross.
+  func testSavedMemberOrderReachesThePageOnLoadAndAppearance() throws {
+    let saved = ["bbbbbbbbbbbbbbbb", "codex#saved_login_api", "aaaaaaaaaaaaaaaa"]
+    let state = CockpitBridgeState(context: try context())
+    let load = try state.load(.init(theme: .night, locale: .en, profile: .full, memberOrder: saved + ["all", "not a key", "bbbbbbbbbbbbbbbb"]),
+      shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+    XCTAssertEqual(try object(load)["memberOrder"] as? [String], saved, "member keys only, once each, in the saved order")
+    XCTAssertEqual(try state.accept(reply(load, "ready", 1), source: source), .ready)
+    let reordered = try state.setAppearance(.init(theme: .night, locale: .en, profile: .full, memberOrder: ["aaaaaaaaaaaaaaaa"]))
+    XCTAssertEqual(try object(reordered)["memberOrder"] as? [String], ["aaaaaaaaaaaaaaaa"])
+    let reset = try state.setAppearance(.init(theme: .night, locale: .en, profile: .full))
+    XCTAssertNil(try object(reset)["memberOrder"], "no saved order: the page keeps the engine order")
+    let plain = CockpitBridgeState(context: try context())
+    XCTAssertNil(try object(try ready(plain))["memberOrder"])
+  }
   func testEarlyAppearanceReportSurvivesLaterValidActionBeforeAck() throws {
     let state=CockpitBridgeState(context:try context()),load=try ready(state)
     _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
@@ -403,6 +467,26 @@ final class BridgeTests: XCTestCase {
     XCTAssertThrowsError(try state.accept(reply(display,"nextDeadline",4,extra:["deadlineUnixMs":"1234"]),source:source))
     state.dispose()
   }
+  /// CKP-SHELL-50: the page asks for one of the three ranges by key; anything else, an inactive page or a stray field fails closed.
+  func testRangeSelectAdmitsOnlyTheThreeRangesFromAnActivePage() throws {
+    let state=CockpitBridgeState(context:try context()),load=try ready(state)
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    var sequence=1
+    func action(_ key:String) throws -> String {
+      sequence+=1
+      var body=try object(reply(load,"action",sequence,extra:["action":"rangeSelect","key":key]))
+      body["requestId"]=UUID().uuidString; return try encode(body)
+    }
+    XCTAssertEqual(try state.accept(action("today"),source:source),.action(.rangeSelect(.today)))
+    XCTAssertEqual(try state.accept(action("7d"),source:source),.action(.rangeSelect(.sevenDays)))
+    XCTAssertEqual(try state.accept(action("30d"),source:source),.action(.rangeSelect(.thirtyDays)))
+    for key in ["24h","7","month",""] { XCTAssertThrowsError(try state.accept(action(key),source:source),key) }
+    var wrong=try object(action("7d"));wrong["range"]=wrong.removeValue(forKey:"key")
+    XCTAssertThrowsError(try state.accept(encode(wrong),source:source))
+    _ = try state.setVisibility(.init(visible:true,occluded:true,key:true))
+    XCTAssertThrowsError(try state.accept(action("7d"),source:source))
+    state.dispose()
+  }
   func testScopeRejectsUnknownKeysWrongFieldAndClearedMembership() throws {
     let state=CockpitBridgeState(context:try context()),load=try ready(state)
     _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
@@ -461,24 +545,19 @@ final class BridgeTests: XCTestCase {
   func testG396ResetEventKindAndConfirmationReachThePageTypedAsTheSchemaRequires() throws {
     var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     while !FileManager.default.fileExists(atPath: root.appendingPathComponent("schema/app-cli/captures").path) { root.deleteLastPathComponent() }
-    var data = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))) as? [String: Any])
-    var details = try XCTUnwrap(data["details"] as? [String: Any])
-    var announced = try XCTUnwrap((details["resetEvents"] as? [[String: Any]])?.first)
-    XCTAssertEqual(announced["kind"] as? String, "direct_reset", "the real Go capture carries kind like the producer")
-    announced["id"] = "banked-1"; announced["kind"] = "reset_credit"
-    var confirmed = announced
-    confirmed["id"] = "confirmed-1"; confirmed["status"] = "confirmed"; confirmed["confirms"] = "banked-1"
-    confirmed["confirmedAt"] = "2026-10-29T13:00:00Z"; confirmed["confirmedAtBasis"] = "firstSeen"
-    details["resetEvents"] = [announced, confirmed]
-    data["details"] = details
+    // The events are the real projector's (resetevents.CaptureEvents via swiftwire): announced direct reset, announced
+    // reset credit and a confirmed credit, generated, never transcribed here.
+    let data = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))) as? [String: Any])
+    let events = try XCTUnwrap((data["details"] as? [String: Any])?["resetEvents"] as? [[String: Any]])
+    XCTAssertEqual(events.map { $0["kind"] as? String }, ["reset_credit", "reset_credit", "direct_reset"])
     let wire = try WireDecoder.decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: data))
     let state = CockpitBridgeState(context: try context())
     _ = try ready(state)
     let display = try object(state.display(wire, ticket: XCTUnwrap(state.queryTicket)))
     let sent = try XCTUnwrap(((display["data"] as? [String: Any])?["details"] as? [String: Any])?["resetEvents"] as? [[String: Any]])
-    XCTAssertEqual(sent.map { $0["kind"] as? String }, ["reset_credit", "reset_credit"])
-    XCTAssertEqual(sent.map { $0["confirmedAtBasis"] as? String }, [nil, "firstSeen"])
-    XCTAssertEqual(sent.last?["confirmedAt"] as? String, "2026-10-29T13:00:00Z")
+    XCTAssertEqual(sent.map { $0["kind"] as? String }, events.map { $0["kind"] as? String })
+    XCTAssertEqual(sent.map { $0["confirmedAtBasis"] as? String }, events.map { $0["confirmedAtBasis"] as? String })
+    XCTAssertEqual(sent.map { $0["confirmedAt"] as? String }, events.map { $0["confirmedAt"] as? String })
     // The page validates against the generated schema; each field the host sends must name its type there.
     let schema = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("schema/app-cli/app-server.json"))) as? [String: Any])
     let event = try XCTUnwrap(((schema["$defs"] as? [String: Any])?["ResetEvent"] as? [String: Any])?["properties"] as? [String: [String: Any]])
@@ -488,5 +567,30 @@ final class BridgeTests: XCTestCase {
     for (field, node) in event where node["type"] == nil && node["$ref"] == nil && node["anyOf"] == nil {
       XCTFail("ResetEvent.\(field) has no type; the page rejects every display that carries it")
     }
+  }
+
+  /// Cockpit recovery step 2: the real Go capture, decoded into WireCockpitData and encoded by the bridge, reaches the
+  /// page unchanged (reset events included). desktop/tests/cockpit/unit/bridge.test.mjs takes the same capture through
+  /// the page bridge's validation and render, so Go JSON -> Swift decode/encode -> TS validation/render holds end to end.
+  func testTheGoCaptureIsSentToThePageUnchanged() throws {
+    var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    while !FileManager.default.fileExists(atPath: root.appendingPathComponent("schema/app-cli/captures").path) { root.deleteLastPathComponent() }
+    let bytes = try Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))
+    let capture = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? NSDictionary)
+    let wire = try WireDecoder.decode(WireCockpitData.self, from: bytes)
+    let state = CockpitBridgeState(context: try context())
+    _ = try ready(state)
+    let display = try object(state.display(wire, ticket: XCTUnwrap(state.queryTicket)))
+    let sent = try XCTUnwrap(display["data"] as? NSDictionary)
+    XCTAssertEqual(sent, capture, "The host adds, drops or rewrites nothing the page validates")
+    XCTAssertEqual(state.lastNonFinitePaths, [])
+  }
+  /// Cockpit recovery step 2: the correlated probe names this page, and only this page.
+  func testTheCorrelatedProbeNamesItsPage() throws {
+    let state = CockpitBridgeState(context: try context())
+    XCTAssertEqual(state.probeScript,
+      "const c=window.modelPlanCockpit;return c&&typeof c.state==='function'?String(c.state('\(state.pageID.uuidString)')):'missing'",
+      "Only the page id is interpolated")
+    XCTAssertNotEqual(state.probeScript, CockpitBridgeState(context: try context()).probeScript)
   }
 }

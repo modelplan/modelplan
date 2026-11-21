@@ -20,12 +20,15 @@ func EraseScope(p Paths, scope string, forget bool) error {
 		return errors.New("invalid scope")
 	}
 	if path == "local_history" {
-		unlock, err := consent.ReaderLock()
+		unlock, err := consent.ReaderLockWait()
 		if err != nil {
 			return err
 		}
 		defer unlock()
-		if err := forgetLocalSpeedLedgers(p.Cache, tool); err != nil {
+		if tool == "codex" {
+			forgetCodexRollouts() // WP-17: the decoded rollout memo goes with the scope
+		}
+		if err := forgetLocalSpeedLedgers(p, tool); err != nil {
 			return err
 		}
 		if err := localusage.ForgetProductionHistoryLocked(p.Cache, tool); err != nil {
@@ -59,7 +62,8 @@ func EraseScope(p Paths, scope string, forget bool) error {
 }
 
 // Caller holds ReaderLock. perf.flock also guards the daily-long rollup.
-func forgetLocalSpeedLedgers(cache, tool string) error {
+func forgetLocalSpeedLedgers(p Paths, tool string) error {
+	cache := p.Cache
 	observed := filepath.Join(cache, "observed")
 	if _, err := os.Stat(observed); os.IsNotExist(err) {
 		return nil
@@ -71,8 +75,15 @@ func forgetLocalSpeedLedgers(cache, tool string) error {
 		return errors.New("readings busy; retry cleanup")
 	}
 	defer unlock()
+	if err := markHistoryCleared(cache, tool); err != nil {
+		return err
+	}
+	if err := speed.ForgetAccountingLocked(cache, tool); err != nil {
+		return err
+	}
+	legacy := speed.LegacyCursorSources(cache, ledgerLogRoots(p))
 	for _, name := range []string{"speed.json", "perf.json", "daily-long.json", "imported.json"} {
-		if err := filterCachedSource(filepath.Join(observed, name), name, tool, true); err != nil {
+		if err := filterCachedSource(filepath.Join(observed, name), name, tool, true, legacy); err != nil {
 			return err
 		}
 	}

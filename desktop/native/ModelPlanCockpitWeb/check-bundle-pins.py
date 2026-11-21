@@ -25,7 +25,12 @@ RESERVED_SOURCES = (
     ('assets/hull/SOURCES.md', 'cockpit/hull/SOURCES.md'),
     ('assets/bells/', 'cockpit/bells/assets/'),
     ('assets/hull/', 'cockpit/hull/assets/'),
+    ('assets/throttle/SOURCES.md', 'cockpit/throttle/SOURCES.md'),
+    ('assets/throttle/', 'cockpit/throttle/assets/'),
+    ('assets/rack/SOURCES.md', 'cockpit/rack/SOURCES.md'),
+    ('assets/rack/', 'cockpit/rack/assets/'),
     ('assets/logo.svg', 'logo.svg'),
+    ('assets/art/rockets/', 'runtime/field-scene/rockets/'),
     ('assets/', 'cockpit/strip/assets/'),
 )
 THIRD_PARTY = ('assets/brands/', 'assets/SOURCES.md')
@@ -157,7 +162,7 @@ def check_app(repo, app):
     _, built = inventory(repo / 'desktop/cockpit/.tmp' / edition, edition)
     if pin != pins[edition] or files != built:
         raise ValueError('Packaged cockpit differs from the canonical build')
-    if pins[edition].encode() not in (app / 'Contents/MacOS/ModelPlanCommunity').read_bytes():
+    if pins[edition].encode() not in (app / 'Contents/MacOS/ModelPlan').read_bytes():
         raise ValueError('Packaged executable does not carry the build pin of its cockpit')
     return {'edition': edition, 'manifestSHA256': pin, 'files': len(files)}
 

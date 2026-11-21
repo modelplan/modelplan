@@ -3,11 +3,22 @@ import {register} from '../i18n.js';
 
 register('fad', {
   // silkscreen
-  status: ['silk', '状态', 'State'],
+  // CKP-FAD-55: the row label over the session lamps.
+  status: ['silk', '会话', 'Sessions'],
   indicatorAria: ['aria', '{m}：{s}；{fast}', '{m}: {s}; {fast}'],
-  indicatorTrying: ['aria', '在试', 'trying'],
-  indicatorSelected: ['aria', '已选', 'selected'],
-  indicatorIdle: ['aria', '未选', 'not selected'],
+  sessionLive: ['aria', '有会话在跑', 'a session is running'],
+  sessionUsed: ['aria', '这段时间用过', 'used in this range'],
+  sessionNone: ['aria', '没有会话', 'no sessions'],
+  // Model card lines (V1-FINAL §7, CKP-FAD-50…52): each line is at most 9 characters in both languages.
+  cardUnused: ['lcd', '未使用', 'Unused'],
+  cardUnlisted: ['lcd', '未收录', 'Unlisted'],
+  cardNoRecord: ['lcd', '无用量记录', 'No record'],
+  cardUnreported: ['lcd', '档位未报告', 'Effort ?'],
+  cardTry: ['lcd', '试 {e}', 'Try {e}'],
+  cardNow: ['lcd', '当前 {e}', 'Now {e}'],
+  cardNowUnknown: ['lcd', '当前未报告', 'Now ?'],
+  cardTryShare: ['lcd', '能{a} 费{c}', 'A{a} C{c}'],
+  cardTrying: ['lcd', '试算中', 'Trying'],
   // One LCD state; cost/ability/speed text is retained for tooltip/accessibility facts.
   tryEffort: ['lcd', '试 {e}', 'Try {e}'],
   tryCurrent: ['lcd', '试 = 当前', 'Try = Current'],
@@ -21,7 +32,8 @@ register('fad', {
   bank: ['line', '第{i}组/共{n}组', 'Bank {i}/{n}'],
   // accessible names and tooltips (not drawn)
   running: ['aria', '运行 {t}', 'running {t}'],
-  stripAria: ['aria', '{m}：{cur}，推荐 ★{rec}{x}{more}。按下在公共屏比较，长按钉到第 1 组。仅本机比较，不改真实会话', '{m}: {cur}, recommended ★{rec}{x}{more}. Press to compare on the Main screen, long-press to pin to bank 1. Local comparison; your session stays unchanged'],
+  stripAria: ['aria', '{m}：{cur}，推荐 ★{rec}{x}{more}{use}。点一下打开档位页，长按收藏到第 1 组。只是试算，不改工具设置', '{m}: {cur}, recommended ★{rec}{x}{more}{use}. Click to open the effort page, long-press to pin to bank 1. A trial only; your tool settings stay unchanged'],
+  stripAriaUse: ['aria', '；这段时间 {u}', '; in this range {u}'],
   stripAriaX: ['aria', '，成本是推荐的 {x}', ', cost {x} of the recommendation'],
   stripAriaMore: ['aria', '，另有 {more}', ', also {more}'],
   stripTrialAria: ['aria', '{m}：在试 {e}，{cost}，{d}（只在本机比较，不改会话）', '{m}: trying {e}, {cost}, {d} (a local comparison, no session changes)'],

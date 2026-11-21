@@ -154,7 +154,8 @@ private actor CardDismissalClient: EngineClient {
         XCTAssertTrue(nozzle.beginNozzle(id: memberID, local: start))
         nozzle.moveNozzle(local: CGPoint(x: target.along + 10, y: target.along + 10))
         nozzle.endNozzle(global: .zero, currentID: memberID)
-        XCTAssertTrue(dock.card.isHidden, "Dragging must not open a card")
+        // This delegate-only gesture does not drive the edge carry; the resting pointer can open its card.
+        // DockCarryKeepsWidgetTests exercises card dismissal through the actual carry path.
         XCTAssertTrue(refresh.requests.isEmpty, "Dragging must not request refresh")
         let count = dock.dockView.refreshSweepCountForChecks
         let observed = app.composition.presentedContent.snapshot.presentationRows[memberID]?.originalObservedAt
@@ -164,6 +165,7 @@ private actor CardDismissalClient: EngineClient {
         XCTAssertEqual(refresh.requests, [memberID], "A click requests only the admitted member")
         XCTAssertEqual(dock.dockView.refreshSweepCountForChecks, count + 1)
         XCTAssertFalse(dock.dockView.refreshSweepAnimatingForChecks, "Reduce Motion keeps the sweep static")
+        XCTAssertTrue(dock.dockView.refreshSweepReadoutFramesForChecks.isEmpty, "G3-98: Reduce Motion never dims or changes the readout")
         refresh.current = .deferred
         XCTAssertTrue(nozzle.beginNozzle(id: memberID, local: start))
         nozzle.endNozzle(global: .zero, currentID: memberID)
@@ -222,8 +224,17 @@ private actor CardDismissalClient: EngineClient {
         focused.setAccessibilityFocused(false)
         var navigations = 0
         dock.showSettings = { navigations += 1 }; dock.showConsole = { navigations += 1 }
-        // Member identity rule: the same verified member ID reopens the card.
-        nozzle.hoverNozzle(nil); nozzle.hoverNozzle(memberID)
+        // A fresh pointer entry onto the same verified member reopens the card after Escape.
+        // Hover callbacks alone cannot move the sampled pointer used by the production controller.
+        pointer = CGPoint(x: 100, y: 100)
+        nozzle.hoverNozzle(nil)
+        dock.interactionControllerForChecks?.refresh()
+        let returnPlacement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let returnAnchor = try XCTUnwrap(view.interactionAnchor(memberID))
+        pointer = CGPoint(x: returnPlacement.frame.minX + returnAnchor.midX - view.bounds.minX,
+                          y: returnPlacement.frame.maxY - returnAnchor.midY + view.bounds.minY)
+        nozzle.hoverNozzle(memberID)
+        dock.interactionControllerForChecks?.refresh()
         for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(dock.card.isHidden, "The same member reopens its card")
 
@@ -252,6 +263,164 @@ private actor CardDismissalClient: EngineClient {
                 XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.showDock, true)
             }
         }
+        await app.composition.stop()
+    }
+}
+
+/// G3-98 normal entry with motion on: the result arrives through the engine store, a failure through the adapter.
+@MainActor private final class LandingMemberRefresh: DockMemberRefreshAdapting {
+    var requests: [String] = []
+    var onRequest: () async throws -> Void = {}
+    func admission(for member: EngineAccountMember, delivery: EngineDeliveryContext, now: Date) -> DockMemberRefreshAdmission { .ready }
+    func request(member: EngineAccountMember, delivery: EngineDeliveryContext) async throws { requests.append(member.id); try await onRequest() }
+}
+
+@MainActor final class DockRingReadoutNormalEntryTests: XCTestCase {
+    private func fixture(remaining: Double) throws -> WireRowsSnapshot {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        rows[0]["surfaces"] = ["dock", "menu"]; rows[0]["state"] = "fresh"; rows[0]["expiresAt"] = "2099-01-01T00:00:00Z"
+        var accounts = try XCTUnwrap(rows[0]["accounts"] as? [[String: Any]])
+        accounts[0]["valueState"] = "current"; accounts[0]["freshUntil"] = "2099-01-01T00:00:00Z"
+        var windows = try XCTUnwrap(accounts[0]["windows"] as? [[String: Any]])
+        windows[0]["current"] = true; windows[0]["validUntil"] = "2099-01-01T00:00:00Z"
+        windows[0]["resetsAt"] = "2099-01-01T00:00:00Z"; windows[0]["limitKey"] = "main"; windows[0]["poolKey"] = "main"
+        windows[0]["remainingPercent"] = remaining
+        windows[0].removeValue(forKey: "modelScope")
+        accounts[0]["windows"] = windows; rows[0]["accounts"] = accounts
+        projection["rows"] = rows; root["projection"] = projection
+        return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+    }
+
+    func testRingClickWithMotionHoldsOutgoingNumberFadesInResultAndReleasesOnFailure() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("ring-readout-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let before = try fixture(remaining: 42.5), landed = try fixture(remaining: 80)
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-05T12:00:00Z"))
+        var pointer = CGPoint(x: 1430, y: 475)
+        var engineStore: EngineStore?
+        let app = EngineRowsEntry.make(configuration: config,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
+            createsNativePanels: false, cockpitEntryEnabled: true, dockEnvironment: {
+                var env = normalEntryTestEnvironment()
+                env.pointer = pointer
+                return env
+            }, deadlineNow: { now }, makeClient: { _, store in engineStore = store; return CardDismissalClient(store: store, rows: before) }, activateSettings: {})
+        await app.prepare()
+        let refresh = LandingMemberRefresh(); app.memberRefreshAdapter = refresh
+        let dock = app.composition.dock
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.autoHide(false))
+        _ = try await app.settingsHost.application.editor.commit(SettingsB20Edit.motion(.system))
+        var system = app.settingsHost.application.editor.environment; system.reduceMotion = false
+        app.updateSystemAccessibility(system)
+        app.allowDockPresentation()
+        await app.composition.start()
+        defer { dock.close() }
+        XCTAssertEqual(app.composition.latestSettings?.effective.reduceMotion, false, "motion is on for this journey")
+        let memberID = "0123456789abcdef"
+        let view = dock.dockView
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(view.interactionAnchor(memberID))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
+            y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+        let oldText = try XCTUnwrap(view.presentedReadingsForChecks[memberID]?.readout)
+        let nozzle = try XCTUnwrap(view.nozzleEventDelegate)
+        let target = try XCTUnwrap(dock.interactionEnvironment().targets.first { $0.id == memberID })
+        let start = CGPoint(x: target.along, y: target.along)
+        func click() { XCTAssertTrue(nozzle.beginNozzle(id: memberID, local: start)); nozzle.endNozzle(global: .zero, currentID: memberID) }
+        func settle() async throws {
+            for _ in 0..<500 where view.refreshSweepAnimatingForChecks { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertFalse(view.refreshSweepAnimatingForChecks)
+        }
+        func frames() -> [(id: String, alpha: Double, text: String)] { view.refreshSweepReadoutFramesForChecks.filter { $0.id == memberID } }
+
+        // Result: the engine delivers new rows 400 ms after the click, while the number is hidden.
+        refresh.onRequest = {
+            try await Task.sleep(for: .milliseconds(400))
+            let context = EngineDeliveryContext(sessionID: "synthetic-entry", floor: .init(storeEpoch: "synthetic-entry", generation: 1), revision: 1)
+            await engineStore?.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
+                consentGeneration: 1, data: landed), delivery: context), invalidRowCount: 0))
+        }
+        click()
+        XCTAssertTrue(view.refreshSweepAnimatingForChecks, "with motion on the click animates the readout")
+        try await settle()
+        XCTAssertEqual(refresh.requests, [memberID])
+        let newText = try XCTUnwrap(view.presentedReadingsForChecks[memberID]?.readout)
+        XCTAssertNotEqual(newText, oldText, "the landed result changed the number")
+        var seen = frames()
+        let lowest = try XCTUnwrap(seen.indices.min { seen[$0].alpha < seen[$1].alpha })
+        XCTAssertEqual(seen[lowest].alpha, 0, "the number is fully hidden while the refresh runs")
+        XCTAssertTrue(seen[..<lowest].allSatisfy { $0.text == oldText }, "the outgoing number is held through the fade-out")
+        XCTAssertTrue(seen[(lowest + 1)...].allSatisfy { $0.alpha == 0 || $0.text == newText }, "only the new value fades in")
+        XCTAssertEqual(seen.last?.alpha, 1)
+        XCTAssertEqual(seen.last?.text, newText)
+
+        // Failure: the request throws; activateMember releases the hold well before the 3 s cap.
+        struct Failed: Error {}
+        refresh.onRequest = { try await Task.sleep(for: .milliseconds(300)); throw Failed() }
+        let clock = ContinuousClock(), started = clock.now
+        click()
+        XCTAssertTrue(view.refreshSweepAnimatingForChecks)
+        try await settle()
+        XCTAssertLessThan(clock.now - started, .milliseconds(2500), "a failed refresh releases the number before the cap")
+        XCTAssertEqual(refresh.requests, [memberID, memberID])
+        seen = frames()
+        XCTAssertTrue(seen.contains { $0.alpha == 0 }, "the number was hidden during the failed refresh")
+        XCTAssertEqual(seen.last?.alpha, 1)
+        XCTAssertEqual(seen.last?.text, newText, "a failed refresh brings back the number it hid")
+        await app.composition.stop()
+    }
+
+    /// Owner D277 (CKP-ENG-27), macrev2-1020-1 / glm-1020-1: the cockpit's Refresh reaches the normal entry's real member
+    /// refresh through `refreshFromCockpit`: `all` asks once for every stable presented member, a rendered key asks for
+    /// that member only, and an unknown key asks for nothing. Observed at the member-refresh adapter, not an owner stub.
+    func testCockpitRefreshReachesTheNormalEntrysMemberRefresh() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-refresh-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let rows = try fixture(remaining: 42.5)
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-05T12:00:00Z"))
+        let app = EngineRowsEntry.make(configuration: config,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
+            createsNativePanels: false, cockpitEntryEnabled: true, dockEnvironment: normalEntryTestEnvironment,
+            deadlineNow: { now }, makeClient: { _, store in CardDismissalClient(store: store, rows: rows) }, activateSettings: {})
+        await app.prepare()
+        let refresh = LandingMemberRefresh(); app.memberRefreshAdapter = refresh
+        let dock = app.composition.dock
+        app.allowDockPresentation()
+        await app.composition.start()
+        defer { dock.close() }
+        let memberID = "0123456789abcdef"
+        for _ in 0..<100 where !app.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == memberID }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let presented = Set(app.composition.presentedContent.snapshot.inputs.map(\.id))
+        XCTAssertTrue(presented.contains(memberID), "the fixture's member is on the widget")
+        let expected = app.composition.accountMembers.members.filter { $0.isStable && presented.contains($0.id) }.map(\.id)
+        XCTAssertFalse(expected.isEmpty)
+        func settle(_ count: Int) async throws {
+            for _ in 0..<200 where refresh.requests.count < count { try await Task.sleep(for: .milliseconds(10)) }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        app.refreshFromCockpit("all")
+        try await settle(expected.count)
+        XCTAssertEqual(refresh.requests.sorted(), expected.sorted(), "all = each stable presented member, once")
+
+        app.refreshFromCockpit("ffffffffffffffff")
+        try await settle(expected.count + 1)
+        XCTAssertEqual(refresh.requests.count, expected.count, "an unknown key reads nothing")
+
+        app.refreshFromCockpit(memberID)
+        try await settle(expected.count + 1)
+        XCTAssertEqual(refresh.requests.count, expected.count + 1)
+        XCTAssertEqual(refresh.requests.last, memberID, "a rendered key reads that member only")
         await app.composition.stop()
     }
 }

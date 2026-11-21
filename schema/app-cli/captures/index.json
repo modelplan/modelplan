@@ -112,6 +112,14 @@
       "type": "RowsAccountToday",
       "optional": [
         {
+          "field": "observedTotalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "observedOutputTokens",
           "omission": true,
           "null": false,
@@ -151,6 +159,14 @@
           "wrongType": true,
           "strict": false,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "currency",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -182,6 +198,39 @@
       "required": [
         "code",
         "at"
+      ]
+    },
+    {
+      "file": "RowsHint.json",
+      "type": "RowsHint",
+      "optional": [
+        {
+          "field": "signInCommand",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "installCommand",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "installUrl",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "text"
       ]
     },
     {
@@ -229,6 +278,14 @@
           "wrongType": true,
           "strict": false,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "hint",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -618,6 +675,58 @@
       ]
     },
     {
+      "file": "WireCockpitCost.json",
+      "type": "WireCockpitCost",
+      "optional": [
+        {
+          "field": "pricesAsOf",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "basis",
+        "currency",
+        "daily",
+        "hourly",
+        "models"
+      ]
+    },
+    {
+      "file": "WireCockpitCostBucket.json",
+      "type": "WireCockpitCostBucket",
+      "optional": [
+        {
+          "field": "approximate",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "at",
+        "source",
+        "estimatedUsd",
+        "pricedTokens",
+        "unpricedTokens"
+      ]
+    },
+    {
+      "file": "WireCockpitCostModels.json",
+      "type": "WireCockpitCostModels",
+      "optional": [],
+      "required": [
+        "today",
+        "recent7d",
+        "recent30d"
+      ]
+    },
+    {
       "file": "WireCockpitCredits.json",
       "type": "WireCockpitCredits",
       "optional": [
@@ -730,6 +839,14 @@
           "nullPolicy": "forbidden"
         },
         {
+          "field": "planModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "forecasts",
           "omission": true,
           "null": false,
@@ -826,6 +943,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "cost",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -845,6 +970,22 @@
       "file": "WireCockpitHistorySums.json",
       "type": "WireCockpitHistorySums",
       "optional": [
+        {
+          "field": "totalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "reasoningTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
         {
           "field": "inputTokens",
           "omission": true,
@@ -893,6 +1034,34 @@
       ]
     },
     {
+      "file": "WireCockpitModelCost.json",
+      "type": "WireCockpitModelCost",
+      "optional": [
+        {
+          "field": "estimatedUsd",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "approximate",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "model",
+        "source",
+        "pricedTokens",
+        "unpricedTokens"
+      ]
+    },
+    {
       "file": "WireCockpitPeak.json",
       "type": "WireCockpitPeak",
       "optional": [
@@ -909,6 +1078,25 @@
         "rowId",
         "startsAt",
         "status"
+      ]
+    },
+    {
+      "file": "WireCockpitPlanModels.json",
+      "type": "WireCockpitPlanModels",
+      "optional": [
+        {
+          "field": "generation",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "planId",
+        "basis",
+        "modelIds"
       ]
     },
     {
@@ -980,6 +1168,14 @@
         },
         {
           "field": "provisional",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "aaScore",
           "omission": true,
           "null": false,
           "wrongType": false,
@@ -1093,6 +1289,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectState",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1156,6 +1360,14 @@
           "nullPolicy": "coalesced"
         },
         {
+          "field": "projectState",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "rate",
           "omission": true,
           "null": true,
@@ -1165,6 +1377,30 @@
         },
         {
           "field": "fast",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "startedAt",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "observedTotalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "modelDisplay",
           "omission": true,
           "null": false,
           "wrongType": false,
@@ -1310,6 +1546,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "reportedModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1331,6 +1575,14 @@
       "file": "WireCockpitToday.json",
       "type": "WireCockpitToday",
       "optional": [
+        {
+          "field": "observedTotalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
         {
           "field": "generationTps",
           "omission": true,
@@ -1906,6 +2158,29 @@
         "code",
         "message",
         "data"
+      ]
+    },
+    {
+      "file": "WireReaderKeyParams.json",
+      "type": "WireReaderKeyParams",
+      "optional": [],
+      "required": [
+        "provider",
+        "region",
+        "key"
+      ]
+    },
+    {
+      "file": "WireReaderKeyResult.json",
+      "type": "WireReaderKeyResult",
+      "optional": [],
+      "required": [
+        "schemaVersion",
+        "provider",
+        "region",
+        "present",
+        "otherKeyFound",
+        "outcome"
       ]
     },
     {

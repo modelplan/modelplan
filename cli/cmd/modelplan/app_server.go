@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver"
@@ -15,6 +16,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -69,20 +71,29 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	}
 	rawPaths := func(a consent.Admission) quota.Paths { return quota.ProductionPathsWithAdmission(st.Dir, version, a) }
 	detectTools := func() detect.Report { return detection(st) }
+	// D238: tool ids only; a read-only engine keeps the ledger in memory.
+	seen := detect.NewSeenLedger(filepath.Join(st.Dir, "detected-tools.json"), options.ReadOnly)
 	if sources.Detect != nil {
 		detectTools = sources.Detect(detectTools)
 	}
 	broker := &appserver.CredentialBroker{PathsFor: rawPaths, Offline: options.Offline, ReadOnly: options.ReadOnly}
 	paths := broker.Paths
+	var importer *appserver.ImportController
 	shared, err := appserver.NewSharedBackend(appserver.SharedConfig{
-		Activity: appActivity(st.Dir),
+		Granted: func() {
+			if importer != nil {
+				importer.StartOwedAfter(owedGrantDelay, speed.ImportDefaultDays)
+			}
+		},
+		ManualKeyPresent: func(provider string) bool { return quota.ManualKeyPresent(st.Dir, provider) },
+		Activity:         appActivity(st.Dir),
 		Reported: func(report quota.Report, now time.Time) {
 			if !options.ReadOnly {
 				observeQuotaHistory(st, report, now)
 			}
 		},
-		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.Load(st); return d, err },
-		Detect:           detectTools, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
+		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.LoadShared(st); return d, err }, // read only (WP-17)
+		Detect:           detectTools, LaterInstalled: seen.Observe, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
 		Cleanup: func(scope string, forget bool) error {
 			return quota.EraseScope(quota.ProductionPaths(st.Dir, version), scope, forget)
 		},
@@ -97,12 +108,17 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		return nil, func() {}, err
 	}
 	handlers["publication/get"] = publication
-	var importer *appserver.ImportController
+	for method, h := range appserver.ReaderKeyHandlers(appserver.ReaderKeyConfig{Dir: st.Dir, ReadOnly: options.ReadOnly, Offline: options.Offline}) {
+		handlers[method] = h
+	}
 	if !options.ReadOnly {
 		importer = appserver.NewImportController(importEngine{st: st})
 		for method, h := range appserver.HistoryImportHandlers(importer) {
 			handlers[method] = h
 		}
+		// G3-112: an import still owed (failed, interrupted, withdrawn, or cleared and granted
+		// again) is retried at start and after each committed grant. A fresh profile owes nothing.
+		importer.StartOwedAfter(owedLaunchDelay, speed.ImportDefaultDays)
 	}
 	closeBackend := func() {}
 	var scheduler *appserver.RefreshScheduler
@@ -123,7 +139,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			return nil, func() {}, err
 		}
 		handlers["cockpit/query"] = cockpit
-		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Observe: observeForApp(st), Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify, CredentialHold: func(provider string) (bool, time.Time) {
+		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Observe: observeForApp(st), ObserveAfter: appserver.ObserveFirstDelay, Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify, CredentialHold: func(provider string) (bool, time.Time) {
 			if server == nil {
 				return false, time.Time{}
 			}
@@ -145,6 +161,12 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	var fetcher *appPublication
 	if !options.Offline && !options.ReadOnly {
 		fetcher = newAppPublication(ctx, st, appPublicationBase())
+		if fetcher != nil {
+			applyTestCadence(fetcher)
+			fetcher.subscribed = func() bool {
+				return hasTrackedSubscription(quota.ReadPermitted(quota.ProductionPaths(st.Dir, version), time.Now()).Accounts)
+			}
+		}
 	}
 	if fetcher != nil {
 		closeScheduler := closeBackend

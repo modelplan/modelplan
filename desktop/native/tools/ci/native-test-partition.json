@@ -67,16 +67,20 @@
         "DockPlacementProducerTests",
         "DockPointerObservationTests",
         "DockRasterDragTests",
+        "DockStripJourneyTests",
         "DockWakePolicyTests",
         "EngineDesignConformanceTests",
         "EngineDockInteractionBindingTests",
         "FindQuotaWidgetJourneyTests",
+        "G1PresentationHelpJourneysB",
+        "G3_122StatusTitleTests",
         "HintExecutionHostTests",
         "HostPairedProjectionTests",
         "InstrumentHelpCompositionTests",
         "InstrumentHintSourceRouterTests",
         "M5CreditsDisplayFormatTests",
         "MenuHostDispatchJourneyTests",
+        "MenuRangeSummaryTests",
         "NativeAccountDockProjectionTests",
         "NormalEntrySettingsJourneyTests",
         "ObservedPlacementAdapterTests",
@@ -86,18 +90,21 @@
         "ProductionConsentIdentityTests",
         "ProductionSettingsFactoryTests",
         "ProductionSettingsJourneyTests",
+        "ProfileRootTests",
         "PulseDockPositioningTests",
         "ReserveTruthNoWindowTests",
         "Respin5FreshnessPreferenceTests",
         "S1GalleryTests",
         "S4QuotaJourneyTests",
+        "SET918NotificationDeliveryJourneyTests",
         "SettingsApplicationTests",
         "SettingsWaitEventTests",
         "SettingsWindowHostTests",
         "StaticDockPresentationTests",
         "SubscriptionCatalogueOwnershipTests",
         "T2MaterialSeamTests",
-        "U8ConsentJourneyTests"
+        "U8ConsentJourneyTests",
+        "WP15WidgetCardStateTests"
       ],
       "ownerGui": [
         "D41KeychainJourneyTests",
@@ -120,7 +127,7 @@
           "leg": "gui",
           "reason": "needs the real synthetic-test CLI, which the native job does not build"
         },
-        "CommunityCockpitEntryTests/testNormalEntryKeepsTheScopeForTheDayAndStartsTheNextDayAtAll": {
+        "CommunityCockpitEntryTests/testNormalEntryKeepsTheScopeAndRangeAcrossRestartsAndDays": {
           "leg": "gui",
           "reason": "needs the real synthetic-test CLI, which the native job does not build; U11 builds and supplies it"
         },
@@ -147,10 +154,6 @@
         "G1SettingsJourneys/testG1_SET_9_12_CaptureVisibilityPersists": {
           "leg": "gui",
           "reason": "G1 partial journey; deferred: actual widget sharing state and relaunch require an admitted GUI session"
-        },
-        "G1SettingsJourneys/testG1_SET_9_13_SubscriptionOrderChangesAndReset": {
-          "leg": "gui",
-          "reason": "G1 partial journey; deferred: three-member drag, arrow actions, engine-column order and relaunch are not yet exercised"
         },
         "G1SettingsJourneys/testG1_SET_9_15_AppearanceAndAccessibilityApplyLive": {
           "leg": "gui",

@@ -220,6 +220,39 @@ const (
 	ForecastNoBasis      ForecastBasis = "none"
 )
 
+// ReaderKeyProvider names a provider that takes a user-entered key (D90).
+type ReaderKeyProvider string
+
+const (
+	ReaderKeyZai        ReaderKeyProvider = "zai"
+	ReaderKeyOpenCodeGo ReaderKeyProvider = "opencodego"
+)
+
+// ReaderKeyRegion is the site the key belongs to. "none" is for providers without a choice.
+type ReaderKeyRegion string
+
+const (
+	ReaderKeyRegionNone   ReaderKeyRegion = "none"
+	ReaderKeyRegionGlobal ReaderKeyRegion = "global"
+	ReaderKeyRegionChina  ReaderKeyRegion = "china"
+)
+
+// ReaderKeyOutcome is the one fixed word a readerkey/* call answers with.
+type ReaderKeyOutcome string
+
+const (
+	ReaderKeySaved       ReaderKeyOutcome = "saved"
+	ReaderKeyRemoved     ReaderKeyOutcome = "removed"
+	ReaderKeyOK          ReaderKeyOutcome = "ok"
+	ReaderKeyRefused     ReaderKeyOutcome = "key_refused"
+	ReaderKeyPlanLapsed  ReaderKeyOutcome = "plan_lapsed"
+	ReaderKeyNoKey       ReaderKeyOutcome = "no_key"
+	ReaderKeyUnreachable ReaderKeyOutcome = "unreachable"
+	ReaderKeyFailed      ReaderKeyOutcome = "failed"
+	ReaderKeyNotAccepted ReaderKeyOutcome = "not_accepted"
+	ReaderKeyFileUnsafe  ReaderKeyOutcome = "file_unsafe"
+)
+
 // HistoryImportPhase is the importer's state as the app shows it.
 type HistoryImportPhase string
 
@@ -239,4 +272,16 @@ const (
 	ImportSourceNoConsent HistoryImportSourceStatus = "skipped_no_consent"
 	ImportSourceNothing   HistoryImportSourceStatus = "nothing_found"
 	ImportSourceOff       HistoryImportSourceStatus = "off"
+)
+
+// CockpitProjectState says whether a cockpit session has a project, apart from whether its name is shown:
+// named (projectLabel is the name), unnamed (a project the tool stores no name for), hidden (a project
+// whose name `project-labels off` withholds) or none (no project at all).
+type CockpitProjectState string
+
+const (
+	ProjectNamed   CockpitProjectState = "named"
+	ProjectUnnamed CockpitProjectState = "unnamed"
+	ProjectHidden  CockpitProjectState = "hidden"
+	ProjectNone    CockpitProjectState = "none"
 )

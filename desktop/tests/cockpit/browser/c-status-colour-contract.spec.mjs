@@ -61,14 +61,14 @@ for(const theme of ['night','day'])test(`COL-2.1-01/02/03 status colours reach t
   expect(near(await pixel(segment),rgb,8),`${level} bar pixel`).toBe(true); // the LCD glass glare lifts a few levels
   if(level!=='ok')await expect(cell.locator('.qnum')).toHaveCSS('color',css(rgb));
  }
- await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.getByRole('button',{name:'Plans',exact:true}).click();
  for(const level of ['mid','low'])await expect(page.locator(`.mb10.lv-${level} i.on`).first()).toHaveCSS('background-color',css(STATUS[level]));
 });
 
 test('COL-2.1-04 critical takes the day step on light surfaces and never the night red',async({page})=>{
  await open(page,reading().data,'day');
  expect(await page.evaluate(()=>{const c=document.createElement('canvas').getContext('2d'),probe=document.createElement('i');probe.style.color='var(--st-low-day)';document.body.append(probe);c.fillStyle=getComputedStyle(probe).color;c.fillRect(0,0,1,1);probe.remove();return [...c.getImageData(0,0,1,1).data].slice(0,3);})).toEqual(DAY_LOW);
- for(const page2 of [null,'Subscription','Breakdown']){
+ for(const page2 of [null,'Plans','Breakdown']){
   if(page2)await page.getByRole('button',{name:page2,exact:true}).click();
   const onLight=await page.evaluate(([low])=>{const c=document.createElement('canvas').getContext('2d',{willReadFrequently:true});c.canvas.width=c.canvas.height=1;
    const rgba=v=>{c.clearRect(0,0,1,1);c.fillStyle=v;c.fillRect(0,0,1,1);return [...c.getImageData(0,0,1,1).data];};
@@ -90,7 +90,7 @@ test('THM-2.4-02 night metal and inks hold their values',async({page})=>{
 for(const theme of ['night','day'])test(`COL-2.1-12/17 brand red stays out of every painted surface in ${theme}`,async({page})=>{
  const fx=reading();await open(page,fx.data,theme);await renderVisualDeck(page,fx,'en');
  const seen=[];
- for(const name of ['Overview','Subscription','Effort','Breakdown']){await page.getByRole('button',{name,exact:true}).click();seen.push(...await paints(page));}
+ for(const name of ['Overview','Plans','Models','Breakdown']){await page.getByRole('button',{name,exact:true}).click();seen.push(...await paints(page));}
  await page.keyboard.down('Alt');seen.push(...await paints(page));await page.keyboard.up('Alt');
  expect(seen.length).toBeGreaterThan(200);
  // The only cockpit place for it is the strip's live "Plan" wordmark (owner build 13: the study's hud-selection

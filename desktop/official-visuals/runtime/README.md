@@ -40,6 +40,10 @@ not whole-window or integrated-button screenshots.
 app's `runtime/` directory. The default community build excludes this pack.
 Native Dock/cockpit consumers bind the manifest in their own integration work.
 
+- **Launch-field window:** `field-scene/` holds the minified launch-field component (window mode,
+  D298) for the enlarged field, the fleet round-four rocket atlases it loads (`field-scene/rockets/*.webp`,
+  D207) and its 2D fallback's sprites (`field-scene/rockets/flat/`); see its README.
+
 The integrity check is `node scripts/check-visual-pack.mjs`. It checks the exact
 file set, hashes, dimensions, baseline associations, licence registry and public
 metadata. The porthole-stills/ pack adds the approved 980 PNG stills and its own runtime

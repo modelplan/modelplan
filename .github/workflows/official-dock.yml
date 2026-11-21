@@ -19,6 +19,7 @@ on:
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/DockContentProviderTests.swift'
       - 'desktop/native/ModelPlanDock/Native/DockInstrumentView.swift'
       - '.github/workflows/official-dock.yml'
+      - '!**/*.md'
   push:
     branches: [main]
     paths:
@@ -46,7 +47,7 @@ concurrency:
 
 jobs:
   geometry:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !contains(fromJSON('["pull_request","merge_group"]'), github.event_name) }}
     runs-on: macos-15
     timeout-minutes: 20
     steps:

@@ -97,8 +97,12 @@ test("LBL-2.2-06 string length budgets", todo("LBL-2.2-06"), () => {
 const englishTokensAllowed = ["ALERT", "MCP", "Codex", "GLM", "ZCode", "Z.ai", "OpenCode", "Cursor", "Copilot",
   "Qwen", "Kimi", "Kiro", "Grok", "MiniMax", "Gemini", "Claude", "Antigravity", "Amp", "Droid", "token", "Token",
   "API", "JSON", "CLI", "3D", "Esc", "Escape", "macOS", "Mac", "MIT",
+  // D327 resource plugin: the CPU readout ("CPU 96%") and the GB unit stay as written in the Chinese UI.
+  "CPU", "GB",
   "Go", "Node.js", "api.z.ai", "z.ai", "open.bigmodel.cn", "bigmodel.cn", "opencode.ai"];
-const englishPhrasesAllowed = ["Claude Code", "ModelPlan", "Model Plan", "Intel"];
+const englishPhrasesAllowed = ["Claude Code", "ModelPlan", "Model Plan", "Intel",
+  // environment variable names the user must type exactly (never translated)
+  "OPENCODE_API_KEY"];
 test("LBL-2.2-07 no English inside the Chinese UI except ALERT, model names and units", todo("LBL-2.2-07"), () => {
   const bad = [];
   for (const p of pairs) {

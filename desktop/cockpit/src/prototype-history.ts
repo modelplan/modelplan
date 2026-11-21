@@ -2,7 +2,10 @@
 // Maps cockpitHistoryV1 into the study pages' shapes. Sources are this device's tools, joined to a subscription only
 // through the producer's current binding (owner D-D: shown as local records). A day or hour without an observation
 // stays null, never zero, and the page says nothing about days before the recording began.
+import {ht} from './host-text.js';
+import {costView} from './prototype-cost.js';
 import type {WireCockpitData} from '../generated/wire.js';
+import {overviewCost,type OverviewCost} from './overview-cost.js';
 
 const HOUR=36e5,DAYS=182;
 const dayKey=(at:number)=>{const d=new Date(at);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
@@ -13,9 +16,15 @@ export interface HistoryView {
  readonly hourly:readonly {accountId:string;instants:number[];values:(number|null)[]}[];
  readonly projectRanking:{recent7d:unknown[];recent30d:unknown[]};
  readonly paceHistory:Record<string,Record<string,unknown[]>>;
+ /** ≈cost per day and hour for the overview bars (WP-12); null without priced usage. */
+ readonly cost:OverviewCost|null;
+ /** WP-13: the Models page's usage list, by model id, observed output tokens per range. */
+ readonly modelRanking:{recent7d:{top:{name:string;tokens:number}[]};recent30d:{top:{name:string;tokens:number}[]}};
+ /** WP-13 + WP-06: the producer's ≈cost (US dollars) per model id for the 7- and 30-day ranges, and each range's total; absent without price data. */
+ readonly modelCost:{recent7d:Readonly<Record<string,number>>;recent30d:Readonly<Record<string,number>>;total:{recent7d:number|null;recent30d:number|null}};
 }
 const kinds:Readonly<Record<string,string>>={five_hour:'5h',weekly:'week',monthly:'month'};
-export const noHistory:HistoryView={daily:[],hourly:[],projectRanking:{recent7d:[],recent30d:[]},paceHistory:{}};
+export const noHistory:HistoryView={daily:[],hourly:[],projectRanking:{recent7d:[],recent30d:[]},paceHistory:{},cost:null,modelRanking:{recent7d:{top:[]},recent30d:{top:[]}},modelCost:{recent7d:{},recent30d:{},total:{recent7d:null,recent30d:null}}};
 
 export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<string,string>,now:number,locale:string):HistoryView {
  const h=data?.history;if(!h||h.coverage!=='local-history')return noHistory;
@@ -41,13 +50,17 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
   for(const b of h.hourly){const index=Math.floor((Date.parse(b.at)-instants[0]!)/HOUR);if(sources.has(b.source)&&index>=0&&index<values.length)values[index]=(values[index]??0)+b.observedOutputTokens;}
   hourly.push({accountId,instants,values});
  }
- const projects=(rows:typeof h.projects.recent7d)=>rows.map((p,i)=>({project:p.label??(locale==='en'?`Project ${i+1}`:`项目 ${i+1}`),tokens:p.observedOutputTokens,tokenScope:'combined',share:p.share,configs:[{model:p.model??'',effort:p.effort,recommendedEffort:null}]}));
+ const projects=(rows:typeof h.projects.recent7d)=>rows.map((p,i)=>({project:p.label??ht(locale,'host.projectN',{n:i+1}),tokens:p.observedOutputTokens,tokenScope:'combined',share:p.share,configs:[{model:p.model??'',effort:p.effort,recommendedEffort:null}]}));
  const paceHistory:Record<string,Record<string,unknown[]>>={};
  for(const group of h.cycles){
   const accountId=ids.get(group.subscriptionRef),kind=kinds[group.kind];if(!accountId||!kind)continue;
   (paceHistory[accountId]??={})[kind]=group.cycles.map(c=>({start:c.startedAt,end:c.resetsAt,points:c.points,hadDrop:c.hadDrop,spent:c.spent.map(s=>({model:s.model??'',effort:s.effort,fast:s.fast,points:s.points}))}));
  }
- return {daily,hourly,projectRanking:{recent7d:projects(h.projects.recent7d),recent30d:projects(h.projects.recent30d)},paceHistory};
+ const models=(w:{top:ReadonlyArray<{name:string;observedOutputTokens:number}>})=>({top:w.top.map(e=>({name:e.name,tokens:e.observedOutputTokens}))});
+ const cv=costView(data,now),costOf=(range:'last7d'|'last30d')=>Object.fromEntries((cv?.models[range]??[]).flatMap(r=>r.cost&&r.cost.usd>=0&&r.model!=='unknown'?[[r.model,r.cost.usd] as const]:[]));
+
+ return {daily,hourly,projectRanking:{recent7d:projects(h.projects.recent7d),recent30d:projects(h.projects.recent30d)},paceHistory,cost:overviewCost(data,ids,now),modelRanking:{recent7d:models(h.models.recent7d),recent30d:models(h.models.recent30d)},
+  modelCost:{recent7d:costOf('last7d'),recent30d:costOf('last30d'),total:{recent7d:cv?.total.last7d.cost?.usd??null,recent30d:cv?.total.last30d.cost?.usd??null}}};
 }
 
 /** The 7|30 usage block for one subscription: several linked tools add up; an unknown kind stays unknown. */
@@ -56,7 +69,7 @@ export function usageStats(data:WireCockpitData|null|undefined,ref:string|null|u
  const add=(a:number|null|undefined,b:number|null|undefined)=>a==null||b==null?null:a+b;
  const window=(key:'recent7d'|'recent30d')=>{
   const sums=sources.map(s=>s[key]),one=sums.length===1?sums[0]!.generationTps:null;
-  return {sums:{inputTokens:sums.map(s=>s.inputTokens).reduce(add),observedOutputTokens:sums.map(s=>s.outputTokens).reduce((a,b)=>a+b,0),cacheReadTokens:sums.map(s=>s.cacheReadTokens).reduce(add),cacheWriteTokens:sums.map(s=>s.cacheWriteTokens).reduce(add)},
+  return {sums:{totalTokens:sums.map(s=>s.totalTokens??null).reduce(add),inputTokens:sums.map(s=>s.inputTokens).reduce(add),observedOutputTokens:sums.map(s=>s.outputTokens).reduce((a,b)=>a+b,0),cacheReadTokens:sums.map(s=>s.cacheReadTokens).reduce(add),cacheWriteTokens:sums.map(s=>s.cacheWriteTokens).reduce(add)},
    metrics:{generationTps:one===null?{status:'unknown',value:null}:{status:'ok',value:one}}};
  };
  return {recent7d:window('recent7d'),recent30d:window('recent30d')};

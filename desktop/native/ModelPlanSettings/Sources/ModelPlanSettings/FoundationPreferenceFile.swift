@@ -206,6 +206,7 @@ enum FoundationPreferenceFile {
             // existing choice is never replaced by a later system preference.
             if candidate.selection.settings == .defaults, let defaultLanguage {
                 document.settings.language = defaultLanguage
+                document.settings.followsSystemLanguage = true
                 initialBytes = try document.encoded()
             }
             let temporary = try stage(initialBytes, in: fd); defer { _ = unlinkat(fd, temporary, 0) }

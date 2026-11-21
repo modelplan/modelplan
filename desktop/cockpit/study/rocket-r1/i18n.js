@@ -49,6 +49,9 @@ export function setLanguage(next) {
 }
 export const onLanguage = f => listeners.add(f);
 
+// True when the key has copy in either language; callers use it to fall back instead of printing a raw key (G3-109).
+export const has = key => tables[lang][key] != null || tables['zh-CN'][key] != null;
+
 let record = null; // key -> longest rendered width, while checks record
 const missing = new Set();
 export function t(key, vars) {

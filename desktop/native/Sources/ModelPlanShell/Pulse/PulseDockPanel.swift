@@ -2,6 +2,7 @@
 // ModelPlan adaptation of FloatingPanel event routing at Pulse 7668384cbcf357bba7dee4af85b4052a59c6e35d.
 // ModelPlan adaptation: reuse Pulse display identity and restore the requested frame after initial order-in.
 // ModelPlan adaptation: use the live pointer for carry and borrow keyboard focus only during a background drag.
+// ModelPlan adaptation: a carry started by a ring press (D244) is continued and released through the same route.
 // No upstream private appearance selector, visual tether or provider logic is used.
 import AppKit
 
@@ -10,18 +11,24 @@ import AppKit
     func continuePanelMove(globalPoint: CGPoint)
     func finishPanelMove(globalPoint: CGPoint)
     var hasPanelControlCapture: Bool { get }
+    /// A carry is held that the panel did not capture itself (a ring press past the click threshold, D244).
+    var hasPanelCarry: Bool { get }
     func cancelPanelMove()
 }
 
 public extension PulsePanelMouseHandling {
     var hasPanelControlCapture: Bool { false }
+    var hasPanelCarry: Bool { false }
 }
 
 /// Input capture only; the host's controller owns placement and hide state.
 @MainActor final class PulsePanelInputRoute {
     weak var handler: (any PulsePanelMouseHandling)?
     private(set) var captured = false
-    var canCancel: Bool { captured || handler?.hasPanelControlCapture == true }
+    var canCancel: Bool { captured || handler?.hasPanelControlCapture == true || handler?.hasPanelCarry == true }
+    /// The panel's own capture, or a carry the instrument started: the rest of the drag and its release come here
+    /// with the live pointer, so they still reach the carry when its edge's view has been swapped out (G3-114 bundle).
+    private var routesDrag: Bool { captured || handler?.hasPanelCarry == true }
     func begin(windowPoint: CGPoint, globalPoint: CGPoint, controlClick: Bool) -> Bool {
         cancel()
         guard !controlClick, let handler else { return false }
@@ -29,13 +36,13 @@ public extension PulsePanelMouseHandling {
         return captured
     }
     func drag(globalPoint: CGPoint) -> Bool {
-        guard captured else { return false }
+        guard routesDrag else { return false }
         guard let handler else { captured = false; return false }
         handler.continuePanelMove(globalPoint: globalPoint)
         return true
     }
     func end(globalPoint: CGPoint) -> Bool {
-        guard captured else { return false }
+        guard routesDrag else { return false }
         captured = false
         handler?.finishPanelMove(globalPoint: globalPoint)
         return true

@@ -25,6 +25,7 @@ type Stamp struct {
 type View struct {
 	QuotaReport               quota.Report
 	PublicModels              []digest.Model
+	PublicSpeedTiers          []digest.SpeedTier // the same publication's speed tiers (API price multipliers, WP-06)
 	Stamp                     Stamp
 	Projection                rows.Projection
 	ResetEvents               *[]rows.ResetEvent
@@ -71,6 +72,13 @@ type CredentialReceiver interface {
 type Capabilities interface{ Capabilities() []string }
 
 type ProtocolError struct{ Code int }
+
+// StampReader is a backend that can tell its current consent fence without building a view
+// (WP-17). Every committed consent change moves the fence, so a request that read under one
+// stamp can confirm it still holds without reading everything again.
+type StampReader interface {
+	CurrentStamp(context.Context) (Stamp, error)
+}
 
 func (e ProtocolError) Error() string { return wire.ErrorName(e.Code) }
 func errorCode(err error) int {

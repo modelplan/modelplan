@@ -66,8 +66,10 @@ test('CKP-SHELL-21 every try control stays local: zero requests and only whiteli
  const types=new Set(after.posts.map(m=>m.type));
  for(const type of types)expect(['ready','rendered','nextDeadline','cleared','action'],`bridge message ${type}`).toContain(type);
  const sent=after.posts.slice(before).filter(m=>m.type==='action');
- // Trying an effort or a model is not an action native could apply: no try control produces any action at all.
- expect(sent.map(m=>m.action),'actions sent while trying').toEqual([]);
+ // Trying an effort or a model is not an action native could apply: no try control produces any action at all. The
+ // range key is not a try control: it asks the app for its one range (CKP-SHELL-50), a fixed key and nothing else.
+ for(const m of sent.filter(m=>m.action==='rangeSelect'))expect(['today','7d','30d']).toContain(m.key);
+ expect(sent.filter(m=>m.action!=='rangeSelect').map(m=>m.action),'actions sent while trying').toEqual([]);
  for(const m of after.posts)expect(JSON.stringify(m),'no model, effort, credential or path leaves the page').not.toMatch(/"(model|effort|setModel|setEffort|token|credential|password|apiKey|path|file)"\s*:/i);
 });
 
@@ -89,21 +91,16 @@ for(const [tier,height] of [['tall',890],['compact',640]]){
  test(`CKP-MFD-25 a click inside a page reaches its module and the charts take the measured screen at ${tier}`,async({page})=>{
   await page.clock.setFixedTime(new Date(NOW));
   await open(page,{data:withHistory(),tier,height});
-  // Overview: the Grid key is inside the page; pressing it reaches the overview module, which draws the heatmap into
-  // its measured area with the largest cells that fit (5 to 14 px).
-  await expect(page.locator('.pg-overview svg.ov-chart')).toBeVisible();
+  // Overview (WP-12): the totals row is there; the Grid key is not lit in v1 and pressing it reaches the module without
+  // changing the view (the heatmap cells-fit check moved out with the key, to v1.1).
+  await expect(page.locator('.pg-overview .ov-top')).toBeVisible();
   await page.locator('[data-opt="chart"] b',{hasText:/^Grid$/}).click();
-  await expect(page.locator('.pg-overview svg.ov-heat')).toBeVisible();
-  await expect.poll(()=>page.evaluate(()=>{
-   const area=document.querySelector('[data-fill="ov"]'),svg=area?.querySelector('svg.ov-heat');if(!svg)return null;
-   const cell=Number(svg.querySelector('rect.hm').getAttribute('width')),w=Number(svg.getAttribute('width')),h=Number(svg.getAttribute('height'));
-   return {fitsW:w<=area.clientWidth,fitsH:h<=area.clientHeight,nextWouldNotFit:cell>=14||26*(cell+3)-2>area.clientWidth||12+7*(cell+3)-2>area.clientHeight};
-  })).toEqual({fitsW:true,fitsH:true,nextWouldNotFit:true});
+  await expect(page.locator('[data-opt="chart"] b.on')).toHaveText('Bars');await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(0);
   // Compare: a fader press opens it, a try key inside it reaches the compare module, and its chart fills its measured area.
   await page.locator('.fd-strip[aria-label^="Synthetic lineup-1:"]').click();
   const screen=page.locator('.mfd-page.pg-compare');await expect(screen).toBeVisible();
   const key=screen.locator('.cmp-lad [data-mfd="try:Low"]');await key.click();
-  await expect(screen.locator('svg.cmp-chart .cfg-trial')).not.toHaveCount(0);
+  await expect(screen.locator('svg.cmp-chart .pc-band-trial')).toHaveCount(1);
   await expect.poll(()=>page.evaluate(()=>{const area=document.querySelector('[data-fill="cmp"]'),svg=area?.querySelector('svg.cmp-chart');if(!svg||!area.clientWidth)return null;return {width:Math.abs(svg.getBoundingClientRect().width-area.clientWidth)<=1,height:svg.getBoundingClientRect().height<=area.clientHeight+1};})).toEqual({width:true,height:true});
  });
 }
@@ -112,7 +109,7 @@ for(const [tier,height] of [['tall',890],['compact',640]]){
 // by the page, no canvas exists in it, and the reveal animates no clip-path or mask.
 test('CKP-ENT-02 opening the cockpit page creates no GL context, no canvas and no clip or mask animation',async({page})=>{
  await open(page);
- await page.getByRole('button',{name:'Effort',exact:true}).click();
+ await page.getByRole('button',{name:'Models',exact:true}).click();
  const {gl}=await probe(page);expect(gl,'getContext(webgl*) calls').toEqual([]);
  expect(await page.locator('canvas').count(),'canvas elements in the cockpit page').toBe(0);
  expect(await page.locator('iframe,webview,embed,object').count()).toBe(0);

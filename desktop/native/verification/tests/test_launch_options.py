@@ -124,7 +124,12 @@ class ReaderOptionTests(unittest.TestCase):
         keys = json.loads((root / 'schema/app-cli/child-environment.json').read_text())['allowedKeys']
         swift = (root / 'clients/swift/ModelPlanWire/Sources/ModelPlanWire/Generated.swift').read_text()
         switches = {*subject_options.reader_env('off'), *subject_options.reader_env('passive'), *subject_options.reader_env('zai')}
-        self.assertEqual(sorted(k for k in keys if k.startswith('MODELPLAN_')), sorted(switches))
+        # D164: MODELPLAN_PROFILE_ROOT is a profile switch set by test-build tooling, not a reader switch.
+        # It must still be in the contract and the generated Swift, but `readers` never sets it.
+        profile = {'MODELPLAN_PROFILE_ROOT'}
+        self.assertEqual(sorted(k for k in keys if k.startswith('MODELPLAN_') and k not in profile), sorted(switches))
+        self.assertLessEqual(profile, set(keys))
+        self.assertIn('"MODELPLAN_PROFILE_ROOT"', swift)
         for key in switches:
             self.assertIn(f'"{key}"', swift)
 
@@ -136,7 +141,7 @@ def build_home(root):
     (native / 'settings-v1.json').write_text('{"a":1}')
     (native / 'community-v1.json').write_text('{"b":2}')
     prefs = home / 'Library' / 'Preferences'; prefs.mkdir(parents=True)
-    (prefs / 'org.modelplan.community.swift.scaffold.plist').write_bytes(b'bplist00-original')
+    (prefs / 'ai.modelplan.app.plist').write_bytes(b'bplist00-original')
     (prefs / 'com.other.app.plist').write_bytes(b'other')
     cache = home / 'Library' / 'Caches' / 'modelplan' / 'objects'; cache.mkdir(parents=True)
     (cache / 'o1').write_bytes(b'object')
@@ -176,7 +181,7 @@ class ProductBackupTests(unittest.TestCase):
         (native / 'settings-v1.json').write_text('{"a":2}')
         (native / 'new.json').write_text('{}')
         (self.home / '.config' / 'modelplan' / 'consent.json').unlink()
-        (self.home / 'Library' / 'Preferences' / 'org.modelplan.community.swift.scaffold.plist').write_bytes(b'changed')
+        (self.home / 'Library' / 'Preferences' / 'ai.modelplan.app.plist').write_bytes(b'changed')
         # ... and something outside the list changes too (it must stay as the run left it)
         (self.home / 'Library' / 'Application Support' / 'M0Bridge' / 'state.json').write_text('coordinator-2')
         result = product_backup.restore(self.root / 'backup', runner=self.runner, sleep=lambda s: None)
@@ -184,7 +189,7 @@ class ProductBackupTests(unittest.TestCase):
         self.assertEqual(result['runChanges']['added'], ['Library/Application Support/ModelPlan/Native/new.json'])
         self.assertEqual(result['runChanges']['removed'], ['.config/modelplan/consent.json'])
         self.assertIn('Library/Application Support/ModelPlan/Native/settings-v1.json', result['runChanges']['changed'])
-        self.assertEqual(self.calls, [['import', 'org.modelplan.community.swift.scaffold', str(self.root / 'backup' / 'preferences-import.plist')]])
+        self.assertEqual(self.calls, [['import', 'ai.modelplan.app', str(self.root / 'backup' / 'preferences-import.plist')]])
         self.assertEqual((native / 'settings-v1.json').read_text(), '{"a":1}')
         self.assertFalse((native / 'new.json').exists())
         self.assertEqual((self.home / '.config' / 'modelplan' / 'consent.json').read_text(), '{"tools":{"codex":{}}}')
@@ -210,7 +215,7 @@ class ProductBackupTests(unittest.TestCase):
     def test_absent_paths_stay_absent_and_the_domain_is_deleted(self):
         import shutil
         shutil.rmtree(self.home / 'Library' / 'Caches' / 'modelplan')
-        (self.home / 'Library' / 'Preferences' / 'org.modelplan.community.swift.scaffold.plist').unlink()
+        (self.home / 'Library' / 'Preferences' / 'ai.modelplan.app.plist').unlink()
         manifest = product_backup.backup(self.home, self.root / 'backup')
         self.assertEqual(manifest['roots']['Library/Caches/modelplan'], 'absent')
         (self.home / 'Library' / 'Caches' / 'modelplan').mkdir()
@@ -218,7 +223,7 @@ class ProductBackupTests(unittest.TestCase):
         result = product_backup.restore(self.root / 'backup', runner=self.runner)
         self.assertTrue(result['restored'])
         self.assertFalse((self.home / 'Library' / 'Caches' / 'modelplan').exists())
-        self.assertEqual(self.calls, [['delete', 'org.modelplan.community.swift.scaffold']])
+        self.assertEqual(self.calls, [['delete', 'ai.modelplan.app']])
 
     def test_refusals(self):
         cache = self.home / 'Library' / 'Caches' / 'modelplan'

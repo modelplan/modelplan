@@ -1,4 +1,5 @@
-export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && inputs.os == 'macos-15' && vars.MAC_CI_NONGUI == 'enabled' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/'))))) && fromJSON('[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'gui-probe') && '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\",\"modelplan-mac-gui\"]' || '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}";
+import { spawnSync } from "node:child_process";
+export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && inputs.os == 'macos-15' && vars.MAC_CI_NONGUI == 'enabled' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/'))))) && fromJSON('[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (inputs.task != 'native-headless' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'native-headless') && github.event_name == 'merge_group' && startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main'))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'gui-probe') && '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\",\"modelplan-mac-gui\"]' || '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}";
 // SPDX-License-Identifier: MIT
 // Runner and trigger rules for public workflows. Defence in depth only: the enforced boundaries
 // are the immutable reusable workflow selected by the runner group and the owner-only pre-job gate.
@@ -7,6 +8,352 @@ export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && i
 // select these runners directly. Other triggers, OR bypasses and constructed
 // selectors fail; escaped YAML spellings are checked too.
 export const ALLOWED_ROUTES = new Set();
+
+// The workflow reviewer (owner 2026-11-15 pilot). Only pr-review.yml may name the review runner, with exactly
+// this line, and it may start only from workflow_run or workflow_dispatch: both run main's definition, so a PR
+// cannot change what runs next to the owner's Codex login. The enforced boundary is the runner group, which admits
+// only modelplan/modelplan/.github/workflows/pr-review.yml@refs/heads/main, and the runner's job-started hook.
+export const PR_REVIEW_PATH = ".github/workflows/pr-review.yml";
+export const PR_REVIEW_ROUTE = "runs-on: [self-hosted, Linux, ARM64, modelplan-review]";
+export const PR_REVIEW_TRIGGERS = Object.freeze(["workflow_run", "workflow_dispatch"]);
+
+export function prReviewProblems(text) {
+  const problems = [];
+  const on = topLevelBlock(text, "on");
+  const keys = on ? [...on.matchAll(/^ {2}([A-Za-z_]+):/gm)].map((m) => m[1]) : [];
+  if (!keys.length || keys.some((k) => !PR_REVIEW_TRIGGERS.includes(k))) problems.push("pr-review.yml may start only from workflow_run or workflow_dispatch");
+  if (!/^permissions: \{\}$/m.test(text)) problems.push("pr-review.yml needs top-level permissions: {}");
+  if (!/^\s+persist-credentials: false$/m.test(text)) problems.push("pr-review.yml checkout must not persist credentials");
+  if (text.split("\n").filter((l) => l.trim() === PR_REVIEW_ROUTE).length !== 1) problems.push("pr-review.yml has exactly one review-runner job");
+  return problems;
+}
+
+// The Sol workflow reviewer (owner D352). Hosted runners only; it may start only from events that run main's
+// definition (workflow_run, workflow_dispatch). Every checkout is main's, without credentials. The model
+// credentials (OpenAI key, GLM key and base URL) appear once each, only in the review step, and the comment token only
+// in the post step; each step runs exactly the expected script and no other secret is named.
+export const PR_REVIEW_SOL_PATH = ".github/workflows/pr-review-sol.yml";
+export const PR_REVIEW_SOL_TRIGGERS = Object.freeze(["workflow_run", "workflow_dispatch"]);
+const SOL_SECRET_STEPS = Object.freeze({
+  OPENAI_API_KEY: "run: node scripts/pr-review/sol-call.mjs",
+  GLM_API_KEY: "run: node scripts/pr-review/sol-call.mjs",
+  GLM_BASE_URL: "run: node scripts/pr-review/sol-call.mjs",
+  PR_REVIEW_COMMENT_TOKEN: "run: node scripts/pr-review/sol-post.mjs",
+});
+
+// Steps as blocks of lines, split at "- " list items at one indentation inside each job's steps.
+function stepBlocks(jobLines) {
+  const steps = [];
+  let cur = null, indent = null, inSteps = false;
+  for (const l of jobLines) {
+    if (/^ {4}steps:\s*$/.test(l)) { inSteps = true; continue; }
+    if (/^ {4}[A-Za-z_-]+:/.test(l)) { inSteps = false; cur = null; continue; }
+    if (!inSteps) continue;
+    const m = /^(\s*)- /.exec(l);
+    if (m && (indent === null || m[1].length === indent)) { indent = m[1].length; cur = [l]; steps.push(cur); continue; }
+    if (cur) cur.push(l);
+  }
+  return steps;
+}
+
+export function prReviewSolProblems(text) {
+  const problems = [];
+  const keys = onKeys(text);
+  if (!/^ {4}workflows: \[ci, mac-compile, review-label\]$/m.test(topLevelBlock(text, "on") ?? "")) problems.push("pr-review-sol.yml's workflow_run follows only ci, mac-compile and review-label");
+  if (keys.join(",") !== PR_REVIEW_SOL_TRIGGERS.join(",")) problems.push("pr-review-sol.yml may start only from workflow_run and workflow_dispatch");
+  if (!/^permissions: \{\}$/m.test(text)) problems.push("pr-review-sol.yml needs top-level permissions: {}");
+  if (/self-hosted|pull_request_target/.test(text)) problems.push("pr-review-sol.yml runs only on GitHub-hosted runners");
+  if (/^\s+[a-z-]+:\s*write\b/m.test(text)) problems.push("pr-review-sol.yml asks for no write permission (the comment token posts)");
+  const checkouts = (text.match(/uses: actions\/checkout@/g) ?? []).length;
+  if (!checkouts || checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every pr-review-sol.yml checkout must set persist-credentials: false");
+  if (checkouts !== (text.match(/^\s+ref: main$/gm) ?? []).length || /^\s+ref: (?!main$)/m.test(text)) problems.push("pr-review-sol.yml checks out main only");
+  const named = [...text.matchAll(/\bsecrets\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
+  if (named.length !== Object.keys(SOL_SECRET_STEPS).length || Object.keys(SOL_SECRET_STEPS).some((s) => named.filter((x) => x === s).length !== 1)) problems.push(`pr-review-sol.yml names exactly ${Object.keys(SOL_SECRET_STEPS).join(", ")}, once each`);
+  const steps = jobBlocks(text).flatMap((j) => stepBlocks(j.lines));
+  for (const [secret, run] of Object.entries(SOL_SECRET_STEPS)) {
+    const holders = steps.filter((s) => s.some((l) => l.includes(`secrets.${secret}`)));
+    if (holders.length !== 1 || holders[0].filter((l) => /^\s+run:/.test(l)).map((l) => l.trim()).join("\n") !== run)
+      problems.push(`secrets.${secret} must be used only by the step that runs ${run.slice(5)}`);
+  }
+  return problems;
+}
+
+// The Mac compile check (owner 2026-11-15). Only mac-compile.yml may name the compile runners, with exactly this line,
+// in one job whose condition is exactly MAC_COMPILE_IF. It may start only from workflow_run (after the trigger
+// workflow) or workflow_dispatch, which both run main's definition: a pull_request run would execute the PR's own
+// copy, so a fork could drop the condition. Read-only token except one statuses: write job that checks nothing
+// out, no secrets, no persisted checkout credentials. The trigger workflow runs on pull_request with no permissions,
+// no checkout and no actions. The enforced boundary is the modelplan-compile runner group, restricted to
+// mac-compile.yml@refs/heads/main.
+export const MAC_COMPILE_PATH = ".github/workflows/mac-compile.yml";
+export const REVIEW_LABEL_PATH = ".github/workflows/review-label.yml";
+export const MAC_COMPILE_TRIGGER_PATH = ".github/workflows/mac-compile-trigger.yml";
+export const MAC_COMPILE_ROUTE = "runs-on: [self-hosted, macOS, ARM64, modelplan-compile]";
+export const MAC_COMPILE_GATE = "github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005'))";
+export const MAC_COMPILE_IF = `if: \${{ needs.plan.outputs.run == 'true' && ${MAC_COMPILE_GATE} }}`;
+
+// Runner acceptance smoke (owner D353, 2026-11-20). Only runner-smoke.yml may take a runner by its temporary smoke
+// label, with exactly this line, in one job gated to the owner on main's definition. It starts only from
+// workflow_dispatch, and the label choice may list only smoke-arm64-N names, so it can never name a production label.
+export const RUNNER_SMOKE_PATH = ".github/workflows/runner-smoke.yml";
+export const RUNNER_SMOKE_ROUTE = 'runs-on: [self-hosted, macOS, ARM64, "${{ inputs.label }}"]';
+export const RUNNER_SMOKE_GATE = "github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && (inputs.ref == 'main' || startsWith(inputs.ref, 'refs/tags/'))";
+export const RUNNER_SMOKE_IF = `if: \${{ ${RUNNER_SMOKE_GATE} }}`;
+
+export const RUNNER_SMOKE_CHECKOUT_REF = "        ref: ${{ startsWith(inputs.ref, 'refs/tags/') && inputs.ref || github.sha }}";
+export const RUNNER_SMOKE_ON = [
+  "on:", "  workflow_dispatch:", "    inputs:", "      label:",
+  '        description: "Temporary unique smoke label of the runner under test"',
+  "        type: choice", "        required: true", "        options:", "<choice>",
+  "      ref:", '        description: "What to build: main (default) or a tag as refs/tags/<name>"',
+  "        type: string", "        required: false", "        default: main",
+].join("\n");
+
+// First step of the smoke job (macrevc-1107-3, ruling R11): refuse any runner whose registered name is not the opaque
+// smoke-arm64-N. A host-identifying default name therefore never reaches a build, and after this step the name is safe to
+// print. This also keeps the V1 host and the GUI Macs out. The refusal message never repeats the name. (GitHub's own job metadata shows the name before any step runs, which
+// is why the owner registers the runner under this opaque name; see docs/mac-ci.md.)
+export const RUNNER_SMOKE_NAME_STEP = Object.freeze({
+  name: "Refuse a runner without an opaque name",
+  id: "guard",
+  shell: "bash",
+  run: [
+    "# The runner must be registered as smoke-arm64-N: any other name may identify the host, so it is refused unprinted.",
+    "case \"${RUNNER_NAME:-}\" in",
+    "  smoke-arm64-[0-9]|smoke-arm64-[0-9][0-9]) ;;",
+    "  *) echo \"::error::the runner must be registered under the opaque name smoke-arm64-N; refusing to run\"; exit 1;;",
+    "esac",
+    "echo \"HEADLESS_SCRATCH=$RUNNER_TEMP/headless-build\" >> \"$GITHUB_ENV\"",
+    "",
+  ].join("\n"),
+});
+
+const onKeys = (text) => {
+  const on = topLevelBlock(text, "on");
+  return on ? [...on.matchAll(/^ {2}([A-Za-z_]+):/gm)].map((m) => m[1]) : [];
+};
+const significant = (block) => (block ?? "").split("\n").filter((l) => l.trim() && !/^\s*#/.test(l)).join("\n");
+
+export function macCompileProblems(text) {
+  const problems = [];
+  const keys = onKeys(text);
+  if (keys.join(",") !== "workflow_run,workflow_dispatch") problems.push("mac-compile.yml may start only from workflow_run and workflow_dispatch");
+  if (!/^ {4}workflows: \[mac-compile trigger\]$/m.test(topLevelBlock(text, "on") ?? "")) problems.push("mac-compile.yml's workflow_run must follow only the mac-compile trigger workflow");
+  if (significant(topLevelBlock(text, "permissions")) !== "permissions:\n  contents: read") problems.push("mac-compile.yml needs top-level permissions: contents: read");
+  if (/\bsecrets\./.test(text)) problems.push("mac-compile.yml may not use secrets");
+  const checkouts = (text.match(/uses: actions\/checkout@/g) ?? []).length;
+  if (checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every mac-compile.yml checkout must set persist-credentials: false");
+  const jobs = jobBlocks(text);
+  const writes = text.split("\n").filter((l) => !/^\s*#/.test(l) && /:\s*write\b/.test(l));
+  const writer = jobs.filter((j) => j.lines.some((l) => /:\s*write\b/.test(l)));
+  if (writes.some((l) => l !== "      statuses: write") || writes.length > 1) problems.push("mac-compile.yml may ask only for statuses: write, in one job");
+  else if (writer.length === 1 && writer[0].lines.some((l) => l.trim() === MAC_COMPILE_ROUTE || /^\s*(?:-\s*)?(?:uses|working-directory):/.test(l)))
+    problems.push("the statuses: write job may not check out or run repository code, nor run on the compile runners");
+  const routed = jobs.filter((j) => j.lines.some((l) => l.trim() === MAC_COMPILE_ROUTE));
+  if (routed.length !== 1 || text.split("\n").filter((l) => l.trim() === MAC_COMPILE_ROUTE).length !== 1) problems.push("mac-compile.yml has exactly one compile-runner job");
+  else if (routed[0].lines.filter((l) => /^    if:/.test(l)).join("\n") !== "    " + MAC_COMPILE_IF) problems.push("the compile-runner job's condition must be exactly MAC_COMPILE_IF");
+  return problems;
+}
+
+export function runnerSmokeProblems(text) {
+  const problems = [];
+  if (onKeys(text).join(",") !== "workflow_dispatch") problems.push("runner-smoke.yml may start only from workflow_dispatch");
+  if (significant(topLevelBlock(text, "permissions")) !== "permissions:\n  contents: read") problems.push("runner-smoke.yml needs top-level permissions: contents: read");
+  // Effective (non-comment) lines only: no secrets context in any spelling (dot, index or bare), no write permission in
+  // any form (block, flow or write-all), and no job-level or step-level permissions block at all.
+  const effective = text.split("\n").filter((l) => !/^\s*#/.test(l));
+  if (effective.some((l) => /\bsecrets\b/i.test(l) || /:\s*write(?:-all)?\b/.test(l) || /\bwrite-all\b/.test(l))) problems.push("runner-smoke.yml may not use secrets or write permissions");
+  if (effective.filter((l) => /^\s*["']?permissions["']?\s*:/.test(l)).length !== 1) problems.push("runner-smoke.yml may have only the top-level permissions block, none in a job");
+  // Public logs and the job summary must not carry the runner's host name or the file owner: the runner name is only
+  // compared inside the refusal guard, never printed, and no long directory listing (owner and group columns) is run.
+  if (effective.some((l) => /\brunner\.name\b/.test(l) || /\bls\s+-\w*l/.test(l))) problems.push("runner-smoke.yml may not print the runner name or a long directory listing");
+  const checkouts = (text.match(/uses: actions\/checkout@/g) ?? []).length;
+  if (checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every runner-smoke.yml checkout must set persist-credentials: false");
+  // The whole on: block must equal the reviewed shape, with only the smoke choices free (`- smoke-arm64-N`, optionally
+  // followed by a comment). Any other line, including a multi-line or quoted list item, is a problem.
+  // Plain ASCII only (a non-breaking space would silently become part of a YAML scalar, e.g. the runner label).
+  if (/[^\x20-\x7e\n]/.test(text)) problems.push("runner-smoke.yml must be plain ASCII without tabs");
+  const onLines = significant(topLevelBlock(text, "on")).split("\n").map((l) => (/^ {10}- smoke-arm64-\d+(?: #[ -~]*)?$/.test(l) ? "<choice>" : l));
+  const choices = onLines.filter((l) => l === "<choice>").length;
+  const expectedOn = RUNNER_SMOKE_ON.replace("<choice>", Array(choices).fill("<choice>").join("\n"));
+  if (!choices || onLines.join("\n") !== expectedOn) problems.push("runner-smoke.yml's on: block must be the reviewed shape with only smoke-arm64-N label choices");
+  // The only checkout ref is the tag-or-own-commit expression, as an effective (non-comment) line of the checkout's with: block.
+  const refLines = text.split("\n").filter((l) => !/^\s*#/.test(l) && /^ {8}ref:/.test(l));
+  if (refLines.length !== 1 || refLines[0] !== RUNNER_SMOKE_CHECKOUT_REF) problems.push("runner-smoke.yml must check out a tag or its own commit, never a free-form branch (expressions compare case-insensitively)");
+  else {
+    const lines = text.split("\n");
+    const at = lines.indexOf(refLines[0]);
+    const before = lines.slice(0, at).filter((l) => !/^\s*#/.test(l));
+    const after = lines.slice(at + 1).find((l) => !/^\s*#/.test(l));
+    if (after === undefined || !/^ {0,8}\S/.test(after)) problems.push("the checkout ref must be a single-line value");
+    if (before.slice(-3).join("\n") !== "    - uses: actions/checkout@v4\n      with:\n        persist-credentials: false") problems.push("the checkout ref must belong to the actions/checkout step");
+  }
+  const parsed = parseWorkflowYaml(text);
+  if (parsed.error) problems.push(`runner-smoke.yml must parse as YAML: ${parsed.error}`);
+  else if (!parsed.unavailable) for (const p of runnerSmokeYamlProblems(parsed.doc)) if (!problems.includes(p)) problems.push(p);
+  // The runner name appears only after the opaque-name guard has opened the job, so the report may name the runner.
+  const smokeSteps = (parsed.doc?.jobs && Object.values(parsed.doc.jobs)[0]?.steps) || [];
+  if (!parsed.unavailable && JSON.stringify(smokeSteps[0] ?? null) !== JSON.stringify(RUNNER_SMOKE_NAME_STEP)) problems.push("runner-smoke.yml must open with the exact opaque-runner-name guard step (smoke-arm64-N only)");
+  problems.push(...runnerSmokeNameLeakProblems(text));
+  const jobs = jobBlocks(text);
+  const routed = jobs.filter((j) => j.lines.some((l) => l.trim() === RUNNER_SMOKE_ROUTE));
+  if (jobs.length !== 1 || routed.length !== 1) problems.push("runner-smoke.yml has exactly one job, on the smoke route");
+  else {
+    if (routed[0].lines.filter((l) => /^    if:/.test(l)).join("\n") !== "    " + RUNNER_SMOKE_IF) problems.push("the smoke job's condition must be exactly RUNNER_SMOKE_IF");
+    if (!routed[0].lines.some((l) => l === "    timeout-minutes: 40")) problems.push("the smoke job needs timeout-minutes: 40");
+  }
+  return problems;
+}
+
+// macrevc-1107-3: a rejected runner name never reaches a log or summary. After the guard fails no later step may run, so
+// the only step allowed to run on failure is the timing report, and only when the guard step succeeded; the runner name
+// is read nowhere but in the guard and that report. Text based, so it does not depend on a YAML parser.
+export const RUNNER_SMOKE_REPORT_IF = "      if: ${{ always() && steps.guard.outcome == 'success' }}";
+export function runnerSmokeNameLeakProblems(text) {
+  const problems = [];
+  const lines = text.split("\n");
+  const starts = lines.map((l, i) => (/^ {4}- /.test(l) ? i : -1)).filter((i) => i >= 0);
+  const steps = starts.map((s, k) => lines.slice(s, starts[k + 1] ?? lines.length).filter((l) => !/^\s*#/.test(l)));
+  steps.forEach((step, i) => {
+    const body = step.join("\n");
+    const isReport = step[0] === "    - name: Timings, runner name and smoke label";
+    if (i > 0 && /\b(?:always|failure|cancelled)\s*\(|\bsteps\.guard\b/.test(body)) {
+      const conds = step.filter((l) => /^ {6}if:/.test(l));
+      if (!(isReport && conds.length === 1 && conds[0] === RUNNER_SMOKE_REPORT_IF)) problems.push("runner-smoke.yml: only the timing report may run after the opaque-name guard failed, and only on steps.guard.outcome == 'success'");
+    }
+    if (i > 0 && !isReport && /RUNNER_NAME|runner\.name/.test(body)) problems.push("runner-smoke.yml: the runner name may be read only by the guard and the timing report");
+  });
+  if (!steps[0]?.includes("      id: guard")) problems.push("runner-smoke.yml: the opaque-name guard must be the first step and carry id: guard");
+  const report = steps.find((s) => s[0] === "    - name: Timings, runner name and smoke label");
+  if (!report || !report.includes(RUNNER_SMOKE_REPORT_IF)) problems.push("runner-smoke.yml: the timing report must run only when the opaque-name guard succeeded (if: always() && steps.guard.outcome == 'success')");
+  return problems;
+}
+
+// Structural YAML view (macrevc-1107-1/-2): text matching cannot see quoted keys, flow maps or matrix indirection, so the
+// runner and permission rules below read the parsed document. PyYAML is optional (see parseWorkflowYaml). A
+// duplicate key is an error (the last one would silently win), and anything that fails to parse is a policy problem.
+const YAML_TO_JSON = [
+  "import sys, json",
+  "try: import yaml",
+  "except ImportError: sys.exit(3)",
+  "class L(yaml.SafeLoader): pass",
+  "def mapping(loader, node):",
+  "    seen = set()",
+  "    for k, _ in node.value:",
+  "        key = loader.construct_object(k)",
+  "        if key in seen: raise yaml.YAMLError('duplicate key %r' % (key,))",
+  "        seen.add(key)",
+  "    return loader.construct_mapping(node)",
+  "L.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping)",
+  "doc = yaml.load(sys.stdin.read(), Loader=L)",
+  "def norm(v):",
+  "    if isinstance(v, dict): return {('on' if k is True else str(k)): norm(x) for k, x in v.items()}",
+  "    if isinstance(v, list): return [norm(x) for x in v]",
+  "    return v if isinstance(v, (str, int, float, bool)) or v is None else str(v)",
+  "print(json.dumps(norm(doc)))",
+].join("\n");
+
+export function parseWorkflowYaml(text) {
+  const r = spawnSync("python3", ["-I", "-c", YAML_TO_JSON], { input: text, encoding: "utf8" });
+  // PyYAML is not installed on every runner (hosted images lack it). Without it the structural view is unavailable; the
+  // text rules still apply, and repo-checks installs PyYAML and sets MODELPLAN_REQUIRE_YAML=1 so the structural rules run there.
+  if (r.status === 3) return process.env.MODELPLAN_REQUIRE_YAML === "1" ? { error: "PyYAML is required here (MODELPLAN_REQUIRE_YAML=1) but not installed" } : { unavailable: true };
+  if (r.status !== 0) return { error: (r.stderr || r.error?.message || "python3 yaml unavailable").trim().split("\n").pop() };
+  try { return { doc: JSON.parse(r.stdout) }; } catch { return { error: "unreadable parser output" }; }
+}
+
+// Depth-first walk of every key/value pair of the parsed document.
+function walkYaml(node, visit, path = []) {
+  if (Array.isArray(node)) node.forEach((x, i) => walkYaml(x, visit, [...path, i]));
+  else if (node && typeof node === "object") for (const [k, v] of Object.entries(node)) { visit(k, v, path); walkYaml(v, visit, [...path, k]); }
+}
+
+const strings = (v) => (typeof v === "string" ? [v] : Array.isArray(v) ? v.flatMap(strings) : v && typeof v === "object" ? Object.values(v).flatMap(strings) : []);
+// A matrix value written as an expression is static when its only context is github.event_name and everything else is
+// string literals and the plain operators: then every label it can yield is one of the literals (the u14 pattern that
+// picks between two literal arrays by event). Returns those labels, or null when anything else appears.
+function staticExpressionLabels(value) {
+  const m = /^\$\{\{([^]*)\}\}$/.exec(value.trim());
+  if (!m) return null;
+  const literals = [];
+  const skeleton = m[1].replace(/'((?:[^']|'')*)'/g, (_, lit) => { literals.push(lit.replace(/''/g, "'")); return "L"; });
+  if (!/^(?:\s|L|!|&&|\|\||\(|\)|,|fromJSON|contains|github\.event_name)*$/.test(skeleton)) return null;
+  const out = [];
+  for (const lit of literals) {
+    try {
+      const parsed = JSON.parse(lit);
+      out.push(...(Array.isArray(parsed) ? parsed : [parsed]));
+    } catch { out.push(lit); }
+  }
+  return out;
+}
+const SAFE_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+// Every runner label that a job can resolve to must be statically known. A plain literal is checked by the line rules;
+// an expression is accepted only as `${{ matrix.<key> }}` over a strategy.matrix whose values are all literals (no
+// `${{`, no fromJSON): anything else (inputs, vars, fromJSON matrices, ternaries, needs/steps) fails closed.
+export function runsOnProblems(doc, path) {
+  const problems = [];
+  const jobs = doc && typeof doc.jobs === "object" && doc.jobs ? doc.jobs : {};
+  for (const [name, job] of Object.entries(jobs)) {
+    if (!job || typeof job !== "object" || !("runs-on" in job)) continue;
+    const labels = strings(job["runs-on"]);
+    for (const label of labels) {
+      if (!label.includes("${{")) continue;
+      if (path === RUNNER_SMOKE_PATH && label === "${{ inputs.label }}") continue;   // the smoke route itself
+      const m = /^\$\{\{\s*matrix\.([A-Za-z_][\w-]*)\s*\}\}$/.exec(label);
+      const matrix = job.strategy && typeof job.strategy === "object" ? job.strategy.matrix : undefined;
+      let values = null;
+      if (m && matrix && typeof matrix === "object" && !Array.isArray(matrix)) {
+        const key = m[1];
+        const raw = matrix[key];
+        const exprLabels = typeof raw === "string" && raw.includes("${{") ? staticExpressionLabels(raw) : undefined;
+        const listed = exprLabels !== undefined ? (exprLabels ?? [{}]) : Array.isArray(raw) ? raw : raw === undefined ? [] : [raw];
+        const included = Array.isArray(matrix.include) ? matrix.include.filter((e) => e && typeof e === "object" && key in e).map((e) => e[key]) : [];
+        values = [...listed, ...included];
+        const flat = values.flatMap(strings);
+        if (!values.length || flat.length !== values.length || flat.some((v) => !SAFE_LABEL.test(v)) || typeof matrix.include === "string" || typeof matrix.exclude === "string") values = null;
+      }
+      if (!values) problems.push(`job ${name}: runner label expression ${label} cannot be resolved statically (only a literal strategy.matrix key is allowed)`);
+    }
+  }
+  return problems;
+}
+
+// The smoke workflow must keep a read-only token in every YAML spelling: exactly one permissions mapping (top level,
+// equal to {contents: read}), none inside a job or step, and no write level or write-all anywhere in the document.
+export function runnerSmokeYamlProblems(doc) {
+  const problems = [];
+  if (!doc || typeof doc !== "object") return ["runner-smoke.yml is not a YAML mapping"];
+  if (JSON.stringify(doc.permissions) !== JSON.stringify({ contents: "read" })) problems.push("runner-smoke.yml needs top-level permissions: contents: read");
+  walkYaml(doc, (k, v, path) => {
+    if (k === "permissions" && path.length) problems.push("runner-smoke.yml may have only the top-level permissions block, none in a job or step");
+  });
+  walkYaml({ permissions: doc.permissions, jobs: doc.jobs }, (k, v) => {
+    if (k === "permissions") for (const x of strings(v)) if (/write/i.test(x)) problems.push("runner-smoke.yml may not use write permissions");
+  });
+  if (JSON.stringify(doc).toLowerCase().includes("secrets")) problems.push("runner-smoke.yml may not use secrets");
+  return problems;
+}
+
+export function macCompileTriggerProblems(text) {
+  const problems = [];
+  if (onKeys(text).join(",") !== "pull_request") problems.push("mac-compile-trigger.yml may start only from pull_request");
+  if (!/^permissions: \{\}$/m.test(text)) problems.push("mac-compile-trigger.yml needs top-level permissions: {}");
+  if (/^\s*(?:-\s*)?(?:uses|permissions):/m.test(text.replace(/^permissions: \{\}$/m, ""))) problems.push("mac-compile-trigger.yml may not use actions or ask for permissions");
+  if (/\bsecrets\./.test(text)) problems.push("mac-compile-trigger.yml may not use secrets");
+  return problems;
+}
+
+// review-label.yml: the no-op trigger of pr-review-sol.yml for the review:gpt label (same shape as the compile trigger).
+export function reviewLabelProblems(text) {
+  const problems = [];
+  if (onKeys(text).join(",") !== "pull_request") problems.push("review-label.yml may start only from pull_request");
+  if (!/^permissions: \{\}$/m.test(text)) problems.push("review-label.yml needs top-level permissions: {}");
+  if (/^\s*(?:-\s*)?(?:uses|permissions):/m.test(text.replace(/^permissions: \{\}$/m, ""))) problems.push("review-label.yml may not use actions or ask for permissions");
+  if (/\bsecrets\./.test(text)) problems.push("review-label.yml may not use secrets");
+  return problems;
+}
 
 // GitHub runs top-level .yml and .yaml files under .github/workflows/.
 export function isWorkflowFile(path) {
@@ -23,22 +370,59 @@ function decodedVariant(text) {
       (_, x, u, U) => String.fromCodePoint(parseInt(x || u || U, 16)));
 }
 
-function lineProblems(raw, problems) {
+function lineProblems(raw, problems, path = "") {
   const line = raw.trim();
-  if (/modelplans-(publish|ci)/.test(line)) problems.add("private runner label");
+  if (/modelplans-(publish|ci)/i.test(line)) problems.add("private runner label");
+  if (path !== PR_REVIEW_PATH && /modelplan-review/i.test(line)) problems.add("review runner label outside pr-review.yml");
+  // Runner labels match case-insensitively on GitHub, so every label guard does too.
+  if (path !== RUNNER_SMOKE_PATH && /\bsmoke-arm64-\d+\b/i.test(line)) problems.add("smoke runner label outside runner-smoke.yml");
+  if (path !== MAC_COMPILE_PATH && /modelplan-compile\b/i.test(line)) problems.add("compile runner label outside mac-compile.yml");
   if (/^runs-on:.*\b(format|join)\(/.test(line)) problems.add("dynamically constructed runner label");
   if ((line.includes("self-hosted") || line.includes("pull_request_target")) && !ALLOWED_ROUTES.has(line))
     problems.add("non-canonical self-hosted route or pull_request_target");
+}
+
+// Every runs-on key with its continuation lines (a flow list or a block list), joined into one string.
+function runsOnBlocks(text) {
+  const lines = text.split("\n"), out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(\s*)runs-on:/.exec(lines[i]);
+    if (!m || /^\s*#/.test(lines[i])) continue;
+    let block = lines[i].trim();
+    for (let j = i + 1; j < lines.length && (lines[j].trim() === "" || lines[j].search(/\S/) > m[1].length); j++) block += "\n" + lines[j].trim();
+    out.push(block.trim());
+  }
+  return out;
 }
 
 export function workflowProblems(text, path = "") {
   const problems = new Set();
   const check = (raw) => {
     if (path === ".github/workflows/trusted-mac.yml" && raw.trim() === TRUSTED_MAC_ROUTE) return;
-    lineProblems(raw, problems);
+    if (path === PR_REVIEW_PATH && raw.trim() === PR_REVIEW_ROUTE) return;
+    if (path === MAC_COMPILE_PATH && raw.trim() === MAC_COMPILE_ROUTE) return;
+    if (path === RUNNER_SMOKE_PATH && raw.trim() === RUNNER_SMOKE_ROUTE) return;
+    lineProblems(raw, problems, path);
   };
+  if (path === PR_REVIEW_PATH) for (const p of prReviewProblems(text)) problems.add(p);
+  if (path === PR_REVIEW_SOL_PATH) for (const p of prReviewSolProblems(text)) problems.add(p);
+  if (path === MAC_COMPILE_PATH) for (const p of macCompileProblems(text)) problems.add(p);
+  if (path === RUNNER_SMOKE_PATH) for (const p of runnerSmokeProblems(text)) problems.add(p);
+  if (path === REVIEW_LABEL_PATH) for (const p of reviewLabelProblems(text)) problems.add(p);
+  if (path === MAC_COMPILE_TRIGGER_PATH) for (const p of macCompileTriggerProblems(text)) problems.add(p);
   if (path !== ".github/workflows/trusted-mac.yml" && text.includes("MAC_GUI_LEND")) problems.add("GUI lending switch outside trusted-mac.yml");
   for (const raw of text.split("\n")) check(raw);
+  // A runner label chosen at run time from an input or variable could name the smoke label from any workflow.
+  if (path !== ".github/workflows/trusted-mac.yml") for (const route of runsOnBlocks(text)) {
+    if (path === RUNNER_SMOKE_PATH && route === RUNNER_SMOKE_ROUTE) continue;
+    if (/\$\{\{[^}]*\b(?:inputs|github\.event\.inputs|vars|secrets|env|needs|steps)\b/.test(route)) problems.add("runner label chosen from an input or variable outside runner-smoke.yml");
+  }
+  // Structural check (macrevc-1107-1): the runner label of every job must resolve statically, whatever the YAML spelling.
+  if (path !== ".github/workflows/trusted-mac.yml" && text.includes("runs-on")) {
+    const parsed = parseWorkflowYaml(text);
+    if (parsed.error) problems.add(`workflow does not parse as YAML: ${parsed.error}`);
+    else if (!parsed.unavailable) for (const p of runsOnProblems(parsed.doc, path)) problems.add(p);
+  }
   if (text.includes("\\")) for (const raw of decodedVariant(text).split("\n")) check(raw);
   return [...problems];
 }
@@ -216,5 +600,84 @@ export function draftGuardProblems(text) {
       problems.push(`macOS job ${job.name} runs on draft PRs; add "if: github.event_name != 'pull_request' || !github.event.pull_request.draft" (or collapse the matrix to ubuntu on drafts)`);
     }
   }
+  return problems;
+}
+
+// D254 (2026-11-14): hosted macOS gives 5 concurrent jobs, so a pull_request must start macOS jobs only when it
+// changes something they test, and a newer push must cancel the older run of the same PR. Nothing else is ever
+// filtered or cancelled: merge_group, push, schedule and workflow_dispatch keep the full suite. Required checks
+// need no stub: merge-gates counts only the newest run per workflow that exists, plus ci.yml as the anchor, and
+// a skipped job is green (OK_CONCLUSIONS), so a workflow or job a PR does not trigger never blocks it.
+function onEvent(text, event) {
+  const on = topLevelBlock(text, "on");
+  if (!on) return null;
+  const lines = on.split("\n");
+  const start = lines.findIndex((l) => new RegExp(`^  ["']?${event}["']?:`).test(l));
+  if (start === -1) return null;
+  const end = lines.findIndex((l, i) => i > start && /^  \S/.test(l));
+  return lines.slice(start, end === -1 ? lines.length : end).join("\n");
+}
+
+// A job-level scope gate: the job's own `if:` reads a scope job's output (mac / run / notices-mac style),
+// is dispatch-only, or is opt-in by label.
+const JOB_SCOPE_GATE = /needs\.[\w-]+\.outputs\.[\w-]*(?:mac|run)\b|github\.event_name\s*==\s*'workflow_dispatch'|labels\.\*\.name,\s*'gui-ci'/;
+
+function jobIf(lines) {
+  const i = lines.findIndex((l) => /^    if:/.test(l));
+  return i === -1 ? "" : lines[i];
+}
+
+export function macPathGateProblems(text, path = "") {
+  const problems = [];
+  if (path.endsWith("/trusted-mac.yml")) return problems;
+  const pr = onEvent(text, "pull_request");
+  if (pr === null || !runsMacos(text)) return problems;
+  const wfFilter = /^    paths:/m.test(pr) && /!\*\*\/\*\.md/.test(pr);
+  const macJobs = jobBlocks(text).filter((j) => jobRunsMacos(j.lines));
+  if (!wfFilter) {
+    for (const job of macJobs) {
+      if (!JOB_SCOPE_GATE.test(jobIf(job.lines)))
+        problems.push(`macOS job ${job.name} has no path gate on pull_request (a workflow-level pull_request paths list excluding !**/*.md, or an if: reading a scope job's output)`);
+    }
+  } else if (/^  pull_request:/m.test(text) && macJobs.some((j) => /needs\.pr-scope\./.test(jobIf(j.lines)) === false && /workflows\/desktop\.yml/.test(path))) {
+    // desktop.yml keeps a broad workflow-level list for its Linux jobs; its Mac jobs narrow it with pr-scope.
+    for (const job of macJobs) {
+      if (!JOB_SCOPE_GATE.test(jobIf(job.lines)))
+        problems.push(`macOS job ${job.name} has no path gate on pull_request (needs pr-scope)`);
+    }
+  }
+  return problems;
+}
+
+// merge_group, schedule and workflow_dispatch are never path-filtered; the markdown exclusion belongs to
+// pull_request only (push keeps whatever list it had); a PR cancel is pull_request-only wherever a
+// workflow can run for a PR.
+export function nonPrFilterProblems(text) {
+  const problems = [];
+  for (const ev of ["merge_group", "schedule", "workflow_dispatch"]) {
+    const b = onEvent(text, ev);
+    if (b !== null && /^    (paths|paths-ignore|branches|branches-ignore):/m.test(b) && ev !== "schedule")
+      problems.push(`${ev} must not be path- or branch-filtered`);
+  }
+  const push = onEvent(text, "push");
+  if (push !== null && /!\*\*\/\*\.md/.test(push)) problems.push("the markdown exclusion is for pull_request only, never push");
+  return problems;
+}
+
+export function prCancelProblems(text) {
+  const problems = [];
+  const on = topLevelBlock(text, "on");
+  if (!on || onEvent(text, "pull_request") === null) return problems;
+  // A workflow whose only event is pull_request has no other run to cancel.
+  if (on.split("\n").filter((l) => /^  \S/.test(l)).length === 1) return problems;
+  const conc = topLevelBlock(text, "concurrency");
+  if (!conc) return problems;
+  const groupLine = conc.split("\n").find((l) => /^\s+group:/.test(l)) ?? "";
+  const cancelLine = conc.split("\n").find((l) => /^\s+cancel-in-progress:/.test(l)) ?? "";
+  if (/cancel-in-progress:\s*true\s*$/.test(cancelLine)) problems.push("cancel-in-progress: true would also cancel merge_group, push and schedule runs");
+  if (/cancel-in-progress/.test(cancelLine) && !/github\.event_name\s*==\s*'pull_request'/.test(cancelLine) && !/cancel-in-progress:\s*false/.test(cancelLine))
+    problems.push("cancel-in-progress must be pull_request-only");
+  if (/cancel-in-progress:\s*\$\{\{/.test(cancelLine) && /github\.sha/.test(groupLine) )
+    problems.push("a non-PR run must not share a group by commit sha (a merge_group and the push to main carry the same sha)");
   return problems;
 }

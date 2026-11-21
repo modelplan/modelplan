@@ -89,6 +89,7 @@ func (s *RefreshScheduler) automatic() {
 				_, pending := s.pending[key]
 				s.mu.Unlock()
 				if pending {
+					s.replanQueued(admission, scope, key, now)
 					continue
 				}
 				if until.After(now) {

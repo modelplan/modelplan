@@ -57,9 +57,13 @@ import ModelPlanDock
                 remainingPercent: fact.remainingPercent, resetsAt: fact.resetsAt,
                 issuedAt: fact.issuedAt, until: fact.until)
         }
+        let retained = pair.retainedWindows.map { fact in
+            HostRetainedWindowFact(memberID: fact.memberID, windowID: fact.windowID, remainingPercent: fact.remainingPercent,
+                resetsAt: fact.resetsAt, observedAt: fact.observedAt, until: fact.until)
+        }
         do {
             let result = try HostVerifiedWindowAdapter.candidate(.init(content: pair.content,
-                deadline: deadline, verifiedWindows: proofs, evaluatedAt: context.now,
+                deadline: deadline, verifiedWindows: proofs, retainedWindows: retained, evaluatedAt: context.now,
                 sourceToken: token, language: provider.language), sourceIsCurrent: isCurrent)
             guard isCurrent(token) else { throw HostVerifiedWindowError.staleSnapshot }
             evaluatedAt = context.now
@@ -90,12 +94,17 @@ import ModelPlanDock
         return valid(value, evaluatedAt: evaluatedAt, now: now)
     }
     func makeContent(_ context: DockContentContext) -> DockContent {
-        guard let value, let evaluatedAt else { return empty() }
+        admittedContent(context) ?? empty()
+    }
+    /// The admitted content, or nil while none is admitted (between a clear and the next install). G3-122: the menu
+    /// bar title tells this gap apart from an admitted content that has no number.
+    func admittedContent(_ context: DockContentContext) -> DockContent? {
+        guard let value, let evaluatedAt else { return nil }
         guard valid(value, evaluatedAt: evaluatedAt, now: context.now) else {
             clear(); onStale?()
             if let replacement = self.value, let at = self.evaluatedAt,
                valid(replacement, evaluatedAt: at, now: context.now) { return replacement }
-            return empty()
+            return nil
         }
         return value
     }

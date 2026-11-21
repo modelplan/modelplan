@@ -13,11 +13,18 @@ enum CockpitDeliveryResult { case accepted, missing, rejected, failed }
   private let capacity: Int, deliver: (Message, @escaping Completion) -> Void
   private var queued: [Job] = [], active: Job?
   private var generation: UInt64 = 0, serial: UInt64 = 0
-  init(capacity: Int = 32, deliver: @escaping (Message, @escaping Completion) -> Void) {
-    self.capacity = capacity; self.deliver = deliver
+  /// G3-116: calls the page completed as accepted, counted whether or not the message was still current then. A
+  /// replaced display still proves the page is alive and working through its queue.
+  private(set) var acceptedCount: UInt64 = 0
+  /// Recovery contract: every call the page completed (accepted, refused, or answered without a bridge) is an answer
+  /// from it, current or not, so it proves the page alive. A failed call may mean the process went, so it is not one.
+  private let answered: (() -> Void)?
+  init(capacity: Int = 32, answered: (() -> Void)? = nil, deliver: @escaping (Message, @escaping Completion) -> Void) {
+    self.capacity = capacity; self.answered = answered; self.deliver = deliver
   }
-  /// G3-86: `coalesce` names a whole-state message (shell, untriggered appearance): a newer one
-  /// replaces a queued older one, at the back, so host sequence order is kept. A full queue first drops
+  /// G3-86: `coalesce` names a whole-state message (shell, untriggered appearance; recovery step 3 adds display, tick
+  /// and visibility): a newer one replaces a queued older one, at the back, so host sequence order is kept. The active
+  /// call is never replaced, so each kind has at most one call in flight and one waiting. A full queue first drops
   /// queued work that is no longer current; only then is the message refused.
   @discardableResult func submit(_ message: Message, coalesce: String? = nil, isCurrent: @escaping () -> Bool,
                                   completed: @escaping Completion) -> Bool {
@@ -44,6 +51,8 @@ enum CockpitDeliveryResult { case accepted, missing, rejected, failed }
       deliver(job.message) { [weak self] result in
         guard let self, self.serial == token, let current = self.active else { return }
         self.active = nil; self.serial &+= 1
+        if result == .accepted { self.acceptedCount &+= 1 }
+        if result != .failed { self.answered?() }
         if self.generation == epoch && current.isCurrent() { current.completed(result) }
         self.pump()
       }

@@ -16,7 +16,7 @@ import tempfile
 app = Path(sys.argv[1]).resolve()
 output = Path(sys.argv[2]).resolve()
 output.mkdir(parents=True, exist_ok=False)
-exe = app / 'Contents/MacOS/ModelPlanCommunity'
+exe = app / 'Contents/MacOS/ModelPlan'
 helper = app / 'Contents/Helpers/modelplan'
 
 

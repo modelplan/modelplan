@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// HIST-IMP-05 (D117): the 7- and 30-day views draw imported history exactly like live data (no lighter styling, no
-// origin-based marker); only the hover note says which part was imported. Synthetic data only.
+// HIST-IMP-05 (D117): imported history counts like live data and carries no origin marker. WP-12: the overview bars are
+// ≈cost, whose buckets carry no origin, so the bars have no imported part to mark; the totals row names where the record
+// starts, imported days included. Synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
@@ -12,7 +13,8 @@ async function open(page,data,locale='en'){
  await page.clock.setFixedTime(new Date(NOW));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25}))).toBe(true);
+ // CKP-SHELL-50: the host's range; these views are drawn at 30 days unless a test picks another.
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,range:'30d'},redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
 }
@@ -29,58 +31,17 @@ function fixture(imported=true){
   projects:{recent7d:[],recent30d:[]},cycles:[]};
  return data;
 }
-const bars=page=>page.locator('.ov-bucket').evaluateAll(list=>list.map(e=>({total:Number(e.dataset.total),imported:Number(e.dataset.imported||0),classes:e.getAttribute('class'),bars:[...e.querySelectorAll('.ov-bar')].map(b=>b.getAttribute('class'))})));
-
-test('HIST-IMP-05 the 30-day bars of imported and live days look identical, with a hover note on imported ones',async({page})=>{
+test('HIST-IMP-05 imported days move the start of the totals row and leave no origin marker on the overview',async({page})=>{
  await open(page,fixture());
- const b=await bars(page);expect(b.length).toBe(30);
- // Index 29 is today: 12 days back is index 17, 6 back is 23, 3 back is 26.
- expect([b[17].total,b[23].total,b[26].total,b[25].total,b[29].total]).toEqual([300,800,750,1000,100]);
- expect([b[17].imported,b[23].imported,b[26].imported,b[25].imported,b[29].imported]).toEqual([300,800,250,0,0]);
- for(const x of b){expect(x.classes).toBe('ov-bucket');for(const c of x.bars)expect(c).toBe('ov-bar');}
- expect(await page.locator('.ov-bucket').nth(26).getAttribute('data-tip')).toContain('incl. imported 250');
- expect(await page.locator('.ov-bucket').nth(23).getAttribute('data-tip')).toContain('Imported');
- expect(await page.locator('.ov-bucket').nth(25).getAttribute('data-tip')).not.toMatch(/mported/);
-});
-
-test('HIST-IMP-05 imported bars have the same fill and opacity as live bars',async({page})=>{
- await open(page,fixture());
- const style=await page.evaluate(()=>{const bar=i=>document.querySelectorAll('.ov-bucket')[i].querySelector('.ov-bar'),r=bar(23),l=bar(25);
-  return {impFill:r.getAttribute('fill'),liveFill:l.getAttribute('fill'),impOpacity:getComputedStyle(r).opacity,liveOpacity:getComputedStyle(l).opacity};});
- expect(style.impFill).toBe(style.liveFill);expect(style.impOpacity).toBe(style.liveOpacity);
-});
-
-test('HIST-IMP-05 no import-boundary marker, label or origin wording on the chart, in English and Chinese',async({page})=>{
- await open(page,fixture());
- await expect(page.locator('.ov-chart .ov-from')).toHaveCount(0);
- await expect(page.locator('.ov-legend .ov-from-l')).toHaveCount(0);
- await expect(page.locator('.ov-chart')).not.toHaveAttribute('aria-label',/mported/);
+ await expect(page.locator('.ov-top .lbl').first()).toHaveText('since 10-23');
+ await expect(page.locator('.ov-top .ov-total')).toHaveText('4k');
+ await expect(page.locator('.pg-overview [data-imported], .pg-overview .ov-from, .pg-overview .hm.imp')).toHaveCount(0);
  await open(page,fixture(),'zh-CN');
- await expect(page.locator('.ov-chart .ov-from')).toHaveCount(0);
- expect(await page.locator('.ov-bucket').nth(23).getAttribute('data-tip')).toContain('已导入');
+ await expect(page.locator('.ov-top .lbl').first()).toHaveText('自 10-23 起');
 });
 
-test('HIST-IMP-05 the 7-day view draws imported days like live ones',async({page})=>{
- await open(page,fixture());
- await page.locator('[data-opt="days"] b',{hasText:/^7$/}).click();
- const b=await bars(page);expect(b.length).toBe(7);
- // 6 days back is the first bar and imported only.
- expect([b[0].total,b[0].imported]).toEqual([800,800]);
- for(const x of b){expect(x.classes).toBe('ov-bucket');for(const c of x.bars)expect(c).toBe('ov-bar');}
-});
-
-test('HIST-IMP-05 the grid view draws imported days like live ones',async({page})=>{
- await open(page,fixture());
- await page.locator('[data-opt="chart"] b',{hasText:/Grid/}).click();
- await expect(page.locator('.ov-heat .hm.imp')).toHaveCount(0);
- await expect(page.locator('.ov-heat')).not.toHaveAttribute('aria-label',/mported/);
- await expect(page.locator('.hm-since')).toHaveText('Recorded since Oct 23');
-});
-
-test('HIST-IMP-05 without imported data the views are as before',async({page})=>{
+test('HIST-IMP-05 without imported data the totals row starts at the first live day',async({page})=>{
  await open(page,fixture(false));
- const b=await bars(page);expect(b.every(x=>x.imported===0&&x.classes==='ov-bucket')).toBe(true);
- await page.locator('[data-opt="chart"] b',{hasText:/Grid/}).click();
- await expect(page.locator('.ov-heat .hm.imp')).toHaveCount(0);
- await expect(page.locator('.hm-since')).toHaveText('Recorded since Oct 31');
+ await expect(page.locator('.ov-top .lbl').first()).toHaveText('since 10-31');
+ await expect(page.locator('.ov-top .ov-total')).toHaveText('2k');
 });

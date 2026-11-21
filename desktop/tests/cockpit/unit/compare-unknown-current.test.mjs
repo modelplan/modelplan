@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Build 14c (owner): a fader trial on GPT-6.1 Terra with no live session (current unreported, trial XHigh, ★ High)
-// showed no chart, because the chart's ratios were taken against the unreported current. The table keeps its dashes
-// (CKP-MFD-19: never ★ as a stand-in); the chart is drawn relative to ★ = 1, with ★ and trial markers.
+// CKP-MFD-19 + build 14c, on the v8 comparison (CKP-MFD-33): a fader trial on GPT-6.1 Terra with no live session
+// (current unreported, trial XHigh, ★ High). Nothing stands in for the unreported current (no white tick, number or
+// column; the note says "current unknown"), and the share chart is still drawn with ★ and the trial marked.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {comparison} from '../../../cockpit/study/rocket-r1/mfd-pages/views.js';
+import {comparison,configShare} from '../../../cockpit/study/rocket-r1/mfd-pages/views.js';
 import {setLanguage} from '../../../cockpit/study/rocket-r1/i18n.js';
 import '../../../cockpit/study/rocket-r1/strings/mfd.js';
 
@@ -14,27 +14,87 @@ const terra={id:'model0',name:'GPT-6.1 Terra',short:'Terra 6.1',rec:'High',pool:
 globalThis.document??={documentElement:{}}; // setLanguage sets the page language
 const view={models:[terra],speedTiers:{},sessionRanking:[],accounts:[],now:0};
 const ui={lang:'en',scope:null,fill:{cmp:{w:300,h:60}}};
-const cells=html=>[...html.matchAll(/<td data-role="(\w+)"[^>]*><span class="cmp-value"[^>]*>([^<]*)</g)].map(m=>[m[1],m[2]]);
+const nums=html=>[...html.matchAll(/<text class="pc-num pc-(\w+)"[^>]*>(\d+)</g)].map(m=>[m[1],m[2]+'%']);
 
-test('build 14c: with current unknown the table shows dashes (CKP-MFD-19) and the chart is drawn relative to ★',()=>{
+test('CKP-MFD-19: with current unknown nothing stands in for it; the trial and ★ are still drawn',()=>{
  setLanguage('en');
  const html=comparison(view,ui,{modelId:'model0',current:null,trial:'XHigh',currentFast:false});
- const values=cells(html),of=role=>values.filter(([r])=>r===role).map(([,v])=>v);
- assert.deepEqual(of('current'),['--','--','--']);
- // Never ★ as a stand-in for current in the table.
- assert.deepEqual(of('trial'),['—','—','—']);assert.deepEqual(of('rec'),['—','—','—']);
- assert.match(html,/current unknown · chart relative to ★/);
- assert.match(html,/<svg class="cmp-chart"[^>]*data-scale="log2"/);
+ assert.match(html,/<em>current unknown<\/em>/);
+ assert.doesNotMatch(html,/data-role="current"/);assert.doesNotMatch(html,/pc-band-current/);
+ // XHigh: 61.1 / 70.3 and 0.6 / 1.1 of the top effort (Max).
+ assert.deepEqual(nums(html),[['trial','87%'],['trial','55%']]);
+ assert.match(html,/<svg class="cmp-chart" data-scale="share"/);
  assert.equal((html.match(/<polyline points=/g)??[]).length,3);
- // ★ is the chart's ×1: its marks sit on the ×1 line; the trial (XHigh) is marked too.
- assert.match(html,/class="cfg cfg-rec" data-config="High:normal"/);assert.match(html,/class="cfg cfg-trial" data-config="XHigh:normal"/);
- assert.match(html,/data-effort="High" data-v="1"/);
+ assert.match(html,/class="pc-band pc-band-trial"[^>]*data-effort="XHigh"/);
+ assert.match(html,/class="pc-star"[^>]*data-role="rec"/);
 });
-test('a reported current stays the reference for the columns and the chart',()=>{
+test('a reported current is the white tick, number and column',()=>{
  setLanguage('en');
  const html=comparison(view,ui,{modelId:'model0',current:'Med',trial:'XHigh',currentFast:false});
- const values=cells(html),of=role=>values.filter(([r])=>r===role).map(([,v])=>v);
- assert.deepEqual(of('current'),['±0','×1.00','×1.00']);
- assert.equal(of('rec')[1],'×1.75');
- assert.doesNotMatch(html,/relative to ★/);assert.match(html,/<polyline points=/);
+ assert.deepEqual(nums(html),[['current','75%'],['trial','87%'],['current','18%'],['trial','55%']]);
+ assert.match(html,/class="pc-band pc-band-current"[^>]*data-effort="Med"/);
+ assert.doesNotMatch(html,/current unknown/);
+});
+test('configShare: shares of the top effort, for a standard or a fast configuration',()=>{
+ const s=configShare(terra,null,'High');
+ assert.ok(Math.abs(s.abl-57.6/70.3)<1e-9&&Math.abs(s.cost-.35/1.1)<1e-9&&Math.abs(s.time-.3/.8)<1e-9);
+ assert.deepEqual(configShare(terra,null,'Max'),{abl:1,cost:1,time:1});
+ const fast=configShare(terra,{speed:1.5,cost:2.5},'High',true);
+ assert.ok(Math.abs(fast.cost-.35*2.5/1.1)<1e-9&&Math.abs(fast.time-.3/1.5/.8)<1e-9&&fast.abl===s.abl);
+ // A tier that does not state its speed leaves the fast time unknown instead of a made-up number.
+ assert.equal(configShare(terra,{speed:1,cost:2.5,taskTimeUnknown:true},'High',true).time,null);
+ assert.equal(configShare(terra,null,'Nope'),null);
+});
+
+// macrevc-885-1: the reference is the model's published top effort (the top of the ladder), whatever its ability; each
+// metric is measured against its own reference value and stays unknown when that value is missing.
+// Cost and time: shares of the top of the published ladder, each reference metric independent (macrevc-885-1). Ability,
+// as ruled for v1 final (CKP-MFD-52, V1-FINAL §8.5, LATER): a share of the model's highest-scoring effort.
+test('CKP-MFD-33/52: cost and time are shares of the top effort; ability is a share of the best-scoring effort; a missing metric is unknown on its own',()=>{
+ const m={id:'synthetic',rec:'High',e:[['Low',40,1,1],['High',60,2,2],['Max',null,4,4]]};
+ assert.deepEqual(configShare(m,null,'High'),{abl:1,cost:.5,time:.5}); // Max has no ability: High is the best score
+ assert.deepEqual(configShare(m,null,'Max'),{abl:null,cost:1,time:1});
+ const odd={id:'odd',rec:'High',e:[['Low',40,1,1],['High',60,2,2],['Max',50,4,4]]}; // Max is less able than High
+ assert.deepEqual(configShare(odd,null,'Max'),{abl:50/60,cost:1,time:1});
+ assert.equal(configShare(odd,null,'High').abl,1);
+ assert.equal(configShare(odd,null,'High').cost,.5);
+ const noCost={id:'nc',rec:'High',e:[['Low',40,1,1],['High',60,2,2],['Max',70,null,4]]};
+ assert.deepEqual(configShare(noCost,null,'High'),{abl:60/70,cost:null,time:.5});
+ const noScores={id:'ns',rec:'High',e:[['Low',null,1,1],['High',null,2,2],['Max',null,4,4]]};
+ assert.deepEqual(configShare(noScores,null,'High'),{abl:null,cost:.5,time:.5});
+});
+
+// WP-05 (owner 11-18): the ability scale will move (AA-aligned 34.185 + 8.150·q); the page uses ratios only, so any positive
+// scale gives score ÷ best score, and no threshold, axis top or "50 = average" text depends on it.
+test('WP-05 the ability share is scale-free: the same model on another ability scale reads score ÷ best score',()=>{
+ const q=[-1.2,0.1,0.6,1,1.9],rescaled={...terra,e:terra.e.map((r,i)=>[r[0],34.185+8.150*q[i],r[2],r[3]])};
+ for(const [i,l] of ['Low','Med','High','XHigh','Max'].entries())assert.ok(Math.abs(configShare(rescaled,null,l).abl-(34.185+8.150*q[i])/(34.185+8.150*q[4]))<1e-12,l);
+ setLanguage('en');
+ const html=comparison({...view,models:[rescaled]},ui,{modelId:'model0',current:'High'});
+ assert.match(html,/<b class="lad-a">\d+%<\/b>/);assert.doesNotMatch(html,/average|平均|50 =/i);
+ // a scale centred elsewhere moves only the numbers, never the axis: still 0 / 50% / 100% of the top effort
+ assert.match(html,/>100%<\/text>/);assert.match(html,/>0<\/text>/);
+});
+
+// macrevb-885-2: with fast on, the band between the Standard and fast line covers only runs of consecutive efforts that
+// have both values; an interior effort with no cost (or no time) is a gap in the band, as it is in the lines.
+test('CKP-MFD-33 fast band: an interior missing cost or time splits the band; it never bridges the missing effort',()=>{
+ setLanguage('en');
+ const tiers={'Codex|model0':{speed:1.5,cost:2.5}};
+ const pieces=(html,k)=>{const d=html.match(new RegExp(`<path class="pc-fastband pc-${k}"[^>]*d="([^"]+)"`))?.[1];assert.ok(d,`${k}: a band is drawn`);
+  return d.split('Z').map(p=>p.trim()).filter(Boolean).map(p=>[...p.matchAll(/[ML]([\d.]+) ([\d.]+)/g)].map(m=>Number(m[1])));};
+ // the x of every effort column, from the full model's band (one piece over all five efforts: 5 top + 5 bottom points)
+ const full=pieces(comparison({...view,models:[{...terra,pool:'codex'}],speedTiers:tiers},ui,{modelId:'model0',current:'High',currentFast:true}),'cost');
+ assert.equal(full.length,1);const X=full[0].slice(0,5);
+ for(const [k,col] of [['cost',2],['time',3]]){
+  // High missing: Low+Med and XHigh+Max are two pieces; no piece has a point at High's x or spans it
+  const gap={...terra,pool:'codex',e:terra.e.map(r=>r[0]==='High'?Object.assign([...r],{[col]:null}):r)};
+  const ps=pieces(comparison({...view,models:[gap],speedTiers:tiers},ui,{modelId:'model0',current:'Low',currentFast:true}),k);
+  assert.equal(ps.length,2,`${k}: two runs`);
+  for(const p of ps)assert.ok(Math.max(...p)<X[2]||Math.min(...p)>X[2],`${k}: a piece spans the missing High column`);
+  // Med missing: Low stands alone (no piece), High..Max is one piece
+  const lone={...terra,pool:'codex',e:terra.e.map(r=>r[0]==='Med'?Object.assign([...r],{[col]:null}):r)};
+  const ql=pieces(comparison({...view,models:[lone],speedTiers:tiers},ui,{modelId:'model0',current:'High',currentFast:true}),k);
+  assert.equal(ql.length,1,`${k}: one run`);assert.ok(Math.min(...ql[0])>X[1],`${k}: the band starts after the missing Med column`);
+ }
 });

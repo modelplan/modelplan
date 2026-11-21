@@ -104,7 +104,8 @@ import ModelPlanSettings
             eventNumber: 1, clickCount: type == .leftMouseDown ? 1 : 0, pressure: type == .leftMouseDown ? 1 : 0))
     }
     func rows() -> [NSAccessibilityElement] {
-        host.dockView.accessibilityChildren()?.compactMap { $0 as? NSAccessibilityElement } ?? []
+        // Subscription rows only: the empty-station button (dock.empty, G3-136) is not a row.
+        host.dockView.accessibilityChildren()?.compactMap { $0 as? NSAccessibilityElement }.filter { $0.accessibilityIdentifier() != "dock.empty" } ?? []
     }
     func menuText() throws -> String { try XCTUnwrap(panel().contentView?.menu).items.map(\.title).joined(separator: " | ") }
 }
@@ -394,11 +395,13 @@ import ModelPlanSettings
             XCTAssertEqual(from.m42, 0, accuracy: 0.0001)
         }
         f.tick(0.301)
+        let collapsed = expectation(description: "the collapse ghost has finished and been removed")
+        f.host.collapseCompletedForChecks = { collapsed.fulfill() }
         f.leave()
         XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
         XCTAssertTrue(panel.contentView is DockSliverView, "the sliver is presented at once")
         XCTAssertTrue(f.host.collapseAnimatingForChecks, "the collapse plays in its own click-through panel")
-        try await Task.sleep(for: .milliseconds(250))
+        await fulfillment(of: [collapsed], timeout: 5)
         XCTAssertFalse(f.host.collapseAnimatingForChecks, "the collapse ends after 0.12 s")
         let motion = DockRevealMotion.animations(revealing: false, edge: .bottom, flipped: true, reduceMotion: false)
         XCTAssertEqual(motion["dock.reveal.opacity"]?.duration ?? 0, 0.12, accuracy: 0.0001)

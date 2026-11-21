@@ -56,6 +56,14 @@ import ModelPlanWire
         let sent = await engine.recordedGrants()
         XCTAssertEqual(sent.count, 1, "the grant is never replayed on its own")
         XCTAssertNil(controller.facts, "cleared facts are not restored")
+        // Post-merge sampling (#858): pressing Done again before replacement facts must not pass.
+        XCTAssertFalse(controller.firstRunChoiceSatisfied, "Done stays disabled while the facts are gone")
+        let again = await controller.commitFirstRunChoices()
+        XCTAssertFalse(again, "a retry without facts must not complete first run without sending choices")
+        let sentAfter = await engine.recordedGrants()
+        XCTAssertEqual(sentAfter.count, 1)
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        XCTAssertFalse(controller.factsClearedSinceAccepted, "fresh facts re-open Done")
     }
 
     /// Finding 1: the same rejection from Settings is a failed request too, so the user can retry.

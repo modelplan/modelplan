@@ -5,9 +5,10 @@ import XCTest
 
 @testable import ModelPlanCockpitWeb
 
-/// Build 14c, G3-79: with two displays the cockpit opens on the display the user clicked (the widget's ignition),
-/// not on the menu bar icon's; a drag takes it to any display; a remembered detached origin is replayed only while it
-/// is still on a display. Uses a fixed two-display arrangement through the controller's `screens` seam.
+/// Build 14c, G3-79: with two displays a detached open goes to the display the user clicked (the widget's ignition);
+/// a drag takes it to any display; a remembered detached origin is replayed only while it is still on a display.
+/// Build 15, G3-128: attached (open, rack, catch zone, put back) it always belongs to the status item's display.
+/// Uses a fixed two-display arrangement through the controller's `screens` seam.
 @MainActor final class CockpitScreenSelectionTests: XCTestCase {
   /// A: the built-in 1512 x 982 display with the menu bar (33 pt) and the status item. B: a 2560 x 1440 display to its right.
   private let a = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 949))
@@ -27,10 +28,10 @@ import XCTest
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
   /// The production controller with the app's anchor and open-point closures, on the fixed arrangement.
-  private func page(session: CockpitShellSession? = nil, click: CGPoint?) throws -> CockpitWindowController {
+  private func page(session: CockpitShellSession? = nil, click: CGPoint?, reduceMotion: Bool = false) throws -> CockpitWindowController {
     let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
     let icon = self.icon
-    let page = CockpitWindowController(bundle: try bundle(), context: context, appearance: .init(theme: .night, locale: .en, profile: .full),
+    let page = CockpitWindowController(bundle: try bundle(), context: context, appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: reduceMotion),
                                        shellSession: session ?? CockpitShellSession(), anchor: { icon }, openPoint: { click })
     let displays = [a, b]
     page.screens = { displays }
@@ -49,15 +50,64 @@ import XCTest
     XCTAssertEqual(CockpitScreenSelection.containing(CGPoint(x: 4072, y: 1440), in: [a, b]), b, "B's top-right corner is on B")
   }
 
-  /// The owner's 14c report: the ignition on B opened the cockpit on A, under the icon.
-  func testIgnitionOnTheSecondDisplayOpensTheCockpitThere() throws {
+  /// G3-128 (a), owner build 15: the ignition on B opened the attached cockpit on B, under a computed icon on B's menu
+  /// bar, and the rack had no real icon there. Attached, it belongs to the status item's display (A), under the icon.
+  func testAnAttachedOpenFromTheSecondDisplayGoesUnderTheStatusItem() throws {
     let page = try page(click: clickOnB)
     let (usable, anchor) = try XCTUnwrap(page.environment())
-    XCTAssertEqual(usable, b.visibleFrame, "the cockpit lays out on B")
-    XCTAssertEqual(anchor, CockpitShellLayout.hiddenIconAnchor(usable: b.visibleFrame), "B has no icon: top right of B, below its menu bar")
+    XCTAssertEqual(usable, a.visibleFrame, "the cockpit lays out on the status item's display")
+    XCTAssertEqual(anchor, icon, "under the status item itself")
     let placed = try XCTUnwrap(page.placement())
-    assertInside(placed.frame, b.visibleFrame, "attached open from B")
+    assertInside(placed.frame, a.visibleFrame, "attached open from B")
+    XCTAssertEqual(page.rackIcon(), icon, "the rack hangs from the status item")
+    XCTAssertEqual(page.attachedHome(), placed.frame, "home is that same place")
   }
+
+  /// G3-128 (b): a cockpit opened from B, detached and left on B, goes home to the status item's display. Before, the
+  /// put back target was computed with the open's click point and so stayed on B.
+  func testPutBackHomeIsOnTheStatusItemsDisplayAfterADetachToTheOtherDisplay() throws {
+    let session = CockpitShellSession()
+    let page = try page(session: session, click: clickOnB)
+    session.detached = true
+    session.remember(CGPoint(x: 2600, y: 300), arrangement: page.arrangement)
+    let (usable, _) = try XCTUnwrap(page.environment())
+    XCTAssertEqual(usable, b.visibleFrame, "detached it stays where it was left, on B")
+    let home = try XCTUnwrap(page.attachedHome())
+    let attached = try XCTUnwrap(CockpitShellLayout.fit(usable: a.visibleFrame, anchor: icon, shutterClosed: false, screenWidth: a.frame.width))
+    XCTAssertEqual(home, attached.frame, "home is under the status item on A")
+    XCTAssertEqual(page.rackIcon(), icon, "and the rack that catches it hangs from the status item")
+    XCTAssertTrue(page.inCatchZone(home), "the catch zone is around that home")
+    let bHome = try XCTUnwrap(CockpitShellLayout.fit(usable: b.visibleFrame, anchor: CockpitShellLayout.hiddenIconAnchor(usable: b.visibleFrame),
+                                                     shutterClosed: false, screenWidth: b.frame.width))
+    XCTAssertFalse(page.inCatchZone(bHome.frame), "B's top-right is not home")
+    XCTAssertTrue(session.detached, "asking for home does not change the session")
+  }
+
+  #if MODELPLAN_TEST_ONLY_SPI
+  /// G3-128 (a)+(b) through the real window: prewarmed from a press on B it sits on A; dragged onto B and put back with
+  /// the strip key it returns to A under the icon, attached. Window server: GUI leg.
+  func testTheStripKeyPutBackReturnsToTheStatusItemsDisplay() throws {
+    let session = CockpitShellSession()
+    let page = try page(session: session, click: clickOnB, reduceMotion: true)
+    page.prewarm()
+    page.verificationWebView?.navigationDelegate = nil // the headless synthetic load must not discard the window
+    defer { page.discard() }
+    let window = try XCTUnwrap(page.window)
+    let home = try XCTUnwrap(CockpitShellLayout.fit(usable: a.visibleFrame, anchor: icon, shutterClosed: false, screenWidth: a.frame.width)).frame
+    assertInside(window.frame, a.visibleFrame, "opened from B, attached under the status item on A")
+    let from = CGPoint(x: window.frame.minX + 60, y: window.frame.maxY - 30)
+    page.titleDrag(.began, point: from)
+    page.titleDrag(.moved, point: CGPoint(x: from.x + 40, y: from.y))
+    page.titleDrag(.moved, point: CGPoint(x: 2800, y: 900))
+    page.titleDrag(.ended, point: CGPoint(x: 2800, y: 900))
+    XCTAssertFalse(page.isAttached)
+    assertInside(window.frame, b.visibleFrame, "detached on B")
+    page.setAttached(true) // the strip's put-back key
+    XCTAssertTrue(page.isAttached, "Reduce Motion: latched at once")
+    XCTAssertEqual(window.frame, home, "back under the status item on A, not B's top right")
+    XCTAssertEqual(page.verificationRack.target, 1, "the rack holds it from the status item")
+  }
+  #endif
 
   /// C-24 stays as it was: the menu bar icon (no click point) opens attached under the icon on A.
   func testTheIconStillOpensUnderTheIcon() throws {
@@ -66,7 +116,8 @@ import XCTest
     XCTAssertEqual(usable, a.visibleFrame); XCTAssertEqual(anchor, icon)
     let placed = try XCTUnwrap(page.placement())
     assertInside(placed.frame, a.visibleFrame, "attached open from the icon")
-    XCTAssertEqual(placed.frame.midX, icon.midX, accuracy: 1, "centred under the icon (D88)")
+    let attached = try XCTUnwrap(CockpitShellLayout.fit(usable: a.visibleFrame, anchor: icon, shutterClosed: false, screenWidth: a.frame.width))
+    XCTAssertEqual(placed.frame, attached.frame, "the attached place under the icon (CKP-SHELL-33: its left shoulder, kept on screen)")
   }
 
   func testADragOntoTheOtherDisplayEndsInsideIt() throws {
@@ -101,9 +152,10 @@ import XCTest
     XCTAssertEqual(session.origin(for: page.arrangement), window.frame.origin, "the place on B is remembered")
   }
 
-  /// macrev2-845-1: a drop on a shorter display fits the cockpit there. Before, the drag kept B's full-size frame and
-  /// clamped only its origin, so on a 775 pt visible frame its top stayed above the display.
-  func testADropOnAShorterDisplayFitsTheCockpitThere() throws {
+  /// G3-132 (owner, 11-18; replaces macrev2-845-1's refit at the drop): one cockpit size on every display, capped by
+  /// the smallest one. A drag between displays never resizes it (no "too big then shrink", no "small then grow"), and it
+  /// is fully inside whichever display it is dropped on. Window server: GUI leg.
+  func testOneCockpitSizeOnEveryDisplayAndADragNeverResizesIt() throws {
     let short = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1280, height: 800), visibleFrame: CGRect(x: 0, y: 0, width: 1280, height: 775))
     let large = CockpitScreen(frame: CGRect(x: 1280, y: 0, width: 2560, height: 1440), visibleFrame: CGRect(x: 1280, y: 0, width: 2560, height: 1415))
     let session = CockpitShellSession()
@@ -113,21 +165,84 @@ import XCTest
     page.prewarm()
     defer { page.discard() }
     let window = try XCTUnwrap(page.window)
-    assertInside(window.frame, large.visibleFrame, "opened on the large display, where the click was")
-    XCTAssertGreaterThan(window.frame.height, short.visibleFrame.height, "the large display's cockpit is taller than the short display")
+    let size = window.frame.size
+    let smallest = try XCTUnwrap(CockpitShellLayout.fit(usable: short.visibleFrame, anchor: CockpitShellLayout.hiddenIconAnchor(usable: short.visibleFrame),
+                                                        shutterClosed: false, screenWidth: short.frame.width))
+    XCTAssertEqual(size, smallest.frame.size, "the short display's size")
     let from = CGPoint(x: window.frame.minX + 60, y: window.frame.maxY - 30)
     page.titleDrag(.began, point: from)
     page.titleDrag(.moved, point: CGPoint(x: from.x - 40, y: from.y))
+    for to in [CGPoint(x: 1200, y: 500), CGPoint(x: 1600, y: 900), CGPoint(x: 3000, y: 1200)] {
+      page.titleDrag(.moved, point: to)
+      XCTAssertEqual(window.frame.size, size, "mid-drag at \(to): the size never changes")
+    }
+    page.titleDrag(.ended, point: CGPoint(x: 3000, y: 1200))
+    XCTAssertFalse(page.isAttached)
+    XCTAssertEqual(window.frame.size, size, "dropped on the large display: the same size")
+    assertInside(window.frame, large.visibleFrame, "on the large display")
+    let back = CGPoint(x: window.frame.minX + 60, y: window.frame.maxY - 30)
+    page.titleDrag(.began, point: back)
+    page.titleDrag(.moved, point: CGPoint(x: back.x - 40, y: back.y))
     page.titleDrag(.moved, point: CGPoint(x: 600, y: 400))
     page.titleDrag(.ended, point: CGPoint(x: 600, y: 400))
-    XCTAssertFalse(page.isAttached)
-    assertInside(window.frame, short.visibleFrame, "the whole cockpit is on the short display after the drop")
-    let fitted = try XCTUnwrap(page.placement())
-    XCTAssertEqual(window.frame, fitted.frame, "the layout is the short display's fit")
-    let expected = try XCTUnwrap(CockpitShellLayout.fit(usable: short.visibleFrame, anchor: CockpitShellLayout.hiddenIconAnchor(usable: short.visibleFrame),
-                                                        shutterClosed: false, screenWidth: short.frame.width))
-    XCTAssertEqual(fitted.frame.size, expected.frame.size, "zoom and profile are the short display's")
-    XCTAssertEqual(session.origin(for: page.arrangement), window.frame.origin, "the fitted place is remembered")
+    XCTAssertEqual(window.frame.size, size, "and back on the short display: the same size")
+    assertInside(window.frame, short.visibleFrame, "the whole cockpit is on the short display")
+    XCTAssertEqual(try XCTUnwrap(page.placement()).frame.size, size)
+    XCTAssertEqual(session.origin(for: page.arrangement), window.frame.origin, "the place is remembered")
+  }
+
+  /// G3-132 (owner, 11-18; D66 amended): Auto is judged on the set of connected displays (85 % if any is laptop-width,
+  /// 100 % only if all are wider), and every choice is capped by the smallest display's visible height (D51 floor and
+  /// short version as before). Headless: the pure fit with the displays' basis, and the controller's `screens` seam.
+  func testAutoAndTheCapFollowTheSetOfDisplays() throws {
+    let air = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1470, height: 956), visibleFrame: CGRect(x: 0, y: 70, width: 1470, height: 849))
+    let wide = CockpitScreen(frame: CGRect(x: 1470, y: 0, width: 2560, height: 1440), visibleFrame: CGRect(x: 1470, y: 0, width: 2560, height: 1415))
+    let hd = CockpitScreen(frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080), visibleFrame: CGRect(x: -1920, y: 0, width: 1920, height: 1055))
+    let small = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1280, height: 800), visibleFrame: CGRect(x: 0, y: 0, width: 1280, height: 775))
+    func scales(_ set: [CockpitScreen], _ size: CockpitSize = .automatic) throws -> [CGFloat] {
+      let basis = try XCTUnwrap(CockpitSizeBasis(screens: set))
+      return try set.map { screen in
+        let fit = try XCTUnwrap(CockpitShellLayout.fit(usable: screen.visibleFrame, anchor: CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame),
+                                                      shutterClosed: false, size: size, screenWidth: screen.frame.width, basis: basis))
+        XCTAssertTrue(screen.visibleFrame.contains(fit.frame), "fully visible on \(NSStringFromRect(screen.frame))")
+        return fit.scale
+      }
+    }
+    // A laptop and an external display: Auto is 85 % on both (before, 100 % on the external one).
+    XCTAssertEqual(try scales([air, wide]), [0.85, 0.85])
+    XCTAssertEqual(try scales([wide, air]), [0.85, 0.85], "whichever display is listed first")
+    // Two external displays: 100 % on both, capped by neither (the 1080p one has 1045 pt under the gap).
+    XCTAssertEqual(try scales([wide, hd]), [1, 1])
+    // A fixed 100 % with a small display connected: capped on both by the small display's room (765 / 939).
+    for value in try scales([small, wide], .percent100) { XCTAssertEqual(value, 765 / 939, accuracy: 1e-9) }
+    for value in try scales([small, wide], .percent80) { XCTAssertEqual(value, 0.8, accuracy: 1e-9, "80 % fits the small display") }
+    // D51 floor kept: a display too short for the full cockpit at 75 % gives the short version on every display.
+    let tiny = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1280, height: 720), visibleFrame: CGRect(x: 0, y: 0, width: 1280, height: 695))
+    let basis = try XCTUnwrap(CockpitSizeBasis(screens: [tiny, wide]))
+    let onWide = try XCTUnwrap(CockpitShellLayout.fit(usable: wide.visibleFrame, anchor: CockpitShellLayout.hiddenIconAnchor(usable: wide.visibleFrame),
+                                                      shutterClosed: false, screenWidth: wide.frame.width, basis: basis))
+    XCTAssertEqual(onWide.profile, .compact, "the tiny display's tier on the wide display too")
+    XCTAssertNil(CockpitSizeBasis(screens: []))
+
+    // The controller: a drag (detached, remembered on either display) keeps the size; adding or removing a display
+    // recomputes it.
+    let session = CockpitShellSession()
+    let page = try page(session: session, click: nil)
+    page.screens = { [air, wide] }
+    session.detached = true
+    session.remember(CGPoint(x: 2000, y: 300), arrangement: page.arrangement)
+    let onTheWide = try XCTUnwrap(page.placement()).frame
+    session.remember(CGPoint(x: 200, y: 200), arrangement: page.arrangement)
+    let onTheAir = try XCTUnwrap(page.placement()).frame
+    XCTAssertEqual(onTheWide.size, onTheAir.size, "the same size on both displays")
+    XCTAssertEqual(onTheWide.width, 541, "Auto 85 %, judged on the set")
+    page.screens = { [wide] }
+    session.remember(CGPoint(x: 2000, y: 300), arrangement: page.arrangement)
+    XCTAssertEqual(try XCTUnwrap(page.placement()).frame.width, 636, "the Air unplugged: the external display alone is 100 %")
+    page.screens = { [wide, small] }
+    session.remember(CGPoint(x: 2000, y: 300), arrangement: page.arrangement)
+    XCTAssertEqual(try XCTUnwrap(page.placement()).frame.width, (636 * 765 / 939).rounded(.up), accuracy: 1,
+                   "a small display plugged in: Auto 85 % capped by its 775 pt")
   }
 
   /// A remembered origin on a display that is no longer there is not replayed; the open goes to the click's display.
