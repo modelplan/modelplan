@@ -212,8 +212,15 @@ private actor CardDismissalClient: EngineClient {
         dock.subscriptionCockpitRequested = nil
         // The footer press closes the card (it hands over to the cockpit); a fresh hover brings it back for the focus check.
         XCTAssertTrue(dock.card.isHidden, "Pressing the footer row closes the card")
+        pointer = CGPoint(x: 100, y: 100)
         nozzle.hoverNozzle(nil)
+        dock.interactionControllerForChecks?.refresh()
+        let footerPlacement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let footerAnchor = try XCTUnwrap(view.interactionAnchor(memberID))
+        pointer = CGPoint(x: footerPlacement.frame.minX + footerAnchor.midX - view.bounds.minX,
+                          y: footerPlacement.frame.maxY - footerAnchor.midY + view.bounds.minY)
         nozzle.hoverNozzle(memberID)
+        dock.interactionControllerForChecks?.refresh()
         for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(dock.card.isHidden, "A fresh hover reopens the card after the footer press")
         nozzle.hoverNozzle(nil)
