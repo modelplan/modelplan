@@ -94,3 +94,13 @@ Existing test references are pinned to the reviewed implementation, not new exec
 - OpenCode config-source parsing must not be described as an enabled production route. Enabling it needs a selected-provider contract and separate acceptance.
 - Per-read HTTP auth-stop recording does not establish a persisted cross-read scope latch. Later scheduled reads remain possible after backoff; this is a standard-completion gap.
 - Public source/reference behavior is not a guarantee of server-side no-write/no-charge effects. Catalogue enablement requires the card’s red lines and L2; creating this document supplies neither permission nor a pass.
+
+## ZCode QR-code sign-in (D369, 2026-11-21)
+
+- Scope: `zai.account_usage.saved_login` (credential class, `defaultCheck: false`). It is separate from `zai.account_usage.api_key`; neither grants the other. Until it is allowed, a detected sign-in shows `consent_required` with the Settings action and no numbers.
+- Applies only when no key route serves GLM: no ZCode `provider_config.json`, no `Z_AI_API_KEY`, no saved manual key, no other chosen GLM source. Key first, as before.
+- Reads, read-only and under the reader lock: `~/.zcode/v2/setting.json` (family and selection), `config.json` (the selected entry), `credentials.json` (ZCode's AES-256-GCM store, opened in memory with ZCode's own machine-derived secret, or `ZCODE_CREDENTIAL_SECRET`), and for a Start Plan `telemetry-state.json` (`deviceMid`). Nothing is refreshed, written, renamed or deleted; no token, key, identity or keyed hash of them is stored, logged or put in an error.
+- Requests (one per read, `readers/request_set.go`): Coding Plan → GET `/api/monitor/usage/quota/limit` with the account's own key on `api.z.ai` (z.ai family) or `open.bigmodel.cn` (BigModel family). Start Plan (z.ai family only) → GET `https://zcode.z.ai/api/v1/zcode-plan/billing/balance` with the JWT and `X-Device-Mid`. A BigModel Start Plan is not sent anywhere (`region_refused`); an entry whose base URL names the other region is refused.
+- States: an expired JWT (checked before sending), a missing account key or HTTP/body 401/403 → `login_expired` ("Sign in to ZCode again"); body `code:500` → `no_plan`.
+- Port: Token Monitor@9de6288 `src/shared/providers/zai/zcodeDiscovery.js`, `src/shared/providers/zai/limits.js` (MIT); see `docs/borrowed/token-monitor-zcode.md`.
+- Tests: `cli/internal/quota/d369_zcode_login_test.go`, `cli/internal/rows/d369_zcode_login_test.go` (synthetic store and fake JWT; canary scans of every ModelPlan file, report and diagnostic).

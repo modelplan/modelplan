@@ -193,9 +193,13 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 		by[id] = x
 	}
 	// ZCode's own Coding Plan key, on by default when no GLM source is configured (G3-21).
-	if g, ok := p.ReaderAccessGrant("zai"); ok && g.ConfigSource != nil && g.ConfigSource.Tool == "zcode" {
+	if g, ok := p.ReaderAccessGrant("zai"); ok && g.ConfigSource != nil && (g.ConfigSource.Tool == "zcode" || g.ConfigSource.Tool == zcodeLoginTool) {
 		if _, configured := by["zai"]; !configured {
-			by["zai"] = Selection{Provider: "zai", Backend: BackendNative, Origin: "zcode-config"}
+			origin := "zcode-config"
+			if g.ConfigSource.Tool == zcodeLoginTool {
+				origin = "zcode-login" // D369: ZCode's QR-code sign-in
+			}
+			by["zai"] = Selection{Provider: "zai", Backend: BackendNative, Origin: origin}
 		}
 	}
 	// D90: a pasted key makes the provider a selection too. Consent still decides below whether it is read.
@@ -269,6 +273,10 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 			class = consent.ExplicitKey
 		}
 		allowed := policy.Allows(x.Provider, class, mode)
+		if zcodeLoginRoute(p, x.Provider) && (x.Origin == "zcode-login" || x.Origin == "consent.json") {
+			// D369: ZCode's sign-in is read only under its own saved-login scope.
+			allowed = policy.AllowsScope(consent.ScopeZaiAccountUsageSavedLogin, mode)
+		}
 		if _, decided := policy.Tools[x.Provider]; !decided && !policy.ScopeDecided(x.Provider, class) && !policy.RequireConsent && mode == consent.Automatic && (x.Origin == "connections.json" || x.Origin == "codexbar.json") {
 			allowed = true
 		}

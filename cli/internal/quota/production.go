@@ -164,7 +164,51 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 			p.ZCodeNoProviderFile = true
 		}
 	}
+	applyZCodeLogin(&p, home, state, mode, configured)
 	return p
+}
+
+// applyZCodeLogin: ZCode's QR-code sign-in route (D369). It applies only where ZCode keeps no
+// provider-file key (the key route stays first) and no other GLM source or key is set, and only
+// behind its own saved-login scope, off by default. Without that consent the row says the sign-in
+// was found and needs consent; nothing inside ZCode's folder is opened. Construction reads file
+// metadata only.
+func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, configured bool) {
+	if configured || home == "" || mode != consent.Automatic || !ZCodeLoginPresent(home) {
+		return
+	}
+	if _, err := os.Lstat(ZCodeProviderConfig(home)); !os.IsNotExist(err) {
+		return // ZCode's provider-file key route comes first
+	}
+	if g, granted := p.ReaderAccess.Grants["zai"]; granted && g.ConfigSource != nil {
+		return
+	}
+	if r, decided := state.Tools["zai"]; decided && (!r.Allowed || zaiRecordChoseSource(r)) {
+		return
+	}
+	if os.Getenv(nativeReaders["zai"].KeyEnv) != "" || ManualKeyPresent(p.Cache, "zai") {
+		return
+	}
+	if !detect.LocalRoot(ZCodeLoginDir(home)) {
+		return
+	}
+	scope := consent.ScopeZaiAccountUsageSavedLogin
+	// A bare GLM allow (no key, profile or source) is no route of its own here.
+	delete(p.ReaderAccess.Grants, "zai")
+	p.ZCodeNoProviderFile = false
+	if !state.AllowsScope(scope, mode) {
+		p.ZCodeLoginConsent = true
+		return
+	}
+	fence := state.Fence()
+	p.ReaderAccess.Grants["zai"] = ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
+		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Generation, 10) + ":zcode-login:" + zcodeLoginStamp(home),
+		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
+		StillValid: func() bool {
+			current, effective := consent.Current()
+			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence && current.AllowsScope(scope, effective)
+		},
+		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: ZCodeLoginDir(home)}}
 }
 
 // zcodeRoots are ZCode's data folders, the same path signals detection lists for it

@@ -335,6 +335,7 @@ type Paths struct {
 	ClaudeSessionAccess         *localusage.HistoryAccess // explicit consent/profile scope for cache-only session projection
 	ReaderAccess                *ReaderAccess             // explicit shared-consent admission for saved-login readers
 	ZCodeNoProviderFile         bool                      // ZCode is present on the default route but keeps no provider file (G3-21)
+	ZCodeLoginConsent           bool                      // ZCode's sign-in is there but its saved-login scope is not allowed (D369)
 }
 
 // Read gathers every available source and evaluates it at now.

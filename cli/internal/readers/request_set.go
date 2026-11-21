@@ -62,6 +62,16 @@ func requestSet(scope string, r *http.Request) (requestPin, bool) {
 		p.headers = append(p.headers, "X-Msh-Platform", "X-Msh-Version", "X-Msh-Device-Id", "X-Msh-Device-Name", "X-Msh-Device-Model", "X-Msh-Os-Version")
 	case consent.ScopeZaiAccountUsageAPIKey:
 		valid = (host == "api.z.ai" || host == "open.bigmodel.cn") && path == "/api/monitor/usage/quota/limit"
+	case consent.ScopeZaiAccountUsageSavedLogin:
+		// D369: one request per read. Coding Plan quota on the account's own region host, or ZCode's
+		// Start Plan balance on zcode.z.ai (z.ai family only), which needs ZCode's device id.
+		switch {
+		case (host == "api.z.ai" || host == "open.bigmodel.cn") && path == "/api/monitor/usage/quota/limit":
+			valid = true
+		case host == "zcode.z.ai" && path == "/api/v1/zcode-plan/billing/balance":
+			valid = true
+			p.headers = append(p.headers, "X-Device-Mid")
+		}
 	case consent.ScopeOpenCodeGoAccountUsageAPIKey:
 		valid = host == "opencode.ai" && path == "/zen/go/v1/usage"
 	case consent.ScopeGrokAccountUsageSavedLogin:

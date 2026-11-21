@@ -4059,7 +4059,8 @@
             "antigravity.runtime_usage",
             "zai.account_usage.api_key",
             "minimax.account_usage.api_key",
-            "opencodego.account_usage.api_key"
+            "opencodego.account_usage.api_key",
+            "zai.account_usage.saved_login"
           ],
           "type": "string"
         }

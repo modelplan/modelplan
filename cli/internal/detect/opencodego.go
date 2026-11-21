@@ -31,6 +31,9 @@ func (t Tool) UndetectedScopes() []string {
 	if t.ProviderID == "opencodego" && t.Detected && t.Subscription == SubscriptionNotFound {
 		return []string{OpenCodeGoScope}
 	}
+	if t.ProviderID == "zai" && t.Detected && !t.zcodeLogin {
+		return []string{ZaiSavedLoginScope}
+	}
 	return nil
 }
 
