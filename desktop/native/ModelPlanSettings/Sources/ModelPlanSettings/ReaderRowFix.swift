@@ -46,9 +46,13 @@ extension ReaderCauseTable {
         let canon = canonical(rawCode)
         if rowIsKiro(tool) {
             switch canon {
-            case "not_found", "runtime_missing":
+            case "not_found":
                 return .init(reason: .init("kiro-cli was not found", "没有找到 Kiro 命令行工具"),
                              action: .init("Install kiro-cli", "安装 Kiro 命令行工具"), target: .installTool)
+            case "runtime_missing":
+                // Also the cause when the configured kiro-cli path names a file that cannot start: reinstalling would not help.
+                return .init(reason: .init("kiro-cli was not found or could not start", "没有找到 Kiro 命令行工具，或它无法启动"),
+                             action: .init("Install kiro-cli, or check the kiro-cli path you configured", "安装 Kiro 命令行工具，或检查你配置的 Kiro 命令行工具路径"), target: .installTool)
             case "not_signed_in", "login_expired", "unsupported_login":
                 return .init(reason: .init("Not signed in to kiro-cli", "尚未登录 Kiro 命令行工具"),
                              action: .init("Sign in to kiro-cli", "登录 Kiro 命令行工具"), target: .explain)

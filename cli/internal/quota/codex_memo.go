@@ -28,18 +28,32 @@ const rolloutSettle = time.Second
 var (
 	rolloutMemoMu sync.Mutex
 	rolloutMemo   = map[string]rolloutMemoEntry{}
+	// rolloutMemoGen counts Forgets (guarded by rolloutMemoMu). A read takes it as its fence
+	// before its consent is evaluated and may memoize only while it is unchanged, so a scan that
+	// was admitted before a Forget can never refill the memo after it (sampling 11-20 S1).
+	rolloutMemoGen uint64
 	// rolloutReads counts rollout files opened for decoding (tests and timing only).
 	rolloutReads atomic.Int64
+	// afterRolloutDecode runs between decoding a rollout and memoizing it (tests only).
+	afterRolloutDecode = func(string) {}
 )
 
 func sameRolloutFile(a, b os.FileInfo) bool {
 	return a.Size() == b.Size() && a.ModTime().Equal(b.ModTime()) && os.SameFile(a, b)
 }
 
+// codexRolloutFence is taken by a read before its consent is evaluated; see rolloutMemoGen.
+func codexRolloutFence() uint64 {
+	rolloutMemoMu.Lock()
+	defer rolloutMemoMu.Unlock()
+	return rolloutMemoGen
+}
+
 // codexRolloutEvents returns the decoded events of path, read again only when the file
 // changed. The stat is taken before the read: a write during the read leaves a newer
-// file than the recorded one, which the next call reads again.
-func codexRolloutEvents(path string) (rolloutScan, bool) {
+// file than the recorded one, which the next call reads again. A read whose fence is older
+// than the last Forget returns what it decoded but keeps nothing.
+func codexRolloutEvents(path string, fence uint64) (rolloutScan, bool) {
 	info, err := os.Stat(path)
 	if err != nil || !info.Mode().IsRegular() {
 		rolloutMemoMu.Lock()
@@ -55,8 +69,9 @@ func codexRolloutEvents(path string) (rolloutScan, bool) {
 	}
 	readAt := time.Now()
 	scan, ok := readRolloutEvents(path)
+	afterRolloutDecode(path)
 	rolloutMemoMu.Lock()
-	if ok {
+	if ok && fence == rolloutMemoGen {
 		rolloutMemo[path] = rolloutMemoEntry{info: info, readAt: readAt, scan: scan}
 	} else {
 		delete(rolloutMemo, path)
@@ -83,6 +98,7 @@ func keepCodexRollouts(files []string) {
 // forgetCodexRollouts drops everything decoded from Codex rollouts.
 func forgetCodexRollouts() {
 	rolloutMemoMu.Lock()
+	rolloutMemoGen++
 	clear(rolloutMemo)
 	rolloutMemoMu.Unlock()
 }
