@@ -748,6 +748,23 @@ func claudeBackoffIsLocal(cache string) bool {
 	return true
 }
 
+// pastedGLMKeyRoute: a pasted GLM key is saved and the GLM selection runs natively, unblocked.
+func pastedGLMKeyRoute(p Paths) bool {
+	if !ManualKeyPresent(p.Cache, "zai") {
+		return false
+	}
+	ss, err := Selections(p)
+	if err != nil {
+		return false
+	}
+	for _, x := range ss {
+		if x.Provider == "zai" && x.Backend == BackendNative && x.Blocked == "" {
+			return true
+		}
+	}
+	return false
+}
+
 // zcodeLoginRoute: the provider is read through ZCode's sign-in (D369).
 func zcodeLoginRoute(p Paths, provider string) bool {
 	g, ok := p.ReaderAccessGrant(provider)
@@ -764,6 +781,11 @@ func credentialStageFailure(e readerEntry) bool {
 // is "consent required": the row offers the consent action and shows no data.
 func applyZCodeNoProviderFile(r *Report, p Paths) {
 	if !p.ZCodeNoProviderFile && !p.ZCodeLoginConsent {
+		return
+	}
+	// S6 (#1031 sampling): a selected, admitted pasted GLM key is a route that can run; its own
+	// status (for instance "missing / not read yet" after a key change) stands.
+	if pastedGLMKeyRoute(p) {
 		return
 	}
 	cause := SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"}
