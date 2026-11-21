@@ -55,6 +55,10 @@ type BriefModel struct {
 // display scale where tie is 0.815), so it follows the publication's scale; #781.
 const defaultFloorTies = 3.0
 
+// floorEpsilon absorbs binary rounding in the published scores: 21.960 - 19.515 is 2.4450000000000003, yet the gap
+// is exactly 3 ties and the best value keeps the default (strictly more than the floor switches).
+const floorEpsilon = 1e-9
+
 type BriefStep struct {
 	Label        string   `json:"label"`
 	Recommended  bool     `json:"recommended,omitempty"`
@@ -124,7 +128,7 @@ func TaskStart(a *quota.Account, r quota.Report, d *digest.Digest, now time.Time
 	}
 	def := best
 	b.DefaultReason = "best_value"
-	if best < 0 || (strong >= 0 && b.Models[strong].Ability-b.Models[best].Ability > floor) {
+	if best < 0 || (strong >= 0 && b.Models[strong].Ability-b.Models[best].Ability > floor+floorEpsilon) {
 		def, b.DefaultReason = strong, "strongest"
 	}
 	var defModel *digest.Model

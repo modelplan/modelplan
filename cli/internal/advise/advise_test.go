@@ -497,6 +497,25 @@ func TestDefaultFloorFollowsPublicationScale(t *testing.T) {
 	}
 }
 
+// A published gap of exactly 2.445 (21.960 - 19.515, which floating point gives as 2.4450000000000003) is on the
+// floor, so the best value keeps the default; 2.446 switches to the strongest.
+func TestDefaultFloorBoundaryIgnoresFloatingPointNoise(t *testing.T) {
+	for _, c := range []struct {
+		strong, best float64
+		want         string
+	}{{21.960, 19.515, "best_value"}, {21.961, 19.515, "strongest"}} {
+		d := fixtureDigest()
+		sonnet := claude("high", 30, 3*time.Hour, 300)
+		sonnet.Harness.Model = "claude-sonnet-5-5"
+		d.Lineups[0].Tie = 0.815
+		d.Lineups[0].Members[0].Ability = c.strong
+		d.Lineups[0].Members[1].Ability = c.best
+		if b := TaskStart(&sonnet, quota.Report{}, d, now); b.DefaultReason != c.want {
+			t.Fatalf("%v vs %v: default = %s, want %s", c.strong, c.best, b.DefaultReason, c.want)
+		}
+	}
+}
+
 func TestDefaultIsBestValueUnlessItIsMuchWeaker(t *testing.T) {
 	d := fixtureDigest()
 	sonnet := func() *quota.Account {
