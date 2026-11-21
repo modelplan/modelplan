@@ -72,7 +72,7 @@ function drawCell(cell:PluginCell|undefined,row:number):HTMLElement {
   if(!cell){const empty=el('div','qcell none');empty.dataset.row=String(row);return empty;}
   const box=el('div','qcell pl-cell'+(cell.level?' pl-'+cell.level:''));box.dataset.row=String(row);
   const line=el('span','qline');
-  if(cell.big||cell.subline){
+  if(!(typeof cell.value==='number'||typeof cell.bar==='number')){
     // The calendar's cells keep the three-row form (tag above, big value with the side value, colour mark below).
     box.classList.add('pl-cal');
     box.append(fitted('pl-tag',cell.tag));
@@ -221,7 +221,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     if(area){const ok=paint(area,plugin.id,drawn.draw!,false);column.dataset.draw=ok?'custom':'fallback';if(!ok){watch?.unobserve(area);area.replaceWith(...cells());}}
     else delete column.dataset.draw;
     refocus(column,key);restoreHeld(column,plugin.id);
-    if(column.isConnected)fitIn(column);// a redrawn cell is measured at once (the table's own fit() only runs on a resize)
+    if(column.isConnected)column.querySelectorAll<HTMLElement>('.pl-cell:not(.pl-cal)').forEach(fitIn);// a redrawn Resources cell (the calendar's cells and bottom line keep main's later fit) is measured at once (the table's own fit() only runs on a resize)
   }
   function redrawColumn(id:string) {
     const column=columns.get(id),plugin=registry.get(id);
