@@ -1,0 +1,1 @@
+Added `modelplan doctor shapes --tool NAME|all --out DIR`: writes structure-only samples (allow-listed key names, value types, relative times; no values, accounts, paths or prompts) of the local files the readers consume, plus a manifest of exactly which fields were kept. Local only, never run automatically.
