@@ -320,6 +320,7 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 // implementations and will consume the same consent/generation contract in its
 // router. No credential-reading implementation lives here.
 func ReadPermitted(p Paths, now time.Time) Report {
+	codexFence := codexRolloutFence() // before admission: a later Forget voids this read's memo writes
 	admission := admissionFor(p)
 	p.Admission = &admission
 	s, mode := admission.State(), admission.Mode()
@@ -344,7 +345,7 @@ func ReadPermitted(p Paths, now time.Time) Report {
 		add(readClaudeCode(p.Cache, p.ClaudeSession, now))
 	}
 	if s.Allows("codex", consent.Local, mode) {
-		add(readCodex(p.CodexHome, p.CodexThread))
+		add(readCodexFenced(p.CodexHome, p.CodexThread, codexFence))
 	}
 	if s.Allows("codex", consent.Runtime, mode) && p.CodexHome != "" {
 		applyAccount(&r, p.Cache, now, admission)
