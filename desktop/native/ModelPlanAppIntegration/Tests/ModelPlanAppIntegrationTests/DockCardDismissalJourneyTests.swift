@@ -200,6 +200,33 @@ private actor CardDismissalClient: EngineClient {
         // D37 (11-06): the production card is the prototype card: no Settings or Close buttons.
         XCTAssertNil(button(dock.card, id: "dock.card.enter"), "The card has no Settings button")
         XCTAssertNil(button(dock.card, id: "dock.card.close"), "The card has no Close button")
+        // D371 B4e: every card closes with the one cockpit footer row; a press routes that subscription to the cockpit.
+        let footerContent = try XCTUnwrap(dock.cardContent(for: memberID))
+        XCTAssertEqual(footerContent.cockpitLabel, "View in cockpit")
+        XCTAssertEqual(footerContent.cockpitTarget, footerContent.name)
+        // With the cockpit entry unavailable (release builds) the subscription card shows no footer row.
+        dock.cockpitEntryEnabled = false
+        XCTAssertEqual(try XCTUnwrap(dock.cardContent(for: memberID)).cockpitLabel, "", "no cockpit entry: no footer row")
+        dock.cockpitEntryEnabled = true
+        XCTAssertNotNil(dock.card.cockpitRowFrameForChecks, "the shown subscription card has the footer row")
+        var routed: [String] = []
+        dock.subscriptionCockpitRequested = { routed.append($0) }
+        XCTAssertTrue(dock.card.pressCockpitRowForChecks())
+        XCTAssertEqual(routed, [memberID], "the footer row opens the cockpit on this subscription")
+        dock.subscriptionCockpitRequested = nil
+        // The footer press closes the card (it hands over to the cockpit); a fresh hover brings it back for the focus check.
+        XCTAssertTrue(dock.card.isHidden, "Pressing the footer row closes the card")
+        pointer = CGPoint(x: 100, y: 100)
+        nozzle.hoverNozzle(nil)
+        dock.interactionControllerForChecks?.refresh()
+        let footerPlacement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let footerAnchor = try XCTUnwrap(view.interactionAnchor(memberID))
+        pointer = CGPoint(x: footerPlacement.frame.minX + footerAnchor.midX - view.bounds.minX,
+                          y: footerPlacement.frame.maxY - footerAnchor.midY + view.bounds.minY)
+        nozzle.hoverNozzle(memberID)
+        dock.interactionControllerForChecks?.refresh()
+        for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(dock.card.isHidden, "A fresh hover reopens the card after the footer press")
         nozzle.hoverNozzle(nil)
         let focused = try XCTUnwrap((dock.dockView.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
             .first { $0.accessibilityIdentifier() == "dock.subscription." + memberID })

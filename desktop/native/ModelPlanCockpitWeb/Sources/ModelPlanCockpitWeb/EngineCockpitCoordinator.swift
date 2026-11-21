@@ -144,6 +144,16 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     guard CockpitPluginWire.validID(id) else { return }
     if let page { page.openPluginScreen(id); pluginScreenRequest = nil } else { pluginScreenRequest = id }
   }
+  /// D371 B4e: a subscription card's footer row opens the cockpit on that subscription: its tab lights and the engine
+  /// table turns to it (the same state as a tab click). `key` is the member's scope key (its Dock ID). A key that is
+  /// not a current member is ignored once a reply is known; before the first reply it is held, and `showLastReply`
+  /// resets it to All if the reply has no such member. A cockpit that is already open only switches.
+  public func selectScope(_ key: String) {
+    guard CockpitMemberScopes.isValidKey(key), !CockpitMemberScopes.isIndexedFallback(key),
+      scopeMembers.isEmpty || scopeMembers.contains(key) else { return }
+    selectedScope = key; page?.updateScope(key)
+    scopeMemory?.save(Self.persistable(key) ? key : nil)
+  }
   /// One reading for a running plugin, to the current page only.
   public func sendPluginData(id: String, data: [String: Any]) {
     guard pluginsRunning.contains(id) else { return }

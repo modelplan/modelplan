@@ -5,7 +5,8 @@ import ModelPlanResources
 @testable import ModelPlanAppIntegration
 
 /// D324/D327 on the widget: the resource ring sits in the subscription ring's place, outer arc memory (solid used,
-/// faint cached), inner arc CPU, always orchid (the ring never changes colour; only the readout number takes a tone).
+/// faint cached), inner arc CPU. D371 B4c (owner 11-21): each arc, each card bar and the readout number take the status
+/// colour of what they measure (normal / amber from 80 % / red from 90 %), never the plugin's orchid.
 /// The hover card follows variant A: the row matching the readout at full ink, the others secondary, a background only
 /// on problem rows.
 private func resourceGB(_ v: Double) -> UInt64 { UInt64((v * Double(UInt64(1) << 30)).rounded()) }
@@ -28,7 +29,7 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         return try XCTUnwrap(ResourceDockBridge.input(face: face, card: card, language: .chinese))
     }
 
-    func testRingIsTwoOrchidArcsThatNeverChangeColour() throws {
+    func testRingArcsTakeTheStatusToneOfWhatTheyMeasure() throws {
         let normal = try DockInstrumentProjection.evaluate(try input(sample(), key: .memory), now: Date())
         // B4f (owner 11-21): the ring draws the percentage alone; VoiceOver still reads what it measures.
         XCTAssertEqual(normal.readout, "47%")
@@ -38,18 +39,24 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         XCTAssertEqual(normal.pluginRing?.outerFaint ?? 0, 12.8 / 32, accuracy: 0.001, "faint segment = cached")
         XCTAssertEqual(normal.inner?.fraction ?? 0, 0.22, accuracy: 0.001, "inner = CPU")
         let ring = try XCTUnwrap(normal.pluginRing)
-        XCTAssertEqual([ring.red, ring.green, ring.blue].map { Int(($0 * 255).rounded()) }, [0xda, 0x66, 0xc2], "orchid #da66c2")
+        XCTAssertEqual([ring.red, ring.green, ring.blue].map { Int(($0 * 255).rounded()) }, [0x5a, 0xd9, 0xba], "the base ink is the normal status colour, not orchid")
+        XCTAssertEqual([normal.outer?.status, normal.inner?.status], [.normal, .normal])
         XCTAssertNil(normal.timeLeftFraction, "no quota clock on a plugin ring")
         XCTAssertFalse(normal.jetEligible)
 
         let spike = try DockInstrumentProjection.evaluate(try input(sample(cpu: 96), key: .cpu, tone: .critical), now: Date())
         XCTAssertEqual(spike.readout, "96%")
         XCTAssertEqual(spike.pluginRing?.accessibilityReadout, "CPU 96%")
-        XCTAssertEqual(spike.status, .critical, "only the readout number turns red")
-        XCTAssertEqual(spike.outer?.status, .normal, "the ring keeps its ink")
-        XCTAssertEqual(spike.inner?.status, .normal)
-        XCTAssertEqual(spike.pluginRing?.red, ring.red)
+        XCTAssertEqual(spike.status, .critical, "the readout number turns red")
+        XCTAssertEqual(spike.outer?.status, .normal, "memory 47 % keeps the normal colour")
+        XCTAssertEqual(spike.inner?.status, .critical, "the CPU arc turns red at 96 %")
         XCTAssertNil(spike.outer?.remainingFraction, "never read as a used-up quota window")
+        // The amber line: 80 % CPU is amber; memory under warn pressure is amber whatever its percentage.
+        let amber = try DockInstrumentProjection.evaluate(try input(sample(cpu: 80), key: .memory), now: Date())
+        XCTAssertEqual(amber.inner?.status, .warning)
+        let colours = [DockQuotaStatus.normal, .warning, .critical].map { DockPluginStatusColour.rgb($0) }
+        XCTAssertEqual(Set(colours.map { "\($0.red)\($0.green)\($0.blue)" }).count, 3, "three distinct status colours")
+        XCTAssertNotEqual(Int((colours[0].red * 255).rounded()), 0xda, "none of them is the orchid")
     }
 
     func testHoverCardRowsFollowVariantA() throws {
@@ -59,18 +66,23 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         XCTAssertEqual(rows.map(\.value), ["22%", "47%", "76%"])
         XCTAssertEqual(rows.map(\.emphasised), [false, true, false], "the row matching the readout is at full ink")
         XCTAssertEqual(rows.map { $0.plugin?.tinted }, [false, false, false], "emphasis is ink only, never a background")
-        XCTAssertTrue(rows.allSatisfy { $0.plugin.map { Int(($0.red * 255).rounded()) == 0xda } == true }, "orchid bars")
+        let normalInk = DockPluginStatusColour.rgb(.normal)
+        XCTAssertTrue(rows.allSatisfy { $0.plugin.map { Int(($0.red * 255).rounded()) == Int((normalInk.red * 255).rounded()) } == true }, "normal rows: the normal status colour, not orchid")
         XCTAssertEqual(rows[1].plugin?.faintFill ?? 0, 12.8 / 32, accuracy: 0.001)
-        XCTAssertEqual(rows.map { $0.plugin?.notch }, [0.7, nil, 0.9])
+        XCTAssertEqual(rows.map { $0.plugin?.notch }, [0.8, nil, 0.9])
         XCTAssertEqual(card.rows.last?.kind, .footnote)
-        XCTAssertEqual(card.rows.last?.value, "内存压力 正常 · 每 10 秒")
+        XCTAssertEqual(card.rows.last?.value, "内存压力 正常")
+        XCTAssertEqual(card.sourceAndAge, "每 10 秒", "D371 B4e: the cadence is the header's right text")
         XCTAssertFalse(card.rows.contains { $0.id.hasPrefix("quota:") }, "no quota windows on a plugin card")
 
         let spike = try DockCardProjection.content(input: try input(sample(cpu: 96, diskFree: 30), key: .cpu, tone: .critical), at: Date())
         let spikeRows = spike.rows.filter { $0.kind == .quota }
         XCTAssertEqual(spikeRows.map(\.emphasised), [true, false, false], "the emphasis follows the readout to CPU")
-        XCTAssertEqual(spikeRows.map { $0.plugin?.tinted }, [true, false, true], "background only on problem rows (CPU ≥ 70 %, disk ≥ 90 %)")
-        XCTAssertEqual(spikeRows.map(\.tone), [.critical, .normal, .warning], "amber/red numbers keep their tone, emphasised or not")
+        XCTAssertEqual(spikeRows.map { $0.plugin?.tinted }, [true, false, true], "background only on problem rows (amber or red)")
+        XCTAssertEqual(spikeRows.map(\.tone), [.critical, .normal, .critical], "amber/red numbers keep their tone, emphasised or not")
+        // The bars take the same status colour as their number.
+        let red = DockPluginStatusColour.rgb(.critical)
+        XCTAssertEqual(spikeRows.map { $0.plugin.map { Int(($0.red * 255).rounded()) } }, [Int((red.red * 255).rounded()), Int((normalInk.red * 255).rounded()), Int((red.red * 255).rounded())])
     }
 
     /// Sample S17 (macrevb-1096-6): the card action carries the Dock ID; the cockpit bridge takes the plugin ID only.
@@ -189,7 +201,8 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         XCTAssertEqual(refreshes, 1)
         XCTAssertEqual(provider.resourceInput?.pluginRing?.readout, "47%")
         XCTAssertEqual(provider.resourceInput?.pluginRing?.accessibilityReadout, "内存 47%")
-        XCTAssertEqual(provider.resourceInput?.pluginRing?.cardFooter, "内存压力 正常 · 每 10 秒", "widget shown: every 10 s")
+        XCTAssertEqual(provider.resourceInput?.pluginRing?.cardFooter, "内存压力 正常")
+        XCTAssertEqual(provider.resourceInput?.pluginRing?.cardSource, "每 10 秒", "widget shown: every 10 s")
         run(until: 10)
         XCTAssertEqual(refreshes, 1, "no redraw without a ≥ 1 point change")
         reader.cpu = 40
@@ -207,7 +220,7 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
 
     func testHoverCardFollowsDiskPressureAndCadenceWithoutARingRedraw() throws {
         final class Reader: ResourceReader {
-            var cpu: Double = 22, diskFree: Double = 494 * 0.11, pressure: ResourcePressure = .normal
+            var cpu: Double = 22, diskFree: Double = 494 * 0.25, pressure: ResourcePressure = .normal
             func read(uptime: TimeInterval, unixMs: Int64) -> ResourceSample? {
                 resourceSample(at: uptime, cpu: cpu, pressure: pressure, diskFree: diskFree)
             }
@@ -233,10 +246,10 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         run(until: 0)
         XCTAssertEqual(redraws, 1)
         func disk() throws -> DockCardRow { try XCTUnwrap(binding.liveCard()?.rows.first { $0.id == "resource:disk" }) }
-        XCTAssertEqual(try disk().value, "89%")
+        XCTAssertEqual(try disk().value, "75%")
         XCTAssertEqual(try disk().plugin?.tinted, false)
 
-        // Disk 89 % -> 91 %: the ring face (memory, CPU, readout) is unchanged, so the ring does not redraw.
+        // Disk 75 % -> 91 %: the ring face (memory, CPU, readout) is unchanged, so the ring does not redraw.
         reader.diskFree = 494 * 0.09
         let before = cardRefreshes
         run(until: 10)
@@ -244,8 +257,8 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         XCTAssertGreaterThan(cardRefreshes, before, "an open card is refreshed on the new sample")
         XCTAssertEqual(try disk().value, "91%", "the card shows the current disk")
         XCTAssertEqual(try disk().plugin?.tinted, true, "and its warning tint")
-        XCTAssertEqual(try disk().tone, .warning)
-        XCTAssertEqual(provider.resourceInput?.pluginRing?.cardRows.first { $0.id == "resource:disk" }?.value, "89%",
+        XCTAssertEqual(try disk().tone, .critical, "D371: 91 % disk is red")
+        XCTAssertEqual(provider.resourceInput?.pluginRing?.cardRows.first { $0.id == "resource:disk" }?.value, "75%",
                        "the captured input is stale; the host reads the live card instead")
         let input = try XCTUnwrap(provider.resourceInput)
         let shown = try DockCardProjection.content(input: StaticDockPreviewHost.livePluginInput(input, live: binding.liveCard()), at: Date())
@@ -259,16 +272,18 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         let drawn = redraws
         reader.pressure = .warn
         run(until: 50)
-        XCTAssertEqual(redraws, drawn, "pressure alone does not change the ring face")
+        XCTAssertEqual(redraws, drawn + 1, "D371: warn pressure turns the memory arc amber, so the ring repaints once")
+        let amberRedraws = redraws
         let memory = try XCTUnwrap(binding.liveCard()?.rows.first { $0.id == "resource:memory" })
         XCTAssertEqual(memory.tone, .warning, "the memory number takes the pressure tone at once")
         XCTAssertEqual(memory.plugin?.tinted, true)
-        XCTAssertEqual(binding.liveCard()?.footer, "内存压力 偏高 · 每 10 秒")
+        XCTAssertEqual(binding.liveCard()?.footer, "内存压力 偏高")
+        XCTAssertEqual(binding.liveCard()?.source, "每 10 秒", "D371 B4e: the cadence is the card header's right text")
 
         // The cadence changes (the cockpit column opens at 2 s): the footer follows without a redraw.
         binding.setVisibility(.init(pluginEnabled: true, columnShown: true, widgetShown: true, columnSetting: 2))
-        XCTAssertEqual(redraws, drawn)
-        XCTAssertEqual(binding.liveCard()?.footer, "内存压力 偏高 · 每 2 秒")
+        XCTAssertEqual(redraws, amberRedraws)
+        XCTAssertEqual(binding.liveCard()?.source, "每 2 秒")
 
         binding.setVisibility(.init(pluginEnabled: false, columnShown: false, widgetShown: true, columnSetting: 2))
         XCTAssertNil(binding.liveCard(), "plugin off: no card")
@@ -276,14 +291,17 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
 
     // MARK: macrevb-1096-6: the card's action and header mark
 
-    func testCardCarriesTheScreenActionAndTheLineMark() throws {
+    func testCardCarriesTheCockpitEntryAndTheFramelessLineMark() throws {
         let card = try DockCardProjection.content(input: try input(sample(), key: .memory), at: Date())
-        XCTAssertEqual(card.actionLabel, "驾驶舱大屏 ›", "the footer action opens the resource big screen")
+        // D371 B4e: one footer row "在驾驶舱查看" + the plugin's name; no separate action button any more.
+        XCTAssertEqual(card.cockpitLabel, "在驾驶舱查看")
+        XCTAssertEqual(card.cockpitTarget, "资源占用")
+        XCTAssertEqual(card.actionLabel, "", "the old pill button is gone")
         let english = ResourceCard(sample: sample(), shown: .init(key: .memory, percent: 47, tone: .normal), cpuPeak: 22, interval: 10, language: .english)
-        XCTAssertEqual(ResourceDockBridge.card(english).action, "Cockpit screen ›")
+        XCTAssertEqual(ResourceDockBridge.card(english).action, "View in cockpit")
         let paths = DockPluginIcon.paths(in: CGRect(x: 0, y: 0, width: 16, height: 16))
-        XCTAssertEqual(paths.count, 2, "the screen outline and the heartbeat line")
-        XCTAssertEqual(paths[0].boundingBox.width, 14, accuracy: 0.01)
+        XCTAssertEqual(paths.count, 1, "D371: the heartbeat line alone, no square frame")
+        XCTAssertEqual(paths[0].boundingBox.width, 14, accuracy: 0.01, "from x = 1 to x = 15")
         XCTAssertTrue(StaticDockPreviewHost.pluginCardMark.size == CGSize(width: 16, height: 16))
     }
 
@@ -298,9 +316,9 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         XCTAssertEqual(DockInstrumentView.communityNumberColor(.normal), .labelColor)
     }
 
-    /// The neutral edition (no reserved art) draws the two orchid arcs beside a plain readout; the row is not dimmed
+    /// The neutral edition (no reserved art) draws the two status-coloured arcs beside a plain readout; the row is not dimmed
     /// or marked unavailable.
-    func testNeutralEditionDrawsTheOrchidArcs() throws {
+    func testNeutralEditionDrawsTheStatusArcs() throws {
         let reading = try DockInstrumentProjection.evaluate(try input(sample(cpu: 96), key: .cpu, tone: .critical), now: Date())
         let view = DockInstrumentView(frame: .zero)
         try view.applyCommunity([reading], locale: "zh-Hans")
@@ -309,14 +327,18 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: rep)
         let ring = DockInstrumentView.communityPluginGeometry(row: CGRect(x: 0, y: 0, width: view.bounds.width, height: 44), scale: 1).ring
-        var orchid = 0
+        var red = 0, green = 0, orchid = 0
         let sx = CGFloat(rep.pixelsWide) / view.bounds.width, sy = CGFloat(rep.pixelsHigh) / view.bounds.height
         for x in stride(from: ring.minX, to: ring.maxX, by: 0.5) {
             for y in stride(from: ring.minY, to: ring.maxY, by: 0.5) {
                 guard let c = rep.colorAt(x: Int(x * sx), y: Int(y * sy))?.usingColorSpace(.sRGB) else { continue }
                 if c.redComponent > 0.75, c.greenComponent < 0.55, c.blueComponent > 0.6, c.alphaComponent > 0.5 { orchid += 1 }
+                if c.redComponent > 0.85, c.greenComponent < 0.4, c.blueComponent < 0.4, c.alphaComponent > 0.5 { red += 1 }
+                if c.redComponent < 0.45, c.greenComponent > 0.75, c.blueComponent > 0.6, c.alphaComponent > 0.5 { green += 1 }
             }
         }
-        XCTAssertGreaterThan(orchid, 20, "the orchid arcs are drawn in the neutral row")
+        XCTAssertGreaterThan(red, 8, "D371: the CPU arc at 96 % is red")
+        XCTAssertGreaterThan(green, 20, "and the memory arc at 47 % keeps the normal colour")
+        XCTAssertEqual(orchid, 0, "no orchid on the ring")
     }
 }
