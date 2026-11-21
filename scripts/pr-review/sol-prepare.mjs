@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { client } from "../merge-gates/github.mjs";
 import { feed, parseGlmTiers } from "../merge-gates/rules.mjs";
-import { buildSolPrompt, compileRunProblem, compileStatus, decideSol } from "./sol.mjs";
+import { buildSolPrompt, compileRunProblem, compileStatus, decideSol, omitGeneratedDiffs } from "./sol.mjs";
 
 const env = process.env;
 const output = (k, v) => appendFileSync(env.GITHUB_OUTPUT, `${k}=${v}\n`);
@@ -62,8 +62,8 @@ if (d.since) {
   if (have && tryGit("merge-base", "--is-ancestor", d.since, d.head)) { mode = "delta"; base = d.since; }
 }
 d = { ...d, mode, base };
-const diff = git("diff", "--no-color", "--no-ext-diff", mergeBase, d.head);
-const delta = mode === "delta" ? git("diff", "--no-color", "--no-ext-diff", d.since, d.head) : "";
+const diff = omitGeneratedDiffs(git("diff", "--no-color", "--no-ext-diff", mergeBase, d.head));
+const delta = mode === "delta" ? omitGeneratedDiffs(git("diff", "--no-color", "--no-ext-diff", d.since, d.head)) : "";
 const stat = git("diff", "--stat=160", "--no-color", mergeBase, d.head);
 const changed = git("diff", "--name-only", "--no-renames", "--diff-filter=AMRT", "-z", mergeBase, d.head).split("\0").filter(Boolean);
 const deleted = git("diff", "--name-only", "--no-renames", "--diff-filter=D", "-z", mergeBase, d.head).split("\0").filter(Boolean);

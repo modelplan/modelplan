@@ -831,3 +831,23 @@ test("review:gpt: the fallback comment is a counting (ghglm) verdict with the fi
   assert.equal(S.postProblem({ pr: pr(labelled), items: R.feed([]), head: H, lane: S.SOL_LANE, posted: S.GLM_LANE, tier: 1, files: t1 }), null, "GLM may post on a labelled PR with no REVIEW_GLM_TIERS");
   assert.match(S.postProblem({ pr: pr(), items: R.feed([]), head: H, lane: S.SOL_LANE, posted: S.GLM_LANE, tier: 1, files: t1 }), /may not decide/);
 });
+
+test("generated bundle diff is replaced by a one-line note; every other file is kept", () => {
+  const other = "diff --git a/codex/server.mjs b/codex/server.mjs\nindex 1..2 100644\n--- a/codex/server.mjs\n+++ b/codex/server.mjs\n@@ -1 +1 @@\n-a\n+b\n";
+  const bundle = "diff --git a/codex/server.bundle.mjs b/codex/server.bundle.mjs\nindex 1..2 100644\n--- a/codex/server.bundle.mjs\n+++ b/codex/server.bundle.mjs\n@@ -1,2 +1,2 @@\n-x\n-y\n+z\n+w\n";
+  const tail = "diff --git a/cli/main.go b/cli/main.go\n--- a/cli/main.go\n+++ b/cli/main.go\n@@ -1 +1 @@\n-1\n+2\n";
+  const out = S.omitGeneratedDiffs(other + bundle + tail);
+  assert.equal(out, other + "codex/server.bundle.mjs: generated file, 4 lines changed, omitted from review; reproducible with `npm run build` in codex/ and checked by the ci.yml `codex` job (committed-as-built steps)\n" + tail);
+  const big = bundle + "-line\n".repeat(5000);
+  assert.ok(S.omitGeneratedDiffs(other + big + tail).length < big.length, "a large bundle diff shrinks to the note");
+});
+
+test("a file that is not listed is never omitted, including look-alikes and renames", () => {
+  const d = ["codex/server.bundle.mjs.map", "codex/other.bundle.mjs", "x/codex/server.bundle.mjs", "codex/server.mjs"]
+    .map((p) => `diff --git a/${p} b/${p}\n--- a/${p}\n+++ b/${p}\n@@ -1 +1 @@\n-a\n+b\n`).join("");
+  assert.equal(S.omitGeneratedDiffs(d), d);
+  const renamed = "diff --git a/old.mjs b/codex/server.bundle.mjs\nsimilarity index 90%\nrename from old.mjs\nrename to codex/server.bundle.mjs\n";
+  assert.equal(S.omitGeneratedDiffs(renamed), renamed);
+  assert.equal(S.omitGeneratedDiffs(""), "");
+  assert.deepEqual(Object.keys(S.GENERATED_DIFF_OMITTED), ["codex/server.bundle.mjs"]);
+});
