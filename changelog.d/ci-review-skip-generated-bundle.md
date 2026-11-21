@@ -1,1 +1,0 @@
-The pull request review no longer sends the generated codex/server.bundle.mjs diff to the reviewer; it gets a one-line note, so Codex reader PRs are no longer skipped for exceeding the request size. The ci.yml codex job still verifies the committed bundle against its sources.
