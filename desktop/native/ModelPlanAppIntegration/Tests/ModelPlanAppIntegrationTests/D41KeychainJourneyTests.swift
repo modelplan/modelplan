@@ -149,10 +149,15 @@ private actor D41Engine: EngineClient {
         let (app, engine) = try await launch(keychain: "unset")
         let sheet = try app.scopeConsentEntry.makeFirstRunView(language: .english)
         show(sheet)
-        let allow = try XCTUnwrap(view("scope.firstRun.keychain.allow", in: sheet) as? NSButton)
-        XCTAssertEqual(allow.title, "Allow")
+        XCTAssertNotNil(view("scope.firstRun.keychain.allow", in: sheet))
         let before = await engine.recorded()
         XCTAssertTrue(before.isEmpty, "showing the row asks nothing of the system")
+        // On a busy runner a redraw during the await above can retire the first button (its action is cleared), so the
+        // click must go to the live one: wait until the controller can mutate, then find the button and click at once.
+        for _ in 0..<500 where !app.scopeConsentEntry.controller.canMutate { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(app.scopeConsentEntry.controller.canMutate, "the Allow button acts only once the controller can mutate")
+        let allow = try XCTUnwrap(view("scope.firstRun.keychain.allow", in: sheet) as? NSButton)
+        XCTAssertEqual(allow.title, "Allow")
         allow.performClick(nil)
         var grants: [WireConsentGrantParams] = []
         for _ in 0..<300 where grants.isEmpty { try await Task.sleep(for: .milliseconds(10)); grants = await engine.recorded() }

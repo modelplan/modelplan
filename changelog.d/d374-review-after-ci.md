@@ -1,1 +1,0 @@
-The merge gate now requires a mac-compile success status at the head of a pull request that changes desktop/native, the PR reviewer no longer waits for the Mac compile, a dropped review answer is retried once and then reported, and a scheduled sweep dispatches missing Mac compiles (also run when a PR is retargeted to main).

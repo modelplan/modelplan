@@ -6,6 +6,36 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.69 (2026-11-21)
+
+- The cockpit calendar now writes subscription names with their colour mark instead of two-letter codes, shows the next reset as a large time, lists two different moments (or one when they are the same), and says "no time-slot rules" when you have none.
+
+- Gemini CLI quota keeps reading after its one-hour access token lapses, if you allow it (D232). A new opt-in permission, `gemini.account_usage.token_refresh` (off by default, effective only together with the Gemini saved-login permission), lets the reader exchange the saved refresh token at Google's token endpoint using the Gemini CLI's published installed-app client. The new token stays in memory only: nothing is written to `~/.gemini` or to ModelPlan's cache, no client secret is read from the installed Gemini CLI, and revoking the permission drops the token.
+
+- The merge gate now requires a mac-compile success status at the head of a pull request that changes desktop/native, the PR reviewer no longer waits for the Mac compile, a dropped review answer is retried once and then reported, and a scheduled sweep dispatches missing Mac compiles (also run when a PR is retargeted to main).
+
+- The app's engine no longer burns CPU while nothing changes. Reading an existing account reference took a lock file in the folder the engine watches, so every snapshot started the next one; native readers were listed in a random order, so every snapshot was sent to the app as a change; and a session log with no recent responses was read in full and the usage ledger rewritten every 30 seconds. An idle engine now reads nothing again and sends nothing until a file it watches really changes or a scheduled read is due.
+
+- Internal: the icon-open rack test no longer depends on a 50 ms wall-clock sample.
+
+- Cockpit: a clicked date key, fader or scale key no longer shows the gold keyboard ring after the next key press; the overview keeps the last usage history while one reply could not read it, instead of flashing "No usage record yet"; the Resources column's CPU, Memory and Disk labels are no longer squeezed out of their rows; the porthole list lines up every ★ effort and names GPT-6 Astra and GPT-6 Luna with their version; the placeholder plugin is no longer offered in the "+" menu.
+
+- The task-start brief keeps the best-value model as the default when it scores exactly three ties below the strongest on the 0.4 display scale (a gap of 2.445), instead of recommending the strongest model because of floating-point rounding. In the cockpit, a window's run-out line now shows that window's own forecast, so a five-hour forecast no longer hides the weekly one, and a reset announcement for one plan selects that plan's subscription when you click its alert.
+
+- Privacy and usage-history fixes. Turning Gemini on (first-run Done, the Settings switch or Select all) no longer also allows Gemini sign-in renewal: renewal, which sends the saved refresh token to Google's token endpoint, is now only its own labelled choice, and turning it off keeps the Gemini quota already read. Forgetting Codex local history now stops a Codex read that was admitted before the Forget from opening the session logs again. A Codex five-hour forecast without a reset time no longer spans an unseen reset in some session-log orders. After an upgrade, a GLM reading of another account that an older build saved while your pasted key was selected is no longer shown. "Remove imported history" now also removes an imported response that a later scan had counted as live, and a normal transcript append no longer drops usage kept across a time-zone change. Clearing the cockpit (consent cleared) removes an open quota tooltip at once.
+
+- Three quota fixes. Forgetting Codex local history now also discards what a Codex read that was already running had decoded, so nothing from the session logs stays in memory after Forget. A Codex five-hour forecast without a reset time no longer disappears when session logs are read in a different order: every order gives the same run-out time and headroom. After you paste a GLM key for another account, a refresh before the next reading is due shows "not read yet" instead of the previous account's quota from ZCode or Claude Code.
+
+- A free Grok Build account whose $0 reading has expired stays out of the Dock and cockpit, the first scan after an upgrade no longer drops usage recorded under a different time zone, the Kiro cause says when a configured `MODELPLAN_KIRO` cannot start, and the CLI rejects a lineup step that starts or ends at a pending model.
+
+- The public reader now rejects a publication whose lineup step starts or ends at a model that is still pending evaluation, and one whose usage-trend ranks carry an unpublished `__proto__` key, instead of showing them as measured data.
+
+- A free Grok Build balance ($0) shows its line in Settings again, with the balance. Control-clicking the widget no longer leaves the attached cockpit stuck open, and dropping the widget back where it was saved no longer makes it jump.
+
+- The app reaches its first readings and the cockpit's first data several seconds sooner after launch: an engine event that changes nothing the quota widget shows (a health, consent or cockpit reply) no longer clears and redraws the widget, and a delivery that does change it redraws the widget once instead of four times, so the engine's replies no longer queue behind widget redraws. Privacy clears still withdraw the widget at once.
+
+- ZCode users who signed in by QR code can now see their GLM quota. The sign-in has its own consent, off by default: until it is allowed the ZCode / GLM row says the sign-in was found and offers the Settings action, instead of "unsupported login type". ModelPlan reads ZCode's sign-in read-only and in memory, sends it only to the official host of the account's region (z.ai or BigModel), never renews it, and asks you to sign in to ZCode again when it has ended. A GLM key in ZCode's provider file or the environment is still used first.
+
 ## CLI v0.5.68 (2026-11-21)
 
 - The pull request review no longer sends the generated codex/server.bundle.mjs diff to the reviewer; it gets a one-line note, so Codex reader PRs are no longer skipped for exceeding the request size. The ci.yml codex job still verifies the committed bundle against its sources.

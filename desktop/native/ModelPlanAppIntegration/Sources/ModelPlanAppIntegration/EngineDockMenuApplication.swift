@@ -72,6 +72,16 @@ struct StatusNoticePresentation {
     var lifecycleEngineStopped: Bool { lifecycleController?.engineStopped ?? false }
     private var activityPaused = false
     private(set) var lifecyclePaused = false
+    /// WP-17: the lifecycle has reported ready at least once. Before that, its pause is the launch (the engine
+    /// starting), not sleep or a locked screen.
+    private(set) var lifecycleEverReady = false
+    /// WP-17: a cockpit open asked for during launch. The launch pause dropped every early click (4 to 6 attempts per
+    /// launch on the owner's Mac); now the click is kept, the icon shows it pressed, and the cockpit opens the moment
+    /// the lifecycle is ready. Its page still shows data only from an admitted delivery (the consent fence).
+    private(set) var launchOpen: (fromStatusItem: Bool, openPoint: CGPoint?)?
+    /// WP-17: the launch pause (lifecycle started, never ready yet), as opposed to an OS pause. Every cockpit open
+    /// entry (icon click, menu item, shortcut, ignition, reopen) keeps its open during it through `showConsole`.
+    var inLaunchPause: Bool { lifecyclePaused && lifecycleController != nil && !lifecycleEverReady }
     private var accessibilityObserver: NSObjectProtocol?
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
@@ -433,7 +443,16 @@ struct StatusNoticePresentation {
     /// `openPoint` is the click that opened it elsewhere (the widget's ignition): a detached cockpit with no remembered
     /// place opens on that display; an attached one still opens under the icon (G3-128).
     public func showConsole(fromStatusItem: Bool = false, openPoint: CGPoint? = nil) {
-        guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
+        guard cockpitEntryEnabled, !terminating else { return }
+        if lifecyclePaused {
+            // An OS pause (sleep, lock, displays off) keeps refusing; only the launch keeps the click.
+            guard inLaunchPause else { return }
+            launchOpen = (fromStatusItem, fromStatusItem ? nil : openPoint)
+            refreshStatusTooltip()
+            return
+        }
+        // Opened before the lifecycle started: its launch pause hides the console, so the ready reopens it.
+        if !lifecycleEverReady { launchOpen = (fromStatusItem, fromStatusItem ? nil : openPoint) }
         cockpitOpenPoint = fromStatusItem ? nil : openPoint
         composition.dock.acknowledgeCockpitOpening()
         if console == nil {
@@ -447,6 +466,9 @@ struct StatusNoticePresentation {
     /// D88: the cockpit opened, closed, detached or was put back: the icon highlight and the one-time
     /// detach / put-back hints follow.
     private func cockpitPresentationChanged() {
+        // The user closed a cockpit opened before the lifecycle started: the ready does not bring it back. A hide by
+        // the launch pause itself runs while paused and keeps the open.
+        if console?.isShowing != true, !lifecyclePaused { launchOpen = nil }
         refreshStatusTooltip()
         dockHelp?.refresh()
     }
@@ -457,13 +479,15 @@ struct StatusNoticePresentation {
     /// G3-94 was the attached case: the ignition's mouse-down closed the cockpit as an outside click, then its action
     /// (open-only) opened it again.
     func pressIgnition(at point: CGPoint) {
-        guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
+        guard cockpitEntryEnabled, !terminating, !lifecyclePaused || inLaunchPause else { return }
         if let console, console.isShowing, !console.isDetached { console.requestClose(); refreshStatusTooltip(); return }
         showConsole(openPoint: point)
     }
     /// G3-40: the status icon toggles the cockpit where it is, attached or detached. Every other
     /// entry (menu item, shortcut, reopening the app) only ever opens; the ignition follows D204 (`pressIgnition`).
     func toggleConsole() {
+        // A second click during launch takes the kept open back, like closing an open cockpit.
+        if launchOpen != nil, lifecyclePaused { launchOpen = nil; refreshStatusTooltip(); return }
         if let console, console.isShowing { console.requestClose(); refreshStatusTooltip() } else { showConsole(fromStatusItem: true) }
     }
     /// OS accessibility changes are presentation facts, never saved user choices.
@@ -643,8 +667,14 @@ struct StatusNoticePresentation {
             onPause: { [weak self] in self?.withdrawForLifecycle() },
             onReady: { [weak self] in
                 guard let self, !self.terminating else { return }
-                self.lifecyclePaused = false; self.composition.dock.resumeFromLifecycle(); self.composition.resumeDeadlines()
+                self.lifecyclePaused = false; self.lifecycleEverReady = true
+                self.composition.dock.resumeFromLifecycle(); self.composition.resumeDeadlines()
                 self.allowDockPresentation(); self.dockHelp?.resume(); self.renderMenu()
+                if let open = self.launchOpen {
+                    self.launchOpen = nil
+                    if self.console?.isShowing != true, !self.setupActive { self.showConsole(fromStatusItem: open.fromStatusItem, openPoint: open.openPoint) }
+                    self.refreshStatusTooltip()
+                }
                 Task { [weak self] in await self?.restoreFirstRunIfNeeded() }
             }, onGateOpen: { [weak self] in
                 self?.allowDockPresentation()
@@ -706,8 +736,9 @@ struct StatusNoticePresentation {
         context.shortcutObservations = observations
         settings.update(context: context)
     }
-    private func performShortcut(_ action: ShortcutAction) {
-        guard !terminating, !lifecyclePaused else { return }
+    func performShortcut(_ action: ShortcutAction) {
+        // WP-17: the open-cockpit shortcut keeps its open during the launch pause like every other open entry.
+        guard !terminating, !lifecyclePaused || (action == .openCockpit && inLaunchPause) else { return }
         switch action {
         case .openCockpit: showConsole()
         // D56: the SET-9-05 widget slot is the Find Quota Widget shortcut.
@@ -1023,7 +1054,7 @@ struct StatusNoticePresentation {
             return true
         }
         guard event.type == .leftMouseDown, onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
-              !terminating, setupActive || (cockpitEntryEnabled && !lifecyclePaused) else { return false }
+              !terminating, setupActive || (cockpitEntryEnabled && (!lifecyclePaused || inLaunchPause)) else { return false }
         statusPressPending = true
         return true
     }
@@ -1168,7 +1199,8 @@ struct StatusNoticePresentation {
         }
         menuItems += [
             .init(title: nil),
-            .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
+            // WP-17: the item stays enabled during the launch pause; the open is kept until the engine is ready.
+            .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: (available || inLaunchPause) && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
             .init(title: showTitle, accessibilityID: "status.showQuotaWidget", checked: widgetShown,
                   action: showAvailability == .ready ? { [weak self] in Task { @MainActor [weak self] in await self?.setDockShown(!widgetShown) } } : nil),
             // D56: shows where the widget is; it turns the widget on first when it is off.
@@ -1309,7 +1341,7 @@ struct StatusNoticePresentation {
         if button.isHighlighted != pressed { button.highlight(pressed) }
     }
     /// D88: open and attached. A detached cockpit is its own window, so the icon is not pressed.
-    var statusItemPressed: Bool { console?.isShowing == true && console?.isDetached != true }
+    var statusItemPressed: Bool { (console?.isShowing == true && console?.isDetached != true) || (launchOpen != nil && lifecyclePaused) }
     private func showHelp(fromStatusMenu: Bool = false) {
         guard !terminating, !lifecyclePaused else { return }
         spotlight.finish(.cancelled)
