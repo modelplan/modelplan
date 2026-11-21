@@ -180,6 +180,9 @@ func validateOutcome(tool string, name *Name, state State, reason Reason, step *
 	if reason.Code == CodeNotSignedIn && name != nil {
 		text = NotSignedInText(name.EN, name.ZH)
 	}
+	if own, ok := toolStepText(tool, reason.Code); ok {
+		text = own
+	}
 	if step.Text != text {
 		return fmt.Errorf("invalid rows field: action message table")
 	}

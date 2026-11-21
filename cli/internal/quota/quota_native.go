@@ -378,7 +378,8 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 			// subscription); the key itself is read on this Mac, never sent, logged or stored.
 			e.DetectedKeyRef = assignSubscription(p.Cache, zaiKeyBasis, detectedZaiKey(p, x), now)
 		}
-		if e.Status == "ok" && key != "" && !IdentityOff() {
+		// D369: ZCode's sign-in is never the basis of a reference; nothing derived from it is stored.
+		if e.Status == "ok" && key != "" && !IdentityOff() && !zcodeLoginRoute(p, x.Provider) {
 			e.SubscriptionRef = assignSubscription(p.Cache, nativeIdentityBasis(x), key, now) // a key is one subscription
 		}
 		if e.Error != "" {
@@ -455,13 +456,21 @@ func getJSON(ctx context.Context, c *http.Client, url, key string, v any) error 
 // getJSONAuthorization is getJSON with the complete Authorization value supplied by the
 // caller, for a vendor contract that takes the key without a scheme prefix.
 func getJSONAuthorization(ctx context.Context, c *http.Client, url, authorization string, v any) error {
+	return getJSONHeaders(ctx, c, url, map[string]string{"Authorization": authorization}, v)
+}
+
+// getJSONHeaders is getJSONAuthorization with further fixed request headers (each reader's request
+// set pins which names are allowed).
+func getJSONHeaders(ctx context.Context, c *http.Client, url string, headers map[string]string, v any) error {
 	ctx, cancel := context.WithTimeout(ctx, nativeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return codeError("other", "bad request")
 	}
-	req.Header.Set("Authorization", authorization)
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "modelplan")
 	resp, err := c.Do(req)
@@ -639,7 +648,7 @@ func projectLegacyNativeCache(ctx context.Context, p Paths, provider string, old
 	case "zai":
 		if g, ok := p.ReaderAccessGrant(provider); ok && g.ConfigSource != nil {
 			access, blocked := zaiConfigAdmission(ctx)
-			e = zaiConfigCachedEntry(loadZaiConfigState(p.Cache), now, access.LoginGeneration)
+			e = zaiConfigCachedEntryScope(loadZaiConfigState(p.Cache), now, access.LoginGeneration, zaiConfigScope(ctx))
 			if blocked != "" {
 				e = codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext(blocked)}
 			}
@@ -739,17 +748,28 @@ func claudeBackoffIsLocal(cache string) bool {
 	return true
 }
 
+// zcodeLoginRoute: the provider is read through ZCode's sign-in (D369).
+func zcodeLoginRoute(p Paths, provider string) bool {
+	g, ok := p.ReaderAccessGrant(provider)
+	return ok && provider == "zai" && g.ConfigSource != nil && g.ConfigSource.Tool == zcodeLoginTool
+}
+
 func credentialStageFailure(e readerEntry) bool {
 	return e.CredentialReadState != "" || e.ErrorCode == "file_missing"
 }
 
 // applyZCodeNoProviderFile reports ZCode's unreadable layout as a fixed reason, never a
 // pending first reading, unless another ZCode/GLM source already reported (G3-21).
+// With ZCode's QR-code sign-in present but its saved-login scope not allowed (D369), the fixed reason
+// is "consent required": the row offers the consent action and shows no data.
 func applyZCodeNoProviderFile(r *Report, p Paths) {
-	if !p.ZCodeNoProviderFile {
+	if !p.ZCodeNoProviderFile && !p.ZCodeLoginConsent {
 		return
 	}
 	cause := SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"}
+	if p.ZCodeLoginConsent {
+		cause = SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "consent_required", ErrorCode: "consent_required"}
+	}
 	for i, s := range r.Sources {
 		if s.Source == "native:zai" {
 			// A bare legacy GLM allow reports its absent environment key; ZCode's missing

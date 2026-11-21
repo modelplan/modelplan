@@ -23,6 +23,7 @@ tests. Services that require HTTP/2 cannot be read through this guarded path.
 | `kimi.account_usage.api_key` | `api.kimi.com` or `api.kimi.ai` | GET `/coding/v1/usages` | 1 |
 | `kimi.account_usage.saved_login` | `api.kimi.com` | GET `/coding/v1/usages` | 1 |
 | `zai.account_usage.api_key` | `api.z.ai` or `open.bigmodel.cn` | GET `/api/monitor/usage/quota/limit` | 1 |
+| `zai.account_usage.saved_login` | `api.z.ai` or `open.bigmodel.cn` (the account's region), or `zcode.z.ai` (z.ai family only) | GET `/api/monitor/usage/quota/limit`, or GET `/api/v1/zcode-plan/billing/balance` (adds `X-Device-Mid`) | 1 |
 | `opencodego.account_usage.api_key` | `opencode.ai` | GET `/zen/go/v1/usage` | 1 |
 | `grok.account_usage.saved_login` | `cli-chat-proxy.grok.com` | GET `/v1/billing?format=credits` | 1 |
 | `gemini.account_usage.saved_login` | `cloudcode-pa.googleapis.com` | optional POST `/v1internal:loadCodeAssist`, POST `/v1internal:retrieveUserQuota` | 2 |
