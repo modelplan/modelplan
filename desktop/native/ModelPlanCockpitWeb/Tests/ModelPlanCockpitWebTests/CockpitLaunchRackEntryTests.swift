@@ -45,6 +45,14 @@ import XCTest
     return window
   }
   private func wait(_ ms: Int) async throws { try await Task.sleep(for: .milliseconds(ms)) }
+  /// Polls every 10 ms for up to 2 s; the failure names what never happened.
+  private func until(_ what: String, file: StaticString = #filePath, line: UInt = #line, _ condition: @MainActor () -> Bool) async throws {
+    for _ in 0..<200 {
+      if condition() { return }
+      try await wait(10)
+    }
+    XCTFail("never happened: \(what)", file: file, line: line)
+  }
 
   func testIdleAttachedSizeChangeRefreshesRackMask() throws {
     let fixture = try make(reduceMotion: true)
@@ -162,10 +170,11 @@ import XCTest
     XCTAssertTrue(window.isVisible, "the page is prepared from the click")
     XCTAssertEqual(window.alphaValue, 0, "but not shown at the click: the rack leads")
     XCTAssertNil(fixture.page.attachmentHintAnchor)
-    try await wait(50)
-    XCTAssertGreaterThan(fixture.page.verificationRack.ext, 0, "the rack's visible part is extending")
-    try await wait(170)
-    XCTAssertGreaterThan(window.alphaValue, 0, "the cockpit comes out while the rack still extends (D299)")
+    // D299's order at every sample (rack first, cockpit from 0.12 s, both end together) is pinned deterministically by
+    // CockpitLaunchRackTests on `openProgress`. Here the live window is polled until each effect shows, never sampled at
+    // a fixed wall-clock instant: a busy runner's main thread can delay the first 60 Hz tick past 50 ms (run 44887387735).
+    try await until("the rack's visible part is extending") { fixture.page.verificationRack.ext > 0 }
+    try await until("the cockpit comes out (D299)") { window.alphaValue > 0 }
     try await wait(400)
     XCTAssertEqual(window.alphaValue, 1)
     XCTAssertEqual(window.frame, home, "settled at its attached place")
