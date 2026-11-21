@@ -11,7 +11,7 @@ import ModelPlanWire
 
 #if MODELPLAN_TEST_ONLY_SPI
 /// CPU time and memory of one process, read with proc_pid_rusage. Times are Mach absolute units, converted here.
-private struct ProcessSample {
+struct ProcessSample {
     let cpuNanoseconds: UInt64, footprint: UInt64
     private static let timebase: (numer: UInt64, denom: UInt64) = {
         var info = mach_timebase_info_data_t(); mach_timebase_info(&info)
@@ -29,7 +29,7 @@ private struct ProcessSample {
 }
 
 /// The processes the budget counts: this App, the page's WebContent and WebKit's GPU process.
-private struct BudgetProcesses {
+struct BudgetProcesses {
     let app: pid_t, web: pid_t?, gpu: [pid_t], gpuBasis: String
     var all: [pid_t] { [app] + (web.map { [$0] } ?? []) + gpu }
 

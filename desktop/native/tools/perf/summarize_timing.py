@@ -93,6 +93,18 @@ class Collector:
                 if key not in SKIP_EXTRA:
                     self._put("page", f"{stage} {key}", value)
 
+    def stage_samples(self) -> "OrderedDict[str, OrderedDict[str, list[int]]]":
+        """Every stage's samples (one per run that has the stage), for callers that need more than min/median/max."""
+        out: "OrderedDict[str, OrderedDict[str, list[int]]]" = OrderedDict()
+        for group, runs in self.runs.items():
+            stages: "OrderedDict[str, list[int]]" = OrderedDict()
+            for run in runs:
+                for stage, value in run.items():
+                    stages.setdefault(stage, []).append(value)
+            if stages:
+                out[group] = stages
+        return out
+
     def table(self) -> "OrderedDict[str, list[dict]]":
         out: "OrderedDict[str, list[dict]]" = OrderedDict()
         for group, runs in self.runs.items():
@@ -113,13 +125,21 @@ class Collector:
         return out
 
 
-def summarize(paths: list[str]) -> "OrderedDict[str, list[dict]]":
+def collect(paths: list[str]) -> Collector:
     collector = Collector()
     for path in paths:
         with open(path, encoding="utf-8", errors="replace") as handle:
             for raw in handle:
                 collector.line(raw.rstrip("\n"))
-    return collector.table()
+    return collector
+
+
+def summarize(paths: list[str]) -> "OrderedDict[str, list[dict]]":
+    return collect(paths).table()
+
+
+def stage_samples(paths: list[str]) -> "OrderedDict[str, OrderedDict[str, list[int]]]":
+    return collect(paths).stage_samples()
 
 
 def cpu(paths: list[str], cores: int) -> dict:
