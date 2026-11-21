@@ -46,11 +46,19 @@ const empty=page=>page.locator('.pg-overview .ov-empty');
 const totals=page=>page.locator('.pg-overview .ov-top');
 
 // ---- B1 (a): the yellow box on the selected date key ----
-test('B1 a clicked date key, scale key or fader never shows the keyboard ring after a key press; Tab and arrows still do',async({page})=>{
- await open(page,{data:visualFixture().data,range:'30d'});
+test('B1 a clicked date key, scale key, fader, session line or "more sessions" key never shows the keyboard ring after a key press; Tab and arrows still do',async({page})=>{
+ // ghglm-1135-1: seven sessions, so the tape shows linked lines and its "more sessions" key too.
+ const data=visualFixture().data,template=data.details.sessions.find(s=>s.state==='running')??data.details.sessions[0];
+ const ref=data.projection.rows[0].accounts[0].subscriptionRef;// linked lines belong to a subscription
+ data.details.sessions=Array.from({length:7},(_,i)=>({...template,subscriptionRef:ref,sessionRef:(i+1).toString(16).padStart(16,'0')}));
+ await open(page,{data,range:'30d'});
+ // The tape's controls must be there: a missing one would skip its check.
+ await expect(page.locator('.ck-tape .tl.t-observed:not([aria-disabled="true"])').first()).toBeVisible();
+ await expect(page.locator('.ck-tape .t-overflow')).toBeVisible();
  // A drawn keyboard ring: an outline, or the date key's ::before frame (strip header.css), on a :focus-visible element.
  const ringed=()=>page.evaluate(()=>[...document.querySelectorAll('body *')].filter(e=>{if(!e.matches(':focus-visible'))return false;const s=getComputedStyle(e),b=getComputedStyle(e,'::before');return s.outlineStyle!=='none'&&parseFloat(s.outlineWidth)>0||b.content!=='none'&&parseFloat(b.borderTopWidth)>0;}).map(e=>e.className.toString()));
- const targets=['[data-range-key="7d"]','[data-range-key="today"]','[data-range-key="30d"]','.fd-travel','.sc-l:not([disabled])'];
+ const targets=['[data-range-key="7d"]','[data-range-key="today"]','[data-range-key="30d"]','.fd-travel','.sc-l:not([disabled])',
+  '.ck-tape .tl.t-observed:not([aria-disabled="true"])','.ck-tape .t-overflow'];
  for(const selector of targets){
   const control=page.locator(selector).first();if(!await control.count())continue;
   for(const key of ['Escape','Space','t']){

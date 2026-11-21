@@ -97,7 +97,8 @@ export interface CockpitPlugin {
   /** D121: plugins are default on once they ship; the framework placeholder is not. */
   readonly defaultEnabled:boolean;
   /** Owner 11-21: a framework fixture (the placeholder). It stays registered for tests and saved states, but no user-facing
-   *  list offers it (the empty-slot "+" menu here, Settings › Plugins natively: CockpitPluginDefinition frameworkOnly). */
+   *  list offers it (the empty-slot "+" menu here). Settings › Plugins hides it natively through CockpitPluginDefinition
+   *  frameworkOnly, which lands with #1134 (ghglm-1135-3). */
   readonly frameworkOnly?:boolean;
   /** The host samples this plugin's readings (e.g. the resource plugin). Such a plugin is drawn only for a host that sent
    *  its plugin state, so a host that cannot sample never shows an empty column. */
