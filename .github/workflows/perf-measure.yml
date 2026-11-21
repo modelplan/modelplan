@@ -1,0 +1,85 @@
+# SPDX-License-Identifier: MIT
+name: Cockpit perf measurement
+# WP-17 (CKP-SHELL-19/53/54, G3-123): the automated cockpit measurement (CockpitPerfMeasurementTests, in
+# CommunityCockpitEntryTests.testWP17CockpitMeasurement). Manual dispatch only, so it never joins a PR or the merge
+# queue: it takes several minutes of Mac time. Hosted on purpose, like test-build-walkthrough.yml: trusted-mac.yml is
+# pinned and its GUI leg builds neither the test SPI nor the official cockpit and CLI this test needs, so a run on the
+# GUI Mac needs a new trusted-mac pin and a runner-group entry (docs/mac-ci.md). Numbers from a hosted VM are
+# indicative; the same test on the owner's Mac gives the figures the budgets are judged on.
+# The test reports only. It fails only when a measurement cannot be taken (fewer than 10 samples).
+on:
+  workflow_dispatch:
+    inputs:
+      perf:
+        description: Run the measurement (leave true; false makes the run a no-op for a dry dispatch)
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: perf-measure-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  measure:
+    if: ${{ inputs.perf }}
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      MODELPLAN_PERF_OUT: ${{ github.workspace }}/.tmp/wp17-perf
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build the official cockpit and its pins
+        run: |
+          npm ci --prefix desktop/cockpit --ignore-scripts
+          npm run build --prefix desktop/cockpit
+          npm run build:official --prefix desktop/cockpit
+          python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py
+      - name: Build the actual public CLI
+        working-directory: cli
+        run: |
+          mkdir -p ../.tmp
+          go build -o ../.tmp/u11-cli ./cmd/modelplan
+      - name: Measurement tool tests
+        run: python3 -m unittest discover -s desktop/native/tools/perf -p 'test_*.py'
+      - name: Measure the cockpit (cold start, attached and detached open/close, idle CPU)
+        env:
+          MODELPLAN_U11_TEST_CLI: ${{ github.workspace }}/.tmp/u11-cli
+        run: |
+          set -o pipefail
+          mkdir -p "$MODELPLAN_PERF_OUT"
+          {
+            echo "commit=$GITHUB_SHA ref=$GITHUB_REF_NAME run=$GITHUB_RUN_ID runner=$RUNNER_NAME/$RUNNER_ENVIRONMENT"
+            echo "model=$(sysctl -n hw.model) cores=$(sysctl -n hw.ncpu) macOS=$(sw_vers -productVersion)"
+          } > "$MODELPLAN_PERF_OUT/meta.txt"
+          swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/perf-build --jobs 2 \
+            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter 'CommunityCockpitEntryTests/testWP17CockpitMeasurement' 2>&1 | tee .tmp/perf-test.log
+          # An allowed-to-skip test would pass without measuring anything: it must have run and passed.
+          grep -Eq "Test Case '-\[ModelPlanAppIntegrationTests\.CommunityCockpitEntryTests testWP17CockpitMeasurement\]' passed" .tmp/perf-test.log \
+            || { echo "::error::testWP17CockpitMeasurement did not run and pass"; exit 1; }
+      - name: Summarize (JSON and markdown) against the budgets
+        if: ${{ always() }}
+        run: |
+          [ -d "$MODELPLAN_PERF_OUT" ] || { echo "No measurement files were written." | tee -a "$GITHUB_STEP_SUMMARY"; exit 1; }
+          meta=$(tr '\n' ' ' < "$MODELPLAN_PERF_OUT/meta.txt" 2>/dev/null || true)
+          set +e
+          python3 desktop/native/tools/perf/perf_report.py --dir "$MODELPLAN_PERF_OUT" --cores "$(sysctl -n hw.ncpu)" --meta "run=$GITHUB_RUN_ID" "sha=${GITHUB_SHA:0:8}" "runner=$RUNNER_ENVIRONMENT" > "$RUNNER_TEMP/perf-summary.md"
+          status=$?
+          cat "$RUNNER_TEMP/perf-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          { echo; echo '```json'; cat "$MODELPLAN_PERF_OUT/perf-summary.json"; echo '```'; echo; echo "$meta"; } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: wp17-perf-${{ github.sha }}
+          path: ${{ env.MODELPLAN_PERF_OUT }}
+          if-no-files-found: warn
+          retention-days: 14

@@ -626,6 +626,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       _ = try bridge.setVisibility(.init(visible: false, occluded: true, key: false))
     }
     public var verificationWebView: WKWebView? { web }
+    /// WP-17 measurement: the title-strip detach key, so a detached open and close can be timed without a pointer drag.
+    public func verificationDetach() { setAttached(false) }
     public var verificationCloseStarted: ((TimeInterval) -> Void)?
     public var verificationDidDiscard: (() -> Void)?
     /// Stands in for `NSApp.isActive` (and, with it, the panel's key state) and for `NSApp.activate()`.

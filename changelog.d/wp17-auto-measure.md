@@ -1,0 +1,1 @@
+A new manual workflow, Cockpit perf measurement, measures the cockpit's cold start, attached and detached open and close, and idle CPU on synthetic data and reports median, p90 and sample count against the 200 ms, 400 ms and 10% budgets, so the WP-17 numbers no longer depend on hand-run measurements; it changes nothing in the product.
