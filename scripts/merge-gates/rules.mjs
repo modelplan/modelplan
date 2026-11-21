@@ -90,6 +90,12 @@ export function ledgerPr(pr) {
   return /^[ \t>*-]*Ledger:.*\bG3-[0-9]+/im.test(pr?.body ?? "");
 }
 
+// The paths mac-compile-trigger.yml starts the Mac compile for ("desktop/native/**"); the sol test keeps them in step.
+// A PR that changes (or renames away) a file there cannot merge without a mac-compile success status at its head.
+export const COMPILE_PATHS = /^desktop\/native\//;
+export const needsCompile = (paths) => paths.some((p) => COMPILE_PATHS.test(p));
+export const COMPILE_CONTEXT = "mac-compile";
+
 export function prPaths(files) {
   const out = [];
   for (const f of files) {
@@ -759,6 +765,11 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
   if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
   if (ci.state === PENDING) return res(PENDING, say(ci.why), extra);
+  // Owner D374: the review no longer waits for the Mac compile, so the merge gate does. A native head (or one whose file
+  // list was cut off) needs the mac-compile status at THIS head (statuses are per commit); a pending or failed one is
+  // already held back by ciState above. A data-sync PR never touches desktop/native.
+  if (!dataSync && (needsCompile(paths) || files.length >= FILE_LIST_LIMIT) && !(statuses ?? []).some((s) => s.context === COMPILE_CONTEXT && s.state === "success"))
+    return res(PENDING, say("waiting for mac-compile at this head"), extra);
   return res(SUCCESS, say(`tier ${tier}: gates pass${chain.length ? ` (carried ${chain.length})` : ""}`), extra);
 }
 

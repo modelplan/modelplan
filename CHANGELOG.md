@@ -6,6 +6,36 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.68 (2026-11-21)
+
+- The pull request review no longer sends the generated codex/server.bundle.mjs diff to the reviewer; it gets a one-line note, so Codex reader PRs are no longer skipped for exceeding the request size. The ci.yml codex job still verifies the committed bundle against its sources.
+
+- Accept client-v1.7 publications: ability compares models on the ability index, and effort steps read the published within-model chain.
+
+- Keep the selected cockpit page, overlays and comparison when a display update cannot be drawn.
+
+- A window with no known reset time no longer forecasts a false early run-out when another Codex thread still holds readings from before an unseen reset, and its "runs out soon" warning now expires with its recent burn rate instead of staying on in cached views.
+
+- Dragging the widget while the attached cockpit is open no longer closes the cockpit; a plain click on the widget still closes it, when you let go. A cockpit prepared at launch, before the app finished starting, now also follows wake, unlock, clock and display changes from the app's single source, so it is laid out again once the displays settle and is refreshed once per wake instead of twice.
+
+- Resource plugin: a Resources column in the cockpit engine table shows this Mac's CPU, memory and disk (CPU · Memory · Disk), with a continuous bar and a thin trend line in orchid; only the numbers turn amber or red (CPU from 70 % and 90 %, memory by macOS memory pressure, disk from 90 %). Its key opens a screen with the last ten minutes. The app samples with system calls only, never a helper process: every 2, 5 or 10 s (Settings › Subscriptions › Plugins, default 5 s) while the column is shown, every 10 s while the widget is shown, every 60 s otherwise, and not at all when the plugin is off. The ten-minute history stays in memory and is never written to disk.
+
+- A pull request that carries the label `review:gpt` is now always reviewed by GPT first, whatever the review provider mode says, and adding the label starts a review of the current head even if GLM already answered it. If GPT is out of quota the GLM fallback still answers and the review's provider line says "review:gpt requested; GPT quota out".
+
+- Cockpit calendar plugin (v1.1): a calendar column shows the next 12 hours with the published peak hours of your plans in their colours, your own 5-hour and weekly resets and one all-day line, all in your local time; with no peak rules (for example only Codex) it shows the next-reset cells instead. Its key opens a 7-day week view on the MFD screen that you can zoom to about 8 hours; clicking a day there shows that day's events in the column's bottom line.
+
+- The cockpit header has a new layout: ALERT sits left of a centred porthole switch (a click toggles; the slider drag is gone), three Today / 7d / 30d date keys with live labels (each key's click area covers its label, its cap and the halves of the gaps beside it), and the settings, detach and close buttons sit 6 pt apart. The close button, the settings and detach art, the logo and the ALERT lamp are unchanged. The date keys now follow the app's one time range (they show it and ask for it, like the T key), and they dim and ask for nothing while there is no usage source. The date keys now ask the app even with no usage source (they only look dim), and the header's tab order is ALERT, switch, date keys, buttons; the porthole switch toggles on a click only. The porthole switch no longer toggles when a press travels away and comes back, and the date labels sit 3 pt higher, as in the approved mock.
+
+- The cockpit overview now follows the v1 design: up to four alert lines with "+N ▸", one totals row (the range's estimated cost, its tokens and the cost per day, or "since MM-DD" when the record is shorter than the range), and one stacked bar per day sized by estimated cost. Without public price data it draws no bars, and the heatmap key stays unlit.
+
+- The cockpit's page keys now read Overview, Plans, Models and Breakdown; the Subscription page opens the first subscription expanded when there are fewer than 3; the Models page lists models by usage (with a List | Chart key for the ability-cost frontier); and the Breakdown page shows projects or sessions with each row's share as a bar.
+
+- The Quota Widget keeps a subscription's last reading when a refresh does not land: it looks normal for the first hour, then dims, and shows "--" only once that window has reset; an unreadable subscription keeps its ring with a dim "--". The widget card is rebuilt to the v1 final layout: the header says only how long ago the reading was taken ("Updated 3 min ago"), each quota row ends with its reset time or "out ~40m" when a forecast runs out first, the today row reads "33.9M" on the left and "● 1 running · 66 t/s" on the right (each half only when known), the card ends with the same alert sentence as the cockpit and the menu, and the reserve line brightens when a reset is there to use. A loading card shows only the row names and empty bars; an unreadable card shows the cause, the one step to fix it and a Read again button.
+
+- The app starts and opens faster without showing anything different: the engine no longer re-reads unchanged Codex session logs or re-verifies the unchanged public data on every look, the requests right after start answer from the snapshot the start already built while nothing has changed, and a cockpit query builds one snapshot instead of four. The engine starts alongside the app's permission checks, the hidden cockpit page is prepared at once (and 0.1 s after a close instead of 0.5 s) without hashing the cockpit files on the main thread, the first session-log scan waits 2.5 s so it does not compete with the first readings, and the open from the menu bar overlaps the launch rack and the cockpit (about 0.37 s instead of 0.5 s).
+
+- A new manual job (desktop.yml with perf=true) for the cockpit perf measurement measures the cockpit's cold start, attached and detached open and close, and idle CPU on synthetic data and reports median, p90 and sample count against the 200 ms, 400 ms and 10% budgets, so the WP-17 numbers no longer depend on hand-run measurements; it changes nothing in the product.
+
 ## CLI v0.5.67 (2026-11-20)
 
 - The CLI comparison tolerance and the task-start default floor now use the published display scale (tie 0.815, floor 2.445), so verdicts match the website after the 0.4 index scale change.
