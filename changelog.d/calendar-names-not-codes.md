@@ -1,1 +1,0 @@
-The cockpit calendar now writes subscription names with their colour mark instead of two-letter codes, shows the next reset as a large time, lists two different moments (or one when they are the same), and says "no time-slot rules" when you have none.
