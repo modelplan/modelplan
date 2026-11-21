@@ -33,6 +33,14 @@ const SHA = /^[0-9a-f]{40}$/;
 
 const skip = (why) => ({ review: false, why });
 
+// Per-PR override (owner D367 addendum): a PR carrying this label is reviewed by GPT whatever REVIEW_PROVIDER_MODE says.
+// The labels come from the REST pull request the workflow fetches itself, never from a file of the PR.
+export const GPT_LABEL = "review:gpt";
+export const wantsGpt = (pr) => (pr?.labels ?? []).some((l) => l?.name === GPT_LABEL);
+// A labelled PR is never settled by a GLM verdict: only the GPT lane's own verdict (or a counting verdict from another
+// non-GLM lane) means the head is done.
+const gptOwn = (lane) => [`(${lane})`];
+
 // pr: REST pull request; files: REST PR files; items: rules.mjs feed(); lane: SOL_LANE or SOL_SHADOW_LANE;
 // triggerSha: the head the triggering ci run or mac-compile run was for ("" for a dispatch);
 // checks: { ci: ci.yml passed at the head, compile: a trusted mac-compile success status is on the head };
@@ -64,14 +72,16 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   const eligible = eligibleLanes(tier, glmTiers);
   // The run's own lanes: its Sol lane, and its GLM lane only while (ghglm) may decide this tier (SOL-8: a GLM verdict
   // left over from a wider REVIEW_GLM_TIERS is advice and does not settle the head).
-  const own = ownLanes(lane, tier, glmTiers);
+  const gpt = wantsGpt(pr) && sticky !== `(${GLM_LANE})`;
+  const own = gpt ? gptOwn(lane) : ownLanes(lane, tier, glmTiers);
+  const settles = (v) => (eligible.includes(v.lane) && !(gpt && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)";
   // Once per lane per head, forced or not: force only lifts the "another counting lane already reviewed" skip below.
   if (atHead.some((v) => own.includes(v.lane))) return skip("this lane already reviewed this head");
   const ownCounting = [`(${SOL_LANE})`, `(${GLM_LANE})`];
   if (lane === SOL_LANE) {
     // Counting mode spends no tokens when another lane owns or already settled this head.
     if (sticky && !ownCounting.includes(sticky)) return skip(`the assigned reviewer is ${sticky}`);
-    if (!force && !sticky && atHead.some((v) => eligible.includes(v.lane) || v.lane === "(unnamed)")) return skip("a counting verdict already exists at this head");
+    if (!force && !sticky && atHead.some(settles)) return skip("a counting verdict already exists at this head");
   }
   // Shadow runs mirror what counting would do, so the comparison is fair.
   const providers = [];
@@ -91,7 +101,7 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
     if (r) record = { sha: official[i].sha, lane: official[i].lane, text: r };
   }
   const since = record ? record.sha : official.length ? official[official.length - 1].sha : null;
-  return { review: true, head, tier, compile, since, earlier: earlier.slice(-MAX_EARLIER), record, providers };
+  return { review: true, head, tier, compile, since, earlier: earlier.slice(-MAX_EARLIER), record, providers, gpt };
 }
 
 // The R19 record block: the line "Record: <sha>" and the lines after it up to the first blank line (at most 15 lines),
@@ -279,14 +289,15 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
   const tier = files ? tierOverride(items) ?? pathTier(prPaths(files)) : Number(preparedTier);
   if (!SOL_TIERS.includes(tier)) return `tier ${tier} needs no Sol review`;
   const atHead = verdictLines(items).filter((v) => v.sha === head);
-  const own = [...ownLanes(lane, tier, glmTiers), ...(posted ? [`(${posted})`] : [])];
+  const gpt = wantsGpt(pr) && reviewerLane(items) !== `(${GLM_LANE})`;
+  const own = [...(gpt ? gptOwn(lane) : ownLanes(lane, tier, glmTiers)), ...(posted ? [`(${posted})`] : [])];
   if (atHead.some((v) => own.includes(v.lane))) return `(${posted ?? lane}) already has a verdict at ${head}`;
   if (lane === SOL_LANE) {
     const sticky = reviewerLane(items);
     const eligible = eligibleLanes(Number(tier), glmTiers);
     if (sticky && (posted ? sticky !== `(${posted})` : ![`(${SOL_LANE})`, `(${GLM_LANE})`].includes(sticky))) return `the assigned reviewer is ${sticky}`;
     if (posted === GLM_LANE && !eligible.includes(`(${GLM_LANE})`)) return `(${GLM_LANE}) may not decide tier ${tier}`;
-    if (!force && !sticky && atHead.some((v) => eligible.includes(v.lane) || v.lane === "(unnamed)")) return "a counting verdict already exists at this head";
+    if (!force && !sticky && atHead.some((v) => (eligible.includes(v.lane) && !(gpt && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)")) return "a counting verdict already exists at this head";
   }
   // macrevb-1108-6: the review was prepared (scope, delta base, prompt) for preparedTier. A trusted tier change since
   // means that scope is wrong for the new tier (a tier-1 delta after a Terra-only predecessor is not a tier-2 review), so no

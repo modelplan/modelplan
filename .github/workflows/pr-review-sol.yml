@@ -10,6 +10,12 @@
 # every other head after ci.yml passes. Each run re-checks both conditions for the PR's current head, so whichever
 # finishes last starts the review.
 #
+# Per-PR override: a PR labelled review:gpt is always tried with GPT first, whatever REVIEW_PROVIDER_MODE says (the
+# label is read from the REST pull request in the prepare step, never from a PR file). Adding the label starts
+# review-label.yml (a no-op pull_request run); its completion starts this workflow like a ci run. A GLM verdict at the
+# head does not settle a labelled PR. If GPT is out of quota the quota fallback still answers, and the provider line
+# says "review:gpt requested; GPT quota out".
+#
 # Providers (scripts/pr-review/providers.mjs): vars.REVIEW_PROVIDER_MODE is gpt-first (default; OpenAI Responses API,
 # gpt-6.2-sol medium), glm-first (Zhipu GLM-5.3) or schedule (GPT during the Zhipu peak 06:00-10:00 UTC on weekdays,
 # GLM otherwise). On insufficient_quota, a billing limit or a sustained 429 the other provider answers, unless
@@ -32,7 +38,7 @@
 name: pr review sol
 on:
   workflow_run:
-    workflows: [ci, mac-compile]
+    workflows: [ci, mac-compile, review-label]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -51,6 +57,11 @@ jobs:
       (vars.PR_REVIEW_SOL_MODE == 'shadow' || vars.PR_REVIEW_SOL_MODE == 'count') &&
       github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' &&
       ((github.event_name == 'workflow_run' && github.event.workflow_run.name == 'ci' &&
+        github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.pull_requests[0].number) ||
+       (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'review-label' &&
         github.event.workflow_run.event == 'pull_request' &&
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.head_repository.full_name == github.repository &&
@@ -137,7 +148,7 @@ jobs:
           GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
           GLM_BASE_URL: ${{ secrets.GLM_BASE_URL }}
           GLM_FALLBACK: ${{ vars.PR_REVIEW_GLM_FALLBACK }}
-          PROVIDER_MODE: ${{ vars.REVIEW_PROVIDER_MODE }}
+          PROVIDER_MODE: ${{ steps.prep.outputs.provider_mode || vars.REVIEW_PROVIDER_MODE }}
           PROVIDERS: ${{ steps.prep.outputs.providers }}
           TIER: ${{ steps.prep.outputs.tier }}
         run: node scripts/pr-review/sol-call.mjs
@@ -150,6 +161,7 @@ jobs:
           MODE: ${{ steps.prep.outputs.mode }}
           BASE: ${{ steps.prep.outputs.base }}
           TIER: ${{ steps.prep.outputs.tier }}
+          GPT_REQUESTED: ${{ steps.prep.outputs.gpt }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/pr-review/sol-post.mjs
 

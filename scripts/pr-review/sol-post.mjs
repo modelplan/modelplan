@@ -64,7 +64,10 @@ if (waiting) {
 
 let usage = null;
 try { usage = JSON.parse(read(join(dir, "usage.json"))); } catch {}
-const meta = { why: read(join(dir, "why")).trim() ? `quota fallback to ${provider}` : "", model: read(join(dir, "model")).trim() || env.MODEL, effort: provider === "openai" ? env.EFFORT : "default", seconds: read(join(dir, "seconds")).trim() || "?", usage, runUrl: env.RUN_URL };
+const fellBack = read(join(dir, "why")).trim() ? `quota fallback to ${provider}` : "";
+// A labelled PR (review:gpt) answered by GLM means GPT had no quota: say so in the provider line for the coordinator.
+const why = env.GPT_REQUESTED === "true" && provider !== "openai" ? `review:gpt requested; GPT quota out${fellBack ? `; ${fellBack}` : ""}` : fellBack;
+const meta = { why, model: read(join(dir, "model")).trim() || env.MODEL, effort: provider === "openai" ? env.EFFORT : "default", seconds: read(join(dir, "seconds")).trim() || "?", usage, runUrl: env.RUN_URL };
 // Shadow runs log how the lane that counts has judged this head so far (D352: compare on three PRs before cutover).
 const agreeNow = isShadowLane(lane) ? agreement([...items, { kind: "comment", user: TRUSTED, body: `VERDICT: ${answer.verdict} @ ${head} (${lane})`, at: "~" }], head, lane, tierNow, parseGlmTiers(env.REVIEW_GLM_TIERS)) : null;
 const body = renderSolComment({ answer, head, lane, mode: env.MODE, base: env.BASE, tier: tierNow, meta, agree: agreeNow?.text ?? "" });

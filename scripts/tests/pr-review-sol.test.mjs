@@ -253,7 +253,7 @@ test("workflow: trusted triggers, off until the mode variable, PR concurrency, s
   assert.match(text, /\(vars\.PR_REVIEW_SOL_MODE == 'shadow' \|\| vars\.PR_REVIEW_SOL_MODE == 'count'\)/);
   assert.match(text, /LANE: \$\{\{ vars\.PR_REVIEW_SOL_MODE == 'count' && 'ghsol' \|\| 'ghsolshadow' \}\}/);
   assert.match(text, /concurrency:\n {6}group: pr-review-sol-\$\{\{ needs\.resolve\.outputs\.pr \}\}\n {6}cancel-in-progress: false/);
-  assert.match(text, /^ {4}workflows: \[ci, mac-compile\]$/m, "SOL-1: the mac-compile run's completion is a trigger (its job-token status is not)");
+  assert.match(text, /^ {4}workflows: \[ci, mac-compile, review-label\]$/m, "SOL-1: the mac-compile run's completion is a trigger (its job-token status is not)");
   assert.match(text, /github\.event\.workflow_run\.name == 'mac-compile' &&\n\s+github\.event\.workflow_run\.path == '\.github\/workflows\/mac-compile\.yml' &&\n\s+github\.event\.workflow_run\.head_branch == 'main' &&\n\s+github\.event\.workflow_run\.conclusion == 'success'/);
   assert.match(text, /github\.event\.workflow_run\.name == 'ci' &&\n\s+github\.event\.workflow_run\.event == 'pull_request' &&\n\s+github\.event\.workflow_run\.conclusion == 'success'/);
   assert.ok(!/^ {2}status:/m.test(text));
@@ -261,7 +261,7 @@ test("workflow: trusted triggers, off until the mode variable, PR concurrency, s
     ["pull_request trigger", text.replace("  workflow_dispatch:\n", "  pull_request:\n  workflow_dispatch:\n")],
     ["pull_request_target", text.replace("  workflow_dispatch:\n", "  pull_request_target:\n  workflow_dispatch:\n")],
     ["status trigger", text.replace("  workflow_dispatch:\n", "  status:\n  workflow_dispatch:\n")],
-    ["other upstream workflow", text.replace("workflows: [ci, mac-compile]", "workflows: [ci, mac-compile, other]")],
+    ["other upstream workflow", text.replace("workflows: [ci, mac-compile, review-label]", "workflows: [ci, mac-compile, review-label, other]")],
     ["no top-level permissions", text.replace("permissions: {}\n", "")],
     ["persisted credentials", text.replace("persist-credentials: false", "persist-credentials: true")],
     ["PR checkout", text.replace("          ref: main\n          fetch-depth: 0", "          ref: ${{ steps.prep.outputs.head }}\n          fetch-depth: 0")],
@@ -731,4 +731,76 @@ test("stale scope: a delta prepared at tier 1 is not posted as a counting verdic
   assert.equal(note.split("\n")[0], `scope changed, full review required @ ${H} (ghsol)`);
   assert.equal(note.includes("VERDICT"), false, "the notice carries no verdict");
   assert.equal(S.scopeNoted(R.feed([comment(note)]), H), true);
+});
+
+// ---- owner D367 addendum: the review:gpt label ----
+const labelled = { labels: [{ name: "review:gpt" }] };
+test("review:gpt: a labelled PR gets gpt-first under schedule mode; an unlabelled one is unchanged", () => {
+  const offPeak = new Date("2026-11-18T12:00:00Z");
+  const glmTiers = [1, 2];
+  const lab = decide({ pr: labelled, glmTiers });
+  assert.equal(lab.review, true);
+  assert.equal(lab.gpt, true);
+  const none = decide({ glmTiers });
+  assert.equal(none.gpt, false);
+  // prepare turns gpt into the provider mode the call step uses; schedule off-peak alone would put GLM first.
+  assert.deepEqual(P.providerOrder({ mode: "schedule", now: offPeak, allowed: none.providers }), ["glm", "openai"], "no label: schedule unchanged");
+  assert.deepEqual(P.providerOrder({ mode: "gpt-first", now: offPeak, allowed: lab.providers }), ["openai", "glm"], "label: gpt-first");
+  const prep = readFileSync(join(root, "scripts/pr-review/sol-prepare.mjs"), "utf8");
+  assert.match(prep, /output\("provider_mode", d\.gpt \? "gpt-first" : ""\)/);
+  assert.match(readFileSync(join(root, PR_REVIEW_SOL_PATH), "utf8"), /PROVIDER_MODE: \$\{\{ steps\.prep\.outputs\.provider_mode \|\| vars\.REVIEW_PROVIDER_MODE \}\}/);
+  assert.equal(S.wantsGpt(pr({ labels: [{ name: "review:gpt-not" }] })), false, "exact label name only");
+});
+
+test("review:gpt: a GLM verdict at the head does not settle a labelled PR; a GPT one does", () => {
+  const glmTiers = [1, 2];
+  const glm = [comment(v("merge", H, "ghglm"))];
+  assert.equal(decide({ comments: glm, glmTiers }).review, false, "no label: the GLM verdict settles the head");
+  assert.equal(decide({ comments: glm, glmTiers, pr: labelled }).review, true, "label: GPT still reviews");
+  assert.equal(decide({ comments: glm, glmTiers, pr: labelled, lane: S.SOL_SHADOW_LANE }).review, true);
+  assert.equal(decide({ comments: [...glm, comment(v("merge", H, "ghsol"))], glmTiers, pr: labelled }).review, false, "the GPT lane reviews a head once");
+  // the post-time re-check agrees
+  const base = { head: H, lane: S.SOL_LANE, posted: S.SOL_LANE, tier: 1, files: t1, glmTiers };
+  assert.equal(S.postProblem({ pr: pr(labelled), items: R.feed(glm), ...base }), null);
+  assert.match(S.postProblem({ pr: pr(), items: R.feed(glm), ...base }), /already|exists/);
+  // a labelled PR whose reviewer is assigned to GLM keeps that assignment
+  assert.equal(decide({ pr: labelled, glmTiers, comments: [comment("REVIEWER: ghglm")] }).gpt, false);
+});
+
+test("review:gpt: GPT quota out -> GLM answers and the provider line says so; GPT answering adds nothing", async () => {
+  const dir = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "sol-lbl-"));
+  try {
+    mkdirSync(join(dir, "pr-review-sol"));
+    writeFileSync(join(dir, "pr-review-sol", "request.md"), "REQUEST");
+    const server = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        res.setHeader("content-type", "application/json");
+        if (req.url.startsWith("/v1/responses")) { res.statusCode = 429; return res.end(JSON.stringify({ error: { code: "insufficient_quota" } })); }
+        res.end(JSON.stringify({ choices: [{ message: { content: `glm\nRecord: ${H}\nVERDICT: merge` } }], usage: { prompt_tokens: 3, completion_tokens: 1 } }));
+      });
+    });
+    await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const c = spawn(process.execPath, [join(root, "scripts/pr-review/sol-call.mjs")], { env: { PATH: process.env.PATH, RUNNER_TEMP: dir, OPENAI_API_KEY: "sk-test-key-0123456789", GLM_API_KEY: "glm-key-0123456789", GLM_BASE_URL: `${base}/glm`, MODEL: "gpt-x", EFFORT: "medium", SOL_API_URL: `${base}/v1/responses`, SOL_POLL_MS: "10", SOL_RETRY_MS: "0", PROVIDERS: "openai,glm", PROVIDER_MODE: "gpt-first", SOL_NOW: "2026-11-18T12:00:00Z" } });
+    await new Promise((ok) => c.on("close", ok));
+    assert.equal(readFileSync(join(dir, "pr-review-sol", "provider"), "utf8"), "glm");
+    server.close();
+    // the post step's provider line
+    const post = readFileSync(join(root, "scripts/pr-review/sol-post.mjs"), "utf8");
+    assert.match(post, /env\.GPT_REQUESTED === "true" && provider !== "openai"/);
+    assert.match(post, /review:gpt requested; GPT quota out/);
+    const comment = S.renderSolComment({ answer: S.parseAnswer(`glm\nRecord: ${H}\nVERDICT: merge`, H), head: H, lane: S.GLM_LANE, mode: "full", base: BASE, tier: 1, meta: { why: "review:gpt requested; GPT quota out; quota fallback to glm", model: "glm-5.3" } });
+    assert.match(comment.split("\n")[0], /review:gpt requested; GPT quota out/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("review:gpt: resolve accepts the review-label run like a ci run; the trigger workflow is a no-op with no permissions", () => {
+  const text = readFileSync(join(root, ".github/workflows/review-label.yml"), "utf8");
+  assert.deepEqual(workflowProblems(text, ".github/workflows/review-label.yml"), []);
+  assert.ok(workflowProblems(text.replace("types: [labeled]", "types: [labeled]\n  push:"), ".github/workflows/review-label.yml").length);
+  assert.ok(workflowProblems(text.replace("permissions: {}", "permissions: {}\n# x\nenv:\n  K: ${{ secrets.A }}"), ".github/workflows/review-label.yml").length);
+  const sol = readFileSync(join(root, PR_REVIEW_SOL_PATH), "utf8");
+  assert.match(sol, /github\.event\.workflow_run\.name == 'review-label' &&\n\s+github\.event\.workflow_run\.event == 'pull_request' &&\n\s+github\.event\.workflow_run\.conclusion == 'success' &&\n\s+github\.event\.workflow_run\.head_repository\.full_name == github\.repository/);
+  assert.match(readFileSync(join(root, "scripts/pr-review/sol-resolve.mjs"), "utf8"), /env\.WORKFLOW === "ci" \|\| env\.WORKFLOW === "review-label"/);
 });
