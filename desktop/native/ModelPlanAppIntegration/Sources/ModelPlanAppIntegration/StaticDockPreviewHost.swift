@@ -591,8 +591,6 @@ struct DockHelpInteraction: Equatable {
     /// WP-17: official faces drawn (selected edge and alternates), for checks.
     var officialFacesForChecks = 0
     var preparedEdgesForChecks: Set<DockEdge> { Set(edgeViews.keys) }
-    #endif
-    #if DEBUG
     var catalogueReportsForChecks = 0
     #endif
     private func reportCatalogue(_ subscriptions: [SettingsSubscription]) {

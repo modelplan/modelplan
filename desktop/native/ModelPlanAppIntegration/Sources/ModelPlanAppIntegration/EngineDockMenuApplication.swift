@@ -79,6 +79,9 @@ struct StatusNoticePresentation {
     /// launch on the owner's Mac); now the click is kept, the icon shows it pressed, and the cockpit opens the moment
     /// the lifecycle is ready. Its page still shows data only from an admitted delivery (the consent fence).
     private(set) var launchOpen: (fromStatusItem: Bool, openPoint: CGPoint?)?
+    /// WP-17: the launch pause (lifecycle started, never ready yet), as opposed to an OS pause. Every cockpit open
+    /// entry (icon click, menu item, shortcut, ignition, reopen) keeps its open during it through `showConsole`.
+    var inLaunchPause: Bool { lifecyclePaused && lifecycleController != nil && !lifecycleEverReady }
     private var accessibilityObserver: NSObjectProtocol?
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
@@ -443,7 +446,7 @@ struct StatusNoticePresentation {
         guard cockpitEntryEnabled, !terminating else { return }
         if lifecyclePaused {
             // An OS pause (sleep, lock, displays off) keeps refusing; only the launch keeps the click.
-            guard lifecycleController != nil, !lifecycleEverReady else { return }
+            guard inLaunchPause else { return }
             launchOpen = (fromStatusItem, fromStatusItem ? nil : openPoint)
             refreshStatusTooltip()
             return
@@ -476,7 +479,7 @@ struct StatusNoticePresentation {
     /// G3-94 was the attached case: the ignition's mouse-down closed the cockpit as an outside click, then its action
     /// (open-only) opened it again.
     func pressIgnition(at point: CGPoint) {
-        guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
+        guard cockpitEntryEnabled, !terminating, !lifecyclePaused || inLaunchPause else { return }
         if let console, console.isShowing, !console.isDetached { console.requestClose(); refreshStatusTooltip(); return }
         showConsole(openPoint: point)
     }
@@ -733,8 +736,9 @@ struct StatusNoticePresentation {
         context.shortcutObservations = observations
         settings.update(context: context)
     }
-    private func performShortcut(_ action: ShortcutAction) {
-        guard !terminating, !lifecyclePaused else { return }
+    func performShortcut(_ action: ShortcutAction) {
+        // WP-17: the open-cockpit shortcut keeps its open during the launch pause like every other open entry.
+        guard !terminating, !lifecyclePaused || (action == .openCockpit && inLaunchPause) else { return }
         switch action {
         case .openCockpit: showConsole()
         // D56: the SET-9-05 widget slot is the Find Quota Widget shortcut.
@@ -1050,7 +1054,7 @@ struct StatusNoticePresentation {
             return true
         }
         guard event.type == .leftMouseDown, onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
-              !terminating, setupActive || (cockpitEntryEnabled && (!lifecyclePaused || (lifecycleController != nil && !lifecycleEverReady))) else { return false }
+              !terminating, setupActive || (cockpitEntryEnabled && (!lifecyclePaused || inLaunchPause)) else { return false }
         statusPressPending = true
         return true
     }
@@ -1195,7 +1199,8 @@ struct StatusNoticePresentation {
         }
         menuItems += [
             .init(title: nil),
-            .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
+            // WP-17: the item stays enabled during the launch pause; the open is kept until the engine is ready.
+            .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: (available || inLaunchPause) && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
             .init(title: showTitle, accessibilityID: "status.showQuotaWidget", checked: widgetShown,
                   action: showAvailability == .ready ? { [weak self] in Task { @MainActor [weak self] in await self?.setDockShown(!widgetShown) } } : nil),
             // D56: shows where the widget is; it turns the widget on first when it is off.
