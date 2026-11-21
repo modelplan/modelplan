@@ -179,11 +179,17 @@ final class SubscriptionRowModelTests: XCTestCase {
     /// Found-by post-merge sampling 2026-11-19 S1: Kiro's runtime_missing is a missing kiro-cli, never Node.js (row and card).
     func testKiroRuntimeMissingNamesKiroCliNotNodeJS() {
         let row = ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "kiro", toolName: "Kiro")
-        XCTAssertEqual(row?.reason.english, "kiro-cli was not found")
-        XCTAssertEqual(row?.action.english, "Install kiro-cli")
+        XCTAssertEqual(row?.reason.english, "kiro-cli was not found or could not start")
         let card = ReaderCauseTable.entry(code: "runtime_missing", tool: "kiro", toolName: "Kiro")
-        XCTAssertEqual(card?.reason.english, "kiro-cli was not found")
+        XCTAssertEqual(card?.reason.english, "kiro-cli was not found or could not start")
         XCTAssertFalse(card?.action.english.contains("Node") ?? true)
+        // S10 (#1081): a missing command keeps install guidance; a configured override that cannot start (the same
+        // runtime_missing cause) also points at the configured path.
+        for guidance in [row?.action.english, card?.action.english] {
+            XCTAssertTrue(guidance?.contains("Install kiro-cli") ?? false)
+            XCTAssertTrue(guidance?.contains("path you configured") ?? false)
+        }
+        XCTAssertEqual(ReaderCauseTable.rowEntry(code: "not_found", tool: "kiro", toolName: "Kiro")?.action.english, "Install kiro-cli")
         // Other tools keep the Node.js cause.
         XCTAssertEqual(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex")?.reason.english, "Node.js is required")
     }
