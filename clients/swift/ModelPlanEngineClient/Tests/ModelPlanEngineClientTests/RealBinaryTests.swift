@@ -18,8 +18,17 @@ actor EventProbe: EngineClientEventConsumer {
     var responseWaiter: CheckedContinuation<Void, Never>?
     var clearWaiter: CheckedContinuation<Void, Never>?
     var timeline: [String] = []
+    var pauseBootstrapReply = false
+    var bootstrapWaiter: CheckedContinuation<Void, Never>?
     func consume(_ event: EngineClientEvent) async {
         events.append(event)
+        // WP-17: the first rows or consent reply after start, so both bootstrap requests are still outstanding.
+        if pauseBootstrapReply {
+            var bootstrap = false
+            if case .response(_, .rows) = event { bootstrap = true }
+            if case .response(_, .consent) = event { bootstrap = true }
+            if bootstrap { pauseBootstrapReply = false; await withCheckedContinuation { bootstrapWaiter = $0 } }
+        }
         // Only the diagnostics reply: an unrelated reply landing first must not take the pause.
         if case .response(_, .diagnostics) = event, pauseDiagnostics {
             pauseDiagnostics = false
@@ -43,6 +52,9 @@ actor EventProbe: EngineClientEventConsumer {
         }
         if case .clearPrivateViews(let value) = event { timeline.append("clear-ack:" + String(value.revision)) }
     }
+    func suspendNextBootstrapReply() { pauseBootstrapReply = true }
+    func bootstrapReplyIsPaused() -> Bool { bootstrapWaiter != nil }
+    func resumeBootstrapReply() { bootstrapWaiter?.resume(); bootstrapWaiter = nil }
     func suspendNextDiagnostics() { pauseDiagnostics = true }
     func responseIsPaused() -> Bool { responseWaiter != nil }
     func resumeResponse() { responseWaiter?.resume(); responseWaiter = nil }

@@ -588,6 +588,11 @@ struct DockHelpInteraction: Equatable {
     /// and redrew every official face once more per withdrawal, with nothing to retire.
     private(set) var catalogueReportedEmpty = false
     #if DEBUG
+    /// WP-17: official faces drawn (selected edge and alternates), for checks.
+    var officialFacesForChecks = 0
+    var preparedEdgesForChecks: Set<DockEdge> { Set(edgeViews.keys) }
+    #endif
+    #if DEBUG
     var catalogueReportsForChecks = 0
     #endif
     private func reportCatalogue(_ subscriptions: [SettingsSubscription]) {
@@ -1191,7 +1196,8 @@ struct DockHelpInteraction: Equatable {
         edge.prepareDragDisplay = { [weak self] display in
             // Once per press, as it is taken: every edge's view, the top edge's included (lazy, G3-27), is prepared
             // for the press display now, so the carry itself re-renders nothing (Pulse rebuilds nothing mid-drag).
-            guard let self, self.appearanceDisplay != display || self.edgeViews[.top] == nil, !self.rendering else { return }
+            // WP-17: the left and bottom faces are lazy too now, so any missing edge view is prepared here.
+            guard let self, self.appearanceDisplay != display || self.edgeViews.count < DockEdgeGeometry.allowedEdges.count, !self.rendering else { return }
             self.rendering = true
             defer { self.rendering = false }
             self.rebuildPass(self.inputGeneration, carriedTo: display)
@@ -1477,6 +1483,9 @@ struct DockHelpInteraction: Equatable {
         lastAppearanceError = nil
         do {
             if let appearance {
+                #if DEBUG
+                officialFacesForChecks += 1
+                #endif
                 let candidate = try appearance(dockView, rows, passPreferences)
                 guard passIsCurrent(generation) else { return }
                 geometry = candidate
@@ -1549,11 +1558,17 @@ struct DockHelpInteraction: Equatable {
         if (createsNativePanels || prepareDetachedAlternateAppearances), let appearance {
             // The top edge (G3-27) is drawn only while the widget rests there or is being carried:
             // an official horizontal face is costly, and a resting widget never needs it otherwise.
-            let needsTop = selected == .top || carriedTo != nil || edge.isBackgroundPressed
-            for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected && ($0 != .top || needsTop) }) {
+            // WP-17: every other edge's face is drawn only for a press or a carry (G3-27 made the top lazy first). A
+            // resting widget never shows them, and drawing them on every content pass made each delivery three official
+            // faces long on the main actor. `prepareDragDisplay` draws them all as the press is taken.
+            let needsAlternates = carriedTo != nil || edge.isBackgroundPressed
+            for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected && needsAlternates }) {
                 var oriented = passPreferences
                 oriented.dockEdge = settingsEdge(orientation)
                 do {
+                    #if DEBUG
+                    officialFacesForChecks += 1
+                    #endif
                     var candidate = try appearance(view, rows, oriented)
                     candidate.scaleRegistration(by: view.appliedGeometryScale)
                     guard passIsCurrent(generation) else { return }
