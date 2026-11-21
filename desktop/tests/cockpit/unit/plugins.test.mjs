@@ -174,3 +174,30 @@ test('D323 custom draw: the registry stays DOM-free and the draw tokens are cock
  // A plugin without draw is drawn from its cells exactly as before.
  assert.equal(placeholderPlugin.column(undefined,{locale:'en',settings:{intervalSeconds:10},now:0,words:k=>({full:k,short:k})}).draw,undefined);
 });
+
+// Owner badcase 11-21 (B4): plugins are never pinned to page 1 by default. A fresh or materialized state and a plugin
+// added through the "+" menu (enablePlugin) are unpinned, with or without host state; a pin the user set survives both.
+// Unpinned plugins still fill free slots of the last page (D124, unchanged).
+test('B4 no plugin is pinned by default; a user pin survives materialize and enable',()=>{
+ for(const defaults of [true,false]){
+  assert.ok(materialize(emptyPluginState,registry,defaults).entries.every(e=>e.pinned===false),`materialize defaults=${defaults}`);
+  for(const p of builtinPlugins){
+   const added=enablePlugin(emptyPluginState,registry,p.id,defaults);
+   assert.equal(added.entries.find(e=>e.id===p.id).pinned,false,`enable ${p.id} defaults=${defaults}`);
+   assert.ok(enabledPlugins(added,registry,defaults).every(e=>e.pinned===false));
+  }
+ }
+ const pinned=pinPlugin(emptyPluginState,registry,'resources',true);
+ assert.equal(pinned.entries.find(e=>e.id==='resources').pinned,true);
+ assert.equal(materialize(pinned,registry).entries.find(e=>e.id==='resources').pinned,true,'materialize keeps a user pin');
+ assert.equal(enablePlugin(pinned,registry,'resources').entries.find(e=>e.id==='resources').pinned,true,'enable keeps a user pin');
+ const saved=parsePluginState({version:1,entries:[{id:'calendar',enabled:true,pinned:true}],settings:{}});
+ assert.equal(materialize(saved,registry).entries.find(e=>e.id==='calendar').pinned,true,'a saved pin is never migrated');
+ assert.ok(materialize(saved,registry).entries.filter(e=>e.id!=='calendar').every(e=>e.pinned===false));
+});
+// Owner 11-21: the placeholder is a framework fixture: registered (tests, the Swift mirror), off by default, never offered.
+test('the placeholder is framework-only; every shipped plugin is not',()=>{
+ assert.equal(registry.get('placeholder').frameworkOnly,true);
+ assert.equal(registry.get('placeholder').defaultEnabled,false);
+ assert.deepEqual(builtinPlugins.filter(p=>!p.frameworkOnly).map(p=>p.id),['calendar','resources']);
+});
