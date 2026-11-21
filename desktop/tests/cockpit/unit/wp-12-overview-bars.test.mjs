@@ -19,7 +19,7 @@ const days=tail=>{const v=Array(182).fill(null);tail.forEach((x,i)=>{v[182-tail.
 const dailyOf=(a,tail)=>({accountId:a.id,values:days(tail),imported:[],coverageStart:new Date(2026,10,1).getTime(),priced:days(tail).map(v=>v>0?1000:0),unpriced:days(tail).map(()=>0)});
 const listOf=(...pairs)=>pairs.map(([a,tail])=>({a,daily:dailyOf(a,tail)}));
 const ui={lang:'en',days:7,stack:true,scope:null,fill:{ov:{w:260,h:110}}};
-const bars=svg=>[...svg.matchAll(/<g class="ov-bucket"[^>]*data-total="([^"]*)"[^>]*>(.*?)<\/g>/g)].map(m=>({total:Number(m[1]),paths:[...m[2].matchAll(/<path class="ov-bar[^"]*"[^>]*d="M([\d.]+),([\d.]+)V([\d.]+)/g)].map(p=>({y:Number(p[2])}))}));
+const bars=svg=>[...svg.matchAll(/<g class="ov-bucket(?: ov-last)?"[^>]*data-total="([^"]*)"[^>]*>(.*?)<\/g>/g)].map(m=>({total:Number(m[1]),paths:[...m[2].matchAll(/<path class="ov-bar[^"]*"[^>]*d="M([\d.]+),([\d.]+)V([\d.]+)/g)].map(p=>({y:Number(p[2])}))}));
 const heightOf=g=>g.match(/<path class="ov-bar[^"]*"[^>]*d="M[\d.]+,([\d.]+)V([\d.]+)/);
 
 test('WP-12 one bar per day, heights linear from zero in ≈cost, the highest day on the dashed line',()=>{
