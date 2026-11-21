@@ -154,3 +154,15 @@ func TestShareRejectsUnsafeOversizedAndInvalidCacheFiles(t *testing.T) {
 		}
 	})
 }
+
+func TestShareNamesTheProxySourceOnly(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://user:proxy-secret@proxy.invalid:1")
+	r := Collect(t.TempDir(), "0.5.40")
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Proxy != "env" || strings.Contains(string(b), "proxy-secret") || strings.Contains(string(b), "proxy.invalid") {
+		t.Fatalf("share report: %s", b)
+	}
+}

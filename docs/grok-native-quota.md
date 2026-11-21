@@ -37,7 +37,7 @@ One admitted read makes one request:
 bearer, `X-XAI-Token-Auth: xai-grok-cli`, `x-userid`, and headless client metadata.
 User-Agent identifies ModelPlan; the compatibility version is explicitly
 `0.0.0-modelplan-native-beta`, not a claim to be an installed Grok version. The
-injected proxy transport is preserved; redirects/cookie jars are disabled. HTTP
+shared proxy transport (`cli/internal/netproxy`) is preserved; redirects/cookie jars are disabled. HTTP
 errors expose only safe state codes, never bodies or raw identities. A changed
 credential store invalidates an in-flight reading.
 

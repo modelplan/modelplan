@@ -24,7 +24,7 @@ OAuth-host overrides **before a request**. It never sends this login to
 One read makes one `GET https://api.kimi.com/coding/v1/usages` with bearer, the
 known `X-Msh-Platform: kimi_code_cli` and the existing device ID. Client metadata
 identifies ModelPlan; no hostname is read or stored and no installed Kimi version
-is fabricated. The proxy transport is preserved. Redirects/cookie jars and extra
+is fabricated. The shared proxy transport (`cli/internal/netproxy`) is preserved. Redirects/cookie jars and extra
 browser/subscription enrichment calls are disabled. A changed credential file
 invalidates an in-flight reading.
 

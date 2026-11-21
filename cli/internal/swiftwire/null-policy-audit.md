@@ -84,7 +84,7 @@ containers and failure ID retain their required-key checks.
 | ConsentReceipt.CommittedGeneration | coalesced | [shared_backend.go:248](../appserver/shared_backend.go#L248), `Grant`, emits the committed generation or null. `WireConsentReceipt`/Delivery require a generation for committed receipts; absent/null both fail that contextual check, and neither creates a fabricated generation. |
 | ConsentReceipt.CleanupPending | coalesced | Same grant producer; `WireConsentReceipt` returns nil for absent/null, with no pending cleanup entries. |
 | Diagnostics.RefreshDecisions | forbidden | Omission means capability not negotiated; null or malformed data is rejected. |
-| Diagnostics.LastErrorClass | coalesced | [server.go:368](../appserver/server.go#L368), diagnostics reply; `WireDiagnostics` absent/null both mean no last-error class. |
+| Diagnostics.LastErrorClass | coalesced | [server.go:382](../appserver/server.go#L382), diagnostics reply; `WireDiagnostics` absent/null both mean no last-error class. |
 | ScopeDiag.LastRead | coalesced | [shared_backend.go:191](../appserver/shared_backend.go#L191), diagnostics projection; `WireScopeDiag` absent/null both yield no timestamp. |
 | ScopeDiag.NextDueAt | coalesced | Same projection/decoder: absent/null both yield no scheduled timestamp. |
 | RefreshRequestParams.Member | forbidden | Omission selects the legacy scopes form; null is rejected. |

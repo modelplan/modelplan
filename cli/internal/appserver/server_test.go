@@ -3,6 +3,7 @@ package appserver
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -758,6 +759,20 @@ func TestResetEventsCapabilityControlsSnapshotsAndChanges(t *testing.T) {
 				t.Fatal("notification lost updated event")
 			}
 		})
+	}
+}
+
+func TestDiagnosticsReportTheLastErrorClass(t *testing.T) {
+	c := startClient(t, Config{Backend: newMemoryBackend(), LastErrorClass: func() string { return "pac-unsupported" }})
+	c.readMessages()
+	c.send(t, 1, "initialize", wire.InitializeParams{SessionID: "diag", ProtocolVersion: wire.ProtocolVersion, AppVersion: "test", Capabilities: []string{"diagnostics"}})
+	if m := c.response(t, 1); m["error"] != nil {
+		t.Fatal(string(m["error"]))
+	}
+	c.send(t, 2, "diagnostics/get", wire.Empty{})
+	m := c.response(t, 2)
+	if !bytes.Contains(m["result"], []byte(`"lastErrorClass":"pac-unsupported"`)) {
+		t.Fatalf("diagnostics: %s", m["result"])
 	}
 }
 

@@ -33,8 +33,8 @@ with the same access token as bearer and Connect protocol version 1. Same-bindin
 plan/merged/period metadata is cached for at most 24 hours; warm reads request
 period usage only. An expired cached reset forces revalidation. The former
 `/api/usage-summary` and `/api/usage` waterfall is removed. These undocumented
-personal dashboard contracts are not the team Admin API. Proxy transport from the
-injected client is preserved; redirects/cookie jars are disabled and the selected
+personal dashboard contracts are not the team Admin API. The shared proxy
+transport (`cli/internal/netproxy`) is preserved; redirects/cookie jars are disabled and the selected
 local store is checked for changes during the transaction.
 
 Explicit included periods map to weekly/monthly with the returned reset and

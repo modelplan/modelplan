@@ -193,7 +193,7 @@ Wire/schema reference: [official Copilot SDK usage and billing](https://github.c
 
 The command refreshes/verifies the publication (with a last-verified-cache fallback on network failure), reads `client.data.cli.latest` and `cli.sha256["os/arch"]` from FEEDFIX's catalogue design, and downloads that exact release archive from GitHub Releases. It never asks GitHub for “latest”, accepts a download URL from metadata or guesses a missing platform checksum. Until the publication carries a supported pin, it reports unavailable and leaves the binary alone. Older/equal pins do not downgrade a newer CLI.
 
-The archive must match its SHA-256 before bounded tar/ZIP extraction. Invalid checksums, unsafe archive entries, truncation, cancellation and failed staging keep the current executable. A successful replacement keeps the previous binary at `<executable>.previous`. A per-executable lock prevents overlapping updates; the updater never deletes the verified catalogue or reader/helper caches. Publication/download HTTP honors the App-supplied proxy environment. `--offline` refuses without network or executable changes.
+The archive must match its SHA-256 before bounded tar/ZIP extraction. Invalid checksums, unsafe archive entries, truncation, cancellation and failed staging keep the current executable. A successful replacement keeps the previous binary at `<executable>.previous`. A per-executable lock prevents overlapping updates; the updater never deletes the verified catalogue or reader/helper caches. Publication/download HTTP follows the CLI's one proxy policy: proxy variables first, then the macOS system proxy (`internal/netproxy`). `--offline` refuses without network or executable changes.
 
 `modelplan update [--json]` 只更新独立或 Skill 安装的副本；插件缓存（包括符号链接）和 App 包内的副本在联网/访问缓存前拒绝，请通过其管理方更新。其他命令绝不更新可执行文件。仅从已校验发布中的 `cli.latest` 和按 `os/arch` 索引的 SHA-256 选择准确版本，不查 GitHub 的 latest API、不接受元数据 URL、不猜缺失校验值；发布尚无该字段时明确报告不可用。校验、归档、取消或暂存失败保留现有文件，成功后在 `.previous` 保留上一个副本，不删除已校验目录/读取器缓存。HTTP 继承 App 传入的代理；离线模式不更新。
 
@@ -259,7 +259,7 @@ JSON snapshots, JSONL full-message records and legacy `$set.messages` checkpoint
 
 ## Plugin installation for App Settings
 
-`modelplan plugin install claude-code|codex [--json]` runs the documented marketplace-add and plugin-install commands through the host CLI when `claude` or `codex` is on PATH. It uses fixed argument arrays without a shell, inherits the App-provided environment (including proxy settings), and stops if a step fails. The App obtains its one confirmation before invoking this explicit installation command. No quota readers, consent records or publication cache are touched.
+`modelplan plugin install claude-code|codex [--json]` runs the documented marketplace-add and plugin-install commands through the host CLI when `claude` or `codex` is on PATH. It uses fixed argument arrays without a shell, inherits the App-provided environment (including any proxy variables), and stops if a step fails. The App obtains its one confirmation before invoking this explicit installation command. No quota readers, consent records or publication cache are touched.
 
 When the host CLI is unavailable, it prints the commands and documentation link instead. `--offline` always prints a plan without executing anything; `--json` returns a versioned result (`installed`, `instructions`, `planned` or `failed`), routing host output to stderr so stdout remains valid JSON.
 
