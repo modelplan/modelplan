@@ -4,6 +4,7 @@ import ModelPlanSettings
 import ModelPlanDock
 import ModelPlanEngineStore
 import ModelPlanEngineClient
+import ModelPlanResources
 
 /// The exact construction route called by the community executable and synthetic-profile checks.
 @MainActor public enum EngineRowsEntry {
@@ -31,8 +32,9 @@ import ModelPlanEngineClient
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
                             isolatedResetNotificationLedger: URL? = nil,
                             installsResourcePlugin: Bool = false,
+                            resourceReader: (() -> ResourceReader)? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
-        let app=CommunityCockpitApplicationFactory.make(configuration: configuration, settingsStore: settingsStore, createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled, dockEnvironment: dockEnvironment, edition: edition, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient, makeSettingsSurface: makeSettingsSurface, makeConsole: makeConsole, installsResourcePlugin: installsResourcePlugin, activateSettings: activateSettings)
+        let app=CommunityCockpitApplicationFactory.make(configuration: configuration, settingsStore: settingsStore, createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled, dockEnvironment: dockEnvironment, edition: edition, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient, makeSettingsSurface: makeSettingsSurface, makeConsole: makeConsole, installsResourcePlugin: installsResourcePlugin, resourceReader: resourceReader, activateSettings: activateSettings)
         #if MODELPLAN_DOCK_NATIVE_JOURNEY
         let ledger = isolatedResetNotificationLedger ?? nativeJourneyProfile?.appendingPathComponent("reset-notifications.json")
         #else

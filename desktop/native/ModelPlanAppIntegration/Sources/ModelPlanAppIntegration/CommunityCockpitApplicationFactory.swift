@@ -56,6 +56,7 @@ import ModelPlanResources
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
                             installsResourcePlugin: Bool = false,
+                            resourceReader: (() -> ResourceReader)? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
         // Preserve the existing injected-client/console seam used by its callers.
         if let makeClient {
@@ -141,20 +142,21 @@ import ModelPlanResources
         #else
         let installsResources = installsResourcePlugin
         #endif
-        if installsResources { installResourcePlugin(application: application, owner: owner, settingsStore: settingsStore) }
+        if installsResources { installResourcePlugin(application: application, owner: owner, settingsStore: settingsStore, resourceReader: resourceReader) }
         return application
     }
     /// D324: one ResourceSampler for the app. Its cadence follows the plugin choices (Settings or a page edit), the
     /// cockpit page's running plugins and the widget's visibility; its samples feed the widget ring and the page.
-    static func installResourcePlugin(application: EngineDockMenuApplication, owner: CockpitConsoleOwner, settingsStore: SettingsStore) {
+    static func installResourcePlugin(application: EngineDockMenuApplication, owner: CockpitConsoleOwner, settingsStore: SettingsStore,
+                                      resourceReader: (() -> ResourceReader)? = nil) {
         let store = CockpitPluginStore(directory: settingsStore.directory)
         Task { @MainActor [weak application, weak owner] in
             let model = await CockpitPluginSettingsModel.load(from: store)
             guard let application else { return }
             #if MODELPLAN_TEST_ONLY_SPI
-            let reader: ResourceReader = verificationResourceReader?() ?? SystemResourceReader()
+            let reader: ResourceReader = resourceReader?() ?? verificationResourceReader?() ?? SystemResourceReader()
             #else
-            let reader: ResourceReader = SystemResourceReader()
+            let reader: ResourceReader = resourceReader?() ?? SystemResourceReader()
             #endif
             let sampler = ResourceSampler(reader: reader,
                                           reduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })

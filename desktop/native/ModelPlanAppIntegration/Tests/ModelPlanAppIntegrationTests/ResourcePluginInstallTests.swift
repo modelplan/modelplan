@@ -2,13 +2,14 @@
 import XCTest
 import ModelPlanEngineClient
 import ModelPlanSettings
+import ModelPlanResources
 @testable import ModelPlanAppIntegration
 
 /// macrevb-1096-9 (D324/D327): only the installed app samples this Mac. A test or fixture app made through the normal
 /// entry, without the SPI flag and without asking, leaves the resource plugin out: no sampler, no reader, no ring, so
 /// the empty-Dock fixtures (OfficialDockEntryJourneyTests, SettingsWindowHostTests) keep their empty station.
 @MainActor final class ResourcePluginInstallTests: XCTestCase {
-    private func make(installs: Bool?) async throws -> EngineDockMenuApplication {
+    private func make(installs: Bool?, reader: (() -> ResourceReader)? = nil) async throws -> EngineDockMenuApplication {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("resource-install-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
@@ -17,7 +18,7 @@ import ModelPlanSettings
                                                       allowedEnvironment: [:], offline: true, readOnly: true)
         if let installs {
             return EngineRowsEntry.make(configuration: configuration, settingsStore: store, createsNativePanels: false,
-                                        dockEnvironment: normalEntryTestEnvironment, installsResourcePlugin: installs, activateSettings: {})
+                                        dockEnvironment: normalEntryTestEnvironment, installsResourcePlugin: installs, resourceReader: reader, activateSettings: {})
         }
         return EngineRowsEntry.make(configuration: configuration, settingsStore: store, createsNativePanels: false,
                                     dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
@@ -33,7 +34,6 @@ import ModelPlanSettings
         XCTAssertNil(app.cockpitPluginModel)
     }
 
-    #if MODELPLAN_TEST_ONLY_SPI
     /// macrevb-1096-10: the fixture that opts in supplies a counting synthetic reader, so installing the plugin can never
     /// reach SystemResourceReader (this Mac's CPU, memory and disk). Only this reader is ever asked to sample.
     private final class CountingReader: ResourceReader {
@@ -43,15 +43,11 @@ import ModelPlanSettings
 
     func testTheInstalledAppAsksForTheResourcePlugin() async throws {
         let reader = CountingReader()
-        let saved = CommunityCockpitApplicationFactory.verificationResourceReader
-        CommunityCockpitApplicationFactory.verificationResourceReader = { reader }
-        defer { CommunityCockpitApplicationFactory.verificationResourceReader = saved }
-        let app = try await make(installs: true)
+        let app = try await make(installs: true, reader: { reader })
         await app.prepare(); app.allowDockPresentation()
         let dock = app.composition.dock; defer { dock.close() }
         for _ in 0..<150 where app.resourcePlugin == nil { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertNotNil(app.resourcePlugin, "the app that asks (ModelPlanCommunityApp) gets the default-on resource plugin")
         XCTAssertNotNil(app.cockpitPluginModel)
     }
-    #endif
 }
