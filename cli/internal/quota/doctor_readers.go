@@ -250,6 +250,9 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 			if id == "zai" && p.ZCodeNoProviderFile && row.Consent != "denied" {
 				row.State = "unavailable:no_provider_file"
 			}
+			if id == "zai" && p.ZCodeLoginConsent && row.Consent != "denied" {
+				row.State = "unavailable:consent_required" // D369: ZCode's sign-in needs its own consent
+			}
 		case managed:
 			s, err := loadReaderState(p.Cache, id)
 			if err != nil {

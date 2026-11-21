@@ -626,6 +626,31 @@
       ]
     },
     {
+      "id": "token-monitor",
+      "kind": "source-port",
+      "name": "Token Monitor",
+      "version": "9de6288ca4e9af091b42f979570f1408781f8419",
+      "licenseSpdxId": "MIT",
+      "copyright": [
+        "Copyright (c) 2026 Javis"
+      ],
+      "licenseTextPath": "licenses/token-monitor/LICENSE.txt",
+      "licenseFiles": [
+        {
+          "path": "licenses/token-monitor/LICENSE.txt",
+          "sourceFile": "LICENSE",
+          "sha256": "250136de456c31d659e54c1804c43a27dadad175336b67226e9509d6310f923c"
+        }
+      ],
+      "source": "https://github.com/Javis603/token-monitor/tree/9de6288ca4e9af091b42f979570f1408781f8419",
+      "usedBy": [
+        "ZCode QR-code sign-in reader (D369): JavaScript-to-Go adaptation of src/shared/providers/zai/zcodeDiscovery.js and the ZCode parts of src/shared/providers/zai/limits.js; ModelPlan modifications are in cli/internal/quota/zcode_login.go"
+      ],
+      "paths": [
+        "cli/internal/quota/zcode_login.go"
+      ]
+    },
+    {
       "id": "pulse",
       "kind": "source-port",
       "name": "Pulse",

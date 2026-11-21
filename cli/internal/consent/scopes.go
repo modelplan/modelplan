@@ -24,6 +24,8 @@ const (
 	ScopeAntigravityRuntimeUsage      = "antigravity.runtime_usage"
 	ScopeZaiLocalHistory              = "zai.local_history"
 	ScopeZaiAccountUsageAPIKey        = "zai.account_usage.api_key"
+	// ZCode's own sign-in (QR code / OAuth), D369: opt-in, read-only, memory only.
+	ScopeZaiAccountUsageSavedLogin    = "zai.account_usage.saved_login"
 	ScopeOpenCodeGoLocalHistory       = "opencodego.local_history"
 	ScopeOpenCodeGoAccountUsageAPIKey = "opencodego.account_usage.api_key"
 	ScopeMiniMaxAccountUsageAPIKey    = "minimax.account_usage.api_key"

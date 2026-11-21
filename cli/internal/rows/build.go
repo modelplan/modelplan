@@ -414,6 +414,21 @@ func applyOutcome(row *Row, in Input, c *candidate, outcome Outcome) {
 	}
 }
 
+// toolStepText: a tool's own next-step sentence for a reason. D369: ZCode's QR-code sign-in was
+// found but its own consent is off, or the sign-in has ended (ModelPlan never renews it).
+func toolStepText(tool string, code Code) (Text, bool) {
+	if tool != "zai" {
+		return Text{}, false
+	}
+	switch code {
+	case CodeConsentRequired:
+		return Text{EN: "ZCode sign-in found. Allow reading it in Settings to show its quota.", ZH: "已找到 ZCode 登录。在设置中允许读取后显示额度。"}, true
+	case CodeLoginExpired:
+		return Text{EN: "Sign in to ZCode again. ModelPlan reads it after you do.", ZH: "请重新登录 ZCode。登录后会自动读取。"}, true
+	}
+	return Text{}, false
+}
+
 // NotSignedInText is the single not-signed-in sentence. The Swift copies in Settings and
 // first run (SettingsScopeConsentView.blockLine) use the same words; a test pins them.
 func NotSignedInText(nameEN, nameZH string) Text {
@@ -440,6 +455,11 @@ func nextStep(in Input, c *candidate, outcome Outcome) *NextStep {
 	}
 	if outcome.Code == CodeNoReader {
 		step.Text = Text{EN: "Reader support is not available yet", ZH: "暂不支持此读取器"}
+	}
+	if c != nil {
+		if text, ok := toolStepText(c.id, outcome.Code); ok {
+			step.Text = text
+		}
 	}
 	if outcome.Code == CodeNoManualReading {
 		step.Text = Text{EN: "Add a manual reading in Settings", ZH: "在设置中填写手动读数"}

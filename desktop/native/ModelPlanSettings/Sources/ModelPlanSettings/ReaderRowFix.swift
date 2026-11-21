@@ -119,6 +119,11 @@ extension ReaderCauseTable {
             return .init(reason: .init("Not signed in", "未登录"),
                          action: .init(name.map { "Open \($0)" } ?? "Open the tool", name.map { "打开 \($0)" } ?? "打开工具"), target: .openTool)
         case "login_expired":
+            if rowIsGLM(tool) {
+                // D369: ZCode's QR-code sign-in has ended; ModelPlan never renews it.
+                return .init(reason: .init("The ZCode sign-in has ended", "ZCode 登录已失效"),
+                             action: .init("Sign in to ZCode again", "重新登录 ZCode"), target: .openTool)
+            }
             return .init(reason: .init("The sign-in has expired", "登录已过期"),
                          action: .init(name.map { "Open \($0)" } ?? "Open the tool", name.map { "打开 \($0)" } ?? "打开工具"), target: .openTool)
         case "keychain_unset", "keychain_unavailable", "keychain_not_found":
@@ -145,6 +150,11 @@ extension ReaderCauseTable {
             return .init(reason: .init("This address is a third-party relay, so its quota can't be read", "这个地址是第三方转发服务，查不到额度"),
                          action: .init("Why?", "了解原因"), target: .explain)
         case "consent_required":
+            if rowIsGLM(tool) {
+                // D369: ZCode's QR-code sign-in was found; its own permission is off by default.
+                return .init(reason: .init("ZCode sign-in found; reading it needs your permission", "已找到 ZCode 登录，读取需要你的授权"),
+                             action: .init("Allow in Settings", "在设置中允许"), target: .openSettings)
+            }
             return .init(reason: .init("Reading permission needed", "需要读取授权"),
                          action: .init("Review permission in Settings", "在设置检查授权"), target: .openSettings)
         default:

@@ -5781,6 +5781,7 @@ public enum WireRefreshDecisionScope: Codable, Sendable, Equatable {
     case `zaiAccountUsageApiKey`
     case `minimaxAccountUsageApiKey`
     case `opencodegoAccountUsageApiKey`
+    case `zaiAccountUsageSavedLogin`
     case unknown(String)
     public init(rawValue: String) {
         switch rawValue {
@@ -5797,6 +5798,7 @@ public enum WireRefreshDecisionScope: Codable, Sendable, Equatable {
         case "zai.account_usage.api_key": self = .`zaiAccountUsageApiKey`
         case "minimax.account_usage.api_key": self = .`minimaxAccountUsageApiKey`
         case "opencodego.account_usage.api_key": self = .`opencodegoAccountUsageApiKey`
+        case "zai.account_usage.saved_login": self = .`zaiAccountUsageSavedLogin`
         default: self = .unknown(rawValue)
         }
     }
@@ -5815,6 +5817,7 @@ public enum WireRefreshDecisionScope: Codable, Sendable, Equatable {
         case .`zaiAccountUsageApiKey`: return "zai.account_usage.api_key"
         case .`minimaxAccountUsageApiKey`: return "minimax.account_usage.api_key"
         case .`opencodegoAccountUsageApiKey`: return "opencodego.account_usage.api_key"
+        case .`zaiAccountUsageSavedLogin`: return "zai.account_usage.saved_login"
         case .unknown(let value): return value
         }
     }

@@ -204,6 +204,11 @@ var signalCodes = map[signalKey]Code{
 	{SignalStatus, "privacy_blocked"}:                   CodePrivacyBlocked,
 	{SignalStatus, "consent_required"}:                  CodeNotAdmitted,
 	{SignalStatus, "denied"}:                            CodeHTTP403,
+
+	// D369: ZCode's QR-code sign-in. Its own saved-login scope is off (the tool's local reader is
+	// implicit, so the tool-level consent cannot say so), or the sign-in has ended.
+	{SignalError, "consent_required"}: CodeConsentRequired,
+	{SignalError, "login_expired"}:    CodeLoginExpired,
 }
 
 // MapSignal performs exact, contextual lookup. No provider substring is parsed.
