@@ -793,7 +793,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       #endif
       if !rackFirst { onShellChanged?() }
       applyPresentationTraits()
-      if shellSession.detached { onPresenceChanged?(true) }
+      // B6 (owner 11-21): every open re-reads the one Dock presence. An attached open used to leave it alone, so a
+      // stale regular policy (a window that left the screen without telling the presence) kept the Dock icon beside
+      // the attached cockpit. Only a detached open may bring the app forward.
+      onPresenceChanged?(shellSession.detached)
       lastVisibility = nil; visibilityChanged()
       #if MODELPLAN_TEST_ONLY_SPI
         if let web { verificationDidOpen?(web, panel) }

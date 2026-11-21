@@ -300,7 +300,7 @@ struct DockHelpInteraction: Equatable {
         didSet {
             guard spotlightHold != oldValue, !retired else { return }
             for window in [panel, cardPanel, overflowPanel] { window?.collectionBehavior = panelCollectionBehavior }
-            if spotlightHold { dismissCard() }
+            if spotlightHold { closeHeldCardEverywhere() }
             Task { @MainActor [weak self] in
                 guard let self, !self.retired else { return }
                 self.edge.refresh()
@@ -1231,7 +1231,7 @@ struct DockHelpInteraction: Equatable {
         if value.effective.reduceMotion { locateLayer?.removeAnimation(forKey: "locate-pulse") }
         empty.stringValue = preferences.language == .english ? "No local subscriptions" : "暂无本地订阅"
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
-        if !preferences.showDock { pendingUserReveal = false; clearLocateHighlight(); dismissCard() }
+        if !preferences.showDock { pendingUserReveal = false; clearLocateHighlight(); closeHeldCardEverywhere() }
         if preferences.revealMilliseconds != oldReveal {
             let saved = edge.preference
             edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
@@ -1571,6 +1571,12 @@ struct DockHelpInteraction: Equatable {
         guard passIsCurrent(generation) else { return }
         if let cardID, cardID == Self.emptyCardID { showEmptyCard() }
         else if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
+        // B4d (owner 11-21, Pulse: a card stays while the pointer is on its ring or the card): a content replacement
+        // (withdrawAdmittedContent) closes a card it does not keep, and the plugin ring's card is never kept (only
+        // engine members are). The controller still presents it and its publish is de-duplicated, so nothing else
+        // shows it again; the card the active controller holds is shown again here, with every showCard guard.
+        else if let controller = interactionController, controller.isActive,
+                let held = controller.presentation?.card.subscriptionID, held != Self.emptyCardID, order.contains(held) { showCard(held) }
         else if interactionView.emptyStationHovered { showEmptyCard() } // G3-136: a replacement keeps the hovered reason
         if permitted {
             edge.start(); edge.refresh()
@@ -2193,7 +2199,7 @@ struct DockHelpInteraction: Equatable {
     func prepareForCockpit() {
         guard !retired else { return }
         clearLocateHighlight()
-        dismissCard()
+        closeHeldCardEverywhere()
     }
 
     /// `highlight: false` is the Find Quota Widget reveal: its spotlight draws the ring instead.
@@ -2244,11 +2250,11 @@ struct DockHelpInteraction: Equatable {
     @objc private func ignitionPressed() {
         guard cockpitEntryEnabled, permitted, !retired else { return }
         guard let pressIgnition else { openConsole(); return }
-        dismissCard(); pressIgnition(NSEvent.mouseLocation)
+        closeHeldCardEverywhere(); pressIgnition(NSEvent.mouseLocation)
     }
     @objc private func openConsole() {
         guard cockpitEntryEnabled, permitted, !retired, let showConsole else { return }
-        acknowledgeCockpitOpening(); dismissCard(); showConsole()
+        acknowledgeCockpitOpening(); closeHeldCardEverywhere(); showConsole()
     }
     @objc private func openSettings() {
         guard permitted, !retired, !retiring else { return }
@@ -2591,6 +2597,12 @@ struct DockHelpInteraction: Equatable {
         pressObservedSinceSample = true
         defer { pressObservedSinceSample = false }
         controller.refresh()
+    }
+    /// B4d: an intended close (cockpit opening, ignition, Spotlight hold, widget hidden) also ends the controller's
+    /// card, so the rebuild re-sync (rebuildPass) never brings back a card the user's action closed.
+    private func closeHeldCardEverywhere() {
+        if let controller = interactionController, controller.isActive { controller.dismissCard() }
+        dismissCard()
     }
     private func dismissCard() {
         fallbackCardLeaveTask?.cancel(); fallbackCardLeaveTask = nil

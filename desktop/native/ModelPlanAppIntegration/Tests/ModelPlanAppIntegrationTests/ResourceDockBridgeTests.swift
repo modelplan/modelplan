@@ -30,7 +30,9 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
 
     func testRingIsTwoOrchidArcsThatNeverChangeColour() throws {
         let normal = try DockInstrumentProjection.evaluate(try input(sample(), key: .memory), now: Date())
-        XCTAssertEqual(normal.readout, "内存 47%")
+        // B4f (owner 11-21): the ring draws the percentage alone; VoiceOver still reads what it measures.
+        XCTAssertEqual(normal.readout, "47%")
+        XCTAssertEqual(normal.pluginRing?.accessibilityReadout, "内存 47%")
         XCTAssertEqual(normal.status, .normal)
         XCTAssertEqual(normal.outer?.fraction ?? 0, 15.1 / 32, accuracy: 0.001, "outer = memory used")
         XCTAssertEqual(normal.pluginRing?.outerFaint ?? 0, 12.8 / 32, accuracy: 0.001, "faint segment = cached")
@@ -41,7 +43,8 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         XCTAssertFalse(normal.jetEligible)
 
         let spike = try DockInstrumentProjection.evaluate(try input(sample(cpu: 96), key: .cpu, tone: .critical), now: Date())
-        XCTAssertEqual(spike.readout, "CPU 96%")
+        XCTAssertEqual(spike.readout, "96%")
+        XCTAssertEqual(spike.pluginRing?.accessibilityReadout, "CPU 96%")
         XCTAssertEqual(spike.status, .critical, "only the readout number turns red")
         XCTAssertEqual(spike.outer?.status, .normal, "the ring keeps its ink")
         XCTAssertEqual(spike.inner?.status, .normal)
@@ -70,21 +73,29 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         XCTAssertEqual(spikeRows.map(\.tone), [.critical, .normal, .warning], "amber/red numbers keep their tone, emphasised or not")
     }
 
-    func testProviderPutsTheRingFirstAndRemovesIt() throws {
+    /// B4 (owner 11-21): the widget order matches the cockpit's (plugin-layout.ts: subscriptions first, plugins after
+    /// them). Fails before: the ring was put in front of the subscription rings.
+    func testProviderPutsTheRingAfterTheSubscriptionsAndRemovesIt() throws {
         final class Base: DockContentProvider {
             func makeContent(_ context: DockContentContext) -> DockContent {
-                .init(snapshot: .init(inputs: [DockInstrumentInput(id: "codex", name: "Codex", windows: [])]), emptyText: "x")
+                .init(snapshot: .init(inputs: [DockInstrumentInput(id: "codex", name: "Codex", windows: []),
+                                               DockInstrumentInput(id: "zai", name: "ZCode", windows: [])]), emptyText: "x")
             }
         }
         let provider = ResourceDockContentProvider(base: Base())
         let context = DockContentContext(snapshot: nil, diagnostics: .init(), now: Date())
-        XCTAssertEqual(provider.makeContent(context).snapshot.inputs.map(\.id), ["codex"], "no sample yet: no ring")
+        XCTAssertEqual(provider.makeContent(context).snapshot.inputs.map(\.id), ["codex", "zai"], "no sample yet: no ring")
         provider.resourceInput = try input(sample(), key: .memory)
         let content = provider.makeContent(context)
-        XCTAssertEqual(content.snapshot.inputs.map(\.id), [ResourceDockBridge.subscriptionID, "codex"])
+        XCTAssertEqual(content.snapshot.inputs.map(\.id), ["codex", "zai", ResourceDockBridge.subscriptionID])
+        // The widget's presented order: the saved subscription order first, ids it does not cover after it in catalogue
+        // order. With no saved order, or one covering the subscriptions, the ring still comes last.
+        let ids = content.snapshot.inputs.map(\.id)
+        XCTAssertEqual(try DockSubscriptionPreferences().orderedIDs(in: ids).last, ResourceDockBridge.subscriptionID)
+        XCTAssertEqual(try DockSubscriptionPreferences(order: ["zai", "codex"]).orderedIDs(in: ids), ["zai", "codex", ResourceDockBridge.subscriptionID])
         XCTAssertEqual(content.emptyText, "x")
         provider.resourceInput = nil
-        XCTAssertEqual(provider.makeContent(context).snapshot.inputs.map(\.id), ["codex"])
+        XCTAssertEqual(provider.makeContent(context).snapshot.inputs.map(\.id), ["codex", "zai"])
     }
 
     func testBindingRedrawsFromTheSamplerAndDropsTheRingWhenOff() throws {
@@ -113,7 +124,8 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         }
         run(until: 0)
         XCTAssertEqual(refreshes, 1)
-        XCTAssertEqual(provider.resourceInput?.pluginRing?.readout, "内存 47%")
+        XCTAssertEqual(provider.resourceInput?.pluginRing?.readout, "47%")
+        XCTAssertEqual(provider.resourceInput?.pluginRing?.accessibilityReadout, "内存 47%")
         XCTAssertEqual(provider.resourceInput?.pluginRing?.cardFooter, "内存压力 正常 · 每 10 秒", "widget shown: every 10 s")
         run(until: 10)
         XCTAssertEqual(refreshes, 1, "no redraw without a ≥ 1 point change")

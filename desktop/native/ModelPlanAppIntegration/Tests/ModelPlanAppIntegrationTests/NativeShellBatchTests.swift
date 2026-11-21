@@ -24,7 +24,7 @@ import ModelPlanShell
     try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
-  private func open(signals: CockpitSystemSignalSource? = nil) throws -> Fixture {
+  private func open(signals: CockpitSystemSignalSource? = nil, beforeOpen: ((CockpitWindowController) -> Void)? = nil) throws -> Fixture {
     _ = NSApplication.shared
     guard let screen = NSScreen.main else { throw XCTSkip("needs a display") }
     let usable = screen.visibleFrame
@@ -34,6 +34,7 @@ import ModelPlanShell
       appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: true),
       shellSession: CockpitShellSession(), anchor: { icon }, systemSignals: signals)
     addTeardownBlock { @MainActor in page.discard() }
+    beforeOpen?(page)
     page.open()
     (page.window?.contentView?.subviews.first as? WKWebView)?.navigationDelegate = nil
     return Fixture(page: page, icon: icon, usable: usable)
@@ -192,5 +193,33 @@ import ModelPlanShell
     XCTAssertNotNil(f.page.window)
     clock += 1
     XCTAssertEqual(f.page.dismissal.request(.appResigned), .closed, "after 250 ms a resign closes it again")
+  }
+
+  /// B6 (owner 11-21): a menu-bar app shows no Dock icon beside the attached cockpit. The icon follows the one
+  /// presence (Pulse DockPresence: while Settings or a detached cockpit is open). Fails before: an attached open never
+  /// re-read the presence, so a policy left regular by a window that went away without telling it stayed regular.
+  func testAnAttachedOpenDropsAStaleDockIcon() throws {
+    var policy: NSApplication.ActivationPolicy = .accessory, activations = 0
+    let presence = PulseDockPresence(currentPolicy: { policy }, setPolicy: { policy = $0 }, activate: { activations += 1 })
+    let settings = FakeWindow(); presence.track(settings)
+    settings.isVisible = true; presence.apply()
+    XCTAssertEqual(policy, .regular, "Settings open: the Dock icon (Pulse)")
+    settings.isVisible = false // it left the screen without a close notification: the presence was not told
+    XCTAssertEqual(policy, .regular, "stale")
+    var adapter: DetachedCockpitPresence?
+    let f = try open(beforeOpen: { page in
+      adapter = DetachedCockpitPresence(page: page); presence.track(adapter!)
+      page.onPresenceChanged = { presence.apply(activateIfRegular: $0) }
+    })
+    defer { withExtendedLifetime(adapter) {} }
+    XCTAssertTrue(f.page.isAttached)
+    XCTAssertEqual(policy, .accessory, "the attached cockpit opens with no Dock icon")
+    XCTAssertEqual(activations, 0, "an attached open never activates the app through the presence")
+    // Settings really open: the attached open keeps the icon (Pulse shows it while Settings is on screen).
+    settings.isVisible = true; presence.apply()
+    f.page.requestClose()
+    let g = try open(beforeOpen: { page in page.onPresenceChanged = { presence.apply(activateIfRegular: $0) } })
+    XCTAssertTrue(g.page.isAttached)
+    XCTAssertEqual(policy, .regular)
   }
 }

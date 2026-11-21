@@ -13,7 +13,7 @@ Foundation and Darwin only: no AppKit, WebKit, child process, file write or netw
   the ten-minute `ResourceHistory` (memory only; dropped when the plugin is turned off), the widget `ResourceReadout`,
   and `ResourceRedrawGate` (redraw only on a ≥ 1 percentage-point change or a readout change). `ResourceFace.animates`
   is false under Reduce Motion.
-- `ResourceReadout`: "内存 47%" normally; "CPU 96%" once CPU has stayed ≥ 70 % for 20 s; red from 90 %; back to memory
+- `ResourceReadout`: "内存 47%" normally (the widget draws the number alone, "47%", and VoiceOver reads "内存 47%"; owner 11-21); "CPU 96%" once CPU has stayed ≥ 70 % for 20 s; red from 90 %; back to memory
   after 30 s below 60 %. Memory's tone follows macOS memory pressure. The ring never changes colour.
 - `ResourceCard`: hover-card rows CPU · 内存 · 磁盘; the row matching the readout at full ink, the others at
   secondary ink (variant A); a tint only on problem rows (pressure high, CPU ≥ 70 %, disk ≥ 90 %).
