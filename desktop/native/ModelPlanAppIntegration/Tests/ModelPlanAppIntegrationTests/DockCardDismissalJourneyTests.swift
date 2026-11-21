@@ -204,6 +204,10 @@ private actor CardDismissalClient: EngineClient {
         let footerContent = try XCTUnwrap(dock.cardContent(for: memberID))
         XCTAssertEqual(footerContent.cockpitLabel, "View in cockpit")
         XCTAssertEqual(footerContent.cockpitTarget, footerContent.name)
+        // With the cockpit entry unavailable (release builds) the subscription card shows no footer row.
+        dock.cockpitEntryEnabled = false
+        XCTAssertEqual(try XCTUnwrap(dock.cardContent(for: memberID)).cockpitLabel, "", "no cockpit entry: no footer row")
+        dock.cockpitEntryEnabled = true
         XCTAssertNotNil(dock.card.cockpitRowFrameForChecks, "the shown subscription card has the footer row")
         var routed: [String] = []
         dock.subscriptionCockpitRequested = { routed.append($0) }

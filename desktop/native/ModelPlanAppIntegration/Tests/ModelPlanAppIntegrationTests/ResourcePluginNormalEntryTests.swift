@@ -103,6 +103,11 @@ extension CommunityCockpitEntryTests {
         XCTAssertEqual(card.rows.filter { $0.kind == .quota }.map(\.label), ["CPU", "Memory", "Disk"])
         XCTAssertEqual(card.cockpitLabel, "View in cockpit")
         XCTAssertEqual(card.cockpitTarget, "Resources")
+        // With the cockpit entry unavailable (release builds) the plugin card shows no footer row either.
+        dock.cockpitEntryEnabled = false
+        let noEntry = try XCTUnwrap(dock.cardContent(for: id))
+        XCTAssertEqual(noEntry.cockpitLabel, "", "no cockpit entry: no footer row on a plugin card")
+        dock.cockpitEntryEnabled = true
         XCTAssertEqual(card.actionLabel, "")
         XCTAssertTrue(card.rows.last?.value.hasPrefix("Memory pressure Normal") == true)
         // macrevb-1096-8: the ring is hoverable but stays out of the subscription order Settings commits.

@@ -2298,9 +2298,10 @@ struct DockHelpInteraction: Equatable {
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
         if input.pluginRing != nil {
             // D327: a plugin card has its own rows and footer (cadence, pressure); no source age or quota windows.
-            return try DockCardProjection.content(input: Self.livePluginInput(input, live: livePluginCard?(id)), revision: application?.snapshot.revision ?? 0,
+            let pluginContent = try DockCardProjection.content(input: Self.livePluginInput(input, live: livePluginCard?(id)), revision: application?.snapshot.revision ?? 0,
                 enterLabel: EngineRowsText.cockpitAction.value(preferences.language),
                 dismissLabel: EngineRowsText.contextClose.value(preferences.language), redBelow: effectiveRedBelow, at: now)
+            return cockpitEntryEnabled ? pluginContent : Self.withoutCockpitRow(pluginContent)
         }
         var projected = memberSafePreferences.applying(to: input)
         projected.name = projected.duplicateDisplayName
@@ -2406,7 +2407,13 @@ struct DockHelpInteraction: Equatable {
     }
     /// D371 B4e: a subscription card's footer label when the cockpit can be opened from here; "" hides the row.
     func cockpitFooter(for id: String, language: SettingsLanguage) -> String {
-        (cardUsesSettings(id) || cockpitEntryEnabled) ? EngineRowsText.viewInCockpit.value(language) : ""
+        cockpitEntryEnabled ? EngineRowsText.viewInCockpit.value(language) : ""
+    }
+    /// D371 B4e: with the cockpit entry unavailable (release builds) no card shows the footer row, plugin cards included.
+    static func withoutCockpitRow(_ c: DockCardContent) -> DockCardContent {
+        DockCardContent(subscriptionID: c.subscriptionID, revision: c.revision, name: c.name, plan: c.plan, sourceAndAge: c.sourceAndAge,
+                        stateLabel: c.stateLabel, rows: c.rows, links: c.links, enterLabel: c.enterLabel, dismissLabel: c.dismissLabel,
+                        actionLabel: c.actionLabel, cockpitLabel: "", cockpitTarget: "")
     }
     private func isPluginCard(_ id: String) -> Bool { model?.inputs.first(where: { $0.id == id })?.pluginRing != nil }
     /// D65: one plain line per general window at 0 % (shown numbers only), under the readout.
