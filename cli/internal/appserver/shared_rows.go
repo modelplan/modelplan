@@ -82,7 +82,7 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 		}
 		value.ResetCards = account.ResetCards
 		if account.Credits != nil {
-			value.Credits = &rows.CreditsInput{Balance: account.Credits.Balance, Unit: account.Credits.Unit}
+			value.Credits = &rows.CreditsInput{Balance: account.Credits.Balance, Unit: account.Credits.Unit, Currency: account.Credits.Currency}
 		}
 		for _, window := range account.Windows {
 			source := rows.WindowSourceOther

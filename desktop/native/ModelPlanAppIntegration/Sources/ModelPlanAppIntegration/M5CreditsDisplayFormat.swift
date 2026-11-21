@@ -53,6 +53,18 @@ enum M5CreditsDisplayFormat {
     /// A reported money balance without a currency is grouped with at most two decimals, so a
     /// raw floating-point value (14207.8550653333) never reaches the card while cents survive
     /// (12.5 stays 12.5; credits alone are rounded to integers, R-08).
+    /// A money balance in its reported ISO 4217 currency ("$12.34", "US$12.34"); nil for a code that is not three letters.
+    static func currencyText(_ value: Double, code: String, english: Bool = true) -> String? {
+        guard value.isFinite, code.count == 3, code.allSatisfy({ $0.isASCII && $0.isUppercase }) else { return nil }
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: english ? "en_US" : "zh_CN")
+        formatter.numberStyle = .currency
+        formatter.currencyCode = code
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        formatter.roundingMode = .halfUp
+        return formatter.string(from: NSNumber(value: value))
+    }
     static func moneyText(_ value: Double, english: Bool = true) -> String {
         guard value.isFinite else { return String(value) }
         let formatter = NumberFormatter()

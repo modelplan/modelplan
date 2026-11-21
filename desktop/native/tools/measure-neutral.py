@@ -25,7 +25,7 @@ def percentile(values,p):
 p=argparse.ArgumentParser(); p.add_argument('app'); p.add_argument('output'); p.add_argument('--runs',type=int,default=3)
 p.add_argument('--warm',type=int,default=30); p.add_argument('--seconds',type=int,default=60)
 a=p.parse_args(); output=pathlib.Path(a.output); output.mkdir(parents=True,exist_ok=False)
-exe=pathlib.Path(a.app)/'Contents/MacOS/ModelPlanCommunity'
+exe=pathlib.Path(a.app)/'Contents/MacOS/ModelPlan'
 receipt={'schemaVersion':1,'method':'proc_pid_rusage v0 / monotonic / one-core CPU',
          'timebase':{'numer':base.numer,'denom':base.denom},'executableSHA256':hashlib.sha256(exe.read_bytes()).hexdigest(),
          'scope':'neutral accessory, no runner; no physical first-pixel claim','runs':[]}

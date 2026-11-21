@@ -63,6 +63,7 @@ type Server struct {
 	rowsPending                                     bool
 	session                                         string
 	view                                            View
+	viewToken                                       any // what view was built from, for a ViewReuse backend (WP-17)
 	sequence                                        uint64
 	active                                          map[string]activeRequest
 	normal, queries, controls                       int
@@ -345,7 +346,7 @@ func (s *Server) dispatch(r wire.Request) {
 			return
 		}
 		s.start(r, false, false, true, func(ctx context.Context) (Reply, error) {
-			if err := s.refresh(ctx); err != nil {
+			if err := s.refreshForRequest(ctx); err != nil {
 				return Reply{}, err
 			}
 			return Reply{Stamp: s.currentStamp(), subscribe: true}, nil
@@ -358,7 +359,7 @@ func (s *Server) dispatch(r wire.Request) {
 			return
 		}
 		s.start(r, false, false, false, func(ctx context.Context) (Reply, error) {
-			if err := s.refresh(ctx); err != nil {
+			if err := s.refreshForRequest(ctx); err != nil {
 				return Reply{}, err
 			}
 			s.mu.Lock()
@@ -589,12 +590,14 @@ func (s *Server) initialize(r wire.Request) {
 	go func() {
 		defer cancel()
 		s.refreshMu.Lock()
+		token := s.viewTokenBefore()
 		v, err := s.backend.Get(ctx)
 		s.refreshMu.Unlock()
 		s.mu.Lock()
 		s.initializing = false
 		if err == nil && validView(v) {
 			s.view = v
+			s.viewToken = token
 			s.sequence = 1
 			s.initialized = true
 		} else if err == nil {
@@ -666,12 +669,51 @@ func (s *Server) scheduleRefresh() {
 func (s *Server) refresh(ctx context.Context) error {
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
-	return s.readView(ctx)
+	return s.readView(ctx, false)
 }
-func (s *Server) readView(ctx context.Context) error {
-	v, err := s.backend.Get(ctx)
-	if err != nil {
-		return err
+
+// ViewReuse is a backend that can tell whether a view it built is still what Get would build
+// now (WP-17). ViewToken is taken just before a Get; ViewCurrent(token) is true only while
+// nothing that view depends on has changed since.
+type ViewReuse interface {
+	ViewToken() any
+	ViewCurrent(token any) bool
+}
+
+func (s *Server) viewTokenBefore() any {
+	if r, ok := s.backend.(ViewReuse); ok {
+		return r.ViewToken()
+	}
+	return nil
+}
+
+// refreshForRequest serves a client's subscribe or consent request. WP-17: at start the client
+// and the app send four of these right after the handshake; while the backend says the held view
+// is still current, they answer from it (a full snapshot, as always) instead of building it again.
+// The change-driven refresh loop never reuses.
+func (s *Server) refreshForRequest(ctx context.Context) error {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	return s.readView(ctx, true)
+}
+func (s *Server) readView(ctx context.Context, reuse bool) error {
+	var v View
+	var token any
+	reused := false
+	if r, ok := s.backend.(ViewReuse); ok && reuse {
+		s.mu.Lock()
+		held, heldToken, initialized := s.view, s.viewToken, s.initialized
+		s.mu.Unlock()
+		if initialized && heldToken != nil && r.ViewCurrent(heldToken) {
+			v, reused = held, true
+		}
+	}
+	if !reused {
+		token = s.viewTokenBefore()
+		var err error
+		if v, err = s.backend.Get(ctx); err != nil {
+			return err
+		}
 	}
 	if !validView(v) {
 		return ProtocolError{wire.CodeInternal}
@@ -685,6 +727,9 @@ func (s *Server) readView(ctx context.Context) error {
 	if v.Stamp.Epoch == old.Stamp.Epoch && v.Stamp.Generation < old.Stamp.Generation {
 		s.mu.Unlock()
 		return ProtocolError{wire.CodeConsentChanged}
+	}
+	if !reused {
+		s.viewToken = token
 	}
 	changed := !reflect.DeepEqual(old, v)
 	if !changed && !s.rowsPending {

@@ -107,9 +107,84 @@ reply with the new context. Replays and old view revisions are rejected even whe
 the consent floor itself did not change. An engine restart can adopt its new
 session only through that explicit clear, or by unloading and making a fresh page.
 
-Page responses include `ready`, `rendered`, `cleared`, `nextDeadline` and `action`, with the same context/header IDs and the independent output sequence. `ready` carries `appearanceVersion: 2` and the capabilities `appearanceUpdates`, `shellState` and `shellActions`. While visible with displayed data, display, appearance and tick can report a nullable `deadlineUnixMs` correlated to the triggering request. Fixed actions include `chooseSetup`, `openSettings`, `close`, `detach`, `putBack`, `shutterToggle`, `scopeSelect`, `openHistory`, `openField` and `openWebsite`. `openField` may carry `key`, the clicked rocket's published display name (1-64 characters); native resolves it against the published models and focuses nothing for an unknown name. `openWebsite` carries a `page` (`plans`, `effort` or `methodology`) and a short `value`; native builds the public address from them, so no URL crosses the bridge. `scopeSelect` carries `key` equal to `all` or an admitted current member; `openHistory` carries a `tool` from the current displayed rows. Clear invalidates that action membership too. Native
+Page responses include `ready`, `rendered`, `cleared`, `nextDeadline` and `action`, with the same context/header IDs and the independent output sequence. `ready` carries `appearanceVersion: 2` and the capabilities `appearanceUpdates`, `shellState` and `shellActions`. While visible with displayed data, display, appearance and tick can report a nullable `deadlineUnixMs` correlated to the triggering request. While the session strip lists a session, the next whole minute is a deadline, so its elapsed time and "6m ago" move with the host's tick (owner decision D277, CKP-STRIP-16). Fixed actions include `chooseSetup`, `openSettings`, `close`, `detach`, `putBack`, `shutterToggle`, `scopeSelect`, `openHistory`, `openField`, `openWebsite` and `refreshMember`. `openField` may carry `key`, the clicked rocket's published display name (1-64 characters); native resolves it against the published models and focuses nothing for an unknown name. `openWebsite` carries a `page` (`plans`, `effort` or `methodology`) and a short `value`; native builds the public address from them, so no URL crosses the bridge. `refreshMember` (owner D277) carries `key` equal to `all` or an admitted current member and asks native for the widget's per-member re-read. `scopeSelect` carries `key` equal to `all` or an admitted current member; `openHistory` carries a `tool` from the current displayed rows. Clear invalidates that action membership too. Native
 maps these to typed UI intents, never to a command/URL interpreter. No credential,
 consent mutation or plugin-install message exists in this protocol.
+
+## Plugin columns (D121/D124, D293; CKP-PLG-50…54)
+
+Plugins are bundled modules in `src/plugin-registry.ts`: id, string-table keys for the title (long and short) and the
+one-sentence Settings summary, a trusted white line-art icon at the vendor-mark size, the dashed underline colour and
+bar ink (only `#87939e`, `#e9edf0`, `#b9c7d6` or the resource orchid `#da66c2`), settings specs, and three pure functions: `accept` folds a host reading
+into the plugin's state (kept across repaints), `column` describes up to three cells in the subscription columns'
+Other-cell grammar (small tag · large number · side value · continuous bar with a thin trend line) plus a bottom line,
+and `screen` gives the lines of its big screen. Custom draw (D323): when cells cannot express a plugin (a day strip, a
+week grid), its `column` or `screen` result may also carry `draw(ctx)`. The host then gives it one clipped area (the
+column's cell rows, or the screen body under the framework's title bar) and calls `draw` with that `area`, its size, the
+cockpit `tokens`, a per-plugin `memo` shared by column and screen, `opening` and `redraw()`. The key, underline, pin,
+"+" menu, bottom line, title bar and lifecycle stay the framework's; a draw that throws falls back to the cells or lines,
+a size change draws again, and focus on a `data-focus` element survives every redraw. Plugin strings live in `study/rocket-r1/strings/plugins.js`, each drawn
+one with a `<key>Short` form. `src/plugin-layout.ts` is the pure page rule: columns = max(3, subscriptions + plugins),
+at most six per page, subscriptions first; unpinned plugins only fill free slots of the last page; up to two pinned
+plugins stay on page 1. `src/plugin-host.ts` turns empty slots into plugin keys and columns drawn like subscription keys
+and columns (no inner frame, no ×), opens a plugin's big screen inside the big-screen well when its key is clicked
+(faders and page keys stay uncovered; a page key closes it), offers Remove on the key's right-click menu, and runs the
+empty-slot "+" menu (detected unconnected tools, then plugins). Settings keeps the durable choices in the "Plugins"
+section of Settings › Subscriptions.
+
+Lifecycle: a plugin runs only while the page is visible and not occluded (key or not) and its column is on the shown
+page. The page has no timers; the host samples. Messages, all with the common header:
+
+- host → page `{"type":"plugins","plugins":{"version":1,"entries":[{"id","enabled","pinned"}],"settings":{id:{key:int}}}}`:
+  the saved choices (Settings, `CockpitPluginPreferences.swift`). Sending it also tells the page the host accepts the
+  two actions below; without it the page posts neither and keeps page edits to itself.
+- host → page `{"type":"pluginData","id":…,"data":…}`: a reading for a running plugin; refused otherwise.
+- host → page `{"type":"pluginScreen","id":…}`: open that enabled plugin's big screen (a native action such as the
+  widget card's); an open one stays open. Refused before `plugins` or for a plugin that is off.
+- page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's right-click Remove or the "+" menu.
+- page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
+
+Native host (macrevc-844-1): `CockpitPluginWire.canonical` applies `parsePluginState`'s rules in both directions;
+`plugins` is the one nested reply value (at most 4 levels, 64 unique keys per object, 32 items per array, 64 KiB).
+The window sends `plugins` on ready, after every clear and on change (never a state the page confirmed twice; a failed or lost call is sent again, and a change made while another state is in flight is sent once that one is answered); a `pluginScreen` request waits until the page confirmed a plugin state;
+`pluginsRunning` is accepted without focus, `pluginsEdit` only from the active page. The running set drops to `[]`
+when the page goes or is cleared. `CockpitPluginBridge` (ModelPlanAppIntegration) keeps the durable copy in
+`cockpit-plugins.json` and drives `CockpitPluginSampler`, which reads registered plugins at their interval.
+
+Defaults: a default-on plugin (D121) is on only once the host has sent `plugins`; a page whose host never did draws the
+v1 table.
+
+Framework additions for the calendar (v1.1, all generic):
+
+- Host-side shaping: a plugin may declare `derive(display, now)`. While it runs, the page shapes its reading from the
+  `display` data it already has (no network, no new host message) on each render and deadline tick, through the
+  plugin's own `accept`. A host that pushes a valid `pluginData` for that plugin takes over: shaping stops for it.
+- Tick: a running plugin may name its next redraw (`nextDeadline(state, now)`, e.g. the next whole minute). The page
+  reports the earliest of its own deadlines and the plugins' in `nextDeadline`; the host's `tick` redraws the plugin.
+  `context.now` is the host's clock. No page timers, and a stopped plugin asks for nothing.
+- Settings kinds: the calendar has no settings, so `seconds` is still the only kind.
+
+Calendar (`src/calendar-plugin.ts`, `src/calendar-data.ts`, `src/calendar-time.ts`; CKP-PLG-06/07; D323): default on, no
+settings. The day strip (column) and the 7-day week grid (its big screen, opened from the key) are custom draws; the
+bottom line shows the time now, and a failed draw falls back to next reset / next peak / reset cards cells and plain
+lines. Its accept refuses data over 16 KiB as JSON, then runs the strict parser. Its data (`version`, optional `peakRules` `yes`/`no`/`unknown` (missing is unknown), `subs` ≤16, `peaks` ≤64, `resets` ≤64, `spans` ≤16, epoch-ms times, ≤16 KiB) is shaped
+from `display`: published peak windows (`details.peaks`, cockpitPeaksV1), the user's own 5 h (`session`) and weekly
+window resets, reset cards (verified subscriptions only) and announced/confirmed reset events, for the user's own rows
+only. A reset-card list the producer marks partial or truncated has no exact count and no expiry beyond the one it states; "No rules" is shown only when the peak feed is present and the user has no declared plan. The privacy barrier (clear) drops the plugin readings and the host takeover. All times are local; day boundaries are local midnights (DST days have 23/25 hours).
+
+A plugin marked `hostSampled` (the resource plugin) is laid out only after the host has sent its plugin state, so a
+host that cannot sample never shows an empty column.
+
+### Resource plugin (D324, D327)
+
+`src/resource-plugin.ts`: CPU · Memory · Disk cells, the bottom line is memory pressure, orchid `#da66c2` for the key's
+dashed underline, bars and trend lines; only the numbers turn amber or red (CPU ≥ 70 % / ≥ 90 %, memory by macOS
+memory pressure, disk ≥ 90 %). Default on; setting `intervalSeconds` 2 / 5 / 10 (default 5). The host
+(`native/ModelPlanResources`, `ResourceSampler`) samples with system calls only and pushes
+`{"samples":[{"t","cpuUser","cpuSystem","load","memTotal","memApp","memWired","memCompressed","memCached","memFree","swapUsed","pressure","diskTotal","diskFree"}]}`
+(percentages 0–100, bytes, `t` in Unix ms, `pressure` normal / warn / critical): the whole ten-minute window when the
+column starts running (at most 360 samples), then only newer samples. The page keeps the same ten minutes in memory.
+The big screen is drawn as lines until the D323 draw hook lands; then its charts move to `draw(ctx)`.
 
 ## Animation budget and evidence
 
@@ -152,29 +227,41 @@ verification skill/test-Mac lane must remeasure those on the actual package befo
 this draft becomes ready. No hidden prewarm, old-path deletion or U13/L3 acceptance
 is claimed here.
 
-## Maker livery colours (D131, Set 1)
+## Maker livery colours (D131, D250)
 
-Owner decision 2026-11-12 ("Set 1, no mixing"); evidence table `livery-d131/options/part-1.png`. The shared table is the private
-site's `src/shell/brandLivery.ts`; `src/livery-shared.json` is its vendored copy (the private table must carry the same values).
+**D250 (owner 2026-11-13, guanbear/modelplans.ai#716) supersedes D211 "Set 1" for UI accents:** the old pastel palette, completed ("Old+").
+It applies to engine tabs, fader strips, record-strip chips and chart series. Rockets keep the website livery (`rocket`). The shared table is the
+private site's `src/shell/brandLivery.ts`; `src/livery-shared.json` is its vendored copy and is unchanged by D250.
 
-| Maker | Colour | Basis |
+| Maker | Colour | Alt (collision shade) |
 | --- | --- | --- |
-| OpenAI / Codex | `#10a37f` | Real brand accent: the ChatGPT green of openai.com/brand (long-standing hex, not re-measured from a file). |
-| Zhipu / Z.ai / GLM | `#3859ff` | Real brand accent: the Zhipu (智谱) logo colour, Lobe Icons `zhipu-color.svg`. Z.ai's own logo is near-black with no accent. |
-| xAI / Grok | `#f5e642` | Assigned identity colour (unofficial): xAI and X are black and white, so this is the free hue farthest from the other makers and the reserved UI colours. |
-| Cursor | `#f79dcb` | Assigned identity colour (unofficial): Cursor's brand is black and white (cursor.com/brand); light rose is the largest free gap in the palette. |
-| Claude | `#d97757` | Real brand accent (unchanged). |
+| OpenAI / Codex | `#6aa8ff` | `#1352a1` |
+| Anthropic / Claude | `#ff9a6a` | `#a0440a` |
+| Zhipu / Z.ai / GLM | `#8f7dff` | `#4422a0` |
+| Copilot | `#c08cff` | `#6c35a1` |
+| Kimi | `#ff8fcf` | `#a03878` |
+| OpenCode | `#b5d65a` | `#647c04` |
+| Cursor | `#eef2f6` | `#6f7782` (mid grey, reads on light backgrounds; `altFrom: 'app'`) |
+| xAI | `#8594a4` | `#374452` |
+| Google | `#4eccd3` | `#0b7176` |
+| MiniMax | `#f16f7e` | `#900d30` |
+| Meta | `#a6dcff` | `#5084a4` |
+| Alibaba | `#4ab89a` | `#025e4b` |
+| DeepSeek | `#00aad6` | `#0e5166` |
+| Xiaomi | `#e89700` | `#794e08` |
 
-Same-screen collision fallbacks (app UI only) (CIEDE2000 under 15): GLM next to Kimi takes `#8dabfd` (12.7), xAI next to OpenCode takes `#978c0d` (13.4).
-Day theme: marks are drawn at 40% of the colour toward black: Codex `#064133` (6.1:1 on the day metal), GLM `#162466` (7.4), xAI `#625c1a` (3.6),
-Cursor `#633f51` (4.7), GLM fallback `#384465` (5.0), xAI fallback `#3c3805` (6.2). Night uses the colours as is (all at least 3.25:1 on the night metal).
+Alts are the same hue, lightness lowered by 0.28 in OKLab (`deriveAlt`), so they separate from the main colours. Antigravity `#68d7a1`, Kiro `#f8d376`
+and Amp `#83b259` are owner-approved too but have no table row: the cockpit has no vendor key, logo or engine row for them, so adding a row would be dead
+until that wiring exists.
 
-**Owner 11-12: UI accents only; rockets keep website livery.** The Set 1 colours above are app UI accents (engine tabs, fader strips,
-record chips, subscription header). Codex, GLM and xAI are deliberate app-only overrides (`APP_UI` in `sync-livery.mjs`) of the shared
-table: `livery-shared.json` stays a verbatim copy of the website's `brandLivery.ts`, so `node sync-livery.mjs --check --source <file>`
-still demands identity with it, and the website colour stays in the generated table as `rocket`. Cursor is an app-only tool accent with no
-rocket row. Anything that paints a rocket (launch-field scene developer colours, porthole stills) uses `rocketColour()`, never `brandColour()`.
-The private table is not changed for Set 1.
+Same-screen collisions (CIEDE2000 under 15) now include GLM next to Copilot (9.7) and GLM next to xAI (12.6); the later one takes its alt.
+Day theme: marks are drawn at 40% of the colour toward black, at least 3.4:1 on the day metal for every colour. Cursor's near-white would only reach 3.25, so on day Cursor starts from its grey alt `#6f7782` (CSS rule in `prototype-theme.css`).
+Night uses the colours as is.
+
+**UI accents only; rockets keep website livery.** The palette above is applied by `APP_UI` and `TOOLS` in `sync-livery.mjs` over the shared table:
+`livery-shared.json` stays a verbatim copy of the website's `brandLivery.ts`, so `node sync-livery.mjs --check --source <file>` still demands
+identity with it, and the website colour stays in the generated table as `rocket` (Cursor keeps its former `#f79dcb`). Anything that paints a rocket
+(launch-field scene developer colours, porthole stills) uses `rocketColour()`, never `brandColour()`.
 
 `app/livery.css` declares the `--mp-<maker>` developer variables for external or private visual packages appended after the frozen
 `official-visuals/theme.css` (`build.mjs`); nothing in this repo reads them, so the public build's pixels do not depend on that file.

@@ -27,15 +27,14 @@ import XCTest
     try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
-  private func page(session: CockpitShellSession = CockpitShellSession(), click: CGPoint?, separateSpaces: Bool) throws -> CockpitWindowController {
+  private func page(session: CockpitShellSession? = nil, click: CGPoint?) throws -> CockpitWindowController {
     _ = NSApplication.shared
     let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
     let icon = self.icon
     let page = CockpitWindowController(bundle: try bundle(), context: context, appearance: .init(theme: .night, locale: .en, profile: .full),
-                                       shellSession: session, anchor: { icon }, openPoint: { click })
+                                       shellSession: session ?? CockpitShellSession(), anchor: { icon }, openPoint: { click })
     let displays = [a, b]
     page.screens = { displays }
-    page.separateSpaces = { separateSpaces }
     return page
   }
 
@@ -106,6 +105,8 @@ import XCTest
       guard let cockpit = list.firstIndex(of: window.windowNumber), let other = list.firstIndex(of: cover.windowNumber) else { return nil }
       return cockpit < other
     }
+    // Hosted runners without a logged-in window server session list no on-screen windows; the order is then unknowable.
+    guard order() != nil else { throw XCTSkip("the window server lists no on-screen windows here (GUI session needed)") }
     XCTAssertEqual(order(), false, "the other window covers the cockpit")
     page.open()
     XCTAssertEqual(order(), true, "the cockpit is in front again")
@@ -141,40 +142,35 @@ import XCTest
 
   // MARK: two displays
 
-  /// Separate Spaces (each display has a menu bar): attached opens under the icon of the display pressed on.
-  /// Without them only the main display has a menu bar: attached opens there, wherever the press was.
-  func testAttachedScreenFollowsTheMenuBarTheUserCanSee() {
-    XCTAssertEqual(CockpitScreenSelection.attachedScreen(point: pressOnB, anchor: icon, screens: [a, b], separateSpaces: true), b)
-    XCTAssertEqual(CockpitScreenSelection.attachedScreen(point: pressOnB, anchor: icon, screens: [a, b], separateSpaces: false), a)
-    XCTAssertEqual(CockpitScreenSelection.attachedScreen(point: pressOnB, anchor: nil, screens: [b, a], separateSpaces: false), a,
+  /// G3-128 (owner, build 15; supersedes D204's "display pressed on"): attached, the cockpit belongs to the status
+  /// item's display, whichever display the ignition was pressed on. No icon: the display at the origin (the menu bar's).
+  func testAttachedScreenIsTheStatusItemsDisplay() {
+    XCTAssertEqual(CockpitScreenSelection.attachedScreen(anchor: icon, screens: [a, b]), a)
+    XCTAssertEqual(CockpitScreenSelection.attachedScreen(anchor: icon, screens: [b, a]), a, "not the main (key) display")
+    let iconOnB = CGRect(x: 3660, y: 1415, width: 28, height: 25)
+    XCTAssertEqual(CockpitScreenSelection.attachedScreen(anchor: iconOnB, screens: [a, b]), b, "the status item moved to B: B")
+    XCTAssertEqual(CockpitScreenSelection.attachedScreen(anchor: nil, screens: [b, a]), a,
                    "no icon: the display at the origin carries the menu bar")
-    XCTAssertEqual(CockpitScreenSelection.icon(icon, on: a, screens: [a, b]), icon)
-    XCTAssertEqual(CockpitScreenSelection.icon(icon, on: b, screens: [a, b]), CGRect(x: 3660, y: 1407, width: 28, height: 24),
-                   "same distance from B's top-right corner")
-    XCTAssertNil(CockpitScreenSelection.icon(nil, on: b, screens: [a, b]))
   }
 
-  func testAttachedOpenOnTheSecondDisplayWithSeparateSpaces() throws {
-    let page = try page(click: pressOnB, separateSpaces: true)
+  /// G3-128 (a): the ignition pressed on B opens the attached cockpit under the status item on A, and the rack hangs
+  /// from that real icon.
+  func testAttachedOpenFromTheSecondDisplayGoesUnderTheStatusItem() throws {
+    let page = try page(click: pressOnB)
     let (usable, anchor) = try XCTUnwrap(page.environment())
-    XCTAssertEqual(usable, b.visibleFrame)
-    XCTAssertEqual(anchor, CGRect(x: 3660, y: 1407, width: 28, height: 24))
-    let placed = try XCTUnwrap(page.placement()).frame
-    XCTAssertTrue(b.visibleFrame.contains(placed))
-    XCTAssertEqual(placed.midX, anchor.midX, accuracy: 1, "centred under B's icon")
-  }
-
-  func testAttachedOpenStaysOnTheMenuBarDisplayWithoutSeparateSpaces() throws {
-    let page = try page(click: pressOnB, separateSpaces: false)
-    let (usable, anchor) = try XCTUnwrap(page.environment())
-    XCTAssertEqual(usable, a.visibleFrame)
-    XCTAssertEqual(anchor, icon)
+    XCTAssertEqual(usable, a.visibleFrame, "the status item's display, not the display pressed on")
+    XCTAssertEqual(anchor, icon, "under the real status item")
+    let placement = try XCTUnwrap(page.placement())
+    XCTAssertTrue(a.visibleFrame.contains(placement.frame))
+    let attached = try XCTUnwrap(CockpitShellLayout.fit(usable: a.visibleFrame, anchor: icon, shutterClosed: false, screenWidth: a.frame.width))
+    XCTAssertEqual(placement.frame, attached.frame, "the same place the icon's own click opens at")
+    XCTAssertEqual(page.rackIcon(), icon, "the rack hangs from the status item")
   }
 
   /// Detached: its own display (the remembered place), wherever the ignition was pressed.
   func testDetachedOpenStaysOnItsOwnDisplay() throws {
     let session = CockpitShellSession()
-    let page = try page(session: session, click: pressOnB, separateSpaces: true)
+    let page = try page(session: session, click: pressOnB)
     session.detached = true
     let origin = CGPoint(x: 200, y: 0)
     session.remember(origin, arrangement: page.arrangement)

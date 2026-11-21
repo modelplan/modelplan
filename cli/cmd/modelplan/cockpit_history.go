@@ -100,6 +100,7 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 		if perf != nil {
 			out.DailyFrom, out.Daily, out.Hourly = cockpitBuckets(*live, imported, allowed, now)
 			out.Projects = cockpitProjects(perf.Projects(), projectLabels(), view.PublicModels)
+			out.Cost = cockpitCost(*perf, allowed, view.PublicModels, view.PublicSpeedTiers, now)
 			if ledger, ok := history.LoadPace(s.cache); ok {
 				pace := history.PaceView{Ledger: ledger, OK: true, Recording: !history.Off(), Now: now}
 				out.Cycles = cockpitCycles(pace.GroupsShowing(cockpitCycleScan), snapshot.SourceBindings(view.QuotaReport.Accounts, now), allowed, groups, view.PublicModels)
@@ -337,6 +338,6 @@ func cockpitEntityWindow(w speed.EntityWindow) wire.CockpitEntityWindow {
 }
 
 func cockpitHistorySums(s snapshot.PerfWindowSums) wire.CockpitHistorySums {
-	return wire.CockpitHistorySums{InputTokens: s.InputTokens, OutputTokens: s.OutputTokens, CacheReadTokens: s.CacheReadTokens, CacheWriteTokens: s.CacheWriteTokens,
+	return wire.CockpitHistorySums{TotalTokens: s.TotalTokens, ReasoningTokens: s.ReasoningTokens, InputTokens: s.InputTokens, OutputTokens: s.OutputTokens, CacheReadTokens: s.CacheReadTokens, CacheWriteTokens: s.CacheWriteTokens,
 		CacheHitRatio: s.CacheHitRatio, GenerationTps: s.GenerationTps, ObservedRequests: s.ObservedRequests, EligibleRequests: s.EligibleRequests}
 }

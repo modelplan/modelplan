@@ -56,6 +56,17 @@ func TestCockpitRecentSessionsKeepsSevenBoundedDaysOfLastSightings(t *testing.T)
 	if hidden := cockpitRecentSessions(sessions, allowed, scopes, verified, false, models, now); hidden[1].ProjectLabel != nil {
 		t.Fatalf("project labels off: %+v", hidden[1])
 	}
+	// glm-909-1: the wire row says whether a session has a project, so a hidden name never reads "No project".
+	if first.ProjectState != wire.ProjectNamed || got[2].ProjectState != wire.ProjectNone {
+		t.Fatalf("project state with labels on: %q / %q", first.ProjectState, got[2].ProjectState)
+	}
+	if hidden := cockpitRecentSessions(sessions, allowed, scopes, verified, false, models, now); hidden[1].ProjectState != wire.ProjectHidden || hidden[2].ProjectState != wire.ProjectNone {
+		t.Fatalf("project state with labels off: %q / %q", hidden[1].ProjectState, hidden[2].ProjectState)
+	}
+	unnamed := cockpitRecentSessions([]speed.PerfSession{{Ref: "8888888888888888", Source: "codex", ProjectRef: "p2", LastAt: now.Add(-time.Hour)}}, allowed, scopes, verified, true, models, now)
+	if len(unnamed) != 1 || unnamed[0].ProjectState != wire.ProjectUnnamed || unnamed[0].ProjectLabel == nil || *unnamed[0].ProjectLabel != "Unnamed project" {
+		t.Fatalf("a project with no stored name: %+v", unnamed)
+	}
 	many := make([]speed.PerfSession, 0, 260)
 	for i := 0; i < 260; i++ {
 		many = append(many, speed.PerfSession{Ref: "7777777777777" + string(rune('a'+i%6)) + string(rune('a'+(i/6)%6)) + string(rune('a'+(i/36)%6)), Source: "codex", LastAt: now.Add(-time.Duration(i) * time.Minute)})

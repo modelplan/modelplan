@@ -140,9 +140,18 @@ def configure_product(app, source, build_number, root=ROOT):
     info = plistlib.loads(info_path.read_bytes())
     info.update(CFBundleName='ModelPlan', CFBundleDisplayName='ModelPlan Candidate',
                 CFBundleIdentifier=BUNDLE_ID, CFBundleIconFile='ModelPlan.icns', CFBundleShortVersionString=version,
-                CFBundleVersion=build_number, ModelPlanCandidateStage='interface-only')
+                CFBundleVersion=build_number, ModelPlanCandidateStage='interface-only',
+                CFBundleDevelopmentRegion='en', CFBundleLocalizations=['en', 'zh-Hans'])
     info_path.write_bytes(plistlib.dumps(info))
     resources = app / 'Contents/Resources'
+    # glm-873-1: the neutral package ships localized InfoPlist.strings, which macOS prefers over Info.plist,
+    # so the candidate name is written there too, one language per file (SET-9-38).
+    for language, name in (('en', 'ModelPlan Candidate'), ('zh-Hans', 'ModelPlan 候选版')):
+        strings = resources / (language + '.lproj') / 'InfoPlist.strings'
+        lines = regular(strings).read_text(encoding='utf-8').splitlines() if strings.exists() or strings.is_symlink() else []
+        lines = [line for line in lines if not line.lstrip().startswith('"CFBundleDisplayName"')]
+        strings.parent.mkdir(exist_ok=True)
+        strings.write_text('\n'.join(['"CFBundleDisplayName" = "%s";' % name] + lines) + '\n', encoding='utf-8')
     (resources / 'build-edition.json').write_bytes(encoded({'edition': 'official', 'stage': 'interface-only'}))
     (resources / 'release-provenance.json').write_bytes(encoded({
         'sourceRepository': 'modelplan/modelplan', 'sourceCommit': source,
@@ -213,21 +222,22 @@ def build(output, candidate_id, build_number):
     binding = credential_artifact.acquire(work / 'credential-input')
     credential_env = {k: v for k, v in os.environ.items() if k not in ('GH_TOKEN', 'GITHUB_TOKEN')}
     credential_env.update(binding['environment'])
+    credential_env['MODELPLAN_EDITION'] = 'official'  # D57: the candidate carries the official visuals
     archives = work / 'cli-archives'
     release.fetch_cli(pin_path, archives)
     # Preserve the release scaffold and its consumer; this path has no unverified identity switch.
     run('bash', ROOT / 'desktop/native/tools/package-neutral.sh', archives, work / 'native', env=credential_env)
     app = output / 'ModelPlan.app'
-    shutil.move(work / 'native/ModelPlan Community.app', app)
+    shutil.move(work / 'native/ModelPlan.app', app)
     configure_product(app, source, build_number)
     resources = stage_resources(app)
     raw_inputs = {'arm64': work / 'native/cli-arm64/modelplan_darwin_arm64/modelplan',
                   'x86_64': work / 'native/cli-x86_64/modelplan_darwin_amd64/modelplan'}
     sealed = seal(app, source, raw_inputs)
-    release.check_bundle_architectures(app, app / 'Contents/MacOS/ModelPlanCommunity')
+    release.check_bundle_architectures(app, app / 'Contents/MacOS/ModelPlan')
     # The subprocess cwd is explicit; no global cwd mutation or helper execution.
     subprocess.run(['go', 'run', './internal/releaseguard/cmd', '--binary',
-                    str(app / 'Contents/MacOS/ModelPlanCommunity')], cwd=ROOT / 'cli', env=credential_env, check=True)
+                    str(app / 'Contents/MacOS/ModelPlan')], cwd=ROOT / 'cli', env=credential_env, check=True)
     archive = output / 'ModelPlan-candidate-adhoc.zip'
     run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', app, archive)
     release.check_archive(archive)

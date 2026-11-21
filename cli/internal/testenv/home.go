@@ -48,6 +48,9 @@ func IsolateHome(t *testing.T) {
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// A profile root wins over HOME, so an inherited one would receive this test's files.
+	t.Setenv("MODELPLAN_PROFILE_ROOT", "")
+	_ = os.Unsetenv("MODELPLAN_PROFILE_ROOT")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))

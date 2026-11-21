@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/localday"
 	"sort"
 	"time"
 
@@ -22,8 +23,10 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
 	"github.com/modelplan/modelplan/cli/internal/render"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
+	"github.com/modelplan/modelplan/cli/internal/tokenacct"
 )
 
 const (
@@ -36,6 +39,7 @@ const (
 )
 
 type Snapshot struct {
+	TokenAccounting map[string]tokenacct.Windows          `json:"tokenAccounting,omitempty"`
 	ContractVersion int                                   `json:"contractVersion"`
 	Capabilities    map[string]desktopcontract.Capability `json:"capabilities"`
 	QwenUsage       *qwenusage.Report                     `json:"qwenUsage,omitempty"`
@@ -244,6 +248,13 @@ func Build(in Input) Snapshot {
 	}
 	if s.Accounts == nil {
 		s.Accounts = []quota.Account{}
+	} else {
+		// The desktop shows each account's plan text as is, so Codex's Pro tier ids become their
+		// names here; the report keeps the ids its history and advice are keyed on.
+		s.Accounts = append(make([]quota.Account, 0, len(s.Accounts)), s.Accounts...)
+		for i := range s.Accounts {
+			s.Accounts[i].Plan = rows.PlanLabel(s.Accounts[i].Source, s.Accounts[i].Plan)
+		}
 	}
 	if s.Sources == nil {
 		s.Sources = []quota.SourceStatus{}
@@ -260,6 +271,7 @@ func Build(in Input) Snapshot {
 	s.LiveSessions, s.TodayTotals, s.Hourly = []speed.LiveSession{}, []speed.TodayTotal{}, []speed.Hourly{}
 	if in.Perf != nil {
 		s.LiveSessions, s.TodayTotals, s.Hourly = in.Perf.LiveSessions(), in.Perf.TodayTotals(), in.Perf.Hourly()
+		s.TokenAccounting = in.Perf.AccountingWindows()
 		s.PerfStats, s.Daily, s.DailyCoverage = in.Perf.Stats(), in.Perf.Daily(), in.Perf.Coverage()
 		s.DailyLong, s.DailyLongCoverage = in.Perf.DailyLong(), in.Perf.LongCoverage()
 	}
@@ -464,7 +476,7 @@ func validUntil(in Input, s Snapshot) *time.Time {
 	for _, usage := range in.LocalUsage {
 		if usage.Enabled {
 			l := in.Now.Local()
-			ts = append(ts, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, l.Location()))
+			ts = append(ts, localday.Next(l))
 			break
 		}
 	}
@@ -481,7 +493,7 @@ func validUntil(in Input, s Snapshot) *time.Time {
 	}
 	if len(s.Measured) > 0 {
 		l := in.Now.Local()
-		ts = append(ts, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, time.Local))
+		ts = append(ts, localday.Next(l))
 	}
 	sort.Slice(ts, func(i, j int) bool { return ts[i].Before(ts[j]) })
 	for _, t := range ts {

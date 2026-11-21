@@ -15,15 +15,16 @@ async function open(page,data,locale='en'){
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
 }
+// WP-08: the current effort is read from the card's effort line (the five ability bars are gone, CKP-FAD-04 superseded).
 const channels=page=>page.locator('.fd-ch:not(.empty)').evaluateAll(list=>list.map(ch=>({name:ch.querySelector('.st-name')?.textContent,
- clipped:(e=>e.scrollWidth>e.clientWidth+.5)(ch.querySelector('.st-name')),current:ch.querySelector('.eb.cur')?.dataset.l??null,
+ clipped:(e=>e.scrollWidth>e.clientWidth+.5)(ch.querySelector('.st-name')),current:ch.querySelector('.cd-cur')?.textContent??null,
  strip:[...ch.querySelectorAll('.st-vend b')].map(b=>getComputedStyle(b).getPropertyValue('--v').trim())})));
 
 test('B13 the model in use leads the faders with its short name, its brand strip and its current effort lit',async({page})=>{
  await open(page,build13Profile());
  const list=await channels(page);
  expect(list.map(c=>c.name)).toEqual(['Sol 6.1','Astra','Terra 6.1']);
- for(const c of list){expect(c.clipped).toBe(false);expect(c.strip).toEqual(['#10a37f']);}
+ for(const c of list){expect(c.clipped).toBe(false);expect(c.strip).toEqual(['#6aa8ff']);}
  expect(list[0].current).toBe('High');
 });
 
@@ -32,7 +33,7 @@ test('B13 the record strip lists the running Codex session in its subscription c
  const rows=page.locator('.ck-tape .t-observed');
  await expect(rows).toHaveCount(1);
  await expect(rows.first().locator('.t-model')).toHaveText('Sol 6.1');
- expect(await rows.first().locator('.chip').evaluate(e=>getComputedStyle(e).getPropertyValue('--v').trim())).toBe('#10a37f');
+ expect(await rows.first().locator('.chip').evaluate(e=>getComputedStyle(e).getPropertyValue('--v').trim())).toBe('#6aa8ff');
 });
 
 test('B13 two subscriptions of the same tool leave an unbound session neutral',async({page})=>{
@@ -41,7 +42,7 @@ test('B13 two subscriptions of the same tool leave an unbound session neutral',a
  data.subscriptions.push({subscriptionRef:'fedcba9876543210',accounts:[{tool:'codex',account:structuredClone(row.accounts[1])}]});
  await open(page,data);
  expect(await page.locator('.ck-tape .t-observed .chip').evaluate(e=>getComputedStyle(e).getPropertyValue('--v').trim())).toBe('#c6ccd4');
- const list=await channels(page);expect(list[0].name).toBe('Sol 6.1');expect(list[0].strip).toEqual(['#10a37f','#10a37f']);
+ const list=await channels(page);expect(list[0].name).toBe('Sol 6.1');expect(list[0].strip).toEqual(['#6aa8ff','#6aa8ff']);
 });
 
 test('B13 the HUD and the Effort page use short names',async({page})=>{
@@ -49,6 +50,8 @@ test('B13 the HUD and the Effort page use short names',async({page})=>{
  const hud=await page.locator('.hud-list b').allTextContents();
  expect(hud).toContain('Sol 6.1');expect(hud).toContain('Terra 6.1');for(const name of hud)expect(name).not.toMatch(/^GPT-|^Claude /);
  await page.locator('[data-mfd="page:tune"]').click();
- const labels=await page.locator('.mfd-page text').allTextContents();
- expect(labels.join(' ')).toContain('Terra 6.1');expect(labels.join(' ')).not.toContain('GPT-6.1 Terra');
+ const names=await page.locator('.mfd-page .md-n').allTextContents();
+ expect(names).toContain('Terra 6.1');expect(names.join(' ')).not.toContain('GPT-6.1 Terra');
+ await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
+ expect((await page.locator('.mfd-page text').allTextContents()).join(' ')).not.toContain('GPT-6.1');
 });

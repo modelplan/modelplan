@@ -3,9 +3,10 @@
 
 Generated from [notices.json](notices.json), the canonical editable catalog.
 The full licence texts below are unmodified; the metadata and this index do not
-replace them. Licence paths in JSON are relative to this directory, so a future
-About renderer can load each text without a network request. About rendering
-and App resource integration are separate work; this change provides their data.
+replace them. Licence paths in JSON are relative to this directory, so the app's
+About page can show each text without a network request. The official ModelPlan
+visuals are not third-party material: their reserved licence ships as
+VISUAL-LICENSE.md in every app build and is listed first in About.
 
 Components are added with the PRs that ship them. The Go Kiro ACP adaptation and
 native Pulse shell port have separate entries pinned to their own source revisions.
@@ -1023,7 +1024,7 @@ Licence: `MIT`.
 
 Copyright (c) 2026 Peter Steinberger
 
-Used in: Pinned optional CodexBar compatibility helper (downloaded on consented use); Native Go provider adaptations, with original source revisions retained in the ported files.
+Used in: Pinned optional CodexBar compatibility helper (downloaded on consented use); Native Go provider adaptations, with original source revisions retained in the ported files; Reader cause and sign-in command parity (D232), independent implementations citing CodexBar main 7447bc77c2497323d9c41e40164ce705533493c8.
 
 Source: https://github.com/steipete/CodexBar/releases/tag/v0.83.0
 
@@ -2019,13 +2020,49 @@ the property of their respective owners. Their inclusion identifies compatible
 services and does not imply endorsement.
 ````
 
+## ccusage 58866ba681343634ab6e5add61f18f3b70aa98f7
+
+Licence: `MIT`.
+
+Copyright (c) 2025 ryoppippi
+
+Used in: Local token accounting (input, cache read, cache write, output, reasoning; totals by local day): Codex and Claude Code response accounting matched to the Rust adapters, Go ports of the Gemini CLI, Qwen Code and OpenCode adapters, and shared tool-neutral Buckets and Windows, and the estimated-cost rules for long-context and fast-mode requests, with ModelPlan modifications in the named files.
+
+Source: https://github.com/ccusage/ccusage/tree/58866ba681343634ab6e5add61f18f3b70aa98f7
+
+### LICENSE
+
+```text
+MIT License
+
+Copyright (c) 2025 ryoppippi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## three 0.186.1
 
 Licence: `MIT`.
 
 Copyright © 2010-2026 three.js authors
 
-Used in: Official edition only: minified into the launch-field scene bundle, loaded on demand by the enlarged porthole.
+Used in: Official edition only: minified into the launch-field component bundle, loaded on demand by the enlarged porthole.
 
 Source: https://www.npmjs.com/package/three/v/0.186.1
 

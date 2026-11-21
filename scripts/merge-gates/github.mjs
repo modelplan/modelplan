@@ -25,5 +25,6 @@ export function client({ token, repo, api = "https://api.github.com" }) {
     return out;
   }
   const post = async (path, body) => (await req("POST", path, body)).json;
-  return { get, all, post };
+  const patch = async (path, body) => (await req("PATCH", path, body)).json;
+  return { get, all, post, patch };
 }
