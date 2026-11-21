@@ -70,7 +70,7 @@ const why = env.GPT_REQUESTED === "true" && provider !== "openai" ? `review:gpt 
 const meta = { why, model: read(join(dir, "model")).trim() || env.MODEL, effort: provider === "openai" ? env.EFFORT : "default", seconds: read(join(dir, "seconds")).trim() || "?", usage, runUrl: env.RUN_URL };
 // Shadow runs log how the lane that counts has judged this head so far (D352: compare on three PRs before cutover).
 const agreeNow = isShadowLane(lane) ? agreement([...items, { kind: "comment", user: TRUSTED, body: `VERDICT: ${answer.verdict} @ ${head} (${lane})`, at: "~" }], head, lane, tierNow, parseGlmTiers(env.REVIEW_GLM_TIERS)) : null;
-const body = renderSolComment({ answer, head, lane, mode: env.MODE, base: env.BASE, tier: tierNow, meta, agree: agreeNow?.text ?? "" });
+const body = renderSolComment({ answer, head, lane, mode: env.MODE, base: env.BASE, tier: tierNow, meta, agree: agreeNow?.text ?? "", gptFallback: env.GPT_REQUESTED === "true" && provider === "glm" });
 if (secretHits(body)) fail("the comment looks like it contains a credential");
 await gh.post(`/issues/${n}/comments`, { body });
 say(`posted ${answer.verdict} @ ${head} as (${lane}) from ${provider}; ${meta.seconds} s${usage ? `, tokens in ${usage.input} (cached ${usage.cached}) out ${usage.output}` : ""}`);

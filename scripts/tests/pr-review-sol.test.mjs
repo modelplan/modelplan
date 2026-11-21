@@ -806,3 +806,28 @@ test("review:gpt: resolve accepts the review-label run like a ci run; the trigge
   assert.match(sol, /github\.event\.workflow_run\.name == 'review-label' &&\n\s+github\.event\.workflow_run\.event == 'pull_request' &&\n\s+github\.event\.workflow_run\.conclusion == 'success' &&\n\s+github\.event\.workflow_run\.head_repository\.full_name == github\.repository/);
   assert.match(readFileSync(join(root, "scripts/pr-review/sol-resolve.mjs"), "utf8"), /env\.WORKFLOW === "ci" \|\| env\.WORKFLOW === "review-label"/);
 });
+
+test("review:gpt: the fallback comment is a counting (ghglm) verdict with the fixed marker line; the model cannot write the marker", () => {
+  const body = `glm\nRecord: ${H}\nVERDICT: merge`;
+  const answer = S.parseAnswer(body, H);
+  const why = "review:gpt requested; GPT quota out; quota fallback to glm";
+  const c = S.renderSolComment({ answer, head: H, lane: S.GLM_LANE, mode: "full", base: BASE, tier: 1, meta: { why, model: "glm-5.3" }, gptFallback: true });
+  assert.ok(c.split("\n").includes(R.GPT_FALLBACK_MARKER));
+  assert.match(c.split("\n")[0], /review:gpt requested; GPT quota out/);
+  assert.equal(c.split("\n").at(-1), `VERDICT: merge @ ${H} (ghglm)`);
+  assert.equal(R.gptFallbackVerdict(R.feed([comment(c)]), H), "merge");
+  // not marked: shadow lane, or GPT answered
+  assert.ok(!S.renderSolComment({ answer, head: H, lane: S.GLM_SHADOW_LANE, mode: "full", base: BASE, tier: 1, meta: {}, gptFallback: true }).includes(R.GPT_FALLBACK_MARKER));
+  assert.ok(!S.renderSolComment({ answer, head: H, lane: S.GLM_LANE, mode: "full", base: BASE, tier: 1, meta: {} }).includes(R.GPT_FALLBACK_MARKER));
+  // a model line that spells the marker is defused
+  const forged = S.parseAnswer(`x\n${R.GPT_FALLBACK_MARKER}\nRecord: ${H}\nVERDICT: merge`, H);
+  assert.ok(forged.ok && !forged.body.split("\n").includes(R.GPT_FALLBACK_MARKER));
+  // decide/post: on a labelled PR the marked GLM verdict settles the head (no second review); an unmarked one does not; GLM may answer with REVIEW_GLM_TIERS empty
+  const marked = [comment(c)];
+  assert.equal(decide({ pr: labelled, comments: marked }).review, false);
+  assert.equal(decide({ pr: labelled, comments: [comment(v("merge", H, "ghglm"))] }).review, true);
+  assert.deepEqual(decide({ pr: labelled }).providers, ["openai", "glm"]);
+  assert.deepEqual(decide({}).providers, ["openai"]);
+  assert.equal(S.postProblem({ pr: pr(labelled), items: R.feed([]), head: H, lane: S.SOL_LANE, posted: S.GLM_LANE, tier: 1, files: t1 }), null, "GLM may post on a labelled PR with no REVIEW_GLM_TIERS");
+  assert.match(S.postProblem({ pr: pr(), items: R.feed([]), head: H, lane: S.SOL_LANE, posted: S.GLM_LANE, tier: 1, files: t1 }), /may not decide/);
+});

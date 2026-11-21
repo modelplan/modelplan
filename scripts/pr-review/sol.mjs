@@ -3,7 +3,7 @@
 // review from the interactive lanes into Actions. decideSol() picks whether one PR head gets a review, solPolicy() is
 // the coordinator's sol-consult.sh policy text, buildSolPrompt() the whole request, parseAnswer() checks the answer,
 // renderSolComment() writes the PR comment and agreement() compares a shadow verdict with the lane verdict.
-import { DEFAULT_GLM_TIERS, eligibleLanes, gptLabelled, isShadowLane, isTrusted, pathTier, prPaths, reviewerLane, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
+import { DEFAULT_GLM_TIERS, GPT_FALLBACK_MARKER, eligibleLanes, gptFallbackVerdict, gptLabelled, isShadowLane, isTrusted, pathTier, prPaths, reviewerLane, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
 import { verdictLines } from "./brief.mjs";
 
 export const SOL_LANE = "ghsol";
@@ -35,7 +35,7 @@ const skip = (why) => ({ review: false, why });
 
 // Per-PR override (owner D367 addendum): a PR carrying this label is reviewed by GPT whatever REVIEW_PROVIDER_MODE says.
 // The labels come from the REST pull request the workflow fetches itself, never from a file of the PR.
-export { GPT_LABEL } from "../merge-gates/rules.mjs";
+export { GPT_FALLBACK_MARKER, GPT_LABEL } from "../merge-gates/rules.mjs";
 export const wantsGpt = gptLabelled;
 // A labelled PR is never settled by a GLM verdict: only the GPT lane's own verdict (or a counting verdict from another
 // non-GLM lane) means the head is done.
@@ -73,8 +73,10 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   const eligible = eligibleLanes(tier, glmTiers);
   // The run's own lanes: its Sol lane, and its GLM lane only while (ghglm) may decide this tier (SOL-8: a GLM verdict
   // left over from a wider REVIEW_GLM_TIERS is advice and does not settle the head).
-  const own = gpt ? gptOwn(lane) : ownLanes(lane, tier, glmTiers);
-  const settles = (v) => (eligible.includes(v.lane) && !(gpt && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)";
+  // A labelled PR: a GLM verdict settles the head only when it is the marked fallback verdict (GPT out of quota, which counts).
+  const fb = gpt && gptFallbackVerdict(items, head) !== null;
+  const own = gpt ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers);
+  const settles = (v) => (eligible.includes(v.lane) && !(gpt && !fb && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)";
   // Once per lane per head, forced or not: force only lifts the "another counting lane already reviewed" skip below.
   if (atHead.some((v) => own.includes(v.lane))) return skip("this lane already reviewed this head");
   const ownCounting = [`(${SOL_LANE})`, `(${GLM_LANE})`];
@@ -86,7 +88,8 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   // Shadow runs mirror what counting would do, so the comparison is fair.
   const providers = [];
   if (sticky !== `(${GLM_LANE})`) providers.push("openai");
-  if (sticky !== `(${SOL_LANE})` && eligible.includes(`(${GLM_LANE})`)) providers.push("glm");
+  // On a labelled PR GLM is the quota fallback whose marked verdict counts, whatever REVIEW_GLM_TIERS says.
+  if (sticky !== `(${SOL_LANE})` && (gpt || eligible.includes(`(${GLM_LANE})`))) providers.push("glm");
   if (!providers.length) return skip(`the assigned reviewer ${sticky} cannot review tier ${tier}`);
   const earlier = all.filter((v) => v.sha !== head && GPT_LANES.has(v.lane));
   // R19: the record of the latest earlier GPT verdict comment that has one is the cumulative per-PR record. The delta
@@ -234,7 +237,7 @@ export function parseAnswer(text, head) {
 }
 
 // No line of the posted comment may start with a gate marker except the workflow's own last line.
-const MARKER = /^\s*(\**\s*)?(VERDICT|VERDICT-CARRY|GLMREV|GLMREV-ACCEPTED|DESIGN|VERIFIED|AUTO-VERIFIED|EVIDENCE-DEFERRED|REVIEW-TIER|REVIEWER|HOLD|Scenarios)\b/i;
+const MARKER = /^\s*(\**\s*)?(VERDICT|VERDICT-CARRY|GLMREV|GLMREV-ACCEPTED|DESIGN|VERIFIED|AUTO-VERIFIED|EVIDENCE-DEFERRED|REVIEW-TIER|REVIEW-GPT-FALLBACK|REVIEWER|HOLD|Scenarios)\b/i;
 const tidy = (s) => String(s).replace(/@(?=[A-Za-z0-9_-])/g, "@\u2060");
 const MAX_ANSWER_CHARS = 50000;
 
@@ -253,7 +256,7 @@ export function clipKeepingRecord(body, max = MAX_ANSWER_CHARS) {
 
 // answer: parseAnswer() result; mode "full" | "delta"; base: merge base or the earlier reviewed head;
 // agree: agreement() line for shadow runs (optional).
-export function renderSolComment({ answer, head, lane, mode, base, tier, meta = {}, agree = "" }) {
+export function renderSolComment({ answer, head, lane, mode, base, tier, meta = {}, agree = "", gptFallback = false }) {
   if (!answer?.ok) throw new Error("no valid answer: nothing is rendered");
   const kind = mode === "delta" ? `delta review since \`${base}\`` : `complete review against merge base \`${base}\``;
   const glm = lane === GLM_LANE || lane === GLM_SHADOW_LANE;
@@ -267,6 +270,9 @@ export function renderSolComment({ answer, head, lane, mode, base, tier, meta = 
   const tokens = meta.usage ? ` · tokens in ${meta.usage.input} (cached ${meta.usage.cached}) out ${meta.usage.output}` : "";
   out.push(`<sub>workflow ${glm ? "GLM" : "Sol"} reviewer · ${meta.model ?? "?"} ${meta.effort ?? "?"} · ${meta.seconds ?? "?"} s${tokens}${meta.runUrl ? ` · [run](${meta.runUrl})` : ""}</sub>`, "");
   if (out.some((l) => MARKER.test(l))) throw new Error("rendered comment has a gate marker before the verdict line");
+  // review:gpt with GPT out of quota: the counting GLM verdict carries the fixed marker line (only the workflow writes it;
+  // the model's own lines are defused above). The gate counts (ghglm) on a labelled PR only with this line in the comment.
+  if (gptFallback && lane === GLM_LANE) out.push(GPT_FALLBACK_MARKER, "");
   // R19: the VERDICT line is the last line; it is the only line the gate reads.
   out.push(`VERDICT: ${answer.verdict} @ ${head} (${lane})`);
   const comment = out.join("\n");
@@ -291,14 +297,15 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
   if (!SOL_TIERS.includes(tier)) return `tier ${tier} needs no Sol review`;
   const atHead = verdictLines(items).filter((v) => v.sha === head);
   const gpt = wantsGpt(pr);
-  const own = [...(gpt ? gptOwn(lane) : ownLanes(lane, tier, glmTiers)), ...(posted ? [`(${posted})`] : [])];
+  const fb = gpt && gptFallbackVerdict(items, head) !== null;
+  const own = [...(gpt ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers)), ...(posted ? [`(${posted})`] : [])];
   if (atHead.some((v) => own.includes(v.lane))) return `(${posted ?? lane}) already has a verdict at ${head}`;
   if (lane === SOL_LANE) {
     const sticky = reviewerLane(items, gpt);
     const eligible = eligibleLanes(Number(tier), glmTiers);
     if (sticky && (posted ? sticky !== `(${posted})` : ![`(${SOL_LANE})`, `(${GLM_LANE})`].includes(sticky))) return `the assigned reviewer is ${sticky}`;
-    if (posted === GLM_LANE && !eligible.includes(`(${GLM_LANE})`)) return `(${GLM_LANE}) may not decide tier ${tier}`;
-    if (!force && !sticky && atHead.some((v) => (eligible.includes(v.lane) && !(gpt && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)")) return "a counting verdict already exists at this head";
+    if (posted === GLM_LANE && !gpt && !eligible.includes(`(${GLM_LANE})`)) return `(${GLM_LANE}) may not decide tier ${tier}`;
+    if (!force && !sticky && atHead.some((v) => (eligible.includes(v.lane) && !(gpt && !fb && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)")) return "a counting verdict already exists at this head";
   }
   // macrevb-1108-6: the review was prepared (scope, delta base, prompt) for preparedTier. A trusted tier change since
   // means that scope is wrong for the new tier (a tier-1 delta after a Terra-only predecessor is not a tier-2 review), so no

@@ -268,6 +268,20 @@ export function reviewerLane(items, gpt = false) {
 // file. On such a PR the GPT verdict decides: (ghglm) is advisory (counts for nothing, blocks nothing) whatever
 // REVIEW_GLM_TIERS says, and a REVIEWER: ghglm assignment pins nothing.
 export const GPT_LABEL = "review:gpt";
+// The one exception: when GPT is out of quota the workflow's GLM fallback verdict counts. It is a normal (ghglm) verdict
+// whose own comment also carries this exact marker line (posted by the workflow only: the model's text is defused),
+// at the exact head. Without the marker (ghglm) stays advisory on a labelled PR. Returns "merge" | "block" | null.
+export const GPT_FALLBACK_MARKER = "REVIEW-GPT-FALLBACK: GPT quota out; GLM verdict counts; mandatory nightly sampling";
+export function gptFallbackVerdict(items, head) {
+  let out = null;
+  for (const x of items) {
+    const ls = lines(x.body);
+    if (!ls.includes(GPT_FALLBACK_MARKER)) continue;
+    const m = verdicts([x], head, []).get(GLM_LANE);
+    if (m) out = m;
+  }
+  return out;
+}
 export const gptLabelled = (pr) => (pr?.labels ?? []).some((l) => l?.name === GPT_LABEL);
 
 // ---- GLM-out fallback (owner 2026-11-09: "GLM fails -> there must be a fallback; mix them") ----
@@ -642,8 +656,11 @@ export function dataSyncProblem({ pr, files, items, sync, glmTiers = DEFAULT_GLM
   const sticky = reviewerLane(items, gptLabelled(pr));
   const t = tierOverride(items) ?? pathTier(prPaths(files));
   if (sticky && !eligibleLanes(t, glmTiers).includes(sticky)) return `assigned reviewer ${sticky} is not an eligible GPT lane for tier ${t}`;
-  const admits = (l) => !isShadowLane(l) && (l !== GLM_LANE || eligibleLanes(t, glmTiers).includes(GLM_LANE));
-  if (![...verdicts(items, pr.head.sha, [])].some(([l, v]) => v === "merge" && admits(l) && (!sticky || l === sticky))) return "needs a trusted VERDICT: merge @ the exact head";
+  const fbGlm = gptLabelled(pr) ? gptFallbackVerdict(items, pr.head.sha) : null;
+  const admits = (l) => !isShadowLane(l) && (l !== GLM_LANE || fbGlm !== null || eligibleLanes(t, glmTiers).includes(GLM_LANE));
+  const dsVerdicts = verdicts(items, pr.head.sha, []);
+  if (fbGlm) dsVerdicts.set(GLM_LANE, fbGlm);
+  if (![...dsVerdicts].some(([l, v]) => v === "merge" && admits(l) && (!sticky || l === sticky))) return "needs a trusted VERDICT: merge @ the exact head";
   return null;
 }
 
@@ -674,7 +691,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
-  const glmAdvice = !eligibleLanes(tier, glmTiers).includes(GLM_LANE);
+  const fbGlm = gpt ? gptFallbackVerdict(items, head) : null;   // labelled PR, GPT out of quota: the marked GLM verdict counts
+  const glmAdvice = !eligibleLanes(tier, glmTiers).includes(GLM_LANE) && fbGlm === null;
   const auto = chain.length ? null : autoCarry(items, head, proveMainMerges, (lane) => glmAdvice && lane === GLM_LANE);
   const carried = auto ? [auto.from] : chain;
   const fb = { until: glmFallbackUntil, now, used: [] };
@@ -684,7 +702,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // tier split: on tier 2 a macrev (Terra) verdict is advice. A block from a counting GPT lane, or an unnamed one, at the
   // head (or a verified carried head) stops every tier, tier 0 included. GLM, (sonnet) and other lanes are input.
   const allLanes = verdicts(items, head, carried);
-  const eligible = eligibleLanes(tier, glmTiers);
+  if (fbGlm) allLanes.set(GLM_LANE, fbGlm);
+  const eligible = [...eligibleLanes(tier, glmTiers), ...(fbGlm ? [GLM_LANE] : [])];
   const gptLanes = [...eligible, "(unnamed)"];
   const assigned = reviewerLane(items, gpt);
   // An assignment naming a lane that cannot review this tier (Sonnet, unknown, Terra on tier 2) is invalid: it filters

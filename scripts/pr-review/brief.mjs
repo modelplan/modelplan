@@ -127,7 +127,7 @@ export function checkResult(r) {
 
 // Everything the model wrote is quoted, so no line of it can start with a gate marker (VERDICT, GLMREV, DESIGN,
 // VERIFIED, AUTO-VERIFIED, VERDICT-CARRY, REVIEW-TIER, Scenarios) or mention anybody.
-const MARKER = /^\s*(\**\s*)?(VERDICT|VERDICT-CARRY|GLMREV|GLMREV-ACCEPTED|DESIGN|VERIFIED|AUTO-VERIFIED|EVIDENCE-DEFERRED|REVIEW-TIER|Scenarios)\b/i;
+const MARKER = /^\s*(\**\s*)?(VERDICT|VERDICT-CARRY|GLMREV|GLMREV-ACCEPTED|DESIGN|VERIFIED|AUTO-VERIFIED|EVIDENCE-DEFERRED|REVIEW-TIER|REVIEW-GPT-FALLBACK|Scenarios)\b/i;
 const tidy = (s, n = 1500) => clip(String(s).replace(/\r/g, ""), n).replace(/@(?=[A-Za-z0-9_-])/g, "@⁠");
 const quote = (s) => tidy(s).split("\n").map((l) => `> ${l}`);
 
