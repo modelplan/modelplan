@@ -334,6 +334,8 @@ private actor CardDismissalClient: EngineClient {
         binding.setVisibility(.init(pluginEnabled: true, columnShown: false, widgetShown: true, columnSetting: 5))
         run(until: 0)
         let id = ResourceDockBridge.subscriptionID, view = dock.dockView
+        // B9: the ring is drawn with the admitted subscription content (the next install redraws it).
+        for _ in 0..<300 where view.presentedReadingsForChecks[id] == nil { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNotNil(view.presentedReadingsForChecks[id]?.pluginRing, "the resource ring is on the widget")
 
         // The pointer rests on the plugin ring: its card opens.
