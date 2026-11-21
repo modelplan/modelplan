@@ -149,10 +149,12 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 #cockpit .ec.xhl,#cockpit .ek.xhl{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcd-ink) 40%,transparent)}
 /* QA 11-08 (G3-48, CKP-PORT-04/08): the tall HUD follows the study's hud-selection style. Six 12 px rows fill the 74 px
    list (names 10 px, ranks and effort 9 px); the list widens only as far as a complete name needs, inside the HUD. */
-#cockpit .hud-b .hud-list{display:grid;grid-template-columns:9px max-content max-content 7px;column-gap:2px;grid-template-rows:repeat(6,12px);width:max-content;min-width:117px;max-width:174px;height:74px;box-sizing:border-box;padding:1px 2px 1px 4px;align-content:start}
+#cockpit .hud-b .hud-list{display:grid;grid-template-columns:9px minmax(0,max-content) max-content 7px;column-gap:2px;justify-content:start;grid-template-rows:repeat(6,12px);width:max-content;min-width:117px;max-width:174px;height:74px;box-sizing:border-box;padding:1px 2px 1px 4px;align-content:start}
+/* Owner badcase 11-21: the rows share the list's columns (subgrid), so every ★ effort starts at the same x; each row's own
+   auto tracks used to split its free width and moved the ★ by the name's length. */
 #cockpit .hud-b .hp{display:grid;grid-column:1/-1;grid-template-columns:subgrid;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap}
 #cockpit .hud-b .hp b{font:500 10px/12px var(--f-lcd);overflow:hidden;text-overflow:clip;min-width:0}
-#cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-n{color:var(--muted,#8a96a0)}
+#cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-rec{margin-left:0;justify-self:start}#cockpit .hud-b .hp-n{color:var(--muted,#aab6bf)}
 .hud-axis{fill:none;stroke:#e9edf030;stroke-width:.7}.hud-axis-label{font:400 9px var(--f-silk);fill:#aab6bf}
 .hud-rank{font:500 9px var(--f-lcd);fill:#f3e8d5}.hud-rank.dominated{fill:#aab6bf}
 
@@ -337,8 +339,13 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .ek .pl-icon{display:inline-grid;place-items:center;color:var(--silk-hi)}
 .ck-eng .ek .pl-icon svg{width:16px;height:16px;display:block}
 .ck-eng .ek .bl.pl-dash{background:repeating-linear-gradient(90deg,var(--v) 0 3px,transparent 3px 6px);box-shadow:none;opacity:.8}
-.ck-eng .pl-cell{row-gap:2px}
-.ck-eng .pl-cell .pl-tag{display:block;min-width:0;font:400 10px/11px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Owner badcase 11-21 (B8): tag (11) + number line + bar and trend (13) must fit the 44-46 px row; the tag's clipped box
+   let the grid squeeze it to nothing first. The tag never shrinks, the number line takes 18 px (the 20 px digits keep their
+   size), and only the trend line may give way at the meter's bottom. */
+.ck-eng .pl-cell{row-gap:1px}
+.ck-eng .pl-cell .pl-tag{display:block;min-width:0;min-height:11px;font:400 10px/11px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ck-eng .pl-cell .qnum{line-height:18px}
+.ck-eng .pl-cell .pl-meter{min-height:0;overflow:hidden}
 .ck-eng .pl-cell .qline{justify-content:space-between}
 .ck-eng .pl-cell.pl-mid .qnum{color:var(--st-mid)}.ck-eng .pl-cell.pl-low .qnum{color:var(--st-low)}
 .ck-eng .pl-meter{display:grid;row-gap:2px;min-width:0}
@@ -481,3 +488,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-wk .wk-hints i{position:absolute;padding:0 4px;font:400 9px/11px var(--f-silk);font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cal-wk .wk-hints i.up{top:1px;text-align:right;color:var(--lcd-ink)}
 .cal-wk .wk-hints i.down{bottom:1px;color:var(--silk)}
+/* Owner badcase 11-21 (B1): a control the pointer pressed (view.ts pointerKeepsFocus) shows no keyboard ring while it keeps
+   that focus; keyboard focus (Tab, arrows) keeps every ring below. */
+#cockpit [data-pointer-focus]:focus-visible,body [data-pointer-focus]:focus-visible{outline:none}
+.ck-head .rk[data-pointer-focus]:focus-visible::before{content:none}
