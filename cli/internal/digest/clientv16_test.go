@@ -272,6 +272,18 @@ func TestClientV16PendingRows(t *testing.T) {
 			}
 		})
 	}
+	// A pending model is not a measured endpoint of a lineup step either.
+	for _, end := range []string{"from", "to"} {
+		v16Rejects(t, "step "+end, "invalid_client_pending_model", func(d map[string]any) {
+			for _, l := range d["lineups"].([]any) {
+				if l := l.(map[string]any); l["developerId"] == "openai" {
+					step := map[string]any{"from": "luna", "to": "luna", "abilityDelta": 20, "costRatio": 0.5}
+					step[end] = v16Pending
+					l["steps"] = append(l["steps"].([]any), step)
+				}
+			}
+		})
+	}
 }
 
 func TestClientV16APIPriceMultiplierAtOrBelowOneIsDropped(t *testing.T) {
