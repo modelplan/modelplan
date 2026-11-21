@@ -12,7 +12,8 @@
 import type {WireCockpitData} from '../generated/wire.js';
 export type PluginLocale='en'|'zh-CN';
 /** One per-plugin setting. `seconds` is a whole number of seconds inside [min, max] (e.g. sampling 3–30 s, D124). */
-export interface PluginSettingSpec {readonly key:string;readonly kind:'seconds';readonly min:number;readonly max:number;readonly default:number}
+/** `choices`, when given, are the only values a user can pick (Settings shows them as one segmented control). */
+export interface PluginSettingSpec {readonly key:string;readonly kind:'seconds';readonly min:number;readonly max:number;readonly default:number;readonly choices?:readonly number[]}
 /** A drawn string in its two forms (long first; the short one is used when the long one does not fit). */
 export interface PluginWords {readonly full:string;readonly short:string}
 export interface PluginContext {
@@ -54,8 +55,9 @@ export interface PluginScreen {
   /** D323 custom draw: the big screen's body below the framework's title bar. If it throws, `lines` are shown. */
   readonly draw?:((context:PluginDrawContext)=>void)|null;
 }
-/** D293 colours: only these instrument inks (V1-FINAL §0 white / grey, resource silver #b9c7d6). */
-export const PLUGIN_INKS:readonly string[]=Object.freeze(['#87939e','#e9edf0','#b9c7d6']);
+/** D293 colours: only these instrument inks (V1-FINAL §0 white / grey, resource silver #b9c7d6) and the D327 resource
+ *  plugin's orchid #da66c2 (it replaces the silver for the resource plugin; the silver stays allowed for other plugins). */
+export const PLUGIN_INKS:readonly string[]=Object.freeze(['#87939e','#e9edf0','#b9c7d6','#da66c2']);
 /** D323: the cockpit tokens a custom draw paints with (CSS values; the variables are defined by the cockpit sheets). */
 export const PLUGIN_TOKENS=Object.freeze({
   ink:'var(--lcd-ink)',muted:'var(--lcd-muted)',ghost:'var(--lcd-ghost)',rule:'var(--lcd-rule)',
@@ -94,6 +96,9 @@ export interface CockpitPlugin {
   readonly ink?:string;
   /** D121: plugins are default on once they ship; the framework placeholder is not. */
   readonly defaultEnabled:boolean;
+  /** The host samples this plugin's readings (e.g. the resource plugin). Such a plugin is drawn only for a host that sent
+   *  its plugin state, so a host that cannot sample never shows an empty column. */
+  readonly hostSampled?:boolean;
   readonly settings:readonly PluginSettingSpec[];
   /** Folds a host reading (`pluginData`) into the plugin's state; `undefined` refuses it. The state survives repaints. */
   accept(data:unknown,previous:unknown):unknown;
@@ -120,7 +125,7 @@ export class PluginRegistry {
       if(!PLUGIN_INKS.includes(plugin.underline)||plugin.ink!==undefined&&!PLUGIN_INKS.includes(plugin.ink))throw TypeError('Invalid cockpit plugin colour');
       const keys=new Set<string>();
       for(const s of plugin.settings){
-        if(!SETTING_KEY.test(s.key)||keys.has(s.key)||!Number.isSafeInteger(s.min)||!Number.isSafeInteger(s.max)||!Number.isSafeInteger(s.default)||s.min<1||s.min>s.default||s.default>s.max||s.max>86400)throw TypeError('Invalid cockpit plugin setting');
+        if(!SETTING_KEY.test(s.key)||keys.has(s.key)||!Number.isSafeInteger(s.min)||!Number.isSafeInteger(s.max)||!Number.isSafeInteger(s.default)||s.min<1||s.min>s.default||s.default>s.max||s.max>86400||s.choices!==undefined&&(!s.choices.length||!s.choices.includes(s.default)||s.choices.some(c=>!Number.isSafeInteger(c)||c<s.min||c>s.max)))throw TypeError('Invalid cockpit plugin setting');
         keys.add(s.key);
       }
       this.#plugins.set(plugin.id,plugin);
@@ -157,4 +162,4 @@ export const placeholderPlugin:CockpitPlugin=Object.freeze({
       {label:context.words('plugin.placeholderScreenEvery').full,value:context.words('plugin.placeholderEvery',{n:context.settings.intervalSeconds}).full}]};
   },
 });
-// The bundled list (placeholder, calendar) is in plugin-builtins.ts, so this module stays free of plugin drawing code.
+// The bundled list (placeholder, calendar, resources) is in plugin-builtins.ts, so this module stays free of plugin drawing code.

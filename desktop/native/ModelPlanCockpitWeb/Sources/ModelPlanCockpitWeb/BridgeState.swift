@@ -133,6 +133,11 @@ public enum CockpitIntent: Equatable, Sendable {
   /// D136: the favourite (long-press pinned) model ids, most recent first. The coordinator keeps them across restarts.
   case pinnedModels([String])
   case openWebsite(CockpitWebsiteLink)
+  /// Plugin columns (desktop/cockpit/README.md "Plugin columns"): the plugins now running on the page; the host samples
+  /// exactly these. Accepted while the page is hidden too (it reports [] when it stops showing them).
+  case pluginsRunning([String])
+  /// A plugin edit made on the page (right-click Remove or the + menu), as sorted JSON of the page's body.
+  case pluginsEdit(Data)
 }
 /// A typed public page, never a URL from the page: native builds the address from these fields.
 public struct CockpitWebsiteLink: Equatable, Sendable {
@@ -231,6 +236,21 @@ enum FlatReply {
         }
         guard i < a.count, a[i] == 93 else { throw CockpitBridgeError.invalidMessage }
         i += 1
+      } else if key == "plugins", i < a.count, a[i] == 123 {
+        // Plugin columns: the page's `pluginsEdit` body is the one nested value. Skip it as a balanced object (strings
+        // read with escapes); CockpitPluginPreferences.fromPage then checks its exact shape.
+        let start = i
+        var depth = 0
+        repeat {
+          guard i < a.count, i - start <= 65_536 else { throw CockpitBridgeError.limit }
+          switch a[i] {
+          case 34: _ = try string(); continue
+          case 123, 91: depth += 1
+          case 125, 93: depth -= 1
+          default: break
+          }
+          i += 1
+        } while depth > 0
       } else if key == "deadlineUnixMs", i + 4 <= a.count, Array(a[i..<(i + 4)]) == Array("null".utf8) {
         i += 4
       } else {
@@ -283,6 +303,8 @@ public final class CockpitBridgeState {
   public var ackedCautions: [String] = []
   /// D136: favourite model ids restored from the app's own file; sent on load.
   public var pinnedModels: [String] = []
+  /// The host sent its plugin state (`plugins`); only then may it push readings or accept the page's plugin actions.
+  public private(set) var pluginsSent = false
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
   private var retiredSessions = Set<UUID>(), retiredEpochs = Set<String>(),
@@ -486,6 +508,28 @@ public final class CockpitBridgeState {
       nowUnixMs <= Self.maximumUnixMs else { throw CockpitBridgeError.unavailable }
     return try envelope("tick", extra: ["nowUnixMs": String(nowUnixMs), "reason": reason.rawValue], deadlineReport: true)
   }
+  /// Plugin columns: the saved plugin choices (`CockpitPluginPreferences.bridgeJSON`). Sending them also tells the page
+  /// the host accepts `pluginsRunning` and `pluginsEdit`.
+  public func setPlugins(_ json: Data) throws -> String {
+    guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    guard let body = try? JSONSerialization.jsonObject(with: json) as? [String: Any], body["version"] as? Int == 1,
+      body["entries"] is [Any], body["settings"] is [String: Any] else { throw CockpitBridgeError.invalidMessage }
+    let raw = try envelope("plugins", extra: ["plugins": body])
+    pluginsSent = true
+    return raw
+  }
+  /// Plugin columns: one reading for a running plugin (the resource plugin's `{"samples":[…]}`). Only to a visible page.
+  public func pluginData(id: String, data: [String: Any]) throws -> String {
+    guard ready, !blocked, pluginsSent, visibility.visible, !visibility.occluded else { throw CockpitBridgeError.unavailable }
+    guard Self.validPluginID(id), JSONSerialization.isValidJSONObject(data) else { throw CockpitBridgeError.invalidMessage }
+    return try envelope("pluginData", extra: ["id": id, "data": data])
+  }
+  /// desktop/cockpit/src/plugin-registry.ts PLUGIN_ID.
+  static func validPluginID(_ id: String) -> Bool {
+    let scalars = Array(id.unicodeScalars)
+    guard let first = scalars.first, scalars.count <= 32, ("a"..."z").contains(first) else { return false }
+    return scalars.allSatisfy { ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "-" }
+  }
   public func setVisibility(_ value: CockpitVisibility) throws -> String {
     guard ready, !blocked else { throw CockpitBridgeError.unavailable }
     if !value.visible || value.occluded { cancelDeadlineReports() }
@@ -597,9 +641,11 @@ public final class CockpitBridgeState {
       let action = m["action"] as? String
       let history = action == "openHistory", scope = action == "scopeSelect" || action == "rangeSelect" || action == "refreshMember", website = action == "openWebsite", ack = action == "cautionAck" || action == "pinnedModels"
       let focusedField = action == "openField" && m["key"] != nil
-      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack ? ["action","ids"] : ["action"]
+      let running = action == "pluginsRunning", pluginEdit = action == "pluginsEdit"
+      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack || running ? ["action","ids"] : pluginEdit ? ["action","plugins"] : ["action"]
+      // A page stops its plugins when it hides, so `pluginsRunning` is accepted without focus; every other action needs it.
       guard Set(m.keys) == base.union(extra), ready, !blocked,
-        visibility.active
+        running ? pluginsSent : visibility.active, !pluginEdit || pluginsSent
       else { throw CockpitBridgeError.invalidMessage }
       let intent: CockpitIntent
       switch action {
@@ -627,6 +673,13 @@ public final class CockpitBridgeState {
       case "pinnedModels":
         guard let ids = m["ids"] as? [String], CockpitCautionIdentities.valid(ids), Set(ids).count == ids.count else { throw CockpitBridgeError.invalidMessage }
         intent = .pinnedModels(ids)
+      case "pluginsRunning":
+        guard let ids = m["ids"] as? [String], ids.count <= 16, Set(ids).count == ids.count, ids.allSatisfy(Self.validPluginID) else { throw CockpitBridgeError.invalidMessage }
+        intent = .pluginsRunning(ids)
+      case "pluginsEdit":
+        guard let body = m["plugins"] as? [String: Any], JSONSerialization.isValidJSONObject(body),
+          let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]), data.count <= 65_536 else { throw CockpitBridgeError.invalidMessage }
+        intent = .pluginsEdit(data)
       case "close": intent = .close
       case "detach": intent = .detach
       case "putBack": intent = .putBack

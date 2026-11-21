@@ -83,7 +83,7 @@ test('calendar data has a strict, bounded shape',()=>{
  assert.deepEqual(calendarPlugin.accept(week,undefined),parseCalendarData(week));
  assert.equal(calendarPlugin.accept({...week,extra:1},undefined),undefined);
  assert.equal(calendarPlugin.accept({...week,subs:[{...week.subs[0],name:{en:'x'.repeat(CALENDAR_MAX_BYTES),zh:'y'}}]},undefined),undefined,'over the byte bound');
- assert.deepEqual(new PluginRegistry(builtinPlugins).list().map(p=>p.id),['placeholder','calendar']);
+ assert.deepEqual(new PluginRegistry(builtinPlugins).list().map(p=>p.id),['placeholder','calendar','resources']);
  assert.equal(calendarPlugin.defaultEnabled,true);
  assert.equal(calendarPlugin.nextDeadline(null,NOW),local(2026,11,11,11,21));
  assert.equal(calendarPlugin.nextDeadline(null,0),null,'no host time yet: no deadline');

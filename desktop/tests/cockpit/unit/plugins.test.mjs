@@ -70,21 +70,23 @@ test('host state is parsed strictly and bounded',()=>{
 });
 
 test('registry defaults, enable/remove, pin limit, order and setting ranges',()=>{
- // The placeholder is registered but off by default; the calendar is default-on (D121) once a host sent plugin state.
+ // The placeholder is registered but off by default; the calendar (D121) and the resource plugin (D324) are default on
+ // once a host sent plugin state (the resource plugin is also drawn only then: hostSampled, plugin-host layout).
  // Without host state (defaults=false) nothing is on, so an older host draws the v1 table.
- assert.deepEqual(enabledPlugins(emptyPluginState,registry),[{id:'calendar',pinned:false,settings:{}}]);
+ assert.deepEqual(enabledPlugins(emptyPluginState,registry),[{id:'calendar',pinned:false,settings:{}},{id:'resources',pinned:false,settings:{intervalSeconds:5}}]);
  assert.deepEqual(enabledPlugins(emptyPluginState,registry,false),[]);
- assert.deepEqual(materialize(emptyPluginState,registry).entries,[{id:'placeholder',enabled:false,pinned:false},{id:'calendar',enabled:true,pinned:false}]);
- assert.deepEqual(materialize(emptyPluginState,registry,false).entries,[{id:'placeholder',enabled:false,pinned:false},{id:'calendar',enabled:false,pinned:false}]);
+ assert.deepEqual(materialize(emptyPluginState,registry).entries,[{id:'placeholder',enabled:false,pinned:false},{id:'calendar',enabled:true,pinned:false},{id:'resources',enabled:true,pinned:false}]);
+ assert.deepEqual(materialize(emptyPluginState,registry,false).entries,[{id:'placeholder',enabled:false,pinned:false},{id:'calendar',enabled:false,pinned:false},{id:'resources',enabled:false,pinned:false}]);
  assert.deepEqual(enablePlugin(emptyPluginState,registry,'placeholder',false).entries.filter(e=>e.enabled).map(e=>e.id),['placeholder'],'a page edit before host state does not switch defaults on');
  // glm-844-3: pin and move before host state do not switch defaults on either (setPluginSetting never materializes).
  const early=enablePlugin(emptyPluginState,registry,'placeholder',false);
  assert.deepEqual(pinPlugin(early,registry,'placeholder',true,false).entries.filter(e=>e.enabled).map(e=>e.id),['placeholder']);
  assert.equal(pinPlugin(emptyPluginState,registry,'calendar',true,false),null,'before host state the calendar is off, so it cannot be pinned');
- assert.deepEqual(movePlugin(early,registry,'calendar',-1,false).entries,[{id:'calendar',enabled:false,pinned:false},{id:'placeholder',enabled:true,pinned:false}]);
+ assert.equal(pinPlugin(emptyPluginState,registry,'resources',true,false),null,'nor the resource plugin');
+ assert.deepEqual(movePlugin(early,registry,'calendar',-1,false).entries,[{id:'calendar',enabled:false,pinned:false},{id:'placeholder',enabled:true,pinned:false},{id:'resources',enabled:false,pinned:false}]);
  assert.deepEqual(setPluginSetting(emptyPluginState,registry,'placeholder','intervalSeconds',5,false).entries,[]);
  assert.deepEqual(enabledPlugins(setPluginSetting(emptyPluginState,registry,'placeholder','intervalSeconds',5),registry,false),[]);
- const on=disablePlugin(enablePlugin(emptyPluginState,registry,'placeholder'),registry,'calendar');
+ const on=disablePlugin(disablePlugin(enablePlugin(emptyPluginState,registry,'placeholder'),registry,'calendar'),registry,'resources');
  assert.deepEqual(enabledPlugins(on,registry),[{id:'placeholder',pinned:false,settings:{intervalSeconds:10}}]);
  assert.equal(enablePlugin(emptyPluginState,registry,'unknown'),null);
  const pinned=pinPlugin(on,registry,'placeholder',true);assert.equal(pinned.entries[0].pinned,true);
@@ -93,14 +95,18 @@ test('registry defaults, enable/remove, pin limit, order and setting ranges',()=
  // Two other pins already: a third is refused. Unknown ids keep their place and survive edits.
  const crowded=parsePluginState({version:1,entries:[{id:'x',enabled:true,pinned:true},{id:'y',enabled:true,pinned:true},{id:'placeholder',enabled:true,pinned:false}],settings:{}});
  assert.equal(pinPlugin(crowded,registry,'placeholder',true),null);
- assert.deepEqual(movePlugin(crowded,registry,'placeholder',-1).entries.map(e=>e.id),['x','placeholder','y','calendar']);
+ assert.deepEqual(movePlugin(crowded,registry,'placeholder',-1).entries.map(e=>e.id),['x','placeholder','y','calendar','resources']);
  assert.equal(movePlugin(crowded,registry,'x',-1),null);
- assert.deepEqual(enabledPlugins(crowded,registry).map(p=>p.id),['placeholder','calendar'],'unregistered ids are kept but not drawn');
+ assert.deepEqual(enabledPlugins(crowded,registry).map(p=>p.id),['placeholder','calendar','resources'],'unregistered ids are kept but not drawn');
  // D124: sampling interval 3–30 s; out-of-range saved values fall back to the default.
  assert.equal(setPluginSetting(on,registry,'placeholder','intervalSeconds',2),null);
  assert.equal(setPluginSetting(on,registry,'placeholder','intervalSeconds',31),null);
  assert.deepEqual(pluginSettings(setPluginSetting(on,registry,'placeholder','intervalSeconds',3),registry,'placeholder'),{intervalSeconds:3});
  assert.deepEqual(pluginSettings(parsePluginState({version:1,entries:[],settings:{placeholder:{intervalSeconds:99}}}),registry,'placeholder'),{intervalSeconds:10});
+ // D324: the resource column offers 2, 5 or 10 s only; another in-range value is refused and reads back as 5.
+ assert.equal(setPluginSetting(on,registry,'resources','intervalSeconds',3),null);
+ assert.deepEqual(pluginSettings(setPluginSetting(on,registry,'resources','intervalSeconds',10),registry,'resources'),{intervalSeconds:10});
+ assert.deepEqual(pluginSettings(parsePluginState({version:1,entries:[],settings:{resources:{intervalSeconds:7}}}),registry,'resources'),{intervalSeconds:5});
 });
 
 test('CKP-PLG-50/51 plugin contract: cells in the Other-cell grammar, history kept by the plugin, declared colours only',()=>{
@@ -119,8 +125,8 @@ test('CKP-PLG-50/51 plugin contract: cells in the Other-cell grammar, history ke
  assert.deepEqual(cell.tag,{full:'最近读数',short:'读数'});
  for(const bad of [{value:101},{value:-1},{value:1.5},{value:'1'},{value:1,extra:1},null])assert.equal(placeholderPlugin.accept(bad,state),undefined,JSON.stringify(bad));
  assert.equal(placeholderPlugin.accept({value:1},Array.from({length:24},()=>0)).length,24,'history is bounded');
- // Colours: only the V1-FINAL instrument white and grey and the D293 resource silver.
- assert.deepEqual([...PLUGIN_INKS],['#87939e','#e9edf0','#b9c7d6']);
+ // Colours: only the V1-FINAL instrument white and grey, the D293 resource silver and the D327 resource orchid.
+ assert.deepEqual([...PLUGIN_INKS],['#87939e','#e9edf0','#b9c7d6','#da66c2']);
  assert.throws(()=>new PluginRegistry([{...placeholderPlugin,underline:'#6aa8ff'}]),/colour/);
  assert.throws(()=>new PluginRegistry([{...placeholderPlugin,ink:'#ff0000'}]),/colour/);
  assert.throws(()=>new PluginRegistry([{...placeholderPlugin,title:'Placeholder'}]),/Invalid cockpit plugin/);
@@ -145,6 +151,8 @@ test('CKP-PLG-54 the Swift Settings catalogue mirrors the web registry (ids, sum
  assert.deepEqual(ids,registry.list().map(p=>p.id));
  for(const plugin of registry.list())for(const s of plugin.settings)
   assert.match(swift,new RegExp(`CockpitPluginSettingSpec\\(key: "${s.key}", minimum: ${s.min}, maximum: ${s.max}, defaultValue: ${s.default}`),`${plugin.id}.${s.key}`);
+ for(const plugin of registry.list())for(const s of plugin.settings)if(s.choices)
+  assert.ok(swift.includes(`choices: [${s.choices.join(', ')}]`),`${plugin.id}.${s.key} choices`);
  // CKP-PLG-54: Settings shows the page's own one sentence, in both languages.
  for(const plugin of registry.list())assert.ok(swift.includes(`summary: .init("${tables.en[plugin.summary]}", "${tables['zh-CN'][plugin.summary]}")`),`${plugin.id} summary`);
  assert.match(swift,/maximumPinned = 2\b/);assert.match(swift,/maximumEntries = 32\b/);

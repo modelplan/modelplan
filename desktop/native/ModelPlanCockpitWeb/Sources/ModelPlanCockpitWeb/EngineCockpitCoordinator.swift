@@ -42,6 +42,9 @@ import ModelPlanWire
   func setAckedCautions(_ ids:[String])
   /// D136: the favourite model ids to restore; applied before the page loads.
   func setPinnedModels(_ ids:[String])
+  /// Plugin columns: the saved plugin choices (sent on ready) and one reading for a running plugin.
+  func setPlugins(_ json: Data)
+  func sendPluginData(id: String, data: [String: Any])
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket)
   func clearPrivateViews(adopting: CockpitEngineContext?) async
   func discard()
@@ -65,6 +68,8 @@ public extension CockpitPageSurface {
   func fieldClosed() {}
   func setAckedCautions(_ ids:[String]) {}
   func setPinnedModels(_ ids:[String]) {}
+  func setPlugins(_ json: Data) {}
+  func sendPluginData(id: String, data: [String: Any]) {}
 }
 extension CockpitWindowController: CockpitPageSurface {}
 
@@ -104,7 +109,26 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private weak var borrowedClient: (any EngineClient)?
   private var client: (any EngineClient)? { ownedClient ?? borrowedClient }
   private var delivery: EngineDeliveryContext?
-  private var page: (any CockpitPageSurface)?
+  private var page: (any CockpitPageSurface)? {
+    // A page that goes away runs no plugin any more.
+    didSet { if page == nil, oldValue != nil { reportPluginsRunning([]) } }
+  }
+  /// Plugin columns: the saved choices for every page (set before and after a page exists).
+  public var pluginsJSON: Data? { didSet { if let pluginsJSON { page?.setPlugins(pluginsJSON) } } }
+  /// The plugins the page runs now; [] when no page is shown. The app samples exactly these.
+  public var onPluginsRunning: (([String]) -> Void)?
+  /// A page edit (right-click Remove or the + menu); the app saves it like a Settings edit.
+  public var onPluginsEdit: ((Data) -> Void)?
+  public private(set) var pluginsRunning: [String] = []
+  private func reportPluginsRunning(_ ids: [String]) {
+    guard ids != pluginsRunning else { return }
+    pluginsRunning = ids; onPluginsRunning?(ids)
+  }
+  /// One reading for a running plugin, to the current page only.
+  public func sendPluginData(id: String, data: [String: Any]) {
+    guard pluginsRunning.contains(id) else { return }
+    page?.sendPluginData(id: id, data: data)
+  }
   private var pageGeneration: UUID?
   public private(set) var selectedScope = "all"
   /// The app clock. Kept for the hosts that set it; since CKP-SHELL-50 the scope no longer depends on the day.
@@ -333,6 +357,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     let newPage = try makePage(context)
     newPage.setAckedCautions(ackedCautions)
     newPage.setPinnedModels(pinnedModels)
+    if let pluginsJSON { newPage.setPlugins(pluginsJSON) }
     newPage.updateRange(selectedRange)
     let generation = UUID()
     pageGeneration = generation
@@ -494,6 +519,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   }
   private func stopWatchingMemoryPressure() { memorySource?.cancel(); memorySource = nil }
   private func receiveIntent(_ intent:CockpitIntent) {
+    if case .pluginsRunning(let ids) = intent { reportPluginsRunning(ids); return }
+    if case .pluginsEdit(let body) = intent { onPluginsEdit?(body); return }
     if case .cautionAck(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids) else { return }
       ackedCautions=ids; cautionMemory?.save(CockpitCautionIdentities.durable(ids)); return

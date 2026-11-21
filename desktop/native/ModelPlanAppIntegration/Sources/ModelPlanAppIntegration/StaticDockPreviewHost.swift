@@ -196,10 +196,24 @@ struct DockHelpInteraction: Equatable {
     public private(set) var isVisible = false
     public private(set) var lastAppearanceError: Error?
     public var visibilityChanged: (() -> Void)?
-    private func reportVisibility(_ visible: Bool) {
+    /// D324 / macrevb-1096-3: the widget's rings are on screen, i.e. the widget is expanded. The auto-hide sliver is
+    /// ordered in (`isVisible`) but shows no ring, so it does not count: the resource sampler then drops to 60 s.
+    public private(set) var isWidgetShown = false
+    /// The resource sampler's widget cadence follows `isWidgetShown` (the community delegate owns `visibilityChanged`).
+    public var widgetShownChanged: ((Bool) -> Void)?
+    private func reportVisibility(_ visible: Bool, expanded: Bool = false) {
+        reportWidgetShown(visible && expanded)
         guard visible != isVisible else { return }
         isVisible = visible; visibilityChanged?()
     }
+    private func reportWidgetShown(_ shown: Bool) {
+        guard shown != isWidgetShown else { return }
+        isWidgetShown = shown; widgetShownChanged?(shown)
+    }
+    /// macrevb-1096-4: a plugin ring's card as it is now (rows, footer, action); nil keeps the rows of the last redraw.
+    public var livePluginCard: ((String) -> DockPluginCard?)?
+    /// macrevb-1096-6: the plugin card's action ("驾驶舱大屏 ›"). Nil opens the cockpit.
+    public var pluginScreenRequested: ((String) -> Void)?
     public var showConsole: (() -> Void)?
     /// D204 (G3-94): the ignition's own press, with the screen point it came from. Nil falls back to `showConsole`.
     public var pressIgnition: ((CGPoint) -> Void)?
@@ -663,6 +677,8 @@ struct DockHelpInteraction: Equatable {
         let orientation = place?.edge ?? nativeEdge(preferences.dockEdge)
         let view = interactionView
         let catalogue = model?.inputs.map(\.id) ?? []
+        // macrevb-1096-8: plugin rings are hovered and focused like any ring but are not in the subscription order.
+        let orderCatalogue = model?.inputs.filter { $0.pluginRing == nil }.map(\.id) ?? []
         let expanded = edge.presentation?.state == .expanded
         let active = permitted && !retired && !rendering && preferences.showDock &&
             appearance != nil && view.interactionProjectionAvailable && model != nil
@@ -718,6 +734,7 @@ struct DockHelpInteraction: Equatable {
             parentOwnsHide: true, parentExpanded: expanded && active, menuActuallyOpen: menuOpen,
             active: active, reducedMotion: application?.effective.reduceMotion ?? true, edge: orientation, contents: contents)
         var result = value; result.pressedOutside = pressedOutside && !(cardHasKeyboardFocus || focusedID != nil)
+        result.orderCatalogue = orderCatalogue
         // G3-114 (Pulse `.onChange(of: placement.isDragging)` deselects): a carry, ring or body, closes the card.
         result.carrying = edge.isCarrying
         return result
@@ -987,11 +1004,24 @@ struct DockHelpInteraction: Equatable {
     }
     /// The card header's vendor mark: the same checked mark the ring shows (no new art).
     private func cardBrandImage(_ id: String) -> NSImage? {
+        // macrevb-1096-6: a plugin card's header shows the plugin's line mark, the one its ring shows.
+        if isPluginCard(id) { return Self.pluginCardMark }
         let view = interactionView
         guard let key = view.presentedReadingsForChecks[id]?.vendorResourceKey,
               let resource = view.presentedSkinForChecks?.stations.first(where: { $0.subscriptionID == id })?.glyphs[key] else { return nil }
         return Self.cardMark(resource, zaiMarkEnabled: view.zaiMarkEnabled)
     }
+    /// The resource plugin's line mark (DockPluginIcon, the ring's centre) for the card header, in the label ink.
+    static let pluginCardMark: NSImage = {
+        let image = NSImage(size: CGSize(width: 16, height: 16), flipped: true) { rect in
+            guard let c = NSGraphicsContext.current?.cgContext else { return false }
+            c.setStrokeColor(NSColor.labelColor.cgColor); c.setLineWidth(DockPluginIcon.lineWidth(in: rect)); c.setLineJoin(.round); c.setLineCap(.round)
+            for path in DockPluginIcon.paths(in: rect) { c.addPath(path); c.strokePath() }
+            return true
+        }
+        image.accessibilityDescription = "Resources"
+        return image
+    }()
     /// G3-50 (owner 11-08: the prototype's card mark is itself the wrong size): the mark is cropped to
     /// its visible glyph, as the ring does (#397), so a mark that keeps clear space in its file (OpenAI
     /// fills about half of its viewBox) is not drawn smaller than the others. The card then sizes every
@@ -1726,7 +1756,10 @@ struct DockHelpInteraction: Equatable {
         }
         // Native panels and the no-window construction checks share this actual input binding.
         bindBackgroundMovement(value)
-        guard createsNativePanels else { bindPointerInput(value); publishPlacementObservation(value); return }
+        guard createsNativePanels else {
+            bindPointerInput(value); publishPlacementObservation(value)
+            reportWidgetShown(permitted && !retired && value.paintedFrame != nil && value.state == .expanded); return
+        }
         guard permitted, !retired, let frame = value.paintedFrame else {
             attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop()
             panel?.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
@@ -1800,7 +1833,7 @@ struct DockHelpInteraction: Equatable {
         attentionWasExpanded = panel.isVisible && value.state == .expanded
         if panel.isVisible { pulsePresentedNotices(value) }
         publishPlacementObservation(value)
-        reportVisibility(panel.isVisible)
+        reportVisibility(panel.isVisible, expanded: value.state == .expanded)
         #if DEBUG && MODELPLAN_U5_REAL_INPUT
         U5RealInputObservation.install(self, panel: panel)
         #endif
@@ -2239,6 +2272,12 @@ struct DockHelpInteraction: Equatable {
     public func cardContent(for id:String,at date:Date? = nil) throws -> DockCardContent? {
         let now=date ?? currentDate()
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
+        if input.pluginRing != nil {
+            // D327: a plugin card has its own rows and footer (cadence, pressure); no source age or quota windows.
+            return try DockCardProjection.content(input: Self.livePluginInput(input, live: livePluginCard?(id)), revision: application?.snapshot.revision ?? 0,
+                enterLabel: EngineRowsText.cockpitAction.value(preferences.language),
+                dismissLabel: EngineRowsText.contextClose.value(preferences.language), redBelow: effectiveRedBelow, at: now)
+        }
         var projected = memberSafePreferences.applying(to: input)
         projected.name = projected.duplicateDisplayName
         let language = preferences.language, english = language == .english
@@ -2328,6 +2367,17 @@ struct DockHelpInteraction: Equatable {
         try content.validate()
         return content
     }
+    /// macrevb-1096-4: the plugin input with the card as it is now; the ring and readout stay as last drawn.
+    static func livePluginInput(_ input: DockInstrumentInput, live: DockPluginCard?) -> DockInstrumentInput {
+        guard let live, let ring = input.pluginRing else { return input }
+        var next = input; next.pluginRing = ring.withCard(live); return next
+    }
+    /// macrevb-1096-4: an open plugin card takes the latest sample without waiting for a ring redraw.
+    public func refreshPluginCard() {
+        guard !retired, !card.isHidden, let id = cardID, model?.inputs.first(where: { $0.id == id })?.pluginRing != nil else { return }
+        if let controller = interactionController, controller.isActive { controller.refresh() } else { showCard(id) }
+    }
+    private func isPluginCard(_ id: String) -> Bool { model?.inputs.first(where: { $0.id == id })?.pluginRing != nil }
     /// D65: one plain line per general window at 0 % (shown numbers only), under the readout.
     static func usedUpRows(_ input: DockInstrumentInput, at now: Date, language: SettingsLanguage) -> [DockCardRow] {
         input.windows.filter(\.isGeneral).compactMap { window in
@@ -2408,7 +2458,14 @@ struct DockHelpInteraction: Equatable {
             if let controller = self.interactionController, controller.isActive { controller.dismissCard() }
             self.dismissCard()
         }
-        card.onAction = { [weak self] id in self?.cardActionRequested?(id) }
+        card.onAction = { [weak self] id in
+            guard let self else { return }
+            // macrevb-1096-6: a plugin card's action opens the plugin's big screen in the cockpit.
+            guard self.isPluginCard(id) else { self.cardActionRequested?(id); return }
+            guard self.cardIsCurrent(id, revision: content.revision, token: token, feed: feed) else { return }
+            self.closeContext()
+            if let open = self.pluginScreenRequested { open(id) } else { self.openConsole() }
+        }
         card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
         let unavailable = !cardUsesSettings(id) && !cockpitEntryEnabled
         var style = Self.prototypeCardStyle

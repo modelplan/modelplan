@@ -2,7 +2,7 @@
 // Persisted plugin choices: which plugins are on, their order, which are pinned to page 1, and per-plugin settings.
 // The host owns the durable copy (Settings, CockpitPluginPreferences.swift); the page applies the same rules so an
 // edit made on the page (× on a key, "Add" in the + menu) and one made in Settings agree.
-import {PLUGIN_ID,type PluginRegistry} from './plugin-registry.js';
+import {PLUGIN_ID,type PluginRegistry,type PluginSettingSpec} from './plugin-registry.js';
 import {exact,record} from './schema.js';
 export const MAX_PINNED=2;
 export const MAX_ENTRIES=32;
@@ -43,6 +43,8 @@ export function materialize(state:PluginState,registry:PluginRegistry,defaults=t
   if(!missing.length)return state;
   return {...state,entries:[...state.entries,...missing.map(p=>({id:p.id,enabled:defaults&&p.defaultEnabled,pinned:false}))]};
 }
+/** In range and, when the spec lists choices, one of them. */
+const allowed=(spec:PluginSettingSpec,v:unknown):v is number=>Number.isSafeInteger(v)&&(v as number)>=spec.min&&(v as number)<=spec.max&&(!spec.choices||spec.choices.includes(v as number));
 export interface ResolvedPlugin {readonly id:string;readonly pinned:boolean;readonly settings:Readonly<Record<string,number>>}
 /** The enabled, registered plugins in user order, each with complete in-range settings. */
 export function enabledPlugins(state:PluginState,registry:PluginRegistry,defaults=true):ResolvedPlugin[] {
@@ -50,7 +52,7 @@ export function enabledPlugins(state:PluginState,registry:PluginRegistry,default
 }
 export function pluginSettings(state:PluginState,registry:PluginRegistry,id:string):Readonly<Record<string,number>> {
   const out:Record<string,number>={},saved=state.settings[id]??{};
-  for(const spec of registry.get(id)?.settings??[]){const v=saved[spec.key];out[spec.key]=Number.isSafeInteger(v)&&v>=spec.min&&v<=spec.max?v:spec.default;}
+  for(const spec of registry.get(id)?.settings??[]){const v=saved[spec.key];out[spec.key]=allowed(spec,v)?v:spec.default;}
   return Object.freeze(out);
 }
 const replace=(state:PluginState,registry:PluginRegistry,id:string,edit:(e:PluginEntry)=>PluginEntry,defaults=true):PluginState|null=>{
@@ -75,6 +77,6 @@ export function movePlugin(state:PluginState,registry:PluginRegistry,id:string,s
 }
 export function setPluginSetting(state:PluginState,registry:PluginRegistry,id:string,key:string,value:number):PluginState|null {
   const spec=registry.get(id)?.settings.find(s=>s.key===key);
-  if(!spec||!Number.isSafeInteger(value)||value<spec.min||value>spec.max)return null;
+  if(!spec||!allowed(spec,value))return null;
   return {...state,settings:{...state.settings,[id]:{...(state.settings[id]??{}),[key]:value}}};
 }

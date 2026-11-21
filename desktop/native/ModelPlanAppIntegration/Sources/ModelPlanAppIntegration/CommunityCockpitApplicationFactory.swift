@@ -8,6 +8,7 @@ import ModelPlanSettings
 import ModelPlanWire
 import ModelPlanDock
 import ModelPlanShell
+import ModelPlanResources
 
 /// Keep #332's single showConsole route and one protocol client/store.
 /// Clear the existing synchronous sinks first, then await WK clear/disposal,
@@ -40,6 +41,10 @@ import ModelPlanShell
     public static var verificationCockpitTrace: ((String) -> Void)?
     /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
     static var verificationPrewarm = true
+    /// SPI test apps can ask for the resource plugin (with a synthetic reader); every other test app leaves it out.
+    static var verificationResourcePlugin = false
+    /// The resource journey's synthetic reader (the installed app reads this Mac with SystemResourceReader).
+    static var verificationResourceReader: (() -> ResourceReader)?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -50,6 +55,8 @@ import ModelPlanShell
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
+                            installsResourcePlugin: Bool = false,
+                            resourceReader: (() -> ResourceReader)? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
         // Preserve the existing injected-client/console seam used by its callers.
         if let makeClient {
@@ -127,7 +134,58 @@ import ModelPlanShell
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
         owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
         application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
+        // macrevb-1096-9 (D324/D327): only the installed app samples this Mac. It asks for the resource plugin
+        // (`installsResourcePlugin`, ModelPlanCommunityApp); every test or fixture app, with or without the SPI flag and
+        // with or without native panels, leaves it out (no SystemResourceReader, no ring in the Dock), unless an SPI test
+        // asks for the synthetic resource journey.
+        #if MODELPLAN_TEST_ONLY_SPI
+        let installsResources = installsResourcePlugin || verificationResourcePlugin
+        #else
+        let installsResources = installsResourcePlugin
+        #endif
+        if installsResources { installResourcePlugin(application: application, owner: owner, settingsStore: settingsStore, resourceReader: resourceReader) }
         return application
+    }
+    /// D324: one ResourceSampler for the app. Its cadence follows the plugin choices (Settings or a page edit), the
+    /// cockpit page's running plugins and the widget's visibility; its samples feed the widget ring and the page.
+    static func installResourcePlugin(application: EngineDockMenuApplication, owner: CockpitConsoleOwner, settingsStore: SettingsStore,
+                                      resourceReader: (() -> ResourceReader)? = nil) {
+        let store = CockpitPluginStore(directory: settingsStore.directory)
+        Task { @MainActor [weak application, weak owner] in
+            let model = await CockpitPluginSettingsModel.load(from: store)
+            guard let application else { return }
+            #if MODELPLAN_TEST_ONLY_SPI
+            let reader: ResourceReader = resourceReader?() ?? verificationResourceReader?() ?? SystemResourceReader()
+            #else
+            let reader: ResourceReader = resourceReader?() ?? SystemResourceReader()
+            #endif
+            let sampler = ResourceSampler(reader: reader,
+                                          reduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })
+            let language: () -> ResourceLanguage = { [weak application] in
+                application?.composition.latestSettings?.snapshot.preferences.language == .english ? .english : .chinese
+            }
+            let widget = application.composition.installResourceWidget(sampler: sampler, language: language)
+            let host = ResourcePluginHost(sampler: sampler, widget: widget)
+            let coordinator = owner?.coordinator
+            host.sendData = { [weak coordinator] id, data in coordinator?.sendPluginData(id: id, data: data) }
+            coordinator?.onPluginsRunning = { [weak host] ids in host?.pageRunning(ids) }
+            coordinator?.onPluginsEdit = { [weak model] body in
+                guard let object = try? JSONSerialization.jsonObject(with: body) else { return }
+                Task { @MainActor in await model?.acceptPageEdit(object) }
+            }
+            let publish: (CockpitPluginPreferences) -> Void = { [weak host, weak coordinator] preferences in
+                host?.apply(preferences)
+                if let json = try? preferences.bridgeJSON() { coordinator?.pluginsJSON = json }
+            }
+            model.onChange = publish
+            let dock = application.composition.dock
+            dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
+            // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
+            host.setWidgetShown(dock.isWidgetShown)
+            publish(model.preferences)
+            application.settingsHost.cockpitPlugins = model
+            application.resourcePlugin = host; application.cockpitPluginModel = model
+        }
     }
 }
 
@@ -527,7 +585,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()

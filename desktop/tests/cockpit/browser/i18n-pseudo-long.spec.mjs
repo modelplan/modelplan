@@ -87,7 +87,7 @@ test('pseudo-long English keeps the plugin key, column, menu and big screen insi
  const context=await page.context().browser().newContext({viewport:{width:636,height:890},reducedMotion:'reduce'}),p=await context.newPage();
  const {data}=visualFixture();data.projection.rows=data.projection.rows.slice(0,2);
  const {send,receive}=await open(p,{pseudo:true,data});
- expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'placeholder',enabled:true,pinned:false},{id:'calendar',enabled:false,pinned:false}],settings:{placeholder:{intervalSeconds:30}}}}))).toBe(true);
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'placeholder',enabled:true,pinned:false},{id:'calendar',enabled:false,pinned:false},{id:'resources',enabled:false,pinned:false}],settings:{placeholder:{intervalSeconds:30}}}}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
  expect(await receive(send('pluginData',{id:'placeholder',data:{value:100}}))).toBe(true);
  const over=sel=>p.evaluate(sel=>[...document.querySelectorAll(sel)].filter(e=>!e.children.length&&e.textContent.trim()&&e.getClientRects().length&&(e.scrollWidth>e.clientWidth+1||e.scrollHeight>e.clientHeight+1)).map(e=>e.className+':'+e.textContent.trim()),sel);

@@ -1208,6 +1208,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         web?.isHidden = false
         publishAppearance()
         visibilityChanged()
+        publishPlugins()
         onReady?()
         if !shown { warmPaint() }
       case .cleared:
@@ -1533,6 +1534,18 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
   public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }
+  /// Plugin columns: the saved plugin choices; sent now when the page is ready, else once it is.
+  private var pluginsJSON: Data?
+  public func setPlugins(_ json: Data) { pluginsJSON = json; publishPlugins() }
+  private func publishPlugins() {
+    guard let pluginsJSON, bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.setPlugins(pluginsJSON) else { return }
+    send(raw, onRejected: { true })
+  }
+  /// Plugin columns: a reading for a running plugin. Dropped while the page is hidden or has no plugin state.
+  public func sendPluginData(id: String, data: [String: Any]) {
+    guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.pluginData(id: id, data: data) else { return }
+    send(raw, onRejected: { true })
+  }
   /// WP-22 (macrevb-1062-3): the enlarged field's selection (a public model id, nil for a clear) selects the same model on
   /// the page's HUD, faders and porthole. Presentation only: a page that cannot show it keeps working.
   /// Owner 11-19 (#1062): tells the page the enlarged field closed, so a click bouncing off the close does not reopen it.
