@@ -174,6 +174,32 @@ import ModelPlanWire
     page.discard()
   }
 
+  /// macrevb-1104-8 (round 4, R11 rule): a screen goes out only with NO state delivery in flight and the accepted state
+  /// equal to the newest wanted one. A confirmed, B in flight, A committed again and the screen requested: accepted == wanted
+  /// but B is still in flight, so the screen is held until A itself is confirmed, then opens exactly once.
+  func testAScreenRequestedAfterARapidReversalOpensOnceAfterTheLastStateIsConfirmed() throws {
+    let (page, box) = try readyPage()
+    var done = box.sent.count
+    page.setPlugins(stateA); completeAll(box, from: &done)
+    page.setPlugins(stateB)
+    XCTAssertEqual(type(box.sent[done].0), "plugins")
+    let heldB = done
+    page.setPlugins(stateA)
+    page.openPluginScreen("placeholder")
+    XCTAssertFalse(box.sent.contains { type($0.0) == "pluginScreen" }, "held while B is in flight")
+    XCTAssertEqual(page.heldPluginScreen, "placeholder")
+    box.sent[heldB].1(.accepted); done += 1
+    XCTAssertFalse(box.sent.contains { type($0.0) == "pluginScreen" }, "still held: A is in flight now")
+    XCTAssertEqual(type(box.sent.last!.0), "plugins")
+    completeAll(box, from: &done)
+    XCTAssertEqual(page.pluginsAccepted, CockpitPluginWire.canonical(json: stateA))
+    let types = box.sent.compactMap { type($0.0) }.filter { $0 == "plugins" || $0 == "pluginScreen" }
+    XCTAssertEqual(types.filter { $0 == "pluginScreen" }.count, 1, "opens exactly once")
+    XCTAssertEqual(types.last, "pluginScreen", "after A is confirmed")
+    XCTAssertNil(page.heldPluginScreen)
+    page.discard()
+  }
+
   /// macrevb-1104-6 (CKP-PLG-50/54): with A confirmed, B is committed and A again before the page answers B. The page
   /// accepts B, then A reaches it without another edit or visibility event.
   func testAReturnToTheConfirmedStateWhileAnotherIsInFlightReachesThePage() throws {

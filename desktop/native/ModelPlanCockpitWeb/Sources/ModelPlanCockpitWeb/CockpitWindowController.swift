@@ -1606,7 +1606,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   private func publishPluginScreen() {
     guard let id = pluginScreenWanted, pluginScreenInFlight == nil, bridge.ready, !bridge.blocked, bridge.pluginsSent,
-      pluginsConfirmedOnPage, pluginsWanted != nil, pluginsAccepted == pluginsWanted, !ending,
+      pluginsConfirmedOnPage, pluginsWanted != nil, pluginsInFlight == nil, pluginsAccepted == pluginsWanted, !ending,
       let raw = try? bridge.openPluginScreen(id: id) else { return }
     pluginScreenWanted = nil; pluginScreenInFlight = id
     let retry: () -> Void = { [weak self] in
