@@ -50,6 +50,7 @@ Use one publication for joined numbers. Supplementary requests should match `pub
 | `harnessIds`, `harnessEvidence`          | Reviewed exact aliases, qualification and required endpoint conditions; not proof of personal access |
 | `efforts[].effort`, `label`, `available` | Native measured/available configuration in this view; do not invent missing efforts                  |
 | `ability`, `abilityBasis`                | Published points; not a percentage success rate. Never use `abilityIndex` instead                    |
+| `abilityWithinModel`                     | client-v1.7+: the same-model chain behind effort steps (null = no bridge); `ability` compares models  |
 | `cost`, `costBasisId`                    | Approximate USD per declared reference task; not a subscription deduction or arbitrary task quote    |
 | `time`, `timeEstimated`, `timeBasis`     | Task-time multiplier with source/cohort/boundary/reference seconds; not AA generation time or TTFT   |
 | `provisional`                            | Only `true` when present: ability is valid within this model's ladder; never compare it across models |
@@ -117,7 +118,7 @@ curl --fail --silent --show-error --max-time 20 --get \
 
 ## Effort ladder arithmetic
 
-Lead with multipliers. For efforts `lo` → `hi` of one model, both with ability and positive cost on the same `costBasisId`: step = `hi.ability - lo.ability` points and `hi.cost / lo.cost`. Against ★: the same with ★ as `lo`. Round points to one decimal and ratios to two. Time ratios need both `timeBasis` objects equal; keep `timeEstimated` as "estimate". Within one model on one subscription, the cost ratio is the best available estimate of how much faster a step burns quota; say so. Never multiply USD by a quota multiplier, and never turn a percentage into a token or task count.
+Lead with multipliers. For efforts `lo` → `hi` of one model, both with ability and positive cost on the same `costBasisId`: step = `hi.abilityWithinModel - lo.abilityWithinModel` points (client-v1.7+; unknown when either is null; before v1.7, `hi.ability - lo.ability`) and `hi.cost / lo.cost`. Against ★: the same with ★ as `lo`. Round points to one decimal and ratios to two. Time ratios need both `timeBasis` objects equal; keep `timeEstimated` as "estimate". Within one model on one subscription, the cost ratio is the best available estimate of how much faster a step burns quota; say so. Never multiply USD by a quota multiplier, and never turn a percentage into a token or task count.
 
 ## Personal state (local only)
 

@@ -49,3 +49,12 @@ test('speed tiers: only Codex tiers reach the dashboard, and text shows quota mu
  assert.match(renderEffort(astraAbout,'zh',about.speedTiers),/提速约 ×1\.5 · 生成耗时约 ×0\.67/);
  assert.deepEqual(projectClient(fixture).speedTiers,[]);
 });
+test('client-v1.7 effort steps read the within-model chain, not the cross-model ability',()=>{
+ const c=(effort,ability,abilityWithinModel,cost)=>({effort,label:effort,available:true,ability,abilityBasis:'abilityIndex',abilityWithinModel,cost,costBasisId:'x',time:null,timeEstimated:false,timeBasis:null});
+ const m={name:'Astra',recommended:'medium',configurations:[c('low',40,null,1),c('medium',45,44,2),c('xhigh',50.2,46,3),c('max',48.79,47.58,6)]};
+ const rows=renderEffort(m,'en').split('\n');
+ const max=rows.find(s=>s.includes(' max ')),low=rows.find(s=>s.includes(' low '));
+ assert.match(max,/48\.8 \(\+3\.6pts\)/);assert.match(max,/↑ \+1\.6pts ×2\.00/);
+ assert.match(low,/ability 40\.0 /);assert.doesNotMatch(low,/40\.0 \(/);
+ assert.match(rows.slice(1).find(s=>s.includes('★ medium')),/↑ —/);
+});
