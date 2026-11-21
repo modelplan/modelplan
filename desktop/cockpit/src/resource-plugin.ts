@@ -4,8 +4,8 @@
 // child processes) reads the Mac while this column runs and pushes `pluginData` readings of the shape below; the plugin
 // keeps the last ten minutes in memory (never stored) and describes the cells.
 //
-// D327 rules drawn here: lists read CPU · 内存 · 磁盘; the plugin colour is orchid; only the numbers turn amber or red
-// (CPU from 70 % / 90 %, memory by macOS memory pressure, not by percentage, disk from 90 %), bars keep the plugin ink.
+// D327 rules drawn here: lists read CPU · 内存 · 磁盘; the plugin colour is orchid (the key underline). D371 B4c: the cell
+// bars and numbers take the status colour (normal / amber from 80 % / red from 90 %, 3 % hysteresis), as the quota rings.
 // The widget ring, its readout switch and the hover card are native (ModelPlanResources ResourceReadout / ResourceCard).
 //
 // The big screen paints its charts through the D323 draw hook (modelplan#1092): memory 10-minute stacked area (used /
@@ -55,9 +55,25 @@ export function resourceView(s:ResourceSample):ResourceView {
     disk:(s.diskTotal-s.diskFree)/s.diskTotal*100,pressure:s.pressure};
 }
 export type ResourceLevel='mid'|'low'|null;
-/** D327: only the numbers change colour. CPU amber ≥ 70 %, red ≥ 90 %; memory by macOS pressure; disk amber ≥ 90 %. */
-export function resourceLevels(v:{readonly cpu:number;readonly pressure:ResourcePressure;readonly disk:number}):{cpu:ResourceLevel;memory:ResourceLevel;disk:ResourceLevel} {
-  return {cpu:v.cpu>=90?'low':v.cpu>=70?'mid':null,memory:v.pressure==='critical'?'low':v.pressure==='warn'?'mid':null,disk:v.disk>=90?'mid':null};
+/** D371 B4c (11-13 round-4 status colour, same family as the quota rings): one rule for CPU, memory and disk. Amber from
+ *  80 %, red from 90 %; a level is left only once the value is 3 points below its threshold (no flicker at the border).
+ *  Memory is also at least amber under warn pressure and red under critical pressure. */
+export const LEVEL_AMBER=80,LEVEL_RED=90,LEVEL_HYSTERESIS=3;
+export type ResourceLevels={cpu:ResourceLevel;memory:ResourceLevel;disk:ResourceLevel};
+export function levelStep(percent:number,previous:ResourceLevel=null):ResourceLevel {
+  const red=previous==='low'?LEVEL_RED-LEVEL_HYSTERESIS:LEVEL_RED,amber=previous?LEVEL_AMBER-LEVEL_HYSTERESIS:LEVEL_AMBER;
+  return percent>=red?'low':percent>=amber?'mid':null;
+}
+const worse=(a:ResourceLevel,b:ResourceLevel):ResourceLevel=>a==='low'||b==='low'?'low':a==='mid'||b==='mid'?'mid':null;
+export function resourceLevels(v:{readonly cpu:number;readonly pressure:ResourcePressure;readonly disk:number;readonly memory?:number},previous?:ResourceLevels):ResourceLevels {
+  const pressure:ResourceLevel=v.pressure==='critical'?'low':v.pressure==='warn'?'mid':null;
+  return {cpu:levelStep(v.cpu,previous?.cpu),memory:worse(levelStep(v.memory??0,previous?.memory),pressure),disk:levelStep(v.disk,previous?.disk)};
+}
+/** The levels after the newest sample, walking the kept history so the hysteresis has its memory. */
+export function levelsOf(samples:readonly ResourceSample[]):ResourceLevels {
+  let levels:ResourceLevels|undefined;
+  for(const s of samples)levels=resourceLevels(resourceView(s),levels);
+  return levels??{cpu:null,memory:null,disk:null};
 }
 const GB=1024**3;
 /** One decimal below 100 GB, whole numbers above; a whole number drops its ".0" (32 GB, 15.1 GB). */
@@ -81,7 +97,7 @@ export interface ChartData {
 }
 const BINS=60,BIN_MS=10_000,RANK:Record<ResourcePressure,number>={normal:0,warn:1,critical:2};
 export function chartData(samples:readonly ResourceSample[]):ChartData {
-  const base={cpuLine:70,diskNotch:90};
+  const base={cpuLine:80,diskNotch:90};
   if(!samples.length)return {memory:[],strip:[],cpu:[],disk:0,...base};
   const newest=samples[samples.length-1]!;
   const memory=samples.map(s=>({t:s.t,used:(s.memApp+s.memWired+s.memCompressed)/s.memTotal,cached:Math.min(1-(s.memApp+s.memWired+s.memCompressed)/s.memTotal,s.memCached/s.memTotal)}));
@@ -152,8 +168,8 @@ export const resourcePlugin:CockpitPlugin=Object.freeze({
   id:'resources',
   title:'plugin.resourcesTitle',
   summary:'plugin.resourcesSummary',
-  // White line art in the shared 16 px frame (plugin-registry PLUGIN_ICON_FRAME): a rounded screen with a heartbeat line.
-  icon:'<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1.5" width="14" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.5 8.5h2l1.3-3 2 5 1.2-2h2.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+  // D371: white line art without the small square frame: just the heartbeat line.
+  icon:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 8.5h3.5l1.8-5 3.2 9 1.8-4H15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>',
   underline:RESOURCE_INK,
   ink:RESOURCE_INK,
   defaultEnabled:true,
@@ -177,11 +193,11 @@ export const resourcePlugin:CockpitPlugin=Object.freeze({
     const tags=[c.words('plugin.resourcesCpu'),c.words('plugin.resourcesMemory'),c.words('plugin.resourcesDisk')];
     const foot={label:c.words('plugin.resourcesPressure'),value:s?pressureWords(c,s):null};
     if(!s)return {cells:tags.map(tag=>({tag,value:null,bar:null})),foot};
-    const v=resourceView(s),lv=resourceLevels(v),recent=samples.slice(-TREND_POINTS).map(resourceView);
+    const v=resourceView(s),lv=levelsOf(samples),recent=samples.slice(-TREND_POINTS).map(resourceView);
     const cells:PluginCell[]=[
-      {tag:tags[0],value:pct(v.cpu),unit:'%',side:c.words('plugin.resourcesPeak',{n:pct(peak(samples))}),bar:v.cpu/100,trend:recent.map(x=>x.cpu/100),level:lv.cpu},
-      {tag:tags[1],value:pct(v.memory),unit:'%',side:c.words('plugin.resourcesGb',{used:gb(v.memoryUsed),total:gb(s.memTotal)}),bar:v.memory/100,trend:recent.map(x=>x.memory/100),level:lv.memory},
-      {tag:tags[2],value:pct(v.disk),unit:'%',side:c.words('plugin.resourcesFree',{gb:gb(s.diskFree)}),bar:v.disk/100,level:lv.disk},
+      {tag:tags[0],value:pct(v.cpu),unit:'%',side:c.words('plugin.resourcesPeak',{n:pct(peak(samples))}),bar:v.cpu/100,tone:true,trend:recent.map(x=>x.cpu/100),level:lv.cpu},
+      {tag:tags[1],value:pct(v.memory),unit:'%',side:c.words('plugin.resourcesGb',{used:gb(v.memoryUsed),total:gb(s.memTotal)}),bar:v.memory/100,tone:true,trend:recent.map(x=>x.memory/100),level:lv.memory},
+      {tag:tags[2],value:pct(v.disk),unit:'%',side:c.words('plugin.resourcesFree',{gb:gb(s.diskFree)}),bar:v.disk/100,tone:true,level:lv.disk},
     ];
     return {cells,foot};
   },

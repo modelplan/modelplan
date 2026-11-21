@@ -77,7 +77,7 @@ function drawCell(cell:PluginCell|undefined,row:number):HTMLElement {
   if(cell.side){const side=fitted('qtxt',cell.side);side.dataset.small=cell.side.short;line.append(side);}
   box.append(line);
   if(typeof cell.bar==='number'&&Number.isFinite(cell.bar)){
-    const meter=el('span','pl-meter'),bar=el('span','pl-bar'),fill=el('i');fill.style.width=(clamp01(cell.bar)*100).toFixed(1)+'%';bar.append(fill);meter.append(bar);
+    const meter=el('span','pl-meter'),bar=el('span','pl-bar'+(cell.tone?' pl-tone':'')),fill=el('i');fill.style.width=(clamp01(cell.bar)*100).toFixed(1)+'%';bar.append(fill);meter.append(bar);
     const trend=trendLine(cell.trend??[]);if(trend)meter.append(trend);box.append(meter);
   }
   const words=[cell.tag.full,typeof cell.value==='number'?String(Math.round(cell.value))+(cell.unit??''):'',cell.side?.full??''].filter(Boolean).join(' · ');

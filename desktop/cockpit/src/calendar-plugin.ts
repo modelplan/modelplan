@@ -8,7 +8,7 @@
 // title bar and the lifecycle stay the framework's. If a draw fails, the column falls back to the cells and the screen to
 // plain lines.
 // All times are local. The page has no timers: the host's minute tick moves the now line and rolls the day over.
-import {PLUGIN_ICON_FRAME,type CockpitPlugin,type PluginCell,type PluginColumn,type PluginContext,type PluginDrawContext,type PluginLocale} from './plugin-registry.js';
+import {type CockpitPlugin,type PluginCell,type PluginColumn,type PluginContext,type PluginDrawContext,type PluginLocale} from './plugin-registry.js';
 import {CALENDAR_MAX_BYTES,calendarFromCockpit,emptyCalendar,parseCalendarData,type CalendarData,type CalendarSpan} from './calendar-data.js';
 import {HOUR,WEEK_DAYS,addDays,dayOffset,dayPieces,dayWindow,hhmm,hourMarks,isWeekend,midnights,monthDay,nextMinute,packLanes,startOfDay,stripWindow,wallHours} from './calendar-time.js';
 
@@ -270,8 +270,8 @@ export const calendarPlugin:CockpitPlugin=Object.freeze({
  id:'calendar',
  title:'plugin.calendarTitle',
  summary:'plugin.calendarSummary',
- // D328 key icon: a white line calendar sheet with two rings, on the shared 16 px frame at the vendor marks' stroke (currentColor); the underline is the grey dashed #87939e.
- icon:`<svg viewBox="0 0 16 16" aria-hidden="true">${PLUGIN_ICON_FRAME}<path d="M1 6h14M5 0.5v3M11 0.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>`,
+ // D328 key icon: a white line calendar sheet with two rings, without the small square frame (D371) at the vendor marks' stroke (currentColor); the underline is the grey dashed #87939e.
+ icon:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 5.5h13M5 1.5v3M11 1.5v3M3 8.5h2M7 8.5h2M11 8.5h2M3 12h2M7 12h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>`,
  underline:'#87939e',
  defaultEnabled:true,
  settings:Object.freeze([]),
