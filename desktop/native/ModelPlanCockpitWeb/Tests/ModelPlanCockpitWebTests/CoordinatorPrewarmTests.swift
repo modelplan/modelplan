@@ -120,6 +120,36 @@ private actor CountingClient: EngineClient {
 }
 
 final class CoordinatorPrewarmTests: XCTestCase {
+  @MainActor func testValidReplyCancelsPendingReadRetry() async throws {
+    var pages: [WarmProbe] = []
+    var pendingRetry: (@MainActor () -> Void)?
+    var cancellations = 0
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.schedule = { _, fire in
+      pendingRetry = fire
+      return { pendingRetry = nil; cancellations += 1 }
+    }
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    coordinator.open()
+    await settle { await client.requests == 1 }
+    pages[0].onRenderVerified?()
+    await client.failAll(); await coordinator.joinCurrentQueryForVerification()
+    XCTAssertNotNil(pendingRetry, "the failed read armed a retry")
+
+    // Another refresh recovers before that retry fires.
+    coordinator.refresh()
+    await settle { await client.requests == 2 }
+    await coordinator.consume(try reply(delivery(generation: 4)))
+    XCTAssertEqual(cancellations, 0, "an unrelated delivery must not cancel the retry")
+    await coordinator.consume(try reply(session))
+    XCTAssertEqual(cancellations, 1, "a valid reply cancels the obsolete retry")
+    XCTAssertNil(pendingRetry, "the old timer cannot issue another read after recovery")
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    await coordinator.shutdown(); await client.complete()
+  }
+
   /// macrevb-981-2: the console's rebuild budget counts health from verified renders; the coordinator forwards them only
   /// from the page it presents, and a closed page's late receipt counts for nothing.
   /// Recovery step 4: a presented page with verified data keeps it when a read fails or the engine reports a cockpit

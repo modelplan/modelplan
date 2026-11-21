@@ -695,6 +695,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         reply.envelope.storeEpoch == delivery.floor.storeEpoch,
         reply.envelope.consentGeneration == delivery.floor.generation
       {
+        cancelReadRetry()
         lastReply = (delivery, reply.envelope.data); readRetryAttempt = 0
         LaunchTimingLog.shared.mark("first-cockpit-reply", detail: "presented=\(presented)")
         trace(presented ? "query.reply" : "warm.reply")
