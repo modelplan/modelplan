@@ -181,7 +181,9 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const data=shown;let raw:unknown,ok=false;guard(()=>{raw=plugin.derive!(data,now);ok=true;},undefined);
     return ok&&take(plugin,raw);
   }
-  const shouldRun=(id:string)=>!disposed&&visible&&placed.has(id)&&enabled(id);
+  // Sample S4 (#1104 PLG-A2): an open big screen is a surface of its own. With six subscription columns an unpinned
+  // plugin has no column, yet the screen the widget card opened must get readings, so it runs while its screen is open.
+  const shouldRun=(id:string)=>!disposed&&visible&&(placed.has(id)||screen?.id===id)&&enabled(id);
   /** (Re)draws one plugin column's rows in place: one cell per table row, the bottom line, and the reserve row when the table has one. */
   function fill(column:HTMLElement,plugin:CockpitPlugin,rows:number,reserve:boolean) {
     const drawn=guard(()=>plugin.column(readings.get(plugin.id),context(plugin.id)),{cells:[]});
@@ -206,10 +208,10 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     if(column?.isConnected&&plugin)fill(column,plugin,Number(column.dataset.rows)||0,column.dataset.reserve==='true');
   }
   function reconcile() {
+    if(screen&&!enabled(screen.id)){closeScreen();return;/* closeScreen reconciles. */}
     for(const id of [...running])if(!shouldRun(id))running.delete(id);
-    for(const id of placed)if(!running.has(id)&&shouldRun(id)){running.add(id);derive(id);}
+    for(const id of [...placed,...screen?[screen.id]:[]])if(!running.has(id)&&shouldRun(id)){running.add(id);derive(id);}
     for(const [id,column] of columns)column.dataset.running=String(running.has(id));
-    if(screen&&!enabled(screen.id))closeScreen();
     if(negotiated&&!disposed){const ids=active().map(p=>p.id).filter(id=>running.has(id)),key=ids.join();if(key!==reported){reported=key;report.running(ids);}}
   }
   function changed(next:PluginState|null) {
@@ -252,6 +254,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     document.removeEventListener('click',pageKeys,true);
     for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))key.setAttribute('aria-expanded','false');
     if(restoreFocus)root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`)?.focus();
+    reconcile();// S4: a plugin that ran only for its screen stops.
   }
   function openScreen(id:string|null,keep=false):boolean {
     if(id===null){closeScreen();return true;}
@@ -263,7 +266,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const head=el('div','pl-screen-h'),title=fitted('pl-screen-t',pluginWords(locale,plugin.title));
     const close=el('button','pl-screen-x');close.type='button';close.dataset.mat='part';close.onclick=e=>{if(e.isTrusted)closeScreen(true);};
     head.append(icon(plugin,'pl-icon'),title,close);const list=el('dl','pl-screen-l'),area=el('div','pl-screen-d');area.hidden=true;area.dataset.plugin=id;box.append(head,list,area);
-    well.append(box);screen={id,box,title,close,list,area,opening:true};drawScreen();
+    well.append(box);screen={id,box,title,close,list,area,opening:true};reconcile();drawScreen();
     document.addEventListener('click',pageKeys,true);
     root.querySelector(`.eng-keys .pl-key[data-plugin="${id}"]`)?.setAttribute('aria-expanded','true');
     return true;
@@ -394,7 +397,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       }
       const more=item('pm-more',()=>{options.connect();});more.dataset.pmAll='';more.append(fitted('pm-n',w('plugin.allSubscriptions')));m.append(more);
       m.append(el('div','pm-sep'),fitted('pm-h',w('plugin.addPlugin')));
-      for(const plugin of registry.list()){
+      for(const plugin of registry.list().filter(p=>!p.frameworkOnly)){
         const added=enabled(plugin.id),b=item('pm-plugin'+(added?' on':''),()=>{host.add(plugin.id);},added);b.dataset.pmPlugin=plugin.id;
         b.append(icon(plugin,'pm-ic'),fitted('pm-n',pluginWords(options.locale,plugin.title)),added?fitted('pm-ok',w('plugin.added')):el('b','pm-go',w('plugin.addGo').full));m.append(b);
       }

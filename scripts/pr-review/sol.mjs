@@ -3,7 +3,7 @@
 // review from the interactive lanes into Actions. decideSol() picks whether one PR head gets a review, solPolicy() is
 // the coordinator's sol-consult.sh policy text, buildSolPrompt() the whole request, parseAnswer() checks the answer,
 // renderSolComment() writes the PR comment and agreement() compares a shadow verdict with the lane verdict.
-import { DEFAULT_GLM_TIERS, GPT_FALLBACK_MARKER, eligibleLanes, gptFallbackVerdict, gptLabelled, isShadowLane, isTrusted, pathTier, prPaths, reviewerLane, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
+import { DEFAULT_GLM_TIERS, GPT_FALLBACK_MARKER, needsCompile, eligibleLanes, gptFallbackVerdict, gptLabelled, isShadowLane, isTrusted, pathTier, prPaths, reviewerLane, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
 import { verdictLines } from "./brief.mjs";
 
 export const SOL_LANE = "ghsol";
@@ -23,9 +23,8 @@ export const ownLanes = (lane, tier, glmTiers = DEFAULT_GLM_TIERS) =>
 export const laneFor = (mode) => (mode === "count" ? SOL_LANE : mode === "shadow" ? SOL_SHADOW_LANE : null);
 // Tier 0 needs no verdict; Sol reviews tiers 1 and 2 (owner D149).
 export const SOL_TIERS = Object.freeze([1, 2]);
-// The paths mac-compile-trigger.yml starts the Mac compile for ("desktop/native/**"); the test keeps them in step.
-export const COMPILE_PATHS = /^desktop\/native\//;
-export const needsCompile = (paths) => paths.some((p) => COMPILE_PATHS.test(p));
+// The paths themselves live in rules.mjs: the merge gate needs them too (a native PR cannot merge without mac-compile).
+export { COMPILE_PATHS, needsCompile } from "../merge-gates/rules.mjs";
 // Verdict lanes whose earlier comments (findings and R19 record) a review carries forward.
 const GPT_LANES = new Set([...REVIEW_LANES, "(gh-terra-shadow)", `(${SOL_SHADOW_LANE})`, `(${GLM_SHADOW_LANE})`]);
 const MAX_EARLIER = 4;
@@ -61,11 +60,11 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   const paths = prPaths(files);
   const tier = tierOverride(items) ?? pathTier(paths);
   if (!SOL_TIERS.includes(tier)) return skip(`tier ${tier} needs no Sol review`);
-  // Compile first (owner 11-18): a head that changes desktop/native waits for the trusted mac-compile success on that
-  // exact head; every head needs cheap CI (ci.yml) green. Whichever finishes last starts the review.
+  // Owner D374 (11-21): a ready PR is reviewed once ci.yml passes at the head, native or not. The mac-compile success
+  // no longer gates the review; the merge gate (rules.mjs evaluatePr) still requires it for a native head before merge.
+  // `compile` is reported only (the review sees the mac-compile status among the CI lines).
   const compile = needsCompile(paths);
   if (!checks.ci) return skip("ci has not passed at this head");
-  if (compile && !checks.compile) return skip("mac-compile has not passed at this head");
   const all = verdictLines(items);
   const atHead = all.filter((v) => v.sha === head);
   const gpt = wantsGpt(pr);
@@ -139,6 +138,28 @@ const clip = (s, n) => (s.length <= n ? s : s.slice(0, n) + "\n[... truncated]")
 const fence = (s) => "````text\n" + String(s).replaceAll("````", "` ` ` `") + "\n````";
 const MAX_BODY_CHARS = 8000;
 const MAX_EARLIER_CHARS = 6000;
+
+// Generated, reproducible files whose diff is left out of the review request (the request budget is characters and a
+// bundle diff alone can be larger than all of it). Each entry names the CI check that proves the committed file matches
+// its sources: ci.yml job `codex`, steps "The Node 22/24 bundle and its notices are committed as built"
+// (`npm run build` in codex/, then `git diff --exit-code`). Keep this list explicit; never match by pattern.
+export const GENERATED_DIFF_OMITTED = Object.freeze({
+  "codex/server.bundle.mjs": "`npm run build` in codex/ and checked by the ci.yml `codex` job (committed-as-built steps)",
+});
+
+// Replaces the per-file section of each listed generated file in a `git diff` text with a one-line note. Every other
+// section is kept byte for byte.
+export function omitGeneratedDiffs(diff, listed = GENERATED_DIFF_OMITTED) {
+  if (!diff) return diff;
+  const parts = String(diff).split(/^(?=diff --git )/m);
+  return parts.map((part) => {
+    const m = /^diff --git a\/(\S+) b\/(\S+)/.exec(part);
+    if (!m || m[1] !== m[2] || !Object.hasOwn(listed, m[2])) return part;
+    const lines = part.split("\n").filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---) /.test(l)).length;
+    return `${m[2]}: generated file, ${lines} lines changed, omitted from review; reproducible with ${listed[m[2]]}\n`;
+  }).join("");
+}
+
 
 // d: decideSol() result with mode ("full" | "delta") and base (merge base, or d.since on a delta) filled in.
 // diff: the PR diff against its merge base; delta: the diff since d.since (delta only); stat: `git diff --stat`;
@@ -323,6 +344,21 @@ export function renderScopeNote({ head, lane, preparedTier, tier, runUrl = "" })
   if (body.split("\n").some((l) => MARKER.test(l))) throw new Error("scope note has a gate marker");
   return body;
 }
+
+// The answer came back twice without a valid verdict (R18: no final VERDICT line, no Record, a block without a labelled
+// blocker). The run posts this advisory note (no VERDICT) once per head so the loss is not silent; the first line is the
+// coordinator event, always "review answer invalid, no verdict @ <sha> (<lane>)".
+export const NOVERDICT_EVENT = "review answer invalid, no verdict";
+export const NOVERDICT_RE = /^review answer invalid, no verdict @ ([0-9a-f]{40}) \(gh[a-z]+\)$/;
+export const noVerdictNoted = (items, head) => items.some((x) => NOVERDICT_RE.exec(String(x.body).split("\n")[0].replace(/\r$/, ""))?.[1] === head);
+export function renderNoVerdictNote({ head, lane, why = "", runUrl = "" }) {
+  const body = [`${NOVERDICT_EVENT} @ ${head} (${lane})`, "",
+    `_Advisory, no verdict. The reviewer's answer failed the verdict format twice (${tidy(why) || "invalid answer"}), so nothing is counted for this head. A later trigger, a dispatch or an interactive lane reviews it.${runUrl ? ` [run](${runUrl})` : ""}_`].join("\n");
+  if (body.split("\n").some((l) => MARKER.test(l))) throw new Error("no-verdict note has a gate marker");
+  return body;
+}
+// The correction appended to the request for the one retry: what was wrong, and the format again.
+export const retryInput = (input, why) => `${input}\n\n--- Format correction ---\nYour previous answer was discarded: ${tidy(why)}. Answer the whole review again from the start. The last line must be exactly VERDICT: merge or VERDICT: block, a top-level Record block precedes it, and a block verdict names at least one BLOCKER with Trigger:, Consequence: and Acceptance test: lines. If nothing material blocks, answer merge.\n`;
 
 // Every provider that could count here is out of quota (by default: tier 2 with the OpenAI quota out, since GLM decides
 // only the tiers in REVIEW_GLM_TIERS). The run posts this advisory note (no VERDICT) once per head, whichever lane

@@ -43,6 +43,29 @@ type Effort struct {
 	// AAScore (client-v1.5, D292): the raw Artificial Analysis Intelligence Index score for this effort. A reference
 	// shown beside our own ability score, never in its place. Parse drops it below client-v1.5 or when not positive.
 	AAScore *float64 `json:"aaScore,omitempty"`
+	// AbilityWithinModel (client-v1.7): the same-source chain of this model's efforts; Ability is then the
+	// cross-model ability index. Nil where no bridge reaches the effort. Read it through Gain, never directly.
+	AbilityWithinModel *float64 `json:"abilityWithinModel,omitempty"`
+	// Chained is set by Parse for a client-v1.7 or later projection, where steps read AbilityWithinModel.
+	Chained bool `json:"-"`
+}
+
+// Gain is what moving from one effort of a model to another buys, in points (to minus from). From client-v1.7 it
+// is the difference of the published within-model chain and nil when either side has none; before, Ability was
+// that chain. Comparisons across models read Ability instead.
+func Gain(from, to *Effort) *float64 {
+	if from == nil || to == nil {
+		return nil
+	}
+	a, b := from.Ability, to.Ability
+	if from.Chained || to.Chained {
+		a, b = from.AbilityWithinModel, to.AbilityWithinModel
+	}
+	if a == nil || b == nil {
+		return nil
+	}
+	v := *b - *a
+	return &v
 }
 
 type HarnessEvidence struct {
@@ -288,6 +311,7 @@ func Parse(component string, b []byte) (*Digest, error) {
 		}
 	}
 	dropInvalidAAScores(&d)
+	markChained(&d)
 	if d.PlanMetering != nil && !validMetering(d.PlanMetering) {
 		d.PlanMetering = nil
 	}
@@ -334,6 +358,7 @@ func sanitizeOptional(data json.RawMessage) json.RawMessage {
 			effortsChanged := false
 			for _, e := range efforts {
 				effortsChanged = drop(e, "aaScore", func() any { return new(*float64) }) || effortsChanged
+				effortsChanged = drop(e, "abilityWithinModel", func() any { return new(*float64) }) || effortsChanged
 			}
 			if effortsChanged {
 				if b, err := json.Marshal(efforts); err == nil {
@@ -355,6 +380,21 @@ func sanitizeOptional(data json.RawMessage) json.RawMessage {
 		return data
 	}
 	return b
+}
+
+// markChained flags every effort of a client-v1.7 or later projection so Gain reads the chain (an absent or
+// malformed chain value is then an unknown step, never the ability difference). Earlier projections drop the field.
+func markChained(d *Digest) {
+	chained := projectionMinor(d.ProjectionVersion) >= 7
+	for i := range d.Models {
+		for j := range d.Models[i].Efforts {
+			e := &d.Models[i].Efforts[j]
+			e.Chained = chained
+			if !chained || (e.AbilityWithinModel != nil && (math.IsInf(*e.AbilityWithinModel, 0) || math.IsNaN(*e.AbilityWithinModel))) {
+				e.AbilityWithinModel = nil
+			}
+		}
+	}
 }
 
 // dropInvalidAAScores keeps an effort's aaScore only where the public reader accepts it: a positive finite number in a

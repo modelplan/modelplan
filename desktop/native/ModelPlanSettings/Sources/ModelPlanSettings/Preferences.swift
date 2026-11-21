@@ -261,10 +261,11 @@ public actor SettingsStore {
     /// corrupt targets never trigger legacy migration or automatic replacement.
     public init(foundationAt applicationSupport: URL, product: FoundationSettingsMigration.ProductIdentity,
                 rowIDMap: [String: String] = [:], defaultLanguage: SettingsLanguage? = nil,
-                preferredLanguages: [String]? = nil,
+                preferredLanguages: [String]? = nil, defaultOpenAtLogin: Bool? = nil,
                 onboardingDefinition: OnboardingDefinition = .task65) throws {
         let location = try FoundationPreferenceLocation(applicationSupport: applicationSupport, product: product)
-        let opened = try FoundationPreferenceFile.open(location, rowIDMap: rowIDMap, defaultLanguage: defaultLanguage)
+        let opened = try FoundationPreferenceFile.open(location, rowIDMap: rowIDMap, defaultLanguage: defaultLanguage,
+                                                   defaultOpenAtLogin: defaultOpenAtLogin)
         self.url = location.target; self.onboardingDefinition = onboardingDefinition
         self.current = opened.document.settings; self.foundationBacking = opened
         if let preferredLanguages, current.followsSystemLanguage {

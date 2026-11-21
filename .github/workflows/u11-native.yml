@@ -32,7 +32,7 @@ jobs:
     # Runs in the pinned trusted-mac.yml (docs/mac-ci.md): the ordinary owner Macs with MAC_CI_NONGUI=enabled,
     # hosted macos-15 otherwise.
     if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (!contains(fromJSON('["pull_request","merge_group"]'), github.event_name) || vars.MAC_CI_NONGUI == 'enabled') }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@789109c2567716f58eb4669e01c76b3e25f17845
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@2f418f633a29ba31202d0516ae646346a2a5b14f
     with:
       task: u11-native
       os: macos-15

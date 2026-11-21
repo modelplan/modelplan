@@ -1,11 +1,11 @@
 // Whole-label aliases shared by the fader LCD, published model projection and record strip.
-// First choice preserves the model version where needed; later choices are explicit narrow-LCD aliases.
+// First choice preserves the model version (owner badcase 11-21: "Astra" beside "Astra 6.2" read as a duplicate); later choices are explicit narrow-LCD aliases.
 // Unknown names retain their full text where it fits, otherwise use a defined generic tag (full name in aria/title).
 const MODELS = {
-  'GPT-6 Luna': ['Luna'],
+  'GPT-6 Luna': ['Luna 6', 'Luna6', 'Luna'],
   'GPT-6 Sol': ['Sol 6', 'Sol6'],
   'GPT-6.1 Sol': ['Sol 6.1', 'Sol6.1'],
-  'GPT-6 Astra': ['Astra'],
+  'GPT-6 Astra': ['Astra 6', 'Astra6', 'Astra'],
   'GPT Astra': ['Astra'],
   'Claude Opus 5.5': ['Opus 5.5', 'Opus5.5', 'Opus'],
   'Claude Sonnet 5': ['Sonnet 5', 'Sonnet5', 'Sonnet'],

@@ -152,7 +152,7 @@ func nilResetRollout(t *testing.T, name string, now time.Time, reads ...[2]float
 	if err := os.WriteFile(p, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r := scanRollout(p)
+	r := scanRollout(p, codexRolloutFence())
 	if r == nil {
 		t.Fatalf("%s: no rollout", name)
 	}

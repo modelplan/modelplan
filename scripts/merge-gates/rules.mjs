@@ -83,6 +83,19 @@ export function pathTier(paths) {
   return 0;
 }
 
+// R13 (2026-11-12): a ledger PR (its body has a "Ledger: ... G3-nn" line) is at least tier 2 whatever it touches, so it
+// needs a Sol verdict (macrev2/macrevb). Before this, tier-1 files let Terra alone land #785 #788 #848 #863 #865 #870
+// #884 #887. A REVIEW-TIER override can raise it but never lower it below 2.
+export function ledgerPr(pr) {
+  return /^[ \t>*-]*Ledger:.*\bG3-[0-9]+/im.test(pr?.body ?? "");
+}
+
+// The paths mac-compile-trigger.yml starts the Mac compile for ("desktop/native/**"); the sol test keeps them in step.
+// A PR that changes (or renames away) a file there cannot merge without a mac-compile success status at its head.
+export const COMPILE_PATHS = /^desktop\/native\//;
+export const needsCompile = (paths) => paths.some((p) => COMPILE_PATHS.test(p));
+export const COMPILE_CONTEXT = "mac-compile";
+
 export function prPaths(files) {
   const out = [];
   for (const f of files) {
@@ -689,7 +702,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const design = designTouch(files, conf);
   const paths = prPaths(files);
   const override = tierOverride(items);
-  const tier = override ?? pathTier(paths);
+  const tier = ledgerPr(pr) ? Math.max(2, override ?? pathTier(paths)) : (override ?? pathTier(paths));
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
   const fbGlm = gpt ? gptFallbackVerdict(items, head) : null;   // labelled PR, GPT out of quota: the marked GLM verdict counts
   const glmAdvice = !eligibleLanes(tier, glmTiers).includes(GLM_LANE) && fbGlm === null;
@@ -752,6 +765,11 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
   if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
   if (ci.state === PENDING) return res(PENDING, say(ci.why), extra);
+  // Owner D374: the review no longer waits for the Mac compile, so the merge gate does. A native head (or one whose file
+  // list was cut off) needs the mac-compile status at THIS head (statuses are per commit); a pending or failed one is
+  // already held back by ciState above. A data-sync PR never touches desktop/native.
+  if (!dataSync && (needsCompile(paths) || files.length >= FILE_LIST_LIMIT) && !(statuses ?? []).some((s) => s.context === COMPILE_CONTEXT && s.state === "success"))
+    return res(PENDING, say("waiting for mac-compile at this head"), extra);
   return res(SUCCESS, say(`tier ${tier}: gates pass${chain.length ? ` (carried ${chain.length})` : ""}`), extra);
 }
 

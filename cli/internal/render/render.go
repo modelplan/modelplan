@@ -235,10 +235,11 @@ func step(es []digest.Effort, i int, pts string) string {
 		return ""
 	}
 	lo, hi := es[i-1], es[i]
-	if lo.Ability == nil || hi.Ability == nil || lo.Cost == nil || hi.Cost == nil || *lo.Cost <= 0 {
+	g := digest.Gain(&lo, &hi) // the published within-model step (client-v1.7), not the cross-model difference
+	if lo.Ability == nil || hi.Ability == nil || g == nil || lo.Cost == nil || hi.Cost == nil || *lo.Cost <= 0 {
 		return "↑ —"
 	}
-	return fmt.Sprintf("↑ %+.1f%s ×%.2f", *hi.Ability-*lo.Ability, pts, *hi.Cost / *lo.Cost)
+	return fmt.Sprintf("↑ %+.1f%s ×%.2f", *g, pts, *hi.Cost / *lo.Cost)
 }
 
 func sep(t Text) string {
@@ -274,7 +275,14 @@ func num(v *float64, rec *digest.Effort, ability bool, pts string) string {
 // abilityOf is num for an effort's ability, marked when the producer published it as provisional:
 // valid within this model's ladder, not across models.
 func abilityOf(e, rec *digest.Effort, t Text) string {
-	s := num(e.Ability, rec, true, t.Pts)
+	s := "—"
+	if e.Ability != nil {
+		s = fmt.Sprintf("%.1f", *e.Ability)
+		// Against ★ by the within-model step (client-v1.7: the chain); no bracket when that step is unknown.
+		if g := digest.Gain(rec, e); rec != nil && rec.Ability != nil && g != nil {
+			s = fmt.Sprintf("%.1f (%+.1f%s)", *e.Ability, *g, t.Pts)
+		}
+	}
 	if e.Provisional && e.Ability != nil {
 		s += " " + t.Provisional
 	}

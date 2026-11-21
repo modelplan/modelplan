@@ -5,7 +5,7 @@
   "scope": "Publication validation and caching only. Excludes scoring, ranking, calibration, acquisition, publication and official visual implementation.",
   "files": {
     "public-reader.mjs": {
-      "sha256": "0dd44ba0d007283db6d35da0dea0b1397a34198cb137439d4f8d45dedffd40eb",
+      "sha256": "a848d395f9ac110175c8d4ae13ccd44f1bc9a5777244d91adbe7f2b64db83b31",
       "license": "MIT"
     },
     "public-reader.d.mts": {

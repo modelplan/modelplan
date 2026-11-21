@@ -625,7 +625,11 @@ var usageTrendSchema = z3.object({
   source: z3.literal("openrouter-paid-daily"),
   asOf: isoDay,
   days: z3.number().int().min(1).max(90),
-  ranks: z3.record(text3, z3.array(z3.number().int().min(1).nullable()))
+  // zod drops an own "__proto__" key while parsing a record, so the membership check must see the raw keys.
+  ranks: z3.unknown().superRefine((raw, ctx) => {
+    if (raw !== null && typeof raw === "object" && Object.hasOwn(raw, "__proto__"))
+      ctx.addIssue({ code: "custom", message: "invalid_client_usage_trend" });
+  }).pipe(z3.record(text3, z3.array(z3.number().int().min(1).nullable())))
 }).strict();
 var harnessIdsSchema = z3.object({
   api: ids2,
@@ -715,8 +719,13 @@ var clientDigestSchema = z3.object({
           effort: text3,
           label: text3,
           available: z3.boolean(),
+          // client-v1.7: ability is the cross-model abilityIndex ("abilityIndex"); before, the
+          // within-model chain ("abilityWithinModel"). "capability" is the fallback in both.
           ability: nullable,
-          abilityBasis: z3.enum(["abilityWithinModel", "capability"]),
+          abilityBasis: z3.enum(["abilityWithinModel", "abilityIndex", "capability"]),
+          // client-v1.7: the within-model chain, on every effort (null where no bridge reaches it).
+          // Differences between two efforts of one model read this; ability compares models.
+          abilityWithinModel: nullable.optional(),
           cost: scalar.nonnegative().nullable(),
           costBasisId: text3.nullable(),
           time: scalar.nonnegative().nullable(),
@@ -817,6 +826,9 @@ var clientDigestSchema = z3.object({
     fail("invalid_client_v16_projection");
   if (d.priceUnit !== void 0 !== d.models.some((m) => m.price !== void 0))
     fail("invalid_client_price_unit");
+  const efforts = d.models.flatMap((m) => m.efforts);
+  if (minor < 7 ? efforts.some((e) => e.abilityBasis === "abilityIndex" || e.abilityWithinModel !== void 0) : efforts.some((e) => e.abilityBasis === "abilityWithinModel" || e.abilityWithinModel === void 0))
+    fail("invalid_client_v17_projection");
   if (d.usageTrend !== void 0) {
     const modelIds = new Set(d.models.map((m) => m.id));
     const ranks = Object.entries(d.usageTrend.ranks);
@@ -827,7 +839,7 @@ var clientDigestSchema = z3.object({
   for (const m of d.models)
     if (pending.has(m.id) && (m.efforts.length > 0 || m.recommended !== null || m.recommendationBasis !== null || m.defaultSelected === true))
       fail("invalid_client_pending_model");
-  if (d.lineups.some((l) => pending.has(l.baseline) || l.frontier.some((id3) => pending.has(id3)) || l.members.some((r) => pending.has(r.id))))
+  if (d.lineups.some((l) => pending.has(l.baseline) || l.frontier.some((id3) => pending.has(id3)) || l.members.some((r) => pending.has(r.id)) || l.steps.some((s) => pending.has(s.from) || pending.has(s.to))))
     fail("invalid_client_pending_model");
   const models = new Map(d.models.map((m) => [m.id, m]));
   for (const t of d.speedTiers ?? [])

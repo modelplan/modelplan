@@ -100,6 +100,9 @@ test('usageTrend keys are published models, every array covers the days, and it 
     d.usageTrend.days = 90;
     for (const m of d.models) d.usageTrend.ranks[m.id] = Array(90).fill(1000000);
   }, 'invalid_client_usage_trend');
+  await rejects(d => {
+    Object.defineProperty(d.usageTrend.ranks, '__proto__', {value: Array(d.usageTrend.days).fill(null), enumerable: true, configurable: true, writable: true});
+  }, 'invalid_client_usage_trend');
   for (const edit of [
     t => { t.days = 0; }, t => { t.days = 91; }, t => { t.source = 'openrouter'; }, t => { t.asOf = '18 Nov 2026'; },
     t => { t.ranks[Object.keys(t.ranks)[0]][0] = 0; }, t => { t.extra = true; },
@@ -122,6 +125,10 @@ test('pending rows carry no efforts, no recommendation and no lineup place', asy
     if (member === 'baseline') l.baseline = pendingId;
   };
   for (const where of ['members', 'frontier', 'baseline']) await rejects(inLineup(where), 'invalid_client_pending_model');
+  for (const end of ['from', 'to']) await rejects(d => {
+    const l = d.lineups.find(x => x.developerId === 'openai');
+    l.steps.push({from: 'luna', to: 'luna', abilityDelta: 20, costRatio: 0.5, [end]: pendingId});
+  }, 'invalid_client_pending_model');
 });
 
 test('a speed tier apiPriceMultiplier is a finite number above 1', async () => {

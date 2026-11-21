@@ -56,14 +56,31 @@ test("decide: open, ready, trusted same-repository tier 1 and 2 heads only; the 
   assert.equal(S.laneFor(""), null, "unset keeps the workflow off");
 });
 
-test("decide: compile first; cheap CI for heads that need no Mac compile", () => {
+test("decide (D374): every ready head is reviewed once ci passes, native or not; mac-compile no longer gates the review", () => {
   assert.equal(decide({ checks: { ci: false, compile: true } }).why, "ci has not passed at this head");
   assert.equal(decide({ checks: { ci: true, compile: false } }).review, true, "no desktop/native change: ci is enough");
-  assert.equal(decide({ files: native, checks: { ci: true, compile: false } }).why, "mac-compile has not passed at this head");
+  const n = decide({ files: native, checks: { ci: true, compile: false } });
+  assert.equal(n.review, true, "a native head is reviewed without a mac-compile success");
+  assert.equal(n.compile, true);
   assert.equal(decide({ files: native, checks: { ci: false, compile: true } }).why, "ci has not passed at this head");
   assert.equal(decide({ files: native }).compile, true);
-  // A renamed file's old path counts: moving a file out of desktop/native still needs the compile.
-  assert.equal(decide({ files: [{ filename: "cli/x.swift", previous_filename: "desktop/native/x.swift" }], checks: { ci: true, compile: false } }).why, "mac-compile has not passed at this head");
+  // Drafts stay excluded, and one verdict per lane per head still holds.
+  assert.equal(decide({ files: native, checks: { ci: true, compile: false }, pr: { draft: true } }).why, "draft");
+  const done = decide({ files: native, checks: { ci: true, compile: false }, comments: [comment(v("merge", H, "ghsol"))] });
+  assert.equal(done.review, false);
+  // A renamed file's old path still counts as native (reported only).
+  assert.equal(decide({ files: [{ filename: "cli/x.swift", previous_filename: "desktop/native/x.swift" }], checks: { ci: true, compile: false } }).compile, true);
+});
+
+test("D374: the no-verdict note is advisory (no gate marker), deduplicated per head, and the retry input names the reason", () => {
+  const note = S.renderNoVerdictNote({ head: H, lane: "ghsol", why: "a block verdict needs at least one blocker", runUrl: "https://x/run/1" });
+  assert.equal(note.split("\n")[0], `review answer invalid, no verdict @ ${H} (ghsol)`);
+  assert.match(S.NOVERDICT_RE.source, /no verdict/);
+  assert.ok(S.NOVERDICT_RE.test(note.split("\n")[0]));
+  assert.deepEqual(R.verdicts(R.feed([comment(note)]), H, []).size, 0, "the note is no verdict");
+  assert.equal(S.noVerdictNoted(R.feed([comment(note)]), H), true);
+  assert.equal(S.noVerdictNoted(R.feed([comment(note)]), OLD), false);
+  assert.match(S.retryInput("REQ", "no final VERDICT line"), /^REQ\n\n--- Format correction ---\n.*no final VERDICT line/s);
 });
 
 test("decide: COMPILE_PATHS match mac-compile-trigger.yml's pull_request paths", () => {
@@ -830,4 +847,82 @@ test("review:gpt: the fallback comment is a counting (ghglm) verdict with the fi
   assert.deepEqual(decide({}).providers, ["openai"]);
   assert.equal(S.postProblem({ pr: pr(labelled), items: R.feed([]), head: H, lane: S.SOL_LANE, posted: S.GLM_LANE, tier: 1, files: t1 }), null, "GLM may post on a labelled PR with no REVIEW_GLM_TIERS");
   assert.match(S.postProblem({ pr: pr(), items: R.feed([]), head: H, lane: S.SOL_LANE, posted: S.GLM_LANE, tier: 1, files: t1 }), /may not decide/);
+});
+
+test("generated bundle diff is replaced by a one-line note; every other file is kept", () => {
+  const other = "diff --git a/codex/server.mjs b/codex/server.mjs\nindex 1..2 100644\n--- a/codex/server.mjs\n+++ b/codex/server.mjs\n@@ -1 +1 @@\n-a\n+b\n";
+  const bundle = "diff --git a/codex/server.bundle.mjs b/codex/server.bundle.mjs\nindex 1..2 100644\n--- a/codex/server.bundle.mjs\n+++ b/codex/server.bundle.mjs\n@@ -1,2 +1,2 @@\n-x\n-y\n+z\n+w\n";
+  const tail = "diff --git a/cli/main.go b/cli/main.go\n--- a/cli/main.go\n+++ b/cli/main.go\n@@ -1 +1 @@\n-1\n+2\n";
+  const out = S.omitGeneratedDiffs(other + bundle + tail);
+  assert.equal(out, other + "codex/server.bundle.mjs: generated file, 4 lines changed, omitted from review; reproducible with `npm run build` in codex/ and checked by the ci.yml `codex` job (committed-as-built steps)\n" + tail);
+  const big = bundle + "-line\n".repeat(5000);
+  assert.ok(S.omitGeneratedDiffs(other + big + tail).length < big.length, "a large bundle diff shrinks to the note");
+});
+
+test("a file that is not listed is never omitted, including look-alikes and renames", () => {
+  const d = ["codex/server.bundle.mjs.map", "codex/other.bundle.mjs", "x/codex/server.bundle.mjs", "codex/server.mjs"]
+    .map((p) => `diff --git a/${p} b/${p}\n--- a/${p}\n+++ b/${p}\n@@ -1 +1 @@\n-a\n+b\n`).join("");
+  assert.equal(S.omitGeneratedDiffs(d), d);
+  const renamed = "diff --git a/old.mjs b/codex/server.bundle.mjs\nsimilarity index 90%\nrename from old.mjs\nrename to codex/server.bundle.mjs\n";
+  assert.equal(S.omitGeneratedDiffs(renamed), renamed);
+  assert.equal(S.omitGeneratedDiffs(""), "");
+  assert.deepEqual(Object.keys(S.GENERATED_DIFF_OMITTED), ["codex/server.bundle.mjs"]);
+});
+
+// Owner D374: a dropped answer is asked for once more; a second invalid answer is recorded for the post step.
+async function callTwice(answers) {
+  const dir = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "sol-retry-"));
+  try {
+    mkdirSync(join(dir, "pr-review-sol"));
+    writeFileSync(join(dir, "pr-review-sol", "request.md"), "REQUEST");
+    let n = 0;
+    const seen = [];
+    const server = createServer((req, res) => {
+      let b = "";
+      req.on("data", (d) => (b += d));
+      req.on("end", () => {
+        res.setHeader("content-type", "application/json");
+        seen.push(b);
+        res.end(JSON.stringify({ choices: [{ message: { content: answers[Math.min(n++, answers.length - 1)] } }], usage: { prompt_tokens: 3, completion_tokens: 1 } }));
+      });
+    });
+    await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const c = spawn(process.execPath, [join(root, "scripts/pr-review/sol-call.mjs")], { env: { PATH: process.env.PATH, RUNNER_TEMP: dir, GLM_API_KEY: "glm-key-0123456789", GLM_BASE_URL: `${base}/glm`, HEAD_SHA: H, PROVIDERS: "glm", PROVIDER_MODE: "glm-first", SOL_RETRY_MS: "0" } });
+    let out = "";
+    c.stdout.on("data", (d) => (out += d));
+    await new Promise((ok) => c.on("close", ok));
+    server.close();
+    const f = (name) => (existsSync(join(dir, "pr-review-sol", name)) ? readFileSync(join(dir, "pr-review-sol", name), "utf8") : null);
+    return { calls: n, seen, answer: f("answer.md"), noverdict: f("noverdict"), out };
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+const goodAnswer = `ok\nRecord: ${H}\nVERDICT: merge`;
+const badAnswer = `Record: ${H}\nVERDICT: block`;   // a block with no blocker (the #1126 case)
+
+test("D374 retry: an answer that fails the verdict format is asked for once more and the valid second answer is used", async () => {
+  const r = await callTwice([badAnswer, goodAnswer]);
+  assert.equal(r.calls, 2);
+  assert.match(r.seen[1], /Format correction/);
+  assert.equal(r.answer, goodAnswer);
+  assert.equal(r.noverdict, null);
+});
+
+test("D374 retry: two invalid answers leave a noverdict marker, never a third call; a valid first answer is not retried", async () => {
+  const bad = await callTwice([badAnswer, badAnswer, goodAnswer]);
+  assert.equal(bad.calls, 2);
+  assert.match(bad.noverdict, /needs at least one blocker/);
+  const ok = await callTwice([goodAnswer]);
+  assert.equal(ok.calls, 1);
+  assert.equal(ok.noverdict, null);
+});
+
+test("D374: the post step turns the noverdict marker into the advisory note and the workflow passes the head to the review step", () => {
+  const post = readFileSync(join(root, "scripts/pr-review/sol-post.mjs"), "utf8");
+  assert.match(post, /existsSync\(join\(dir, "noverdict"\)\)/);
+  assert.match(post, /noVerdictNoted\(items, head\)/);
+  const wf = readFileSync(join(root, PR_REVIEW_SOL_PATH), "utf8");
+  assert.match(wf, /Review \(model credentials only here\)\n\s+if: [^\n]+\n\s+env:\n\s+HEAD_SHA: \$\{\{ steps\.prep\.outputs\.head \}\}/);
+  assert.deepEqual(prReviewSolProblems(wf), []);
+  assert.match(wf, /workflows: \[ci, mac-compile, review-label\]/, "the mac-compile workflow_run stays an extra trigger");
 });

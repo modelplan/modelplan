@@ -7,6 +7,7 @@
 // public job log, and is refused if it contains a credential.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseAnswer, retryInput } from "./sol.mjs";
 import { fallbackEnabled, glmProvider, openaiProvider, providerOrder, reviewInOrder } from "./providers.mjs";
 
 const env = process.env;
@@ -24,6 +25,18 @@ const build = (name) => name === "glm"
   : openaiProvider({ key: env.OPENAI_API_KEY, model: env.MODEL, effort: env.EFFORT, url: env.SOL_API_URL || undefined, pollMs: num(env.SOL_POLL_MS, 15000), deadlineMs: num(env.SOL_TIMEOUT, 1800) * 1000, waitMs });
 let r;
 try { r = await reviewInOrder({ input, order, build }); } catch (e) { fail(e.message); }
+// A dropped answer (no final VERDICT, no Record, a block without a blocker) is retried once with the reason appended.
+// A second invalid answer is recorded as "noverdict"; the post step then says so in a short advisory note.
+const head = String(env.HEAD_SHA ?? "");
+const invalid = (x) => { if (x.provider === "waiting" || !x.text?.trim()) return null; const a = parseAnswer(x.text, head); return a.ok ? null : a.why; };
+let again = null;
+const firstWhy = /^[0-9a-f]{40}$/.test(head) ? invalid(r) : null;
+if (firstWhy) {
+  console.log(`pr-review-sol: invalid answer from ${r.provider} (${firstWhy}); retrying once`);
+  try { again = await reviewInOrder({ input: retryInput(input, firstWhy), order, build }); } catch (e) { console.log(`pr-review-sol: retry failed (${e.message})`); }
+  if (again && again.provider !== "waiting" && again.text?.trim()) r = { ...again, usage: { input: r.usage.input + again.usage.input, cached: r.usage.cached + again.usage.cached, output: r.usage.output + again.usage.output } };
+}
+const finalWhy = firstWhy ? invalid(r) : null;
 writeFileSync(join(dir, "provider"), r.provider);
 writeFileSync(join(dir, "seconds"), String(Math.round((Date.now() - start) / 1000)));
 writeFileSync(join(dir, "why"), r.why ?? "");
@@ -35,6 +48,7 @@ if (r.provider === "waiting") {
 if (!r.text.trim()) fail(`empty answer from ${r.provider}`);
 for (const k of [env.OPENAI_API_KEY, env.GLM_API_KEY]) if (k && r.text.includes(k)) fail("the answer contains an API key");
 writeFileSync(join(dir, "answer.md"), r.text);
+if (finalWhy) writeFileSync(join(dir, "noverdict"), finalWhy ?? firstWhy);
 writeFileSync(join(dir, "model"), r.model ?? "");
 writeFileSync(join(dir, "usage.json"), JSON.stringify(r.usage));
 if (r.why) console.log(`pr-review-sol: quota out (${r.why}); answered by ${r.provider}`);

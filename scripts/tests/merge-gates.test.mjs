@@ -31,8 +31,11 @@ const pr = (over = {}) => ({
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } },
   ...over,
 });
-const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, prove, p = pr() } = {}) =>
+// D374: a native head also needs the mac-compile success status; the default statuses carry it so unrelated tests stay green.
+const compileOk = { context: "mac-compile", state: "success" };
+const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [compileOk], verified = () => false, prove, p = pr() } = {}) =>
   R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, proveMainMerges: prove, conf });
+const evalPrBase = (o) => evalPr(o);
 // D243 (owner 2026-11-13): scenario evidence, Scenarios lines, trains, GLMREV, DESIGN and non-GPT verdict blocks are
 // advisory. They never change the PR state; the status description names them after "info:". advisory() reads the
 // evidence part back out of a result: PENDING when the description reports missing or unreadable evidence.
@@ -138,6 +141,25 @@ test("tier gates: tier 1 needs a GPT merge, tier 2 needs a Sol lane, macrev is a
   assert.equal(evalPr({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "tier 1 Sol");
 });
 
+test("R13: a PR with a Ledger: G3-nn line is at least tier 2, so Terra alone cannot land it", () => {
+  const body = "Ledger: G3-65\nScenarios: V-01";
+  const ledger = pr({ body });
+  assert.ok(R.ledgerPr(ledger));
+  assert.ok(R.ledgerPr(pr({ body: "Summary\n\n- Ledger: G3-26, G3-27 (fix)\nScenarios: none" })));
+  assert.ok(!R.ledgerPr(pr({ body: "Scenarios: none" })));
+  assert.ok(!R.ledgerPr(pr({ body: "Ledger: none\nSee G3-65 elsewhere" })), "only the Ledger line counts");
+  const glm = comment(`GLMREV: OK @ ${H}`);
+  const av = comment(`AUTO-VERIFIED: V-01 @ ${H} gates=ci,gui,review`);
+  const e = (comments, p) => evalPr({ p, files: [file("scripts/tool.mjs")], comments: [...comments, glm, av] });
+  assert.equal(R.pathTier(["scripts/tool.mjs"]), 1, "the files alone are tier 1");
+  assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).state, R.PENDING, "Terra alone is not enough");
+  assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).tier, 2);
+  assert.equal(e([comment(v("merge", H, "macrev2"))], ledger).state, R.SUCCESS, "Sol lands it");
+  assert.equal(e([comment(v("merge", H, "macrevb"))], ledger).state, R.SUCCESS);
+  assert.equal(e([comment("REVIEW-TIER: 0"), comment(v("merge", H, "macrevc"))], ledger).state, R.PENDING, "an override cannot lower it below 2");
+  assert.equal(e([comment(v("merge", H, "macrevc"))], pr({ body: "Scenarios: none" })).state, R.SUCCESS, "a non-ledger PR stays tier 1");
+});
+
 test("workflow reviewer (gh-terra pilot): a Terra lane; its shadow name and other hyphenated names count for nothing", () => {
   assert.ok(R.TERRA_LANES.includes("(gh-terra)"));
   assert.ok(!R.SOL_LANES.includes("(gh-terra)"));
@@ -210,6 +232,8 @@ test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothin
 
 test("D97 AUTO-VERIFIED: trusted first line at the exact head clears the listed scenarios, ledger and G3 rows included", () => {
   const docs = [file("docs/evidence.md")];
+  // R13: a ledger PR is tier 2, so every case below also carries the Sol verdict and the GLM review it now needs.
+  const evalPr = (o) => evalPrBase({ ...o, comments: [...(o.comments ?? []), comment(v("merge", H, "macrev2")), comment(`GLMREV: OK @ ${H}`)] });
   const ledger = (body) => pr({ title: "Fix G3-07", body: `Ledger: G3-07\n${body}` });
   const av = (ids, sha = H, gates = "ci,gui,review") => `AUTO-VERIFIED: ${ids} @ ${sha} gates=${gates}`;
   assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(`${av("V-01, V-02")}\n\nchecked`)] }).state, R.SUCCESS);
@@ -382,7 +406,7 @@ test("GLM-out fallback: (sonnet) DESIGN/GLMREV pass only inside the window, exac
   const UNTIL = "2026-11-14T12:17:50Z", until = Date.parse(UNTIL);
   const inside = Date.parse("2026-11-09T12:00:00Z"), after = until + 1000;
   const evalFb = ({ comments, files, now = inside, u = until }) => {
-    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmFallbackUntil: u, now });
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [compileOk], verifiedEdge: () => false, conf, glmFallbackUntil: u, now });
     return { ...r, state: marker(r, files === seam ? "GLMREV" : "DESIGN") };
   };
   // window parsing: strict UTC form, at most 8 days ahead
@@ -423,7 +447,7 @@ test("GLM-out fallback mixing: a (sonnet) pass/OK only at the exact head and nev
   const until = Date.parse("2026-11-14T12:17:50Z"), now = Date.parse("2026-11-09T12:00:00Z");
   const ui = [file("desktop/native/ModelPlanSettings/Pane.swift")], seam = [file("cli/main.go")];
   const evalFb = ({ comments, files, verified = () => false }) => {
-    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: verified, conf, glmFallbackUntil: until, now });
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [compileOk], verifiedEdge: verified, conf, glmFallbackUntil: until, now });
     return { ...r, state: marker(r, files === seam ? "GLMREV" : "DESIGN") };
   };
   const merge = comment(v("merge")), glm = comment(`GLMREV: OK @ ${H}`);
@@ -450,7 +474,7 @@ test("GLM-out fallback mixing: a (sonnet) pass/OK only at the exact head and nev
 test("DESIGN-ACCEPTED: coordinator lift of a GLM or (sonnet) DESIGN fail, exact head, trusted comment first line only", () => {
   const until = Date.parse("2026-11-14T12:17:50Z"), now = Date.parse("2026-11-09T12:00:00Z");
   const evalD = ({ comments, reviews = [], verified = () => false, u = until }) => {
-    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments, reviews), files: [file("desktop/native/ModelPlanSettings/Pane.swift")], runs: greenCi, statuses: [], verifiedEdge: verified, conf, glmFallbackUntil: u, now });
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments, reviews), files: [file("desktop/native/ModelPlanSettings/Pane.swift")], runs: greenCi, statuses: [compileOk], verifiedEdge: verified, conf, glmFallbackUntil: u, now });
     return { ...r, state: marker(r, "DESIGN") };
   };
   const merge = comment(v("merge")), glm = comment(`GLMREV: OK @ ${H}`);
@@ -1512,4 +1536,23 @@ test("review:gpt: the GLM fallback verdict counts only with the workflow's marke
   assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers: [2] }).state, R.SUCCESS, "unlabelled unchanged");
   // GPT still decides when it answered: GPT merge beats nothing, a GPT block beats a marked GLM merge
   assert.equal(ev(labelled, [marked("merge"), comment(v("block", H, "ghsol"))]).state, R.FAILURE);
+});
+
+test("D374: a native head cannot merge without a mac-compile success status at its head", () => {
+  const native = [file("desktop/native/ModelPlanSettings/Pane.swift")];
+  const merge = [comment(v("merge"))];
+  const r = (o) => evalPr({ files: native, comments: merge, ...o });
+  assert.equal(r({ statuses: [compileOk] }).state, R.SUCCESS, "compile green: the gate passes");
+  const missing = r({ statuses: [] });
+  assert.equal(missing.state, R.PENDING);
+  assert.match(missing.why, /^waiting for mac-compile at this head/);
+  assert.equal(r({ statuses: [{ context: "mac-compile", state: "pending" }] }).state, R.PENDING, "a running compile holds it");
+  assert.equal(r({ statuses: [{ context: "mac-compile", state: "failure" }] }).state, R.FAILURE, "a failed compile blocks it");
+  assert.equal(r({ statuses: [{ context: "other", state: "success" }] }).state, R.PENDING, "only the mac-compile context counts");
+  // A rename out of desktop/native is native too; a PR with no native file never waits for it.
+  assert.equal(evalPr({ files: [file("cli/x.swift", { previous_filename: "desktop/native/x.swift" })], comments: merge, statuses: [] }).state, R.PENDING);
+  assert.equal(evalPr({ files: [file("scripts/tool.mjs")], comments: merge, statuses: [] }).state, R.SUCCESS);
+  // A truncated file list could hide a native file: it waits for the compile too.
+  const many = Array.from({ length: R.FILE_LIST_LIMIT }, (_, i) => file(`docs/${i}.md`));
+  assert.equal(evalPr({ files: many, comments: merge, statuses: [] }).state, R.PENDING);
 });

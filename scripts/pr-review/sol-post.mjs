@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { client } from "../merge-gates/github.mjs";
 import { feed, isShadowLane, parseGlmTiers, pathTier, prPaths, tierOverride, TRUSTED } from "../merge-gates/rules.mjs";
 import { secretHits } from "./brief.mjs";
-import { agreement, parseAnswer, postLane, postProblem, renderScopeNote, renderSolComment, renderWaitNote, scopeNoted, SCOPE_CHANGED } from "./sol.mjs";
+import { agreement, parseAnswer, postLane, postProblem, noVerdictNoted, renderNoVerdictNote, renderScopeNote, renderSolComment, renderWaitNote, scopeNoted, SCOPE_CHANGED } from "./sol.mjs";
 
 const env = process.env;
 const dir = join(env.RUNNER_TEMP, "pr-review-sol");
@@ -18,7 +18,9 @@ const head = String(env.HEAD_SHA ?? "");
 if (!/^[0-9a-f]{40}$/.test(head)) fail("no head sha");
 const provider = read(join(dir, "provider")).trim() || "openai";
 const waiting = provider === "waiting";
-const answer = waiting ? null : parseAnswer(read(join(dir, "answer.md")), head);
+// sol-call.mjs asked twice and both answers failed the verdict format: a short advisory note instead of a verdict.
+const noVerdict = !waiting && existsSync(join(dir, "noverdict")) ? read(join(dir, "noverdict")).trim() || "invalid answer" : "";
+const answer = waiting || noVerdict ? null : parseAnswer(read(join(dir, "answer.md")), head);
 // R18: an answer without a final VERDICT or record gives no verdict; the next trigger (or a dispatch) reviews again.
 if (answer && !answer.ok) fail(answer.why);
 const lane = postLane(env.LANE, provider);
@@ -50,6 +52,15 @@ if (late?.startsWith(SCOPE_CHANGED)) {
   process.exit(0);
 }
 if (late) { say(`#${n}: ${late}; nothing posted`); process.exit(0); }
+
+if (noVerdict) {
+  if (noVerdictNoted(items, head)) { say(`#${n}: a no-verdict note for ${head} already exists`); process.exit(0); }
+  const note = renderNoVerdictNote({ head, lane: env.LANE, why: noVerdict, runUrl: env.RUN_URL });
+  await gh.post(`/issues/${n}/comments`, { body: note });
+  console.log(`::warning::${note.split("\n")[0]}`);
+  say(`#${n}: posted "${note.split("\n")[0]}"`);
+  process.exit(0);
+}
 
 if (waiting) {
   // One coordinator event per head: the note is posted once; later runs for the same head only log.

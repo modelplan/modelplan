@@ -237,12 +237,12 @@ test("every owner-Mac route that is not a GUI task needs modelplan-mac-nongui, s
   const gui = /\(inputs\.task == 'native' \|\| inputs\.task == 'native-owner-gui' \|\| inputs\.task == 'gui-probe'\) && '(\[[^\]]*\])'/.exec(TRUSTED_MAC_ROUTE);
   assert.ok(gui && JSON.parse(gui[1]).includes("modelplan-mac-gui"), "only native, native-owner-gui and gui-probe take the GUI label");
   // The hosted GUI split never reaches an owner Mac: it is excluded from the owner branch, and its caller passes macos-15.
-  assert.ok(TRUSTED_MAC_ROUTE.includes("inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (inputs.task != 'native-headless' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) &&"));
-  // D198 for every event but the merge queue: native-headless resolves to the hosted image from inputs.os.
-  // D246: in the merge queue it takes the non-GUI owner Macs; the GUI label is only for the three tasks checked above.
+  assert.ok(TRUSTED_MAC_ROUTE.includes("inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (inputs.task != 'native-headless' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) &&"));
+  // D198 for every event but the main-dispatch seed publish; D246 (merge queue on the owner Macs) was reverted.
+
   const headless = TRUSTED_MAC_ROUTE.split("|| (inputs.os == 'ubuntu-latest'")[0].split("native-headless").length - 1;
-  assert.equal(headless, 2, "native-headless appears only in the merge_group exception and the merge_group clause");
-  assert.ok(TRUSTED_MAC_ROUTE.includes("(inputs.task != 'native-headless' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))"));
+  assert.equal(headless, 1, "native-headless appears only in the main-dispatch exception");
+  assert.ok(TRUSTED_MAC_ROUTE.includes("(inputs.task != 'native-headless' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))"));
   assert.ok(TRUSTED_MAC_ROUTE.includes("((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled')"), "owner GUI tasks still need MAC_CI_GUI");
   const reusable = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
   assert.deepEqual(guiGuardProblems(reusable), [], "every non-GUI job opens with the D94 GUI guard");
@@ -385,11 +385,11 @@ test("D169: trusted-mac.yml narrows the GUI share only on an ordinary branch dis
   assert.match(tests, /\[ "\$GUI_ONLY" != full \] \|\| \{ echo "::error::the full GUI share planned no tests"; exit 1; \}/);
 });
 
-test("D169/D246: the owner Macs admit the merge queue for the GUI tasks and native-headless, the nightly for the GUI tasks only", () => {
-  const extra = "((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'native-headless') && github.event_name == 'merge_group' && startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main')";
+test("D169/D246 reverted: the owner Macs admit the merge queue for the GUI tasks only (native-headless is hosted there), the nightly for the GUI tasks only", () => {
+  const extra = "((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'merge_group' && startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main')";
   assert.equal(TRUSTED_MAC_ROUTE.split(extra).length, 2, "exactly one merge_group/schedule clause");
-  // merge_group: the D246 native-headless exception and the queue clause; nothing else.
-  assert.equal(TRUSTED_MAC_ROUTE.split("merge_group").length, 3);
+  // merge_group: only the queue clause; native-headless is hosted in the queue.
+  assert.equal(TRUSTED_MAC_ROUTE.split("merge_group").length, 2);
   assert.equal(TRUSTED_MAC_ROUTE.split("'schedule'").length, 2);
   // It sits inside the owner identity gate, next to the push/dispatch clause.
   const owner = "(github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request'";
@@ -827,4 +827,15 @@ test("packaging workflows pin Xcode 26.6 (17F113) instead of selecting the newes
     assert.match(text, /is not installed on this runner/, `${f} must fail when the pinned Xcode is absent`);
     assert.match(text, /'xcodebuild', '-version'/, `${f} must log xcodebuild -version`);
   }
+});
+
+test("the merge-queue native-headless leg is hosted and a hosted merge-queue run requires Xcode 26.6 (17F113)", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  const job = text.slice(text.indexOf("\n  native-headless:\n"));
+  const guard = job.slice(job.indexOf("- name: Require Xcode 26.6 (17F113) on a hosted merge-queue run"));
+  assert.ok(guard.length < job.length, "the guard step exists in native-headless");
+  assert.match(guard, /if: \$\{\{ github\.event_name == 'merge_group' && runner\.environment == 'github-hosted' \}\}/);
+  assert.match(guard, /Xcode 26\\\.6\$/);
+  assert.match(guard, /17F113/);
+  assert.doesNotMatch(TRUSTED_MAC_ROUTE, /native-headless'\) && github\.event_name == 'merge_group'/);
 });
