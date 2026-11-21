@@ -33,7 +33,19 @@ import ModelPlanSettings
         XCTAssertNil(app.cockpitPluginModel)
     }
 
+    #if MODELPLAN_TEST_ONLY_SPI
+    /// macrevb-1096-10: the fixture that opts in supplies a counting synthetic reader, so installing the plugin can never
+    /// reach SystemResourceReader (this Mac's CPU, memory and disk). Only this reader is ever asked to sample.
+    private final class CountingReader: ResourceReader {
+        private(set) var reads = 0
+        func read(uptime: TimeInterval, unixMs: Int64) -> ResourceSample? { reads += 1; return nil }
+    }
+
     func testTheInstalledAppAsksForTheResourcePlugin() async throws {
+        let reader = CountingReader()
+        let saved = CommunityCockpitApplicationFactory.verificationResourceReader
+        CommunityCockpitApplicationFactory.verificationResourceReader = { reader }
+        defer { CommunityCockpitApplicationFactory.verificationResourceReader = saved }
         let app = try await make(installs: true)
         await app.prepare(); app.allowDockPresentation()
         let dock = app.composition.dock; defer { dock.close() }
@@ -41,4 +53,5 @@ import ModelPlanSettings
         XCTAssertNotNil(app.resourcePlugin, "the app that asks (ModelPlanCommunityApp) gets the default-on resource plugin")
         XCTAssertNotNil(app.cockpitPluginModel)
     }
+    #endif
 }
