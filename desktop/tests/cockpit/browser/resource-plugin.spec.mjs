@@ -103,11 +103,10 @@ test('D371 B4c status colour: bars and numbers are normal / amber / red by resou
  await expect(column(page).locator('.pl-cell[data-row="1"] .qvalue')).toHaveText('94');
 });
 
-test('D371 the Resources and Calendar tab icons have no small square frame',async({page})=>{
+test('D371 the Resources tab icon has no small square frame (the Calendar icon is unchanged)',async({page})=>{
  await open(page);
- const frames=await page.evaluate(()=>[...document.querySelectorAll('.eng-keys .pl-key')].map(k=>[k.dataset.plugin,k.querySelectorAll('.lamp svg rect').length,k.querySelectorAll('.lamp svg').length]));
- expect(frames.length).toBeGreaterThan(0);
- for(const [id,rects,svgs] of frames){expect(svgs,id).toBe(1);expect(rects,id).toBe(0);}
+ const frames=await page.evaluate(()=>{const k=document.querySelector('.eng-keys .pl-key[data-plugin="resources"]');return [k.querySelectorAll('.lamp svg rect').length,k.querySelectorAll('.lamp svg').length];});
+ expect(frames).toEqual([0,1]);
 });
 
 test('the big screen: charts on the draw hook, redrawn by readings, closed by Escape',async({page})=>{

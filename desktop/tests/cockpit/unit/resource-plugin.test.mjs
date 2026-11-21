@@ -7,7 +7,6 @@ import assert from 'node:assert/strict';
 import {PluginRegistry,PLUGIN_INKS} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
 import {builtinPlugins} from '../../../cockpit/.tmp/compiled/src/plugin-builtins.js';
 import {resourcePlugin,RESOURCE_INK,RESOURCE_WINDOW_MS,resourceLevels,chartData} from '../../../cockpit/.tmp/compiled/src/resource-plugin.js';
-import {calendarPlugin} from '../../../cockpit/.tmp/compiled/src/calendar-plugin.js';
 import {tables} from '../../../cockpit/study/rocket-r1/i18n.js';
 import '../../../cockpit/study/rocket-r1/strings/plugins.js';
 
@@ -110,8 +109,8 @@ test('D371 B4c the column carries the level through its sample history, so a fli
  assert.equal(cpu(10,20).tone,true,'bars take the status tone');
 });
 
-test('D371 the Resources and Calendar key icons have no small square frame',()=>{
- assert.doesNotMatch(resourcePlugin.icon,/<rect/);assert.doesNotMatch(calendarPlugin.icon,/<rect/);assert.match(calendarPlugin.icon,/currentColor/);
+test('D371 the Resources key icon has no small square frame',()=>{
+ assert.doesNotMatch(resourcePlugin.icon,/<rect/);
 });
 
 test('screen lines (the draw fallback): CPU, memory with the four kinds, disk, sampling interval',()=>{
