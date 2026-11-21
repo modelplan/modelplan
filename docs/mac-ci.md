@@ -37,6 +37,11 @@ branch, not a commit. The workflow starts only from `workflow_dispatch` by the o
 only `main` or a `refs/tags/` tag, and holds a read-only token with no secrets. After the owner adds the group entry, check
 that a branch copy, another workflow and a non-owner dispatch or rerun get no smoke runner.
 
+Register the runner under the opaque name `smoke-arm64-N` (the same N as its label), never the default host name: GitHub
+records the registered name in public job metadata before any step runs. The workflow's first step refuses any other name
+without printing it, so the timing table can name the runner safely. The policy check also rejects any other workflow whose
+`runs-on` is an expression that is not a literal `strategy.matrix` key (an input-driven or `fromJSON` matrix fails closed).
+
 ## Graphical checks
 
 Native checks create actual AppKit windows. They stay hosted until

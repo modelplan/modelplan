@@ -7,7 +7,9 @@
 # Trust boundary (public repository: fork code must never reach these Macs):
 # - Only workflow_dispatch starts it, by the owner account, from main's definition (a branch's copy never runs here).
 # - The ref to build must be main or a tag (refs/tags/...); anything else is skipped by the job condition.
-# - Public output names the smoke label only: never the runner name (register the runner under a non-identifying name) or file owners.
+# - The runner must be registered under the opaque name smoke-arm64-N (GitHub shows the registered name in job metadata
+#   before any step runs); the first step refuses any other name without printing it. Public output may then name the
+#   runner, and never a file owner.
 # - Read-only token, no secrets, checkouts keep no credentials, no artifacts, no seed publish.
 # Adding a runner: add its smoke-arm64-N label to the options below (scripts/workflow-policy.mjs allows only that shape).
 # Owner step after merge: add this workflow's pinned ref to the modelplan-mac runner group (D330).
@@ -41,14 +43,14 @@ jobs:
     env:
       MACOSX_DEPLOYMENT_TARGET: '14.0'
     steps:
-    - name: Runner identity and clock
+    - name: Refuse a runner without an opaque name
       shell: bash
       run: |
-        # Never the V1 host or a GUI Mac, whatever label it carries.
+        # The runner must be registered as smoke-arm64-N: any other name may identify the host, so it is refused unprinted.
         case "${RUNNER_NAME:-}" in
-          modelplan-mac-arm64-1|*gui*) echo "::error::this job must not run on the V1 host or a GUI Mac"; exit 1;;
+          smoke-arm64-[0-9]|smoke-arm64-[0-9][0-9]) ;;
+          *) echo "::error::the runner must be registered under the opaque name smoke-arm64-N; refusing to run"; exit 1;;
         esac
-        # Public log: the runner name is compared above and never printed (the report below names the smoke label only).
         echo "HEADLESS_SCRATCH=$RUNNER_TEMP/headless-build" >> "$GITHUB_ENV"
     - uses: actions/checkout@v4
       with:
@@ -142,7 +144,7 @@ jobs:
       run: swift run --package-path desktop/native --scratch-path "$HEADLESS_SCRATCH" --skip-build ModelPlanRunLoopChecks
     - name: Synthetic fixture integrity
       run: python3 desktop/native/tools/check-fixture-manifests.py
-    - name: Timings and smoke label
+    - name: Timings, runner name and smoke label
       if: ${{ always() }}
       shell: bash
       env:
@@ -152,7 +154,7 @@ jobs:
         now=$(date +%s)
         span() { if [ -n "${2:-}" ] && [ -n "${1:-}" ]; then echo "$(( $2 - $1 ))s"; else echo "not reached"; fi; }
         {
-          echo "runner: label $SMOKE_LABEL (ref $SMOKE_REF, $(uname -m))"
+          echo "runner: $RUNNER_NAME, label $SMOKE_LABEL (ref $SMOKE_REF, $(uname -m))"
           echo "toolchain select:   $(span "${T_START:-}" "${T_XCODE:-}")"
           echo "native build:       $(span "${T_XCODE:-}" "${T_BUILD:-}")"
           echo "integration build:  $(span "${T_BUILD:-}" "${T_TESTBUILD:-}")"

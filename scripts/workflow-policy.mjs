@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && inputs.os == 'macos-15' && vars.MAC_CI_NONGUI == 'enabled' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/'))))) && fromJSON('[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (inputs.task != 'native-headless' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'native-headless') && github.event_name == 'merge_group' && startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main'))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'gui-probe') && '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\",\"modelplan-mac-gui\"]' || '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}";
 // SPDX-License-Identifier: MIT
 // Runner and trigger rules for public workflows. Defence in depth only: the enforced boundaries
@@ -57,6 +58,24 @@ export const RUNNER_SMOKE_ON = [
   "        type: string", "        required: false", "        default: main",
 ].join("\n");
 
+// First step of the smoke job (macrevc-1107-3, ruling R11): refuse any runner whose registered name is not the opaque
+// smoke-arm64-N. A host-identifying default name therefore never reaches a build, and after this step the name is safe to
+// print. This also keeps the V1 host and the GUI Macs out. The refusal message never repeats the name. (GitHub's own job metadata shows the name before any step runs, which
+// is why the owner registers the runner under this opaque name; see docs/mac-ci.md.)
+export const RUNNER_SMOKE_NAME_STEP = Object.freeze({
+  name: "Refuse a runner without an opaque name",
+  shell: "bash",
+  run: [
+    "# The runner must be registered as smoke-arm64-N: any other name may identify the host, so it is refused unprinted.",
+    "case \"${RUNNER_NAME:-}\" in",
+    "  smoke-arm64-[0-9]|smoke-arm64-[0-9][0-9]) ;;",
+    "  *) echo \"::error::the runner must be registered under the opaque name smoke-arm64-N; refusing to run\"; exit 1;;",
+    "esac",
+    "echo \"HEADLESS_SCRATCH=$RUNNER_TEMP/headless-build\" >> \"$GITHUB_ENV\"",
+    "",
+  ].join("\n"),
+});
+
 const onKeys = (text) => {
   const on = topLevelBlock(text, "on");
   return on ? [...on.matchAll(/^ {2}([A-Za-z_]+):/gm)].map((m) => m[1]) : [];
@@ -92,11 +111,10 @@ export function runnerSmokeProblems(text) {
   // any form (block, flow or write-all), and no job-level or step-level permissions block at all.
   const effective = text.split("\n").filter((l) => !/^\s*#/.test(l));
   if (effective.some((l) => /\bsecrets\b/i.test(l) || /:\s*write(?:-all)?\b/.test(l) || /\bwrite-all\b/.test(l))) problems.push("runner-smoke.yml may not use secrets or write permissions");
-  if (effective.filter((l) => /^\s*permissions\s*:/.test(l)).length !== 1) problems.push("runner-smoke.yml may have only the top-level permissions block, none in a job");
+  if (effective.filter((l) => /^\s*["']?permissions["']?\s*:/.test(l)).length !== 1) problems.push("runner-smoke.yml may have only the top-level permissions block, none in a job");
   // Public logs and the job summary must not carry the runner's host name or the file owner: the runner name is only
   // compared inside the refusal guard, never printed, and no long directory listing (owner and group columns) is run.
   if (effective.some((l) => /\brunner\.name\b/.test(l) || /\bls\s+-\w*l/.test(l))) problems.push("runner-smoke.yml may not print the runner name or a long directory listing");
-  if (effective.some((l) => /\b(?:echo|printf|tee|cat)\b[^\n]*\$\{?RUNNER_NAME\b/.test(l))) problems.push("runner-smoke.yml may not print RUNNER_NAME");
   const checkouts = (text.match(/uses: actions\/checkout@/g) ?? []).length;
   if (checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every runner-smoke.yml checkout must set persist-credentials: false");
   // The whole on: block must equal the reviewed shape, with only the smoke choices free (`- smoke-arm64-N`, optionally
@@ -118,6 +136,12 @@ export function runnerSmokeProblems(text) {
     if (after === undefined || !/^ {0,8}\S/.test(after)) problems.push("the checkout ref must be a single-line value");
     if (before.slice(-3).join("\n") !== "    - uses: actions/checkout@v4\n      with:\n        persist-credentials: false") problems.push("the checkout ref must belong to the actions/checkout step");
   }
+  const parsed = parseWorkflowYaml(text);
+  if (parsed.error) problems.push(`runner-smoke.yml must parse as YAML: ${parsed.error}`);
+  else for (const p of runnerSmokeYamlProblems(parsed.doc)) if (!problems.includes(p)) problems.push(p);
+  // The runner name appears only after the opaque-name guard has opened the job, so the report may name the runner.
+  const smokeSteps = (parsed.doc?.jobs && Object.values(parsed.doc.jobs)[0]?.steps) || [];
+  if (JSON.stringify(smokeSteps[0] ?? null) !== JSON.stringify(RUNNER_SMOKE_NAME_STEP)) problems.push("runner-smoke.yml must open with the exact opaque-runner-name guard step (smoke-arm64-N only)");
   const jobs = jobBlocks(text);
   const routed = jobs.filter((j) => j.lines.some((l) => l.trim() === RUNNER_SMOKE_ROUTE));
   if (jobs.length !== 1 || routed.length !== 1) problems.push("runner-smoke.yml has exactly one job, on the smoke route");
@@ -125,6 +149,108 @@ export function runnerSmokeProblems(text) {
     if (routed[0].lines.filter((l) => /^    if:/.test(l)).join("\n") !== "    " + RUNNER_SMOKE_IF) problems.push("the smoke job's condition must be exactly RUNNER_SMOKE_IF");
     if (!routed[0].lines.some((l) => l === "    timeout-minutes: 40")) problems.push("the smoke job needs timeout-minutes: 40");
   }
+  return problems;
+}
+
+// Structural YAML view (macrevc-1107-1/-2): text matching cannot see quoted keys, flow maps or matrix indirection, so the
+// runner and permission rules below read the parsed document. PyYAML is already a CI dependency of the repo checks. A
+// duplicate key is an error (the last one would silently win), and anything that fails to parse is a policy problem.
+const YAML_TO_JSON = [
+  "import sys, json, yaml",
+  "class L(yaml.SafeLoader): pass",
+  "def mapping(loader, node):",
+  "    seen = set()",
+  "    for k, _ in node.value:",
+  "        key = loader.construct_object(k)",
+  "        if key in seen: raise yaml.YAMLError('duplicate key %r' % (key,))",
+  "        seen.add(key)",
+  "    return loader.construct_mapping(node)",
+  "L.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping)",
+  "doc = yaml.load(sys.stdin.read(), Loader=L)",
+  "def norm(v):",
+  "    if isinstance(v, dict): return {('on' if k is True else str(k)): norm(x) for k, x in v.items()}",
+  "    if isinstance(v, list): return [norm(x) for x in v]",
+  "    return v if isinstance(v, (str, int, float, bool)) or v is None else str(v)",
+  "print(json.dumps(norm(doc)))",
+].join("\n");
+
+export function parseWorkflowYaml(text) {
+  const r = spawnSync("python3", ["-I", "-c", YAML_TO_JSON], { input: text, encoding: "utf8" });
+  if (r.status !== 0) return { error: (r.stderr || r.error?.message || "python3 yaml unavailable").trim().split("\n").pop() };
+  try { return { doc: JSON.parse(r.stdout) }; } catch { return { error: "unreadable parser output" }; }
+}
+
+// Depth-first walk of every key/value pair of the parsed document.
+function walkYaml(node, visit, path = []) {
+  if (Array.isArray(node)) node.forEach((x, i) => walkYaml(x, visit, [...path, i]));
+  else if (node && typeof node === "object") for (const [k, v] of Object.entries(node)) { visit(k, v, path); walkYaml(v, visit, [...path, k]); }
+}
+
+const strings = (v) => (typeof v === "string" ? [v] : Array.isArray(v) ? v.flatMap(strings) : v && typeof v === "object" ? Object.values(v).flatMap(strings) : []);
+// A matrix value written as an expression is static when its only context is github.event_name and everything else is
+// string literals and the plain operators: then every label it can yield is one of the literals (the u14 pattern that
+// picks between two literal arrays by event). Returns those labels, or null when anything else appears.
+function staticExpressionLabels(value) {
+  const m = /^\$\{\{([^]*)\}\}$/.exec(value.trim());
+  if (!m) return null;
+  const literals = [];
+  const skeleton = m[1].replace(/'((?:[^']|'')*)'/g, (_, lit) => { literals.push(lit.replace(/''/g, "'")); return "L"; });
+  if (!/^(?:\s|L|!|&&|\|\||\(|\)|,|fromJSON|contains|github\.event_name)*$/.test(skeleton)) return null;
+  const out = [];
+  for (const lit of literals) {
+    try {
+      const parsed = JSON.parse(lit);
+      out.push(...(Array.isArray(parsed) ? parsed : [parsed]));
+    } catch { out.push(lit); }
+  }
+  return out;
+}
+const SAFE_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+// Every runner label that a job can resolve to must be statically known. A plain literal is checked by the line rules;
+// an expression is accepted only as `${{ matrix.<key> }}` over a strategy.matrix whose values are all literals (no
+// `${{`, no fromJSON): anything else (inputs, vars, fromJSON matrices, ternaries, needs/steps) fails closed.
+export function runsOnProblems(doc, path) {
+  const problems = [];
+  const jobs = doc && typeof doc.jobs === "object" && doc.jobs ? doc.jobs : {};
+  for (const [name, job] of Object.entries(jobs)) {
+    if (!job || typeof job !== "object" || !("runs-on" in job)) continue;
+    const labels = strings(job["runs-on"]);
+    for (const label of labels) {
+      if (!label.includes("${{")) continue;
+      if (path === RUNNER_SMOKE_PATH && label === "${{ inputs.label }}") continue;   // the smoke route itself
+      const m = /^\$\{\{\s*matrix\.([A-Za-z_][\w-]*)\s*\}\}$/.exec(label);
+      const matrix = job.strategy && typeof job.strategy === "object" ? job.strategy.matrix : undefined;
+      let values = null;
+      if (m && matrix && typeof matrix === "object" && !Array.isArray(matrix)) {
+        const key = m[1];
+        const raw = matrix[key];
+        const exprLabels = typeof raw === "string" && raw.includes("${{") ? staticExpressionLabels(raw) : undefined;
+        const listed = exprLabels !== undefined ? (exprLabels ?? [{}]) : Array.isArray(raw) ? raw : raw === undefined ? [] : [raw];
+        const included = Array.isArray(matrix.include) ? matrix.include.filter((e) => e && typeof e === "object" && key in e).map((e) => e[key]) : [];
+        values = [...listed, ...included];
+        const flat = values.flatMap(strings);
+        if (!values.length || flat.length !== values.length || flat.some((v) => !SAFE_LABEL.test(v)) || typeof matrix.include === "string" || typeof matrix.exclude === "string") values = null;
+      }
+      if (!values) problems.push(`job ${name}: runner label expression ${label} cannot be resolved statically (only a literal strategy.matrix key is allowed)`);
+    }
+  }
+  return problems;
+}
+
+// The smoke workflow must keep a read-only token in every YAML spelling: exactly one permissions mapping (top level,
+// equal to {contents: read}), none inside a job or step, and no write level or write-all anywhere in the document.
+export function runnerSmokeYamlProblems(doc) {
+  const problems = [];
+  if (!doc || typeof doc !== "object") return ["runner-smoke.yml is not a YAML mapping"];
+  if (JSON.stringify(doc.permissions) !== JSON.stringify({ contents: "read" })) problems.push("runner-smoke.yml needs top-level permissions: contents: read");
+  walkYaml(doc, (k, v, path) => {
+    if (k === "permissions" && path.length) problems.push("runner-smoke.yml may have only the top-level permissions block, none in a job or step");
+  });
+  walkYaml({ permissions: doc.permissions, jobs: doc.jobs }, (k, v) => {
+    if (k === "permissions") for (const x of strings(v)) if (/write/i.test(x)) problems.push("runner-smoke.yml may not use write permissions");
+  });
+  if (JSON.stringify(doc).toLowerCase().includes("secrets")) problems.push("runner-smoke.yml may not use secrets");
   return problems;
 }
 
@@ -196,6 +322,12 @@ export function workflowProblems(text, path = "") {
   if (path !== ".github/workflows/trusted-mac.yml") for (const route of runsOnBlocks(text)) {
     if (path === RUNNER_SMOKE_PATH && route === RUNNER_SMOKE_ROUTE) continue;
     if (/\$\{\{[^}]*\b(?:inputs|github\.event\.inputs|vars|secrets|env|needs|steps)\b/.test(route)) problems.add("runner label chosen from an input or variable outside runner-smoke.yml");
+  }
+  // Structural check (macrevc-1107-1): the runner label of every job must resolve statically, whatever the YAML spelling.
+  if (path !== ".github/workflows/trusted-mac.yml" && text.includes("runs-on")) {
+    const parsed = parseWorkflowYaml(text);
+    if (parsed.error) problems.add(`workflow does not parse as YAML: ${parsed.error}`);
+    else for (const p of runsOnProblems(parsed.doc, path)) problems.add(p);
   }
   if (text.includes("\\")) for (const raw of decodedVariant(text).split("\n")) check(raw);
   return [...problems];

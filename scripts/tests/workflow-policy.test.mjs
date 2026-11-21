@@ -531,9 +531,16 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
     ["    timeout-minutes: 40\n", "    timeout-minutes: 40\n    permissions: { contents: write }\n"],
     ["    timeout-minutes: 40\n", "    timeout-minutes: 40\n    permissions: write-all\n"],
     ["    timeout-minutes: 40\n", "    timeout-minutes: 40\n    permissions:\n      contents: read\n"],
-    ["        echo \"HEADLESS_SCRATCH", "        echo \"runner ${RUNNER_NAME}\"\n        echo \"HEADLESS_SCRATCH"],
+    ["          smoke-arm64-[0-9]|smoke-arm64-[0-9][0-9]) ;;", "          smoke-arm64-[0-9]*|*) ;;"],
+    ["          smoke-arm64-[0-9]|smoke-arm64-[0-9][0-9]) ;;", "          smoke-arm64-[0-9]|smoke-arm64-[0-9][0-9]|modelplan-mac-*) ;;"],
+    ["    - name: Refuse a runner without an opaque name\n", "    - name: Refuse a runner without an opaque name\n      if: ${{ always() && false }}\n"],
+    ["    timeout-minutes: 40\n", "    timeout-minutes: 40\n    \"permissions\": {contents: \"write\"}\n"],
+    ["    timeout-minutes: 40\n", "    timeout-minutes: 40\n    'permissions': {contents: 'write'}\n"],
+    ["    timeout-minutes: 40\n", "    timeout-minutes: 40\n    ? permissions\n    : {contents: write}\n"],
+    ["permissions:\n  contents: read\n", "permissions:\n  contents: read\npermissions:\n  contents: write\n"],
+    ["    steps:\n    - name: Refuse", "    steps:\n    - permissions: {contents: write}\n      run: echo x\n    - name: Refuse"],
     ["        echo \"ModelPlanCommunityApp linked\"", "        ls -l \"$bin/ModelPlanCommunityApp\""],
-    ["          echo \"runner: label", "          echo \"${{ runner.name }}\"\n          echo \"runner: label"],
+    ["          echo \"runner: $RUNNER_NAME, label", "          echo \"${{ runner.name }}\"\n          echo \"runner: label"],
     ["jobs:\n", "jobs:\n  extra:\n    runs-on: [self-hosted, macOS, ARM64, modelplan-mac-nongui]\n    steps: []\n"],
   ];
   for (const [from, to] of mutations) {
@@ -550,7 +557,40 @@ test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on m
     "runs-on: [${{ vars.R }}]", "runs-on:\n      - ${{ inputs.runner }}", "runs-on:\n      - macOS\n      - ${{ inputs.label }}", "runs-on: [ubuntu-latest, \"${{ inputs.label }}\"]"])
     assert.ok(workflowProblems(`jobs:\n  a:\n    ${route}\n`, ".github/workflows/other.yml").length > 0, route);
   // Safe hosted routes stay legal, including a static matrix (the existing u14 workflow) and the smoke route in its own file.
-  for (const route of ["runs-on: ubuntu-24.04", "runs-on: ${{ matrix.os }}", "runs-on: [ubuntu-latest]"]) assert.deepEqual(workflowProblems(`jobs:\n  a:\n    ${route}\n`, ".github/workflows/other.yml"), [], route);
+  for (const route of ["runs-on: ubuntu-24.04", "runs-on: [ubuntu-latest]"]) assert.deepEqual(workflowProblems(`jobs:\n  a:\n    ${route}\n`, ".github/workflows/other.yml"), [], route);
+  const staticMatrix = "jobs:\n  a:\n    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-15]\n    runs-on: ${{ matrix.os }}\n";
+  assert.deepEqual(workflowProblems(staticMatrix, ".github/workflows/other.yml"), []);
+  assert.deepEqual(workflowProblems("jobs:\n  a:\n    strategy:\n      matrix:\n        include:\n          - os: ubuntu-latest\n    runs-on: ${{ matrix.os }}\n", ".github/workflows/other.yml"), []);
+  const evMatrix = (e) => `jobs:\n  a:\n    strategy:\n      matrix:\n        os: ${e}\n    runs-on: \${{ matrix.os }}\n`;
+  assert.deepEqual(workflowProblems(evMatrix("${{ fromJSON(!contains(fromJSON('[\"pull_request\"]'), github.event_name) && '[\"ubuntu-latest\",\"macos-latest\"]' || '[\"ubuntu-latest\"]') }}"), ".github/workflows/other.yml"), []);
+  for (const e of ["${{ fromJSON(github.event_name == 'push' && '[\"a\"]' || inputs.rows) }}", "${{ fromJSON(github.event_name == 'push' && '[\"smoke-arm64-5\"]' || '[\"b\"]') }}", "${{ fromJSON(github.event_name == 'push' && '[\"a b\"]' || '[\"b\"]') }}", "${{ github.ref_name }}"])
+    assert.ok(workflowProblems(evMatrix(e), ".github/workflows/other.yml").length > 0, e);
+  // macrevc-1107-1: a matrix that comes from an input or any expression, or a key it does not define, cannot be resolved statically.
+  for (const bad of [
+    "on:\n  workflow_dispatch:\n    inputs:\n      matrix:\n        type: string\njobs:\n  a:\n    strategy:\n      matrix: ${{ fromJSON(inputs.matrix) }}\n    runs-on: ${{ matrix.os }}\n",
+    "jobs:\n  a:\n    strategy:\n      matrix:\n        os: ${{ fromJSON(inputs.os) }}\n    runs-on: ${{ matrix.os }}\n",
+    "jobs:\n  a:\n    strategy:\n      matrix:\n        include: ${{ fromJSON(inputs.rows) }}\n    runs-on: ${{ matrix.os }}\n",
+    "jobs:\n  a:\n    strategy:\n      matrix:\n        os: [\"${{ inputs.os }}\"]\n    runs-on: ${{ matrix.os }}\n",
+    "jobs:\n  a:\n    runs-on: ${{ matrix.os }}\n",
+    "jobs:\n  a:\n    strategy:\n      matrix:\n        os: [ubuntu-latest]\n    runs-on: ${{ matrix.other }}\n",
+    "jobs:\n  a:\n    runs-on: ${{ github.event_name == 'push' && 'ubuntu-latest' || 'macos-15' }}\n",
+    "jobs:\n  a:\n    \"runs-on\": ${{ fromJSON(inputs.r) }}\n",
+    "jobs:\n  a:\n    runs-on: { group: g, labels: \"${{ inputs.l }}\" }\n",
+    "jobs:\n  a:\n    runs-on: [self-hosted, \"${{ needs.p.outputs.l }}\"]\n",
+  ]) assert.ok(workflowProblems(bad, ".github/workflows/other.yml").length > 0, bad);
+  // macrevc-1107-2: quoted keys, YAML complex keys and duplicate keys are read as the parser reads them.
+  const ruleSmoke = (extra) => workflowProblems(text.replace("    timeout-minutes: 40\n", `    timeout-minutes: 40\n${extra}`), RUNNER_SMOKE_PATH);
+  for (const extra of ['    "permissions": {contents: "write"}\n', "    'permissions': { 'contents': 'write' }\n", '    "permissions": "write-all"\n', '    "permissions": {"contents": "read"}\n']) assert.ok(ruleSmoke(extra).length > 0, extra);
+  // macrevc-1107-3: only an opaque smoke-arm64-N runner name is accepted, and it is refused unprinted.
+  const guard = text.slice(text.indexOf("        case \"${RUNNER_NAME:-}\""), text.indexOf("        echo \"HEADLESS_SCRATCH"));
+  const sh = (name) => spawnSync("bash", ["-c", guard.replace(/^ {8}/gm, "")], { env: { RUNNER_NAME: name, PATH: process.env.PATH }, encoding: "utf8" });
+  for (const ok of ["smoke-arm64-5", "smoke-arm64-12"]) assert.equal(sh(ok).status, 0, ok);
+  for (const bad of ["", "Guans-Mac-mini", "guan-macbook.local", "modelplan-mac-arm64-1", "smoke-arm64-5x", "SMOKE-ARM64-5", "smoke-arm64-", "smoke-arm64-123", "x-smoke-arm64-5"]) {
+    const r = sh(bad);
+    assert.equal(r.status, 1, bad);
+    assert.ok(!bad || bad === "smoke-arm64-" || !(r.stdout + r.stderr).includes(bad), `printed ${bad}`);
+  }
+  assert.ok(text.includes('echo "runner: $RUNNER_NAME, label $SMOKE_LABEL'));
 });
 
 test("the mac-compile trigger is a no-permission, no-action pull_request run", () => {
