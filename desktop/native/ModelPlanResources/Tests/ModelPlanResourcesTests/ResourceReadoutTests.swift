@@ -49,11 +49,12 @@ final class ResourceReadoutTests: XCTestCase {
     /// border keeps its colour.
     func testAmberFromEightyWithThreePointHysteresis() {
         var readout = ResourceReadout()
-        XCTAssertEqual(readout.step(cpu(79.9, at: 0)).tone, .normal)
-        XCTAssertEqual(readout.step(cpu(80, at: 10)).tone, .warning)
-        XCTAssertEqual(readout.step(cpu(78, at: 20)).tone, .warning, "78 % is still inside the 3-point band")
-        XCTAssertEqual(readout.step(cpu(76.9, at: 30)).tone, .normal)
-        XCTAssertEqual(readout.step(cpu(78, at: 40)).tone, .normal, "entering needs the plain 80 % again")
+        func level(_ percent: Double, at t: TimeInterval) -> ResourceTone? { _ = readout.step(cpu(percent, at: t)); return readout.levels?.cpu }
+        XCTAssertEqual(level(79.9, at: 0), .normal)
+        XCTAssertEqual(level(80, at: 10), .warning)
+        XCTAssertEqual(level(78, at: 20), .warning, "78 % is still inside the 3-point band")
+        XCTAssertEqual(level(76.9, at: 30), .normal)
+        XCTAssertEqual(level(78, at: 40), .normal, "entering needs the plain 80 % again")
         XCTAssertEqual(ResourceRules.tone(85), .warning)
         XCTAssertEqual(ResourceRules.tone(85, previous: .critical), .critical, "red is kept down to 87 %")
         XCTAssertEqual(ResourceRules.tone(70, previous: .critical), .normal)
