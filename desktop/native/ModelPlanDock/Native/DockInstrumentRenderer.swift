@@ -179,7 +179,7 @@ public struct DockNozzlePose: Equatable, Sendable {
         }
         guard let backgroundImage = cachedBackground ?? c.makeImage() else { throw DockArtworkError.invalidManifest }
         var metrics=[DockGlyphMetric]()
-        func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor,fit:Bool = false) throws {
+        func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor,fit:Bool = false,numberColor:CGColor? = nil) throws {
             var recipe = recipe
             if fit, !value.isEmpty, recipe.size.isFinite, (1...128).contains(recipe.size), rect.width > 0, rect.height > 0 {
                 // G3-32: a fallback mark is shrunk to sit inside its box, never clipped by it.
@@ -210,7 +210,14 @@ public struct DockNozzlePose: Equatable, Sendable {
                 guard !language.isEmpty,language.utf8.count<=64 else{throw DockArtworkError.invalidManifest}
                 attributes[NSAttributedString.Key(kCTLanguageAttributeName as String)]=language
             }
-            let line=CTLineCreateWithAttributedString(NSAttributedString(string:value,attributes:attributes))
+            let styled=NSMutableAttributedString(string:value,attributes:attributes)
+            if let numberColor {
+                // macrevb-1096-5 (D236, D327): a plugin readout keeps its label in the readout ink; only the number is toned.
+                let label=DockPluginRing.readoutParts(value).label
+                styled.addAttribute(NSAttributedString.Key(kCTForegroundColorAttributeName as String),value:numberColor,
+                                    range:NSRange(location:(label as NSString).length,length:(value as NSString).length-(label as NSString).length))
+            }
+            let line=CTLineCreateWithAttributedString(styled)
             let runFonts=(CTLineGetGlyphRuns(line) as NSArray).compactMap{item -> String? in
                 let run=item as! CTRun,attributes=CTRunGetAttributes(run) as NSDictionary
                 guard let actual=attributes[kCTFontAttributeName] else{return nil}
@@ -225,7 +232,7 @@ public struct DockNozzlePose: Equatable, Sendable {
             c.textPosition = .zero;CTLineDraw(line,c);c.restoreGState()
         }
         func usedUp(_ arc:DockQuotaArc?) -> Bool { arc?.remainingFraction == 0 }
-        func ring(_ recipe:DockRingRecipe,_ arc:DockQuotaArc?,_ centre:CGPoint) throws {
+        func ring(_ recipe:DockRingRecipe,_ arc:DockQuotaArc?,_ centre:CGPoint,plugin:DockPluginRing?=nil,faint:Double=0) throws {
             guard recipe.radius>0,recipe.width>0,recipe.radius.isFinite,recipe.width.isFinite,
                 recipe.opacity.isFinite,(0...1).contains(recipe.opacity),(0...1).contains(recipe.minimumVisibleFraction) else{throw DockArtworkError.invalidManifest}
             c.saveGState();c.setAlpha(recipe.opacity);c.setLineWidth(recipe.width);c.setLineCap(.butt)
@@ -243,8 +250,18 @@ public struct DockNozzlePose: Equatable, Sendable {
             } else { c.setStrokeColor(try ink("track")) }
             c.strokeEllipse(in:rect)
             c.setLineDash(phase:0,lengths:[]);c.setAlpha(recipe.opacity)
+            // D327: a plugin ring is always its own ink; the faint segment (memory cached) follows the solid one.
+            let pluginInk=plugin.map{CGColor(srgbRed:$0.red,green:$0.green,blue:$0.blue,alpha:1)}
+            if let pluginInk,faint.isFinite,faint>0 {
+                let start=CGFloat(max(0,min(1,arc?.fraction ?? 0))),end=CGFloat(min(1,Double(start)+faint))
+                if end>start {
+                    c.saveGState();c.setAlpha(recipe.opacity*0.35);c.setStrokeColor(pluginInk);c.setLineCap(.butt)
+                    c.addArc(center:centre,radius:recipe.radius,startAngle:-.pi/2+start*2 * .pi,endAngle:-.pi/2+end*2 * .pi,clockwise:false)
+                    c.strokePath();c.restoreGState()
+                }
+            }
             if let arc,let fraction=arc.fraction,fraction.isFinite,(0...1).contains(fraction),fraction>0 {
-                c.setStrokeColor(try ink(arc.status.rawValue))
+                c.setStrokeColor(try pluginInk ?? ink(arc.status.rawValue))
                 let visibleFraction = CGFloat(max(recipe.minimumVisibleFraction, fraction))
                 if visibleFraction >= 1 {
                     // A full turn through addArc is an open path with coincident endpoints; butt caps leave the
@@ -260,6 +277,16 @@ public struct DockNozzlePose: Equatable, Sendable {
                 }
             }
             c.restoreGState()
+        }
+        /// D327: a plugin ring's centre is the plugin's white line icon (the resource plugin's rounded screen with a
+        /// heartbeat line, desktop/cockpit/src/resource-plugin.ts `icon`), drawn from its 16-unit outline at the vendor
+        /// mark's size and stroke weight.
+        func pluginIcon(_ rect: CGRect) throws {
+            let paths = DockPluginIcon.paths(in: rect)
+            guard !paths.isEmpty else { throw DockArtworkError.invalidManifest }
+            c.saveGState(); defer { c.restoreGState() }
+            c.setStrokeColor(try ink("text")); c.setLineWidth(DockPluginIcon.lineWidth(in: rect)); c.setLineJoin(.round); c.setLineCap(.round)
+            for path in paths { c.addPath(path); c.strokePath() }
         }
         func drawNotice(_ notice: DockNotice, _ station: DockStationRecipe) throws {
                 // D166: a confirmed reset is green; a skin without its own notice green uses its normal green.
@@ -376,14 +403,18 @@ public struct DockNozzlePose: Equatable, Sendable {
                 c.setLineWidth(station.diameter/2-radius);c.setStrokeColor(try ink("case"))
                 let rr=(radius+station.diameter/2)/2
                 c.strokeEllipse(in:CGRect(x:station.centre.x-rr,y:station.centre.y-rr,width:2*rr,height:2*rr))
-                try ring(station.outer,reading.outer,station.centre)
-                if reading.inner != nil {try ring(station.inner,reading.inner,station.centre)}
+                try ring(station.outer,reading.outer,station.centre,plugin:reading.pluginRing,faint:reading.pluginRing?.outerFaint ?? 0)
+                if reading.inner != nil {try ring(station.inner,reading.inner,station.centre,plugin:reading.pluginRing)}
                 if station.notchWidth>0 {
                     c.setLineWidth(station.notchWidth);c.setStrokeColor(try ink("notch"))
                     c.move(to:CGPoint(x:station.centre.x,y:station.centre.y-station.diameter/2))
                     c.addLine(to:CGPoint(x:station.centre.x,y:station.centre.y-radius));c.strokePath()
                 }
-                if let key=reading.vendorResourceKey,let resource=station.glyphs[key] {
+                if reading.pluginRing != nil {
+                    let opacity=station.glyphOpacity ?? 1
+                    guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
+                    c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try pluginIcon(station.glyphRect)
+                } else if let key=reading.vendorResourceKey,let resource=station.glyphs[key] {
                     let opacity=station.glyphOpacity ?? 1
                     guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
                     c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try image(resource,station.glyphRect,fitVisibleGlyph:true)
@@ -425,7 +456,12 @@ public struct DockNozzlePose: Equatable, Sendable {
             if station.showsReadout != false {
                 let opacity=station.readoutOpacity ?? 1
                 guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
-                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try text(reading.readout,station.readout,skin.text,try ink(textColor))
+                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()}
+                if reading.pluginRing != nil {
+                    // macrevb-1096-5: the label stays in the normal readout ink; the number takes the tone.
+                    let labelInk=skin.readoutPalette?[DockQuotaStatus.normal.rawValue] ?? "text"
+                    try text(reading.readout,station.readout,skin.text,try ink(labelInk),numberColor:try ink(textColor))
+                } else { try text(reading.readout,station.readout,skin.text,try ink(textColor)) }
             }
             if let alias=reading.alias,let rect=station.aliasRect {try text(alias,rect,skin.aliasText,try ink("alias"))}
             if let notice=notices[id] { try drawNotice(notice, station) }

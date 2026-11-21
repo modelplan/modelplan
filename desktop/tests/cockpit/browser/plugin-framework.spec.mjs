@@ -7,9 +7,11 @@ import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.
 import {appearance,commands,pageId,sample,shell,excludePortholeFlicker} from '../fixture.mjs';
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 
-// The calendar plugin is default-on (D121); these framework specs keep it off so only the placeholder is laid out.
+// The calendar (D121) and resource (D324) plugins are default on; these framework specs keep them off so only the
+// placeholder is laid out.
 const calendarOff={id:'calendar',enabled:false,pinned:false};
-const on=(pinned=false,settings={})=>({version:1,entries:[{id:'placeholder',enabled:true,pinned},calendarOff],settings:{placeholder:settings}});
+const RES_OFF={id:'resources',enabled:false,pinned:false};
+const on=(pinned=false,settings={})=>({version:1,entries:[{id:'placeholder',enabled:true,pinned},calendarOff,RES_OFF],settings:{placeholder:settings}});
 /** `count` connected subscriptions, plus tools found but not connected. */
 function dataWith(count,unconnected=[]) {
  const data=sample(),seed=data.projection.rows[1];
@@ -46,7 +48,7 @@ test('CKP-PLG-52 columns = subscriptions + plugins, at least 3, at most 6 a page
   if(shown)expect(await page.evaluate(()=>{const cols=[...document.querySelectorAll('.eng-cols > *')];const i=cols.findIndex(c=>c.classList.contains('pl-col'));return cols.slice(0,i).every(c=>c.matches('.ec[data-col]'))&&cols.slice(i+1).every(c=>c.matches('.ec-bay'));})).toBe(true);
  }
  // Off (turned off by the host): the v1 table, with "+" on the empty slots.
- expect(await receive(send('plugins',{plugins:{version:1,entries:[calendarOff],settings:{}}}))).toBe(true);
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[calendarOff,RES_OFF],settings:{}}}))).toBe(true);
  expect(await receive(send('display',{data:dataWith(2)}))).toBe(true);
  await expect(page.locator('.eng-keys')).toHaveAttribute('data-slots','3');
  await expect(page.locator('.eng-keys .ek-bay')).toHaveCount(1);
@@ -86,7 +88,7 @@ test('CKP-PLG-50 the plugin key is a subscription key: same box and white name, 
  await key(page).focus();await page.keyboard.press('Shift+F10');await expect(menu).toBeVisible();
  await menu.getByRole('menuitem').click();
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
- expect(await pluginEdits(page)).toEqual([{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff],settings:{placeholder:{}}}]);
+ expect(await pluginEdits(page)).toEqual([{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff,RES_OFF],settings:{placeholder:{}}}]);
 });
 
 test('CKP-PLG-51 the plugin column has no inner frame; its cells use the Other-cell grammar and align with subscription rows',async({page})=>{
@@ -195,7 +197,7 @@ test('CKP-PLG-53 a reading updates the open plugin screen in place: the focused 
  await expect(page.locator('.pl-screen dd').last()).toHaveText('every 4 s');
  await expect(close).toBeFocused();
  // Removal in Settings (host state turns it off) closes the screen.
- expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff],settings:{}}}))).toBe(true);
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff,RES_OFF],settings:{}}}))).toBe(true);
  await expect(page.locator('.pl-screen')).toHaveCount(0);
 });
 
@@ -235,7 +237,7 @@ test('lifecycle: the plugin runs only while the cockpit is open and its column i
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  await key(page).click({button:'right'});await page.getByRole('menuitem',{name:'Remove from the cockpit'}).click();
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
- expect(await pluginEdits(page)).toEqual([{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff],settings:{placeholder:{intervalSeconds:3}}}]);
+ expect(await pluginEdits(page)).toEqual([{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff,RES_OFF],settings:{placeholder:{intervalSeconds:3}}}]);
  // Cleared readings stop everything.
  expect(await receive(send('plugins',{plugins:on(false)}))).toBe(true);
  await expect(column(page)).toHaveAttribute('data-running','true');

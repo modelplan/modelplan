@@ -41,6 +41,7 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
         controller.window?.makeKeyAndOrderFront(nil)
     }
     func hide() { controller.window?.orderOut(nil); presence.apply(closing: controller.window) }
+    func attachCockpitPlugins(_ model: CockpitPluginSettingsModel) { controller.attachCockpitPlugins(model) }
 }
 
 /// Retain one per app. All Settings entry points share the existing application editor and one lazy window.
@@ -53,7 +54,15 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
     private let activate: @MainActor () -> Void
     private let environment: @MainActor () -> SettingsEnvironment
     private let makeSurface: @MainActor (SettingsEditor) -> any SettingsWindowSurface
-    private var surface: (any SettingsWindowSurface)?
+    private var surface: (any SettingsWindowSurface)? {
+        didSet { attachPlugins() }
+    }
+    /// Settings › Subscriptions › Plugins (switch, interval, pin to page 1) edits this model.
+    public var cockpitPlugins: CockpitPluginSettingsModel? { didSet { attachPlugins() } }
+    private func attachPlugins() {
+        guard let cockpitPlugins, let native = surface as? NativeSettingsWindowSurface else { return }
+        native.attachCockpitPlugins(cockpitPlugins)
+    }
     private var request: UInt64 = 0
 
     public init(application: SettingsApplicationCoordinator,

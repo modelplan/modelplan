@@ -7,6 +7,7 @@ import ModelPlanWire
 import ModelPlanCommunityHost
 import ModelPlanSettings
 import ModelPlanDock
+import ModelPlanResources
 
 @MainActor private final class EngineDockClock {
     var now: @MainActor () -> Date = { Date() }
@@ -167,6 +168,17 @@ public struct EngineMenuRefreshResult {
             }
             self.deadlineDriver.replace()
         }
+    }
+    /// D324/D327: puts the resource ring in front of the admitted subscription rings and keeps it current from the
+    /// one ResourceSampler. The caller reports visibility (plugin on, cockpit column, widget shown) on the binding.
+    public func installResourceWidget(sampler: ResourceSampler, language: @escaping () -> ResourceLanguage) -> ResourceWidgetBinding {
+        let provider = ResourceDockContentProvider(base: admittedCache)
+        dock.setDockContentProvider(provider)
+        let binding = ResourceWidgetBinding(sampler: sampler, provider: provider, language: language,
+                                            refreshCard: { [weak self] in self?.dock.refreshPluginCard() }) { [weak self] in self?.dock.refreshDockContent() }
+        // macrevb-1096-4: the hover card reads the latest sample, not the rows captured at the last ring redraw.
+        dock.livePluginCard = { [weak binding] id in id == ResourceDockBridge.subscriptionID ? binding?.liveCard() : nil }
+        return binding
     }
     #if DEBUG
     func installDockVisibilityTimingForChecks(clock: @escaping () -> TimeInterval, scheduler: any DockEdgeScheduling) {

@@ -144,6 +144,9 @@ struct StatusNoticePresentation {
     public internal(set) var cockpitPlugins: CockpitPluginBridge?
     /// Called once `cockpitPlugins` is set; a plugin that samples registers its reader here.
     public var cockpitPluginsReady: (@MainActor (CockpitPluginBridge) -> Void)?
+    /// D324: the resource plugin's sampler host and the plugin choices it follows (kept for the app's lifetime).
+    var resourcePlugin: ResourcePluginHost?
+    var cockpitPluginModel: CockpitPluginSettingsModel?
     private var prewarmReleased = false
     private var setupScanObserver: UUID?
     /// Done with nothing read yet: the widget appears when the first tool is read, then Find Quota Widget runs once.
@@ -651,25 +654,19 @@ struct StatusNoticePresentation {
                 self.scopeConsentEntry.controller.setFirstRunEngineFailed(true)
             })
         lifecycleController = controller
+        // Spec item 2: pages subscribe to the app's relay (also before this point); the lifecycle feeds it from here.
+        cancelCockpitSignalFeed?(); cancelCockpitSignalFeed = controller.subscribe { [weak self] signal in self?.cockpitSignalRelay.deliver(signal) }
         controller.setActivityPaused(activityPaused)
         withdrawForLifecycle(); controller.start()
     }
-    /// Spec item 2: the cockpit's wake/unlock/clock/display signals from the lifecycle's one `SystemEvents`, or nil
-    /// before the lifecycle exists (a page then keeps its own observers).
+    /// Spec item 2: the one source of every cockpit page, alive for the whole app, fed by the lifecycle once it exists.
+    let cockpitSignalRelay = CockpitSignalRelay()
+    private var cancelCockpitSignalFeed: (() -> Void)?
+    /// Spec item 2: the cockpit's wake/unlock/clock/display signals, from the lifecycle's one `SystemEvents` through
+    /// the app's relay. Never nil: a page prewarmed before the lifecycle starts subscribes too and gets the signals from
+    /// the start of the lifecycle on, instead of keeping its own observers for its whole life.
     var cockpitSystemSignals: CockpitSystemSignalSource? {
-        guard lifecycleController != nil else { return nil }
-        return { [weak self] handler in
-            guard let controller = self?.lifecycleController else { return {} }
-            return controller.subscribe { signal in
-                switch signal {
-                case .wake, .screensWake: handler(.wake)
-                case .unlock: handler(.unlock)
-                case .clockChanged, .timeZoneChanged: handler(.clockChanged)
-                case .displaysChanged: handler(.displaysChanged)
-                case .displaysSettled: handler(.displaysSettled)
-                }
-            }
-        }
+        { [weak self] handler in self?.cockpitSignalRelay.subscribe(handler) ?? {} }
     }
     /// M4's activity observer sets an independent pause reason; it never clears OS reasons.
     public func setActivityPaused(_ paused: Bool) {
@@ -677,6 +674,7 @@ struct StatusNoticePresentation {
     }
     func stopLifecycle() async {
         guard let controller = lifecycleController else { return }
+        cancelCockpitSignalFeed?(); cancelCockpitSignalFeed = nil
         await controller.stop(); lifecycleController = nil
     }
     private func withdrawForLifecycle() {

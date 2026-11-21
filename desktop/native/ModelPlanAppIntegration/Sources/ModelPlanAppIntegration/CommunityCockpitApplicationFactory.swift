@@ -8,6 +8,7 @@ import ModelPlanSettings
 import ModelPlanWire
 import ModelPlanDock
 import ModelPlanShell
+import ModelPlanResources
 
 /// Keep #332's single showConsole route and one protocol client/store.
 /// Clear the existing synchronous sinks first, then await WK clear/disposal,
@@ -40,6 +41,10 @@ import ModelPlanShell
     public static var verificationCockpitTrace: ((String) -> Void)?
     /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
     static var verificationPrewarm = true
+    /// SPI test apps can ask for the resource plugin (with a synthetic reader); every other test app leaves it out.
+    static var verificationResourcePlugin = false
+    /// The resource journey's synthetic reader (the installed app reads this Mac with SystemResourceReader).
+    static var verificationResourceReader: (() -> ResourceReader)?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -50,6 +55,8 @@ import ModelPlanShell
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
+                            installsResourcePlugin: Bool = false,
+                            resourceReader: (() -> ResourceReader)? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
         // Preserve the existing injected-client/console seam used by its callers.
         if let makeClient {
@@ -107,6 +114,7 @@ import ModelPlanShell
         owner.anchor = { [weak application] in application?.cockpitAnchor }
         owner.openPoint = { [weak application] in application?.cockpitOpenPoint }
         owner.ignitionFrame = { [weak application] in application?.composition.dock.ignitionScreenFrame }
+        owner.widgetFrame = { [weak application] in application?.composition.dock.widgetScreenFrame }
         if application.cockpitEntryEnabled {
             owner.prepare()
             // CKP-SHELL-20: a synthetic page from a test factory is made only by a click.
@@ -126,19 +134,58 @@ import ModelPlanShell
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
         owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
         application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
-        installCockpitPlugins(application: application, owner: owner, settingsStore: settingsStore)
+        // macrevb-1096-9 (D324/D327): only the installed app samples this Mac. It asks for the resource plugin
+        // (`installsResourcePlugin`, ModelPlanCommunityApp); every test or fixture app, with or without the SPI flag and
+        // with or without native panels, leaves it out (no SystemResourceReader, no ring in the Dock), unless an SPI test
+        // asks for the synthetic resource journey.
+        #if MODELPLAN_TEST_ONLY_SPI
+        let installsResources = installsResourcePlugin || verificationResourcePlugin
+        #else
+        let installsResources = installsResourcePlugin
+        #endif
+        installCockpitPlugins(application: application, owner: owner, settingsStore: settingsStore,
+                              installsResources: installsResources, resourceReader: resourceReader)
         return application
     }
     /// macrevc-844-1: the saved plugin choices reach every cockpit page, page edits are saved, and the page's running
     /// plugins drive the sampler. Until the file is read, pages wait without plugin state (plugin-host.ts keeps the
     /// default-on plugins off and posts nothing until it arrives).
-    static func installCockpitPlugins(application: EngineDockMenuApplication, owner: CockpitConsoleOwner, settingsStore: SettingsStore) {
+    /// D324: with `installsResources`, one ResourceSampler for the app. Its cadence follows the plugin choices (Settings
+    /// or a page edit), the cockpit page's running plugins and the widget's visibility; its samples feed the widget ring
+    /// and the page. It observes the one bridge (the bridge owns the coordinator's plugin callbacks), never replaces them.
+    static func installCockpitPlugins(application: EngineDockMenuApplication, owner: CockpitConsoleOwner, settingsStore: SettingsStore,
+                                      installsResources: Bool = false, resourceReader: (() -> ResourceReader)? = nil) {
         let directory = settingsStore.directory
         Task { @MainActor [weak application, weak owner] in
             let bridge = await CockpitPluginBridge.load(directory: directory, coordinator: owner?.coordinator)
             bridge.showCockpit = { [weak application] in application?.showConsole() }
-            application?.cockpitPlugins = bridge
-            application?.cockpitPluginsReady?(bridge)
+            guard let application else { return }
+            application.cockpitPlugins = bridge
+            if installsResources {
+                #if MODELPLAN_TEST_ONLY_SPI
+                let reader: ResourceReader = resourceReader?() ?? verificationResourceReader?() ?? SystemResourceReader()
+                #else
+                let reader: ResourceReader = resourceReader?() ?? SystemResourceReader()
+                #endif
+                let sampler = ResourceSampler(reader: reader,
+                                              reduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })
+                let language: () -> ResourceLanguage = { [weak application] in
+                    application?.composition.latestSettings?.snapshot.preferences.language == .english ? .english : .chinese
+                }
+                let widget = application.composition.installResourceWidget(sampler: sampler, language: language)
+                let host = ResourcePluginHost(sampler: sampler, widget: widget)
+                host.sendData = { [weak owner] id, data in owner?.coordinator?.sendPluginData(id: id, data: data) }
+                bridge.observeRunning { [weak host] ids in host?.pageRunning(ids) }
+                bridge.observeChoices { [weak host] preferences in host?.apply(preferences) }
+                let dock = application.composition.dock
+                dock.pluginScreenRequested = { [weak bridge] id in bridge?.openScreen(id) }
+                dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
+                // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
+                host.setWidgetShown(dock.isWidgetShown)
+                application.settingsHost.cockpitPlugins = bridge.model
+                application.resourcePlugin = host; application.cockpitPluginModel = bridge.model
+            }
+            application.cockpitPluginsReady?(bridge)
         }
     }
 }
@@ -188,6 +235,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var openPoint: (() -> CGPoint?)?
     /// D204 (G3-94): the widget ignition's frame on screen; its press is not an outside click.
     var ignitionFrame: (() -> CGRect?)?
+    var widgetFrame: (() -> CGRect?)?
     var verifiedBundle: VerifiedCockpitBundle?
     let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
@@ -277,6 +325,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() },openPoint:{ [weak self] in self?.openPoint?() },
             systemSignals:systemSignals?())
         page.ignitionFrame = { [weak self] in self?.ignitionFrame?() }
+        page.widgetFrame = { [weak self] in self?.widgetFrame?() }
         // Spec item 4: a detached cockpit gives the app its Dock icon and Cmd-Tab entry, through the one presence.
         if let presence {
             let adapter = DetachedCockpitPresence(page: page)

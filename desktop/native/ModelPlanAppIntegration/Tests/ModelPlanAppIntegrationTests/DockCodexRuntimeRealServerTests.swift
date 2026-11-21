@@ -204,11 +204,9 @@ import XCTest
         XCTAssertEqual(window.observedAt?.rawValue, old)
         XCTAssertEqual(window.source, .runtime)
         let weekly = "row.quota:" + window.id
-        XCTAssertEqual(text(weekly + ".value", in: card), "--", "Retained metadata must not admit an expired number")
-        // One source: the header carries it, and the row does not repeat it.
-        let retainedSource = text("source", in: card)
-        XCTAssertTrue(retainedSource?.contains("Tool runtime · 3h ago") == true,
-                      "Retained window provenance: " + (retainedSource ?? "missing"))
+        XCTAssertEqual(text(weekly + ".value", in: card), "20%", "A retained reading whose producer-stated reset has not passed stays on the card (macrevb-1051-1)")
+        // DOCK-3.8-50: the header is age-only; the complete field value must equal the age text, so a source label fails.
+        XCTAssertEqual(text("source", in: card), "Updated 3 h ago", "Retained window header must be age-only")
         try await wait { FileManager.default.fileExists(atPath: requested.path) }
         XCTAssertTrue(FileManager.default.fileExists(atPath: requested.path), "The normal session started the runtime RPC")
         try FileManager.default.removeItem(at: hold)
@@ -226,7 +224,7 @@ import XCTest
         if let displayed = dock.detachedCardForChecks { currentCard = displayed }
         else { currentCard = try openCard() }
         XCTAssertEqual(text(weekly + ".value", in: currentCard), "70%")
-        XCTAssertTrue(text("source", in: currentCard)?.contains("Tool runtime · just now") == true)
+        XCTAssertEqual(text("source", in: currentCard), "Updated just now")
 
         let deny = try WireConsentGrantParams(requestId: UUID().uuidString.lowercased(),
             expectStoreEpoch: delivery.floor.storeEpoch, expectGeneration: delivery.floor.generation,
@@ -337,7 +335,7 @@ import XCTest
         if initialState == .current {
             let initialCard = try openLocalCard()
             XCTAssertEqual(text("row.quota:" + firstWindow.id + ".value", in: initialCard), "\(initialRemaining)%")
-            XCTAssertTrue(text("source", in: initialCard)?.contains("Local history · 2m ago") == true)
+            XCTAssertEqual(text("source", in: initialCard), "Updated 2 min ago")
         }
 
         func appendReading(used: Int, at observed: Date) throws {
@@ -370,7 +368,7 @@ import XCTest
         XCTAssertNil(current.subscriptionRef, "Local history must not be linked to a runtime account")
         let card = try openLocalCard()
         XCTAssertEqual(text("row.quota:" + currentWindow.id + ".value", in: card), "\(updatedRemaining)%")
-        XCTAssertTrue(text("source", in: card)?.contains("Local history · just now") == true)
+        XCTAssertEqual(text("source", in: card), "Updated just now")
 
         // Commit the denial from the same synthetic profile while the read-only
         // App stays subscribed. The consent event must withdraw the actual card.

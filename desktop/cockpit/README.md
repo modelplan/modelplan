@@ -115,7 +115,7 @@ consent mutation or plugin-install message exists in this protocol.
 
 Plugins are bundled modules in `src/plugin-registry.ts`: id, string-table keys for the title (long and short) and the
 one-sentence Settings summary, a trusted white line-art icon at the vendor-mark size, the dashed underline colour and
-bar ink (only `#87939e`, `#e9edf0` or `#b9c7d6`), settings specs, and three pure functions: `accept` folds a host reading
+bar ink (only `#87939e`, `#e9edf0`, `#b9c7d6` or the resource orchid `#da66c2`), settings specs, and three pure functions: `accept` folds a host reading
 into the plugin's state (kept across repaints), `column` describes up to three cells in the subscription columns'
 Other-cell grammar (small tag · large number · side value · continuous bar with a thin trend line) plus a bottom line,
 and `screen` gives the lines of its big screen. Custom draw (D323): when cells cannot express a plugin (a day strip, a
@@ -171,6 +171,20 @@ lines. Its accept refuses data over 16 KiB as JSON, then runs the strict parser.
 from `display`: published peak windows (`details.peaks`, cockpitPeaksV1), the user's own 5 h (`session`) and weekly
 window resets, reset cards (verified subscriptions only) and announced/confirmed reset events, for the user's own rows
 only. A reset-card list the producer marks partial or truncated has no exact count and no expiry beyond the one it states; "No rules" is shown only when the peak feed is present and the user has no declared plan. The privacy barrier (clear) drops the plugin readings and the host takeover. All times are local; day boundaries are local midnights (DST days have 23/25 hours).
+
+A plugin marked `hostSampled` (the resource plugin) is laid out only after the host has sent its plugin state, so a
+host that cannot sample never shows an empty column.
+
+### Resource plugin (D324, D327)
+
+`src/resource-plugin.ts`: CPU · Memory · Disk cells, the bottom line is memory pressure, orchid `#da66c2` for the key's
+dashed underline, bars and trend lines; only the numbers turn amber or red (CPU ≥ 70 % / ≥ 90 %, memory by macOS
+memory pressure, disk ≥ 90 %). Default on; setting `intervalSeconds` 2 / 5 / 10 (default 5). The host
+(`native/ModelPlanResources`, `ResourceSampler`) samples with system calls only and pushes
+`{"samples":[{"t","cpuUser","cpuSystem","load","memTotal","memApp","memWired","memCompressed","memCached","memFree","swapUsed","pressure","diskTotal","diskFree"}]}`
+(percentages 0–100, bytes, `t` in Unix ms, `pressure` normal / warn / critical): the whole ten-minute window when the
+column starts running (at most 360 samples), then only newer samples. The page keeps the same ten minutes in memory.
+The big screen is drawn as lines until the D323 draw hook lands; then its charts move to `draw(ctx)`.
 
 ## Animation budget and evidence
 

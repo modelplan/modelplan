@@ -25,7 +25,7 @@ export function assertAscending(values, what) {
  *  barX is the first VISIBLE bar's left edge (the .ov-bar path), null for a bucket with no bar, so a chart whose bars
  *  are drawn reversed under correct hit targets and tooltips still fails. */
 export function overviewBuckets(svg) {
-  return [...svg.matchAll(/<g class="ov-bucket"[^>]*data-total="([^"]*)"[^>]*data-tip="([^"]*)"[^>]*>(.*?)<\/g>/gs)].map((m) => {
+  return [...svg.matchAll(/<g class="ov-bucket(?: ov-last)?"[^>]*data-total="([^"]*)"[^>]*data-tip="([^"]*)"[^>]*>(.*?)<\/g>/gs)].map((m) => {
     const x = m[3].match(/<rect class="ov-hit" x="([\d.]+)"/);
     const bar = m[3].match(/<path class="ov-bar"[^>]*\sd="M([\d.]+),/);
     return {total: Number(m[1]), tip: m[2], x: Number(x?.[1]), barX: bar ? Number(bar[1]) : null};

@@ -97,7 +97,7 @@ test('ALR-51 grey and stale rows never light the lamp or wash a column',async({p
 
 test('CKP-MFD-56 a row selects its subscription and returns; a grey row opens Settings › Subscriptions',async({page})=>{
  const data=busy();await open(page,data);
- await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.getByRole('button',{name:'Plans',exact:true}).click();
  await lamp(page).click();
  await rows(page).nth(4).locator('button').click();
  expect((await actions(page)).at(-1)).toMatchObject({action:'openSettingsSubscriptions'});
@@ -105,17 +105,17 @@ test('CKP-MFD-56 a row selects its subscription and returns; a grey row opens Se
  await rows(page).nth(1).locator('button').click();
  expect((await actions(page)).at(-1)).toMatchObject({action:'scopeSelect',key:data.projection.rows[0].accounts[0].subscriptionRef});
  await expect(page.locator('.pg-alerts')).toHaveCount(0);
- await expect(page.getByRole('button',{name:'Subscription',exact:true})).toHaveAttribute('aria-pressed','true');
+ await expect(page.getByRole('button',{name:'Plans',exact:true})).toHaveAttribute('aria-pressed','true');
 });
 
 test('CKP-MFD-56 Esc, the back key and a second lamp press each return to the page the list came from',async({page})=>{
  await open(page,busy());
- await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.getByRole('button',{name:'Plans',exact:true}).click();
  for(const close of [()=>page.keyboard.press('Escape'),()=>page.locator('.pg-alerts [data-mfd="back"]').click(),()=>lamp(page).click()]){
   await lamp(page).click();await expect(page.locator('.pg-alerts')).toBeVisible();
   await close();
   await expect(page.locator('.pg-alerts')).toHaveCount(0);
-  await expect(page.getByRole('button',{name:'Subscription',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByRole('button',{name:'Plans',exact:true})).toHaveAttribute('aria-pressed','true');
  }
 });
 

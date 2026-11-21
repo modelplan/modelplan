@@ -13,7 +13,8 @@ const L=(day,h,m=0)=>Date.UTC(2026,10,11+day,h+8,m);
 const NOW=L(0,11,20);
 const shots=process.env.CAL_SHOTS;
 const shot=async(page,name,target=page)=>{if(shots)await target.screenshot({path:`${shots}/${name}.png`});};
-const calendarOn={version:1,entries:[{id:'calendar',enabled:true,pinned:false}],settings:{}};
+// The resource plugin (D324) is also default on; it is kept off here so the calendar's column math is its own.
+const calendarOn={version:1,entries:[{id:'calendar',enabled:true,pinned:false},{id:'resources',enabled:false,pinned:false}],settings:{}};
 // The mockup's sample week: four subscriptions, GLM's 22:00–02:00 peak crossing midnight, own resets, a reset card and
 // an announced GLM reset taking effect on Monday 11/16.
 const week={version:1,peakRules:'yes',

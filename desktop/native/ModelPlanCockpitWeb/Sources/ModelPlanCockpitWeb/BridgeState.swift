@@ -287,6 +287,21 @@ enum FlatReply {
         }
         guard i < a.count, a[i] == 93 else { throw CockpitBridgeError.invalidMessage }
         i += 1
+      } else if key == "plugins", i < a.count, a[i] == 123 {
+        // Plugin columns: the page's `pluginsEdit` body is the one nested value. Skip it as a balanced object (strings
+        // read with escapes); CockpitPluginPreferences.fromPage then checks its exact shape.
+        let start = i
+        var depth = 0
+        repeat {
+          guard i < a.count, i - start <= 65_536 else { throw CockpitBridgeError.limit }
+          switch a[i] {
+          case 34: _ = try string(); continue
+          case 123, 91: depth += 1
+          case 125, 93: depth -= 1
+          default: break
+          }
+          i += 1
+        } while depth > 0
       } else if key == "deadlineUnixMs", i + 4 <= a.count, Array(a[i..<(i + 4)]) == Array("null".utf8) {
         i += 4
       } else {

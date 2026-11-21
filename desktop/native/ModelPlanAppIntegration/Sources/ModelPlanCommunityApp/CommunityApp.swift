@@ -148,7 +148,9 @@ import ModelPlanWire
                 executableURL: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"),
                 applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "community",
                 allowedEnvironment: profile.childEnvironment(ProcessInfo.processInfo.environment.filter { WireChildEnvironment.allowedKeys.contains($0.key) }),
-                minimumServerVersion: EngineRowsEntry.minimumAppServerVersion), settingsStore: preferences)
+                minimumServerVersion: EngineRowsEntry.minimumAppServerVersion), settingsStore: preferences,
+                // D324: the installed app is the one that samples this Mac (resource plugin, default on).
+                installsResourcePlugin: true)
             NSApplication.shared.delegate = app
             // D57: once the run loop is up, ask the person to remove a pre-rename app that is still running.
             Task { @MainActor in LegacyAppNotice.presentIfNeeded() }

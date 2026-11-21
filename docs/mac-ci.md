@@ -27,6 +27,21 @@ the **caller** identity when a reusable workflow is used. It must not be
 misrepresented as proof of the reusable definition; the runner group's
 server-side workflow restriction supplies that boundary.
 
+## Runner acceptance smoke (owner exception, D353)
+
+A new or standby Mac is validated with `runner-smoke.yml` before it gets a production label. The runner carries only
+a temporary `smoke-arm64-N` label, which no other workflow may name (`scripts/workflow-policy.mjs`). This is an
+owner-approved exception to the rule above: the `modelplan-mac` runner group also admits
+`modelplan/modelplan/.github/workflows/runner-smoke.yml@refs/heads/main` (D330), because a direct dispatch is pinned to a
+branch, not a commit. The workflow starts only from `workflow_dispatch` by the owner account, from main's definition, builds
+only `main` or a `refs/tags/` tag, and holds a read-only token with no secrets. After the owner adds the group entry, check
+that a branch copy, another workflow and a non-owner dispatch or rerun get no smoke runner.
+
+Register the runner under the opaque name `smoke-arm64-N` (the same N as its label), never the default host name: GitHub
+records the registered name in public job metadata before any step runs. The workflow's first step refuses any other name
+without printing it, so the timing table can name the runner safely. The policy check also rejects any other workflow whose
+`runs-on` is an expression that is not a literal `strategy.matrix` key (an input-driven or `fromJSON` matrix fails closed).
+
 ## Graphical checks
 
 Native checks create actual AppKit windows. They stay hosted until

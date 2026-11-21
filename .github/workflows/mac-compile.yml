@@ -15,7 +15,8 @@
 #   statuses: write, which runs no repository code.
 # Build seed: written only by the `seed` job (workflow_dispatch of main by the owner), read-only for PR jobs.
 name: mac-compile
-run-name: "${{ inputs.pr && format('mac-compile PR #{0}', inputs.pr) || '' }}"
+# The title names what was compiled; pr-review-sol.yml binds a mac-compile success to a head through it.
+run-name: "${{ inputs.pr && (inputs.sha && format('mac-compile PR #{0} @ {1}', inputs.pr, inputs.sha) || format('mac-compile PR #{0}', inputs.pr)) || github.event.workflow_run.head_sha && format('mac-compile {0}', github.event.workflow_run.head_sha) || '' }}"
 on:
   workflow_run:
     workflows: [mac-compile trigger]
@@ -24,6 +25,10 @@ on:
     inputs:
       pr:
         description: "PR number: compile the PR at its current head (drafts allowed). Empty with seed=true."
+        type: string
+        required: false
+      sha:
+        description: "Optional: the PR head sha expected; the run refuses another head and its title then proves this head to pr-review-sol.yml"
         type: string
         required: false
       seed:
@@ -60,6 +65,7 @@ jobs:
           PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.workflow_run.pull_requests[0].number }}
           RUN_HEAD: ${{ github.event.workflow_run.head_sha }}
           SEED: ${{ github.event_name == 'workflow_dispatch' && inputs.seed }}
+          SHA_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || '' }}
         run: |
           set -eu
           # Seed run (owner dispatch of main): no PR; main's own head is built and published to the runner's read-only seed.
@@ -78,6 +84,7 @@ jobs:
           [ "$(jq -r .user.id <<<"$j")" = 11829005 ] || { echo "::error::PR #$PR is not by the owner account"; exit 1; }
           sha=$(jq -r .head.sha <<<"$j")
           [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no head sha for PR #$PR"; exit 1; }
+          [ -z "$SHA_INPUT" ] || [ "$SHA_INPUT" = "$sha" ] || { echo "::error::PR #$PR is at $sha, not the requested $SHA_INPUT"; exit 1; }
           if [ "$EVENT" = workflow_run ]; then
             [ "$(jq -r .draft <<<"$j")" = false ] || { echo "::error::PR #$PR is a draft"; exit 1; }
             [ "$sha" = "$RUN_HEAD" ] || { echo "::error::PR #$PR moved from $RUN_HEAD to $sha; the newer head's trigger compiles it"; exit 1; }

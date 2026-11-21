@@ -57,6 +57,37 @@ import ModelPlanSettings
         try await Task.sleep(for: .milliseconds(30))
         XCTAssertEqual(app.editor.snapshot?.preferences.subscriptions.order, ["b", "a"])
     }
+    /// macrevb-1096-8: with the resource ring shown, a keyboard reorder of two subscriptions persists, and the plugin
+    /// id never reaches the Settings transaction (Settings' catalogue has no plugin ids).
+    func testKeyboardOrderWithResourceRingShownKeepsThePluginOutOfSettings() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("settings.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let host = InteractionHost()
+        host.environment = DockInteractionEnvironment(catalogue: [ResourceDockBridge.subscriptionID, "a", "b"], preferences: .init(), targets: [])
+        host.environment.orderCatalogue = ["a", "b"]
+        var context = SettingsPageContext()
+        context.subscriptions = [SettingsSubscription(id: "a", name: .init("A", "A")), SettingsSubscription(id: "b", name: .init("B", "B"))]
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: url), context: context) { value in
+            host.environment.preferences = value.snapshot.preferences.subscriptions
+            host.environment.bindingRevision = value.snapshot.revision
+        }
+        await app.reload()
+        let binding = EngineDockInteractionBinding(host: host, application: app, scheduler: InteractionScheduler(), clock: { 0 })
+        binding.start()
+        let controller = try XCTUnwrap(host.controller)
+        var requests: [DockOrderRequest] = []
+        let forward = controller.onOrderRequest
+        controller.onOrderRequest = { requests.append($0); forward?($0) }
+        controller.moveByKeyboard(id: "a", delta: 1)
+        for _ in 0..<100 where app.editor.snapshot?.preferences.subscriptions.order != ["b", "a"] { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(app.editor.snapshot?.preferences.subscriptions.order, ["b", "a"], "the new order persists")
+        XCTAssertEqual(requests.map(\.catalogue), [["a", "b"]], "the Settings transaction never contains plugin:resources")
+        controller.moveByKeyboard(id: ResourceDockBridge.subscriptionID, delta: 1)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(requests.count, 1, "the plugin ring is not in the subscription order")
+        XCTAssertEqual(app.editor.snapshot?.preferences.subscriptions.order, ["b", "a"])
+        binding.stop()
+    }
     func testStaleHostPreferencesCannotCommitOrder() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("settings.json")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

@@ -1524,7 +1524,7 @@
     {
       "id": "j-opt-grid",
       "title": "Overview option key Bars | Grid",
-      "expected": "Back on Overview, the Bars | Grid key switches the chart to the heatmap.",
+      "expected": "Back on Overview, the Bars | Grid key shows Grid not lit; pressing it changes nothing and the bars stay (CKP-MFD-62, WP-12).",
       "prototype": "feature journey (D75)",
       "requires": [
         "cockpit-open"

@@ -91,16 +91,11 @@ for(const [tier,height] of [['tall',890],['compact',640]]){
  test(`CKP-MFD-25 a click inside a page reaches its module and the charts take the measured screen at ${tier}`,async({page})=>{
   await page.clock.setFixedTime(new Date(NOW));
   await open(page,{data:withHistory(),tier,height});
-  // Overview: the Grid key is inside the page; pressing it reaches the overview module, which draws the heatmap into
-  // its measured area with the largest cells that fit (5 to 14 px).
-  await expect(page.locator('.pg-overview svg.ov-chart')).toBeVisible();
+  // Overview (WP-12): the totals row is there; the Grid key is not lit in v1 and pressing it reaches the module without
+  // changing the view (the heatmap cells-fit check moved out with the key, to v1.1).
+  await expect(page.locator('.pg-overview .ov-top')).toBeVisible();
   await page.locator('[data-opt="chart"] b',{hasText:/^Grid$/}).click();
-  await expect(page.locator('.pg-overview svg.ov-heat')).toBeVisible();
-  await expect.poll(()=>page.evaluate(()=>{
-   const area=document.querySelector('[data-fill="ov"]'),svg=area?.querySelector('svg.ov-heat');if(!svg)return null;
-   const cell=Number(svg.querySelector('rect.hm').getAttribute('width')),w=Number(svg.getAttribute('width')),h=Number(svg.getAttribute('height'));
-   return {fitsW:w<=area.clientWidth,fitsH:h<=area.clientHeight,nextWouldNotFit:cell>=14||26*(cell+3)-2>area.clientWidth||12+7*(cell+3)-2>area.clientHeight};
-  })).toEqual({fitsW:true,fitsH:true,nextWouldNotFit:true});
+  await expect(page.locator('[data-opt="chart"] b.on')).toHaveText('Bars');await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(0);
   // Compare: a fader press opens it, a try key inside it reaches the compare module, and its chart fills its measured area.
   await page.locator('.fd-strip[aria-label^="Synthetic lineup-1:"]').click();
   const screen=page.locator('.mfd-page.pg-compare');await expect(screen).toBeVisible();
