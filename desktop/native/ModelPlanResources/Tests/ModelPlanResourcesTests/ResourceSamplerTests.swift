@@ -64,6 +64,47 @@ final class ResourceSamplerTests: XCTestCase {
         sampler.stop()
     }
 
+    /// Sample S18 (#1096 1096-clock-rollback): the Mac clock set back 30 minutes while the column runs at 5 s. The page
+    /// orders and windows by the sample time, so the first sample after the rollback must be the newest, with the
+    /// history still ordered and spaced by real elapsed time.
+    @MainActor func testWallClockRollbackKeepsThePageTimeMonotonic() {
+        final class WallReader: ResourceReader {
+            var cpuUser: Double = 15
+            func read(uptime: TimeInterval, unixMs: Int64) -> ResourceSample? {
+                var s = sample(at: uptime, cpuUser: cpuUser, cpuSystem: 5); s.unixMs = unixMs; return s
+            }
+        }
+        let timers = ManualTimers(), reader = WallReader()
+        var wall: Int64 = 1_795_000_000_000
+        let sampler = ResourceSampler(reader: reader, clock: timers.clock, scheduler: timers.scheduler,
+                                      wallClock: { wall + Int64((timers.now * 1000).rounded()) })
+        var delivered: [ResourceSample] = []
+        sampler.onSample = { delivered.append($0) }
+        sampler.setVisibility(ResourceVisibility(pluginEnabled: true, columnShown: true, widgetShown: false, columnSetting: 5))
+        timers.run(until: 20)
+        let before = delivered.count
+        XCTAssertGreaterThan(before, 1)
+        wall -= 30 * 60 * 1000 // the system clock moves back 30 minutes
+        reader.cpuUser = 90
+        timers.run(until: 40)
+        let stamps = delivered.map(\.unixMs)
+        XCTAssertGreaterThan(delivered.count, before)
+        XCTAssertEqual(stamps, stamps.sorted(), "the page time never goes backward")
+        XCTAssertEqual(Set(stamps).count, stamps.count)
+        XCTAssertGreaterThan(delivered[before].unixMs, delivered[before - 1].unixMs, "the first post-rollback sample is the newest")
+        XCTAssertEqual(delivered[before].unixMs - delivered[before - 1].unixMs,
+                       Int64(((delivered[before].uptime - delivered[before - 1].uptime) * 1000).rounded()), "spaced by elapsed uptime")
+        // The page payload carries the same order (ResourcePagePayload "t").
+        let page = (ResourcePagePayload.data(delivered)["samples"] as? [[String: Any]])?.compactMap { $0["t"] as? Int } ?? []
+        XCTAssertEqual(page, page.sorted())
+        // Turned off and on: a fresh anchor from the wall clock as it is now.
+        sampler.setVisibility(ResourceVisibility(pluginEnabled: false, columnShown: false, widgetShown: false, columnSetting: 5))
+        sampler.setVisibility(ResourceVisibility(pluginEnabled: true, columnShown: true, widgetShown: false, columnSetting: 5))
+        timers.run(until: 200)
+        XCTAssertEqual(sampler.history.samples.first.map { $0.unixMs - Int64(($0.uptime * 1000).rounded()) }, wall)
+        sampler.stop()
+    }
+
     #if os(macOS)
     /// One real sample (host_processor_info, host_statistics64, sysctl, statfs) takes under 2 ms.
     @MainActor func testOneSystemSampleTakesUnderTwoMilliseconds() throws {
