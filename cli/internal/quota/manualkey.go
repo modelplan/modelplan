@@ -262,7 +262,8 @@ func invalidateManualKeyReadings(dir, provider string) error {
 	// one after it, never a mix.
 	if provider == "opencodego" {
 		if _, err := os.Stat(nativePath(dir)); err == nil {
-			_ = filterCachedSource(nativePath(dir), "native.json", provider, false, nil)
+			// The caller already owns lockManualKeys; do not acquire it again.
+			_ = filterCachedSourceWithWriter(nativePath(dir), "native.json", provider, false, nil, writeAtomic)
 		}
 	}
 	if provider == "zai" {
