@@ -864,6 +864,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
     let view = CockpitWebView(frame: .zero, configuration: config)
     view.menuProvider = { [weak self] in self?.contextMenu() }
+    view.pageOwnsContextClick = { [weak self] point, answer in
+      guard let self else { answer(false); return }
+      self.pluginKeyAt(point, answer)
+    }
     // Owner 11-19 (#1062): the first click on an inactive cockpit in the porthole band only activates it; the porthole
     // opens the enlarged field on a click, so an activation click must not reach it. The rest of the page keeps first-click.
     view.declinesActivationClick = { [weak self] point in
@@ -1055,6 +1059,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func clearPrivateViews(adopting context: CockpitEngineContext? = nil) async {
     freshnessDriver.hide(); freshnessDriver.invalidate(); bridge.cancelDeadlineReports(); visibilityFence.invalidate()
     orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); cancelAppearanceWait()
+    forgetPluginDelivery(); stopPluginSampling()
     receiptWatchdog.cancel(); renderWatchdog.cancel(); backlog = BacklogResync()
     visibilityTimeout?.cancel(); visibilityTimeout = nil
     freshnessHasRendered = false; pendingFreshnessReason = nil
@@ -1178,6 +1183,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// Resends what a refused update left stale, once the queue has room again.
   private func resyncAfterBacklog() {
     guard !ending, orderedDelivery.outstanding < 8 else { return }
+    if pluginsResend { pluginsResend = false; publishPluginState() }
     let pending = backlog
     guard pending.display || pending.visibility || pending.appearance || pending.tick != nil else { return }
     backlog = BacklogResync()
@@ -1208,7 +1214,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         web?.isHidden = false
         publishAppearance()
         visibilityChanged()
-        publishPlugins()
+        publishPluginState(force: true)
         onReady?()
         if !shown { warmPaint() }
       case .cleared:
@@ -1221,6 +1227,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           publishAppearance()
           lastVisibility = nil
           visibilityChanged()
+          publishPluginState(force: true)
         }
         waiter?.resume()
       case .action(let intent):
@@ -1230,6 +1237,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         case .shutterToggle:
           toggleShutter()
         case .close: closeAnimated()
+        case .pluginsEdit(let state):
+          // The page already shows this state; the host's echo of it is not sent back. A save that fails sends the
+          // committed state again (CockpitPluginBridge), which differs from this one and so reaches the page.
+          // macrevb-1104-6: while the save runs, the edit is the state the page should keep, so a delivery that
+          // completes meanwhile (or a show) does not send the older committed state back over it.
+          pluginsAccepted = state; pluginsWanted = state; pluginsConfirmedOnPage = true
+          onIntent?(intent); publishPluginScreen()
         default: onIntent?(intent)
         }
       case .rendered:
@@ -1310,7 +1324,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private func suspendForHiddenPage() {
     refreshAfterHiddenDisplay = refreshAfterHiddenDisplay || bridge.hasPendingDisplay || backlog.display
     backlog = BacklogResync()
-    appearanceGate.deferUntilVisible(); cancelAppearanceWait(); orderedDelivery.invalidate()
+    appearanceGate.deferUntilVisible(); cancelAppearanceWait(); orderedDelivery.invalidate(); forgetPluginDelivery()
     freshnessDriver.hide(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
     pauseHealth()
@@ -1395,7 +1409,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // #981 sampling P2: liveness follows the host's window facts before the page is ready too. A hidden unready page
     // accrues nothing; shown again, it gets a fresh grace period and its bootstrap is monitored again. Everything
     // that delivers to the page stays behind the query-ticket guard below.
-    if !(value.visible && !value.occluded) { if !health.paused { pauseHealth() } }
+    if !(value.visible && !value.occluded) { if !health.paused { pauseHealth() }; stopPluginSampling() }
     else {
       health.resume()
       if shown, !bridge.ready, bootstrapCheck == nil, !health.isWaiting { armBootstrapCheck() }
@@ -1437,6 +1451,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           if self.appearanceGate.retry(visible: true, displayPending: self.bridge.hasPendingDisplay) { self.publishAppearance() }
           else { self.watchDeferredAppearance() }
           if let id = self.bridge.currentDisplayRequest, self.bridge.awaitsDisplayReceipt(id) { self.renderWatchdog.wait(for: id) }
+          self.publishPluginState()
           self.freshnessDriver.show()
           if self.awaitingShown, let onShown = self.onShown {
             self.awaitingShown = false; self.refreshAfterHiddenDisplay = false; onShown()
@@ -1534,14 +1549,94 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
   public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }
-  /// Plugin columns: the saved plugin choices; sent now when the page is ready, else once it is.
-  private var pluginsJSON: Data?
-  public func setPlugins(_ json: Data) { pluginsJSON = json; publishPlugins() }
-  private func publishPlugins() {
-    guard let pluginsJSON, bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.setPlugins(pluginsJSON) else { return }
-    send(raw, onRejected: { true })
+  /// Plugin columns (macrevc-844-1): the saved plugin choices (canonical JSON). Sent on ready, after every clear that
+  /// leaves the page usable, on change and when the page is shown again; the queue keeps only the newest one.
+  /// macrevb-1104-3 / macrevd-1104-2: `pluginsAccepted` is the state the page confirmed (its receive returned true, or
+  /// its own edit), never one merely queued. A refused, failed, dropped or invalidated delivery leaves it unconfirmed,
+  /// so the newest committed state is sent again; only a confirmed identical state is skipped.
+  /// macrevb-1104-6 (CKP-PLG-50/54): the page ends on the newest committed state. A change skipped because it equalled
+  /// the confirmed state while another state was in flight is sent once that delivery is accepted (the page then shows
+  /// the in-flight state, not the skipped one). A failed call or an invalidated in-flight call leaves the page's state
+  /// unknown, so the confirmed state is forgotten and the committed one is sent again.
+  private var pluginsWanted: Data?, pluginsInFlight: Data?, pluginsResend = false
+  private(set) var pluginsAccepted: Data?
+  /// macrevb-1104-8: this page took a plugin state (accepted receive or its own edit), so it has negotiated plugins and
+  /// can open a plugin screen. A state merely created or queued (`bridge.pluginsSent`) is not enough.
+  private(set) var pluginsConfirmedOnPage = false
+  public func setPlugins(_ json: Data) {
+    guard let canonical = CockpitPluginWire.canonical(json: json) else { return }
+    pluginsWanted = canonical; publishPluginState()
   }
-  /// Plugin columns: a reading for a running plugin. Dropped while the page is hidden or has no plugin state.
+  /// The plugin state, then any held screen request (which needs that state on the page first).
+  private func publishPluginState(force: Bool = false) { publishPlugins(force: force); publishPluginScreen() }
+  private func publishPlugins(force: Bool = false) {
+    guard let wanted = pluginsWanted, bridge.ready, !bridge.blocked, !ending,
+      force || (wanted != pluginsAccepted && wanted != pluginsInFlight),
+      let raw = try? bridge.setPlugins(wanted) else { return }
+    pluginsInFlight = wanted
+    let settle: (Bool) -> Void = { [weak self] resend in
+      guard let self, self.pluginsInFlight == wanted else { return }
+      self.pluginsInFlight = nil
+      if resend { self.pluginsResend = true }
+    }
+    send(raw, coalesce: "plugins",
+         onAccepted: { [weak self] in
+           settle(false)
+           guard let self else { return }
+           self.pluginsAccepted = wanted; self.pluginsConfirmedOnPage = true
+           // macrevb-1104-6 / -8: a newer committed state skipped meanwhile goes now; a held screen can open now.
+           self.publishPluginState()
+         },
+         onRejected: { [weak self] in settle(false); if self?.pluginsAccepted == wanted { self?.pluginsAccepted = nil }; return true },
+         onFailed: { [weak self] in settle(true); self?.pluginsAccepted = nil },
+         dropped: { settle(true) })
+  }
+  /// The ordered queue was invalidated: a queued or active plugin delivery never completes, so it is not in flight. An
+  /// active call may still have run on the page, so what the page shows is unknown (macrevb-1104-6) and a screen request
+  /// that was on its way is held again (macrevb-1104-8; opening with `keep` is idempotent).
+  private func forgetPluginDelivery() {
+    if pluginsInFlight != nil { pluginsInFlight = nil; pluginsAccepted = nil }
+    if let id = pluginScreenInFlight { pluginScreenInFlight = nil; if pluginScreenWanted == nil { pluginScreenWanted = id } }
+  }
+  /// D124 (macrevb-1104-4, macrev2-1104-6): the host stops sampling the moment the page stops being shown (hidden,
+  /// occluded, closing, clearing); the page's own `[]` report may come late or under an old view revision.
+  private func stopPluginSampling() { if bridge.pluginsSent { onIntent?(.pluginsRunning([])) } }
+  /// Plugin columns: a request to open a plugin's big screen. Held until this page is ready and has confirmed the NEWEST
+  /// committed plugin state (macrevb-1104-8: an earlier confirmation is not enough while a newer state is in flight,
+  /// failed or queued; the page would refuse the screen under older preferences), then sent once; a newer request replaces a held one. A failed or dropped call is held
+  /// again and resent when the queue moves; a refusal from a negotiated page (the plugin is off) ends the request.
+  private(set) var pluginScreenWanted: String?
+  private var pluginScreenInFlight: String?
+  /// A screen request this page holds and has not delivered (the coordinator carries it to a replacement page).
+  public var heldPluginScreen: String? { pluginScreenWanted ?? pluginScreenInFlight }
+  public func openPluginScreen(_ id: String) {
+    guard CockpitPluginWire.validID(id) else { return }
+    pluginScreenWanted = id; publishPluginScreen()
+  }
+  private func publishPluginScreen() {
+    guard let id = pluginScreenWanted, pluginScreenInFlight == nil, bridge.ready, !bridge.blocked, bridge.pluginsSent,
+      pluginsConfirmedOnPage, pluginsWanted != nil, pluginsInFlight == nil, pluginsAccepted == pluginsWanted, !ending,
+      let raw = try? bridge.openPluginScreen(id: id) else { return }
+    pluginScreenWanted = nil; pluginScreenInFlight = id
+    let retry: () -> Void = { [weak self] in
+      guard let self, self.pluginScreenInFlight == id else { return }
+      self.pluginScreenInFlight = nil
+      if self.pluginScreenWanted == nil { self.pluginScreenWanted = id }
+      self.pluginsResend = true
+    }
+    send(raw, coalesce: "pluginScreen",
+         onAccepted: { [weak self] in
+           guard let self, self.pluginScreenInFlight == id else { return }
+           self.pluginScreenInFlight = nil; self.publishPluginScreen()
+         },
+         onRejected: { [weak self] in
+           guard let self else { return true }
+           if self.pluginScreenInFlight == id { self.pluginScreenInFlight = nil }
+           self.publishPluginScreen(); return true
+         },
+         onFailed: retry, dropped: retry)
+  }
+  /// Plugin columns: one reading for a running plugin. Dropped while the page is hidden or has no plugin state.
   public func sendPluginData(id: String, data: [String: Any]) {
     guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.pluginData(id: id, data: data) else { return }
     send(raw, onRejected: { true })
@@ -1937,6 +2032,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
   }
   private func toggleAttachment() { setAttached(shellSession.detached) }
+  /// macrev2-1104-3: a secondary click on a plugin key belongs to the page (its Remove menu, plugin-host.ts); anywhere
+  /// else the app's own menu shows. Asked only once the host sent plugin state; any doubt shows the app's menu.
+  private func pluginKeyAt(_ point: CGPoint, _ answer: @escaping @MainActor (Bool) -> Void) {
+    let scale = layout?.scale ?? 0
+    let x = Double(point.x / max(scale, 0.0001)), y = Double(point.y / max(scale, 0.0001))
+    guard bridge.pluginsSent, !ending, let web, scale > 0, x.isFinite, y.isFinite else { answer(false); return }
+    // Numbers only are interpolated; nothing from the page or the event text reaches the script.
+    let script = "(()=>{const e=document.elementFromPoint(\(x),\(y));return !!(e&&e.closest('.eng-keys .pl-key'))})()"
+    Task { @MainActor in
+      let hit = (try? await web.evaluateJavaScript(script)) as? Bool
+      answer(hit == true)
+    }
+  }
   /// D88: the app's own right-click menu: one item that detaches or puts back. No Reload.
   func contextMenu() -> NSMenu? {
     guard window != nil, !ending, closeTask == nil else { return nil }
@@ -2153,6 +2261,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // confirms visibility on the same page, so it must ask for fresh data then, as a hidden page does.
     refreshAfterHiddenDisplay = refreshAfterHiddenDisplay || bridge.hasPendingDisplay
     orderedDelivery.invalidate(); appearanceGate.deferUntilVisible(); cancelAppearanceWait()
+    forgetPluginDelivery(); stopPluginSampling()
     visibilityFence.invalidate(); visibilityTimeout?.cancel(); visibilityTimeout = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel(); pauseHealth()
     settlePendingShutter(); shutterMoving = false

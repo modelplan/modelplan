@@ -273,6 +273,7 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   visible(value){plugins.setVisible(value);},
   plugins(raw){return plugins.applyHostState(raw);},
   pluginData(id,data){return plugins.deliver(id,data);},
+  openPluginScreen(id){return plugins.openScreen(id,true);},
   dispose(){if(disposed)return;disposed=true;shutterRun=null;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);window.removeEventListener('keydown',rangeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }

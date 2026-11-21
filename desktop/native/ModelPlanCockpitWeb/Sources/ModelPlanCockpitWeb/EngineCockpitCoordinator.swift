@@ -42,9 +42,14 @@ import ModelPlanWire
   func setAckedCautions(_ ids:[String])
   /// D136: the favourite model ids to restore; applied before the page loads.
   func setPinnedModels(_ ids:[String])
-  /// Plugin columns: the saved plugin choices (sent on ready) and one reading for a running plugin.
+  /// Plugin columns (macrevc-844-1): the saved plugin choices (sent on ready and on change) and one reading for a
+  /// running plugin.
   func setPlugins(_ json: Data)
   func sendPluginData(id: String, data: [String: Any])
+  /// Open this plugin's big screen once the page can (after its plugin state).
+  func openPluginScreen(_ id: String)
+  /// macrevb-1104-8: a screen request the page holds and has not delivered yet.
+  var heldPluginScreen: String? { get }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket)
   func clearPrivateViews(adopting: CockpitEngineContext?) async
   func discard()
@@ -70,6 +75,8 @@ public extension CockpitPageSurface {
   func setPinnedModels(_ ids:[String]) {}
   func setPlugins(_ json: Data) {}
   func sendPluginData(id: String, data: [String: Any]) {}
+  func openPluginScreen(_ id: String) {}
+  var heldPluginScreen: String? { nil }
 }
 extension CockpitWindowController: CockpitPageSurface {}
 
@@ -110,19 +117,32 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var client: (any EngineClient)? { ownedClient ?? borrowedClient }
   private var delivery: EngineDeliveryContext?
   private var page: (any CockpitPageSurface)? {
-    // A page that goes away runs no plugin any more.
-    didSet { if page == nil, oldValue != nil { reportPluginsRunning([]) } }
+    // A page that goes away (close, failure, replacement) runs no plugin any more.
+    didSet { if oldValue != nil, page !== oldValue { reportPluginsRunning([]) } }
   }
-  /// Plugin columns: the saved choices for every page (set before and after a page exists).
-  public var pluginsJSON: Data? { didSet { if let pluginsJSON { page?.setPlugins(pluginsJSON) } } }
-  /// The plugins the page runs now; [] when no page is shown. The app samples exactly these.
+  /// Plugin columns (macrevc-844-1): the saved choices for every page, handed to a new page before it loads and to the
+  /// current page on change. Only a state that passes the page's own rules is kept.
+  public var pluginsJSON: Data? {
+    didSet {
+      if let json = pluginsJSON, CockpitPluginWire.canonical(json: json) == nil { pluginsJSON = oldValue; return }
+      if let pluginsJSON { page?.setPlugins(pluginsJSON) }
+    }
+  }
+  /// The plugins the page runs now ([] without a shown page); the app samples exactly these.
   public var onPluginsRunning: (([String]) -> Void)?
-  /// A page edit (right-click Remove or the + menu); the app saves it like a Settings edit.
+  /// A page edit (right-click Remove or the + menu) as canonical JSON; the app saves it like a Settings edit.
   public var onPluginsEdit: ((Data) -> Void)?
   public private(set) var pluginsRunning: [String] = []
   private func reportPluginsRunning(_ ids: [String]) {
     guard ids != pluginsRunning else { return }
     pluginsRunning = ids; onPluginsRunning?(ids)
+  }
+  /// A request to open a plugin's big screen (the widget card's action) that no page has taken yet.
+  public private(set) var pluginScreenRequest: String?
+  /// Opens this plugin's big screen on the current page, or on the next page made (the app shows the cockpit itself).
+  public func openPluginScreen(_ id: String) {
+    guard CockpitPluginWire.validID(id) else { return }
+    if let page { page.openPluginScreen(id); pluginScreenRequest = nil } else { pluginScreenRequest = id }
   }
   /// One reading for a running plugin, to the current page only.
   public func sendPluginData(id: String, data: [String: Any]) {
@@ -358,6 +378,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     newPage.setAckedCautions(ackedCautions)
     newPage.setPinnedModels(pinnedModels)
     if let pluginsJSON { newPage.setPlugins(pluginsJSON) }
+    if let id = pluginScreenRequest { newPage.openPluginScreen(id); pluginScreenRequest = nil }
     newPage.updateRange(selectedRange)
     let generation = UUID()
     pageGeneration = generation
@@ -405,8 +426,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       self.pageGeneration = nil
       self.scopeMembers.removeAll()
       self.cancelQuery()
-      self.page = nil
       let wasPresented = self.presented
+      // macrevb-1104-8: a hidden page that goes before it could open a requested screen hands it to the next page.
+      if !wasPresented, let held = self.page?.heldPluginScreen { self.pluginScreenRequest = held }
+      self.page = nil
       self.presented = false; self.presentedPageRendered = false
       self.openingReply = nil; self.openingFreshPending = false; self.openingShown = false
       if wasPresented { self.onClosed?() }
@@ -487,6 +510,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func clearKeepingWarmCount(_ page: any CockpitPageSurface, adopting context: CockpitEngineContext?) async {
     let hidden = !presented
     if hidden { releasingWarmPage = true }
+    // D124 (macrev2-1104-6): sampling stops when the clear starts (the page is hidden at once), not when its receipt
+    // arrives; the page's own [] report carries the old view revision and is refused.
+    reportPluginsRunning([])
     await page.clearPrivateViews(adopting: context)
     if hidden { releasingWarmPage = false }
   }
@@ -495,6 +521,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     prewarmTask?.cancel(); prewarmTask = nil
     guard let warm = page, !presented else { return }
     cancelQuery()
+    if let held = warm.heldPluginScreen { pluginScreenRequest = held }
     page = nil; pageGeneration = nil; scopeMembers.removeAll()
     warm.discard()
     CockpitTimingLog.record("prewarm released")
@@ -519,8 +546,11 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   }
   private func stopWatchingMemoryPressure() { memorySource?.cancel(); memorySource = nil }
   private func receiveIntent(_ intent:CockpitIntent) {
-    if case .pluginsRunning(let ids) = intent { reportPluginsRunning(ids); return }
-    if case .pluginsEdit(let body) = intent { onPluginsEdit?(body); return }
+    if case .pluginsRunning(let ids) = intent {
+      guard CockpitPluginWire.validRunning(ids) else { return }
+      reportPluginsRunning(ids); return
+    }
+    if case .pluginsEdit(let state) = intent { onPluginsEdit?(state); return }
     if case .cautionAck(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids) else { return }
       ackedCautions=ids; cautionMemory?.save(CockpitCautionIdentities.durable(ids)); return

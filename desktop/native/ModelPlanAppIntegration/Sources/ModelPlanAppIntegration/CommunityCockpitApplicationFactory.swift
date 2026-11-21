@@ -143,48 +143,49 @@ import ModelPlanResources
         #else
         let installsResources = installsResourcePlugin
         #endif
-        if installsResources { installResourcePlugin(application: application, owner: owner, settingsStore: settingsStore, resourceReader: resourceReader) }
+        installCockpitPlugins(application: application, owner: owner, settingsStore: settingsStore,
+                              installsResources: installsResources, resourceReader: resourceReader)
         return application
     }
-    /// D324: one ResourceSampler for the app. Its cadence follows the plugin choices (Settings or a page edit), the
-    /// cockpit page's running plugins and the widget's visibility; its samples feed the widget ring and the page.
-    static func installResourcePlugin(application: EngineDockMenuApplication, owner: CockpitConsoleOwner, settingsStore: SettingsStore,
-                                      resourceReader: (() -> ResourceReader)? = nil) {
-        let store = CockpitPluginStore(directory: settingsStore.directory)
+    /// macrevc-844-1: the saved plugin choices reach every cockpit page, page edits are saved, and the page's running
+    /// plugins drive the sampler. Until the file is read, pages wait without plugin state (plugin-host.ts keeps the
+    /// default-on plugins off and posts nothing until it arrives).
+    /// D324: with `installsResources`, one ResourceSampler for the app. Its cadence follows the plugin choices (Settings
+    /// or a page edit), the cockpit page's running plugins and the widget's visibility; its samples feed the widget ring
+    /// and the page. It observes the one bridge (the bridge owns the coordinator's plugin callbacks), never replaces them.
+    static func installCockpitPlugins(application: EngineDockMenuApplication, owner: CockpitConsoleOwner, settingsStore: SettingsStore,
+                                      installsResources: Bool = false, resourceReader: (() -> ResourceReader)? = nil) {
+        let directory = settingsStore.directory
         Task { @MainActor [weak application, weak owner] in
-            let model = await CockpitPluginSettingsModel.load(from: store)
+            let bridge = await CockpitPluginBridge.load(directory: directory, coordinator: owner?.coordinator)
+            bridge.showCockpit = { [weak application] in application?.showConsole() }
             guard let application else { return }
-            #if MODELPLAN_TEST_ONLY_SPI
-            let reader: ResourceReader = resourceReader?() ?? verificationResourceReader?() ?? SystemResourceReader()
-            #else
-            let reader: ResourceReader = resourceReader?() ?? SystemResourceReader()
-            #endif
-            let sampler = ResourceSampler(reader: reader,
-                                          reduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })
-            let language: () -> ResourceLanguage = { [weak application] in
-                application?.composition.latestSettings?.snapshot.preferences.language == .english ? .english : .chinese
+            application.cockpitPlugins = bridge
+            if installsResources {
+                #if MODELPLAN_TEST_ONLY_SPI
+                let reader: ResourceReader = resourceReader?() ?? verificationResourceReader?() ?? SystemResourceReader()
+                #else
+                let reader: ResourceReader = resourceReader?() ?? SystemResourceReader()
+                #endif
+                let sampler = ResourceSampler(reader: reader,
+                                              reduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })
+                let language: () -> ResourceLanguage = { [weak application] in
+                    application?.composition.latestSettings?.snapshot.preferences.language == .english ? .english : .chinese
+                }
+                let widget = application.composition.installResourceWidget(sampler: sampler, language: language)
+                let host = ResourcePluginHost(sampler: sampler, widget: widget)
+                host.sendData = { [weak owner] id, data in owner?.coordinator?.sendPluginData(id: id, data: data) }
+                bridge.observeRunning { [weak host] ids in host?.pageRunning(ids) }
+                bridge.observeChoices { [weak host] preferences in host?.apply(preferences) }
+                let dock = application.composition.dock
+                dock.pluginScreenRequested = { [weak bridge] id in bridge?.openScreen(id) }
+                dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
+                // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
+                host.setWidgetShown(dock.isWidgetShown)
+                application.settingsHost.cockpitPlugins = bridge.model
+                application.resourcePlugin = host; application.cockpitPluginModel = bridge.model
             }
-            let widget = application.composition.installResourceWidget(sampler: sampler, language: language)
-            let host = ResourcePluginHost(sampler: sampler, widget: widget)
-            let coordinator = owner?.coordinator
-            host.sendData = { [weak coordinator] id, data in coordinator?.sendPluginData(id: id, data: data) }
-            coordinator?.onPluginsRunning = { [weak host] ids in host?.pageRunning(ids) }
-            coordinator?.onPluginsEdit = { [weak model] body in
-                guard let object = try? JSONSerialization.jsonObject(with: body) else { return }
-                Task { @MainActor in await model?.acceptPageEdit(object) }
-            }
-            let publish: (CockpitPluginPreferences) -> Void = { [weak host, weak coordinator] preferences in
-                host?.apply(preferences)
-                if let json = try? preferences.bridgeJSON() { coordinator?.pluginsJSON = json }
-            }
-            model.onChange = publish
-            let dock = application.composition.dock
-            dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
-            // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
-            host.setWidgetShown(dock.isWidgetShown)
-            publish(model.preferences)
-            application.settingsHost.cockpitPlugins = model
-            application.resourcePlugin = host; application.cockpitPluginModel = model
+            application.cockpitPluginsReady?(bridge)
         }
     }
 }

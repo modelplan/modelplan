@@ -140,6 +140,10 @@ struct StatusNoticePresentation {
     public var firstRunPresence: FirstRunPresenceDetector = .live()
     /// Set by the cockpit factory: starts the cockpit prewarm that the first launch held back (E4).
     public var releaseCockpitPrewarm: (@MainActor () -> Void)?
+    /// macrevc-844-1: the cockpit plugin choices and sampler, once the saved file is read (CockpitPluginBridge).
+    public internal(set) var cockpitPlugins: CockpitPluginBridge?
+    /// Called once `cockpitPlugins` is set; a plugin that samples registers its reader here.
+    public var cockpitPluginsReady: (@MainActor (CockpitPluginBridge) -> Void)?
     /// D324: the resource plugin's sampler host and the plugin choices it follows (kept for the app's lifetime).
     var resourcePlugin: ResourcePluginHost?
     var cockpitPluginModel: CockpitPluginSettingsModel?

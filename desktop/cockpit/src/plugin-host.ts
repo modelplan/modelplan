@@ -106,8 +106,9 @@ export interface PluginHost {
   add(id:string):boolean;
   openMenu(anchor:HTMLElement,options:MenuOptions):boolean;
   closeMenu():void;
-  /** CKP-PLG-53: the plugin's big screen inside the big-screen area; null closes it. */
-  openScreen(id:string|null):boolean;
+  /** CKP-PLG-53: the plugin's big screen inside the big-screen area; null closes it. The key toggles; `keep` (a host
+   *  request such as the widget card's action) leaves an already open screen open. */
+  openScreen(id:string|null,keep?:boolean):boolean;
   /** Plugins currently running (for tests and diagnostics). */
   running():string[];
   /** The display data the page rendered, at the host's time: running plugins with `derive` get their shaped reading. */
@@ -252,11 +253,11 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))key.setAttribute('aria-expanded','false');
     if(restoreFocus)root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`)?.focus();
   }
-  function openScreen(id:string|null):boolean {
+  function openScreen(id:string|null,keep=false):boolean {
     if(id===null){closeScreen();return true;}
     const plugin=registry.get(id);
     if(disposed||!enabled(id)||!plugin)return false;
-    if(screen?.id===id){closeScreen();return true;}
+    if(screen?.id===id){if(!keep)closeScreen();return true;}
     const well=root.querySelector<HTMLElement>('.dk-mfd .mfd-screen');if(!well)return false;
     closeScreen();const box=el('section','pl-screen');box.dataset.plugin=id;box.setAttribute('role','region');box.tabIndex=-1;
     const head=el('div','pl-screen-h'),title=fitted('pl-screen-t',pluginWords(locale,plugin.title));
@@ -330,9 +331,10 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       });
       reconcile();if(screen)drawScreen();
     },
-    // The privacy barrier (clear, new view revision): readings and host takeover go with the old view, so a cleared reading
-    // never comes back and the next display is shaped afresh (macrevc-844-2). A running plugin is sampled again by the host.
-    clearPlacement(){forget();pending=null;placed.clear();columns.clear();readings.clear();hostFed.clear();closeMenu();closeScreen();reconcile();},
+    // Privacy barrier (clear, new view revision, waiting/empty; macrevc-844-2, macrev2-1104-2): readings, per-plugin draw
+    // memory and host takeover go with the old view, so a cleared reading never comes back and the next display is shaped
+    // afresh. A running plugin is sampled again by the host.
+    clearPlacement(){forget();pending=null;placed.clear();columns.clear();readings.clear();memos.clear();hostFed.clear();closeMenu();closeScreen();reconcile();},
     hold(){
       // Called again while the engine rebuilds (focus already dropped): an earlier hold stays until it is used, focus
       // moves elsewhere (focusin) or the plugin is no longer placed.

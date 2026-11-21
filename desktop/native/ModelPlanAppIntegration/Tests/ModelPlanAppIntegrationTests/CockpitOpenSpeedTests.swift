@@ -46,6 +46,24 @@ extension CommunityCockpitEntryTests {
         ])
         return environment
     }
+    /// One fresh Codex reading in the synthetic home, so the real CLI emits a Codex row on the "dock" surface and the
+    /// cockpit has one subscription column. Without it the synthetic home has no reading, the producer drops "dock"
+    /// (G3-38, D76) and the real page shows the CKP-ENG-57 empty engine, which draws no table and so no plugin column.
+    /// The record has the shape `testG313RealCLIRecoversRetainedWeeklyCard` uses.
+    static func seedCodexSubscription(_ root: URL) throws {
+        let day = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: Date())
+        let sessions = root.appendingPathComponent(String(format: "home/.codex/sessions/%04d/%02d/%02d", day.year!, day.month!, day.day!), isDirectory: true)
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        let value: [String: Any] = ["timestamp": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-60)), "type": "event_msg",
+            "payload": ["type": "token_count", "rate_limits": ["limit_id": "codex", "plan_type": "plus",
+                "primary": ["used_percent": 30, "window_minutes": 10080,
+                            "resets_at": Int(Date().addingTimeInterval(86400).timeIntervalSince1970)]]]]
+        var data = try JSONSerialization.data(withJSONObject: value)
+        data.append(0x0a)
+        try data.write(to: sessions.appendingPathComponent("rollout-synthetic-plugins.jsonl"))
+    }
+    /// CKP-ENG-57: the real page draws its engine table (and so any plugin column) only with a subscription column.
+    static let engineDrawnScript = "document.getElementById('cockpit')?.dataset.engineEmpty==='false'"
 
     /// Resident memory of the WebKit helper processes, in KiB, by process. RSS counts shared pages, so
     /// differences between two samples are the useful number, not the totals.
