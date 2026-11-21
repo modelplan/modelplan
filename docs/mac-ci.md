@@ -27,6 +27,21 @@ the **caller** identity when a reusable workflow is used. It must not be
 misrepresented as proof of the reusable definition; the runner group's
 server-side workflow restriction supplies that boundary.
 
+## Runner acceptance smoke (owner exception, D353)
+
+A new or standby Mac is validated with `runner-smoke.yml` before it gets a production label. The runner carries only
+a temporary `smoke-arm64-N` label, which no other workflow may name (`scripts/workflow-policy.mjs`). This is an
+owner-approved exception to the rule above: the `modelplan-mac` runner group also admits
+`modelplan/modelplan/.github/workflows/runner-smoke.yml@refs/heads/main` (D330), because a direct dispatch is pinned to a
+branch, not a commit. The workflow starts only from `workflow_dispatch` by the owner account, from main's definition, builds
+only `main` or a `refs/tags/` tag, and holds a read-only token with no secrets. After the owner adds the group entry, check
+that a branch copy, another workflow and a non-owner dispatch or rerun get no smoke runner.
+
+Register the runner under the opaque name `smoke-arm64-N` (the same N as its label), never the default host name: GitHub
+records the registered name in public job metadata before any step runs. The workflow's first step refuses any other name
+without printing it, so the timing table can name the runner safely. The policy check also rejects any other workflow whose
+`runs-on` is an expression that is not a literal `strategy.matrix` key (an input-driven or `fromJSON` matrix fails closed).
+
 ## Graphical checks
 
 Native checks create actual AppKit windows. They stay hosted until
@@ -173,6 +188,11 @@ against `full`, `none` or a comma-separated list of identifiers, and passes it t
 leg) and verifies that exactly that narrowed share ran. Every other run (merge queue, nightly,
 push, `main`/release dispatch) runs and verifies the whole share whatever the caller passes.
 
+The compile check is build plus touched classes: for `ModelPlanAppIntegration` (about 540 window-style cases,
+longer than the compile Mac's 45 minute limit) it builds the tests and runs only the classes declared in the
+test files the PR touches (at most 8, otherwise build-tests only). The full suite is the job of the GUI and
+headless legs, not of the compile check.
+
 A selection is a speed-up for the PR round, not the merge gate. The merge queue runs the full GUI
 leg on the group commit, and `desktop` must pass there before anything reaches `main`; the
 coordinator's gate still requires a successful GUI leg at the PR head. A `schedule` run at 09:23
@@ -184,6 +204,16 @@ Non-UI Swift tests are not skipped on the strength of a Mac compile lane's earli
 head (D169 item 3 was dropped): those lanes run on agent-operated machines, and nothing they report
 (a comment, a file, or a signature made with a key on that machine) can be verified as untampered
 by CI. Only GitHub-produced results count.
+
+### macOS legs on pull requests (D254)
+
+Hosted macOS gives 5 concurrent jobs, so a pull request starts a Mac job only when it changes something that job
+tests. Every PR-triggered Mac workflow either has a `pull_request` `paths` list that ends in `'!**/*.md'`, or gates
+each Mac job on a scope output (`desktop.yml` `pr-scope`, `ci.yml` and `repo-checks.yml` `mac-scope` and `notices-mac`).
+`merge_group`, `push`, `schedule` and `workflow_dispatch` are never filtered and keep the full suite. A workflow or
+job a PR does not trigger needs no stub: `merge-gates` counts only runs that exist (plus the `ci` anchor) and a skipped
+job is green. `trusted-mac.yml` stays untouched; the filters live in its callers. Concurrency cancels only
+`pull_request` runs of the same PR (`workflow-policy.test.mjs` enforces both rules).
 
 ## Migration
 

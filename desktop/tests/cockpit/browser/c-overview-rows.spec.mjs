@@ -32,7 +32,9 @@ function history(dailyFrom=localDay(39)){
 }
 const grid=page=>page.locator('[data-opt="chart"] b',{hasText:/^Grid$/}).click();
 
-test('CKP-MFD-08 the Grid key draws the 26-week heatmap with five neutral steps in All',async({page})=>{
+// WP-12 (CKP-MFD-62): the Grid key is not lit in v1, so the heatmap cannot be opened from the page. The four heatmap
+// tests below are skipped until v1.1 lights the key again; the heatmap code and its unit test stay.
+test.skip('CKP-MFD-08 the Grid key draws the 26-week heatmap with five neutral steps in All',async({page})=>{
  await open(page,history());await grid(page);
  const heat=page.locator('.pg-overview svg.ov-heat');await expect(heat).toBeVisible();
  await expect(heat).toHaveAttribute('aria-label','Daily output tokens, last 26 weeks');await expect(heat).not.toHaveClass(/\bvendor\b/);
@@ -47,10 +49,10 @@ test('CKP-MFD-08 the Grid key draws the 26-week heatmap with five neutral steps 
  // The record began inside the 26 weeks: the started-on line says so.
  await expect(page.locator('.pg-overview .hm-since')).toHaveText('Recorded since Sep 26');
  // The 7/30 and split/stacked keys belong to the bars only.
- await expect(page.locator('[data-opt="days"]')).toHaveCount(0);await expect(page.locator('[data-opt="stack"]')).toHaveCount(0);
+ await expect(page.locator('[data-opt="range"]')).toHaveCount(0);await expect(page.locator('[data-opt="stack"]')).toHaveCount(0);
 });
 
-test('CKP-MFD-08 hovering a heatmap cell shows its date and the tokens per subscription',async({page})=>{
+test.skip('CKP-MFD-08 hovering a heatmap cell shows its date and the tokens per subscription',async({page})=>{
  await open(page,history());await grid(page);
  const tip=page.locator('.dk-mfd .mfd-tip');await expect(tip).toBeHidden();
  await page.locator('.ov-heat rect.hm.today').hover();
@@ -63,7 +65,7 @@ test('CKP-MFD-08 hovering a heatmap cell shows its date and the tokens per subsc
  await page.locator('.ov-bucket').last().hover();await expect(tip).toBeVisible();await expect(tip).toContainText('Codex');
 });
 
-test('CKP-MFD-08 a subscription scope draws the heatmap in its vendor colour',async({page})=>{
+test.skip('CKP-MFD-08 a subscription scope draws the heatmap in its vendor colour',async({page})=>{
  await open(page,history());await page.keyboard.press('1');await grid(page);
  const heat=page.locator('.pg-overview svg.ov-heat');await expect(heat).toHaveClass(/\bvendor\b/);
  const hv=await heat.evaluate(e=>e.style.getPropertyValue('--hv'));expect(hv).toMatch(/^#[0-9a-f]{6}$/i);
@@ -76,7 +78,7 @@ test('CKP-MFD-08 a subscription scope draws the heatmap in its vendor colour',as
  expect(ink.fill).not.toBe(rgb);
 });
 
-test('CKP-MFD-08 a record that began before the 26 weeks has no started-on line, and Chinese reads 点阵',async({page})=>{
+test.skip('CKP-MFD-08 a record that began before the 26 weeks has no started-on line, and Chinese reads 点阵',async({page})=>{
  await open(page,history(localDay(181)),'zh-CN');
  await page.locator('[data-opt="chart"] b',{hasText:/^点阵$/}).click();
  await expect(page.locator('.pg-overview svg.ov-heat')).toHaveAttribute('aria-label','近 26 周每日输出 token');

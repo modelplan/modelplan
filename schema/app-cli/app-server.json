@@ -87,14 +87,7 @@
           ]
         },
         "resetCards": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ResetCards"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/ResetCards"
         },
         "route": {
           "enum": [
@@ -121,14 +114,7 @@
           ]
         },
         "today": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AccountToday"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/AccountToday"
         },
         "valueState": {
           "enum": [
@@ -211,37 +197,20 @@
           "type": "string"
         },
         "generationTps": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "minimum": 0
+          "minimum": 0,
+          "type": "number"
         },
         "observedOutputTokens": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "minimum": 1
+          "minimum": 1,
+          "type": "integer"
+        },
+        "observedTotalTokens": {
+          "minimum": 0,
+          "type": "integer"
         },
         "runningSessions": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "minimum": 1
+          "minimum": 1,
+          "type": "integer"
         }
       },
       "required": [
@@ -304,6 +273,121 @@
         "windowId",
         "severity",
         "remainingPercent"
+      ],
+      "type": "object"
+    },
+    "CockpitCost": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "daily": {
+          "items": {
+            "$ref": "#/$defs/CockpitCostBucket"
+          },
+          "maxItems": 480,
+          "type": "array"
+        },
+        "hourly": {
+          "items": {
+            "$ref": "#/$defs/CockpitCostBucket"
+          },
+          "maxItems": 384,
+          "type": "array"
+        },
+        "models": {
+          "$ref": "#/$defs/CockpitCostModels"
+        },
+        "pricesAsOf": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maxLength": 10
+        }
+      },
+      "required": [
+        "basis",
+        "currency",
+        "pricesAsOf",
+        "daily",
+        "hourly",
+        "models"
+      ],
+      "type": "object"
+    },
+    "CockpitCostBucket": {
+      "additionalProperties": false,
+      "properties": {
+        "approximate": {
+          "type": "boolean"
+        },
+        "at": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "estimatedUsd": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "pricedTokens": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "unpricedTokens": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "at",
+        "source",
+        "estimatedUsd",
+        "pricedTokens",
+        "unpricedTokens"
+      ],
+      "type": "object"
+    },
+    "CockpitCostModels": {
+      "additionalProperties": false,
+      "properties": {
+        "recent30d": {
+          "items": {
+            "$ref": "#/$defs/CockpitModelCost"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "recent7d": {
+          "items": {
+            "$ref": "#/$defs/CockpitModelCost"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "today": {
+          "items": {
+            "$ref": "#/$defs/CockpitModelCost"
+          },
+          "maxItems": 64,
+          "type": "array"
+        }
+      },
+      "required": [
+        "today",
+        "recent7d",
+        "recent30d"
       ],
       "type": "object"
     },
@@ -535,14 +619,7 @@
           "type": "array"
         },
         "publication": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CockpitPublication"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/CockpitPublication"
         },
         "publishedModels": {
           "items": {
@@ -716,6 +793,9 @@
     "CockpitHistory": {
       "additionalProperties": false,
       "properties": {
+        "cost": {
+          "$ref": "#/$defs/CockpitCost"
+        },
         "coverage": {
           "type": "string"
         },
@@ -868,6 +948,12 @@
         },
         "outputTokens": {
           "type": "integer"
+        },
+        "reasoningTokens": {
+          "type": "integer"
+        },
+        "totalTokens": {
+          "type": "integer"
         }
       },
       "required": [
@@ -879,6 +965,49 @@
         "generationTps",
         "observedRequests",
         "eligibleRequests"
+      ],
+      "type": "object"
+    },
+    "CockpitModelCost": {
+      "additionalProperties": false,
+      "properties": {
+        "approximate": {
+          "type": "boolean"
+        },
+        "estimatedUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 0
+        },
+        "model": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "pricedTokens": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "unpricedTokens": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "model",
+        "source",
+        "estimatedUsd",
+        "pricedTokens",
+        "unpricedTokens"
       ],
       "type": "object"
     },
@@ -1026,6 +1155,9 @@
     "CockpitPublicationEffort": {
       "additionalProperties": false,
       "properties": {
+        "aaScore": {
+          "type": "number"
+        },
         "ability": {
           "anyOf": [
             {
@@ -1056,14 +1188,7 @@
           "type": "string"
         },
         "multiplier": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "number"
         },
         "provisional": {
           "type": "boolean"
@@ -1347,14 +1472,7 @@
           ]
         },
         "fast": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "boolean"
         },
         "lastObservedAt": {
           "format": "date-time",
@@ -1362,6 +1480,15 @@
         },
         "model": {
           "type": "string"
+        },
+        "modelDisplay": {
+          "maxLength": 48,
+          "minLength": 1,
+          "type": "string"
+        },
+        "observedTotalTokens": {
+          "minimum": 0,
+          "type": "integer"
         },
         "projectLabel": {
           "anyOf": [
@@ -1398,6 +1525,10 @@
           "type": "string"
         },
         "source": {
+          "type": "string"
+        },
+        "startedAt": {
+          "format": "date-time",
           "type": "string"
         },
         "state": {
@@ -1690,14 +1821,7 @@
           "type": "array"
         },
         "resetCards": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ResetCards"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/ResetCards"
         },
         "resetCounts": {
           "items": {
@@ -1769,6 +1893,10 @@
           ]
         },
         "observedOutputTokens": {
+          "type": "integer"
+        },
+        "observedTotalTokens": {
+          "minimum": 0,
           "type": "integer"
         },
         "source": {
@@ -2100,14 +2228,7 @@
       },
       "properties": {
         "accessToken": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "string"
         },
         "expiresAt": {
           "anyOf": [
@@ -2190,18 +2311,11 @@
           "type": "string"
         },
         "refreshDecisions": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/RefreshDecision"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "maxItems": 20
+          "items": {
+            "$ref": "#/$defs/RefreshDecision"
+          },
+          "maxItems": 20,
+          "type": "array"
         },
         "scopes": {
           "items": {
@@ -3100,14 +3214,7 @@
           ]
         },
         "hint": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Hint"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/Hint"
         },
         "text": {
           "$ref": "#/$defs/Text"
@@ -4668,15 +4775,8 @@
           "minimum": 0
         },
         "earliestExpiresAt": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "format": "date-time",
+          "type": "string"
         },
         "items": {
           "items": {
@@ -5107,18 +5207,11 @@
       "additionalProperties": false,
       "properties": {
         "forecasts": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/CockpitForecast"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "maxItems": 128
+          "items": {
+            "$ref": "#/$defs/CockpitForecast"
+          },
+          "maxItems": 128,
+          "type": "array"
         },
         "resetEvents": {
           "items": {
@@ -5448,21 +5541,14 @@
           "type": "string"
         },
         "source": {
-          "anyOf": [
-            {
-              "enum": [
-                "local_history",
-                "runtime",
-                "saved_login",
-                "api_key",
-                "other"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "enum": [
+            "local_history",
+            "runtime",
+            "saved_login",
+            "api_key",
+            "other"
+          ],
+          "type": "string"
         },
         "validUntil": {
           "anyOf": [

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publicationFaders,scopedFaders,moreFaderModels} from '../../../cockpit/.tmp/compiled/src/publication-faders.js';
+import {publicationFaders,scopedFaders,moreFaderModels,historyUsage} from '../../../cockpit/.tmp/compiled/src/publication-faders.js';
 
 test('maps published model verdicts without inventing unknown readings',()=>{
  const input={contractVersion:1,models:[{id:'example',name:'Example',recommended:'medium',efforts:[
@@ -121,4 +121,42 @@ test('sampling-930 every subscription developer adds its published models, in pu
  const published=[model('a','openai'),model('b','anthropic'),model('c','google'),model('d','anthropic')];
  const subs=[{key:'s1',developer:'openai',colour:'#fff'},{key:'s2',developer:'anthropic',colour:'#fff'},{key:'s3',developer:null,colour:'#fff'}];
  assert.deepEqual(moreFaderModels(published,[{model:'c'}],[],subs).map(m=>m.id),['c','a','b','d']);
+});
+
+// G3-133 (owner test build 15): "in use" came only from live sessions and the 7-day session ledger, so a model the owner
+// uses every day (history ranking, imported or recorded) sat behind an unused starred one. The history ranking
+// (cockpitHistoryV1 models.recent7d / recent30d) orders models that no session shows: 7-day tokens, then 30-day tokens.
+test('G3-133 history usage orders the faders: 7-day then 30-day tokens, before unused recommendations',()=>{
+ const model=(id,ability)=>({id,name:id,developerId:'openai',recommended:'medium',efforts:[{effort:'medium',star:true,ability,cost:1,time:null}]});
+ const publication={contractVersion:1,models:[model('astra',90),model('terra',80),model('sol',70)]};
+ const usage=new Map([['sol',{d7:500,d30:900}],['terra',{d7:0,d30:50}]]);
+ const {faders}=publicationFaders(publication,[],[],[],{now:Date.parse('2026-11-18T00:00:00Z'),usage});
+ assert.deepEqual(faders.map(f=>f.id),['sol','terra','astra']);
+ // A session seen in the last 7 days still leads the history order.
+ const live=[{sessionRef:'0123456789abcdef',subscriptionRef:null,model:'astra',lastObservedAt:'2026-11-17T23:00:00Z'}];
+ assert.deepEqual(publicationFaders(publication,live,[],[],{now:Date.parse('2026-11-18T00:00:00Z'),usage}).faders.map(f=>f.id),['astra','sol','terra']);
+});
+test('G3-133 a model used only in history stays in the own-plans set and in the extra candidates',()=>{
+ const model=(id,developerId)=>({id,name:id,developerId,recommended:'medium',efforts:[{effort:'medium',star:true,ability:1,cost:1,time:null}]});
+ const publication={contractVersion:1,models:[model('a','openai')]};
+ const subs=[{key:'s1',developer:'openai',colour:'#fff'}];
+ const published=[model('a','openai'),model('g','google')];
+ assert.deepEqual(moreFaderModels(published,[],[],subs,new Set(['g'])).map(m=>m.id),['g','a']);
+ const {faders}=publicationFaders(publication,[],published.slice(1),subs,{now:1,ownPlansOnly:true,usage:new Map([['g',{d7:1,d30:1}]])});
+ assert.deepEqual(faders.map(f=>f.id),['g','a']);
+});
+
+test('macrevd-1039-1 historyUsage sums rows that map to one canonical model',()=>{
+ const top=(name,n)=>({name,observedOutputTokens:n});
+ const usage=historyUsage({models:{recent7d:{top:[top('sol',300),top('sol',200),top('terra',400)]},recent30d:{top:[top('sol',10),top('sol',5)]}}});
+ assert.deepEqual(usage.get('sol'),{d7:500,d30:15});
+ assert.deepEqual(usage.get('terra'),{d7:400,d30:0});
+});
+
+// WP-05 (D292, owner 11-17): aaScore rides along as a fifth reading only when published; ability (index 1) stays our score.
+test('WP-05 carries a published aaScore as a reference after time, never in place of ability',()=>{
+ const p={contractVersion:1,models:[{id:'m',name:'M',recommended:'high',efforts:[
+  {effort:'high',star:true,ability:42.8,cost:.375,time:104,aaScore:61.5},{effort:'max',star:false,ability:47.5,cost:1.056,time:221},
+  {effort:'low',star:false,ability:33.9,cost:.132,time:38,aaScore:-1}]}]};
+ assert.deepEqual(publicationFaders(p).faders[0].e,[['Low',33.9,.132,38],['High',42.8,.375,104,61.5],['Max',47.5,1.056,221]]);
 });

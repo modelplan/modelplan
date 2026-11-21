@@ -107,9 +107,84 @@ reply with the new context. Replays and old view revisions are rejected even whe
 the consent floor itself did not change. An engine restart can adopt its new
 session only through that explicit clear, or by unloading and making a fresh page.
 
-Page responses include `ready`, `rendered`, `cleared`, `nextDeadline` and `action`, with the same context/header IDs and the independent output sequence. `ready` carries `appearanceVersion: 2` and the capabilities `appearanceUpdates`, `shellState` and `shellActions`. While visible with displayed data, display, appearance and tick can report a nullable `deadlineUnixMs` correlated to the triggering request. Fixed actions include `chooseSetup`, `openSettings`, `close`, `detach`, `putBack`, `shutterToggle`, `scopeSelect`, `openHistory`, `openField` and `openWebsite`. `openField` may carry `key`, the clicked rocket's published display name (1-64 characters); native resolves it against the published models and focuses nothing for an unknown name. `openWebsite` carries a `page` (`plans`, `effort` or `methodology`) and a short `value`; native builds the public address from them, so no URL crosses the bridge. `scopeSelect` carries `key` equal to `all` or an admitted current member; `openHistory` carries a `tool` from the current displayed rows. Clear invalidates that action membership too. Native
+Page responses include `ready`, `rendered`, `cleared`, `nextDeadline` and `action`, with the same context/header IDs and the independent output sequence. `ready` carries `appearanceVersion: 2` and the capabilities `appearanceUpdates`, `shellState` and `shellActions`. While visible with displayed data, display, appearance and tick can report a nullable `deadlineUnixMs` correlated to the triggering request. While the session strip lists a session, the next whole minute is a deadline, so its elapsed time and "6m ago" move with the host's tick (owner decision D277, CKP-STRIP-16). Fixed actions include `chooseSetup`, `openSettings`, `close`, `detach`, `putBack`, `shutterToggle`, `scopeSelect`, `openHistory`, `openField`, `openWebsite` and `refreshMember`. `openField` may carry `key`, the clicked rocket's published display name (1-64 characters); native resolves it against the published models and focuses nothing for an unknown name. `openWebsite` carries a `page` (`plans`, `effort` or `methodology`) and a short `value`; native builds the public address from them, so no URL crosses the bridge. `refreshMember` (owner D277) carries `key` equal to `all` or an admitted current member and asks native for the widget's per-member re-read. `scopeSelect` carries `key` equal to `all` or an admitted current member; `openHistory` carries a `tool` from the current displayed rows. Clear invalidates that action membership too. Native
 maps these to typed UI intents, never to a command/URL interpreter. No credential,
 consent mutation or plugin-install message exists in this protocol.
+
+## Plugin columns (D121/D124, D293; CKP-PLG-50…54)
+
+Plugins are bundled modules in `src/plugin-registry.ts`: id, string-table keys for the title (long and short) and the
+one-sentence Settings summary, a trusted white line-art icon at the vendor-mark size, the dashed underline colour and
+bar ink (only `#87939e`, `#e9edf0`, `#b9c7d6` or the resource orchid `#da66c2`), settings specs, and three pure functions: `accept` folds a host reading
+into the plugin's state (kept across repaints), `column` describes up to three cells in the subscription columns'
+Other-cell grammar (small tag · large number · side value · continuous bar with a thin trend line) plus a bottom line,
+and `screen` gives the lines of its big screen. Custom draw (D323): when cells cannot express a plugin (a day strip, a
+week grid), its `column` or `screen` result may also carry `draw(ctx)`. The host then gives it one clipped area (the
+column's cell rows, or the screen body under the framework's title bar) and calls `draw` with that `area`, its size, the
+cockpit `tokens`, a per-plugin `memo` shared by column and screen, `opening` and `redraw()`. The key, underline, pin,
+"+" menu, bottom line, title bar and lifecycle stay the framework's; a draw that throws falls back to the cells or lines,
+a size change draws again, and focus on a `data-focus` element survives every redraw. Plugin strings live in `study/rocket-r1/strings/plugins.js`, each drawn
+one with a `<key>Short` form. `src/plugin-layout.ts` is the pure page rule: columns = max(3, subscriptions + plugins),
+at most six per page, subscriptions first; unpinned plugins only fill free slots of the last page; up to two pinned
+plugins stay on page 1. `src/plugin-host.ts` turns empty slots into plugin keys and columns drawn like subscription keys
+and columns (no inner frame, no ×), opens a plugin's big screen inside the big-screen well when its key is clicked
+(faders and page keys stay uncovered; a page key closes it), offers Remove on the key's right-click menu, and runs the
+empty-slot "+" menu (detected unconnected tools, then plugins). Settings keeps the durable choices in the "Plugins"
+section of Settings › Subscriptions.
+
+Lifecycle: a plugin runs only while the page is visible and not occluded (key or not) and its column is on the shown
+page. The page has no timers; the host samples. Messages, all with the common header:
+
+- host → page `{"type":"plugins","plugins":{"version":1,"entries":[{"id","enabled","pinned"}],"settings":{id:{key:int}}}}`:
+  the saved choices (Settings, `CockpitPluginPreferences.swift`). Sending it also tells the page the host accepts the
+  two actions below; without it the page posts neither and keeps page edits to itself.
+- host → page `{"type":"pluginData","id":…,"data":…}`: a reading for a running plugin; refused otherwise.
+- host → page `{"type":"pluginScreen","id":…}`: open that enabled plugin's big screen (a native action such as the
+  widget card's); an open one stays open. Refused before `plugins` or for a plugin that is off.
+- page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's right-click Remove or the "+" menu.
+- page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
+
+Native host (macrevc-844-1): `CockpitPluginWire.canonical` applies `parsePluginState`'s rules in both directions;
+`plugins` is the one nested reply value (at most 4 levels, 64 unique keys per object, 32 items per array, 64 KiB).
+The window sends `plugins` on ready, after every clear and on change (never a state the page confirmed twice; a failed or lost call is sent again, and a change made while another state is in flight is sent once that one is answered); a `pluginScreen` request waits until the page confirmed a plugin state;
+`pluginsRunning` is accepted without focus, `pluginsEdit` only from the active page. The running set drops to `[]`
+when the page goes or is cleared. `CockpitPluginBridge` (ModelPlanAppIntegration) keeps the durable copy in
+`cockpit-plugins.json` and drives `CockpitPluginSampler`, which reads registered plugins at their interval.
+
+Defaults: a default-on plugin (D121) is on only once the host has sent `plugins`; a page whose host never did draws the
+v1 table.
+
+Framework additions for the calendar (v1.1, all generic):
+
+- Host-side shaping: a plugin may declare `derive(display, now)`. While it runs, the page shapes its reading from the
+  `display` data it already has (no network, no new host message) on each render and deadline tick, through the
+  plugin's own `accept`. A host that pushes a valid `pluginData` for that plugin takes over: shaping stops for it.
+- Tick: a running plugin may name its next redraw (`nextDeadline(state, now)`, e.g. the next whole minute). The page
+  reports the earliest of its own deadlines and the plugins' in `nextDeadline`; the host's `tick` redraws the plugin.
+  `context.now` is the host's clock. No page timers, and a stopped plugin asks for nothing.
+- Settings kinds: the calendar has no settings, so `seconds` is still the only kind.
+
+Calendar (`src/calendar-plugin.ts`, `src/calendar-data.ts`, `src/calendar-time.ts`; CKP-PLG-06/07; D323): default on, no
+settings. The day strip (column) and the 7-day week grid (its big screen, opened from the key) are custom draws; the
+bottom line shows the time now, and a failed draw falls back to next reset / next peak / reset cards cells and plain
+lines. Its accept refuses data over 16 KiB as JSON, then runs the strict parser. Its data (`version`, optional `peakRules` `yes`/`no`/`unknown` (missing is unknown), `subs` ≤16, `peaks` ≤64, `resets` ≤64, `spans` ≤16, epoch-ms times, ≤16 KiB) is shaped
+from `display`: published peak windows (`details.peaks`, cockpitPeaksV1), the user's own 5 h (`session`) and weekly
+window resets, reset cards (verified subscriptions only) and announced/confirmed reset events, for the user's own rows
+only. A reset-card list the producer marks partial or truncated has no exact count and no expiry beyond the one it states; "No rules" is shown only when the peak feed is present and the user has no declared plan. The privacy barrier (clear) drops the plugin readings and the host takeover. All times are local; day boundaries are local midnights (DST days have 23/25 hours).
+
+A plugin marked `hostSampled` (the resource plugin) is laid out only after the host has sent its plugin state, so a
+host that cannot sample never shows an empty column.
+
+### Resource plugin (D324, D327)
+
+`src/resource-plugin.ts`: CPU · Memory · Disk cells, the bottom line is memory pressure, orchid `#da66c2` for the key's
+dashed underline, bars and trend lines; only the numbers turn amber or red (CPU ≥ 70 % / ≥ 90 %, memory by macOS
+memory pressure, disk ≥ 90 %). Default on; setting `intervalSeconds` 2 / 5 / 10 (default 5). The host
+(`native/ModelPlanResources`, `ResourceSampler`) samples with system calls only and pushes
+`{"samples":[{"t","cpuUser","cpuSystem","load","memTotal","memApp","memWired","memCompressed","memCached","memFree","swapUsed","pressure","diskTotal","diskFree"}]}`
+(percentages 0–100, bytes, `t` in Unix ms, `pressure` normal / warn / critical): the whole ten-minute window when the
+column starts running (at most 360 samples), then only newer samples. The page keeps the same ten minutes in memory.
+The big screen is drawn as lines until the D323 draw hook lands; then its charts move to `draw(ctx)`.
 
 ## Animation budget and evidence
 

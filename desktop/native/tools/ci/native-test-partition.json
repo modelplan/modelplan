@@ -67,16 +67,20 @@
         "DockPlacementProducerTests",
         "DockPointerObservationTests",
         "DockRasterDragTests",
+        "DockStripJourneyTests",
         "DockWakePolicyTests",
         "EngineDesignConformanceTests",
         "EngineDockInteractionBindingTests",
         "FindQuotaWidgetJourneyTests",
+        "G1PresentationHelpJourneysB",
+        "G3_122StatusTitleTests",
         "HintExecutionHostTests",
         "HostPairedProjectionTests",
         "InstrumentHelpCompositionTests",
         "InstrumentHintSourceRouterTests",
         "M5CreditsDisplayFormatTests",
         "MenuHostDispatchJourneyTests",
+        "MenuRangeSummaryTests",
         "NativeAccountDockProjectionTests",
         "NormalEntrySettingsJourneyTests",
         "ObservedPlacementAdapterTests",
@@ -92,13 +96,15 @@
         "Respin5FreshnessPreferenceTests",
         "S1GalleryTests",
         "S4QuotaJourneyTests",
+        "SET918NotificationDeliveryJourneyTests",
         "SettingsApplicationTests",
         "SettingsWaitEventTests",
         "SettingsWindowHostTests",
         "StaticDockPresentationTests",
         "SubscriptionCatalogueOwnershipTests",
         "T2MaterialSeamTests",
-        "U8ConsentJourneyTests"
+        "U8ConsentJourneyTests",
+        "WP15WidgetCardStateTests"
       ],
       "ownerGui": [
         "D41KeychainJourneyTests",
@@ -121,7 +127,7 @@
           "leg": "gui",
           "reason": "needs the real synthetic-test CLI, which the native job does not build"
         },
-        "CommunityCockpitEntryTests/testNormalEntryKeepsTheScopeForTheDayAndStartsTheNextDayAtAll": {
+        "CommunityCockpitEntryTests/testNormalEntryKeepsTheScopeAndRangeAcrossRestartsAndDays": {
           "leg": "gui",
           "reason": "needs the real synthetic-test CLI, which the native job does not build; U11 builds and supplies it"
         },

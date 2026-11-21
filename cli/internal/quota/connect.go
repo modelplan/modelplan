@@ -127,7 +127,7 @@ func (s QuotaSource) check() error {
 
 // Selections: the effective backend of every provider that is configured anywhere, sorted.
 var loadReaderCatalogue = func(cache string) *detect.Catalogue {
-	if d, _, err := publication.Load(&store.Store{Dir: cache}); err == nil {
+	if d, _, err := publication.LoadShared(&store.Store{Dir: cache}); err == nil { // read only (WP-17)
 		return d.Catalogue
 	}
 	return nil
@@ -324,6 +324,10 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	p.Admission = &admission
 	s, mode := admission.State(), admission.Mode()
 	r := Report{ConsentStoreEpoch: s.StoreEpoch, ConsentGeneration: s.Generation, SchemaVersion: 1, EvaluatedAt: now.UTC(), Note: note, Accounts: []Account{}}
+	if mode == consent.Off || !s.Allows("codex", consent.Local, mode) {
+		// WP-17: nothing decoded from Codex rollouts outlives the admission to read them.
+		forgetCodexRollouts()
+	}
 	if mode == consent.Off {
 		reason := "reader-privacy"
 		if consent.NewerStore() {
@@ -375,7 +379,7 @@ func ReadDeclared(p Paths, now time.Time) Report {
 func ForgetTool(p Paths, tool string) error { return forgetTool(p, tool, true, false, "") }
 
 func forgetTool(p Paths, tool string, history, identity bool, scopeClass string) error {
-	admission, err := consent.ReaderLock()
+	admission, err := consent.ReaderLockWait()
 	if err != nil {
 		return err
 	}
@@ -414,6 +418,12 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 	var legacy map[string]string
 	if history {
 		if err := markHistoryCleared(p.Cache, tool); err != nil {
+			return err
+		}
+		// The per-response accounting ledger is local history too: the boundary hides it from
+		// projections, but Forget reports deletion, so the tool's records are erased here, under
+		// the same ledger locks and before any success is reported.
+		if err := speed.ForgetAccountingLocked(p.Cache, tool); err != nil {
 			return err
 		}
 		legacy = speed.LegacyCursorSources(p.Cache, ledgerLogRoots(p))

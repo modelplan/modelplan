@@ -2,16 +2,23 @@
 # SPDX-License-Identifier: MIT
 # Mac compile check (mac-compile.yml), run on the compile Mac in a checkout of the PR merge commit.
 # Usage: run.sh <plan.tsv> <scratch root> <sha>
-# For each plan row (from plan.mjs): swift build, then swift test on the selected classes (or the whole package
-# minus the never-run classes, or only --build-tests). Each package gets at most PACKAGE_MINUTES (default 25) for
+# Optional SEED_ROOT: a per-runner build seed. PR jobs only READ it (a clone of the matching seed becomes the job's own
+# scratch, thrown away with the job); with SEED_WRITE=1 (trusted main runs only) a successful build is published to it.
+# For each plan row (from plan.mjs): one `swift build --build-tests` (product and test targets, one compile), then `swift test --skip-build` on the selected classes (or the whole package
+# minus the never-run classes, or only --build-tests; ModelPlanAppIntegration is never run whole, see plan.mjs). Each package gets at most PACKAGE_MINUTES (default 25) for
 # build and test together. Writes the summary to $GITHUB_STEP_SUMMARY (first line "COMPILE ok|fail @ <sha8>")
 # and exits non-zero on any failure.
 set -u
 PLAN=$1; SCRATCH_ROOT=$2; SHA=$3
 LIMIT=$(( ${PACKAGE_MINUTES:-25} * 60 ))
-LOGS=${RUNNER_TEMP:-/tmp}/mac-compile-logs; rm -rf "$LOGS"; mkdir -p "$LOGS" "$SCRATCH_ROOT"
+LOGS=${RUNNER_TEMP:-/tmp}/mac-compile-logs; mkdir -p "$SCRATCH_ROOT"
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 ok=1; rows=; failed_tests=; errors=
+
+SEED_ROOT=${SEED_ROOT:-}; SEED_WRITE=${SEED_WRITE:-0}
+. "$(dirname "${BASH_SOURCE[0]}")/seedlib.sh"
+wipe "$LOGS"; mkdir -p "$LOGS" || exit 1
+seed_lock || exit 1
 
 # Run "$@" until it exits or the package deadline passes (macOS has no timeout(1)); SwiftPM stops its children on TERM.
 limited() {
@@ -29,8 +36,10 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
   [ -n "$dir" ] || continue
   sp="$SCRATCH_ROOT/$scratch"; blog="$LOGS/$scratch-build.log"; tlog="$LOGS/$scratch-test.log"
   deadline=$(( $(date +%s) + LIMIT ))
-  echo "::group::$dir: swift build"
-  limited swift build --package-path "$dir" --scratch-path "$sp" >"$blog" 2>&1; brc=$?
+  clear_path "$sp" || { echo "::error::could not clear or move aside $sp"; exit 1; }
+  if [ -n "$SEED_ROOT" ]; then seed_restore "$dir" "$scratch" "$sp"; [ $? != 2 ] || { echo "::error::could not clear or move aside $sp"; exit 1; }; fi
+  echo "::group::$dir: swift build --build-tests"
+  limited swift build --build-tests --package-path "$dir" --scratch-path "$sp" >"$blog" 2>&1; brc=$?
   tail -40 "$blog"; echo "::endgroup::"
   build=ok; test="not run"; : >"$tlog"
   if [ "$brc" != 0 ]; then
@@ -38,9 +47,9 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
   else
     echo "::group::$dir: tests ($mode)"
     case $mode in
-      filter) limited swift test --package-path "$dir" --scratch-path "$sp" --filter "$filter" --skip "$skip" >"$tlog" 2>&1; trc=$? ;;
-      skip) limited swift test --package-path "$dir" --scratch-path "$sp" --skip "$skip" >"$tlog" 2>&1; trc=$? ;;
-      *) limited swift build --build-tests --package-path "$dir" --scratch-path "$sp" >"$tlog" 2>&1; trc=$? ;;
+      filter) limited swift test --skip-build --package-path "$dir" --scratch-path "$sp" --filter "$filter" --skip "$skip" >"$tlog" 2>&1; trc=$? ;;
+      skip) limited swift test --skip-build --package-path "$dir" --scratch-path "$sp" --skip "$skip" >"$tlog" 2>&1; trc=$? ;;
+      *) trc=0 ;; # the one build above already built the test targets
     esac
     tail -60 "$tlog"; echo "::endgroup::"
     if [ "$mode" = build-tests ]; then
@@ -55,6 +64,9 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
       line=$(grep -F -m1 "error: $name" "$tlog")
       failed_tests="$failed_tests- \`$name\`${line:+: \`${line#"$PWD/"}\`}"$'\n'
     done < <(sed -nE "s/^Test Case '(.*)' failed.*/\1/p" "$tlog")
+  fi
+  if [ "$SEED_WRITE" = 1 ] && [ "$build" = ok ] && [ "$test" != "not run" ] && [ "$trc" = 0 ]; then
+    seed_publish "$dir" "$scratch" "$sp" || exit 1
   fi
   rows="$rows- \`$dir\`: build $build; test $test"$'\n'
   errors="$errors$(cat "$blog" "$tlog" | grep -E '^[^ :]+:[0-9]+:[0-9]+: error:' | sed "s#^$PWD/##")"$'\n'

@@ -96,7 +96,7 @@ def print_step(step, facts):
 
 def run(build, output):
     output.mkdir(parents=True, exist_ok=False)
-    app = build / 'neutral/ModelPlan Community.app'
+    app = build / 'neutral/ModelPlan.app'
     helper = app / 'Contents/Helpers/modelplan'
     subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(app)], check=True)
     receipt = json.loads((build / 'build-receipt.json').read_text())
@@ -126,7 +126,7 @@ def run(build, output):
             'MODELPLAN_APP_SMOKE': '1', 'MODELPLAN_E2E_JOURNEY': '1', 'MODELPLAN_E2E_REPORT': str(report), 'NO_COLOR': '1'}
         # The fixture uses stdio only. Denying all network is stricter than localhost-only.
         sandbox = root / 'journey.sb'; sandbox.write_text('(version 1)\n(allow default)\n(deny network*)\n')
-        command = ['/usr/bin/sandbox-exec', '-f', str(sandbox), str(app / 'Contents/MacOS/ModelPlanCommunity')]
+        command = ['/usr/bin/sandbox-exec', '-f', str(sandbox), str(app / 'Contents/MacOS/ModelPlan')]
         printed, results = set(), []
         with (output / 'process.stderr').open('wb') as error:
             process = subprocess.Popen(command, env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,

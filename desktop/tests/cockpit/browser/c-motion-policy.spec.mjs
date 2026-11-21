@@ -12,12 +12,16 @@ const ALLOWED_ANIMATIONS=new Set([
  'cockpit-running-cursor', // CKP-STRIP-10 running-row cursor
  'cockpit-state-pulse',   // two finite lamp-dot pulses on a state change (no idle loop)
  'cockpit-porthole-flicker', // owner D39/D-H flame flicker; active, open and no Reduce Motion only
- 'cockpit-mouth-shimmer', // CKP-ENG-19 base mouth light, working subscriptions only; same gates
+ 'cockpit-light-breathe', // CKP-ENG-19 (D294) base working light, working subscriptions only; same gates
+ 'cockpit-bell-flare',    // CKP-SHELL-33 (D294) landing burn thrown out of the mouth, only while the host ignites
+ 'cockpit-bell-burn',     // the burn's stepped flutter, same gate
 ]);
 // Selector fragment -> transitioned properties allowed on it (interaction feedback and fader glide).
-const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top','--fd-frame']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],[/\bshutter-(blind|thumb)\b/,['width','transform']],
+const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top','--fd-frame']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],// WP-10: the porthole switch's two art layers and the date keys cross-fade in 120 ms (spec R3, section 6 and 7).
+ [/\bshutter-slider\b/,['opacity']],[/\brk\b/,['color']],[/\brk-cap\b/,['opacity']],
  // CKP-SHELL-33 (D178/D186): the launch-rack ignition glow fades on the base bells (120 ms in, 220 ms out); off under Reduce Motion.
- [/\bbz(-empty)?\b/,['opacity']]];
+ // D294: the burn's plume also retracts by transform; the working light yields by opacity.
+ [/\bbz(-empty)?\b/,['opacity','transform']],[/\bbz-sheet\b/,['opacity']]];
 
 async function open(page,data) {
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
@@ -46,7 +50,7 @@ test('MOT-2.3-01 only the allowed cockpit motions are live, and they run while t
  const lamp=page.locator('[data-caution]');await expect(lamp).toHaveClass(/\bflash\b/);
  const states=[];states.push(await motions(page));
  await page.keyboard.down('Alt');states.push(await motions(page));await page.keyboard.up('Alt');
- for(const name of ['Subscription','Models','Breakdown']){await page.getByRole('button',{name,exact:true}).click();states.push(await motions(page));}
+ for(const name of ['Plans','Models','Breakdown']){await page.getByRole('button',{name,exact:true}).click();states.push(await motions(page));}
  for(const list of states)expect(disallowed(list)).toEqual([]);
  const names=new Set(states.flat().map(m=>m.animation));
  expect(names.has('cockpit-running-cursor')).toBe(true);
@@ -103,10 +107,10 @@ test('MOT-2.3-08 a hidden or closed cockpit runs no animation',async({page})=>{
 
 test('MOT-2.3-08 a hidden cockpit starts no transition and cancels any in flight (visible positive control)',async({page})=>{
  const {send,receive}=await open(page,visualFixture().data);
- const shutter=list=>list.filter(m=>m.kind==='CSSTransition'&&/shutter-(blind|thumb)/.test(m.element)).map(m=>m.name).sort();
+ const shutter=list=>list.filter(m=>m.kind==='CSSTransition'&&/shutter-slider/.test(m.element)).map(m=>m.name).sort();
  // Positive control: the same shell change on a shown page runs the shutter transitions.
  expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);
- expect(shutter(await running(page))).toEqual(['transform','width']);
+ expect(shutter(await running(page))).toEqual(['opacity','opacity']);
  // Hiding mid-flight cancels them at once.
  expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);
  expect(await running(page)).toEqual([]);
@@ -116,4 +120,19 @@ test('MOT-2.3-08 a hidden cockpit starts no transition and cancels any in flight
  expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
  expect(await running(page)).toEqual([]);
  expect(await page.locator('#cockpit').getAttribute('data-shell')).toBe('open');
+});
+
+test('MOT-2.3-08 the landing burn runs only on a shown cockpit: ignition while hidden starts no animation',async({page})=>{
+ const {send,receive}=await open(page,visualFixture().data);
+ const burn=async()=>(await running(page)).filter(m=>m.kind==='CSSAnimation'&&/cockpit-bell-(flare|burn)/.test(m.name));
+ // Positive control: ignition on a shown cockpit runs the burn.
+ expect(await receive(send('ignition',{on:true}))).toBe(true);
+ expect((await burn()).length).toBeGreaterThan(0);
+ expect(await receive(send('ignition',{on:false}))).toBe(true);
+ // Hidden: the host may still ignite, but nothing runs, and nothing starts when the ignition flips while hidden.
+ expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);
+ expect(await receive(send('ignition',{on:true}))).toBe(true);
+ expect(await page.locator('#cockpit').getAttribute('data-ignite')).toBe('true');
+ expect(await burn()).toEqual([]);
+ expect((await motions(page)).filter(m=>/cockpit-bell-(flare|burn)/.test(m.animation))).toEqual([]);
 });

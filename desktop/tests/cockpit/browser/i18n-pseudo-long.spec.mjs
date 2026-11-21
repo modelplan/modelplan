@@ -5,7 +5,7 @@ import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 import {usePseudoLong} from '../pseudo-long.mjs';
 
-async function open(page,{pseudo}) {
+async function open(page,{pseudo,data=visualFixture().data}) {
  if(pseudo)await usePseudoLong(page);
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
@@ -13,7 +13,7 @@ async function open(page,{pseudo}) {
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
- expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ expect(await receive(send('display',{data}))).toBe(true);
  return {send,receive};
 }
 // Every visible leaf of the cockpit whose text is wider or taller than its own box (clipped or ellipsised).
@@ -24,7 +24,7 @@ const clipped=page=>page.locator('#cockpit').evaluate(root=>{
 // Gaps the pseudo-long check found in the first run (v1.1, SET-9-40 owns the layout work): the page-key labels and the
 // record strip's status word are sized for today's two languages. The test fails on any other clipped label, and also when
 // one of these stops clipping, so the list can only shrink.
-const known=['section.ck-deck:4>div.dk-mfd:1>div.mfd-pk:0>button.pk:1>span:0','section.ck-deck:4>div.dk-mfd:1>div.mfd-pk:0>button.pk:3>span:0','section.ck-tape:5>div.t-lines:0>button.tl:2>span.t-time:6'];
+const known=['section.ck-deck:4>div.dk-mfd:1>div.mfd-pk:0>button.pk:3>span:0','section.ck-tape:5>div.t-lines:0>button.tl:2>span.t-live:6'];
 for(const tier of ['tall','compact'])
 test(`pseudo-long English keeps key labels inside their boxes (${tier})`,async({page})=>{
  const found={};
@@ -43,4 +43,60 @@ test(`pseudo-long English keeps key labels inside their boxes (${tier})`,async({
  const fresh=found.pseudo.filter(x=>!base.has(x.view+'|'+x.path));
  expect(fresh.filter(x=>!known.includes(x.path)).map(x=>[x.view,x.path,x.text]),'a key label no longer fits the pseudo-long locale').toEqual([]);
  expect(known.filter(path=>!fresh.some(x=>x.path===path)),'a known gap is fixed: remove it from the list').toEqual([]);
+});
+
+// WP-12 (V1-FINAL §14): the overview's totals row ("since MM-DD", per day) and its three-line empty state keep every word
+// inside their boxes in the pseudo-long locale; numbers are never truncated.
+test('pseudo-long English keeps the overview totals row and empty state whole (WP-12)',async({page})=>{
+ await usePseudoLong(page);
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ const leaves=()=>page.locator('.pg-overview .ov-top *, .pg-overview .ov-empty *').evaluateAll(list=>list.filter(e=>!e.children.length&&e.textContent.trim()&&(e.scrollWidth>e.clientWidth+1||e.scrollHeight>e.clientHeight+1)).map(e=>e.textContent));
+ // Today's reading only: the row says Today.
+ expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ await expect(page.locator('.pg-overview .ov-top')).toHaveCount(1);expect(await leaves()).toEqual([]);
+ // No record at all: the three lines.
+ const none=visualFixture().data;none.details.subscriptions.forEach(s=>{s.today=[];});
+ expect(await receive(send('display',{data:none}))).toBe(true);
+ await expect(page.locator('.pg-overview .ov-empty')).toHaveCount(1);expect(await leaves()).toEqual([]);
+});
+
+// WP-04: the strip's own new words (the unlisted badge, the overflow button and the empty line) fit in the pseudo-long
+// locale. The overflow and empty lines run the full strip width; the badge shares the model cell, so it must not clip.
+test('pseudo-long English keeps the strip badge, overflow and empty lines inside their boxes',async({page})=>{
+ const stripClipped=async(data)=>{
+  const context=await page.context().browser().newContext({viewport:{width:636,height:890},reducedMotion:'reduce'}),p=await context.newPage();
+  await open(p,{pseudo:true,data});
+  const found=await p.locator('.ck-tape').evaluate(root=>[...root.querySelectorAll('.t-badge,.t-overflow,.t-none')].filter(e=>e.scrollWidth>e.clientWidth+1).map(e=>e.className+':'+e.textContent.trim()));
+  await context.close();return found;
+ };
+ const {data}=visualFixture(),base=data.details.sessions[0];
+ data.details.sessions=[{...base,model:'unknown',modelDisplay:'Sol 6.2'},...Array.from({length:6},(_,i)=>({...base,sessionRef:'00000000000000a'+i,state:'idle',lastObservedAt:'2026-11-04T11:50:00Z'}))];
+ expect(await stripClipped(data),'badge or overflow button clips').toEqual([]);
+ const none=visualFixture().data;none.details.sessions=[];
+ expect(await stripClipped(none),'the empty line clips').toEqual([]);
+});
+
+// WP-18 (CKP-PLG-50/51/53): the plugin key, its column, its right-click menu and its big screen fit the pseudo-long
+// locale, taking their short forms where the long ones do not fit. Nothing is clipped or ellipsised.
+test('pseudo-long English keeps the plugin key, column, menu and big screen inside their boxes',async({page})=>{
+ const context=await page.context().browser().newContext({viewport:{width:636,height:890},reducedMotion:'reduce'}),p=await context.newPage();
+ const {data}=visualFixture();data.projection.rows=data.projection.rows.slice(0,2);
+ const {send,receive}=await open(p,{pseudo:true,data});
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'placeholder',enabled:true,pinned:false},{id:'calendar',enabled:false,pinned:false},{id:'resources',enabled:false,pinned:false}],settings:{placeholder:{intervalSeconds:30}}}}))).toBe(true);
+ expect(await receive(send('display',{data}))).toBe(true);
+ expect(await receive(send('pluginData',{id:'placeholder',data:{value:100}}))).toBe(true);
+ const over=sel=>p.evaluate(sel=>[...document.querySelectorAll(sel)].filter(e=>!e.children.length&&e.textContent.trim()&&e.getClientRects().length&&(e.scrollWidth>e.clientWidth+1||e.scrollHeight>e.clientHeight+1)).map(e=>e.className+':'+e.textContent.trim()),sel);
+ await expect(p.locator('.pl-key .ek-name')).toBeVisible();
+ expect(await over('.pl-key *,.pl-col *'),'plugin key or column clips').toEqual([]);
+ await p.locator('.pl-key').click({button:'right'});await expect(p.locator('.pl-menu')).toBeVisible();
+ expect(await over('.pl-menu *'),'plugin menu clips').toEqual([]);
+ await p.keyboard.press('Escape');
+ await p.locator('.pl-key').click();await expect(p.locator('.pl-screen')).toBeVisible();
+ expect(await over('.pl-screen *'),'plugin screen clips').toEqual([]);
+ await context.close();
 });

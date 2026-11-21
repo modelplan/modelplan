@@ -112,6 +112,14 @@
       "type": "RowsAccountToday",
       "optional": [
         {
+          "field": "observedTotalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "observedOutputTokens",
           "omission": true,
           "null": false,
@@ -667,6 +675,58 @@
       ]
     },
     {
+      "file": "WireCockpitCost.json",
+      "type": "WireCockpitCost",
+      "optional": [
+        {
+          "field": "pricesAsOf",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "basis",
+        "currency",
+        "daily",
+        "hourly",
+        "models"
+      ]
+    },
+    {
+      "file": "WireCockpitCostBucket.json",
+      "type": "WireCockpitCostBucket",
+      "optional": [
+        {
+          "field": "approximate",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "at",
+        "source",
+        "estimatedUsd",
+        "pricedTokens",
+        "unpricedTokens"
+      ]
+    },
+    {
+      "file": "WireCockpitCostModels.json",
+      "type": "WireCockpitCostModels",
+      "optional": [],
+      "required": [
+        "today",
+        "recent7d",
+        "recent30d"
+      ]
+    },
+    {
       "file": "WireCockpitCredits.json",
       "type": "WireCockpitCredits",
       "optional": [
@@ -883,6 +943,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "cost",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -902,6 +970,22 @@
       "file": "WireCockpitHistorySums.json",
       "type": "WireCockpitHistorySums",
       "optional": [
+        {
+          "field": "totalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "reasoningTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
         {
           "field": "inputTokens",
           "omission": true,
@@ -947,6 +1031,34 @@
         "outputTokens",
         "observedRequests",
         "eligibleRequests"
+      ]
+    },
+    {
+      "file": "WireCockpitModelCost.json",
+      "type": "WireCockpitModelCost",
+      "optional": [
+        {
+          "field": "estimatedUsd",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "approximate",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "model",
+        "source",
+        "pricedTokens",
+        "unpricedTokens"
       ]
     },
     {
@@ -1056,6 +1168,14 @@
         },
         {
           "field": "provisional",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "aaScore",
           "omission": true,
           "null": false,
           "wrongType": false,
@@ -1262,6 +1382,30 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "forbidden"
+        },
+        {
+          "field": "startedAt",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "observedTotalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "modelDisplay",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1431,6 +1575,14 @@
       "file": "WireCockpitToday.json",
       "type": "WireCockpitToday",
       "optional": [
+        {
+          "field": "observedTotalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
         {
           "field": "generationTps",
           "omission": true,

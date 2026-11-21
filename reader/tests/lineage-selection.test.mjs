@@ -134,3 +134,69 @@ test('harnessIds accept the optional per-tool keys and still reject unknown keys
   const bad = await publication(c => { c.data.models[0].harnessIds['unknown-tool'] = ['x']; });
   await assert.rejects(() => verifyClientDigest(bad));
 });
+
+const projection = (data, version) => Object.assign(data, {
+  projectionVersion: version, multipliers: [], speedTiers: [],
+  multiplierHorizon: {from: timestamp, to: timestamp, selection: 'highest-priority-no-stacking'},
+});
+
+test('client-v1.5 efforts may carry aaScore, provisional ones too, with aaIndexVersion', async () => {
+  const value = await publication(c => {
+    projection(c.data, 'client-v1.5');
+    c.data.aaIndexVersion = '4.3';
+    c.data.models[0].recommended = 'medium';
+    c.data.models[0].efforts = [
+      effort('low'), effort('medium', {aaScore: 48.2}), effort('xhigh', {ability: 61, provisional: true, aaScore: 59.1}),
+    ];
+  });
+  await verifyClientDigest(value);
+  const [low, medium, xhigh] = value.component.data.models[0].efforts;
+  assert.equal('aaScore' in low, false);
+  assert.equal(medium.aaScore, 48.2);
+  assert.equal(xhigh.aaScore, 59.1);
+  assert.equal(value.component.data.aaIndexVersion, '4.3');
+});
+
+test('aaScore needs client-v1.5, a positive finite value and a matching aaIndexVersion', async () => {
+  const cases = [
+    ['client-v1.4', {aaScore: 48.2}, '4.3'],
+    [undefined, {aaScore: 48.2}, '4.3'],
+    ['client-v1.5', {aaScore: 0}, '4.3'],
+    ['client-v1.5', {aaScore: -1}, '4.3'],
+    ['client-v1.5', {aaScore: null}, '4.3'],
+    ['client-v1.5', {aaScore: '48.2'}, '4.3'],
+    ['client-v1.5', {aaScore: 48.2}, undefined],
+    ['client-v1.5', {aaScore: 48.2}, ''],
+    ['client-v1.5', {}, '4.3'],
+    ['client-v1.4', {}, '4.3'],
+  ];
+  for (const [version, extra, indexVersion] of cases) {
+    const value = await publication(c => {
+      if (version) projection(c.data, version);
+      if (indexVersion !== undefined) c.data.aaIndexVersion = indexVersion;
+      c.data.models[0].efforts = [effort('medium', extra)];
+    });
+    await assert.rejects(verifyClientDigest(value), /publication_invalid_data_client/, JSON.stringify([version, extra, indexVersion]));
+  }
+});
+
+test('a client-v1.5 digest without any aaScore stays valid', async () => {
+  const value = await publication(c => {
+    projection(c.data, 'client-v1.5');
+    c.data.models[0].efforts = [effort('medium')];
+  });
+  await verifyClientDigest(value);
+  assert.equal('aaIndexVersion' in value.component.data, false);
+});
+
+test('lineup tie is 1 on index display scale 0.3 or 0.815 on 0.4; any other value is rejected', async () => {
+  const withTie = tie => publication(c => {
+    c.data.lineups = [{
+      developerId: 'synthetic', costBasisId: 'synthetic', method: 'lineup-v1', tie,
+      baseline: 'synthetic-current', frontier: ['synthetic-current'], steps: [],
+      members: [{id: 'synthetic-current', status: 'incomplete', tags: [], dominatedBy: null}],
+    }];
+  });
+  for (const tie of [1, 0.815]) await verifyClientDigest(await withTie(tie));
+  for (const tie of [0.5, 0, 1.2, '1']) await assert.rejects(() => verifyClientDigest(withTie(tie)));
+});

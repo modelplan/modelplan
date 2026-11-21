@@ -1,0 +1,38 @@
+{
+  "note": "Independent cost fixture (D352 change 4). Every expectedUsd was worked out by hand from the price table, NOT produced by any code in this repo; each case carries its arithmetic. Prices are USD per million tokens. A request whose whole input (input + cacheRead + cacheWrite) is above longContext.aboveInputTokens is billed entirely at the long-context rates. Reasoning is billed as output. outputOnlyUsd is what the wrong 'output tokens only' sum would give.",
+  "prices": {
+    "alpha": {"input": 2, "output": 10, "cacheRead": 0.2, "cacheWrite": 2.5,
+      "longContext": {"aboveInputTokens": 200000, "input": 4, "output": 20, "cacheRead": 0.4, "cacheWrite": 5}},
+    "beta": {"input": 1, "output": 5, "cacheRead": 0.1}
+  },
+  "requests": {
+    "short": {"model": "alpha", "input": 100000, "cacheRead": 50000, "cacheWrite": 0, "output": 10000, "reasoning": 0,
+      "arithmetic": "100000*2e-6=0.20 + 50000*0.2e-6=0.01 + 10000*10e-6=0.10", "expectedUsd": 0.31, "outputOnlyUsd": 0.10, "totalTokens": 160000},
+    "longContext": {"model": "alpha", "input": 50000, "cacheRead": 300000, "cacheWrite": 0, "output": 20000, "reasoning": 0,
+      "arithmetic": "input size 350000 > 200000, long rates: 50000*4e-6=0.20 + 300000*0.4e-6=0.12 + 20000*20e-6=0.40", "expectedUsd": 0.72, "outputOnlyUsd": 0.40, "totalTokens": 370000},
+    "outputOnly": {"model": "alpha", "input": 0, "cacheRead": 0, "cacheWrite": 0, "output": 10000, "reasoning": 0,
+      "arithmetic": "10000*10e-6=0.10", "expectedUsd": 0.10, "outputOnlyUsd": 0.10, "totalTokens": 10000},
+    "cacheWrite": {"model": "alpha", "input": 10000, "cacheRead": 0, "cacheWrite": 20000, "output": 1000, "reasoning": 0,
+      "arithmetic": "10000*2e-6=0.02 + 20000*2.5e-6=0.05 + 1000*10e-6=0.01", "expectedUsd": 0.08, "outputOnlyUsd": 0.01, "totalTokens": 31000},
+    "reasoning": {"model": "beta", "input": 100000, "cacheRead": 0, "cacheWrite": 0, "output": 5000, "reasoning": 15000,
+      "arithmetic": "100000*1e-6=0.10 + (5000+15000)*5e-6=0.10", "expectedUsd": 0.20, "outputOnlyUsd": 0.10, "totalTokens": 120000},
+    "unpricedBucket": {"model": "beta", "input": 1000, "cacheRead": 0, "cacheWrite": 5000, "output": 100, "reasoning": 0,
+      "arithmetic": "beta has no cacheWrite rate and 5000 tokens in that bucket: the request stays unpriced", "expectedUsd": null, "outputOnlyUsd": null, "totalTokens": 6100}
+  },
+  "fastMultiplier": {"request": "short", "multiplier": 2, "arithmetic": "0.31*2", "expectedUsd": 0.62},
+  "window": {
+    "note": "Local calendar days relative to 'today'. dayOffset 0 is today, 40 is outside the 30-day range.",
+    "days": [
+      {"dayOffset": 0, "requests": ["short", "longContext", "cacheWrite"]},
+      {"dayOffset": 3, "requests": ["outputOnly", "reasoning"]},
+      {"dayOffset": 10, "requests": ["short"]},
+      {"dayOffset": 40, "requests": ["longContext"]}
+    ],
+    "expected": {
+      "today":   {"usd": 1.11, "tokens": 561000, "arithmetic": "0.31+0.72+0.08; 160000+370000+31000"},
+      "last7d":  {"usd": 1.41, "tokens": 691000, "arithmetic": "1.11+(0.10+0.20); 561000+(10000+120000)"},
+      "last30d": {"usd": 1.72, "tokens": 851000, "arithmetic": "1.41+0.31; 691000+160000"}
+    },
+    "highestDayUsd": 1.11
+  }
+}

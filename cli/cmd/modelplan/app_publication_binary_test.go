@@ -277,3 +277,94 @@ func TestAppServerOfflineAndReadOnlyFetchNothing(t *testing.T) {
 		})
 	}
 }
+
+// DOCK-3.8-30 through the real command: with an enabled subscription the publication loop re-checks the
+// pointer on its short cadence; with none it does not. The binary is built with the test-only cadence tag and told
+// to use two seconds instead of 15-30 minutes (the release binary has neither).
+func pointerChecks(h *appPublicationHost) int {
+	n := 0
+	for _, r := range h.requests() {
+		if r == "GET /publications/current.json" {
+			n++
+		}
+	}
+	return n
+}
+
+func TestAppServerRechecksPublicationPointerOnlyWithASubscription(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		seed       string // "codex": a bound Codex subscription; "declared": a user declaration only; "": nothing
+		subscribed bool
+	}{{"with a bound tracked subscription", "codex", true}, {"with only a declared plan", "declared", false}, {"without one", "", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			home, _ := freshAppHome(t)
+			switch tc.seed {
+			case "codex":
+				// An enabled Codex reader whose cached account reading is bound to a subscription it saw (macrevc-895-2).
+				seedBoundCodexSubscription(t, home)
+			case "declared":
+				// A plan the user declared in the local plan file: no reader saw the account, so it is not a tracked,
+				// bound subscription and keeps the six-hour rule.
+				path := filepath.Join(home, ".config", "modelplan", "local.json")
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(`{"schemaVersion":1,"plans":[{"planId":"codex-plus"}]}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f := newPublicationFixture(t, nil)
+			host, srv := newAppPublicationHost(t, f, false)
+			t.Setenv("MODELPLAN_BASE", srv.URL)
+			t.Setenv("MODELPLAN_TEST_PUBLICATION_RECHECK_SECONDS", "2")
+			binary := filepath.Join(t.TempDir(), "modelplan")
+			if raw, err := exec.Command("go", "build", "-tags", "modelplan_test_cadence", "-o", binary, ".").CombinedOutput(); err != nil {
+				t.Fatalf("build: %v %s", err, raw)
+			}
+			p := startQueryBinaryCaps(t, binary, []string{"rows", "consent", "publication"})
+			waitForAppPublication(t, p, 10*time.Second)
+			if tc.subscribed {
+				deadline := time.Now().Add(20 * time.Second)
+				for pointerChecks(host) < 3 && time.Now().Before(deadline) {
+					time.Sleep(100 * time.Millisecond)
+				}
+				if n := pointerChecks(host); n < 3 { // the first fetch and at least two re-checks
+					t.Fatalf("pointer checks = %d, want the first fetch and 2 re-checks: %v", n, host.requests())
+				}
+				return
+			}
+			time.Sleep(8 * time.Second)
+			if n := pointerChecks(host); n != 1 {
+				t.Fatalf("without a subscription the pointer was checked %d times: %v", n, host.requests())
+			}
+		})
+	}
+}
+
+// seedBoundCodexSubscription grants the Codex reader and caches an account reading bound to a subscription reference,
+// as account_today_binary_test does. MODELPLAN_CODEX_ACCOUNT stays off, so no live refresh replaces the reading.
+func seedBoundCodexSubscription(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("MODELPLAN_READERS", "passive")
+	t.Setenv("MODELPLAN_IDENTITY", "")
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := consent.Change(consent.Path(), func(s *consent.State) error { return consent.Set(s, "codex", true, "native:codex", "native", now) }); err != nil {
+		t.Fatal(err)
+	}
+	state, err := consent.Load(consent.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reading := map[string]any{"schemaVersion": 1, "status": "ok", "observedAt": now, "admission": state.CaptureStamp(consent.ScopeCodexRuntimeUsage), "subscriptionRef": "0123456789abcdef", "windows": []any{map[string]any{"kind": "weekly", "usedPercent": 25, "windowMinutes": 10080, "resetsAt": now.Add(time.Hour), "observedAt": now}}}
+	path := filepath.Join(home, "cache", "observed", "codex-account.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, publicationJSON(t, reading), 0600); err != nil {
+		t.Fatal(err)
+	}
+}

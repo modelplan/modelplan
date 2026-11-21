@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: MIT
+# Trigger for pr-review-sol.yml when the label review:gpt is added (owner D367 addendum). A pull_request run executes
+# the PR's own copy of a workflow, so nothing here reviews anything: this run only records "review:gpt was added" on a
+# GitHub-hosted runner, with no token permissions, no checkout and no secret. Its completion starts pr-review-sol.yml
+# through workflow_run, which always runs main's definition, re-reads the PR and its labels from the API, and applies
+# every trusted-origin and readiness rule itself.
+name: review-label
+on:
+  pull_request:
+    branches: [main]
+    types: [labeled]
+permissions: {}
+concurrency:
+  group: review-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  trigger:
+    if: ${{ github.event.label.name == 'review:gpt' && !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: 'echo "PR ${PR_NUMBER} head ${HEAD_SHA} labelled review:gpt"'

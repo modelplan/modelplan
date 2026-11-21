@@ -64,7 +64,10 @@ type SharedBackend struct {
 	config        SharedConfig
 	resetMemo     *resetevents.Memo
 	changes       chan struct{}
-	once          sync.Once
+	// changeSeq counts every change notification; a view built under one count is not reused
+	// after the next (WP-17).
+	changeSeq atomic.Uint64
+	once      sync.Once
 	// Bound by the constructor before Serve. Credentials remain in the
 	// scheduler's one-use memory callback and are never persisted here.
 	CredentialSink  CredentialReceiver
@@ -105,6 +108,7 @@ func (b *SharedBackend) Capabilities() []string {
 	return caps
 }
 func (b *SharedBackend) notify() {
+	b.changeSeq.Add(1)
 	select {
 	case b.changes <- struct{}{}:
 	default:
@@ -144,6 +148,18 @@ func (b *SharedBackend) Publish(ctx context.Context, stamp Stamp, enqueue func()
 		}
 	}
 	return nil
+}
+
+// CurrentStamp is the consent fence as it is now; no view is built (WP-17).
+func (b *SharedBackend) CurrentStamp(ctx context.Context) (Stamp, error) {
+	if err := ctx.Err(); err != nil {
+		return Stamp{}, err
+	}
+	stamp := stampOf(consent.Capture().Fence())
+	if stamp.Epoch == "" {
+		return Stamp{}, ProtocolError{wire.CodeInternal}
+	}
+	return stamp, nil
 }
 
 func (b *SharedBackend) Get(ctx context.Context) (View, error) {
@@ -302,10 +318,12 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	projection := rows.Build(in)
 	var resetEvents *[]rows.ResetEvent
 	var publicModels []digest.Model
+	var publicSpeedTiers []digest.SpeedTier
 	droppedResetConfirmations := 0
 	if !changed && b.config.ResetPublication != nil {
 		if d, err := b.config.ResetPublication(); err == nil && d != nil {
 			publicModels = d.Models
+			publicSpeedTiers = d.Speed
 			events, dropped := resetevents.ProjectWithMemo(d, projection, in.Now, b.resetMemo)
 			droppedResetConfirmations = dropped
 			resetEvents = &events
@@ -397,7 +415,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	// Evaluation time is not a displayed fact; keeping it would make every
 	// otherwise identical backend view look changed to rows subscribers.
 	report.EvaluatedAt = time.Time{}
-	return View{QuotaReport: report, PublicModels: publicModels, Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
+	return View{QuotaReport: report, PublicModels: publicModels, PublicSpeedTiers: publicSpeedTiers, Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
 }
 
 func (b *SharedBackend) paths(admission consent.Admission) quota.Paths {
@@ -457,14 +475,13 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 			// default route off, so removing the manual key would leave GLM unread. The manual key still wins first.
 			// An existing explicit choice (an environment key, a profile or another backend) is never replaced: file
 			// presence is not evidence that ZCode was the selected source.
-			prior := consent.Capture().State().Tools["zai"]
-			chosen := prior.KeyEnv != "" || len(prior.Profiles) > 0 || (prior.Backend != "" && prior.Backend != "native")
-			if definition.Tool == "zai" && !chosen && b.config.ManualKeyPresent != nil && b.config.ManualKeyPresent("zai") {
-				if home, err := os.UserHomeDir(); err == nil {
-					if fi, err := os.Lstat(quota.ZCodeProviderConfig(home)); err == nil && fi.Mode().IsRegular() {
-						record.KeyEnv = ""
-					}
-				}
+			// G3-127: the first-run Done grant (no manual key) must not either. Before Done the page reads ZCode's
+			// provider file; recording an environment key that is not set (the app has none) switched that route off and
+			// left GLM unread after Done. An environment key that is actually set stays an explicit source (macrev2-993-2).
+			// macrevd-1037-1: only the GLM grant may consult ZCode's file or the GLM manual-key store; another
+			// provider's key grant never reaches either.
+			if definition.Tool == "zai" && b.zcodeKeepsDetectedSource(record.KeyEnv) {
+				record.KeyEnv = ""
 			}
 		}
 		return record, nil
@@ -485,6 +502,26 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 	b.notify()
 	return result, nil
 }
+
+// zcodeKeepsDetectedSource: the GLM key grant leaves ZCode's provider file as the source. Call it for the zai tool only.
+// The checks short-circuit in order: an earlier explicit choice, then the environment key, then the GLM manual-key
+// store, then ZCode's file, so nothing past the first deciding check is read.
+func (b *SharedBackend) zcodeKeepsDetectedSource(keyEnv string) bool {
+	prior := consent.Capture().State().Tools["zai"]
+	if prior.KeyEnv != "" || len(prior.Profiles) > 0 || (prior.Backend != "" && prior.Backend != "native") {
+		return false
+	}
+	if os.Getenv(keyEnv) != "" && (b.config.ManualKeyPresent == nil || !b.config.ManualKeyPresent("zai")) {
+		return false
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	fi, err := os.Lstat(quota.ZCodeProviderConfig(home))
+	return err == nil && fi.Mode().IsRegular()
+}
+
 func grantError(err error) error {
 	switch err.Error() {
 	case "consent_stale", "stale_generation":
@@ -532,6 +569,77 @@ func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFil
 		}
 	}
 	return stamps
+}
+
+// watchedStamps is the metadata of every file whose change makes a new snapshot: the consent
+// store, the reader state, the local file, the observed captures and the permitted Codex rollouts.
+func watchedStamps(paths quota.Paths, codexStamps []localFileStamp) []fileStamp {
+	files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
+	current := make([]fileStamp, 0, len(files)+len(codexStamps))
+	for _, file := range files {
+		info, err := os.Stat(file)
+		stamp := fileStamp{}
+		if err == nil {
+			stamp = fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}
+		}
+		current = append(current, stamp)
+	}
+	for _, stamp := range codexStamps {
+		observed := stamp.fileStamp
+		observed.path = stamp.path
+		current = append(current, observed)
+	}
+	return current
+}
+
+// viewReuseWindow bounds how long a view may answer requests in place of a new one, about the
+// watch loop's own poll interval, so nothing it does not watch can be older than that.
+const viewReuseWindow = 250 * time.Millisecond
+
+// viewToken is what a view depends on that can be checked without building it (WP-17).
+type viewToken struct {
+	seq       uint64
+	stamp     Stamp
+	inputs    []fileStamp
+	detection detect.Report
+	at        time.Time // monotonic
+}
+
+func (b *SharedBackend) captureViewToken() viewToken {
+	t := viewToken{seq: b.changeSeq.Load(), at: time.Now()}
+	admission := consent.Capture()
+	t.stamp = stampOf(admission.Fence())
+	t.inputs = watchedStamps(b.paths(admission), b.codexLocalStamps(admission))
+	t.detection = b.config.Detect()
+	return t
+}
+
+// ViewToken is taken just before a Get (Server's ViewReuse).
+func (b *SharedBackend) ViewToken() any { return b.captureViewToken() }
+
+// ViewCurrent: the view built after token is what Get would build now. It holds only within
+// viewReuseWindow, with no change notification since, the same consent fence, the same watched
+// files (checked now, not at the watch loop's next poll) and the same detected tools.
+func (b *SharedBackend) ViewCurrent(token any) bool {
+	held, ok := token.(viewToken)
+	if !ok || held.stamp.Epoch == "" || time.Since(held.at) >= viewReuseWindow || b.config.LaterInstalled != nil && b.laterPending(held.detection) {
+		return false
+	}
+	now := b.captureViewToken()
+	return now.seq == held.seq && now.stamp == held.stamp && reflect.DeepEqual(now.inputs, held.inputs) && reflect.DeepEqual(now.detection, held.detection)
+}
+
+// laterPending: a later-installed tool still owes its D240 grant, which only a Get applies.
+func (b *SharedBackend) laterPending(detection detect.Report) bool {
+	if b.config.ReadOnly {
+		return false
+	}
+	later := b.config.LaterInstalled(detection)
+	if len(later) == 0 {
+		return false
+	}
+	state := consent.Capture().State()
+	return len(consent.AutoLocalLogScopes(state, later)) > 0 || len(consent.AutoLaterClosedScopes(state, consent.LaterLocalLogScopes(state, later))) > 0
 }
 
 func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
@@ -582,21 +690,7 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 						codexStamps = b.codexLocalStamps(admission)
 						nextCodexCheck = now.Add(time.Second)
 					}
-					files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
-					current := make([]fileStamp, 0, len(files))
-					for _, file := range files {
-						info, err := os.Stat(file)
-						stamp := fileStamp{}
-						if err == nil {
-							stamp = fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}
-						}
-						current = append(current, stamp)
-					}
-					for _, stamp := range codexStamps {
-						observed := stamp.fileStamp
-						observed.path = stamp.path
-						current = append(current, observed)
-					}
+					current := watchedStamps(paths, codexStamps)
 					if !reflect.DeepEqual(last, current) || (!todayDeadline.IsZero() && !now.Before(todayDeadline)) {
 						last = current
 						todayDeadline = nextAccountTodayDeadline(paths, admission, now)

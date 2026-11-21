@@ -2,7 +2,7 @@
 // Workflow reviewer (pr-review.yml, owner 2026-11-15 tier-1 pilot): pure functions, no I/O. decide() picks whether
 // and how to review one PR head, buildBrief() writes the reviewer's instructions, renderComment() turns the model's
 // structured answer into the PR comment, secretHits() is the last check before anything is posted.
-import { isTrusted, pathTier, prPaths, tierOverride, SOL_LANES, TERRA_LANES } from "../merge-gates/rules.mjs";
+import { isTrusted, pathTier, prPaths, tierOverride, SOL_LANES, TERRA_LANES, REVIEW_LANES } from "../merge-gates/rules.mjs";
 
 export const COUNTING_LANE = "gh-terra";
 export const SHADOW_LANE = "gh-terra-shadow";
@@ -46,11 +46,13 @@ export function decide({ pr, files, items, runHead = "", lane, force = false }) 
   const atHead = all.filter((v) => v.sha === head);
   if (!force && atHead.some((v) => v.lane === `(${lane})`)) return skip("this lane already reviewed this head");
   // Counting mode keeps R14's one GPT verdict per head; shadow mode reviews anyway so the pilot can compare.
+  // Tier 1 only, where Sol and Terra always count; (ghglm) counts only on REVIEW_GLM_TIERS, which this pilot does not
+  // read, so a GLM verdict never stops it (SOL-8).
   const counting = new Set([...SOL_LANES, ...TERRA_LANES]);
   if (!force && lane === COUNTING_LANE && atHead.some((v) => counting.has(v.lane))) return skip("a counting GPT lane already reviewed this head");
   // R13: an owner-ledger (G3) fix takes its VERDICT from a Sol lane; the counting Terra lane leaves it alone.
   if (lane === COUNTING_LANE && /\bG3-\d+/.test(`${pr.title ?? ""}\n${pr.body ?? ""}`)) return skip("owner-ledger PR: a Sol lane gives the verdict (R13)");
-  const gpt = new Set([...SOL_LANES, ...TERRA_LANES, ...GH_LANES]);
+  const gpt = new Set([...REVIEW_LANES, ...GH_LANES]);
   const earlier = all.filter((v) => v.sha !== head && gpt.has(v.lane));
   const since = earlier.length ? earlier[earlier.length - 1].sha : null;
   return { review: true, head, tier, mode: since ? "delta" : "full", since, earlier: earlier.slice(-MAX_EARLIER) };
@@ -125,7 +127,7 @@ export function checkResult(r) {
 
 // Everything the model wrote is quoted, so no line of it can start with a gate marker (VERDICT, GLMREV, DESIGN,
 // VERIFIED, AUTO-VERIFIED, VERDICT-CARRY, REVIEW-TIER, Scenarios) or mention anybody.
-const MARKER = /^\s*(\**\s*)?(VERDICT|VERDICT-CARRY|GLMREV|GLMREV-ACCEPTED|DESIGN|VERIFIED|AUTO-VERIFIED|EVIDENCE-DEFERRED|REVIEW-TIER|Scenarios)\b/i;
+const MARKER = /^\s*(\**\s*)?(VERDICT|VERDICT-CARRY|GLMREV|GLMREV-ACCEPTED|DESIGN|VERIFIED|AUTO-VERIFIED|EVIDENCE-DEFERRED|REVIEW-TIER|REVIEW-GPT-FALLBACK|Scenarios)\b/i;
 const tidy = (s, n = 1500) => clip(String(s).replace(/\r/g, ""), n).replace(/@(?=[A-Za-z0-9_-])/g, "@⁠");
 const quote = (s) => tidy(s).split("\n").map((l) => `> ${l}`);
 

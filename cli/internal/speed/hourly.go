@@ -40,12 +40,38 @@ func (l *PerfLedger) addHourly(source string, q request, _ time.Time) {
 	r.TokenKinds.add(q.TokenKinds, true)
 	l.Hourly = append(l.Hourly, r)
 }
+
+// costHours is the rolling window of the hourly ≈cost (WP-06): an hour starting after now−48h.
+const costHours = 48 * time.Hour
+
+// hourlyRows is the hourly view: today and yesterday by local date.
 func hourlyRows(rows []Hourly, now time.Time) []Hourly {
 	from, to := windowFrom(now, 2), day(now)
+	return hourlyWhere(rows, now, func(t time.Time) bool { return day(t) >= from && day(t) <= to })
+}
+
+// hourlyKept is what the ledger retains: the hourly view plus every hour still inside the rolling
+// 48 hours of the ≈cost, which after local midnight reaches into the day before yesterday.
+func hourlyKept(rows []Hourly, now time.Time) []Hourly {
+	from, to := windowFrom(now, 2), day(now)
+	return hourlyWhere(rows, now, func(t time.Time) bool {
+		return (day(t) >= from && day(t) <= to) || t.After(now.Add(-costHours))
+	})
+}
+
+// costHourly is the hourly ≈cost window: hours starting after now−48h and not after now.
+func (v PerfView) costHourly() []Hourly {
+	if !v.OK {
+		return []Hourly{}
+	}
+	return hourlyWhere(v.Ledger.Hourly, v.Now, func(t time.Time) bool { return t.After(v.Now.Add(-costHours)) })
+}
+
+func hourlyWhere(rows []Hourly, now time.Time, keep func(time.Time) bool) []Hourly {
 	out := []Hourly{}
 	for _, r := range rows {
 		t, err := time.Parse(time.RFC3339, r.Hour)
-		if err != nil || day(t) < from || day(t) > to || t.After(now) {
+		if err != nil || t.After(now) || !keep(t) {
 			continue
 		}
 		out = append(out, r)
@@ -92,7 +118,7 @@ func hourlyRows(rows []Hourly, now time.Time) []Hourly {
 	})
 	return kept
 }
-func (l *PerfLedger) pruneHourly(now time.Time) { l.Hourly = hourlyRows(l.Hourly, now) }
+func (l *PerfLedger) pruneHourly(now time.Time) { l.Hourly = hourlyKept(l.Hourly, now) }
 func (v PerfView) Hourly() []Hourly {
 	if !v.OK {
 		return []Hourly{}
@@ -107,6 +133,7 @@ type TodayTotal struct {
 }
 
 func (v PerfView) TodayTotals() []TodayTotal {
+	v = v.accounted()
 	out := []TodayTotal{}
 	if !v.OK {
 		return out

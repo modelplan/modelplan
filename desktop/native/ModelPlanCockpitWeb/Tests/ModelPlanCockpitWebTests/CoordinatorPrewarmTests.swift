@@ -48,6 +48,9 @@ private actor CountingClient: EngineClient {
 @MainActor private final class WarmProbe: CockpitPageSurface {
   let state: CockpitBridgeState
   var onReady: (() -> Void)?, onIntent: ((CockpitIntent) -> Void)?, onClosed: (() -> Void)?, onShown: (() -> Void)?
+  var onDataRendered: (() -> Void)?
+  /// Like the real page, reports each display it renders; off for the probes that predate G3-42.
+  let reportsDataRendered: Bool
   var onRenderVerified: (() -> Void)?, onDisplayAbandoned: (() -> Void)?
   var queryTicket: CockpitQueryTicket? { state.queryTicket }
   private(set) var prewarmed = false, opened = 0, discarded = false
@@ -57,7 +60,11 @@ private actor CountingClient: EngineClient {
   private(set) var displays = 0, displayedWhileHidden = 0
   private(set) var displayedNames: [String] = []
   private var sequence = 0
-  init(_ context: CockpitEngineContext) { state = CockpitBridgeState(context: context) }
+  init(_ context: CockpitEngineContext, reportsRenders: Bool = false) {
+    state = CockpitBridgeState(context: context); reportsDataRendered = reportsRenders
+  }
+  /// The page's rendered receipt for the display it was sent last.
+  func rendered() { onDataRendered?() }
   private func ack(_ raw: String, _ type: String) {
     var value = try! JSONSerialization.jsonObject(with: Data(raw.utf8)) as! [String: Any]
     value["shell"] = nil; value["appearance"] = nil; value["redBelow"] = nil; value["showUsedPercent"] = nil; value["showAllModels"] = nil
@@ -193,6 +200,30 @@ final class CoordinatorPrewarmTests: XCTestCase {
     }
   }
 
+  /// WP-17 (Fable perf plan 5.1 row 2, CKP-SHELL-54): with the app's defaults the hidden page is built as soon as the
+  /// session is known (no 0.5 s wait), and after a close the next one follows after about 0.1 s, not at once and not 0.5 s.
+  @MainActor func testPrewarmStartsAtOnceAndRebuildsShortlyAfterAClose() async throws {
+    var pages: [WarmProbe] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    XCTAssertEqual(coordinator.prewarmDelay, .zero)
+    XCTAssertEqual(coordinator.rebuildAfterCloseDelay, .milliseconds(100))
+    coordinator.prewarmEnabled = true
+    let start = ContinuousClock.now
+    await coordinator.consume(.context(delivery()))
+    await settle { pages.count == 1 }
+    XCTAssertEqual(pages.count, 1)
+    XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(400), "no half-second wait before the hidden page")
+    coordinator.open()
+    coordinator.requestClose()
+    let closed = ContinuousClock.now
+    XCTAssertEqual(pages.count, 1, "the close's last steps run before the next page is built")
+    await settle { pages.count == 2 }
+    XCTAssertEqual(pages.count, 2, "the next hidden page follows the close")
+    XCTAssertGreaterThanOrEqual(ContinuousClock.now - closed, .milliseconds(100))
+    await coordinator.shutdown(); await client.complete()
+  }
+
   /// CKP-SHELL-20: the app's coordinator builds one hidden page after the session is known, without
   /// telling the console a page opened, fills the last reply once, and the click shows that page.
   @MainActor func testPrewarmBuildsOneHiddenPageThatTheClickShowsWithTheLastReplyFirst() async throws {
@@ -238,6 +269,58 @@ final class CoordinatorPrewarmTests: XCTestCase {
     XCTAssertEqual(requests, 2, "the replacement does not query while the last reply is current for this delivery")
     await coordinator.shutdown(); await client.complete()
     XCTAssertTrue(pages[1].discarded)
+  }
+
+  /// G3-42: the first open after prewarm draws the last reply before the fresh query is even asked, and the
+  /// query, held by a stalled engine, cannot delay it. The page's render of the last reply starts the query; a
+  /// page that never reports that render still gets its query after the grace.
+  @MainActor func testFirstOpenAfterPrewarmShowsTheLastReplyBeforeTheFreshQueryCompletes() async throws {
+    var pages: [WarmProbe] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0, reportsRenders: true); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.prewarmDelay = .zero
+    coordinator.lastRenderGrace = .seconds(3600)
+    coordinator.prewarmEnabled = true
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    await settle { pages.count == 1 }
+    await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(session))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+    XCTAssertEqual(warm.displayedWhileHidden, 0, "nothing is displayed on the hidden page")
+
+    coordinator.open()
+    XCTAssertEqual(warm.displays, 1, "the first open draws the last reply at once")
+    try await Task.sleep(for: .milliseconds(50))
+    var requests = await client.requests
+    XCTAssertEqual(requests, 1, "the fresh query waits for that render, so it cannot compete with it")
+    warm.rendered()
+    await settle { await client.requests == 2 }
+    requests = await client.requests
+    XCTAssertEqual(requests, 2, "the render of the last reply starts the fresh query")
+    // The engine stalls: the query is outstanding and the last reply is what the open shows.
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertEqual(warm.displays, 1, "the cached data is on screen while the fresh query has not completed")
+    warm.rendered()
+    requests = await client.requests
+    XCTAssertEqual(requests, 2, "a later render does not ask again")
+    await coordinator.consume(try reply(session))
+    XCTAssertEqual(warm.displays, 2, "the fresh reply replaces it")
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+
+    // A page that never reports the render still gets its fresh query once the grace ends.
+    coordinator.requestClose()
+    await settle { pages.count == 2 }
+    let next = try XCTUnwrap(pages.last)
+    await settle { next.queryTicket != nil }
+    coordinator.lastRenderGrace = .milliseconds(20)
+    coordinator.open()
+    XCTAssertEqual(next.displays, 1, "the next open draws the last reply at once too")
+    await settle { await client.requests == 3 }
+    requests = await client.requests
+    XCTAssertEqual(requests, 3, "the grace bounds the hold")
+    await coordinator.shutdown(); await client.complete()
   }
 
   /// The last reply never crosses a private-view clear or a delivery change, so a reply is never retagged.

@@ -92,7 +92,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 				observeQuotaHistory(st, report, now)
 			}
 		},
-		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.Load(st); return d, err },
+		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.LoadShared(st); return d, err }, // read only (WP-17)
 		Detect:           detectTools, LaterInstalled: seen.Observe, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
 		Cleanup: func(scope string, forget bool) error {
 			return quota.EraseScope(quota.ProductionPaths(st.Dir, version), scope, forget)
@@ -139,7 +139,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			return nil, func() {}, err
 		}
 		handlers["cockpit/query"] = cockpit
-		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Observe: observeForApp(st), Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify, CredentialHold: func(provider string) (bool, time.Time) {
+		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Observe: observeForApp(st), ObserveAfter: appserver.ObserveFirstDelay, Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify, CredentialHold: func(provider string) (bool, time.Time) {
 			if server == nil {
 				return false, time.Time{}
 			}
@@ -161,6 +161,12 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	var fetcher *appPublication
 	if !options.Offline && !options.ReadOnly {
 		fetcher = newAppPublication(ctx, st, appPublicationBase())
+		if fetcher != nil {
+			applyTestCadence(fetcher)
+			fetcher.subscribed = func() bool {
+				return hasTrackedSubscription(quota.ReadPermitted(quota.ProductionPaths(st.Dir, version), time.Now()).Accounts)
+			}
+		}
 	}
 	if fetcher != nil {
 		closeScheduler := closeBackend

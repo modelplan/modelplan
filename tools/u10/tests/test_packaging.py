@@ -182,7 +182,7 @@ class PackagingTests(unittest.TestCase):
 
     def test_candidate_name_overrides_the_neutral_localized_display_name(self):
         # glm-873-1: package-neutral.sh ships per-language InfoPlist.strings, which macOS prefers over Info.plist.
-        strings = {'en': 'ModelPlan Community', 'zh-Hans': 'ModelPlan 社区版'}
+        strings = {'en': 'ModelPlan (self-built)', 'zh-Hans': 'ModelPlan（自编译）'}
         for language, name in strings.items():
             folder = self.app / 'Contents/Resources' / (language + '.lproj')
             folder.mkdir()

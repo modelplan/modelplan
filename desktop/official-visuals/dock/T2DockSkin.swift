@@ -66,8 +66,11 @@ public enum T2DockSkin {
                 if let alias=reading.alias, !alias.isEmpty { recipe["aliasRect"] = rect(box(CGPoint(x:station.readoutCentre.x,y:station.readoutCentre.y-12*unit),56*unit,12*unit)) }
             } else if station.isOverflow { recipe["overflowCount"] = g.overflow.count; recipe["overflowNoticeKey"] = "__t2_overflow_notice__" }
             else if station.isEmpty {
-                // rocket-r1/rocket.css .dk-empty: a dark dashed status station.
-                recipe["placeholderLabel"] = "?"
+                // G3-136 (owner 11-18, WP-15): nothing to read yet is an empty ring on the same nozzle backdrop with the
+                // menu-bar rocket in the centre (the renderer's `emptyMark`); never a "?". The empty label and the style
+                // keep marking this station as the empty one (hit area, Settings action, accessibility).
+                recipe["placeholderLabel"] = ""
+                recipe["emptyRing"] = true
                 recipe["placeholderText"] = ["fontResource":"font-jetbrains-mono", "size":16, "weight":400]
                 recipe["placeholderStyle"] = ["fillKey":"emptyFill", "strokeKey":"emptyStroke", "textKey":"emptyText", "strokeWidth":1, "dash":[3,3]]
             }

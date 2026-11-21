@@ -25,6 +25,9 @@ func EraseScope(p Paths, scope string, forget bool) error {
 			return err
 		}
 		defer unlock()
+		if tool == "codex" {
+			forgetCodexRollouts() // WP-17: the decoded rollout memo goes with the scope
+		}
 		if err := forgetLocalSpeedLedgers(p, tool); err != nil {
 			return err
 		}
@@ -73,6 +76,9 @@ func forgetLocalSpeedLedgers(p Paths, tool string) error {
 	}
 	defer unlock()
 	if err := markHistoryCleared(cache, tool); err != nil {
+		return err
+	}
+	if err := speed.ForgetAccountingLocked(cache, tool); err != nil {
 		return err
 	}
 	legacy := speed.LegacyCursorSources(cache, ledgerLogRoots(p))

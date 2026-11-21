@@ -11,7 +11,8 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
-import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
+import { HOSTED_WORKFLOWS } from "./hosted.mjs";
+import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -50,6 +51,28 @@ function verifiedEdge(oldSha, newSha) {
   return carryCache.get(k);
 }
 
+// D243 G6 auto-carry proof (git.verifyMainMerges). The checkout has full history of main (fetch-depth 0, blobless);
+// main is refetched once before the first proof; PR commits are fetched by sha and blobs on demand, so no
+// shallow-history limit applies.
+const mainMergeCache = new Map();
+let mainFresh = false;
+function proveMainMerges(oldSha, newSha) {
+  const k = `${oldSha}>${newSha}`;
+  if (!mainMergeCache.has(k)) {
+    let r;
+    try {
+      // Refresh main once, so a main commit merged after the job's checkout is still found on main.
+      if (!mainFresh) { G.git(cwd, ["fetch", "-q", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/main:${MAIN}`]); mainFresh = true; }
+      r = G.verifyMainMerges(cwd, oldSha, newSha, MAIN);
+    } catch (e) {
+      r = { ok: false, why: `git error: ${String(e?.message || e).split("\n")[0]}`, between: [] };
+    }
+    log({ autoCarry: k, ok: r.ok, why: r.why });
+    mainMergeCache.set(k, r);
+  }
+  return mainMergeCache.get(k);
+}
+
 // A train's members, read only for a train: the extra calls would otherwise run on every evaluation. A number in
 // Supersedes that is not a PR is skipped; any other read error stops the evaluation, so the gate never passes on
 // a partial member list.
@@ -75,6 +98,16 @@ async function readDataSync(pr) {
   return { run, commit };
 }
 
+// D314: the jobs of runs that may hold a GitHub-hosted macOS leg (hosted.mjs), attached as run.jobs so the rules can set
+// those legs aside. Only runs that are not already green are read. An unreadable list leaves run.jobs unset, and the
+// rules then judge the whole run as before (fail closed).
+async function readJobs(runs) {
+  await Promise.all(runs.filter((r) => HOSTED_WORKFLOWS.includes(String(r.path).split("@")[0])).map(async (r) => {
+    try { r.jobs = await gh.all(`/actions/runs/${r.id}/jobs?filter=latest`, "jobs", 500); }
+    catch (e) { log({ run: r.id, jobs: `unreadable: ${String(e).slice(0, 120)}` }); }
+  }));
+}
+
 async function prResult(number) {
   const pr = await gh.get(`/pulls/${number}`);
   const head = pr.head.sha;
@@ -86,10 +119,12 @@ async function prResult(number) {
     gh.get(`/commits/${head}/status`),
     readTrainMembers(pr),
   ]);
+  await readJobs(runs.filter((r) => !(r.status === "completed" && ["success", "skipped", "neutral"].includes(r.conclusion))));
+  // REVIEW_GLM_TIERS (repository variable, default empty): the tiers the (ghglm) workflow lane may decide.
   // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
   const now = Date.now();
   const glmFallbackUntil = parseFallbackUntil(env.GLM_FALLBACK_UNTIL || "", now);
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now });
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, proveMainMerges, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now, glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS) });
   return { pr, result };
 }
 
@@ -130,6 +165,8 @@ async function evaluateGroupAndPost(groupSha) {
   ]);
   const desktop = queueRuns.filter(queueRunScope(repo)).filter((r) => r.path === ".github/workflows/desktop.yml").sort((x, y) => y.id - x.id)[0];
   const desktopJobs = desktop ? await gh.all(`/actions/runs/${desktop.id}/jobs`, "jobs", 500) : null;
+  if (desktop) desktop.jobs = desktopJobs;
+  await readJobs(queueRuns.filter(queueRunScope(repo)).filter((r) => r !== desktop));
   const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, desktopJobs, repo });
   await post(groupSha, { group: steps.map((s) => s.pr), ...result });
 }
@@ -144,7 +181,11 @@ async function fromEvent() {
     return null;
   }
   if (name !== "workflow_run") return log({ skipped: `event ${name}` });
-  const wr = ev.workflow_run;
+  return fromRun(ev.workflow_run);
+}
+
+// One workflow run (the workflow_run payload): its merge group or its PRs.
+async function fromRun(wr) {
   if (wr.event === "merge_group") {
     if (!String(wr.head_branch).startsWith("gh-readonly-queue/main/")) return log({ skipped: `queue branch ${wr.head_branch}` });
     return evaluateGroupAndPost(wr.head_sha);

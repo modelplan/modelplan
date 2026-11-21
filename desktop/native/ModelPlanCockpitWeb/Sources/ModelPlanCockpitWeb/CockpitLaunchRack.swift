@@ -10,6 +10,19 @@ public enum CockpitLaunchRackTiming {
   public static let rackOpen: TimeInterval = 0.25
   /// ...then the cockpit comes out from under the menu bar while the rest of the rack extends behind it.
   public static let cockpitOpen: TimeInterval = 0.25
+  /// D299 (amends D188, WP-17, CKP-SHELL-53): the two phases overlap. The rack still leads; the cockpit starts this long
+  /// after the click, before the rack's visible part is out, so the whole open takes `overlappedOpen` (about 0.37 s)
+  /// instead of 0.25 + 0.25 s.
+  public static let cockpitOpenDelay: TimeInterval = 0.12
+  public static var overlappedOpen: TimeInterval { cockpitOpenDelay + cockpitOpen }
+  /// D299: at `elapsed` seconds into a rack-first open, the rack's extension (0-1) and the cockpit's own progress (0-1).
+  /// The rack's visible part (its first third) extends over `rackOpen`; the cockpit's progress also carries the rest of
+  /// the rack behind it, so the rack is fully out exactly when the cockpit lands. Both only grow, without a jump.
+  public static func openProgress(elapsed: TimeInterval) -> (rack: CGFloat, cockpit: CGFloat) {
+    let visible = CGFloat(min(1, max(0, elapsed / rackOpen)))
+    let cockpit = CGFloat(min(1, max(0, (elapsed - cockpitOpenDelay) / cockpitOpen)))
+    return (min(1, visible / 3 + 2.0 / 3 * cockpit), cockpit)
+  }
   /// The cockpit starts this far above its attached place (under the menu bar) and slides down.
   public static let openRise: CGFloat = 60
   /// A full extend or retract of the rack (tear-off, put back).
@@ -24,6 +37,32 @@ public enum CockpitLaunchRackTiming {
   public static let landingStep: CGFloat = 56
   /// Key put-back flight time, from the demo: 520 ms + 0.9 ms per point of path, kept within 0.82-1.3 s.
   public static func flight(length: CGFloat) -> TimeInterval { min(1.3, max(0.82, 0.52 + Double(length) * 0.0009)) }
+  /// G3-130 (owner, 11-18): a put back starts the rack's unfold and the cockpit's motion (key flight, near-home move,
+  /// ride home) at the same moment, both at their normal speeds; neither waits for or speeds up the other. Where the rack
+  /// is when the cockpit lands, from `rackExtension` (0-1) after `motion` seconds: fully out after a long flight, partly
+  /// out after a short move, from where it then carries on at the same pace to its attached end state.
+  public static func rackAtLanding(motion: TimeInterval, rackExtension: CGFloat) -> CGFloat {
+    min(1, max(0, rackExtension) + CGFloat(max(0, motion) / fullTravel))
+  }
+}
+
+/// CKP-SHELL-33 / G3-130: where a put back's motion has the cockpit's origin at progress `t` (0-1), eased out cubically.
+/// The key flight is one quadratic Bezier whose control point sits under home, so its last part runs straight up the
+/// rack; the near-home move and the drag's ride home are straight. Every path starts exactly where the cockpit is and
+/// is continuous: macrevb/macrev2-1038-1, a start above home (a detached cockpit on a display stacked above, or a drag
+/// released just above home) was clamped to home's height on its first frame, a jump of up to a display's height.
+public enum CockpitPutBackPath {
+  public static func ease(_ t: CGFloat) -> CGFloat { 1 - pow(1 - max(0, min(1, t)), 3) }
+  /// The flight's control point: under home by the catch zone, or at the start's height when that is lower still.
+  public static func control(from p0: CGPoint, to d: CGPoint, zone: CGFloat) -> CGPoint { CGPoint(x: d.x, y: min(d.y - zone, p0.y)) }
+  public static func flight(from p0: CGPoint, to d: CGPoint, zone: CGFloat, at t: CGFloat) -> CGPoint {
+    let c = control(from: p0, to: d, zone: zone), k = ease(t), u = 1 - k
+    return CGPoint(x: u * u * p0.x + 2 * u * k * c.x + k * k * d.x, y: u * u * p0.y + 2 * u * k * c.y + k * k * d.y)
+  }
+  public static func straight(from p0: CGPoint, to d: CGPoint, at t: CGFloat) -> CGPoint {
+    let e = ease(t)
+    return CGPoint(x: p0.x + (d.x - p0.x) * e, y: p0.y + (d.y - p0.y) * e)
+  }
 }
 
 /// D187: where a key detach puts the cockpit. The first candidate that keeps the WHOLE cockpit inside the visible

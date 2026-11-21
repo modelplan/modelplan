@@ -1216,7 +1216,7 @@
     {
       "id": "porthole-enlarged",
       "title": "Porthole enlarged 3D view",
-      "expected": "A click on the porthole opens the enlarged launch field in its own panel, rendering the 3D scene.",
+      "expected": "A click on the porthole opens the enlarged launch field (WP-22, D298): a panel 88% of the display's visible frame (820x560 to 1600x1000) over a plain dim of the whole display, with the launch-field window, its menu, its keys and the 3D scene.",
       "prototype": "desktop/cockpit/study/rocket-r1 porthole.js enlarge",
       "requires": [
         "porthole-open"
@@ -1248,18 +1248,14 @@
     {
       "id": "porthole-enlarged-closed",
       "title": "Enlarged view closed",
-      "expected": "A second click on the porthole closes the enlarged panel.",
+      "expected": "Esc on the idle field (the launch-field component's Esc ladder, onClose esc) closes the enlarged panel and its dim; the cockpit stays open. The whole field rectangle counts as inside (D298), so a press on the porthole under it no longer closes it.",
       "requires": [
         "porthole-enlarged"
       ],
       "actions": [
         {
-          "op": "clickIn",
-          "target": "label:Open the 3D launch field · Or click anywhere on the field",
-          "at": [
-            0.8,
-            0.3
-          ]
+          "op": "key",
+          "name": "escape"
         },
         {
           "op": "wait",
@@ -1285,7 +1281,7 @@
     {
       "id": "hud-select",
       "title": "HUD row",
-      "expected": "A click on the first HUD row opens that model on the Effort page and nothing else. Each HUD row is an accessibility button titled by its rank (\"1 Astra \u2605Med\"); the 3D-field label now names only the \u2922 key, so a position inside it opens the field.",
+      "expected": "A click on the first HUD row opens that model on the Models page and nothing else. Each HUD row is an accessibility button titled by its rank (\"1 Astra \u2605Med\"); the 3D-field label now names only the \u2922 key, so a position inside it opens the field.",
       "prototype": "desktop/cockpit/study/rocket-r1 hud-selection",
       "requires": [
         "porthole-enlarged-closed"
@@ -1312,7 +1308,7 @@
       },
       "checks": [
         {
-          "on": "label:Effort"
+          "on": "label:Models"
         },
         {
           "noNewWindow": true
@@ -1451,8 +1447,8 @@
     },
     {
       "id": "j-page-effort",
-      "title": "MFD page Effort",
-      "expected": "The Effort page key lights and the page shows its own content.",
+      "title": "MFD page Models",
+      "expected": "The Models page key lights and the page shows its own content.",
       "prototype": "feature journey (D75)",
       "requires": [
         "cockpit-open"
@@ -1463,7 +1459,7 @@
         },
         {
           "op": "click",
-          "target": "label:Effort"
+          "target": "label:Models"
         },
         {
           "op": "wait",
@@ -1482,7 +1478,7 @@
       },
       "checks": [
         {
-          "on": "label:Effort"
+          "on": "label:Models"
         }
       ],
       "requirement": "D75 feature journeys"
@@ -1528,7 +1524,7 @@
     {
       "id": "j-opt-grid",
       "title": "Overview option key Bars | Grid",
-      "expected": "Back on Overview, the Bars | Grid key switches the chart to the heatmap.",
+      "expected": "Back on Overview, the Bars | Grid key shows Grid not lit; pressing it changes nothing and the bars stay (CKP-MFD-62, WP-12).",
       "prototype": "feature journey (D75)",
       "requires": [
         "cockpit-open"
@@ -1590,6 +1586,11 @@
         {
           "op": "wait",
           "seconds": 1
+        },
+        {
+          "op": "awaitStable",
+          "target": "label~:Press to compare on the Main screen",
+          "quiet": 3
         },
         {
           "op": "click",

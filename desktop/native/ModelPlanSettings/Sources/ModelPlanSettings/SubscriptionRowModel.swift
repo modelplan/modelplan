@@ -153,7 +153,7 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             return SubscriptionRow(id: id, tool: tool, name: displayName, plan: sub.plan, section: .added,
                                    consent: toolFacts?.consent, state: toolFacts?.state, causeCode: code,
                                    visible: !hiddenIDs.contains(id), position: index, addedCount: ordered.count,
-                                   status: status, needsAttention: fix != nil, fix: fix, canAdd: false)
+                                   status: status, needsAttention: fix.map { !$0.isInformational } ?? false, fix: fix, canAdd: false)
         }
 
         var detected: [SubscriptionRow] = [], absent: [SubscriptionRow] = [], pending: [SubscriptionRow] = []
@@ -163,10 +163,14 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             if tool.detected {
                 if tool.canRead && isReading(tool.tool) {
                     // Reading by default but no engine row yet: it belongs under "My subscriptions", without order controls.
+                    // D322: a reader that failed before any account exists says why, with the table's cause and next step.
+                    let failCode = actionableCode(toolFacts?.code)
+                    let failFix = failCode.flatMap { ReaderCauseTable.rowEntry(code: $0, tool: tool.tool, toolName: displayName.english, keyEntryAvailable: keyEntryAvailable) }
                     pending.append(SubscriptionRow(id: tool.tool, tool: tool.tool, name: displayName, plan: "", section: .added,
-                                                   consent: toolFacts?.consent, state: toolFacts?.state, causeCode: nil, visible: true,
+                                                   consent: toolFacts?.consent, state: toolFacts?.state, causeCode: failFix == nil ? nil : failCode, visible: true,
                                                    position: nil, addedCount: ordered.count,
-                                                   status: SettingsText("Reading…", "正在读取…"), needsAttention: false, fix: nil, canAdd: false))
+                                                   status: failFix?.reason ?? SettingsText("Reading…", "正在读取…"),
+                                                   needsAttention: failFix.map { !$0.isInformational } ?? false, fix: failFix, canAdd: false))
                     continue
                 }
                 let pre = prerequisite(tool: tool, name: displayName.english, facts: toolFacts, keyEntryAvailable: keyEntryAvailable)

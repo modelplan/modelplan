@@ -64,6 +64,10 @@ enum DockGripInk {
     /// Separate empty-state action; never routed through subscription/overflow interaction.
     public var onEmptyAction: (() -> Bool)? { didSet { refreshNodes() } }
     public var permitsEmptyAction: ((DockActionSource) -> Bool)?
+    /// G3-136: true when the pointer comes onto the painted empty station, false when it leaves, so the host can show
+    /// the one-line reason card on hover (as a ring's card shows on hover).
+    public var onEmptyHover: ((Bool) -> Void)?
+    private var emptyHovered = false
     public weak var backgroundDragDelegate:(any DockBackgroundDragHandling)?
     public weak var nozzleEventDelegate:(any DockNozzleEventHandling)?
     public var keyboardNavigationEnabled=false
@@ -521,7 +525,7 @@ enum DockGripInk {
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){ringPress=nil;readoutHolds=[:];refreshSweepRing=nil;onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){ringPress=nil;readoutHolds=[:];refreshSweepRing=nil;onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onEmptyHover=nil;emptyHovered=false;onVisualReset=nil}
     private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
@@ -699,13 +703,14 @@ enum DockGripInk {
     public func communityRowText(_ id:String) -> String? {
         guard community,let r=readings[id] else { return nil }
         let heading=[r.alias ?? r.name,r.readout].joined(separator:"  ")
-        guard r.remainingPercent == nil else { return heading }
+        // A plugin ring has no quota percentage and is never "unavailable" (macrevb-1096-5).
+        guard r.remainingPercent == nil,r.pluginRing == nil else { return heading }
         let reason=r.unavailableReason?.trimmingCharacters(in:.whitespacesAndNewlines)
         return heading+"\n"+String((reason?.isEmpty == false ? reason! : locale.hasPrefix("zh") ? "不可用" : "Unavailable").prefix(80))
     }
     public func communityRowIsDimmed(_ id:String) -> Bool {
         guard community, let reading=readings[id] else { return false }
-        return reading.remainingPercent == nil
+        return reading.remainingPercent == nil && reading.pluginRing == nil
     }
     public override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();invalidatePresentation()}
     public override func draw(_ dirtyRect:NSRect){
@@ -724,15 +729,58 @@ enum DockGripInk {
         if !community { NSColor.clear.setFill(); bounds.fill(using: .copy); return }
         NSColor.windowBackgroundColor.setFill();bounds.fill()
         if failed {let label=locale.hasPrefix("zh") ? "仪表暂不可用":"Instruments unavailable";(label as NSString).draw(at:CGPoint(x:12,y:12),withAttributes:[.font:NSFont.systemFont(ofSize:12),.foregroundColor:NSColor.secondaryLabelColor]);return}
+        if let rect = emptyStationRect {
+            // G3-136 in the neutral edition: a plain dashed ring marks the empty station (no reserved artwork).
+            let ring = NSBezierPath(ovalIn: rect.insetBy(dx: (rect.width - min(rect.width, rect.height)) / 2 + 2, dy: (rect.height - min(rect.width, rect.height)) / 2 + 2))
+            ring.lineWidth = 1; ring.setLineDash([3, 3], count: 2, phase: 0)
+            NSColor.secondaryLabelColor.setStroke(); ring.stroke()
+        }
         for (index,id) in orderedIDs.enumerated(){guard let r=readings[id] else{continue}
             let value=communityRowText(id) ?? [r.alias ?? r.name,r.readout].joined(separator:"  ")
             let context = NSGraphicsContext.current?.cgContext
             context?.saveGState()
             if let control = stationRect(id) { context?.clip(to: control) }
             let scale=communityRowHeight/44,paragraph=NSMutableParagraphStyle();paragraph.lineBreakMode = .byTruncatingTail
+            if let ring=r.pluginRing,let context {
+                drawCommunityPluginRow(ring,reading:r,in:CGRect(x:0,y:CGFloat(index)*communityRowHeight,width:bounds.width,height:communityRowHeight),scale:scale,context:context,paragraph:paragraph)
+                context.restoreGState();continue
+            }
             (value as NSString).draw(in:CGRect(x:12*scale,y:CGFloat(index)*communityRowHeight+8*scale,width:bounds.width-24*scale,height:communityRowHeight-12*scale),withAttributes:[.font:NSFont.monospacedSystemFont(ofSize:12*scale,weight:.regular),.foregroundColor:communityRowIsDimmed(id) ? NSColor.secondaryLabelColor : NSColor.labelColor,.paragraphStyle:paragraph])
             context?.restoreGState()
         }
+    }
+    /// macrevb-1096-5: the neutral edition draws a plugin ring with no reserved art: the two arcs in the plugin ink
+    /// (outer solid + faint, inner thin) beside the name and readout; the label stays neutral and only the number is toned.
+    public static func communityPluginGeometry(row:CGRect,scale:CGFloat)->(ring:CGRect,text:CGRect){
+        let side=row.height-12*scale
+        let ring=CGRect(x:row.minX+12*scale,y:row.minY+6*scale,width:side,height:side)
+        return (ring,CGRect(x:ring.maxX+8*scale,y:row.minY+8*scale,width:max(0,row.maxX-ring.maxX-20*scale),height:row.height-12*scale))
+    }
+    public static func communityNumberColor(_ tone:DockQuotaStatus)->NSColor{
+        tone == .critical ? .systemRed : tone == .warning ? .systemOrange : .labelColor
+    }
+    private func drawCommunityPluginRow(_ ring:DockPluginRing,reading r:DockInstrumentReading,in row:CGRect,scale:CGFloat,context c:CGContext,paragraph:NSParagraphStyle){
+        let g=Self.communityPluginGeometry(row:row,scale:scale)
+        let ink=CGColor(srgbRed:ring.red,green:ring.green,blue:ring.blue,alpha:1)
+        let centre=CGPoint(x:g.ring.midX,y:g.ring.midY),outerWidth=3*scale,innerWidth=1.5*scale
+        let outerRadius=g.ring.width/2-outerWidth/2,innerRadius=outerRadius-outerWidth-1.5*scale
+        // This view is flipped: angles run clockwise from 12 o'clock with `clockwise: false`, as in the official ring.
+        func arc(_ radius:CGFloat,_ width:CGFloat,from a:Double,to b:Double,alpha:CGFloat){
+            guard b>a,radius>0 else{return}
+            c.saveGState();c.setStrokeColor(ink.copy(alpha:alpha) ?? ink);c.setLineWidth(width);c.setLineCap(.butt)
+            c.addArc(center:centre,radius:radius,startAngle:-.pi/2+CGFloat(a)*2 * .pi,endAngle:-.pi/2+CGFloat(b)*2 * .pi,clockwise:false)
+            c.strokePath();c.restoreGState()
+        }
+        let outer=min(1,max(0,ring.outer)),faint=min(1-outer,max(0,ring.outerFaint))
+        arc(outerRadius,outerWidth,from:0,to:1,alpha:0.12)
+        arc(outerRadius,outerWidth,from:0,to:outer,alpha:1)
+        arc(outerRadius,outerWidth,from:outer,to:outer+faint,alpha:0.35)
+        if let inner=ring.inner{arc(innerRadius,innerWidth,from:0,to:1,alpha:0.12);arc(innerRadius,innerWidth,from:0,to:min(1,max(0,inner)),alpha:1)}
+        let font=NSFont.monospacedSystemFont(ofSize:12*scale,weight:.regular)
+        let parts=DockPluginRing.readoutParts(r.readout)
+        let text=NSMutableAttributedString(string:(r.alias ?? r.name)+"  "+parts.label,attributes:[.font:font,.foregroundColor:NSColor.labelColor,.paragraphStyle:paragraph])
+        text.append(NSAttributedString(string:parts.number,attributes:[.font:font,.foregroundColor:Self.communityNumberColor(ring.readoutTone),.paragraphStyle:paragraph]))
+        text.draw(in:g.text)
     }
     private func stationRect(_ id:String)->CGRect? {
         if community {
@@ -745,12 +793,29 @@ enum DockGripInk {
         return CGRect(x:s.centre.x-s.diameter/2-origin.x,y:s.centre.y-s.diameter/2-origin.y,width:s.diameter,height:s.diameter)
     }
     private var emptyStationRect: CGRect? {
-        guard !community, !failed, let skin,
+        if community {
+            // D57/D321: the neutral edition has no skin; with no rows its one empty row is the station (same hit size as a row).
+            guard !failed, orderedIDs.isEmpty else { return nil }
+            let inset = 8 * communityRowHeight / 44
+            return CGRect(x: 0, y: 0, width: bounds.width, height: communityRowHeight).insetBy(dx: inset, dy: inset)
+        }
+        guard !failed, let skin,
               let station = skin.stations.first(where: { $0.placeholderStyle != nil && $0.placeholderLabel != nil && $0.subscriptionID == nil && $0.overflowCount == nil }) else { return nil }
         return CGRect(x: station.centre.x-station.diameter/2-layoutOrigin.x,
                       y: station.centre.y-station.diameter/2-layoutOrigin.y, width: station.diameter, height: station.diameter)
     }
     @_spi(DockResourceChecks) public var emptyStationRectForChecks: CGRect? { emptyStationRect }
+    /// G3-136: where the empty station's reason card points (view-local), nil when no empty station is painted.
+    public var emptyStationAnchor: CGRect? { emptyStationRect }
+    /// G3-136: the pointer is over the painted empty station now (last mouseMoved/mouseExited).
+    public var emptyStationHovered: Bool { emptyHovered && emptyStationRect != nil }
+    private func updateEmptyHover(atLocal p: NSPoint?) {
+        let over = p.map { isPainted(atLocal: $0) && emptyStationRect?.contains($0) == true } ?? false
+        guard over != emptyHovered else { return }
+        emptyHovered = over; onEmptyHover?(over)
+    }
+    /// The same hover path mouseMoved/mouseExited take, for checks without a window event source.
+    @_spi(DockResourceChecks) public func hoverEmptyStationForChecks(atLocal p: NSPoint?) { updateEmptyHover(atLocal: p) }
     /// AppKit adds a node's parent-space frame to the parent's lower-left corner, whatever the
     /// parent's isFlipped says, so the top-down rects this view works in have to be turned over.
     private func accessibilityParentRect(_ rect:CGRect)->CGRect {
@@ -879,10 +944,11 @@ enum DockGripInk {
         let grip = isPainted(atLocal: p) ? registeredGripRects.firstIndex { $0.contains(p) } : nil
         if hoveredGripIndex != grip { hoveredGripIndex = grip; updateGripEmphasis() }
         nozzleEventDelegate?.hoverNozzle(hoverUnitID(atLocal:p))
+        updateEmptyHover(atLocal: p)
         onHelpPointerMoved?()
     }
     public override func mouseEntered(with event:NSEvent){mouseMoved(with:event)}
-    public override func mouseExited(with event:NSEvent){hoveredGripIndex=nil;updateGripEmphasis();nozzleEventDelegate?.hoverNozzle(nil);onHelpPointerMoved?()}
+    public override func mouseExited(with event:NSEvent){hoveredGripIndex=nil;updateGripEmphasis();nozzleEventDelegate?.hoverNozzle(nil);updateEmptyHover(atLocal:nil);onHelpPointerMoved?()}
     public override func mouseDragged(with event:NSEvent){
         if ringPress != nil || nozzleEventDelegate?.hasCapture == true{
             pointerDragged(local:convert(event.locationInWindow,from:nil),global:window?.convertPoint(toScreen:event.locationInWindow));return

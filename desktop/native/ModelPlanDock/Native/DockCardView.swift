@@ -69,6 +69,8 @@ import CryptoKit
 }
 @MainActor private final class DockCardBar:NSView {
     var fraction:Double?,on:NSColor,track:NSColor
+    /// Plugin rows (D327): a faint segment after the fill and a warning notch.
+    var faint:Double?,notch:Double?
     var size=CGSize(width:96,height:10){didSet{invalidateIntrinsicContentSize();needsDisplay=true}}
     var gap:CGFloat=2{didSet{needsDisplay=true}}
     init(row:DockCardRow,on:NSColor,track:NSColor){self.fraction=row.fillFraction;self.on=on;self.track=track;super.init(frame:CGRect(x:0,y:0,width:96,height:10));setAccessibilityElement(true);setAccessibilityRole(.levelIndicator);setAccessibilityValue(row.fillFraction.map{NSNumber(value:$0*100)});setAccessibilityMinValue(0);setAccessibilityMaxValue(100);setAccessibilityLabel(row.label);setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));setAccessibilityIdentifier("dock.card.quota."+row.id)}
@@ -76,7 +78,7 @@ import CryptoKit
     override var intrinsicContentSize:NSSize{size}
     func apply(row:DockCardRow,on:NSColor,track:NSColor){
         let changed=fraction != row.fillFraction
-        fraction=row.fillFraction;self.on=on;self.track=track
+        fraction=row.fillFraction;self.on=on;self.track=track;faint=row.plugin?.faintFill;notch=row.plugin?.notch
         setAccessibilityLabel(row.label);setAccessibilityValue(fraction.map{NSNumber(value:$0*100)})
         setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));needsDisplay=true
         if changed{NSAccessibility.post(element:self,notification:.valueChanged)}
@@ -88,9 +90,15 @@ import CryptoKit
     }
     override func draw(_ dirtyRect:NSRect){
         let w=max(0,(bounds.width-9*gap)/10),lit=Self.litSegments(fraction)
+        let faintEnd=faint.map{f in min(10,max(lit,Int((((fraction ?? 0)+f)*10).rounded())))} ?? lit
         for i in 0..<10{
             let r=CGRect(x:CGFloat(i)*(w+gap),y:0,width:w,height:bounds.height)
-            (i<lit ? on:track).setFill();NSBezierPath(roundedRect:r,xRadius:1,yRadius:1).fill()
+            (i<lit ? on:i<faintEnd ? on.withAlphaComponent(0.35):track).setFill();NSBezierPath(roundedRect:r,xRadius:1,yRadius:1).fill()
+        }
+        if let notch,notch.isFinite,notch>0,notch<1{
+            // The notch sits in the gap before the segment it marks (CPU 70 %: between the 7th and 8th).
+            let x=CGFloat((notch*10).rounded())*(w+gap)-gap/2
+            on.withAlphaComponent(0.7).setFill();CGRect(x:x-0.5,y:-1,width:1,height:bounds.height+2).fill()
         }
     }
 }
@@ -105,6 +113,8 @@ import CryptoKit
     private var bars=[String:DockCardBar](),rowViews=[String:NSView](),brandView:NSImageView?
     /// The readout window in card coordinates (flipped), drawn behind the rows.
     private var windowRect:CGRect?,noticeRect:CGRect?,highlightRects=[CGRect]()
+    /// Plugin problem rows (D327): the only rows with a background, in their tone's ink.
+    private var tintRects=[(rect:CGRect,color:NSColor)]()
     public override init(frame:NSRect){super.init(frame:frame)}
     required init?(coder:NSCoder){fatalError()}
     public override var isFlipped:Bool{true}
@@ -209,9 +219,9 @@ import CryptoKit
         let windowTop=y
         var rowY=y+pad.top
         let c=style.columns,g=style.columnGap
-        highlightRects=[];noticeRect=nil
-        let readings=value.rows.filter{$0.kind != .notice && $0.kind != .event && $0.kind != .footnote},notices=value.rows.filter{$0.kind == .notice}
-        let events=value.rows.filter{$0.kind == .event},footnotes=value.rows.filter{$0.kind == .footnote}
+        highlightRects=[];tintRects=[];noticeRect=nil
+        let readings=value.rows.filter{$0.kind != .notice && $0.kind != .event && $0.kind != .footnote && $0.kind != .alert},notices=value.rows.filter{$0.kind == .notice}
+        let events=value.rows.filter{$0.kind == .event},footnotes=value.rows.filter{$0.kind == .footnote},alerts=value.rows.filter{$0.kind == .alert}
         let noticeTextWidth=inner-style.noticePadding.left-style.noticePadding.right
         for (index,row) in readings.enumerated(){
             if index>0{rowY+=style.rowGap}
@@ -222,9 +232,14 @@ import CryptoKit
             rowView.setAccessibilityLabel([row.label,row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "))
             let l=label(rowID+".label",row.label,font:readoutSmall,color:row.emphasised ? style.ink:style.muted);place(l,in:rowView)
             if row.kind == .extraQuota{l.setAccessibilityLabel(row.label)} // DOCK-3.6-18: no native tooltip
-            let toneColor=style.quota[row.tone] ?? style.ink
+            let statusColor=style.quota[row.tone] ?? style.ink
+            // D327: a plugin bar keeps the plugin ink; only its number takes the tone.
+            let pluginInk=row.plugin.map{NSColor(srgbRed:$0.red,green:$0.green,blue:$0.blue,alpha:1)}
+            let toneColor=pluginInk ?? statusColor
             let isReading=row.kind == .quota || row.kind == .extraQuota
-            let valueColor:NSColor = row.tone == .warning || row.tone == .critical ? toneColor : (isReading && row.remainingFraction == nil && row.tone == .unknown ? style.muted : style.ink)
+            // DOCK-3.2-50: an unknown tone is muted, also when a retained reading over an hour old keeps its number. A plugin
+            // row's number is full ink when its row is emphasised (variant A), secondary otherwise; amber/red keep their tone.
+            let valueColor:NSColor = row.tone == .warning || row.tone == .critical ? toneColor : row.plugin != nil ? (row.emphasised ? style.ink:style.muted) : (isReading && row.tone == .unknown ? style.muted : style.ink)
             var cells:[(view:NSView,x:CGFloat,width:CGFloat)]=[]
             var detailBelow:NSTextField?
             if row.kind == .quota || row.kind == .extraQuota{
@@ -278,7 +293,10 @@ import CryptoKit
             // The reserve line is spoken once, by the row; its text fields are not read a second time.
             if row.kind == .reserve{rowView.subviews.forEach{$0.setAccessibilityElement(false)}}
             rowView.frame=CGRect(x:style.padding+pad.left,y:rowY,width:rowWidth,height:rowHeight)
-            if row.emphasised,style.rowHighlight != nil{highlightRects.append(rowView.frame.insetBy(dx:-style.rowOutset,dy:0))}
+            if let plugin=row.plugin{
+                // Variant A: the emphasis is ink only; a background marks a problem row only.
+                if plugin.tinted{tintRects.append((rect:rowView.frame.insetBy(dx:-style.rowOutset,dy:0),color:statusColor.withAlphaComponent(0.16)))}
+            }else if row.emphasised,style.rowHighlight != nil{highlightRects.append(rowView.frame.insetBy(dx:-style.rowOutset,dy:0))}
             rowY+=rowHeight
         }
         if readings.isEmpty{windowRect=nil;y=windowTop-style.headerBottomGap}
@@ -367,6 +385,18 @@ import CryptoKit
             for child in rowView.subviews where child !== line{child.removeFromSuperview()}
             y+=style.eventGap;rowView.frame=CGRect(x:style.padding,y:y,width:inner,height:h);y+=h
         }
+        // DOCK-3.8-52: the shared alert sentence closes the card, in its status ink, the plate's full width.
+        for row in alerts{
+            let rowID="row."+row.id
+            usedRows.insert(rowID)
+            let rowView=rowViews[rowID] ?? DockCardRowView();rowViews[rowID]=rowView;place(rowView,in:self)
+            rowView.setAccessibilityElement(true);rowView.setAccessibilityRole(.staticText);rowView.setAccessibilityLabel(row.value)
+            let colour=row.tone == .warning || row.tone == .critical ? (style.quota[row.tone] ?? style.ink) : style.muted
+            let line=label(rowID+".value",row.value,font:readoutSmall,color:colour,wraps:true);place(line,in:rowView)
+            let h=wrapped(line,width:inner);line.frame=CGRect(x:-2,y:0,width:inner+4,height:h)
+            for child in rowView.subviews where child !== line{child.removeFromSuperview()}
+            y+=style.eventGap;rowView.frame=CGRect(x:style.padding,y:y,width:inner,height:h);y+=h
+        }
         // D41: an action this subscription needs now, independent of the footer buttons.
         if !value.actionLabel.isEmpty{
             let action=button("action",value.actionLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onAction?(value.subscriptionID)}
@@ -418,7 +448,7 @@ import CryptoKit
         content=nil;buttons.values.forEach{$0.retire()};bars.values.forEach{$0.setAccessibilityElement(false)}
         rowViews.values.forEach{$0.setAccessibilityElement(false)}
         subviews.forEach{$0.removeFromSuperview()}
-        buttons.removeAll();bars.removeAll();labels.removeAll();rowViews.removeAll();brandView=nil;windowRect=nil;noticeRect=nil;highlightRects=[]
+        buttons.removeAll();bars.removeAll();labels.removeAll();rowViews.removeAll();brandView=nil;windowRect=nil;noticeRect=nil;highlightRects=[];tintRects=[]
     }
     public override func draw(_ dirtyRect:NSRect){
         // Flat plate with a 1 pt inset seam; dark readout window with its own seam (face.css #card.c7).
@@ -442,6 +472,7 @@ import CryptoKit
             highlight.setFill()
             for rect in highlightRects{NSBezierPath(roundedRect:rect,xRadius:style.rowHighlightRadius,yRadius:style.rowHighlightRadius).fill()}
         }
+        for tint in tintRects{tint.color.setFill();NSBezierPath(roundedRect:tint.rect,xRadius:style.rowHighlightRadius,yRadius:style.rowHighlightRadius).fill()}
     }
     public func dispose(){generation &+= 1;clear();setAccessibilityElement(false);onEnter=nil;onDismiss=nil;onOpenURL=nil;onAction=nil;onFocusChange=nil;permitsAction=nil}
 }

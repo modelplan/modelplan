@@ -117,3 +117,35 @@ func TestObserveRingKeepsOneEntryPerRepeatedOutcome(t *testing.T) {
 		t.Fatalf("ring = %+v", got)
 	}
 }
+
+// WP-17 (Fable perf plan 5.1 row 2): the first ledger observation walks every Claude and Codex
+// log directory; at start it ran in the same moment as the first views and reads. It now waits
+// ObserveAfter (the app: ObserveFirstDelay, 2-3 s) after the automatic start, then keeps its cadence.
+func TestFirstObservationWaitsObserveAfter(t *testing.T) {
+	if ObserveFirstDelay < 2*time.Second || ObserveFirstDelay > 3*time.Second {
+		t.Fatalf("ObserveFirstDelay = %v, want 2-3 s", ObserveFirstDelay)
+	}
+	backend, paths, _ := refreshFixture(t, consent.ScopeCodexRuntimeUsage)
+	first := make(chan time.Time, 1)
+	s := NewRefreshScheduler(context.Background(), RefreshConfig{
+		Backend: backend, Paths: paths, ObserveEvery: time.Hour, ObserveAfter: 300 * time.Millisecond,
+		Observe: func(time.Time) []ObserveResult {
+			select {
+			case first <- time.Now():
+			default:
+			}
+			return []ObserveResult{{Source: "codex", Outcome: ObserveRan}}
+		},
+	})
+	defer s.Close()
+	started := time.Now()
+	s.StartAutomatic()
+	select {
+	case at := <-first:
+		if waited := at.Sub(started); waited < 300*time.Millisecond {
+			t.Fatalf("the first observation ran after %v, before ObserveAfter", waited)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no observation after ObserveAfter")
+	}
+}

@@ -25,7 +25,7 @@ func loadCockpitPublication(ctx context.Context, st *store.Store) (*digest.Diges
 	if st == nil {
 		return nil, nil
 	}
-	d, _, err := publication.Load(st)
+	d, _, err := publication.LoadShared(st) // read only (WP-17)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -62,7 +62,13 @@ func publishedCockpitModel(m digest.Model) (wire.CockpitPublicationModel, bool) 
 				return wire.CockpitPublicationModel{}, false
 			}
 		}
-		out.Efforts = append(out.Efforts, wire.CockpitPublicationEffort{Effort: e.Effort, Label: e.Label, Star: m.Recommended != "" && e.Effort == m.Recommended, Ability: e.Ability, Cost: e.Cost, Time: e.Time, Provisional: e.Provisional})
+		effort := wire.CockpitPublicationEffort{Effort: e.Effort, Label: e.Label, Star: m.Recommended != "" && e.Effort == m.Recommended, Ability: e.Ability, Cost: e.Cost, Time: e.Time, Provisional: e.Provisional}
+		// aaScore is a reference only: a bad value drops the field, never the model.
+		if e.AAScore != nil && *e.AAScore > 0 && !math.IsInf(*e.AAScore, 0) {
+			aa := *e.AAScore
+			effort.AAScore = &aa
+		}
+		out.Efforts = append(out.Efforts, effort)
 	}
 	return out, true
 }

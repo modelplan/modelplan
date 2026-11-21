@@ -41,12 +41,53 @@ final class SubscriptionRowModelTests: XCTestCase {
         let targets = model.added.map { $0.fix?.target }
         XCTAssertEqual(targets, [.allowKeychain, .installTool, .addKey, .installTool, .addKey])
         XCTAssertEqual(model.added[1].fix?.action.english, "Open install page", "a hint and the install page, not a path chooser")
-        XCTAssertEqual(model.added[1].status.chinese, "安装 Codex CLI，或确认 Codex 在命令行里能运行")
+        XCTAssertEqual(model.added[1].status.chinese, "找不到 Codex 命令")
         XCTAssertEqual(model.added[3].fix?.action.english, "Install kiro-cli")
         XCTAssertTrue(model.added.allSatisfy(\.needsAttention))
         // Without the key area the GLM row falls back to opening ZCode.
         let plain = build([sub("zai", vendor: "zai", source: .unavailable, cause: "key_missing")], order: ["zai"], tools: [], keys: false)
         XCTAssertEqual(plain.added[0].fix?.target, .openTool)
+    }
+
+    /// WP-16 / SET-9-51: the Subscriptions page has the three sections (added, detected, supported-not-installed),
+    /// and an unreadable cause is the card's sentence from ReaderCauseTable (region_refused is worded identically in both tables).
+    func testWP16ThreeSectionsAndSharedCauseSentence() {
+        let model = build([sub("claude", vendor: "claude", source: .unavailable, cause: "region_refused")],
+                          order: ["claude"], tools: [tool("cursor"), tool("kiro", detected: false)])
+        XCTAssertEqual(model.added.map(\.id), ["claude"])
+        XCTAssertEqual(model.detected.map(\.id), ["cursor"])
+        XCTAssertEqual(model.notInstalled.map(\.id), ["kiro"])
+        XCTAssertEqual(model.added[0].status, ReaderCauseTable.entry(code: "region_refused", tool: "claude")?.reason)
+    }
+
+    /// WP-16 / SET-9-51: for every cause the card knows, the Settings row text is the card's sentence (one table entry per cause).
+    func testWP16RowReasonEqualsCardReasonForEveryCause() throws {
+        let codes = ["not_found", "runtime_missing", "timeout", "rpc_error", "closed", "not_signed_in", "login_expired",
+                     "keychain_unset", "keychain_denied", "key_missing", "region_refused", "no_plan", "usage_not_reported", "consent_required"]
+        for tool in ["claude", "codex", "zai", "opencodego", "kiro"] {
+            for keys in [false, true] {
+                for code in codes {
+                    let card = try XCTUnwrap(ReaderCauseTable.entry(code: code, tool: tool, toolName: tool.capitalized), code)
+                    let row = try XCTUnwrap(ReaderCauseTable.rowEntry(code: code, tool: tool, toolName: tool.capitalized, keyEntryAvailable: keys), code)
+                    XCTAssertEqual(row.reason, card.reason, "\(tool) \(code) keys=\(keys)")
+                }
+            }
+        }
+    }
+
+    /// WP-16: a cause the card words as "No action needed" stays a plain fact on the row: card sentence, no attention flag.
+    func testWP16UsageNotReportedIsAPlainFact() {
+        let model = build([sub("grok", vendor: "grok", source: .fresh, cause: "usage_not_reported")], order: ["grok"], tools: [])
+        XCTAssertFalse(model.added[0].needsAttention)
+        XCTAssertEqual(model.added[0].status, ReaderCauseTable.entry(code: "usage_not_reported", tool: "grok", toolName: "Grok")?.reason)
+    }
+
+    /// WP-16 / SET-9-52, SET-9-53: size options in the owner's order, red line 25 by default, show-all-models off.
+    func testWP16CockpitSizeOrderAndRedLineDefault() throws {
+        XCTAssertEqual(SettingsCockpitSize.allCases.map(\.rawValue), ["automatic", "100", "90", "85", "80"])
+        let p = try JSONDecoder().decode(SettingsPreferences.self, from: Data("{}".utf8))
+        XCTAssertEqual(p.redBelow, 25); XCTAssertEqual(p.effectiveRedBelow, 25)
+        XCTAssertFalse(p.showAllModels); XCTAssertEqual(p.cockpitSize, .automatic)
     }
 
     func testEngineRowStateFillsInWhenTheSubscriptionHasNoCause() {
@@ -77,6 +118,23 @@ final class SubscriptionRowModelTests: XCTestCase {
         XCTAssertEqual(withKeys.added[0].status.english, "This address is a third-party relay, so its quota can't be read")
         let without = build([sub("zai", vendor: "zai", source: .unavailable, cause: "region_refused")], order: ["zai"], tools: [], keys: false)
         XCTAssertEqual(without.added[0].fix?.target, .explain, "no key area: the plain explanation stays")
+    }
+
+    /// D322 (reader-fail-no-account): a tool that reads by default whose reader fails before any account exists shows
+    /// the table's one cause plus one next step in its own row, not a bare "Reading...".
+    func testD322FailedReaderWithNoAccountShowsItsCauseInTheToolRow() throws {
+        let facts = ["codex": ToolRowFacts(state: .failed, code: "runtime_missing")]
+        let model = build([], order: [], tools: [tool("codex")], facts: facts, reading: ["codex"])
+        let row = try XCTUnwrap(model.added.first { $0.id == "codex" })
+        let entry = try XCTUnwrap(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex", toolName: "Codex"))
+        XCTAssertEqual(row.status, entry.reason)
+        XCTAssertEqual(row.fix?.action, entry.action)
+        XCTAssertTrue(row.needsAttention)
+        XCTAssertEqual(row.causeCode, "runtime_missing")
+        // A reader with no failure keeps the plain "Reading..." line.
+        let calm = build([], order: [], tools: [tool("codex")], facts: ["codex": ToolRowFacts(state: .fresh, code: "ok")], reading: ["codex"])
+        XCTAssertEqual(calm.added[0].status, SettingsText("Reading…", "正在读取…"))
+        XCTAssertNil(calm.added[0].fix)
     }
 
     func testDetectedNotAddedAndNotInstalledSections() {
@@ -118,6 +176,18 @@ final class SubscriptionRowModelTests: XCTestCase {
         }
     }
 
+    /// Found-by post-merge sampling 2026-11-19 S1: Kiro's runtime_missing is a missing kiro-cli, never Node.js (row and card).
+    func testKiroRuntimeMissingNamesKiroCliNotNodeJS() {
+        let row = ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "kiro", toolName: "Kiro")
+        XCTAssertEqual(row?.reason.english, "kiro-cli was not found")
+        XCTAssertEqual(row?.action.english, "Install kiro-cli")
+        let card = ReaderCauseTable.entry(code: "runtime_missing", tool: "kiro", toolName: "Kiro")
+        XCTAssertEqual(card?.reason.english, "kiro-cli was not found")
+        XCTAssertFalse(card?.action.english.contains("Node") ?? true)
+        // Other tools keep the Node.js cause.
+        XCTAssertEqual(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex")?.reason.english, "Node.js is required")
+    }
+
     func testFirstRunPrerequisiteLineUsesTheSameTable() {
         func line(_ t: FirstRunTool, _ facts: ToolRowFacts? = nil) -> (SettingsText, Bool) {
             let r = SubscriptionRowModel.prerequisite(tool: t, name: t.tool.capitalized, facts: facts); return (r.text, r.needsAttention)
@@ -126,9 +196,9 @@ final class SubscriptionRowModelTests: XCTestCase {
         XCTAssertEqual(line(tool("claude", keychain: true)).0.english, "A Keychain prompt will appear once; choose Always Allow.")
         XCTAssertFalse(line(tool("claude", keychain: true)).1)
         let missing = line(tool("kiro"), ToolRowFacts(consent: .unset, state: .needsAction, code: "tool_not_found"))
-        XCTAssertEqual(missing.0.english, "kiro-cli was not found"); XCTAssertTrue(missing.1)
+        XCTAssertEqual(missing.0.english, "Can't find the Kiro command"); XCTAssertTrue(missing.1)
         let codex = line(tool("codex"), ToolRowFacts(consent: .unset, state: .needsAction, code: "not_found"))
-        XCTAssertEqual(codex.0.english, "Install the Codex CLI, or make sure Codex runs from a terminal")
+        XCTAssertEqual(codex.0.english, "Can't find the Codex command")
         // Consent and timing codes are first run's own question, not a prerequisite.
         XCTAssertEqual(line(tool("codex"), ToolRowFacts(consent: .unset, state: .needsConsent, code: "consent_required")).0.english, "Ready: nothing else is needed.")
         XCTAssertEqual(line(tool("grok", block: .notSignedIn, readable: false)).0.english, "Not signed in to Grok. Sign in first.")
@@ -161,7 +231,8 @@ final class RowFixTableTests: XCTestCase {
             XCTAssertFalse(fix.action.chinese.isEmpty, code)
         }
         let runtime = try XCTUnwrap(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex"))
-        XCTAssertFalse(runtime.reason.chinese.contains("Node.js"))
+        // WP-16: the reason is the card's sentence ("需要 Node.js"); the row's own action keeps the plain wording.
+        XCTAssertEqual(runtime.reason, ReaderCauseTable.entry(code: "runtime_missing")?.reason)
         XCTAssertFalse(runtime.action.chinese.contains("Node.js"))
     }
 }

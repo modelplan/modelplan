@@ -88,8 +88,8 @@ private actor G1BEngine: EngineClient {
         let id = try XCTUnwrap(app.composition.presentedContent.snapshot.inputs.first?.id)
         let deadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2099-01-01T00:00:00Z"))
         for (language, expectations) in [
-            // D40: the prototype's compact card form (window-time.js duration, strings/card.js resetIn).
-            (SettingsLanguage.english, ["resets 45m", "resets 3h18", "resets 3d5h"]),
+            // WP-15 DOCK-3.8-51 intentionally uses WidgetCardText.resetsIn's English "resets in …" copy; the D40 relative durations remain unchanged.
+            (SettingsLanguage.english, ["resets in 45m", "resets in 3h18", "resets in 3d5h"]),
             (.chinese, ["45m 后重置", "3h18 后重置", "3d5h 后重置"])
         ] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
@@ -122,8 +122,9 @@ private actor G1BEngine: EngineClient {
         let app = try await entry(profile: profile(), preferredLanguages: ["zh-CN"], fixture: quotaFixture())
         let menu = try XCTUnwrap(app.liveStatusMenu)
         // This healthy synthetic fixture has no provider diagnostics or update action.
-        let expected = ["刷新", "显示额度挂件", "找到额度挂件", "即将推出", "网站", "方法论", "隐私", "说明…", "设置…", "重置位置", "关于 ModelPlan", "退出 ModelPlan"]
-        let statusTitles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+        // MENU-50 (WP-09): range selector, then the fixed items (the cockpit entry is off in this build).
+        let expected = ["时间段", "即将推出", "显示额度挂件", "找到额度挂件", "重置位置", "设置…", "说明…", "退出 ModelPlan"]
+        let statusTitles = menu.items.filter { !$0.isSeparatorItem && $0.accessibilityIdentifier() != "status.rangeTotal" }.map(\.title)
         let dockTitles = app.composition.dock.menu().items.filter { !$0.isSeparatorItem }.map(\.title)
         XCTAssertGreaterThan(statusTitles.count, 1)
         XCTAssertGreaterThanOrEqual(dockTitles.count, 3)
@@ -131,9 +132,9 @@ private actor G1BEngine: EngineClient {
         // Owner HIG decision 11-06: the widget menu is [✓自动收起, 设置…, 重置位置] — [退出 ModelPlan]; no Hide.
         XCTAssertEqual(dockTitles, ["自动收起", "设置…", "重置位置", "退出 ModelPlan"])
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
-        let english = try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
+        let english = try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem && $0.accessibilityIdentifier() != "status.rangeTotal" }.map(\.title)
         XCTAssertGreaterThan(english.count, 1)
-        XCTAssertEqual(english, ["Refresh", "Show Quota Widget", "Find Quota Widget", "Coming soon", "Website", "Methodology", "Privacy", "Help…", "Settings…", "Reset Position", "About ModelPlan", "Quit ModelPlan"])
+        XCTAssertEqual(english, ["Time range", "Coming soon", "Show Quota Widget", "Find Quota Widget", "Reset Position", "Settings…", "Help…", "Quit ModelPlan"])
         XCTAssertNotEqual(english, expected, "The check must reject English app-owned actions")
     }
 

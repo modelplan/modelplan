@@ -8,6 +8,7 @@ import ModelPlanSettings
 import ModelPlanWire
 import ModelPlanDock
 import ModelPlanShell
+import ModelPlanResources
 
 /// Keep #332's single showConsole route and one protocol client/store.
 /// Clear the existing synchronous sinks first, then await WK clear/disposal,
@@ -40,21 +41,27 @@ import ModelPlanShell
     public static var verificationCockpitTrace: ((String) -> Void)?
     /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
     static var verificationPrewarm = true
+    /// SPI test apps can ask for the resource plugin (with a synthetic reader); every other test app leaves it out.
+    static var verificationResourcePlugin = false
+    /// The resource journey's synthetic reader (the installed app reads this Mac with SystemResourceReader).
+    static var verificationResourceReader: (() -> ResourceReader)?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                             cockpitEntryEnabled: Bool? = nil,
-                            dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                            dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil, edition: ProductionEdition = .current,
                             deadlineNow: @escaping @MainActor () -> Date = { Date() },
                             deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
+                            installsResourcePlugin: Bool = false,
+                            resourceReader: (() -> ResourceReader)? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
         // Preserve the existing injected-client/console seam used by its callers.
         if let makeClient {
             return EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-                createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,makeClient:makeClient,
+                createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,edition:edition,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,makeClient:makeClient,
                 makeSettingsSurface:makeSettingsSurface,makeConsole:makeConsole,activateSettings:activateSettings)
         }
         #if MODELPLAN_TEST_ONLY_SPI
@@ -63,7 +70,7 @@ import ModelPlanShell
         #endif
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-            createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,
+            createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,edition:edition,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,
             makeClient: { configuration, store in
                 let coordinator = EngineCockpitCoordinator { [weak owner] context in
                     #if MODELPLAN_TEST_ONLY_SPI
@@ -78,7 +85,7 @@ import ModelPlanShell
                 #endif
                 let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
-                coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
+                coordinator.currentDate = deadlineNow
                 coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
                 coordinator.cautionMemory = FileCockpitCautionMemory(url: settingsStore.directory.appendingPathComponent("cockpit-cautions.json"))
                 coordinator.pinMemory = FileCockpitPinMemory(url: settingsStore.directory.appendingPathComponent("cockpit-pins.json"))
@@ -99,12 +106,15 @@ import ModelPlanShell
                 #endif
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
+        // CKP-SHELL-50 / MENU-52: the page reads and requests the same app-owned range as the menu bar, before its load.
+        owner.coordinator?.rangeState = application.cockpitRange
         owner.systemSignals = { [weak application] in application?.cockpitSystemSignals }
         owner.presence = application.dockPresence
         application.currentCockpitPage = { [weak owner] in owner?.currentPage }
         owner.anchor = { [weak application] in application?.cockpitAnchor }
         owner.openPoint = { [weak application] in application?.cockpitOpenPoint }
         owner.ignitionFrame = { [weak application] in application?.composition.dock.ignitionScreenFrame }
+        owner.widgetFrame = { [weak application] in application?.composition.dock.widgetScreenFrame }
         if application.cockpitEntryEnabled {
             owner.prepare()
             // CKP-SHELL-20: a synthetic page from a test factory is made only by a click.
@@ -120,10 +130,63 @@ import ModelPlanShell
         }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         owner.settingsSubscriptions = { [weak application] in Task { await application?.presentSettings(paneID: "subscriptions") } }
+        owner.refreshMember = { [weak application] key in application?.refreshFromCockpit(key) }
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
         owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
         application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
+        // macrevb-1096-9 (D324/D327): only the installed app samples this Mac. It asks for the resource plugin
+        // (`installsResourcePlugin`, ModelPlanCommunityApp); every test or fixture app, with or without the SPI flag and
+        // with or without native panels, leaves it out (no SystemResourceReader, no ring in the Dock), unless an SPI test
+        // asks for the synthetic resource journey.
+        #if MODELPLAN_TEST_ONLY_SPI
+        let installsResources = installsResourcePlugin || verificationResourcePlugin
+        #else
+        let installsResources = installsResourcePlugin
+        #endif
+        installCockpitPlugins(application: application, owner: owner, settingsStore: settingsStore,
+                              installsResources: installsResources, resourceReader: resourceReader)
         return application
+    }
+    /// macrevc-844-1: the saved plugin choices reach every cockpit page, page edits are saved, and the page's running
+    /// plugins drive the sampler. Until the file is read, pages wait without plugin state (plugin-host.ts keeps the
+    /// default-on plugins off and posts nothing until it arrives).
+    /// D324: with `installsResources`, one ResourceSampler for the app. Its cadence follows the plugin choices (Settings
+    /// or a page edit), the cockpit page's running plugins and the widget's visibility; its samples feed the widget ring
+    /// and the page. It observes the one bridge (the bridge owns the coordinator's plugin callbacks), never replaces them.
+    static func installCockpitPlugins(application: EngineDockMenuApplication, owner: CockpitConsoleOwner, settingsStore: SettingsStore,
+                                      installsResources: Bool = false, resourceReader: (() -> ResourceReader)? = nil) {
+        let directory = settingsStore.directory
+        Task { @MainActor [weak application, weak owner] in
+            let bridge = await CockpitPluginBridge.load(directory: directory, coordinator: owner?.coordinator)
+            bridge.showCockpit = { [weak application] in application?.showConsole() }
+            guard let application else { return }
+            application.cockpitPlugins = bridge
+            if installsResources {
+                #if MODELPLAN_TEST_ONLY_SPI
+                let reader: ResourceReader = resourceReader?() ?? verificationResourceReader?() ?? SystemResourceReader()
+                #else
+                let reader: ResourceReader = resourceReader?() ?? SystemResourceReader()
+                #endif
+                let sampler = ResourceSampler(reader: reader,
+                                              reduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })
+                let language: () -> ResourceLanguage = { [weak application] in
+                    application?.composition.latestSettings?.snapshot.preferences.language == .english ? .english : .chinese
+                }
+                let widget = application.composition.installResourceWidget(sampler: sampler, language: language)
+                let host = ResourcePluginHost(sampler: sampler, widget: widget)
+                host.sendData = { [weak owner] id, data in owner?.coordinator?.sendPluginData(id: id, data: data) }
+                bridge.observeRunning { [weak host] ids in host?.pageRunning(ids) }
+                bridge.observeChoices { [weak host] preferences in host?.apply(preferences) }
+                let dock = application.composition.dock
+                dock.pluginScreenRequested = { [weak bridge] id in bridge?.openScreen(id) }
+                dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
+                // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
+                host.setWidgetShown(dock.isWidgetShown)
+                application.settingsHost.cockpitPlugins = bridge.model
+                application.resourcePlugin = host; application.cockpitPluginModel = bridge.model
+            }
+            application.cockpitPluginsReady?(bridge)
+        }
     }
 }
 
@@ -140,6 +203,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var settings: (() -> Void)?
     /// CKP-SHELL-39: Settings on its Subscriptions pane, for the empty engine screen's button.
     var settingsSubscriptions: (() -> Void)?
+    /// Owner D277 (CKP-ENG-27): the engine table's Refresh; a member key, or `all`.
+    var refreshMember: ((String) -> Void)?
     /// Right-click menu hooks, set by the factory beside `settings`.
     var setSize: ((SettingsSize) -> Void)?
     var currentSize: (() -> SettingsSize?)?
@@ -165,17 +230,20 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
-    /// Build 14c (G3-79): where the latest open was clicked; nil opens on the menu bar icon's display.
+    /// Build 14c (G3-79): where the latest open was clicked; only a detached open uses it (G3-128: attached is always
+    /// the menu bar icon's display).
     var openPoint: (() -> CGPoint?)?
     /// D204 (G3-94): the widget ignition's frame on screen; its press is not an outside click.
     var ignitionFrame: (() -> CGRect?)?
+    var widgetFrame: (() -> CGRect?)?
     var verifiedBundle: VerifiedCockpitBundle?
     let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     /// G3-42: hashing the helper and every bundle file took the main thread on each click. The app's identity and
     /// bundle are checked once per launch, away from the click; every served file is still checked again as it loads.
-    /// A click before this finishes checks on the spot, and a failure here is reported by that click.
+    /// WP-17 (CKP-SHELL-54): a click or the prewarm before this finishes waits for it (`awaitPreparedBundle`) instead of
+    /// checking again on the main thread; only a failed check is repeated by the click, which then reports it.
     func prepare() {
         guard verifiedBundle == nil, preparation == nil else { return }
         let bundle=self.bundle,pins=CommunityCockpitApplicationFactory.manifestPins
@@ -189,6 +257,12 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         }
     }
     private var preparation: Task<VerifiedCockpitBundle?,Never>?
+    /// WP-17: waits for the launch check if it is still running, so the page that follows is made from its result.
+    func awaitPreparedBundle() async {
+        guard verifiedBundle == nil, let preparation else { return }
+        let verified = await preparation.value
+        if verifiedBundle == nil { verifiedBundle = verified }
+    }
     nonisolated private static func admit(bundle: URL,pins: [String:String]) throws -> VerifiedCockpitBundle {
         guard CommunityConsentBundleIdentity.matches(bundle:bundle) || CommunityConsentBundleIdentity.matchesOwnerTest(bundle:bundle)
         else { throw CockpitBridgeError.unavailable }
@@ -226,7 +300,12 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
     private func beginPrewarm(_ snapshot: SettingsSnapshot) {
         if coordinator?.presented != true { adoptAppearance(snapshot, applied: prewarmApplied?()) }
-        coordinator?.prewarmEnabled = true
+        // WP-17: the prewarm no longer waits 0.5 s; it waits for the launch check of the bundle instead, so the hidden page
+        // never hashes the bundle on the main thread.
+        Task { @MainActor [weak self] in
+            await self?.awaitPreparedBundle()
+            self?.coordinator?.prewarmEnabled = true
+        }
     }
     func adoptAppearance(_ snapshot: SettingsSnapshot, applied: SettingsApplication?) {
         let theme:CockpitAppearance.Theme
@@ -258,6 +337,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() },openPoint:{ [weak self] in self?.openPoint?() },
             systemSignals:systemSignals?())
         page.ignitionFrame = { [weak self] in self?.ignitionFrame?() }
+        page.widgetFrame = { [weak self] in self?.widgetFrame?() }
         // Spec item 4: a detached cockpit gives the app its Dock icon and Cmd-Tab entry, through the one presence.
         if let presence {
             let adapter = DetachedCockpitPresence(page: page)
@@ -274,21 +354,41 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
 }
 
-/// D64: the cockpit scope and its local day in one small file beside the settings. A consent or store change removes it.
+/// CKP-SHELL-50: the cockpit scope in one small file beside the settings, kept across restarts whatever the day (an
+/// older file's "day" is ignored). A consent or store change removes it.
 @MainActor final class FileCockpitScopeMemory: CockpitScopeMemory {
     let url: URL
     init(url: URL) { self.url = url }
-    func load() -> (key: String, day: String)? {
+    func load() -> String? {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 1024,
               let data = try? Data(contentsOf: url),
               let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let key = value["scope"] as? String, let day = value["day"] as? String else { return nil }
-        return (key, day)
+              let key = value["scope"] as? String else { return nil }
+        return key
     }
-    func save(_ value: (key: String, day: String)?) {
-        guard let value else { try? FileManager.default.removeItem(at: url); return }
-        guard let data = try? JSONSerialization.data(withJSONObject: ["scope": value.key, "day": value.day], options: [.sortedKeys]) else { return }
+    func save(_ key: String?) {
+        guard let key else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["scope": key], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+/// CKP-SHELL-50: the app's range (Today / 7d / 30d) in one small file beside the settings. A preference, not private
+/// data, so a consent or store change keeps it.
+@MainActor final class FileCockpitRangeMemory: CockpitRangeMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> CockpitRange? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let raw = value["range"] as? String else { return nil }
+        return CockpitRange(rawValue: raw)
+    }
+    func save(_ value: CockpitRange) {
+        guard let data = try? JSONSerialization.data(withJSONObject: ["range": value.rawValue], options: [.sortedKeys]) else { return }
         try? data.write(to: url, options: .atomic)
     }
 }
@@ -464,10 +564,12 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     }
     /// Public model data only: the launch field never receives personal readings. The official page is
     /// the only one that asks; a community bundle has no field page, so the panel is not offered.
+    /// WP-22 (D298): `mine` is the published models the connected tools can run (CockpitFieldFleet), `asOf` the
+    /// publication's date for the menu header.
     private struct FieldPayload:Encodable {
-        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
+        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?,asOf:String?
     }
-    private var fieldPanel:CockpitFieldPanel?
+    private(set) var fieldPanel:CockpitFieldPanel? // read by tests (WP-22 site keys)
     /// G3-80 seams: where the pointer is, the cockpit's frame and the displays the field is placed on.
     var pointerLocation: @MainActor () -> CGPoint = { NSEvent.mouseLocation }
     var cockpitFrameForField: (@MainActor () -> CGRect?)?
@@ -478,10 +580,11 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     /// focuses nothing. Only the matching public model ID crosses.
     /// `lowPower` is the Low Power Mode state at open (D63): the scene mounts quiet and on demand when it is on.
     func fieldPayload(focusName:String?=nil,lowPower:Bool=ProcessInfo.processInfo.isLowPowerModeEnabled) -> String? {
-        guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
-        let mine=details.publication?.models.map(\.id) ?? []
+        guard let data=composition.store.snapshot.cockpit,let details=data.details,let models=details.publishedModels,!models.isEmpty else { return nil }
+        let mine=CockpitFieldFleet.runnable(data)
         let focus=focusName.flatMap { name in models.first { $0.name == name }?.id }
-        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:focus)
+        let asOf=details.publication.map { String($0.publishedAt.rawValue.prefix(10)) }
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:focus,asOf:asOf)
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {
@@ -493,8 +596,9 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openField:openField()
         case .openFieldAt(let name):openField(focusName:name)
         case .openWebsite(let link):owner.openWebsite(link.url)
+        case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.cautionAck,.pinnedModels:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()
@@ -505,10 +609,25 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
         guard let payload=fieldPayload(focusName:focusName,lowPower:panel.isLowPower) else { return }
         if let fieldScreens { panel.screens=fieldScreens }
+        // WP-22: the field's site keys open the allowlisted modelplan.ai pages in the default browser (CockpitFieldPanel.siteURL).
+        panel.openURL={ [weak self] url in self?.owner.openWebsite(url) }
+        // macrevb-1062-3: the field's selection is the cockpit's (HUD, faders, porthole); only a published model id passes.
+        panel.onSelect={ [weak self] id in self?.fieldSelected(id) }
+        // Owner 11-19 (#1062): every close path (Esc, ×, outside click, losing key, idle, failure, the cockpit's hide) runs
+        // the panel's one close funnel; the page then ignores a porthole click bouncing off it.
+        panel.onClosed={ [weak self] in self?.owner.coordinator?.fieldClosed() }
         // Build 14c (G3-80): on the cockpit's display. The intent does not say whether a click or a key opened it, so
         // the pointer counts only while it is over the cockpit (macrev2-845-2).
         let cockpit=cockpitFrameForField?() ?? owner.coordinator?.cockpitFrame
         fieldPanel=panel;panel.open(payload:payload,cockpit:cockpit,pointer:pointerLocation(),fallback:owner.anchor?())
+    }
+    /// WP-22 (macrevb-1062-3): a published model id from the field, or nil for a clear, selects on the cockpit page. An id
+    /// the publication does not list is ignored.
+    func fieldSelected(_ id:String?) {
+        if let id {
+            guard composition.store.snapshot.cockpit?.details?.publishedModels?.contains(where: { $0.id == id }) == true else { return }
+        }
+        owner.coordinator?.selectModel(id)
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.
     func applySettings(_ value: SettingsApplication) {
@@ -538,6 +657,10 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
             guard !Task.isCancelled else { return }
             guard wantsVisible else { showTask = nil; return }
             owner.adoptAppearance(snapshot,applied:appliedSettings)
+            // WP-17 (CKP-SHELL-54): a click during the launch check of the bundle waits for it, off the main thread.
+            await owner.awaitPreparedBundle()
+            guard !Task.isCancelled else { return }
+            guard wantsVisible else { showTask = nil; return }
             // A prewarmed page was made before this open; it shows with the settings of this moment.
             if owner.coordinator?.presented == false { owner.coordinator?.updateAppearance(owner.appearance) }
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }

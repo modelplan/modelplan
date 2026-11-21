@@ -19,6 +19,9 @@ type SpeedTier struct {
 	Billing []SpeedBilling   `json:"billing"`
 	Caveats []string         `json:"caveats"`
 	Sources []string         `json:"sources"`
+	// APIPriceMultiplier (client-v1.6) is the maker's API per-token price multiple for this
+	// speed; set by price.go only when published. Never a subscription ratio.
+	APIPriceMultiplier *float64 `json:"-"`
 }
 
 type SpeedTierModel struct {

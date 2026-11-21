@@ -10,6 +10,10 @@ import ModelPlanWire
   var onClosed: (() -> Void)? { get set }
   /// CKP-SHELL-20: once per open, when the page is first confirmed visible.
   var onShown: (() -> Void)? { get set }
+  /// G3-42: the page admitted the rendered receipt of a display it was sent.
+  var onDataRendered: (() -> Void)? { get set }
+  /// G3-42: whether this page reports `onDataRendered`. Only such a page holds the fresh query for its first render.
+  var reportsDataRendered: Bool { get }
   /// D88: the attachment or the settled open changed (detach, put back, drop, entrance end).
   var onShellChanged: (() -> Void)? { get set }
   /// Recovery contract: the page acknowledged a rendered display (verified data on screen).
@@ -28,16 +32,32 @@ import ModelPlanWire
   func requestClose()
   func updateAppearance(_ appearance: CockpitAppearance)
   func updateScope(_ key:String)
+  /// CKP-SHELL-50: the app's range; before the page loads it only sets what the load carries (no repaint, no flicker).
+  func updateRange(_ value: CockpitRange)
+  /// WP-22 (macrevb-1062-3): the enlarged field's selection by public model id; nil clears it.
+  func selectModel(_ id:String?)
+  /// Owner 11-19 (#1062): the enlarged field closed.
+  func fieldClosed()
   /// G3-56: the acknowledged caution identities to restore; applied before the page loads.
   func setAckedCautions(_ ids:[String])
   /// D136: the favourite model ids to restore; applied before the page loads.
   func setPinnedModels(_ ids:[String])
+  /// Plugin columns (macrevc-844-1): the saved plugin choices (sent on ready and on change) and one reading for a
+  /// running plugin.
+  func setPlugins(_ json: Data)
+  func sendPluginData(id: String, data: [String: Any])
+  /// Open this plugin's big screen once the page can (after its plugin state).
+  func openPluginScreen(_ id: String)
+  /// macrevb-1104-8: a screen request the page holds and has not delivered yet.
+  var heldPluginScreen: String? { get }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket)
   func clearPrivateViews(adopting: CockpitEngineContext?) async
   func discard()
 }
 public extension CockpitPageSurface {
   var onShown: (() -> Void)? { get { nil } set {} }
+  var onDataRendered: (() -> Void)? { get { nil } set {} }
+  var reportsDataRendered: Bool { false }
   var onShellChanged: (() -> Void)? { get { nil } set {} }
   var onRenderVerified: (() -> Void)? { get { nil } set {} }
   var onDisplayAbandoned: (() -> Void)? { get { nil } set {} }
@@ -48,15 +68,23 @@ public extension CockpitPageSurface {
   func requestClose() { discard() }
   func updateAppearance(_ appearance: CockpitAppearance) {}
   func updateScope(_ key:String) {}
+  func updateRange(_ value: CockpitRange) {}
+  func selectModel(_ id:String?) {}
+  func fieldClosed() {}
   func setAckedCautions(_ ids:[String]) {}
   func setPinnedModels(_ ids:[String]) {}
+  func setPlugins(_ json: Data) {}
+  func sendPluginData(id: String, data: [String: Any]) {}
+  func openPluginScreen(_ id: String) {}
+  var heldPluginScreen: String? { nil }
 }
 extension CockpitWindowController: CockpitPageSurface {}
 
-/// D64: where the app keeps the cockpit scope and the local day it was chosen, so it outlives a restart that day.
+/// CKP-SHELL-50 (supersedes CKP-ENTRY-04 / D64's day rule): where the app keeps the cockpit scope, so it outlives
+/// every restart. A consent or store change still removes it.
 @MainActor public protocol CockpitScopeMemory: AnyObject {
-  func load() -> (key: String, day: String)?
-  func save(_ value: (key: String, day: String)?)
+  func load() -> String?
+  func save(_ key: String?)
 }
 
 /// G3-56: where the app keeps the caution identities the owner acknowledged, so the lamp stays steady after a restart.
@@ -88,26 +116,66 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private weak var borrowedClient: (any EngineClient)?
   private var client: (any EngineClient)? { ownedClient ?? borrowedClient }
   private var delivery: EngineDeliveryContext?
-  private var page: (any CockpitPageSurface)?
-  private var pageGeneration: UUID?
-  public private(set) var selectedScope = "all"
-  /// The calendar day the scope was chosen.
-  private var scopeDay: DateComponents?
-  /// The clock that decides that day. The app sets its own clock here, so the day follows the clock its
-  /// other deadlines use.
-  public var currentDate: @MainActor () -> Date = { Date() }
-  /// D64: set after `currentDate`. A saved scope from today is restored; any other day is ignored. A numbered
-  /// (positional) fallback is never kept, and a restored scope is still checked against each reply.
-  public var scopeMemory: (any CockpitScopeMemory)? {
+  private var page: (any CockpitPageSurface)? {
+    // A page that goes away (close, failure, replacement) runs no plugin any more.
+    didSet { if oldValue != nil, page !== oldValue { reportPluginsRunning([]) } }
+  }
+  /// Plugin columns (macrevc-844-1): the saved choices for every page, handed to a new page before it loads and to the
+  /// current page on change. Only a state that passes the page's own rules is kept.
+  public var pluginsJSON: Data? {
     didSet {
-      guard let saved = scopeMemory?.load(), Self.persistable(saved.key), saved.day == dayKey(currentDate()) else { return }
-      selectedScope = saved.key; scopeDay = calendarDay(currentDate())
+      if let json = pluginsJSON, CockpitPluginWire.canonical(json: json) == nil { pluginsJSON = oldValue; return }
+      if let pluginsJSON { page?.setPlugins(pluginsJSON) }
     }
   }
+  /// The plugins the page runs now ([] without a shown page); the app samples exactly these.
+  public var onPluginsRunning: (([String]) -> Void)?
+  /// A page edit (right-click Remove or the + menu) as canonical JSON; the app saves it like a Settings edit.
+  public var onPluginsEdit: ((Data) -> Void)?
+  public private(set) var pluginsRunning: [String] = []
+  private func reportPluginsRunning(_ ids: [String]) {
+    guard ids != pluginsRunning else { return }
+    pluginsRunning = ids; onPluginsRunning?(ids)
+  }
+  /// A request to open a plugin's big screen (the widget card's action) that no page has taken yet.
+  public private(set) var pluginScreenRequest: String?
+  /// Opens this plugin's big screen on the current page, or on the next page made (the app shows the cockpit itself).
+  public func openPluginScreen(_ id: String) {
+    guard CockpitPluginWire.validID(id) else { return }
+    if let page { page.openPluginScreen(id); pluginScreenRequest = nil } else { pluginScreenRequest = id }
+  }
+  /// One reading for a running plugin, to the current page only.
+  public func sendPluginData(id: String, data: [String: Any]) {
+    guard pluginsRunning.contains(id) else { return }
+    page?.sendPluginData(id: id, data: data)
+  }
+  private var pageGeneration: UUID?
+  public private(set) var selectedScope = "all"
+  /// The app clock. Kept for the hosts that set it; since CKP-SHELL-50 the scope no longer depends on the day.
+  public var currentDate: @MainActor () -> Date = { Date() }
+  /// CKP-SHELL-50: a saved scope is restored whatever day it was chosen. A numbered (positional) fallback is never
+  /// kept, and a restored scope is still checked against each reply.
+  public var scopeMemory: (any CockpitScopeMemory)? {
+    didSet {
+      guard let saved = scopeMemory?.load(), Self.persistable(saved) else { return }
+      selectedScope = saved
+    }
+  }
+  /// CKP-SHELL-50: the app-owned range. The coordinator hands it to every page before that page loads and passes the
+  /// page's requests (big-screen key, T) back to it; the menu bar asks the same object.
+  public var rangeState: CockpitRangeState? {
+    didSet {
+      if let token = rangeObservation { oldValue?.removeObserver(token); rangeObservation = nil }
+      rangeObservation = rangeState?.observe { [weak self] value in self?.page?.updateRange(value) }
+      page?.updateRange(selectedRange)
+    }
+  }
+  private var rangeObservation: UUID?
+  public var selectedRange: CockpitRange { rangeState?.value ?? .initial }
   /// G3-56: the acknowledged caution identities. Restored at load, replaced whenever the page reports a press.
   public private(set) var ackedCautions: [String] = []
   public var cautionMemory: (any CockpitCautionMemory)? {
-    didSet { let ids = cautionMemory?.load() ?? []; ackedCautions = CockpitCautionIdentities.valid(ids) ? ids : [] }
+    didSet { let ids = cautionMemory?.load() ?? []; ackedCautions = CockpitCautionIdentities.valid(ids) ? CockpitCautionIdentities.durable(ids) : [] }
   }
   /// D136: the favourite model ids. Restored at load and replaced whenever the page reports a long-press. A user
   /// preference, so a store barrier does not clear them.
@@ -117,9 +185,6 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   }
   private static func persistable(_ key: String) -> Bool {
     key != "all" && CockpitMemberScopes.isValidKey(key) && !CockpitMemberScopes.isIndexedFallback(key)
-  }
-  private func dayKey(_ date: Date) -> String {
-    let d = calendarDay(date); return String(format: "%04d-%02d-%02d", d.year ?? 0, d.month ?? 0, d.day ?? 0)
   }
   private var scopeMembers = Set<String>()
   private var request: Task<Void, Never>?
@@ -152,7 +217,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       else { stopWatchingMemoryPressure(); releaseWarmPage() }
     }
   }
-  public var prewarmDelay: Duration = .milliseconds(500)
+  /// WP-17 (Fable perf plan 5.1 row 2, CKP-SHELL-54): the hidden page is built as soon as there is an engine session; it no
+  /// longer waits 0.5 s. After a close the next one waits `rebuildAfterCloseDelay`, so the close's last steps run first.
+  public var prewarmDelay: Duration = .zero
+  public var rebuildAfterCloseDelay: Duration = .milliseconds(100)
   private var prewarmTask: Task<Void, Never>?
   /// Hidden pages that ended on their own (a failure, not a release or a clear) since the last open.
   /// Three stop prewarming until the next open, so a page that cannot load is not rebuilt in a loop.
@@ -172,6 +240,12 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var warmBuilds = 0
   private var warmBuiltAt: TimeInterval?
   private var freshLogged = true
+  /// G3-42: at a show, the last reply is drawn before the fresh query starts. On the first open of a launch the
+  /// page's first visible render competed with the engine's query for the CPU; the last reply's receipt then came
+  /// only after the fresh reply had replaced it, so the click waited for the query (636 to 1574 ms on hosted
+  /// runners, against 20 to 50 ms on later opens). The query waits for that render, at most this long.
+  public var lastRenderGrace: Duration = .seconds(1)
+  private var lastRenderHold: (token: UUID, task: Task<Void, Never>)?
   #if MODELPLAN_TEST_ONLY_SPI
   /// Names each step of a prewarm and an open, in order, for timing tests. Never engine data.
   public var verificationTrace: ((String) -> Void)?
@@ -277,7 +351,6 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         freshLogged = false
         CockpitTimingLog.record("open page=\(page.queryTicket == nil ? "warm-loading" : "warm-ready") clickMs=\(CockpitTimingLog.sinceClick())")
         trace("open.warm")
-        retireScopeFromAnotherDay()
         page.updateScope(selectedScope)
       }
       page.open()
@@ -298,7 +371,6 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     CockpitTimingLog.record("open page=cold clickMs=\(CockpitTimingLog.sinceClick())")
     trace("open.cold")
     page = newPage
-    retireScopeFromAnotherDay()
     newPage.updateScope(selectedScope)
     newPage.open()
     if page === newPage { onOpened?() }
@@ -308,6 +380,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     let newPage = try makePage(context)
     newPage.setAckedCautions(ackedCautions)
     newPage.setPinnedModels(pinnedModels)
+    if let pluginsJSON { newPage.setPlugins(pluginsJSON) }
+    if let id = pluginScreenRequest { newPage.openPluginScreen(id); pluginScreenRequest = nil }
+    newPage.updateRange(selectedRange)
     let generation = UUID()
     pageGeneration = generation
     newPage.onReady = { [weak self] in
@@ -322,9 +397,15 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       CockpitTimingLog.record("open shown clickMs=\(CockpitTimingLog.sinceClick())")
       self.trace("page.shown")
       self.openingShown = true
-      self.showLastReply(self.openingReply ?? self.lastReply)
-      // Do not ask twice when the click-time query has already completed.
-      if !self.openingFreshPending && self.request == nil { self.refresh() }
+      let showedLast = self.showLastReply(self.openingReply ?? self.lastReply)
+      // Do not ask twice when the click-time query has already completed or is running (its reply is fresh).
+      guard !self.openingFreshPending && self.request == nil else { return }
+      // G3-42: the last reply is drawn first; the fresh query starts once the page has rendered it.
+      if showedLast, self.page?.reportsDataRendered == true { self.holdQueryForLastRender() } else { self.refresh() }
+    }
+    newPage.onDataRendered = { [weak self] in
+      guard let self, self.pageGeneration == generation, self.presented else { return }
+      self.releaseHeldQuery("after-last")
     }
     newPage.onShellChanged = { [weak self] in
       guard let self, self.pageGeneration == generation, self.presented else { return }
@@ -348,8 +429,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       self.pageGeneration = nil
       self.scopeMembers.removeAll()
       self.cancelQuery()
-      self.page = nil
       let wasPresented = self.presented
+      // macrevb-1104-8: a hidden page that goes before it could open a requested screen hands it to the next page.
+      if !wasPresented, let held = self.page?.heldPluginScreen { self.pluginScreenRequest = held }
+      self.page = nil
       self.presented = false; self.presentedPageRendered = false
       self.openingReply = nil; self.openingFreshPending = false; self.openingShown = false
       if wasPresented { self.onClosed?() }
@@ -357,7 +440,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         self.warmFailures += 1
         CockpitTimingLog.record("prewarm ended failures=\(self.warmFailures)")
       }
-      self.schedulePrewarm()
+      self.schedulePrewarm(after: self.rebuildAfterCloseDelay)
     }
     return newPage
   }
@@ -369,22 +452,42 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     if hasFresh { showLastReply(lastReply); onDisplayed?() }
   }
   /// The last reply for this exact delivery, on a page confirmed visible. Never retagged to a newer context.
-  private func showLastReply(_ reply: (delivery: EngineDeliveryContext, data: WireCockpitData)?) {
+  @discardableResult private func showLastReply(_ reply: (delivery: EngineDeliveryContext, data: WireCockpitData)?) -> Bool {
     guard let page, let ticket = page.queryTicket, let delivery, let last = reply, last.delivery == delivery,
-      let context = try? Self.bridgeContext(delivery), ticket.context == context else { return }
+      let context = try? Self.bridgeContext(delivery), ticket.context == context else { return false }
     scopeMembers = CockpitMemberScopes.keys(last.data)
     if CockpitMemberScopes.isIndexedFallback(selectedScope) || !scopeMembers.contains(selectedScope) { selectedScope = "all" }
     CockpitTimingLog.record("open display=last clickMs=\(CockpitTimingLog.sinceClick())")
     trace("display.last")
     page.display(last.data, ticket: ticket)
     page.updateScope(selectedScope)
+    return true
   }
-  private func schedulePrewarm() {
+  /// G3-42: hold the fresh query of this show until the page renders the last reply, or the grace ends.
+  private func holdQueryForLastRender() {
+    lastRenderHold?.task.cancel()
+    let token = UUID(), grace = lastRenderGrace
+    trace("query.held")
+    let task = Task { @MainActor [weak self] in
+      do { try await Task.sleep(for: grace) } catch { return }
+      guard let self, self.lastRenderHold?.token == token else { return }
+      self.releaseHeldQuery("after-grace")
+    }
+    lastRenderHold = (token, task)
+  }
+  private func releaseHeldQuery(_ reason: String) {
+    guard let hold = lastRenderHold else { return }
+    hold.task.cancel(); lastRenderHold = nil
+    CockpitTimingLog.record("open query=\(reason) clickMs=\(CockpitTimingLog.sinceClick())")
+    trace("query.released")
+    refresh()
+  }
+  private func schedulePrewarm(after delay: Duration? = nil) {
     guard prewarmEnabled, !memoryPressured, warmFailures < 3, page == nil, prewarmTask == nil,
       client != nil, delivery != nil else { return }
-    let delay = prewarmDelay
+    let delay = delay ?? prewarmDelay
     prewarmTask = Task { @MainActor [weak self] in
-      do { try await Task.sleep(for: delay) } catch { return }
+      if delay > .zero { do { try await Task.sleep(for: delay) } catch { return } }
       guard let self, !Task.isCancelled else { return }
       self.prewarmTask = nil
       self.prewarmNow()
@@ -410,6 +513,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func clearKeepingWarmCount(_ page: any CockpitPageSurface, adopting context: CockpitEngineContext?) async {
     let hidden = !presented
     if hidden { releasingWarmPage = true }
+    // D124 (macrev2-1104-6): sampling stops when the clear starts (the page is hidden at once), not when its receipt
+    // arrives; the page's own [] report carries the old view revision and is refused.
+    reportPluginsRunning([])
     await page.clearPrivateViews(adopting: context)
     if hidden { releasingWarmPage = false }
   }
@@ -418,6 +524,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     prewarmTask?.cancel(); prewarmTask = nil
     guard let warm = page, !presented else { return }
     cancelQuery()
+    if let held = warm.heldPluginScreen { pluginScreenRequest = held }
     page = nil; pageGeneration = nil; scopeMembers.removeAll()
     warm.discard()
     CockpitTimingLog.record("prewarm released")
@@ -442,9 +549,14 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   }
   private func stopWatchingMemoryPressure() { memorySource?.cancel(); memorySource = nil }
   private func receiveIntent(_ intent:CockpitIntent) {
+    if case .pluginsRunning(let ids) = intent {
+      guard CockpitPluginWire.validRunning(ids) else { return }
+      reportPluginsRunning(ids); return
+    }
+    if case .pluginsEdit(let state) = intent { onPluginsEdit?(state); return }
     if case .cautionAck(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids) else { return }
-      ackedCautions=ids; cautionMemory?.save(ids); return
+      ackedCautions=ids; cautionMemory?.save(CockpitCautionIdentities.durable(ids)); return
     }
     if case .pinnedModels(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids), Set(ids).count == ids.count else { return }
@@ -452,17 +564,20 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     }
     if case .scopeSelect(let key)=intent {
       guard delivery != nil,scopeMembers.contains(key) else { return }
-      selectedScope=key; scopeDay=calendarDay(currentDate()); page?.updateScope(key)
-      scopeMemory?.save(Self.persistable(key) ? (key, dayKey(currentDate())) : nil); return
+      selectedScope=key; page?.updateScope(key)
+      scopeMemory?.save(Self.persistable(key) ? key : nil); return
+    }
+    if case .rangeSelect(let value)=intent {
+      // The app decides; its observer echoes the range to the page in the shell (one source of truth).
+      rangeState?.select(value); return
     }
     onIntent?(intent)
   }
-  private func calendarDay(_ date:Date) -> DateComponents { Calendar.current.dateComponents([.era,.year,.month,.day],from:date) }
-  /// CKP-ENTRY-04: a scope lasts for the day it was chosen; the first open on a later day starts at All.
-  private func retireScopeFromAnotherDay() {
-    if selectedScope != "all", scopeDay != calendarDay(currentDate()) { selectedScope="all" }
-  }
   public func updateAppearance(_ appearance: CockpitAppearance) { page?.updateAppearance(appearance) }
+  /// WP-22 (macrevb-1062-3): the enlarged field's selection reaches the cockpit page (HUD, faders, porthole).
+  public func selectModel(_ id: String?) { page?.selectModel(id) }
+  /// Owner 11-19 (#1062): the enlarged field closed; the page guards its porthole against the close's bounce.
+  public func fieldClosed() { page?.fieldClosed() }
   /// User close retains the page until its normal transition completes.
   /// Privacy/shutdown continue to use close() for immediate disposal.
   public func requestClose() {
@@ -481,6 +596,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     schedulePrewarm()
   }
   private func cancelQuery() {
+    lastRenderHold?.task.cancel(); lastRenderHold = nil
     cancelReadRetry()
     request?.cancel()
     request = nil
@@ -496,6 +612,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       refreshAgain = true
       return
     }
+    // Another reason to ask (a row change, a page that asks again) ends a hold; the query starts now.
+    lastRenderHold?.task.cancel(); lastRenderHold = nil
     let token = UUID()
     requestToken = token
     requestTicket = ticket
@@ -533,7 +651,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     guard delivery != next else { return }
     cancelQuery()
     lastReply = nil; importState = nil
-    // A restored scope (D64) waits for the first context; a change of session or floor after that returns to All.
+    // A restored scope (CKP-SHELL-50) waits for the first context; a change of session or floor after that returns to All.
     if let previous = delivery, previous.sessionID != next.sessionID || previous.floor != next.floor { selectedScope="all" }
     scopeMembers.removeAll()
     delivery = next
@@ -554,9 +672,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     case .clearPrivateViews(let invalidation):
       cancelQuery(); presentedPageRendered = false
       lastReply = nil; importState = nil
-      // The engine's first floor arrives as a clear with no previous session; nothing private was shown yet, so a scope
-      // restored for today (D64) stays, and is still checked against the first reply. After a session, a consent or
-      // store change forgets the saved scope; an engine stop (the app quitting) keeps it for today.
+      // The engine's first floor arrives as a clear with no previous session; nothing private was shown yet, so a
+      // restored scope (CKP-SHELL-50) stays, and is still checked against the first reply. After a session, a consent or
+      // store change forgets the saved scope; an engine stop (the app quitting) keeps it.
       if invalidation.previous == nil {
         delivery = nil; scopeMembers.removeAll()
         // A prewarmed page cleared here is not a failure of that page (CKP-SHELL-20).
@@ -578,6 +696,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         reply.envelope.consentGeneration == delivery.floor.generation
       {
         lastReply = (delivery, reply.envelope.data); readRetryAttempt = 0
+        LaunchTimingLog.shared.mark("first-cockpit-reply", detail: "presented=\(presented)")
         trace(presented ? "query.reply" : "warm.reply")
         if !presented { CockpitTimingLog.record("prewarm last-reply buildMs=\(warmBuiltAt.map { CockpitTimingLog.ms(since: $0) } ?? -1)") }
         else if !freshLogged { freshLogged = true; CockpitTimingLog.record("open display=fresh clickMs=\(CockpitTimingLog.sinceClick())") }

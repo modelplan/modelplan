@@ -1,0 +1,79 @@
+{
+  "_doc": "Path areas that must name the reference app they follow (docs/readers/integration-standard.md section 3). To cover a new area add one group: paths are regexes tested against each changed path (case-insensitive); apps are the allowed references (keys of REFERENCE_APPS in rules.mjs). A PR touching several groups needs an allowed app for each. 'Reference: none (<reason>)' needs a reason of at least 20 characters. 'dirs' lists the directories that carry a generated AGENTS.md and CLAUDE.md (node scripts/merge-gates/reference-docs.mjs --write regenerates them; the merge-gates test fails when they drift). 'hint' says which files in a shared directory belong to the group.",
+  "noneReasonMinLength": 20,
+  "repos": {
+    "CodexBar": "https://github.com/steipete/CodexBar",
+    "Pulse": "https://github.com/qunqin24/Pulse",
+    "TokenMonitor": "https://github.com/Javis603/token-monitor",
+    "ccusage": "https://github.com/ccusage/ccusage",
+    "Tokei": "https://github.com/cclank/tokei",
+    "Stats": "https://github.com/exelban/Stats",
+    "Maccy": "https://github.com/p0deje/Maccy"
+  },
+  "groups": [
+    {
+      "name": "reader",
+      "paths": [
+        "^cli/internal/(quota|detect|localusage|speed|consent)/",
+        "^desktop/native/.*/Sources/.*ReaderCause[^/]*\\.swift$",
+        "^desktop/cockpit/src/(.*/)?reader-?causes?[^/]*$"
+      ],
+      "apps": [
+        "CodexBar",
+        "Pulse",
+        "TokenMonitor",
+        "ccusage",
+        "Tokei"
+      ],
+      "dirs": [
+        "cli/internal/quota",
+        "cli/internal/detect",
+        "cli/internal/localusage",
+        "cli/internal/speed",
+        "cli/internal/consent"
+      ],
+      "hint": "reader, detection, metric and consent code"
+    },
+    {
+      "name": "widget",
+      "paths": [
+        "^desktop/native/ModelPlanDock/",
+        "^desktop/native/ModelPlanAppIntegration/.*/(StaticDockPreviewHost|StaticDockPreviewApplication|DockEdgeController|DockCard|DockInteraction|CommunityPlacement)[^/]*\\.swift$",
+        "^desktop/native/Sources/ModelPlanShell/Pulse/"
+      ],
+      "apps": [
+        "Pulse"
+      ],
+      "dirs": [
+        "desktop/native/ModelPlanDock",
+        "desktop/native/ModelPlanAppIntegration",
+        "desktop/native/Sources/ModelPlanShell/Pulse"
+      ],
+      "hint": "widget and Dock interaction (Dock host, edge, drag, card and placement files)"
+    },
+    {
+      "name": "menu-bar and native shell",
+      "paths": [
+        "^desktop/native/ModelPlanAppIntegration/.*/(CommunityMenuBar|EngineMenuBarTitle|LivePrivateMenus|CockpitContextMenu|EngineDockMenu[^/]*|U6StatusItem[^/]*|EngineLifecycleController|HelpOverlayRouter|HintExecutionHost|Dock(Requested)?Help[^/]*)\\.swift$",
+        "^desktop/native/ModelPlanCockpitShell/Sources/",
+        "^desktop/native/ModelPlanCockpitWeb/Sources/.*/CockpitWindowController\\.swift$",
+        "^desktop/native/Sources/ModelPlanShell/(SystemEvents|StatusItemPlacement|DisplayChangeRecheck|MainThreadHangWatchdog)\\.swift$",
+        "^desktop/native/Sources/ModelPlanCommunityHost/(CommunityDelegate|CommunityMenuBarPresentation)\\.swift$"
+      ],
+      "apps": [
+        "CodexBar",
+        "Stats",
+        "Maccy",
+        "Pulse"
+      ],
+      "dirs": [
+        "desktop/native/ModelPlanCockpitShell",
+        "desktop/native/ModelPlanCockpitWeb",
+        "desktop/native/ModelPlanAppIntegration",
+        "desktop/native/Sources/ModelPlanShell",
+        "desktop/native/Sources/ModelPlanCommunityHost"
+      ],
+      "hint": "menu bar and native shell (status item and menus, cockpit window controller, help and hint panels, engine lifecycle wake/unlock/display handling); in Sources/ModelPlanShell and Sources/ModelPlanCommunityHost: SystemEvents, StatusItemPlacement, DisplayChangeRecheck, CommunityDelegate and CommunityMenuBarPresentation"
+    }
+  ]
+}

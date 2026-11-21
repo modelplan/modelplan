@@ -19,7 +19,10 @@ import subprocess
 import sys
 import time
 
-APP_EXECUTABLE = "ModelPlanCommunity"
+APP_EXECUTABLE = "ModelPlan"
+# D57: a ref from before the rename packages "ModelPlan Community.app" with this executable; the walkthrough
+# still launches it, so older test builds stay walkable.
+APP_EXECUTABLES = (APP_EXECUTABLE, "ModelPlanCommunity")
 DISPLAY_CANDIDATES = ((1920, 1200), (1920, 1080), (1680, 1050), (1600, 1200), (1440, 900), (1280, 1024))
 PARK = (0.42, 0.62)  # A screen fraction clear of the widget's edges, the menu bar and the Dock.
 MIN_COLOURS = 24  # Coarse 12-bit colours: a blank, black or single-tone render has far fewer.
@@ -252,6 +255,23 @@ class Walkthrough:
                 raise WalkthroughError("still on screen after %ss: %s" % (action.get("timeout", 15), action["target"]))
             self.host.sleep(0.5)
 
+    def op_awaitStable(self, action):
+        """Wait until every match of a target keeps the same title and frame for "quiet" seconds. A data refresh
+        (a seeded reading going stale) rebuilds the fader bank and would clear a view opened meanwhile."""
+        quiet, deadline = action.get("quiet", 3), self.host.now() + action.get("timeout", 30)
+        last, since = None, self.host.now()
+        while True:
+            now = self.host.now()
+            seen = [(n.get("title"), n.get("label"), n.get("value"), tuple(n.get("frame") or ()))
+                    for n in resolve_all(self.tree(), action["target"])]
+            if seen != last:
+                last, since = seen, now
+            elif now - since >= quiet:
+                return
+            if now >= deadline:
+                raise WalkthroughError("not stable after %ss: %s" % (action.get("timeout", 30), action["target"]))
+            self.host.sleep(0.5)
+
     def op_when(self, action):
         """Run nested actions only when a target is on screen ("present"), is not ("absent"), or shows a value
         ("equals": {"target", "value"}), so one walk fits a build with the flow and a build without it (the
@@ -320,14 +340,15 @@ class Walkthrough:
         """Drag the cockpit by the middle of its title-strip drag region (G3-43).
 
         The region is the app's `titleDragFrame`: page x 24..240 and, from the top of the page, the strip top
-        (225 full open, 45 full closed, 57 short) minus 3 down to plus 29. It scales with the window, so the point
-        comes from the reported window frame (page width 636, root 877/691/627/609 plus the 34 px base reserve), never
-        from another control that merely shares a label.
+        (253 full, 65 short, from the top of the open canvas; CockpitShellLayout.stripTop) minus 3 down to plus 29. It
+        scales with the window, so the point comes from the reported window frame: page width 636 and a height of
+        939 (full open), 711 (full, shutter closed: the window drops the 228 px porthole band above the strip), 669
+        (short open) or 629 (short closed: 40 px dropped). Closed, the strip therefore sits 25 px from the window top.
         """
         window = self.need(action["window"])["frame"]
         scale = window[2] / 636.0
-        root = round(window[3] / scale) - 34
-        strip_top = {877: 225, 691: 45, 627: 57, 609: 45}.get(min((877, 691, 627, 609), key=lambda r: abs(r - root)), 225)
+        height = window[3] / scale
+        strip_top = {939: 253, 711: 25, 669: 65, 629: 25}[min((939, 711, 669, 629), key=lambda h: abs(h - height))]
         start = (window[0] + 132 * scale, window[1] + (strip_top + 13) * scale)
         self.host.helper("down", *start)
         self.host.helper("held", start[0] + action["by"][0], start[1] + action["by"][1], action.get("seconds", 1.0))
@@ -710,8 +731,8 @@ def read_bundle(app):
 def check_bundle(info, expected_sha):
     """Only an owner test package offers the steps this walkthrough walks."""
     problems = []
-    if info.get("CFBundleExecutable") != APP_EXECUTABLE:
-        problems.append("executable is not " + APP_EXECUTABLE)
+    if info.get("CFBundleExecutable") not in APP_EXECUTABLES:
+        problems.append("executable is not one of " + ", ".join(APP_EXECUTABLES))
     if info.get("ModelPlanCockpitEntryEnabled") is not True:
         problems.append("cockpit entry is closed: not an owner test package")
     if expected_sha and info.get("ModelPlanPublicSource") != expected_sha:
@@ -996,7 +1017,7 @@ def run(args, host):
     seed = json.loads(Path(args.seed).read_text(encoding="utf-8"))
     facts = set_display(host)
     frame = facts["screens"][0]["frame"]
-    cli, exe = app / "Contents/Helpers/modelplan", app / "Contents/MacOS" / APP_EXECUTABLE
+    cli, exe = app / "Contents/Helpers/modelplan", app / "Contents/MacOS" / info["CFBundleExecutable"]
     walkthrough = Walkthrough(host, app, out, steps, seed, (frame[2], frame[3]))
     walkthrough.facts = facts
     fresh = fresh_profile_probe(host, walkthrough, exe, cli, Path(str(home) + "-fresh"), seed, out)

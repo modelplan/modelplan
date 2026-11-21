@@ -62,8 +62,8 @@ for(const [locale,balance,note] of [['en','$12.34',/balance, no usage/],['zh-CN'
   await open(page,locale,true);
   await page.keyboard.press('5');
   const overview=page.locator('.mfd-page.pg-overview');
-  await expect(overview.locator('.ov-top .ov-local')).toHaveCount(1);
-  await expect(overview.locator('.ov-top .ov-sum')).toHaveText('200');
+  await expect(overview.locator('.ov-top')).toHaveAttribute('data-tip',/.+/);
+  await expect(overview.locator('.ov-top .ov-total')).toHaveText('200');
   await expect(overview.locator('.ov-bal b')).toHaveText(balance);
   await expect(overview.locator('.ov-bal-note')).toHaveText(note);
  });
