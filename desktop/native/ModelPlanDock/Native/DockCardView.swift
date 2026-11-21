@@ -125,7 +125,7 @@ import CryptoKit
     func configure(glyph image:NSImage?,label:String,spoken:String,ink:NSColor,muted:NSColor,hairline line:NSColor,invoke:@escaping ()->Void){
         self.invoke=invoke;hairline=line;self.ink=ink;self.muted=muted
         glyph.image=image;glyph.isHidden=image == nil
-        title.stringValue=label;title.font=.systemFont(ofSize:12);chevron.font=.systemFont(ofSize:14)
+        title.stringValue=label;title.font = .systemFont(ofSize:12);chevron.font = .systemFont(ofSize:14)
         setAccessibilityLabel(spoken)
         applyHover();layout();needsDisplay=true
     }
