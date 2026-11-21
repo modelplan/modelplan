@@ -152,3 +152,35 @@ test('macrevb-1096-2 turning the plugin off and on (Settings or page Remove/Add)
  await expect(column(page).locator('.qvalue').first()).toHaveText('10');
  await expect(column(page).locator('.pl-cell[data-row="0"]')).toContainText('peak 10%');
 });
+
+/** `count` connected subscriptions: with six, every slot is a subscription column and an unpinned resource plugin has none (CKP-PLG-52). */
+function dataWith(count) {
+ const data=sample(),seed=data.projection.rows[1];
+ data.projection.rows=[data.projection.rows[0],...Array.from({length:count-1},(_,i)=>{const row=structuredClone(seed);row.id=`tool-${i+2}`;row.name={en:`Tool ${i+2}`,zh:`工具 ${i+2}`};row.order=i+2;return row;})];
+ return data;
+}
+test('sample S4 (#1104 PLG-A2): the host-opened screen runs and draws its charts with six subscriptions and Resources unpinned',async({page})=>{
+ const {send,receive,push}=await open(page,{plugins:{version:1,entries:[CAL_OFF],settings:{}}});
+ expect(await receive(send('display',{data:dataWith(6)}))).toBe(true);
+ await expect(column(page)).toHaveCount(0);
+ await expect(key(page)).toHaveCount(0);
+ expect((await running(page)).at(-1)).toEqual([]);
+ // The widget card's "Cockpit screen ›" (pluginScreen from the host): the screen opens and the plugin runs, so the
+ // host samples it and its readings reach the charts.
+ expect(await receive(send('pluginScreen',{id:'resources'}))).toBe(true);
+ const screen=page.locator('.mfd-screen .pl-screen[data-plugin="resources"]');
+ await expect(screen).toBeVisible();
+ expect((await running(page)).at(-1)).toEqual(['resources']);
+ expect(await push(Array.from({length:6},(_,i)=>reading(T0+i*5000,{cpuUser:10+i})))).toBe(true);
+ const chart=screen.locator('.pl-draw-chart');
+ // No reading draws no chart; the readings fill the 60-bar CPU frame (one bar per 10 s: the last two 5 s samples, 14 % and 15 %).
+ await expect(chart.locator('[data-chart="cpu"] [data-bar]')).toHaveCount(60);
+ await expect(chart.locator('[data-chart="cpu"] [data-bar]').last()).toHaveAttribute('data-user','14.5');
+ await expect(chart.locator('[data-chart="memory-used"]')).toHaveCount(1);
+ await expect(chart.locator('[data-chart="disk"]')).toHaveCount(1);
+ // Closing the screen stops it again (nothing samples for a plugin that is neither placed nor on screen).
+ await page.keyboard.press('Escape');
+ await expect(screen).toHaveCount(0);
+ expect((await running(page)).at(-1)).toEqual([]);
+ expect(await push([reading(T0+60000)])).toBe(false);
+});
