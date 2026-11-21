@@ -31,21 +31,26 @@ public struct CockpitPluginDefinition: Equatable, Sendable {
     public let symbol: String
     public let defaultEnabled: Bool
     public let settings: [CockpitPluginSettingSpec]
+    /// Owner 11-21: a framework test plugin (the placeholder). It stays in the catalogue so tests, fixtures and saved
+    /// state keep working, but Settings never lists it and it is never offered to users.
+    public let frameworkOnly: Bool
     public init(id: String, title: SettingsText, summary: SettingsText = .init("", ""), symbol: String = "puzzlepiece",
-                defaultEnabled: Bool, settings: [CockpitPluginSettingSpec]) {
+                defaultEnabled: Bool, settings: [CockpitPluginSettingSpec], frameworkOnly: Bool = false) {
         self.id = id; self.title = title; self.summary = summary; self.symbol = symbol; self.defaultEnabled = defaultEnabled; self.settings = settings
+        self.frameworkOnly = frameworkOnly
     }
 }
 public enum CockpitPluginCatalogue {
     public static let maximumPinned = 2
     public static let maximumEntries = 32
-    /// The framework placeholder (off by default), the calendar (WP-19, default on) and the resource plugin (D324, default on).
+    /// The framework placeholder (off by default, framework only: never listed in Settings), the calendar (WP-19, default
+    /// on) and the resource plugin (D324, default on). Every plugin starts unpinned (owner 11-21): only the user pins.
     public static let builtIn: [CockpitPluginDefinition] = [
         CockpitPluginDefinition(id: "placeholder", title: .init("Placeholder", "占位插件"),
                                 summary: .init("Shows the last number the app sent; for trying plugins.", "显示应用推来的最后一个数，用来试插件框架。"),
                                 symbol: "dot.square", defaultEnabled: false, settings: [
             CockpitPluginSettingSpec(key: "intervalSeconds", minimum: 3, maximum: 30, defaultValue: 10, title: .init("Update interval", "更新间隔")),
-        ]),
+        ], frameworkOnly: true),
         /// v1.1 calendar (D137/D138/D140/D141/D145, CKP-PLG-06/07): default on; no settings. The page shapes its data from
         /// the display data the app already sends, so the app samples nothing for it.
         CockpitPluginDefinition(id: "calendar", title: .init("Calendar", "日历"),
@@ -61,6 +66,10 @@ public enum CockpitPluginCatalogue {
                                      choices: [2, 5, 10]),
         ]),
     ]
+    /// The plugins a user can see and choose (Settings rows): every catalogued plugin except framework test plugins.
+    public static func listed(_ catalogue: [CockpitPluginDefinition] = builtIn) -> [CockpitPluginDefinition] {
+        catalogue.filter { !$0.frameworkOnly }
+    }
     private static let lower: ClosedRange<Unicode.Scalar> = "a"..."z"
     private static let upper: ClosedRange<Unicode.Scalar> = "A"..."Z"
     private static let digit: ClosedRange<Unicode.Scalar> = "0"..."9"
@@ -165,9 +174,19 @@ public struct CockpitPluginPreferences: Codable, Equatable, Sendable {
             guard let i = next.entries.firstIndex(where: { $0.id == id }), !pinned || next.canPin(id, catalogue) else { return false }
             next.entries[i].pinned = pinned
         case let .move(id, step):
-            guard step == -1 || step == 1, let i = next.entries.firstIndex(where: { $0.id == id }),
+            guard step == -1 || step == 1, var i = next.entries.firstIndex(where: { $0.id == id }),
                   next.entries.indices.contains(i + step) else { return false }
-            next.entries.swapAt(i, i + step)
+            // Owner 11-21: a framework-only plugin is not listed, so a listed plugin steps over it to its listed
+            // neighbour (one press, one visible move). A move with no listed neighbour on that side is refused.
+            let hidden = Set(catalogue.filter(\.frameworkOnly).map(\.id))
+            let listedMover = !hidden.contains(id)
+            if listedMover {
+                let ahead = step == 1 ? Array(next.entries[(i + 1)...]) : Array(next.entries[..<i].reversed())
+                guard ahead.contains(where: { !hidden.contains($0.id) }) else { return false }
+            }
+            repeat {
+                next.entries.swapAt(i, i + step); i += step
+            } while listedMover && hidden.contains(next.entries[i - step].id) && next.entries.indices.contains(i + step)
         case let .setSetting(id, key, value):
             guard let spec = catalogue.first(where: { $0.id == id })?.settings.first(where: { $0.key == key }),
                   spec.allows(value) else { return false }

@@ -370,7 +370,14 @@ public enum EngineDeadlineFacts {
             let number = reading?.remainingPercent.map { " · \(Int($0.rounded()))%" } ?? ""
             return member.name(english:english) + number + " · " + text(message(row, now: context.now).0.text)
         }
-        let subscriptions: [SettingsSubscription] = members.map { member -> SettingsSubscription in
+        // S9 (#1099 D322-2): a row on the Settings surface only (a free $0 Grok Build balance) has accounts but no
+        // Dock member; its Settings line comes from the same account projection, from the Settings surface.
+        let memberRows = Set(members.map(\.rowID)), memberIDs = Set(members.map(\.id))
+        let settingsOnly = EngineAccountMemberCatalogue(rows: value.settingsRows.filter {
+            !$0.accounts.isEmpty && !memberRows.contains($0.id) && !$0.surfaces.contains(.dock)
+        }).members.filter { !memberIDs.contains($0.id) }
+        let settingsOnlyIDs = Set(settingsOnly.map(\.id))
+        let subscriptions: [SettingsSubscription] = (members + settingsOnly).map { member -> SettingsSubscription in
             let retainedFailure = (member.row.state == .stale || member.account.valueState == .retained)
                 ? member.account.lastFailure?.code.rawValue : nil
             let failing = member.row.state == .failed || member.row.state == .needsAction
@@ -380,10 +387,17 @@ public enum EngineDeadlineFacts {
                 causeCode = retainedFailure
             } else if failing {
                 causeCode = message(member.row, now: context.now).0.code.rawValue
+            } else if settingsOnlyIDs.contains(member.id), member.row.reason.code == .usageNotReported {
+                // The Settings line is the one place it is shown, so it says why (no usage percentage).
+                causeCode = member.row.reason.code.rawValue
             } else {
                 causeCode = nil
             }
-            let planName: String = member.account.plan.name.map { text($0) } ?? ""
+            var planName: String = member.account.plan.name.map { text($0) } ?? ""
+            // S9: "only the balance is shown" (usage_not_reported) holds on the Settings line too.
+            if settingsOnlyIDs.contains(member.id), let balance = settingsBalance(member.account) {
+                planName = planName.isEmpty ? balance : planName + " · " + balance
+            }
             return SettingsSubscription(id: member.id,
                 name: .init(member.name(english: true), member.name(english: false)),
                 plan: planName, vendor: member.row.vendorKey ?? "",
@@ -392,7 +406,6 @@ public enum EngineDeadlineFacts {
         }
         // SET-9-42: a reader that failed before any account or reading exists has no Dock member, yet its tool
         // still owns a Settings row carrying the cause. Build those rows from the Settings surface, not the Dock.
-        let memberRows = Set(members.map(\.rowID))
         let accountless: [SettingsSubscription] = value.settingsRows.compactMap { row in
             guard row.accounts.isEmpty, !memberRows.contains(row.id),
                   row.state == .failed || row.state == .needsAction || row.state == .needsKeychain else { return nil }
@@ -483,6 +496,13 @@ public enum EngineDeadlineFacts {
                 date(facts.earliestExpiresAt))
     }
 
+    /// S9: a reported money balance for a Settings-only line ("$0.00"); nil without a finite money balance.
+    private func settingsBalance(_ account: RowsAccount) -> String? {
+        guard let credits = account.credits, let balance = credits.balance, balance.isFinite, balance >= 0,
+              credits.unit == "money" else { return nil }
+        if let code = credits.currency, let money = M5CreditsDisplayFormat.currencyText(balance, code: code, english: english) { return money }
+        return M5CreditsDisplayFormat.moneyText(balance, english: english)
+    }
     private func sourceState(_ member:EngineAccountMember,now:Date) -> SubscriptionSourceState {
         let row=member.row, account=member.account
         guard row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired else { return .denied }

@@ -88,6 +88,17 @@ extension CommunityCockpitEntryTests {
         let dock = entry.composition.dock, id = ResourceDockBridge.subscriptionID
         try await waitFor("the resource ring is on the widget") { dock.dockView.presentedReadingsForChecks[id]?.pluginRing != nil }
         XCTAssertTrue(dock.isWidgetShown, "the expanded widget counts as shown (D324: 10 s)")
+        // B4 (owner 11-21): the widget order is the cockpit's, subscriptions first and the plugin ring after them.
+        // Fails before: the resource ring was painted in front of the Codex ring.
+        let painted = dock.dockView.presentedOrderForChecks
+        XCTAssertGreaterThanOrEqual(painted.count, 2, "the seeded Codex ring and the resource ring")
+        XCTAssertEqual(painted.last, id, "the plugin ring comes after every subscription ring")
+        // B4f (owner 11-21): the ring draws the percentage alone; VoiceOver still names what it measures.
+        let reading = try XCTUnwrap(dock.dockView.presentedReadingsForChecks[id])
+        XCTAssertTrue(reading.readout.range(of: "^[0-9]+%$", options: .regularExpression) != nil, "percentage only: \(reading.readout)")
+        let node = (dock.dockView.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+            .first { $0.accessibilityIdentifier() == "dock.subscription." + id }
+        XCTAssertEqual(node?.accessibilityValue() as? String, "Memory " + reading.readout, "the spoken readout keeps its label")
         let card = try XCTUnwrap(dock.cardContent(for: id))
         XCTAssertEqual(card.rows.filter { $0.kind == .quota }.map(\.label), ["CPU", "Memory", "Disk"])
         XCTAssertEqual(card.actionLabel, "Cockpit screen ›")
@@ -117,9 +128,12 @@ extension CommunityCockpitEntryTests {
         try await Task.sleep(for: .milliseconds(300))
         let scriptClick = await js(web, screenOpen)
         XCTAssertEqual(scriptClick, "false", "an untrusted script click does not open the screen")
-        // macrevb-1096-6: the widget card's "Cockpit screen ›" action (card.onAction) opens it on the shown page.
+        // macrevb-1096-6 / sample S17: the widget card's "Cockpit screen ›" action (card.onAction, the same closure for a
+        // pointer click, Return/Space and a VoiceOver press) passes the ring's Dock ID, "plugin:resources", not the
+        // plugin ID; the installed callback must still open the screen on the shown page.
         let open = try XCTUnwrap(dock.pluginScreenRequested, "the installed plugin wires the card action")
-        open(ResourcePluginHost.pluginID)
+        XCTAssertEqual(id, "plugin:resources")
+        open(id)
         try await waitFor("the card action opens the resource big screen") {
             await self.js(web, "String(document.querySelectorAll('.dk-mfd .mfd-screen .pl-draw-chart').length>0)") == "true"
         }

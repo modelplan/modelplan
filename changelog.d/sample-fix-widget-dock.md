@@ -1,0 +1,1 @@
+A free Grok Build balance ($0) shows its line in Settings again, with the balance. Control-clicking the widget no longer leaves the attached cockpit stuck open, and dropping the widget back where it was saved no longer makes it jump.

@@ -42,6 +42,10 @@ public struct ResourceTimerHandle {
     private var readout = ResourceReadout()
     private var gate = ResourceRedrawGate()
     private var timer: ResourceTimerHandle?
+    /// Sample S18 (#1096 1096-clock-rollback): the page's time axis is one wall-clock reading taken when the history
+    /// starts plus the monotonic uptime since then. The page orders and windows samples by this time, so a Mac clock
+    /// set back (or forward) never makes a new sample look older than the ones before it.
+    private var wallAnchor: (uptime: TimeInterval, unixMs: Int64)?
 
     public init(reader: ResourceReader, clock: @escaping Clock = { ProcessInfo.processInfo.systemUptime },
                 scheduler: @escaping Scheduler = ResourceSampler.dispatchTimer, reduceMotion: @escaping () -> Bool = { false },
@@ -73,7 +77,7 @@ public struct ResourceTimerHandle {
     private func fire() {
         timer = nil
         let now = clock()
-        if schedule.admit(now: now), let sample = reader.read(uptime: now, unixMs: wallClock()) {
+        if schedule.admit(now: now), let sample = reader.read(uptime: now, unixMs: pageTime(uptime: now)) {
             history.append(sample)
             let shown = readout.step(sample)
             self.shown = shown
@@ -84,6 +88,14 @@ public struct ResourceTimerHandle {
             onCardChange?()
         }
         arm(schedule.delay(now: clock()))
+    }
+
+    /// The page time of a sample read at `uptime` (S18). A new anchor is taken while the history is empty (first
+    /// sample, plugin turned back on) and if uptime ever runs behind the anchor.
+    private func pageTime(uptime: TimeInterval) -> Int64 {
+        if history.samples.isEmpty || wallAnchor.map({ uptime < $0.uptime }) ?? true { wallAnchor = (uptime, wallClock()) }
+        let anchor = wallAnchor!
+        return anchor.unixMs + Int64(((uptime - anchor.uptime) * 1000).rounded())
     }
 
     /// A one-shot GCD timer on the main queue with leeway, so the system can coalesce its wake-ups.
