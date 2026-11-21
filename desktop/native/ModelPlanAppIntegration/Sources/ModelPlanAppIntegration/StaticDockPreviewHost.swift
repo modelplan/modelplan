@@ -210,6 +210,12 @@ struct DockHelpInteraction: Equatable {
               consoleButton.bounds.width > 0, consoleButton.bounds.height > 0 else { return nil }
         return window.convertToScreen(consoleButton.convert(consoleButton.bounds, to: nil))
     }
+    /// Spec item 1 (1.7 d): the widget panel's frame on screen while it is shown. The attached cockpit decides a press
+    /// there at its release, so a ring or body carry (D244) does not close it.
+    public var widgetScreenFrame: CGRect? {
+        guard let panel, panel.isVisible else { return nil }
+        return panel.frame
+    }
     private func installIgnitionArt() {
         let side = dockView.presentedSkinForChecks?.fixedLayers.first { $0.resource.contains("recessed-guard") }?.rect.width ?? 0
         consoleButton.installArt(side > 0 ? T2IgnitionArt.shared : nil, guardSide: side)
