@@ -101,7 +101,9 @@ extension CommunityCockpitEntryTests {
         XCTAssertEqual(node?.accessibilityValue() as? String, "Memory " + reading.readout, "the spoken readout keeps its label")
         let card = try XCTUnwrap(dock.cardContent(for: id))
         XCTAssertEqual(card.rows.filter { $0.kind == .quota }.map(\.label), ["CPU", "Memory", "Disk"])
-        XCTAssertEqual(card.actionLabel, "Cockpit screen ›")
+        XCTAssertEqual(card.cockpitLabel, "View in cockpit")
+        XCTAssertEqual(card.cockpitTarget, "Resources")
+        XCTAssertEqual(card.actionLabel, "")
         XCTAssertTrue(card.rows.last?.value.hasPrefix("Memory pressure Normal") == true)
         // macrevb-1096-8: the ring is hoverable but stays out of the subscription order Settings commits.
         let interaction = dock.interactionEnvironment()
@@ -128,7 +130,7 @@ extension CommunityCockpitEntryTests {
         try await Task.sleep(for: .milliseconds(300))
         let scriptClick = await js(web, screenOpen)
         XCTAssertEqual(scriptClick, "false", "an untrusted script click does not open the screen")
-        // macrevb-1096-6 / sample S17: the widget card's "Cockpit screen ›" action (card.onAction, the same closure for a
+        // macrevb-1096-6 / sample S17: the widget card's "View in cockpit" footer row (card.onOpenCockpit, the same closure for a
         // pointer click, Return/Space and a VoiceOver press) passes the ring's Dock ID, "plugin:resources", not the
         // plugin ID; the installed callback must still open the screen on the shown page.
         let open = try XCTUnwrap(dock.pluginScreenRequested, "the installed plugin wires the card action")

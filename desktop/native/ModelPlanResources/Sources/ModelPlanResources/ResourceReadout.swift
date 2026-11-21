@@ -2,7 +2,8 @@
 import Foundation
 
 public enum ResourceReadoutKey: String, Equatable, Sendable { case memory, cpu }
-/// Only numbers carry a tone; the ring never changes colour (D236, D327).
+/// D371 B4c (owner 11-21, the 11-13 round-4 status colour): a resource's tone is normal, amber (`.warning`) or red
+/// (`.critical`), the same family as the quota rings. It colours the ring arc, the card bar and the number alike.
 public enum ResourceTone: String, Equatable, Sendable { case normal, warning, critical }
 
 /// What the widget's readout shows under the ring.
@@ -23,14 +24,39 @@ public enum ResourceRules {
     /// The readout returns to memory after CPU has stayed below this for `cpuDownFor` seconds.
     public static let cpuDown: Double = 60
     public static let cpuDownFor: TimeInterval = 30
-    public static let cpuRed: Double = 90
-    public static let diskWarning: Double = 90
-    public static func cpuTone(_ cpu: Double) -> ResourceTone { cpu >= cpuRed ? .critical : cpu >= cpuUp ? .warning : .normal }
-    /// Memory follows macOS memory pressure, never its percentage (macOS fills free memory with cache).
+    /// D371 B4c: one status rule for CPU, memory and disk (the 11-13 board gives no numbers, so the brief's): amber from
+    /// 80 %, red from 90 %, and a tone is left only once the value is `hysteresis` points below its threshold.
+    public static let amber: Double = 80
+    public static let red: Double = 90
+    public static let hysteresis: Double = 3
+    public static func tone(_ percent: Double, previous: ResourceTone? = nil) -> ResourceTone {
+        let redAt = previous == .critical ? red - hysteresis : red
+        let amberAt = previous == .warning || previous == .critical ? amber - hysteresis : amber
+        return percent >= redAt ? .critical : percent >= amberAt ? .warning : .normal
+    }
+    public static func cpuTone(_ cpu: Double, previous: ResourceTone? = nil) -> ResourceTone { tone(cpu, previous: previous) }
+    /// Memory is toned by its percentage and also by macOS memory pressure (warn is at least amber, critical red).
     public static func memoryTone(_ pressure: ResourcePressure) -> ResourceTone {
         switch pressure { case .normal: return .normal; case .warn: return .warning; case .critical: return .critical }
     }
-    public static func diskTone(_ disk: Double) -> ResourceTone { disk >= diskWarning ? .warning : .normal }
+    public static func memoryTone(percent: Double, pressure: ResourcePressure, previous: ResourceTone? = nil) -> ResourceTone {
+        worse(tone(percent, previous: previous), memoryTone(pressure))
+    }
+    public static func diskTone(_ disk: Double, previous: ResourceTone? = nil) -> ResourceTone { tone(disk, previous: previous) }
+    static func worse(_ a: ResourceTone, _ b: ResourceTone) -> ResourceTone {
+        a == .critical || b == .critical ? .critical : a == .warning || b == .warning ? .warning : .normal
+    }
+}
+
+/// The three tones after one sample; the previous ones give the 3-point hysteresis a memory.
+public struct ResourceLevels: Equatable, Sendable {
+    public var cpu: ResourceTone, memory: ResourceTone, disk: ResourceTone
+    public init(cpu: ResourceTone, memory: ResourceTone, disk: ResourceTone) { self.cpu = cpu; self.memory = memory; self.disk = disk }
+    public init(sample s: ResourceSample, previous: ResourceLevels? = nil) {
+        cpu = ResourceRules.cpuTone(s.cpu, previous: previous?.cpu)
+        memory = ResourceRules.memoryTone(percent: s.memoryPercent, pressure: s.pressure, previous: previous?.memory)
+        disk = ResourceRules.diskTone(s.diskPercent, previous: previous?.disk)
+    }
 }
 
 /// The readout switch (D327): memory normally; CPU once it has stayed ≥ 70 % for 20 s; back to memory once CPU has
@@ -38,11 +64,15 @@ public enum ResourceRules {
 /// and any sample outside the band restarts it.
 public struct ResourceReadout: Equatable, Sendable {
     public private(set) var key: ResourceReadoutKey = .memory
+    /// The tones after the latest sample (D371 hysteresis state).
+    public private(set) var levels: ResourceLevels?
     private var highSince: TimeInterval?
     private var lowSince: TimeInterval?
     public init() {}
     public mutating func step(_ s: ResourceSample) -> ResourceShown {
         let cpu = s.cpu, now = s.uptime
+        let levels = ResourceLevels(sample: s, previous: self.levels)
+        self.levels = levels
         switch key {
         case .memory:
             if cpu >= ResourceRules.cpuUp {
@@ -58,20 +88,23 @@ public struct ResourceReadout: Equatable, Sendable {
             } else { lowSince = nil }
         }
         return key == .cpu
-            ? ResourceShown(key: .cpu, percent: Int(cpu.rounded()), tone: ResourceRules.cpuTone(cpu))
-            : ResourceShown(key: .memory, percent: Int(s.memoryPercent.rounded()), tone: ResourceRules.memoryTone(s.pressure))
+            ? ResourceShown(key: .cpu, percent: Int(cpu.rounded()), tone: levels.cpu)
+            : ResourceShown(key: .memory, percent: Int(s.memoryPercent.rounded()), tone: levels.memory)
     }
     public mutating func reset() { self = ResourceReadout() }
 }
 
-/// The widget ring (D327): outer arc memory (solid used, faint cached), inner thin arc CPU; disk is not on the ring.
+/// The widget ring (D327, D371 status colours): outer arc memory (solid used, faint cached), inner thin arc CPU; disk is not on the ring.
 /// Fractions 0–1. Maps onto the subscription ring's two arcs (ModelPlanDock DockInstrumentReading outer / inner).
 public struct ResourceFace: Equatable, Sendable {
     public var memoryUsed: Double, memoryCached: Double, cpu: Double
     public var shown: ResourceShown
+    /// D371: the status tone of each resource; the ring's outer arc is memory's, the inner arc CPU's.
+    public var levels: ResourceLevels
     /// False under Reduce Motion: arcs and the readout change without animation.
     public var animates: Bool
-    public init(sample s: ResourceSample, shown: ResourceShown, reduceMotion: Bool) {
+    public init(sample s: ResourceSample, shown: ResourceShown, reduceMotion: Bool, levels: ResourceLevels? = nil) {
+        self.levels = levels ?? ResourceLevels(sample: s)
         memoryUsed = s.memoryPercent / 100
         memoryCached = min(1 - memoryUsed, s.cachedPercent / 100)
         cpu = s.cpu / 100
@@ -91,7 +124,8 @@ public struct ResourceRedrawGate: Equatable, Sendable {
     private func changed(_ face: ResourceFace) -> Bool {
         guard let drawn else { return true }
         let step = 0.01 - 1e-9
-        return drawn.shown != face.shown || drawn.animates != face.animates || abs(drawn.memoryUsed - face.memoryUsed) >= step ||
+        // The ring draws memory's and CPU's tone (disk is not on the ring), so only those redraw it.
+        return drawn.shown != face.shown || drawn.levels.cpu != face.levels.cpu || drawn.levels.memory != face.levels.memory || drawn.animates != face.animates || abs(drawn.memoryUsed - face.memoryUsed) >= step ||
             abs(drawn.memoryCached - face.memoryCached) >= step || abs(drawn.cpu - face.cpu) >= step
     }
     public mutating func reset() { drawn = nil }

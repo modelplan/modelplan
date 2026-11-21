@@ -200,6 +200,16 @@ private actor CardDismissalClient: EngineClient {
         // D37 (11-06): the production card is the prototype card: no Settings or Close buttons.
         XCTAssertNil(button(dock.card, id: "dock.card.enter"), "The card has no Settings button")
         XCTAssertNil(button(dock.card, id: "dock.card.close"), "The card has no Close button")
+        // D371 B4e: every card closes with the one cockpit footer row; a press routes that subscription to the cockpit.
+        let footerContent = try XCTUnwrap(dock.cardContent(for: memberID))
+        XCTAssertEqual(footerContent.cockpitLabel, "View in cockpit")
+        XCTAssertEqual(footerContent.cockpitTarget, footerContent.name)
+        XCTAssertNotNil(dock.card.cockpitRowFrameForChecks, "the shown subscription card has the footer row")
+        var routed: [String] = []
+        dock.subscriptionCockpitRequested = { routed.append($0) }
+        XCTAssertTrue(dock.card.pressCockpitRowForChecks())
+        XCTAssertEqual(routed, [memberID], "the footer row opens the cockpit on this subscription")
+        dock.subscriptionCockpitRequested = nil
         nozzle.hoverNozzle(nil)
         let focused = try XCTUnwrap((dock.dockView.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
             .first { $0.accessibilityIdentifier() == "dock.subscription." + memberID })
