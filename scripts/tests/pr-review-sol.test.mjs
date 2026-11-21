@@ -704,9 +704,31 @@ test("post: a tier change between prepare and post suppresses a provider that lo
   const post = (cs, over = {}) => S.postProblem({ pr: pr(), items: items(cs), head: H, lane: "ghsol", posted: "ghglm", tier: 1, files: t1, glmTiers: [1], ...over });
   assert.equal(post([]), null, "tier 1: ghglm may post");
   assert.match(post([comment("REVIEW-TIER: 2")]), /may not decide tier 2/, "stale prepared tier 1, fresh override 2");
-  assert.equal(post([comment("REVIEW-TIER: 2")], { posted: "ghsol" }), null, "Sol still posts on tier 2");
+  assert.match(post([comment("REVIEW-TIER: 2")], { posted: "ghsol" }), /^scope changed, full review required/, "Sol prepared for tier 1 may not count on tier 2");
+  assert.equal(post([comment("REVIEW-TIER: 2")], { posted: "ghsol", tier: 2 }), null, "prepared for tier 2: Sol posts");
   assert.match(post([comment("REVIEW-TIER: 0")], { posted: "ghsol" }), /tier 0 needs no Sol review/);
   assert.match(post([], { files: t2 }), /may not decide tier 2/, "the files moved the tier to 2");
   assert.equal(post([comment("REVIEW-TIER: 2")], { files: null }), null, "without a file list only the prepared tier is known (the script always passes files)");
   assert.match(readFileSync(join(root, "scripts/pr-review/sol-post.mjs"), "utf8"), /files, glmTiers/, "sol-post passes the fresh files");
+});
+
+// macrevb-1108-6: a tier-1 delta prepared from a Terra-only predecessor must not settle tier 2 after a trusted override.
+test("stale scope: a delta prepared at tier 1 is not posted as a counting verdict at tier 2; fresh preparation is full", () => {
+  const rec = (sha, lane) => comment(`Record: ${sha}\nR17 -> ok\n\n${v("merge", sha, lane)}`);
+  const prior = [rec(OLD, "macrevc")];                       // Terra predecessor: counts on tier 1 only
+  const prepared = decide({ comments: prior });
+  assert.equal(prepared.tier, 1);
+  assert.equal(prepared.since, OLD, "tier 1 prepares a delta from the Terra review");
+  const now = [...prior, comment("REVIEW-TIER: 2")];
+  const post = (cs, over = {}) => S.postProblem({ pr: pr(), items: R.feed(cs), head: H, lane: "ghsol", posted: "ghsol", tier: prepared.tier, files: t1, glmTiers: [], ...over });
+  assert.equal(post(prior), null, "unchanged tier posts");
+  assert.match(post(now), /^scope changed, full review required/, "the stale delta is suppressed");
+  assert.match(post(now, { lane: "ghsolshadow", posted: "ghsolshadow" }), /^scope changed/, "shadow lane too");
+  const fresh = decide({ comments: now });
+  assert.equal(fresh.tier, 2);
+  assert.equal(fresh.since, null, "fresh preparation at tier 2 is a full review");
+  const note = S.renderScopeNote({ head: H, lane: "ghsol", preparedTier: 1, tier: 2 });
+  assert.equal(note.split("\n")[0], `scope changed, full review required @ ${H} (ghsol)`);
+  assert.equal(note.includes("VERDICT"), false, "the notice carries no verdict");
+  assert.equal(S.scopeNoted(R.feed([comment(note)]), H), true);
 });

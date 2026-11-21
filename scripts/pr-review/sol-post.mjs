@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { client } from "../merge-gates/github.mjs";
 import { feed, isShadowLane, parseGlmTiers, pathTier, prPaths, tierOverride, TRUSTED } from "../merge-gates/rules.mjs";
 import { secretHits } from "./brief.mjs";
-import { agreement, parseAnswer, postLane, postProblem, renderSolComment, renderWaitNote, waitNoted } from "./sol.mjs";
+import { agreement, parseAnswer, postLane, postProblem, renderScopeNote, renderSolComment, renderWaitNote, scopeNoted, SCOPE_CHANGED } from "./sol.mjs";
 
 const env = process.env;
 const dir = join(env.RUNNER_TEMP, "pr-review-sol");
@@ -39,6 +39,16 @@ const prAfter = await gh.get(`/pulls/${n}`);
 const check = { items, head, lane: env.LANE, posted: waiting ? null : lane, force: env.FORCE === "true", tier: Number(env.TIER), files, glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS) };
 const late = postProblem({ pr, ...check }) ?? postProblem({ pr: prAfter, ...check });
 const tierNow = tierOverride(items) ?? pathTier(prPaths(files));   // fresh, as postProblem used it
+if (late?.startsWith(SCOPE_CHANGED)) {
+  // The prepared scope no longer fits the trusted tier: post a non-counting notice once, never a verdict.
+  if (!scopeNoted(items, head)) {
+    const note = renderScopeNote({ head, lane: env.LANE, preparedTier: Number(env.TIER), tier: tierNow, runUrl: env.RUN_URL });
+    await gh.post(`/issues/${n}/comments`, { body: note });
+    console.log(`::warning::${note.split("\n")[0]}`);
+  }
+  say(`#${n}: ${late}; no verdict posted`);
+  process.exit(0);
+}
 if (late) { say(`#${n}: ${late}; nothing posted`); process.exit(0); }
 
 if (waiting) {

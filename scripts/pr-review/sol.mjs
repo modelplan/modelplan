@@ -288,7 +288,21 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
     if (posted === GLM_LANE && !eligible.includes(`(${GLM_LANE})`)) return `(${GLM_LANE}) may not decide tier ${tier}`;
     if (!force && !sticky && atHead.some((v) => eligible.includes(v.lane) || v.lane === "(unnamed)")) return "a counting verdict already exists at this head";
   }
+  // macrevb-1108-6: the review was prepared (scope, delta base, prompt) for preparedTier. A trusted tier change since
+  // means that scope is wrong for the new tier (a tier-1 delta after a Terra-only predecessor is not a tier-2 review), so no
+  // counting verdict goes out; the next run prepares fresh at the right tier. A delta is never upgraded.
+  if (files && tier !== Number(preparedTier)) return `${SCOPE_CHANGED}: prepared for tier ${preparedTier}, now tier ${tier}`;
   return null;
+}
+export const SCOPE_CHANGED = "scope changed, full review required";
+export const scopeEvent = (head, lane) => `${SCOPE_CHANGED} @ ${head} (${lane})`;
+export const scopeNoted = (items, head) => items.some((x) => String(x.body).split("\n")[0].replace(/\r$/, "").startsWith(`${SCOPE_CHANGED} @ ${head} `));
+// Non-counting notice: no VERDICT line, no gate marker.
+export function renderScopeNote({ head, lane, preparedTier, tier, runUrl = "" }) {
+  const body = [scopeEvent(head, lane), "",
+    `_Advisory, no verdict. This review was prepared for tier ${preparedTier}, but the trusted tier is now ${tier}, so its scope does not fit and nothing is counted. The next run prepares a complete tier-${tier} review of this head.${runUrl ? ` [run](${runUrl})` : ""}_`].join("\n");
+  if (body.split("\n").some((l) => MARKER.test(l))) throw new Error("scope note has a gate marker");
+  return body;
 }
 
 // Every provider that could count here is out of quota (by default: tier 2 with the OpenAI quota out, since GLM decides
