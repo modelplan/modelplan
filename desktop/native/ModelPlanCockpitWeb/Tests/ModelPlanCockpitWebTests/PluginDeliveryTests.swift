@@ -317,7 +317,14 @@ import ModelPlanWire
     page.verificationReceive(try pageMessage(clear.0, "cleared"), source: source)
     await clearing.value
     let clearIndex = try XCTUnwrap(box.sent.firstIndex(where: { type($0.0) == "clear" }))
-    XCTAssertTrue(box.sent[(clearIndex + 1)...].contains(where: { type($0.0) == "plugins" }), "the cleared page gets the plugin state again")
+    // Deliveries are serial: the receipt sends appearance and visibility first, and the state follows each answer.
+    var next = clearIndex + 1
+    while next < box.sent.count, type(box.sent[next].0) != "plugins" {
+      let i = next; next += 1; box.sent[i].1(.accepted)
+    }
+    let resent = box.sent[(clearIndex + 1)...].filter { type($0.0) == "plugins" }
+    XCTAssertEqual(resent.count, 1, "the cleared page gets the plugin state again, once")
+    XCTAssertEqual(resent.first.flatMap { pluginsBody($0.0) }, CockpitPluginWire.canonical(json: stateA))
     page.discard()
   }
 }
