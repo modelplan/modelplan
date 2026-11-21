@@ -343,7 +343,7 @@ public struct FirstRunReading: Sendable, Equatable {
     }
     public func selectAll() {
         guard canMutate else { return }
-        selectedIDs = Set(facts?.scopes.filter { $0.route != .browserSession && canChoose($0.scope) }.map(\.scope) ?? [])
+        selectedIDs = Set(facts?.scopes.filter { $0.route != .browserSession && !Self.separateOptInScopes.contains($0.scope) && canChoose($0.scope) }.map(\.scope) ?? [])
         phase = .idle; changed()
     }
     @discardableResult public func requestAllow() -> ScopeConsentConfirmation? {
@@ -431,6 +431,10 @@ public struct FirstRunReading: Sendable, Equatable {
         default: return nil
         }
     }
+    /// D232 (sampling 11-21 S1): extension scopes with their own opt-in. No bulk choice (first-run Done, a tool
+    /// switched on in Settings, Select all) includes them; only the path's own checkbox allows one, by itself.
+    /// The engine refuses an allow that names one together with any other scope. Off still refuses them.
+    public static let separateOptInScopes: Set<String> = ["gemini.account_usage.token_refresh"]
     /// G3-45: each detected tool once, in the engine's order. Browser-session paths stay out:
     /// they ask on their own at first need (FR-9-05), never through this one consent.
     public var firstRunTools: [FirstRunTool] {
@@ -442,7 +446,8 @@ public struct FirstRunReading: Sendable, Equatable {
         }
         return order.map { tool in
             let standard = (byTool[tool] ?? []).filter {
-                $0.route.isKnown && $0.route != .knownUnknown && $0.route != .browserSession && $0.disabledReason == nil && !$0.cleanupPending
+                $0.route.isKnown && $0.route != .knownUnknown && $0.route != .browserSession && $0.disabledReason == nil && !$0.cleanupPending &&
+                    !Self.separateOptInScopes.contains($0.scope)
             }
             return FirstRunTool(tool: tool, scopes: standard.map(\.scope), routes: standard.map(\.route), block: block(forTool: tool),
                                 promptsKeychain: standard.contains { $0.keychain != nil }, keyMissing: rowCodes[tool] == .keyMissing)

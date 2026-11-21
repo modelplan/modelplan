@@ -463,16 +463,20 @@ func mergeCodex(rs []*rollout) *Account {
 		for _, k := range r.order {
 			w := r.windows[k]
 			if i, ok := pos[k]; ok {
+				// Rollouts arrive in file order, not reading order: thin once all are in (S7).
 				if w.ObservedAt.After(a.Windows[i].ObservedAt) {
-					a.Windows[i] = withHistory(w, a.Windows[i])
+					a.Windows[i] = mergeHistory(w, a.Windows[i], false)
 				} else if r != newest {
-					a.Windows[i] = withHistory(a.Windows[i], w) // another thread's readings of the same meter
+					a.Windows[i] = mergeHistory(a.Windows[i], w, false) // another thread's readings of the same meter
 				}
 				continue
 			}
 			pos[k] = len(a.Windows)
 			a.Windows = append(a.Windows, w)
 		}
+	}
+	for i := range a.Windows {
+		a.Windows[i] = thinHistory(a.Windows[i])
 	}
 	return a
 }

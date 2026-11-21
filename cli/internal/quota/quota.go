@@ -575,7 +575,12 @@ const (
 // withHistory is w, which replaces older, keeping older's readings (and older itself) as samples.
 // Without a reset time, the later of the two inferred cycle starts holds: a merge never brings
 // back readings from before a drop either side has seen.
-func withHistory(w, older Window) Window {
+func withHistory(w, older Window) Window { return mergeHistory(w, older, true) }
+
+// mergeHistory is withHistory; spaced false keeps every reading of the cycle unthinned, for a
+// caller that merges readings out of time order and thins once at the end (sampling 11-21 S7):
+// thinning before every reading is in could drop the peak that marks a later-merged drop.
+func mergeHistory(w, older Window, spaced bool) Window {
 	rec := append(append([]Sample(nil), older.recent...), w.recent...)
 	if s, ok := older.sampleOf(); ok {
 		rec = append(rec, s)
@@ -590,7 +595,13 @@ func withHistory(w, older Window) Window {
 			w.cycleAfter = older.cycleAfter
 		}
 	}
-	w.recent, w.cycleStart, w.cycleAfter = thin(rec, w)
+	w.recent, w.cycleStart, w.cycleAfter = thinSpaced(rec, w, spaced)
+	return w
+}
+
+// thinHistory applies the deferred spacing to a window merged with spaced false.
+func thinHistory(w Window) Window {
+	w.recent, w.cycleStart, w.cycleAfter = thin(w.recent, w)
 	return w
 }
 
@@ -598,7 +609,9 @@ func withHistory(w, older Window) Window {
 // the recent hour, two minutes apart within it. History off keeps only the hour. It also returns
 // the cycle start and the last reading before it, moved forward when a drop in the readings
 // shows an unseen reset.
-func thin(ss []Sample, w Window) ([]Sample, time.Time, time.Time) {
+func thin(ss []Sample, w Window) ([]Sample, time.Time, time.Time) { return thinSpaced(ss, w, true) }
+
+func thinSpaced(ss []Sample, w Window, spaced bool) ([]Sample, time.Time, time.Time) {
 	keep := recentKeep
 	if os.Getenv("MODELPLAN_HISTORY") == "off" {
 		keep = time.Hour
@@ -613,6 +626,9 @@ func thin(ss []Sample, w Window) ([]Sample, time.Time, time.Time) {
 	start, after := w.cycleStart, w.cycleAfter
 	if w.ResetsAt == nil {
 		in, start, after = afterLastDrop(in, w)
+	}
+	if !spaced {
+		return in, start, after
 	}
 	var out []Sample
 	for _, s := range in {
