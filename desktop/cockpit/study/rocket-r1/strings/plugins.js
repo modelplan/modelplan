@@ -114,7 +114,7 @@ register('plugin', {
   resourcesPeak: ['lcd', '最高 {n}%', 'peak {n}%'],
   resourcesPeakShort: ['lcd', '↑{n}%', '↑{n}%'],
   resourcesGb: ['lcd', '{used} / {total} GB', '{used} / {total} GB'],
-  resourcesGbShort: ['lcd', '{used} GB', '{used} GB'],
+  resourcesGbShort: ['lcd', '{used}/{total}G', '{used}/{total}G'],
   resourcesFree: ['lcd', '剩 {gb} GB', '{gb} GB free'],
   resourcesFreeShort: ['lcd', '剩{gb}G', '{gb}G free'],
   resourcesPressure: ['lcd', '内存压力', 'Mem pressure'],
