@@ -1,0 +1,158 @@
+# SPDX-License-Identifier: MIT
+# Official review in Actions (owner D352, change 1). One review per PR head, posted as
+# "VERDICT: merge|block @ <head> (ghsol)" ((ghglm) when GLM-5.3 answered) on the last line of the comment, after
+# the R19 record. While vars.PR_REVIEW_SOL_MODE is "shadow" it posts as (ghsolshadow)/(ghglmshadow), which count
+# for nothing, and logs agreement with the lane verdict; "count" is the cutover; unset (or anything else) keeps the
+# workflow off.
+#
+# When: compile first (owner 11-18). A head that changes desktop/native is reviewed after main's mac-compile.yml run for
+# that exact head succeeds (its completion is the trigger: the status it posts with the job token starts no workflow);
+# every other head after ci.yml passes. Each run re-checks both conditions for the PR's current head, so whichever
+# finishes last starts the review.
+#
+# Providers (scripts/pr-review/providers.mjs): vars.REVIEW_PROVIDER_MODE is gpt-first (default; OpenAI Responses API,
+# gpt-6.2-sol medium), glm-first (Zhipu GLM-5.3) or schedule (GPT during the Zhipu peak 06:00-10:00 UTC on weekdays,
+# GLM otherwise). On insufficient_quota, a billing limit or a sustained 429 the other provider answers, unless
+# vars.PR_REVIEW_GLM_FALLBACK is "off". GLM is used only where (ghglm) counts: vars.REVIEW_GLM_TIERS (default empty: advisory only),
+# which modelplan-gates reads too. When every usable provider is out of quota, the head gets one advisory
+# "tier-N review waiting: GPT quota out" note (the coordinator event) and no verdict.
+#
+# Trust boundary:
+# - workflow_run and workflow_dispatch run main's definition of this file, never a PR's copy.
+# - PR code is data: its git objects are fetched and read into the request; nothing is checked out, built or run.
+#   The model gets no tools, files or network; the PR text reaches it only inside the request.
+# - The model credentials (secrets OPENAI_API_KEY, GLM_API_KEY, GLM_BASE_URL, environment pr-review) are referenced
+#   only by the review step; the comment token (PR_REVIEW_COMMENT_TOKEN, same environment) only by the post step. The
+#   answer stays in the runner temp, never in the public log; nothing is uploaded.
+# - resolve drops a delivery for a head that is no longer current before the review job joins the PR's concurrency
+#   group, so a stale delivery never displaces the current head's queued job. One review job per PR at a time; before
+#   spending tokens it skips a head that already has this lane's verdict (and, counting, any counting verdict or another
+#   sticky reviewer); right before posting it re-reads the PR and posts nothing if the head moved or the verdict
+#   appeared meanwhile.
+name: pr review sol
+on:
+  workflow_run:
+    workflows: [ci, mac-compile]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number to review at its current head (ci, and mac-compile where needed, must have passed)
+        required: true
+        type: string
+      force:
+        description: Review even if another counting lane already reviewed this head (a lane that already has a verdict at the head never posts twice)
+        type: boolean
+        default: false
+permissions: {}
+jobs:
+  resolve:
+    if: >-
+      (vars.PR_REVIEW_SOL_MODE == 'shadow' || vars.PR_REVIEW_SOL_MODE == 'count') &&
+      github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_run' && github.event.workflow_run.name == 'ci' &&
+        github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.pull_requests[0].number) ||
+       (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'mac-compile' &&
+        github.event.workflow_run.path == '.github/workflows/mac-compile.yml' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == github.repository) ||
+       (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005' && github.triggering_actor == 'guanbear'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      statuses: read
+    outputs:
+      pr: ${{ steps.resolve.outputs.pr }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Check out main (trusted scripts only)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          sparse-checkout: scripts
+          persist-credentials: false
+      - id: resolve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          PR_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.workflow_run.pull_requests[0].number }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/pr-review/sol-resolve.mjs
+
+  review:
+    needs: resolve
+    if: needs.resolve.outputs.pr != ''
+    runs-on: ubuntu-24.04
+    environment: pr-review
+    timeout-minutes: 45
+    # Serialize by PR; a queued run waits instead of cancelling a review that is already spending tokens.
+    concurrency:
+      group: pr-review-sol-${{ needs.resolve.outputs.pr }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: read
+      statuses: read
+    env:
+      PR: ${{ needs.resolve.outputs.pr }}
+      TRIGGER_SHA: ${{ needs.resolve.outputs.sha }}
+      FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+      LANE: ${{ vars.PR_REVIEW_SOL_MODE == 'count' && 'ghsol' || 'ghsolshadow' }}
+      MODEL: ${{ vars.PR_REVIEW_SOL_MODEL || 'gpt-6.2-sol' }}
+      EFFORT: medium
+      REVIEW_GLM_TIERS: ${{ vars.REVIEW_GLM_TIERS }}
+    steps:
+      - name: Check out main (trusted scripts only)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Decide and build the request (no secret)
+        id: prep
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/pr-review/sol-prepare.mjs
+
+      - name: Review (model credentials only here)
+        if: steps.prep.outputs.review == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
+          GLM_BASE_URL: ${{ secrets.GLM_BASE_URL }}
+          GLM_FALLBACK: ${{ vars.PR_REVIEW_GLM_FALLBACK }}
+          PROVIDER_MODE: ${{ vars.REVIEW_PROVIDER_MODE }}
+          PROVIDERS: ${{ steps.prep.outputs.providers }}
+          TIER: ${{ steps.prep.outputs.tier }}
+        run: node scripts/pr-review/sol-call.mjs
+
+      - name: Post the verdict (comment token only here)
+        if: steps.prep.outputs.review == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PR_REVIEW_COMMENT_TOKEN }}
+          HEAD_SHA: ${{ steps.prep.outputs.head }}
+          MODE: ${{ steps.prep.outputs.mode }}
+          BASE: ${{ steps.prep.outputs.base }}
+          TIER: ${{ steps.prep.outputs.tier }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/pr-review/sol-post.mjs
+
+      - name: Clean up the review directory
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/pr-review-sol"

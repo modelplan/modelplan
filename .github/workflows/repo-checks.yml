@@ -112,6 +112,9 @@ jobs:
       - name: "source-policy: workflow reviewer tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/pr-review.test.mjs
+      - name: "source-policy: Sol workflow reviewer tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/pr-review-sol.test.mjs
       - name: "source-policy: no sound or haptics (MOT-2.3-12)"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/no-sound-haptics.test.mjs
