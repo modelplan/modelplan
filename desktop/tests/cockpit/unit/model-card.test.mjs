@@ -121,3 +121,19 @@ test('LBL-2.2-51 ≈cost and token formats on the card',()=>{
  assert.deepEqual([64,9.1,0.42,310,99.4,1234,12345].map(approxCost),['≈$64','≈$9.1','≈$0.42','≈$310','≈$99','≈$1.2k','≈$12k']);
  assert.deepEqual([212e6,4.2e6,830e3,1.23e9,12.4e9,512].map(tokShort),['212M','4.2M','830k','1.2B','12B','512']);
 });
+
+// Owner 11-21 (G3-144…): the cost in the card's large slot never clips, and the unknown current effort says what it is.
+test('G3-145 the card cost is a short form that fits the 52 px slot: under $0.01 "<$0.01", under $1 two decimals; the accessible text keeps the estimate',()=>{
+ setLanguage('en');
+ const big=cost=>channel(fader({use:{tokens:432,share:.01,cost}})).card;
+ assert.equal(big(0.004).big,'<$0.01');assert.equal(big(0.004).bigFull,'≈$0.004');
+ assert.equal(big(0.012).big,'≈$0.01');assert.equal(big(0.42).big,'≈$0.42');
+ assert.equal(big(9.1).big,'≈$9.1');assert.equal(big(1234).big,'≈$1.2k');
+ for(const v of [0.0004,0.004,0.012,0.09,0.42,0.999,1,9.1,64,310,1234,12345])assert.ok(chars(big(v).big)<=6,`${v} -> ${big(v).big}`);
+});
+
+test('G3-146 the unknown current effort reads "档位未报告" / "Effort ?", never the "no usage" look of 当前未报告',()=>{
+ const tried=lang=>{setLanguage(lang);return channel(fader({current:null,use:{tokens:5e6,share:.4}}),{previews:{m:'XHigh'},view:{modelId:'m',trial:'XHigh',fast:null,from:'fader'}}).card.nowLine;};
+ assert.equal(tried('zh-CN'),'档位未报告');assert.equal(tried('en'),'Effort ?');
+ setLanguage('en');
+});
