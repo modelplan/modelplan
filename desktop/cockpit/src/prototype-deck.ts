@@ -41,7 +41,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  let locale:Locale='en',selected=0,scope='all',data:WireCockpitData|null=null,renderedNow=0;
  // Prototype mfd.js:39-58,75 (openMfdView/closeMfdView): the full alert list is a view over the current page, opened by the
  // ALERT lamp or the overview's "+N" line, closed by "‹ Back to <page>", Esc, a page key or a second lamp press.
- let alertsView:{from:'caution'|'mfd';mark?:string|null;flash?:boolean}|null=null,returnPage:number|null=null,tuneModel:string|null=null;
+ let pageFill:{w:number;h:number}|null=null,alertsView:{from:'caution'|'mfd';mark?:string|null;flash?:boolean}|null=null,returnPage:number|null=null,tuneModel:string|null=null;
  // The study's comparison view (mfd.js openComparison, views.js round D1): a fader trial shows "Compare · <model>" over
  // the current page, whose key goes dark; ‹ back, Esc, a page key or the same source again returns. One trial at a time.
  let compare:{modelId:string;current:string|null;trial?:string;fast?:boolean;currentFast:boolean}|null=null,cmpFill:{w:number;h:number}|null=null,cmpWatch:ResizeObserver|null=null;root.dataset.detailsAvailable=String(details.liveSessions!==null);
@@ -192,6 +192,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  }
 
  const bar=node('div','mfd-pk'),screen=node('div','mfd-screen'),page=node('div','mfd-page pg-overview'),footer=node('div','mfd-ok');bar.setAttribute('role','toolbar');screen.dataset.mat='well';page.dataset.fill='page';screen.append(page);
+ // A change of the screen's size (compact / tall) redraws the overview, whose alert budget follows it.
+ if(typeof ResizeObserver!=='undefined')new ResizeObserver(()=>{if(selected===0&&pageFill&&page.clientHeight>0&&page.clientHeight!==pageFill.h)paint(true);}).observe(page);
  const pages=cockpitPageRegistry,modules=pages.map(p=>p.module);let uiWhere='proj',uiRange:CockpitRange=INITIAL_RANGE,uiChart='bars',uiStack=true,uiModels:'list'|'chart'='list',listPick:string|null=null,uiSubTab='now',uiCycle:string|null=null,gridFill:{w:number;h:number}|null=null;
  const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=i;paint();};bar.append(b);return {b,caption};});
  mfd.replaceChildren(bar,screen,footer);
@@ -243,13 +245,13 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const accounts=members.map(({key,row,account})=>({id:ids.get(key)!,name:titleOf(row,account),short:locale==='en'?row.name.en:row.name.zh,plan:planOf(account),vendor:row.vendorKey&&Object.hasOwn(vendorPalette,row.vendorKey)?row.vendorKey:'unknown',colour:colours.get(key)!,logo:row.vendorKey&&Object.hasOwn(subscriptionMarks,row.vendorKey)?subscriptionMarks[row.vendorKey]!:'',source:'native',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:ageOf(account),support:'quota-only',pool:null,windows:account.valueState==='none'?[]:account.windows.filter(w=>!scopedWindow(w)).map(w=>({kind:w.role==='session'?'5h':w.role==='weekly'?'week':w.role==='monthly'?'month':w.role==='daily'?'day':'other',label:locale==='en'?w.label.en:w.label.zh,remaining:displayWindow(account,w,now)?w.remainingPercent:null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))&&Date.parse(w.resetsAt)>=now?(Date.parse(w.resetsAt)-now)/60000:null,resetAt:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Date.parse(w.resetsAt):null,...runOutFields(runOutMinutes(data,row.id,account,w,now)),elapsed:null})),extras:account.valueState==='none'?[]:account.windows.filter(scopedWindow).map(w=>({kind:'other',label:locale==='en'?w.label.en:w.label.zh,remaining:displayWindow(account,w,now)?w.remainingPercent:null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))&&Date.parse(w.resetsAt)>=now?(Date.parse(w.resetsAt)-now)/60000:null,resetAt:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Date.parse(w.resetsAt):null,...runOutFields(runOutMinutes(data,row.id,account,w,now)),elapsed:null})),cards:[],credits:scope==='all'&&prototypeEngineSupplement(account,data??undefined).reserveCredits?.balance!=null&&['credits','points'].includes(prototypeEngineSupplement(account,data??undefined).reserveCredits?.unit??'')?{balance:prototypeEngineSupplement(account,data??undefined).reserveCredits!.balance,drawing:null}:null,todayTokens:prototypeEngineSupplement(account,data??undefined).todayTokens,forecast:forecastOf(account.windows.filter(w=>!scopedWindow(w)).map(w=>runOutFields(runOutMinutes(data,row.id,account,w,now)))),peak:null,resets:resetHistory(data,account.subscriptionRef,row.id,now),usageStats:usageStats(data,account.subscriptionRef)}));
   // Owner D38: urgency order, subscription and time left; resets and stale readings are list-only (blue).
   // The overview follows the selected scope; the full list (the global lamp's destination) never does.
-  const allAlerts=data?cautionItems(data,now,redBelow()).map(x=>({member:x.member,level:x.level,stable:x.stable,text:locale==='en'?x.text.en:x.text.zh,detail:x.detail?locale==='en'?x.detail.en:x.detail.zh:null,settings:x.settings===true})):[];
-  const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text})=>({level,text}));
+  const allAlerts=data?cautionItems(data,now,redBelow()).map(x=>({member:x.member,level:x.level,stable:x.stable,text:locale==='en'?x.text.en:x.text.zh,detail:x.detail?locale==='en'?x.detail.en:x.detail.zh:null,settings:x.settings===true,kind:x.kind})):[];
+  const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text,kind})=>({level,text,kind}));
   // Public model data for the frontier (owner D39/D-B): the shared selection for this scope, ten at most.
   const published=publishedFleet(data,scope,now);
   // macrevc-1058-4: the Models list also shows an eligible model the history ranks as used even when it falls outside the ten-model field.
   const listModels=publishedFleet(data,scope,now,Infinity);
-  return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),sessionRanking:(()=>{const live=lastSeen(members,ids);return [...live,...recentSeen(members,ids,new Set(live.map(x=>x.ref)))];})(),models:published,listModels,lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:published},empty:accounts.length===0,ids,members};
+  return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),recordStart:recordStart(),sessionRanking:(()=>{const live=lastSeen(members,ids);return [...live,...recentSeen(members,ids,new Set(live.map(x=>x.ref)))];})(),models:published,listModels,lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:published},empty:accounts.length===0,ids,members};
  }
  // The first local day of the recorded history (cockpitHistoryV1 dailyFrom), as a local midnight.
  function recordStart(){const from=data?.history?.coverage==='local-history'?data.history.dailyFrom:null;if(!from||!/^\d{4}-\d{2}-\d{2}$/.test(from))return null;const [y,m,day]=from.split('-').map(Number),at=new Date(y!,m!-1,day!);if(at.getFullYear()!==y||at.getMonth()!==m!-1||at.getDate()!==day)return null;return at.getTime();}
@@ -266,7 +268,9 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   if(now!==undefined)renderedNow=now;
   hideTip();if(!keepFaders){paintScale();paintFaders();}bar.setAttribute('aria-label',t('mfd.keysAria'));
   buttons.forEach(({b,caption},i)=>{caption.textContent=t(modules[i].title);b.setAttribute('aria-label',ht(locale,pages[i].key));b.classList.toggle('on',i===selected);b.setAttribute('aria-pressed',String(i===selected));});
-  const d=publicData(),selectedId=scope==='all'?null:d.ids.get(scope)??null,subId=selectedId??subjectOf(d,{scope:null})?.id??null,ui={page:modules[selected].id,view:null,days:uiRange==='today'?24:uiRange==='7d'?7:30,range:uiRange,stack:uiStack,chart:uiChart,where:uiWhere,models:uiModels,time:uiRange==='today'?'today':'7d',subTab:uiSubTab,subDays:uiRange==='30d'?30:7,cycle:uiCycle,older:false,scope:selectedId,selModel:listPick??tuneModel,trials:{},now:d.now,lang:locale,fill:selected===0&&uiChart==='grid'&&gridFill?{ov:gridFill}:{},redAt:redBelow()};
+  // The page's own measured size (the screen is absolute, so it does not depend on the content): the overview's alert budget reads it (V1-FINAL §13).
+ if(page.clientHeight>0)pageFill={w:page.clientWidth,h:page.clientHeight};
+  const d=publicData(),selectedId=scope==='all'?null:d.ids.get(scope)??null,subId=selectedId??subjectOf(d,{scope:null})?.id??null,ui={page:modules[selected].id,view:null,days:uiRange==='today'?24:uiRange==='7d'?7:30,range:uiRange,stack:uiStack,chart:uiChart,where:uiWhere,models:uiModels,time:uiRange==='today'?'today':'7d',subTab:uiSubTab,subDays:uiRange==='30d'?30:7,cycle:uiCycle,older:false,scope:selectedId,selModel:listPick??tuneModel,trials:{},now:d.now,lang:locale,fill:{...(selected===0&&uiChart==='grid'&&gridFill?{ov:gridFill}:{}),...(pageFill?{page:pageFill}:{})},redAt:redBelow()};
   root.querySelector('[data-caution]')?.classList.toggle('mfd-src',alertsView?.from==='caution');
   bar.classList.remove('dark');footer.className='mfd-ok';footer.onclick=null;
   if(compare&&!alertsView&&paintCompare(d,ui))return;
@@ -298,13 +302,12 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   for(const e of page.querySelectorAll<SVGElement|HTMLElement>('svg.ov-heat[style],.hm-since[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const decl of css.split(';')){const at=decl.indexOf(':');if(at<0)continue;const name=decl.slice(0,at).trim(),value=decl.slice(at+1).trim();if(/^(left|top|--hv)$/.test(name)&&/^(-?\d+(\.\d+)?px|#[0-9a-f]{3,8})$/i.test(value))e.style.setProperty(name,value);}}
   // Opened from the HUD: the same return rule as the alerts view.
   if(returnPage!==null){const back=node('button','mfd-back',t('mfd.back',{p:t(pages[returnPage]!.module.title)}));back.type='button';back.dataset.mfd='back';page.prepend(back);}
-  // v1 has today facts but no daily history; never turn a partial aggregate into a complete total.
-  if(selected===0&&d.daily.length){const top=page.querySelector('.ov-top');if(top)top.append(node('span','lbl ov-local',ht(locale,'host.onThisMac')));}
-  // D63: a total over a period longer than the local record says where the record starts, not "30 days".
+  // The overview draws its own totals row, "since" label and empty state (WP-12); the deck adds nothing to them.
+  // D-D: the totals are this device's records; the totals row carries that as its hover note (it has no room for a label).
+  if(selected===0&&d.daily.length){const top=page.querySelector<HTMLElement>('.ov-top');if(top)top.dataset.tip=ht(locale,'host.onThisMac');}
+  // D63: the subscription usage block says where a shorter local record starts.
   const since=recordStart();
-  if(since!==null&&selected===0&&d.daily.length){const sum=page.querySelector('.ov-top .ov-sum'),label=sum?.previousElementSibling;if(label&&since>dayStart(d.now,29))label.textContent=t('mfd.since',{d:md(since,{lang:locale})});}
   if(since!==null&&selected===1)for(const stats of page.querySelectorAll<HTMLElement>('.sp-stats[data-days]')){const days=Number(stats.dataset.days),head=stats.querySelector('.stat-h');if(head&&Number.isFinite(days)&&since>dayStart(d.now,days-1))head.textContent+=' · '+t('mfd.since',{d:md(since,{lang:locale})});}
-  if(selected===0&&!d.daily.length){const members=scope==='all'?d.members:d.members.filter(m=>m.key===scope),values=members.map(m=>prototypeEngineSupplement(m.account,data??undefined).todayTokens);if(values.length&&values.every((v):v is number=>v!==null)){const sum=values.reduce((a,v)=>a+v,0);if(Number.isSafeInteger(sum)){const total=node('div','ov-top');total.append(node('span','lbl',t('mfd.today')),node('b','ov-total',tok(sum)));const alerts=page.querySelector('.mfd-alerts');if(alerts)alerts.after(total);else page.prepend(total);}}}
   // G3-109: a subscription with a balance but no usage percentage (Grok Build on the X Subscription, D228) has no
   // chart; its Overview shows the balance and why there is no percentage instead of an empty "Quota only". Recorded
   // token history (macrev2-925-1) keeps its totals and chart: the balance then follows the totals instead of the empty state.
