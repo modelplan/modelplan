@@ -56,7 +56,8 @@ final class ResourceReadoutTests: XCTestCase {
         XCTAssertEqual(level(76.9, at: 30), .normal)
         XCTAssertEqual(level(78, at: 40), .normal, "entering needs the plain 80 % again")
         XCTAssertEqual(ResourceRules.tone(85), .warning)
-        XCTAssertEqual(ResourceRules.tone(85, previous: .critical), .critical, "red is kept down to 87 %")
+        XCTAssertEqual(ResourceRules.tone(88, previous: .critical), .critical, "red is kept down to 87 %")
+        XCTAssertEqual(ResourceRules.tone(86, previous: .critical), .warning, "below 87 % red is left")
         XCTAssertEqual(ResourceRules.tone(70, previous: .critical), .normal)
     }
 

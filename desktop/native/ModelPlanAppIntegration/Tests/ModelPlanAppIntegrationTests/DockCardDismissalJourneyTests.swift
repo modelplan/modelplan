@@ -210,6 +210,12 @@ private actor CardDismissalClient: EngineClient {
         XCTAssertTrue(dock.card.pressCockpitRowForChecks())
         XCTAssertEqual(routed, [memberID], "the footer row opens the cockpit on this subscription")
         dock.subscriptionCockpitRequested = nil
+        // The footer press closes the card (it hands over to the cockpit); a fresh hover brings it back for the focus check.
+        XCTAssertTrue(dock.card.isHidden, "Pressing the footer row closes the card")
+        nozzle.hoverNozzle(nil)
+        nozzle.hoverNozzle(memberID)
+        for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(dock.card.isHidden, "A fresh hover reopens the card after the footer press")
         nozzle.hoverNozzle(nil)
         let focused = try XCTUnwrap((dock.dockView.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
             .first { $0.accessibilityIdentifier() == "dock.subscription." + memberID })
