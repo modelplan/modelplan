@@ -16,8 +16,8 @@ public enum FirstRunCopy {
     public static let later = SettingsText("Later", "稍后")
     /// The three former small-print paragraphs in one. The line about reading session files lives in Settings › Data & Privacy.
     public static let smallPrint = SettingsText(
-        "Tools you install later are read too. After Done, up to 30 days of past usage is imported in the background (counts, models and times only). Change any of this in Settings › Data & Privacy.",
-        "之后安装的工具默认也会读取。点\u{201C}完成\u{201D}后会在后台导入最多 30 天的过往用量（只含次数、模型和时间）。都可在 设置 › 数据与隐私 中更改。")
+        "Tools you install later are read too. After Done, up to 30 days of past usage is imported in the background (counts, models and times, plus each project's folder name, kept per day on this Mac). Change any of this in Settings › Data & Privacy.",
+        "之后安装的工具默认也会读取。点\u{201C}完成\u{201D}后会在后台导入最多 30 天的过往用量（含次数、模型、时间和各项目的文件夹名称，按天保存在本机）。都可在 设置 › 数据与隐私 中更改。")
     public static func window(_ kind: FirstRunReadingKind) -> SettingsText {
         kind == .fiveHour ? .init("5h", "5小时") : .init("Weekly", "每周")
     }

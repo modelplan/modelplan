@@ -505,6 +505,9 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, legacy 
 	if name == "speed.json" || name == "daily-long.json" || name == "imported.json" {
 		keys = []string{"rows"}
 	}
+	if name == "imported.json" {
+		keys = []string{"rows", "projects"} // the per-day project sums go with the rows (HIST-IMP-10)
+	}
 	if name == "perf.json" {
 		keys = []string{"rows", "sessions", "hourly", "live"}
 	}

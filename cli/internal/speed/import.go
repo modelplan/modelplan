@@ -63,6 +63,9 @@ type Span struct {
 	// Complete: an import of the source finished under Epoch, also when the eligible interval was
 	// empty (the live ledger or a clear already reaches back past it), so there is no From.
 	Complete bool `json:"complete,omitempty"`
+	// ProjectsVersion: 1 once the span was read with project folder names (HIST-IMP-10, D168). A span
+	// without it is read once more in the background, within the range already granted.
+	ProjectsVersion int `json:"projectsVersion,omitempty"`
 }
 
 // RetryFile is one log whose read failed and the turn spans it still owes.
@@ -107,6 +110,8 @@ type ImportLedger struct {
 	Cancelled map[string]*GrantMark `json:"cancelled,omitempty"`
 	Coverage  map[string]Span       `json:"coverage,omitempty"`
 	Rows      []PerfRow             `json:"rows"`
+	// Projects: per local day and project folder name, nothing finer (HIST-IMP-10, D168).
+	Projects []ImportProject `json:"projects,omitempty"`
 }
 
 // ImportPath is the ledger file.
@@ -259,7 +264,7 @@ func owedAt(cache string, a consent.Admission, source string) (time.Time, bool) 
 		return time.Time{}, false // the user cancelled an import under this grant
 	}
 	c, has := l.Coverage[source]
-	if has && (c.Complete || !c.From.IsZero()) && c.AccountingVersion == 1 && sameEpoch(c.Epoch, epoch) && (source != "codex" || c.Archived) {
+	if has && (c.Complete || !c.From.IsZero()) && c.AccountingVersion == 1 && c.ProjectsVersion == 1 && sameEpoch(c.Epoch, epoch) && (source != "codex" || c.Archived) {
 		return time.Time{}, false // imported
 	}
 	if at, tried := l.Attempts[source]; tried && sameEpoch(at.Epoch, epoch) {
@@ -357,6 +362,8 @@ type ImportOptions struct {
 	// Guard runs a source's write under the caller's consent fence (consent.LocalWrite); nil runs
 	// it directly.
 	Guard func(source string, write func() error) error
+	// NoProjectNames: keep no project folder names (the user turned project labels off).
+	NoProjectNames bool
 }
 
 // SourceResult reports one source without any path or id.
@@ -406,6 +413,9 @@ type importJob struct {
 	// cleared: the source's clear boundary (cleared.go) when the run started; nothing before it
 	// is read, and a clear during the run withdraws the source as a grant change does.
 	cleared time.Time
+	// projects: this run's per-day, per-folder sums; noProjects keeps none.
+	projects   map[importProjectKey]*ImportProject
+	noProjects bool
 }
 
 var errGrantWithdrawn = errors.New("history grant withdrawn during the import")
@@ -484,6 +494,15 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			}
 			c, j.reread = Span{}, true
 		}
+		if c.ProjectsVersion < 1 && (c.Complete || !c.From.IsZero()) {
+			// Imported before project folder names were kept (HIST-IMP-10): read the granted span once
+			// more and replace its rows, so each turn counts once.
+			if !c.From.IsZero() && c.From.Before(jfrom) {
+				jfrom = c.From
+			}
+			c, j.reread = Span{}, true
+		}
+		j.noProjects = o.NoProjectNames
 		j.cleared = clr.tool(j.source)
 		if j.cleared.After(jfrom) {
 			jfrom = j.cleared // a cleared history is not imported again
@@ -787,6 +806,7 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 				continue
 			}
 			tmp.addTurn(j.source, j.parser, t, false)
+			j.addProject(t)
 			j.turns++
 		}
 	}
@@ -938,10 +958,21 @@ func commitImport(ctx context.Context, cache string, j *importJob, auto bool, no
 			}
 		}
 		led.Rows, c = kept, Span{}
+		keptProjects := led.Projects[:0]
+		for _, p := range led.Projects {
+			if p.Source != j.source {
+				keptProjects = append(keptProjects, p)
+			}
+		}
+		led.Projects = keptProjects
 	}
 	for _, r := range j.rows {
 		r.GrantEpoch = epoch
 		led.merge(r)
+	}
+	for _, p := range j.projectRows() {
+		p.GrantEpoch = epoch
+		led.mergeProject(p)
 	}
 	for _, r := range j.ranges {
 		if c.From.IsZero() {
@@ -957,6 +988,7 @@ func commitImport(ctx context.Context, cache string, j *importJob, auto bool, no
 	}
 	c.Epoch = epoch
 	c.AccountingVersion = 1
+	c.ProjectsVersion = 1
 	c.Archived = j.source == "codex"
 	c.Complete = true
 	// Every pending log was tried this run: the ones that read are done, the ones that failed
@@ -1056,7 +1088,7 @@ func RemoveImportedUnder(cache string, a consent.Admission) error {
 	if !ok {
 		return os.Remove(ImportPath(cache))
 	}
-	if len(led.Rows) == 0 && len(led.Coverage) == 0 && led.AutoRan == nil && led.AutoRequested == nil {
+	if len(led.Rows) == 0 && len(led.Projects) == 0 && len(led.Coverage) == 0 && led.AutoRan == nil && led.AutoRequested == nil {
 		return nil
 	}
 	if led.AutoRan == nil && led.AutoRequested == nil {
@@ -1132,6 +1164,7 @@ func (l *ImportLedger) prune(now time.Time) {
 		kept = kept[len(kept)-maxRows:]
 	}
 	l.Rows = kept
+	l.pruneProjects(from)
 	for {
 		b, _ := json.Marshal(l)
 		if len(b) < maxFile || len(l.Rows) == 0 {

@@ -1,0 +1,1 @@
+Imported usage history now also keeps each project's folder name (the last part of the path only), as per-day totals on this Mac. They feed the project ranking by share, are deleted by Remove imported history and by revoking history access, and existing imports are read once more in the background.
