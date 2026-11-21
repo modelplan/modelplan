@@ -15,7 +15,9 @@
 #   statuses: write, which runs no repository code.
 # Build seed: written only by the `seed` job (workflow_dispatch of main by the owner), read-only for PR jobs.
 name: mac-compile
-run-name: "${{ inputs.pr && format('mac-compile PR #{0}', inputs.pr) || '' }}"
+# The title names the PR for both triggers: merge-gates.yml re-evaluates that PR when this run completes (the gate
+# requires the mac-compile status at a Swift PR's head).
+run-name: "${{ (inputs.pr && format('mac-compile PR #{0}', inputs.pr)) || (github.event.workflow_run.pull_requests[0].number && format('mac-compile PR #{0}', github.event.workflow_run.pull_requests[0].number)) || '' }}"
 on:
   workflow_run:
     workflows: [mac-compile trigger]

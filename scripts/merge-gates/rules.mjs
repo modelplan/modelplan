@@ -12,6 +12,16 @@
 
 import referenceMap from "./reference-map.json" with { type: "json" };
 export const CONTEXT = "modelplan-gates";
+// Round 3 (Sol): the machine-readable carry signal, a second status the gate writes from the EVALUATED carry (never from
+// diagnostic text): "carried <source sha40> -> <head sha40> (<kind>)" or "none -> <head sha40>", always state success so it
+// never gates anything. Coordinator readers use only this (gate-auth.sh GATE_CARRY_JQ), and only when the head matches.
+export const CARRY_CONTEXT = "modelplan-gates-carry";
+export const CARRY_KINDS = Object.freeze(["verdict-carry", "auto-carry", "carry-forward"]);
+export function carryStatus(result) {
+  const c = result?.carry;
+  if (c && SHA.test(c.from ?? "") && CARRY_KINDS.includes(c.kind)) return { state: "success", description: `carried ${c.from} -> ${result.head} (${c.kind})` };
+  return { state: "success", description: `none -> ${result?.head}` };
+}
 // The repository whose runs count; evaluate.mjs passes GITHUB_REPOSITORY, this is the default.
 export const REPO = "modelplan/modelplan";
 // Every lane posts through this account; anybody can comment on a public repo, so nothing else counts.
@@ -33,6 +43,9 @@ export const QUEUE_WORKFLOWS = Object.freeze([
   ".github/workflows/u14-harness.yml", ".github/workflows/transport-fuzz.yml",
 ]);
 const SHA = /^[0-9a-f]{40}$/;
+// The Mac compile check's commit status (mac-compile.yml) and the paths that need it (as the coordinator's decide.py).
+export const MAC_COMPILE = "mac-compile";
+export const SWIFT_RE = /\.swift$|^desktop\/native\//;
 
 export const PENDING = "pending";
 export const SUCCESS = "success";
@@ -155,12 +168,16 @@ export function carryEdges(items) {
   return edges;
 }
 
+// verified(old, new) -> { ok, sides: { pr, main } }. Plan B (D325/D326, Sol round 1): a legacy edge is bound by the same
+// overlap guardrail as the auto-carry and the carry-forward record; a proof without side lists (or a bare boolean)
+// never carries.
+export const edgeHolds = (r) => !!r && typeof r === "object" && r.ok === true && !carryForwardOverlap(r.sides?.pr, r.sides?.main);
 export function carryChain(edges, head, verified = () => false) {
   const chain = [];
   let f = head;
   for (let hop = 0; hop < 6; hop++) {
     const e = edges.find((x) => x.new === f);
-    if (!e || !verified(e.old, e.new)) break;
+    if (!e || !edgeHolds(verified(e.old, e.new))) break;
     chain.push(e.old);
     f = e.old;
   }
@@ -218,7 +235,86 @@ export function autoCarry(items, head, prove = () => ({ ok: false })) {
   if (!proof?.ok) return null;
   const after = new Set((proof.between ?? []).filter((s) => s !== head));
   if (named.some((s) => after.has(s))) return null;
+  // Plan B guardrail (owner D325/D326, Astra 2026-11-20): an automatic carry also needs no coupled overlap between the PR
+  // side and the main side. A proof without side lists never carries (fail closed).
+  if (!proof.sides || carryForwardOverlap(proof.sides.pr, proof.sides.main)) return null;
   return { from: old, why: `verdict carried from ${old.slice(0, 8)} (main merges only, diff unchanged)` };
+}
+
+// ---- Carry-forward (plan B, owner D325/D326 2026-11-20) ----
+// A main merge that changed the PR's own patch (so neither VERDICT-CARRY nor the auto-carry above holds) still keeps its
+// review when the coordinator posts, in a trusted COMMENT, the record
+//   CARRY-FORWARD: <head> from <approved> (main <parent2>) checks=<list>
+// and the gate re-proves it (evaluate.mjs: git.verifyCarryForward): the head is a two-parent merge whose first parent is
+// the approved head and whose second parent is the named main commit on main, and Git's own clean re-merge of the two
+// parents reproduces the head's tree exactly (no conflict resolution, no extra edit). The rename-aware file lists from the
+// parents' merge base to each parent then must not overlap in the cockpit hot set or the always-review set, and must not
+// form a producer/consumer pair across the sides (CARRY_FORWARD; the coordinator runs this same code from main, carry-proof.mjs).
+// The record counts only for the exact head it names (a moved head ignores it), and only when the latest trusted VERDICT
+// line on the PR is a merge naming the approved head. CI at the head and the merge-group CI stay required as always.
+// Round 3 (Sol): the unit includes the cockpit payload's producer side too: the CLI wire types and schema generator, the
+// published app-cli schema and the generated Swift bindings (desktop/cockpit/generated is already inside desktop/cockpit/).
+const COCKPIT_UNIT = /^desktop\/cockpit\/|^desktop\/native\/ModelPlanCockpit(Web|Shell)\/|^desktop\/official-visuals\/cockpit|^desktop\/tests\/cockpit\/|^source-policy\.json$|^cli\/internal\/appserver\/wire(schema)?\/|^schema\/app-cli\/|^clients\/swift\/ModelPlanWire\//;
+export const CARRY_FORWARD = Object.freeze({
+  // a path changed on BOTH sides that matches one of these refuses
+  hot: Object.freeze([
+    /^desktop\/cockpit\/src\/view\.ts$/, /^desktop\/cockpit\/src\/bridge\.ts$/, /^desktop\/cockpit\/src\/prototype-[^/]+\.ts$/,
+    /(^|\/)cockpit\.css$/, /^desktop\/tests\/cockpit\//, /^desktop\/official-visuals\/cockpit-baselines\//, /^source-policy\.json$/,
+    /^desktop\/cockpit\/src\/main\.ts$/, /^desktop\/native\/ModelPlanCockpitWeb\//,
+  ]),
+  // tests, baselines, policy, gate and workflow files: an edit on both sides always gets a delta review
+  shared: Object.freeze([TEST_RE, /\.png$|^desktop\/official-visuals\//, /^\.github\/|^scripts\/merge-gates\/|^desktop\/native\/verification\/scenario-tiers\.tsv$/]),
+  // one side touching `a` and the other side touching `b` (either way round) refuses, shared path or not
+  pairs: Object.freeze([
+    { name: "bridge-payload", a: /^desktop\/cockpit\/src\/(bridge|schema)\.ts$|^desktop\/native\/ModelPlanCockpitWeb\//, b: /^desktop\/cockpit\/src\/(view|main|prototype-[^/]+)\.ts$/ },
+    { name: "render-baseline", a: /^desktop\/cockpit\/(src|web)\/|(^|\/)cockpit\.css$/, b: /^desktop\/official-visuals\/cockpit-baselines\/|^source-policy\.json$/ },
+    // Pilot scope (Sol round 1): until targeted integration evidence exists, the cockpit counts as one coupled unit, so
+    // any cockpit change on BOTH sides (caller/callee such as main.ts -> view.ts, render code vs CSS, native host vs web
+    // page) refuses; only changes uncoupled from the other side's cockpit work carry.
+    { name: "cockpit", a: COCKPIT_UNIT, b: COCKPIT_UNIT },
+  ]),
+});
+
+// prSide / mainSide: changed paths from the merge base to each parent. Returns the first refusal reason, or null.
+export function carryForwardOverlap(prSide, mainSide, policy = CARRY_FORWARD) {
+  if (!Array.isArray(prSide) || !Array.isArray(mainSide)) return "no file lists";
+  const main = new Set(mainSide);
+  for (const p of prSide) if (main.has(p)) {
+    if (policy.hot.some((re) => re.test(p))) return `both sides changed ${p} (cockpit hot set)`;
+    if (policy.shared.some((re) => re.test(p))) return `both sides changed ${p} (test, baseline, policy or gate file)`;
+  }
+  const touches = (side, re) => side.some((p) => re.test(p));
+  for (const { name, a, b } of policy.pairs)
+    if ((touches(prSide, a) && touches(mainSide, b)) || (touches(prSide, b) && touches(mainSide, a))) return `coupled change across the sides (${name})`;
+  return null;
+}
+
+// The latest trusted CARRY-FORWARD record (comments only) that names `head`, or null.
+export function carryForwardRecord(items, head) {
+  let rec = null;
+  for (const x of items) if (x.kind === "comment")
+    for (const l of lines(x.body)) {
+      const m = /^CARRY-FORWARD: ([0-9a-f]{40}) from ([0-9a-f]{40}) \(main ([0-9a-f]{40})\) checks=([a-z,]+)\s*$/.exec(l);
+      if (m && m[1] === head) rec = { from: m[2], main: m[3], checks: m[4].split(",") };
+    }
+  return rec;
+}
+
+// prove(approved, head, main) -> { ok, why, sides: { pr, main } } (evaluate.mjs: git.verifyCarryForward). Returns
+// { from, why } or null.
+export function carryForward(items, head, prove = () => ({ ok: false })) {
+  const rec = carryForwardRecord(items, head);
+  if (!rec || rec.from === head) return null;
+  let last = null;
+  for (const x of items)
+    for (const l of lines(x.body)) {
+      const m = /^VERDICT: (merge|block) @ ([0-9a-f]{40})\b/i.exec(l);
+      if (m) last = { v: m[1].toLowerCase(), sha: m[2].toLowerCase() };
+    }
+  if (!last || last.v !== "merge" || last.sha !== rec.from) return null;
+  const proof = prove(rec.from, head, rec.main);
+  if (!proof?.ok || carryForwardOverlap(proof.sides?.pr, proof.sides?.main)) return null;
+  return { from: rec.from, why: `verdict carried forward from ${rec.from.slice(0, 8)} (CARRY-FORWARD: clean re-merge with main ${rec.main.slice(0, 8)}, no coupled overlap)` };
 }
 
 // Sticky reviewer (owner 2026-11-18): "REVIEWER: <lane>" on its own line in a trusted comment names the one GPT lane
@@ -523,7 +619,7 @@ export function queueRunScope(repo) {
 
 // D314 (hosted.mjs): with hosted = true, a run whose jobs were read (run.jobs) is judged without its GitHub-hosted
 // macOS legs; they are only reported (`info`). A run without jobs is judged whole, as before.
-export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], scope, hosted = false } = {}) {
+export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], requiredStatuses = [], scope, hosted = false } = {}) {
   const latest = latestRuns(runs, scope);
   const failed = [], waiting = [], aside = [];
   for (const r of latest) {
@@ -539,7 +635,7 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], sco
     else if (!OK_CONCLUSIONS.has(r.conclusion)) failed.push(`${r.name} ${r.conclusion}`);
   }
   for (const s of statuses) {
-    if (s.context === CONTEXT) continue;
+    if (s.context === CONTEXT || s.context === CARRY_CONTEXT) continue;
     if (s.state === "pending") waiting.push(s.context);
     else if (s.state !== "success") failed.push(`${s.context} ${s.state}`);
   }
@@ -547,6 +643,9 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], sco
   if (failed.length) return { state: FAILURE, why: `failed: ${failed.join(", ")}`, info };
   const missing = required.filter((p) => !latest.some((r) => r.path === p));
   if (missing.length) return { state: PENDING, why: `waiting for ${missing.join(", ")} to start`, info };
+  // A required commit status that is absent is not a pass (fail closed while it is still being computed).
+  const absent = requiredStatuses.filter((c) => !statuses.some((s) => s.context === c && s.state === "success"));
+  if (absent.length && !waiting.length) return { state: PENDING, why: `waiting for ${absent.join(", ")}`, info };
   if (waiting.length) return { state: PENDING, why: `running: ${waiting.join(", ")}`, info };
   return { state: SUCCESS, why: "checks green", info };
 }
@@ -613,10 +712,11 @@ export function dataSyncProblem({ pr, files, items, sync }) {
 
 // ---- One PR head ----
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
-// verifiedEdge(old, new): carry proof; proveMainMerges(old, new): auto-carry proof (autoCarry); conf: parsed design-paths.conf; members: a train's member PRs;
+// verifiedEdge(old, new): carry proof; proveMainMerges(old, new): auto-carry proof (autoCarry); proveCarryForward(approved,
+// head, main): plan B carry-forward proof (carryForward); conf: parsed design-paths.conf; members: a train's member PRs;
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, proveCarryForward, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -636,7 +736,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const tier = override ?? pathTier(paths);
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
   const auto = chain.length ? null : autoCarry(items, head, proveMainMerges);
-  const carried = auto ? [auto.from] : chain;
+  const fwd = chain.length || auto ? null : carryForward(items, head, proveCarryForward);
+  const carried = auto ? [auto.from] : fwd ? [fwd.from] : chain;
   const fb = { until: glmFallbackUntil, now, used: [] };
 
   // One review gate (D243 step 5; amends R1/R4/R13/R14/R16 and the D161/D235 lifts). Tier 2 needs a Sol verdict
@@ -669,8 +770,12 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   if (gap) notes.push(gap);
   const refNote = referenceProblem(pr, paths);
   if (refNote) notes.push(refNote);
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried, ...(auto ? { autoCarried: auto.from } : {}), glmFallback: fb.used, notes };
-  const say = (why) => [why, ...(auto ? [auto.why] : []), ...(notes.length ? [`info: ${notes.join("; ")}`] : [])].join("; ");
+  const carry = chain.length ? { from: chain.at(-1), kind: "verdict-carry" } : auto ? { from: auto.from, kind: "auto-carry" } : fwd ? { from: fwd.from, kind: "carry-forward" } : null;
+  const extra = { tier, design: design.touching ? design.surfaces : [], carried, carry, ...(auto ? { autoCarried: auto.from } : {}), ...(fwd ? { carriedForward: fwd.from } : {}), glmFallback: fb.used, notes };
+  // The carry note names the head whose verdicts carried; coordinator readers take it (and only it) as the gate's accepted
+  // carry for this exact head.
+  const chainWhy = chain.length ? [`verdict carried from ${chain.at(-1).slice(0, 8)} (VERDICT-CARRY)`] : [];
+  const say = (why) => [why, ...chainWhy, ...(auto ? [auto.why] : []), ...(fwd ? [fwd.why] : []), ...(notes.length ? [`info: ${notes.join("; ")}`] : [])].join("; ");
   if (pr.draft) return res(PENDING, say("draft"), extra);
 
   const blocked = [...lanes].filter(([, v]) => v === "block").map(([l]) => l);
@@ -687,7 +792,10 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // D314: hosted macOS legs are post-merge only, unless the PR changes a workflow (hosted.mjs explains why).
   extra.hostedExempt = !touchesWorkflows(paths) && files.length < FILE_LIST_LIMIT;
   if (!extra.hostedExempt) notes.push("workflow change: hosted legs gate");
-  const ci = ciState(runs, statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
+  // Plan B (Sol round 1): a carried or freshly reviewed head that changes Swift lands only with mac-compile success at this
+  // exact head (the same paths as the coordinator's compile admission, decide.py SWIFT_RE); absent = pending.
+  const compile = paths.some((p) => SWIFT_RE.test(p)) ? [MAC_COMPILE] : [];
+  const ci = ciState(runs, statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, requiredStatuses: compile, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
   if (ci.info) notes.push(ci.info);
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
   if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
