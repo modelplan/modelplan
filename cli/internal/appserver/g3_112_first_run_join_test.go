@@ -211,10 +211,12 @@ func (s *scheduledOwed) NextOwedAt(now time.Time) (time.Time, bool) {
 	}
 	return at, ok
 }
-func (s *scheduledOwed) CancelOwed() {
-	s.mu.Lock()
-	s.cancelled = true
-	s.mu.Unlock()
+func (s *scheduledOwed) CancelOwed() func() {
+	return func() {
+		s.mu.Lock()
+		s.cancelled = true
+		s.mu.Unlock()
+	}
 }
 func (s *scheduledOwed) RunOwed(ctx context.Context, days int, progress func(int, int)) ([]wire.HistoryImportSource, error) {
 	s.mu.Lock()
@@ -311,7 +313,9 @@ func (s *slowStop) Run(ctx context.Context, days int, firstRun bool, progress fu
 	return nil, ctx.Err()
 }
 func (s *slowStop) NextOwedAt(now time.Time) (time.Time, bool) { return time.Time{}, false }
-func (s *slowStop) CancelOwed() { s.settledAtMark.Store(s.settled.Load()) }
+func (s *slowStop) CancelOwed() func() {
+	return func() { s.settledAtMark.Store(s.settled.Load()) }
+}
 
 // Post-merge sampling 11-15: Cancel stops the run and waits for it before it persists the
 // suppression, so a commit past its context check cannot land after (and erase) the mark.
@@ -329,4 +333,55 @@ func TestCancelPersistsSuppressionOnlyAfterTheRunSettled(t *testing.T) {
 		t.Fatal("suppression was persisted while the run could still commit")
 	}
 	c.Close()
+}
+
+// regrantDuringStop is a run that settles only when released after it is cancelled, with a grant
+// counter standing in for the consent in force; the suppression is recorded against the grant
+// CancelOwed snapshotted.
+type regrantDuringStop struct {
+	countingOwed
+	stopping   chan struct{} // closed once the run sees its cancel
+	release    chan struct{} // the run settles when this closes
+	grant      atomic.Int32
+	suppressed atomic.Int32 // the grant the suppression was persisted against (0: none)
+}
+
+func (s *regrantDuringStop) Run(ctx context.Context, days int, firstRun bool, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+	<-ctx.Done()
+	close(s.stopping)
+	<-s.release
+	return nil, ctx.Err()
+}
+func (s *regrantDuringStop) NextOwedAt(now time.Time) (time.Time, bool) { return time.Time{}, false }
+func (s *regrantDuringStop) CancelOwed() func() {
+	grant := s.grant.Load()
+	return func() { s.suppressed.Store(grant) }
+}
+
+// Post-merge sampling 11-17: Cancel snapshots the grants when it begins. Revoking and granting
+// again while it waits for a slow run to stop leaves the new grant owed: the suppression is
+// recorded against the grant that was cancelled, not the one in force when the run settled.
+func TestCancelSuppressesTheGrantInForceWhenItBegan(t *testing.T) {
+	e := &regrantDuringStop{stopping: make(chan struct{}), release: make(chan struct{})}
+	e.grant.Store(1)
+	c := NewImportController(e)
+	defer c.Close()
+	h := HistoryImportHandlers(c)
+	if _, err := call(t, h, "history/import_start", `{"days":30,"firstRun":false}`); err != nil {
+		t.Fatal(err)
+	}
+	cancelled := make(chan error, 1)
+	go func() {
+		_, err := call(t, h, "history/import_cancel", `{}`)
+		cancelled <- err
+	}()
+	<-e.stopping
+	e.grant.Store(2) // revoke and grant again while Cancel waits for the run
+	close(e.release)
+	if err := <-cancelled; err != nil {
+		t.Fatal(err)
+	}
+	if got := e.suppressed.Load(); got != 1 {
+		t.Fatalf("suppression recorded against grant %d, want the cancelled grant 1", got)
+	}
 }

@@ -103,11 +103,14 @@ type OwedRunner interface {
 }
 
 // OwedScheduler is the optional engine side of the retry schedule: when the next owed retry is
-// due (after its backoff), and the user's Cancel that stops automatic imports under the current
-// grants (macrevd-967-4/-5).
+// due (after its backoff), and the user's Cancel that stops automatic imports under the grants in
+// force when it was pressed (macrevd-967-4/-5).
 type OwedScheduler interface {
 	NextOwedAt(now time.Time) (time.Time, bool)
-	CancelOwed()
+	// CancelOwed snapshots the grants in force now and returns persist, which records the
+	// suppression against exactly that snapshot. Cancel calls persist only after the run has
+	// settled; a grant given meanwhile (revoke and grant again) is not suppressed.
+	CancelOwed() (persist func())
 }
 
 // StartOwedAfter checks for an owed import after delay, off the launch or grant path (owner
@@ -266,6 +269,12 @@ func HistoryImportHandlers(c *ImportController) map[string]Handler {
 			if _, err := params[wire.Empty](raw); err != nil {
 				return Reply{}, ProtocolError{wire.CodeInvalidParams}
 			}
+			// The grants are snapshotted when cancellation begins: waiting for a slow run to stop
+			// below must not let a grant given meanwhile be suppressed (post-merge sampling 11-17).
+			var persist func()
+			if s, ok := c.engine.(OwedScheduler); ok {
+				persist = s.CancelOwed()
+			}
 			c.mu.Lock()
 			cancel := c.cancel
 			running := c.phase == wire.ImportRunning
@@ -284,8 +293,8 @@ func HistoryImportHandlers(c *ImportController) map[string]Handler {
 				cancel()
 			}
 			c.wg.Wait() // the run has stopped and written nothing when this answers
-			if s, ok := c.engine.(OwedScheduler); ok {
-				s.CancelOwed()
+			if persist != nil {
+				persist()
 			}
 			return reply(stamp)
 		}},
