@@ -151,14 +151,14 @@ data and uploads screenshots and a manifest. See
 
 ## Cockpit perf measurement
 
-`perf-measure.yml` (WP-17, CKP-SHELL-19/53/54, G3-123) is a manual workflow on a hosted `macos-15`; it never joins a PR or the
-merge queue. It builds the official cockpit and the synthetic-test CLI, runs
+The `perf` job of `desktop.yml` (WP-17, CKP-SHELL-19/53/54, G3-123) runs on a hosted `macos-15` when the workflow is dispatched
+with `perf=true` (`gh workflow run desktop.yml -R modelplan/modelplan --ref <branch or main> -f perf=true`); that dispatch skips
+every other job, and a PR or the merge queue never runs it. It builds the official cockpit and the synthetic-test CLI, runs
 `CommunityCockpitEntryTests/testWP17CockpitMeasurement` (skipped unless `MODELPLAN_PERF_OUT` is set) and turns the app's own
 timing lines into `perf-summary.json` and `perf-summary.md` with `desktop/native/tools/perf/perf_report.py` (median, p90 and n
 per section, printed against the budgets in the step summary, uploaded as the `wp17-perf-<sha>` artifact). It reports only
-and fails only when fewer than 10 samples (60 idle seconds) were taken. Dispatch it on `main`, or on a branch at the commit
-under test (`gh workflow run perf-measure.yml -R modelplan/modelplan --ref <branch>`). A run on the GUI Mac needs a new
-`trusted-mac.yml` task (its GUI leg compiles without the test SPI) and so a new pin and runner-group entry, as above.
+and fails only when fewer than 10 samples (60 idle seconds) were taken. A run on the GUI Mac needs a new `trusted-mac.yml`
+task (its GUI leg compiles without the test SPI) and so a new pin and runner-group entry, as above.
 
 ## Merge queue
 

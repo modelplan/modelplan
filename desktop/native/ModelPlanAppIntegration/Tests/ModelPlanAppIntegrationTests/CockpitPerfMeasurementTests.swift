@@ -87,7 +87,7 @@ extension CommunityCockpitEntryTests {
 
     @MainActor func testWP17CockpitMeasurement() async throws {
         guard let outPath = ProcessInfo.processInfo.environment["MODELPLAN_PERF_OUT"], !outPath.isEmpty else {
-            throw XCTSkip("WP-17 measurement runs only from perf-measure.yml (MODELPLAN_PERF_OUT names the output directory)")
+            throw XCTSkip("WP-17 measurement runs only from desktop.yml with perf=true (MODELPLAN_PERF_OUT names the output directory)")
         }
         let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
         let cliPath = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"], "the measurement needs the synthetic-test CLI")
