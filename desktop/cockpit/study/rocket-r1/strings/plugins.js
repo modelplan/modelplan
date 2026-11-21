@@ -72,6 +72,8 @@ register('plugin', {
   calR5: ['lcd', '5h', '5h'],
   calWeek5: ['lcd', '5h 重置', '5h reset'],
   calWeekly: ['lcd', '周重置', 'weekly'],
+  calWin5: ['lcd', '5 小时', '5h'],
+  calWinWeek: ['lcd', '每周', 'weekly'],
   calWeeklyLong: ['lcd', '周额度重置', 'weekly reset'],
   calWk: ['lcd', '周', 'wk'],
   calCards: ['lcd', '重置卡', 'reset card'],

@@ -1024,7 +1024,7 @@ Licence: `MIT`.
 
 Copyright (c) 2026 Peter Steinberger
 
-Used in: Pinned optional CodexBar compatibility helper (downloaded on consented use); Native Go provider adaptations, with original source revisions retained in the ported files; Reader cause and sign-in command parity (D232), independent implementations citing CodexBar main 7447bc77c2497323d9c41e40164ce705533493c8.
+Used in: Pinned optional CodexBar compatibility helper (downloaded on consented use); Native Go provider adaptations, with original source revisions retained in the ported files; Reader cause and sign-in command parity and Gemini token refresh behaviour (D232), independent implementations citing CodexBar main 7447bc77c2497323d9c41e40164ce705533493c8.
 
 Source: https://github.com/steipete/CodexBar/releases/tag/v0.83.0
 
@@ -1034,6 +1034,42 @@ Source: https://github.com/steipete/CodexBar/releases/tag/v0.83.0
 MIT License
 
 Copyright (c) 2026 Peter Steinberger
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Token Monitor 9de6288ca4e9af091b42f979570f1408781f8419
+
+Licence: `MIT`.
+
+Copyright (c) 2026 Javis
+
+Used in: ZCode QR-code sign-in reader (D369): JavaScript-to-Go adaptation of src/shared/providers/zai/zcodeDiscovery.js and the ZCode parts of src/shared/providers/zai/limits.js; ModelPlan modifications are in cli/internal/quota/zcode_login.go.
+
+Source: https://github.com/Javis603/token-monitor/tree/9de6288ca4e9af091b42f979570f1408781f8419
+
+### LICENSE
+
+```text
+MIT License
+
+Copyright (c) 2026 Javis
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

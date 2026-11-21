@@ -46,7 +46,7 @@ function cellOf(a, w, ui, runOutW, grey) {
   const r = a.state === 'loading' || a.state === 'error' ? null : w.remaining ?? null, level = levelOf(r, ui.redAt);
   return {focusIdentity: w.focusIdentity ?? null, kind: w.kind, period: PERIODS[w.kind] || w.kind, remaining: r, value: r == null ? null : ui.pctMode === 'used' ? 100 - r : r, level, lit: litSegments(r, ui.pctMode === 'used'),
     drawing: r === 0 && !grey && !!a.credits?.drawing, noData: r == null && a.state === 'ok',
-    runOutMin: w === runOutW && r != null && !grey && a.state !== 'stale' ? a.forecast.runOutMin : null,
+    runOutMin: a.forecast && w.trend != null && w.trend < 0 && w.runOutMin != null && r != null && !grey && a.state !== 'stale' ? w.runOutMin : null,
     timeLeft: grey || a.state === 'loading' || a.state === 'error' ? null : timeLeft(w),
     timeLit: grey || a.state === 'loading' || a.state === 'error' ? null : litTimeDots(timeLeft(w)),
     resetIn: w.resetIn ?? null, resetAt: w.resetAt ?? null, resetText: w.resetText ?? null};

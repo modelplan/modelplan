@@ -12,6 +12,10 @@ type ScopeDefinition struct {
 	ID, Tool, Class, Route string
 	DefaultCheck           bool
 	Keychain               bool
+	// Requires names the scope this one only extends (D232). An extension never stands
+	// for its tool's route, is allowed only together with the scope it requires, and
+	// holds no data of its own to erase.
+	Requires string
 }
 
 func Definitions() []ScopeDefinition {
@@ -20,11 +24,11 @@ func Definitions() []ScopeDefinition {
 		ScopeOpenCodeV2LocalHistory, ScopeClaudeLocalHistory, ScopeClaudeAccountUsageSavedLogin,
 		ScopeCodexLocalHistory, ScopeCodexRuntimeUsage,
 		ScopeCursorLocalHistory, ScopeCursorAccountUsageSavedLogin,
-		ScopeGeminiLocalHistory, ScopeGeminiAccountUsageSavedLogin,
+		ScopeGeminiLocalHistory, ScopeGeminiAccountUsageSavedLogin, ScopeGeminiAccountUsageTokenRefresh,
 		ScopeGrokLocalHistory, ScopeGrokAccountUsageSavedLogin,
 		ScopeKimiLocalHistory, ScopeKimiAccountUsageSavedLogin, ScopeKimiAccountUsageAPIKey,
 		ScopeKiroRuntimeUsage, ScopeCopilotLocalHistory, ScopeCopilotRuntimeUsage,
-		ScopeAntigravityRuntimeUsage, ScopeZaiLocalHistory, ScopeZaiAccountUsageAPIKey,
+		ScopeAntigravityRuntimeUsage, ScopeZaiLocalHistory, ScopeZaiAccountUsageAPIKey, ScopeZaiAccountUsageSavedLogin,
 		ScopeOpenCodeGoLocalHistory, ScopeOpenCodeGoAccountUsageAPIKey,
 		ScopeMiniMaxAccountUsageAPIKey, ScopeAmpLocalHistory, ScopeDroidLocalHistory, ScopeQwenLocalHistory,
 	} {
@@ -39,6 +43,9 @@ func Definitions() []ScopeDefinition {
 			d.Class, d.Route = Credential, "saved_login_api"
 		case "account_usage.api_key":
 			d.Class, d.Route = ExplicitKey, "api_key_api"
+		case "account_usage.token_refresh":
+			// Same saved-login route, one more pinned request; never pre-selected (D232).
+			d.Class, d.Route, d.Requires = Credential, "saved_login_api", ScopeGeminiAccountUsageSavedLogin
 		}
 		if id == ScopeOpenCodeV2LocalHistory {
 			d.DefaultCheck = false
@@ -51,6 +58,10 @@ func Definitions() []ScopeDefinition {
 		// appears by default; a Keychain-only login waits for that choice.
 		if id == ScopeZaiAccountUsageAPIKey || id == ScopeClaudeAccountUsageSavedLogin {
 			d.DefaultCheck = true
+		}
+		// ZCode's QR-code sign-in (D369) is a credential read: opt-in, off by default (D240).
+		if id == ScopeZaiAccountUsageSavedLogin {
+			d.DefaultCheck = false
 		}
 		d.Keychain = id == ScopeClaudeAccountUsageSavedLogin
 		out = append(out, d)
@@ -155,6 +166,9 @@ func (s State) AllowsScope(id, mode string) bool {
 	if !known {
 		return false
 	}
+	if d.Requires != "" && !s.AllowsScope(d.Requires, mode) {
+		return false
+	}
 	r, decided := s.Scopes[id]
 	if decided {
 		if !r.Allowed || r.ConsentTextVersion != TextVersion || r.DeniedSources[d.Class] {
@@ -196,7 +210,7 @@ func (s State) scopeFor(tool, class string) string {
 		}
 	}
 	for _, d := range Definitions() {
-		if d.Tool == tool && d.Class == class {
+		if d.Tool == tool && d.Class == class && d.Requires == "" {
 			return d.ID
 		}
 	}

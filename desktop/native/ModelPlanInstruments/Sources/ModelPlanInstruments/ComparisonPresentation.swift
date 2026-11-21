@@ -173,7 +173,7 @@ public struct ComparisonPresentation: Equatable, Sendable {
         fastAvailable = comparison.fastAvailable
         trialFast = comparison.panels[1].configuration?.fast ?? false
         var note: [String] = []
-        if unknownCurrent { note.append(chinese ? "当前未报告" : "Current unknown") }
+        if unknownCurrent { note.append(chinese ? "档位未报告" : "Current unknown") }
         fastShown = comparison.panels.contains { $0.configuration?.fast == true }
         if fastShown, let tier = model.fastTier, tier.usable {
             note.append((chinese ? "快速：速度 " : "Fast: speed ") + Self.factor(tier.speedMultiplier) + " · " + (chinese ? "成本 " : "cost ") + Self.factor(tier.costMultiplier))

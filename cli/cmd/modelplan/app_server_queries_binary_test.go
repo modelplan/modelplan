@@ -45,7 +45,13 @@ func startQueryBinaryCapsWithArgs(t *testing.T, binary string, capabilities []st
 }
 func startQueryBinaryCapsArgs(t *testing.T, binary string, capabilities []string, args ...string) *queryBinary {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	return startQueryBinaryFor(t, 30*time.Second, binary, capabilities, args...)
+}
+
+// startQueryBinaryFor bounds the app-server's whole life by limit (it is killed after it).
+func startQueryBinaryFor(t *testing.T, limit time.Duration, binary string, capabilities []string, args ...string) *queryBinary {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	cmd := exec.CommandContext(ctx, binary, append([]string{"app-server"}, args...)...)
 	in, err := cmd.StdinPipe()
 	if err != nil {

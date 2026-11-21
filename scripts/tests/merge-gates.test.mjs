@@ -31,7 +31,9 @@ const pr = (over = {}) => ({
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } },
   ...over,
 });
-const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, prove, p = pr() } = {}) =>
+// D374: a native head also needs the mac-compile success status; the default statuses carry it so unrelated tests stay green.
+const compileOk = { context: "mac-compile", state: "success" };
+const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [compileOk], verified = () => false, prove, p = pr() } = {}) =>
   R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, proveMainMerges: prove, conf });
 const evalPrBase = (o) => evalPr(o);
 // D243 (owner 2026-11-13): scenario evidence, Scenarios lines, trains, GLMREV, DESIGN and non-GPT verdict blocks are
@@ -404,7 +406,7 @@ test("GLM-out fallback: (sonnet) DESIGN/GLMREV pass only inside the window, exac
   const UNTIL = "2026-11-14T12:17:50Z", until = Date.parse(UNTIL);
   const inside = Date.parse("2026-11-09T12:00:00Z"), after = until + 1000;
   const evalFb = ({ comments, files, now = inside, u = until }) => {
-    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmFallbackUntil: u, now });
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [compileOk], verifiedEdge: () => false, conf, glmFallbackUntil: u, now });
     return { ...r, state: marker(r, files === seam ? "GLMREV" : "DESIGN") };
   };
   // window parsing: strict UTC form, at most 8 days ahead
@@ -445,7 +447,7 @@ test("GLM-out fallback mixing: a (sonnet) pass/OK only at the exact head and nev
   const until = Date.parse("2026-11-14T12:17:50Z"), now = Date.parse("2026-11-09T12:00:00Z");
   const ui = [file("desktop/native/ModelPlanSettings/Pane.swift")], seam = [file("cli/main.go")];
   const evalFb = ({ comments, files, verified = () => false }) => {
-    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: verified, conf, glmFallbackUntil: until, now });
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [compileOk], verifiedEdge: verified, conf, glmFallbackUntil: until, now });
     return { ...r, state: marker(r, files === seam ? "GLMREV" : "DESIGN") };
   };
   const merge = comment(v("merge")), glm = comment(`GLMREV: OK @ ${H}`);
@@ -472,7 +474,7 @@ test("GLM-out fallback mixing: a (sonnet) pass/OK only at the exact head and nev
 test("DESIGN-ACCEPTED: coordinator lift of a GLM or (sonnet) DESIGN fail, exact head, trusted comment first line only", () => {
   const until = Date.parse("2026-11-14T12:17:50Z"), now = Date.parse("2026-11-09T12:00:00Z");
   const evalD = ({ comments, reviews = [], verified = () => false, u = until }) => {
-    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments, reviews), files: [file("desktop/native/ModelPlanSettings/Pane.swift")], runs: greenCi, statuses: [], verifiedEdge: verified, conf, glmFallbackUntil: u, now });
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments, reviews), files: [file("desktop/native/ModelPlanSettings/Pane.swift")], runs: greenCi, statuses: [compileOk], verifiedEdge: verified, conf, glmFallbackUntil: u, now });
     return { ...r, state: marker(r, "DESIGN") };
   };
   const merge = comment(v("merge")), glm = comment(`GLMREV: OK @ ${H}`);
@@ -1534,4 +1536,23 @@ test("review:gpt: the GLM fallback verdict counts only with the workflow's marke
   assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers: [2] }).state, R.SUCCESS, "unlabelled unchanged");
   // GPT still decides when it answered: GPT merge beats nothing, a GPT block beats a marked GLM merge
   assert.equal(ev(labelled, [marked("merge"), comment(v("block", H, "ghsol"))]).state, R.FAILURE);
+});
+
+test("D374: a native head cannot merge without a mac-compile success status at its head", () => {
+  const native = [file("desktop/native/ModelPlanSettings/Pane.swift")];
+  const merge = [comment(v("merge"))];
+  const r = (o) => evalPr({ files: native, comments: merge, ...o });
+  assert.equal(r({ statuses: [compileOk] }).state, R.SUCCESS, "compile green: the gate passes");
+  const missing = r({ statuses: [] });
+  assert.equal(missing.state, R.PENDING);
+  assert.match(missing.why, /^waiting for mac-compile at this head/);
+  assert.equal(r({ statuses: [{ context: "mac-compile", state: "pending" }] }).state, R.PENDING, "a running compile holds it");
+  assert.equal(r({ statuses: [{ context: "mac-compile", state: "failure" }] }).state, R.FAILURE, "a failed compile blocks it");
+  assert.equal(r({ statuses: [{ context: "other", state: "success" }] }).state, R.PENDING, "only the mac-compile context counts");
+  // A rename out of desktop/native is native too; a PR with no native file never waits for it.
+  assert.equal(evalPr({ files: [file("cli/x.swift", { previous_filename: "desktop/native/x.swift" })], comments: merge, statuses: [] }).state, R.PENDING);
+  assert.equal(evalPr({ files: [file("scripts/tool.mjs")], comments: merge, statuses: [] }).state, R.SUCCESS);
+  // A truncated file list could hide a native file: it waits for the compile too.
+  const many = Array.from({ length: R.FILE_LIST_LIMIT }, (_, i) => file(`docs/${i}.md`));
+  assert.equal(evalPr({ files: many, comments: merge, statuses: [] }).state, R.PENDING);
 });

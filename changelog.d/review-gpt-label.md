@@ -1,1 +1,0 @@
-A pull request that carries the label `review:gpt` is now always reviewed by GPT first, whatever the review provider mode says, and adding the label starts a review of the current head even if GLM already answered it. If GPT is out of quota the GLM fallback still answers and the review's provider line says "review:gpt requested; GPT quota out".

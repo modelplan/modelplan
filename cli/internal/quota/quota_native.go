@@ -372,13 +372,17 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		if x.Provider == "copilot" {
 			e.Source = "runtime"
 		}
+		if x.Provider == "zai" && hasManual {
+			e.ManualKeyGeneration = generations["zai"] // S8: read with this pasted key
+		}
 		if x.Provider == "zai" && !IdentityOff() {
 			// One row (owner 2026-11-14): Settings says when the entered key differs from a detected one.
 			// Only the detected key's local reference is kept (the keyed-hash identity map, as for every
 			// subscription); the key itself is read on this Mac, never sent, logged or stored.
 			e.DetectedKeyRef = assignSubscription(p.Cache, zaiKeyBasis, detectedZaiKey(p, x), now)
 		}
-		if e.Status == "ok" && key != "" && !IdentityOff() {
+		// D369: ZCode's sign-in is never the basis of a reference; nothing derived from it is stored.
+		if e.Status == "ok" && key != "" && !IdentityOff() && !zcodeLoginRoute(p, x.Provider) {
 			e.SubscriptionRef = assignSubscription(p.Cache, nativeIdentityBasis(x), key, now) // a key is one subscription
 		}
 		if e.Error != "" {
@@ -455,13 +459,21 @@ func getJSON(ctx context.Context, c *http.Client, url, key string, v any) error 
 // getJSONAuthorization is getJSON with the complete Authorization value supplied by the
 // caller, for a vendor contract that takes the key without a scheme prefix.
 func getJSONAuthorization(ctx context.Context, c *http.Client, url, authorization string, v any) error {
+	return getJSONHeaders(ctx, c, url, map[string]string{"Authorization": authorization}, v)
+}
+
+// getJSONHeaders is getJSONAuthorization with further fixed request headers (each reader's request
+// set pins which names are allowed).
+func getJSONHeaders(ctx context.Context, c *http.Client, url string, headers map[string]string, v any) error {
 	ctx, cancel := context.WithTimeout(ctx, nativeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return codeError("other", "bad request")
 	}
-	req.Header.Set("Authorization", authorization)
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "modelplan")
 	resp, err := c.Do(req)
@@ -488,6 +500,15 @@ func getJSONAuthorization(ctx context.Context, c *http.Client, url, authorizatio
 	return nil
 }
 
+func nativeProviderIDs() []string {
+	ids := make([]string, 0, len(nativeReaders))
+	for id := range nativeReaders {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
 // applyNative adds one account per native provider with a recent usable reading, and one source
 // status per native provider saying what was read or why not.
 func applyNative(r *Report, p Paths, now time.Time) {
@@ -506,8 +527,10 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			legacySelections[s.Provider] = true
 		}
 	}
-	for provider, n := range nativeReaders {
-		if n.Managed != nil && !legacySelections[provider] {
+	// Sorted, so the report (and every snapshot built from it) has one order; map order
+	// changed the sources between identical reads and published a new snapshot (G3-147).
+	for _, provider := range nativeProviderIDs() {
+		if n := nativeReaders[provider]; n.Managed != nil && !legacySelections[provider] {
 			if _, pending := PolicyPending(provider); pending {
 				if p.ReaderAccess == nil {
 					// Legacy cache-only readers report the veto only when a retained capture
@@ -550,6 +573,12 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		e, ok := by[x.Provider]
 		if ok && e.Status == "ok" && !captureAllowed(p, x.Provider, e.Admission, false) {
 			ok = false
+		}
+		if ok && x.Provider == "zai" {
+			// S8: while a pasted GLM key is saved, a cache-only read shows only that key's reading.
+			if _, pasted, err := loadManualKeyChecked(p.Cache, x.Provider); err == nil && pasted && !glmEntryOfPastedKey(p.Cache, e) {
+				ok = false
+			}
 		}
 		switch {
 		case x.Blocked == "no-native-reader":
@@ -618,11 +647,33 @@ func kimiCacheMatches(cache string, x Selection, e codexbarEntry) bool {
 	return ref != "" && ref == e.SubscriptionRef
 }
 
+// glmEntryOfPastedKey: e is reference-only, or was read with the pasted GLM key saved now.
+func glmEntryOfPastedKey(cache string, e codexbarEntry) bool {
+	if e.ObservedAt.IsZero() && e.Status == "" && len(e.Windows) == 0 {
+		return true
+	}
+	return e.ManualKeyGeneration != 0 && e.ManualKeyGeneration == manualKeyGenerations(cache)["zai"]
+}
+
 // A throttled sweep still applies current generation/admission to typed caches.
 // It must not call a collector just to invalidate an old aggregate account.
 func projectLegacyNativeCache(ctx context.Context, p Paths, provider string, old codexbarEntry, now time.Time) codexbarEntry {
 	ctx = productionReaderContext(ctx, p, provider)
 	e := old
+	// Sampling 11-20 S5: a saved (or unreadable) pasted GLM key is the only GLM route, so the
+	// configured-tool cache (another key, possibly another account) is never projected over it;
+	// the entry that the key change or the pasted key's own read left stands.
+	// Sampling 11-21 S8: an entry a parent build left (another key's reading projected over the pasted key) is not
+	// the pasted key's: only a reading of the current pasted-key generation stays; any other becomes reference-only,
+	// keeping its deadline, so nothing is shown and no request is made before it.
+	if provider == "zai" {
+		if _, pasted, err := loadManualKeyChecked(p.Cache, provider); pasted || err != nil {
+			if err == nil && !glmEntryOfPastedKey(p.Cache, old) {
+				return glmReferenceOnly(old)
+			}
+			return old
+		}
+	}
 	switch provider {
 	case "copilot":
 		access, blocked := copilotAdmission(ctx)
@@ -639,7 +690,7 @@ func projectLegacyNativeCache(ctx context.Context, p Paths, provider string, old
 	case "zai":
 		if g, ok := p.ReaderAccessGrant(provider); ok && g.ConfigSource != nil {
 			access, blocked := zaiConfigAdmission(ctx)
-			e = zaiConfigCachedEntry(loadZaiConfigState(p.Cache), now, access.LoginGeneration)
+			e = zaiConfigCachedEntryScope(loadZaiConfigState(p.Cache), now, access.LoginGeneration, zaiConfigScope(ctx))
 			if blocked != "" {
 				e = codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext(blocked)}
 			}
@@ -739,17 +790,50 @@ func claudeBackoffIsLocal(cache string) bool {
 	return true
 }
 
+// pastedGLMKeyRoute: a pasted GLM key is saved and the GLM selection runs natively, unblocked.
+func pastedGLMKeyRoute(p Paths) bool {
+	if !ManualKeyPresent(p.Cache, "zai") {
+		return false
+	}
+	ss, err := Selections(p)
+	if err != nil {
+		return false
+	}
+	for _, x := range ss {
+		if x.Provider == "zai" && x.Backend == BackendNative && x.Blocked == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// zcodeLoginRoute: the provider is read through ZCode's sign-in (D369).
+func zcodeLoginRoute(p Paths, provider string) bool {
+	g, ok := p.ReaderAccessGrant(provider)
+	return ok && provider == "zai" && g.ConfigSource != nil && g.ConfigSource.Tool == zcodeLoginTool
+}
+
 func credentialStageFailure(e readerEntry) bool {
 	return e.CredentialReadState != "" || e.ErrorCode == "file_missing"
 }
 
 // applyZCodeNoProviderFile reports ZCode's unreadable layout as a fixed reason, never a
 // pending first reading, unless another ZCode/GLM source already reported (G3-21).
+// With ZCode's QR-code sign-in present but its saved-login scope not allowed (D369), the fixed reason
+// is "consent required": the row offers the consent action and shows no data.
 func applyZCodeNoProviderFile(r *Report, p Paths) {
-	if !p.ZCodeNoProviderFile {
+	if !p.ZCodeNoProviderFile && !p.ZCodeLoginConsent {
+		return
+	}
+	// S6 (#1031 sampling): a selected, admitted pasted GLM key is a route that can run; its own
+	// status (for instance "missing / not read yet" after a key change) stands.
+	if pastedGLMKeyRoute(p) {
 		return
 	}
 	cause := SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"}
+	if p.ZCodeLoginConsent {
+		cause = SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "consent_required", ErrorCode: "consent_required"}
+	}
 	for i, s := range r.Sources {
 		if s.Source == "native:zai" {
 			// A bare legacy GLM allow reports its absent environment key; ZCode's missing

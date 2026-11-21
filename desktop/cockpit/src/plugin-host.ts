@@ -75,17 +75,23 @@ function drawCell(cell:PluginCell|undefined,row:number):HTMLElement {
   // 10 px grey and is never hidden; the side value sits at the right edge and gives way (full, short, then gone), never cut.
   const line=el('span','qline'),lead=el('span','pl-lead');
   if(typeof cell.value==='number'&&Number.isFinite(cell.value)){const num=el('b','qnum'),value=el('span','qvalue',String(Math.round(cell.value)));num.append(value);if(cell.unit)num.append(el('small','',cell.unit));lead.append(num);}
+  else if(cell.big)lead.append(el('b','pl-big',cell.big));
   lead.append(el('span','pl-tag',cell.tag.full));
   line.append(lead);
   if(cell.side){const side=fitted('qtxt pl-side',cell.side);side.dataset.small=cell.side.short;line.append(side);}
   box.append(line);
+  // D375: the subscription's colour mark with its name, so a colour is never alone.
+  if(cell.subline&&/^#[0-9a-f]{6}$/i.test(cell.subline.colour)){
+    const sub=el('span','pl-sub'),mark=el('i','pl-sw');mark.style.background=cell.subline.colour;mark.setAttribute('aria-hidden','true');
+    sub.append(mark,fitted('pl-subt',cell.subline.text));box.append(sub);
+  }
   if(typeof cell.bar==='number'&&Number.isFinite(cell.bar)){
     // 6 pt bar 3 pt below the number line; the trend is one 1 px line inside the bar's track.
     const meter=el('span','pl-meter'),bar=el('span','pl-bar'+(cell.tone?' pl-tone':'')),fill=el('i');fill.style.width=(clamp01(cell.bar)*100).toFixed(1)+'%';bar.append(fill);
     const trend=trendLine(cell.trend??[]);if(trend)bar.append(trend);
     meter.append(bar);box.append(meter);
   }
-  const words=[cell.tag.full,typeof cell.value==='number'?String(Math.round(cell.value))+(cell.unit??''):'',cell.side?.full??''].filter(Boolean).join(' · ');
+  const words=[cell.tag.full,typeof cell.value==='number'?String(Math.round(cell.value))+(cell.unit??''):cell.big??'',cell.side?.full??'',cell.subline?.text.full??''].filter(Boolean).join(' · ');
   box.setAttribute('aria-label',words);return box;
 }
 export interface MenuOptions {readonly data:WireCockpitData|null;readonly locale:PluginLocale;readonly mark:(vendorKey:string|null)=>string|null;readonly connect:()=>boolean}
@@ -186,7 +192,9 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const data=shown;let raw:unknown,ok=false;guard(()=>{raw=plugin.derive!(data,now);ok=true;},undefined);
     return ok&&take(plugin,raw);
   }
-  const shouldRun=(id:string)=>!disposed&&visible&&placed.has(id)&&enabled(id);
+  // Sample S4 (#1104 PLG-A2): an open big screen is a surface of its own. With six subscription columns an unpinned
+  // plugin has no column, yet the screen the widget card opened must get readings, so it runs while its screen is open.
+  const shouldRun=(id:string)=>!disposed&&visible&&(placed.has(id)||screen?.id===id)&&enabled(id);
   /** (Re)draws one plugin column's rows in place: one cell per table row, the bottom line, and the reserve row when the table has one. */
   function fill(column:HTMLElement,plugin:CockpitPlugin,rows:number,reserve:boolean) {
     const drawn=guard(()=>plugin.column(readings.get(plugin.id),context(plugin.id)),{cells:[]});
@@ -212,10 +220,10 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     if(column?.isConnected&&plugin)fill(column,plugin,Number(column.dataset.rows)||0,column.dataset.reserve==='true');
   }
   function reconcile() {
+    if(screen&&!enabled(screen.id)){closeScreen();return;/* closeScreen reconciles. */}
     for(const id of [...running])if(!shouldRun(id))running.delete(id);
-    for(const id of placed)if(!running.has(id)&&shouldRun(id)){running.add(id);derive(id);}
+    for(const id of [...placed,...screen?[screen.id]:[]])if(!running.has(id)&&shouldRun(id)){running.add(id);derive(id);}
     for(const [id,column] of columns)column.dataset.running=String(running.has(id));
-    if(screen&&!enabled(screen.id))closeScreen();
     if(negotiated&&!disposed){const ids=active().map(p=>p.id).filter(id=>running.has(id)),key=ids.join();if(key!==reported){reported=key;report.running(ids);}}
   }
   function changed(next:PluginState|null) {
@@ -258,6 +266,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     document.removeEventListener('click',pageKeys,true);
     for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))key.setAttribute('aria-expanded','false');
     if(restoreFocus)root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`)?.focus();
+    reconcile();// S4: a plugin that ran only for its screen stops.
   }
   function openScreen(id:string|null,keep=false):boolean {
     if(id===null){closeScreen();return true;}
@@ -269,7 +278,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const head=el('div','pl-screen-h'),title=fitted('pl-screen-t',pluginWords(locale,plugin.title));
     const close=el('button','pl-screen-x');close.type='button';close.dataset.mat='part';close.onclick=e=>{if(e.isTrusted)closeScreen(true);};
     head.append(icon(plugin,'pl-icon'),title,close);const list=el('dl','pl-screen-l'),area=el('div','pl-screen-d');area.hidden=true;area.dataset.plugin=id;box.append(head,list,area);
-    well.append(box);screen={id,box,title,close,list,area,opening:true};drawScreen();
+    well.append(box);screen={id,box,title,close,list,area,opening:true};reconcile();drawScreen();
     document.addEventListener('click',pageKeys,true);
     root.querySelector(`.eng-keys .pl-key[data-plugin="${id}"]`)?.setAttribute('aria-expanded','true');
     return true;

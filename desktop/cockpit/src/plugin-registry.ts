@@ -33,6 +33,11 @@ export interface PluginCell {
   /** Small unit after the number, e.g. "%". */
   readonly unit?:string;
   readonly side?:PluginWords|null;
+  /** D375: the large text (a time such as "14:10"), drawn where `value` would be; `value` wins when both are given. */
+  readonly big?:string|null;
+  /** D375: a line under the number: the subscription's colour mark and its name (a colour is never alone). `text.full` is
+   *  name + window + day; `text.short` is the name alone, taken when the long one does not fit. */
+  readonly subline?:{readonly colour:string;readonly text:PluginWords}|null;
   /** Continuous bar fill, 0–1; absent draws no bar. */
   readonly bar?:number|null;
   /** Thin trend line under the bar, oldest first, each 0–1; fewer than two points draws none. */

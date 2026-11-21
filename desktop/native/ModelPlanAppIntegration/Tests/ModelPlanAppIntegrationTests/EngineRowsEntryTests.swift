@@ -383,6 +383,51 @@ private actor RowsEntryClient: EngineClient {
         await app.composition.stop()
     }
 
+    /// S9 (post-merge sampling 11-20, #1099 D322-2): a fresh $0 Grok Build balance (no usage percentage) is on the
+    /// Settings surface only. The Settings projection read only Dock members plus accountless failures, so the
+    /// account-backed row fell through both and Settings had no Grok line. Fails before: no Grok subscription.
+    func testAFreeGrokBalanceKeepsOneSettingsLineWithItsBalanceAndNoWidgetRing() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("s9-free-grok-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        var row = rows[0], account = try XCTUnwrap((row["accounts"] as? [[String: Any]])?.first)
+        // The rows builder's D322 output: surfaces Settings only, fresh, usage_not_reported, a current $0 USD balance.
+        row["id"] = "grok"; row["vendorKey"] = "xai"; row["name"] = ["en": "Grok Build", "zh": "Grok Build"]
+        row["surfaces"] = ["settings"]; row["state"] = "fresh"; row["consent"] = "allowed"
+        row["reason"] = ["code": "usage_not_reported", "text": ["en": "usage_not_reported", "zh": "usage_not_reported"]]
+        row["expiresAt"] = "2099-01-01T00:00:00Z"; row.removeValue(forKey: "stateAfterExpiry"); row.removeValue(forKey: "nextStep")
+        account["plan"] = ["id": "grok", "name": ["en": "Grok Build", "zh": "Grok Build"]]
+        account["credits"] = ["balance": 0.0, "unit": "money", "currency": "USD"]
+        account["windows"] = [[String: Any]](); account["valueState"] = "current"; account["lastFailure"] = NSNull()
+        account["observedAt"] = "2026-11-20T00:00:00Z"; account["freshUntil"] = "2099-01-01T00:00:00Z"
+        account.removeValue(forKey: "resetCards"); account.removeValue(forKey: "activity"); account.removeValue(forKey: "today")
+        row["accounts"] = [account]; rows[0] = row
+        projection["rows"] = rows; projection.removeValue(forKey: "resetEvents"); root["projection"] = projection
+        let snapshot = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        let (app, _) = try normalEntry(snapshot, profile: profile)
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        defer { app.composition.dock.close() }
+        for _ in 0..<100 where !app.settingsHost.application.editor.context.subscriptions.contains(where: { $0.tool == "grok" }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let grok = app.settingsHost.application.editor.context.subscriptions.filter { $0.tool == "grok" }
+        XCTAssertEqual(grok.count, 1, "exactly one Settings line for the account")
+        let line = try XCTUnwrap(grok.first)
+        XCTAssertTrue(line.plan.contains("Grok Build") && line.plan.contains("$0"), line.plan)
+        XCTAssertEqual(line.causeCode, "usage_not_reported")
+        XCTAssertNil(try app.composition.dock.cardContent(for: line.id), "no widget ring or card")
+        await app.settingsHost.present(paneID: "subscriptions")
+        let view = app.scopeConsentEntry.view; view.layoutSubtreeIfNeeded()
+        let status = try XCTUnwrap((settingNode(view, id: "subscriptions.status." + line.id) as? NSTextField)?.stringValue)
+        XCTAssertTrue(status.contains("usage percentage"), status)
+        await app.composition.stop()
+    }
+
     func testAccountlessParseFailureShowsReasonAndFixOnItsNormalSettingsToolRow() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set942-parse-error-" + UUID().uuidString)

@@ -5,9 +5,19 @@ import ModelPlanResources
 
 /// The resource plugin on the widget (D324, D327): the sampler's face and hover card as one more ring in the Dock.
 /// The ring is the subscription ring's size (D163): outer arc memory (solid used, faint cached), inner thin arc CPU,
-/// always in orchid; only the readout's number takes a tone (D236). The card rows follow variant A.
+/// always in orchid; only the readout's number takes a tone (D236). The card rows follow variant A. B4f (owner 11-21):
+/// the readout under the ring is the percentage alone ("77%"); VoiceOver reads "内存 77%" (`spokenReadout`).
 public enum ResourceDockBridge {
     public static let subscriptionID = "plugin:resources"
+    /// A plugin ring's Dock ID is this prefix and the cockpit plugin ID.
+    static let dockIDPrefix = "plugin:"
+    /// Sample S17 (#1096 macrevb-1096-6): the cockpit plugin ID ("resources") for a plugin ring's Dock ID
+    /// ("plugin:resources"). The cockpit bridge takes plugin IDs only (CockpitPluginWire.validID refuses the colon).
+    public static func pluginID(dockID: String) -> String? {
+        guard dockID.hasPrefix(dockIDPrefix) else { return nil }
+        let id = String(dockID.dropFirst(dockIDPrefix.count))
+        return id.isEmpty ? nil : id
+    }
     public static let ink = "#da66c2"
     static let rgb = (red: Double(0xda) / 255, green: Double(0x66) / 255, blue: Double(0xc2) / 255)
 
@@ -32,8 +42,9 @@ public enum ResourceDockBridge {
     public static func ring(face: ResourceFace, card: ResourceCard, language: ResourceLanguage) -> DockPluginRing? {
         let live = Self.card(card)
         return DockPluginRing(hex: ink, outer: min(1, max(0, face.memoryUsed)), outerFaint: min(1 - min(1, max(0, face.memoryUsed)), max(0, face.memoryCached)),
-                              inner: min(1, max(0, face.cpu)), readout: face.shown.text(language), readoutTone: tone(face.shown.tone),
-                              animates: face.animates, cardRows: live.rows, cardFooter: live.footer, cardAction: live.action)
+                              inner: min(1, max(0, face.cpu)), readout: "\(face.shown.percent)%", readoutTone: tone(face.shown.tone),
+                              animates: face.animates, cardRows: live.rows, cardFooter: live.footer, cardAction: live.action,
+                              spokenReadout: face.shown.text(language))
     }
 
     /// The Dock input for the resource ring; nil while there is no sample yet (the ring is not shown empty).
@@ -46,18 +57,26 @@ public enum ResourceDockBridge {
     }
 }
 
-/// Adds the resource ring to another provider's content. The ring comes first unless the user ordered it elsewhere
-/// (unknown ids follow the saved order, SubscriptionOrder.orderedIDs).
+/// Adds the resource ring to another provider's content. B4 (owner 11-21): the ring comes after the subscription
+/// rings, the cockpit's order (desktop/cockpit/src/plugin-layout.ts: subscriptions first, plugins after them). The
+/// ring is outside the subscription order Settings commits (macrevb-1096-8), so the saved order never moves it; ids the
+/// saved order does not cover follow it in catalogue order (SubscriptionOrder.orderedIDs), which keeps it last.
 @MainActor public final class ResourceDockContentProvider: DockContentProvider {
     private let base: any DockContentProvider
     /// Set by the host on every admitted redraw; nil hides the ring (plugin off or no sample yet).
     public var resourceInput: DockInstrumentInput?
+    /// B9 (owner 11-21): whether the base has admitted content now. Between a content clear and the next install
+    /// (a rows refresh, a deadline replacement) the base is empty on purpose; the ring alone would then be painted and
+    /// the subscription rings would vanish for a moment. nil = always admitted.
+    var baseAdmitted: (() -> Bool)?
     public init(base: any DockContentProvider) { self.base = base }
     public func makeContent(_ context: DockContentContext) -> DockContent {
         let content = base.makeContent(context)
-        guard let extra = resourceInput else { return content }
+        // B9: no admitted subscription content, no ring: the widget is never redrawn with the plugin ring alone in a
+        // replacement gap. Invariant: a shown subscription ring is removed only when its row is really gone.
+        guard let extra = resourceInput, baseAdmitted?() ?? true else { return content }
         let s = content.snapshot
-        let snapshot = CommunityDockSnapshot(inputs: [extra] + s.inputs.filter { $0.id != extra.id }, subscriptions: s.subscriptions,
+        let snapshot = CommunityDockSnapshot(inputs: s.inputs.filter { $0.id != extra.id } + [extra], subscriptions: s.subscriptions,
             presentationRows: s.presentationRows, unavailableReason: s.unavailableReason,
             readerDiagnostics: s.readerDiagnostics, emptyDiagnostic: s.emptyDiagnostic)
         return DockContent(snapshot: snapshot, menuStatusLines: content.menuStatusLines, emptyText: content.emptyText,
@@ -96,13 +115,17 @@ public enum ResourceDockBridge {
         guard provider.resourceInput != nil else { return }
         refreshCard()
     }
+    /// B9: no widget redraw while the subscription content is between a clear and its next install; that install
+    /// redraws with the latest ring. A redraw in the gap painted the plugin ring alone and the subscription rings
+    /// vanished for a moment.
+    private var baseAdmitted: Bool { provider.baseAdmitted?() ?? true }
     private func redraw(_ face: ResourceFace) {
         provider.resourceInput = ResourceDockBridge.input(face: face, card: card(face), language: language())
-        refresh()
+        if baseAdmitted { refresh() }
     }
     /// Plugin state, cockpit column and widget visibility; off removes the ring at once.
     public func setVisibility(_ v: ResourceVisibility) {
         sampler.setVisibility(v)
-        if !v.pluginEnabled, provider.resourceInput != nil { provider.resourceInput = nil; refresh() }
+        if !v.pluginEnabled, provider.resourceInput != nil { provider.resourceInput = nil; if baseAdmitted { refresh() } }
     }
 }

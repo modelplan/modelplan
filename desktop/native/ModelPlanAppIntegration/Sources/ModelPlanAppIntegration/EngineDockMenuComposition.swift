@@ -28,6 +28,30 @@ public struct EngineMenuRefreshResult {
     private var deadlineLifecycleSuspended = false
     private var pendingProjectionReplacement = false
     private var cardReplacementMembers: Set<String> = []
+    /// WP-17: what the Dock projection reads from one accepted delivery. Every store event (health, a consent or
+    /// cockpit reply, a context) used to clear and redraw the Dock, four official-face passes, on the main actor while
+    /// the engine client's ordered delivery waited: about 0.6 s per event on a hosted Mac, before the cockpit saw its
+    /// reply. An event that leaves these unchanged changes no Dock pixel, so it only refreshes the menu.
+    struct DockInputs: Equatable {
+        let status: DockContentStatus
+        let connection: EngineConnectionState
+        let delivery: EngineDeliveryContext?
+        let current: Bool
+        let rowsSequence: UInt64?
+        let invalidRowCount: Int
+        let language: String
+    }
+    /// The inputs of the last completed replacement; nil after a clear, so the next delivery always redraws.
+    private var replacedInputs: DockInputs?
+    /// The inputs of the last full withdrawal with no admitted content since; a second clear of the same empty state
+    /// (the fence withdraws again when a recompute finds no admitted rows) only drops the cache.
+    private var emptyClearInputs: DockInputs?
+    func dockInputs() -> DockInputs {
+        let snapshot = store.snapshot
+        return DockInputs(status: provider.dockContent.status, connection: snapshot.connection, delivery: snapshot.delivery,
+                          current: snapshot.delivery.map { client.isCurrent($0) } ?? false, rowsSequence: snapshot.rows?.sequence,
+                          invalidRowCount: snapshot.invalidRowCount, language: adapter.language)
+    }
     private lazy var pairedProjection = HostPairedProjection(store: store, source: provider, provider: adapter, client: client)
     private let deadlineWall: @MainActor () -> Date
     private let deadlineElapsed: () -> TimeInterval
@@ -37,6 +61,10 @@ public struct EngineMenuRefreshResult {
             clear: { [weak self] in
                 guard let self else { return }
                 self.admittedCache.clear()
+                // WP-17: the same empty state was withdrawn already and nothing was installed since; withdrawing and
+                // redrawing it again changes nothing (a kept card is never skipped: its replacement decides it).
+                let inputs = self.dockInputs()
+                if self.cardReplacementMembers.isEmpty, self.emptyClearInputs == inputs { return }
                 let keepCard = self.dock.withdrawAdmittedContent(privacy: self.provider.dockContent.status == .cleared,
                                                                  keepingCardFor: self.cardReplacementMembers)
                 // On withdrawal or a failed replacement the empty cache still
@@ -45,6 +73,7 @@ public struct EngineMenuRefreshResult {
                     self.dock.refreshDockContent()
                     self.menuDidChange?()
                 }
+                self.emptyClearInputs = keepCard ? nil : inputs
             }, recompute: { [weak self] now in
                 guard let self else { return nil }
                 defer {
@@ -57,6 +86,7 @@ public struct EngineMenuRefreshResult {
             }, install: { [weak self] content in
                 guard let self else { return }
                 guard let evaluatedAt = self.pairedProjection.evaluatedAt else { return }
+                self.emptyClearInputs = nil
                 self.admittedCache.install(content, evaluatedAt: evaluatedAt)
                 self.dock.refreshDockContent(); self.menuDidChange?()
                 self.armActivityExpiry()
@@ -141,6 +171,16 @@ public struct EngineMenuRefreshResult {
         dock.setDockContentProvider(admittedCache)
         provider.dockContentDidChange = { [weak self] in
             guard let self else { return }
+            let inputs = self.dockInputs()
+            if inputs.status == .cleared { self.replacedInputs = nil; self.emptyClearInputs = nil }
+            // WP-17: nothing the Dock projects changed (a health, consent or cockpit reply). The admitted content
+            // stays exactly as valid as it was; only the menu, which also shows those replies, is refreshed.
+            else if inputs == self.replacedInputs, !self.pairedProjection.isProjecting, !self.deadlineLifecycleSuspended,
+                    inputs.rowsSequence == nil || self.pairedProjection.isCurrent(self.pairedProjection.generation) {
+                self.menuDidChange?()
+                return
+            }
+            self.replacedInputs = nil
             self.adapter.scrubInvalidatedMenus()
             let previous = self.pairedProjection.acceptedDelivery
             self.pairedProjection.invalidate()
@@ -167,12 +207,15 @@ public struct EngineMenuRefreshResult {
                 }
             }
             self.deadlineDriver.replace()
+            if !self.pendingProjectionReplacement { self.replacedInputs = inputs }
         }
     }
-    /// D324/D327: puts the resource ring in front of the admitted subscription rings and keeps it current from the
+    /// D324/D327: puts the resource ring after the admitted subscription rings (B4, the cockpit's order) and keeps it current from the
     /// one ResourceSampler. The caller reports visibility (plugin on, cockpit column, widget shown) on the binding.
     public func installResourceWidget(sampler: ResourceSampler, language: @escaping () -> ResourceLanguage) -> ResourceWidgetBinding {
         let provider = ResourceDockContentProvider(base: admittedCache)
+        // B9: the ring is added only to admitted content, never to the empty gap of a replacement.
+        provider.baseAdmitted = { [weak cache = admittedCache] in cache?.hasAdmittedContent == true }
         dock.setDockContentProvider(provider)
         let binding = ResourceWidgetBinding(sampler: sampler, provider: provider, language: language,
                                             refreshCard: { [weak self] in self?.dock.refreshPluginCard() }) { [weak self] in self?.dock.refreshDockContent() }

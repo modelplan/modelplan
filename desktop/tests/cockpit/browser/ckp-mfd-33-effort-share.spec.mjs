@@ -395,6 +395,20 @@ test('CKP-MFD-50 the title carries the model\'s 7-day use: "7d 212M · 17%" (no 
  await expect(screen.locator('.cmp-h .cmp-use')).toHaveCount(0);
 });
 
+// G3-144/145 (owner 11-21): with a price estimate the title reads "7天 1k · ≈$7.3 · 占 100%" (one ≈, always the 7-day use,
+// whatever the range), and an unknown current effort says "档位未报告" (the tool did not report it), not "当前未报告".
+test('G3-144 the title shows one ≈ with the 7-day cost, and names an unreported current effort',async({page})=>{
+ const priced=data=>{data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:null,subscriptions:[],
+  models:{measure:'observed-output-tokens',attribution:'unattributed',recent7d:{entities:1,totalObservedOutputTokens:1000,top:[{name:'gpt-6.1-sol',observedOutputTokens:1000,observedRequests:9,share:1}]},recent30d:{entities:0,totalObservedOutputTokens:0,top:[]}},
+  tools:{measure:'observed-output-tokens',attribution:'unattributed',recent7d:{entities:0,totalObservedOutputTokens:0,top:[]},recent30d:{entities:0,totalObservedOutputTokens:0,top:[]}},daily:[],hourly:[],projects:{recent7d:[],recent30d:[]},cycles:[],
+  cost:{basis:'api-list-price',currency:'USD',pricesAsOf:'2026-11-04',daily:[],hourly:[],models:{today:[],recent7d:[{model:'gpt-6.1-sol',source:'codex',estimatedUsd:7.3,pricedTokens:1000,unpricedTokens:0}],recent30d:[]}}};
+  data.details.sessions[0].effort=null;};
+ await open(page,{locale:'zh-CN',edit:priced});
+ const screen=await openSol(page);
+ await expect(screen.locator('.cmp-h .cmp-use')).toHaveText('7天 1k · ≈$7.3 · 占 100%');
+ await expect(screen.locator('.cmp-h .cmp-note')).toHaveText('档位未报告');
+});
+
 // V1-FINAL §14 (WP-05): every new string passes the pseudo-long check: long form, then short, then left out; numbers never cut.
 test('CKP-MFD-50…54 pseudo-long English: the effort page keeps its numbers whole and nothing runs out of the screen',async({page})=>{
  const {usePseudoLong}=await import('../pseudo-long.mjs');

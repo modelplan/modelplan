@@ -47,8 +47,9 @@ public enum ReaderCauseTable {
         case "runtime_missing":
             // Kiro's reader needs the kiro-cli command itself, not Node.js (same text as its row, ReaderRowFix).
             if (tool ?? "").lowercased() == "kiro" {
-                return .init(reason: .init("kiro-cli was not found", "没有找到 Kiro 命令行工具"),
-                             action: .init("Install kiro-cli, then refresh", "安装 Kiro 命令行工具后刷新"), target: .guidance)
+                // The same cause covers a configured kiro-cli path that cannot start, so reinstalling is not the only fix.
+                return .init(reason: .init("kiro-cli was not found or could not start", "没有找到 Kiro 命令行工具，或它无法启动"),
+                             action: .init("Install kiro-cli, or check the kiro-cli path you configured, then refresh", "安装 Kiro 命令行工具，或检查你配置的 Kiro 命令行工具路径，然后刷新"), target: .guidance)
             }
             return .init(reason: .init("Node.js is required", "需要 Node.js"),
                          action: .init("Install Node.js, then refresh", "安装 Node.js 后刷新"), target: .guidance)
@@ -66,6 +67,11 @@ public enum ReaderCauseTable {
             return .init(reason: .init("Not signed in", "未登录"),
                          action: .init(name.map { "Open \($0) and sign in" } ?? "Open the tool and sign in", name.map { "打开 \($0) 并登录" } ?? "打开工具并登录"), target: .guidance)
         case "login_expired":
+            if isGLM(tool) {
+                // D369: ZCode's QR-code sign-in has ended; ModelPlan never renews it.
+                return .init(reason: .init("The ZCode sign-in has ended", "ZCode 登录已失效"),
+                             action: .init("Sign in to ZCode again; it is read after that", "请重新登录 ZCode，之后会自动读取"), target: .guidance)
+            }
             return .init(reason: .init("The sign-in has expired", "登录已过期"),
                          action: .init(name.map { "Open \($0) and sign in again" } ?? "Open the tool and sign in again", name.map { "打开 \($0) 并重新登录" } ?? "打开工具并重新登录"), target: .guidance)
         case "keychain_unset", "keychain_unavailable", "keychain_not_found":
@@ -101,6 +107,11 @@ public enum ReaderCauseTable {
                         name.map { "\($0) 不提供用量百分比，只显示余额" } ?? "不提供用量百分比，只显示余额")
             return .init(reason: reason, action: .init("No action needed", "无需操作"), target: .guidance)
         case "consent_required":
+            if isGLM(tool) {
+                // D369: ZCode's QR-code sign-in was found; its own permission is off by default.
+                return .init(reason: .init("ZCode sign-in found; reading it needs your permission", "已找到 ZCode 登录，读取需要你的授权"),
+                             action: .init("Allow reading it in Settings", "在设置中允许读取"), target: .openSettings)
+            }
             return .init(reason: .init("Reading permission needed", "需要读取授权"),
                          action: .init("Review permission in Settings", "在设置检查授权"), target: .openSettings)
         default:

@@ -247,3 +247,66 @@ func TestPartialImportKeepsLegacyLiveRecordsRescannable(t *testing.T) {
 		t.Fatalf("total changed: %d want %d", got, 2*out)
 	}
 }
+
+// S16 (#1050). Invariant: the upgrade rescan of an unchanged legacy transcript never deletes a
+// recorded response. The recording-day start is recomputed in today's time zone; a move from Los
+// Angeles to New York must not drop the early response the previous build recorded.
+func TestUpgradeRescanKeepsRecordsAfterATimeZoneChange(t *testing.T) {
+	grantLocalHistory(t)
+	zone := func(name string) {
+		loc, err := time.LoadLocation(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		old := time.Local
+		time.Local = loc
+		t.Cleanup(func() { time.Local = old })
+	}
+	line := func(at, id string, in int) string {
+		return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"sessionId":"tz-session","requestId":"req-%s","message":{"id":"msg_%s","model":"claude-sonnet-4-5-20250929","role":"assistant","content":[],"usage":{"input_tokens":%d,"output_tokens":10}}}`, at, id, id, in)
+	}
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	body := line("2026-11-16T18:00:00Z", "early", 100) + "\n" + line("2026-11-17T06:30:00Z", "late", 200) + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cache := t.TempDir()
+	seedPerf(t, cache, time.Date(2026, 11, 17, 6, 0, 0, 0, time.UTC))
+	now := time.Date(2026, 11, 17, 7, 0, 0, 0, time.UTC)
+
+	zone("America/Los_Angeles")
+	if err := ObserveClaude(cache, path, false, Ingest{}, now); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := loadAccounting(cache); countRecords(l) != 2 {
+		t.Fatalf("the previous build records both responses: %+v", l.Files)
+	}
+	stripTiers(t, cache)
+
+	zone("America/New_York")
+	if err := ObserveClaude(cache, path, false, Ingest{}, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	l, _ := loadAccounting(cache)
+	if countRecords(l) != 2 {
+		t.Fatalf("the upgrade rescan dropped a recorded response: %+v", l.Files)
+	}
+	for _, f := range l.Files {
+		if !f.Tiered {
+			t.Fatalf("the rescanned file is not marked tiered")
+		}
+		for _, r := range f.Records {
+			if r.Tier == "" {
+				t.Fatalf("record %s has no recovered tier", r.Key)
+			}
+		}
+	}
+}
+
+func countRecords(l accountingLedger) int {
+	n := 0
+	for _, f := range l.Files {
+		n += len(f.Records)
+	}
+	return n
+}

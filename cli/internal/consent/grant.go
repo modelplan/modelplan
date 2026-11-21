@@ -113,6 +113,15 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 		if len(grant.Allow) > 0 && grant.ConsentTextVersion != TextVersion {
 			return errors.New("stale_consent_text")
 		}
+		// D232 (sampling 11-21 S1): an extension scope has its own opt-in. A grant that allows
+		// it together with any other scope is a bulk choice (first-run Done, a tool switched
+		// on, Select all) and is refused whole; only an allow of the extension by itself
+		// grants it. Denying it with the rest of its tool stays one request.
+		for _, id := range grant.Allow {
+			if d, known := Definition(id); known && d.Requires != "" && len(grant.Allow) > 1 {
+				return errors.New("invalid_request")
+			}
+		}
 		admitted := map[string]Record{}
 		for _, id := range grant.Allow {
 			d, known := Definition(id)
@@ -187,6 +196,14 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 		}
 		for tool := range touched {
 			syncScopeTool(s, tool)
+		}
+		// A grant that changes only extension scopes keeps the reading key (S2): revoking the
+		// Gemini token-refresh extension must not discard the saved-login reading it extends.
+		s.extensionOnly = len(seen) > 0 && len(grant.Keychain) == 0
+		for id := range seen {
+			if d, known := Definition(id); !known || d.Requires == "" {
+				s.extensionOnly = false
+			}
 		}
 		generation := s.Generation + 1
 		result = GrantReceipt{RequestID: grant.RequestID, StoreEpoch: s.StoreEpoch, Committed: true, CommittedGeneration: &generation, Code: "ok"}
@@ -321,7 +338,7 @@ func syncScopeTool(s *State, tool string) {
 	for _, class := range []string{Local, Runtime, Credential, ExplicitKey} {
 		for _, d := range Definitions() {
 			r, ok := s.Scopes[d.ID]
-			if ok && d.Tool == tool && d.Class == class && r.Allowed {
+			if ok && d.Tool == tool && d.Class == class && d.Requires == "" && r.Allowed {
 				record = r
 				record.Allowed = true
 			}

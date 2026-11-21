@@ -24,6 +24,8 @@ const (
 	ScopeAntigravityRuntimeUsage      = "antigravity.runtime_usage"
 	ScopeZaiLocalHistory              = "zai.local_history"
 	ScopeZaiAccountUsageAPIKey        = "zai.account_usage.api_key"
+	// ZCode's own sign-in (QR code / OAuth), D369: opt-in, read-only, memory only.
+	ScopeZaiAccountUsageSavedLogin    = "zai.account_usage.saved_login"
 	ScopeOpenCodeGoLocalHistory       = "opencodego.local_history"
 	ScopeOpenCodeGoAccountUsageAPIKey = "opencodego.account_usage.api_key"
 	ScopeMiniMaxAccountUsageAPIKey    = "minimax.account_usage.api_key"
@@ -31,3 +33,8 @@ const (
 	ScopeDroidLocalHistory            = "droid.local_history"
 	ScopeQwenLocalHistory             = "qwen.local_history"
 )
+
+// ScopeGeminiAccountUsageTokenRefresh (D232) is an opt-in extension of the Gemini saved-login
+// scope: when the Gemini CLI's one-hour access token has lapsed, the reader may exchange the
+// saved refresh token for a new access token held in memory. Nothing is written back.
+const ScopeGeminiAccountUsageTokenRefresh = "gemini.account_usage.token_refresh"
