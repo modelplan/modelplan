@@ -65,3 +65,42 @@ func TestG3147UnchangedLogWithoutRecordsIsNotReadAgain(t *testing.T) {
 		t.Fatalf("the new response was not recorded: %+v", totals)
 	}
 }
+
+// G3-147 review: a response dated ahead of the engine clock is recorded once the clock passes
+// it, even though the file does not change; meanwhile the ledger is not rewritten.
+func TestG3147ResponseAheadOfTheClockIsRecordedLater(t *testing.T) {
+	utc(t)
+	grantLocalHistory(t)
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	cache := t.TempDir()
+	seedPerf(t, cache, now.Add(-12*time.Hour))
+	path := filepath.Join(t.TempDir(), "ahead.jsonl")
+	line := fmt.Sprintf(`{"type":"assistant","timestamp":%q,"sessionId":"synthetic","requestId":"req-ahead","message":{"id":"msg_ahead","model":"claude-sonnet-4-5-20250929","role":"assistant","content":[],"usage":{"input_tokens":100,"cache_read_input_tokens":900,"output_tokens":10}}}`+"\n", now.Add(time.Minute).Format(time.RFC3339Nano))
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ledger := filepath.Join(cache, "observed", "accounting.json.gz")
+	if err := ObserveClaude(cache, path, false, Ingest{}, now); err != nil {
+		t.Fatal(err)
+	}
+	if totals := view(t, cache, now).TodayTotals(); len(totals) != 0 {
+		t.Fatalf("a response ahead of the clock was recorded early: %+v", totals)
+	}
+	first, err := os.Stat(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ObserveClaude(cache, path, false, Ingest{}, now.Add(30*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := os.Stat(ledger); err != nil || !os.SameFile(first, again) {
+		t.Fatalf("the ledger was rewritten while the response was still ahead (%v)", err)
+	}
+	later := now.Add(2 * time.Minute)
+	if err := ObserveClaude(cache, path, false, Ingest{}, later); err != nil {
+		t.Fatal(err)
+	}
+	if totals := view(t, cache, later).TodayTotals(); len(totals) != 1 || totals[0].Sums.ObservedRequests != 1 {
+		t.Fatalf("the response was not recorded after the clock passed it: %+v", totals)
+	}
+}

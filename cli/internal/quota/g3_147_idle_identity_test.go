@@ -56,8 +56,13 @@ func TestG3147IdentityReadsLeaveObservedDirectoryAlone(t *testing.T) {
 	if got := readerHash(cache, "profile", "synthetic-profile"); got != hash {
 		t.Fatalf("reader hash unavailable while the lock is held: %q", got)
 	}
-	// A reference that is due its hourly refresh still takes the lock (and so waits for it).
-	if got := assignSubscription(cache, "synthetic-basis", "synthetic-identity", now.Add(2*time.Hour)); got != "" {
+	// A reference that is due its hourly refresh still takes the lock (and so waits for it). The
+	// lock is dated at that read's own clock, so it is held (not stale) whatever the wall clock is.
+	due := now.Add(2 * time.Hour)
+	if err := os.Chtimes(lock, due, due); err != nil {
+		t.Fatal(err)
+	}
+	if got := assignSubscription(cache, "synthetic-basis", "synthetic-identity", due); got != "" {
 		t.Fatalf("stale reference refreshed without the lock: %q", got)
 	}
 }

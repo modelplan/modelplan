@@ -46,6 +46,9 @@ func TestG3147IdleAppServerPublishesNothing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts the real app-server for about 25 s")
 	}
+	// One time zone, and an idle window clear of midnight: the day rollover is a scheduled
+	// republication (Today totals start over), not an idle one.
+	t.Setenv("TZ", "UTC")
 	home := setupQueryHome(t)
 	now := time.Now().UTC()
 	// A Claude Code log whose responses predate the recording start, and a Codex rollout.
@@ -100,6 +103,9 @@ func TestG3147IdleAppServerPublishesNothing(t *testing.T) {
 		} else if n != 0 {
 			quiet = 0
 		}
+	}
+	if untilMidnight := time.Until(time.Now().UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)); untilMidnight < 10*time.Second {
+		p.collect(untilMidnight + 3*time.Second) // let the rollover's publication pass
 	}
 	observed := filepath.Join(home, "cache", "observed")
 	before, err := os.Stat(observed)
