@@ -1,0 +1,1 @@
+The effort panel title no longer shows a doubled approximation sign ("≈≈$7.3"), a small cost on a model card uses a short form that fits ("<$0.01", "≈$0.42"), and an unreported current effort now reads "档位未报告" instead of "当前未报告".

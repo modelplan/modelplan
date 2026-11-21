@@ -130,7 +130,7 @@ register('mfd', {
   fastOn: ['lcd', '开', 'on'],
   fastOff: ['lcd', '关', 'off'],
   fastRow: ['aria', '快速模式', 'Fast mode'], // the accessible name of the ⚡ glyph (drawn as SVG, polish A)
-  currentUnknown: ['line', '当前未报告', 'current unknown'],
+  currentUnknown: ['line', '档位未报告', 'current unknown'],
   ladderAria: ['aria', '试 {e}', 'Try {e}'],
   // round D1 (owner 2026-10-23): the comparison names itself on the screen and has its own bottom keys
   sameCurrent: ['line', '试 = 当前', 'Try = Current'],
@@ -142,7 +142,7 @@ register('mfd', {
   // WP-05 (V1-FINAL §8.5): the model's 7-day use right of the title (≈$ only when an estimated cost exists), the idle hint,
   // the single-effort line and the AA reference (D292: a reference beside our ability score, never the share itself)
   cmpUse: ['lcd', '7天 {t} · 占 {p}%', '7d {t} · {p}%'],
-  cmpUseCost: ['lcd', '7天 {t} · ≈{c} · 占 {p}%', '7d {t} · ≈{c} · {p}%'],
+  cmpUseCost: ['lcd', '7天 {t} · {c} · 占 {p}%', '7d {t} · {c} · {p}%'],
   cmpHintIdle: ['text', '点一个档位或拖推杆来试', 'Click an effort or drag the fader to try it'],
   cmpHintIdleShort: ['text', '点档位或拖推杆来试', 'Click or drag to try'],
   cmpTrialNoteShort: ['text', '只是试算', 'Trial only'],
