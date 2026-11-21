@@ -2193,7 +2193,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         let point = event.window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
         switch event.type {
         case .leftMouseDragged, .leftMouseUp: self?.widgetPointer(event.type, at: point)
-        default: self?.localPress(in: event.window, at: point, eventType: event.type)
+        default: self?.localPress(in: event.window, at: point, eventType: event.type,
+                                  contextClick: event.modifierFlags.contains(.control))
         }
       }
       return event
@@ -2215,13 +2216,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// A press in one of this app's windows (the local monitor). D88: a press on a hint or help panel over the cockpit,
   /// or on the enlarged field it opened, does not close it.
-  func localPress(in target: NSWindow?, at point: CGPoint, eventType: NSEvent.EventType) {
+  func localPress(in target: NSWindow?, at point: CGPoint, eventType: NSEvent.EventType, contextClick: Bool = false) {
     if let id = target?.identifier, id == Self.helpOverlayIdentifier || id == Self.fieldWindowIdentifier { return }
-    outsidePress(point, eventType: eventType)
+    outsidePress(point, eventType: eventType, contextClick: contextClick)
   }
   /// macrevd-1114-1: `external` is a press delivered to another app (the global monitor). The widget is this app's own
   /// window, so such a press is never a widget press, wherever the cursor is sampled afterwards.
-  func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType,external:Bool = false) {
+  /// S15 (#1114): `contextClick` is a left press with Control held. The widget opens its context menu for it
+  /// (DockInstrumentView.mouseDown), whose tracking swallows the release, so it is a right press, never a carry.
+  func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType,external:Bool = false,contextClick:Bool = false) {
     guard !shellSession.detached, let window, !window.frame.contains(point) else { return }
     // The owned tray completes one toggle on mouse-up. Its mouse-down is not
     // a competing outside dismissal, including with Reduce Motion/long holds.
@@ -2234,7 +2237,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // Spec item 1 (1.7 c): a right or other press on the icon opens the status menu; the cockpit stays while it is up.
     if isTray { return }
     // Spec item 1 (1.7 d): the widget press waits for its release (a ring carry starts only once the press moves).
-    if eventType == .leftMouseDown, !external, dismissal.isArmed, widgetFrame?()?.contains(point) == true {
+    // S15: a Control-click is the widget's context menu (as a right press there); its release never reaches us.
+    if eventType == .leftMouseDown, !external, !contextClick, dismissal.isArmed, widgetFrame?()?.contains(point) == true {
       widgetPress?.hold.release()
       widgetPress = (point, false, dismissal.hold(.drag))
       return
