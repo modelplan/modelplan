@@ -793,7 +793,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       #endif
       if !rackFirst { onShellChanged?() }
       applyPresentationTraits()
-      if shellSession.detached { onPresenceChanged?(true) }
+      // B6 (owner 11-21): every open re-reads the one Dock presence. An attached open used to leave it alone, so a
+      // stale regular policy (a window that left the screen without telling the presence) kept the Dock icon beside
+      // the attached cockpit. Only a detached open may bring the app forward.
+      onPresenceChanged?(shellSession.detached)
       lastVisibility = nil; visibilityChanged()
       #if MODELPLAN_TEST_ONLY_SPI
         if let web { verificationDidOpen?(web, panel) }
@@ -1064,7 +1067,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func clearPrivateViews(adopting context: CockpitEngineContext? = nil) async {
     freshnessDriver.hide(); freshnessDriver.invalidate(); bridge.cancelDeadlineReports(); visibilityFence.invalidate()
     orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); cancelAppearanceWait()
-    forgetPluginDelivery(); stopPluginSampling()
+    // A clear empties the page's placement: nothing it ran before is restored by a later visible update (S3).
+    forgetPluginDelivery(); stopPluginSampling(); pageRunning = []
     receiptWatchdog.cancel(); renderWatchdog.cancel(); backlog = BacklogResync()
     visibilityTimeout?.cancel(); visibilityTimeout = nil
     freshnessHasRendered = false; pendingFreshnessReason = nil
@@ -1249,6 +1253,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           // completes meanwhile (or a show) does not send the older committed state back over it.
           pluginsAccepted = state; pluginsWanted = state; pluginsConfirmedOnPage = true
           onIntent?(intent); publishPluginScreen()
+        case .pluginsRunning(let ids):
+          pageRunning = ids; onIntent?(intent)
         default: onIntent?(intent)
         }
       case .rendered:
@@ -1457,6 +1463,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           else { self.watchDeferredAppearance() }
           if let id = self.bridge.currentDisplayRequest, self.bridge.awaitsDisplayReceipt(id) { self.renderWatchdog.wait(for: id) }
           self.publishPluginState()
+          if visible { self.resumePluginSampling() }
           self.freshnessDriver.show()
           if self.awaitingShown, let onShown = self.onShown {
             self.awaitingShown = false; self.refreshAfterHiddenDisplay = false; onShown()
@@ -1606,6 +1613,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// D124 (macrevb-1104-4, macrev2-1104-6): the host stops sampling the moment the page stops being shown (hidden,
   /// occluded, closing, clearing); the page's own `[]` report may come late or under an old view revision.
   private func stopPluginSampling() { if bridge.pluginsSent { onIntent?(.pluginsRunning([])) } }
+  /// Sample S3 (#1104 PLG-A1): the running set the page last reported. The host stops sampling on its own hidden or
+  /// occluded fact at once (`stopPluginSampling`), before the page answers. When that hidden update is replaced in the
+  /// queue by a visible one, the page never sees the hide, keeps running and reports nothing new, so the host restores
+  /// the page's own set once the page accepts the visible update. A page that did take the hide reported [] first.
+  private var pageRunning: [String] = []
+  private func resumePluginSampling() {
+    guard bridge.pluginsSent, !pageRunning.isEmpty else { return }
+    onIntent?(.pluginsRunning(pageRunning))
+  }
   /// Plugin columns: a request to open a plugin's big screen. Held until this page is ready and has confirmed the NEWEST
   /// committed plugin state (macrevb-1104-8: an earlier confirmation is not enough while a newer state is in flight,
   /// failed or queued; the page would refuse the screen under older preferences), then sent once; a newer request replaces a held one. A failed or dropped call is held
@@ -2193,7 +2209,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         let point = event.window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
         switch event.type {
         case .leftMouseDragged, .leftMouseUp: self?.widgetPointer(event.type, at: point)
-        default: self?.localPress(in: event.window, at: point, eventType: event.type)
+        default: self?.localPress(in: event.window, at: point, eventType: event.type,
+                                  contextClick: event.modifierFlags.contains(.control))
         }
       }
       return event
@@ -2215,13 +2232,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// A press in one of this app's windows (the local monitor). D88: a press on a hint or help panel over the cockpit,
   /// or on the enlarged field it opened, does not close it.
-  func localPress(in target: NSWindow?, at point: CGPoint, eventType: NSEvent.EventType) {
+  func localPress(in target: NSWindow?, at point: CGPoint, eventType: NSEvent.EventType, contextClick: Bool = false) {
     if let id = target?.identifier, id == Self.helpOverlayIdentifier || id == Self.fieldWindowIdentifier { return }
-    outsidePress(point, eventType: eventType)
+    outsidePress(point, eventType: eventType, contextClick: contextClick)
   }
   /// macrevd-1114-1: `external` is a press delivered to another app (the global monitor). The widget is this app's own
   /// window, so such a press is never a widget press, wherever the cursor is sampled afterwards.
-  func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType,external:Bool = false) {
+  /// S15 (#1114): `contextClick` is a left press with Control held. The widget opens its context menu for it
+  /// (DockInstrumentView.mouseDown), whose tracking swallows the release, so it is a right press, never a carry.
+  func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType,external:Bool = false,contextClick:Bool = false) {
     guard !shellSession.detached, let window, !window.frame.contains(point) else { return }
     // The owned tray completes one toggle on mouse-up. Its mouse-down is not
     // a competing outside dismissal, including with Reduce Motion/long holds.
@@ -2234,7 +2253,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // Spec item 1 (1.7 c): a right or other press on the icon opens the status menu; the cockpit stays while it is up.
     if isTray { return }
     // Spec item 1 (1.7 d): the widget press waits for its release (a ring carry starts only once the press moves).
-    if eventType == .leftMouseDown, !external, dismissal.isArmed, widgetFrame?()?.contains(point) == true {
+    // S15: a Control-click is the widget's context menu (as a right press there); its release never reaches us.
+    if eventType == .leftMouseDown, !external, !contextClick, dismissal.isArmed, widgetFrame?()?.contains(point) == true {
       widgetPress?.hold.release()
       widgetPress = (point, false, dismissal.hold(.drag))
       return

@@ -6,6 +6,7 @@ import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
 @_spi(DockResourceChecks) import ModelPlanDock
+import ModelPlanResources
 @testable import ModelPlanAppIntegration
 
 private actor CardDismissalClient: EngineClient {
@@ -199,6 +200,16 @@ private actor CardDismissalClient: EngineClient {
         // D37 (11-06): the production card is the prototype card: no Settings or Close buttons.
         XCTAssertNil(button(dock.card, id: "dock.card.enter"), "The card has no Settings button")
         XCTAssertNil(button(dock.card, id: "dock.card.close"), "The card has no Close button")
+        // D371 B4e: every card closes with the one cockpit footer row; a press routes that subscription to the cockpit.
+        let footerContent = try XCTUnwrap(dock.cardContent(for: memberID))
+        XCTAssertEqual(footerContent.cockpitLabel, "View in cockpit")
+        XCTAssertEqual(footerContent.cockpitTarget, footerContent.name)
+        XCTAssertNotNil(dock.card.cockpitRowFrameForChecks, "the shown subscription card has the footer row")
+        var routed: [String] = []
+        dock.subscriptionCockpitRequested = { routed.append($0) }
+        XCTAssertTrue(dock.card.pressCockpitRowForChecks())
+        XCTAssertEqual(routed, [memberID], "the footer row opens the cockpit on this subscription")
+        dock.subscriptionCockpitRequested = nil
         nozzle.hoverNozzle(nil)
         let focused = try XCTUnwrap((dock.dockView.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
             .first { $0.accessibilityIdentifier() == "dock.subscription." + memberID })
@@ -263,6 +274,106 @@ private actor CardDismissalClient: EngineClient {
                 XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.showDock, true)
             }
         }
+        await app.composition.stop()
+    }
+
+    /// B4d (owner 11-21, Pulse: a ring's card stays while the pointer rests on its ring or the card). A content
+    /// replacement (the composition's deadline clear: `withdrawAdmittedContent` keeping only engine members, then
+    /// `refreshDockContent`) closed the Resources ring's card; the interaction controller still presented it and its
+    /// de-duplicated publish never showed it again. Fails before: the card stayed hidden under the resting pointer.
+    func testPluginCardStaysOpenAcrossAContentReplacementUnderARestingPointer() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("plugin-card-hold-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        rows[0]["surfaces"] = ["dock", "menu"]; rows[0]["state"] = "fresh"; rows[0]["expiresAt"] = "2099-01-01T00:00:00Z"
+        var accounts = try XCTUnwrap(rows[0]["accounts"] as? [[String: Any]])
+        accounts[0]["valueState"] = "current"; accounts[0]["freshUntil"] = "2099-01-01T00:00:00Z"
+        var windows = try XCTUnwrap(accounts[0]["windows"] as? [[String: Any]])
+        windows[0]["current"] = true; windows[0]["validUntil"] = "2099-01-01T00:00:00Z"
+        windows[0]["resetsAt"] = "2099-01-01T00:00:00Z"; windows[0]["limitKey"] = "main"; windows[0]["poolKey"] = "main"
+        windows[0].removeValue(forKey: "modelScope")
+        accounts[0]["windows"] = windows; rows[0]["accounts"] = accounts
+        projection["rows"] = rows; root["projection"] = projection
+        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-05T12:00:00Z"))
+        var pointer = CGPoint(x: 1430, y: 475)
+        var cardFrame: CGRect?
+        let app = EngineRowsEntry.make(configuration: config,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
+            createsNativePanels: false, cockpitEntryEnabled: true, dockEnvironment: {
+                var env = normalEntryTestEnvironment()
+                env.pointer = pointer
+                env.cardFrame = cardFrame
+                return env
+            }, deadlineNow: { now }, makeClient: { _, store in CardDismissalClient(store: store, rows: fixture) }, activateSettings: {})
+        await app.prepare()
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.autoHide(false))
+        app.allowDockPresentation()
+        await app.composition.start()
+        let dock = app.composition.dock
+        defer { dock.close() }
+
+        // The installed resource ring with a synthetic reader and a manual clock (as ResourceDockBridgeTests).
+        final class Reader: ResourceReader {
+            func read(uptime: TimeInterval, unixMs: Int64) -> ResourceSample? {
+                let g: UInt64 = 1 << 30
+                return ResourceSample(unixMs: 1_795_000_000_000 + Int64(uptime * 1000), uptime: uptime, cpuUser: 16.5, cpuSystem: 5.5, load: 2.4,
+                                      memTotal: 32 * g, memApp: 9 * g, memWired: 4 * g, memCompressed: g, memCached: 12 * g, memFree: 6 * g,
+                                      swapUsed: 0, pressure: .normal, diskTotal: 494 * g, diskFree: 120 * g)
+            }
+        }
+        var clock: TimeInterval = 0
+        var timers: [(deadline: TimeInterval, fire: @MainActor () -> Void)] = []
+        let sampler = ResourceSampler(reader: Reader(), clock: { clock }, scheduler: { delay, _, fire in
+            timers.append((clock + delay, fire)); let i = timers.count - 1
+            return ResourceTimerHandle { timers[i].fire = {} }
+        })
+        func run(until end: TimeInterval) {
+            while let i = timers.indices.filter({ timers[$0].deadline <= end }).min(by: { timers[$0].deadline < timers[$1].deadline }) {
+                let t = timers[i]; timers[i].deadline = .infinity; clock = max(clock, t.deadline); t.fire()
+            }
+            clock = end
+        }
+        let binding = app.composition.installResourceWidget(sampler: sampler, language: { .english })
+        binding.setVisibility(.init(pluginEnabled: true, columnShown: false, widgetShown: true, columnSetting: 5))
+        run(until: 0)
+        let id = ResourceDockBridge.subscriptionID, view = dock.dockView
+        // B9: the ring is drawn with the admitted subscription content (the next install redraws it).
+        for _ in 0..<300 where view.presentedReadingsForChecks[id] == nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNotNil(view.presentedReadingsForChecks[id]?.pluginRing, "the resource ring is on the widget")
+
+        // The pointer rests on the plugin ring: its card opens.
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(view.interactionAnchor(id))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX, y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+        let controller = try XCTUnwrap(dock.interactionControllerForChecks)
+        // A detached synthetic host reads the ring from the reported hover while the pointer is on the widget.
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
+        controller.refresh()
+        for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(dock.card.isHidden, "the plugin ring opens its card")
+        XCTAssertEqual(controller.presentation?.card.subscriptionID, id)
+
+        // A content replacement while the pointer stays: the composition's clear closure, which keeps only engine
+        // members' cards (the plugin is never one), then the rebuild.
+        if !dock.withdrawAdmittedContent(privacy: false, keepingCardFor: []) { dock.refreshDockContent() }
+        controller.refresh()
+        try await Task.sleep(for: .milliseconds(300))
+        controller.refresh()
+        XCTAssertEqual(controller.presentation?.card.subscriptionID, id, "the pointer still holds the card")
+        XCTAssertFalse(dock.card.isHidden, "B4d: a replacement must not close the card the resting pointer holds")
+
+        // An intended close still closes it, and a replacement does not bring it back.
+        dock.prepareForCockpit()
+        XCTAssertTrue(dock.card.isHidden)
+        if !dock.withdrawAdmittedContent(privacy: false, keepingCardFor: []) { dock.refreshDockContent() }
+        XCTAssertTrue(dock.card.isHidden, "a card the user's action closed stays closed across a rebuild")
         await app.composition.stop()
     }
 }

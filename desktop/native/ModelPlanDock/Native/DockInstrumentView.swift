@@ -40,6 +40,8 @@ enum DockGripInk {
     @_spi(DockResourceChecks) public var zaiMarkEnabled = (Bundle.main.object(forInfoDictionaryKey: "zaiMarkEnabled") as? Bool) ?? false
     @_spi(DockResourceChecks) public var presentedNoticesForChecks: [String: DockNotice] { failed ? [:] : notices }
     @_spi(DockResourceChecks) public var presentedReadingsForChecks: [String: DockInstrumentReading] { failed ? [:] : readings }
+    /// The rings in the order they are painted (B4: subscriptions first, plugin rings after them).
+    @_spi(DockResourceChecks) public var presentedOrderForChecks: [String] { failed ? [] : orderedIDs }
     /// Read-only capture of the currently presented synthetic test surface.
     @_spi(DockResourceChecks) public var presentedSkinForChecks: DockInstrumentSkin? { failed || community ? nil : skin }
     /// Skin-space origin of the view's local coordinates (the hover viewport when one is reserved).
@@ -749,7 +751,7 @@ enum DockGripInk {
             context?.restoreGState()
         }
     }
-    /// macrevb-1096-5: the neutral edition draws a plugin ring with no reserved art: the two arcs in the plugin ink
+    /// macrevb-1096-5: the neutral edition draws a plugin ring with no reserved art: the two arcs in their status colours (D371)
     /// (outer solid + faint, inner thin) beside the name and readout; the label stays neutral and only the number is toned.
     public static func communityPluginGeometry(row:CGRect,scale:CGFloat)->(ring:CGRect,text:CGRect){
         let side=row.height-12*scale
@@ -761,21 +763,23 @@ enum DockGripInk {
     }
     private func drawCommunityPluginRow(_ ring:DockPluginRing,reading r:DockInstrumentReading,in row:CGRect,scale:CGFloat,context c:CGContext,paragraph:NSParagraphStyle){
         let g=Self.communityPluginGeometry(row:row,scale:scale)
-        let ink=CGColor(srgbRed:ring.red,green:ring.green,blue:ring.blue,alpha:1)
+        // D371 B4c: each arc takes the status colour of what it measures (the faint segment follows the outer arc).
+        func tone(_ t:DockQuotaStatus)->CGColor{let c=DockPluginStatusColour.rgb(t);return CGColor(srgbRed:c.red,green:c.green,blue:c.blue,alpha:1)}
+        let outerInk=tone(ring.outerTone),innerInk=tone(ring.innerTone)
         let centre=CGPoint(x:g.ring.midX,y:g.ring.midY),outerWidth=3*scale,innerWidth=1.5*scale
         let outerRadius=g.ring.width/2-outerWidth/2,innerRadius=outerRadius-outerWidth-1.5*scale
         // This view is flipped: angles run clockwise from 12 o'clock with `clockwise: false`, as in the official ring.
-        func arc(_ radius:CGFloat,_ width:CGFloat,from a:Double,to b:Double,alpha:CGFloat){
+        func arc(_ radius:CGFloat,_ width:CGFloat,from a:Double,to b:Double,alpha:CGFloat,ink:CGColor){
             guard b>a,radius>0 else{return}
             c.saveGState();c.setStrokeColor(ink.copy(alpha:alpha) ?? ink);c.setLineWidth(width);c.setLineCap(.butt)
             c.addArc(center:centre,radius:radius,startAngle:-.pi/2+CGFloat(a)*2 * .pi,endAngle:-.pi/2+CGFloat(b)*2 * .pi,clockwise:false)
             c.strokePath();c.restoreGState()
         }
         let outer=min(1,max(0,ring.outer)),faint=min(1-outer,max(0,ring.outerFaint))
-        arc(outerRadius,outerWidth,from:0,to:1,alpha:0.12)
-        arc(outerRadius,outerWidth,from:0,to:outer,alpha:1)
-        arc(outerRadius,outerWidth,from:outer,to:outer+faint,alpha:0.35)
-        if let inner=ring.inner{arc(innerRadius,innerWidth,from:0,to:1,alpha:0.12);arc(innerRadius,innerWidth,from:0,to:min(1,max(0,inner)),alpha:1)}
+        arc(outerRadius,outerWidth,from:0,to:1,alpha:0.12,ink:outerInk)
+        arc(outerRadius,outerWidth,from:0,to:outer,alpha:1,ink:outerInk)
+        arc(outerRadius,outerWidth,from:outer,to:outer+faint,alpha:0.35,ink:outerInk)
+        if let inner=ring.inner{arc(innerRadius,innerWidth,from:0,to:1,alpha:0.12,ink:innerInk);arc(innerRadius,innerWidth,from:0,to:min(1,max(0,inner)),alpha:1,ink:innerInk)}
         let font=NSFont.monospacedSystemFont(ofSize:12*scale,weight:.regular)
         let parts=DockPluginRing.readoutParts(r.readout)
         let text=NSMutableAttributedString(string:(r.alias ?? r.name)+"  "+parts.label,attributes:[.font:font,.foregroundColor:NSColor.labelColor,.paragraphStyle:paragraph])
@@ -857,7 +861,9 @@ enum DockGripInk {
         }
         for id in orderedIDs {guard let reading=readings[id],let rect=stationRect(id) else{continue}
             let stale = reading.dataState == .stale ? (reading.unavailableReason ?? (locale.hasPrefix("zh") ? "部分读数已过期" : "Some readings are stale")) : nil
-            append("subscription."+id,reading.alias ?? reading.name,reading.readout,[reading.selectedWindowLabel,reading.readout,stale].compactMap{$0}.joined(separator:" · "),rect,.subscription(id))
+            // B4f: a plugin ring draws its number alone; VoiceOver still reads what it measures ("内存 77%").
+            let spoken=reading.pluginRing?.accessibilityReadout ?? reading.readout
+            append("subscription."+id,reading.alias ?? reading.name,spoken,[reading.selectedWindowLabel,spoken,stale].compactMap{$0}.joined(separator:" · "),rect,.subscription(id))
             if !community,let notice=notices[id],let station=skin?.stations.first(where:{$0.subscriptionID==id}) {
                 let origin = layoutOrigin
                 let zh=locale.hasPrefix("zh"),label:String

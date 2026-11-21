@@ -102,15 +102,88 @@ import CryptoKit
         }
     }
 }
+/// D371 B4e (owner 11-21, option A): the card's one cockpit entry, a full-width row under a hairline: glyph,
+/// "在驾驶舱查看", the target's name in grey and "›". The whole row is one button and lights on hover.
+@MainActor private final class DockCardCockpitRow:NSView {
+    override var isFlipped:Bool{true}
+    var invoke:(()->Void)?
+    private let glyph=NSImageView(),title=NSTextField(labelWithString:""),target=NSTextField(labelWithString:""),chevron=NSTextField(labelWithString:"›")
+    private var hairline=NSColor.separatorColor
+    private var hover=false{didSet{if hover != oldValue{needsDisplay=true}}}
+    private var tracking:NSTrackingArea?
+    override init(frame:NSRect){
+        super.init(frame:frame)
+        for v in [glyph,title,target,chevron] as [NSView]{addSubview(v);v.setAccessibilityElement(false)}
+        glyph.imageScaling = .scaleProportionallyDown
+        for f in [title,target,chevron]{f.isBordered=false;f.drawsBackground=false;f.lineBreakMode = .byTruncatingTail}
+        setAccessibilityElement(true);setAccessibilityRole(.button);setAccessibilityIdentifier("dock.card.cockpit")
+    }
+    required init?(coder:NSCoder){fatalError()}
+    func configure(glyph image:NSImage?,label:String,target name:String,font:NSFont,ink:NSColor,muted:NSColor,hairline line:NSColor,invoke:@escaping ()->Void){
+        self.invoke=invoke;hairline=line
+        glyph.image=image;glyph.contentTintColor=ink;glyph.isHidden=image == nil
+        title.stringValue=label;title.font=font;title.textColor=ink
+        target.stringValue=name;target.font=font;target.textColor=muted
+        chevron.font=font;chevron.textColor=muted
+        setAccessibilityLabel([label,name].filter{!$0.isEmpty}.joined(separator:" "))
+        layout();needsDisplay=true
+    }
+    func retire(){invoke=nil}
+    /// Geometry for checks: glyph, label, target and chevron frames in the row's coordinates.
+    var partFramesForChecks:(glyph:CGRect,title:CGRect,target:CGRect,chevron:CGRect){(glyph.frame,title.frame,target.frame,chevron.frame)}
+    var isHoveredForChecks:Bool{hover}
+    func setHoverForChecks(_ on:Bool){hover=on}
+    override func setFrameSize(_ newSize:NSSize){super.setFrameSize(newSize);layout()}
+    override func layout(){
+        super.layout()
+        let h=bounds.height,pad:CGFloat=8,gap:CGFloat=8,side:CGFloat=16
+        var x=pad
+        if !glyph.isHidden{glyph.frame=CGRect(x:x,y:(h-side)/2,width:side,height:side);x+=side+gap}
+        let chevronWidth=ceil(chevron.cell?.cellSize.width ?? 8)
+        chevron.frame=CGRect(x:bounds.width-pad-chevronWidth,y:(h-ceil(chevron.fittingSize.height))/2,width:chevronWidth,height:ceil(chevron.fittingSize.height))
+        let room=max(0,chevron.frame.minX-gap-x)
+        let titleWidth=min(ceil(title.fittingSize.width),room),titleHeight=ceil(title.fittingSize.height)
+        title.frame=CGRect(x:x,y:(h-titleHeight)/2,width:titleWidth,height:titleHeight)
+        let targetX=x+titleWidth+6
+        target.frame=CGRect(x:targetX,y:(h-titleHeight)/2,width:max(0,chevron.frame.minX-gap-targetX),height:titleHeight)
+    }
+    override func updateTrackingAreas(){
+        super.updateTrackingAreas()
+        if let tracking{removeTrackingArea(tracking)}
+        let area=NSTrackingArea(rect:.zero,options:[.mouseEnteredAndExited,.activeAlways,.inVisibleRect],owner:self,userInfo:nil)
+        addTrackingArea(area);tracking=area
+    }
+    override func mouseEntered(with event:NSEvent){hover=true}
+    override func mouseExited(with event:NSEvent){hover=false}
+    override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
+    override func mouseDown(with event:NSEvent){}
+    override func mouseUp(with event:NSEvent){
+        guard bounds.contains(convert(event.locationInWindow,from:nil)) else{return}
+        invoke?()
+    }
+    override func accessibilityPerformPress()->Bool{
+        guard !isHiddenOrHasHiddenAncestor,let invoke else{return false}
+        invoke();return true
+    }
+    override func draw(_ dirtyRect:NSRect){
+        if hover{
+            NSColor.labelColor.withAlphaComponent(0.06).setFill()
+            NSBezierPath(roundedRect:bounds.insetBy(dx:0,dy:0),xRadius:6,yRadius:6).fill()
+        }
+        hairline.setFill();CGRect(x:0,y:0,width:bounds.width,height:1).fill()
+    }
+}
 /// Rows lay out top-down like the card itself.
 @MainActor private final class DockCardRowView:NSView { override var isFlipped:Bool{true} }
 @MainActor public final class DockCardView:NSView {
     public var onEnter:((String,UInt64)->Void)?,onDismiss:(()->Void)?,onOpenURL:((URL)->Void)?,onAction:((String)->Void)?
+    /// D371 B4e: the footer row "在驾驶舱查看" was pressed (pointer, Return or a VoiceOver press); gets the card's ID.
+    public var onOpenCockpit:((String)->Void)?
     public var permitsAction:((String,UInt64)->Bool)?
     public var onFocusChange:(()->Void)?
     private var content:DockCardContent?,generation:UInt64=0,style=DockCardStyle()
     private var labels=[String:NSTextField](),buttons=[String:DockCardButton]()
-    private var bars=[String:DockCardBar](),rowViews=[String:NSView](),brandView:NSImageView?
+    private var bars=[String:DockCardBar](),rowViews=[String:NSView](),brandView:NSImageView?,cockpitRow:DockCardCockpitRow?
     /// The readout window in card coordinates (flipped), drawn behind the rows.
     private var windowRect:CGRect?,noticeRect:CGRect?,highlightRects=[CGRect]()
     /// Plugin problem rows (D327): the only rows with a background, in their tone's ink.
@@ -133,7 +206,7 @@ import CryptoKit
         field.cell?.wraps=wraps;field.cell?.isScrollable = !wraps;field.usesSingleLineMode = !wraps
         field.maximumNumberOfLines=wraps ? 0:1;field.lineBreakMode=wraps ? .byWordWrapping : .byTruncatingTail
     }
-    public func apply(_ value:DockCardContent,style:DockCardStyle? = nil,brandImage:NSImage?=nil,enterDisabledReason:String?=nil)throws{
+    public func apply(_ value:DockCardContent,style:DockCardStyle? = nil,brandImage:NSImage?=nil,enterDisabledReason:String?=nil,cockpitGlyph:NSImage?=nil)throws{
         let replacing=content?.subscriptionID != value.subscriptionID
         generation &+= 1;content=nil
         if replacing { clear() }
@@ -415,7 +488,13 @@ import CryptoKit
             }
             y+=footerHeight
         }
-        y+=style.verticalPadding
+        // D371 B4e: the one cockpit entry closes the card, a full-width row below a hairline (design: 8 pt above, the
+        // row reaching 4 pt past the text margins, 30 pt high, 4 pt of plate below it).
+        if !value.cockpitLabel.isEmpty{
+            let footer=cockpitRow ?? DockCardCockpitRow();cockpitRow=footer;place(footer,in:self)
+            footer.configure(glyph:cockpitGlyph,label:value.cockpitLabel,target:value.cockpitTarget,font:.systemFont(ofSize:style.fontSize+1),ink:style.ink,muted:style.muted,hairline:style.muted.withAlphaComponent(0.3)){[weak self] in guard let self,self.current(value,token:token) else{return};self.onOpenCockpit?(value.subscriptionID)}
+            y+=8;footer.frame=CGRect(x:style.padding-4,y:y,width:inner+8,height:30);y+=30+4
+        }else{cockpitRow?.retire();cockpitRow?.removeFromSuperview();cockpitRow=nil;y+=style.verticalPadding}
         setAccessibilityRole(.group);setAccessibilityLabel(value.name);setAccessibilityHelp(nil)
         for id in Array(buttons.keys) where !usedButtons.contains(id){if let b=buttons.removeValue(forKey:id){b.retire();b.removeFromSuperview()}}
         for id in Array(bars.keys) where !usedBars.contains(id){if let bar=bars.removeValue(forKey:id){bar.setAccessibilityElement(false);bar.removeFromSuperview()}}
@@ -424,6 +503,13 @@ import CryptoKit
         frame.size=CGSize(width:style.width,height:max(40,ceil(y)))
         setAccessibilityElement(true);needsDisplay=true
     }
+    /// D371 B4e checks: the cockpit footer row, its frame in card coordinates and its parts.
+    @_spi(DockResourceChecks) public var cockpitRowFrameForChecks:CGRect?{cockpitRow?.frame}
+    @_spi(DockResourceChecks) public var cockpitRowPartsForChecks:(glyph:CGRect,title:CGRect,target:CGRect,chevron:CGRect)?{cockpitRow?.partFramesForChecks}
+    @_spi(DockResourceChecks) public var cockpitRowLabelForChecks:String?{cockpitRow?.accessibilityLabel()}
+    @_spi(DockResourceChecks) public var cockpitRowHoveredForChecks:Bool{cockpitRow?.isHoveredForChecks ?? false}
+    @_spi(DockResourceChecks) public func hoverCockpitRowForChecks(_ on:Bool){cockpitRow?.setHoverForChecks(on)}
+    @_spi(DockResourceChecks) public func pressCockpitRowForChecks()->Bool{cockpitRow?.accessibilityPerformPress() ?? false}
     /// Checks: what VoiceOver reads for a row (its own label) and the text fields under it that would be read again.
     @_spi(DockResourceChecks) public func rowSpeechForChecks(_ id:String)->(label:String?,spokenChildren:[String])?{
         guard let row=rowViews["row."+id] else{return nil}
@@ -448,7 +534,7 @@ import CryptoKit
         content=nil;buttons.values.forEach{$0.retire()};bars.values.forEach{$0.setAccessibilityElement(false)}
         rowViews.values.forEach{$0.setAccessibilityElement(false)}
         subviews.forEach{$0.removeFromSuperview()}
-        buttons.removeAll();bars.removeAll();labels.removeAll();rowViews.removeAll();brandView=nil;windowRect=nil;noticeRect=nil;highlightRects=[];tintRects=[]
+        buttons.removeAll();bars.removeAll();labels.removeAll();rowViews.removeAll();brandView=nil;cockpitRow?.retire();cockpitRow=nil;windowRect=nil;noticeRect=nil;highlightRects=[];tintRects=[]
     }
     public override func draw(_ dirtyRect:NSRect){
         // Flat plate with a 1 pt inset seam; dark readout window with its own seam (face.css #card.c7).
@@ -474,5 +560,5 @@ import CryptoKit
         }
         for tint in tintRects{tint.color.setFill();NSBezierPath(roundedRect:tint.rect,xRadius:style.rowHighlightRadius,yRadius:style.rowHighlightRadius).fill()}
     }
-    public func dispose(){generation &+= 1;clear();setAccessibilityElement(false);onEnter=nil;onDismiss=nil;onOpenURL=nil;onAction=nil;onFocusChange=nil;permitsAction=nil}
+    public func dispose(){generation &+= 1;clear();setAccessibilityElement(false);onEnter=nil;onDismiss=nil;onOpenURL=nil;onAction=nil;onOpenCockpit=nil;onFocusChange=nil;permitsAction=nil}
 }

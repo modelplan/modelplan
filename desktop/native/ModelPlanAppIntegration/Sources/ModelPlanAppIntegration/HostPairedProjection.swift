@@ -87,6 +87,9 @@ import ModelPlanDock
         self.value = value; self.evaluatedAt = evaluatedAt
     }
     func clear() { value = nil; evaluatedAt = nil }
+    /// B9: whether a content is admitted now (false between a clear and the next install). No side effects: a
+    /// provider that wraps this cache asks it after `makeContent`, which already dropped a stale value.
+    var hasAdmittedContent: Bool { value != nil && evaluatedAt != nil }
     /// A presentation-only re-projection may retain the current card only
     /// while the same delivery and its original deadline remain valid.
     func isAdmissible(at now: Date) -> Bool {

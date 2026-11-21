@@ -83,4 +83,34 @@ final class HeldDockDropTests: XCTestCase {
         let fresh = try XCTUnwrap(HeldDockDrop.after(drop: c, showing: b, previous: hold, now: later))
         XCTAssertEqual(fresh.superseded, [b], "only the placement shown before the new drop is held")
     }
+
+    /// S11 (post-merge sampling 11-20, #1032 T3): saved A at revision 7. Drop at B (its save pending), then drop back
+    /// at A. A placement-context update republishes the still-saved A at revision 7; that ended the hold, so B's
+    /// save (revision 8) moved the widget to B until A's save (revision 9) landed. The hold now ends only on a
+    /// snapshot newer than the drop. Fails before: the republish of A returns no hold and B's save shows B.
+    func testARepublishOfTheStillSavedPlacementIsNotTheDropBacksReceipt() throws {
+        let now = ContinuousClock.now
+        let toB = HeldDockDrop.after(drop: b, showing: a, previous: nil, revision: 7, now: now)
+        let backToA = try XCTUnwrap(HeldDockDrop.after(drop: a, showing: b, previous: toB, revision: 7, now: now),
+                                    "B's save is still pending after the drop back")
+        // The context update re-sends revision 7, which carries A.
+        let republished = backToA.admit(a, revision: 7, now: now)
+        XCTAssertEqual(republished.show, a)
+        let held = try XCTUnwrap(republished.hold, "a republish at the drop's revision is not A's save receipt")
+        // B's save lands first.
+        let savedB = held.admit(b, revision: 8, now: now)
+        XCTAssertEqual(savedB.show, a, "the widget stays at A while A's save is pending")
+        // A's own save is the receipt: the hold ends and A stays.
+        let savedA = try XCTUnwrap(savedB.hold).admit(a, revision: 9, now: now)
+        XCTAssertEqual(savedA.show, a)
+        XCTAssertNil(savedA.hold)
+    }
+
+    /// S11: a newer snapshot carrying the drop is its receipt even with no other save pending in between.
+    func testANewerSnapshotCarryingTheDropEndsTheHold() throws {
+        let now = ContinuousClock.now
+        let hold = try XCTUnwrap(HeldDockDrop.after(drop: b, showing: a, previous: nil, revision: 3, now: now))
+        XCTAssertNotNil(hold.admit(a, revision: 3, now: now).hold, "the pre-drop snapshot republished keeps the hold")
+        XCTAssertNil(hold.admit(b, revision: 4, now: now).hold, "B's save ends it")
+    }
 }

@@ -32,24 +32,28 @@ public struct DockCardContent:Equatable,Sendable {
     public let rows:[DockCardRow],links:[DockCardLink],enterLabel:String,dismissLabel:String
     /// A local action this subscription needs now (D41: allow the Keychain read); empty when none.
     public let actionLabel:String
-    public init(subscriptionID:String,revision:UInt64=0,name:String,plan:String="",sourceAndAge:String="",stateLabel:String="",rows:[DockCardRow],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",actionLabel:String=""){
+    /// D371 B4e: the card's one cockpit entry, a full-width footer row under a hairline: the glyph, `cockpitLabel`
+    /// ("在驾驶舱查看"), `cockpitTarget` (the subscription's or plugin's name, in grey) and "›". Empty label = no row.
+    public let cockpitLabel:String,cockpitTarget:String
+    public init(subscriptionID:String,revision:UInt64=0,name:String,plan:String="",sourceAndAge:String="",stateLabel:String="",rows:[DockCardRow],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",actionLabel:String="",cockpitLabel:String="",cockpitTarget:String=""){
+        self.cockpitLabel=cockpitLabel;self.cockpitTarget=cockpitTarget
         self.subscriptionID=subscriptionID;self.revision=revision;self.name=name;self.plan=plan;self.sourceAndAge=sourceAndAge;self.stateLabel=stateLabel
         self.rows=rows;self.links=links;self.enterLabel=enterLabel;self.dismissLabel=dismissLabel;self.actionLabel=actionLabel
     }
     public func validate()throws{
-        let strings=[subscriptionID,name,plan,sourceAndAge,stateLabel,enterLabel,dismissLabel,actionLabel]+rows.flatMap{[$0.id,$0.label,$0.value,$0.detail,$0.hint]}+links.map(\.label)
+        let strings=[subscriptionID,name,plan,sourceAndAge,stateLabel,enterLabel,dismissLabel,actionLabel,cockpitLabel,cockpitTarget]+rows.flatMap{[$0.id,$0.label,$0.value,$0.detail,$0.hint]}+links.map(\.label)
         guard !subscriptionID.isEmpty,rows.count<=64,links.count<=8,Set(rows.map(\.id)).count==rows.count,!rows.contains(where:{$0.id.isEmpty}),strings.allSatisfy({$0.utf8.count<=2048}),links.allSatisfy(\.allowed),rows.allSatisfy({r in (r.remainingFraction.map{$0.isFinite && (0...1).contains($0)} ?? true) && (r.fillFraction.map{$0.isFinite && (0...1).contains($0)} ?? true)}) else{throw DockLogicError.invalidCatalogue}
     }
 }
 
 public enum DockCardProjection {
     /// Reuse the canonical Dock quota truth/readout rules. Other facts/copy come from the validated owner.
-    public static func content(input:DockInstrumentInput,selectedWindowID:String?=nil,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",actionLabel:String="",redBelow:Double=25,at now:Date)throws->DockCardContent{
+    public static func content(input:DockInstrumentInput,selectedWindowID:String?=nil,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",actionLabel:String="",cockpitLabel:String="",cockpitTarget:String="",redBelow:Double=25,at now:Date)throws->DockCardContent{
         _=try DockInstrumentProjection.evaluate(input,now:now,redBelow:redBelow)
         if let ring=input.pluginRing{
             // A plugin card: its own rows, then its footer line; never quota windows.
             let footer=ring.cardFooter.isEmpty ? [] : [DockCardRow(id:"plugin.footer",kind:.footnote,label:"",value:ring.cardFooter)]
-            let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:ring.cardRows+footer,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel,actionLabel:ring.cardAction.isEmpty ? actionLabel:ring.cardAction)
+            let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:ring.cardSource.isEmpty ? sourceAndAge:ring.cardSource,stateLabel:stateLabel,rows:ring.cardRows+footer,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel,actionLabel:actionLabel,cockpitLabel:ring.cardAction.isEmpty ? cockpitLabel:ring.cardAction,cockpitTarget:cockpitTarget.isEmpty ? input.name:cockpitTarget)
             try result.validate();return result
         }
         var rows=[DockCardRow]()
@@ -59,7 +63,7 @@ public enum DockCardProjection {
             let reading=try DockInstrumentProjection.evaluate(scoped,now:now,redBelow:redBelow)
             rows.append(.init(id:"quota:"+window.id,kind:window.isGeneral && (window.period == .fiveHour || window.period == .week || window.period == .month) ? .quota:.extraQuota,label:window.label,value:reading.readout,detail:windowDetails[window.id] ?? "",remainingFraction:reading.remainingPercent.map{$0/100},fillFraction:.some(reading.outer?.fraction),tone:reading.status,emphasised:window.id == selectedWindowID))
         }
-        let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:rows+additionalRows,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel,actionLabel:actionLabel)
+        let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:rows+additionalRows,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel,actionLabel:actionLabel,cockpitLabel:cockpitLabel,cockpitTarget:cockpitTarget)
         try result.validate();return result
     }
 }

@@ -45,16 +45,19 @@ import AppKit
     }
     private func text(_ en: String, _ zh: String) -> String { SettingsWords.text(en, zh, language) }
 
-    /// One row per catalogued plugin, in the saved order.
+    /// One row per listed plugin, in the saved order. Owner 11-21: a framework test plugin (the placeholder) is never
+    /// listed. Owner D124: an unpinned plugin takes a free column after the subscriptions, so with few subscriptions it
+    /// shows on page 1 without a pin; the note says so (B4).
     func rebuild() {
         heading.stringValue = text("Plugins", "插件")
-        note.stringValue = text("Plugin columns follow your subscriptions in the cockpit. A pinned plugin stays on page 1 (at most two).",
-                                "插件列排在驾驶舱订阅的后面。固定的插件留在第 1 页（最多两个）。")
+        note.stringValue = text("Plugin columns come after your subscriptions in the cockpit and use free columns on the last page. A pinned plugin always stays on page 1 (at most two).",
+                                "插件列排在驾驶舱订阅的后面，占用最后一页的空位。固定的插件总在第 1 页（最多两个）。")
         for view in list.arrangedSubviews { list.removeArrangedSubview(view); view.removeFromSuperview() }
         let prefs = model.preferences.materialized(model.catalogue)
-        let known = prefs.entries.filter { entry in model.catalogue.contains(where: { $0.id == entry.id }) }
+        let listed = CockpitPluginCatalogue.listed(model.catalogue)
+        let known = prefs.entries.filter { entry in listed.contains(where: { $0.id == entry.id }) }
         for (index, entry) in known.enumerated() {
-            guard let plugin = model.catalogue.first(where: { $0.id == entry.id }) else { continue }
+            guard let plugin = listed.first(where: { $0.id == entry.id }) else { continue }
             list.addArrangedSubview(row(plugin, entry: entry, first: index == 0, last: index == known.count - 1, prefs: prefs))
         }
     }
