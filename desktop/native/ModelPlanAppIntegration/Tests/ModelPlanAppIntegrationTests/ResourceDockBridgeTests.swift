@@ -254,7 +254,8 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         // CPU takes the readout, then memory pressure changes: the readout stays CPU, so again no redraw.
         reader.cpu = 75
         run(until: 40)
-        XCTAssertEqual(provider.resourceInput?.pluginRing?.readout, "CPU 75%")
+        XCTAssertEqual(provider.resourceInput?.pluginRing?.readout, "75%", "B4f: the number alone")
+        XCTAssertEqual(provider.resourceInput?.pluginRing?.accessibilityReadout, "CPU 75%")
         let drawn = redraws
         reader.pressure = .warn
         run(until: 50)
@@ -303,7 +304,7 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         let reading = try DockInstrumentProjection.evaluate(try input(sample(cpu: 96), key: .cpu, tone: .critical), now: Date())
         let view = DockInstrumentView(frame: .zero)
         try view.applyCommunity([reading], locale: "zh-Hans")
-        XCTAssertEqual(view.communityRowText(ResourceDockBridge.subscriptionID), "资源占用  CPU 96%", "no 'unavailable' line")
+        XCTAssertEqual(view.communityRowText(ResourceDockBridge.subscriptionID), "资源占用  96%", "no 'unavailable' line; B4f: the number alone")
         XCTAssertFalse(view.communityRowIsDimmed(ResourceDockBridge.subscriptionID))
         let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: rep)
