@@ -68,7 +68,7 @@ test('CKP-MFD compare: the effort keys move the trial, one trial at a time, and 
  // Trying another fader replaces this trial.
  const second=page.locator('.fd-ch:not(.empty)').nth(1);
  await second.locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
- await expect(page.locator('.mfd-title')).toHaveText('Effort · Astra');
+ await expect(page.locator('.mfd-title')).toHaveText('Effort · Astra 6');
  await expect(page.locator('.fd-ch.trying')).toHaveCount(1);
  await page.locator('.mfd-vk .vk-back').click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);await expect(page.locator('.mfd-pk .pk.on')).toHaveCount(1);
@@ -155,7 +155,7 @@ test('CKP-MFD compare: the back key is named "Back …" for assistive tech, and 
 test('CKP-MFD compare: the title stays whole when the current effort is unknown',async({page})=>{
  await open(page);
  const astra=page.locator('.fd-ch:not(.empty)').nth(1);await astra.locator('.fd-strip').click();
- const title=page.locator('.mfd-title');await expect(title).toHaveText('Effort · Astra');
+ const title=page.locator('.mfd-title');await expect(title).toHaveText('Effort · Astra 6');
  expect(await title.evaluate(e=>e.scrollWidth<=e.clientWidth+.5)).toBe(true);
 });
 

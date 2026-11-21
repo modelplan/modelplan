@@ -20,6 +20,10 @@ import {currentWindow,withoutProjectNames} from './prototype-data-adapter.js';
 import {INITIAL_RANGE,nextCockpitRange,type CockpitRange} from './range.js';
 import {mountPluginHost,pluginHostOf,type PluginReports} from './plugin-host.js';
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
+/** Controls focusable through their own tabindex that a pointer presses (B1): buttons, radios and sliders. */
+export const POINTER_UNFOCUSED='button,[role="radio"],[role="slider"]';
+/** B1: how long a page keeps its last local history across replies whose history read was unavailable. */
+export const HISTORY_HOLD_MS=10*60*1000;
 export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void,reportAcked:(ids:string[])=>void=()=>{},reportPins:(ids:string[])=>void=()=>{},reportPlugins:PluginReports={state:()=>{},running:()=>{}}):CockpitView {
  let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
  let nativeShell:ShellState|null=null,tier:ShellState['tier']='tall';
@@ -27,6 +31,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  // host's shell echo is the same value, so nothing repaints twice.
  const requestRange=(range:CockpitRange):boolean=>{if(!active||disposed||!nativeShell)return false;action('rangeSelect',range);nativeShell={...nativeShell,range};return true;};
  let applyScope:((scope:string)=>void)|null=null,refreshEngine:((now?:number)=>void)|null=null,localiseEngine:((value:Appearance['locale'],now:number)=>void)|null=null,quotaFocusIdentity:((element:HTMLElement)=>string|null)|null=null,lastData:WireCockpitData|null=null;
+ let heldHistory:{history:NonNullable<WireCockpitData['history']>;at:number}|null=null;
  let lastRenderedAt=0;const retiredUnstableScopes=new Set<string>();
  let hudSelected:string|null=null;const hudOptions=()=>({scope:nativeShell?.scope??'all',now:lastRenderedAt,selected:hudSelected,closed:nativeShell?.profile==='closed'});
  let selectedRedBelow=effectiveRedBelow(undefined);const redBelow=()=>selectedRedBelow;let showUsedPercent=false;const showUsed=()=>showUsedPercent;
@@ -59,6 +64,14 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  const headerRange=mountHeaderRange(root,range=>{if(requestRange(range))deck.range(range);else headerRange.set(nativeShell?.range??INITIAL_RANGE);},INITIAL_RANGE);
  const attach=root.querySelector<HTMLButtonElement>('[data-detach]')!,close=root.querySelector<HTMLButtonElement>('[data-close]')!;
  const noMenu=(e:Event)=>e.preventDefault();document.addEventListener('contextmenu',noMenu);
+ // Owner badcase 11-21 (B1): a control focusable through its own tabindex (the date keys' roving radio, the fader scale
+ // and travel, the record lines) takes macOS WebKit focus from a mouse press, and the next key press (Esc, Space, T) then
+ // matches :focus-visible and drew the keyboard ring around a control the user only clicked. A pointer press marks the
+ // control (data-pointer-focus) and its ring stays off while it keeps that focus; it still takes focus, so the arrow
+ // keys work after a click, and the first keyboard move to another control (Tab, an arrow) shows that one's ring.
+ const pointerKeepsFocus=(e:MouseEvent)=>{if(!e.isTrusted||!(e.target instanceof Element))return;const c=e.target.closest('[tabindex]');if(c instanceof HTMLElement&&root.contains(c)&&c.matches(POINTER_UNFOCUSED))c.dataset.pointerFocus='';};
+ const pointerFocusEnds=(e:FocusEvent)=>{if(e.target instanceof HTMLElement)delete e.target.dataset.pointerFocus;};
+ root.addEventListener('mousedown',pointerKeepsFocus,true);root.addEventListener('focusout',pointerFocusEnds,true);
  frame.settings.classList.add('s6-strip-key');attach.classList.add('s6-strip-key');close.classList.add('s6-strip-key');
  const cap=element('section',undefined,'s6-closed-cap');cap.hidden=true;
  cap.style.pointerEvents='auto';cap.style.gridRow='1';cap.style.gridColumn='1';cap.style.alignSelf='end';cap.style.padding='12px';cap.style.background='var(--port-bg)';cap.style.borderRadius='8px';
@@ -225,8 +238,15 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   };
  }
  function renderData(data:WireCockpitData,now:number){
+  // Owner badcase 11-21 (B1): within one page context (a consent or store change arrives as `clear` first and drops
+  // lastData), a reply whose history the engine could not read this time ("unavailable" right after "local-history") is
+  // a loading state, not "no usage record yet". The last local history stays for up to HISTORY_HOLD_MS; "recording-off"
+  // and a newer local history always replace it.
+  const held=heldHistory&&data.history?.coverage==='unavailable'&&now-heldHistory.at>=0&&now-heldHistory.at<HISTORY_HOLD_MS?heldHistory:null;
+  const nextHeld=data.history?.coverage==='local-history'?{history:data.history,at:now}:held;
+  if(held)data={...data,history:held.history};
   const previous=lastData,previousAt=lastRenderedAt,restore=snapshot(),restoreDeck=deck.checkpoint();
-  try{renderInto(data,now);}
+  try{renderInto(data,now);heldHistory=nextHeld;}
   catch(error){
    if(!restoring&&!disposed){
     restoring=true;
@@ -268,12 +288,12 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   render:renderData,
   nextDeadline(){if(!lastData)return null;const own=nextDeadline(lastData,lastRenderedAt),plugin=plugins.nextDeadline();return own===null?plugin:plugin===null?own:Math.min(own,plugin);},
   tick(now){refreshDeadlines(now);},
-  clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
+  clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;heldHistory=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
   active(value,now){const was=active;active=value;plugins.setInteractive(value);root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}else if(!was&&lastData){if(now!==undefined)lastRenderedAt=now;syncCaution(lastData,lastRenderedAt);}},
   visible(value){plugins.setVisible(value);},
   plugins(raw){return plugins.applyHostState(raw);},
   pluginData(id,data){return plugins.deliver(id,data);},
   openPluginScreen(id){return plugins.openScreen(id,true);},
-  dispose(){if(disposed)return;disposed=true;shutterRun=null;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);window.removeEventListener('keydown',rangeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  dispose(){if(disposed)return;disposed=true;shutterRun=null;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);root.removeEventListener('mousedown',pointerKeepsFocus,true);root.removeEventListener('focusout',pointerFocusEnds,true);window.removeEventListener('keydown',scopeShortcut);window.removeEventListener('keydown',rangeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }

@@ -394,7 +394,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       }
       const more=item('pm-more',()=>{options.connect();});more.dataset.pmAll='';more.append(fitted('pm-n',w('plugin.allSubscriptions')));m.append(more);
       m.append(el('div','pm-sep'),fitted('pm-h',w('plugin.addPlugin')));
-      for(const plugin of registry.list()){
+      for(const plugin of registry.list().filter(p=>!p.frameworkOnly)){
         const added=enabled(plugin.id),b=item('pm-plugin'+(added?' on':''),()=>{host.add(plugin.id);},added);b.dataset.pmPlugin=plugin.id;
         b.append(icon(plugin,'pm-ic'),fitted('pm-n',pluginWords(options.locale,plugin.title)),added?fitted('pm-ok',w('plugin.added')):el('b','pm-go',w('plugin.addGo').full));m.append(b);
       }
