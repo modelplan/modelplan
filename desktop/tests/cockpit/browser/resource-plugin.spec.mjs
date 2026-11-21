@@ -67,33 +67,47 @@ test('D327 the key: white line icon, orchid dashed underline; the cells read CPU
  await expect(column(page).locator('.pl-cell[data-row="1"]')).toContainText('15.1 / 32 GB');
  await expect(column(page).locator('.pl-cell[data-row="2"]')).toContainText('120 GB free');
  await expect(column(page).locator('.pl-foot')).toContainText('Normal');
- // Bars and trend lines use the plugin ink; the disk has no trend line.
+ // The plugin ink is the key underline and the --pl-ink token; the bars take the status colour (D371). The disk has no trend line.
  const ink=await page.evaluate(()=>{const col=document.querySelector('.pl-col[data-plugin="resources"]');return {ink:col.style.getPropertyValue('--pl-ink'),trends:col.querySelectorAll('.pl-trend').length,fills:[...col.querySelectorAll('.pl-bar i')].map(i=>i.style.width)};});
  expect(ink.ink).toBe('#da66c2');expect(ink.trends).toBe(2);expect(ink.fills).toEqual(['22%','47.2%','75.7%']);
  await expect(column(page).locator('.pl-cell.pl-mid, .pl-cell.pl-low')).toHaveCount(0);
 });
 
-test('D327 only numbers change colour: CPU red at ≥ 90 %, memory amber by pressure, disk amber at ≥ 90 %',async({page})=>{
+test('D371 B4c status colour: bars and numbers are normal / amber / red by resource state, never the plugin orchid',async({page})=>{
  const {push}=await open(page,{locale:'zh-CN'});
- expect(await push([reading(T0,{cpuUser:71,cpuSystem:25,pressure:'warn',swapUsed:2.1*GB,diskFree:40*GB})])).toBe(true);
- await expect(column(page).locator('.pl-tag')).toHaveText(['CPU','内存','磁盘']);
+ const paint=()=>page.evaluate(()=>{const col=document.querySelector('.pl-col[data-plugin="resources"]');
+  return {numbers:[...col.querySelectorAll('.qnum')].map(n=>getComputedStyle(n).color),bars:[...col.querySelectorAll('.pl-bar i')].map(i=>getComputedStyle(i).backgroundColor),
+   trends:[...col.querySelectorAll('.pl-trend path')].map(p=>getComputedStyle(p).stroke)};});
+ // Normal: CPU 22 %, memory 47 %, disk 76 %: one normal colour on all three bars, not the orchid.
+ expect(await push([reading(T0),reading(T0+5000)])).toBe(true);
+ await expect(column(page).locator('.pl-cell.pl-mid, .pl-cell.pl-low')).toHaveCount(0);
+ const normal=await paint();
+ expect(new Set(normal.bars).size).toBe(1);expect(normal.bars[0]).not.toBe('rgb(218, 102, 194)');
+ // CPU 96 % red, memory warn pressure amber, disk 92 % red.
+ expect(await push([reading(T0+10000,{cpuUser:71,cpuSystem:25,pressure:'warn',swapUsed:2.1*GB,diskFree:40*GB})])).toBe(true);
  await expect(column(page).locator('.pl-cell[data-row="0"]')).toHaveClass(/pl-low/);
  await expect(column(page).locator('.pl-cell[data-row="1"]')).toHaveClass(/pl-mid/);
- await expect(column(page).locator('.pl-cell[data-row="2"]')).toHaveClass(/pl-mid/);
+ await expect(column(page).locator('.pl-cell[data-row="2"]')).toHaveClass(/pl-low/);
  await expect(column(page).locator('.pl-foot')).toContainText('偏高');
- const colours=await page.evaluate(()=>{const col=document.querySelector('.pl-col[data-plugin="resources"]');
-  return {numbers:[...col.querySelectorAll('.qnum')].map(n=>getComputedStyle(n).color),bars:[...col.querySelectorAll('.pl-bar i')].map(i=>getComputedStyle(i).backgroundColor)};});
- // Bars keep the orchid; the red and amber numbers differ from each other and from the bars.
- expect(new Set(colours.bars).size).toBe(1);
- expect(colours.numbers[0]).not.toBe(colours.numbers[1]);expect(colours.numbers[1]).toBe(colours.numbers[2]);
- expect(colours.numbers).not.toContain(colours.bars[0]);
- // Back to normal pressure, a 94 % memory reading keeps its ink (macOS uses free memory as cache).
- expect(await push([reading(T0+5000,{memApp:20.4*GB,memWired:5.2*GB,memCompressed:4.6*GB,memCached:1.2*GB,memFree:.6*GB})])).toBe(true);
+ const hot=await paint();
+ expect(new Set(hot.bars).size).toBe(2);expect(hot.bars).not.toContain(normal.bars[0]);
+ expect(hot.bars[0]).toBe(hot.numbers[0]);expect(hot.bars[1]).toBe(hot.numbers[1]);expect(hot.bars[2]).toBe(hot.numbers[2]);
+ expect(hot.bars[0]).toBe(hot.bars[2]);// red is red
+ expect(hot.trends[0]).toBe(hot.bars[0]);expect(hot.trends[1]).toBe(hot.bars[1]);
+ // Back to normal pressure, a 94 % memory reading is red by percentage (it was ink-only before D371).
+ expect(await push([reading(T0+15000,{memApp:20.4*GB,memWired:5.2*GB,memCompressed:4.6*GB,memCached:1.2*GB,memFree:.6*GB})])).toBe(true);
  await expect(column(page).locator('.pl-cell[data-row="1"] .qvalue')).toHaveText('94');
- await expect(column(page).locator('.pl-cell[data-row="1"]')).not.toHaveClass(/pl-mid|pl-low/);
+ await expect(column(page).locator('.pl-cell[data-row="1"]')).toHaveClass(/pl-low/);
  // A refused reading changes nothing.
- expect(await push([{...reading(T0+10000),cpuUser:200}])).toBe(false);
+ expect(await push([{...reading(T0+20000),cpuUser:200}])).toBe(false);
  await expect(column(page).locator('.pl-cell[data-row="1"] .qvalue')).toHaveText('94');
+});
+
+test('D371 the Resources and Calendar tab icons have no small square frame',async({page})=>{
+ await open(page);
+ const frames=await page.evaluate(()=>[...document.querySelectorAll('.eng-keys .pl-key')].map(k=>[k.dataset.plugin,k.querySelectorAll('.lamp svg rect').length,k.querySelectorAll('.lamp svg').length]));
+ expect(frames.length).toBeGreaterThan(0);
+ for(const [id,rects,svgs] of frames){expect(svgs,id).toBe(1);expect(rects,id).toBe(0);}
 });
 
 test('the big screen: charts on the draw hook, redrawn by readings, closed by Escape',async({page})=>{

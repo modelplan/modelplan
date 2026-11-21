@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {PluginRegistry,PLUGIN_INKS} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
 import {builtinPlugins} from '../../../cockpit/.tmp/compiled/src/plugin-builtins.js';
 import {resourcePlugin,RESOURCE_INK,RESOURCE_WINDOW_MS,resourceLevels,chartData} from '../../../cockpit/.tmp/compiled/src/resource-plugin.js';
+import {calendarPlugin} from '../../../cockpit/.tmp/compiled/src/calendar-plugin.js';
 import {tables} from '../../../cockpit/study/rocket-r1/i18n.js';
 import '../../../cockpit/study/rocket-r1/strings/plugins.js';
 
@@ -77,10 +78,10 @@ test('D327 column: CPU · memory · disk cells, numbers turn amber/red, memory f
  assert.deepEqual(en.cells.map(c=>c.tag.full),['CPU','Memory','Disk']);
  assert.equal(en.cells[0].side.full,'peak 61%');assert.equal(en.cells[2].side.full,'120 GB free');assert.equal(en.foot.value.full,'Normal');
 
- // A 94% memory reading with normal pressure keeps its ink: macOS uses free memory as cache (board section 2).
+ // D371 B4c: a 94% memory reading is red by percentage even at normal pressure (status colour, same family as the quota rings).
  const full=resourcePlugin.accept({samples:[sample(T0,{memApp:20.4*GB,memWired:5.2*GB,memCompressed:4.6*GB,memCached:1.2*GB,memFree:.6*GB})]},undefined);
  assert.equal(resourcePlugin.column(full,context('en')).cells[1].value,94);
- assert.equal(resourcePlugin.column(full,context('en')).cells[1].level,null);
+ assert.equal(resourcePlugin.column(full,context('en')).cells[1].level,'low');
  const warn=resourcePlugin.accept({samples:[sample(T0,{pressure:'warn',swapUsed:2.1*GB})]},undefined);
  assert.equal(resourcePlugin.column(warn,context('en')).cells[1].level,'mid');
  assert.equal(resourcePlugin.column(warn,context('zh-CN')).foot.value.full,'偏高 · 交换 2.1 GB');
@@ -88,13 +89,29 @@ test('D327 column: CPU · memory · disk cells, numbers turn amber/red, memory f
  assert.equal(resourcePlugin.column(critical,context('en')).cells[1].level,'low');
  const spike=resourcePlugin.accept({samples:[sample(T0,{cpuUser:71,cpuSystem:25,diskFree:40*GB})]},undefined);
  const s=resourcePlugin.column(spike,context('en')).cells;
- assert.equal(s[0].value,96);assert.equal(s[0].level,'low');assert.equal(s[2].level,'mid');
+ assert.equal(s[0].value,96);assert.equal(s[0].level,'low');assert.equal(s[2].level,'low');
 });
 
-test('D327 levels: CPU amber from 70 %, red from 90 %; memory by pressure only; disk amber from 90 %',()=>{
- assert.deepEqual(resourceLevels({cpu:69.9,pressure:'normal',disk:89.9}),{cpu:null,memory:null,disk:null});
- assert.deepEqual(resourceLevels({cpu:70,pressure:'warn',disk:90}),{cpu:'mid',memory:'mid',disk:'mid'});
- assert.deepEqual(resourceLevels({cpu:90,pressure:'critical',disk:99}),{cpu:'low',memory:'low',disk:'mid'});
+test('D371 B4c levels: one status colour by percentage, amber from 80 %, red from 90 %, 3 % hysteresis; memory also follows pressure',()=>{
+ assert.deepEqual(resourceLevels({cpu:79.9,pressure:'normal',disk:79}),{cpu:null,memory:null,disk:null});
+ assert.deepEqual(resourceLevels({cpu:80,pressure:'normal',disk:89.9},undefined),{cpu:'mid',memory:null,disk:'mid'});
+ assert.deepEqual(resourceLevels({cpu:90,pressure:'warn',disk:99}),{cpu:'low',memory:'mid',disk:'low'});
+ assert.equal(resourceLevels({cpu:10,pressure:'critical',disk:10}).memory,'low');
+ // Hysteresis: a level is left only 3 points below its threshold.
+ const at=(cpu,prev)=>resourceLevels({cpu,pressure:'normal',disk:0},{cpu:prev,memory:null,disk:null}).cpu;
+ assert.equal(at(78,'mid'),'mid');assert.equal(at(76.9,'mid'),null);
+ assert.equal(at(88,'low'),'low');assert.equal(at(86.9,'low'),'mid');assert.equal(at(70,'low'),null);
+ assert.equal(at(85,null),'mid','entering needs the plain threshold');
+});
+
+test('D371 B4c the column carries the level through its sample history, so a flicker at the border keeps the colour',()=>{
+ const cpu=(...v)=>{let st;v.forEach((x,i)=>{st=resourcePlugin.accept({samples:[sample(T0+i*5000,{cpuUser:x,cpuSystem:0})]},st);});return resourcePlugin.column(st,context('en')).cells[0];};
+ assert.equal(cpu(60,81,78).level,'mid');assert.equal(cpu(60,81,76).level,null);assert.equal(cpu(60,78).level,null);
+ assert.equal(cpu(10,20).tone,true,'bars take the status tone');
+});
+
+test('D371 the Resources and Calendar key icons have no small square frame',()=>{
+ assert.doesNotMatch(resourcePlugin.icon,/<rect/);assert.doesNotMatch(calendarPlugin.icon,/<rect/);assert.match(calendarPlugin.icon,/currentColor/);
 });
 
 test('screen lines (the draw fallback): CPU, memory with the four kinds, disk, sampling interval',()=>{
@@ -130,7 +147,7 @@ test('chartData: memory 10-minute used/cached fractions, pressure strip, CPU 10-
  // CPU: one bar per 10 s (mean of the samples inside it), user and system stacked, at most 60 bars.
  assert.equal(d.cpu.length,60);
  for(const b of d.cpu){assert.ok(b.user>=0&&b.system>=0&&b.user+b.system<=100.0001);}
- assert.equal(d.cpuLine,70);assert.equal(d.diskNotch,90);
+ assert.equal(d.cpuLine,80);assert.equal(d.diskNotch,90);
  assert.ok(Math.abs(d.disk-(494-120)/494*100)<1e-6);
- assert.deepEqual(chartData([]),{memory:[],strip:[],cpu:[],disk:0,cpuLine:70,diskNotch:90});
+ assert.deepEqual(chartData([]),{memory:[],strip:[],cpu:[],disk:0,cpuLine:80,diskNotch:90});
 });

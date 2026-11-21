@@ -39,6 +39,8 @@ export interface PluginCell {
   readonly trend?:readonly number[]|null;
   /** Past a warning line only the number turns amber (mid) or red (low). */
   readonly level?:'mid'|'low'|null;
+  /** D371: the bar and trend line take the status colour of `level` (normal / amber / red) instead of the plugin ink. */
+  readonly tone?:boolean;
 }
 export interface PluginColumn {
   /** Up to three cells, top row first; rows without a cell stay empty. Also the fallback when `draw` fails. */
