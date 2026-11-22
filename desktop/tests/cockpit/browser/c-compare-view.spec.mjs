@@ -147,9 +147,9 @@ test('CKP-MFD compare: the back key is named "Back …" for assistive tech, and 
  await page.locator('.hud-list .hp').first().click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-tune/);
  await expect(page.locator('.fd-ch.trying')).toHaveCount(0);
- // A page key closes the view the HUD opened (study closeMfdView('page')): no stale "‹ back" line on the next page.
- await page.locator('[data-mfd="page:overview"]').click();
- await expect(page.locator('.mfd-page .mfd-back')).toHaveCount(0);
+ // D387: the Overview tab of the switch closes the view the HUD opened: no stale "‹ back" line or switch on the overview.
+ await page.getByRole('tab',{name:'Overview'}).click();
+ await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);await expect(page.locator('.mfd-page .mfd-back')).toHaveCount(0);await expect(page.getByRole('tablist')).toHaveCount(0);
 });
 
 test('CKP-MFD compare: the title stays whole when the current effort is unknown',async({page})=>{
