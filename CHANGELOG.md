@@ -6,6 +6,8 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- The cockpit's launch rack now always stays behind the cockpit, also while it detaches, flies back or opens and closes; before, a detaching or returning cockpit had the rack drawn over its canopy. With the menu bar icon hidden or squeezed off, the attached cockpit now hangs from the menu bar just right of the notch (or the same place on a display without one), with its rack, instead of opening at the top-right corner without one.
+
 ## CLI v0.5.69 (2026-11-21)
 
 - The cockpit calendar now writes subscription names with their colour mark instead of two-letter codes, shows the next reset as a large time, lists two different moments (or one when they are the same), and says "no time-slot rules" when you have none.

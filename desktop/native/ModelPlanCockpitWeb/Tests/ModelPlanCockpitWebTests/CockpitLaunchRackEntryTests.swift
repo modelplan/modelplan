@@ -24,16 +24,25 @@ import XCTest
     try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
-  private func make(reduceMotion: Bool = false) throws -> Fixture {
+  /// `notch`: nil keeps the visible status item; `.some(edge)` hides it (the app's anchor is nil) on a display whose notch
+  /// ends at `edge` (nil edge: no notch), D378.
+  private func make(reduceMotion: Bool = false, hiddenItemNotch notch: CGFloat?? = nil) throws -> Fixture {
     _ = NSApplication.shared
     guard let screen = NSScreen.main else { throw XCTSkip("needs a display") }
     let usable = screen.visibleFrame
     // A status item's frame in the menu bar, left of centre so the cockpit has room on both sides.
-    let icon = CGRect(x: (usable.minX + usable.width * 0.4).rounded(), y: usable.maxY, width: 28, height: max(1, screen.frame.maxY - usable.maxY))
+    var icon = CGRect(x: (usable.minX + usable.width * 0.4).rounded(), y: usable.maxY, width: 28, height: max(1, screen.frame.maxY - usable.maxY))
     let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
     let session = CockpitShellSession()
+    let visible = notch == nil, shown = icon
     let page = CockpitWindowController(bundle: try bundle(), context: context,
-      appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: reduceMotion), shellSession: session, anchor: { icon })
+      appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: reduceMotion), shellSession: session,
+      anchor: { visible ? shown : nil })
+    if let notch {
+      let display = CockpitScreen(frame: screen.frame, visibleFrame: usable, notchRightEdge: notch)
+      page.screens = { [display] }
+      icon = CockpitShellLayout.menuBarEdgeAnchor(screen: display)
+    }
     page.onFailure = { [weak self] in self?.failures.append($0) }
     return Fixture(page: page, session: session, icon: icon, usable: usable, screenWidth: screen.frame.width)
   }
@@ -335,6 +344,97 @@ import XCTest
     XCTAssertTrue(short.sawPartial, "short ride: the rack unfolded through partial extensions, it did not jump")
     XCTAssertEqual(failures, [])
   }
+  /// G3-156 (owner, build 2): the rack is ALWAYS behind the cockpit: the icon open, the key detach, the key put back,
+  /// the drag tear-off and drag put back, and the close. Observed on every rack placement (each 60 Hz frame of every
+  /// motion, `verificationRackDrawn`) on the real window server order, not at wall-clock instants; each phase waits
+  /// for its end state by polling. Before the fix a detaching or flying cockpit (`.normal`, G3-102) sat under a rack
+  /// left at the attached level, which drew over its canopy.
+  func testTheRackStaysBehindTheCockpitInEveryPhaseAndBothDirections() async throws {
+    let fixture = try make()
+    defer { fixture.page.discard() }
+    var phase = "icon open", behind: [String: [Bool]] = [:]
+    fixture.page.verificationRackDrawn = {
+      if let value = fixture.page.verificationRackBehindCockpit { behind[phase, default: []].append(value) }
+    }
+    defer { fixture.page.verificationRackDrawn = nil }
+    func settle(_ what: String, seconds: Int = 4, _ condition: @MainActor () -> Bool) async throws {
+      let deadline = ContinuousClock.now + .seconds(seconds)
+      while ContinuousClock.now < deadline, !condition() { try await Task.sleep(for: .milliseconds(4)) }
+      XCTAssertTrue(condition(), "never happened: \(what)")
+    }
+    let window = try open(fixture)
+    let home = try XCTUnwrap(fixture.home)
+    try await settle("open settled") { window.alphaValue == 1 && window.frame == home && fixture.page.verificationRack.ext == 1 && !fixture.page.verificationRack.moving }
+
+    phase = "key detach"
+    fixture.page.setAttached(false)
+    XCTAssertEqual(fixture.page.verificationRackBehindCockpit, true, "behind at the press, the frame the level drops")
+    try await settle("detached, rack in") { fixture.page.verificationRack.panel == nil && !fixture.page.verificationRack.moving }
+
+    phase = "key put back"
+    fixture.page.setAttached(true)
+    try await settle("latched, rack out") { fixture.page.isAttached && fixture.page.verificationRack.ext == 1 && !fixture.page.verificationRack.moving }
+
+    phase = "drag tear-off"
+    let grab = CGPoint(x: home.minX + 120, y: home.maxY - 16)
+    fixture.page.titleDrag(.began, point: grab)
+    fixture.page.titleDrag(.moved, point: CGPoint(x: grab.x, y: grab.y - 200))
+    try await settle("torn off, rack in") { fixture.page.verificationRack.panel == nil }
+
+    phase = "drag put back"
+    let near = CGPoint(x: grab.x + 10, y: grab.y - 20)
+    fixture.page.titleDrag(.moved, point: near)
+    fixture.page.titleDrag(.ended, point: near)
+    try await settle("latched again") { fixture.page.isAttached && fixture.page.verificationRack.ext == 1 && !fixture.page.verificationRack.moving }
+
+    phase = "close"
+    fixture.page.requestClose()
+    try await settle("closed") { fixture.page.window == nil }
+
+    for name in ["icon open", "key detach", "key put back", "drag tear-off", "drag put back", "close"] {
+      let samples = behind[name] ?? []
+      XCTAssertGreaterThan(samples.count, 1, "\(name): the rack was on screen and sampled")
+      XCTAssertEqual(samples.filter { !$0 }.count, 0, "\(name): the rack was in front of the cockpit on \(samples.filter { !$0 }.count) of \(samples.count) frames")
+    }
+    XCTAssertEqual(failures, [])
+  }
+
+  /// D378 (owner, 11-21): with the status item not visible the attached cockpit still has its rack: it hangs from the
+  /// menu bar's edge just right of the notch (or where a notch edge would be), over the left shoulder, behind the cockpit.
+  func testAHiddenStatusItemOpensUnderTheNotchsRightEdgeWithTheRackBehind() async throws {
+    guard let main = NSScreen.main else { throw XCTSkip("needs a display") }
+    try await assertHiddenItemOpen(notch: (main.frame.midX + 92).rounded(), label: "notch")
+  }
+  func testAHiddenStatusItemOnADisplayWithoutANotchOpensRightOfTheMenuBarCentre() async throws {
+    try await assertHiddenItemOpen(notch: nil, label: "no notch")
+  }
+  private func assertHiddenItemOpen(notch: CGFloat?, label: String, file: StaticString = #filePath, line: UInt = #line) async throws {
+    let fixture = try make(hiddenItemNotch: .some(notch))
+    defer { fixture.page.discard() }
+    let main = try XCTUnwrap(NSScreen.main)
+    let edge = notch ?? (main.frame.midX + CockpitShellLayout.nominalNotchHalfWidth).rounded()
+    XCTAssertEqual(fixture.icon.minX, edge, "\(label): anchored at the edge", file: file, line: line)
+    XCTAssertEqual(fixture.page.rackIcon(), fixture.icon, "\(label): the rack hangs there although the item is hidden", file: file, line: line)
+    var behind: [Bool] = []
+    fixture.page.verificationRackDrawn = { if let value = fixture.page.verificationRackBehindCockpit { behind.append(value) } }
+    defer { fixture.page.verificationRackDrawn = nil }
+    let window = try open(fixture)
+    let home = try XCTUnwrap(fixture.home)
+    try await until("\(label): open settled", file: file, line: line) {
+      window.alphaValue == 1 && window.frame == home && fixture.page.verificationRack.ext == 1 && !fixture.page.verificationRack.moving
+    }
+    let panel = try XCTUnwrap(fixture.page.verificationRack.panel, "\(label): the rack is out", file: file, line: line)
+    XCTAssertEqual(panel.minX, edge, accuracy: 0.5, "\(label): its left side on the notch's right edge", file: file, line: line)
+    XCTAssertEqual(panel.maxY, fixture.usable.maxY, accuracy: 0.5, "\(label): from the menu bar's edge", file: file, line: line)
+    if let layout = fixture.page.verificationLayout, home.minX > fixture.usable.minX, home.maxX < fixture.usable.maxX {
+      XCTAssertEqual(layout.shoulder.x, panel.midX, accuracy: 0.5, "\(label): over the left shoulder", file: file, line: line)
+    }
+    XCTAssertGreaterThan(behind.count, 1, "\(label): sampled while the rack was out", file: file, line: line)
+    XCTAssertFalse(behind.contains(false), "\(label): the rack stays behind the cockpit", file: file, line: line)
+    XCTAssertEqual(fixture.page.verificationRackBehindCockpit, true, file: file, line: line)
+    XCTAssertEqual(failures, [], file: file, line: line)
+  }
+
   /// Runs `press` (the put back) and samples the window and rack until the cockpit is latched. The proof is the order of
   /// the observed states, never elapsed time (a slow hosted runner stretches every gap, and the old wall-clock bounds on
   /// landing, pace and jump flaked there). Returns the
