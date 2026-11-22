@@ -145,6 +145,28 @@ enum SettingsWords {
     private var appearanceObservation: NSKeyValueObservation?
     private let environmentProvider: @MainActor () -> SettingsEnvironment
     private var refreshing = false, pendingEdit = false
+    /// G3-161: while the window is not visible, an engine context update (it changes nothing the user can see) only marks
+    /// the content stale; showing the window refreshes it once. Off by default; the app host turns it on. User edits,
+    /// pane changes and searches always refresh at once.
+    public var defersContextRefreshWhileHidden = false
+    private var refreshDeferred = false
+    /// Counts content refreshes, for the G3-161 checks.
+    private(set) var refreshCountForChecks = 0
+    /// What the plugins section last showed. An engine update that leaves it equal does not rebuild the section.
+    private struct PluginViewKey: Equatable {
+        let language: SettingsLanguage, paneID: String, query: String
+        let preferences: CockpitPluginPreferences, catalogue: [CockpitPluginDefinition]
+    }
+    private var pluginViewKey: PluginViewKey?
+    private func editorDidChange() {
+        if defersContextRefreshWhileHidden, editor.isDeliveringContextUpdate, window?.isVisible != true { refreshDeferred = true; return }
+        refresh()
+    }
+    public override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        if refreshDeferred { refresh() }
+    }
+    public func windowDidDeminiaturize(_ notification: Notification) { if refreshDeferred { refresh() } }
     private var pendingSaveTask: Task<Void, Never>?
     private enum ErrorSource { case aliasDraft, persistence, clipboard, hostAction }
     private var errorSource: ErrorSource?
@@ -179,7 +201,7 @@ enum SettingsWords {
         super.init(window: window)
         window.delegate = self
         buildWindow(window)
-        editor.onChange = { [weak self] in self?.refresh() }
+        editor.onChange = { [weak self] in self?.editorDidChange() }
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshEnvironment() } })
@@ -221,7 +243,7 @@ enum SettingsWords {
     public func attachCockpitPlugins(_ model: CockpitPluginSettingsModel) {
         guard cockpitPluginsView == nil else { return }
         let view = SettingsCockpitPluginsView(model: model, language: language)
-        cockpitPluginsView = view; stack.addArrangedSubview(view)
+        cockpitPluginsView = view; pluginViewKey = nil; stack.addArrangedSubview(view)
         view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         refresh()
     }
@@ -313,6 +335,7 @@ enum SettingsWords {
     }
     private func refresh() {
         guard !refreshing else { return }; refreshing = true; defer { refreshing = false }
+        refreshDeferred = false; refreshCountForChecks += 1
         window?.title = SettingsWords.text("Settings", "设置", language)
         searchField.placeholderString = SettingsWords.text("Search settings", "搜索设置", language)
         searchField.setAccessibilityLabel(searchField.placeholderString)
@@ -353,7 +376,11 @@ enum SettingsWords {
                 : !["import", "history", "usage", "导入", "历史", "使用"].contains(where: { query.localizedCaseInsensitiveContains($0) })
             if !view.isHidden, scopeConsentEntry?.historyImport?.status == nil { Task { await scopeConsentEntry?.historyImport?.refreshIfNeeded() } }
         }
-        cockpitPluginsView?.apply(language: language, paneID: selectedPaneID, query: query)
+        if let view = cockpitPluginsView {
+            let key = PluginViewKey(language: language, paneID: selectedPaneID, query: query,
+                                    preferences: view.model.preferences, catalogue: view.model.catalogue)
+            if key != pluginViewKey { pluginViewKey = key; view.apply(language: language, paneID: selectedPaneID, query: query) }
+        }
         if scopeConsentEntry == nil {
             if connectionContent.isHidden && !connectionsWereHidden { connectionsView.suspend() }
             connectionsView.apply(language: language)
