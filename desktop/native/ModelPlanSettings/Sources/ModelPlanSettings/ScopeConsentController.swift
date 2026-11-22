@@ -460,6 +460,8 @@ public struct FirstRunReading: Sendable, Equatable {
     /// switched on in Settings, Select all) includes them; only the path's own checkbox allows one, by itself.
     /// The engine refuses an allow that names one together with any other scope. Off still refuses them.
     public static let separateOptInScopes: Set<String> = ["gemini.account_usage.token_refresh"]
+    /// D380: Keychain-capable scopes whose Keychain read depends on the tool's own store format (ZCode 3.19+ only).
+    public static let conditionalKeychainScopes: Set<String> = ["zai.account_usage.saved_login"]
     /// G3-45: each detected tool once, in the engine's order. Browser-session paths stay out:
     /// they ask on their own at first need (FR-9-05), never through this one consent.
     public var firstRunTools: [FirstRunTool] {
@@ -474,10 +476,10 @@ public struct FirstRunReading: Sendable, Equatable {
                 $0.route.isKnown && $0.route != .knownUnknown && $0.route != .browserSession && $0.disabledReason == nil && !$0.cleanupPending &&
                     !Self.separateOptInScopes.contains($0.scope)
             }
-            // D380: ZCode's saved-login scope also has a Keychain choice, but only a Keychain-bound store needs
-            // it, which its row reports; first run keeps the Keychain line for Claude Code alone.
+            // D380: ZCode's saved-login scope has a Keychain choice that only a Keychain-bound store needs (its row
+            // says so), so it does not make first run promise a macOS prompt.
             return FirstRunTool(tool: tool, scopes: standard.map(\.scope), routes: standard.map(\.route), block: block(forTool: tool),
-                                promptsKeychain: tool == "claude" && standard.contains { $0.keychain != nil }, keyMissing: rowCodes[tool] == .keyMissing)
+                                promptsKeychain: standard.contains { $0.keychain != nil && !Self.conditionalKeychainScopes.contains($0.scope) }, keyMissing: rowCodes[tool] == .keyMissing)
         }
     }
     /// G3-59: Settings lists every tool first run would list (same rows, engine order), then each supported
