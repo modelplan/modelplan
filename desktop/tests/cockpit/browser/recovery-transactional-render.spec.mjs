@@ -57,7 +57,8 @@ test('S2: deck checkpoints restore the selected page, alert overlay and tune ret
   await page.evaluate(()=>{const d=window.checkpointDeck,restore=d.checkpoint();d.clear();restore();d.refresh();});
   expect(await page.locator('.mfd-screen').innerHTML()).toBe(tune);
   await page.keyboard.press('Escape');
-  await expect(page.locator('[data-mfd="page:sub"]')).toHaveAttribute('aria-pressed','true');
+  // D387: Escape from tune lands on Overview, not on the page the tune was opened from.
+  await expect(page.locator('[data-mfd="page:overview"]')).toHaveAttribute('aria-pressed','true');
   await page.evaluate(()=>window.checkpointDeck.showAlerts());
   const alerts=await page.locator('.mfd-screen').innerHTML();
   await page.evaluate(()=>{const d=window.checkpointDeck,restore=d.checkpoint();d.clear();restore();d.refresh();});

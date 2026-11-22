@@ -303,6 +303,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   bar.classList.remove('dark');footer.className='mfd-ok';footer.onclick=null;
   // D387: a plugin screen is the whole view; the page underneath and its option keys are not shown.
   page.hidden=screenView!==null;
+  // G3-171: before the first reply there is nothing to show yet; say so (busy) on every view the page carries, so a restored alerts list does not keep a stale busy flag.
+  if(data)page.removeAttribute('aria-busy');else page.setAttribute('aria-busy','true');
   if(screenView!==null){page.replaceChildren();footer.replaceChildren(...Array.from({length:3},()=>{const e=node('span','ok soft off');e.dataset.mat='part';e.setAttribute('aria-hidden','true');return e;}));return;}
   if(compare&&!alertsView&&paintCompare(d,ui))return;
   if(alertsView){
@@ -322,8 +324,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    return;
   }
   page.className='mfd-page pg-'+modules[selected].id;
-  // G3-171: before the first reply there is nothing to show yet; say so (busy) instead of the empty-subscriptions text.
-  if(data)page.removeAttribute('aria-busy');else page.setAttribute('aria-busy','true');
+  // G3-171: before the first reply there is nothing to show yet; say so (loading) instead of the empty-subscriptions text.
   page.innerHTML=!data?`<p class="mp-empty mp-loading" role="status">${t('eng.loading')}</p>`:d.empty?`<p class="mp-empty">${t('eng.empty')}</p>`:modules[selected].render(d,ui);
   // The study's measured chart area (mfd.js): the heatmap takes the largest cells its area allows, so it is drawn at the
   // measured size, again once if that size changed.
