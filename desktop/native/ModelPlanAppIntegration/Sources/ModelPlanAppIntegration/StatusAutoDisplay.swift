@@ -108,16 +108,20 @@ struct StatusAutoDisplay {
     }
 }
 
-/// The red dot of a used-up quota, at the icon's top-right corner. It has no width of its own.
+/// The red dot of a used-up quota, at the icon's bottom-right corner (G3-166: at the top-right it sat on the rocket's
+/// nose). It lies inside the button's bounds and has no width of its own.
 @MainActor final class StatusUsedUpDotView: NSView {
     static let side: CGFloat = 7
     override var isFlipped: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    /// Where the dot sits in a button's bounds: the bottom-right corner, whichever way the button's y axis runs.
+    static func frame(in bounds: NSRect, flipped: Bool) -> NSRect {
+        let y = flipped ? max(bounds.minY, bounds.maxY - side) : bounds.minY
+        return NSRect(x: max(bounds.minX, bounds.maxX - side), y: y, width: side, height: side)
+    }
     func attach(to button: NSButton) {
-        let bounds = button.bounds
-        let top = button.isFlipped ? bounds.minY : max(bounds.minY, bounds.maxY - Self.side)
-        frame = NSRect(x: max(bounds.minX, bounds.maxX - Self.side), y: top, width: Self.side, height: Self.side)
-        autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+        frame = Self.frame(in: button.bounds, flipped: button.isFlipped)
+        autoresizingMask = [.minXMargin, button.isFlipped ? .minYMargin : .maxYMargin]
         if superview !== button { button.addSubview(self) }
     }
     override func draw(_ dirtyRect: NSRect) {
