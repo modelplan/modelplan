@@ -32,6 +32,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -278,6 +279,14 @@ func readZCodeLogin(dir string, now time.Time) (zcodeLogin, string) {
 	if b, err = zaiConfigFile(filepath.Join(dir, "credentials.json")); err == nil {
 		if json.Unmarshal(b, &store) != nil {
 			store = nil
+		}
+	}
+	// G3-158: ZCode 3.19+ entries (enc:v2) are keyed by a secret in the system credential store,
+	// which is not read. Such a store is unsupported; neither "sign in again" nor the plaintext
+	// mirror, which may belong to another account, stands in for it.
+	for _, v := range store {
+		if raw, ok := v.(string); ok && strings.HasPrefix(raw, "enc:") && !strings.HasPrefix(raw, "enc:v1:") {
+			return zcodeLogin{}, "unsupported_login"
 		}
 	}
 	secret := zcodeCredentialSecret()
@@ -608,3 +617,37 @@ func parseZCodeBilling(r zcodeBillingResponse, now time.Time) codexbarEntry {
 	e.Status, e.ErrorCode, e.Error = "ok", "", ""
 	return e
 }
+
+// zcodeProviderFileKeyless: ZCode's provider file selects no key (no selection, an account
+// selection, or a selected rule without a key), so the key route can never read. The file is read
+// only when its size or time changed (paths are built every watcher pass); the key, if any, is
+// dropped at once and only the verdict is kept.
+func zcodeProviderFileKeyless(path string) bool {
+	fi, err := os.Lstat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	stamp := strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
+	zcodeKeylessMu.Lock()
+	defer zcodeKeylessMu.Unlock()
+	if m, ok := zcodeKeylessMemo[path]; ok && m.stamp == stamp {
+		return m.keyless
+	}
+	keyless := false
+	if b, err := zaiConfigFile(path); err == nil {
+		_, key, state, code := zcodeProviderKey(b)
+		keyless = (state != "" && (code == "unsupported_login" || code == "no_key")) || (state == "" && strings.TrimSpace(key) == "")
+	}
+	zcodeKeylessMemo[path] = zcodeKeylessEntry{stamp, keyless}
+	return keyless
+}
+
+type zcodeKeylessEntry struct {
+	stamp   string
+	keyless bool
+}
+
+var (
+	zcodeKeylessMu   sync.Mutex
+	zcodeKeylessMemo = map[string]zcodeKeylessEntry{}
+)
