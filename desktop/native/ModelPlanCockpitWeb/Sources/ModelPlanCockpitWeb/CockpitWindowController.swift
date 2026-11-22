@@ -1766,7 +1766,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let displays = self.screens(), requested = anchor()
     var remembered: CockpitScreen?
     if shellSession.detached, let origin = detachedOrigin,
-       let replayed = CockpitScreenSelection.replayFrame(origin: origin, size: layout?.frame.size ?? CGSize(width: 1, height: 1), screens: displays) {
+       let replayed = CockpitScreenSelection.replayFrame(origin: origin, size: layout?.frame.size ?? CGSize(width: 1, height: 1), screens: displays, bottomOverhang: hullBottomInset) {
       remembered = CockpitScreenSelection.overlapping(replayed, in: displays)
     }
     // G3-128: attached, the status item's display; the click point (the widget's ignition, possibly on another display
@@ -1821,7 +1821,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #if MODELPLAN_TEST_ONLY_SPI
     if verificationPlacement != nil { return (fit, fit.clamping(origin: detachedOrigin ?? fit.frame.origin, usable: usable)) }
     #endif
-    let replayed = detachedOrigin.flatMap { CockpitScreenSelection.replayFrame(origin: $0, size: fit.frame.size, screens: screens()) }
+    let replayed = detachedOrigin.flatMap { CockpitScreenSelection.replayFrame(origin: $0, size: fit.frame.size, screens: screens(), bottomOverhang: fit.hullBottomInset) }
     return (fit, replayed ?? fit.frame)
   }
   private func applyLayout(animated: Bool = false, shutter: Bool = false) {
@@ -1831,6 +1831,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard closeTask == nil, let window, let (fit, frame) = placement() else { return }
     shutterTask?.cancel(); shutterTask = nil
     layout = fit
+    (window as? CockpitPanel)?.bottomOverhang = fit.hullBottomInset
     appearance = .init(theme: CockpitDayPolicy.resolve(appearance.theme), locale: appearance.locale, profile: fit.profile,
       reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, showAllModels: appearance.showAllModels, size: appearance.size, memberOrder: appearance.memberOrder)
     // G3-108: the web view keeps the open canvas on the window's bottom edge and the page keeps the body at one place on
@@ -2173,14 +2174,18 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let window, let web, let drag = dragRegion, window.firstResponder === drag else { return }
     window.makeFirstResponder(web)
   }
+  /// G3-159: the transparent reserve under the hull for the current layout (the placement's fit before the first layout).
+  private var hullBottomInset: CGFloat { layout?.hullBottomInset ?? placement()?.fit.hullBottomInset ?? 0 }
   /// A drag's frame: on the display under the pointer (the test placement's usable frame under the SPI seam).
   func dragFrame(start: CGRect, from: CGPoint, to point: CGPoint) -> CGRect {
     #if MODELPLAN_TEST_ONLY_SPI
     if let verificationPlacement {
-      return CockpitScreenSelection.dragFrame(start: start, from: from, to: point, screens: [], fallback: verificationPlacement.usable)
+      return CockpitScreenSelection.dragFrame(start: start, from: from, to: point, screens: [], fallback: verificationPlacement.usable,
+                                                bottomOverhang: hullBottomInset)
     }
     #endif
-    return CockpitScreenSelection.dragFrame(start: start, from: from, to: point, screens: screens(), fallback: environment()?.0)
+    return CockpitScreenSelection.dragFrame(start: start, from: from, to: point, screens: screens(), fallback: environment()?.0,
+                                            bottomOverhang: hullBottomInset)
   }
   private func cancelDrag() {
     dragRegion?.resetDragState()
@@ -2515,10 +2520,18 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// cockpit: AppKit's constraint otherwise pulled the open-sized window down under the menu bar, so the body moved by
   /// up to the porthole band and the remembered origin (and the reopen) came back lower than where it was put.
   var pendingTopDrop: CGFloat = 0
+  /// G3-159: the transparent reserve under the hull; AppKit's constraint judges the window without it, so the hull
+  /// (not the flame margin) is what reaches the screen's bottom edge.
+  var bottomOverhang: CGFloat = 0
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
-    guard pendingTopDrop > 0, frameRect.height > pendingTopDrop else { return super.constrainFrameRect(frameRect, to: screen) }
-    var closed = frameRect; closed.size.height -= pendingTopDrop
-    return CGRect(origin: super.constrainFrameRect(closed, to: screen).origin, size: frameRect.size)
+    var judged = frameRect
+    if pendingTopDrop > 0, frameRect.height > pendingTopDrop { judged.size.height -= pendingTopDrop }
+    let drop = max(0, bottomOverhang)
+    guard judged.height > drop, drop > 0 || judged.height != frameRect.height else { return super.constrainFrameRect(frameRect, to: screen) }
+    judged.origin.y += drop; judged.size.height -= drop
+    var out = super.constrainFrameRect(judged, to: screen)
+    out.origin.y -= drop
+    return CGRect(origin: out.origin, size: frameRect.size)
   }
 }
 /// The drag area of the expanded cockpit's top strip. Hovering it shows an open hand (closed while

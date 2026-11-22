@@ -127,7 +127,8 @@ import XCTest
     // Well into B, then hard against B's bottom-right corner: before 14c this was clamped back into A.
     for to in [CGPoint(x: 2600, y: 600), CGPoint(x: 4071, y: 1)] {
       let moved = page.dragFrame(start: start, from: from, to: to)
-      assertInside(moved, b.visibleFrame, "drag to \(to)")
+      // G3-159: the window's transparent reserve may hang below B's bottom edge; the hull stays inside.
+      assertInside(moved.offsetBy(dx: 0, dy: max(0, b.visibleFrame.minY - moved.minY)), b.visibleFrame, "drag to \(to)")
       XCTAssertEqual(moved.size, start.size, "a drag never resizes")
     }
     let back = page.dragFrame(start: start, from: from, to: CGPoint(x: 300, y: 300))
@@ -271,5 +272,30 @@ import XCTest
     // Partly off A's bottom: pulled back inside A rather than dropped.
     let clamped = try XCTUnwrap(CockpitScreenSelection.replayFrame(origin: CGPoint(x: 1300, y: -100), size: CGSize(width: 400, height: 300), screens: [a, b]))
     assertInside(clamped, a.visibleFrame, "clamped into the display it overlaps most")
+  }
+
+  /// G3-159 (owner, build 2): the clamp counted the transparent flame reserve under the hull as part of the window, so a
+  /// detached cockpit stopped a gap above the screen's bottom edge. The hull's bottom reaches the visible frame's bottom.
+  func testADragToTheBottomPutsTheHullOnTheVisibleFramesBottomEdge() throws {
+    let page = try page(click: nil)
+    let start = try XCTUnwrap(page.placement())
+    let from = CGPoint(x: start.frame.minX + 100, y: start.frame.maxY - 20)
+    for (screen, target) in [(a, CGPoint(x: 700, y: 1)), (b, CGPoint(x: 2600, y: 1))] {
+      let moved = page.dragFrame(start: start.frame, from: from, to: target)
+      let hullBottom = moved.minY + start.fit.hullBottomInset
+      XCTAssertEqual(hullBottom, screen.visibleFrame.minY, accuracy: 2, "hull bottom on \(NSStringFromRect(screen.visibleFrame))")
+      XCTAssertGreaterThan(start.fit.hullBottomInset, 20, "the reserve under the hull is real")
+      XCTAssertEqual(moved.size, start.frame.size)
+    }
+    // Top edge rule unchanged: dragged to the very top it stays under the menu bar.
+    let top = page.dragFrame(start: start.frame, from: from, to: CGPoint(x: 700, y: 5000))
+    XCTAssertLessThanOrEqual(top.maxY, a.visibleFrame.maxY)
+  }
+  func testTheClampLetsOnlyTheBottomOverhang() {
+    let usable = CGRect(x: 0, y: 0, width: 1000, height: 800)
+    let rect = CGRect(x: 10, y: -500, width: 300, height: 400)
+    XCTAssertEqual(CockpitScreenSelection.clamp(rect, into: usable).minY, 0)
+    XCTAssertEqual(CockpitScreenSelection.clamp(rect, into: usable, bottomOverhang: 34).minY, -34)
+    XCTAssertEqual(CockpitScreenSelection.clamp(CGRect(x: 10, y: 900, width: 300, height: 400), into: usable, bottomOverhang: 34).maxY, 800)
   }
 }
