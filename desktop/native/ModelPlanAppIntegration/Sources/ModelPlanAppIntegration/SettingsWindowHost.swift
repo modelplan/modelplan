@@ -23,6 +23,8 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
          presence: PulseDockPresence) {
         controller = SettingsWindowController(editor: editor, environmentProvider: environment, scopeConsentEntry: scopeConsentEntry)
         self.presence = presence
+        // G3-161: an engine update does not rebuild Settings while its window is closed; showing it refreshes once.
+        controller.defersContextRefreshWhileHidden = true
     }
     func prepare() async { await controller.prepare() }
     func show(paneID: String?) {

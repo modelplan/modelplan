@@ -70,9 +70,13 @@ import AppKit
     }
 
     /// One row per listed plugin, in the saved order. Owner 11-21: a framework test plugin (the placeholder) is never
-    /// listed. Owner D124: an unpinned plugin takes a free column after the subscriptions. D376: the note is one line; the
-    /// pin limit lives in the pin switch's disabled tooltip.
+    /// listed. Owner D124: an unpinned plugin takes a free column after the subscriptions, so with few subscriptions it
+    /// shows on page 1 without a pin; the note says so (B4). D376: the note is one line; the pin limit lives in the pin
+    /// switch's disabled tooltip.
+    /// Counts rebuilds, for the G3-161 checks (an unchanged catalogue and state must not rebuild the section).
+    private(set) var rebuildCountForChecks = 0
     func rebuild() {
+        rebuildCountForChecks += 1
         heading.stringValue = text("Plugins", "插件")
         note.stringValue = text("Plugin columns come after your subscriptions.", "插件列显示在订阅后面")
         for view in list.arrangedSubviews { list.removeArrangedSubview(view); view.removeFromSuperview() }

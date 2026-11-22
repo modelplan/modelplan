@@ -512,6 +512,28 @@ enum DockGripInk {
             throw error
         }
     }
+    /// G3-161: replaces one ring's reading in place and repaints over the cached material: no skin, no CoreImage face and no
+    /// new accessibility tree. False means nothing changed and the caller must run a full pass (a held readout or a
+    /// ring-click sweep is running, the ring is not on this view, or the official material is not applied).
+    public func replaceReading(_ reading: DockInstrumentReading) throws -> Bool {
+        let id = reading.subscriptionID
+        guard !failed, readings[id] != nil, readoutHolds.isEmpty, refreshSweepRing == nil, refreshSweepOriginal == nil else { return false }
+        var next = readings; next[id] = reading
+        if community { readings = next; refreshNodes(); needsDisplay = true; return true }
+        guard let skin, let renderer = officialRenderer, let background = backgroundImage, restingInstrumentImage != nil else { return false }
+        let resting = try renderer.render(skin: skin, readings: next, notices: notices, scale: scale, cachedBackground: background)
+        var painted = resting.image, usesViewport = false
+        if !nozzlePosesForChecks.isEmpty {
+            painted = try renderer.render(skin: skin, readings: next, notices: notices, scale: scale, poses: nozzlePosesForChecks,
+                                          cachedBackground: background, viewport: hoverViewport).image
+            usesViewport = hoverViewport != nil
+        }
+        readings = next; restingInstrumentImage = resting.image; alphaData = resting.image.dataProvider?.data
+        presentedTextMetricsForChecks = resting.metrics
+        image = painted; imageUsesHoverViewport = usesViewport
+        refreshNodes(); needsDisplay = true
+        return true
+    }
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
     /// `keepingRefreshHolds`: a content replacement (clear, then reinstall with the landed value) keeps the G3-98
     /// ring-click holds, so the reinstalled render fades the new number in instead of popping it. A privacy
