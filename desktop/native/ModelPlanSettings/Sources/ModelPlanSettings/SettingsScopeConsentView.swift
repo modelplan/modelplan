@@ -580,8 +580,8 @@ import ModelPlanWire
             // G3-155: ZCode's QR-code sign-in is readable behind its own opt-in (D369); this says only that no readable
             // sign-in was found, never "unsupported".
             if tool == "zai" {
-                return .init("No readable GLM sign-in found in ZCode, so nothing is read. Sign in to ZCode, or add a key in Settings › Subscriptions.",
-                             "没有在 ZCode 里找到可读取的 GLM 登录，因此不读取。请在 ZCode 里登录，或在 设置 › 订阅 中添加密钥。")
+                return .init("No readable GLM sign-in found in ZCode, so nothing is read.",
+                             "没有在 ZCode 里找到可读取的 GLM 登录，因此不读取。")
             }
             return .init("Signed in with an account ModelPlan cannot read yet, so nothing is read.",
                          "这种账号登录方式暂不支持读取，因此不读取。")
