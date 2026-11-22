@@ -2166,9 +2166,11 @@ struct DockHelpInteraction: Equatable {
     func pluginCardMenu(_ id: String) -> NSMenu? {
         guard let item = pluginCloseItem(id) else { return nil }
         let component = DockSliverMenu(labels: [:], handlers: [:])
+        // Hold the menu before handing it its delegate: after retainWithMenu the component keeps it only weakly.
+        let menu = component.menu
         component.retainWithMenu()
         component.replace(with: [item])
-        return component.menu
+        return menu
     }
     func menu(ringID: String? = nil) -> NSMenu {
         let component = DockSliverMenu(labels: [:], handlers: [:])

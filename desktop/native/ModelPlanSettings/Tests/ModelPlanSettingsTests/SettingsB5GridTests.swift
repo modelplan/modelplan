@@ -180,7 +180,10 @@ import ModelPlanWire
         // D376: the resource sampling note starts at the sub-row's 38 pt indent, under the options line.
         let sampling = try XCTUnwrap(find(plugins, "settings.cockpitPlugins.resources.samplingNote", NSTextField.self))
         let row = try XCTUnwrap(find(plugins, "settings.cockpitPlugins.resources", NSStackView.self))
-        XCTAssertEqual(rect(sampling, in: column).minX - rect(row, in: column).minX, SettingsGrid.mark + SettingsGrid.gap, accuracy: 1)
+        // Measured on the label's alignment rect: a stack view places a label's text edge, and its frame overhangs that
+        // edge by the label's alignment inset (2 pt).
+        XCTAssertEqual(rect(sampling, in: column).minX + sampling.alignmentRectInsets.left - rect(row, in: column).minX,
+                       SettingsGrid.mark + SettingsGrid.gap, accuracy: 1)
         XCTAssertEqual(row.arrangedSubviews.suffix(2).map { $0.accessibilityIdentifier() },
                        ["settings.cockpitPlugins.resources.options", "settings.cockpitPlugins.resources.samplingLine"], "directly under the options line")
         // Reading permissions: name and note left, the buttons right of them.

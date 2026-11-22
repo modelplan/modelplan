@@ -35,9 +35,11 @@ import XCTest
         XCTAssertEqual(alert.messageText, "关闭资源占用？")
         XCTAssertEqual(alert.informativeText, "可以在 设置 › 插件 里重新打开。")
         XCTAssertEqual(alert.buttons.map(\.title), ["取消", "关闭"])
-        XCTAssertEqual(alert.buttons[0].keyEquivalent, "\r", "Cancel is the default button")
+        // Cancel is added first (the default per NSAlert's order; AppKit may give a Cancel-titled first button Escape
+        // instead of Return, so the key string is not asserted), Turn Off second and destructive.
+        XCTAssertEqual(alert.buttons[0].accessibilityIdentifier(), "plugin.close.cancel")
         XCTAssertFalse(alert.buttons[0].hasDestructiveAction)
-        XCTAssertNotEqual(alert.buttons[1].keyEquivalent, "\r")
+        XCTAssertEqual(alert.buttons[1].accessibilityIdentifier(), "plugin.close.confirm")
         XCTAssertTrue(alert.buttons[1].hasDestructiveAction, "Turn Off is marked destructive")
     }
 
