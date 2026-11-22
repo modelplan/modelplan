@@ -229,8 +229,8 @@ final class CockpitPluginPreferencesTests: XCTestCase {
             return nil
         }
         let cases: [(SettingsLanguage, String, String)] = [
-            (.chinese, "插件列显示在订阅后面", "驾驶舱打开时 每 2/5/10 秒 · 只有挂件时每 10 秒"),
-            (.english, "Plugin columns come after your subscriptions.", "Every 2/5/10 s while the cockpit is open · every 10 s with only the widget"),
+            (.chinese, "插件列显示在订阅后面", "驾驶舱打开时 每 2、5、10 秒 · 只有额度挂件时每 10 秒"),
+            (.english, "Plugin columns come after your subscriptions.", "Every 2, 5 or 10 s while the cockpit is open · every 10 s with only the Quota Widget"),
         ]
         for (language, note, hint) in cases {
             let model = CockpitPluginSettingsModel(store: CockpitPluginStore(directory: try directory()))
