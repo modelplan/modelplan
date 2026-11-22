@@ -30,6 +30,50 @@ test('CKP-PORT-04 the tall HUD lists the first six models, complete, under a min
 test('CKP-PORT-03 HUD B sits at window-local (76,24)',async({page})=>{
  await open(page);expect(await local(page)).toEqual([76,24,180,160]);
 });
+// D371 B2 option A (owner 11-21): no panel, one edge-fading scrim, a 1 px dark text outline, inside the safe area, whole rows only.
+test('CKP-PORT-03 D371 the HUD has no panel: transparent box, no border, no shadow, one scrim fading to nothing at its edge',async({page})=>{
+ await open(page);
+ const look=await page.locator('.hud').evaluate(h=>{const c=getComputedStyle(h),s=getComputedStyle(h,'::before');return {bg:c.backgroundColor,bgImage:c.backgroundImage,border:c.borderTopWidth,shadow:c.boxShadow,radius:c.borderTopLeftRadius,scrim:s.backgroundImage,content:s.content};});
+ expect(look.bg).toBe('rgba(0, 0, 0, 0)');expect(look.bgImage).toBe('none');expect(look.border).toBe('0px');expect(look.shadow).toBe('none');expect(look.radius).toBe('0px');
+ expect(look.scrim).toMatch(/radial-gradient/);expect(look.scrim).toMatch(/rgba\(0, 0, 0, 0\)\s*\d*%?\)?$|transparent/);
+});
+test('CKP-PORT-03 D371 list and chart text carry a 1 px dark outline',async({page})=>{
+ await open(page);
+ const outline=await page.locator('.hud').evaluate(h=>{const w=e=>parseFloat(getComputedStyle(e).webkitTextStrokeWidth||'0');return {name:w(h.querySelector('.hp b')),rec:w(h.querySelector('.hp-rec')),num:w(h.querySelector('.hp-n')),axis:parseFloat(getComputedStyle(h.querySelector('.hud-axis-label')).strokeWidth)};});
+ expect(outline).toEqual({name:1,rec:1,num:1,axis:1});
+});
+test('CKP-PORT-03 D371 the whole HUD stays inside the safe area, 10 px in from the glass edge',async({page})=>{
+ await open(page);
+ const [hud,port]=await Promise.all([page.locator('.hud').boundingBox(),page.locator('.ck-port').boundingBox()]);
+ expect(hud.x-port.x).toBeGreaterThanOrEqual(10);expect(hud.y-port.y).toBeGreaterThanOrEqual(10);
+ expect(port.x+port.width-(hud.x+hud.width)).toBeGreaterThanOrEqual(10);expect(port.y+port.height-(hud.y+hud.height)).toBeGreaterThanOrEqual(10);
+});
+test('CKP-PORT-03 D371 variant B: a half-opacity scrim reaching 48 pt left and right and 16 pt above and below the list; grey #aab6bf reads',async({page})=>{
+ await open(page);
+ const look=await page.locator('.hud').evaluate(h=>{const box=h.getBoundingClientRect(),s=getComputedStyle(h,'::before'),lum=c=>{const [r,g,b]=c.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;},ratio=c=>(lum(c)+.05)/(lum('rgb(3, 8, 16)')+.05);
+  return {inset:[s.top,s.right,s.bottom,s.left],image:s.backgroundImage,rank:getComputedStyle(h.querySelector('.hp-n')).color,rec:getComputedStyle(h.querySelector('.hp-rec')).color,rankRatio:ratio(getComputedStyle(h.querySelector('.hp-n')).color),recRatio:ratio(getComputedStyle(h.querySelector('.hp-rec')).color)};});
+ expect(look.inset).toEqual(['-16px','-48px','-16px','-48px']);
+ expect(look.image).toContain('rgba(0, 0, 0, 0.25)');expect(look.image).not.toContain('rgba(0, 0, 0, 0.5)');
+ expect(look.rank).toBe('rgb(170, 182, 191)');
+ expect(look.rankRatio).toBeGreaterThan(7);expect(look.recRatio).toBeGreaterThan(7);
+});
+test('CKP-PORT-04 D371 the ★ effort column lines up across rows whatever the name length',async({page})=>{
+ const names=['A','GPT-6.1 Terra Max','Luna','Gemini 4 Argon','MiMo','Sol'];
+ await open(page,{published:names.map((name,i)=>({...model('q'+i,40+i,.1*(i+1)),name}))});
+ const xs=await page.locator('.hud .hp-rec').evaluateAll(a=>a.map(e=>Math.round(e.getBoundingClientRect().left)));
+ expect(new Set(xs).size).toBe(1);
+ const names2=await page.locator('.hud .hp b').evaluateAll(a=>a.map(e=>e.scrollWidth>e.clientWidth+.5));expect(names2.every(c=>!c)).toBe(true);
+});
+test('CKP-PORT-04 D371 when six rows do not fit the safe area, fewer whole rows are shown (never a cut row or an ellipsis)',async({page})=>{
+ const {send,receive}=await open(page);
+ await expect(page.locator('.hud .hp')).toHaveCount(6);
+ await page.evaluate(()=>{document.querySelector('.ck-port').style.height='138px';});
+ expect(await receive(send('shell',{...shell,tier:'tall'}))).toBe(true);
+ const n=await page.locator('.hud .hp').count();expect(n).toBeGreaterThanOrEqual(1);expect(n).toBeLessThan(6);
+ const room=await page.evaluate(()=>{const p=document.querySelector('.ck-port').getBoundingClientRect(),rows=[...document.querySelectorAll('.hud .hp')];return p.bottom-10-rows.at(-1).getBoundingClientRect().bottom;});
+ expect(room).toBeGreaterThanOrEqual(-0.5);
+ expect(await page.locator('.hud .hp b').evaluateAll(a=>a.some(e=>e.scrollWidth>e.clientWidth+.5||getComputedStyle(e).textOverflow==='ellipsis'))).toBe(false);
+});
 test('CKP-PORT-04 chart order: this week\'s models, the lineup, then developers in turn, dominated last',async({page})=>{
  const other=m=>({...m,developerId:'anthropic'}),a=model('a',40,.1),b=model('b',50,.3),c=other(model('c',60,.5)),d=other(model('d',70,.7)),e=model('e',80,.9),beaten=model('beaten',30,2);
  const session={sessionRef:'0'.repeat(16),source:'codex',subscriptionRef:null,model:'e',effort:'high',projectLabel:null,lastObservedAt:observed(),state:'running',rate:null};
@@ -253,7 +297,7 @@ test('WP-22 a porthole click within 300 ms of the field closing is ignored; a la
 });
 // v1 final (WP-14, V1-FINAL §5): the HUD is the legend of the user's own models. A session does not add a model its
 // subscription does not carry (a Claude Code session pointed at another vendor's model is not that subscription's model),
-// the rows stop at six (three on the short cockpit) on one solid dark backing, names 10 px white, and a small green dot
+// the rows stop at six (three on the short cockpit) on no panel, names 10 px white, and a small green dot
 // follows the ★ effort of every model a session is running right now.
 const running=(ref,id,state='running',source='codex')=>({sessionRef:ref.repeat(16),source,subscriptionRef:null,model:id,effort:'high',projectLabel:null,lastObservedAt:observed(),state,rate:null});
 test('CKP-PORT-50 a session on a model outside its subscription does not list that model',async({page})=>{
@@ -263,11 +307,11 @@ test('CKP-PORT-50 a session on a model outside its subscription does not list th
 const backing=page=>page.locator('.hud').evaluate(h=>{const cs=getComputedStyle(h),box=h.getBoundingClientRect(),alpha=(/rgba?\(([^)]+)\)/.exec(cs.backgroundColor)?.[1].split(',').map(Number)[3])??1;
  return {image:cs.backgroundImage,alpha,inside:[...h.querySelectorAll('.hp')].every(r=>{const b=r.getBoundingClientRect();return b.left>=box.left-.5&&b.right<=box.right+.5&&b.top>=box.top-.5&&b.bottom<=box.bottom+.5;}),
   names:[...h.querySelectorAll('.hp b')].map(b=>[getComputedStyle(b).fontSize,getComputedStyle(b).color])};});
-for(const [tier,cap] of [['tall',6],['compact',3]])test(`CKP-PORT-50 ${tier}: at most ${cap} rows of owned models on one solid dark backing, names 10 px white`,async({page})=>{
+for(const [tier,cap] of [['tall',6],['compact',3]])test(`CKP-PORT-50 ${tier}: at most ${cap} rows of owned models on no panel, names 10 px white`,async({page})=>{
  await open(page,{tier,sessions:[running('a','m6'),running('b','m7')]});
  await expect(page.locator('.hud .hp')).toHaveCount(cap);
  const b=await backing(page);
- expect(b.image).toBe('none');expect(b.alpha).toBeGreaterThanOrEqual(.5);expect(b.inside).toBe(true);
+ expect(b.image).toBe('none');expect(b.alpha).toBe(0);expect(b.inside).toBe(true);// D371: the backing is gone (a scrim, not a panel)
  for(const [size,colour] of b.names)expect([size,colour]).toEqual(['10px','rgb(233, 237, 240)']);
 });
 test('CKP-PORT-51 a green dot follows the ★ effort of each model a session is running now, and only those',async({page})=>{
