@@ -11,8 +11,8 @@ const reading=(t,o={})=>{const s={t,cpuUser:19,cpuSystem:3,load:2.4,memTotal:32*
  for(const k of Object.keys(s))if(k.startsWith('mem')||k.startsWith('disk')||k==='swapUsed')s[k]=Math.round(s[k]);return s;};
 const T0=Date.UTC(2026,10,19,12);
 /** Two connected subscriptions: the resource column takes the third slot (CKP-PLG-52). */
-function data2() {const data=sample();data.projection.rows=data.projection.rows.slice(0,2);return data;}
-async function open(page,{plugins={version:1,entries:[],settings:{}},locale='en'}={}) {
+function data2(rows=2) {const data=sample();data.projection.rows=data.projection.rows.slice(0,rows);return data;}
+async function open(page,{plugins={version:1,entries:[],settings:{}},locale='en',rows=2}={}) {
  await page.clock.setFixedTime(new Date('2026-11-19T12:00:00Z'));
  await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
@@ -20,7 +20,7 @@ async function open(page,{plugins={version:1,entries:[],settings:{}},locale='en'
  expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  if(plugins)expect(await receive(send('plugins',{plugins}))).toBe(true);
- expect(await receive(send('display',{data:data2()}))).toBe(true);
+ expect(await receive(send('display',{data:data2(rows)}))).toBe(true);
  return {send,receive,push:samples=>receive(send('pluginData',{id:'resources',data:{samples}}))};
 }
 const CAL_OFF={id:'calendar',enabled:false,pinned:false};
@@ -63,37 +63,51 @@ test('D327 the key: white line icon, orchid dashed underline; the cells read CPU
  expect(await push([reading(T0),reading(T0+5000,{cpuUser:58})])).toBe(true);
  expect(await push([reading(T0+10000)])).toBe(true);
  await expect(column(page).locator('.qvalue')).toHaveText(['22','47','76']);
- await expect(column(page).locator('.pl-cell[data-row="0"]')).toContainText('peak 61%');
- await expect(column(page).locator('.pl-cell[data-row="1"]')).toContainText('15.1 / 32 GB');
- await expect(column(page).locator('.pl-cell[data-row="2"]')).toContainText('120 GB free');
+ // D371 Q5: a side value gives way in a narrow column (short, then hidden), so the full words are read from the cell's label.
+ await expect(column(page).locator('.pl-cell[data-row="0"]')).toHaveAttribute('aria-label',/peak 61%/);
+ await expect(column(page).locator('.pl-cell[data-row="1"]')).toHaveAttribute('aria-label',/15\.1 \/ 32 GB/);
+ await expect(column(page).locator('.pl-cell[data-row="2"]')).toHaveAttribute('aria-label',/120 GB free/);
  await expect(column(page).locator('.pl-foot')).toContainText('Normal');
- // Bars and trend lines use the plugin ink; the disk has no trend line.
+ // The plugin ink is the key underline and the --pl-ink token; the bars take the status colour (D371). The disk has no trend line.
  const ink=await page.evaluate(()=>{const col=document.querySelector('.pl-col[data-plugin="resources"]');return {ink:col.style.getPropertyValue('--pl-ink'),trends:col.querySelectorAll('.pl-trend').length,fills:[...col.querySelectorAll('.pl-bar i')].map(i=>i.style.width)};});
  expect(ink.ink).toBe('#da66c2');expect(ink.trends).toBe(2);expect(ink.fills).toEqual(['22%','47.2%','75.7%']);
  await expect(column(page).locator('.pl-cell.pl-mid, .pl-cell.pl-low')).toHaveCount(0);
 });
 
-test('D327 only numbers change colour: CPU red at ≥ 90 %, memory amber by pressure, disk amber at ≥ 90 %',async({page})=>{
+test('D371 B4c status colour: bars and numbers are normal / amber / red by resource state, never the plugin orchid',async({page})=>{
  const {push}=await open(page,{locale:'zh-CN'});
- expect(await push([reading(T0,{cpuUser:71,cpuSystem:25,pressure:'warn',swapUsed:2.1*GB,diskFree:40*GB})])).toBe(true);
- await expect(column(page).locator('.pl-tag')).toHaveText(['CPU','内存','磁盘']);
+ const paint=()=>page.evaluate(()=>{const col=document.querySelector('.pl-col[data-plugin="resources"]');
+  return {numbers:[...col.querySelectorAll('.qnum')].map(n=>getComputedStyle(n).color),bars:[...col.querySelectorAll('.pl-bar i')].map(i=>getComputedStyle(i).backgroundColor),
+   trends:[...col.querySelectorAll('.pl-trend path')].map(p=>getComputedStyle(p).stroke)};});
+ // Normal: CPU 22 %, memory 47 %, disk 76 %: one normal colour on all three bars, not the orchid.
+ expect(await push([reading(T0),reading(T0+5000)])).toBe(true);
+ await expect(column(page).locator('.pl-cell.pl-mid, .pl-cell.pl-low')).toHaveCount(0);
+ const normal=await paint();
+ expect(new Set(normal.bars).size).toBe(1);expect(normal.bars[0]).not.toBe('rgb(218, 102, 194)');
+ // CPU 96 % red, memory warn pressure amber, disk 92 % red.
+ expect(await push([reading(T0+10000,{cpuUser:71,cpuSystem:25,pressure:'warn',swapUsed:2.1*GB,diskFree:40*GB})])).toBe(true);
  await expect(column(page).locator('.pl-cell[data-row="0"]')).toHaveClass(/pl-low/);
  await expect(column(page).locator('.pl-cell[data-row="1"]')).toHaveClass(/pl-mid/);
- await expect(column(page).locator('.pl-cell[data-row="2"]')).toHaveClass(/pl-mid/);
+ await expect(column(page).locator('.pl-cell[data-row="2"]')).toHaveClass(/pl-low/);
  await expect(column(page).locator('.pl-foot')).toContainText('偏高');
- const colours=await page.evaluate(()=>{const col=document.querySelector('.pl-col[data-plugin="resources"]');
-  return {numbers:[...col.querySelectorAll('.qnum')].map(n=>getComputedStyle(n).color),bars:[...col.querySelectorAll('.pl-bar i')].map(i=>getComputedStyle(i).backgroundColor)};});
- // Bars keep the orchid; the red and amber numbers differ from each other and from the bars.
- expect(new Set(colours.bars).size).toBe(1);
- expect(colours.numbers[0]).not.toBe(colours.numbers[1]);expect(colours.numbers[1]).toBe(colours.numbers[2]);
- expect(colours.numbers).not.toContain(colours.bars[0]);
- // Back to normal pressure, a 94 % memory reading keeps its ink (macOS uses free memory as cache).
- expect(await push([reading(T0+5000,{memApp:20.4*GB,memWired:5.2*GB,memCompressed:4.6*GB,memCached:1.2*GB,memFree:.6*GB})])).toBe(true);
+ const hot=await paint();
+ expect(new Set(hot.bars).size).toBe(2);expect(hot.bars).not.toContain(normal.bars[0]);
+ expect(hot.bars[0]).toBe(hot.numbers[0]);expect(hot.bars[1]).toBe(hot.numbers[1]);expect(hot.bars[2]).toBe(hot.numbers[2]);
+ expect(hot.bars[0]).toBe(hot.bars[2]);// red is red
+ expect(new Set(hot.trends).size).toBe(1);expect(hot.trends[0]).not.toBe(hot.bars[0]);// the trend is one neutral 1 px line inside the track
+ // Back to normal pressure, a 94 % memory reading is red by percentage (it was ink-only before D371).
+ expect(await push([reading(T0+15000,{memApp:20.4*GB,memWired:5.2*GB,memCompressed:4.6*GB,memCached:1.2*GB,memFree:.6*GB})])).toBe(true);
  await expect(column(page).locator('.pl-cell[data-row="1"] .qvalue')).toHaveText('94');
- await expect(column(page).locator('.pl-cell[data-row="1"]')).not.toHaveClass(/pl-mid|pl-low/);
+ await expect(column(page).locator('.pl-cell[data-row="1"]')).toHaveClass(/pl-low/);
  // A refused reading changes nothing.
- expect(await push([{...reading(T0+10000),cpuUser:200}])).toBe(false);
+ expect(await push([{...reading(T0+20000),cpuUser:200}])).toBe(false);
  await expect(column(page).locator('.pl-cell[data-row="1"] .qvalue')).toHaveText('94');
+});
+
+test('D371 the Resources tab icon has no small square frame (the Calendar icon is unchanged)',async({page})=>{
+ await open(page);
+ const frames=await page.evaluate(()=>{const k=document.querySelector('.eng-keys .pl-key[data-plugin="resources"]');return [k.querySelectorAll('.lamp svg rect').length,k.querySelectorAll('.lamp svg').length];});
+ expect(frames).toEqual([0,1]);
 });
 
 test('the big screen: charts on the draw hook, redrawn by readings, closed by Escape',async({page})=>{
@@ -151,6 +165,41 @@ test('macrevb-1096-2 turning the plugin off and on (Settings or page Remove/Add)
  expect(await push([reading(T0+600000,{cpuUser:8,cpuSystem:2})])).toBe(true);
  await expect(column(page).locator('.qvalue').first()).toHaveText('10');
  await expect(column(page).locator('.pl-cell[data-row="0"]')).toContainText('peak 10%');
+});
+
+// D371 Q5 (owner 11-21): the Resources cell is two layers, 31 pt, centred in the row the subscription table owns; the side value
+// goes full, short, then hidden, never cut; the tag stays; tags are 10 px in the order CPU, memory, disk.
+for(const [name,rows,columns] of [['3 columns',2,3],['6 columns',4,6]])
+test(`D371 Q5 ${name}: the Resources cell has two fixed layers, lines up with the subscription rows and never clips`,async({page})=>{
+ const {push}=await open(page,{rows,plugins:{version:1,entries:[CAL_OFF],settings:{}}});
+ const cols=await page.locator('.eng-cols > .ec[data-col]').count();expect(cols).toBeGreaterThan(0);
+ const samples=[0,1,2,3,4].map(i=>reading(T0+i*5000,{cpuUser:30+i*8,cpuSystem:5,memApp:(6+i)*GB,diskFree:(60-i)*GB}));
+ expect(await push(samples)).toBe(true);
+ await expect(column(page).locator('.qvalue')).toHaveCount(3);
+ const m=await page.evaluate(()=>{
+  const col=document.querySelector('.pl-col[data-plugin="resources"]'),box=e=>e.getBoundingClientRect(),cells=[...col.querySelectorAll('.pl-cell')];
+  const quota=[...document.querySelectorAll('.eng-cols > .ec[data-col]:not(.pl-col) .qcell')].map(e=>box(e)).filter(r=>r.height>0);
+  return {quotaHeights:quota.map(r=>Math.round(r.height)),quotaTops:[...new Set(quota.map(r=>Math.round(r.top)))].sort((a,b)=>a-b),
+   cells:cells.map(c=>{const r=box(c),line=c.querySelector('.qline'),bar=c.querySelector('.pl-bar'),tag=c.querySelector('.pl-tag'),side=c.querySelector('.pl-side'),lead=c.querySelector('.pl-lead'),
+    L=box(line),B=box(bar),T=box(tag),S=side?box(side):null;
+    return {top:Math.round(r.top),height:Math.round(r.height),line:Math.round(L.height),bar:Math.round(B.height),gap:Math.round(B.top-L.bottom),span:Math.round(B.bottom-L.top),tag:tag.textContent,tagSize:getComputedStyle(tag).fontSize,tagVisible:T.width>0&&T.right<=box(line).right+.5,
+     sideText:side?side.textContent:null,sideCut:side?side.scrollWidth>side.clientWidth+.5:false,sideRight:S?Math.round(r.right-S.right):null,sideForms:side?[side.dataset.full,side.dataset.short]:null,leadRight:box(lead).right<=r.right+.5,
+     inside:L.left>=r.left-.5&&L.right<=r.right+.5&&B.right<=r.right+.5,trend:c.querySelectorAll('.pl-bar .pl-trend').length,num:getComputedStyle(c.querySelector('.qnum')).fontSize};})};
+ });
+ expect(m.cells.map(c=>c.tag)).toEqual(['CPU','Memory','Disk']);
+ for(const c of m.cells){
+  expect(c.tagSize).toBe('10px');expect(c.tagVisible).toBe(true);expect(c.leadRight).toBe(true);expect(c.inside).toBe(true);
+  expect([c.line,c.bar,c.gap,c.span]).toEqual([22,6,3,31]);
+  expect(c.sideCut,'the side value is never cut').toBe(false);
+  expect([c.sideForms[0],c.sideForms[1],''],'full, short, then hidden').toContain(c.sideText);
+  if(c.sideText)expect(c.sideRight).toBe(4);
+  expect(['20px','16px']).toContain(c.num);
+ }
+ expect(m.cells.map(c=>c.trend)).toEqual([1,1,0]);
+ // The rows line up with the subscription table's: same tops and heights as its quota cells, whatever the column count.
+ expect(m.cells.map(c=>c.top)).toEqual(m.quotaTops.slice(0,3));
+ for(const c of m.cells)expect(m.quotaHeights).toContain(c.height);
+ if(columns===6)expect(m.cells.some(c=>c.sideText!==c.sideForms[0]),'the narrow table uses a short form or hides the side value').toBe(true);
 });
 
 /** `count` connected subscriptions: with six, every slot is a subscription column and an unpinned resource plugin has none (CKP-PLG-52). */

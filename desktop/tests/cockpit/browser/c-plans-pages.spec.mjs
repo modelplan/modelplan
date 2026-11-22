@@ -168,12 +168,12 @@ test('CKP-MFD-65 without a usage record the Models list keeps the published orde
  await expect(page.locator('.mfd-page .md-row.idle')).toHaveCount(0);
 });
 
-test('CKP-MFD-66 the Models chart key shows the frontier and names only the selected and the first-ranked model',async({page})=>{
+test('CKP-MFD-66 the Models chart key shows the frontier and names every plotted model without hover (G3-168)',async({page})=>{
  await open(page,withHistory());await page.locator('[data-mfd="page:tune"]').click();
  expect(await page.locator('.ok[data-opt="models"] b').allTextContents()).toEqual(['List','Chart']);
  await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
  await expect(page.locator('.mfd-page svg.fc')).toBeVisible();
- expect(await page.locator('.mfd-page svg.fc .fc-l').count()).toBeLessThanOrEqual(2);
+ expect(await page.locator('.mfd-page svg.fc .fc-l').count()).toBe(await page.locator('.mfd-page svg.fc .fc-star').count());
 });
 
 test('CKP-MFD-67 the Breakdown page has one key, Projects | Sessions; project rows carry their share as a bar',async({page})=>{

@@ -183,10 +183,18 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 	if configured || home == "" || mode != consent.Automatic || !ZCodeLoginPresent(home) {
 		return
 	}
+	// ZCode's provider-file key route comes first, unless that file (read under the key route's
+	// own admission, which the default grant below carries) selects no key: an old file left by an
+	// earlier ZCode must not hide the sign-in (G3-158).
+	staleProviderFile := false
 	if _, err := os.Lstat(ZCodeProviderConfig(home)); !os.IsNotExist(err) {
-		return // ZCode's provider-file key route comes first
+		g, granted := p.ReaderAccess.Grants["zai"]
+		if !granted || g.ConfigSource == nil || g.ConfigSource.Tool != "zcode" || !zcodeProviderFileKeyless(ZCodeProviderConfig(home)) {
+			return
+		}
+		staleProviderFile = true
 	}
-	if g, granted := p.ReaderAccess.Grants["zai"]; granted && g.ConfigSource != nil {
+	if g, granted := p.ReaderAccess.Grants["zai"]; granted && g.ConfigSource != nil && !staleProviderFile {
 		return
 	}
 	if r, decided := state.Tools["zai"]; decided && (!r.Allowed || zaiRecordChoseSource(r)) {
