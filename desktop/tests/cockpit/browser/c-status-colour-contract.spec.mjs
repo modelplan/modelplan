@@ -46,7 +46,7 @@ const paints=(page,root='body')=>page.evaluate(root=>{
    if(parseFloat(s.borderTopWidth)>0)channels.borderTopColor=s.borderTopColor;
    for(const [property,value] of Object.entries(channels))for(const found of String(value).match(colour)??[]){const rgb=rgba(found);if(rgb[3]>12)out.push({name:name+(pseudo??''),property,rgb});}}}
  return out;},root);
-const statusBearing=/\b(qcell|qnum|qbar|mb10|eng-led|caution|lv-(ok|mid|low|amber|red)|al-(red|amber))\b/;
+const statusBearing=/\b(qcell|qnum|qbar|mb10|eng-pk|caution|lv-(ok|mid|low|amber|red)|al-(red|amber))\b/;
 
 async function pixel(locator) {
  const box=await locator.boundingBox(),png=await locator.page().screenshot({clip:{x:Math.floor(box.x+box.width/2),y:Math.floor(box.y+box.height/2),width:1,height:1}});
