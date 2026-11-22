@@ -73,8 +73,8 @@ test('CKP-FAD-50/55 cards: use large (tokens until ≈cost exists), share bar in
  // Opus current XHigh, ★ Med: "XHigh ★Med" is 10 characters → "XHigh".
  expect((await lines(card(page,'GLM-5.3')))[1]).toBe('96M');
  expect((await lines(card(page,'Opus 5.5'))).at(-1)).toBe('XHigh');
- // Lamps: Sol and Opus run (lit, in the subscription colour), GLM is idle but used (dim). The row label reads Sessions.
- await expect(page.locator('.fd-scale .sc-led')).toHaveText('Sessions');
+ // Lamps: Sol and Opus run (lit, in the subscription colour), GLM is idle but used (dim). The row has no label (G3-164).
+ await expect(page.locator('.fd-scale .sc-led')).toHaveText('');
  await expect(sol.locator('.fd-indicator')).toHaveAttribute('data-state','live');
  await expect(card(page,'GLM-5.3').locator('.fd-indicator')).toHaveAttribute('data-state','used');
  // No card line overflows its card, tall and short (CKP-FAD-57: lines tighten, never overlap).
@@ -108,6 +108,18 @@ test('CKP-FAD-55 the lamp reads every verified session: a running session at pos
  await expect(card(page,'Sol 6.1').locator('.fd-indicator')).toHaveAttribute('data-state','used');
 });
 
+for(const [locale,on,off] of [['zh-CN','有会话在跑','没有会话在跑'],['en','has a session running','has no session running']])
+test('G3-164 the session row has no label, and each dot is named and has a tooltip, lit and dark ('+locale+')',async({page})=>{
+ await open(page,{locale,sol:[solSession(1,'high',null,'running')]});
+ await expect(page.locator('.fd-scale .sc-led')).toHaveText('');
+ await expect(page.locator('.fd-scale')).not.toContainText(/会话|Sessions/);
+ const sol=card(page,'Sol 6.1').locator('.fd-indicator'),glm=card(page,'GLM-5.3').locator('.fd-indicator');
+ await expect(sol).toHaveAttribute('title','Sol 6.1 '+on);
+ expect(await sol.getAttribute('aria-label')).toMatch(new RegExp('^Sol 6\\.1 '+on));
+ await expect(glm).toHaveAttribute('title','GLM-5.3 '+off);
+ expect(await glm.getAttribute('aria-label')).toMatch(new RegExp('^GLM-5\\.3 '+off));
+});
+
 test('CKP-FAD-53 a refused render leaves the held current effort where it was committed, inside the 1.5x band (macrevb-1052-3)',async({page})=>{
  const send=await open(page,{sol:[solSession(1,'high',40),solSession(2,'xhigh',30,'running',2)]}); // High leads: held High
  const sol=card(page,'Sol 6.1'),cur=()=>sol.locator('.cd-cur').textContent();
@@ -135,7 +147,8 @@ test('CKP-FAD-51 unused and zh: dimmed card "未使用 / ★Med", dashed lever',
  await expect(opus.locator('.fd-cap')).toHaveClass(/\bunused\b/);
  await expect(opus.locator('.fd-indicator')).toHaveAttribute('data-state','off');
  expect((await lines(card(page,'Sol 6.1')))[1]).toBe('212M');
- await expect(page.locator('.fd-scale .sc-led')).toHaveText('会话');
+ await expect(page.locator('.fd-scale .sc-led')).toHaveText('');
+ await expect(page.locator('.fd-scale')).not.toContainText('会话');
 });
 
 test('CKP-FAD-54 the five steps, with their timings',async({page})=>{
