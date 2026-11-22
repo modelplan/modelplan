@@ -16,8 +16,8 @@ globalThis.document??={documentElement:{}};
 const NOW=Date.UTC(2026,10,18,12),H=3600e3;
 const win=(kind,remaining,resetIn,extra={})=>({kind,remaining,resetIn,resetAt:null,resetText:null,elapsed:null,trend:null,runOutMin:null,durationMinutes:null,...extra});
 const account=(id,windows,more={})=>({id,name:id,short:id,alias:id,colour:'#888888',logo:'x.svg',state:'ok',support:'observed',todayTokens:null,windows,extras:[],forecast:null,...more});
-const model=(accounts,lang,alerts=[])=>engineModel({accounts,alerts,now:NOW},{few:'c3',page:0,scope:null,tint:true,pctMode:'left',redAt:25,ack:null,lang,now:NOW});
-const view=(accounts,lang='en',alerts=[])=>{setLanguage(lang);return engineView(model(accounts,lang,alerts),{changed:new Set(),lang,now:NOW});};
+const model=(accounts,lang,alerts=[],ui={})=>engineModel({accounts,alerts,now:NOW},{few:'c3',page:0,scope:null,tint:true,pctMode:'left',redAt:25,ack:null,lang,now:NOW,...ui});
+const view=(accounts,lang='en',alerts=[],ui={})=>{setLanguage(lang);return engineView(model(accounts,lang,alerts,ui),{changed:new Set(),lang,now:NOW});};
 const col=(html,id)=>html.split(`data-col="${id}" data-state`)[1]?.split('<div class="ec')[0]??'';
 const lines=html=>[...html.matchAll(/<em class="qtxt([^"]*)" data-full="([^"]*)"/g)].map(m=>({cls:m[1].trim(),full:m[2]}));
 const values=html=>[...html.matchAll(/<span class="qvalue">([^<]*)<\/span>/g)].map(m=>m[1]);
@@ -150,3 +150,29 @@ test('CKP-ENG-27 a plan is dropped only when the name already says it as a word 
  assert.equal(accountLabel('Codex Pro 200',plan('pro 200'),'en'),'Codex Pro 200');
  assert.equal(accountLabel('智谱 GLM 编程套餐',plan('编程套餐'),'zh-CN'),'智谱 GLM 编程套餐');
 });
+
+// G3-156 (owner build 2, CKP-ENG-53): the range row follows the header range; history read but nothing recorded in the range
+// says so; "quota only" is for a subscription with no usage record at all.
+for(const [lang,range,none] of [['en','today','No usage today'],['en','7d','No usage in 7d'],['en','30d','No usage in 30d'],['zh-CN','today','今天暂无用量'],['zh-CN','7d','7天暂无用量'],['zh-CN','30d','30天暂无用量']])
+ test(`G3-156 the range row says no usage when history is read but nothing is recorded (${lang} ${range})`,()=>{
+  const html=view([
+   account('quiet',[win('5h',80,90)],{support:'quota-only',noUsage:true}),
+   account('quota',[win('5h',80,90)],{support:'quota-only'}),
+  ],lang,[],{range});
+  assert.match(col(html,'quiet'),new RegExp(`<span class="qq">${none}</span>`));
+  assert.doesNotMatch(col(html,'quiet'),/Quota only|仅额度/);
+  assert.match(col(html,'quota'),/<span class="qq">(Quota only|仅额度)<\/span>/);
+ });
+
+// CKP-ENG-53: the row is labelled with the header range and shows ≈cost, tokens and speed for it (never a quota-only text).
+for(const [range,zh,en] of [['today','今天','Today'],['7d','7天','7d'],['30d','30天','30d']])
+ test(`CKP-ENG-53 the range row is labelled ${range} and shows cost, tokens and speed`,()=>{
+  for(const [lang,label] of [['zh-CN',zh],['en',en]]){
+   const html=view([account('use',[win('5h',80,90)],{todayTokens:212e6,rangeCost:64,todayAverageGenerationTps:52})],lang,[],{range});
+   assert.match(html,new RegExp(`<span class="lb lb-t"[^>]*>${label}</span>`));
+   const row=col(html,'use').match(/<div class="qrow qrow-t"[\s\S]*?<\/div>/)[0];
+   assert.match(row,/qcost/);assert.match(row,/qtokens/);assert.match(row,/qaverage/);assert.doesNotMatch(row,/class="qq"/);
+   // Drop order: cost first in the row, then tokens, then speed (the host drops from the end).
+   assert.ok(row.indexOf('qcost')<row.indexOf('qtokens')&&row.indexOf('qtokens')<row.indexOf('qaverage'));
+  }
+ });
