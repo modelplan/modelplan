@@ -1766,7 +1766,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let displays = self.screens(), requested = anchor()
     var remembered: CockpitScreen?
     if shellSession.detached, let origin = detachedOrigin,
-       let replayed = CockpitScreenSelection.replayFrame(origin: origin, size: layout?.frame.size ?? CGSize(width: 1, height: 1), screens: displays, bottomOverhang: hullBottomInset) {
+       // The stored layout only: `hullBottomInset` may fall back to `placement()`, which re-enters `environment()`
+       // here, so before the first layout (a detached reopen with a remembered origin) that pair recursed until
+       // the stack overflowed and the test process died with signal 11.
+       let replayed = CockpitScreenSelection.replayFrame(origin: origin, size: layout?.frame.size ?? CGSize(width: 1, height: 1), screens: displays, bottomOverhang: layout?.hullBottomInset ?? 0) {
       remembered = CockpitScreenSelection.overlapping(replayed, in: displays)
     }
     // G3-128: attached, the status item's display; the click point (the widget's ignition, possibly on another display
