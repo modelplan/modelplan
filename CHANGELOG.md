@@ -7,6 +7,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 These ship with the next CLI release; its pin PR gives them a version heading.
 
 - The cockpit now hangs the same rocket nozzle under every plugin column (Calendar, Resources) as under a subscription column. A plugin nozzle stays dark at rest and lights with the whole row on landing.
+- The menu-bar item now has an automatic display, the new default: just the icon normally; a compact number (about 42 pt wide, no pill) only while the tracked quota is below your alert line; the icon with a red dot when it is used up; and the icon alone again if macOS squeezes the item out of view. The accessibility label always carries the full reading, for example "ModelPlan · Codex 0%". "Icon only", "Tightest percentage" and "Two windows" stay in Settings.
 
 ## CLI v0.5.69 (2026-11-21)
 
