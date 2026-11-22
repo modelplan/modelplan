@@ -258,6 +258,19 @@ func CodexRuntimeAvailable(cache string, admission consent.Admission, now time.T
 	return false
 }
 
+// runtimeWindowCurrent: a runtime window carries a usable value whose cycle has not ended.
+func runtimeWindowCurrent(windows []Window, now time.Time) bool {
+	for _, window := range windows {
+		if window.ObservedAt.IsZero() || window.ObservedAt.After(now) || finite(window.UsedPercent, 0, 1000) == nil {
+			continue
+		}
+		if window.ResetsAt == nil || now.Before(*window.ResetsAt) {
+			return true
+		}
+	}
+	return false
+}
+
 // AccountDue: the cached reading is old enough to ask Codex again.
 func AccountDue(cache string, now time.Time) bool {
 	if off() || cache == "" {
@@ -857,10 +870,16 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 	// accountKeep, and at least one window not yet reset. Otherwise the session logs remain the
 	// Codex reading, as before; the unusable runtime snapshot is only shown when there are no
 	// logs at all.
+	// G3-158: only session logs at least as new as the runtime reading stand in for it. A runtime
+	// reading that is merely retained (its refresh failed) or past the freshness hour is still the
+	// newest thing known; logs from days before it must not replace it (they showed 34% left for
+	// a used-up week and dropped the plan name).
 	live := CodexRuntimeAvailable(cache, admission, now)
 	if !live {
+		// Turned off, or no window of the runtime reading still in its cycle: the logs stand.
+		newer := !off() && runtimeWindowCurrent(s.Windows, now)
 		for _, candidate := range r.Accounts {
-			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil {
+			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil && (!newer || !candidate.ObservedAt.Before(s.ObservedAt)) {
 				failureSource(false) // the session-log reading wins; the retained windows are not merged
 				return
 			}

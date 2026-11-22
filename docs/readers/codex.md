@@ -75,6 +75,8 @@ Subject: [current main adapter](https://github.com/modelplan/modelplan/blob/61ef
 
 Exactly initialize/initialized, then one rate-limit read and at most one identity read (identity is omitted when identity is off), then best-effort `model/list` pages (at most 4). These are at most six data RPCs, not an HTTP-call-count proof. The outer operation has a 15-second deadline (25 seconds until Codex has answered once, for a cold start) and kill/reap cleanup. The direct refresh entry now rechecks and reserves the shared persisted provider gate under its lock, independently of a caller checking AccountDue. Success waits five minutes; failures wait 30 minutes. Until Codex has answered once, the first three failures wait 20 seconds, one minute and five minutes instead, so one failed first read does not hide the reading for half an hour. This gate is retained independently of the account capture.
 
+Which Codex reading is shown (G3-20 option B, G3-158): a live account reading (successful, under an hour old, at least one window still in its cycle) is the only Codex account. When it is not live, the session logs stand in only when they are at least as new as the account reading (or the account read is turned off, or none of its windows is still in its cycle). An account reading that is retained after a failed refresh, or past the hour, stays over older logs, marked stale, with the failure named; a window whose reported reset has passed shows no value (`reset_passed`).
+
 The first terminal RPC/auth/protocol/transport failure stops the listed sequence. No request to renew a token, start inference or consume credits is allowed. Inner runtime retries, HTTP auth codes, redirect behavior and subsequent network calls remain outside this recorder’s proof.
 
 ## Tests
