@@ -47,8 +47,8 @@ function list(d, ui) {
   return `<div class="md-h">${esc(t('mfd.mdTitle', {r: rangeWord(ui), n: hasUsage ? inUse : rows.length}))}${totalCost(d, ui)}</div><div class="md-list" data-usage="${hasUsage}">${body}</div>`;
 }
 
-// 图 (CKP-MFD-66): the ability-cost frontier of the user's models. Only the selected model and the first-ranked one carry
-// a name on the chart; the others show theirs on hover (their points already carry a tooltip).
+// 图 (CKP-MFD-66, amended by G3-168): the ability-cost frontier of the user's models. Every model carries its name on the
+// chart (offset or on a leader line where they would collide); hover still adds the point's full detail.
 function chart(d, ui) {
   const first = usageRows(d, ui).rows[0]?.m.id, field = chartModels(d, ui);
   // A model selected or ranked first from the list stays on the chart even outside the ten-model field (macrevc-1058-11).
@@ -57,8 +57,7 @@ function chart(d, ui) {
   if (!ms.length) return `<p class="mp-empty">${t('mfd.noModels')}</p>`;
   const {w, h} = fill(ui, 'fc', {w: 260, h: 180}), current = {};
   for (const m of ms) { const c = currentOf(d, ui, m.id); if (c?.effort) current[m.id] = c.effort; }
-  const named = new Set([ui.selModel, first].filter(Boolean));
-  return `<div class="mfd-fill" data-fill="fc" data-models="${ms.map(m => m.id).join(' ')}">${frontierSvg(ms, {w, h, current, trial: ui.trials, selected: ui.selModel, named,
+  return `<div class="mfd-fill" data-fill="fc" data-models="${ms.map(m => m.id).join(' ')}">${frontierSvg(ms, {w, h, current, trial: ui.trials, selected: ui.selModel,
     axis: {ability: t('mfd.ability'), cost: t('mfd.cost')}, aria: t('mfd.frontierAria')})}<span class="tune-links">${secondaryLink(modelUrl(ms.find(m => m.id === ui.selModel)?.id || ms[0].id), websiteWords(ui.lang).compare)} ${secondaryLink(methodologyUrl('effort-ladder'), websiteWords(ui.lang).how)}</span></div>`;
 }
 
