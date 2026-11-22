@@ -48,10 +48,11 @@ export function historyUsage(history:{readonly models?:{readonly recent7d?:{read
 }
 /** D391 (owner 11-22): the history ranking carries no tool attribution (`WireCockpitRankedEntity` is name and tokens),
  * so a ranked model contributes only when a ticked subscription runs its developer — its recorded use cannot be the
- * user's own plans'. The conservative plan-filter rule applies: a subscription whose developer is unknown cannot be
- * matched, so then nothing is filtered (null). */
+ * user's own plans'. With no ticked subscription at all, no ranked model can be the user's own use, so every id is
+ * filtered (the empty set). The conservative plan-filter rule applies the other way round: a subscription whose
+ * developer is unknown cannot be matched, so then nothing is filtered (null). */
 const historyDevelopers=(subscriptions:readonly {readonly developer:string|null}[]):ReadonlySet<string>|null=>
- subscriptions.length>0&&subscriptions.every(s=>s.developer!==null)?new Set(subscriptions.map(s=>s.developer as string)):null;
+ subscriptions.every(s=>s.developer!==null)?new Set(subscriptions.map(s=>s.developer as string)):null;
 /** Beyond the engine's three: published models in use (live or recorded), then those of a developer one of the user's
  * subscriptions runs, in publication order. Every subscription counts, whatever the state of its reading: a stale or
  * loading reading is still the user's plan (sampling #930). `publicationFaders` applies the 7-day and own-plan rules.

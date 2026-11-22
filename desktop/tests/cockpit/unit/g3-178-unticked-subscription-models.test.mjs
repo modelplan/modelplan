@@ -67,3 +67,18 @@ test('D391 history usage of an unticked developer adds no fader; a ticked develo
  const loose=publicationFaders(publication,[],moreFaderModels(published,[],[],unknown,new Set(['glm-5'])),unknown,{now:Date.now(),ownPlansOnly:true,usage:historyUsage({models:{recent7d:{top:[{name:'glm-5',observedOutputTokens:10,observedRequests:1,share:1}]}}})});
  assert.ok(loose.faders.some(f=>f.id==='glm-5'));
 });
+
+// ghglm-1171-1 round 2: with NOTHING ticked (no member rows at all), no ranked model can be the user's own plans'
+// use, so history contributes nothing either — the empty developer set filters every id.
+test('D391 with no ticked subscription, history usage adds no model at all',()=>{
+ const data=sample(),seed=data.projection.rows[0];
+ const zai=structuredClone(seed);zai.id='zai';zai.name={en:'ZCode',zh:'ZCode'};zai.surfaces=['menu','settings'];zai.accounts.forEach(a=>{a.subscriptionRef=null;a.accountLocator=null;});
+ data.projection.rows=[zai];
+ assert.deepEqual(cockpitMembers(data),[]);
+ const model=(id,developerId)=>({id,name:id,developerId,recommended:'medium',efforts:[{effort:'medium',star:true,ability:1,cost:1,time:null}]});
+ const publication={contractVersion:1,models:[model('gpt-5','openai')]};
+ const published=[...publication.models,model('glm-5','zhipuai')];
+ const usage=historyUsage({models:{recent7d:{top:[{name:'glm-5',observedOutputTokens:10,observedRequests:1,share:1}]}}});
+ assert.deepEqual(moreFaderModels(published,[],[],[],new Set(usage.keys())).map(m=>m.id),[]);
+ assert.ok(!publicationFaders(publication,[],[],[],{now:Date.now(),ownPlansOnly:true,usage}).faders.some(f=>f.id==='glm-5'));
+});
