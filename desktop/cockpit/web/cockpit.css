@@ -259,19 +259,24 @@ html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{ani
    A working bell's light steps aside meanwhile (the .bz-sheet container yields; its breathing runs on its pseudo-elements,
    so no animation can hold it lit). Vertical positions come from the bell height. */
 .ck-base :is(.bz,.bz-empty){--ig-w:var(--bell-w,var(--w,calc(var(--cw,40px) - 8px)));--ig-h:var(--bell-h,calc(var(--ig-w) * 10 / 81));--ig-m:var(--bell-m,calc(var(--ig-h) * .4515))}
-.ck-base :is(.bz,.bz-empty)::after{content:"";position:absolute;left:50%;top:var(--ig-m);width:calc(var(--ig-w) * .86);height:calc(var(--ig-h) - var(--ig-m) + 20px);
+.ck-base :is(.bz,.bz-empty)::after{content:"";position:absolute;left:50%;top:var(--ig-m);width:calc(var(--ig-w) * .86);height:calc(var(--ig-h) - var(--ig-m) + 24px);
   transform:translateX(-50%) scaleY(.15);transform-origin:50% 0;pointer-events:none;z-index:3;opacity:0;transition:opacity .28s linear,transform .28s ease-in;
   background-repeat:no-repeat;
-  background-image:radial-gradient(ellipse 18% 92% at 50% 0,#fff6e6 0%,rgba(255,214,150,.95) 22%,rgba(255,160,46,.7) 55%,transparent 100%),
-    radial-gradient(ellipse 34% 100% at 50% 0,rgba(255,184,96,.75) 0%,rgba(255,150,40,.45) 50%,transparent 100%),
-    radial-gradient(ellipse 50% 70% at 50% 0,rgba(255,160,46,.45) 0%,rgba(255,120,30,.18) 60%,transparent 100%)}
+  /* G3-160: a rocket exhaust, as the porthole and site flames: a white-yellow core, an orange body fading to nothing at
+     the tip (about 30 px, the whole base reserve), and three shock diamonds down the axis. One element, gradients only. */
+  background-image:radial-gradient(ellipse 5% 6% at 50% 27%,rgba(255,252,232,1) 0%,transparent 100%),
+    radial-gradient(ellipse 4% 5% at 50% 52%,rgba(255,240,196,.9) 0%,transparent 100%),
+    radial-gradient(ellipse 3% 4.5% at 50% 76%,rgba(255,228,165,.7) 0%,transparent 100%),
+    radial-gradient(ellipse 6.5% 98% at 50% 0,#fffef4 0%,#fff0b0 50%,rgba(255,226,140,.6) 82%,transparent 100%),
+    radial-gradient(ellipse 14% 100% at 50% 0,rgba(255,206,110,.95) 0%,rgba(255,160,46,.78) 55%,rgba(255,130,30,.3) 85%,transparent 100%),
+    radial-gradient(ellipse 34% 100% at 50% 0,rgba(255,150,40,.55) 0%,rgba(255,110,30,.28) 60%,transparent 100%)}
 .ck-base :is(.bz,.bz-empty)::before{content:"";position:absolute;left:50%;top:calc(var(--ig-m) - 1px);width:calc(var(--ig-w) * .9);height:calc(var(--ig-h) - var(--ig-m) + 3px);
   transform:translateX(-50%);pointer-events:none;z-index:3;opacity:0;transition:opacity .9s cubic-bezier(.2,.6,.3,1) .15s;
   background:radial-gradient(ellipse 50% 70% at 50% 35%,rgba(255,186,110,.9) 0%,rgba(255,120,40,.45) 55%,transparent 100%) no-repeat}
 #cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{opacity:.9;transform:translateX(-50%) scaleY(1);transition:opacity .09s ease-out,transform 0s}
 #cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::before{opacity:.7;transition:opacity .12s ease-out}
-@keyframes cockpit-bell-flare{from{scale:1 .25}45%{scale:1 1.12}to{scale:1 1}}
-@keyframes cockpit-bell-burn{0%,100%{scale:1 1}30%{scale:1 1.08}55%{scale:1 .92}80%{scale:1 1.04}}
+@keyframes cockpit-bell-flare{from{scale:1 .25}to{scale:1 1}}
+@keyframes cockpit-bell-burn{0%,100%{scale:1 1}30%{scale:.94 .97}55%{scale:1.05 .9}80%{scale:.97 .98}}
 @media (prefers-reduced-motion:no-preference){
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"][data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .84s steps(7,end) .22s infinite}
 }
