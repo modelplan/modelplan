@@ -22,15 +22,26 @@ function starPath(x, y, r) {
     return `${i ? 'L' : 'M'}${(x + Math.cos(angle) * reach).toFixed(1)} ${(y + Math.sin(angle) * reach).toFixed(1)}`;
   }).join('') + 'Z';
 }
-/** Beside its ★, one line lower or higher if that spot is taken, or not at all. */
-function nameLabels(items, width, taken) {
+/** Beside its ★, one line lower or higher or on its left if that spot is taken; when none is free the name goes in the
+ * first free row down the right-hand edge with a thin leader line back to its ★. Every name is drawn (G3-168). */
+function nameLabels(items, width, height, taken) {
   const boxes = [...taken], labels = [];
+  const free = (x, y, w) => !boxes.some(b => x < b.x1 && b.x0 < x + w && y - 8 < b.y1 && b.y0 < y + 2);
   for (const item of [...items].sort((a, b) => a.dim - b.dim || a.y - b.y)) {
-    const w = item.text.length * 5.6 + 2, x = Math.min(item.x, width - w - 1);
-    const y = [0, 10, -12, 20, -22].map(dy => item.y + dy).find(y => !boxes.some(b => x < b.x1 && b.x0 < x + w && y - 8 < b.y1 && b.y0 < y + 2));
-    if (y === undefined) continue;
-    boxes.push({x0: x, x1: x + w, y0: y - 8, y1: y + 2});
-    labels.push(`<text class="fc-l ${item.dim ? 'dim' : ''}" x="${x.toFixed(1)}" y="${y.toFixed(1)}">${esc(item.text)}</text>`);
+    const w = item.text.length * 5.6 + 2, right = Math.min(item.x, width - w - 1), left = Math.max(1, item.x - 12 - w);
+    let spot = null;
+    for (const [x, dy] of [[right, 0], [right, 10], [right, -12], [right, 20], [right, -22], [left, 0], [left, 10], [left, -12]]) {
+      if (free(x, item.y + dy, w)) { spot = {x, y: item.y + dy}; break; }
+    }
+    let leader = '';
+    if (!spot) {
+      const x = width - w - 1;
+      for (let y = 10; y < height - 4; y += 10) if (free(x, y, w)) { spot = {x, y}; break; }
+      spot ??= {x, y: Math.min(height - 4, item.y)};
+      leader = `<line class="fc-lead" x1="${(item.x - 6).toFixed(1)}" y1="${(item.y - 4).toFixed(1)}" x2="${(spot.x - 1).toFixed(1)}" y2="${(spot.y - 3).toFixed(1)}"/>`;
+    }
+    boxes.push({x0: spot.x, x1: spot.x + w, y0: spot.y - 8, y1: spot.y + 2});
+    labels.push(`${leader}<text class="fc-l ${item.dim ? 'dim' : ''}" x="${spot.x.toFixed(1)}" y="${spot.y.toFixed(1)}">${esc(item.text)}</text>`);
   }
   return labels.join('');
 }
@@ -55,7 +66,7 @@ export function frontierSvg(models, {w: width, h: height, current = {}, axis = {
     return `<path class="fc-star ${leaders.has(m.id) ? '' : 'dim'}" d="${starPath(X(star[2]), Y(star[1]), 4)}"/>${dot ? `<circle class="fc-cur" cx="${X(dot[2]).toFixed(1)}" cy="${Y(dot[1]).toFixed(1)}" r="3"/>` : ''}`;
   }).join('');
   const taken = models.flatMap(m => [starRow(m), seen(m)].filter(Boolean)).map(row => ({x0: X(row[2]) - 4, x1: X(row[2]) + 4, y0: Y(row[1]) - 4, y1: Y(row[1]) + 4}));
-  const names = nameLabels(models.flatMap(m => { const star = starRow(m);return star && (!named || named.has(m.id)) ? [{text: m.short, x: X(star[2]) + 6, y: Y(star[1]) + 4, dim: !leaders.has(m.id)}] : []; }), width, taken);
+  const names = nameLabels(models.flatMap(m => { const star = starRow(m);return star && (!named || named.has(m.id)) ? [{text: m.short, x: X(star[2]) + 6, y: Y(star[1]) + 4, dim: !leaders.has(m.id)}] : []; }), width, height, taken);
   const points = all.map(({m, row}) => {
     const roles = [isCurrent(m, row) && t('rev49.current'), m.rec === row[0] && t('rev49.recommended')].filter(Boolean).join(' · ') || t('rev49.published');
     const label = t('rev49.point', {m: m.name, e: row[0], a: row[1], c: row[2], s: roles});
