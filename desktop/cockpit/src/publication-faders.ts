@@ -46,11 +46,19 @@ export function historyUsage(history:{readonly models?:{readonly recent7d?:{read
  }
  return out;
 }
+/** D391 (owner 11-22): the history ranking carries no tool attribution (`WireCockpitRankedEntity` is name and tokens),
+ * so a ranked model contributes only when a ticked subscription runs its developer — its recorded use cannot be the
+ * user's own plans'. The conservative plan-filter rule applies: a subscription whose developer is unknown cannot be
+ * matched, so then nothing is filtered (null). */
+const historyDevelopers=(subscriptions:readonly {readonly developer:string|null}[]):ReadonlySet<string>|null=>
+ subscriptions.length>0&&subscriptions.every(s=>s.developer!==null)?new Set(subscriptions.map(s=>s.developer as string)):null;
 /** Beyond the engine's three: published models in use (live or recorded), then those of a developer one of the user's
  * subscriptions runs, in publication order. Every subscription counts, whatever the state of its reading: a stale or
- * loading reading is still the user's plan (sampling #930). `publicationFaders` applies the 7-day and own-plan rules. */
+ * loading reading is still the user's plan (sampling #930). `publicationFaders` applies the 7-day and own-plan rules.
+ * D391: sessions arrive already admitted, and history-ranked models pass the developer rule above. */
 export function moreFaderModels<T extends {readonly id:string;readonly developerId:string}>(published:readonly T[],live:readonly {readonly model:string}[],recorded:readonly {readonly model:string}[],subscriptions:readonly {readonly developer:string|null}[],historyModels:ReadonlySet<string>=new Set()):T[]{
- const used=new Set([...live,...recorded].map(s=>s.model).concat([...historyModels])),vendors=new Set(subscriptions.map(s=>s.developer));
+ const ranked=historyDevelopers(subscriptions),history=ranked===null?[...historyModels]:[...historyModels].filter(id=>published.some(m=>m.id===id&&ranked.has(m.developerId)));
+ const used=new Set([...live,...recorded].map(s=>s.model).concat(history)),vendors=new Set(subscriptions.map(s=>s.developer));
  return [...published.filter(m=>used.has(m.id)),...published.filter(m=>!used.has(m.id)&&vendors.has(m.developerId))];
 }
 export function publicationFaders(publication:unknown,live:unknown=null,more:readonly unknown[]=[],subscriptions:readonly FaderSubscription[]=[],options:FaderSetOptions={}):{accounts:Account[];faders:Fader[]} {
@@ -59,6 +67,10 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
  if(!root||root.contractVersion!==1||!Array.isArray(root.models))return {accounts:[],faders:[]};
  const faders:Fader[]=[],taken=new Set<string>(),lastUsed=new Map<string,number>(),tierOf=new Map<string,number>();
  const planDevelopers=new Set(subscriptions.map(s=>s.developer)),filterPlans=options.ownPlansOnly===true&&subscriptions.length>0&&!planDevelopers.has(null);
+ // D391: ranked history has no tool attribution, so usage exempts a model from the plan filter only when a ticked
+ // subscription runs its developer; with an unknown developer among the subscriptions nothing can be matched, and the
+ // usage keeps its old exempting power (the plan filter is off in that case anyway).
+ const ranked=historyDevelopers(subscriptions),historyExempt=(id:string,developer:string|null)=>options.usage?.has(id)===true&&(ranked===null||developer!==null&&ranked.has(developer));
  const recent=[...(Array.isArray(live)?live:[]),...(options.recorded??[])].flatMap(value=>{
   const s=object(value),model=text(s?.model),at=typeof s?.lastObservedAt==='string'?Date.parse(s.lastObservedAt):NaN;
   if(!model||!text(s?.sessionRef))return [];
@@ -71,7 +83,7 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
   if(faders.length>=FADER_LIMIT)break;
   const model=object(value),id=text(model?.id),name=text(model?.name),recommended=level(model?.recommended),developer=text(model?.developerId);
   if(!model||!id||!name||!recommended||!Array.isArray(model.efforts)||taken.has(id))continue;
-  if(filterPlans&&!lastUsed.has(id)&&!options.usage?.has(id)&&!(developer&&planDevelopers.has(developer)))continue;
+  if(filterPlans&&!lastUsed.has(id)&&!historyExempt(id,developer)&&!(developer&&planDevelopers.has(developer)))continue;
   const rows:Fader['e']=[],seen=new Set<string>();let recommendedStarred=false;
   for(const value of model.efforts.slice(0,32)){
    const effort=object(value),label=level(effort?.effort),ability=number(effort?.ability),cost=number(effort?.cost),aa=number(effort?.aaScore);

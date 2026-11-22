@@ -26,6 +26,9 @@ function fixture(){
   {sessionRef:'00000000000000a2',source:'zcode',subscriptionRef:null,model:'glm-live',effort:'medium',projectLabel:null,lastObservedAt:at,state:'running',rate:null},
   {sessionRef:'00000000000000a3',source:'zcode',subscriptionRef:null,model:'unknown',modelDisplay:'GLM-5.3 live',effort:null,projectLabel:null,lastObservedAt:at,state:'running',rate:null},
  ];
+ // ghglm-1171-1: usage recorded before unticking still ranks the GLM model in the (unattributed) history.
+ const ranking=measure=>({measure,attribution:'unattributed',recent7d:{entities:1,totalObservedOutputTokens:404000,top:[{name:'glm-live',observedOutputTokens:404000,observedRequests:80,share:1}]},recent30d:{entities:0,totalObservedOutputTokens:0,top:[]}});
+ data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:null,subscriptions:[],models:ranking('observed-output-tokens'),tools:ranking('observed-output-tokens'),daily:[],hourly:[],projects:{recent7d:[],recent30d:[]},cycles:[]};
  return data;
 }
 async function open(page,data){
@@ -38,13 +41,19 @@ async function open(page,data){
  return {send,receive};
 }
 
-test('D391 an unticked subscription\'s models show in no cockpit model view, live sessions included',async({page})=>{
+test('D391 an unticked subscription\'s models show in no cockpit model view, live sessions and history included',async({page})=>{
  await open(page,fixture());
- // Fader banks: only the ticked subscription's in-use model; no GLM fader, no unlisted "GLM-5.3 live" card.
+ // Fader banks: only the ticked subscription's in-use model; no GLM fader, no unlisted "GLM-5.3 live" card,
+ // and the history ranking (ghglm-1171-1) adds no GLM fader either.
  await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(1);
  await expect(page.locator('.fd-ch:not(.empty) .fd-strip')).toHaveAttribute('aria-label',/^Synthetic used:/);
  // Porthole HUD: no GLM row (the list is the members' own models; the unticked tool adds none).
  for(const row of await page.locator('.hud .hp').all())await expect(row).not.toContainText('GLM');
+ // Models page (ghglm-1171-2): its list is the same member set; the unticked developer's model has no row.
+ await page.locator('[data-mfd="page:tune"]').click();
+ await expect(page.locator('.pg-tune .md-row')).toBeVisible();
+ for(const row of await page.locator('.pg-tune .md-row').all())await expect(row).not.toContainText('GLM');
+ await expect(page.locator('.pg-tune .md-row .md-n').first()).toHaveText('Synthetic used');
  // Outside the session tape no text names the unticked subscription's models.
  const texts=await page.locator('#cockpit').evaluate(root=>[...root.querySelectorAll('*')].filter(e=>!e.closest('.ck-tape')&&e.children.length===0).map(e=>e.textContent).filter(t=>t&&t.includes('GLM')));
  expect(texts).toEqual([]);
