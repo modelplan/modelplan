@@ -158,6 +158,8 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  const pulse=()=>{stop();if(!active||nativeShell?.profile==='closed'||reduceMotion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;void frame.lamp.offsetWidth;frame.lamp.classList.add('state-pulse');};
  // Plugin columns (D121/D124, D293): one host per page; the engine table lays its columns out through it.
  const plugins=mountPluginHost(root,reportPlugins);
+ // D387: the plugin screen and the deck's pages are views of one panel; each tells the other when it takes the panel.
+ deck.bindScreen(()=>{plugins.openScreen(null);});plugins.onScreen(screen=>deck.screen(screen));
  // S18 (sampling 11-21, ADR 0005): the engine's floating tooltip is appended outside the table (the document body when
  // the page root is #cockpit itself); it goes with the table, synchronously, so no private text outlives a clear or a re-render.
  const dropEngineTips=()=>{for(const tip of root.ownerDocument.querySelectorAll('.eng-hint'))tip.remove();};
