@@ -57,26 +57,25 @@ test('CKP-ENG-24 the empty bay add-subscription opens Settings on the Subscripti
  expect(await page.evaluate(()=>window.sent.filter(m=>m.type==='action').map(m=>m.action))).toEqual(['openSettingsSubscriptions']);
 });
 
-// macrevb-1020-1: the footer describes only the DISPLAYED columns, also while a subscription is selected and the pager moves.
-test('CKP-ENG-55 a selected subscription does not keep a paged-out reading in the footer',async({page})=>{
+// D376 (CKP-ENG-27/55): the overview's bottom line follows the selection: 全部 = the oldest reading of all and rereads all;
+// a selected subscription = its own reading and rereads only it. Paging the table does not change it.
+test('CKP-ENG-55 the overview update line follows the selected subscription, not the table page',async({page})=>{
  const {data,account,sync}=fixture(7);
  account(6).observedAt=iso(-125);account(6).valueState='retained';account(6).lastFailure={at:iso(-1),code:'network'};sync();
  await open(page,data);
- await page.locator('.ek[data-sub]').first().click();
- await expect(page.locator('.eng-upd-t'),'selected, own reading').toHaveText('Updated 3 min ago');
- await page.evaluate(()=>{window.sent.length=0;});await page.locator('.eng-upd-r').click();
- const own=await page.evaluate(()=>window.sent.filter(m=>m.action==='refreshMember').map(m=>m.key));expect(own,'on screen: its own key').toHaveLength(1);expect(own[0]).not.toBe('all');
- await page.locator('.eng-pk[data-bpage="1"]').click();
- await expect(page.locator('.eng-upd-t'),'page 2 is on screen: its reading, its failure').toHaveText('Updated 2 h ago · no new data');
- await expect(page.locator('.eng-upd')).toHaveAttribute('data-failing','true');
- // Retry's label and target follow what is on screen: the selected account is paged out, so it is not what refreshes.
- await expect(page.locator('.eng-upd-r')).toHaveText('Retry');
- await expect(page.locator('.eng-upd-r')).toHaveAttribute('aria-label',/all/i);
- await page.evaluate(()=>{window.sent.length=0;});await page.locator('.eng-upd-r').click();
+ const text=page.locator('.pg-overview .eng-upd-t'),btn=page.locator('.pg-overview .eng-upd-r');
+ await expect(text,'全部: the oldest reading of all').toHaveText('2 h ago');
+ await expect(btn).toHaveText('Retry');await expect(page.locator('.pg-overview .eng-upd')).toHaveAttribute('data-failing','true');
+ await page.evaluate(()=>{window.sent.length=0;});await btn.click();
  expect(await page.evaluate(()=>window.sent.filter(m=>m.action==='refreshMember').map(m=>m.key))).toEqual(['all']);
- await page.locator('.eng-pk[data-bpage="-1"]').click();
- await expect(page.locator('.eng-upd-t')).toHaveText('Updated 3 min ago');
- await expect(page.locator('.eng-upd')).toHaveAttribute('data-failing','false');
+ await page.locator('.ek[data-sub]').first().click();
+ await expect(text,'selected: its own reading').toHaveText('Updated 3 min ago');
+ await expect(page.locator('.pg-overview .eng-upd')).toHaveAttribute('data-failing','false');
+ await expect(btn).toHaveText('Refresh');
+ await page.evaluate(()=>{window.sent.length=0;});await btn.click();
+ const own=await page.evaluate(()=>window.sent.filter(m=>m.action==='refreshMember').map(m=>m.key));expect(own).toHaveLength(1);expect(own[0]).not.toBe('all');
+ await page.locator('.eng-pk[data-bpage="1"]').click();
+ await expect(text,'paging the table does not change the selection').toHaveText('Updated 3 min ago');
 });
 
 // macrevb-1020-3: the age rides the first populated quota cell, so a weekly-only (or Other-only) stale column still has it.

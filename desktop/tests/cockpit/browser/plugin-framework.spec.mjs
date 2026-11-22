@@ -123,15 +123,14 @@ test('CKP-PLG-52 pin keeps the plugin on page 1 with many subscriptions; unpinne
  expect(await receive(send('plugins',{plugins:on(true)}))).toBe(true);
  await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(5);
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(1);
- await page.getByRole('button',{name:'Page 2'}).click();
+ await page.getByRole('button',{name:'Next subscriptions'}).click();
  await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(1);
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
  // Seven subscriptions, unpinned: the plugin takes a free slot on the last page.
  expect(await receive(send('plugins',{plugins:on(false)}))).toBe(true);
  expect(await receive(send('display',{data:dataWith(7)}))).toBe(true);
- await page.getByRole('button',{name:'Page 1'}).click();
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
- await page.getByRole('button',{name:'Page 2'}).click();
+ await page.getByRole('button',{name:'Next subscriptions'}).click();
  await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(1);
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(1);
  // A shortcut digit still selects subscriptions only.
@@ -207,7 +206,7 @@ test('lifecycle: the plugin runs only while the cockpit is open and its column i
  // Page 1 has no room: not shown, never started, and host readings are refused.
  await expect(column(page)).toHaveCount(0);
  expect(await receive(reading(1))).toBe(false);
- await page.getByRole('button',{name:'Page 2'}).click();
+ await page.getByRole('button',{name:'Next subscriptions'}).click();
  await expect(column(page)).toHaveAttribute('data-running','true');
  expect(await receive(reading(7))).toBe(true);
  await expect(column(page).locator('.qvalue')).toHaveText('7');
@@ -225,10 +224,10 @@ test('lifecycle: the plugin runs only while the cockpit is open and its column i
  await expect(column(page).locator('.qvalue')).toHaveText('7');
  await expect(column(page)).toHaveAttribute('data-running','true');
  // Page away: stopped.
- await page.getByRole('button',{name:'Page 1'}).click();
+ await page.getByRole('button',{name:'Previous subscriptions'}).click();
  await expect(page.locator('.pl-col')).toHaveCount(0);
  expect(await receive(reading(9))).toBe(false);
- await page.getByRole('button',{name:'Page 2'}).click();
+ await page.getByRole('button',{name:'Next subscriptions'}).click();
  await expect(column(page).locator('.qvalue')).toHaveText('7');
  // A settings change from the host redraws the column.
  expect(await receive(send('plugins',{plugins:on(false,{intervalSeconds:3})}))).toBe(true);
