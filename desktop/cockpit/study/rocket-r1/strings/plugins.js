@@ -7,6 +7,7 @@ import {register} from '../i18n.js';
 register('plugin', {
   // The key and the big screen.
   keyAria: ['aria', '{name} · 插件 · 点开大屏，右键更多', '{name} · plugin · click for its screen, right-click for more'],
+  nozzle: ['aria', '插件 · {name}', 'Plugin · {name}'],
   menuAria: ['aria', '{name} 插件菜单', '{name} plugin menu'],
   remove: ['line', '从驾驶舱移除', 'Remove from the cockpit'],
   removeShort: ['silk', '移除', 'Remove'],
