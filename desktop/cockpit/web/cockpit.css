@@ -489,7 +489,8 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-wk .wk-pk.tent{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 24%,transparent) 0 4px,color-mix(in srgb,var(--c) 12%,transparent) 4px 8px)}
 .cal-wk .wk-pk b{display:block;font:700 9px/11px var(--f-silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cal-wk .wk-pk i{display:none;font:400 9px/11px var(--f-lcd);font-style:normal}
-.cal-wk.zoom .wk-pk i{display:block}
+/* G3-179: like the strip's label, the zoomed time line clips on one line (never wraps), so the page can shorten it. */
+.cal-wk.zoom .wk-pk i{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cal-wk .wk-ch.wk{background:transparent;box-shadow:inset 0 0 0 1px var(--c);color:var(--c)}
 .cal-wk .wk-adr.mark{overflow:visible}
 .cal-wk .wk-adr.mark span{padding:0 2px;color:var(--c)}
