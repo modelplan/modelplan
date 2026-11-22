@@ -21,10 +21,10 @@ const APPROVED={
  compact:[[4,409.5],[6,482],[8,531.5],[10,559.5],[14,582.5],[20,595],[30,607],[40,615.5],[48,620],[100,620.5],[200,620.5],[400,636]],
 };
 const shapes=[
- {tier:'tall',closed:false,canvas:939,root:905,cap:244,approved:APPROVED.tall},
- {tier:'compact',closed:false,canvas:669,root:635,cap:56,approved:APPROVED.compact},
- {tier:'tall',closed:true,canvas:939,root:691,cap:30},
- {tier:'compact',closed:true,canvas:669,root:609,cap:30},
+ {tier:'tall',closed:false,canvas:951,root:905,cap:244,approved:APPROVED.tall},
+ {tier:'compact',closed:false,canvas:681,root:635,cap:56,approved:APPROVED.compact},
+ {tier:'tall',closed:true,canvas:951,root:691,cap:30},
+ {tier:'compact',closed:true,canvas:681,root:609,cap:30},
 ];
 async function open(page,s){
  await page.setViewportSize({width:636,height:s.canvas});
