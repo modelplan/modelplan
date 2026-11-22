@@ -128,6 +128,8 @@ export interface PluginHost {
   /** CKP-PLG-53: the plugin's big screen inside the big-screen area; null closes it. The key toggles; `keep` (a host
    *  request such as the widget card's action) leaves an already open screen open. */
   openScreen(id:string|null,keep?:boolean):boolean;
+  /** D387: the deck follows the one open screen (its plugin id and shown name), or null when none is open. */
+  onScreen(listener:(screen:{id:string;name:string}|null)=>void):void;
   /** Plugins currently running (for tests and diagnostics). */
   running():string[];
   /** The display data the page rendered, at the host's time: running plugins with `derive` get their shaped reading. */
@@ -148,7 +150,7 @@ export interface PluginReports {
 }
 export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=new PluginRegistry(builtinPlugins)):PluginHost {
   let state:PluginState=emptyPluginState,negotiated=false,visible=false,interactive=false,disposed=false,locale:PluginLocale='en';
-  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement;title:HTMLElement;close:HTMLButtonElement;list:HTMLElement;area:HTMLElement;opening:boolean}|null=null;
+  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement;title:HTMLElement;list:HTMLElement;area:HTMLElement;opening:boolean}|null=null;
   const readings=new Map<string,unknown>(),columns=new Map<string,HTMLElement>(),running=new Set<string>(),placed=new Set<string>(),hostFed=new Set<string>();
   let shown:WireCockpitData|null=null,now=0;
   // D323 custom draw: per-plugin view memory, the size each area was last drawn at, and one observer that draws an area
@@ -248,12 +250,16 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   // button whether it came from a pointer, Enter or Space, so the capture listener sees every path.
   // Invariant (macrevb-835-2): the screen's frame (icon, title, Close) is built once per opening; readings, repaints,
   // locale and settings changes update its text and lines in place, so a focused control is never replaced.
-  const pageKeys=(e:Event)=>{if(screen&&(e.target as Element|null)?.closest?.('.mfd-pk .pk'))closeScreen();};
+  // D387: the screen is one view of the lower panel. Any other view key (a page key, a subscription key, All) ends it.
+  const pageKeys=(e:Event)=>{if(screen&&(e.target as Element|null)?.closest?.('.mfd-pk .pk,.eng-keys .ek:not(.pl-key),.ek[data-all]'))closeScreen();};
+  // The plugin key is pressed (lit, aria-pressed) exactly while its screen is open, as a subscription key is while selected.
+  const markKey=(key:HTMLElement,open:boolean)=>{key.classList.toggle('on',open);key.setAttribute('aria-expanded',String(open));key.setAttribute('aria-pressed',String(open));};
+  let listener:((s:{id:string;name:string}|null)=>void)|null=null,told='';
+  const tell=(s:{id:string;name:string}|null)=>{const sig=s?s.id+'\0'+s.name:'';if(sig===told)return;told=sig;listener?.(s);};
   function drawScreen() {
     if(!screen)return;const plugin=registry.get(screen.id);if(!plugin){closeScreen();return;}
-    const title=pluginWords(locale,plugin.title),close=pluginWords(locale,'plugin.close');
+    const title=pluginWords(locale,plugin.title);
     screen.title.dataset.full=title.full;screen.title.dataset.short=title.short;
-    screen.close.textContent=close.full;
     const shown=guard(()=>plugin.screen(readings.get(plugin.id),context(plugin.id)),{lines:[]});
     // D323: a custom draw paints the body under the title bar; when it throws, the lines are shown instead.
     const opening=screen.opening;screen.opening=false;
@@ -268,11 +274,12 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       const [dt,dd]=[row.children[0]!,row.children[1]!];if(dt.textContent!==line.label)dt.textContent=line.label;if(dd.textContent!==line.value)dd.textContent=line.value;});
     for(const row of rows.slice(lines.length))row.remove();
     screen.box.setAttribute('aria-label',ht(locale,'plugin.screenAria',{name:title.full}));fitIn(screen.box);
+    tell({id:screen.id,name:title.full});
   }
   function closeScreen(restoreFocus=false) {
     if(!screen)return;const id=screen.id;watch?.unobserve(screen.area);screen.box.remove();screen=null;
     document.removeEventListener('click',pageKeys,true);
-    for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))key.setAttribute('aria-expanded','false');
+    for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))markKey(key,false);tell(null);
     if(restoreFocus)root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`)?.focus();
     reconcile();// S4: a plugin that ran only for its screen stops.
   }
@@ -284,11 +291,10 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const well=root.querySelector<HTMLElement>('.dk-mfd .mfd-screen');if(!well)return false;
     closeScreen();const box=el('section','pl-screen');box.dataset.plugin=id;box.setAttribute('role','region');box.tabIndex=-1;
     const head=el('div','pl-screen-h'),title=fitted('pl-screen-t',pluginWords(locale,plugin.title));
-    const close=el('button','pl-screen-x');close.type='button';close.dataset.mat='part';close.onclick=e=>{if(e.isTrusted)closeScreen(true);};
-    head.append(icon(plugin,'pl-icon'),title,close);const list=el('dl','pl-screen-l'),area=el('div','pl-screen-d');area.hidden=true;area.dataset.plugin=id;box.append(head,list,area);
-    well.append(box);screen={id,box,title,close,list,area,opening:true};reconcile();drawScreen();
+    head.append(icon(plugin,'pl-icon'),title);const list=el('dl','pl-screen-l'),area=el('div','pl-screen-d');area.hidden=true;area.dataset.plugin=id;box.append(head,list,area);
+    well.append(box);screen={id,box,title,list,area,opening:true};reconcile();drawScreen();
     document.addEventListener('click',pageKeys,true);
-    root.querySelector(`.eng-keys .pl-key[data-plugin="${id}"]`)?.setAttribute('aria-expanded','true');
+    const opened=root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`);if(opened)markKey(opened,true);
     return true;
   }
   // ---- menus: the empty-slot "+" menu and the plugin key's right-click menu share one popup.
@@ -339,7 +345,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
         // CKP-PLG-50: the subscription key's box and type, a white line-art icon in the vendor-mark box, a dashed
         // underline in the plugin's colour, no digit and no ×.
         const key=el('button','ek bd-r pl-key');key.type='button';key.dataset.plugin=id;key.dataset.mat='part';
-        key.setAttribute('aria-label',ht(locale,'plugin.keyAria',{name:title.full}));key.setAttribute('aria-expanded',String(screen?.id===id));key.title=title.full;
+        key.setAttribute('aria-label',ht(locale,'plugin.keyAria',{name:title.full}));markKey(key,screen?.id===id);key.title=title.full;
         const identity=el('span','ek-identity');identity.append(icon(plugin,'lamp pl-icon'),fitted('ek-name',title));
         const line=el('i','bl pl-dash');line.setAttribute('aria-hidden','true');line.style.setProperty('--v',plugin.underline);
         key.append(identity,line);
@@ -426,6 +432,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     },
     closeMenu:()=>closeMenu(),
     openScreen,
+    onScreen(next){listener=next;},
     running:()=>[...running],
     dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();memos.clear();pending=null;hostFed.clear();shown=null;watch?.disconnect();document.removeEventListener('focusin',moved,true);document.removeEventListener('keydown',escape,true);hosts.delete(root);},
   };
