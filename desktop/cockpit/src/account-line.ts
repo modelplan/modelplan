@@ -50,3 +50,7 @@ export function updatedCopy(at:number,now:number):{key:'host.updatedNow'|'host.u
  const hours=Math.floor(minutes/60);
  return hours<48?{key:'host.updatedHour',n:hours}:{key:'host.updatedDay',n:Math.floor(hours/24)};
 }
+/** D376: the failing form of the overview's update line drops the word "updated": "12 分钟前". */
+export function agoKey(key:ReturnType<typeof updatedCopy>['key']):'host.agoNow'|'host.agoMin'|'host.agoHour'|'host.agoDay' {
+ return key==='host.updatedNow'?'host.agoNow':key==='host.updatedMin'?'host.agoMin':key==='host.updatedHour'?'host.agoHour':'host.agoDay';
+}

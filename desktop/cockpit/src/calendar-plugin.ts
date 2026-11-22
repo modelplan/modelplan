@@ -83,9 +83,14 @@ function paintStrip(context:PluginDrawContext,reading:CalendarData) {
   const {p,start,end}=item,block=el('div','cal-pk'+(p.tentative?' tent':''));block.style.setProperty('--c',colourOf(data,p.sub));
   block.style.top=pct(Y(start));block.style.height=pct(Y(end)-Y(start));
   block.style.left=`calc(var(--cal-g) + (100% - var(--cal-g) - 2px) * ${lane/lanes})`;block.style.width=`calc((100% - var(--cal-g) - 2px) / ${lanes} - 2px)`;
-  const abbr=nameOf(data,p.sub,zh);
-  block.title=peakTitle(data,p,w,zh);block.append(el('b','',p.from<=now?(p.to===null?`${abbr} ${w.peak}`:`${abbr} ${w.until} ${hhmm(p.to)}`):`${abbr} ${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}`));
-  axis.append(block);
+  const abbr=nameOf(data,p.sub,zh),live=p.from<=now,stop=p.to===null?'…':hhmm(p.to);
+  block.title=peakTitle(data,p,w,zh);
+  // G3-179 (owner 11-22, shot 142331): a six-column cockpit leaves the block ~45 px, so "GL 09:00–…" clipped to
+  // "GL 09:…". The time is the block's fact (D375: cells lead with the big time), so the abbreviation drops first,
+  // then the end, before any of it clips. The tooltip keeps the whole sentence.
+  const label=live?(p.to===null?[`${abbr} ${w.peak}`,w.peak]:[`${abbr} ${w.until} ${stop}`,`${w.until} ${stop}`,stop]):[`${abbr} ${hhmm(p.from)}–${stop}`,`${hhmm(p.from)}–${stop}`,hhmm(p.from)];
+  const text=el('b','',label[0]!);block.append(text);axis.append(block);
+  for(let i=1;i<label.length&&text.scrollWidth>text.clientWidth;i++)text.textContent=label[i]!;
  }
  // The user's own resets: capsules with the time only after the subscription and kind ("CL 周 09:00").
  const chips=data.resets.filter(r=>r.at>=span.from&&r.at<span.to);
@@ -188,7 +193,7 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
  for(let i=0;i<WEEK_DAYS;i++){const at=addDays(today,i),c=el('div','wk-col'+(isWeekend(at)?' we':'')+(i===selected?' sel':''));c.dataset.day=String(i);place(c,i);c.onclick=e=>{if(e.isTrusted&&!(e.target as Element).closest('.wk-ch'))pickDay(i);};inner.append(c);}
  const step=fit?6:2;
  for(let h=0;h<=24;h+=fit?6:1){const g=el('div','wk-g'+(h%step?' minor':'')+(h===0?' top':''));g.style.top=Y(h);if(h%step===0&&h<24)g.append(el('i','',narrow?String(h).padStart(2,'0'):`${String(h).padStart(2,'0')}:00`));inner.append(g);}
- const items:WeekItem[]=[];
+ const items:WeekItem[]=[],times:[HTMLElement,string][]=[];
  // Peaks: split at local midnights; overlapping peaks in one day sit side by side.
  const pieces=data.peaks.flatMap(p=>dayPieces(p.from,p.to??Math.max(p.from+HOUR,now),today,WEEK_DAYS).map(x=>({...x,p})));
  for(let i=0;i<WEEK_DAYS;i++)for(const {item,lane,lanes} of packLanes(pieces.filter(x=>x.day===i))){
@@ -196,8 +201,10 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
   block.style.top=Y(start);block.style.height=pct((stop-start)/24);
   block.style.left=`calc(${col(i)} + 2px + (${colW} - 4px) * ${lane/lanes})`;block.style.width=`calc((${colW} - 4px) / ${lanes} - 1px)`;
   const abbr=nameOf(data,p.sub,zh);block.title=peakTitle(data,p,w,zh);
-  block.append(el('b','',fit?abbr:`${abbr} ${w.peak}${cont?w.cont:''}`),el('i','',`${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}`));
-  inner.append(block);items.push({day:i,start,end:stop,label:`${abbr} ${w.peak} ${hhmm(p.from)}`,kind:'peak'});
+  const time=el('i','',`${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}`);
+  block.append(el('b','',fit?abbr:`${abbr} ${w.peak}${cont?w.cont:''}`),time);
+  inner.append(block);times.push([time,hhmm(p.from)]);
+  items.push({day:i,start,end:stop,label:`${abbr} ${w.peak} ${hhmm(p.from)}`,kind:'peak'});
  }
  // Chips: weekly resets on their day, and today's next 5-hour reset of each subscription.
  const next5=new Map<number,number>();for(const r of data.resets)if(r.kind==='5h'&&dayOffset(now,r.at)===0&&!next5.has(r.sub))next5.set(r.sub,r.at);
@@ -214,6 +221,9 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
  inner.append(past,line,tag);
  const hints=el('div','wk-hints');
  body.replaceChildren(heads,allDay,scroll,hints,status);hints.style.top=`${scroll.offsetTop}px`;
+ // G3-179: measured only now that the body is in the document — a zoomed time line drops its end before it clips
+ // (a block holds ~40 px across seven columns); the block's tooltip keeps the whole window.
+ if(!fit)for(const [time,start] of times)if(time.scrollWidth>time.clientWidth)time.textContent=start;
  // Zoomed: keep the centre hour (first zoom: centre on now), and keep the edge hints in step with the scroll.
  if(!fit){
   const centre=s.centre??nh,vh=scroll.clientHeight,ch=inner.clientHeight;

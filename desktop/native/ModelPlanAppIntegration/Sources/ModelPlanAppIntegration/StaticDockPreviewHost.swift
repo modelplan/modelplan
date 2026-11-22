@@ -424,6 +424,8 @@ struct DockHelpInteraction: Equatable {
     var detachedCardForChecks: DockCardView? { !createsNativePanels && !card.isHidden ? card : nil }
     /// Render passes run, full (resting) and carried (a press's edge-view preparation), for the carry checks.
     private(set) var fullRebuildPassesForChecks = 0, carriedRebuildPassesForChecks = 0
+    /// G3-161: plugin ring updates that repainted only the ring (no rebuild pass).
+    private(set) var ringOnlyRefreshesForChecks = 0
     var applicationForChecks: SettingsApplication? { application }
     #endif
     func refreshPresence() { displayFollower.sample(); edge.refresh() }
@@ -2412,6 +2414,29 @@ struct DockHelpInteraction: Equatable {
     static func livePluginInput(_ input: DockInstrumentInput, live: DockPluginCard?) -> DockInstrumentInput {
         guard let live, let ring = input.pluginRing else { return input }
         var next = input; next.pluginRing = ring.withCard(live); return next
+    }
+    /// G3-161: a plugin ring whose reading changed repaints alone, over the Dock's cached material. The sampler used to
+    /// rebuild the whole Dock (content, projection, every official face and the CoreImage material) for it. Returns false
+    /// when only a full pass is safe (a pass is pending or running, the widget is pressed or carried, the ring is not
+    /// on the widget, a held readout is running); the caller then runs the full pass as before.
+    public func refreshPluginRing(_ input: DockInstrumentInput) -> Bool {
+        guard !retired, !retiring, !rendering, !rebuildPending, permitted, !edge.isBackgroundPressed, !edge.isPublishingRelease,
+              input.pluginRing != nil, let model, let index = model.inputs.firstIndex(where: { $0.id == input.id }),
+              model.inputs[index].pluginRing != nil, edgeViews.values.allSatisfy({ $0 === dockView }) else { return false }
+        let passPreferences = preferences.withoutUnstableMemberChoices(model.subscriptions)
+        var value = passPreferences.applying(to: input)
+        value.unavailableReason = model.presentationRows[input.id]?.reason
+        if let signal = workingSignals[input.id] { value.working = signal }
+        guard let reading = try? DockInstrumentProjection.evaluate(value, now: currentDate(), redBelow: effectiveRedBelow),
+              (try? dockView.replaceReading(reading)) == true else { return false }
+        var inputs = model.inputs; inputs[index] = input
+        self.model = CommunityDockSnapshot(inputs: inputs, subscriptions: model.subscriptions, presentationRows: model.presentationRows,
+                                           unavailableReason: model.unavailableReason, readerDiagnostics: model.readerDiagnostics,
+                                           emptyDiagnostic: model.emptyDiagnostic)
+        #if DEBUG
+        ringOnlyRefreshesForChecks += 1
+        #endif
+        return true
     }
     /// macrevb-1096-4: an open plugin card takes the latest sample without waiting for a ring redraw.
     public func refreshPluginCard() {
