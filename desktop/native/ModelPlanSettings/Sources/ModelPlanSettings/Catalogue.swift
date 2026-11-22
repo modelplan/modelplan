@@ -264,7 +264,7 @@ public enum SettingsCatalogue {
         .init(.order,"Subscription order","订阅顺序","One shared order for the Quota Widget and cockpit; hidden entries remain editable.","额度挂件与驾驶舱共用顺序；隐藏项仍可编辑。"),
         .init(.login,LoginSetting.title.english,LoginSetting.title.chinese,"Start ModelPlan after signing in to your Mac.","登录 Mac 后自动启动 ModelPlan。"),
         .init(.automaticUpdates,"Check for updates automatically","自动检查更新","Show available versions quietly in Overview and the menu.","有可用版本时，在总览和菜单中轻声提醒。"),
-        .init(.menuDisplay,"Menu-bar display","菜单栏显示","Icon, tightest percentage or two windows.","图标、最紧的百分比或并列两个窗口。"),
+        .init(.menuDisplay,"Menu-bar display","菜单栏显示","Automatic: the icon, a number only when the quota runs low. Or choose icon only, the tightest percentage or two windows.","自动：平时只显示图标，额度偏低时才显示数字；也可选仅图标、最紧的百分比或并列两个窗口。"),
         .init(.openShortcut,"Open cockpit shortcut","打开驾驶舱快捷键","Global registration can fail; local matching remains available.","全局注册可能失败；应用内匹配仍可用。"),
         .init(.dockShortcut,"Find Quota Widget shortcut","找到额度挂件快捷键","Shows where the Quota Widget is. Text editing and composition do not trigger shortcuts.","显示额度挂件的位置；文本编辑与输入法组合期间不触发。"),
         .init(.language,"Language","语言","Follow the system language, or choose Chinese or English.","跟随系统语言，或选择中文或英文。"),
