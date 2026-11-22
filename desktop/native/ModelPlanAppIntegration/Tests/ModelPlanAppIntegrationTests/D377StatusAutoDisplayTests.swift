@@ -115,13 +115,13 @@ import ModelPlanWire
 
     // ---- through the real application ----
 
-    private func launch(weekly: Double, display: MenuDisplay = .automatic) async throws -> (EngineDockMenuApplication, NSButton) {
+    private func launch(weekly: Double, fiveHour: Double? = nil, display: MenuDisplay = .automatic) async throws -> (EngineDockMenuApplication, NSButton) {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("d377-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        let fixture = try HostPairedProjectionTests.rows(weekly: weekly)
+        let fixture = try HostPairedProjectionTests.rows(weekly: weekly, fiveHour: fiveHour)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
             dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
@@ -135,7 +135,7 @@ import ModelPlanWire
     }
 
     func testAFreshProfileShowsTheIconOnlyWhenTheQuotaIsHealthy() async throws {
-        let (app, button) = try await launch(weekly: 60)
+        let (app, button) = try await launch(weekly: 60, fiveHour: 90)
         app.applyStatusContent(to: button, detail: "")
         XCTAssertEqual(button.title, "")
         XCTAssertEqual(button.imagePosition, .imageOnly)
@@ -186,7 +186,7 @@ import ModelPlanWire
     }
 
     func testTheOtherDisplayChoicesAreUnchanged() async throws {
-        let (app, button) = try await launch(weekly: 60, display: .tightest)
+        let (app, button) = try await launch(weekly: 60, fiveHour: 90, display: .tightest)
         app.applyStatusContent(to: button, detail: "")
         XCTAssertEqual(button.title, "60%", "an explicit tightest choice still shows the number above the line")
         XCTAssertEqual(button.accessibilityLabel(), "ModelPlan 60%")
