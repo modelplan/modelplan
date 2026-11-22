@@ -106,7 +106,15 @@ export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,co
   if(m.running){const on=document.createElement('i');on.className='hp-on';on.setAttribute('role','img');on.setAttribute('aria-label',ht(locale,'host.running'));row.append(on);}
   list.append(row);
  }
- host.append(list);
+ host.append(list);if(!compact)fitRows(host,list);
+}
+/** D371 B2 (CKP-PORT-04): when six rows do not fit above the safe-area line (10 px in from the port's bottom edge), show fewer
+ *  whole rows; never a cut row, never an ellipsis. */
+function fitRows(host:HTMLElement,list:HTMLElement):void {
+ const port=host.closest('.ck-port');if(!port)return;
+ const edge=port.getBoundingClientRect();if(edge.height<=0)return;
+ const limit=edge.bottom-10;
+ for(const row of [...list.children].reverse()){if(list.children.length<=1||row.getBoundingClientRect().bottom<=limit+.5)break;row.remove();}
 }
 /** A row or point opens the model on 模型; hovering one tells the porthole which rocket to light. */
 export function wireHud(host:HTMLElement,pick:(id:string)=>void):()=>void {

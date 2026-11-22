@@ -119,12 +119,17 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 /* HUD B: borderless, on one scrim that fades to nothing at every edge (CKP-PORT-03, 04). The port's padding box starts at (18,14) in the window, so these are the window-local (76,24) and (58,9) less that. */
 #cockpit .hud[hidden]{display:none!important}
 #cockpit[data-layout] .hud.hud-b,#cockpit[data-layout] .hud.hud-strip{position:absolute;right:auto;bottom:auto;min-width:0;max-width:none;min-height:0;padding:0;border:0;border-radius:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:auto;cursor:default}
-/* WP-14 (V1-FINAL §5, final-3): one solid dark backing under the whole HUD (the old radial fade left the lower rows on the
-   earth glow); the prototype's #030810 at 0.5 (final-3). */
-#cockpit[data-layout] .hud.hud-b{left:58px;top:10px;width:180px;height:160px;display:block;background:#03081080;border-radius:6px}
+/* D371 B2 option A (owner 11-21, CKP-PORT-03): no panel. One scrim that fades to nothing at every edge sits behind the
+   text, and every letter carries a 1 px dark outline so it reads on the bright earth limb. The HUD block itself stays at
+   (76,24) 180x160, inside the safe area (10 px in from the glass's curved edge); the scrim never grows past the port. */
+#cockpit[data-layout] .hud.hud-b{left:58px;top:10px;width:180px;height:160px;display:block;background:none;border-radius:0}
+#cockpit .hud::before{content:"";position:absolute;inset:-16px -48px;z-index:-1;pointer-events:none;background:radial-gradient(ellipse closest-side at 50% 50%,rgba(0,0,0,.25) 0,rgba(0,0,0,.16) 65%,rgba(0,0,0,0) 100%)}
+#cockpit .hud{isolation:isolate}
+#cockpit .hud .hp,#cockpit .hud .hp b,#cockpit .hud .hp-n,#cockpit .hud .hp-rec,#cockpit .hud .hud-axis-label,#cockpit .hud .hud-rank{-webkit-text-stroke:1px rgba(0,0,0,.6);paint-order:stroke fill}
+#cockpit .hud .hud-axis-label,#cockpit .hud .hud-rank{stroke:rgba(0,0,0,.6);stroke-width:1px;-webkit-text-stroke:0}
 #cockpit .hud-b .hud-chart{width:180px;height:86px;padding:4px 9px 5px}
 #cockpit .hud-b .hud-list{width:117px;height:74px;padding:0;gap:0;overflow:hidden}
-#cockpit[data-layout] .hud.hud-strip{left:44px;top:11px;width:216px;height:30px;display:block;background:#03081080;border-radius:6px}
+#cockpit[data-layout] .hud.hud-strip{left:44px;top:11px;width:216px;height:30px;display:block;background:none;border-radius:0}
 #cockpit .hud .hp{display:flex;align-items:baseline;gap:3px;padding:0 2px;min-width:0;background:none;border:0;color:inherit;font-size:10px;line-height:12px;cursor:pointer}
 #cockpit .hud .hp b{overflow:visible;text-overflow:clip;font-size:10px}
 #cockpit .hud .hp-rec{white-space:nowrap;margin-left:auto}
@@ -148,8 +153,8 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 /* Owner badcase 11-21: the rows share the list's columns (subgrid), so every ★ effort starts at the same x; each row's own
    auto tracks used to split its free width and moved the ★ by the name's length. */
 #cockpit .hud-b .hp{display:grid;grid-column:1/-1;grid-template-columns:subgrid;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap}
-#cockpit .hud-b .hp b{font:500 10px/12px var(--f-lcd);overflow:hidden;text-overflow:ellipsis;min-width:0}
-#cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-rec{margin-left:0;justify-self:start}#cockpit .hud-b .hp-n{color:var(--muted,#8a96a0)}
+#cockpit .hud-b .hp b{font:500 10px/12px var(--f-lcd);overflow:hidden;text-overflow:clip;min-width:0}
+#cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-rec{margin-left:0;justify-self:start}#cockpit .hud-b .hp-n{color:#aab6bf}
 .hud-axis{fill:none;stroke:#e9edf030;stroke-width:.7}.hud-axis-label{font:400 9px var(--f-silk);fill:#aab6bf}
 .hud-rank{font:500 9px var(--f-lcd);fill:#f3e8d5}.hud-rank.dominated{fill:#aab6bf}
 
@@ -222,7 +227,11 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 /* G3-108: the porthole closes as the glass sliding down into the hull top (and rises out of it on open), clipped at
    the hull top so it never covers the strip; 250 ms (SHUTTER_MS), none under Reduce Motion (the page then draws the
    new shell at once). */
-@keyframes cockpit-shutter{from{transform:translateY(0);clip-path:inset(-24px -32px 0 -32px)}to{transform:translateY(100%);clip-path:inset(-24px -32px 100% -32px)}}
+/* G3-162 (owner, internal build 2): sliding the glass down left its curved top and frame standing above the strip, outside
+   the hull, half retracted. The glass now stays in its place and the hull's top edge comes down over it (opening, rises
+   off it): the clip is the hull silhouette (inside the row, nothing above it, no side overhang) from the first frame, so no
+   part of the canopy is drawn outside the hull while it moves. 0 % is the open state's own clip, so both ends are unchanged. */
+@keyframes cockpit-shutter{0%{clip-path:inset(-24px -32px 0 -32px)}2%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(100% 0 0 0)}}
 #cockpit.ck[data-shutter-motion="closing"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) both}
 #cockpit.ck[data-shutter-motion="opening"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) reverse both}
 html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{animation:none}
@@ -254,19 +263,24 @@ html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{ani
    A working bell's light steps aside meanwhile (the .bz-sheet container yields; its breathing runs on its pseudo-elements,
    so no animation can hold it lit). Vertical positions come from the bell height. */
 .ck-base :is(.bz,.bz-empty){--ig-w:var(--bell-w,var(--w,calc(var(--cw,40px) - 8px)));--ig-h:var(--bell-h,calc(var(--ig-w) * 10 / 81));--ig-m:var(--bell-m,calc(var(--ig-h) * .4515))}
-.ck-base :is(.bz,.bz-empty)::after{content:"";position:absolute;left:50%;top:var(--ig-m);width:calc(var(--ig-w) * .86);height:calc(var(--ig-h) - var(--ig-m) + 20px);
+.ck-base :is(.bz,.bz-empty)::after{content:"";position:absolute;left:50%;top:var(--ig-m);width:calc(var(--ig-w) * .86);height:calc(var(--ig-h) - var(--ig-m) + 24px);
   transform:translateX(-50%) scaleY(.15);transform-origin:50% 0;pointer-events:none;z-index:3;opacity:0;transition:opacity .28s linear,transform .28s ease-in;
   background-repeat:no-repeat;
-  background-image:radial-gradient(ellipse 18% 92% at 50% 0,#fff6e6 0%,rgba(255,214,150,.95) 22%,rgba(255,160,46,.7) 55%,transparent 100%),
-    radial-gradient(ellipse 34% 100% at 50% 0,rgba(255,184,96,.75) 0%,rgba(255,150,40,.45) 50%,transparent 100%),
-    radial-gradient(ellipse 50% 70% at 50% 0,rgba(255,160,46,.45) 0%,rgba(255,120,30,.18) 60%,transparent 100%)}
+  /* G3-160: a rocket exhaust, as the porthole and site flames: a white-yellow core, an orange body fading to nothing at
+     the tip (about 30 px, the whole base reserve), and three shock diamonds down the axis. One element, gradients only. */
+  background-image:radial-gradient(ellipse 5% 6% at 50% 27%,rgba(255,252,232,1) 0%,transparent 100%),
+    radial-gradient(ellipse 4% 5% at 50% 52%,rgba(255,240,196,.9) 0%,transparent 100%),
+    radial-gradient(ellipse 3% 4.5% at 50% 76%,rgba(255,228,165,.7) 0%,transparent 100%),
+    radial-gradient(ellipse 6.5% 98% at 50% 0,#fffef4 0%,#fff0b0 50%,rgba(255,226,140,.6) 82%,transparent 100%),
+    radial-gradient(ellipse 14% 100% at 50% 0,rgba(255,206,110,.95) 0%,rgba(255,160,46,.78) 55%,rgba(255,130,30,.3) 85%,transparent 100%),
+    radial-gradient(ellipse 34% 100% at 50% 0,rgba(255,150,40,.55) 0%,rgba(255,110,30,.28) 60%,transparent 100%)}
 .ck-base :is(.bz,.bz-empty)::before{content:"";position:absolute;left:50%;top:calc(var(--ig-m) - 1px);width:calc(var(--ig-w) * .9);height:calc(var(--ig-h) - var(--ig-m) + 3px);
   transform:translateX(-50%);pointer-events:none;z-index:3;opacity:0;transition:opacity .9s cubic-bezier(.2,.6,.3,1) .15s;
   background:radial-gradient(ellipse 50% 70% at 50% 35%,rgba(255,186,110,.9) 0%,rgba(255,120,40,.45) 55%,transparent 100%) no-repeat}
 #cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{opacity:.9;transform:translateX(-50%) scaleY(1);transition:opacity .09s ease-out,transform 0s}
 #cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::before{opacity:.7;transition:opacity .12s ease-out}
-@keyframes cockpit-bell-flare{from{scale:1 .25}45%{scale:1 1.12}to{scale:1 1}}
-@keyframes cockpit-bell-burn{0%,100%{scale:1 1}30%{scale:1 1.08}55%{scale:1 .92}80%{scale:1 1.04}}
+@keyframes cockpit-bell-flare{from{scale:1 .25}to{scale:1 1}}
+@keyframes cockpit-bell-burn{0%,100%{scale:1 1}30%{scale:.94 .97}55%{scale:1.05 .9}80%{scale:.97 .98}}
 @media (prefers-reduced-motion:no-preference){
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"][data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .84s steps(7,end) .22s infinite}
 }
@@ -337,22 +351,27 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 /* Owner badcase 11-21 (B8): tag (11) + number line + bar and trend (13) must fit the 44-46 px row; the tag's clipped box
    let the grid squeeze it to nothing first. The tag never shrinks, the number line takes 18 px (the 20 px digits keep their
    size), and only the trend line may give way at the meter's bottom. */
-.ck-eng .pl-cell{row-gap:1px}
-.ck-eng .pl-cell .pl-tag{display:block;min-width:0;min-height:11px;font:400 10px/11px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ck-eng .pl-cell .qnum{line-height:18px}
-.ck-eng .pl-cell .pl-meter{min-height:0;overflow:hidden}
-.ck-eng .pl-cell .qline{justify-content:space-between}
+/* D371 Q5 (owner 11-21): a plugin cell is two layers like the quota cells, 31 pt: the 22 pt number line ("39% CPU", the 10 px grey tag
+   inline after the %, never hidden; the side value right-aligned at the 4 pt cell padding, given way full, short, then gone) and a
+   6 pt bar 3 pt below, its trend a 1 px line inside the track. The subscription table owns the row height; the cell centres in it. */
+.ck-eng .pl-cell:not(.pl-cal){row-gap:3px;overflow:visible}
+.ck-eng .pl-cell:not(.pl-cal) .qline{display:flex;align-items:baseline;justify-content:flex-start;gap:4px;height:22px;min-width:0}
+.ck-eng .pl-cell:not(.pl-cal) .pl-lead{display:inline-flex;align-items:baseline;flex:none;gap:3px;white-space:nowrap}
+.ck-eng .pl-cell:not(.pl-cal) .pl-tag{display:inline;flex:none;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}
+.ck-eng .pl-cell:not(.pl-cal) .qnum{line-height:22px}
+.ck-eng .pl-cell:not(.pl-cal) .qtxt.pl-side{flex:1 1 0;min-width:0;overflow:hidden;white-space:nowrap;text-align:right;text-overflow:clip}
 .ck-eng .pl-cell .pl-big{display:inline-block;flex:none;font:600 20px/22px var(--f-lcd);font-variant-numeric:tabular-nums;color:var(--lcd-ink);white-space:nowrap}
 .cls-narrow .pl-cell .pl-big{font-size:16px;line-height:19px}
 .ck-eng .pl-cell .pl-sub{display:flex;align-items:center;gap:4px;min-width:0}
 .ck-eng .pl-cell .pl-sw{flex:none;width:7px;height:7px;border-radius:1.5px}
 .ck-eng .pl-cell .pl-subt{display:block;min-width:0;font:400 10px/11px var(--f-lcd);color:var(--lcd-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ck-eng .pl-cell.pl-mid .qnum{color:var(--st-mid)}.ck-eng .pl-cell.pl-low .qnum{color:var(--st-low)}
-.ck-eng .pl-meter{display:grid;row-gap:2px;min-width:0}
-.ck-eng .pl-bar{position:relative;display:block;height:5px;border-radius:1px;background:var(--lcd-ghost);overflow:hidden}
+.ck-eng .pl-meter{display:block;min-width:0}
+.ck-eng .pl-bar{position:relative;display:block;height:6px;border-radius:1px;background:var(--lcd-ghost);overflow:hidden}
 .ck-eng .pl-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:1px;background:var(--pl-ink,var(--lcd-ink))}
-.ck-eng .pl-trend{display:block;width:100%;height:6px;overflow:visible}
-.ck-eng .pl-trend path{fill:none;stroke:var(--pl-ink,var(--lcd-ink));stroke-width:1;opacity:.7;vector-effect:non-scaling-stroke}
+.ck-eng .pl-bar.pl-tone i{background:var(--st-ok)}.ck-eng .pl-cell.pl-mid .pl-bar.pl-tone i{background:var(--st-mid)}.ck-eng .pl-cell.pl-low .pl-bar.pl-tone i{background:var(--st-low)}
+.ck-eng .pl-trend{display:block;position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
+.ck-eng .pl-trend path{fill:none;stroke:var(--lcd-ink);stroke-width:1;opacity:.6;vector-effect:non-scaling-stroke}
 .ck-eng .pl-foot{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 4px;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;min-width:0}
 .ck-eng .pl-foot .pl-fit{min-width:0;overflow:hidden;text-overflow:ellipsis}.ck-eng .pl-foot .pl-foot-v{color:var(--lcd-ink)}
 .ck-eng .eng-keys .ek-bay .bay-dash{font-size:0}
@@ -471,7 +490,8 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-wk .wk-pk.tent{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 24%,transparent) 0 4px,color-mix(in srgb,var(--c) 12%,transparent) 4px 8px)}
 .cal-wk .wk-pk b{display:block;font:700 9px/11px var(--f-silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cal-wk .wk-pk i{display:none;font:400 9px/11px var(--f-lcd);font-style:normal}
-.cal-wk.zoom .wk-pk i{display:block}
+/* G3-179: like the strip's label, the zoomed time line clips on one line (never wraps), so the page can shorten it. */
+.cal-wk.zoom .wk-pk i{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cal-wk .wk-ch.wk{background:transparent;box-shadow:inset 0 0 0 1px var(--c);color:var(--c)}
 .cal-wk .wk-adr.mark{overflow:visible}
 .cal-wk .wk-adr.mark span{padding:0 2px;color:var(--c)}
@@ -490,3 +510,10 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
    that focus; keyboard focus (Tab, arrows) keeps every ring below. */
 #cockpit [data-pointer-focus]:focus-visible,body [data-pointer-focus]:focus-visible{outline:none}
 .ck-head .rk[data-pointer-focus]:focus-visible::before{content:none}
+
+/* The calendar's cells (D375) keep the three-row form from before the Q5 two-layer Resources cell. */
+.ck-eng .pl-cell.pl-cal{row-gap:1px}
+.ck-eng .pl-cell.pl-cal .pl-tag{display:block;min-width:0;min-height:11px;font:400 10px/11px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ck-eng .pl-cell.pl-cal .qnum{line-height:18px}
+.ck-eng .pl-cell.pl-cal .pl-meter{min-height:0;overflow:hidden}
+.ck-eng .pl-cell.pl-cal .qline{justify-content:space-between}

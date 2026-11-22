@@ -6,6 +6,30 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.70 (2026-11-22)
+
+- The cockpit now hangs the same rocket nozzle under every plugin column (Calendar, Resources) as under a subscription column. A plugin nozzle stays dark at rest and lights with the whole row on landing.
+
+- Quota widget and Settings fixes from the owner's 11-21 report: the Resources ring now sits after the subscription rings, as in the cockpit; its label under the ring is the percentage alone (VoiceOver still reads "Memory 77%"); the subscription rings no longer vanish for a moment when a Resources update lands while the widget content is being refreshed; its hover card stays open while the pointer rests on the ring or the card; opening the attached cockpit no longer leaves a stale Dock icon; Settings no longer lists the framework placeholder plugin and explains that unpinned plugins fill free columns after the subscriptions.
+
+- The effort panel title no longer shows a doubled approximation sign ("≈≈$7.3"), a small cost on a model card uses a short form that fits ("<$0.01", "≈$0.42"), and an unreported current effort now reads "Effort not reported" (Chinese UI: effort not reported) instead of "Current not reported".
+
+- The cockpit porthole HUD no longer has a background panel: one scrim that fades out at every edge, a 1 px dark outline on its text, the ★ effort column aligned across rows, and fewer whole rows when six do not fit the safe area. The Resources column bars and numbers use the normal, amber (from 80 %) and red (from 90 %) status colours with a 3 % hysteresis, and the Resources tab icon loses its small square frame. The porthole HUD scrim is now the half-opacity variant B (reaching 48 pt to the sides, 16 pt above and below) with the rank numbers in #aab6bf, and the Resources column cell is two fixed layers (number line with the tag inline, 6 pt bar with a 1 px trend inside the track), its side value going full, short, then hidden.
+
+- The Resources ring, hover card bars and numbers now use the quota rings' status colours (normal, amber from 80 %, red from 90 %, 3-point hysteresis) instead of one orchid. The plugin logo loses its small square frame on the ring and the card header. Every Dock card (subscription and Resources) ends in one full-width "View in cockpit" row under a hairline: the menu-bar glyph, and a chevron (compact: 6 pt gap, hairline, 22 pt row); a subscription card opens the cockpit on that subscription, a plugin card opens that plugin's big screen, and an already open cockpit only switches. The sampling cadence moves to the card header.
+
+- Internal: the D41 Keychain journey test clicks the live first-run Allow button only once the consent controller can mutate, so a redraw on a busy GUI runner can no longer retire the button between finding and clicking it.
+
+- Codex: when Codex's own account reading could not be refreshed (a failed read, or none for an hour), the Codex row fell back to the session logs however old they were, so it could show a percentage read days earlier (34% left for a week that was used up) and lose the plan name. Logs now replace the account reading only when they are at least as new as it; otherwise the account reading stays, marked as a retained reading with the failure named. Codex: when Codex itself fails the usage read because it cannot decode the server's answer (a plan or field newer than the installed Codex) but quotes that answer in its error, ModelPlan now takes the windows, plan and credits from it instead of reporting a failed read. GLM (ZCode QR-code sign-in): an old ZCode provider file that names no key no longer hides the QR-code sign-in route; the row now asks for that sign-in's consent and reads it once allowed. A ZCode 3.19+ sign-in whose store is locked to the macOS Keychain is reported as not supported, without asking for consent that could not produce a reading.
+
+- The landing burn under the cockpit's nozzles now looks like a rocket exhaust: a bright white-yellow core, an orange plume fading to nothing, three shock diamonds, and a slight width flicker. It is longer, up to the whole space under the hull, and stays one element with no extra cost; with Reduce Motion it is a still plume.
+
+- Cockpit: closing or opening the porthole no longer shows the canopy half retracted outside the hull; the glass is clipped to the hull silhouette for the whole motion (the hull's top edge comes down over it, and rises off it on open), both ends unchanged, Reduce Motion unchanged.
+
+- The cockpit Models chart now names every model on the chart without hover; crowded names move beside or to the right edge on a thin leader line.
+
+- Opening the cockpit while the app is still starting (the menu bar icon, the Open Cockpit menu item, the open-cockpit shortcut, the widget's ignition or opening the app again) is no longer ignored: the icon shows pressed at once and the cockpit opens as soon as the engine is ready. The quota widget draws only the face of the edge it rests on (the other edges are drawn when a drag starts), and the app no longer asks the engine twice for the rows and the consent facts at launch, so the first readings arrive sooner.
+
 ## CLI v0.5.69 (2026-11-21)
 
 - The cockpit calendar now writes subscription names with their colour mark instead of two-letter codes, shows the next reset as a large time, lists two different moments (or one when they are the same), and says "no time-slot rules" when you have none.

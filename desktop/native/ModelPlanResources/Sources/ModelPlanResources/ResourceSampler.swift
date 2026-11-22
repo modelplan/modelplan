@@ -25,6 +25,8 @@ public struct ResourceTimerHandle {
     public private(set) var history = ResourceHistory()
     public private(set) var face: ResourceFace?
     public private(set) var shown: ResourceShown?
+    /// D371: the status tones after the latest sample (with their hysteresis state).
+    public var levels: ResourceLevels? { readout.levels }
     /// Every admitted sample (the cockpit host pushes it to the page through ResourcePageFeed).
     public var onSample: ((ResourceSample) -> Void)?
     /// The widget ring and readout, only when they changed by at least one percentage point (or the readout changed).
@@ -81,7 +83,7 @@ public struct ResourceTimerHandle {
             history.append(sample)
             let shown = readout.step(sample)
             self.shown = shown
-            let face = ResourceFace(sample: sample, shown: shown, reduceMotion: reduceMotion())
+            let face = ResourceFace(sample: sample, shown: shown, reduceMotion: reduceMotion(), levels: readout.levels)
             self.face = face
             onSample?(sample)
             if gate.admit(face) { onRedraw?(face) }

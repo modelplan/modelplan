@@ -61,7 +61,10 @@ import AppKit
     /// One row per listed plugin, in the saved order. Owner 11-21: a framework test plugin (the placeholder) is never
     /// listed. Owner D124: an unpinned plugin takes a free column after the subscriptions, so with few subscriptions it
     /// shows on page 1 without a pin; the note says so (B4).
+    /// Counts rebuilds, for the G3-161 checks (an unchanged catalogue and state must not rebuild the section).
+    private(set) var rebuildCountForChecks = 0
     func rebuild() {
+        rebuildCountForChecks += 1
         heading.stringValue = text("Plugins", "插件")
         note.stringValue = text("Plugin columns come after your subscriptions in the cockpit and use free columns on the last page. A pinned plugin always stays on page 1 (at most two).",
                                 "插件列排在驾驶舱订阅的后面，占用最后一页的空位。固定的插件总在第 1 页（最多两个）。")

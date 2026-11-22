@@ -212,8 +212,10 @@ struct DockHelpInteraction: Equatable {
     }
     /// macrevb-1096-4: a plugin ring's card as it is now (rows, footer, action); nil keeps the rows of the last redraw.
     public var livePluginCard: ((String) -> DockPluginCard?)?
-    /// macrevb-1096-6: the plugin card's action ("驾驶舱大屏 ›"). Nil opens the cockpit.
+    /// macrevb-1096-6, D371 B4e: a plugin card's footer row ("在驾驶舱查看") opens that plugin's big screen. Nil opens the cockpit.
     public var pluginScreenRequested: ((String) -> Void)?
+    /// D371 B4e: a subscription card's footer row opens the cockpit on that subscription (the ring's ID). Nil opens the cockpit.
+    public var subscriptionCockpitRequested: ((String) -> Void)?
     public var showConsole: (() -> Void)?
     /// D204 (G3-94): the ignition's own press, with the screen point it came from. Nil falls back to `showConsole`.
     public var pressIgnition: ((CGPoint) -> Void)?
@@ -422,6 +424,8 @@ struct DockHelpInteraction: Equatable {
     var detachedCardForChecks: DockCardView? { !createsNativePanels && !card.isHidden ? card : nil }
     /// Render passes run, full (resting) and carried (a press's edge-view preparation), for the carry checks.
     private(set) var fullRebuildPassesForChecks = 0, carriedRebuildPassesForChecks = 0
+    /// G3-161: plugin ring updates that repainted only the ring (no rebuild pass).
+    private(set) var ringOnlyRefreshesForChecks = 0
     var applicationForChecks: SettingsApplication? { application }
     #endif
     func refreshPresence() { displayFollower.sample(); edge.refresh() }
@@ -2309,9 +2313,10 @@ struct DockHelpInteraction: Equatable {
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
         if input.pluginRing != nil {
             // D327: a plugin card has its own rows and footer (cadence, pressure); no source age or quota windows.
-            return try DockCardProjection.content(input: Self.livePluginInput(input, live: livePluginCard?(id)), revision: application?.snapshot.revision ?? 0,
+            let pluginContent = try DockCardProjection.content(input: Self.livePluginInput(input, live: livePluginCard?(id)), revision: application?.snapshot.revision ?? 0,
                 enterLabel: EngineRowsText.cockpitAction.value(preferences.language),
                 dismissLabel: EngineRowsText.contextClose.value(preferences.language), redBelow: effectiveRedBelow, at: now)
+            return cockpitEntryEnabled ? pluginContent : Self.withoutCockpitRow(pluginContent)
         }
         var projected = memberSafePreferences.applying(to: input)
         projected.name = projected.duplicateDisplayName
@@ -2325,6 +2330,7 @@ struct DockHelpInteraction: Equatable {
                 stateLabel: input.dataState == .fresh ? "" : (english ? "Unavailable or stale" : "不可用或已过期"),
                 additionalRows: Self.usedUpRows(projected, at: now, language: language),
                 links: currentCardSourceLinks(for: id, at: now), enterLabel: enterLabel, dismissLabel: dismissLabel,
+                cockpitLabel: cockpitFooter(for: id, language: language), cockpitTarget: projected.name,
                 redBelow: effectiveRedBelow, at: now)
         }
         let selected = try DockInstrumentProjection.evaluate(projected, now: now, redBelow: effectiveRedBelow).selectedWindowID
@@ -2367,6 +2373,7 @@ struct DockHelpInteraction: Equatable {
                 additionalRows: additional,
                 links: currentCardSourceLinks(for: id, at: now),
                 enterLabel: enterLabel, dismissLabel: dismissLabel, actionLabel: action,
+                cockpitLabel: cockpitFooter(for: id, language: language), cockpitTarget: projected.name,
                 redBelow: effectiveRedBelow, at: now)
         guard loading else { return content }
         // DOCK-3.8-53 loading: the window names with dark placeholder blocks (empty bars), no numbers and no "--".
@@ -2376,7 +2383,8 @@ struct DockHelpInteraction: Equatable {
         }
         return DockCardContent(subscriptionID: content.subscriptionID, revision: content.revision, name: content.name, plan: content.plan,
                                sourceAndAge: content.sourceAndAge, stateLabel: content.stateLabel, rows: placeholders, links: content.links,
-                               enterLabel: content.enterLabel, dismissLabel: content.dismissLabel, actionLabel: content.actionLabel)
+                               enterLabel: content.enterLabel, dismissLabel: content.dismissLabel, actionLabel: content.actionLabel,
+                               cockpitLabel: content.cockpitLabel, cockpitTarget: content.cockpitTarget)
     }
     /// DOCK-3.8-52: the footer is the shared alert sentence (ALR-50, WP-11 `AlertSentence`), the same words as the lamp,
     /// the alert list and the menu line: "Claude 5h 9% · out ~40m · resets in 2h00".
@@ -2407,10 +2415,43 @@ struct DockHelpInteraction: Equatable {
         guard let live, let ring = input.pluginRing else { return input }
         var next = input; next.pluginRing = ring.withCard(live); return next
     }
+    /// G3-161: a plugin ring whose reading changed repaints alone, over the Dock's cached material. The sampler used to
+    /// rebuild the whole Dock (content, projection, every official face and the CoreImage material) for it. Returns false
+    /// when only a full pass is safe (a pass is pending or running, the widget is pressed or carried, the ring is not
+    /// on the widget, a held readout is running); the caller then runs the full pass as before.
+    public func refreshPluginRing(_ input: DockInstrumentInput) -> Bool {
+        guard !retired, !retiring, !rendering, !rebuildPending, permitted, !edge.isBackgroundPressed, !edge.isPublishingRelease,
+              input.pluginRing != nil, let model, let index = model.inputs.firstIndex(where: { $0.id == input.id }),
+              model.inputs[index].pluginRing != nil, edgeViews.values.allSatisfy({ $0 === dockView }) else { return false }
+        let passPreferences = preferences.withoutUnstableMemberChoices(model.subscriptions)
+        var value = passPreferences.applying(to: input)
+        value.unavailableReason = model.presentationRows[input.id]?.reason
+        if let signal = workingSignals[input.id] { value.working = signal }
+        guard let reading = try? DockInstrumentProjection.evaluate(value, now: currentDate(), redBelow: effectiveRedBelow),
+              (try? dockView.replaceReading(reading)) == true else { return false }
+        var inputs = model.inputs; inputs[index] = input
+        self.model = CommunityDockSnapshot(inputs: inputs, subscriptions: model.subscriptions, presentationRows: model.presentationRows,
+                                           unavailableReason: model.unavailableReason, readerDiagnostics: model.readerDiagnostics,
+                                           emptyDiagnostic: model.emptyDiagnostic)
+        #if DEBUG
+        ringOnlyRefreshesForChecks += 1
+        #endif
+        return true
+    }
     /// macrevb-1096-4: an open plugin card takes the latest sample without waiting for a ring redraw.
     public func refreshPluginCard() {
         guard !retired, !card.isHidden, let id = cardID, model?.inputs.first(where: { $0.id == id })?.pluginRing != nil else { return }
         if let controller = interactionController, controller.isActive { controller.refresh() } else { showCard(id) }
+    }
+    /// D371 B4e: a subscription card's footer label when the cockpit can be opened from here; "" hides the row.
+    func cockpitFooter(for id: String, language: SettingsLanguage) -> String {
+        cockpitEntryEnabled ? EngineRowsText.viewInCockpit.value(language) : ""
+    }
+    /// D371 B4e: with the cockpit entry unavailable (release builds) no card shows the footer row, plugin cards included.
+    static func withoutCockpitRow(_ c: DockCardContent) -> DockCardContent {
+        DockCardContent(subscriptionID: c.subscriptionID, revision: c.revision, name: c.name, plan: c.plan, sourceAndAge: c.sourceAndAge,
+                        stateLabel: c.stateLabel, rows: c.rows, links: c.links, enterLabel: c.enterLabel, dismissLabel: c.dismissLabel,
+                        actionLabel: c.actionLabel, cockpitLabel: "", cockpitTarget: "")
     }
     private func isPluginCard(_ id: String) -> Bool { model?.inputs.first(where: { $0.id == id })?.pluginRing != nil }
     /// D65: one plain line per general window at 0 % (shown numbers only), under the readout.
@@ -2501,6 +2542,15 @@ struct DockHelpInteraction: Equatable {
             self.closeContext()
             if let open = self.pluginScreenRequested { open(id) } else { self.openConsole() }
         }
+        card.onOpenCockpit = { [weak self] id in
+            guard let self, self.cardIsCurrent(id, revision: content.revision, token: token, feed: feed) else { return }
+            self.closeContext()
+            // D371 B4e: one footer row on every card. A plugin card opens its own big screen, a subscription card the
+            // cockpit on that subscription; an already open cockpit only switches.
+            if self.isPluginCard(id) {
+                if let open = self.pluginScreenRequested { open(id) } else { self.openConsole() }
+            } else if let open = self.subscriptionCockpitRequested { open(id) } else { self.openConsole() }
+        }
         card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
         let unavailable = !cardUsesSettings(id) && !cockpitEntryEnabled
         var style = Self.prototypeCardStyle
@@ -2508,7 +2558,8 @@ struct DockHelpInteraction: Equatable {
         // Settings is in the widget's right-click menu.
         style.showsActions = purpose != .production
         do {
-            try card.apply(content, style: style, brandImage: cardBrandImage(id), enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
+            try card.apply(content, style: style, brandImage: cardBrandImage(id), enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil,
+                           cockpitGlyph: CockpitEntryGlyph.image)
         } catch { dismissCard(); return }
         if interactionController?.isActive != true { scheduleFallbackCardLeave() }
         // M-1: the ring whose card is open glows (only on the presented edge view).

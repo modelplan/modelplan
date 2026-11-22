@@ -48,7 +48,7 @@ const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:s
 /** A text box that takes its short form when the long one does not fit (prototype-engine fit()). */
 const fitted=(className:string,words:PluginWords)=>{const e=el('span',className+' pl-fit',words.full);e.dataset.full=words.full;e.dataset.short=words.short;return e;};
 /** Menus and the big screen sit outside the engine table's fit(): the same long-then-short rule, once they are laid out. */
-const fitIn=(box:HTMLElement)=>{for(const e of box.querySelectorAll<HTMLElement>('.pl-fit[data-short]')){e.textContent=e.dataset.full??'';if(e.clientWidth>0&&e.scrollWidth>e.clientWidth)e.textContent=e.dataset.short??'';}};
+const fitIn=(box:HTMLElement)=>{for(const e of box.querySelectorAll<HTMLElement>('.pl-fit[data-short]')){e.textContent=e.dataset.full??'';if(e.clientWidth>0&&e.scrollWidth>e.clientWidth)e.textContent=e.dataset.short??'';if(e.classList.contains('pl-side')&&e.clientWidth>0&&e.scrollWidth>e.clientWidth)e.textContent='';}};// D371 Q5: a side value that does not fit even short is hidden
 const icon=(plugin:CockpitPlugin,className:string)=>{const span=el('span',className);span.setAttribute('aria-hidden','true');span.innerHTML=plugin.icon;return span;};
 const clamp01=(v:number)=>Math.max(0,Math.min(1,v));
 /** The stable `data-focus` key of the focused element inside `box`, if any (D323: focus survives a redraw). */
@@ -71,11 +71,22 @@ function trendLine(points:readonly number[]):SVGSVGElement|null {
 function drawCell(cell:PluginCell|undefined,row:number):HTMLElement {
   if(!cell){const empty=el('div','qcell none');empty.dataset.row=String(row);return empty;}
   const box=el('div','qcell pl-cell'+(cell.level?' pl-'+cell.level:''));box.dataset.row=String(row);
-  box.append(fitted('pl-tag',cell.tag));
   const line=el('span','qline');
-  if(typeof cell.value==='number'&&Number.isFinite(cell.value)){const num=el('b','qnum'),value=el('span','qvalue',String(Math.round(cell.value)));num.append(value);if(cell.unit)num.append(el('small','',cell.unit));line.append(num);}
-  else if(cell.big)line.append(el('b','pl-big',cell.big));
-  if(cell.side){const side=fitted('qtxt',cell.side);side.dataset.small=cell.side.short;line.append(side);}
+  if(!(typeof cell.value==='number'||typeof cell.bar==='number')){
+    // The calendar's cells keep the three-row form (tag above, big value with the side value, colour mark below).
+    box.classList.add('pl-cal');
+    box.append(fitted('pl-tag',cell.tag));
+    if(cell.big)line.append(el('b','pl-big',cell.big));
+    if(cell.side){const side=fitted('qtxt',cell.side);side.dataset.small=cell.side.short;line.append(side);}
+  }else{
+    // D371 Q5 (owner 11-21): two layers, 31 pt in all. The number line (22 pt) reads "39% CPU": the tag follows the % inline in
+    // 10 px grey and is never hidden; the side value sits at the right edge and gives way (full, short, then gone), never cut.
+    const lead=el('span','pl-lead');
+    if(typeof cell.value==='number'&&Number.isFinite(cell.value)){const num=el('b','qnum'),value=el('span','qvalue',String(Math.round(cell.value)));num.append(value);if(cell.unit)num.append(el('small','',cell.unit));lead.append(num);}
+    lead.append(el('span','pl-tag',cell.tag.full));
+    line.append(lead);
+    if(cell.side){const side=fitted('qtxt pl-side',cell.side);side.dataset.small=cell.side.short;line.append(side);}
+  }
   box.append(line);
   // D375: the subscription's colour mark with its name, so a colour is never alone.
   if(cell.subline&&/^#[0-9a-f]{6}$/i.test(cell.subline.colour)){
@@ -83,8 +94,10 @@ function drawCell(cell:PluginCell|undefined,row:number):HTMLElement {
     sub.append(mark,fitted('pl-subt',cell.subline.text));box.append(sub);
   }
   if(typeof cell.bar==='number'&&Number.isFinite(cell.bar)){
-    const meter=el('span','pl-meter'),bar=el('span','pl-bar'),fill=el('i');fill.style.width=(clamp01(cell.bar)*100).toFixed(1)+'%';bar.append(fill);meter.append(bar);
-    const trend=trendLine(cell.trend??[]);if(trend)meter.append(trend);box.append(meter);
+    // 6 pt bar 3 pt below the number line; the trend is one 1 px line inside the bar's track.
+    const meter=el('span','pl-meter'),bar=el('span','pl-bar'+(cell.tone?' pl-tone':'')),fill=el('i');fill.style.width=(clamp01(cell.bar)*100).toFixed(1)+'%';bar.append(fill);
+    const trend=trendLine(cell.trend??[]);if(trend)bar.append(trend);
+    meter.append(bar);box.append(meter);
   }
   const words=[cell.tag.full,typeof cell.value==='number'?String(Math.round(cell.value))+(cell.unit??''):cell.big??'',cell.side?.full??'',cell.subline?.text.full??''].filter(Boolean).join(' · ');
   box.setAttribute('aria-label',words);return box;
@@ -208,6 +221,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     if(area){const ok=paint(area,plugin.id,drawn.draw!,false);column.dataset.draw=ok?'custom':'fallback';if(!ok){watch?.unobserve(area);area.replaceWith(...cells());}}
     else delete column.dataset.draw;
     refocus(column,key);restoreHeld(column,plugin.id);
+    if(column.isConnected)column.querySelectorAll<HTMLElement>('.pl-cell:not(.pl-cal)').forEach(fitIn);// a redrawn Resources cell (the calendar's cells and bottom line keep main's later fit) is measured at once (the table's own fit() only runs on a resize)
   }
   function redrawColumn(id:string) {
     const column=columns.get(id),plugin=registry.get(id);

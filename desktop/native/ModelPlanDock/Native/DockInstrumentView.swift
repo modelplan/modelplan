@@ -512,6 +512,28 @@ enum DockGripInk {
             throw error
         }
     }
+    /// G3-161: replaces one ring's reading in place and repaints over the cached material: no skin, no CoreImage face and no
+    /// new accessibility tree. False means nothing changed and the caller must run a full pass (a held readout or a
+    /// ring-click sweep is running, the ring is not on this view, or the official material is not applied).
+    public func replaceReading(_ reading: DockInstrumentReading) throws -> Bool {
+        let id = reading.subscriptionID
+        guard !failed, readings[id] != nil, readoutHolds.isEmpty, refreshSweepRing == nil, refreshSweepOriginal == nil else { return false }
+        var next = readings; next[id] = reading
+        if community { readings = next; refreshNodes(); needsDisplay = true; return true }
+        guard let skin, let renderer = officialRenderer, let background = backgroundImage, restingInstrumentImage != nil else { return false }
+        let resting = try renderer.render(skin: skin, readings: next, notices: notices, scale: scale, cachedBackground: background)
+        var painted = resting.image, usesViewport = false
+        if !nozzlePosesForChecks.isEmpty {
+            painted = try renderer.render(skin: skin, readings: next, notices: notices, scale: scale, poses: nozzlePosesForChecks,
+                                          cachedBackground: background, viewport: hoverViewport).image
+            usesViewport = hoverViewport != nil
+        }
+        readings = next; restingInstrumentImage = resting.image; alphaData = resting.image.dataProvider?.data
+        presentedTextMetricsForChecks = resting.metrics
+        image = painted; imageUsesHoverViewport = usesViewport
+        refreshNodes(); needsDisplay = true
+        return true
+    }
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
     /// `keepingRefreshHolds`: a content replacement (clear, then reinstall with the landed value) keeps the G3-98
     /// ring-click holds, so the reinstalled render fades the new number in instead of popping it. A privacy
@@ -751,7 +773,7 @@ enum DockGripInk {
             context?.restoreGState()
         }
     }
-    /// macrevb-1096-5: the neutral edition draws a plugin ring with no reserved art: the two arcs in the plugin ink
+    /// macrevb-1096-5: the neutral edition draws a plugin ring with no reserved art: the two arcs in their status colours (D371)
     /// (outer solid + faint, inner thin) beside the name and readout; the label stays neutral and only the number is toned.
     public static func communityPluginGeometry(row:CGRect,scale:CGFloat)->(ring:CGRect,text:CGRect){
         let side=row.height-12*scale
@@ -763,21 +785,23 @@ enum DockGripInk {
     }
     private func drawCommunityPluginRow(_ ring:DockPluginRing,reading r:DockInstrumentReading,in row:CGRect,scale:CGFloat,context c:CGContext,paragraph:NSParagraphStyle){
         let g=Self.communityPluginGeometry(row:row,scale:scale)
-        let ink=CGColor(srgbRed:ring.red,green:ring.green,blue:ring.blue,alpha:1)
+        // D371 B4c: each arc takes the status colour of what it measures (the faint segment follows the outer arc).
+        func tone(_ t:DockQuotaStatus)->CGColor{let c=DockPluginStatusColour.rgb(t);return CGColor(srgbRed:c.red,green:c.green,blue:c.blue,alpha:1)}
+        let outerInk=tone(ring.outerTone),innerInk=tone(ring.innerTone)
         let centre=CGPoint(x:g.ring.midX,y:g.ring.midY),outerWidth=3*scale,innerWidth=1.5*scale
         let outerRadius=g.ring.width/2-outerWidth/2,innerRadius=outerRadius-outerWidth-1.5*scale
         // This view is flipped: angles run clockwise from 12 o'clock with `clockwise: false`, as in the official ring.
-        func arc(_ radius:CGFloat,_ width:CGFloat,from a:Double,to b:Double,alpha:CGFloat){
+        func arc(_ radius:CGFloat,_ width:CGFloat,from a:Double,to b:Double,alpha:CGFloat,ink:CGColor){
             guard b>a,radius>0 else{return}
             c.saveGState();c.setStrokeColor(ink.copy(alpha:alpha) ?? ink);c.setLineWidth(width);c.setLineCap(.butt)
             c.addArc(center:centre,radius:radius,startAngle:-.pi/2+CGFloat(a)*2 * .pi,endAngle:-.pi/2+CGFloat(b)*2 * .pi,clockwise:false)
             c.strokePath();c.restoreGState()
         }
         let outer=min(1,max(0,ring.outer)),faint=min(1-outer,max(0,ring.outerFaint))
-        arc(outerRadius,outerWidth,from:0,to:1,alpha:0.12)
-        arc(outerRadius,outerWidth,from:0,to:outer,alpha:1)
-        arc(outerRadius,outerWidth,from:outer,to:outer+faint,alpha:0.35)
-        if let inner=ring.inner{arc(innerRadius,innerWidth,from:0,to:1,alpha:0.12);arc(innerRadius,innerWidth,from:0,to:min(1,max(0,inner)),alpha:1)}
+        arc(outerRadius,outerWidth,from:0,to:1,alpha:0.12,ink:outerInk)
+        arc(outerRadius,outerWidth,from:0,to:outer,alpha:1,ink:outerInk)
+        arc(outerRadius,outerWidth,from:outer,to:outer+faint,alpha:0.35,ink:outerInk)
+        if let inner=ring.inner{arc(innerRadius,innerWidth,from:0,to:1,alpha:0.12,ink:innerInk);arc(innerRadius,innerWidth,from:0,to:min(1,max(0,inner)),alpha:1,ink:innerInk)}
         let font=NSFont.monospacedSystemFont(ofSize:12*scale,weight:.regular)
         let parts=DockPluginRing.readoutParts(r.readout)
         let text=NSMutableAttributedString(string:(r.alias ?? r.name)+"  "+parts.label,attributes:[.font:font,.foregroundColor:NSColor.labelColor,.paragraphStyle:paragraph])
