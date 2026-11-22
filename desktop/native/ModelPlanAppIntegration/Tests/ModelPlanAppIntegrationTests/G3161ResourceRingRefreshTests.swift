@@ -60,7 +60,7 @@ import ModelPlanResources
         let id = ResourceDockBridge.subscriptionID
         for _ in 0..<300 where app.composition.dock.dockView.presentedReadingsForChecks[id] == nil { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNotNil(app.composition.dock.dockView.presentedReadingsForChecks[id]?.pluginRing, "the resource ring is on the widget")
-        return ({ run($0) }, id)
+        return ({ run(until: $0) }, id)
     }
 
     /// N sampler ticks with unchanged values cause no Dock rebuild pass and no ring repaint.
