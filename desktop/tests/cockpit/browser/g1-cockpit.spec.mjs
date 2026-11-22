@@ -4,12 +4,12 @@ import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
-async function open(page,data=visualFixture().data) {
+async function open(page,data=visualFixture().data,range=null) {
  await page.addInitScript(()=>{window.__g1Messages=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__g1Messages.push(JSON.parse(raw));}}}};});
  await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance,shell:range?{...shell,range}:shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
  return {send,receive,data};
@@ -92,7 +92,7 @@ test('CKP-ENG-07 a monthly-only quota stays in Other and distinguishes unknown f
 
 test('CKP-ENG-08 Today uses today output and today average, with unknown left blank',async({page})=>{
  const data=visualFixture().data;const detail=data.details.subscriptions[0];detail.today[0].observedOutputTokens=12000;detail.today[0].generationTps=42;
- const {send,receive}=await open(page,data);const row=page.locator('.eng-cols .ec[data-col]').first().locator('.qrow-t');
+ const {send,receive}=await open(page,data,'today');const row=page.locator('.eng-cols .ec[data-col]').first().locator('.qrow-t');
  await expect(row.locator('.qtokens')).toHaveText('12k');await expect(row.locator('.qaverage')).toContainText('42');
  detail.today=[];expect(await receive(send('display',{data}))).toBe(true);
  await expect(row.locator('.qtokens')).toHaveCount(0);await expect(row.locator('.qaverage')).toHaveCount(0);
