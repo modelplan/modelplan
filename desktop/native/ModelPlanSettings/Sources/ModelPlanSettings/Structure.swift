@@ -4,7 +4,7 @@ import Foundation
 /// Provisional identifiers retained for callers of the original eight-page draft.
 /// The injected structure, not this enum or its declaration order, determines navigation/grouping.
 public enum SettingsPane: String, CaseIterable, Sendable {
-    case appearance, rings, position, general, notifications, subscriptions, privacy, diagnostics, about, dock, cockpit
+    case appearance, rings, position, general, notifications, subscriptions, privacy, diagnostics, about, dock, cockpit, plugins
     public var title: SettingsText {
         SettingsStructure.task65.panes.first { $0.id == rawValue }?.title ?? SettingsStructure.provisional.panes.first { $0.id == rawValue }?.title ?? .init(rawValue, rawValue)
     }
@@ -17,6 +17,7 @@ public struct SettingsGroupDefinition: Equatable, Sendable {
         self.id = id; self.title = title; self.keys = keys
     }
 }
+/// A pane with no groups draws only its own content (D376: Plugins shows the cockpit plugin rows, no catalogue rows).
 public struct SettingsPaneDefinition: Equatable, Sendable {
     public let id: String
     public let title: SettingsText
@@ -35,7 +36,7 @@ public struct SettingsStructure: Equatable, Sendable {
         guard !panes.isEmpty, panes.count <= 32, Set(panes.map(\.id)).count == panes.count,
               panes.allSatisfy({ pane in
                   validSettingsIdentifier(pane.id) && !pane.title.english.isEmpty && !pane.title.chinese.isEmpty &&
-                  !pane.groups.isEmpty && Set(pane.groups.map(\.id)).count == pane.groups.count &&
+                  Set(pane.groups.map(\.id)).count == pane.groups.count &&
                   pane.groups.allSatisfy { validSettingsIdentifier($0.id) && !$0.keys.isEmpty }
               }), keys.count == Set(keys).count, Set(keys) == Set(SettingKey.allCases) else { throw SettingsError.invalidCatalogue }
         self.panes = panes
@@ -48,6 +49,8 @@ public struct SettingsStructure: Equatable, Sendable {
         .init(id: "cockpit", title: .init("Cockpit", "驾驶舱"), groups: [Settings65Homes.cockpit]),
         .init(id: "appearance", title: .init("Appearance", "外观"), groups: [Settings65Homes.appearance]),
         .init(id: "subscriptions", title: .init("Subscriptions", "订阅"), groups: [Settings65Homes.subscriptionOrder, Settings65Homes.subscriptions]),
+        // D376: the cockpit plugins have their own pane right after Subscriptions; its rows are SettingsCockpitPluginsView.
+        .init(id: "plugins", title: .init("Plugins", "插件"), groups: []),
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.notificationSystemSettings,.forecast,.reset,.official,.expiring,.stale])]),
         .init(id: "privacy", title: .init("Data & Privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
         .init(id: "diagnostics", title: .init("Diagnostics", "诊断"), groups: [.init(id: "main", keys: [.source,.readerDetails,.refreshHistory,.diagnostics,.exportDiagnostics])]),

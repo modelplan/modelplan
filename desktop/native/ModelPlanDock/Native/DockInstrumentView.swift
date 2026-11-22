@@ -1070,6 +1070,13 @@ enum DockGripInk {
     /// G3-120: the ring unit under a sampled pointer (view-local), so card hover is read from the
     /// same pointer sample that decides leaving (Pulse `pointerMoved`), not only from tracking events.
     public func ringUnitID(atLocal p:NSPoint)->String?{hoverUnitID(atLocal:p)}
+    /// D376: a ring's own right-click menu (a plugin ring's "Turn Off <plugin>…" plus the widget menu), asked with the
+    /// ring under the click. Nil, or no ring there, keeps the view's plain `menu`.
+    public var contextMenuForRing:((String)->NSMenu?)?
+    public override func menu(for event:NSEvent)->NSMenu?{
+        if let provider=contextMenuForRing,let id=ringUnitID(atLocal:convert(event.locationInWindow,from:nil)),let menu=provider(id){return menu}
+        return super.menu(for:event)
+    }
     private func pointerAction(atLocal p:NSPoint)->DockInstrumentAction?{
         if let skin,!community {
             let global=CGPoint(x:p.x+layoutOrigin.x,y:p.y+layoutOrigin.y)
