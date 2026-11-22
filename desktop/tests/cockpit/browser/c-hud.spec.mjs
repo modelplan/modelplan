@@ -192,12 +192,12 @@ test('G3-48 compact HUD names never overlap, however long',async({page})=>{
   expect([p.lineHeight,p.rowHeight]).toEqual(['10px',10]);
  }
 });
-test('CKP-PORT-06 a row opens 模型 and Esc or Back returns to the page before',async({page})=>{
+test('CKP-PORT-06 a row opens 模型 and Esc or the Overview tab returns to the overview',async({page})=>{
  await open(page);
  await page.locator('.hud .hp').first().click();await expect(page.locator('.fc')).toBeVisible();
- await expect(page.locator('.mfd-back')).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('.fc')).toHaveCount(0);
+ await expect(page.locator('.mfd-pk .pk-seg:not([hidden])')).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('.fc')).toHaveCount(0);
  await page.locator('.hud-dot').first().click();await expect(page.locator('.fc')).toBeVisible();
- await page.locator('.mfd-back').click();await expect(page.locator('.fc')).toHaveCount(0);
+ await page.getByRole('tab',{name:'Overview'}).click();await expect(page.locator('.fc')).toHaveCount(0);
 });
 const fieldOpens=page=>page.evaluate(()=>window.__actions.filter(a=>a==='openField').length);
 test('CKP-PORT-06 a HUD click opens 模型 only; the port beside it still opens the field',async({page})=>{
@@ -210,9 +210,9 @@ for(const key of ['Enter','Space'])test(`CKP-PORT-06 ${key} on a HUD row opens �
  await page.locator('.hud .hp').first().focus();await page.keyboard.press(key);await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
 });
 test('clearing the data leaves no HUD box and no Back button',async({page})=>{
- const {send,receive}=await open(page);await page.locator('.hud .hp').first().click();await expect(page.locator('.mfd-back')).toBeVisible();
- expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(page.locator('.hud')).toBeHidden();await expect(page.locator('.hud .hp')).toHaveCount(0);await expect(page.locator('.mfd-back')).toHaveCount(0);
- await page.keyboard.press('Escape');await expect(page.locator('.mfd-back')).toHaveCount(0);
+ const {send,receive}=await open(page);await page.locator('.hud .hp').first().click();await expect(page.locator('.mfd-pk .pk-seg:not([hidden])')).toBeVisible();
+ expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(page.locator('.hud')).toBeHidden();await expect(page.locator('.hud .hp')).toHaveCount(0);await expect(page.locator('.mfd-pk .pk-seg:not([hidden])')).toHaveCount(0);
+ await page.keyboard.press('Escape');await expect(page.locator('.mfd-pk .pk-seg:not([hidden])')).toHaveCount(0);
 });
 // Real public IDs and names from the publication: the roster key differs from the ID, and an older model shares a word.
 test('CKP-PORT-06 hovering a row lights its rocket by published name, for real public IDs',async({page})=>{

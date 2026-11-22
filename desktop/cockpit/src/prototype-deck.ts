@@ -204,10 +204,10 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=i;paint();};bar.append(b);return {b,caption};});
  // D387: the Overview key is the two-way switch "Overview | <screen>" while a screen (a plugin's, or the HUD's big chart)
  // is open: a tablist in the big-screen bottom switch's look (.ok-l b / .ok-sep). It replaces "‹ Back" and the screen's Close.
- const seg=node('div','pk pk-seg'),segTabs=[node('button','pk-tab'),node('button','pk-tab')] as const;
+ const seg=node('div','pk-seg'),segTabs=[node('button','pk-tab'),node('button','pk-tab')] as const;
  seg.hidden=true;seg.setAttribute('role','tablist');seg.dataset.mat='part';
  segTabs.forEach((x,j)=>{x.type='button';x.setAttribute('role','tab');x.dataset.mfd=j?'seg:screen':'seg:overview';});
- const sepEl=node('i','ok-sep');sepEl.setAttribute('aria-hidden','true');seg.append(segTabs[0],sepEl,segTabs[1]);bar.insertBefore(seg,bar.children[1]??null);
+ const sepEl=node('i','ok-sep');sepEl.setAttribute('aria-hidden','true');seg.append(segTabs[0],sepEl,segTabs[1]);bar.append(seg);
  const toOverview=()=>{if(screenView!==null){closeScreenHook?.();screenView=null;}alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=0;paint();};
  segTabs[0].onclick=e=>{if(e.isTrusted)toOverview();};
  // The screen tab is the current view: pressing it again changes nothing.

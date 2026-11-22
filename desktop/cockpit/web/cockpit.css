@@ -517,7 +517,8 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .pl-cell.pl-cal .qline{justify-content:space-between}
 
 /* D387: the Overview key as the two-way "Overview | <screen>" switch, in the big-screen bottom switch's look (.ok-l b, .ok-sep). */
-.mfd-pk .pk.pk-seg{display:flex;align-items:center;justify-content:center;min-width:0}.mfd-pk .pk.pk-seg[hidden]{display:none}
+.mfd-pk .pk[hidden],.mfd-pk .pk-seg[hidden]{display:none}
+.mfd-pk .pk-seg{grid-column:1;grid-row:1;position:relative;display:flex;align-items:center;justify-content:center;min-width:0;height:var(--row-h,18px);padding:0 4px;border-radius:4px;background:linear-gradient(180deg,var(--key-1),var(--key-2));box-shadow:var(--raised);overflow:hidden}
 .pk-seg .pk-tab{position:relative;flex:0 1 auto;min-width:0;margin:0;padding:0 2px;border:0;background:none;font:500 10px/1 var(--f-silk);color:var(--silk-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 .pk-seg .pk-tab.on{color:var(--silk-hi)}.pk-seg .pk-tab.on::after{content:"";position:absolute;left:20%;right:20%;bottom:-3px;height:2px;border-radius:1px;background:var(--key-led-on);box-shadow:var(--key-led-glow)}
 .pk-seg .pk-tab:focus-visible{outline:1px solid var(--silk-hi);outline-offset:1px;border-radius:3px}

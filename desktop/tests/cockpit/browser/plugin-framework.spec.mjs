@@ -150,7 +150,8 @@ test('CKP-PLG-53 clicking the plugin key opens its big screen inside the big-scr
   const r=e=>e.getBoundingClientRect(),s=r(document.querySelector('.pl-screen')),well=r(document.querySelector('.mfd-screen'));
   const overlaps=b=>!(b.right<=s.left||b.left>=s.right||b.bottom<=s.top||b.top>=s.bottom);
   const blockers=[...document.querySelectorAll('.dk-fad,.mfd-pk,.mfd-pk .pk')].filter(e=>overlaps(r(e))).map(e=>e.className);
-  const keys=[...document.querySelectorAll('.mfd-pk .pk')].map(k=>{const b=r(k);return document.elementFromPoint(b.left+b.width/2,b.top+b.height/2)?.closest('.pk')===k;});
+  // D387: the Overview key is the switch while a screen is open (its tabs stand in for it); the other page keys must stay uncovered.
+  const keys=[...document.querySelectorAll('.mfd-pk .pk:not([hidden]),.mfd-pk .pk-seg:not([hidden]) [role=tab]')].map(k=>{const b=r(k);return document.elementFromPoint(b.left+b.width/2,b.top+b.height/2)===k||k.contains(document.elementFromPoint(b.left+b.width/2,b.top+b.height/2));});
   const fader=document.querySelector('.dk-fad'),fb=r(fader),hit=document.elementFromPoint(fb.left+fb.width/2,fb.top+fb.height/2);
   return {inside:s.left>=well.left-0.5&&s.right<=well.right+0.5&&s.top>=well.top-0.5&&s.bottom<=well.bottom+0.5,blockers,keys,fader:!!hit&&fader.contains(hit)};
  });
@@ -181,16 +182,16 @@ test('CKP-PLG-53 a page key activated from the keyboard (Enter or Space) also cl
  }
 });
 
-test('CKP-PLG-53 a reading updates the open plugin screen in place: the focused Close button stays mounted and focused',async({page})=>{
+test('CKP-PLG-53 a reading updates the open plugin screen in place: the focused screen tab stays mounted and focused',async({page})=>{
  const {send,receive}=await open(page,dataWith(2),on());
  expect(await receive(send('pluginData',{id:'placeholder',data:{value:10}}))).toBe(true);
  await key(page).click();
- const close=page.locator('.pl-screen .pl-screen-x');await close.focus();await expect(close).toBeFocused();
- await page.evaluate(()=>{window.__close=document.querySelector('.pl-screen .pl-screen-x');});
+ const close=page.locator('.mfd-pk .pk-seg [role=tab][aria-selected=true]');await close.focus();await expect(close).toBeFocused();
+ await page.evaluate(()=>{window.__close=document.querySelector('.mfd-pk .pk-seg [role=tab][aria-selected=true]');});
  expect(await receive(send('pluginData',{id:'placeholder',data:{value:11}}))).toBe(true);
  await expect(page.locator('.pl-screen dd').first()).toHaveText('11%');
  await expect(close).toBeFocused();
- expect(await page.evaluate(()=>window.__close===document.querySelector('.pl-screen .pl-screen-x')&&window.__close.isConnected)).toBe(true);
+ expect(await page.evaluate(()=>window.__close===document.querySelector('.mfd-pk .pk-seg [role=tab][aria-selected=true]')&&window.__close.isConnected)).toBe(true);
  // A repaint (new display) and a host settings change redraw the screen in place too.
  expect(await receive(send('display',{data:dataWith(2)}))).toBe(true);
  expect(await receive(send('plugins',{plugins:on(false,{intervalSeconds:4})}))).toBe(true);
