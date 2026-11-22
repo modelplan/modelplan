@@ -1,0 +1,1 @@
+The calendar strip's peak label no longer clips its time in a six-column cockpit: the label drops the subscription abbreviation first, then the end time, before anything clips (the hover keeps the full window); the week view's zoomed time line does the same.
