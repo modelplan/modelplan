@@ -3,7 +3,7 @@ import Foundation
 
 /// What decides the sampling cadence (owner D324).
 public struct ResourceVisibility: Equatable, Sendable {
-    /// The plugin is on (Settings › Subscriptions › Plugins). Off = no sampling at all.
+    /// The plugin is on (Settings › Plugins). Off = no sampling at all.
     public var pluginEnabled: Bool
     /// The cockpit is open and the resource column is on its current page (the page's `pluginsRunning` lists it).
     public var columnShown: Bool
