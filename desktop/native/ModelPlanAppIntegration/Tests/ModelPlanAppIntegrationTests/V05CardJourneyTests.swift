@@ -87,7 +87,8 @@ private actor V05SyntheticClient: EngineClient {
         let bar = try XCTUnwrap(views(dock.card).first { $0.accessibilityIdentifier().hasPrefix("dock.card.quota.") })
         XCTAssertEqual(bar.intrinsicContentSize, NSSize(width: 78, height: 7))
         // G3-05 / G3-31 (R64 D-3, D-4): the prototype card look on the real card.
-        // Plate 304 with 10/11 padding, a dark readout window inset 11 pt, fixed 56/78/34 grid, header name 13 semibold.
+        // Plate 304 with 10/11 padding, a dark readout window inset 11 pt, the 78 pt bar grid with
+        // content-sized label/percent columns (D388), header name 13 semibold.
         let lcd = try XCTUnwrap(dock.card.readoutWindowForChecks, "the card has a readout window")
         XCTAssertEqual(lcd.minX, 11, accuracy: 0.5); XCTAssertEqual(lcd.width, 304 - 22, accuracy: 0.5)
         let quotaRow = try XCTUnwrap(dock.cardContent(for: id)?.rows.first { $0.kind == .quota || $0.kind == .extraQuota })
@@ -96,7 +97,13 @@ private actor V05SyntheticClient: EngineClient {
         let cells = dock.card.rowCellsForChecks(quotaRow.id).filter { $0.minY < rowFrame.minY + 18 }
         XCTAssertGreaterThanOrEqual(cells.count, 3)
         guard cells.count >= 3 else { return }
-        XCTAssertEqual(cells.prefix(3).map { $0.width.rounded() }, [56, 78, 34], "label / bar / percent columns")
+        // D388: the label and percent columns size to the card's content (capped at the approved 56/34);
+        // the bar keeps the approved 78 pt ten-segment width and the 5 pt grid gaps.
+        XCTAssertEqual(cells[1].width.rounded(), 78, "the bar column keeps the approved width")
+        let labels = views(dock.card).compactMap { $0 as? NSTextField }.filter { $0.accessibilityIdentifier().hasPrefix("dock.card.text.row.") && $0.accessibilityIdentifier().hasSuffix(".label") }
+        let widest = labels.map { ceil($0.cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: 10_000, height: 10_000)).width ?? 0) }.max() ?? 0
+        XCTAssertEqual(cells[0].width, min(widest, 56), accuracy: 1.5, "the label column is the card's widest label (D388)")
+        XCTAssertLessThanOrEqual(cells[2].width, 34, "the percent column hugs its content (D388)")
         XCTAssertEqual(cells[1].minX - cells[0].maxX, 5, accuracy: 0.5); XCTAssertEqual(cells[2].minX - cells[1].maxX, 5, accuracy: 0.5)
         XCTAssertEqual(cells[0].minX, lcd.minX + 7, accuracy: 0.5, "rows start inside the window's 7 pt padding")
         XCTAssertGreaterThanOrEqual(rowFrame.height, 18)

@@ -250,8 +250,9 @@ public struct DockNozzlePose: Equatable, Sendable {
             } else { c.setStrokeColor(try ink("track")) }
             c.strokeEllipse(in:rect)
             c.setLineDash(phase:0,lengths:[]);c.setAlpha(recipe.opacity)
-            // D327: a plugin ring is always its own ink; the faint segment (memory cached) follows the solid one.
-            let pluginInk=plugin.map{CGColor(srgbRed:$0.red,green:$0.green,blue:$0.blue,alpha:1)}
+            // D371 B4c: a plugin ring arc takes the skin's status ink for its own tone (normal / warning / critical, as a
+            // quota ring); the faint segment (memory cached) follows the solid one.
+            let pluginInk:CGColor?=try plugin.map{_ in try ink((arc?.status ?? .normal).rawValue)}
             if let pluginInk,faint.isFinite,faint>0 {
                 let start=CGFloat(max(0,min(1,arc?.fraction ?? 0))),end=CGFloat(min(1,Double(start)+faint))
                 if end>start {
@@ -278,9 +279,9 @@ public struct DockNozzlePose: Equatable, Sendable {
             }
             c.restoreGState()
         }
-        /// D327: a plugin ring's centre is the plugin's white line icon (the resource plugin's rounded screen with a
-        /// heartbeat line, desktop/cockpit/src/resource-plugin.ts `icon`), drawn from its 16-unit outline at the vendor
-        /// mark's size and stroke weight.
+        /// D327, D371: a plugin ring's centre is the plugin's white line icon (the resource plugin's heartbeat line without
+        /// a frame, desktop/cockpit/src/resource-plugin.ts `icon`), drawn from its 16-unit outline at the vendor mark's
+        /// size and stroke weight.
         func pluginIcon(_ rect: CGRect) throws {
             let paths = DockPluginIcon.paths(in: rect)
             guard !paths.isEmpty else { throw DockArtworkError.invalidManifest }
