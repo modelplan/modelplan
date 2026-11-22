@@ -58,6 +58,7 @@
         "ConsentContractTests",
         "ConsentCoreQ2Tests",
         "ConsentHostDisplayTests",
+        "D377StatusAutoDisplayTests",
         "DockCodexRuntimeRealServerTests",
         "DockHoverExplanationTests",
         "DockInteractionHostPortTests",
