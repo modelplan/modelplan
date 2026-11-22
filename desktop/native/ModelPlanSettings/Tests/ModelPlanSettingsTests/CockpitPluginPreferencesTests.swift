@@ -44,7 +44,7 @@ final class CockpitPluginPreferencesTests: XCTestCase {
     @MainActor func testResourceRowHasSwitchIntervalChoicesAndPin() async throws {
         let model = CockpitPluginSettingsModel(store: CockpitPluginStore(directory: try directory()))
         let view = SettingsCockpitPluginsView(model: model, language: .chinese)
-        view.apply(language: .chinese, paneID: "subscriptions", query: "")
+        view.apply(language: .chinese, paneID: "plugins", query: "")
         func find<T: NSView>(_ id: String, _ type: T.Type) -> T? {
             var queue: [NSView] = [view]
             while let next = queue.first { queue.removeFirst(); if next.accessibilityIdentifier() == id, let hit = next as? T { return hit }; queue += next.subviews }
@@ -167,7 +167,8 @@ final class CockpitPluginPreferencesTests: XCTestCase {
     }
 
     /// CKP-PLG-54: the "Plugins" section of Settings › Subscriptions: icon, one sentence, toggle, options, pin to page 1.
-    @MainActor func testSettingsSectionShowsOnTheSubscriptionsPaneAndEditsThroughTheModel() async throws {
+    /// D376: the plugins have their own Settings pane; the Subscriptions pane no longer shows them.
+    @MainActor func testSettingsSectionShowsOnThePluginsPaneAndEditsThroughTheModel() async throws {
         // A listed off-by-default plugin with a stepper (the shape the framework placeholder had; owner 11-21 took the
         // placeholder itself out of Settings).
         let trial = CockpitPluginDefinition(id: "placeholder", title: .init("Placeholder", "占位插件"),
@@ -179,20 +180,26 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         let model = CockpitPluginSettingsModel(store: CockpitPluginStore(directory: try directory()), catalogue: catalogue)
         let view = SettingsCockpitPluginsView(model: model, language: .english)
         XCTAssertTrue(view.isHidden, "hidden until the window places it")
-        view.apply(language: .english, paneID: "subscriptions", query: "")
+        view.apply(language: .english, paneID: "plugins", query: "")
         XCTAssertFalse(view.isHidden)
+        view.apply(language: .english, paneID: "subscriptions", query: "")
+        XCTAssertTrue(view.isHidden, "no longer a section on the Subscriptions pane (D376)")
         view.apply(language: .english, paneID: "cockpit", query: "")
         XCTAssertTrue(view.isHidden, "no longer a separate section on the Cockpit pane")
         view.apply(language: .english, paneID: "general", query: "")
         XCTAssertTrue(view.isHidden)
-        view.apply(language: .chinese, paneID: "general", query: "插件")
-        XCTAssertFalse(view.isHidden)
+        for query in ["插件", "plugin", "资源", "日历", "Resources", "calendar"] {
+            view.apply(language: .chinese, paneID: "general", query: query)
+            XCTAssertFalse(view.isHidden, "search \(query) finds the plugins")
+        }
+        view.apply(language: .chinese, paneID: "general", query: "别名")
+        XCTAssertTrue(view.isHidden)
         func find<T: NSView>(_ id: String, _ type: T.Type) -> T? {
             var queue: [NSView] = [view]
             while let next = queue.first { queue.removeFirst(); if next.accessibilityIdentifier() == id, let hit = next as? T { return hit }; queue += next.subviews }
             return nil
         }
-        view.apply(language: .english, paneID: "subscriptions", query: "")
+        view.apply(language: .english, paneID: "plugins", query: "")
         XCTAssertNotNil(find("settings.cockpitPlugins.placeholder.icon", NSImageView.self)?.image, "the plugin's line icon")
         XCTAssertEqual(find("settings.cockpitPlugins.placeholder.summary", NSTextField.self)?.stringValue,
                        "Shows the last number the app sent; for trying plugins.")
@@ -212,6 +219,43 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(find("settings.cockpitPlugins.placeholder.pinned", NSButton.self)).isEnabled)
     }
 
+    /// D376: the Plugins pane's one-line note, and the resource plugin's sampling note under its options line, in both
+    /// languages; the sampling note is 11 pt secondary and dims with the interval control while the plugin is off. Fails
+    /// before D376: the note was two sentences and there was no sampling note.
+    @MainActor func testPluginsPaneNoteAndResourceSamplingNoteDimWhenOff() async throws {
+        func find<T: NSView>(_ root: NSView, _ id: String, _ type: T.Type) -> T? {
+            var queue: [NSView] = [root]
+            while let next = queue.first { queue.removeFirst(); if next.accessibilityIdentifier() == id, let hit = next as? T { return hit }; queue += next.subviews }
+            return nil
+        }
+        let cases: [(SettingsLanguage, String, String)] = [
+            (.chinese, "插件列显示在订阅后面", "驾驶舱打开时 每 2/5/10 秒 · 只有挂件时每 10 秒"),
+            (.english, "Plugin columns come after your subscriptions.", "Every 2/5/10 s while the cockpit is open · every 10 s with only the widget"),
+        ]
+        for (language, note, hint) in cases {
+            let model = CockpitPluginSettingsModel(store: CockpitPluginStore(directory: try directory()))
+            let view = SettingsCockpitPluginsView(model: model, language: language)
+            view.apply(language: language, paneID: "plugins", query: "")
+            XCTAssertEqual(find(view, "settings.cockpitPlugins.note", NSTextField.self)?.stringValue, note)
+            XCTAssertEqual(find(view, "settings.section.plugins", NSTextField.self)?.isHidden, true, "the window's pane title heads the pane")
+            let sampling = try XCTUnwrap(find(view, "settings.cockpitPlugins.resources.samplingNote", NSTextField.self))
+            XCTAssertEqual(sampling.stringValue, hint)
+            XCTAssertEqual(sampling.font?.pointSize, 11)
+            XCTAssertEqual(sampling.textColor, .secondaryLabelColor, "on: secondary")
+            XCTAssertNil(find(view, "settings.cockpitPlugins.calendar.samplingNote", NSTextField.self), "the calendar samples nothing")
+            view.apply(language: language, paneID: "general", query: "plugin")
+            XCTAssertEqual(find(view, "settings.section.plugins", NSTextField.self)?.isHidden, false, "search results name the section")
+        }
+        var off = CockpitPluginPreferences()
+        XCTAssertTrue(off.apply(.setEnabled("resources", false)))
+        let model = CockpitPluginSettingsModel(preferences: off, store: CockpitPluginStore(directory: try directory()))
+        let view = SettingsCockpitPluginsView(model: model, language: .chinese)
+        view.apply(language: .chinese, paneID: "plugins", query: "")
+        XCTAssertFalse(try XCTUnwrap(find(view, "settings.cockpitPlugins.resources.intervalSeconds", NSSegmentedControl.self)).isEnabled)
+        XCTAssertEqual(try XCTUnwrap(find(view, "settings.cockpitPlugins.resources.samplingNote", NSTextField.self)).textColor, .tertiaryLabelColor,
+                       "off: the note dims with the control")
+    }
+
     /// Owner 11-21: the framework placeholder is a test plugin and must not ship to users. Fails before: Settings ›
     /// Subscriptions › Plugins listed "占位插件" first, with its switch, pin and interval.
     @MainActor func testReleaseSettingsNeverListsThePlaceholder() async throws {
@@ -223,7 +267,7 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         var saved = CockpitPluginPreferences()
         XCTAssertTrue(saved.apply(.setEnabled("placeholder", true)))
         controller.attachCockpitPlugins(CockpitPluginSettingsModel(preferences: saved, store: CockpitPluginStore(directory: dir)))
-        controller.selectPane("subscriptions")
+        controller.selectPane("plugins")
         let section = try XCTUnwrap(controller.cockpitPluginsView)
         XCTAssertFalse(section.isHidden)
         var ids: [String] = [], queue: [NSView] = [section]
@@ -265,14 +309,19 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         XCTAssertEqual(p.entries.first { $0.id == "calendar" }?.pinned, true)
     }
 
-    @MainActor func testWindowAttachesTheSectionToTheSubscriptionsPane() async throws {
+    /// D376: the window shows the section on the Plugins pane only, under the pane title "插件", with no "No matching
+    /// settings" line (the pane has no catalogue rows).
+    @MainActor func testWindowAttachesTheSectionToThePluginsPane() async throws {
         let dir = try directory()
         let editor = SettingsEditor(store: try SettingsStore(url: dir.appendingPathComponent("preferences.json")))
         let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
         await controller.prepare()
         controller.attachCockpitPlugins(CockpitPluginSettingsModel(store: CockpitPluginStore(directory: dir)))
         let section = try XCTUnwrap(controller.cockpitPluginsView)
-        controller.selectPane("subscriptions"); XCTAssertFalse(section.isHidden)
+        controller.selectPane("plugins"); XCTAssertFalse(section.isHidden)
+        XCTAssertTrue(["插件", "Plugins"].contains(controller.paneHeadingForChecks), "the pane title, in the Subscriptions title style: \(controller.paneHeadingForChecks)")
+        XCTAssertFalse(controller.emptyNoticeShownForChecks, "the plugin rows are the pane's content")
+        controller.selectPane("subscriptions"); XCTAssertTrue(section.isHidden, "D376: not on the Subscriptions pane")
         controller.selectPane("cockpit"); XCTAssertTrue(section.isHidden)
         controller.selectPane("appearance"); XCTAssertTrue(section.isHidden)
         controller.close()

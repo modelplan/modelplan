@@ -128,7 +128,7 @@ enum SettingsWords {
     private lazy var connectionsView = SettingsConnectionsView(editor: editor)
     private let scopeConsentEntry: ScopeConsentEntry?
     private var historyImportView: SettingsHistoryImportView?
-    /// The "Plugins" section on the Subscriptions pane (CKP-PLG-54), attached by the app once its plugin store is open.
+    /// The cockpit plugin rows of the Plugins pane (CKP-PLG-54, D376), attached by the app once its plugin store is open.
     public private(set) var cockpitPluginsView: SettingsCockpitPluginsView?
     private let heading = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
@@ -221,21 +221,20 @@ enum SettingsWords {
         refresh()
     }
     public func refreshEnvironment() { editor.update(environment: environmentProvider()) }
-    /// CKP-PLG-54 (D293): shows the "Plugins" section on the Subscriptions pane. It sits after the catalogue rows and
-    /// the subscription rows, so row insertion indices are unchanged.
+    /// CKP-PLG-54 (D293, D376): the rows of the Plugins pane. They sit after the catalogue rows, so row insertion
+    /// indices are unchanged; on the Plugins pane (no catalogue rows) they follow the pane title directly.
     public func attachCockpitPlugins(_ model: CockpitPluginSettingsModel) {
         guard cockpitPluginsView == nil else { return }
         let view = SettingsCockpitPluginsView(model: model, language: language)
         cockpitPluginsView = view
-        if let entry = scopeConsentEntry {
-            // D371: the plugins sit right after "My subscriptions", on the same grid, inside the Subscriptions surface.
-            entry.view.pluginSection = view
-        } else {
-            stack.addArrangedSubview(view)
-            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        }
+        stack.addArrangedSubview(view)
+        view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         refresh()
     }
+    /// The pane title shown now (for checks).
+    var paneHeadingForChecks: String { heading.stringValue }
+    /// Whether "No matching settings" is shown now (for checks).
+    var emptyNoticeShownForChecks: Bool { !empty.isHidden }
     public func windowWillClose(_ notification: Notification) {
         for row in rows.values { row.diagram?.stop() }
         if scopeConsentEntry == nil { connectionsView.suspend() }
@@ -453,7 +452,7 @@ enum SettingsWords {
             }
             // Hidden diagrams also stop immediately on a runtime accessibility transaction.
             if effective.reduceMotion { for row in rows.values { row.diagram?.stop() } }
-            empty.isHidden = !visible.isEmpty || !connectionContent.isHidden
+            empty.isHidden = !visible.isEmpty || !connectionContent.isHidden || cockpitPluginsView?.isHidden == false
             empty.stringValue = SettingsWords.text("No matching settings", "没有匹配的设置", language)
         } catch {
             for row in rows.values { row.retireControls() }
