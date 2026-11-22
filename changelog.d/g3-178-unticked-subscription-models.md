@@ -1,0 +1,1 @@
+The cockpit no longer shows the models of a subscription unticked in Settings: live or recorded sessions of that tool add no faders, model cards or unlisted cards under All (D391), while the session list still shows the sessions themselves.
