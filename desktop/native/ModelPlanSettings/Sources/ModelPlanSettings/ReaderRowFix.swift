@@ -64,6 +64,15 @@ extension ReaderCauseTable {
                                               : .init("No OpenCode Go key found", "没有找到 OpenCode Go 的密钥"),
                          action: .init("Add key", "添加密钥"), target: .addKey)
         }
+        if rowIsGLM(tool), canon == "unsupported_login" || canon == "unknown_store_format" {
+            // Owner 11-22: the action opens the D90 key field on this row directly; without key entry it opens Settings.
+            return .init(reason: zcodeUnreadable.reason, action: .init("Paste key…", "粘贴 key…"), target: keyEntryAvailable ? .addKey : .openSettings)
+        }
+        if rowIsGLM(tool), ["keychain_unset", "keychain_unavailable", "keychain_denied"].contains(canon) {
+            // D380: one button, the same Keychain consent as Claude Code's; macOS then asks (Always Allow).
+            return .init(reason: .init("ZCode keeps its sign-in key in the Keychain", "ZCode 的登录密钥保存在钥匙串中"),
+                         action: .init("Allow reading", "允许读取"), target: .allowKeychain)
+        }
         if canon == "region_refused", keyEntryAvailable, rowIsKeyProvider(tool) {
             // SET-9-41: a third-party relay address cannot be read, but the user can still enter a key of their own, which goes
             // only to the official host; the row says why and offers the same Add key entry.

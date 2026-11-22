@@ -175,7 +175,9 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 			tool := s.Tools[d.Tool]
 			tool.ReaderID, tool.Backend, tool.Region, tool.KeyEnv = r.ReaderID, r.Backend, r.Region, r.KeyEnv
 			tool.Allowed, tool.ConsentTextVersion = true, TextVersion
-			if d.Keychain {
+			// Only Claude's tool record carries the legacy Keychain fields; ZCode's choice (D380)
+			// lives on its scope record alone, so the shared GLM tool record is left as it was.
+			if d.Keychain && d.Tool == "claude" {
 				tool.Keychain, tool.DeniedSources = r.Keychain, r.DeniedSources
 			}
 			s.Tools[d.Tool] = tool

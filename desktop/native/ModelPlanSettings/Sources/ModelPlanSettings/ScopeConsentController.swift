@@ -307,11 +307,36 @@ public struct FirstRunReading: Sendable, Equatable {
         guard let scope = claudeSavedLogin, scope.keychain != .allow else { return false }
         return scope.keychain == .deny || claudeRowState == .needsKeychain
     }
+    /// D380: ZCode's saved-login path (its QR sign-in), when it is here and allowed. ZCode 3.19+ keeps the store's
+    /// key in the Keychain; the engine's row says needs-Keychain only for such a store, so a v1 store asks nothing.
+    private var zcodeSavedLogin: WireConsentScope? {
+        facts?.scopes.first {
+            $0.tool == "zai" && $0.route == .savedLoginApi && $0.detected && !$0.retired && $0.disabledReason == nil && !$0.cleanupPending
+        }
+    }
+    /// D380: the ZCode row needs the Keychain choice (unset, refused, or the prompt was not answered).
+    public var needsZCodeKeychainAccess: Bool {
+        guard let scope = zcodeSavedLogin, scope.state == .allowed else { return false }
+        return rowStates["zai"] == .needsKeychain
+    }
+    /// Which tool's Keychain button a press belongs to: Claude Code (D41) or ZCode (D380).
+    public func needsKeychainAccess(tool: String) -> Bool {
+        switch tool {
+        case "claude": return needsKeychainAccess
+        case "zai", "zcode", "glm": return needsZCodeKeychainAccess
+        default: return false
+        }
+    }
     public func chooseKeychainLater() { keychainLater = true; changed() }
     /// D41: the button is the consent, so no second confirmation. The engine's foreground read
     /// after this grant is what makes macOS show its dialog; nothing else may trigger it.
-    public func allowKeychain() async {
-        guard canMutate, let id = claudeSavedLogin?.scope else { return }
+    public func allowKeychain() async { await allowKeychain(tool: "claude") }
+    /// D380: the same single consent for ZCode's key. The button is the consent; the engine's foreground read
+    /// after this grant is the only thing that may make macOS show its dialog, and the user's own answer there
+    /// ("Always Allow") is what lets later background reads work. Nothing here pre-approves or bypasses it.
+    public func allowKeychain(tool: String) async {
+        let scope = ["zai", "zcode", "glm"].contains(tool) ? zcodeSavedLogin : claudeSavedLogin
+        guard canMutate, let id = scope?.scope else { return }
         let value = ScopeConsentConfirmation(id: UUID(), intent: .init(mutation: .allow(scopes: [id], keychain: [id])))
         phase = .confirmation(value)
         await confirm(value.id)
@@ -449,8 +474,10 @@ public struct FirstRunReading: Sendable, Equatable {
                 $0.route.isKnown && $0.route != .knownUnknown && $0.route != .browserSession && $0.disabledReason == nil && !$0.cleanupPending &&
                     !Self.separateOptInScopes.contains($0.scope)
             }
+            // D380: ZCode's saved-login scope also has a Keychain choice, but only a Keychain-bound store needs
+            // it, which its row reports; first run keeps the Keychain line for Claude Code alone.
             return FirstRunTool(tool: tool, scopes: standard.map(\.scope), routes: standard.map(\.route), block: block(forTool: tool),
-                                promptsKeychain: standard.contains { $0.keychain != nil }, keyMissing: rowCodes[tool] == .keyMissing)
+                                promptsKeychain: tool == "claude" && standard.contains { $0.keychain != nil }, keyMissing: rowCodes[tool] == .keyMissing)
         }
     }
     /// G3-59: Settings lists every tool first run would list (same rows, engine order), then each supported

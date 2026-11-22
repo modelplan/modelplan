@@ -4,12 +4,10 @@ package quota
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
-	"github.com/modelplan/modelplan/cli/internal/detect"
 )
 
 // G3-158 follow-up (owner's Mac, ZCode 3.19.1): ~/.zcode/v2 holds the QR sign-in files
@@ -63,50 +61,5 @@ func TestG3158StaleKeylessProviderFileFallsThroughToSignIn(t *testing.T) {
 	}
 }
 
-// ZCode 3.19 keeps its credential key in the macOS Keychain: credential-source says "os" and the
-// store's entries are enc:v2. ModelPlan does not read another app's Keychain item (D230/D232), so
-// that sign-in is not offered (no consent asked for a read that cannot work), and a store with v2
-// entries is unsupported, never "sign in again" and never answered from the plaintext mirror.
-func TestG3158KeychainBoundZCodeStoreIsUnsupported(t *testing.T) {
-	isolateHome(t)
-	t.Setenv("Z_AI_API_KEY", "")
-	home, _ := os.UserHomeDir()
-	dir := writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
-	writeZCodeProviders(t, home, zcodeStaleProviderFiles["no_selection"])
-	if err := os.WriteFile(filepath.Join(dir, "credential-source"), []byte("os"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if detect.ZCodeLoginPresent(home) {
-		t.Fatal("a Keychain-bound ZCode store listed as a readable sign-in")
-	}
-	cache := t.TempDir()
-	p := ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture())
-	if p.ZCodeLoginConsent {
-		t.Fatal("consent asked for a sign-in ModelPlan cannot read")
-	}
-	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
-	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai", "open.bigmodel.cn", "zcode.z.ai")
-	_ = RefreshNativeProviders(context.Background(), p, now, []string{"zai"})
-	_, s, _ := zcodeReport(t, cache, now)
-	if z.calls.Load() != 0 {
-		t.Fatalf("%d requests", z.calls.Load())
-	}
-	if s.ErrorCode != "unsupported_login" {
-		t.Fatalf("source %+v, want unsupported_login", s)
-	}
-
-	// Read time: a store whose entries are enc:v2 (Keychain-keyed) is unsupported even with a
-	// plaintext mirror present, and nothing is sent.
-	if err := os.Remove(filepath.Join(dir, "credential-source")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "credentials.json"), []byte(`{"oauth:zai:user_info":"enc:v2:os:aaaa.bbbb.cccc","zcodejwttoken":"enc:v2:os:aaaa.bbbb.cccc"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"provider":{"builtin:zai-coding-plan":{"enabled":true,"options":{"apiKey":"mirror-canary"}}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, code := readZCodeLogin(dir, time.Now()); code != "unsupported_login" {
-		t.Fatalf("v2 store code %q, want unsupported_login", code)
-	}
-}
+// The Keychain-bound store (ZCode 3.19+) that G3-158 reported as unsupported is read since D380;
+// see d380_zcode_keychain_test.go.

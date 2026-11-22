@@ -49,6 +49,10 @@ func (a Admission) KeychainStatus(tool string) string {
 	return a.state.KeychainStatus(tool, a.Mode())
 }
 
+func (a Admission) ScopeKeychainStatus(scope string) string {
+	return a.state.ScopeKeychainStatus(scope, a.Mode())
+}
+
 func permissionCopy(state State) State {
 	copy := State{SchemaVersion: state.SchemaVersion, Generation: state.Generation, ReadingGeneration: state.ReadingGeneration, StoreEpoch: state.StoreEpoch, RequireConsent: state.RequireConsent, Revoked: map[string]uint64{}, Scopes: make(map[string]Record, len(state.Scopes)), Privacy: state.Privacy, Tools: make(map[string]Record, len(state.Tools))}
 	for scope, generation := range state.Revoked {

@@ -544,6 +544,9 @@ struct StatusNoticePresentation {
             let vendor = self.settings.editor.context.subscriptions.first { $0.id == id }?.vendor
             if self.scopeConsentEntry.controller.needsKeychainAccess, vendor == nil || vendor == "claude" {
                 Task { await self.scopeConsentEntry.controller.allowKeychain() }
+            } else if let vendor, self.scopeConsentEntry.controller.needsKeychainAccess(tool: vendor), vendor != "claude" {
+                // D380: ZCode's Keychain card asks for its own Keychain choice the same way.
+                Task { await self.scopeConsentEntry.controller.allowKeychain(tool: vendor) }
             } else {
                 Task { await self.composition.refresh() }
             }

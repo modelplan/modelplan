@@ -214,15 +214,24 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 		p.ZCodeLoginConsent = true
 		return
 	}
+	// D380: a store ZCode bound to the macOS Keychain waits for the scope's own Keychain choice.
+	// Stat-only, as for Claude Code (D41): no reader runs, so no failed attempt holds back the
+	// read that follows Allow, and the plaintext mirror is never a stand-in.
+	keychain := &ZCodeKeychain{Consent: state.ScopeKeychainStatus(scope, mode)}
+	if detect.ZCodeKeychainBound(home) && keychain.Consent != "allowed" {
+		p.ZCodeKeychainPending = keychain.Consent
+		return
+	}
 	fence := state.Fence()
 	p.ReaderAccess.Grants["zai"] = ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
+		Keychain: keychain.Consent == "allowed", KeychainConsent: keychain.Consent,
 		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Generation, 10) + ":zcode-login:" + zcodeLoginStamp(home),
 		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
 		StillValid: func() bool {
 			current, effective := consent.Current()
 			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence && current.AllowsScope(scope, effective)
 		},
-		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: ZCodeLoginDir(home)}}
+		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: ZCodeLoginDir(home), Keychain: keychain}}
 }
 
 // zcodeRoots are ZCode's data folders, the same path signals detection lists for it

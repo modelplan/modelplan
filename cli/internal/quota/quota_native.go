@@ -822,7 +822,7 @@ func credentialStageFailure(e readerEntry) bool {
 // With ZCode's QR-code sign-in present but its saved-login scope not allowed (D369), the fixed reason
 // is "consent required": the row offers the consent action and shows no data.
 func applyZCodeNoProviderFile(r *Report, p Paths) {
-	if !p.ZCodeNoProviderFile && !p.ZCodeLoginConsent {
+	if !p.ZCodeNoProviderFile && !p.ZCodeLoginConsent && p.ZCodeKeychainPending == "" {
 		return
 	}
 	// S6 (#1031 sampling): a selected, admitted pasted GLM key is a route that can run; its own
@@ -833,6 +833,9 @@ func applyZCodeNoProviderFile(r *Report, p Paths) {
 	cause := SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"}
 	if p.ZCodeLoginConsent {
 		cause = SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "consent_required", ErrorCode: "consent_required"}
+	}
+	if code := map[string]string{"unset": "keychain_unset", "denied": "keychain_denied"}[p.ZCodeKeychainPending]; code != "" {
+		cause = SourceStatus{Source: "native:zai", Status: "unavailable", Reason: code, ErrorCode: code}
 	}
 	for i, s := range r.Sources {
 		if s.Source == "native:zai" {
