@@ -63,13 +63,13 @@ final class ShellLayoutTests: XCTestCase {
     }
     /// G3-39: the menu bar is excluded from `usable` once, and a step is taken when its root really fits.
     func testG3_39ProfileFollowsTheRealFitOnLaptopScreens() throws {
-        // 13-inch Air without a notch at its default size: 876 pt usable, the full canvas needs 939 + 10. D51: scaled full.
+        // 13-inch Air without a notch at its default size: 876 pt usable, the full canvas needs 951 + 10. D51: scaled full.
         XCTAssertEqual(try placed(width: 1440, height: 900, bar: 24).profile, .full)
         // The same Air at "More Space".
         XCTAssertEqual(try placed(width: 1680, height: 1050, bar: 24).profile, .full)
         // 13-inch notched Air: 919 pt usable, 909 under the 10 pt gap (CKP-SHELL-33).
         let notched = try placed(width: 1470, height: 956, bar: 37, size: .percent100)
-        XCTAssertEqual(notched.profile, .full); XCTAssertEqual(notched.scale, 909 / 939, accuracy: 1e-9)
+        XCTAssertEqual(notched.profile, .full); XCTAssertEqual(notched.scale, 909 / 951, accuracy: 1e-9)
         XCTAssertEqual(notched.frame.height, 909, accuracy: 1e-9); XCTAssertEqual(notched.frame.minY, 0, accuracy: 1e-9)
         XCTAssertEqual(try placed(width: 1470, height: 956, bar: 37, macDock: 70).profile, .full)
     }
@@ -78,12 +78,12 @@ final class ShellLayoutTests: XCTestCase {
     /// 70 pt at its default size. Each case also states what 100 % would fit to.
     func testD51EveryAirShowsTheFullCockpitWithItsFlames() throws {
         let cases: [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = [
-            // width, height, menu bar, Dock, default scale, largest fit = (usable - 10) / (905 root + 34 flame reserve).
+            // width, height, menu bar, Dock, default scale, largest fit = (usable - 10) / (905 root + 46 flame reserve).
             // CKP-SHELL-33's 10 pt gap leaves the 13-inch Air with the Dock 796 pt, just under 85 % (798).
-            (1440, 900, 24, 0, 0.85, 866 / 939), (1440, 900, 24, 70, 796 / 939, 796 / 939),
-            (1470, 956, 37, 0, 0.85, 909 / 939), (1470, 956, 37, 70, 0.85, 839 / 939),
+            (1440, 900, 24, 0, 0.85, 866 / 951), (1440, 900, 24, 70, 796 / 951, 796 / 951),
+            (1470, 956, 37, 0, 0.85, 909 / 951), (1470, 956, 37, 70, 0.85, 839 / 951),
             // The largest Dock (128 pt tiles, about 140 pt) on the smallest Air is still full, below 85 %.
-            (1440, 900, 24, 140, 726 / 939, 726 / 939),
+            (1440, 900, 24, 140, 726 / 951, 726 / 951),
         ]
         for (width, height, bar, dock, expected, largest) in cases {
             XCTAssertEqual(try placed(width: width, height: height, bar: bar, macDock: dock, size: .percent100).scale, largest, accuracy: 1e-9)
@@ -96,7 +96,7 @@ final class ShellLayoutTests: XCTestCase {
             assertHoldsThePage(value, label)
             XCTAssertEqual(value.frame.maxY, height - bar - 10, accuracy: 1e-9, label)
             XCTAssertGreaterThanOrEqual(value.frame.minY, dock - 1e-9, label)
-            XCTAssertEqual(value.pageSize, CGSize(width: 636, height: 939), label)
+            XCTAssertEqual(value.pageSize, CGSize(width: 636, height: 951), label)
         }
     }
     /// D51: closing the shutter keeps the open root's scale, so the strip and canopy never jump in size.
@@ -139,8 +139,8 @@ final class ShellLayoutTests: XCTestCase {
         let floor = try fit(710)
         XCTAssertEqual(floor.profile, .compact); XCTAssertEqual(floor.rootHeight, 635); XCTAssertEqual(floor.scale, 0.85)
         let lowest = try fit(711)
-        // The tier is judged as before (705 / 939 >= 75 %); CKP-SHELL-33's 10 pt gap then comes out of the scale (701 / 939).
-        XCTAssertEqual(lowest.profile, .full); XCTAssertEqual(lowest.scale, 701 / 939, accuracy: 1e-9)
+        // The tier is judged as before (705 / 951 >= 75 %); CKP-SHELL-33's 10 pt gap then comes out of the scale (701 / 951).
+        XCTAssertEqual(lowest.profile, .full); XCTAssertEqual(lowest.scale, 701 / 951, accuracy: 1e-9)
     }
     /// D51/D60 Settings "Cockpit size" 80 / 85 (default) / 90 / 100 %: drawn at that size when it fits, otherwise
     /// smaller to fit the screen.
@@ -158,7 +158,7 @@ final class ShellLayoutTests: XCTestCase {
         }
         for size in [CockpitSize.percent85, .percent90, .percent100] {
             let value = try placed(width: 1440, height: 900, bar: 24, macDock: 70, size: size)
-            XCTAssertTrue(value.sizeFellBack); XCTAssertEqual(value.scale, 796 / 939, accuracy: 1e-9); XCTAssertEqual(value.profile, .full)
+            XCTAssertTrue(value.sizeFellBack); XCTAssertEqual(value.scale, 796 / 951, accuracy: 1e-9); XCTAssertEqual(value.profile, .full)
         }
     }
     /// D60 + #713 review: placement uses the final scale (the 85 % default, not only the fit-to-screen scale),
@@ -186,7 +186,7 @@ final class ShellLayoutTests: XCTestCase {
         }
         // Real Air screens: Auto 85 %, still shrinking to fit when the Dock is at the bottom on the 13-inch.
         XCTAssertEqual(try placed(width: 1470, height: 956, bar: 37, macDock: 70).scale, 0.85)
-        XCTAssertEqual(try placed(width: 1440, height: 900, bar: 24, macDock: 140).scale, 726 / 939, accuracy: 1e-9)
+        XCTAssertEqual(try placed(width: 1440, height: 900, bar: 24, macDock: 140).scale, 726 / 951, accuracy: 1e-9)
         // The screen's full width decides, not the width left by a side Dock.
         let side = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 80, y: 0, width: 1648, height: 1093), anchor: .init(x: 1200, y: 1093, width: 28, height: 24),
                                                         shutterClosed: false, screenWidth: 1728))
@@ -224,7 +224,7 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertTrue(value.shutterClosed); XCTAssertTrue(value.forcedClosed)
         XCTAssertEqual(value.rootHeight, 609)
         XCTAssertLessThan(value.scale, 1)
-        XCTAssertEqual(value.frame.width / 636, value.canvasHeight / 669, accuracy: 0.002, "uniform, up to the whole-point rounding")
+        XCTAssertEqual(value.frame.width / 636, value.canvasHeight / 681, accuracy: 0.002, "uniform, up to the whole-point rounding")
         XCTAssertLessThanOrEqual(value.frame.height, 494, "the closed window fits the room")
         assertHoldsThePage(value, "short and narrow")
         XCTAssertGreaterThanOrEqual(value.frame.minY, 50)

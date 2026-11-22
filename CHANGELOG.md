@@ -10,6 +10,8 @@ These ship with the next CLI release; its pin PR gives them a version heading.
 
 - The cockpit's launch rack now always stays behind the cockpit, also while it detaches, flies back or opens and closes; before, a detaching or returning cockpit had the rack drawn over its canopy. With the menu bar icon hidden or squeezed off, the attached cockpit now hangs from the menu bar just right of the notch (or the same place on a display without one), with its rack, instead of opening at the top-right corner without one.
 
+- The nozzle flame is now a bold, full-width exhaust (owner pick D381 v4-1): the base reserve under the hull grows from 34 to 46 px so the whole plume shows.
+
 ## CLI v0.5.70 (2026-11-22)
 
 - The cockpit now hangs the same rocket nozzle under every plugin column (Calendar, Resources) as under a subscription column. A plugin nozzle stays dark at rest and lights with the whole row on landing.
