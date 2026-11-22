@@ -100,9 +100,13 @@ public enum ResourceDockBridge {
     private let language: () -> ResourceLanguage
     private let refresh: () -> Void
     private let refreshCard: () -> Void
+    /// G3-161: repaints only the Resources ring; false = it could not, run the full `refresh`.
+    private let refreshRing: (DockInstrumentInput) -> Bool
     public init(sampler: ResourceSampler, provider: ResourceDockContentProvider, language: @escaping () -> ResourceLanguage,
-                refreshCard: @escaping () -> Void = {}, refresh: @escaping () -> Void) {
+                refreshCard: @escaping () -> Void = {}, refreshRing: @escaping (DockInstrumentInput) -> Bool = { _ in false },
+                refresh: @escaping () -> Void) {
         self.sampler = sampler; self.provider = provider; self.language = language; self.refresh = refresh; self.refreshCard = refreshCard
+        self.refreshRing = refreshRing
         sampler.onRedraw = { [weak self] face in self?.redraw(face) }
         sampler.onCardChange = { [weak self] in self?.cardChanged() }
     }
@@ -125,13 +129,34 @@ public enum ResourceDockBridge {
     /// redraws with the latest ring. A redraw in the gap painted the plugin ring alone and the subscription rings
     /// vanished for a moment.
     private var baseAdmitted: Bool { provider.baseAdmitted?() ?? true }
+    /// What the ring shows: the rounded numbers and tones. Two faces with the same key look the same.
+    private struct RingKey: Equatable {
+        let shown: ResourceShown, memoryTone: ResourceTone, cpuTone: ResourceTone
+        let memory: Int, cached: Int, cpu: Int, animates: Bool, language: ResourceLanguage
+        init(_ face: ResourceFace, _ language: ResourceLanguage) {
+            shown = face.shown; memoryTone = face.levels.memory; cpuTone = face.levels.cpu; animates = face.animates; self.language = language
+            memory = Int((face.memoryUsed * 100).rounded()); cached = Int((face.memoryCached * 100).rounded()); cpu = Int((face.cpu * 100).rounded())
+        }
+    }
+    private var drawnKey: RingKey?
+    /// G3-161: a sample whose displayed numbers and tones equal the drawn ones repaints nothing (the open card still
+    /// follows through `onCardChange`). A changed one repaints the ring alone; the full Dock pass is the fallback.
     private func redraw(_ face: ResourceFace) {
-        provider.resourceInput = ResourceDockBridge.input(face: face, card: card(face), language: language())
-        if baseAdmitted { refresh() }
+        let lang = language()
+        let key = RingKey(face, lang)
+        if key == drawnKey, provider.resourceInput != nil { return }
+        guard let input = ResourceDockBridge.input(face: face, card: card(face), language: lang) else {
+            drawnKey = nil; provider.resourceInput = nil
+            if baseAdmitted { refresh() }
+            return
+        }
+        drawnKey = key; provider.resourceInput = input
+        if baseAdmitted, !refreshRing(input) { refresh() }
     }
     /// Plugin state, cockpit column and widget visibility; off removes the ring at once.
     public func setVisibility(_ v: ResourceVisibility) {
         sampler.setVisibility(v)
+        if !v.pluginEnabled { drawnKey = nil }
         if !v.pluginEnabled, provider.resourceInput != nil { provider.resourceInput = nil; if baseAdmitted { refresh() } }
     }
 }

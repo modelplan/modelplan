@@ -3,6 +3,7 @@
 // Publication and session facts come from admitted cockpit details; unknown
 // inputs stay unavailable, with synthetic values confined to test fixtures.
 import {ht} from './host-text.js';
+import {accountLabel,footerState,updatedCopy,agoKey} from './account-line.js';
 import {unavailablePrototypeDetailsFixture,type PrototypeDetailsFixture} from './prototype-details-fixture-adapter.js';
 import {effectiveRedBelow} from './threshold.js';
 import {beginFaderPress,endFaderPress} from './fader-press.js';
@@ -34,7 +35,7 @@ type Locale='en'|'zh-CN';
 const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
 const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,key:'host.pageOverview'}),Object.freeze({module:plans,key:'host.pageSubscription'}),Object.freeze({module:tune,key:'host.pageEffort'}),Object.freeze({module:where,key:'host.pageBreakdown'})]);
 export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
-export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,appRange?:()=>CockpitRange){
+export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange){
  const scale=root.querySelector<HTMLElement>('.fd-scale')!,channels=root.querySelector<HTMLElement>('.fd-chs')!,mfd=root.querySelector<HTMLElement>('.dk-mfd')!;
  let details=fixture;const fixturePublication=fixture.publication!==null;fixture=unavailablePrototypeDetailsFixture();
  let publicationKey:string|null=null;
@@ -307,6 +308,20 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   for(const e of page.querySelectorAll<SVGElement|HTMLElement>('svg.ov-heat[style],.hm-since[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const decl of css.split(';')){const at=decl.indexOf(':');if(at<0)continue;const name=decl.slice(0,at).trim(),value=decl.slice(at+1).trim();if(/^(left|top|--hv)$/.test(name)&&/^(-?\d+(\.\d+)?px|#[0-9a-f]{3,8})$/i.test(value))e.style.setProperty(name,value);}}
   // Opened from the HUD: the same return rule as the alerts view.
   if(returnPage!==null){const back=node('button','mfd-back',t('mfd.back',{p:t(pages[returnPage]!.module.title)}));back.type='button';back.dataset.mfd='back';page.prepend(back);}
+  // D376 (CKP-ENG-27/55): the update time and refresh are the overview's bottom line, in every overview state. 全部 shows the
+  // oldest reading and rereads everything; a selected subscription shows its own and rereads only it. Reads that keep
+  // failing turn the line amber ("12 分钟前 · 重试", the full sentence on hover). The existing note sits on the same line.
+  if(selected===0&&!d.empty){
+   const own=selectedId?d.members[Number(selectedId.slice('member'.length))]:undefined,shown=own?[own]:d.members,state=footerState(shown.map(m=>m.account));
+   const foot=node('div','ov-foot'),note=page.querySelector('.ov-note');if(note)foot.append(note);
+   const line=node('div','eng-upd'),copy=state.at!==null?updatedCopy(state.at,d.now):null;line.dataset.failing=String(state.failing);
+   if(copy){const text=node('span','eng-upd-t',state.failing?ht(locale,agoKey(copy.key),{n:copy.n}):ht(locale,copy.key,{n:copy.n}));line.append(text);}
+   if(copy||state.failing){line.append(node('i','eng-upd-sep',' · '));}
+   const button=node('button','eng-upd-r',ht(locale,state.failing?'host.retry':'host.refresh'));button.type='button';button.dataset.refresh=own?.key??'all';
+   button.setAttribute('aria-label',own?ht(locale,'host.refreshOne',{name:accountLabel(locale==='en'?own.row.name.en:own.row.name.zh,own.account,locale)}):ht(locale,'host.refreshAll'));
+   if(state.failing)line.dataset.tip=[copy?ht(locale,copy.key,{n:copy.n}):'',ht(locale,'host.noNewData'),ht(locale,'host.retryTip')].filter(Boolean).join(' · ');
+   line.append(button);foot.append(line);page.append(foot);
+  }
   // The overview draws its own totals row, "since" label and empty state (WP-12); the deck adds nothing to them.
   // D-D: the totals are this device's records; the totals row carries that as its hover note (it has no room for a label).
   if(selected===0&&d.daily.length){const top=page.querySelector<HTMLElement>('.ov-top');if(top)top.dataset.tip=ht(locale,'host.onThisMac');}
@@ -342,7 +357,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    // The study's 30 daily credit bars need a daily credits history no reader reports yet: the total stays unknown, never a zero or a drawn bar.
    const daily=node('div','cr-l sub cr-30-unknown');daily.append(node('span','lbl'),node('em','',t('mfd.credits30',{n:'--'})));page.append(daily);}}
   footer.replaceChildren();const raw=d.empty?[]:(modules[selected].optionKeys?.(ui,d)??[]);for(let i=0;i<3;i++){const item=raw[i] as {id:string;items?:{value:string|number;text:string;on:boolean}[];a?:{value:string|number;text:string;on:boolean};b?:{value:string|number;text:string;on:boolean}}|null|undefined;if(!item){const e=node('span','ok soft off');e.dataset.mat='part';e.setAttribute('aria-hidden','true');footer.append(e);continue;}const b=node('button','ok soft'),label=node('span','ok-l'),choices=item.items??[item.a!,item.b!];b.type='button';b.dataset.mfd='opt:'+item.id;b.dataset.opt=item.id;b.dataset.mat='part';b.setAttribute('aria-label',choices.map(x=>x.text).join(' | ')+': '+(choices.find(x=>x.on)?.text??''));choices.forEach((x,j)=>{if(j){const sep=node('i','ok-sep');sep.setAttribute('aria-hidden','true');label.append(sep);}const choice=node('b',x.on?'on':'',x.text);choice.dataset.choice=String(x.value);label.append(choice);});b.append(label);b.onclick=e=>{if(!e.isTrusted)return;const v=(e.target as HTMLElement).closest<HTMLElement>('[data-choice]')?.dataset.choice;if(item.id==='where')uiWhere=v??(uiWhere==='time'?'proj':'time');else if(item.id==='models')uiModels=v==='chart'?'chart':v==='list'?'list':uiModels==='chart'?'list':'chart';else if(item.id==='range'){/* CKP-SHELL-50: the app owns the range; the key asks for it (onRange shows it at once). */const next=isCockpitRange(v)?v:nextCockpitRange(rangeNow());if(onRange?onRange(next):true)uiRangeLocal=next;}else if(item.id==='chart')uiChart=v==='grid'?'grid':'bars';else if(item.id==='stack')uiStack=v?v==='stack':!uiStack;else if(item.id==='tab')uiSubTab=v??(uiSubTab==='hist'?'now':'hist');else if(item.id==='cycle'){const other=choices.find(x=>!x.on);uiCycle=v??(other?String(other.value):uiCycle);}paint();};footer.append(b);}
-  page.onclick=e=>{const target=e.target as HTMLElement;if(target.closest('a')){e.preventDefault();return;}if(e.isTrusted&&target.closest('[data-mfd="back"]')){closeTune();return;}if(e.isTrusted&&target.closest('[data-mfd="alerts"]')){alertsView={from:'mfd'};paint();return;}const row=target.closest<HTMLElement>('[data-mfd^="model:"]');if(e.isTrusted&&row?.dataset.model){listPick=row.dataset.model;selectedModel=listPick;paint();return;}const b=target.closest<HTMLElement>('[data-mfd^="scope:"]');if(!e.isTrusted||!b)return;const index=Number((b.dataset.mfd??'').slice('scope:member'.length));const m=d.members[index];if(m&&onScope?.(m.key)){setScope(m.key);paint();}};
+  page.onclick=e=>{const target=e.target as HTMLElement;if(target.closest('a')){e.preventDefault();return;}{const refresh=target.closest<HTMLButtonElement>('button[data-refresh]');if(refresh){if(e.isTrusted)onRefresh(refresh.dataset.refresh||'all');return;}}if(e.isTrusted&&target.closest('[data-mfd="back"]')){closeTune();return;}if(e.isTrusted&&target.closest('[data-mfd="alerts"]')){alertsView={from:'mfd'};paint();return;}const row=target.closest<HTMLElement>('[data-mfd^="model:"]');if(e.isTrusted&&row?.dataset.model){listPick=row.dataset.model;selectedModel=listPick;paint();return;}const b=target.closest<HTMLElement>('[data-mfd^="scope:"]');if(!e.isTrusted||!b)return;const index=Number((b.dataset.mfd??'').slice('scope:member'.length));const m=d.members[index];if(m&&onScope?.(m.key)){setScope(m.key);paint();}};
  }
  // The comparison card on the screen and its own bottom keys (mfd.js screen/renderMfd with VIEWS.compare).
  function paintCompare(d:ReturnType<typeof publicData>,ui:Record<string,unknown>){
