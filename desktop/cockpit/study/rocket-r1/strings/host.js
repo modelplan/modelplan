@@ -106,6 +106,12 @@ register('host', {
   updatedMin: ['line', '{n} 分钟前更新', 'Updated {n} min ago'],
   updatedHour: ['line', '{n} 小时前更新', 'Updated {n} h ago'],
   updatedDay: ['line', '{n} 天前更新', 'Updated {n} d ago'],
+  agoNow: ['line', '刚刚', 'just now'],
+  agoMin: ['line', '{n} 分钟前', '{n} min ago'],
+  agoHour: ['line', '{n} 小时前', '{n} h ago'],
+  agoDay: ['line', '{n} 天前', '{n} d ago'],
+  retryTip: ['aria', '点按重试', 'tap to retry'],
+  staleDot: ['aria', '有订阅读不到新数据', 'A subscription has no new data'],
   refresh: ['silk', '刷新', 'Refresh'],
   noNewData: ['line', '读不到新数据', 'no new data'], // CKP-ENG-55: reads keep failing; values are held
   retry: ['silk', '重试', 'Retry'],

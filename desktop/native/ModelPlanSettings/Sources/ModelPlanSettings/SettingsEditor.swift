@@ -139,9 +139,14 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     /// G3-71: the hidden-icon notice was dismissed; it stays dismissed until the notice clears (situation changes).
     public private(set) var statusItemNoticeDismissed = false
     public func dismissStatusItemNotice() { statusItemNoticeDismissed = true; notifyChange() }
+    /// True only while `update(context:)` tells the observers (an engine delivery, not a user edit). A hidden Settings
+    /// window may hold such a refresh until it is shown (G3-161).
+    public private(set) var isDeliveringContextUpdate = false
     public func update(context: SettingsPageContext) {
         self.context = context
         if context.statusItemNotice == nil { statusItemNoticeDismissed = false }
+        isDeliveringContextUpdate = true
+        defer { isDeliveringContextUpdate = false }
         notifyChange()
     }
     /// The host's live read of the macOS login item. An explicit login choice is decided against it,

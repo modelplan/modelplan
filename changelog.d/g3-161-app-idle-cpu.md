@@ -1,0 +1,1 @@
+The app uses less CPU while it sits idle. The Resources ring on the widget now repaints on its own instead of rebuilding the whole quota widget on every sample, and a Settings window that is closed no longer rebuilds itself (or its Plugins section) on every engine update.
