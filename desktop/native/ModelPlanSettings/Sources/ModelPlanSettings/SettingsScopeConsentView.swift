@@ -36,6 +36,10 @@ import ModelPlanWire
     private var observer: UUID?
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
+    /// G3-155: the ZCode opt-in checkbox wraps its promise inside the card column; layout() pins its height to
+    /// the wrapped cell height (an NSButton cell does not re-derive its height from a pinned width).
+    private var wrappingButtons: [NSButton] = []
+    private var wrappingButtonHeights: [ObjectIdentifier: NSLayoutConstraint] = [:]
     private var keySection: ReaderKeySection?
     /// D87 slice 6/7: the Subscriptions rows. Nil context keeps the plain per-tool list (first run, direct drives).
     private var rowsContext: SubscriptionRowsContext?
@@ -114,6 +118,19 @@ import ModelPlanWire
             let width = label.bounds.width
             if width > 0, abs(label.preferredMaxLayoutWidth - width) > 0.5 {
                 label.preferredMaxLayoutWidth = width; label.invalidateIntrinsicContentSize()
+            }
+        }
+        // Wrapping checkbox cells settle the same way: while the pinned height disagrees with the wrapped
+        // cell height at the current width, move the height constraint (equal → no further invalidation).
+        for button in wrappingButtons {
+            let width = button.bounds.width
+            guard width > 0, let cell = button.cell else { continue }
+            let wrapped = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)).height
+            if let pinned = wrappingButtonHeights[ObjectIdentifier(button)] {
+                if abs(pinned.constant - wrapped) > 0.5 { pinned.constant = wrapped }
+            } else {
+                let pinned = button.heightAnchor.constraint(equalToConstant: wrapped)
+                pinned.isActive = true; wrappingButtonHeights[ObjectIdentifier(button)] = pinned
             }
         }
     }
@@ -346,9 +363,15 @@ import ModelPlanWire
                 self.controller.chooseFirstRunOptIn(optIn.scope, chosen: !self.controller.isFirstRunOptInChosen(optIn.scope))
             }
             optInBox.setButtonType(.switch); optInBox.state = controller.isFirstRunOptInChosen(optIn.scope) ? .on : .off
+            // The promise wraps inside the card column like the lines above: one title-wide line drags the
+            // column and the wrapped status line above it never settles its height (the G345 "cut off").
+            optInBox.translatesAutoresizingMaskIntoConstraints = false
             optInBox.font = .systemFont(ofSize: 12); optInBox.lineBreakMode = .byWordWrapping
+            optInBox.cell?.truncatesLastLine = false; optInBox.cell?.wraps = true
+            optInBox.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            optInBox.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
             optInBox.setAccessibilityLabel(Self.zcodeOptInTitle.value(language))
-            column.addArrangedSubview(optInBox)
+            column.addArrangedSubview(optInBox); wrappingButtons.append(optInBox)
         }
         let right = NSStackView(); right.orientation = .vertical; right.alignment = .trailing; right.spacing = 2
         right.translatesAutoresizingMaskIntoConstraints = false
@@ -598,6 +621,7 @@ import ModelPlanWire
         rowsView?.retire(); rowsView = nil
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
         wrappingLabels = []
+        wrappingButtons = []; wrappingButtonHeights = [:]
         if let keySection, controller.rowsRevision != keyStatusRowsRevision {
             keyStatusRowsRevision = controller.rowsRevision; keySection.refreshStatus()
         }
