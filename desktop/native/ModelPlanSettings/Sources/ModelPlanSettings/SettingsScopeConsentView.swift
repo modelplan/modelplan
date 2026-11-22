@@ -367,7 +367,7 @@ import ModelPlanWire
             // column and the wrapped status line above it never settles its height (the G345 "cut off").
             optInBox.translatesAutoresizingMaskIntoConstraints = false
             optInBox.font = .systemFont(ofSize: 12); optInBox.lineBreakMode = .byWordWrapping
-            optInBox.cell?.truncatesLastLine = false; optInBox.cell?.wraps = true
+            optInBox.cell?.truncatesLastVisibleLine = false; optInBox.cell?.wraps = true
             optInBox.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             optInBox.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
             optInBox.setAccessibilityLabel(Self.zcodeOptInTitle.value(language))
