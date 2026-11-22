@@ -6,7 +6,7 @@ import {renderVisualDeck,visualFixture} from '../visual-fixture.mjs';
 for(const locale of ['en','zh-CN'])test(`visual fixture populates the synthetic last-seen strip and test-only faders (${locale})`,async({page})=>{
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance:{...appearance,locale},shell}))).toBe(true);
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,range:'today'}}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:sample()}))).toBe(true);
  // sample() is a client without details; the normal entry's faders are in publication-faders.spec.
