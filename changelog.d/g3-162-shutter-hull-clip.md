@@ -1,0 +1,1 @@
+Cockpit: closing or opening the porthole no longer shows the canopy half retracted outside the hull; the glass is clipped to the hull silhouette for the whole motion (the hull's top edge comes down over it, and rises off it on open), both ends unchanged, Reduce Motion unchanged.

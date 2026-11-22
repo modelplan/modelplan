@@ -227,7 +227,11 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 /* G3-108: the porthole closes as the glass sliding down into the hull top (and rises out of it on open), clipped at
    the hull top so it never covers the strip; 250 ms (SHUTTER_MS), none under Reduce Motion (the page then draws the
    new shell at once). */
-@keyframes cockpit-shutter{from{transform:translateY(0);clip-path:inset(-24px -32px 0 -32px)}to{transform:translateY(100%);clip-path:inset(-24px -32px 100% -32px)}}
+/* G3-162 (owner, internal build 2): sliding the glass down left its curved top and frame standing above the strip, outside
+   the hull, half retracted. The glass now stays in its place and the hull's top edge comes down over it (opening, rises
+   off it): the clip is the hull silhouette (inside the row, nothing above it, no side overhang) from the first frame, so no
+   part of the canopy is drawn outside the hull while it moves. 0 % is the open state's own clip, so both ends are unchanged. */
+@keyframes cockpit-shutter{0%{clip-path:inset(-24px -32px 0 -32px)}2%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(100% 0 0 0)}}
 #cockpit.ck[data-shutter-motion="closing"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) both}
 #cockpit.ck[data-shutter-motion="opening"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) reverse both}
 html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{animation:none}
