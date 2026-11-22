@@ -132,7 +132,8 @@ import XCTest
       XCTAssertEqual(moved.size, start.size, "a drag never resizes")
     }
     let back = page.dragFrame(start: start, from: from, to: CGPoint(x: 300, y: 300))
-    assertInside(back, a.visibleFrame, "and back onto A")
+    // G3-159: dragged far down, the hull reaches A's bottom edge; the transparent reserve may hang below it.
+    assertInside(back.offsetBy(dx: 0, dy: max(0, a.visibleFrame.minY - back.minY)), a.visibleFrame, "and back onto A")
   }
 
   /// The normal drag entry: the title strip's phases move the real window onto B and remember the origin there.
@@ -187,7 +188,8 @@ import XCTest
     page.titleDrag(.moved, point: CGPoint(x: 600, y: 400))
     page.titleDrag(.ended, point: CGPoint(x: 600, y: 400))
     XCTAssertEqual(window.frame.size, size, "and back on the short display: the same size")
-    assertInside(window.frame, short.visibleFrame, "the whole cockpit is on the short display")
+    // G3-159: the hull is what stays inside the short display; the transparent reserve may hang below its edge.
+    assertInside(window.frame.offsetBy(dx: 0, dy: max(0, short.visibleFrame.minY - window.frame.minY)), short.visibleFrame, "the whole cockpit is on the short display")
     XCTAssertEqual(try XCTUnwrap(page.placement()).frame.size, size)
     XCTAssertEqual(session.origin(for: page.arrangement), window.frame.origin, "the place is remembered")
   }
