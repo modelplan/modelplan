@@ -277,6 +277,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const d=publicData(),selectedId=scope==='all'?null:d.ids.get(scope)??null,subId=selectedId??subjectOf(d,{scope:null})?.id??null,ui={page:modules[selected].id,view:null,days:rangeNow()==='today'?24:rangeNow()==='7d'?7:30,range:rangeNow(),stack:uiStack,chart:uiChart,where:uiWhere,models:uiModels,time:rangeNow()==='today'?'today':'7d',subTab:uiSubTab,subDays:rangeNow()==='30d'?30:7,cycle:uiCycle,older:false,scope:selectedId,selModel:listPick??tuneModel,trials:{},now:d.now,lang:locale,fill:{...(selected===0&&uiChart==='grid'&&gridFill?{ov:gridFill}:{}),...(pageFill?{page:pageFill}:{})},redAt:redBelow()};
   root.querySelector('[data-caution]')?.classList.toggle('mfd-src',alertsView?.from==='caution');
   bar.classList.remove('dark');footer.className='mfd-ok';footer.onclick=null;
+  // G3-171: before the first reply there is nothing to show yet; say so (busy) on every view the page carries, so a restored alerts list does not keep a stale busy flag.
+  if(data)page.removeAttribute('aria-busy');else page.setAttribute('aria-busy','true');
   if(compare&&!alertsView&&paintCompare(d,ui))return;
   if(alertsView){
    // CKP-MFD-55/56 (WP-11): the list view (mfd-pages/alerts.js). A row selects its subscription and returns to the
@@ -295,8 +297,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    return;
   }
   page.className='mfd-page pg-'+modules[selected].id;
-  // G3-171: before the first reply there is nothing to show yet; say so (busy) instead of the empty-subscriptions text.
-  if(data)page.removeAttribute('aria-busy');else page.setAttribute('aria-busy','true');
+  // G3-171: before the first reply there is nothing to show yet; say so (loading) instead of the empty-subscriptions text.
   page.innerHTML=!data?`<p class="mp-empty mp-loading" role="status">${t('eng.loading')}</p>`:d.empty?`<p class="mp-empty">${t('eng.empty')}</p>`:modules[selected].render(d,ui);
   // The study's measured chart area (mfd.js): the heatmap takes the largest cells its area allows, so it is drawn at the
   // measured size, again once if that size changed.
