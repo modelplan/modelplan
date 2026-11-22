@@ -285,7 +285,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let detached = shellSession.detached
     if let window {
       let level = Self.level(detached: detached), behavior = Self.collectionBehavior(detached: detached)
-      if window.level != level { window.level = level }
+      // G3-156: the rack follows the cockpit's level at once, so it is never above it for a frame.
+      if window.level != level { window.level = level; refreshRack() }
       if window.collectionBehavior != behavior { window.collectionBehavior = behavior }
     }
     // A widget press left over from before (its release never reached us) does not decide anything after this.
@@ -658,6 +659,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationRack: (ext: CGFloat, target: CGFloat, panel: CGRect?, ignited: Bool, moving: Bool) {
       (rackExtension, rackTarget, rack.panel?.isVisible == true ? rack.panel?.frame : nil, ignited, motion != nil)
     }
+    /// G3-156: whether the rack is behind the cockpit window right now (nil while the rack is not on screen).
+    public var verificationRackBehindCockpit: Bool? { window.flatMap { rack.isBehind($0) } }
+    /// G3-156: called after every rack placement (each 60 Hz frame of an open, close, detach or put back).
+    public var verificationRackDrawn: (() -> Void)?
     /// The rack clipping rectangle in its flipped view coordinates.
     public var verificationRackMask: CGRect? { (rack.panel?.contentView as? CockpitRackView)?.maskedOut }
     /// Every ignition change sent to the page, in order.
@@ -1775,7 +1780,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       ? CockpitScreenSelection.openScreen(point: openPoint(), anchor: requested, screens: displays)
       : CockpitScreenSelection.attachedScreen(anchor: requested, screens: displays)
     guard let screen = remembered ?? asked else { return nil }
-    let icon = requested.flatMap { screen.frame.intersects($0) ? $0 : nil } ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
+    // D378: no visible status item (the app's anchor is nil when it is hidden, not visible, occluded or off every
+    // screen): the menu bar's edge right of the notch. An icon on another display: that display's top right (G3-46).
+    guard let requested else { return (screen.visibleFrame, CockpitShellLayout.menuBarEdgeAnchor(screen: screen)) }
+    let icon = screen.frame.intersects(requested) ? requested : CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
   /// Where Put back takes the cockpit: the attached fit on the display an attached open uses. The catch zone, the
@@ -1792,9 +1800,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     return (fit, usable, icon)
   }
   /// CKP-SHELL-33: the menu bar icon the rack hangs from, only while it is a real icon on the attached cockpit's display.
+  /// D378: with no visible icon, the menu bar's edge right of the notch the attached cockpit anchors to.
   func rackIcon() -> CGRect? {
-    guard let (_, _, icon) = attachedFit(), let requested = anchor(), icon == requested, icon.width > 0, icon.height > 0,
+    guard let (_, usable, icon) = attachedFit(), icon.width > 0, icon.height > 0,
           [icon.minX, icon.minY, icon.width, icon.height].allSatisfy(\.isFinite) else { return nil }
+    if let requested = anchor() { return icon == requested ? icon : nil }
+    guard let screen = screens().first(where: { $0.visibleFrame == usable }),
+          icon == CockpitShellLayout.menuBarEdgeAnchor(screen: screen) else { return nil }
     return icon
   }
   /// G3-132 (owner, 11-18): one cockpit size on every display, from the smallest connected display. It depends only on
@@ -2423,6 +2435,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // A prewarmed (never shown) page has no rack on screen.
     rack.update(icon: rackExtension > 0 && shown ? rackIcon() : nil, cockpit: window, hidden: hidden, extended: rackExtension,
                 moving: rackExtension != rackTarget || motion != nil)
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationRackDrawn?()
+    #endif
   }
   /// The nozzles: the page's amber glow on every base bell (D178/D186). Not under Reduce Motion.
   private func ignite(_ on: Bool) {
