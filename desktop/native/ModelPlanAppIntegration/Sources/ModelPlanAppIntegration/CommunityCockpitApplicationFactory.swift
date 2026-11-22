@@ -161,6 +161,12 @@ import ModelPlanResources
             bridge.showCockpit = { [weak application] in application?.showConsole() }
             guard let application else { return }
             application.cockpitPlugins = bridge
+            // D371 B4e: a subscription card's footer row ("在驾驶舱查看 <name> ›") opens the cockpit on that subscription:
+            // select its scope, then show the cockpit (an already open one only switches).
+            application.composition.dock.subscriptionCockpitRequested = { [weak owner, weak application] dockID in
+                owner?.coordinator?.selectScope(dockID)
+                application?.showConsole()
+            }
             if installsResources {
                 #if MODELPLAN_TEST_ONLY_SPI
                 let reader: ResourceReader = resourceReader?() ?? verificationResourceReader?() ?? SystemResourceReader()

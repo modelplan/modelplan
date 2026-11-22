@@ -18,7 +18,7 @@ const FUEL:Readonly<Record<string,string>>={ok:'#5ad9ba',mid:'#eac17b',low:'#ef4
 const RANK:Readonly<Record<string,number>>={ok:1,mid:2,low:3};
 const COLOUR=/^#[0-9a-f]{6}$/i;
 
-export type BaseLight={key:string;col:string;x:number;w:number;cw:number;colour:string;fuel:string;state:'work'|'stale'|'idle';rate:number|null;len:number};
+export type BaseLight={key:string;col:string;x:number;w:number;cw:number;colour:string;fuel:string;state:'work'|'stale'|'idle'|'plugin';rate:number|null;len:number;name?:string};
 
 // Glow sheet length: 30 t/s or less -> 12, 120 t/s or more -> 24, no rate -> the middle (study flameLen).
 export function flameLength(rate:number|null):number {
@@ -55,6 +55,12 @@ export function baseLights(root:HTMLElement,data:WireCockpitData):{lights:BaseLi
   lights.push({key:member,col:id,x:(r.left+r.width/2-box.left)*k,w:Math.max(8,cw-2*INSET),cw,colour:COLOUR.test(vendor)?vendor:'#7d868e',
    fuel:level?FUEL[level]:'#7d868e',state,rate:live.rate,len:state==='work'?flameLength(live.rate):0});
  }
+ // D377: a plugin column (Calendar, Resources) hangs the same nozzle. It is never working or stale: dark at rest, lit only by the landing burn with the whole row.
+ for(const column of root.querySelectorAll<HTMLElement>('.ck-eng .eng-cols .ec.pl-col[data-plugin]')){
+  const r=column.getBoundingClientRect();if(!r.width)continue;const cw=r.width*k;
+  lights.push({key:'',col:'',x:(r.left+r.width/2-box.left)*k,w:Math.max(8,cw-2*INSET),cw,colour:'#7d868e',fuel:'#7d868e',state:'plugin',rate:null,len:0,name:column.getAttribute('aria-label')??column.dataset.plugin??''});
+ }
+ lights.sort((a,b)=>a.x-b.x);
  const sockets=[...root.querySelectorAll<HTMLElement>('.ck-eng .eng-cols .ec-bay')].map(e=>{const r=e.getBoundingClientRect();return {x:(r.left+r.width/2-box.left)*k,cw:r.width*k};}).filter(s=>s.cw>0);
  return {lights,sockets};
 }

@@ -6,6 +6,8 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- The cockpit now hangs the same rocket nozzle under every plugin column (Calendar, Resources) as under a subscription column. A plugin nozzle stays dark at rest and lights with the whole row on landing.
+
 ## CLI v0.5.69 (2026-11-21)
 
 - The cockpit calendar now writes subscription names with their colour mark instead of two-letter codes, shows the next reset as a large time, lists two different moments (or one when they are the same), and says "no time-slot rules" when you have none.

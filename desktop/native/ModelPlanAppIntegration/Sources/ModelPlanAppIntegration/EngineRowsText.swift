@@ -24,6 +24,8 @@ enum EngineRowsText {
     static let cockpitMenu = SettingsText("Cockpit…", "驾驶舱…")
     static let cockpitAction = SettingsText("Cockpit", "驾驶舱")
     static let openCockpit = SettingsText("Open cockpit", "打开驾驶舱")
+    /// D371 B4e: the label of every Dock card's footer row (the target's name follows it, in grey).
+    static let viewInCockpit = SettingsText("View in cockpit", "在驾驶舱查看")
     static let readingsTitle = SettingsText("Quota Widget readings", "额度挂件读数")
     static let comingSoon = SettingsText("Coming soon", "即将推出")
     static let quit = SettingsText("Quit ModelPlan", "退出 ModelPlan")
