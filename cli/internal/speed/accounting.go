@@ -68,6 +68,9 @@ type usageFile struct {
 	// Cutoff: the recording-day start under which this file was scanned. A zone change can
 	// make additional responses eligible even when the previous scan already found records.
 	Cutoff time.Time `json:"cutoff,omitempty"`
+	// Earliest retention day represented by this cached scan. Pruning advances it;
+	// a rollback before it must re-read the file even when other records remain.
+	RetentionFrom string `json:"retentionFrom,omitempty"`
 }
 type accountingLedger struct {
 	Version int                  `json:"version"`
@@ -189,6 +192,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 	}
 	floor := LoadCleared(cache).floor(source)
 	start := accountingLiveStart(cache, now)
+	retention := windowFrom(now, 35)
 	changed := false
 	for _, path := range paths {
 		fi, err := os.Stat(path)
@@ -197,7 +201,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		}
 		key := fileKey(path)
 		old, exists := l.Files[key]
-		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Tiered && !old.Pending && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() && old.Cutoff.Equal(start) {
+		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Tiered && !old.Pending && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() && old.Cutoff.Equal(start) && old.RetentionFrom != "" && retention >= old.RetentionFrom {
 			continue
 		}
 		// Sampling 11-22 (1146 A3): a selected file whose responses all predate the retention
@@ -265,7 +269,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 				records = append(records, r)
 			}
 		}
-		next := usageFile{LiveObserved: true, Tiered: true, Pending: pending, Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started, Cutoff: start}
+		next := usageFile{LiveObserved: true, Tiered: true, Pending: pending, Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started, Cutoff: start, RetentionFrom: retention}
 		// Re-reading a pending file changes nothing until the clock passes its response; an
 		// identical entry is not a change, so the ledger is not rewritten meanwhile.
 		if len(records) == 0 {
@@ -299,6 +303,9 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		}
 		if len(records) != len(f.Records) {
 			changed = true
+			if f.LiveObserved && (f.RetentionFrom == "" || retention > f.RetentionFrom) {
+				f.RetentionFrom = retention
+			}
 		}
 		f.Records = records
 		if len(records) == 0 && f.LiveObserved && day(time.Unix(0, f.Modified)) >= windowFrom(now, 35) {

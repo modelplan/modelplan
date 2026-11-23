@@ -240,3 +240,29 @@ func TestSampling1122OldScanReconsideredAfterClockRollback(t *testing.T) {
 		t.Fatal("clock rollback made the response eligible but the old scan hid it")
 	}
 }
+
+// macrev2-1180-1: a partially retained file must be rescanned after a clock rollback.
+func TestSampling1122RetentionRollbackWithRetainedFile(t *testing.T) {
+	utc(t)
+	grantLocalHistory(t)
+	cache := t.TempDir()
+	seedPerf(t, cache, t0.Add(-24*time.Hour))
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	writeLines(t, path,
+		cx(0, "session_meta", `{"id":"synthetic","source":"cli"}`),
+		cx(0, "event_msg", `{"type":"token_count","info":{"total_token_usage":{"output_tokens":100}}}`),
+		cx(7*24*60*60, "event_msg", `{"type":"token_count","info":{"total_token_usage":{"output_tokens":300}}}`),
+	)
+	mtime := t0.Add(7 * 24 * time.Hour)
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	for i, step := range []struct{ day, want int }{{27, 300}, {35, 200}, {27, 300}} {
+		now := t0.Add(time.Duration(step.day) * 24 * time.Hour)
+		observeCx(t, cache, now, path)
+		got := view(t, cache, now).AccountingWindows()["codex"].Last30d.Output
+		if got != int64(step.want) {
+			t.Fatalf("observation %d (day %d): 30-day output = %d, want %d", i+1, step.day, got, step.want)
+		}
+	}
+}
