@@ -579,6 +579,17 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			if _, pasted, err := loadManualKeyChecked(p.Cache, x.Provider); err == nil && pasted && !glmEntryOfPastedKey(p.Cache, e) {
 				ok = false
 			}
+			// The aggregate reading has a consent stamp but no login-generation stamp. The typed
+			// cache binds the good reading to the current ZCode store; do not project an earlier
+			// login's aggregate value after the credential files change.
+			if g, admitted := p.ReaderAccessGrant("zai"); ok && e.Status == "ok" && admitted && g.ConfigSource != nil && g.ConfigSource.Tool == zcodeLoginTool {
+				ctx := productionReaderContext(context.Background(), p, "zai")
+				access, blocked := zaiConfigAdmission(ctx)
+				state := loadZaiConfigState(p.Cache)
+				if blocked != "" || state.Good == nil || state.GoodGeneration != access.LoginGeneration || !typedCaptureAllowed(state.Good.Admission, consent.ScopeZaiAccountUsageSavedLogin, access.CaptureAllowed) {
+					ok = false
+				}
+			}
 		}
 		switch {
 		case x.Blocked == "no-native-reader":

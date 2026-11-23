@@ -633,11 +633,12 @@ func zcodeProviderFileKeyless(path string) bool {
 	if m, ok := zcodeKeylessMemo[path]; ok && m.stamp == stamp {
 		return m.keyless
 	}
-	keyless := false
-	if b, err := zaiConfigFile(path); err == nil {
-		_, key, state, code := zcodeProviderKey(b)
-		keyless = (state != "" && (code == "unsupported_login" || code == "no_key")) || (state == "" && strings.TrimSpace(key) == "")
+	b, err := zaiConfigFile(path)
+	if err != nil {
+		return false // An I/O failure is not a classification; retry on the next pass.
 	}
+	_, key, state, code := zcodeProviderKey(b)
+	keyless := (state != "" && (code == "unsupported_login" || code == "no_key")) || (state == "" && strings.TrimSpace(key) == "")
 	zcodeKeylessMemo[path] = zcodeKeylessEntry{stamp, keyless}
 	return keyless
 }

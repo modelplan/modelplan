@@ -395,9 +395,9 @@ func ReadDeclared(p Paths, now time.Time) Report {
 // ForgetTool deletes only ModelPlan-owned readings while holding the same cache
 // locks as the current readers. Attempt gates/identities are retained so revoke,
 // reconnect and catalogue rollback cannot reset a provider's request budget.
-func ForgetTool(p Paths, tool string) error { return forgetTool(p, tool, true, false, "") }
+func ForgetTool(p Paths, tool string) error { return forgetTool(p, tool, true, false, "", "") }
 
-func forgetTool(p Paths, tool string, history, identity bool, scopeClass string) error {
+func forgetTool(p Paths, tool string, history, identity bool, scopeClass, scope string) error {
 	admission, err := consent.ReaderLockWait()
 	if err != nil {
 		return err
@@ -468,7 +468,7 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 		}
 	}
 	if scopeClass != consent.Bridge && (tool != "claude" || history) {
-		if err := forgetProductionReaderState(p.Cache, tool); err != nil {
+		if err := forgetProductionReaderState(p.Cache, tool, scope); err != nil {
 			return err
 		}
 	}
@@ -489,6 +489,12 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 		names = append(names, "cycles.json", "pace.json", "speed.json", "perf.json", "daily-long.json", "imported.json")
 	}
 	for _, name := range names {
+		if scope == consent.ScopeZaiAccountUsageSavedLogin && name == "native.json" {
+			if err := forgetZCodeLoginNative(p.Cache); err != nil {
+				return err
+			}
+			continue
+		}
 		if scopeClass == consent.Bridge && name == "native.json" || scopeClass == consent.Credential && (name == "native.json" || name == "codexbar.json") {
 			continue
 		}
@@ -497,6 +503,49 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 		}
 	}
 	return nil
+}
+
+// Caller holds the reader and native locks. Drop only ZCode-login captures, preserving other
+// routes and the shared native request deadline. Unstamped legacy entries are removed fail-closed.
+func forgetZCodeLoginNative(cache string) error {
+	path := nativePath(cache)
+	b, status := readBounded(path, 4<<20)
+	if status == "missing" {
+		return nil
+	}
+	var doc map[string]json.RawMessage
+	if status != "" || json.Unmarshal(b, &doc) != nil {
+		return errors.New("cached readings invalid")
+	}
+	if len(doc["providers"]) == 0 || string(doc["providers"]) == "null" {
+		return nil
+	}
+	var entries []json.RawMessage
+	if json.Unmarshal(doc["providers"], &entries) != nil {
+		return errors.New("cached readings invalid")
+	}
+	changed := false
+	for i, raw := range entries {
+		var e codexbarEntry
+		if json.Unmarshal(raw, &e) != nil {
+			return errors.New("cached readings invalid")
+		}
+		if e.Provider == "zai" && (e.Admission == nil || e.Admission.Scope == consent.ScopeZaiAccountUsageSavedLogin) {
+			ref := glmReferenceOnly(e)
+			ref.DetectedKeyRef = ""
+			entries[i], _ = json.Marshal(ref)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	doc["providers"], _ = json.Marshal(entries)
+	b, err := json.Marshal(doc)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(path, append(b, '\n'))
 }
 
 // filterCachedSource is shared by disconnect and local-history scope cleanup.

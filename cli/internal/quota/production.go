@@ -366,7 +366,7 @@ func publishReaderCache(publish func(func() error) error, save func() bool) bool
 	return write() == nil
 }
 
-func forgetProductionReaderState(cache, tool string) error {
+func forgetProductionReaderState(cache, tool, scope string) error {
 	if tool == "claude" {
 		return localusage.ForgetProductionHistoryLocked(cache, tool)
 	}
@@ -383,6 +383,15 @@ func forgetProductionReaderState(cache, tool string) error {
 	var state map[string]json.RawMessage
 	if status != "" || json.Unmarshal(b, &state) != nil {
 		return errors.New("reader cache unavailable")
+	}
+	if scope == consent.ScopeZaiAccountUsageSavedLogin && len(state["lastGood"]) > 0 {
+		var good codexbarEntry
+		if json.Unmarshal(state["lastGood"], &good) != nil {
+			return errors.New("reader cache unavailable")
+		}
+		if good.Admission != nil && good.Admission.Scope != scope {
+			return nil
+		}
 	}
 	// Keep attempt/backoff and access Deny; remove captures only.
 	for _, key := range []string{"lastGood", "pools", "observedAt", "goodGeneration"} {
