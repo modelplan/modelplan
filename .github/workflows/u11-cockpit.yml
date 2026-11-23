@@ -67,6 +67,8 @@ jobs:
     needs: queue-scope
     if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     runs-on: ubuntu-24.04-arm
+    # The 747-test webkit suite runs ~20 minutes on the hosted arm runner (main's last
+    # run: 19m57s); the old 20-minute cap cancelled healthy runs that grew past it.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

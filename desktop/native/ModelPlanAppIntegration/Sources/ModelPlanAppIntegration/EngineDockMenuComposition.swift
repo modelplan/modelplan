@@ -348,11 +348,19 @@ public struct EngineMenuRefreshResult {
     /// engine delivery, a withdrawn or suspended projection).
     var menuTitleReading: StatusTitleReading {
         guard let settings = latestSettings else { return .unavailable }
-        guard settings.snapshot.preferences.menuDisplay != .icon else { return .none }
+        guard settings.snapshot.preferences.menuDisplay != .icon, settings.snapshot.preferences.menuDisplay != .automatic else { return .none }
         if provider.dockContent.status == .cleared || provider.dockContent.status == .empty { return .none }
         let now = deadlineWall()
         guard let content = admittedCache.admittedContent(.init(snapshot: nil, diagnostics: .init(), now: now)) else { return .unavailable }
         return EngineMenuBarTitle.reading(inputs: content.snapshot.inputs, preferences: settings.snapshot.preferences, now: now)
+    }
+    /// D377: the tracked quota for the automatic display, with the same gap rules as `menuTitleReading`.
+    var menuAutoInput: StatusAutoInput {
+        guard let settings = latestSettings else { return .unavailable }
+        if provider.dockContent.status == .cleared || provider.dockContent.status == .empty { return .none }
+        let now = deadlineWall()
+        guard let content = admittedCache.admittedContent(.init(snapshot: nil, diagnostics: .init(), now: now)) else { return .unavailable }
+        return EngineMenuBarTitle.autoInput(inputs: content.snapshot.inputs, preferences: settings.snapshot.preferences, now: now)
     }
     public var menuPresentation: CommunityMenuBarPresentation {
         let now = deadlineWall()

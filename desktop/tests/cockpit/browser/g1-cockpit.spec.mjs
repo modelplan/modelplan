@@ -255,7 +255,7 @@ test('CKP-ENG-11 alert washes a whole column without warning marks and missing c
 test('CKP-ENG-03 paged subscriptions keep empty bays blank and signal an off-page caution',async({page})=>{
  const data=visualFixture().data;data.details=null;for(const row of data.projection.rows)for(const w of row.accounts[0].windows)w.remainingPercent=75;
  for(let i=data.projection.rows.length;i<7;i++){const row=structuredClone(data.projection.rows[0]),ref=(i+1).toString(16).padStart(16,'0');row.id='synthetic-'+i;row.name={en:'Synthetic '+i,zh:'模拟 '+i};row.accounts[0].subscriptionRef=ref;row.accounts[0].accountLocator=ref;for(const w of row.accounts[0].windows)w.remainingPercent=i===6?20:75;data.projection.rows.push(row);data.subscriptions.push({subscriptionRef:ref,accounts:[{tool:row.id,account:structuredClone(row.accounts[0])}]});}
- await open(page,data);await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(6);await expect(page.locator('.eng-led[data-page="1"]')).toHaveClass(/\blv-red\b/);
+ await open(page,data);await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(6);await expect(page.locator(".eng-pk[data-bpage=\"1\"]")).toHaveClass(/\blv-red\b/);
  await page.locator('[data-bpage="1"]').click();await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(1);await expect(page.locator('.eng-keys .ek-bay')).toHaveCount(5);const bays=page.locator('.eng-cols .ec-bay');await expect(bays).toHaveCount(5);await expect(bays.locator('.qvalue,.qbar,.qtime')).toHaveCount(0);for(const bay of await bays.all())expect((await bay.innerText()).trim()).toBe('');
 });
 

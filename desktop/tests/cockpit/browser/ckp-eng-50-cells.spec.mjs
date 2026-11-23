@@ -79,33 +79,64 @@ test('CKP-ENG-54 an alert washes its column; a stale or unreadable one does not'
  await expect(cols.nth(1)).not.toHaveClass(/\btint-/);await expect(cols.nth(2)).not.toHaveClass(/\btint-/);
 });
 
-for(const [locale,text,retry] of [['en','Updated 12 min ago · no new data','Retry'],['zh-CN','12 分钟前更新 · 读不到新数据','重试']])
- test(`CKP-ENG-55 the footer says when reads keep failing, and offers a retry (${locale})`,async({page})=>{
+for(const [locale,text,retry,reason] of [['en','12 min ago','Retry','no new data'],['zh-CN','12 分钟前','重试','读不到新数据']])
+ test(`CKP-ENG-55 the overview's bottom line says when reads keep failing in amber, with the reason on hover, and offers a retry (${locale})`,async({page})=>{
   const {data,account,sync}=fixture(2);Object.assign(account(1),{valueState:'retained',observedAt:iso(-12),lastFailure:{at:iso(-1),code:'network'}});sync();
   await open(page,data,locale);
-  await expect(page.locator('.eng-upd-t')).toHaveText(text);await expect(page.locator('button.eng-upd-r')).toHaveText(retry);
+  const line=page.locator('.pg-overview .ov-foot .eng-upd');
+  await expect(line.locator('.eng-upd-t')).toHaveText(text);await expect(line.locator('button.eng-upd-r')).toHaveText(retry);
+  await expect(line).toHaveAttribute('data-failing','true');
+  expect(await line.getAttribute('data-tip')).toContain(reason);
+  const [ink,amber]=await page.evaluate(()=>{const e=document.querySelector('.pg-overview .eng-upd[data-failing="true"] .eng-upd-t'),probe=document.createElement('i');probe.style.color='var(--st-mid)';e.parentElement.append(probe);const r=[getComputedStyle(e).color,getComputedStyle(probe).color];probe.remove();return r;});
+  expect(ink,'amber').toBe(amber);
   await page.locator('button.eng-upd-r').click();
   expect(await page.evaluate(()=>window.sent.filter(m=>m.type==='action').map(m=>[m.action,m.key]).at(-1))).toEqual(['refreshMember','all']);
   // The held values stay: no "delayed" notice in the table.
   await expect(page.locator('.eng-cols .qvalue').first()).toHaveText('75');
  });
 
-test('CKP-ENG-01/03/55 seven subscriptions: the footer reads the shown page, sits right beside the pager, and the reserve row stays whole',async({page})=>{
+// D376: the staleness signal stays visible when the overview is not showing: an amber dot on the 全部 key.
+test('CKP-ENG-55 healthy reads put no dot on the 全部 key',async({page})=>{
+ const {data}=fixture(2);await open(page,data);
+ await expect(page.locator('.ek-all .ek-stale')).toHaveCount(0);
+});
+test('CKP-ENG-55 failing reads put an amber dot on the 全部 key, also while another page is showing',async({page})=>{
+ const {data,account,sync}=fixture(2);
+ Object.assign(account(1),{valueState:'retained',observedAt:iso(-12),lastFailure:{at:iso(-1),code:'network'}});sync();
+ await open(page,data);
+ await expect(page.locator('.ek-all .ek-stale')).toHaveCount(1);await expect(page.locator('.ek-all .ek-stale')).toBeVisible();
+ await page.locator('.mfd-pk .pk').nth(1).click();
+ await expect(page.locator('.mfd-page.pg-overview')).toHaveCount(0);
+ await expect(page.locator('.ek-all .ek-stale'),'still there when another page is showing').toBeVisible();
+});
+
+test('D376 one page: no pager, no strip, the keys keep full height',async({page})=>{
+ const {data}=fixture(3);await open(page,data);
+ await expect(page.locator('.eng-pg')).toHaveCount(0);
+ const [all,sub]=await Promise.all([page.locator('.ek-all').boundingBox(),page.locator('.eng-keys .ek[data-sub]').first().boundingBox()]);
+ expect(all.height).toBe(sub.height);
+ const [eng,lcd]=await Promise.all([page.locator('.ck-eng').boundingBox(),page.locator('.eng-lcd').boundingBox()]);
+ expect(Math.abs(eng.y+eng.height-(lcd.y+lcd.height)),'the table reclaims the strip row').toBeLessThanOrEqual(1);
+});
+
+test('CKP-ENG-01/03 D376 seven subscriptions: the pager sits under the 全部 key, the table reclaims the strip, the reserve row stays whole',async({page})=>{
  const {data,account,sync}=fixture(7);
  account(6).observedAt=iso(-60);
  for(const s of data.details.subscriptions)s.credits={balance:2368,observedAt:iso(-3)};
  sync();await open(page,data);
- await expect(page.locator('.eng-pg')).toBeVisible();
- await expect(page.locator('.eng-upd-t'),'page 1 shows six readings three minutes old').toHaveText('Updated 3 min ago');
- const [lcd,foot,pager,line,reserve]=await Promise.all(['.eng-lcd','.eng-foot','.eng-pg','.eng-upd','.eng-cols > .ec[data-col] .qrow-r'].map(s=>page.locator(s).first().boundingBox()));
- expect(foot.y,'the footer is under the table').toBeGreaterThanOrEqual(lcd.y+lcd.height-1);
- expect(line.x+line.width,'the updated line sits left of the pager').toBeLessThanOrEqual(pager.x+1);
- expect(Math.abs(pager.x+pager.width-(lcd.x+lcd.width)),'right-aligned with the table').toBeLessThan(6);
+ await expect(page.locator('.eng-pg')).toBeVisible();await expect(page.locator('.eng-pgn')).toHaveText('1/2');
+ await expect(page.locator('.eng-pgn')).toHaveAttribute('aria-label','Page 1 of 2');
+ await expect(page.locator('.eng-foot,.ck-eng .eng-upd')).toHaveCount(0);
+ const [lcd,pager,all,eng,reserve]=await Promise.all(['.eng-lcd','.eng-pg','.ek-all','.ck-eng','.eng-cols > .ec[data-col] .qrow-r'].map(s=>page.locator(s).first().boundingBox()));
+ expect(pager.y,'under the 全部 key').toBeGreaterThanOrEqual(all.y+all.height-1);
+ expect(pager.x).toBeGreaterThanOrEqual(all.x-1);expect(pager.x+pager.width,'fits the key width').toBeLessThanOrEqual(all.x+all.width+1);
+ expect(pager.y+pager.height,'above the table').toBeLessThanOrEqual(lcd.y+1);
+ expect(Math.abs(eng.y+eng.height-(lcd.y+lcd.height)),'the table reclaims the old strip row').toBeLessThanOrEqual(1);
  expect(reserve.y+reserve.height,'the reserve row is whole inside the table').toBeLessThanOrEqual(lcd.y+lcd.height+0.5);
  await expect(page.locator('.eng-cols > .ec[data-col]').first().locator('.qrow-r .qrv-p')).toHaveText('Credits 2,368');
- // Page 2: the seventh subscription alone with its own age; the paged empty bays stay blank (CKP-ENG-03).
+ // Page 2: the seventh subscription alone; the paged empty bays stay blank (CKP-ENG-03).
  await page.locator('.eng-pk[data-bpage="1"]').click();
- await expect(page.locator('.eng-upd-t')).toHaveText('Updated 1 h ago');
+ await expect(page.locator('.eng-pgn')).toHaveText('2/2');
  await expect(page.locator('.ec-add')).toHaveCount(0);
  const reserve2=await page.locator('.eng-cols > .ec[data-col] .qrow-r').first().boundingBox(),lcd2=await page.locator('.eng-lcd').boundingBox();
  expect(reserve2.y+reserve2.height).toBeLessThanOrEqual(lcd2.y+lcd2.height+0.5);
