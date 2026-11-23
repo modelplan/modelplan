@@ -110,16 +110,36 @@ import ModelPlanWire
         buttons = []
         rowsView?.retire(); rowsView = nil
         keySection?.dismiss()
-        wrappingLabels.removeAll()
+        stopObservingWrappingLabels()
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
     }
     public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
-    public override func layout() {
-        super.layout()
-        guard !wrappingWidthUpdateScheduled, !wrappingLabels.isEmpty else { return }
+    private func observeWrappingWidth(_ label: NSTextField) {
+        wrappingLabels.append(label)
+        label.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(wrappingFrameChanged(_:)),
+                                               name: NSView.frameDidChangeNotification, object: label)
+        scheduleWrappingWidthUpdate()
+    }
+
+    private func stopObservingWrappingLabels() {
+        for label in wrappingLabels {
+            NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification, object: label)
+        }
+        wrappingLabels.removeAll()
+    }
+
+    @objc private func wrappingFrameChanged(_ notification: Notification) {
+        guard let label = notification.object as? NSTextField else { return }
+        let width = floor(label.bounds.width)
+        if width > 0, label.preferredMaxLayoutWidth != width { scheduleWrappingWidthUpdate() }
+    }
+
+    private func scheduleWrappingWidthUpdate() {
+        guard !wrappingWidthUpdateScheduled else { return }
         wrappingWidthUpdateScheduled = true
-        // Updating a label's preferred width dirties intrinsic sizing. Let AppKit finish laying out
-        // the window before using the resolved widths so the update cannot restart that layout pass.
+        // A nested stack can resize a label without laying out this view again. Observe the label's
+        // frame, then update its intrinsic sizing after AppKit finishes the current layout pass.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             defer { self.wrappingWidthUpdateScheduled = false }
@@ -153,7 +173,7 @@ import ModelPlanWire
         if secondary { field.textColor = .secondaryLabelColor }
         field.lineBreakMode = .byWordWrapping; field.maximumNumberOfLines = 0
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        addArrangedSubview(field); wrappingLabels.append(field)
+        addArrangedSubview(field); observeWrappingWidth(field)
         field.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
     }
     /// One horizontal line of related buttons, in reading order.
@@ -166,13 +186,13 @@ import ModelPlanWire
     private func settingsRow(_ title: SettingsText, note: SettingsText?, buttons rowButtons: [NSView], id: String) {
         let name = NSTextField(wrappingLabelWithString: title.value(language))
         name.font = .systemFont(ofSize: 13, weight: .semibold)
-        wrappingLabels.append(name)
+        observeWrappingWidth(name)
         var copyViews: [NSView] = [name]
         var notes: [NSTextField] = []
         if let note {
             let field = NSTextField(wrappingLabelWithString: note.value(language))
             field.font = .systemFont(ofSize: 12); field.textColor = .secondaryLabelColor
-            wrappingLabels.append(field); notes.append(field); copyViews.append(field)
+            observeWrappingWidth(field); notes.append(field); copyViews.append(field)
         }
         let copy = NSStackView(views: copyViews); copy.orientation = .vertical; copy.alignment = .leading; copy.spacing = 3
         copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -353,7 +373,7 @@ import ModelPlanWire
             field.lineBreakMode = .byWordWrapping; field.maximumNumberOfLines = 0
             field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             field.setAccessibilityIdentifier(lineID)
-            column.addArrangedSubview(field); wrappingLabels.append(field)
+            column.addArrangedSubview(field); observeWrappingWidth(field)
             field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
         // Owner 11-12: each row shows its own step, so a slow tool never holds the others back.
@@ -447,7 +467,7 @@ import ModelPlanWire
             field.lineBreakMode = .byWordWrapping; field.maximumNumberOfLines = 0
             field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             field.setAccessibilityIdentifier(lineID)
-            column.addArrangedSubview(field); wrappingLabels.append(field)
+            column.addArrangedSubview(field); observeWrappingWidth(field)
             field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
         // An unsupported login is not read at all, so its row says only why (D52). A supported tool
@@ -623,7 +643,7 @@ import ModelPlanWire
         buttons = []
         rowsView?.retire(); rowsView = nil
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
-        wrappingLabels = []
+        stopObservingWrappingLabels()
         if let keySection, controller.rowsRevision != keyStatusRowsRevision {
             keyStatusRowsRevision = controller.rowsRevision; keySection.refreshStatus()
         }

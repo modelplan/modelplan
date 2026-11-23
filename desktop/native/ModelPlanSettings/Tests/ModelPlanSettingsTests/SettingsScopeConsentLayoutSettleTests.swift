@@ -63,7 +63,7 @@ import ModelPlanWire
                     matchingWidth = nil
                 }
             }
-            XCTAssertTrue(settled, "Permissions note did not settle at window width \(width)")
+            XCTAssertTrue(settled, "Permissions note did not settle at window width \(width), frame width \(note.bounds.width), preferred width \(note.preferredMaxLayoutWidth)")
             if width == 900 {
                 if let wideHeight { XCTAssertEqual(note.bounds.height, wideHeight) }
                 else { wideHeight = note.bounds.height }
