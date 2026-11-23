@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -63,10 +64,28 @@ func antigravityFlag(fields []string, name string) string {
 	return ""
 }
 
-// Parse only this user's language_server processes with the exact app-data
-// marker. Transient process arguments are never emitted or persisted.
-func antigravityServers(raw []byte) []AntigravityServer {
-	var out []AntigravityServer
+// One parsed `ps -o pid=,uid=,comm=,args=` row for this user's language_server
+// process. Kept only for discovery and verification inside this file; transient
+// process arguments are never emitted or persisted.
+type antigravityProcessRow struct {
+	pid    int
+	fields []string
+}
+
+// macOS prints `comm` beside `args` as the first 16 characters of the executable path
+// (`/Applications/An`), so the name is then read from the command line's first
+// argument, which that prefix must begin; Linux, and a path of at most 16 characters,
+// print the bare name. Anything else, including a path split by a space, is not a match.
+func antigravityLanguageServer(fields []string) bool {
+	isName := func(s string) bool {
+		s = strings.ToLower(filepath.Base(s))
+		return s == "language_server" || strings.HasPrefix(s, "language_server_")
+	}
+	return isName(fields[2]) || strings.HasPrefix(fields[3], fields[2]) && isName(fields[3])
+}
+
+func antigravityProcessRows(raw []byte) []antigravityProcessRow {
+	var out []antigravityProcessRow
 	for _, line := range strings.Split(string(raw), "\n") {
 		f := strings.Fields(line)
 		if len(f) < 4 {
@@ -74,23 +93,132 @@ func antigravityServers(raw []byte) []AntigravityServer {
 		}
 		pid, pidErr := strconv.Atoi(f[0])
 		uid, uidErr := strconv.Atoi(f[1])
-		name := strings.ToLower(filepath.Base(f[2]))
-		if pidErr != nil || uidErr != nil || pid <= 0 || uid != os.Getuid() || !(name == "language_server" || strings.HasPrefix(name, "language_server_")) {
+		if pidErr != nil || uidErr != nil || pid <= 0 || uid != os.Getuid() || !antigravityLanguageServer(f) {
 			continue
 		}
-		app := antigravityFlag(f, "--app_data_dir")
-		if app != "antigravity" && app != "antigravity-ide" {
+		out = append(out, antigravityProcessRow{pid: pid, fields: f})
+	}
+	return out
+}
+
+// The exact app-data marker of an Antigravity server; also the folder under
+// ~/.gemini that holds its daemon descriptors. Empty for any other process.
+func antigravityAppData(fields []string) string {
+	app := antigravityFlag(fields, "--app_data_dir")
+	if app != "antigravity" && app != "antigravity-ide" {
+		return ""
+	}
+	return app
+}
+
+// Parse only this user's language_server processes with the exact app-data
+// marker and the extension-server port and transport nonce on the command line
+// (the IDE extension mode). Hub-mode servers are found by antigravityDaemonServers.
+func antigravityServers(raw []byte) []AntigravityServer {
+	var out []AntigravityServer
+	for _, row := range antigravityProcessRows(raw) {
+		if antigravityAppData(row.fields) == "" {
 			continue
 		}
-		port, err := strconv.Atoi(antigravityFlag(f, "--extension_server_port"))
+		port, err := strconv.Atoi(antigravityFlag(row.fields, "--extension_server_port"))
 		if err != nil || port < 1 || port > 65535 {
 			continue
 		}
-		token := antigravityFlag(f, "--csrf_token")
+		token := antigravityFlag(row.fields, "--csrf_token")
 		if !antigravityCSRF(token) {
 			continue
 		}
-		out = append(out, AntigravityServer{PID: pid, Port: port, CSRF: token})
+		out = append(out, AntigravityServer{PID: row.pid, Port: port, CSRF: token})
+	}
+	return out
+}
+
+// Newer Antigravity (2.3x) hub-mode language servers start without the
+// extension-server port and transport nonce on the command line (the nonce arrives
+// on stdin) and write them to a descriptor beside their app data instead:
+// ~/.gemini/<app data dir>/daemon/hub_<port>.json with pid, httpsPort, httpPort,
+// lsVersion and csrfToken, the file antigravity-panel reads for the same servers
+// (n2ns/antigravity-panel#224). csrfToken is the same transient local transport nonce
+// the command line carried in IDE mode, never an account credential.
+type antigravityDaemonDescriptor struct {
+	PID       int    `json:"pid"`
+	HTTPPort  int    `json:"httpPort"`
+	CSRFToken string `json:"csrfToken"`
+}
+
+var antigravityDaemonDir = func(appData string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".gemini", appData, "daemon")
+}
+
+func antigravityHubDescriptorName(name string) bool {
+	stem, ok := strings.CutPrefix(name, "hub_")
+	if !ok {
+		return false
+	}
+	if stem, ok = strings.CutSuffix(stem, ".json"); !ok || stem == "" {
+		return false
+	}
+	for _, r := range stem {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// A descriptor alone is not authority. As in antigravity-panel, a file is accepted
+// only when its pid is a language_server from the same ps snapshot that runs with
+// the app data owning the descriptor's folder, so a stale descriptor from an earlier
+// run (dead or recycled pid), or another tool's server, yields nothing. The listener
+// ownership check in verifyAntigravityServer then pins the port. A pid already
+// discovered from the command line is not repeated.
+func antigravityDaemonServers(raw []byte, known []AntigravityServer) []AntigravityServer {
+	discovered := map[int]bool{}
+	for _, s := range known {
+		discovered[s.PID] = true
+	}
+	// Each running server by pid with the folder that holds its app data's descriptors.
+	apps, dirs := map[int]string{}, []string{}
+	for _, row := range antigravityProcessRows(raw) {
+		dir := ""
+		if app := antigravityAppData(row.fields); app != "" {
+			dir = antigravityDaemonDir(app)
+		}
+		if dir != "" && apps[row.pid] == "" {
+			apps[row.pid] = dir
+			dirs = append(dirs, dir)
+		}
+	}
+	var out []AntigravityServer
+	for i, dir := range dirs {
+		if slices.Contains(dirs[:i], dir) {
+			continue
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !antigravityHubDescriptorName(entry.Name()) {
+				continue
+			}
+			b, status := readBounded(filepath.Join(dir, entry.Name()), 8<<10)
+			if status != "" {
+				continue
+			}
+			var d antigravityDaemonDescriptor
+			if json.Unmarshal(b, &d) != nil || d.PID <= 0 || discovered[d.PID] || !antigravityCSRF(d.CSRFToken) {
+				continue
+			}
+			if apps[d.PID] != dir || d.HTTPPort < 1 || d.HTTPPort > 65535 {
+				continue
+			}
+			out = append(out, AntigravityServer{PID: d.PID, Port: d.HTTPPort, CSRF: d.CSRFToken})
+		}
 	}
 	return out
 }
@@ -116,6 +244,7 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 			return e
 		}
 		servers := antigravityServers(raw)
+		servers = append(servers, antigravityDaemonServers(raw, servers)...)
 		if len(servers) == 0 {
 			e.Error = antigravityNext("not_detected")
 			e.ErrorCode = "runtime_missing"
@@ -279,8 +408,26 @@ func verifyAntigravityServer(ctx context.Context, s AntigravityServer) error {
 	if err != nil {
 		return errors.New("Antigravity process unavailable")
 	}
-	candidates := antigravityServers(raw)
-	if len(candidates) != 1 || candidates[0].PID != s.PID || candidates[0].Port != s.Port || candidates[0].CSRF != s.CSRF {
+	// Identity is the pid's own row: this user's language_server with Antigravity's
+	// app data. An IDE-mode row re-states the port and nonce, and a mismatch fails the
+	// read. A hub-mode row carries neither (its daemon descriptor owns them), so for
+	// those the listener ownership below is what pins the port.
+	identity := false
+	for _, row := range antigravityProcessRows(raw) {
+		if row.pid != s.PID || antigravityAppData(row.fields) == "" {
+			continue
+		}
+		port, portErr := strconv.Atoi(antigravityFlag(row.fields, "--extension_server_port"))
+		token := antigravityFlag(row.fields, "--csrf_token")
+		if portErr == nil || token != "" {
+			if port != s.Port || token != s.CSRF {
+				return errors.New("Antigravity process changed")
+			}
+		}
+		identity = true
+		break
+	}
+	if !identity {
 		return errors.New("Antigravity process changed")
 	}
 	bin := "/usr/bin/lsof"

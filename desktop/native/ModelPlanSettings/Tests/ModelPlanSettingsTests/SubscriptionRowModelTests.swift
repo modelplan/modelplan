@@ -64,7 +64,7 @@ final class SubscriptionRowModelTests: XCTestCase {
     func testWP16RowReasonEqualsCardReasonForEveryCause() throws {
         let codes = ["not_found", "runtime_missing", "timeout", "rpc_error", "closed", "not_signed_in", "login_expired",
                      "keychain_unset", "keychain_denied", "key_missing", "region_refused", "no_plan", "usage_not_reported", "consent_required"]
-        for tool in ["claude", "codex", "zai", "opencodego", "kiro"] {
+        for tool in ["claude", "codex", "zai", "opencodego", "kiro", "antigravity"] {
             for keys in [false, true] {
                 for code in codes {
                     let card = try XCTUnwrap(ReaderCauseTable.entry(code: code, tool: tool, toolName: tool.capitalized), code)
@@ -192,6 +192,21 @@ final class SubscriptionRowModelTests: XCTestCase {
         XCTAssertEqual(ReaderCauseTable.rowEntry(code: "not_found", tool: "kiro", toolName: "Kiro")?.action.english, "Install kiro-cli")
         // Other tools keep the Node.js cause.
         XCTAssertEqual(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex")?.reason.english, "Node.js is required")
+    }
+
+    /// #1175: Antigravity's reader is native code and never runs Node.js; its runtime_missing is no running server.
+    func testAntigravityRuntimeMissingNamesTheServerNotNodeJS() throws {
+        let row = try XCTUnwrap(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "antigravity", toolName: "Antigravity"))
+        let card = try XCTUnwrap(ReaderCauseTable.entry(code: "runtime_missing", tool: "antigravity", toolName: "Antigravity"))
+        XCTAssertEqual(row.reason, card.reason)
+        XCTAssertEqual(row.reason, SettingsText("No running Antigravity server was found", "没有找到正在运行的 Antigravity 服务"))
+        // The row's fix opens the app; the card stays guidance.
+        XCTAssertEqual(row.action, SettingsText("Open Antigravity", "打开 Antigravity"))
+        XCTAssertEqual(row.target, .openTool)
+        XCTAssertEqual(card.target, .guidance)
+        for text in [row.reason, row.action, card.reason, card.action] {
+            XCTAssertFalse(text.english.contains("Node") || text.chinese.contains("Node"))
+        }
     }
 
     func testFirstRunPrerequisiteLineUsesTheSameTable() {

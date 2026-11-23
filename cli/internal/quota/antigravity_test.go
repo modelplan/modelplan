@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -120,6 +121,218 @@ func TestAntigravityNoRedirectRetryOrOAuth(t *testing.T) {
 	for _, raw := range []string{`null`, `{}`, `{"userStatus":{"cascadeModelConfigData":{"clientModelConfigs":[{"modelOrAlias":{"model":"a"},"quotaInfo":{"remainingFraction":2}}]}}}`} {
 		if e := parseAntigravity([]byte(raw), now); e.Status != "error" {
 			t.Fatal(e)
+		}
+	}
+}
+
+// A macOS ps row exactly as `ps -o pid=,uid=,comm=,args=` prints the hub-mode server
+// (Antigravity 2.34): comm is the first 16 characters of the executable path, and
+// neither the port nor the transport nonce is on the command line.
+const antigravityHubRow = "555 %d /Applications/An /Applications/Antigravity.app/Contents/Resources/bin/language_server --standalone --app_data_dir antigravity --read_host_bridge_token_from_stdin"
+const antigravityHubNonce = "hub-nonce-canary"
+
+// The daemon folder layout under an isolated home: ~/.gemini/<app data>/daemon.
+func antigravityDaemonHome(t *testing.T) string {
+	t.Helper()
+	old := antigravityDaemonDir
+	t.Cleanup(func() { antigravityDaemonDir = old })
+	home := t.TempDir()
+	antigravityDaemonDir = func(appData string) string { return filepath.Join(home, ".gemini", appData, "daemon") }
+	return home
+}
+
+func TestAntigravityLanguageServerRows(t *testing.T) {
+	uid := os.Getuid()
+	rows := func(lines ...string) []antigravityProcessRow {
+		return antigravityProcessRows([]byte(strings.Join(lines, "\n") + "\n"))
+	}
+	server := "/Applications/Antigravity.app/Contents/Resources/bin/language_server_macos_arm --app_data_dir antigravity"
+	// macOS truncates comm beside args; Linux, and a path of at most 16 characters, print the bare name.
+	for _, comm := range []string{"/Applications/An", "language_server", "language_server_m"} {
+		if got := rows(fmt.Sprintf("555 %d %s %s", uid, comm, server)); len(got) != 1 || got[0].pid != 555 {
+			t.Fatal(comm, got)
+		}
+	}
+	for name, line := range map[string]string{
+		"another user's server": fmt.Sprintf("555 %d /Applications/An %s", uid+1, server),
+		"another executable":    fmt.Sprintf("555 %d /Applications/An /Applications/Antigravity.app/Contents/MacOS/Antigravity %s", uid, server),
+		"a later argument":      fmt.Sprintf("555 %d /bin/zsh /bin/zsh -c language_server --app_data_dir antigravity", uid),
+		// Not guessed: the executable's path is split, so its name cannot be read with certainty.
+		"a space in the executable's path": fmt.Sprintf("555 %d /Users/Janet Doe /Users/Janet Doe/Applications/Antigravity.app/Contents/Resources/bin/language_server --app_data_dir antigravity", uid),
+	} {
+		if got := rows(line); len(got) != 0 {
+			t.Fatal(name, got)
+		}
+	}
+}
+
+func TestAntigravityDaemonDescriptorDiscovery(t *testing.T) {
+	uid := os.Getuid()
+	hubRow := fmt.Sprintf(antigravityHubRow, uid)
+	ideAppDataRow := strings.Replace(hubRow, "--app_data_dir antigravity ", "--app_data_dir antigravity-ide ", 1)
+	valid := `{"pid":555,"httpsPort":63530,"httpPort":63531,"lsVersion":"2.34.0","csrfToken":"` + antigravityHubNonce + `"}`
+	for _, tc := range []struct {
+		name, folder, file, body, rows string
+		known                          []AntigravityServer
+		want                           int
+	}{
+		{name: "hub-mode server", folder: "antigravity", file: "hub_63531.json", body: valid, rows: hubRow, want: 1},
+		// An `agy --hub` server names its file after the hub port, not the HTTP one.
+		{name: "file name port is not the HTTP port", folder: "antigravity", file: "hub_40000.json", body: valid, rows: hubRow, want: 1},
+		{name: "IDE app data", folder: "antigravity-ide", file: "hub_63531.json", body: valid, rows: ideAppDataRow, want: 1},
+		{name: "stale pid", folder: "antigravity", file: "hub_63531.json", body: valid, rows: strings.Replace(hubRow, "555 ", "556 ", 1)},
+		{name: "pid runs with another app data", folder: "antigravity", file: "hub_63531.json", body: valid, rows: strings.Replace(hubRow, "--app_data_dir antigravity ", "--app_data_dir other ", 1)},
+		{name: "another app data's folder", folder: "antigravity", file: "hub_63531.json", body: valid, rows: ideAppDataRow},
+		{name: "no nonce", folder: "antigravity", file: "hub_63531.json", body: `{"pid":555,"httpPort":63531}`, rows: hubRow},
+		{name: "nonce with another charset", folder: "antigravity", file: "hub_63531.json", body: `{"pid":555,"httpPort":63531,"csrfToken":"not a nonce"}`, rows: hubRow},
+		{name: "no pid", folder: "antigravity", file: "hub_63531.json", body: `{"httpPort":63531,"csrfToken":"` + antigravityHubNonce + `"}`, rows: hubRow},
+		{name: "no HTTP port", folder: "antigravity", file: "hub_63531.json", body: `{"pid":555,"httpsPort":63530,"csrfToken":"` + antigravityHubNonce + `"}`, rows: hubRow},
+		{name: "HTTP port out of range", folder: "antigravity", file: "hub_63531.json", body: `{"pid":555,"httpPort":70000,"csrfToken":"` + antigravityHubNonce + `"}`, rows: hubRow},
+		{name: "another file name", folder: "antigravity", file: "ls_63531.json", body: valid, rows: hubRow},
+		{name: "another file name, no digits", folder: "antigravity", file: "hub_port.json", body: valid, rows: hubRow},
+		{name: "unparsable", folder: "antigravity", file: "hub_63531.json", body: `not json`, rows: hubRow},
+		{name: "already found from the command line", folder: "antigravity", file: "hub_63531.json", body: valid, rows: hubRow, known: []AntigravityServer{{PID: 555, Port: 1, CSRF: "x"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := antigravityDaemonHome(t)
+			dir := filepath.Join(home, ".gemini", tc.folder, "daemon")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, tc.file), []byte(tc.body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			got := antigravityDaemonServers([]byte(tc.rows), tc.known)
+			if len(got) != tc.want {
+				t.Fatal(got)
+			}
+			if tc.want == 1 && (got[0].PID != 555 || got[0].Port != 63531 || got[0].CSRF != antigravityHubNonce) {
+				t.Fatal(got[0])
+			}
+		})
+	}
+}
+
+func TestAntigravityDaemonDescriptorFolderIsReadOnceAndRefusesSymlinks(t *testing.T) {
+	home := antigravityDaemonHome(t)
+	uid := os.Getuid()
+	dir := filepath.Join(home, ".gemini", "antigravity", "daemon")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	descriptor := func(pid, port int) string {
+		return fmt.Sprintf(`{"pid":%d,"httpPort":%d,"csrfToken":"%s"}`, pid, port, antigravityHubNonce)
+	}
+	// Two servers share one folder, and the descriptor of the server listed last is read too.
+	rows := fmt.Sprintf(antigravityHubRow, uid) + "\n" + strings.Replace(fmt.Sprintf(antigravityHubRow, uid), "555 ", "557 ", 1)
+	for _, f := range []struct {
+		name, body string
+	}{{"hub_63531.json", descriptor(555, 63531)}, {"hub_63532.json", descriptor(557, 63532)}} {
+		if err := os.WriteFile(filepath.Join(dir, f.name), []byte(f.body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := antigravityDaemonServers([]byte(rows), nil); len(got) != 2 {
+		t.Fatal(got)
+	}
+	// A descriptor the server did not write: a link to a file elsewhere is not read.
+	real := filepath.Join(home, "elsewhere.json")
+	if err := os.WriteFile(real, []byte(descriptor(555, 63531)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "hub_63531.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(dir, "hub_63531.json")); err != nil {
+		t.Fatal(err)
+	}
+	if got := antigravityDaemonServers([]byte(rows), nil); len(got) != 1 || got[0].PID != 557 {
+		t.Fatal(got)
+	}
+}
+
+func TestAntigravityHubDaemonEndToEnd(t *testing.T) {
+	isolateHome(t)
+	home := antigravityDaemonHome(t)
+	// Binding is covered by TestAntigravityListenerBindingBeforeHTTP and TestAntigravityVerifyBindsHubModeToTheListener.
+	_, ts := antigravityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Codeium-Csrf-Token") != antigravityHubNonce || r.URL.Path != "/exa.language_server_pb.LanguageServerService/GetUserStatus" {
+			t.Error("wrong transport nonce or RPC")
+		}
+		_, _ = w.Write([]byte(antigravityFixture))
+	})
+	_, port, _ := net.SplitHostPort(ts.Listener.Addr().String())
+	dir := filepath.Join(home, ".gemini", "antigravity", "daemon")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"pid":555,"httpsPort":%[1]s,"httpPort":%[1]s,"lsVersion":"2.34.0","csrfToken":"%s"}`, port, antigravityHubNonce)
+	if err := os.WriteFile(filepath.Join(dir, "hub_"+port+".json"), []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(fmt.Sprintf(antigravityHubRow, os.Getuid()))
+	old := antigravityCommand
+	t.Cleanup(func() { antigravityCommand = old })
+	antigravityCommand = func(_ context.Context, bin string, _ ...string) ([]byte, error) {
+		if bin != "/bin/ps" {
+			return nil, fmt.Errorf("unexpected command %s", bin)
+		}
+		return raw, nil
+	}
+	cache := t.TempDir()
+	e := collectAntigravity(context.Background(), nil, cache, now)
+	if e.Status != "ok" || len(e.Windows) != 2 || *e.Windows[0].UsedPercent != 75 {
+		t.Fatal(e)
+	}
+	// The nonce is sent once and never persisted with the reading.
+	b, _ := os.ReadFile(antigravityStatePath(cache))
+	out, _ := json.Marshal(e)
+	if bytes.Contains(b, []byte(antigravityHubNonce)) || bytes.Contains(out, []byte(antigravityHubNonce)) {
+		t.Fatal("transport nonce persisted")
+	}
+}
+
+func TestAntigravityVerifyBindsHubModeToTheListener(t *testing.T) {
+	isolateHome(t)
+	old := antigravityCommand
+	t.Cleanup(func() { antigravityCommand = old })
+	uid := os.Getuid()
+	s := AntigravityServer{PID: 555, Port: 63531, CSRF: antigravityHubNonce}
+	command := func(ps string, listenerOwner int) {
+		t.Helper()
+		antigravityCommand = func(_ context.Context, bin string, _ ...string) ([]byte, error) {
+			switch bin {
+			case "/bin/ps":
+				return []byte(ps), nil
+			case "/usr/sbin/lsof", "/usr/bin/lsof": // macOS, then Linux
+				return []byte(fmt.Sprintf("p%d\nu%d\nn127.0.0.1:63531\n", listenerOwner, uid)), nil
+			}
+			return nil, fmt.Errorf("unexpected command %s", bin)
+		}
+	}
+	hubRow := fmt.Sprintf(antigravityHubRow, uid)
+	// A hub-mode row states neither the port nor the nonce, so the listener's owner pins the port.
+	command(hubRow, 555)
+	if err := verifyAntigravityServer(context.Background(), s); err != nil {
+		t.Fatal(err)
+	}
+	command(hubRow, 556)
+	if err := verifyAntigravityServer(context.Background(), s); err == nil {
+		t.Fatal("read through a listener another process owns")
+	}
+	// A row that does state them must re-state exactly this server.
+	command(fmt.Sprintf("555 %d language_server /app/language_server --app_data_dir antigravity --csrf_token other-nonce --extension_server_port 63531", uid), 555)
+	if err := verifyAntigravityServer(context.Background(), s); err == nil {
+		t.Fatal("accepted a row whose nonce changed")
+	}
+	// The pid must be this user's language_server with Antigravity's app data.
+	for _, ps := range []string{
+		fmt.Sprintf("555 %d /bin/zsh /bin/zsh -c language_server", uid),
+		strings.Replace(hubRow, "--app_data_dir antigravity ", "--app_data_dir other ", 1),
+	} {
+		command(ps, 555)
+		if err := verifyAntigravityServer(context.Background(), s); err == nil {
+			t.Fatal("verified a foreign process")
 		}
 	}
 }

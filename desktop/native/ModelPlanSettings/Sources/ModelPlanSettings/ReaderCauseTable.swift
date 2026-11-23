@@ -51,6 +51,12 @@ public enum ReaderCauseTable {
                 return .init(reason: .init("kiro-cli was not found or could not start", "没有找到 Kiro 命令行工具，或它无法启动"),
                              action: .init("Install kiro-cli, or check the kiro-cli path you configured, then refresh", "安装 Kiro 命令行工具，或检查你配置的 Kiro 命令行工具路径，然后刷新"), target: .guidance)
             }
+            // The Antigravity reader is native code and never runs Node.js; this cause means no
+            // running, verifiable Antigravity language server was found (#1175).
+            if (tool ?? "").lowercased() == "antigravity" {
+                return .init(reason: .init("No running Antigravity server was found", "没有找到正在运行的 Antigravity 服务"),
+                             action: .init("Open Antigravity, then refresh", "打开 Antigravity 后刷新"), target: .guidance)
+            }
             return .init(reason: .init("Node.js is required", "需要 Node.js"),
                          action: .init("Install Node.js, then refresh", "安装 Node.js 后刷新"), target: .guidance)
         case "timeout":

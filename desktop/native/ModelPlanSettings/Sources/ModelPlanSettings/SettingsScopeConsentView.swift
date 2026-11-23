@@ -877,7 +877,7 @@ public struct SubscriptionRowActions {
         }
     }
     private static let appNames = ["zai": "ZCode", "opencodego": "OpenCode", "opencode": "OpenCode", "claude": "Claude", "codex": "Codex",
-                                   "cursor": "Cursor", "kimi": "Kimi", "grok": "Grok", "gemini": "Gemini"]
+                                   "cursor": "Cursor", "kimi": "Kimi", "grok": "Grok", "gemini": "Gemini", "antigravity": "Antigravity"]
     static func openApplication(for tool: String) -> Bool {
         guard let name = appNames[tool] else { return false }
         let home = FileManager.default.homeDirectoryForCurrentUser.path

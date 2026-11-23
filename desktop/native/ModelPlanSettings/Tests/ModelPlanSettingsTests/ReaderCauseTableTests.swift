@@ -20,6 +20,8 @@ final class ReaderCauseTableTests: XCTestCase {
             // D369: ZCode's QR-code sign-in.
             ("consent_required", "zai", "GLM", "ZCode sign-in found; reading it needs your permission", "已找到 ZCode 登录，读取需要你的授权", "Allow reading it in Settings", "在设置中允许读取", .openSettings),
             ("login_expired", "zai", "GLM", "The ZCode sign-in has ended", "ZCode 登录已失效", "Sign in to ZCode again; it is read after that", "请重新登录 ZCode，之后会自动读取", .guidance),
+            // #1175: the native Antigravity reader never runs Node.js; runtime_missing means no running server.
+            ("runtime_missing", "antigravity", "Antigravity", "No running Antigravity server was found", "没有找到正在运行的 Antigravity 服务", "Open Antigravity, then refresh", "打开 Antigravity 后刷新", .guidance),
         ]
         for (code, tool, name, reasonEN, reasonZH, actionEN, actionZH, target) in cases {
             let entry = try XCTUnwrap(ReaderCauseTable.entry(code: code, tool: tool, toolName: name), code)
@@ -87,11 +89,13 @@ final class ReaderCauseTableTests: XCTestCase {
     func testSettingsSourceRowShowsTheCauseInsteadOfTheBareState() throws {
         var context = SettingsPageContext()
         context.subscriptions = [SettingsSubscription(id: "codex", name: .init("Codex", "Codex"), source: .unavailable, causeCode: "runtime_missing"),
+                                 SettingsSubscription(id: "antigravity", name: .init("Antigravity", "Antigravity"), vendor: "antigravity", source: .unavailable, causeCode: "runtime_missing"),
                                  SettingsSubscription(id: "grok", name: .init("Grok", "Grok"), source: .unavailable)]
         var preferences = SettingsPreferences(); preferences.language = .chinese
         let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: preferences, context: context).first { $0.key == .source })
         guard case .subscriptions(let values) = row.value else { return XCTFail("not per-subscription") }
         XCTAssertEqual(values.first { $0.id == "codex" }?.value, "unavailable" + SubscriptionSourceState.causeSeparator + "需要 Node.js · 安装 Node.js 后刷新")
+        XCTAssertEqual(values.first { $0.id == "antigravity" }?.value, "unavailable" + SubscriptionSourceState.causeSeparator + "没有找到正在运行的 Antigravity 服务 · 打开 Antigravity 后刷新")
         XCTAssertEqual(values.first { $0.id == "grok" }?.value, "unavailable")
     }
 

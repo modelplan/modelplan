@@ -59,6 +59,12 @@ extension ReaderCauseTable {
             default: break
             }
         }
+        if canon == "runtime_missing", (tool ?? "").lowercased() == "antigravity" {
+            // The native Antigravity reader never runs Node.js; this cause means no readable
+            // running server was found (#1175), so the fix is to open the app, not install a runtime.
+            return .init(reason: .init("No running Antigravity server was found", "没有找到正在运行的 Antigravity 服务"),
+                         action: .init("Open Antigravity", "打开 Antigravity"), target: .openTool)
+        }
         if canon == "key_missing", keyEntryAvailable, rowIsKeyProvider(tool) {
             return .init(reason: rowIsGLM(tool) ? .init("No GLM Coding Plan sign-in found in ZCode", "ZCode 里没有找到 GLM 编程套餐的登录")
                                               : .init("No OpenCode Go key found", "没有找到 OpenCode Go 的密钥"),
