@@ -517,5 +517,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .pl-cell.pl-cal .pl-meter{min-height:0;overflow:hidden}
 .ck-eng .pl-cell.pl-cal .qline{justify-content:space-between}
 
-/* Keep the full subscription name legible in the narrow six-column layout. */
-.ck-eng .eng-keys[data-slots="6"] .ek-name{font-size:9px}
+/* Give the six-column label room while keeping the vendor mark alongside it. */
+.ck-eng .eng-keys[data-slots="6"] .ek .ek-identity{gap:2px;max-width:calc(100% - 4px)}
+.ck-eng .eng-keys[data-slots="6"] .ek .ek-identity .lamp{width:12px;height:12px}
+.ck-eng .eng-keys[data-slots="6"] .ek-name{font-size:10px}
