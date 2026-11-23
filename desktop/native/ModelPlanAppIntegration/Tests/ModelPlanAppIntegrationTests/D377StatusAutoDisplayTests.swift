@@ -249,6 +249,49 @@ import ModelPlanWire
         XCTAssertEqual(button.title, "12%", "the scheduled callback retries without another display change")
     }
 
+    /// macrevc-1184-1: after a fallback, a recent visibility rewrite plus an unchanged-visibility display notification must
+    /// still reach a render from the real settle and follow-up callbacks, so the one-minute retry replaces the ten-minute one.
+    func testSettledDisplayChangeAfterARecentRewriteRearmsTheOneMinuteRetry() async throws {
+        let (app, _) = try await launch(weekly: 12)
+        let start = app.composition.currentDate()
+        var now = start
+        app.composition.currentDate = { now }
+        var visible = true
+        app.statusItemVisibility = { visible }
+        var recheck: [(ms: UInt64, fire: @MainActor () -> Void)] = []
+        app.displayRecheckSchedule = { ms, fire in recheck.append((ms, fire)); return {} }
+        var armed: [(seconds: TimeInterval, fire: @MainActor () -> Void)] = []
+        app.statusAutoSchedule = { seconds, fire in armed.append((seconds, fire)); return {} }
+        app.installStatusItem()
+        app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertEqual(button.title, "12%")
+
+        visible = false
+        app.checkStatusItemVisibility()
+        let debounce = try XCTUnwrap(armed.last)
+        now = start.addingTimeInterval(1)
+        debounce.fire()
+        XCTAssertEqual(button.title, "")
+        XCTAssertEqual(armed.last?.seconds ?? 0, StatusAutoDisplay.retryWide, accuracy: 0.001, "the ordinary ten-minute deadline is armed")
+
+        app.rewriteStatusContent()            // a visible-window occlusion notification just rewrote the item
+        app.displayParametersChanged()        // visibility stays the same (hidden)
+        let settle = try XCTUnwrap(recheck.last)
+        XCTAssertEqual(settle.ms, DisplayChangeRecheck.settleMilliseconds)
+        settle.fire()                         // throttled rewrite, unchanged visibility
+        let followUp = try XCTUnwrap(recheck.last)
+        XCTAssertEqual(followUp.ms, DisplayChangeRecheck.followUpMilliseconds)
+        followUp.fire()
+
+        let retry = try XCTUnwrap(armed.last)
+        XCTAssertEqual(retry.seconds, 60, accuracy: 0.001, "the one-minute retry replaces the ten-minute deadline")
+        XCTAssertEqual(button.title, "")
+        now = start.addingTimeInterval(61)
+        retry.fire()
+        XCTAssertEqual(button.title, "12%", "the installed button widens at the retry")
+    }
+
     func testNoticeReplacesTheUsedUpDotWhileTheMenuIsTracking() async throws {
         let (app, _) = try await launch(weekly: 0)
         app.installStatusItem()

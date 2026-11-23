@@ -1003,10 +1003,18 @@ struct StatusNoticePresentation {
     }, settled: { [weak self] in
         guard let self, !self.terminating else { return }
         self.rewriteStatusContent(); self.checkStatusItemVisibility()
+        self.renderPendingDisplayRewrite()
     }, followUp: { [weak self] in
         guard let self, !self.terminating else { return }
         self.checkStatusItemVisibility()
+        self.renderPendingDisplayRewrite()
     })
+    /// macrevc-1184-1: a display change marks the next render as a rewrite and bumps the epoch, but the throttled
+    /// rewrite and an unchanged visibility can both skip rendering. The settled display must always reach one render,
+    /// or the Automatic retry deadline (the epoch-based one-minute retry) stays unarmed.
+    private func renderPendingDisplayRewrite() {
+        if forceStatusRewrite { renderMenu() }
+    }
     /// One display-parameter notification: the next render rewrites the item's content (G3-57), the check waits.
     func displayParametersChanged() {
         guard !terminating else { return }
