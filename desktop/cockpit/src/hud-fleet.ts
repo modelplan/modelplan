@@ -16,7 +16,7 @@ function roundRobin(list:readonly HudModel[]) {
  return out;
 }
 /** One order for the scope (the enlarged chart's field) (hud-selection/selection.js): models used this week, the lineup, then developers in turn; dominated last. */
-export function fleetOf(shortLabel:ShortLabel,data:WireCockpitData|null|undefined,scope='all',now=Date.now(),limit=FIELD_LIMIT):HudModel[] {
+export function fleetOf(shortLabel:ShortLabel,data:WireCockpitData|null|undefined,scope='all',now=Date.now(),limit=FIELD_LIMIT,usedLimit=USED_LIMIT):HudModel[] {
  const published=data?.details?.publishedModels??[],developerOf=new Map(published.map(m=>[m.id,m.developerId]));
  const members=data?cockpitMembers(data):[],member=scope==='all'?null:members.find(m=>m.key===scope)??null;
  if(scope!=='all'&&!member)return [];
@@ -36,7 +36,7 @@ export function fleetOf(shortLabel:ShortLabel,data:WireCockpitData|null|undefine
  const beaten=(m:FieldModel)=>candidates.some(n=>n.id!==m.id&&n.sel[2]>0&&m.sel[2]>0&&n.sel[1]>=m.sel[1]&&n.sel[2]<=m.sel[2]&&(n.sel[1]>m.sel[1]||n.sel[2]<m.sel[2]));
  const models=candidates.map((m):HudModel=>({...m,dominated:beaten(m),...(latest.has(m.id)?{latestEffort:latest.get(m.id)??null}:{}),...(running.has(m.id)?{running:true}:{})}));
  const byId=new Map(models.map(m=>[m.id,m]));
- const used=[...latest.keys()].flatMap(id=>{const m=byId.get(id);return m?[m]:[];}).slice(0,USED_LIMIT),taken=new Set(used.map(m=>m.id));
+ const used=[...latest.keys()].flatMap(id=>{const m=byId.get(id);return m?[m]:[];}).slice(0,usedLimit),taken=new Set(used.map(m=>m.id));
  const rest=models.filter(m=>!taken.has(m.id)),lineup=(data?.details?.publication?.models??[]).flatMap(p=>{const m=rest.find(x=>x.id===p.id&&!x.dominated);return m?[m]:[];}),picked=new Set(lineup.map(m=>m.id));
  return [...used,...lineup,...roundRobin(rest.filter(m=>!m.dominated&&!picked.has(m.id))),...roundRobin(rest.filter(m=>m.dominated&&!picked.has(m.id)))].slice(0,limit);
 }

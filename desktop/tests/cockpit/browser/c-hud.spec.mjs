@@ -108,6 +108,20 @@ test('D386 a running dominated model remains selectable in the scoped Models lis
  const row=page.locator('.md-row[data-model="running-overflow"]');await expect(row).toBeVisible();await row.click();
  await expect(row).toHaveClass(/\bsel\b/);
 });
+
+test('D386 all four running models precede unused scoped Models rows',async({page})=>{
+ const fleet=Array.from({length:10},(_,i)=>model('front-'+i,40+i,.1*(i+1)));
+ const sessions=Array.from({length:4},(_,i)=>{
+  fleet.push(model('running-'+i,20,2+i));
+  return {sessionRef:'00000000000000a'+i,source:'codex',subscriptionRef:null,model:'running-'+i,effort:'high',projectLabel:null,lastObservedAt:new Date(Date.now()-i*1000).toISOString(),state:'running',rate:null};
+ });
+ let ref='';const {send,receive}=await open(page,{published:fleet,sessions,edit:data=>{keepRows(['codex'])(data);ref=data.subscriptions[0].subscriptionRef;}});
+ expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ const ids=await page.locator('.md-row').evaluateAll(rows=>rows.map(row=>row.dataset.model));
+ expect(ids.slice(0,4)).toEqual(['running-0','running-1','running-2','running-3']);
+ const fourth=page.locator('.md-row[data-model="running-3"]');await fourth.click();await expect(fourth).toHaveClass(/\bsel\b/);
+});
 // D86: "All" is the union of the user's own subscriptions, never the whole published field.
 const keepRows=ids=>data=>{data.projection.rows=data.projection.rows.filter(r=>ids.includes(r.id));data.subscriptions=data.subscriptions.filter(s=>data.projection.rows.some(r=>r.accounts.some(a=>a.subscriptionRef===s.subscriptionRef)));};
 const mixed=()=>[model('gpt-a',50,.3),model('gpt-b',45,.2),{...model('claude-a',60,.5),developerId:'anthropic'},{...model('google-a',55,.4),developerId:'google'}];
