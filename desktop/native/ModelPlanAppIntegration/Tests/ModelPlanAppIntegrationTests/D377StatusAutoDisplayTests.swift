@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
+import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
@@ -63,7 +64,7 @@ import ModelPlanWire
         XCTAssertEqual(auto.resolve(reading(12), squeezed: true, displayEpoch: 0, now: base.addingTimeInterval(1.5)), .number("12%"))
         XCTAssertEqual(auto.resolve(reading(12), squeezed: true, displayEpoch: 0,
                                     now: base.addingTimeInterval(1 + StatusAutoDisplay.squeezeDebounce)), .iconOnly)
-        XCTAssertNil(auto.pendingDeadline)
+        XCTAssertEqual(auto.pendingDeadline, base.addingTimeInterval(1 + StatusAutoDisplay.squeezeDebounce + StatusAutoDisplay.retryWide))
     }
 
     func testAShortSqueezeNeverSwitches() {
@@ -85,24 +86,25 @@ import ModelPlanWire
                                     now: base.addingTimeInterval(1 + StatusAutoDisplay.retryWide - 1)), .iconOnly)
         XCTAssertEqual(auto.resolve(reading(12), squeezed: false, displayEpoch: 0,
                                     now: base.addingTimeInterval(1 + StatusAutoDisplay.retryWide)), .number("12%"), "ten minutes later")
-        // A display change retries at once.
+        // After the switch interval, a display change retries before the ten-minute fallback.
         var other = StatusAutoDisplay()
         _ = other.resolve(reading(12), squeezed: true, displayEpoch: 0, now: base)
         XCTAssertEqual(other.resolve(reading(12), squeezed: true, displayEpoch: 0, now: base.addingTimeInterval(1)), .iconOnly)
-        XCTAssertEqual(other.resolve(reading(12), squeezed: false, displayEpoch: 1, now: base.addingTimeInterval(2)), .number("12%"))
+        XCTAssertEqual(other.resolve(reading(12), squeezed: false, displayEpoch: 1, now: base.addingTimeInterval(61)), .number("12%"))
     }
 
     func testAtMostOneSqueezeSwitchAMinute() {
         var auto = StatusAutoDisplay()
         _ = auto.resolve(reading(12), squeezed: true, displayEpoch: 0, now: base)
         XCTAssertEqual(auto.resolve(reading(12), squeezed: true, displayEpoch: 0, now: base.addingTimeInterval(1)), .iconOnly)
-        // A display change retries the wide form after 10 s, and it is squeezed again straight away: no second switch inside a minute.
-        XCTAssertEqual(auto.resolve(reading(12), squeezed: true, displayEpoch: 1, now: base.addingTimeInterval(10)), .number("12%"))
-        XCTAssertEqual(auto.resolve(reading(12), squeezed: true, displayEpoch: 1, now: base.addingTimeInterval(12)), .number("12%"),
-                       "the debounce passed, the minute has not")
-        XCTAssertEqual(auto.pendingDeadline, base.addingTimeInterval(1 + StatusAutoDisplay.minimumSwitchInterval))
-        XCTAssertEqual(auto.resolve(reading(12), squeezed: true, displayEpoch: 1,
-                                    now: base.addingTimeInterval(1 + StatusAutoDisplay.minimumSwitchInterval)), .iconOnly)
+        let retry = base.addingTimeInterval(61)
+        XCTAssertEqual(auto.resolve(reading(12), squeezed: true, displayEpoch: 1, now: base.addingTimeInterval(10)), .iconOnly)
+        XCTAssertEqual(auto.pendingDeadline, retry)
+        XCTAssertEqual(auto.resolve(reading(12), squeezed: true, displayEpoch: 1, now: base.addingTimeInterval(60.99)), .iconOnly)
+        XCTAssertEqual(auto.resolve(reading(12), squeezed: true, displayEpoch: 1, now: retry), .number("12%"))
+        XCTAssertEqual(auto.pendingDeadline, base.addingTimeInterval(121))
+        XCTAssertEqual(auto.resolve(reading(12), squeezed: true, displayEpoch: 1, now: base.addingTimeInterval(120.99)), .number("12%"))
+        XCTAssertEqual(auto.resolve(reading(12), squeezed: true, displayEpoch: 1, now: base.addingTimeInterval(121)), .iconOnly)
     }
 
     func testTheLabelIsCompleteInEveryState() {
@@ -183,6 +185,97 @@ import ModelPlanWire
         XCTAssertEqual(button.title, "", "squeezed: the icon only")
         XCTAssertEqual(button.imagePosition, .imageOnly)
         XCTAssertEqual(button.accessibilityLabel(), "ModelPlan \u{00B7} Synthetic account 15%", "the label keeps the number")
+    }
+
+    func testAutomaticReadingExpiresOnItsScheduledCallback() async throws {
+        let (app, _) = try await launch(weekly: 15)
+        var now = app.composition.currentDate()
+        app.composition.currentDate = { now }
+        app.statusItemVisibility = { true }
+        var armed: [(seconds: TimeInterval, fire: @MainActor () -> Void)] = []
+        app.statusAutoSchedule = { seconds, fire in armed.append((seconds, fire)); return {} }
+        app.installStatusItem()
+        app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertEqual(button.title, "15%")
+
+        app.composition.suspendDeadlines()
+        app.renderMenu()
+        XCTAssertEqual(button.title, "15%")
+        let expiry = try XCTUnwrap(armed.last, "Automatic schedules the end of the reading hold")
+        XCTAssertEqual(expiry.seconds, StatusTitleKeeper.holdLimit, accuracy: 0.001)
+
+        now = now.addingTimeInterval(StatusTitleKeeper.holdLimit)
+        expiry.fire()
+        XCTAssertEqual(button.imagePosition, .imageOnly)
+        XCTAssertEqual(button.title, "")
+        XCTAssertEqual(button.accessibilityLabel(), "ModelPlan")
+    }
+
+    func testDisplayChangeSchedulesADeferredWideRetry() async throws {
+        let (app, _) = try await launch(weekly: 12)
+        let start = app.composition.currentDate()
+        var now = start
+        app.composition.currentDate = { now }
+        var visible = true
+        app.statusItemVisibility = { visible }
+        app.displayRecheckSchedule = { _, _ in {} }
+        var armed: [(seconds: TimeInterval, fire: @MainActor () -> Void)] = []
+        app.statusAutoSchedule = { seconds, fire in armed.append((seconds, fire)); return {} }
+        app.installStatusItem()
+        app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertEqual(button.title, "12%")
+
+        visible = false
+        app.checkStatusItemVisibility()
+        let debounce = try XCTUnwrap(armed.last)
+        now = start.addingTimeInterval(1)
+        debounce.fire()
+        XCTAssertEqual(button.title, "")
+
+        now = start.addingTimeInterval(10)
+        app.displayParametersChanged()
+        app.renderMenu()
+        XCTAssertEqual(button.title, "", "the display change keeps the item narrow during the switch interval")
+        let retry = try XCTUnwrap(armed.last)
+        XCTAssertEqual(retry.seconds, 51, accuracy: 0.001)
+        now = start.addingTimeInterval(60.99)
+        app.renderMenu()
+        XCTAssertEqual(button.title, "")
+
+        now = start.addingTimeInterval(61)
+        retry.fire()
+        XCTAssertEqual(button.title, "12%", "the scheduled callback retries without another display change")
+    }
+
+    func testNoticeReplacesTheUsedUpDotWhileTheMenuIsTracking() async throws {
+        let (app, _) = try await launch(weekly: 0)
+        app.installStatusItem()
+        app.renderMenu()
+        XCTAssertTrue(app.usedUpDotVisibleForTesting)
+
+        let menu = try XCTUnwrap(app.liveStatusMenu)
+        let delegate = try XCTUnwrap(menu.delegate)
+        delegate.menuWillOpen?(menu)
+        defer { delegate.menuDidClose?(menu) }
+        app.renderMenu()
+        XCTAssertTrue(app.statusRenderHeld)
+
+        let now = app.composition.currentDate()
+        var signal = DockSubscriptionSignal(id: "synthetic")
+        signal.reset = .init(id: "reset", status: .announced, announcedAt: now)
+        let notice = try XCTUnwrap(DockNoticeProjection.candidates(for: signal, at: now).first)
+        let deliver = try XCTUnwrap(app.composition.dock.menuNoticeDidChange)
+        deliver(notice, true)
+        XCTAssertEqual(app.noticeIndicator.notice, notice)
+        XCTAssertFalse(app.usedUpDotVisibleForTesting)
+        XCTAssertTrue(app.statusRenderHeld)
+
+        deliver(nil, false)
+        XCTAssertNil(app.noticeIndicator.notice)
+        XCTAssertTrue(app.usedUpDotVisibleForTesting)
+        XCTAssertTrue(app.statusRenderHeld)
     }
 
     func testTheOtherDisplayChoicesAreUnchanged() async throws {
