@@ -43,12 +43,27 @@ import ModelPlanWire
             root.layoutSubtreeIfNeeded()
             XCTAssertEqual(note.preferredMaxLayoutWidth, previousWidth, "Window layout must not change the preferred width")
 
-            await withCheckedContinuation { continuation in
-                DispatchQueue.main.async { continuation.resume() }
+            // Applying the preferred width can change the stack's fitting size and schedule another pass.
+            // Require a matching width on consecutive passes to catch continued layout feedback.
+            var matchingWidth: CGFloat?
+            var settled = false
+            for _ in 0..<8 {
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.main.async { continuation.resume() }
+                }
+                root.layoutSubtreeIfNeeded()
+                let resolvedWidth = floor(note.bounds.width)
+                if resolvedWidth > 0, note.preferredMaxLayoutWidth == resolvedWidth {
+                    if matchingWidth == resolvedWidth {
+                        settled = true
+                        break
+                    }
+                    matchingWidth = resolvedWidth
+                } else {
+                    matchingWidth = nil
+                }
             }
-            root.layoutSubtreeIfNeeded()
-            XCTAssertGreaterThan(note.bounds.width, 0)
-            XCTAssertEqual(note.preferredMaxLayoutWidth, floor(note.bounds.width))
+            XCTAssertTrue(settled, "Permissions note did not settle at window width \(width)")
             if width == 900 {
                 if let wideHeight { XCTAssertEqual(note.bounds.height, wideHeight) }
                 else { wideHeight = note.bounds.height }
