@@ -27,3 +27,16 @@ test('a late lamp mutation fails the timing contract',()=>{
  expect(timingVerdict(step)).toEqual({failure:'last mutation or frame exceeded 150 ms'});
  expect(timingVerdict({...step,late:[...step.late,{kind:'mutation',type:'childList'}]})).toEqual({failure:'last mutation or frame exceeded 150 ms'});
 });
+
+test('an animation-end mutation is attributed to the interaction during the animation',async({page})=>{
+ test.skip(process.env.COCKPIT_HEADED_MOTION!=='1','Natural WebKit animation events require headed rendering.');
+ await page.addInitScript(watch);
+ await page.goto('data:text/html,<style>@keyframes pulse { from { opacity: 1 } to { opacity: .5 } } .pulse { animation: pulse 5000ms }</style><div>lamp</div>');
+ await page.evaluate(()=>{const el=document.querySelector('div');el.addEventListener('animationend',()=>{el.dataset.finished='yes';});el.className='pulse';});
+ await page.waitForFunction(()=>document.querySelector('div').getAnimations().length>0);
+ await page.keyboard.press('Escape');await delay(6000);
+ const step=await page.evaluate(()=>window.__walk.results[0]);
+ expect(await page.locator('div').getAttribute('data-finished')).toBe('yes');
+ expect(step.late.some(e=>e.kind==='mutation'&&e.attribute==='data-finished')).toBe(true);
+ expect(timingVerdict(step)).toEqual({failure:'last mutation or frame exceeded 150 ms'});
+});
