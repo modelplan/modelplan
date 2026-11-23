@@ -65,7 +65,9 @@ import ModelPlanWire
             }
             XCTAssertTrue(settled,
                           "Window width \(width): note width \(note.bounds.width), preferred width \(note.preferredMaxLayoutWidth)")
-            XCTAssertEqual(note.bounds.width, copy.bounds.width, accuracy: 0.001, "The note fills the copy column")
+            let noteAlignmentWidth = note.alignmentRect(forFrame: note.frame).width
+            let copyAlignmentWidth = copy.alignmentRect(forFrame: copy.frame).width
+            XCTAssertEqual(noteAlignmentWidth, copyAlignmentWidth, accuracy: 0.001, "The note fills the copy column")
             if width == 900 {
                 if let wideHeight { XCTAssertEqual(note.bounds.height, wideHeight) }
                 else { wideHeight = note.bounds.height }
