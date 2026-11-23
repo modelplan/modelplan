@@ -22,8 +22,8 @@ test('a prompt timer mutation settles before the deadline',async({page})=>{
  await expect(page.locator('body')).toHaveAttribute('data-prompt','yes');
 });
 
-test('only the identified display-pulse cleanup is an expected late mutation',()=>{
+test('a late lamp mutation fails the timing contract',()=>{
  const step={start:100,last:270,displayAt:50,pending:0,pendingTimers:0,late:[{kind:'mutation',type:'attributes',attribute:'class',target:'<i class="activity" aria-hidden="true"></i>'}]};
- expect(timingVerdict(step)).toEqual({expected:'display-pulse-cleanup'});
+ expect(timingVerdict(step)).toEqual({failure:'last mutation or frame exceeded 150 ms'});
  expect(timingVerdict({...step,late:[...step.late,{kind:'mutation',type:'childList'}]})).toEqual({failure:'last mutation or frame exceeded 150 ms'});
 });

@@ -136,3 +136,12 @@ test('MOT-2.3-08 the landing burn runs only on a shown cockpit: ignition while h
  expect(await burn()).toEqual([]);
  expect((await motions(page)).filter(m=>/cockpit-bell-(flare|burn)/.test(m.animation))).toEqual([]);
 });
+
+test('display pulse ends without a late lamp DOM mutation',async({page})=>{
+ const fx=visualFixture(),{send,receive}=await open(page,fx.data);
+ fx.data.projection.rows[0].accounts[0].windows[0].remainingPercent=19;
+ expect(await receive(send('display',{data:fx.data}))).toBe(true);
+ const lamp=page.locator('.activity');await expect(lamp).toHaveClass(/state-pulse/);
+ const changes=await lamp.evaluate(async el=>{let count=0;const observer=new MutationObserver(records=>count+=records.length);observer.observe(el,{attributes:true});for(const animation of el.getAnimations())animation.finish();await new Promise(resolve=>setTimeout(resolve,50));observer.disconnect();return count;});
+ expect(changes).toBe(0);
+});

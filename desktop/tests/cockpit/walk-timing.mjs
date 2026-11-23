@@ -32,6 +32,5 @@ export function timingVerdict(step){
  if(step.pending)return {failure:'pending animation frames at 150 ms'};
  if(step.pendingTimers)return {failure:'pending timers at 150 ms'};
  if(step.last-step.start<=150)return {};
- const pulse=step.displayAt!==null&&step.start-step.displayAt<600&&step.late.length>0&&step.late.every(e=>e.kind==='mutation'&&e.type==='attributes'&&e.attribute==='class'&&e.target?.startsWith('<i class="activity"'));
- return pulse?{expected:'display-pulse-cleanup'}:{failure:'last mutation or frame exceeded 150 ms'};
+ return {failure:'last mutation or frame exceeded 150 ms'};
 }
