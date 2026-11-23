@@ -26,9 +26,9 @@ function starPath(x, y, r) {
  * first free row down the right-hand edge — or the next column left of it — with a thin leader line back to its ★.
  * A spot counts as free only inside the chart, an overlong published name is fitted to the chart's width (the full
  * name stays in the hover title; the point's tooltip keeps it too), and every name is drawn (G3-168). */
-// Estimated drawn width: 5.6 px per narrow glyph; full-width, CJK and emoji glyphs take about two (measured in WebKit:
-// a 47-glyph full-width name is ~450 px). Exported so the tests use the renderer's own estimate.
-export const labelWidth = text => [...text].reduce((sum, ch) => sum + (/[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]|\p{Extended_Pictographic}/u.test(ch) ? 10 : 5.6), 2);
+// Conservative bound for 10 px chart text, including uppercase and fallback glyphs.
+// Code points rather than UTF-16 units keep astral characters intact when fitted.
+export const labelWidth = text => [...text].length * 10 + 2;
 function nameLabels(items, width, height, taken) {
   const boxes = [...taken], labels = [];
   const free = (x, y, w) => x >= 1 && x + w <= width - 1 && y - 8 >= 0 && y + 2 <= height

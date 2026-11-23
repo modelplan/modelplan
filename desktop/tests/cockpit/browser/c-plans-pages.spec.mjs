@@ -176,14 +176,16 @@ test('CKP-MFD-66 the Models chart key shows the frontier and names every plotted
  expect(await page.locator('.mfd-page svg.fc .fc-l').count()).toBe(await page.locator('.mfd-page svg.fc .fc-star').count());
 });
 
-// macrevb-1179-2: a full-width published name is measured by the browser, not by character count.
-test('CKP-MFD-66 a full-width published model name is fitted inside the chart; title and tooltip keep the full name (G3-168)',async({page})=>{
- const wide='Ｑｗｅｎ－Ｌｏｎｇ－Ｃｏｎｔｅｘｔ－Ｉｎｓｔｒｕｃｔ－Ｐｒｅｖｉｅｗ－２０２６－１１－２２';
+// macrevb-1179-2: check the actual glyph bounds with the shipped fonts loaded.
+for(const [kind,wide] of [
+ ['full-width','Ｑｗｅｎ－Ｌｏｎｇ－Ｃｏｎｔｅｘｔ－Ｉｎｓｔｒｕｃｔ－Ｐｒｅｖｉｅｗ－２０２６－１１－２２'],
+ ['uppercase','QWEN3-CODER-NEXT-INSTRUCT-REASONING-EXPERIMENTAL-PREVIEW-NOVEMBER-2026'],
+]) test(`CKP-MFD-66 a ${kind} published model name is fitted inside the chart; title and tooltip keep the full name (G3-168)`,async({page})=>{
  const data=withHistory();
- data.details.publishedModels.push({...structuredClone(data.details.publishedModels[0]),id:'wide-x',name:wide,short:wide});
- await open(page,data);await page.locator('[data-mfd="page:tune"]').click();
+ data.details.publishedModels.push({...structuredClone(data.details.publishedModels[0]),id:'wide-x',name:wide});
+ await open(page,data);await page.evaluate(()=>document.fonts.ready);await page.locator('[data-mfd="page:tune"]').click();
  await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
- const label=page.locator('.mfd-page svg.fc .fc-l',{has:page.locator('title')});
+ const label=page.locator('.mfd-page svg.fc .fc-l',{has:page.locator('title',{hasText:wide})});
  await expect(label).toHaveCount(1);
  const fit=await page.locator('.mfd-page svg.fc').evaluate(svg=>{const vb=svg.viewBox.baseVal;return [...svg.querySelectorAll('.fc-l')].map(t=>{const b=t.getBBox();return b.x>=0&&b.x+b.width<=vb.width&&b.y>=0&&b.y+b.height<=vb.height;});});
  expect(fit.every(Boolean)).toBe(true);

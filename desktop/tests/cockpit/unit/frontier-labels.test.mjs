@@ -22,12 +22,12 @@ test('G3-168: all crowded models get a visible name at the default size, nothing
 
 // Sampling 11-22 (PR 1165): the placement never checked the viewport, never fitted an overlong published name, and
 // the forced edge fallback overlapped existing names. A label counts as readable only when its full estimated box
-// (baseline y, ±8/+2, 5.6 px per glyph — the renderer's own estimate) is inside the chart and clear of every other.
+// (baseline y, ±8/+2, using the renderer's width estimate) is inside the chart and clear of every other.
 const NAME_RE=/<text class="fc-l[^"]*" x="(-?[\d.]+)" y="(-?[\d.]+)"[^>]*>(?:<title>([^<]*)<\/title>)?([^<]*)<\/text>/g;
 const nameBoxes=(svg,{w,h})=>{
   const names=[...svg.matchAll(NAME_RE)];
   assert.equal(names.length,(svg.match(/class="fc-l /g)||[]).length,'every label parsed');
-  return {names,boxes:names.map(([,x,y,,t])=>({x:+x,y:+y,w:t.length*5.6+2,t}))};
+  return {names,boxes:names.map(([,x,y,,t])=>({x:+x,y:+y,w:labelWidth(t),t}))};
 };
 const inBounds=(b,w,h)=>b.x>=1&&b.x+b.w<=w-1&&b.y-8>=0&&b.y+2<=h;
 const disjoint=(a,b)=>a.x+a.w<=b.x||b.x+b.w<=a.x||Math.abs(a.y-b.y)>=10;
@@ -64,7 +64,7 @@ test('sampling 11-22 F3: an overlong published name is fitted inside and keeps i
   assert.ok(svg.includes(`<title>${long}</title>`),'the label carries the full name as its hover title');
   assert.ok(svg.includes(`data-tip="${long}`),'the point tooltip keeps the full name');
 });
-test('sampling 11-22 macrevb-1179-2: a full-width published name is fitted by its real glyph width, full name kept for hover', () => {
+test('sampling 11-22 macrevb-1179-2: a full-width published name is fitted, full name kept for hover', () => {
   setLanguage('en');
   const wide='Ｑｗｅｎ－Ｌｏｎｇ－Ｃｏｎｔｅｘｔ－Ｉｎｓｔｒｕｃｔ－Ｐｒｅｖｉｅｗ－２０２６－１１－２２';
   const svg=frontierSvg([m('a','Astra 6',62,.9),{id:'q',name:wide,short:wide,rec:'Med',e:[['Low',21,.2,1],['Med',25,.3,1],['High',30,.5,1]]}],{w:260,h:180});
