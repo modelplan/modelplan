@@ -378,7 +378,7 @@ extension CommunityCockpitEntryTests {
               FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
             throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
         }
-        for (name, usable, tier, closedRoot) in [("short", CGRect(x: 0, y: 0, width: 1440, height: 680), CockpitShellState.Tier.compact, CGFloat(609)),
+        for (name, usable, tier, closedRoot) in [("short", CGRect(x: 0, y: 0, width: 1440, height: 692), CockpitShellState.Tier.compact, CGFloat(609)),
                                                   ("full", CGRect(x: 0, y: 0, width: 1680, height: 1026), .tall, 691)] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-53-" + UUID().uuidString).resolvingSymlinksInPath()
             defer { try? FileManager.default.removeItem(at: root) }
@@ -522,7 +522,7 @@ extension CommunityCockpitEntryTests {
         }
         let cases: [(String, CGRect, CockpitSize?, CGFloat)] = [
             ("1470x956, Dock at the bottom (default 85 %)", CGRect(x: 0, y: 70, width: 1470, height: 849), nil, 0.85),
-            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 711), nil, (711 - CockpitShellLayout.menuBarGap) / 951),
+            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 720), nil, (720 - CockpitShellLayout.menuBarGap) / 951),
             ("80 % chosen live", CGRect(x: 0, y: 0, width: 1680, height: 1026), .percent80, 0.8),
         ]
         for (name, usable, live, expected) in cases {
@@ -555,8 +555,8 @@ extension CommunityCockpitEntryTests {
             XCTAssertEqual(painted["height"]!, 951, accuracy: 1, name)
             // Whole-point window frames (fit rounds up) leave under 1 pt of transparent slack below the page: up to 1/scale CSS px.
             let reserve = painted["height"]! - painted["rootBottom"]!
-            XCTAssertGreaterThanOrEqual(reserve, 33, "\(name): the flame reserve is inside the window")
-            XCTAssertLessThanOrEqual(reserve, 34 + 1 / Double(scale) + 0.01, "\(name): the flame reserve plus at most 1 pt of rounding slack")
+            XCTAssertGreaterThanOrEqual(reserve, 45, "\(name): the flame reserve is inside the window")
+            XCTAssertLessThanOrEqual(reserve, 46 + 1 / Double(scale) + 0.01, "\(name): the flame reserve plus at most 1 pt of rounding slack")
             // The window server places borderless panels on whole points.
             XCTAssertEqual(window.frame.width, 636 * scale, accuracy: 1, name)
             XCTAssertEqual(window.frame.height, 951 * scale, accuracy: 1, name)
