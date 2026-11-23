@@ -62,10 +62,10 @@ test('D391 history usage of an unticked developer adds no fader; a ticked develo
  const {faders}=publicationFaders(publication,[],more,subscriptions,{now:Date.now(),ownPlansOnly:true,usage});
  assert.ok(!faders.some(f=>f.id==='glm-5'),'the unticked developer\'s ranked model must not show');
  assert.ok(faders.some(f=>f.id==='gpt-hist'),'a ticked developer\'s ranked model stays (G3-133)');
- // The conservative D123 rule: a subscription whose developer is unknown matches nothing, so usage exempts again.
+ // An unknown developer cannot establish ownership of unattributed history.
  const unknown=[...subscriptions,{key:'unknown-tool',developer:null,colour:'#ffffff'}];
  const loose=publicationFaders(publication,[],moreFaderModels(published,[],[],unknown,new Set(['glm-5'])),unknown,{now:Date.now(),ownPlansOnly:true,usage:historyUsage({models:{recent7d:{top:[{name:'glm-5',observedOutputTokens:10,observedRequests:1,share:1}]}}})});
- assert.ok(loose.faders.some(f=>f.id==='glm-5'));
+ assert.ok(!loose.faders.some(f=>f.id==='glm-5'));
 });
 
 // ghglm-1171-1 round 2: with NOTHING ticked (no member rows at all), no ranked model can be the user's own plans'

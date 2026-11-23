@@ -71,3 +71,16 @@ test('D391 a ticked subscription keeps its sessions\' models (the filter is the 
  expect(labels).toContain('Synthetic claude-used');
  expect(labels.some(l=>l.includes('GLM'))).toBe(false);
 });
+
+test('D391 OpenCode Go cannot admit an unticked tool from unattributed history',async({page})=>{
+ const data=fixture(),oc=structuredClone(data.projection.rows[0]);
+ oc.id='opencodego';oc.name={en:'OpenCode Go',zh:'OpenCode Go'};oc.surfaces=['dock','menu','settings'];
+ oc.accounts.forEach(a=>{a.subscriptionRef=null;a.accountLocator=null;});data.projection.rows.push(oc);
+ data.details.sessions=data.details.sessions.filter(s=>s.source!=='zcode');
+ data.details.publishedModels.push(model('oc-live','xai'));
+ data.details.sessions.push({sessionRef:'00000000000000a4',source:'opencodego',subscriptionRef:null,model:'oc-live',effort:'medium',projectLabel:null,lastObservedAt:new Date().toISOString(),state:'running',rate:null});
+ await open(page,data);
+ const names=await page.locator('.fd-ch:not(.empty) .fd-strip').evaluateAll(list=>list.map(e=>e.getAttribute('aria-label')));
+ expect(names.some(n=>n.startsWith('Synthetic glm-live:'))).toBe(false);
+ expect(names.some(n=>n.startsWith('Synthetic oc-live:'))).toBe(true);
+});

@@ -97,6 +97,17 @@ test('CKP-PORT-07 a subscription scope narrows the HUD and 全部 restores it',a
  await expect(page.locator('.hud .hp')).toHaveCount(1);await expect(page.locator('.hud .hp b')).toHaveText('Synthetic claude-model');
  expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(page.locator('.hud .hp')).toHaveCount(4);
 });
+
+test('D386 a running dominated model remains selectable in the scoped Models list',async({page})=>{
+ const fleet=Array.from({length:10},(_,i)=>model('front-'+i,40+i,.1*(i+1)));
+ fleet.push(model('running-overflow',20,2));let ref='';
+ const session={sessionRef:'00000000000000aa',source:'codex',subscriptionRef:null,model:'running-overflow',effort:'high',projectLabel:null,lastObservedAt:observed(),state:'running',rate:null};
+ const {send,receive}=await open(page,{published:fleet,session,edit:data=>{keepRows(['codex'])(data);ref=data.subscriptions[0].subscriptionRef;}});
+ expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ const row=page.locator('.md-row[data-model="running-overflow"]');await expect(row).toBeVisible();await row.click();
+ await expect(row).toHaveClass(/\bsel\b/);
+});
 // D86: "All" is the union of the user's own subscriptions, never the whole published field.
 const keepRows=ids=>data=>{data.projection.rows=data.projection.rows.filter(r=>ids.includes(r.id));data.subscriptions=data.subscriptions.filter(s=>data.projection.rows.some(r=>r.accounts.some(a=>a.subscriptionRef===s.subscriptionRef)));};
 const mixed=()=>[model('gpt-a',50,.3),model('gpt-b',45,.2),{...model('claude-a',60,.5),developerId:'anthropic'},{...model('google-a',55,.4),developerId:'google'}];
