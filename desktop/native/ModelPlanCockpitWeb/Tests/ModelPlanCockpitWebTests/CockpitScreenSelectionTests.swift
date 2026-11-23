@@ -41,6 +41,11 @@ import XCTest
     XCTAssertTrue(usable.contains(frame), "\(message): \(NSStringFromRect(frame)) is not inside \(NSStringFromRect(usable))", file: file, line: line)
   }
 
+  private func hull(_ windowFrame: CGRect, reserve: CGFloat) -> CGRect {
+    let (_, hull) = windowFrame.divided(atDistance: reserve, from: .minYEdge)
+    return hull
+  }
+
   func testTheClickScreenWinsOverTheIconScreen() {
     XCTAssertEqual(CockpitScreenSelection.openScreen(point: clickOnB, anchor: icon, screens: [a, b]), b, "a click on B opens on B")
     XCTAssertEqual(CockpitScreenSelection.openScreen(point: nil, anchor: icon, screens: [a, b]), a, "no click: the icon's display")
@@ -122,18 +127,19 @@ import XCTest
 
   func testADragOntoTheOtherDisplayEndsInsideIt() throws {
     let page = try page(click: nil)
-    let start = try XCTUnwrap(page.placement()).frame
+    let placement = try XCTUnwrap(page.placement())
+    let start = placement.frame
+    let reserve = placement.fit.hullBottomInset
     let from = CGPoint(x: start.minX + 100, y: start.maxY - 20)
     // Well into B, then hard against B's bottom-right corner: before 14c this was clamped back into A.
     for to in [CGPoint(x: 2600, y: 600), CGPoint(x: 4071, y: 1)] {
       let moved = page.dragFrame(start: start, from: from, to: to)
-      // G3-159: the window's transparent reserve may hang below B's bottom edge; the hull stays inside.
-      assertInside(moved.offsetBy(dx: 0, dy: max(0, b.visibleFrame.minY - moved.minY)), b.visibleFrame, "drag to \(to)")
+      assertInside(hull(moved, reserve: reserve), b.visibleFrame, "drag to \(to)")
       XCTAssertEqual(moved.size, start.size, "a drag never resizes")
     }
     let back = page.dragFrame(start: start, from: from, to: CGPoint(x: 300, y: 300))
-    // G3-159: dragged far down, the hull reaches A's bottom edge; the transparent reserve may hang below it.
-    assertInside(back.offsetBy(dx: 0, dy: max(0, a.visibleFrame.minY - back.minY)), a.visibleFrame, "and back onto A")
+    assertInside(hull(back, reserve: reserve), a.visibleFrame, "and back onto A")
+    XCTAssertEqual(back.size, start.size, "the return drag keeps the same size")
   }
 
   /// The normal drag entry: the title strip's phases move the real window onto B and remember the origin there.
@@ -188,8 +194,9 @@ import XCTest
     page.titleDrag(.moved, point: CGPoint(x: 600, y: 400))
     page.titleDrag(.ended, point: CGPoint(x: 600, y: 400))
     XCTAssertEqual(window.frame.size, size, "and back on the short display: the same size")
-    // G3-159: the hull is what stays inside the short display; the transparent reserve may hang below its edge.
-    assertInside(window.frame.offsetBy(dx: 0, dy: max(0, short.visibleFrame.minY - window.frame.minY)), short.visibleFrame, "the whole cockpit is on the short display")
+    let droppedHull = hull(window.frame, reserve: smallest.hullBottomInset)
+    assertInside(droppedHull, short.visibleFrame, "the hull is on the short display")
+    XCTAssertEqual(droppedHull.minY, short.visibleFrame.minY, accuracy: 1, "the hull reaches the bottom")
     XCTAssertEqual(try XCTUnwrap(page.placement()).frame.size, size)
     XCTAssertEqual(session.origin(for: page.arrangement), window.frame.origin, "the place is remembered")
   }
