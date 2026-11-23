@@ -5,6 +5,7 @@ import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
+import ModelPlanShell
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
