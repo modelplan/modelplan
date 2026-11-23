@@ -1,0 +1,1 @@
+Usage accounting keeps already recorded responses when the computer's clock is corrected backwards, rescans an unchanged session log after a time-zone change makes its responses eligible, and stops reparsing archived logs every 30 seconds.
