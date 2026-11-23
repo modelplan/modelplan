@@ -99,7 +99,8 @@ jobs:
           test -s .tmp/test-results/visual-capture/cockpit-closed-night.png
           test -s .tmp/test-results/visual-capture/cockpit-closed-night.json
           callback=$(find .tmp/test-results -name callback-counts.json -type f -print -quit)
-          test -n "$callback" && test -s "$callback"
+          test -n "$callback"
+          test -s "$callback"
           find .tmp/test-results -type f -print0 | sort -z | xargs -0 sha256sum > .tmp/walk-suite-evidence.sha256
           if COCKPIT_WALK_FORCE_FAILURE=1 npx playwright test --config ../tests/cockpit/playwright.config.mjs --output .tmp/walk-probe-results click-walk.spec.mjs --grep 'click walk: empty' > .tmp/walk-probe.log 2>&1; then
             cat .tmp/walk-probe.log

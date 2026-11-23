@@ -10,6 +10,7 @@ import {walkScenarios,WALK_CLOCK} from '../walk-fixtures.mjs';
 import {expectedWalkFailures} from '../walk-expected-failures.mjs';
 import {watch,timingVerdict} from '../walk-timing.mjs';
 import {replayTargetMatches} from '../walk-replay.mjs';
+import {inspectPage} from '../walk-inspect.mjs';
 import {setTimeout as delay} from 'node:timers/promises';
 
 const output=fileURLToPath(new URL('../.tmp/walk/',import.meta.url));
@@ -37,48 +38,7 @@ async function choices(page){
  })),selectors);
 }
 
-async function inspect(page,checkPointer=false){
- return page.evaluate(checkPointer=>{
-  const p=document.querySelector('.mfd-page'),overlay=[...document.querySelectorAll('.mfd-screen .pl-screen')],selected=[...document.querySelectorAll('.mfd-pk .pk[aria-pressed="true"]')],header=[...document.querySelectorAll('[data-range-key][aria-checked="true"]')];
-  const range=header[0]?.getAttribute('data-range-key'),opt=document.querySelector('.mfd-ok [data-opt="range"] b.on')?.getAttribute('data-choice');
-  const violations=[];
-  if(!p||overlay.length>1)violations.push('one lower-panel view');
-  if(header.length!==1)violations.push('one header range');
-  if(!overlay.length&&!p?.classList.contains('pg-compare')&&!p?.classList.contains('pg-alerts')){
-   if(selected.length!==1||!p?.classList.contains('pg-'+selected[0]?.getAttribute('data-mfd')?.split(':')[1]))violations.push('page key matches view');
-  }
-  if(overlay.length&&document.querySelector(`.eng-keys .pl-key[data-plugin="${overlay[0].dataset.plugin}"]`)?.getAttribute('aria-expanded')!=='true')violations.push('plugin key matches view');
-  if(p?.querySelector('.cal-wk,.pl-screen'))violations.push('plugin content in page');
-  const foreign={overview:'.sp-now,.sa-list,.md-list,.cmp-lad',sub:'.ov-top,.ov-chart,.md-list,.cmp-lad',tune:'.ov-top,.ov-chart,.sp-now,.sa-list,.cmp-lad',where:'.ov-top,.ov-chart,.sp-now,.sa-list,.md-list,.cmp-lad',compare:'.ov-top,.ov-chart,.sp-now,.sa-list,.md-list'};
-  for(const [id,selector] of Object.entries(foreign))if(p?.classList.contains('pg-'+id)&&p.querySelector(selector))violations.push(`foreign content in ${id}`);
-  if(opt&&opt!==range)violations.push(`range mismatch ${range}/${opt}`);
-  const stats=p?.querySelector('.sp-stats[data-days]')?.getAttribute('data-days');
-  if(stats&&stats!==({today:'today','7d':'7','30d':'30'})[range])violations.push(`statistics range mismatch ${range}/${stats}`);
-  const chart=p?.querySelector('.ov-chart[data-buckets]')?.getAttribute('data-buckets');
-  if(chart&&Number(chart)!==({today:24,'7d':7,'30d':30})[range])violations.push(`chart range mismatch ${range}/${chart}`);
-  const overviewLabel=p?.classList.contains('pg-overview')&&!overlay.length?p.querySelector('.ov-top .lbl')?.textContent?.trim():null;
-  if(overviewLabel&&['今天','7天','30天'].includes(overviewLabel)&&overviewLabel!==({today:'今天','7d':'7天','30d':'30天'})[range])violations.push(`overview range mismatch ${range}/${overviewLabel}`);
-  const ring=[...document.querySelectorAll('body *')].filter(e=>{if(!e.matches(':focus-visible'))return false;const s=getComputedStyle(e),b=getComputedStyle(e,'::before');return s.outlineStyle!=='none'&&parseFloat(s.outlineWidth)>0||b.content!=='none'&&parseFloat(b.borderTopWidth)>0;});
-  if(checkPointer&&ring.length)violations.push('focus ring after pointer');
-  const view=overlay[0]||p,box=view?.getBoundingClientRect();
-  if(view&&box)for(const e of view.querySelectorAll('button,svg')){const r=e.getBoundingClientRect(),s=getComputedStyle(e);if(r.width&&r.height&&s.visibility!=='hidden'&&(r.left<box.left-1||r.right>box.right+1||r.top<box.top-1||r.bottom>box.bottom+1))violations.push(`view overflow ${e.className?.baseVal||e.className}`);}
-  // Measure the rendered text itself, including descendants of overflow containers; fully offscreen scroll rows are not visible.
-  const root=document.querySelector('#cockpit'),walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
-  while(walker.nextNode()){
-   const node=walker.currentNode,e=node.parentElement;if(!node.textContent.trim()||!e||overlay.length&&p?.contains(e))continue;
-   const style=getComputedStyle(e),elementBox=e.getBoundingClientRect();if(style.visibility==='hidden'||style.display==='none'||elementBox.width<=1&&elementBox.height<=1&&style.clipPath==='inset(50%)')continue;
-   const text=document.createRange();text.selectNodeContents(node);
-   for(const rect of text.getClientRects()){
-    if(!rect.width||!rect.height)continue;
-    for(let parent=e;parent&&parent!==root;parent=parent.parentElement){const s=getComputedStyle(parent),r=parent.getBoundingClientRect(),clipX=s.display!=='inline'&&/^(hidden|clip|auto|scroll)$/.test(s.overflowX),clipY=s.display!=='inline'&&/^(hidden|clip|auto|scroll)$/.test(s.overflowY);if(!clipX&&!clipY)continue;
-     if(rect.right<=r.left||rect.left>=r.right||rect.bottom<=r.top||rect.top>=r.bottom)break;
-     if(clipX&&(rect.left<r.left-1||rect.right>r.right+1)||clipY&&(rect.top<r.top-1||rect.bottom>r.bottom+1)){const fontBoxOnly=rect.left>=r.left-1&&rect.right<=r.right+1&&rect.top>=r.top-2.5&&rect.bottom<=r.bottom+1.5;const named=fontBoxOnly&&parent.matches('.mfd-pk .pk > span')?'.mfd-pk .pk > span':fontBoxOnly&&parent.matches('.pl-foot .pl-fit')?'.pl-foot .pl-fit':fontBoxOnly&&parent.matches('.mfd-ok .ok-l')?'.mfd-ok .ok-l':fontBoxOnly&&parent.matches('.sp-h b')?'.sp-h b':parent.matches('.eng-keys[data-slots="6"] .ek-name')&&e.textContent==='Claude Code'&&rect.right-r.right<=9&&rect.left>=r.left-1&&rect.top>=r.top-1&&rect.bottom<=r.bottom+1?'.eng-keys .ek-name Claude Code':null;violations.push(named?`clipped text ${named}`:`clipped text ${e.outerHTML.slice(0,140)} in ${parent.outerHTML.slice(0,150)} (${s.display} ${s.overflowX}/${s.overflowY}, ${r.width}x${r.height}): ${Math.round(rect.left-r.left)},${Math.round(rect.right-r.right)},${Math.round(rect.top-r.top)},${Math.round(rect.bottom-r.bottom)}`);break;}
-    }
-   }
-  }
-  return {violations,range,page:p?.className,content:(overlay[0]||p)?.textContent,overviewTotal:p?.querySelector('.ov-top .ov-total')?.textContent??null,plugin:overlay[0]?.dataset.plugin??null,selected:selected.map(e=>e.getAttribute('data-mfd')),choices:[...document.querySelectorAll('.mfd-ok [data-opt]')].map(e=>[e.getAttribute('data-opt'),e.querySelector('b.on')?.getAttribute('data-choice')]),scope:document.querySelector('.eng-keys .ek[aria-pressed="true"]')?.getAttribute('data-sub')??'all',hud:document.querySelector('.hud .hp.selected')?.getAttribute('data-hud-model')??null,pager:document.querySelector('.eng-pgn')?.textContent??null,faders:[...document.querySelectorAll('.fd-ch:not(.empty)')].map(e=>[e.className,e.querySelector('.fd-strip')?.textContent]),picks:[...document.querySelectorAll('.mfd-screen .sel,.mfd-screen .trial')].map(e=>[e.className?.baseVal||e.className,e.getAttribute('data-mfd'),e.textContent])};
- },checkPointer);
-}
+async function inspect(page,checkPointer=false){return page.evaluate(inspectPage,checkPointer);}
 
 for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.scenario))test(`click walk: ${scenario.name}`,async({page})=>{
  test.setTimeout(long?900000:120000);

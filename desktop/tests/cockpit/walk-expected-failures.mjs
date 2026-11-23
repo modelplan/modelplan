@@ -15,4 +15,7 @@ export const expectedWalkFailures=[
 },...['gear','detach'].flatMap(asset=>[
  {name:'header images trigger CSP errors on reload',kind:'console',message:`Refused to connect to http://127.0.0.1:41783/assets/${asset}-normal@3x.png because it does not appear in the connect-src directive of the Content Security Policy.`},
  {name:'header images trigger CSP errors on reload',kind:'console',message:'Failed to load resource: Blocked by Content Security Policy.',url:`http://127.0.0.1:41783/assets/${asset}-normal@3x.png`},
+]),...['lamp-off-glow','lamp-off-body'].flatMap(asset=>[
+ {name:'lamp images trigger CSP errors on reload',kind:'console',message:`Refused to connect to http://127.0.0.1:41783/assets/${asset}@3x.png because it does not appear in the connect-src directive of the Content Security Policy.`},
+ {name:'lamp images trigger CSP errors on reload',kind:'console',message:'Failed to load resource: Blocked by Content Security Policy.',url:`http://127.0.0.1:41783/assets/${asset}@3x.png`},
 ])];
