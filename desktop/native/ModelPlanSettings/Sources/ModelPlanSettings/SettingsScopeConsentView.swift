@@ -36,6 +36,7 @@ import ModelPlanWire
     private var observer: UUID?
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
+    private var wrappingWidthUpdateScheduled = false
     private var keySection: ReaderKeySection?
     /// D87 slice 6/7: the Subscriptions rows. Nil context keeps the plain per-tool list (first run, direct drives).
     private var rowsContext: SubscriptionRowsContext?
@@ -109,24 +110,24 @@ import ModelPlanWire
         buttons = []
         rowsView?.retire(); rowsView = nil
         keySection?.dismiss()
+        wrappingLabels.removeAll()
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
     }
     public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
-    /// Wrapping labels take the column width so long copy wraps instead of spilling (G3-25/26). The merge-queue
-    /// crash (#1137/#1152): with the D371 rows' width-equal constraints a fractional width change could flip a
-    /// label's intrinsic height back and forth inside AppKit's layout pass (the layout-loop exception). The width
-    /// is floored to whole points and applied only when that integer changes, at most once per label per pass —
-    /// setting `preferredMaxLayoutWidth` already invalidates the intrinsic content size.
-    private var layingOutWrappingLabels = false
     public override func layout() {
         super.layout()
-        guard !layingOutWrappingLabels else { return }
-        layingOutWrappingLabels = true
-        defer { layingOutWrappingLabels = false }
-        for label in wrappingLabels {
-            let width = floor(label.bounds.width)
-            if width > 0, label.preferredMaxLayoutWidth != width {
-                label.preferredMaxLayoutWidth = width
+        guard !wrappingWidthUpdateScheduled, !wrappingLabels.isEmpty else { return }
+        wrappingWidthUpdateScheduled = true
+        // Updating a label's preferred width dirties intrinsic sizing. Let AppKit finish laying out
+        // the window before using the resolved widths so the update cannot restart that layout pass.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            defer { self.wrappingWidthUpdateScheduled = false }
+            for label in self.wrappingLabels {
+                let width = floor(label.bounds.width)
+                if width > 0, label.preferredMaxLayoutWidth != width {
+                    label.preferredMaxLayoutWidth = width
+                }
             }
         }
     }
