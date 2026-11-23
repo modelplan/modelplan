@@ -19,7 +19,10 @@ export function usageRows(d, ui) {
   // A subscription scope has no scoped attribution for the ranking or the price data, so shares and ≈cost stay unknown there.
   const ranking = scoped ? null : range === '30d' ? d.modelRanking?.recent30d : range === '7d' ? d.modelRanking?.recent7d : null;
   const used = new Map((ranking?.top ?? []).map(r => [r.name, r]));
-  const field = (d.listModels ?? chartModels(d, ui)).slice(0, 10);
+  const candidates = d.listModels ?? chartModels(d, ui);
+  const active = candidates.filter(m => m.latestEffort !== undefined);
+  // Recent models remain selectable beyond the chart's ten-model cap; keep unused choices available as well.
+  const field = [...active, ...candidates.filter(m => m.latestEffort === undefined).slice(0, Math.max(1, 10 - active.length))];
   // A model the history ranks as used stays listed even when it falls outside the ten-model field (macrevc-1058-4).
   const extra = (d.listModels ?? []).filter(m => used.has(m.id) && !field.some(f => f.id === m.id));
   const ms = [...field, ...extra].map(m => withOlderLabel(m, t('mfd.olderBadge')));

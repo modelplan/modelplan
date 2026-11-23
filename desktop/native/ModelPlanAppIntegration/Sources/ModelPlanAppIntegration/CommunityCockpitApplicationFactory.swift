@@ -578,7 +578,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     /// WP-22 (D298): `mine` is the published models the connected tools can run (CockpitFieldFleet), `asOf` the
     /// publication's date for the menu header.
     private struct FieldPayload:Encodable {
-        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?,asOf:String?
+        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],onlyMine:Bool,focus:String?,asOf:String?
     }
     private(set) var fieldPanel:CockpitFieldPanel? // read by tests (WP-22 site keys)
     /// G3-80 seams: where the pointer is, the cockpit's frame and the displays the field is placed on.
@@ -592,10 +592,12 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     /// `lowPower` is the Low Power Mode state at open (D63): the scene mounts quiet and on demand when it is on.
     func fieldPayload(focusName:String?=nil,lowPower:Bool=ProcessInfo.processInfo.isLowPowerModeEnabled) -> String? {
         guard let data=composition.store.snapshot.cockpit,let details=data.details,let models=details.publishedModels,!models.isEmpty else { return nil }
-        let mine=CockpitFieldFleet.runnable(data)
+        let hidden=Set(owner.appearance.hiddenMembers)
+        let onlyMine=CockpitFieldFleet.hasHiddenMembers(data,hiddenMembers:hidden)
+        let mine=CockpitFieldFleet.runnable(data,hiddenMembers:hidden)
         let focus=focusName.flatMap { name in models.first { $0.name == name }?.id }
         let asOf=details.publication.map { String($0.publishedAt.rawValue.prefix(10)) }
-        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:focus,asOf:asOf)
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,onlyMine:onlyMine,focus:focus,asOf:asOf)
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {

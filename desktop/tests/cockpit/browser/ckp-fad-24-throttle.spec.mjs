@@ -8,15 +8,18 @@ const effort=(e,ability,cost,star=false)=>({effort:e,label:e,star,ability,cost,t
 // Sol: ★ Med, current High; Opus: ★ Med, current XHigh; GLM: one effort, ★ Max = current Max (owner build G3-92).
 export function throttleData({glmEfforts=['max']}={}){
  const data=visualFixture().data;
+ // GLM remains eligible after live sessions clear because this fixture has a visible ZCode subscription.
+ const zai=structuredClone(data.projection.rows[0]);zai.id='zai';zai.name={en:'ZCode',zh:'ZCode'};zai.vendorKey='glm';
+ zai.accounts.forEach(a=>{a.subscriptionRef=null;a.accountLocator=null;});data.projection.rows.push(zai);
  data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-11-12T00:00:00Z',source:'client',truncated:false,models:[
   {id:'sol',name:'Sol 6.1',developerId:'openai',recommended:'medium',efforts:[effort('low',33.9,.13),effort('medium',39.8,.25,true),effort('high',42.8,.38),effort('xhigh',46,.63),effort('max',47.5,1.06)]},
   {id:'opus',name:'Opus 5.5',developerId:'anthropic',recommended:'medium',efforts:[effort('low',45.6,1.2),effort('medium',55.4,2.9,true),effort('high',58.1,3.95),effort('xhigh',60.1,7.5),effort('max',62.4,13)]},
-  {id:'glm',name:'GLM-5.3',developerId:'zhipu',recommended:'max',efforts:glmEfforts.map((e,i)=>effort(e,40+i,1+i,e==='max'))},
+  {id:'glm',name:'GLM-5.3',developerId:'zhipuai',recommended:'max',efforts:glmEfforts.map((e,i)=>effort(e,40+i,1+i,e==='max'))},
  ]};
  data.details.sessions=[
   {sessionRef:'0000000000000001',source:'codex',subscriptionRef:null,model:'sol',effort:'high',projectLabel:'modelPlans',lastObservedAt:'2026-10-20T14:05:00Z',state:'running',rate:null},
   {sessionRef:'0000000000000002',source:'claude',subscriptionRef:null,model:'opus',effort:'xhigh',projectLabel:'desktop',lastObservedAt:'2026-10-20T14:04:00Z',state:'running',rate:null},
-  {sessionRef:'0000000000000003',source:'claude',subscriptionRef:null,model:'glm',effort:'max',projectLabel:'modelPlans',lastObservedAt:'2026-10-20T14:03:00Z',state:'idle',rate:null},
+  {sessionRef:'0000000000000003',source:'zcode',subscriptionRef:null,model:'glm',effort:'max',projectLabel:'modelPlans',lastObservedAt:'2026-10-20T14:03:00Z',state:'idle',rate:null},
  ];
  return data;
 }
@@ -183,6 +186,7 @@ for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height
 test('G3-92 unknown current: the lever is on the ★ row and the ghost on the trial effort row',async({page})=>{
  const {send,receive}=await openThrottles(page);
  const data=throttleData();data.details.sessions=[];expect(await receive(send('display',{data}))).toBe(true);
+ await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(3);
  const rows=await scaleRows(page);
  for(const [i,star] of [[0,'Med'],[1,'Med'],[2,'Max']]){
   const ch=channel(page,i);await expect.poll(async()=>Math.abs(await grip(ch)-rows[star])).toBeLessThanOrEqual(.6);

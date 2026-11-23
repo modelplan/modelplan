@@ -31,6 +31,9 @@ test('D391 an unticked subscription contributes no models; its live and recorded
  assert.deepEqual(admittedRecorded.map(s=>s.sessionRef),[]);
  // A session of a ticked tool stays even when its subscriptionRef names no member (the account cannot be told apart).
  assert.equal(sessionAdmittedBy(members,{source:'codex',subscriptionRef:'ffffffffffffffff'}),true);
+ // A known hidden sibling is different: its producer-verified session belongs to that hidden account.
+ const hidden={...members[0],key:'eeeeeeeeeeeeeeee'};
+ assert.equal(sessionAdmittedBy(members,{source:'codex',subscriptionRef:hidden.key},[...members,hidden]),false);
  const subscriptions=members.map(m=>({key:m.key,developer:toolDevelopers[m.row.id]??null,colour:'#ffffff'}));
  const publication={contractVersion:1,models:[model('gpt-5','openai')]};
  const published=[...publication.models,model('glm-5','zhipuai')];

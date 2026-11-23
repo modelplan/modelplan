@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // The porthole HUD from published public data, through the normal bridge. Synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
-import {appearance,commands,pageId,shell} from '../fixture.mjs';
+import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 import {shortLabel} from '../../../cockpit/study/rocket-r1/short-label.js';
 
@@ -109,18 +109,24 @@ test('D386 a running dominated model remains selectable in the scoped Models lis
  await expect(row).toHaveClass(/\bsel\b/);
 });
 
-test('D386 all four running models precede unused scoped Models rows',async({page})=>{
+test('D386 all eleven running models precede unused scoped Models rows',async({page})=>{
+ test.setTimeout(60000);await excludePortholeFlicker(page);
  const fleet=Array.from({length:10},(_,i)=>model('front-'+i,40+i,.1*(i+1)));
- const sessions=Array.from({length:4},(_,i)=>{
+ const sessions=Array.from({length:11},(_,i)=>{
   fleet.push(model('running-'+i,20,2+i));
-  return {sessionRef:'00000000000000a'+i,source:'codex',subscriptionRef:null,model:'running-'+i,effort:'high',projectLabel:null,lastObservedAt:new Date(Date.now()-i*1000).toISOString(),state:'running',rate:null};
+  return {sessionRef:'00000000000000'+(160+i).toString(16),source:'codex',subscriptionRef:null,model:'running-'+i,effort:'high',projectLabel:null,lastObservedAt:new Date(Date.now()-i*1000).toISOString(),state:'running',rate:null};
  });
  let ref='';const {send,receive}=await open(page,{published:fleet,sessions,edit:data=>{keepRows(['codex'])(data);ref=data.subscriptions[0].subscriptionRef;}});
  expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);
  await page.getByRole('button',{name:'Models',exact:true}).click();
  const ids=await page.locator('.md-row').evaluateAll(rows=>rows.map(row=>row.dataset.model));
- expect(ids.slice(0,4)).toEqual(['running-0','running-1','running-2','running-3']);
- const fourth=page.locator('.md-row[data-model="running-3"]');await fourth.click();await expect(fourth).toHaveClass(/\bsel\b/);
+ expect(ids.slice(0,11)).toEqual(Array.from({length:11},(_,i)=>'running-'+i));
+ expect(ids.slice(11).some(id=>id.startsWith('front-'))).toBe(true);
+ for(let i=0;i<11;i++){const row=page.locator(`.md-row[data-model="running-${i}"]`);await row.click();await expect(row).toHaveClass(/\bsel\b/);}
+ await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
+ const chart=(await page.locator('.pg-tune [data-fill="fc"]').getAttribute('data-models')).split(' ');
+ expect(chart.filter(id=>id.startsWith('front-'))).toHaveLength(10);
+ expect(chart).toContain('running-10'); // The selected list model may join the capped chart field.
 });
 // D86: "All" is the union of the user's own subscriptions, never the whole published field.
 const keepRows=ids=>data=>{data.projection.rows=data.projection.rows.filter(r=>ids.includes(r.id));data.subscriptions=data.subscriptions.filter(s=>data.projection.rows.some(r=>r.accounts.some(a=>a.subscriptionRef===s.subscriptionRef)));};

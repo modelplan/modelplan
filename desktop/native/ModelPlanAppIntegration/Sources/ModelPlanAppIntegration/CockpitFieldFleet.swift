@@ -13,12 +13,22 @@ enum CockpitFieldFleet {
     "codex": "openai", "claude": "anthropic", "gemini": "google", "grok": "xai", "kimi": "kimi", "zai": "zhipuai",
     "minimax": "minimax", "qwen": "alibaba",
   ]
+  /// Match the stable Settings identity for each dock account. Colliding unbound accounts have session-only
+  /// numbered keys and cannot be hidden persistently.
+  private static func memberID(_ row: RowsRow, _ account: RowsAccount) -> String {
+    account.subscriptionRef ?? row.id + "#" + account.route.rawValue
+  }
+  static func hasHiddenMembers(_ data: WireCockpitData, hiddenMembers: Set<String>) -> Bool {
+    data.projection.rows.filter { $0.surfaces.contains(.dock) }.contains { row in
+      row.accounts.contains { hiddenMembers.contains(memberID(row, $0)) }
+    }
+  }
   /// The runnable published model ids, in publication order.
-  static func runnable(_ data: WireCockpitData) -> [String] {
+  static func runnable(_ data: WireCockpitData, hiddenMembers: Set<String> = []) -> [String] {
     guard let details = data.details, let published = details.publishedModels, !published.isEmpty else { return [] }
     var lists: [(models: Set<String>?, developer: String?)] = []
     for row in data.projection.rows where row.surfaces.contains(.dock) {
-      for account in row.accounts {
+      for account in row.accounts where !hiddenMembers.contains(memberID(row, account)) {
         let reported = account.subscriptionRef.flatMap { ref in details.subscriptions.first { $0.subscriptionRef == ref }?.reportedModels }
         let list = reported.flatMap { $0.isEmpty ? nil : Set($0) } ?? planModels(details.planModels, tool: row.id, plan: account.plan.id)
         lists.append((list, toolDevelopers[row.id]))

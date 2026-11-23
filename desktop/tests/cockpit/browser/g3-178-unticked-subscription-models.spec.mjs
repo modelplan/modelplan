@@ -105,3 +105,18 @@ test('D391 OpenCode Go cannot admit an unticked tool from unattributed history',
  expect(names.some(n=>n.startsWith('Synthetic glm-live:'))).toBe(false);
  expect(names.some(n=>n.startsWith('Synthetic oc-live:'))).toBe(true);
 });
+
+test('D391 a hidden same-tool account cannot add a fader while its session stays on tape',async({page})=>{
+ const data=fixture(),zai=data.projection.rows[1],hidden='1122334455667788',visible='2233445566778899';
+ zai.surfaces=['dock','menu','settings'];
+ const account=zai.accounts[0];account.subscriptionRef=hidden;account.accountLocator=hidden;
+ const sibling=structuredClone(account);sibling.subscriptionRef=visible;sibling.accountLocator=visible;zai.accounts.push(sibling);
+ for(const a of [account,sibling])data.subscriptions.push({subscriptionRef:a.subscriptionRef,accounts:[{tool:'zai',account:structuredClone(a)}]});
+ const session=data.details.sessions.find(s=>s.sessionRef==='00000000000000a3');session.subscriptionRef=hidden;session.modelDisplay='Hidden session only';
+ const {send,receive}=await open(page,data);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Hidden session only:"]')).toHaveCount(1);
+ expect(await receive(send('appearance',{...appearance,hiddenMembers:[hidden]}))).toBe(true);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Hidden session only:"]')).toHaveCount(0);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Synthetic glm-live:"]')).toHaveCount(1);
+ await expect(page.locator('.ck-tape [data-session="00000000000000a3"]')).toHaveCount(1);
+});
