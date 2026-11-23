@@ -112,13 +112,21 @@ import ModelPlanWire
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
     }
     public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
-    /// Wrapping labels take the column width so long copy wraps instead of spilling (G3-25/26).
+    /// Wrapping labels take the column width so long copy wraps instead of spilling (G3-25/26). The merge-queue
+    /// crash (#1137/#1152): with the D371 rows' width-equal constraints a fractional width change could flip a
+    /// label's intrinsic height back and forth inside AppKit's layout pass (the layout-loop exception). The width
+    /// is floored to whole points and applied only when that integer changes, at most once per label per pass —
+    /// setting `preferredMaxLayoutWidth` already invalidates the intrinsic content size.
+    private var layingOutWrappingLabels = false
     public override func layout() {
         super.layout()
+        guard !layingOutWrappingLabels else { return }
+        layingOutWrappingLabels = true
+        defer { layingOutWrappingLabels = false }
         for label in wrappingLabels {
-            let width = label.bounds.width
-            if width > 0, abs(label.preferredMaxLayoutWidth - width) > 0.5 {
-                label.preferredMaxLayoutWidth = width; label.invalidateIntrinsicContentSize()
+            let width = floor(label.bounds.width)
+            if width > 0, label.preferredMaxLayoutWidth != width {
+                label.preferredMaxLayoutWidth = width
             }
         }
     }
