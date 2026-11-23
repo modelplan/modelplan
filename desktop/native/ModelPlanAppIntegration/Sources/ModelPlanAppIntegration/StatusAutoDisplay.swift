@@ -58,7 +58,7 @@ struct StatusAutoDisplay {
     private var lastSqueezeSwitch: Date?
     /// The last reading decided on (for the accessibility label and tests).
     private(set) var reading: StatusAutoReading?
-    /// When the next evaluation is due although nothing else renders (a squeeze that has not lasted long enough).
+    /// The earliest reading expiry or squeeze transition that needs another evaluation.
     private(set) var pendingDeadline: Date?
 
     /// The mode to show now. Pure in its inputs and the injected time.
@@ -72,7 +72,9 @@ struct StatusAutoDisplay {
             if held != nil {
                 let since = min(unavailableSince ?? now, now)
                 unavailableSince = since
-                if now.timeIntervalSince(since) >= StatusTitleKeeper.holdLimit { held = nil; unavailableSince = nil }
+                let expiry = since.addingTimeInterval(StatusTitleKeeper.holdLimit)
+                if now >= expiry { held = nil; unavailableSince = nil }
+                else { recheck(at: expiry) }
             }
             current = held
         }
@@ -84,21 +86,32 @@ struct StatusAutoDisplay {
         guard numberShown else { squeezedSince = nil; fellBack = false; return .iconOnly }
         let wide = StatusAutoMode.number(current.shown)
         if fellBack {
-            if displayEpoch != fellBackEpoch || now.timeIntervalSince(fellBackAt) >= Self.retryWide { fellBack = false }
-            else { return .iconOnly }
+            let retryDelay = displayEpoch != fellBackEpoch ? Self.minimumSwitchInterval : Self.retryWide
+            let retry = fellBackAt.addingTimeInterval(retryDelay)
+            if now < retry {
+                recheck(at: retry)
+                return .iconOnly
+            }
+            fellBack = false
+            lastSqueezeSwitch = now
         }
         guard squeezed else { squeezedSince = nil; return wide }
         let since = squeezedSince ?? now
         squeezedSince = since
         let ready = since.addingTimeInterval(Self.squeezeDebounce)
-        let allowed = lastSqueezeSwitch.map { $0.addingTimeInterval(Self.minimumSwitchInterval) } ?? .distantPast
-        let due = max(ready, allowed)
+        let nextSwitch = lastSqueezeSwitch.map { $0.addingTimeInterval(Self.minimumSwitchInterval) } ?? .distantPast
+        let due = max(ready, nextSwitch)
         if now >= due {
             fellBack = true; fellBackAt = now; fellBackEpoch = displayEpoch; lastSqueezeSwitch = now; squeezedSince = nil
+            recheck(at: now.addingTimeInterval(Self.retryWide))
             return .iconOnly
         }
-        pendingDeadline = due
+        recheck(at: due)
         return wide
+    }
+
+    private mutating func recheck(at deadline: Date) {
+        pendingDeadline = min(pendingDeadline ?? deadline, deadline)
     }
 
     /// The accessibility label: complete in every state, "ModelPlan · Codex 0%". Without a reading it is "ModelPlan".

@@ -903,7 +903,7 @@ struct StatusNoticePresentation {
     private var statusCompactFontApplied = false
     private var statusAutoArmedFor: Date?
     private var cancelStatusAuto: (() -> Void)?
-    /// Test seam like `statusHoldSchedule`, for the squeeze debounce.
+    /// Test seam like `statusHoldSchedule`, for Automatic reading expiry and squeeze transitions.
     var statusAutoSchedule: @MainActor (_ seconds: TimeInterval, _ fire: @escaping @MainActor () -> Void) -> () -> Void = { seconds, fire in
         let task = Task { @MainActor in
             do { try await Task.sleep(for: .milliseconds(Int64((max(0, seconds) * 1_000).rounded(.up)))) } catch { return }
@@ -912,7 +912,7 @@ struct StatusNoticePresentation {
         }
         return { task.cancel() }
     }
-    /// A squeeze that has not lasted long enough is looked at again when it has: re-check the window, then render.
+    /// At the next Automatic deadline, re-check the window and render the item.
     private func armStatusAutoRecheck(now: Date) {
         let deadline = terminating ? nil : statusAuto.pendingDeadline
         guard deadline != statusAutoArmedFor else { return }
@@ -1293,6 +1293,8 @@ struct StatusNoticePresentation {
         let pulse: CABasicAnimation? = first ? CABasicAnimation(keyPath: "opacity") : nil
         pulse?.fromValue = 0.25; pulse?.toValue = 1; pulse?.duration = 0.35
         noticeIndicator.apply(notice, firstAppearanceAnimation: pulse, reducedMotion: composition.latestSettings?.effective.reduceMotion ?? true)
+        // Notice changes also arrive during menu tracking, when the normal status render is deferred.
+        if let button = status?.button { applyUsedUpDot(button, show: statusAutoMode == .usedUp) }
     }
     static let statusFallbackTitle = "MP"
     static func statusAccessibilityLabel(title: String) -> String { title.isEmpty ? "ModelPlan" : "ModelPlan \(title)" }
