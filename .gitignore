@@ -12,3 +12,4 @@ __pycache__/
 
 # Cockpit manifest pins, generated at build time from desktop/cockpit/.tmp (check-bundle-pins.py --write)
 /desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift
+/desktop/tests/cockpit/.tmp/

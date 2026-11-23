@@ -35,7 +35,7 @@ type Locale='en'|'zh-CN';
 const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
 const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,key:'host.pageOverview'}),Object.freeze({module:plans,key:'host.pageSubscription'}),Object.freeze({module:tune,key:'host.pageEffort'}),Object.freeze({module:where,key:'host.pageBreakdown'})]);
 export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
-export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange){
+export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange,onOpenCompare:()=>void=()=>{}){
  const scale=root.querySelector<HTMLElement>('.fd-scale')!,channels=root.querySelector<HTMLElement>('.fd-chs')!,mfd=root.querySelector<HTMLElement>('.dk-mfd')!;
  let details=fixture;const fixturePublication=fixture.publication!==null;fixture=unavailablePrototypeDetailsFixture();
  let publicationKey:string|null=null;
@@ -139,6 +139,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  }
  type Channel={id:string;current:string|null;base:string;currentFast:boolean};
  function openCompare(c:Channel,trial?:string,fast?:boolean){
+  onOpenCompare();
   for(const id of Object.keys(previews))if(id!==c.id)delete previews[id];
   compare={modelId:c.id,current:c.current??null,...(trial?{trial}:{}),...(fast!==undefined?{fast}:{}),currentFast:!!c.currentFast};
   if(trial&&trial!==c.base)previews[c.id]=trial;else delete previews[c.id];

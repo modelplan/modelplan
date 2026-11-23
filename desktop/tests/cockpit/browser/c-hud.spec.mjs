@@ -100,6 +100,31 @@ test('CKP-PORT-07 a subscription scope narrows the HUD and 全部 restores it',a
 // D86: "All" is the union of the user's own subscriptions, never the whole published field.
 const keepRows=ids=>data=>{data.projection.rows=data.projection.rows.filter(r=>ids.includes(r.id));data.subscriptions=data.subscriptions.filter(s=>data.projection.rows.some(r=>r.accounts.some(a=>a.subscriptionRef===s.subscriptionRef)));};
 const mixed=()=>[model('gpt-a',50,.3),model('gpt-b',45,.2),{...model('claude-a',60,.5),developerId:'anthropic'},{...model('google-a',55,.4),developerId:'google'}];
+test('a clicked subscription scope immediately narrows the HUD',async({page})=>{
+ await open(page,{published:mixed(),edit:keepRows(['codex','claude'])});
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+ await page.locator('.eng-keys .ek[data-sub]').nth(1).click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.locator('.eng-krow [data-all]').click();
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+ await page.keyboard.press('2');
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.keyboard.press('0');
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+});
+test('subscription-list and session-tape scope picks immediately update the HUD',async({page})=>{
+ await open(page,{published:mixed(),edit:data=>{
+  keepRows(['codex','claude','gemini'])(data);
+  const ref=data.projection.rows.find(r=>r.id==='claude').accounts[0].subscriptionRef;
+  data.details.sessions=[{sessionRef:'0000000000000099',source:'claude',subscriptionRef:ref,model:'claude-a',effort:'high',projectLabel:null,lastObservedAt:new Date().toISOString(),state:'running',rate:null}];
+ }});
+ await page.locator('[data-mfd="page:sub"]').click();
+ await page.locator('.sa-list .sa').nth(1).click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.locator('.eng-krow [data-all]').click();
+ await page.locator('.ck-tape .t-observed').first().click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+});
 test('CKP-PORT-04 D86 one GPT subscription: All lists only that plan\'s models, on the HUD and the 模型 page',async({page})=>{
  await open(page,{published:mixed(),edit:keepRows(['codex'])});
  expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['gpt-a','gpt-b']);
