@@ -57,7 +57,7 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
   if(data){expect(await receive(send('display',{data}))).toBe(true);await page.evaluate(()=>{window.__walk.displayAt=performance.now();});}
   await snapshot();
  };
- const snapshot=async(checkPointer=false)=>{const state=await inspect(page,checkPointer),key=JSON.stringify(state),id=createHash('sha256').update(key).digest('hex').slice(0,16);if(!seen.has(key)){seen.add(key);await page.screenshot({path:`${output}${scenario.name}-${id}.png`});}return state;};
+ const snapshot=async(checkPointer=false)=>{const state=await inspect(page,checkPointer),key=JSON.stringify(state),id=createHash('sha256').update(key).digest('hex').slice(0,16);if(!seen.has(key)){seen.add(key);await page.screenshot({caret:'initial',path:`${output}${scenario.name}-${id}.png`});}return state;};
  const step=async(action)=>{
   path.push(action==='Escape'?'Escape':`${action.selector} [${action.index}] ${action.label}`);
   operations.push(action==='Escape'?{type:'escape'}:{type:'click',action});
@@ -126,6 +126,6 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
    const calendar=(await choices(page)).find(a=>a.selector==='.eng-keys .pl-key'&&a.key==='calendar');expect(calendar).toBeTruthy();await step(calendar);
    const alert=(await choices(page)).find(a=>a.selector==='[data-caution]');expect(alert).toBeTruthy();await step(alert);}
   }
- }catch(e){await page.screenshot({path:`${output}${scenario.name}-failure.png`});const replayFile=`${output}${scenario.name}-failure.json`;await writeFile(replayFile,JSON.stringify({scenario:scenario.name,seed:'0xc0c01123',clock,timezone:'UTC',operations},null,2));const monitor=await page.evaluate(()=>({current:window.__walk.current,results:window.__walk.results.slice(-3),rejections:window.__walk.rejections}));throw Error(`${e.message}\nScenario ${scenario.name}; replay: COCKPIT_WALK_REPLAY=${replayFile}; monitor ${JSON.stringify(monitor)}; path:\n${path.join('\n')}`);}
+ }catch(e){await page.screenshot({caret:'initial',path:`${output}${scenario.name}-failure.png`});const replayFile=`${output}${scenario.name}-failure.json`;await writeFile(replayFile,JSON.stringify({scenario:scenario.name,seed:'0xc0c01123',clock,timezone:'UTC',operations},null,2));const monitor=await page.evaluate(()=>({current:window.__walk.current,results:window.__walk.results.slice(-3),rejections:window.__walk.rejections}));throw Error(`${e.message}\nScenario ${scenario.name}; replay: COCKPIT_WALK_REPLAY=${replayFile}; monitor ${JSON.stringify(monitor)}; path:\n${path.join('\n')}`);}
  finally{console.log(`walk ${scenario.name}: ${timings.length} steps; slowest ${slowest.toFixed(1)} ms; ${seen.size} states; expected failures: ${[...known].join(', ')||'none'}; slowest steps: ${JSON.stringify(timings.sort((a,b)=>b.ms-a.ms).slice(0,5))}`);}
 });
