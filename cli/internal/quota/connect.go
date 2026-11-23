@@ -230,8 +230,8 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 			if x.Region == "" {
 				x.Region = n.Regions[0]
 			}
-			if n.KeyEnv == "" {
-				x.KeyEnv = "" // the agent's own CLI keeps the sign-in
+			if n.KeyEnv == "" || zcodeLoginRoute(p, x.Provider) {
+				x.KeyEnv = "" // the selected sign-in route has no environment key
 			} else if x.KeyEnv == "" {
 				x.KeyEnv = n.KeyEnv
 			}
@@ -489,8 +489,8 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass, scope 
 		names = append(names, "cycles.json", "pace.json", "speed.json", "perf.json", "daily-long.json", "imported.json")
 	}
 	for _, name := range names {
-		if scope == consent.ScopeZaiAccountUsageSavedLogin && name == "native.json" {
-			if err := forgetZCodeLoginNative(p.Cache); err != nil {
+		if zaiAccountScope(scope) && name == "native.json" {
+			if err := forgetZaiAccountNative(p.Cache, scope); err != nil {
 				return err
 			}
 			continue
@@ -505,9 +505,9 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass, scope 
 	return nil
 }
 
-// Caller holds the reader and native locks. Drop only ZCode-login captures, preserving other
-// routes and the shared native request deadline. Unstamped legacy entries are removed fail-closed.
-func forgetZCodeLoginNative(cache string) error {
+// Caller holds the reader and native locks. Preserve the other Z.ai scope and the
+// shared native request deadline. Drop captures whose scope cannot be established.
+func forgetZaiAccountNative(cache, scope string) error {
 	path := nativePath(cache)
 	b, status := readBounded(path, 4<<20)
 	if status == "missing" {
@@ -530,7 +530,7 @@ func forgetZCodeLoginNative(cache string) error {
 		if json.Unmarshal(raw, &e) != nil {
 			return errors.New("cached readings invalid")
 		}
-		if e.Provider == "zai" && (e.Admission == nil || e.Admission.Scope == consent.ScopeZaiAccountUsageSavedLogin) {
+		if e.Provider == "zai" && (e.Admission == nil || !zaiAccountScope(e.Admission.Scope) || e.Admission.Scope == scope) {
 			ref := glmReferenceOnly(e)
 			ref.DetectedKeyRef = ""
 			entries[i], _ = json.Marshal(ref)

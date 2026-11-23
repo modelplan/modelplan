@@ -53,14 +53,22 @@ func ZCodeLoginDir(home string) string { return filepath.Join(home, ".zcode", "v
 // ZCodeLoginPresent: ZCode's sign-in layout is there (detect.ZCodeLoginPresent; metadata only).
 func ZCodeLoginPresent(home string) bool { return detect.ZCodeLoginPresent(home) }
 
-// zcodeLoginStamp: size and modification time of the credential store, so a new sign-in releases
-// a held "sign in again" state. File metadata only; the value is never read here.
-func zcodeLoginStamp(home string) string {
-	fi, err := os.Lstat(filepath.Join(ZCodeLoginDir(home), "credentials.json"))
-	if err != nil {
-		return ""
+// zcodeLoginStamp follows the files that determine the selected login. It uses
+// metadata only, so checking it during discovery or projection opens no credentials.
+func zcodeLoginStamp(dir string) string {
+	var stamp strings.Builder
+	for _, name := range []string{"setting.json", "config.json", "credentials.json", "telemetry-state.json"} {
+		fi, err := os.Lstat(filepath.Join(dir, name))
+		if err == nil {
+			stamp.WriteString(strconv.FormatInt(fi.Size(), 10))
+			stamp.WriteByte('.')
+			stamp.WriteString(strconv.FormatInt(fi.ModTime().UnixNano(), 10))
+			stamp.WriteByte('.')
+			stamp.WriteString(strconv.FormatUint(uint64(fi.Mode()), 10))
+		}
+		stamp.WriteByte(':')
 	}
-	return strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
+	return stamp.String()
 }
 
 // zcodeLogin is one resolved read. credential is in memory only.
@@ -377,6 +385,10 @@ func fetchZCodeLogin(ctx context.Context, c *http.Client, source ZaiConfigSource
 	login, code := readZCodeLogin(source.SettingsPath, now)
 	if code != "" {
 		e.ErrorCode, e.Error = code, code
+		return e
+	}
+	if _, blocked := zaiConfigAdmission(ctx); blocked != "" {
+		e.ErrorCode, e.Error = "consent_required", "consent_required"
 		return e
 	}
 	if source.Region != "" && source.Region != login.region {

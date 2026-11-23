@@ -174,11 +174,9 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 	return p
 }
 
-// applyZCodeLogin: ZCode's QR-code sign-in route (D369). It applies only where ZCode keeps no
-// provider-file key (the key route stays first) and no other GLM source or key is set, and only
-// behind its own saved-login scope, off by default. Without that consent the row says the sign-in
-// was found and needs consent; nothing inside ZCode's folder is opened. Construction reads file
-// metadata only.
+// applyZCodeLogin selects ZCode's QR-code sign-in (D369) when no admitted key or
+// other chosen source takes precedence. Saved-login consent is off by default.
+// Discovery inspects only file metadata.
 func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, configured bool) {
 	if configured || home == "" || mode != consent.Automatic || !ZCodeLoginPresent(home) {
 		return
@@ -202,7 +200,7 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 	if r, decided := state.Tools["zai"]; decided && (!r.Allowed || zaiRecordChoseSource(r)) {
 		return
 	}
-	if os.Getenv(nativeReaders["zai"].KeyEnv) != "" || ManualKeyPresent(p.Cache, "zai") {
+	if state.AllowsScope(consent.ScopeZaiAccountUsageAPIKey, mode) && (os.Getenv(nativeReaders["zai"].KeyEnv) != "" || ManualKeyPresent(p.Cache, "zai")) {
 		return
 	}
 	if !detect.LocalRoot(ZCodeLoginDir(home)) {
@@ -217,14 +215,19 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 		return
 	}
 	fence := state.Fence()
+	dir := ZCodeLoginDir(home)
+	loginStamp := zcodeLoginStamp(dir)
+	// Retained readings follow this scope's revocation watermark. Publishing still uses the
+	// full fence, so any concurrent consent decision cancels an in-flight read.
 	p.ReaderAccess.Grants["zai"] = ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
-		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Generation, 10) + ":zcode-login:" + zcodeLoginStamp(home),
+		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Revoked[scope], 10) + ":zcode-login:" + loginStamp,
 		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
 		StillValid: func() bool {
 			current, effective := consent.Current()
-			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence && current.AllowsScope(scope, effective)
+			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence &&
+				current.AllowsScope(scope, effective) && ZCodeLoginPresent(home) && zcodeLoginStamp(dir) == loginStamp
 		},
-		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: ZCodeLoginDir(home)}}
+		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: dir}}
 }
 
 // zcodeRoots are ZCode's data folders, the same path signals detection lists for it
@@ -386,12 +389,12 @@ func forgetProductionReaderState(cache, tool, scope string) error {
 	if status != "" || json.Unmarshal(b, &state) != nil {
 		return errors.New("reader cache unavailable")
 	}
-	if scope == consent.ScopeZaiAccountUsageSavedLogin && len(state["lastGood"]) > 0 {
+	if zaiAccountScope(scope) && len(state["lastGood"]) > 0 {
 		var good codexbarEntry
 		if json.Unmarshal(state["lastGood"], &good) != nil {
 			return errors.New("reader cache unavailable")
 		}
-		if good.Admission != nil && good.Admission.Scope != scope {
+		if good.Admission != nil && zaiAccountScope(good.Admission.Scope) && good.Admission.Scope != scope {
 			return nil
 		}
 	}

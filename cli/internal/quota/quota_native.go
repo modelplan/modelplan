@@ -350,31 +350,39 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		if err := n.reserveBudget(p.Cache, now); err != nil {
 			return err
 		}
-		key := os.Getenv(x.KeyEnv)
 		readerCtx := productionReaderContext(ctx, p, x.Provider)
-		mk, hasManual, manualErr := loadManualKeyChecked(p.Cache, x.Provider)
-		if manualErr != nil {
-			// The saved key file is unsafe or unreadable: fail this provider closed. Neither the saved key
-			// nor a detected key is sent anywhere, so a different account's usage cannot be shown.
-			e = codexbarEntry{Status: "error", ErrorCode: "file_unreadable", ObservedAt: now.UTC()}
-		} else if hasManual {
-			// D90, owner decision 2026-11-14: a key the user entered wins over any detected key and is
-			// the only one used; it goes only to the compiled official host of its region.
-			e, key = fetchManualKey(ctx, nativeClient, x.Provider, mk, now), mk.Key
-		} else if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
+		loginRoute := zcodeLoginRoute(p, x.Provider)
+		var key string
+		var hasManual bool
+		if loginRoute {
 			e = collectZaiConfig(readerCtx, nativeClient, p.Cache, now)
-		} else if n.Collect != nil {
-			e = n.Collect(readerCtx, nativeClient, p.Cache, now)
 		} else {
-			// D230: for OpenCode Go only OPENCODE_API_KEY is a detected key; OpenCode's own saved
-			// login is checked for existence by detection and never read here.
-			e = n.Fetch(ctx, nativeClient, x.Region, key, now)
-		}
-		// D90: the entered key can be replaced or removed while this read is in flight. The reading belongs to the key it
-		// was made with (possibly another account's), so when the saved key changed, drop it instead of caching it; the
-		// provider's request-budget reservation stays, and the next due read uses the new key.
-		if mk2, has2, err2 := loadManualKeyChecked(p.Cache, x.Provider); (err2 != nil) != (manualErr != nil) || has2 != hasManual || mk2 != mk {
-			continue
+			key = os.Getenv(x.KeyEnv)
+			mk, pasted, manualErr := loadManualKeyChecked(p.Cache, x.Provider)
+			hasManual = pasted
+			if manualErr != nil {
+				// The saved key file is unsafe or unreadable: fail this provider closed. Neither the saved key
+				// nor a detected key is sent anywhere, so a different account's usage cannot be shown.
+				e = codexbarEntry{Status: "error", ErrorCode: "file_unreadable", ObservedAt: now.UTC()}
+			} else if hasManual {
+				// D90, owner decision 2026-11-14: a key the user entered wins over any detected key and is
+				// the only one used; it goes only to the compiled official host of its region.
+				e, key = fetchManualKey(ctx, nativeClient, x.Provider, mk, now), mk.Key
+			} else if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
+				e = collectZaiConfig(readerCtx, nativeClient, p.Cache, now)
+			} else if n.Collect != nil {
+				e = n.Collect(readerCtx, nativeClient, p.Cache, now)
+			} else {
+				// D230: for OpenCode Go only OPENCODE_API_KEY is a detected key; OpenCode's own saved
+				// login is checked for existence by detection and never read here.
+				e = n.Fetch(ctx, nativeClient, x.Region, key, now)
+			}
+			// D90: the entered key can be replaced or removed while this read is in flight. The reading belongs to the key it
+			// was made with (possibly another account's), so when the saved key changed, drop it instead of caching it; the
+			// provider's request-budget reservation stays, and the next due read uses the new key.
+			if mk2, has2, err2 := loadManualKeyChecked(p.Cache, x.Provider); (err2 != nil) != (manualErr != nil) || has2 != hasManual || mk2 != mk {
+				continue
+			}
 		}
 		if e.Status == "ok" {
 			e.ErrorCode = ""
@@ -395,14 +403,14 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		if x.Provider == "zai" && hasManual {
 			e.ManualKeyGeneration = generations["zai"] // S8: read with this pasted key
 		}
-		if x.Provider == "zai" && !IdentityOff() {
+		if x.Provider == "zai" && !loginRoute && !IdentityOff() {
 			// One row (owner 2026-11-14): Settings says when the entered key differs from a detected one.
 			// Only the detected key's local reference is kept (the keyed-hash identity map, as for every
 			// subscription); the key itself is read on this Mac, never sent, logged or stored.
 			e.DetectedKeyRef = assignSubscription(p.Cache, zaiKeyBasis, detectedZaiKey(p, x), now)
 		}
 		// D369: ZCode's sign-in is never the basis of a reference; nothing derived from it is stored.
-		if e.Status == "ok" && key != "" && !IdentityOff() && !zcodeLoginRoute(p, x.Provider) {
+		if e.Status == "ok" && key != "" && !IdentityOff() {
 			e.SubscriptionRef = assignSubscription(p.Cache, nativeIdentityBasis(x), key, now) // a key is one subscription
 		}
 		if e.Error != "" {
@@ -595,20 +603,16 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			ok = false
 		}
 		if ok && x.Provider == "zai" {
-			// S8: while a pasted GLM key is saved, a cache-only read shows only that key's reading.
-			if _, pasted, err := loadManualKeyChecked(p.Cache, x.Provider); err == nil && pasted && !glmEntryOfPastedKey(p.Cache, e) {
-				ok = false
-			}
-			// The aggregate reading has a consent stamp but no login-generation stamp. The typed
-			// cache binds the good reading to the current ZCode store; do not project an earlier
-			// login's aggregate value after the credential files change.
-			if g, admitted := p.ReaderAccessGrant("zai"); ok && e.Status == "ok" && admitted && g.ConfigSource != nil && g.ConfigSource.Tool == zcodeLoginTool {
-				ctx := productionReaderContext(context.Background(), p, "zai")
-				access, blocked := zaiConfigAdmission(ctx)
-				state := loadZaiConfigState(p.Cache)
-				if blocked != "" || state.Good == nil || state.GoodGeneration != access.LoginGeneration || !typedCaptureAllowed(state.Good.Admission, consent.ScopeZaiAccountUsageSavedLogin, access.CaptureAllowed) {
-					ok = false
+			if zcodeLoginRoute(p, x.Provider) {
+				if e.Status == "ok" {
+					ctx := productionReaderContext(context.Background(), p, "zai")
+					access, blocked := zaiConfigAdmission(ctx)
+					// The entry's own provenance remains correct even between the typed and aggregate writes.
+					ok = blocked == "" && e.ZCodeLoginGeneration != "" && e.ZCodeLoginGeneration == access.LoginGeneration
 				}
+			} else if _, pasted, err := loadManualKeyChecked(p.Cache, x.Provider); err == nil && pasted && !glmEntryOfPastedKey(p.Cache, e) {
+				// A saved pasted key admits only that key's cached reading.
+				ok = false
 			}
 		}
 		switch {
@@ -697,7 +701,7 @@ func projectLegacyNativeCache(ctx context.Context, p Paths, provider string, old
 	// Sampling 11-21 S8: an entry a parent build left (another key's reading projected over the pasted key) is not
 	// the pasted key's: only a reading of the current pasted-key generation stays; any other becomes reference-only,
 	// keeping its deadline, so nothing is shown and no request is made before it.
-	if provider == "zai" {
+	if provider == "zai" && !zcodeLoginRoute(p, provider) {
 		if _, pasted, err := loadManualKeyChecked(p.Cache, provider); pasted || err != nil {
 			if err == nil && !glmEntryOfPastedKey(p.Cache, old) {
 				return glmReferenceOnly(old)

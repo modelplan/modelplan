@@ -13,10 +13,14 @@ import (
 
 type refreshScopeKey struct{}
 
+func zaiAccountScope(scope string) bool {
+	return scope == consent.ScopeZaiAccountUsageSavedLogin || scope == consent.ScopeZaiAccountUsageAPIKey
+}
+
 // Z.ai has two account scopes but one selected native provider. Scope-specific refreshes
 // must use the selected route, not merely the shared provider ID.
 func zaiScopeMatches(p Paths, scope string) bool {
-	if scope != consent.ScopeZaiAccountUsageSavedLogin && scope != consent.ScopeZaiAccountUsageAPIKey {
+	if !zaiAccountScope(scope) {
 		return true
 	}
 	grant, ok := p.ReaderAccessGrant("zai")
