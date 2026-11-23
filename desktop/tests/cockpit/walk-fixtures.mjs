@@ -12,9 +12,9 @@ function extraMember(data,index){
  data.projection.rows.push(row);data.subscriptions.push({subscriptionRef:ref,accounts:[{tool:row.id,account:structuredClone(account)}]});
 }
 
-function withHistory(data){
+function withHistory(data,now){
  const ref=data.projection.rows[0].accounts[0].subscriptionRef;
- const day=back=>{const d=new Date();d.setDate(d.getDate()-back);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+ const day=back=>{const d=new Date(now);d.setUTCDate(d.getUTCDate()-back);return d.toISOString().slice(0,10);};
  const sums=outputTokens=>({inputTokens:null,outputTokens,cacheReadTokens:null,cacheWriteTokens:null,cacheHitRatio:null,generationTps:null,observedRequests:1,eligibleRequests:1});
  const ranking={measure:'observed-output-tokens',attribution:'unattributed',recent7d:{entities:0,totalObservedOutputTokens:0,top:[]},recent30d:{entities:0,totalObservedOutputTokens:0,top:[]}};
  data.details.subscriptions=[{subscriptionRef:ref,resetCounts:[],credits:null,today:[{source:'codex',observedOutputTokens:12000,generationTps:42,bindingBasis:'source-wide-current-binding'}]}];
@@ -25,20 +25,23 @@ function withHistory(data){
 }
 
 /** Fresh data for every walk; `display:false` models the time before the first reading. */
-export function walkScenarios(){
- const empty=build13Profile();empty.projection.rows=[];empty.subscriptions=[];empty.details.sessions=[];
- const one=withHistory(build13Profile());one.projection.rows=one.projection.rows.slice(0,1);
- const many=withHistory(build13Profile());for(let i=0;i<7;i++)extraMember(many,i);
+export const WALK_CLOCK='2026-11-23T12:00:00.000Z';
+export function walkScenarios(clock=WALK_CLOCK){
+ const now=Date.parse(clock);if(!Number.isFinite(now))throw Error('invalid walk clock');
+ const base=()=>{const data=build13Profile(now);for(const account of [...data.projection.rows.flatMap(r=>r.accounts),...data.subscriptions.flatMap(s=>s.accounts.map(a=>a.account))]){account.freshUntil='2035-01-01T00:00:00Z';for(const w of account.windows)w.validUntil='2035-01-01T00:00:00Z';}return data;};
+ const empty=base();empty.projection.rows=[];empty.subscriptions=[];empty.details.sessions=[];
+ const one=withHistory(base(),now);one.projection.rows=one.projection.rows.slice(0,1);
+ const many=withHistory(base(),now);for(let i=0;i<7;i++)extraMember(many,i);
  function mixed(readable){
-  const data=withHistory(build13Profile()),row=structuredClone(data.projection.rows[0]);
+  const data=withHistory(base(),now),row=structuredClone(data.projection.rows[0]);
   row.id='zai';row.vendorKey='glm';row.name={en:'ZCode',zh:'ZCode'};
   const account=row.accounts[0];account.subscriptionRef=null;account.accountLocator=null;
-  if(!readable){row.surfaces=['menu','settings'];row.state='needs_action';row.reason={...row.reason,code:'not_signed_in'};account.valueState='none';account.windows=[];account.lastFailure={at:new Date().toISOString(),code:'not_signed_in'};}
+  if(!readable){row.surfaces=['menu','settings'];row.state='needs_action';row.reason={...row.reason,code:'not_signed_in'};account.valueState='none';account.windows=[];account.lastFailure={at:new Date(now).toISOString(),code:'not_signed_in'};}
   data.projection.rows.push(row);
   data.details.publishedModels.push({...structuredClone(data.details.publishedModels[0]),id:'walk-glm',name:'Walk GLM',developerId:'zhipuai'});
   return data;
  }
- const stale=withHistory(build13Profile());stale.projection.rows[0].accounts[0].valueState='retained';
+ const stale=withHistory(base(),now);stale.projection.rows[0].accounts[0].valueState='retained';
  return [
   {name:'empty',data:empty,plugins:plugins(false)},
   {name:'one',data:one,plugins:plugins(false)},

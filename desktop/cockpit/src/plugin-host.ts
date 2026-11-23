@@ -128,6 +128,8 @@ export interface PluginHost {
   /** CKP-PLG-53: the plugin's big screen inside the big-screen area; null closes it. The key toggles; `keep` (a host
    *  request such as the widget card's action) leaves an already open screen open. */
   openScreen(id:string|null,keep?:boolean):boolean;
+  /** Close an open plugin screen and report whether one was covering the page. */
+  dismissScreen():boolean;
   /** Plugins currently running (for tests and diagnostics). */
   running():string[];
   /** The display data the page rendered, at the host's time: running plugins with `derive` get their shaped reading. */
@@ -426,6 +428,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     },
     closeMenu:()=>closeMenu(),
     openScreen,
+    dismissScreen(){if(!screen)return false;closeScreen();return true;},
     running:()=>[...running],
     dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();memos.clear();pending=null;hostFed.clear();shown=null;watch?.disconnect();document.removeEventListener('focusin',moved,true);document.removeEventListener('keydown',escape,true);hosts.delete(root);},
   };

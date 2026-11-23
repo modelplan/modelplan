@@ -35,7 +35,7 @@ type Locale='en'|'zh-CN';
 const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
 const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,key:'host.pageOverview'}),Object.freeze({module:plans,key:'host.pageSubscription'}),Object.freeze({module:tune,key:'host.pageEffort'}),Object.freeze({module:where,key:'host.pageBreakdown'})]);
 export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
-export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange,onOpenCompare:()=>void=()=>{}){
+export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange,onOpenCompare:()=>boolean=()=>false){
  const scale=root.querySelector<HTMLElement>('.fd-scale')!,channels=root.querySelector<HTMLElement>('.fd-chs')!,mfd=root.querySelector<HTMLElement>('.dk-mfd')!;
  let details=fixture;const fixturePublication=fixture.publication!==null;fixture=unavailablePrototypeDetailsFixture();
  let publicationKey:string|null=null;
@@ -164,8 +164,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const shareBar=strip.querySelector<HTMLElement>('.cd-bar');if(shareBar&&next.card.bar!=null){shareBar.style.setProperty('--s',(next.card.bar*100).toFixed(1)+'%');if(next.segments[0])shareBar.style.setProperty('--v',next.segments[0]);}
   for(const [j,el] of [...strip.querySelectorAll<HTMLElement>('.st-vend b')].entries())el.style.setProperty('--v',next.segments[j]);
  }
- function pressLevel(c:Channel,level:string){if(compare?.modelId===c.id&&level===(previews[c.id]??c.base))closeCompare();else tryEffort(c,level);}
- function pressStrip(c:Channel){if(compare?.modelId===c.id)closeCompare();else openCompare(c,previews[c.id]??c.current??undefined);}
+ function pressLevel(c:Channel,level:string){if(compare?.modelId===c.id&&level===(previews[c.id]??c.base)){if(!onOpenCompare())closeCompare();}else tryEffort(c,level);}
+ function pressStrip(c:Channel){if(compare?.modelId===c.id){if(!onOpenCompare())closeCompare();}else openCompare(c,previews[c.id]??c.current??undefined);}
  function paintScale(){setLanguage(locale);scale.innerHTML=scaleView();for(const b of scale.querySelectorAll<HTMLButtonElement>('.sc-l')){b.disabled=true;b.classList.add('na');b.style.setProperty('--k',String(levelK(b.dataset.level??'')));}}
  function paintFaders(){
   const data=faderInput(),input=record(details.publication),requested=selectedModel??safeText(input?.selectedModel),target=data.faders.find(f=>f.id===requested||f.sourceId===requested)?.id??null,ui={bank:bankIndex,bankSize:BANK_SIZE,compact:root.dataset.layout==='640',selModel:target,previews,view:compare?{modelId:compare.modelId,trial:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true},model=faderModel(data,ui);bankIndex=model.bank;

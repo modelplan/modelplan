@@ -6,14 +6,19 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
-import {walkScenarios} from '../walk-fixtures.mjs';
+import {walkScenarios,WALK_CLOCK} from '../walk-fixtures.mjs';
 import {expectedWalkFailures} from '../walk-expected-failures.mjs';
+import {watch,timingVerdict} from '../walk-timing.mjs';
+import {replayTargetMatches} from '../walk-replay.mjs';
+import {setTimeout as delay} from 'node:timers/promises';
 
 const output=fileURLToPath(new URL('../.tmp/walk/',import.meta.url));
 const long=process.env.COCKPIT_WALK_LONG==='1';
 const replay=process.env.COCKPIT_WALK_REPLAY?JSON.parse(readFileSync(process.env.COCKPIT_WALK_REPLAY,'utf8')):null;
+const clock=replay?.clock??WALK_CLOCK;
+test.use({timezoneId:'UTC'});
 const selectors=[
- '[data-range-key]', '.mfd-pk .pk', '.eng-krow [data-all]', '.eng-keys .ek[data-sub]',
+ '[data-range-key]', '[data-caution]', '.mfd-pk .pk', '.eng-krow [data-all]', '.eng-keys .ek[data-sub]',
  '.eng-keys .pl-key', '.eng-pg button:not([aria-disabled="true"])', '.hud .hp',
  '.mfd-ok .ok [data-choice]', '.mfd-page .md-row', '.fd-ch:not(.empty) .fd-strip',
  '.cmp-lad [data-mfd^="try:"]', '[data-bank]', '.pl-screen-x',
@@ -21,27 +26,14 @@ const selectors=[
  '.mfd-ok button[data-mfd="fast"]', '.mfd-ok button[data-mfd="back"]',
  '.mfd-page button[data-mfd="back"]', '.pl-screen .wk-dh', '.fd-scale .sc-l:not(.na)',
 ];
+const topSelectors=new Set(['[data-range-key]','[data-caution]','.mfd-pk .pk','.eng-krow [data-all]','.eng-keys .ek[data-sub]','.eng-keys .pl-key','.eng-pg button:not([aria-disabled="true"])','.hud .hp']);
 const random=seed=>()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
-
-// Installed before the app so frames requested by its code are counted, including frames still pending at the deadline.
-function watch(){
- const pending=new Set(),raf=window.requestAnimationFrame.bind(window),cancel=window.cancelAnimationFrame.bind(window);
- const state=window.__walk={current:null,results:[],rejections:[]};
- const mark=event=>{if(!state.current)return;const now=performance.now(),step=state.current;step.last=now;step.lastEvent=event;if(now-step.start>150)step.late.push(event);};
- window.requestAnimationFrame=cb=>{const scheduled=new Error().stack;let id;id=raf(t=>{pending.delete(id);mark({kind:'frame',scheduled});cb(t);});pending.add(id);return id;};
- window.cancelAnimationFrame=id=>{if(pending.has(id))mark({kind:'cancel-frame'});pending.delete(id);cancel(id);};
- new MutationObserver(records=>{if(!state.current)return;const chosen=performance.now()-state.current.start>150?records:[records.at(-1)];for(const r of chosen){const el=r.target.nodeType===1?r.target:r.target.parentElement;mark({kind:'mutation',type:r.type,attribute:r.attributeName,target:el?.outerHTML?.slice(0,250)});}}).observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
- const start=()=>{const now=performance.now(),step={start:now,last:now,displayAt:state.displayAt??null,late:[]};state.current=step;setTimeout(()=>{step.pending=pending.size;step.elapsed=performance.now()-now;state.results.push(step);if(state.current===step)state.current=null;},150);};
- document.addEventListener('mousedown',start,true);
- document.addEventListener('keydown',e=>{if(e.key==='Escape')start();},true);
- window.addEventListener('unhandledrejection',e=>state.rejections.push(String(e.reason)));
-}
 
 async function choices(page){
  return page.evaluate(selectors=>selectors.flatMap(selector=>[...document.querySelectorAll(selector)].flatMap((el,index)=>{
   const r=el.getBoundingClientRect(),s=getComputedStyle(el),x=r.left+r.width/2,y=r.top+r.height/2,hit=document.elementFromPoint(x,y);
   if(!r.width||!r.height||s.visibility==='hidden'||s.display==='none'||!hit||!(hit===el||el.contains(hit)))return [];
-  return [{selector,index,label:el.getAttribute('aria-label')||el.getAttribute('data-choice')||el.textContent.trim(),key:el.getAttribute('data-range-key')||el.getAttribute('data-mfd')||el.getAttribute('data-plugin')||el.getAttribute('data-hud-model')||el.getAttribute('data-sub')||el.getAttribute('data-bpage'),choice:el.getAttribute('data-choice'),option:el.closest('[data-opt]')?.getAttribute('data-opt')}];
+  return [{selector,index,label:el.getAttribute('aria-label')||el.getAttribute('data-choice')||el.textContent.trim(),key:el.getAttribute('data-range-key')||el.getAttribute('data-mfd')||el.getAttribute('data-plugin')||el.getAttribute('data-hud-model')||el.getAttribute('data-sub')||el.getAttribute('data-bpage')||el.getAttribute('data-focus')||el.getAttribute('data-strip'),choice:el.getAttribute('data-choice'),option:el.closest('[data-opt]')?.getAttribute('data-opt')}];
  })),selectors);
 }
 
@@ -88,11 +80,11 @@ async function inspect(page,checkPointer=false){
  },checkPointer);
 }
 
-for(const scenario of walkScenarios().filter(s=>!replay||s.name===replay.scenario))test(`click walk: ${scenario.name}`,async({page})=>{
+for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.scenario))test(`click walk: ${scenario.name}`,async({page})=>{
  test.setTimeout(long?900000:120000);
  const path=[],operations=[],seen=new Set(),errors=[],known=new Set(),timings=[];let slowest=0;
  page.on('pageerror',e=>errors.push({kind:'pageerror',message:e.message}));page.on('console',m=>{if(m.type()==='error')errors.push({kind:'console',message:m.text(),url:m.location().url});});
- await mkdir(output,{recursive:true});await page.addInitScript(watch);
+ await mkdir(output,{recursive:true});await page.clock.setFixedTime(new Date(clock));await page.addInitScript(watch);
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  let send=commands();const receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const boot=async(data)=>{
@@ -111,15 +103,14 @@ for(const scenario of walkScenarios().filter(s=>!replay||s.name===replay.scenari
   operations.push(action==='Escape'?{type:'escape'}:{type:'click',action});
   const prior=await inspect(page);
   const before=await page.evaluate(()=>window.__walk.results.length);
-  if(action==='Escape')await page.keyboard.press('Escape');else{const actual=(await choices(page)).find(x=>x.selector===action.selector&&x.index===action.index);expect(actual,`click target ${action.label}`).toBeTruthy();expect([actual.key,actual.label]).toEqual([action.key,action.label]);const r=await page.locator(action.selector).nth(action.index).boundingBox();expect(r,'click target').not.toBeNull();await page.mouse.click(r.x+r.width/2,r.y+r.height/2);}
-  await page.waitForFunction(n=>window.__walk.results.length>n,before,{timeout:10000,polling:25});
+  if(action==='Escape')await page.keyboard.press('Escape');else{const actual=(await choices(page)).find(x=>x.selector===action.selector&&x.index===action.index);expect(replayTargetMatches(action,actual),`click target ${action.label}`).toBe(true);const r=await page.locator(action.selector).nth(action.index).boundingBox();expect(r,'click target').not.toBeNull();await page.mouse.click(r.x+r.width/2,r.y+r.height/2);}
+  // Poll from Node rather than scheduling page timers that would themselves be measured.
+  let ready=false;for(let n=0;n<100&&!ready;n++){await delay(25);ready=await page.evaluate(n=>window.__walk.results.length>n,before);}expect(ready,'timing deadline observed').toBe(true);
   const timing=await page.evaluate(()=>window.__walk.results.at(-1));slowest=Math.max(slowest,timing.last-timing.start);
   timings.push({step:path.at(-1),ms:timing.last-timing.start});
   const state=await snapshot(action!=='Escape');
-  expect(timing.pending,'pending animation frames at 150 ms').toBe(0);
-  const pulseCleanup=timing.last-timing.start>150&&timing.displayAt!==null&&timing.start-timing.displayAt<600&&timing.late.length>0&&timing.late.every(e=>e.kind==='mutation'&&e.type==='attributes'&&e.attribute==='class'&&e.target?.startsWith('<i class="activity"'));
-  if(pulseCleanup)known.add(expectedWalkFailures.find(x=>x.kind==='timing'&&x.message==='display-pulse-cleanup').name);
-  else expect(timing.last-timing.start,'last mutation or frame').toBeLessThanOrEqual(150);
+  const verdict=timingVerdict(timing);if(verdict.expected)known.add(expectedWalkFailures.find(x=>x.kind==='timing'&&x.message===verdict.expected).name);
+  expect(verdict.failure??null,'interaction timing').toBeNull();
   const unexpectedGeometry=state.violations.filter(message=>{const failure=expectedWalkFailures.find(x=>x.kind==='geometry'&&x.message===message);if(failure)known.add(failure.name);return !failure;});
   expect(unexpectedGeometry).toEqual([]);
   const normal=value=>value?.replace(/http:\/\/127\.0\.0\.1:\d+/g,'http://127.0.0.1:41783');
@@ -133,6 +124,8 @@ for(const scenario of walkScenarios().filter(s=>!replay||s.name===replay.scenari
   if(action!=='Escape'&&action.selector==='.eng-keys .pl-key')expect(state.plugin).toBe(prior.plugin===action.key?null:action.key);
   if(action!=='Escape'&&action.selector==='.eng-keys .ek[data-sub]')expect(state.scope).toBe(prior.scope===action.key?'all':action.key);
   if(action!=='Escape'&&action.selector==='.pl-screen-x')expect(state.plugin).toBeNull();
+  if(action!=='Escape'&&action.selector==='.pl-screen .wk-dh')await expect(page.locator(action.selector).nth(action.index)).toHaveAttribute('aria-pressed','true');
+  if(action!=='Escape'&&action.selector==='[data-caution]'&&prior.plugin){expect(state.plugin).toBeNull();expect(state.page).toContain('pg-alerts');}
   if(action!=='Escape'&&action.selector==='.mfd-ok .ok [data-choice]')expect(state.choices).toContainEqual([action.option,action.choice]);
   if(action!=='Escape'&&action.selector==='.mfd-page .md-row')expect(state.picks.some(p=>p[1]===action.key)).toBe(true);
   if(action==='Escape'&&prior.plugin)expect(state.plugin).toBeNull();
@@ -150,10 +143,10 @@ for(const scenario of walkScenarios().filter(s=>!replay||s.name===replay.scenari
   await boot(scenario.data);
   if(scenario.afterLoading){await step((await choices(page)).find(a=>a.selector==='[data-range-key]'));path.push('DISPLAY afterLoading');operations.push({type:'display'});expect(await receive(send('display',{data:scenario.afterLoading}))).toBe(true);await page.evaluate(()=>{window.__walk.displayAt=performance.now();});await snapshot();}
   const next=random(0xc0c01123),count=long?200:8;
-  for(let i=0;i<count;i++){const actions=await choices(page);expect(actions.length).toBeGreaterThan(0);await step(i%17===16?'Escape':actions[next()%actions.length]);if(long&&(i+1)%50===0)console.log(`walk ${scenario.name}: ${i+1}/${count} random steps`);}
+  for(let i=0;i<count;i++){const actions=await choices(page);expect(actions.length).toBeGreaterThan(0);await step(i%17===16?'Escape':actions[next()%actions.length]);if(process.env.COCKPIT_WALK_FORCE_FAILURE==='1'&&scenario.name==='empty'&&i===0)throw Error('synthetic walk artifact probe');if(long&&(i+1)%50===0)console.log(`walk ${scenario.name}: ${i+1}/${count} random steps`);}
   // Each ordered pair starts from the same fixture. The long run enumerates all controls reachable directly after A;
   // the short CI run samples pairs. A subscription on a later engine page is reached by its pager first.
-  const data=scenario.data??scenario.afterLoading,top=a=>selectors.slice(0,7).includes(a.selector),same=(a,b)=>a.selector===b.selector&&a.key===b.key;
+  const data=scenario.data??scenario.afterLoading,top=a=>topSelectors.has(a.selector),same=(a,b)=>a.selector===b.selector&&a.key===b.key;
   await boot(data);
   const first=await choices(page),all=first.filter(top).map(a=>({...a,setup:[]}));
   const forward=first.find(a=>a.selector.startsWith('.eng-pg')&&a.key==='1');
@@ -169,8 +162,10 @@ for(const scenario of walkScenarios().filter(s=>!replay||s.name===replay.scenari
   // The owner's reported transition is always included in the short run when both controls exist.
   await boot(data);let current=await choices(page),cal=current.find(a=>a.selector==='.eng-keys .pl-key'&&a.key==='calendar');
   if(!cal&&scenario.plugins.entries.find(e=>e.id==='calendar')?.enabled){const nextPage=current.find(a=>a.selector.startsWith('.eng-pg')&&a.key==='1');if(nextPage){await step(nextPage);current=await choices(page);cal=current.find(a=>a.selector==='.eng-keys .pl-key'&&a.key==='calendar');}expect(cal,'enabled Calendar key').toBeTruthy();}
-  if(cal){await step(cal);const hud=(await choices(page)).find(a=>a.selector==='.hud .hp');if(hud){await step(hud);expect((await inspect(page)).plugin).toBeNull();}}
+  if(cal){await step(cal);const hud=(await choices(page)).find(a=>a.selector==='.hud .hp');if(hud){await step(hud);expect((await inspect(page)).plugin).toBeNull();}
+   const calendar=(await choices(page)).find(a=>a.selector==='.eng-keys .pl-key'&&a.key==='calendar');expect(calendar).toBeTruthy();await step(calendar);
+   const alert=(await choices(page)).find(a=>a.selector==='[data-caution]');expect(alert).toBeTruthy();await step(alert);}
   }
- }catch(e){await page.screenshot({path:`${output}${scenario.name}-failure.png`});const replayFile=`${output}${scenario.name}-failure.json`;await writeFile(replayFile,JSON.stringify({scenario:scenario.name,seed:'0xc0c01123',operations},null,2));const monitor=await page.evaluate(()=>({current:window.__walk.current,results:window.__walk.results.slice(-3),rejections:window.__walk.rejections}));throw Error(`${e.message}\nScenario ${scenario.name}; replay: COCKPIT_WALK_REPLAY=${replayFile}; monitor ${JSON.stringify(monitor)}; path:\n${path.join('\n')}`);}
+ }catch(e){await page.screenshot({path:`${output}${scenario.name}-failure.png`});const replayFile=`${output}${scenario.name}-failure.json`;await writeFile(replayFile,JSON.stringify({scenario:scenario.name,seed:'0xc0c01123',clock,timezone:'UTC',operations},null,2));const monitor=await page.evaluate(()=>({current:window.__walk.current,results:window.__walk.results.slice(-3),rejections:window.__walk.rejections}));throw Error(`${e.message}\nScenario ${scenario.name}; replay: COCKPIT_WALK_REPLAY=${replayFile}; monitor ${JSON.stringify(monitor)}; path:\n${path.join('\n')}`);}
  finally{console.log(`walk ${scenario.name}: ${timings.length} steps; slowest ${slowest.toFixed(1)} ms; ${seen.size} states; expected failures: ${[...known].join(', ')||'none'}; slowest steps: ${JSON.stringify(timings.sort((a,b)=>b.ms-a.ms).slice(0,5))}`);}
 });
