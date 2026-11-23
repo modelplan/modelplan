@@ -1,7 +1,7 @@
 // G3-168 (CKP-MFD-66 amended): every model plotted on the Models chart carries a readable name without hover.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {frontierSvg} from '../../../cockpit/study/rocket-r1/mfd-pages/frontier.js';
+import {frontierSvg,labelWidth} from '../../../cockpit/study/rocket-r1/mfd-pages/frontier.js';
 import {setLanguage} from '../../../cockpit/study/rocket-r1/i18n.js';
 import '../../../cockpit/study/rocket-r1/strings/mfd.js';
 
@@ -63,4 +63,14 @@ test('sampling 11-22 F3: an overlong published name is fitted inside and keeps i
   assert.ok(fitted.t.length<long.length,'the fitted label is shorter than the published name');
   assert.ok(svg.includes(`<title>${long}</title>`),'the label carries the full name as its hover title');
   assert.ok(svg.includes(`data-tip="${long}`),'the point tooltip keeps the full name');
+});
+test('sampling 11-22 macrevb-1179-2: a full-width published name is fitted by its real glyph width, full name kept for hover', () => {
+  setLanguage('en');
+  const wide='Ｑｗｅｎ－Ｌｏｎｇ－Ｃｏｎｔｅｘｔ－Ｉｎｓｔｒｕｃｔ－Ｐｒｅｖｉｅｗ－２０２６－１１－２２';
+  const svg=frontierSvg([m('a','Astra 6',62,.9),{id:'q',name:wide,short:wide,rec:'Med',e:[['Low',21,.2,1],['Med',25,.3,1],['High',30,.5,1]]}],{w:260,h:180});
+  const fitted=[...svg.matchAll(NAME_RE)].find(n=>n[4].endsWith('…'));
+  assert.ok(fitted,'the wide name is truncated');
+  assert.ok(+fitted[1]>=1&&+fitted[1]+labelWidth(fitted[4])<=259,'estimated box inside the chart');
+  assert.ok(svg.includes(`<title>${wide}</title>`),'label title keeps the full name');
+  assert.ok(svg.includes(`data-tip="${wide}`),'point tooltip keeps the full name');
 });
