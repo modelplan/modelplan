@@ -64,7 +64,9 @@ test('D328 column: the next 12 hours only; peaks, capsules with the time, the no
  await expect(s.locator('.cal-adr')).toHaveText(['Claude reset card · until 11/13 +1']);
  // 12 hours end at 23:20 on Wednesday: no midnight divider; GLM's peak is the only block, on one line.
  await expect(s.locator('.cal-mid')).toHaveCount(0);
- await expect(s.locator('.cal-pk b')).toHaveText(['GLM 22:00–02:00']);
+ // G3-179: at five columns the label sheds the abbreviation before the time clips; the tooltip keeps the sentence.
+ await expect(s.locator('.cal-pk b')).toHaveText(['22:00–02:00']);
+ await expect(s.locator('.cal-pk')).toHaveAttribute('title',/GLM/);
  await expect(s.locator('.cal-ch')).toHaveText(['Claude 5h 12:30','Codex 5h 14:10','GLM 5h 15:50']);
  await expect(s.locator('.cal-ch.wk')).toHaveCount(0);
  const boxes=await s.locator('.cal-ch').evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect();return [r.top,r.bottom];}));
@@ -88,7 +90,7 @@ test('D328 Chinese labels, a running peak in the bottom line, and the 明 divide
  // 23:00: GLM's peak is running (until 02:00) and the 12 h window now holds midnight.
  expect(await receive(send('tick',{nowUnixMs:String(L(0,23)),reason:'deadline'}))).toBe(true);
  await expect(column(page).locator('.pl-foot .pl-foot-l')).toHaveText('GLM 高峰中');await expect(column(page).locator('.pl-foot .pl-foot-v')).toHaveText('还剩 3h00');
- await expect(strip(page).locator('.cal-pk b')).toHaveText(['GLM 至 02:00','Claude 05:00–11:00']);
+ await expect(strip(page).locator('.cal-pk b')).toHaveText(['GLM 至 02:00','05:00–11:00']);
  await expect(strip(page).locator('.cal-mid b')).toHaveText(['明']);
 });
 
@@ -214,7 +216,9 @@ test('D328 a day pressed in the week view swaps the column\'s bottom line to tha
  await w.locator('.wk-col').nth(4).click({position:{x:10,y:20}});
  await expect(foot.locator('.pl-foot-l')).toHaveText('11/15 周日');await expect(foot.locator('.pl-foot-v')).toHaveText('暂无');
  // The strip itself does not change (it is always the next 12 hours) and the screen stays open.
- await expect(strip(page).locator('.cal-pk b')).toHaveText(['GLM 22:00–02:00']);
+ // G3-179: the abbreviation dropped (the time is the fact); the tooltip still names GLM.
+ await expect(strip(page).locator('.cal-pk b')).toHaveText(['22:00–02:00']);
+ await expect(strip(page).locator('.cal-pk')).toHaveAttribute('title',/GLM/);
  await expect(screen(page)).toBeVisible();
  // Today restores the default line.
  await w.locator('.wk-dh').first().click();

@@ -98,14 +98,18 @@ function column(col,m,ui,changed){
 const key=col=>`<button class="ek bd-r${col.on?' on':''}${col.off?' off':''}" data-sub="${esc(col.id)}" data-col="${esc(col.id)}" data-mat="part" title="${esc(col.name)}" aria-pressed="${col.on}" aria-label="${esc(t('eng.keyAria',{name:col.name,k:col.key}))}"><span class="ek-identity"><img class="lamp" src="assets/brands/${esc(col.logo)}" alt=""><span class="ek-name" data-full="${esc(col.short)}" data-short="${esc(col.alias||col.short)}" title="${esc(col.name)}">${esc(col.short)}</span></span><i class="bl" style="--v:${esc(col.colour)}"></i><span class="ki">${col.key}</span></button>`;
 function pageDescription(l,m) { return t('rev49.page',{p:l.page+1,names:(l.accounts||[]).map(a=>a.name+(a.status?' · '+t(a.status==='red'?'eng.lvLow':'eng.lvMid'):'')).join(', '),scope:t(m.scoped?'rev49.pageSub':'rev49.pageAll')}); }
 
+// D376: the pager sits under the 全部 key as "◀ 1/2 ▶" (the fader bank pager, smaller). Another page's amber/red
+// subscription (CKP-ENG-03) colours the arrow that points toward it; there are no LEDs.
 function pager(m) {
   if (m.pages < 2) return '';
+  const rank = l => l === 'red' ? 2 : l === 'amber' ? 1 : 0, level = pages => pages.reduce((best, l) => rank(l.level) > rank(best) ? l.level : best, null);
+  const before = level(m.leds.filter(l => l.page < m.page)), after = level(m.leds.filter(l => l.page > m.page));
   const lv = l => l === 'red' ? ' lv-red' : l === 'amber' ? ' lv-amber' : '';
   const aria = [t('eng.pgAria', {p: m.page + 1, n: m.pages}),
     ...m.leds.filter(l => l.level).map(l => t('eng.pgAlert', {p: l.page + 1, lv: t(l.level === 'red' ? 'eng.lvLow' : 'eng.lvMid')}))].join(' · ');
-  return `<div class="eng-pg"><button class="key sm eng-pk" data-bpage="-1" data-mat="part" aria-disabled="${m.page === 0}" aria-label="${t('eng.pgPrevAria')}">◀</button>`
-    + `<span class="eng-leds" role="group" aria-label="${esc(aria)}">${m.leds.map(l => `<i class="eng-led${l.current ? ' cur' : ''}${lv(l.level)}" data-page="${l.page}" tabindex="0" role="img" aria-label="${esc(pageDescription(l,m))}" data-tip="${esc(pageDescription(l,m))}"></i>`).join('')}</span>`
-    + `<button class="key sm eng-pk" data-bpage="1" data-mat="part" aria-disabled="${m.page === m.pages - 1}" aria-label="${t('eng.pgNextAria')}">▶</button></div>`;
+  return `<div class="eng-pg"><button class="key sm eng-pk${lv(before)}" data-bpage="-1" data-mat="part" aria-disabled="${m.page === 0}" aria-label="${t('eng.pgPrevAria')}">◀</button>`
+    + `<span class="eng-pgn bank-lcd" data-mat="well" data-page="${m.page}" aria-current="true" role="group" aria-label="${esc(aria)}">${m.page + 1}/${m.pages}</span>`
+    + `<button class="key sm eng-pk${lv(after)}" data-bpage="1" data-mat="part" aria-disabled="${m.page === m.pages - 1}" aria-label="${t('eng.pgNextAria')}">▶</button></div>`;
 }
 
 export const cautionView = c => `<button class="caution${c.level ? ' lit ' + c.level : ''}${c.flash ? ' flash' : ''}" data-caution data-mat="part" aria-label="${c.level ? t('eng.cautionLitAria') : t('eng.cautionAria')}"><span>ALERT</span></button>`;
@@ -118,6 +122,6 @@ export function engineView(m,{changed=new Set(),lang='zh-CN',now=Date.now()}={})
  const empty=Array.from({length:n-m.cols.length},(_,i)=>emptyColumn(m,m.cols.length+i,addLabel,i===0&&m.pages<2)).join('');
  const emptyKeys=Array.from({length:n-m.cols.length},()=>emptyKey(addLabel)).join('');
  const labels=m.empty?'':m.rows.map(r=>`<span class="lb lb-${r}">${t(r==='other'?'eng.other':LABEL[m.rowPeriods[r]]||'eng.other')}</span>`).join('')+`<span class="lb lb-t" aria-label="${esc(t('eng.todayBasis'))}">${t('eng.today')}</span>`+(m.reserve?`<span class="lb lb-r" tabindex="0" aria-label="${esc(t('eng.reserveHint'))}" data-tip="${esc(t('eng.reserveHint'))}">${t('eng.reserve')}</span>`:'');
- const keys=`<div class="eng-krow"><button class="ek ek-all${m.scoped?'':' on'}" data-all data-mat="part" aria-pressed="${!m.scoped}" aria-label="${t('eng.allAria')}"><span>${t('eng.all')}</span><i class="bl" aria-hidden="true"></i></button><div class="eng-keys" style="--n:${n}">${m.cols.map(key).join('')}${emptyKeys}</div></div>`;
- return `${keys}<div class="eng-lcd cls-${m.cls}${m.rich?' few-rich':''}" data-mat="well" style="--n:${n};--rows:${rowsTemplate(m)}">${m.empty?`<p class="ec-empty">${t('eng.empty')}</p>`:`<div class="eng-labels">${labels}</div><div class="eng-cols">${m.cols.map(col=>column(col,m,ui,changed)).join('')}${empty}</div>`}</div>${pager(m)}`;
+ const keys=`<div class="eng-krow${m.pages>1?' paged':''}"><button class="ek ek-all${m.scoped?'':' on'}" data-all data-mat="part" aria-pressed="${!m.scoped}" aria-label="${t('eng.allAria')}"><span>${t('eng.all')}</span><i class="bl" aria-hidden="true"></i></button>${pager(m)}<div class="eng-keys" style="--n:${n}">${m.cols.map(key).join('')}${emptyKeys}</div></div>`;
+ return `${keys}<div class="eng-lcd cls-${m.cls}${m.rich?' few-rich':''}" data-mat="well" style="--n:${n};--rows:${rowsTemplate(m)}">${m.empty?`<p class="ec-empty">${t('eng.empty')}</p>`:`<div class="eng-labels">${labels}</div><div class="eng-cols">${m.cols.map(col=>column(col,m,ui,changed)).join('')}${empty}</div>`}</div>`;
 }
