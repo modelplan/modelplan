@@ -71,3 +71,24 @@ test('D391 a ticked subscription keeps its sessions\' models (the filter is the 
  expect(labels).toContain('Synthetic claude-used');
  expect(labels.some(l=>l.includes('GLM'))).toBe(false);
 });
+
+test('D391 a Settings visibility update removes model cards but preserves the session tape',async({page})=>{
+ const data=fixture(),zai=data.projection.rows[1],ref='1122334455667788';
+ zai.surfaces=['dock','menu','settings'];zai.accounts[0].subscriptionRef=ref;zai.accounts[0].accountLocator=ref;
+ data.subscriptions.push({subscriptionRef:ref,accounts:[{tool:'zai',account:structuredClone(zai.accounts[0])}]});
+ const {send,receive}=await open(page,data);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Synthetic glm-live:"]')).toHaveCount(1);
+ await expect(page.locator('.ck-tape [data-session="00000000000000a2"]')).toHaveCount(1);
+ expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);
+ await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');
+ expect(await receive(send('appearance',{...appearance,hiddenMembers:[ref]}))).toBe(true);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Synthetic glm-live:"]')).toHaveCount(0);
+ await expect(page.locator('.ck-tape [data-session="00000000000000a2"]')).toHaveCount(1);
+ await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','all');
+ expect(await receive(send('appearance',{...appearance}))).toBe(true);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Synthetic glm-live:"]')).toHaveCount(1);
+ const codexRef=data.projection.rows[0].accounts[0].subscriptionRef;
+ expect(await receive(send('appearance',{...appearance,hiddenMembers:[ref,codexRef]}))).toBe(true);
+ await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(0);
+ await expect(page.locator('.ck-tape [data-session="00000000000000a2"]')).toHaveCount(1);
+});

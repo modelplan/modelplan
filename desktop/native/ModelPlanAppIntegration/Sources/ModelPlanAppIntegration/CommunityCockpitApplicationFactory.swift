@@ -327,14 +327,14 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         }
         appearance = .init(theme:CockpitDayPolicy.resolve(theme),locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
             redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames,showUsedPercent:snapshot.preferences.percentageMode == .used,showAllModels:snapshot.preferences.showAllModels,
-            size:CockpitSize(snapshot.preferences.cockpitSize),memberOrder:snapshot.preferences.subscriptions.order)
+            size:CockpitSize(snapshot.preferences.cockpitSize),memberOrder:snapshot.preferences.subscriptions.order,hiddenMembers:snapshot.preferences.subscriptions.hiddenIDs.sorted())
         if let applied { appearance=cockpitAppearance(applied) }
     }
     func cockpitAppearance(_ value: SettingsApplication) -> CockpitAppearance {
         let e=value.effective
         return .init(theme:appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
             reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames,showUsedPercent:e.showUsedPercent,showAllModels:e.showAllModels,
-            size:CockpitSize(e.cockpitSize),memberOrder:value.snapshot.preferences.subscriptions.order)
+            size:CockpitSize(e.cockpitSize),memberOrder:value.snapshot.preferences.subscriptions.order,hiddenMembers:value.snapshot.preferences.subscriptions.hiddenIDs.sorted())
     }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL
