@@ -3,7 +3,7 @@
 // and resolves to { text, usage: { input, cached, output } } or throws a ProviderError. kind "quota" means the account
 // cannot pay for the call (insufficient_quota, billing hard limit, or 429 that outlasted every retry); only that kind
 // moves on to the other provider. OpenAI: the Responses API called directly (the owner's API credit covers direct
-// Responses calls, not the codex CLI). GLM: Zhipu GLM-5.3 through its OpenAI-compatible chat endpoint. Which goes
+// Responses calls, not the codex CLI). GLM: Zhipu GLM-5.4 through its OpenAI-compatible chat endpoint. Which goes
 // first is vars.REVIEW_PROVIDER_MODE (providerOrder).
 export class ProviderError extends Error {
   constructor(kind, message) { super(message); this.kind = kind; }
@@ -62,8 +62,11 @@ export function openaiProvider({ key, model, effort, url = "https://api.openai.c
   };
 }
 
-// GLM-5.3, the full model (not a flash variant), through the OpenAI-compatible chat completions endpoint.
-export const GLM_MODEL = "glm-5.3";
+// GLM-5.4, the full model (not a flash variant), through the OpenAI-compatible chat completions endpoint. Spelled as
+// ZCode spells it in its requests to the same coding plans: the server answers a 5.3 request with "glm-5.3" whatever
+// case was sent, and a 5.4 request with the case as sent, so this is the only spelling seen accepted for 5.4. The
+// comments the review posts name this model through glmName() (sol.mjs); nothing else states the version.
+export const GLM_MODEL = "GLM-5.4";
 export function glmProvider({ key, baseUrl, model = GLM_MODEL, fetchImpl = fetch, waitMs }) {
   if (!key || !baseUrl) throw new ProviderError("config", "GLM_API_KEY or GLM_BASE_URL is not set");
   if (/flash/i.test(model)) throw new ProviderError("config", "the GLM fallback uses the full model, not flash");

@@ -336,7 +336,7 @@ test("call: background request, polling, answer to a file; the key never reaches
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-// ---- Provider fallback (GLM-5.3 when the OpenAI quota is out) ----
+// ---- Provider fallback (GLM-5.4 when the OpenAI quota is out) ----
 const fake = (name, impl) => ({ name, model: `${name}-m`, review: impl });
 const ok = (t) => async () => ({ text: t, usage: { input: 1, cached: 0, output: 1 } });
 const quota = async () => { throw new P.ProviderError("quota", "openai: HTTP 429 insufficient_quota"); };
@@ -393,10 +393,10 @@ test("providers: quota detection (codes, billing limit, sustained 429) and the G
   assert.deepEqual(await glm.review("REQ"), { text: "G", usage: { input: 5, cached: 0, output: 2 } });
   assert.equal(g.calls[0].url, "https://glm.example/api/paas/v4/chat/completions");
   const sent = JSON.parse(g.calls[0].init.body);
-  assert.equal(sent.model, "glm-5.3", "the full model");
+  assert.equal(sent.model, "GLM-5.4", "the full model, spelled as ZCode spells it");
   assert.deepEqual(sent.messages, [{ role: "user", content: "REQ" }]);
   assert.equal(g.calls[0].init.headers.authorization, "Bearer gk");
-  assert.throws(() => P.glmProvider({ key: "k", baseUrl: "u", model: "glm-5.3-flash" }), /not flash/);
+  assert.throws(() => P.glmProvider({ key: "k", baseUrl: "u", model: "GLM-5.4-Flash" }), /not flash/);
   assert.throws(() => P.glmProvider({ key: "", baseUrl: "u" }), (e) => e.kind === "config");
 });
 
@@ -432,16 +432,18 @@ test("tier gating: (ghglm) counts on the REVIEW_GLM_TIERS tiers (default none); 
   assert.equal(decide({ lane: S.SOL_SHADOW_LANE, comments: [comment(v("merge", H, "ghglmshadow"))], glmTiers: [1] }).why, "this lane already reviewed this head");
   assert.equal(decide({ comments: [comment(v("merge", H, "ghglm"))], glmTiers: [1] }).why, "this lane already reviewed this head");
   assert.match(S.postProblem({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), head: H, lane: "ghsol", glmTiers: [1] }), /already has a verdict/);
-  // The GLM verdict comment.
+  // The GLM verdict comment. Its title names the model that answered, never a version typed by hand.
   const answer = S.parseAnswer(`ok\nRecord: ${H}\nx -> ok\nVERDICT: merge`, H);
-  const body = S.renderSolComment({ answer, head: H, lane: "ghglm", mode: "full", base: BASE, tier: 1 });
-  assert.match(body, /^\*\*GLM-5\.3 workflow review/);
+  const glmComment = (model) => S.renderSolComment({ answer, head: H, lane: "ghglm", mode: "full", base: BASE, tier: 1, meta: { model } });
+  const body = glmComment(P.GLM_MODEL);
+  assert.match(body, /^\*\*GLM-5\.4 workflow review/);
+  assert.match(glmComment("glm-6.1"), /^\*\*GLM-6\.1 workflow review/, "the title follows the model, so it cannot name a stale version");
   assert.equal(body.split("\n").at(-1), v("merge", H, "ghglm"));
   // The tier-2 wait note: no verdict, the event line first, once per head.
   const note = S.renderWaitNote({ head: H, lane: "ghsol", tier: 2, who: ["openai"], why: "openai: HTTP 429 insufficient_quota", runUrl: "https://x/run" });
   const t1note = S.renderWaitNote({ head: H, lane: "ghsol", tier: 1, who: ["glm", "openai"] });
   assert.equal(t1note.split("\n")[0], `tier-1 review waiting: GPT quota out @ ${H} (ghsol)`);
-  assert.match(t1note, /\(GLM-5\.3 and GPT\) is out of quota/);
+  assert.match(t1note, /\(GLM-5\.4 and GPT\) is out of quota/);
   assert.equal(note.split("\n")[0], `tier-2 review waiting: GPT quota out @ ${H} (ghsol)`);
   assert.equal(note.split("\n")[0].startsWith(S.WAIT_EVENT), true);
   const items = R.feed([comment(note)]);
@@ -480,7 +482,7 @@ test("call: OpenAI quota out -> GLM where it counts, a wait marker where it does
     let r = await run({});
     assert.equal(r.code, 0, r.out);
     assert.equal(file("provider"), "glm");
-    assert.equal(file("model"), "glm-5.3");
+    assert.equal(file("model"), "GLM-5.4");
     assert.match(file("answer.md"), /^glm/);
     assert.deepEqual(hits, { openai: 1, glm: 1 });
     r = await run({ PROVIDERS: "openai" });
@@ -621,13 +623,13 @@ test("SOL-4: resolve emits nothing when the PR moves while the mac-compile statu
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("owner 11-20: the GLM coding-plan endpoint joins to <base>/chat/completions with model glm-5.3", async () => {
+test("owner 11-20: the GLM coding-plan endpoint joins to <base>/chat/completions with GLM_MODEL (GLM-5.4)", async () => {
   for (const base of ["https://open.bigmodel.cn/api/coding/paas/v4", "https://open.bigmodel.cn/api/coding/paas/v4/", "https://open.bigmodel.cn/api/coding/paas/v4//"]) {
     const calls = [];
     const f = async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "x" } }] }) }; };
     await P.glmProvider({ key: "k", baseUrl: base, fetchImpl: f }).review("in");
     assert.equal(calls[0].url, "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", base);
-    assert.equal(calls[0].body.model, "glm-5.3");
+    assert.equal(calls[0].body.model, "GLM-5.4");
   }
 });
 
@@ -809,7 +811,7 @@ test("review:gpt: GPT quota out -> GLM answers and the provider line says so; GP
     const post = readFileSync(join(root, "scripts/pr-review/sol-post.mjs"), "utf8");
     assert.match(post, /env\.GPT_REQUESTED === "true" && provider !== "openai"/);
     assert.match(post, /review:gpt requested; GPT quota out/);
-    const comment = S.renderSolComment({ answer: S.parseAnswer(`glm\nRecord: ${H}\nVERDICT: merge`, H), head: H, lane: S.GLM_LANE, mode: "full", base: BASE, tier: 1, meta: { why: "review:gpt requested; GPT quota out; quota fallback to glm", model: "glm-5.3" } });
+    const comment = S.renderSolComment({ answer: S.parseAnswer(`glm\nRecord: ${H}\nVERDICT: merge`, H), head: H, lane: S.GLM_LANE, mode: "full", base: BASE, tier: 1, meta: { why: "review:gpt requested; GPT quota out; quota fallback to glm", model: "GLM-5.4" } });
     assert.match(comment.split("\n")[0], /review:gpt requested; GPT quota out/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -828,7 +830,7 @@ test("review:gpt: the fallback comment is a counting (ghglm) verdict with the fi
   const body = `glm\nRecord: ${H}\nVERDICT: merge`;
   const answer = S.parseAnswer(body, H);
   const why = "review:gpt requested; GPT quota out; quota fallback to glm";
-  const c = S.renderSolComment({ answer, head: H, lane: S.GLM_LANE, mode: "full", base: BASE, tier: 1, meta: { why, model: "glm-5.3" }, gptFallback: true });
+  const c = S.renderSolComment({ answer, head: H, lane: S.GLM_LANE, mode: "full", base: BASE, tier: 1, meta: { why, model: "GLM-5.4" }, gptFallback: true });
   assert.ok(c.split("\n").includes(R.GPT_FALLBACK_MARKER));
   assert.match(c.split("\n")[0], /review:gpt requested; GPT quota out/);
   assert.equal(c.split("\n").at(-1), `VERDICT: merge @ ${H} (ghglm)`);

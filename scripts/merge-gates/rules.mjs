@@ -191,7 +191,7 @@ export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)", "(macrevd)", "
 // workflow on the owner's review runner instead of an interactive pane. Its shadow name (gh-terra-shadow) counts
 // for nothing, like any other named lane.
 export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)", "(gh-terra)"]);
-// (ghglm) is the GLM-5.3 provider of the workflow reviewer (pr-review-sol.yml, D352): it reviews as a fallback when
+// (ghglm) is the GLM provider of the workflow reviewer (pr-review-sol.yml, D352): it reviews as a fallback when
 // the OpenAI quota is out, or by routing (vars.REVIEW_PROVIDER_MODE). The tiers it may decide are configuration, not a
 // constant: the repository variable REVIEW_GLM_TIERS (default empty: GLM never decides; D358/D361) reaches evaluatePr as glmTiers.
 // On a tier it may not decide, its verdict (a block too) is advice. Its shadow name (ghglmshadow) counts for nothing.
