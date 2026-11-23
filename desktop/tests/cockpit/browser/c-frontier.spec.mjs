@@ -45,3 +45,13 @@ test('D386 HUD and enlarged chart use the same recommended-effort frontier',asyn
  await expect(page.locator('.fc-l',{hasText:'Synthetic C'})).toHaveClass(/\bdim\b/);
  await expect(page.locator('.fc-inspect')).toHaveCount(5);
 });
+
+test('D386 coincident recommended frontier models are both undimmed',async({page})=>{
+ const fleet=[model('tie-A',[effort('high',60,.4,true)]),model('tie-B',[effort('high',60,.4,true)]),model('beaten',[effort('high',45,.6,true)])];
+ await open(page,fleet);
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['tie-A','tie-B']);
+ await expect(page.locator('.fc-l',{hasText:'Synthetic tie-A'})).not.toHaveClass(/\bdim\b/);
+ await expect(page.locator('.fc-l',{hasText:'Synthetic tie-B'})).not.toHaveClass(/\bdim\b/);
+ await expect(page.locator('.fc-l',{hasText:'Synthetic beaten'})).toHaveClass(/\bdim\b/);
+ await expect(page.locator('.fc-star.dim')).toHaveCount(1);
+});

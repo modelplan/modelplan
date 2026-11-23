@@ -55,7 +55,9 @@ export function frontierSvg(models, {w: width, h: height, current = {}, axis = {
   const X = cost => left + (log(cost) - minCost) / spanCost * (width - left - right);
   const Y = ability => height - bottom - (ability - minAbility) / spanAbility * (height - top - bottom);
   const at = row => `${X(row[2]).toFixed(1)},${Y(row[1]).toFixed(1)}`;
-  const front = frontierPoints(models), leaders = new Set(front.map(p => p.m.id));
+  const front = frontierPoints(models);
+  // Coincident recommendations share one line vertex but all remain on the frontier.
+  const leaders = new Set(models.filter(m => {const row = starRow(m);return row && front.some(p => p.row[1] === row[1] && p.row[2] === row[2]);}).map(m => m.id));
   const curves = models.map(m => `<polyline class="fc-m ${leaders.has(m.id) ? '' : 'dim'} ${m.id === selected ? 'focus' : ''}" points="${plotted(m).map(at).join(' ')}"/>`).join('');
   // A session reports the wire key ("high"), a row names its label ("High"): the model's labels map one to the other
   // (audit F 4); a study model without them already reports labels.
