@@ -292,10 +292,16 @@ func main() {
 				continue
 			}
 		}
-		if p.plan.Mode == "rows-busy-once" && method == "rows/subscribe" && m["result"] != nil && !p.triggered {
+		if (p.plan.Mode == "rows-busy-once" || p.plan.Mode == "rows-busy-held") && method == "rows/subscribe" && m["result"] != nil && !p.triggered {
 			p.triggered = true
 			env := object(m["result"])
 			m = map[string]any{"jsonrpc": "2.0", "id": m["id"], "error": map[string]any{"code": -32013, "message": "busy", "data": map[string]any{"sessionId": env["sessionId"], "storeEpoch": env["storeEpoch"], "consentGeneration": env["consentGeneration"]}}}
+			if p.plan.Mode == "rows-busy-held" {
+				_ = os.WriteFile(filepath.Join(os.Getenv("HOME"), "rows-busy-held"), []byte("ready"), 0600)
+				p.mu.Unlock()
+				p.release("rows-busy-release", m)
+				continue
+			}
 		}
 		if p.plan.Mode == "wrong-session-sequence" && method == "rows/subscribe" && m["result"] != nil && !p.triggered {
 			p.triggered = true

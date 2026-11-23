@@ -50,4 +50,20 @@ extension RealBinaryTests {
         await probe.resumeBootstrapReply()
         try await eventually { await probe.rowCount() == 1 }
     }
+
+    func testBusyCoalescedRowsCallerRetriesOnTheSameSession() async throws {
+        let binary = try binary(); let home = try home(); let probe = EventProbe()
+        try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+        let client = ProcessEngineClient(configuration: configuration(try proxy(home, binary: binary, mode: "rows-busy-held"), home: home), consumer: probe)
+        addTeardownBlock { await client.stop() }
+        let context = try await client.start()
+        let held = home.appendingPathComponent("rows-busy-held")
+        try await eventually { FileManager.default.fileExists(atPath: held.path) }
+        let rows = Task { try await client.subscribeRows(timeout: nil) }
+        try await eventually { await client.coalescedRequests >= 1 }
+        try Data().write(to: home.appendingPathComponent("rows-busy-release"))
+        _ = try await rows.value
+        try await eventually { await probe.rowCount() > 0 }
+        XCTAssertTrue(client.isCurrent(context), "the retry succeeds on the original session")
+    }
 }
