@@ -18,7 +18,7 @@ public enum AccessibilityPreference: String, Codable, CaseIterable, Sendable { c
 public enum PercentageMode: String, Codable, CaseIterable, Sendable { case remaining, used }
 public enum PercentagePin: String, Codable, CaseIterable, Sendable { case auto, fiveHour = "5h", week }
 public enum HoverMagnification: String, Codable, CaseIterable, Sendable { case none, subtle, strong }
-public enum MenuDisplay: String, Codable, CaseIterable, Sendable { case icon, tightest, twoWindows }
+public enum MenuDisplay: String, Codable, CaseIterable, Sendable { case icon, tightest, twoWindows, automatic }
 public enum OpeningPreference: String, Codable, CaseIterable, Sendable { case hold, quick }
 /// Cockpit size (CKP-SHELL-07, owner D51, D60, D66): Auto by default (85 % on laptop-width screens, 100 % on wider
 /// ones); a screen too short for the choice draws it smaller.
@@ -122,7 +122,8 @@ public struct SettingsPreferences: Codable, Sendable {
     public var openAtLogin = true
     /// Saved preference only; observing/performing update checks belongs to the application service.
     public var automaticUpdates = true
-    public var menuDisplay: MenuDisplay = .tightest
+    /// D377: automatic is the default: the icon alone, a compact number below the alert line, a red dot when used up.
+    public var menuDisplay: MenuDisplay = .automatic
     public var openShortcut = ShortcutChord.unassigned
     public var dockShortcut = ShortcutChord.unassigned
     public var language: SettingsLanguage = .fallback

@@ -85,7 +85,7 @@ actor SettingsJourneyClient: EngineClient {
         // Fresh profile: the tightest number.
         var store = try open()
         var shown = await store.snapshot().preferences.menuDisplay
-        XCTAssertEqual(shown, .tightest, "a fresh profile shows the percentage")
+        XCTAssertEqual(shown, .automatic, "a fresh profile follows the automatic display (D377)")
         try FileManager.default.removeItem(at: profile)
         // An old profile: every key written, menuDisplay "icon" only because it was the default then.
         var old = SettingsPreferences(); old.menuDisplay = .icon; old.theme = .night
@@ -96,7 +96,7 @@ actor SettingsJourneyClient: EngineClient {
         try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "settings": values, "core": core]).write(to: location.target)
         store = try open()
         shown = await store.snapshot().preferences.menuDisplay
-        XCTAssertEqual(shown, .tightest, "the auto-written icon is dropped by the one-time migration")
+        XCTAssertEqual(shown, .automatic, "the auto-written icon is dropped by the one-time migration")
         let theme = await store.snapshot().preferences.theme
         XCTAssertEqual(theme, .night, "every other stored value is kept")
         // The user chooses icon after the change: it is written and stays, and untouched keys are not written.
@@ -109,7 +109,7 @@ actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(settings["menuDisplay"] as? String, "icon")
         XCTAssertNil(settings["automaticUpdates"], "an untouched key is not written")
         // Choosing the default again stops pinning it.
-        _ = try await store.update { $0.menuDisplay = .tightest }
+        _ = try await store.update { $0.menuDisplay = .automatic }
         let again = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: location.target)) as? [String: Any])
         XCTAssertNil((again["settings"] as? [String: Any])?["menuDisplay"])
     }
@@ -118,7 +118,7 @@ actor SettingsJourneyClient: EngineClient {
     /// legacy file keeps its explicit icon and its other values; an unmarked one loses only the auto-written icon.
     /// The published file carries the marker so the rule does not run a second time on the next open.
     func testSET_9_43LegacyImportKeepsAMarkedIconAndDropsAnUnmarkedOne() async throws {
-        for (marked, expected) in [(true, MenuDisplay.icon), (false, .tightest)] {
+        for (marked, expected) in [(true, MenuDisplay.icon), (false, .automatic)] {
             let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g393-import-" + UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: profile) }
             let location = try FoundationPreferenceLocation(applicationSupport: profile, product: .community)
@@ -150,8 +150,8 @@ actor SettingsJourneyClient: EngineClient {
         await app.prepare()
         defer { app.composition.dock.close() }
         let editor = app.settingsHost.application.editor
-        XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.menuDisplay, .tightest,
-                       "A fresh normal entry must select the tightest reading")
+        XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.menuDisplay, .automatic,
+                       "A fresh normal entry follows the automatic display (D377)")
         for choice in [MenuDisplay.icon, .twoWindows, .tightest] {
             _ = try await store.update { $0.menuDisplay = choice }
             let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])

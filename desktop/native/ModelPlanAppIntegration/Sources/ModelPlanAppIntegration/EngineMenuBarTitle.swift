@@ -14,7 +14,7 @@ enum EngineMenuBarTitle {
     /// shown subscription, or an expired/unknown value (MENU_BAR.md: an expired value leaves no number). Only the
     /// composition's projection gap is `.unavailable`.
     static func reading(inputs: [DockInstrumentInput], preferences: SettingsPreferences, now: Date) -> StatusTitleReading {
-        guard preferences.menuDisplay != .icon else { return .none }
+        guard preferences.menuDisplay != .icon, preferences.menuDisplay != .automatic else { return .none }
         let ids = inputs.map(\.id)
         guard Set(ids).count == ids.count, let order = try? preferences.presentedSubscriptionIDs(ids) else { return .none }
         let byID = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id, $0) })
@@ -39,5 +39,24 @@ enum EngineMenuBarTitle {
             if !parts.isEmpty { return .value(parts.joined(separator: " ")) }
         }
         return .value(shown(tightest.remaining))
+    }
+
+    /// D377: the tracked quota of the automatic display, the same tightest subscription the other displays read.
+    /// `.none` without a shown subscription or an admitted value.
+    static func autoInput(inputs: [DockInstrumentInput], preferences: SettingsPreferences, now: Date) -> StatusAutoInput {
+        let ids = inputs.map(\.id)
+        guard Set(ids).count == ids.count, let order = try? preferences.presentedSubscriptionIDs(ids) else { return .none }
+        let byID = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id, $0) })
+        var tightest: (input: DockInstrumentInput, remaining: Double)?
+        for id in order {
+            guard let raw = byID[id] else { continue }
+            let input = preferences.applying(to: raw)
+            guard let remaining = (try? DockInstrumentProjection.evaluate(input, now: now))?.remainingPercent else { continue }
+            if tightest.map({ remaining < $0.remaining }) ?? true { tightest = (input, remaining) }
+        }
+        guard let tightest else { return .none }
+        let shown = "\(Int((tightest.input.showUsedPercent ? 100 - tightest.remaining : tightest.remaining).rounded()))%"
+        return .reading(.init(name: tightest.input.duplicateDisplayName, remaining: tightest.remaining, shown: shown,
+                              alertLine: Double(preferences.effectiveRedBelow)))
     }
 }
