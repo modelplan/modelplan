@@ -1,0 +1,1 @@
+The cockpit no longer keeps an always-on strip under the subscription table: the page control is now a small pager under the All key (shown only with two or more pages), and the update time with Refresh moved to the bottom line of the Overview screen, turning amber with Retry when reads keep failing, with an amber dot on the All key as a reminder on other pages.

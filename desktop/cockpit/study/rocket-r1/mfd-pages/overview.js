@@ -153,7 +153,8 @@ export const overview = {
   id: 'overview', title: 'mfd.pOverview',
   optionKeys: ui => [
     // v1: the Grid key is shown but not lit and changes nothing (CKP-MFD-62); the heatmap code above is for v1.1.
-    {id: 'chart', a: {value:'bars', text: t('mfd.oBars'), on: true}, b: {value:'bars', text: t('mfd.oGrid'), on: false}},
+    // G3-172: the key still names the mode that is drawn, so it can never say Bars over a heatmap.
+    {id: 'chart', a: {value:'bars', text: t('mfd.oBars'), on: ui.chart !== 'grid'}, b: {value:'bars', text: t('mfd.oGrid'), on: ui.chart === 'grid'}},
     // CKP-SHELL-50: the app's range; Today is the 24-hour chart (ui.days follows the range in the deck).
     rangeKey(ui),
     {id:'stack',a:{value:'stack', text:t('mfd.oStack'),on:ui.stack},b:{value:'split', text:t('mfd.oSplit'),on:!ui.stack}},

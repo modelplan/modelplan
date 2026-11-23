@@ -30,6 +30,7 @@ enum SettingsWords {
         case "strong": pair = ("Strong", "明显")
         case "icon": pair = ("Icon only", "仅图标")
         case "tightest": pair = ("Tightest percentage", "最紧的百分比")
+        case "automatic" where key == .menuDisplay: pair = ("Automatic", "自动")
         case "twoWindows": pair = ("Two windows", "两个窗口")
         case "zh-CN": pair = ("Simplified Chinese", "简体中文")
         case "en": pair = ("English", "英语")

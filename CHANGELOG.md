@@ -6,7 +6,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
-- The cockpit's launch rack now always stays behind the cockpit, also while it detaches, flies back or opens and closes; before, a detaching or returning cockpit had the rack drawn over its canopy. With the menu bar icon hidden or squeezed off, the attached cockpit now hangs from the menu bar just right of the notch (or the same place on a display without one), with its rack, instead of opening at the top-right corner without one.
+- The menu-bar item now has an automatic display, the new default: just the icon normally; a compact number (about 42 pt wide, no pill) only while the tracked quota is below your alert line; the icon with a red dot when it is used up; and the icon alone again if macOS squeezes the item out of view. The accessibility label always carries the full reading, for example "ModelPlan · Codex 0%". "Icon only", "Tightest percentage" and "Two windows" stay in Settings.
 
 ## CLI v0.5.70 (2026-11-22)
 
