@@ -186,3 +186,84 @@ func TestSampling1122ForgetLoginPreservesKeyReading(t *testing.T) {
 		t.Fatal("native key reading lost")
 	}
 }
+
+func samplingDenyZCodeKey(t *testing.T) {
+	t.Helper()
+	s := consent.Capture().State()
+	r, err := consent.ApplyGrant(consent.Path(), consent.Grant{RequestID: "sampling-deny-key", ExpectStoreEpoch: s.StoreEpoch, ExpectGeneration: s.Generation, ConsentTextVersion: consent.TextVersion, Deny: []string{consent.ScopeZaiAccountUsageAPIKey}}, consent.GrantHooks{Cleanup: func(string, bool) error { return nil }})
+	if err != nil || r.Code != "ok" {
+		t.Fatalf("deny key: %+v %v", r, err)
+	}
+}
+
+func TestSampling1122RouteDiscoveryNeverOpensProviderAfterRevocation(t *testing.T) {
+	isolateHome(t)
+	t.Setenv("Z_AI_API_KEY", "")
+	home, _ := os.UserHomeDir()
+	writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
+	writeZCodeProviders(t, home, zcodeStaleProviderFiles["no_selection"])
+	grantZCodeLogin(t)
+	captured := consent.Capture()
+	old := zcodeProviderRead
+	defer func() { zcodeProviderRead = old }()
+	opens := 0
+	zcodeProviderRead = func(path string) ([]byte, error) { opens++; return old(path) }
+	_ = ProductionPathsWithAdmission(t.TempDir(), "1.0.0", captured)
+	if opens != 0 {
+		t.Fatalf("route discovery opened provider credentials %d times", opens)
+	}
+	samplingDenyZCodeKey(t)
+	_ = ProductionPathsWithAdmission(t.TempDir(), "1.0.0", captured)
+	if opens != 0 {
+		t.Fatalf("stale discovery opened provider credentials %d times", opens)
+	}
+}
+
+func TestSampling1122DeniedKeyStillAdmitsSavedLogin(t *testing.T) {
+	isolateHome(t)
+	t.Setenv("Z_AI_API_KEY", "")
+	home, _ := os.UserHomeDir()
+	writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
+	writeZCodeProviders(t, home, zcodeStaleProviderFiles["no_selection"])
+	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
+	grantZCodeLogin(t)
+	samplingDenyZCodeKey(t)
+	old := zcodeProviderRead
+	defer func() { zcodeProviderRead = old }()
+	opens := 0
+	zcodeProviderRead = func(path string) ([]byte, error) { opens++; return old(path) }
+	p := ProductionPathsWithAdmission(t.TempDir(), "1.0.0", consent.Capture())
+	if err := ExecuteScopeRefresh(context.Background(), p, consent.ScopeZaiAccountUsageSavedLogin, time.Now()); err != nil {
+		t.Fatalf("saved login refresh: %v", err)
+	}
+	if opens != 0 || z.calls.Load() != 1 {
+		t.Fatalf("provider opens %d, quota calls %d; want 0 and 1", opens, z.calls.Load())
+	}
+}
+
+// A keyless file is classified only by an admitted refresh. The next plan can
+// then select the independent saved-login scope without reading during discovery.
+func TestSampling1122KeylessRouteResolvesUnderReaderLock(t *testing.T) {
+	isolateHome(t)
+	t.Setenv("Z_AI_API_KEY", "")
+	home, _ := os.UserHomeDir()
+	writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
+	writeZCodeProviders(t, home, zcodeStaleProviderFiles["no_selection"])
+	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
+	grantZCodeLogin(t)
+	cache := t.TempDir()
+	now := time.Now()
+	paths := func() Paths { return ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()) }
+	p := paths()
+	_ = ExecuteScopeRefresh(context.Background(), p, consent.ScopeZaiAccountUsageAPIKey, now)
+	if z.calls.Load() != 0 {
+		t.Fatal("key-scoped refresh sent the saved login")
+	}
+	p = paths()
+	if err := ExecuteScopeRefresh(context.Background(), p, consent.ScopeZaiAccountUsageSavedLogin, now); err != nil {
+		t.Fatal(err)
+	}
+	if z.calls.Load() != 1 {
+		t.Fatalf("saved-login quota calls = %d", z.calls.Load())
+	}
+}

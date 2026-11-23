@@ -13,7 +13,7 @@ import ModelPlanWire
   private let source = CockpitMessageSource(mainFrame: true, origin: "modelplan-cockpit://bundle")
   private func reply(_ raw: String, type: String, sequence: Int, extra: [String: Any] = [:]) throws -> String {
     var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
-    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels", "ackedCautions", "pinnedModels", "memberOrder", "nowUnixMs", "reason", "visible", "occluded", "key", "profile", "attached", "forcedClosed", "tier", "scope", "range"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels", "ackedCautions", "pinnedModels", "memberOrder", "nowUnixMs", "reason", "visible", "occluded", "key", "profile", "attached", "forcedClosed", "tier", "scope", "range", "refreshing"] { value[key] = nil }
     value["type"] = type; value["sequence"] = String(sequence)
     if type == "ready" { value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"] }
     for (key, field) in extra { value[key] = field }

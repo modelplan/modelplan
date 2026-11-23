@@ -11,6 +11,8 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 )
 
+type refreshScopeKey struct{}
+
 // Z.ai has two account scopes but one selected native provider. Scope-specific refreshes
 // must use the selected route, not merely the shared provider ID.
 func zaiScopeMatches(p Paths, scope string) bool {
@@ -77,5 +79,5 @@ func ExecuteScopeRefresh(ctx context.Context, p Paths, scope string, now time.Ti
 		home, _ := os.UserHomeDir()
 		return RefreshCodexAccount(ctx, p.Cache, CodexBin(home), now)
 	}
-	return RefreshNativeProviders(ctx, p, now, []string{definition.Tool})
+	return RefreshNativeProviders(context.WithValue(ctx, refreshScopeKey{}, scope), p, now, []string{definition.Tool})
 }

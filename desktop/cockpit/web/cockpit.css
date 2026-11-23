@@ -309,6 +309,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .mfd-page .eng-upd{display:flex;align-items:baseline;gap:0;margin-left:auto;min-width:0;font:10px/12px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}.mfd-page .eng-upd-sep{font-style:normal;white-space:pre}.mfd-page .eng-upd[data-failing="true"]{color:var(--st-mid)}
 .mfd-page .eng-upd-t{overflow:hidden;text-overflow:ellipsis}
 .mfd-page .eng-upd-r{font:inherit;color:var(--silk);background:none;border:0;padding:0 2px;cursor:pointer;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 35%,transparent);text-underline-offset:2px}
+.mfd-page .eng-upd-r:disabled{opacity:.5;cursor:default}
 .mfd-page .eng-upd[data-failing="true"] .eng-upd-r{color:inherit}.mfd-page .eng-upd-r:hover{color:var(--silk-hi)}.mfd-page .eng-upd-r:focus-visible{outline:2px solid var(--gold-lcd,#f6d38a);outline-offset:2px}
 /* CKP-FAD-17: the thin blue trial line belongs to the official throttle art; the community flat fader keeps its ghost cap only. */
 .dk-fad .fd-tline{display:none}

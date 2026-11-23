@@ -220,6 +220,26 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 	if p.Admission != nil && p.Admission.Fence() != state.Fence() {
 		return errors.New("consent changed; refresh stopped")
 	}
+	// Classify the provider file only during a live, admitted read, under the
+	// consent reader lock. Route discovery itself remains metadata-only.
+	if g, ok := p.ReaderAccessGrant("zai"); ok && g.ConfigSource != nil && g.ConfigSource.Tool == "zcode" &&
+		(selected == nil || selected["zai"]) && (g.StillValid == nil || g.StillValid()) {
+		if zcodeProviderFileKeyless(g.ConfigSource.SettingsPath) {
+			// Paths is passed by value but its grants map is shared with callers.
+			// Reselect only this refresh; planners may be reading the original map.
+			grants := make(map[string]ReaderGrant, len(p.ReaderAccess.Grants))
+			for id, grant := range p.ReaderAccess.Grants {
+				grants[id] = grant
+			}
+			p.ReaderAccess = &ReaderAccess{Grants: grants}
+			home, _ := os.UserHomeDir()
+			_, mode := consent.Current()
+			applyZCodeLogin(&p, home, state, mode, glmSourceConfigured(p))
+		}
+	}
+	if scope, _ := ctx.Value(refreshScopeKey{}).(string); scope != "" && !zaiScopeMatches(p, scope) {
+		return errors.New("reader scope does not match selected route")
+	}
 	sessionRead := false
 	if selected == nil && !diagnostic {
 		sessionRead = refreshProductionClaudeSessions(ctx, p, now)

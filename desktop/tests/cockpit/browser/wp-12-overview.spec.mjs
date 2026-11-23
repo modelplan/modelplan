@@ -10,7 +10,7 @@ test.beforeEach(async({page})=>excludePortholeFlicker(page));
 const NOW=new Date(2026,10,4,12).getTime(),H=36e5;
 const localDay=back=>{const d=new Date(2026,10,4-back);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 async function open(page,data,locale='en',tier='tall'){
- await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
  await page.clock.setFixedTime(new Date(NOW));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
@@ -36,6 +36,19 @@ function resets(n){
  return data;
 }
 const rows=page=>page.locator('.pg-overview .mfd-alerts li');
+
+test('sampling 11-22: Overview refresh is disabled until the native read completes',async({page})=>{
+ const {send,receive}=await open(page,recorded(2));
+ const refresh=page.locator('.pg-overview button[data-refresh]');
+ await refresh.click();
+ expect(await receive(send('shell',{...shell,refreshing:true}))).toBe(true);
+ await expect(refresh).toBeDisabled();
+ expect(await refresh.evaluate(e=>getComputedStyle(e).opacity)).toBe('0.5');
+ await refresh.evaluate(e=>e.click());
+ expect(await page.evaluate(()=>window.__events.filter(e=>e.action==='refreshMember').length)).toBe(1);
+ expect(await receive(send('shell',{...shell,refreshing:false}))).toBe(true);
+ await expect(refresh).toBeEnabled();
+});
 
 test('WP-12 CKP-MFD-58 five alerts show at most four lines, the last one "+N ▸"',async({page})=>{
  await open(page,resets(5));

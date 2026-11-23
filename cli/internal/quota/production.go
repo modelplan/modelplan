@@ -189,10 +189,12 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 	staleProviderFile := false
 	if _, err := os.Lstat(ZCodeProviderConfig(home)); !os.IsNotExist(err) {
 		g, granted := p.ReaderAccess.Grants["zai"]
-		if !granted || g.ConfigSource == nil || g.ConfigSource.Tool != "zcode" || !zcodeProviderFileKeyless(ZCodeProviderConfig(home)) {
-			return
+		if granted && g.ConfigSource != nil {
+			if g.ConfigSource.Tool != "zcode" || !zcodeProviderCachedKeyless(ZCodeProviderConfig(home)) {
+				return
+			}
+			staleProviderFile = true
 		}
-		staleProviderFile = true
 	}
 	if g, granted := p.ReaderAccess.Grants["zai"]; granted && g.ConfigSource != nil && !staleProviderFile {
 		return
