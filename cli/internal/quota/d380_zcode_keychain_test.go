@@ -153,7 +153,7 @@ func TestD380KeychainReadWaitsForItsOwnChoice(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	key, encoded := zcodeTestKey(t)
 	writeZCodeKeychainLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true}, key)
-	if !detect.ZCodeLoginPresent(home) || !detect.ZCodeKeychainBound(home) {
+	if !detect.ZCodeLoginPresent(home) || !detect.ZCodeKeychainMarkerPresent(ZCodeLoginDir(home)) {
 		t.Fatal("Keychain-bound sign-in not detected")
 	}
 	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai", "open.bigmodel.cn", "zcode.z.ai")
@@ -188,6 +188,28 @@ func TestD380KeychainReadWaitsForItsOwnChoice(t *testing.T) {
 	}
 	if fake.calls.Load() != 0 || z.calls.Load() != 0 {
 		t.Fatalf("keychain calls %d, requests %d before Allow", fake.calls.Load(), z.calls.Load())
+	}
+}
+
+func TestD380UnexpectedMarkerRequiresChoiceBeforeOpeningLogin(t *testing.T) {
+	isolateHome(t)
+	home, _ := os.UserHomeDir()
+	dir := writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
+	// A non-regular replacement must still gate the read without opening the marker.
+	if err := os.Mkdir(filepath.Join(dir, "credential-source"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "setting.json")); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeKeychain{}
+	for choice, want := range map[string]string{"unset": "keychain_unset", "denied": "keychain_denied"} {
+		if _, got := readZCodeLogin(context.Background(), dir, &ZCodeKeychain{Consent: choice, Key: fake.key}, time.Now()); got != want {
+			t.Fatalf("choice %q reached the file reader: got %q, want %q", choice, got, want)
+		}
+	}
+	if fake.calls.Load() != 0 {
+		t.Fatal("Keychain was used before Allow")
 	}
 }
 

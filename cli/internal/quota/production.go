@@ -186,21 +186,22 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 	// ZCode's provider-file key route comes first, unless that file (read under the key route's
 	// own admission, which the default grant below carries) selects no key: an old file left by an
 	// earlier ZCode must not hide the sign-in (G3-158).
+	keyAllowed := state.AllowsScope(consent.ScopeZaiAccountUsageAPIKey, mode)
 	staleProviderFile := false
-	if _, err := os.Lstat(ZCodeProviderConfig(home)); !os.IsNotExist(err) {
+	if _, err := os.Lstat(ZCodeProviderConfig(home)); keyAllowed && !os.IsNotExist(err) {
 		g, granted := p.ReaderAccess.Grants["zai"]
 		if !granted || g.ConfigSource == nil || g.ConfigSource.Tool != "zcode" || !zcodeProviderFileKeyless(ZCodeProviderConfig(home)) {
 			return
 		}
 		staleProviderFile = true
 	}
-	if g, granted := p.ReaderAccess.Grants["zai"]; granted && g.ConfigSource != nil && !staleProviderFile {
+	if g, granted := p.ReaderAccess.Grants["zai"]; keyAllowed && granted && g.ConfigSource != nil && !staleProviderFile {
 		return
 	}
 	if r, decided := state.Tools["zai"]; decided && (!r.Allowed || zaiRecordChoseSource(r)) {
 		return
 	}
-	if os.Getenv(nativeReaders["zai"].KeyEnv) != "" || ManualKeyPresent(p.Cache, "zai") {
+	if keyAllowed && (os.Getenv(nativeReaders["zai"].KeyEnv) != "" || ManualKeyPresent(p.Cache, "zai")) {
 		return
 	}
 	if !detect.LocalRoot(ZCodeLoginDir(home)) {
@@ -218,7 +219,7 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 	// Stat-only, as for Claude Code (D41): no reader runs, so no failed attempt holds back the
 	// read that follows Allow, and the plaintext mirror is never a stand-in.
 	keychain := &ZCodeKeychain{Consent: state.ScopeKeychainStatus(scope, mode)}
-	if detect.ZCodeKeychainBound(home) && keychain.Consent != "allowed" {
+	if detect.ZCodeKeychainMarkerPresent(ZCodeLoginDir(home)) && keychain.Consent != "allowed" {
 		p.ZCodeKeychainPending = keychain.Consent
 		return
 	}

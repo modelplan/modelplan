@@ -63,3 +63,60 @@ func TestG3158StaleKeylessProviderFileFallsThroughToSignIn(t *testing.T) {
 
 // The Keychain-bound store (ZCode 3.19+) that G3-158 reported as unsupported is read since D380;
 // see d380_zcode_keychain_test.go.
+
+func TestD380DeniedKeyIgnoresStaleProviderFile(t *testing.T) {
+	for _, keychain := range []bool{false, true} {
+		name := "legacy"
+		if keychain {
+			name = "keychain"
+		}
+		t.Run(name, func(t *testing.T) {
+			isolateHome(t)
+			t.Setenv("Z_AI_API_KEY", "synthetic-unadmitted-key")
+			home, _ := os.UserHomeDir()
+			fixture := zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true}
+			if keychain {
+				key, _ := zcodeTestKey(t)
+				writeZCodeKeychainLogin(t, home, fixture, key)
+			} else {
+				writeZCodeLogin(t, home, fixture)
+			}
+			writeZCodeProviders(t, home, zcodeStaleProviderFiles["no_selection"])
+			grantZCodeLogin(t)
+			state, err := consent.EnsureStore(consent.Path())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = consent.ApplyGrant(consent.Path(), consent.Grant{
+				RequestID: "d380-deny-api", ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation,
+				ConsentTextVersion: consent.TextVersion, Deny: []string{consent.ScopeZaiAccountUsageAPIKey},
+			}, consent.GrantHooks{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := ProductionPathsWithAdmission(t.TempDir(), "1.0.0", consent.Capture())
+			zcodeKeylessMu.Lock()
+			_, probed := zcodeKeylessMemo[ZCodeProviderConfig(home)]
+			zcodeKeylessMu.Unlock()
+			if probed {
+				t.Fatal("denied provider file was classified")
+			}
+			if keychain {
+				if p.ZCodeKeychainPending != "unset" {
+					t.Fatal("allowed QR sign-in did not reach its own Keychain choice")
+				}
+				return
+			}
+			g, ok := p.ReaderAccessGrant("zai")
+			if !ok || g.ConfigSource == nil || g.ConfigSource.SettingsPath != ZCodeLoginDir(home) ||
+				g.ConfigSource.Tool != zcodeLoginTool {
+				t.Fatal("denied key suppressed the independently admitted QR route")
+			}
+			z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
+			now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+			if err := ExecuteScopeRefresh(context.Background(), p, consent.ScopeZaiAccountUsageSavedLogin, now); err != nil || z.calls.Load() != 1 {
+				t.Fatalf("admitted QR refresh did not send one request: %v", err)
+			}
+		})
+	}
+}

@@ -238,7 +238,7 @@ func zcodeDecryptV2(value string, key []byte) string {
 // zcodeStoreFormat names the store's encryption: "v1" (machine-derived secret, ZCode 3.11-3.18),
 // "os" (Keychain key, 3.19+), "" for a store without encrypted entries, or "unsupported" for
 // anything else (enc:v2:env, an unknown envelope, or v1 and v2 entries mixed mid-migration).
-func zcodeStoreFormat(dir string, store map[string]any) string {
+func zcodeStoreFormat(pinned bool, store map[string]any) string {
 	v1, os2, other := false, false, false
 	for _, v := range store {
 		raw, ok := v.(string)
@@ -254,7 +254,6 @@ func zcodeStoreFormat(dir string, store map[string]any) string {
 			other = true
 		}
 	}
-	pinned := zcodeSourcePinned(dir)
 	switch {
 	case other || v1 && os2 || v1 && pinned:
 		return "unsupported"
@@ -264,16 +263,6 @@ func zcodeStoreFormat(dir string, store map[string]any) string {
 		return "v1"
 	}
 	return ""
-}
-
-// zcodeSourcePinned: ZCode's credential-source marker pins the folder to the system store ("os").
-func zcodeSourcePinned(dir string) bool {
-	fi, err := os.Lstat(filepath.Join(dir, "credential-source"))
-	if err != nil || !fi.Mode().IsRegular() || fi.Size() > 64 {
-		return false
-	}
-	b, err := os.ReadFile(filepath.Join(dir, "credential-source"))
-	return err == nil && strings.TrimSpace(string(b)) == "os"
 }
 
 // ZCodeKeychain is the in-memory Keychain capability of one ZCode sign-in read (D380). Consent is
@@ -365,6 +354,15 @@ func zcodeBaseRegion(base string) string {
 // readZCodeLogin resolves what one read may send and where, from ZCode's own files, read-only.
 // The code on failure is a reader error code; nothing of the files appears in it.
 func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, now time.Time) (zcodeLogin, string) {
+	pinned := detect.ZCodeKeychainMarkerPresent(dir)
+	if pinned {
+		if keychain == nil || keychain.Consent == "" || keychain.Consent == "unset" {
+			return zcodeLogin{}, "keychain_unset"
+		}
+		if keychain.Consent != "allowed" {
+			return zcodeLogin{}, "keychain_denied"
+		}
+	}
 	var settings zcodeSettings
 	var registry struct {
 		Provider map[string]zcodeProvider `json:"provider"`
@@ -416,7 +414,7 @@ func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, no
 	// the Keychain key, after the user's own Keychain choice (D380). Anything else, including a store
 	// mixing both, is unsupported. A Keychain-bound store never falls back to config.json's
 	// plaintext mirror, which may belong to a previous account.
-	format := zcodeStoreFormat(dir, store)
+	format := zcodeStoreFormat(pinned, store)
 	if format == "unsupported" {
 		return zcodeLogin{}, "unsupported_login"
 	}
@@ -546,6 +544,10 @@ func fetchZCodeLogin(ctx context.Context, c *http.Client, source ZaiConfigSource
 	login, code := readZCodeLogin(ctx, source.SettingsPath, source.Keychain, now)
 	if code != "" {
 		e.ErrorCode, e.Error = code, code
+		return e
+	}
+	if _, blocked := zaiConfigAdmission(ctx); blocked != "" {
+		e.ErrorCode, e.Error = blocked, blocked
 		return e
 	}
 	if source.Region != "" && source.Region != login.region {

@@ -4,7 +4,6 @@ package detect
 import (
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // ZaiSavedLoginScope is the account-usage path only ZCode's own sign-in (QR code / OAuth) can serve
@@ -29,14 +28,9 @@ func ZCodeLoginPresent(home string) bool {
 	return true
 }
 
-// ZCodeKeychainBound: ZCode pinned this sign-in's key to the system credential store (its
-// "credential-source" marker). Metadata only; the marker is read, never the store.
-func ZCodeKeychainBound(home string) bool {
-	path := filepath.Join(home, ".zcode", "v2", "credential-source")
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.Mode().IsRegular() || fi.Size() > 64 {
-		return false
-	}
-	b, err := os.ReadFile(path)
-	return err == nil && strings.TrimSpace(string(b)) == "os"
+// ZCodeKeychainMarkerPresent probes only metadata. An unreadable or unexpected
+// marker also requires consent because the vendor may have pinned the store.
+func ZCodeKeychainMarkerPresent(dir string) bool {
+	_, err := os.Lstat(filepath.Join(dir, "credential-source"))
+	return !os.IsNotExist(err)
 }
