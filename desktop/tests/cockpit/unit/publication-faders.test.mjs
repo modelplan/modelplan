@@ -140,10 +140,13 @@ test('G3-133 a model used only in history stays in the own-plans set and in the 
  const model=(id,developerId)=>({id,name:id,developerId,recommended:'medium',efforts:[{effort:'medium',star:true,ability:1,cost:1,time:null}]});
  const publication={contractVersion:1,models:[model('a','openai')]};
  const subs=[{key:'s1',developer:'openai',colour:'#fff'}];
- const published=[model('a','openai'),model('g','google')];
- assert.deepEqual(moreFaderModels(published,[],[],subs,new Set(['g'])).map(m=>m.id),['g','a']);
- const {faders}=publicationFaders(publication,[],published.slice(1),subs,{now:1,ownPlansOnly:true,usage:new Map([['g',{d7:1,d30:1}]])});
- assert.deepEqual(faders.map(f=>f.id),['g','a']);
+ const published=[model('a','openai'),model('b','openai'),model('g','google')];
+ // D391 (ghglm-1171-1): ranked history has no tool attribution, so a model of a developer the subscriptions do not
+ // run ('g') is dropped; a history-only model of a run developer ('b') stays — the G3-133 order case is Sol and
+ // Astra, two models of one ticked plan.
+ assert.deepEqual(moreFaderModels(published,[],[],subs,new Set(['b','g'])).map(m=>m.id),['b','a']);
+ const {faders}=publicationFaders(publication,[],[published[1]],subs,{now:1,ownPlansOnly:true,usage:new Map([['b',{d7:1,d30:1}],['g',{d7:1,d30:1}]])});
+ assert.deepEqual(faders.map(f=>f.id),['b','a']);
 });
 
 test('macrevd-1039-1 historyUsage sums rows that map to one canonical model',()=>{

@@ -153,7 +153,10 @@ test('HUD every ★ effort starts at the same x, whatever the name length',async
  const data=visualFixture().data;
  data.details.publishedModels=names.map((name,i)=>({id:'n'+i,name,developerId:'openai',recommended:recs[i],efforts:[effort('low',30+i,.02*(i+1),recs[i]==='low'),effort('medium',40+i,.05*(i+1),recs[i]==='medium'),effort('high',45+i,.1*(i+1),recs[i]==='high')]}));
  await open(page,{data});
- await expect(page.locator('.hud-b .hp')).toHaveCount(6);
+ // D386: the HUD lists only the ability frontier, best ability first. n5's ★ low (35, .12) is beaten by n0's ★ medium (40, .05),
+ // so it is off the frontier and five rows remain, n2, n4, n3, n1, n0.
+ await expect(page.locator('.hud-b .hp')).toHaveCount(5);
+ expect(await page.locator('.hud-b .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['n2','n4','n3','n1','n0']);
  const starts=await page.locator('.hud-b .hp-rec').evaluateAll(list=>list.map(e=>e.getBoundingClientRect().left));
  for(const x of starts)expect(Math.abs(x-starts[0])).toBeLessThanOrEqual(0.5);
  // Names never run into the ★ column.
