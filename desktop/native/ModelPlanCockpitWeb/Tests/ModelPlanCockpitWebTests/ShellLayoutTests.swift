@@ -10,19 +10,19 @@ final class ShellLayoutTests: XCTestCase {
     func testDiscreteProfilesAndExactRoots() throws {
         XCTAssertEqual(try fit(1000).rootHeight, 905)
         XCTAssertEqual(try fit(1000, closed: true).rootHeight, 691)
-        XCTAssertEqual(try fit(680).rootHeight, 635)
-        XCTAssertEqual(try fit(680, closed: true).rootHeight, 609)
+        XCTAssertEqual(try fit(692).rootHeight, 635)
+        XCTAssertEqual(try fit(692, closed: true).rootHeight, 609)
         XCTAssertEqual(try fit(945).profile, .full)
         // D51: the full cockpit scales down to 75 %; below that the short version shows.
         XCTAssertEqual(try fit(944).profile, .full)
-        XCTAssertEqual(try fit(711).profile, .full)
-        XCTAssertEqual(try fit(710).profile, .compact)
+        XCTAssertEqual(try fit(720).profile, .full)
+        XCTAssertEqual(try fit(719).profile, .compact)
     }
     func testNativeShellTierAndForcedClosedBoundary() throws {
-        let forced = try fit(674).shellState(attached: true)
+        let forced = try fit(686).shellState(attached: true)
         XCTAssertEqual(forced.profile, .closed); XCTAssertEqual(forced.tier, .compact)
         XCTAssertTrue(forced.forcedClosed)
-        let fitting = try fit(675).shellState(attached: true)
+        let fitting = try fit(687).shellState(attached: true)
         XCTAssertEqual(fitting.profile, .open); XCTAssertEqual(fitting.tier, .compact)
         XCTAssertFalse(fitting.forcedClosed)
         XCTAssertEqual(try fit(945).shellState(attached: false).tier, .tall)
@@ -136,11 +136,11 @@ final class ShellLayoutTests: XCTestCase {
     }
     /// D51: below 75 % the short version shows, at the chosen size when it fits (D60: 85 % by default).
     func testD51ShortVersionOnlyBelowTheReadableScale() throws {
-        let floor = try fit(710)
+        let floor = try fit(719)
         XCTAssertEqual(floor.profile, .compact); XCTAssertEqual(floor.rootHeight, 635); XCTAssertEqual(floor.scale, 0.85)
-        let lowest = try fit(711)
-        // The tier is judged as before (705 / 951 >= 75 %); CKP-SHELL-33's 10 pt gap then comes out of the scale (701 / 951).
-        XCTAssertEqual(lowest.profile, .full); XCTAssertEqual(lowest.scale, 701 / 951, accuracy: 1e-9)
+        let lowest = try fit(720)
+        // The tier is judged as before (714 / 951 >= 75 %); CKP-SHELL-33's 10 pt gap then comes out of the scale (710 / 951).
+        XCTAssertEqual(lowest.profile, .full); XCTAssertEqual(lowest.scale, 710 / 951, accuracy: 1e-9)
     }
     /// D51/D60 Settings "Cockpit size" 80 / 85 (default) / 90 / 100 %: drawn at that size when it fits, otherwise
     /// smaller to fit the screen.
