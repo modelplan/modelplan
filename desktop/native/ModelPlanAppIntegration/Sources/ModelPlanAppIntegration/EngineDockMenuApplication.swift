@@ -81,7 +81,7 @@ struct StatusNoticePresentation {
     private(set) var launchOpen: (fromStatusItem: Bool, openPoint: CGPoint?)?
     /// WP-17: the launch pause (lifecycle started, never ready yet), as opposed to an OS pause. Every cockpit open
     /// entry (icon click, menu item, shortcut, ignition, reopen) keeps its open during it through `showConsole`.
-    var inLaunchPause: Bool { lifecyclePaused && lifecycleController != nil && !lifecycleEverReady }
+    var inLaunchPause: Bool { lifecyclePaused && lifecycleController != nil && !lifecycleEverReady && dockPresentationGateOpen }
     private var accessibilityObserver: NSObjectProtocol?
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
@@ -710,6 +710,7 @@ struct StatusNoticePresentation {
     private func withdrawForLifecycle() {
         guard !terminating else { return }
         lifecyclePaused = true
+        if !dockPresentationGateOpen { launchOpen = nil }
         // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
         statusHelpRequestID = nil
