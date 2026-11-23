@@ -96,7 +96,12 @@ jobs:
       - name: Verify walk failure evidence and replay
         working-directory: desktop/cockpit
         run: |
-          if COCKPIT_WALK_FORCE_FAILURE=1 npx playwright test --config ../tests/cockpit/playwright.config.mjs click-walk.spec.mjs --grep 'click walk: empty' > .tmp/walk-probe.log 2>&1; then
+          test -s .tmp/test-results/visual-capture/cockpit-closed-night.png
+          test -s .tmp/test-results/visual-capture/cockpit-closed-night.json
+          callback=$(find .tmp/test-results -name callback-counts.json -type f -print -quit)
+          test -n "$callback" && test -s "$callback"
+          find .tmp/test-results -type f -print0 | sort -z | xargs -0 sha256sum > .tmp/walk-suite-evidence.sha256
+          if COCKPIT_WALK_FORCE_FAILURE=1 npx playwright test --config ../tests/cockpit/playwright.config.mjs --output .tmp/walk-probe-results click-walk.spec.mjs --grep 'click walk: empty' > .tmp/walk-probe.log 2>&1; then
             cat .tmp/walk-probe.log
             exit 1
           fi
@@ -104,7 +109,8 @@ jobs:
           grep -q 'synthetic walk artifact probe' .tmp/walk-probe.log
           test -s ../tests/cockpit/.tmp/walk/empty-failure.png
           test -s ../tests/cockpit/.tmp/walk/empty-failure.json
-          COCKPIT_WALK_REPLAY=../tests/cockpit/.tmp/walk/empty-failure.json npx playwright test --config ../tests/cockpit/playwright.config.mjs click-walk.spec.mjs
+          COCKPIT_WALK_REPLAY=../tests/cockpit/.tmp/walk/empty-failure.json npx playwright test --config ../tests/cockpit/playwright.config.mjs --output .tmp/walk-probe-results click-walk.spec.mjs
+          sha256sum --check .tmp/walk-suite-evidence.sha256
       - run: node scripts/check-source-policy.mjs
       - name: Preserve bounded synthetic evidence
         if: always()
