@@ -123,6 +123,8 @@ import ModelPlanWire
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             defer { self.wrappingWidthUpdateScheduled = false }
+            // A resize can leave the descendants dirty after the stack's own layout callback.
+            self.layoutSubtreeIfNeeded()
             for label in self.wrappingLabels {
                 let width = floor(label.bounds.width)
                 if width > 0, label.preferredMaxLayoutWidth != width {
@@ -178,13 +180,19 @@ import ModelPlanWire
         copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
         copy.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         for field in [name] + notes {
+            field.setContentHuggingPriority(.defaultLow, for: .horizontal)
             field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             field.widthAnchor.constraint(equalTo: copy.widthAnchor).isActive = true
         }
-        let controls = NSStackView(views: rowButtons); controls.orientation = .horizontal; controls.alignment = .centerY; controls.spacing = 8
-        controls.setContentHuggingPriority(.required, for: .horizontal)
-        controls.setContentCompressionResistancePriority(.required, for: .horizontal)
-        let row = NSStackView(views: [copy, controls]); row.orientation = .horizontal; row.alignment = .centerY; row.spacing = 16
+        let controls = NSStackView(views: rowButtons)
+        controls.orientation = .horizontal; controls.alignment = .centerY; controls.distribution = .fill; controls.spacing = 8
+        for button in rowButtons {
+            button.setContentHuggingPriority(.required, for: .horizontal)
+        }
+        // Give the buttons their natural widths and the copy the remaining space. The
+        // labels' preferred widths then affect their height without resizing the column.
+        let row = NSStackView(views: [copy, controls])
+        row.orientation = .horizontal; row.alignment = .centerY; row.distribution = .fill; row.spacing = 16
         row.edgeInsets = .init(top: 8, left: 0, bottom: 8, right: 0)
         row.setAccessibilityIdentifier(id)
         addArrangedSubview(row); row.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
