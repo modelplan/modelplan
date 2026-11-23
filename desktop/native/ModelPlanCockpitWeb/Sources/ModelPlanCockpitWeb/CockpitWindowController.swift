@@ -918,11 +918,6 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     self.window = panel
     web = view
     let center = NotificationCenter.default
-    // The shutter's frame animation resizes the attached window; the rack's mask line follows that height each step.
-    observers.append(
-      center.addObserver(forName: NSWindow.didResizeNotification, object: panel, queue: .main) { [weak self] _ in
-        MainActor.assumeIsolated { if let self, self.shutterMoving, self.motion == nil { self.refreshRack() } }
-      })
     for name in [
       NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
       NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
@@ -1563,6 +1558,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // shutter moves the bottom edge the content follows the live frame, so the cockpit slides instead of stretching.
     let size = shutterMoving ? window.frame.size : layout.frame.size
     if content.bounds.size != size { content.setBoundsSize(size) }
+    // The attached shutter's frame and the rack cutout advance together on every resize.
+    if shutterMoving && motion == nil { refreshRack() }
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
   public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }

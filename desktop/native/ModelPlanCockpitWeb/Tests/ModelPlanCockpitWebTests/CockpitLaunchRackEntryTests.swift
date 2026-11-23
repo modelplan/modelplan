@@ -118,7 +118,7 @@ import XCTest
   }
 
   /// Owner 11-18: a shutter toggle while attached moves the rack's mask line with the slab, not in one step. Observed
-  /// on the window's own resize notifications (the shutter's frame animation), with monotonic times, the actual window
+  /// after each rack redraw driven by the shutter's frame animation, with monotonic times, the actual window
   /// height and the actual mask position at each one; no assumption about how often the main queue gets to run (CI
   /// coalesced 4 ms sleeps into steps of several points). The line must be the function of the window height at every
   /// observation (so it never moves independently of the slab), the height must pass through in-between values, and
@@ -126,10 +126,17 @@ import XCTest
   func testShutterToggleWhileAttachedMovesTheRackMaskLineSmoothly() async throws {
     let fixture = try make()
     defer { fixture.page.discard() }
+    // Give the layout room for an open compact cockpit even on a short CI desktop.
+    let usable = CGRect(x: fixture.usable.minX, y: fixture.usable.maxY - 720, width: fixture.usable.width, height: 720)
+    fixture.page.verificationPlacement = (usable: usable, anchor: fixture.icon)
+    fixture.page.updateAppearance(.init(theme: .night, locale: .en, profile: .compact, size: .percent80))
     let window = try open(fixture)
-    try await wait(900)
+    try await until("the attached entrance is settled") {
+      window.alphaValue == 1 && fixture.page.verificationRack.ext == 1 && !fixture.page.verificationRack.moving
+    }
     let openLayout = try XCTUnwrap(fixture.page.verificationLayout)
     let total = openLayout.rackMaskDrop
+    XCTAssertFalse(openLayout.forcedClosed)
     XCTAssertGreaterThan(total, 0)
     func line() -> CGFloat? {
       guard let mask = fixture.page.verificationRackMask, let panel = fixture.page.verificationRack.panel else { return nil }
@@ -137,17 +144,16 @@ import XCTest
     }
     struct Observation { let time: TimeInterval, height: CGFloat, line: CGFloat }
     var seen: [Observation] = []
-    // Registered after the controller's own resize observer, so the mask is refreshed when this runs.
-    let token = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { _ in
-      MainActor.assumeIsolated {
-        if let value = line() { seen.append(.init(time: ProcessInfo.processInfo.systemUptime, height: window.frame.height, line: value)) }
-      }
+    fixture.page.verificationRackDrawn = {
+      if let value = line() { seen.append(.init(time: ProcessInfo.processInfo.systemUptime, height: window.frame.height, line: value)) }
     }
-    defer { NotificationCenter.default.removeObserver(token) }
+    defer { fixture.page.verificationRackDrawn = nil }
     let openHeight = window.frame.height
     fixture.page.toggleShutter()
-    try await wait(800)
     let closedLayout = try XCTUnwrap(fixture.page.verificationLayout)
+    try await until("the shutter is settled at its closed height") {
+      !fixture.page.shutterMoving && window.frame.height == closedLayout.frame.height
+    }
     XCTAssertGreaterThanOrEqual(seen.count, 2, "the shutter's frame animation reported its progress")
     for (previous, next) in zip(seen, seen.dropFirst()) {
       XCTAssertGreaterThanOrEqual(next.time, previous.time, "monotonic observation times")
