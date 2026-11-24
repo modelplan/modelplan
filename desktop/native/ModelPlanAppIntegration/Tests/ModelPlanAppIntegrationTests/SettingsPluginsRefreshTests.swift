@@ -6,7 +6,6 @@ import ModelPlanSettings
 import ModelPlanResources
 @testable import ModelPlanAppIntegration
 
-#if MODELPLAN_TEST_ONLY_SPI
 /// D376 / CKP-PLG-54 (post-merge sampling 11-24, 1152 finding), through the normal factory composition: with Settings open
 /// on the Plugins pane, the Resources ring's confirmed "Turn Off Resources…" shows the plugin Off in that same window and
 /// disables its sampling controls. Fails when the factory's Settings hookup (SettingsWindowHost.attachCockpitPlugins) is
@@ -68,4 +67,3 @@ import ModelPlanResources
         XCTAssertTrue(after.allSatisfy { !$0.isEnabled }, "its sampling controls are disabled")
     }
 }
-#endif
