@@ -79,17 +79,7 @@ func (s *RefreshScheduler) observeLoop() {
 		}
 	}
 	for s.ctx.Err() == nil {
-		now := s.now()
-		results := s.config.Observe(now)
-		busy := false
-		for _, r := range results {
-			s.observations.add(now, r)
-			busy = busy || r.Outcome == ObserveSkippedLockBusy
-		}
-		s.writeObserveLog(now)
-		if s.ctx.Err() == nil && s.config.Changed != nil {
-			s.config.Changed()
-		}
+		busy := s.observeOnce(s.now())
 		wait, wake := observeEvery, (<-chan struct{})(nil)
 		if s.config.ObserveEvery > 0 {
 			wait = s.config.ObserveEvery
@@ -108,6 +98,24 @@ func (s *RefreshScheduler) observeLoop() {
 		}
 	}
 }
+
+// observeOnce is one observation pass; it reports whether a reader lock was busy.
+func (s *RefreshScheduler) observeOnce(now time.Time) (busy bool) {
+	results := s.config.Observe(now)
+	for _, r := range results {
+		s.observations.add(now, r)
+		busy = busy || r.Outcome == ObserveSkippedLockBusy
+	}
+	s.writeObserveLog(now)
+	if s.ctx.Err() == nil && s.config.Changed != nil {
+		s.config.Changed()
+	}
+	return busy
+}
+
+// ObserveOnce runs one pass of the observation loop at now, without its timers. The idle-work
+// gates (D397) step it through several 30-second deadlines under a test clock.
+func (s *RefreshScheduler) ObserveOnce(now time.Time) { s.observeOnce(now) }
 
 // ObserveDecisions returns the bounded, code-only history of observation outcomes.
 func (s *RefreshScheduler) ObserveDecisions() []ObserveDecision {
