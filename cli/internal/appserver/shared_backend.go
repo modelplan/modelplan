@@ -503,9 +503,9 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 	return result, nil
 }
 
-// zcodeKeepsDetectedSource: the GLM key grant leaves ZCode's provider file as the source. Call it for the zai tool only.
-// The checks short-circuit in order: an earlier explicit choice, then the environment key, then the GLM manual-key
-// store, then ZCode's file, so nothing past the first deciding check is read.
+// zcodeKeepsDetectedSource: the GLM key grant leaves a detected ZCode provider or login source
+// neutral when no environment key was chosen. Call it for the zai tool only. The presence
+// checks use file metadata; no ZCode credential is opened here.
 func (b *SharedBackend) zcodeKeepsDetectedSource(keyEnv string) bool {
 	prior := consent.Capture().State().Tools["zai"]
 	if prior.KeyEnv != "" || len(prior.Profiles) > 0 || (prior.Backend != "" && prior.Backend != "native") {
@@ -519,7 +519,7 @@ func (b *SharedBackend) zcodeKeepsDetectedSource(keyEnv string) bool {
 		return false
 	}
 	fi, err := os.Lstat(quota.ZCodeProviderConfig(home))
-	return err == nil && fi.Mode().IsRegular()
+	return err == nil && fi.Mode().IsRegular() || detect.ZCodeLoginPresent(home)
 }
 
 func grantError(err error) error {

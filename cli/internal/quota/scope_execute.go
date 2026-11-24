@@ -11,6 +11,26 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 )
 
+type refreshScopeKey struct{}
+
+func zaiAccountScope(scope string) bool {
+	return scope == consent.ScopeZaiAccountUsageSavedLogin || scope == consent.ScopeZaiAccountUsageAPIKey
+}
+
+// Z.ai has two account scopes but one selected native provider. Scope-specific refreshes
+// must use the selected route, not merely the shared provider ID.
+func zaiScopeMatches(p Paths, scope string) bool {
+	if !zaiAccountScope(scope) {
+		return true
+	}
+	grant, ok := p.ReaderAccessGrant("zai")
+	login := ok && grant.ConfigSource != nil && grant.ConfigSource.Tool == zcodeLoginTool
+	if scope == consent.ScopeZaiAccountUsageSavedLogin {
+		return login
+	}
+	return !login
+}
+
 // ExecuteScopeRefresh narrows existing production collectors, never duplicates
 // their request implementation or bypasses their locked admission/budget gates.
 func ExecuteScopeRefresh(ctx context.Context, p Paths, scope string, now time.Time) error {
@@ -21,6 +41,9 @@ func ExecuteScopeRefresh(ctx context.Context, p Paths, scope string, now time.Ti
 	admission := admissionFor(p)
 	if !admission.State().AllowsScope(scope, admission.Mode()) || !consent.CurrentFence(admission.Fence()) {
 		return errors.New("reader not permitted")
+	}
+	if !zaiScopeMatches(p, scope) {
+		return errors.New("reader scope does not match selected route")
 	}
 	if id, pending := PolicyPending(definition.Tool); pending && id == scope {
 		return nil
@@ -60,5 +83,5 @@ func ExecuteScopeRefresh(ctx context.Context, p Paths, scope string, now time.Ti
 		home, _ := os.UserHomeDir()
 		return RefreshCodexAccount(ctx, p.Cache, CodexBin(home), now)
 	}
-	return RefreshNativeProviders(ctx, p, now, []string{definition.Tool})
+	return RefreshNativeProviders(context.WithValue(ctx, refreshScopeKey{}, scope), p, now, []string{definition.Tool})
 }

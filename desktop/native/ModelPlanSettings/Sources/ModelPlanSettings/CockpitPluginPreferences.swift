@@ -24,7 +24,7 @@ public struct CockpitPluginSettingSpec: Equatable, Sendable {
 public struct CockpitPluginDefinition: Equatable, Sendable {
     public let id: String
     public let title: SettingsText
-    /// CKP-PLG-54: the one sentence shown beside the toggle in Settings › Subscriptions › Plugins. The same words as the
+    /// CKP-PLG-54: the one sentence shown beside the toggle in Settings › Plugins. The same words as the
     /// page's `plugin.<id>Summary` string (desktop/cockpit/study/rocket-r1/strings/plugins.js).
     public let summary: SettingsText
     /// A white line-art SF Symbol that stands for the page's icon in Settings.
