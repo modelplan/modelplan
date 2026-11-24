@@ -35,7 +35,7 @@ type Locale='en'|'zh-CN';
 const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
 const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,key:'host.pageOverview'}),Object.freeze({module:plans,key:'host.pageSubscription'}),Object.freeze({module:tune,key:'host.pageEffort'}),Object.freeze({module:where,key:'host.pageBreakdown'})]);
 export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
-export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange){
+export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange,isRefreshing:()=>boolean=()=>false){
  const scale=root.querySelector<HTMLElement>('.fd-scale')!,channels=root.querySelector<HTMLElement>('.fd-chs')!,mfd=root.querySelector<HTMLElement>('.dk-mfd')!;
  let details=fixture;const fixturePublication=fixture.publication!==null;fixture=unavailablePrototypeDetailsFixture();
  let publicationKey:string|null=null;
@@ -319,7 +319,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const line=node('div','eng-upd'),copy=state.at!==null?updatedCopy(state.at,d.now):null;line.dataset.failing=String(state.failing);
    if(copy){const text=node('span','eng-upd-t',state.failing?ht(locale,agoKey(copy.key),{n:copy.n}):ht(locale,copy.key,{n:copy.n}));line.append(text);}
    if(copy||state.failing){line.append(node('i','eng-upd-sep',' · '));}
-   const button=node('button','eng-upd-r',ht(locale,state.failing?'host.retry':'host.refresh'));button.type='button';button.dataset.refresh=own?.key??'all';
+   const button=node('button','eng-upd-r',ht(locale,state.failing?'host.retry':'host.refresh'));button.type='button';button.disabled=isRefreshing();button.dataset.refresh=own?.key??'all';
    button.setAttribute('aria-label',own?ht(locale,'host.refreshOne',{name:accountLabel(locale==='en'?own.row.name.en:own.row.name.zh,own.account,locale)}):ht(locale,'host.refreshAll'));
    if(state.failing)line.dataset.tip=[copy?ht(locale,copy.key,{n:copy.n}):'',ht(locale,'host.noNewData'),ht(locale,'host.retryTip')].filter(Boolean).join(' · ');
    line.append(button);foot.append(line);page.append(foot);

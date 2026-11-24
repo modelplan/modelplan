@@ -6,7 +6,17 @@ import AppKit
 public struct CockpitScreen: Equatable, Sendable {
   public let frame: CGRect
   public let visibleFrame: CGRect
-  public init(frame: CGRect, visibleFrame: CGRect) { self.frame = frame; self.visibleFrame = visibleFrame }
+  /// D378: the x (global) of the camera housing's right edge on a display with a notch, nil without one.
+  public let notchRightEdge: CGFloat?
+  public init(frame: CGRect, visibleFrame: CGRect, notchRightEdge: CGFloat? = nil) {
+    self.frame = frame; self.visibleFrame = visibleFrame; self.notchRightEdge = notchRightEdge
+  }
+  /// D378: the notch's right edge from the system: the unobscured top-right area ends there. Measured from the screen's
+  /// right edge by that area's width, so it does not depend on which coordinate space AppKit reports the area in.
+  @MainActor public static func notchRightEdge(_ screen: NSScreen) -> CGFloat? {
+    guard screen.safeAreaInsets.top > 0, let right = screen.auxiliaryTopRightArea, right.width > 0, right.width < screen.frame.width else { return nil }
+    return screen.frame.maxX - right.width
+  }
 }
 
 /// Build 14c (G3-79, G3-80) and build 15 (G3-128): which display the cockpit and the launch field use. Attached, it is
@@ -17,7 +27,7 @@ public enum CockpitScreenSelection {
   @MainActor public static func system() -> [CockpitScreen] {
     let main = NSScreen.main
     let ordered = (main.map { [$0] } ?? []) + NSScreen.screens.filter { $0 != main }
-    return ordered.map { CockpitScreen(frame: $0.frame, visibleFrame: $0.visibleFrame) }
+    return ordered.map { CockpitScreen(frame: $0.frame, visibleFrame: $0.visibleFrame, notchRightEdge: CockpitScreen.notchRightEdge($0)) }
   }
   /// The display under `point`. Edges count (the pointer can rest on a display's top or right edge), and the first
   /// display listed wins where two touch.
@@ -47,8 +57,8 @@ public enum CockpitScreenSelection {
   /// G3-128 (owner, build 15; supersedes D204's "display pressed on"): where an attached cockpit, its launch rack and a
   /// put back go: always the display of the menu bar status item (the screen of the status item button's window, which
   /// `anchor` is measured in), whatever opened it. The widget's ignition on another display, a stale click point or the
-  /// display a detached cockpit was dragged to never moves home. Without a known icon (G3-46: hidden by a full menu
-  /// bar) it is the display at the global origin, which carries the menu bar, else the first.
+  /// display a detached cockpit was dragged to never moves home. Without a visible icon (G3-46/D378: hidden or squeezed
+  /// off by a full menu bar) it is the display at the global origin, which carries the menu bar, else the first.
   /// Reference: CodexBar and Pulse anchor their status item's panel to the status item button, so on several displays
   /// it always drops from the menu bar that holds the item.
   public static func attachedScreen(anchor: CGRect?, screens: [CockpitScreen]) -> CockpitScreen? {

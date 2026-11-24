@@ -219,7 +219,10 @@ public struct EngineMenuRefreshResult {
         dock.setDockContentProvider(provider)
         let binding = ResourceWidgetBinding(sampler: sampler, provider: provider, language: language,
                                             refreshCard: { [weak self] in self?.dock.refreshPluginCard() },
-                                            refreshRing: { [weak self] in self?.dock.refreshPluginRing($0) ?? false }) { [weak self] in self?.dock.refreshDockContent() }
+                                            refreshRing: { [weak self] input in
+                                                guard let self, self.admittedCache.isAdmissible(at: self.deadlineWall()) else { return false }
+                                                return self.dock.refreshPluginRing(input)
+                                            }) { [weak self] in self?.dock.refreshDockContent() }
         // macrevb-1096-4: the hover card reads the latest sample, not the rows captured at the last ring redraw.
         dock.livePluginCard = { [weak binding] id in id == ResourceDockBridge.subscriptionID ? binding?.liveCard() : nil }
         return binding

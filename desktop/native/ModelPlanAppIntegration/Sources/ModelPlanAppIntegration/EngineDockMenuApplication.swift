@@ -81,7 +81,7 @@ struct StatusNoticePresentation {
     private(set) var launchOpen: (fromStatusItem: Bool, openPoint: CGPoint?)?
     /// WP-17: the launch pause (lifecycle started, never ready yet), as opposed to an OS pause. Every cockpit open
     /// entry (icon click, menu item, shortcut, ignition, reopen) keeps its open during it through `showConsole`.
-    var inLaunchPause: Bool { lifecyclePaused && lifecycleController != nil && !lifecycleEverReady }
+    var inLaunchPause: Bool { lifecyclePaused && lifecycleController != nil && !lifecycleEverReady && dockPresentationGateOpen }
     private var accessibilityObserver: NSObjectProtocol?
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
@@ -381,9 +381,8 @@ struct StatusNoticePresentation {
     private func activateMember(_ id: String) {
         guard !terminating, !lifecyclePaused,
               composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }
-        _ = composition.dock.sweepRefresh(id)
-        // G3-98: a repeated click while this member's refresh runs keeps its number hidden for that result.
         guard !memberRefreshInFlight.contains(id) else { return }
+        _ = composition.dock.sweepRefresh(id)
         var handedOff = false
         defer { if !handedOff { composition.dock.resolveRefreshReadout(id) } }
         guard let member = composition.accountMembers.members.first(where: { $0.id == id && $0.isStable }),
@@ -397,11 +396,16 @@ struct StatusNoticePresentation {
         }
         unavailableMemberRefreshes.remove(id)
         memberRefreshInFlight.insert(id)
+        currentCockpitPage?()?.updateMemberRefreshInFlight(true)
         handedOff = true
         Task { @MainActor [weak self, weak adapter] in
             guard let self else { return }
             var landed = true
-            defer { self.memberRefreshInFlight.remove(id); if !landed { self.composition.dock.resolveRefreshReadout(id) } }
+            defer {
+                self.memberRefreshInFlight.remove(id)
+                self.currentCockpitPage?()?.updateMemberRefreshInFlight(!self.memberRefreshInFlight.isEmpty)
+                if !landed { self.composition.dock.resolveRefreshReadout(id) }
+            }
             guard let adapter, !self.terminating, !self.lifecyclePaused,
                   self.composition.client.isCurrent(delivery),
                   self.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }),
@@ -461,6 +465,7 @@ struct StatusNoticePresentation {
         }
         if let value = composition.latestSettings { console?.applySettings(value) }
         console?.show(fromStatusItem: fromStatusItem)
+        currentCockpitPage?()?.updateMemberRefreshInFlight(!memberRefreshInFlight.isEmpty)
         refreshStatusTooltip()
     }
     /// D88: the cockpit opened, closed, detached or was put back: the icon highlight and the one-time
@@ -469,6 +474,7 @@ struct StatusNoticePresentation {
         // The user closed a cockpit opened before the lifecycle started: the ready does not bring it back. A hide by
         // the launch pause itself runs while paused and keeps the open.
         if console?.isShowing != true, !lifecyclePaused { launchOpen = nil }
+        currentCockpitPage?()?.updateMemberRefreshInFlight(!memberRefreshInFlight.isEmpty)
         refreshStatusTooltip()
         dockHelp?.refresh()
     }
@@ -710,6 +716,7 @@ struct StatusNoticePresentation {
     private func withdrawForLifecycle() {
         guard !terminating else { return }
         lifecyclePaused = true
+        if !dockPresentationGateOpen { launchOpen = nil }
         // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
         statusHelpRequestID = nil
