@@ -28,7 +28,7 @@ func TestDiagnosticChangeDoesNotInvalidateView(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, err := NewSharedBackend(SharedConfig{Detect: func() detect.Report { return detect.Report{} },
-		Paths: func(a consent.Admission) quota.Paths { return paths(a) }, Cleanup: func(string, bool) error { return nil }})
+		Paths: func(a consent.Admission) quota.Paths { return paths(a) }, Cleanup: func(string, bool, consent.EraseGuard) error { return nil }})
 	if err != nil {
 		t.Fatal(err)
 	}
