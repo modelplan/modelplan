@@ -372,8 +372,8 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .pl-bar.pl-tone i{background:var(--st-ok)}.ck-eng .pl-cell.pl-mid .pl-bar.pl-tone i{background:var(--st-mid)}.ck-eng .pl-cell.pl-low .pl-bar.pl-tone i{background:var(--st-low)}
 .ck-eng .pl-trend{display:block;position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
 .ck-eng .pl-trend path{fill:none;stroke:var(--lcd-ink);stroke-width:1;opacity:.6;vector-effect:non-scaling-stroke}
-.ck-eng .pl-foot{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 4px;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;min-width:0}
-.ck-eng .pl-foot .pl-fit{min-width:0;overflow:hidden;text-overflow:ellipsis}.ck-eng .pl-foot .pl-foot-v{color:var(--lcd-ink)}
+.ck-eng .pl-foot{width:0;min-width:100%;display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 4px;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}
+.ck-eng .pl-foot .pl-fit{min-width:0;overflow:hidden;text-overflow:ellipsis}.ck-eng .pl-foot .pl-foot-v{color:var(--lcd-ink);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;white-space:normal;overflow-wrap:anywhere;line-height:14px;height:14px;margin:-2px 0;contain:layout}/* one line, an ellipsis at its end, the rest wrapped out of sight: the text's own box never leaves the clip */
 .ck-eng .eng-keys .ek-bay .bay-dash{font-size:0}
 .ck-eng .eng-keys .ek-bay .bay-dash::before{content:"+";font:400 13px/1 var(--f-silk);color:var(--silk-dim)}
 .ck-eng .eng-keys .ek-bay.on{box-shadow:var(--pressed);background:linear-gradient(180deg,var(--key-p1),var(--key-p2))}

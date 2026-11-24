@@ -57,6 +57,9 @@ test('the unknown-peak footer fits on a crowded Chinese plugin page',async({page
  await expect(column(page).locator('.pl-foot')).toHaveAttribute('aria-label','高峰 · 暂无高峰数据');
  // D406: the redrawn day-view column keeps the full text until the table's next fit; CSS ellipsis (never overflow) is the last resort.
  await expect(value).toHaveCSS('text-overflow','ellipsis');
+ // D406 geometry: after the redraw the text itself fits its box (one line, never overflowing) and the tooltip holds the full text.
+ await expect.poll(()=>value.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+ await expect(value).toHaveAttribute('title','暂无高峰数据');
 });
 
 test('D328 column: the next 12 hours only; peaks, capsules with the time, the now line, one all-day line, no picker or fold',async({page})=>{
@@ -251,7 +254,7 @@ test('D328 a day pressed in the week view swaps the column\'s bottom line to tha
  await expect(screen(page).locator('.pl-screen-t')).toHaveText('日历');
  await w.locator('.wk-dh').nth(1).click();
  await expect(w.locator('.wk-dh').nth(1)).toHaveAttribute('aria-pressed','true');
- await expect(foot.locator('.pl-foot-l')).toHaveText('11/12 周四');await expect(foot.locator('.pl-foot-v')).toHaveText('Claude 高峰 05:00 · Claude 周 09:00 · GLM 高峰 22:00');
+ await expect(foot.locator('.pl-foot-l')).toHaveText('11/12 周四');await expect(foot.locator('.pl-foot-v')).toHaveAttribute('title','Claude 高峰 05:00 · Claude 周 09:00 · GLM 高峰 22:00');// D406: a long line is cut with an ellipsis; the tooltip keeps all of it
  await w.locator('.wk-col').nth(4).click({position:{x:10,y:20}});
  await expect(foot.locator('.pl-foot-l')).toHaveText('11/15 周日');await expect(foot.locator('.pl-foot-v')).toHaveText('暂无');
  // The strip itself does not change (it is always the next 12 hours) and the screen stays open.

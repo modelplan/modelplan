@@ -169,7 +169,8 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     for(const entry of entries){
       const area=entry.target as HTMLElement,last=drawnAt.get(area);
       if(!last||!area.isConnected||area.clientWidth===last.w&&area.clientHeight===last.h)continue;
-      if(area.classList.contains('pl-screen-d'))drawScreen();else redrawColumn(last.id);
+      // Redrawn in the next frame: a redraw inside this callback can resize what it observes ("ResizeObserver loop").
+      requestAnimationFrame(()=>{if(!area.isConnected)return;if(area.classList.contains('pl-screen-d'))drawScreen();else redrawColumn(last.id);});
     }
   });
   const memo=(id:string)=>{let m=memos.get(id);if(!m){m={};memos.set(id,m);}return m;};
@@ -216,7 +217,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     if(area){area.style.gridRow=`1 / span ${rows}`;area.dataset.plugin=plugin.id;}
     const parts:HTMLElement[]=area?[area]:cells();
     const foot=el('div','qrow qrow-t pl-foot');
-    if(drawn.foot){foot.setAttribute('role','group');foot.setAttribute('aria-label',[drawn.foot.label.full,drawn.foot.value?.full].filter(Boolean).join(' · '));foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value)foot.append(fitted('pl-foot-v',drawn.foot.value));}
+    if(drawn.foot){foot.setAttribute('role','group');foot.setAttribute('aria-label',[drawn.foot.label.full,drawn.foot.value?.full].filter(Boolean).join(' · '));foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value){const v=fitted('pl-foot-v',drawn.foot.value);v.title=drawn.foot.value.full;foot.append(v);}}// D406: one line with an ellipsis (CSS); the tooltip holds the full text
     parts.push(foot);if(reserve)parts.push(el('div','qrow qrow-r'));
     column.replaceChildren(...parts);column.dataset.rows=String(rows);column.dataset.reserve=String(reserve);
     const ink=plugin.ink;if(ink)column.style.setProperty('--pl-ink',ink);else column.style.removeProperty('--pl-ink');
