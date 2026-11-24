@@ -78,7 +78,7 @@ struct StatusNoticePresentation {
     /// WP-17: a cockpit open asked for during launch. The launch pause dropped every early click (4 to 6 attempts per
     /// launch on the owner's Mac); now the click is kept, the icon shows it pressed, and the cockpit opens the moment
     /// the lifecycle is ready. Its page still shows data only from an admitted delivery (the consent fence).
-    private(set) var launchOpen: (fromStatusItem: Bool, openPoint: CGPoint?)?
+    private(set) var launchOpen: (rackEntrance: Bool, openPoint: CGPoint?)?
     /// WP-17: the launch pause (lifecycle started, never ready yet), as opposed to an OS pause. Every cockpit open
     /// entry (icon click, menu item, shortcut, ignition, reopen) keeps its open during it through `showConsole`.
     var inLaunchPause: Bool { lifecyclePaused && lifecycleController != nil && !lifecycleEverReady && dockPresentationGateOpen }
@@ -280,8 +280,7 @@ struct StatusNoticePresentation {
         composition.dock.menuNoticeDidChange = { [weak self] notice, first in self?.applyMenuNotice(notice, first: first) }
         composition.dock.showSettings = settingsHost.action
         composition.dock.resetPosition = { [weak self] in self?.resetPositions() }
-        // Build 14c (G3-79): the ignition opens the cockpit on the display the widget is on, where the user clicked.
-        composition.dock.showConsole = { [weak self] in self?.showConsole(openPoint: NSEvent.mouseLocation) }
+        composition.dock.showConsole = { [weak self] in self?.openConsole(rackEntrance: true, openPoint: NSEvent.mouseLocation) }
         // D204 (G3-94): the ignition itself toggles an attached cockpit and brings a detached one to the front.
         composition.dock.pressIgnition = { [weak self] point in self?.pressIgnition(at: point) }
     }
@@ -430,8 +429,8 @@ struct StatusNoticePresentation {
     }
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
     public func presentSettings(paneID: String? = nil) async { await settingsHost.present(paneID: paneID) }
-    /// G3-46: a menu bar full enough to hide the icon (G3-22) leaves no icon to open under. Then there is
-    /// no anchor, and the cockpit opens at the top-right of the screen below the menu bar.
+    /// G3-46: a squeezed status item has no visible icon anchor. The cockpit uses the notch edge
+    /// on the status item's display for that fallback (D378).
     var cockpitAnchor: CGRect? {
         guard !statusItemHidden, let status, status.isVisible, let button = status.button, let window = button.window,
               window.isVisible else { return nil }
@@ -439,6 +438,9 @@ struct StatusNoticePresentation {
         guard NSScreen.screens.contains(where: { $0.frame.intersects(rect) }) else { return nil }
         return rect
     }
+    /// The status item's window can identify its display even when the item is squeezed out.
+    var cockpitStatusScreen: CGRect? { status?.button?.window?.screen?.frame }
+
     /// Build 14c (G3-79): the screen point the latest open came from (the widget's ignition click). Nil for the menu
     /// bar icon, the status menu and shortcuts. Only a detached open uses it; attached, the cockpit always opens under
     /// the menu bar icon's display (G3-128).
@@ -447,24 +449,28 @@ struct StatusNoticePresentation {
     /// `openPoint` is the click that opened it elsewhere (the widget's ignition): a detached cockpit with no remembered
     /// place opens on that display; an attached one still opens under the icon (G3-128).
     public func showConsole(fromStatusItem: Bool = false, openPoint: CGPoint? = nil) {
+        openConsole(rackEntrance: fromStatusItem, openPoint: fromStatusItem ? nil : openPoint)
+    }
+
+    private func openConsole(rackEntrance: Bool, openPoint: CGPoint?) {
         guard cockpitEntryEnabled, !terminating else { return }
         if lifecyclePaused {
             // An OS pause (sleep, lock, displays off) keeps refusing; only the launch keeps the click.
             guard inLaunchPause else { return }
-            launchOpen = (fromStatusItem, fromStatusItem ? nil : openPoint)
+            launchOpen = (rackEntrance, openPoint)
             refreshStatusTooltip()
             return
         }
         // Opened before the lifecycle started: its launch pause hides the console, so the ready reopens it.
-        if !lifecycleEverReady { launchOpen = (fromStatusItem, fromStatusItem ? nil : openPoint) }
-        cockpitOpenPoint = fromStatusItem ? nil : openPoint
+        if !lifecycleEverReady { launchOpen = (rackEntrance, openPoint) }
+        cockpitOpenPoint = openPoint
         composition.dock.acknowledgeCockpitOpening()
         if console == nil {
             console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition)
             console?.onShowingChanged = { [weak self] in self?.cockpitPresentationChanged() }
         }
         if let value = composition.latestSettings { console?.applySettings(value) }
-        console?.show(fromStatusItem: fromStatusItem)
+        console?.show(fromStatusItem: rackEntrance && console?.isDetached != true)
         currentCockpitPage?()?.updateMemberRefreshInFlight(!memberRefreshInFlight.isEmpty)
         refreshStatusTooltip()
     }
@@ -487,7 +493,7 @@ struct StatusNoticePresentation {
     func pressIgnition(at point: CGPoint) {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused || inLaunchPause else { return }
         if let console, console.isShowing, !console.isDetached { console.requestClose(); refreshStatusTooltip(); return }
-        showConsole(openPoint: point)
+        openConsole(rackEntrance: true, openPoint: point)
     }
     /// G3-40: the status icon toggles the cockpit where it is, attached or detached. Every other
     /// entry (menu item, shortcut, reopening the app) only ever opens; the ignition follows D204 (`pressIgnition`).
@@ -678,7 +684,7 @@ struct StatusNoticePresentation {
                 self.allowDockPresentation(); self.dockHelp?.resume(); self.renderMenu()
                 if let open = self.launchOpen {
                     self.launchOpen = nil
-                    if self.console?.isShowing != true, !self.setupActive { self.showConsole(fromStatusItem: open.fromStatusItem, openPoint: open.openPoint) }
+                    if self.console?.isShowing != true, !self.setupActive { self.openConsole(rackEntrance: open.rackEntrance, openPoint: open.openPoint) }
                     self.refreshStatusTooltip()
                 }
                 Task { [weak self] in await self?.restoreFirstRunIfNeeded() }
