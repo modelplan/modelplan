@@ -27,6 +27,9 @@ public enum SystemSignal: Equatable, Sendable {
     /// v1 full review 11-24 #4: a lock seed from state tracked by the lock edges before this instance started (the
     /// pre-lifecycle watcher); nil seeds nothing (the lock edge only). Never a private Window Server property.
     private let screenLocked: (@MainActor () -> Bool?)?
+    /// Review 11-24 macrevb-1215-5: edge-only reasons (no query can re-read them) already active when this instance
+    /// starts, recorded by the pre-lifecycle watcher; each is blocked at start and cleared only by its own resume edge.
+    private let carried: Set<LifecycleCoordinator.PauseReason>
     private var previousDisplays: Set<UInt32> = []
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
     public typealias Schedule = @MainActor (_ milliseconds: UInt64, _ fire: @escaping @MainActor () -> Void) -> () -> Void
@@ -42,8 +45,9 @@ public enum SystemSignal: Equatable, Sendable {
                     (CGSessionCopyCurrentDictionary() as? [String: Any])?[kCGSessionOnConsoleKey as String] as? Bool
                 }, displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool = { ids in
                     !ids.isEmpty && ids.allSatisfy { CGDisplayIsAsleep($0) != 0 }
-                }, screenLocked: (@MainActor () -> Bool?)? = nil, schedule: @escaping Schedule = SystemEvents.sleepSchedule) {
-        self.schedule = schedule; self.screenLocked = screenLocked
+                }, screenLocked: (@MainActor () -> Bool?)? = nil,
+                carried: Set<LifecycleCoordinator.PauseReason> = [], schedule: @escaping Schedule = SystemEvents.sleepSchedule) {
+        self.schedule = schedule; self.screenLocked = screenLocked; self.carried = carried.intersection(Self.edgeOnlyReasons)
         self.gate = gate; self.workspace = workspace; self.local = local
         self.distributed = distributed; self.displayIDs = displayIDs; self.onConsole = onConsole; self.displaysAsleep = displaysAsleep
     }
@@ -62,6 +66,9 @@ public enum SystemSignal: Equatable, Sendable {
          (NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification, .screenSleep),
          (NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification, .sessionInactive)]
     }
+    /// Reasons with no documented query: they exist only as tracked edges, so a handoff must carry them. The others
+    /// (displays, console, display sleep) are re-read by `start()` at the handoff instant from the same queries.
+    nonisolated public static let edgeOnlyReasons: Set<LifecycleCoordinator.PauseReason> = [.systemSleep, .screenLocked]
     /// Review 11-24 #4: the OS pause reasons that hold right now, from the same documented queries `start()` seeds
     /// with (displays, console, display sleep). The lock has no documented query: it is unknown here, so not a reason.
     @MainActor public static func pauseReasonsNow() -> Set<LifecycleCoordinator.PauseReason> {
@@ -119,6 +126,7 @@ public enum SystemSignal: Equatable, Sendable {
         if let onConsole = onConsole() { gate.set(.sessionInactive, blocked: !onConsole) }
         gate.set(.screenSleep, blocked: displaysAsleep(previousDisplays))
         if let locked = screenLocked?() { gate.set(.screenLocked, blocked: locked) }
+        for reason in carried { gate.set(reason, blocked: true) }
         gate.start()
     }
     public func stop() {

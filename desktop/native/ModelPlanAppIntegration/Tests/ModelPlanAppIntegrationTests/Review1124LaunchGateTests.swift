@@ -71,6 +71,11 @@ private actor CountingEngine: EngineClient {
         addTeardownBlock { @MainActor in await app.stopLifecycle(); await app.composition.stop() }
         return app
     }
+    /// The workspace edge names, read from the table the lifecycle and the early watcher share.
+    private func edge(_ reason: LifecycleCoordinator.PauseReason, resume: Bool = false) throws -> Notification.Name {
+        let pair = try XCTUnwrap(SystemEvents.workspacePausePairs.first { $0.reason == reason })
+        return resume ? pair.resume : pair.pause
+    }
     private func counts() async throws -> (starts: Int, stops: Int) { try await XCTUnwrap(engine).counts() }
     private func settle() async throws { for _ in 0..<5 { await Task.yield() }; try await Task.sleep(for: .milliseconds(50)) }
 
@@ -104,7 +109,7 @@ private actor CountingEngine: EngineClient {
         await app.startEngineAlongsidePreparation(); try await settle()
         let observed4 = try await counts().starts
         XCTAssertEqual(observed4, 1, "an open gate keeps the WP-17 early start")
-        app.earlyPauseWorkspace.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        app.earlyPauseWorkspace.post(name: try edge(.screenSleep), object: nil)
         await app.finishEarlyStartWindow()
         let observed5 = try await counts().stops
         XCTAssertEqual(observed5, 1, "the pause stops the early session before the lifecycle starts")
@@ -210,8 +215,39 @@ private actor CountingEngine: EngineClient {
         await app.settingsHost.present(origin: .userInitiated)
         XCTAssertEqual(surface.shown.count, 1)
         let hidden = surface.hidden
-        app.earlyPauseWorkspace.post(name: NSWorkspace.screensDidSleepNotification, object: nil); try await settle()
+        app.earlyPauseWorkspace.post(name: try edge(.screenSleep), object: nil); try await settle()
         XCTAssertFalse(app.settingsAvailable)
         XCTAssertGreaterThan(surface.hidden, hidden, "an open Settings window is closed by the early pause")
+    }
+
+    /// macrevb-1215-5: system sleep has no query, so a will-sleep seen during preparation crosses the handoff. A lifecycle
+    /// installed before the wake, with an awake display and an on-console session, stays paused: no restart, no
+    /// Settings, until did-wake.
+    func testASystemSleepDuringPreparationStaysPausedAcrossTheHandoffUntilWake() async throws {
+        let surface = TestSettingsSurface()
+        let app = try await makeEntry("review-1124-sleep-handoff", settingsSurface: surface)
+        await app.startEngineAlongsidePreparation(); try await settle()
+        let started = try await counts()
+        XCTAssertEqual(started.starts, 1)
+        app.earlyPauseWorkspace.post(name: try edge(.systemSleep), object: nil); try await settle()
+        let slept = try await counts()
+        XCTAssertEqual(slept.stops, 1, "will-sleep stops the early helper")
+        await app.prepare(); await app.finishEarlyStartWindow()
+        let workspace = NotificationCenter()
+        app.startLifecycle(workspace: workspace, local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] },
+                           onConsole: { true }, displaysAsleep: { _ in false })
+        try await settle()
+        let handedOff = try await counts()
+        XCTAssertEqual(handedOff.starts, 1, "no restart before did-wake")
+        XCTAssertTrue(app.lifecyclePaused)
+        XCTAssertFalse(app.settingsAvailable, "no Settings admission before did-wake")
+        await app.settingsHost.present(origin: .userInitiated)
+        XCTAssertEqual(surface.shown.count, 0)
+        workspace.post(name: try edge(.systemSleep, resume: true), object: nil)
+        for _ in 0..<500 where app.lifecyclePaused { try await Task.sleep(for: .milliseconds(10)) }
+        let woke = try await counts()
+        XCTAssertEqual(woke.starts, 2, "did-wake is the one start after the sleep")
+        XCTAssertFalse(app.lifecyclePaused)
+        XCTAssertTrue(app.settingsAvailable)
     }
 }

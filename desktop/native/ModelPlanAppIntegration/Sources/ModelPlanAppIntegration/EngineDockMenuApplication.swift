@@ -683,14 +683,15 @@ struct StatusNoticePresentation {
                         displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool = { SystemEvents.allDisplaysAsleep($0) },
                         screenLocked: (@MainActor () -> Bool?)? = nil) {
         guard !terminating, lifecycleController == nil else { return }
-        // Review 11-24 macrevb-1215-1: a lock seen by the pre-lifecycle watcher seeds the lifecycle in the same main-actor
-        // turn that ends the watcher, so no lock edge falls between the two. Unknown stays unseeded (fail open).
-        var lockSeed = screenLocked
-        if lockSeed == nil, earlyWindowActive, earlyPauseReasons.contains(.screenLocked) { lockSeed = { true } }
+        // Review 11-24 macrevb-1215-1/-5: every active pre-lifecycle reason crosses the handoff in the same main-actor turn
+        // that ends the watcher, so no edge falls between the two. Edge-only reasons (system sleep, lock) are carried;
+        // queryable ones (no display, inactive session, display sleep) are re-read by the lifecycle's seeds from the same
+        // queries the watcher used. An unknown lock stays open (fail open).
+        let carried = earlyWindowActive ? earlyPauseReasons.intersection(SystemEvents.edgeOnlyReasons) : []
         endEarlyStartWindow()
         lifecyclePaused = true
         let controller = EngineLifecycleController(composition: composition, workspace: workspace, local: local,
-            lockEvents: lockEvents, displayIDs: displayIDs, onConsole: onConsole, displaysAsleep: displaysAsleep, screenLocked: lockSeed,
+            lockEvents: lockEvents, displayIDs: displayIDs, onConsole: onConsole, displaysAsleep: displaysAsleep, screenLocked: screenLocked, carried: carried,
             onPause: { [weak self] in self?.withdrawForLifecycle() },
             onReady: { [weak self] in
                 guard let self, !self.terminating else { return }
