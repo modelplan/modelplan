@@ -82,12 +82,10 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
   const state=await snapshot(action!=='Escape');
   const verdict=timingVerdict(timing);if(verdict.expected)known.add(expectedWalkFailures.find(x=>x.kind==='timing'&&x.message===verdict.expected).name);
   if(replaying)return;
-  if(!repeat&&verdict.failure==='last mutation or frame exceeded 150 ms'){
-   const prefix=operations.slice(0,opIndex);retried.push({step:path.at(-1),ms:timing.last-timing.start});
-   operations.length=0;path.length=0;for(const op of prefix)await play(op,true);
-   return step(action,{repeat:true});
-  }
-  expect(verdict.failure??null,'interaction timing').toBeNull();
+  // Only the timing measurement may be repeated; every other invariant is judged on the first attempt below.
+  const slow=!repeat&&verdict.failure==='last mutation or frame exceeded 150 ms';
+  if(repeat||!slow)expect(verdict.failure??null,'interaction timing').toBeNull();
+  if(repeat)return;
   const unexpectedGeometry=state.violations.filter(message=>{const failure=expectedWalkFailures.find(x=>x.kind==='geometry'&&x.message===message);if(failure)known.add(failure.name);return !failure;});
   expect(unexpectedGeometry).toEqual([]);
   const normal=value=>value?.replace(/http:\/\/127\.0\.0\.1:\d+/g,'http://127.0.0.1:41783');
@@ -106,6 +104,13 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
   if(action!=='Escape'&&action.selector==='.mfd-ok .ok [data-choice]')expect(state.choices).toContainEqual([action.option,action.choice]);
   if(action!=='Escape'&&action.selector==='.mfd-page .md-row')expect(state.picks.some(p=>p[1]===action.key)).toBe(true);
   if(action==='Escape'&&prior.plugin)expect(state.plugin).toBeNull();
+  if(slow){
+   const prefix=operations.slice(0,opIndex),mark=operations.length,pathMark=path.length;retried.push({step:path.at(-1),ms:timing.last-timing.start});
+   operations.length=0;path.length=0;for(const op of prefix)await play(op,true);
+   await step(action,{repeat:true});
+   // the repeat re-created the same operations; keep one record of the step
+   operations.length=Math.min(operations.length,mark);path.length=Math.min(path.length,pathMark);
+  }
  };
  try{
   if(replay){
