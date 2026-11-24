@@ -283,6 +283,23 @@ import XCTest
     assertInside(clamped, a.visibleFrame, "clamped into the display it overlaps most")
   }
 
+  func testReopeningAfterABottomEdgeDragKeepsTheTargetDisplayAndSize() throws {
+    let session = CockpitShellSession()
+    let drag = try page(session: session, click: nil)
+    let start = try XCTUnwrap(drag.placement())
+    let from = CGPoint(x: start.frame.minX + 100, y: start.frame.maxY - 20)
+    let dropped = drag.dragFrame(start: start.frame, from: from, to: CGPoint(x: 2600, y: 1))
+    session.detached = true
+    session.remember(dropped.origin, arrangement: drag.arrangement)
+
+    let reopened = try page(session: session, click: nil)
+    let placement = try XCTUnwrap(reopened.placement())
+    let visibleHull = hull(placement.frame, reserve: placement.fit.hullBottomInset)
+    assertInside(visibleHull, b.visibleFrame, "the reopened hull is on the display where it was dropped")
+    XCTAssertEqual(visibleHull.minY, b.visibleFrame.minY, accuracy: 1)
+    XCTAssertEqual(placement.frame, dropped, "reopening keeps the origin and window size")
+  }
+
   /// G3-159 (owner, build 2): the clamp counted the transparent flame reserve under the hull as part of the window, so a
   /// detached cockpit stopped a gap above the screen's bottom edge. The hull's bottom reaches the visible frame's bottom.
   func testADragToTheBottomPutsTheHullOnTheVisibleFramesBottomEdge() throws {
