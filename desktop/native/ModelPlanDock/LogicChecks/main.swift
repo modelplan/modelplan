@@ -396,8 +396,8 @@ do {
             try expect(rem.inner?.remainingFraction==used.inner?.remainingFraction && abs(remTruth-r/100)<1e-9,"remaining truth identical across modes")
         }
         let empty=try reading(0,used:true),full=try reading(100,used:true)
-        try expect(empty.outer?.fraction==1 && empty.outer?.status == .critical && empty.outer?.remainingFraction==0,"0% remaining: full used arc, still critical and used-up")
-        try expect(full.outer?.fraction==0 && full.outer?.status == .normal && full.outer?.remainingFraction==1,"100% remaining: empty used arc, still normal")
+        try expect(empty.inner?.fraction==1 && empty.inner?.status == .critical && empty.inner?.remainingFraction==0,"0% remaining: full used arc, still critical and used-up")
+        try expect(full.inner?.fraction==0 && full.inner?.status == .normal && full.inner?.remainingFraction==1,"100% remaining: empty used arc, still normal")
         let unknown=DockQuotaArc(windowID:"x",fraction:nil,status:.unknown)
         try expect(unknown.remainingFraction==nil,"unknown stays unknown")
     }

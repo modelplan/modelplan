@@ -151,7 +151,8 @@ private actor DockStripEngine: EngineClient {
         }
 
         let before = try reading()
-        XCTAssertEqual(before.outer?.fraction, 0.41)
+        XCTAssertEqual(before.inner?.fraction, 0.41, "D399: the 5-hour window is the inner ring")
+        XCTAssertEqual(before.outer?.fraction, 0.70, "D399: the weekly window is the outer ring")
         XCTAssertEqual(before.readout, "41%")
         XCTAssertNil(fixture.host.dockView.presentedNoticesForChecks[member])
 
@@ -168,6 +169,7 @@ private actor DockStripEngine: EngineClient {
         try await fixture.publish()
         let announcement = try reading()
         XCTAssertEqual(fixture.host.dockView.presentedNoticesForChecks[member]?.key.kind, .resetAnnounced)
+        XCTAssertEqual(announcement.inner?.fraction, before.inner?.fraction)
         XCTAssertEqual(announcement.outer?.fraction, before.outer?.fraction)
         XCTAssertEqual(announcement.readout, before.readout)
 
@@ -180,7 +182,8 @@ private actor DockStripEngine: EngineClient {
         }
         try await fixture.publish()
         let updated = try reading()
-        XCTAssertEqual(updated.outer?.fraction, 0.82)
+        XCTAssertEqual(updated.inner?.fraction, 0.82, "D399: the refreshed 5-hour value stays on the inner ring")
+        XCTAssertEqual(updated.outer?.fraction, 0.70, "D399: the weekly outer ring is unchanged")
         XCTAssertEqual(updated.readout, "70%", "the still-tighter weekly window remains the selected readout")
         XCTAssertEqual(fixture.host.dockView.presentedNoticesForChecks[member]?.key.kind, .resetAnnounced)
     }
