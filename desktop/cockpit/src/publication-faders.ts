@@ -3,7 +3,7 @@
 // missing values. D123 order: models in use (last 7 days, even when no own plan offers them, D135), then the
 // publication's starred recommendations, then the others by ability.
 import {speedTierFor,type FastTier} from './speed-tiers.js';
-type Fader = {id:string;name:string;short:string;rec:string;e:([string,number|null,number|null,number|null]|[string,number|null,number|null,number|null,number])[];accounts:string[];sessions:{ref:string;sub:string|null}[];tier?:FastTier;unlisted?:true};
+type Fader = {id:string;name:string;short:string;rec:string;e:([string,number|null,number|null,number|null]|[string,number|null,number|null,number|null,number])[];accounts:string[];sessions:{ref:string;sub:string|null}[];recordedEffort?:string;recordedFast?:boolean|null;tier?:FastTier;unlisted?:true};
 const object=(value:unknown):Record<string,unknown>|null=>value!==null&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:null;
 const text=(value:unknown):string|null=>typeof value==='string'&&value.length>0&&value.length<=200?value:null;
 const number=(value:unknown):number|null=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=1e12?value:null;
@@ -76,6 +76,14 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
   return Number.isFinite(at)&&at<=options.now&&options.now-at<=7*DAY?[[model,at] as const]:[];
  });
  for(const [model,at] of recent)lastUsed.set(model,Math.max(lastUsed.get(model)??0,at));
+ // G3-200: the latest session in the last seven days (live or recorded) that reported an effort, for a model no live session
+ // reports on (the deck's 15-minute rule decides first).
+ const lastEffort=new Map<string,{at:number;effort:string;fast:boolean|null}>();
+ for(const value of [...(Array.isArray(live)?live:[]),...(options.recorded??[])]){
+  const s=object(value),model=text(s?.model),effort=level(s?.effort),at=typeof s?.lastObservedAt==='string'?Date.parse(s.lastObservedAt):NaN;
+  if(!model||!effort||!Number.isFinite(at)||(options.now!==undefined&&(at>options.now||options.now-at>7*DAY)))continue;
+  if(at>(lastEffort.get(model)?.at??-Infinity))lastEffort.set(model,{at,effort,fast:typeof s?.fast==='boolean'?s.fast:null});
+ }
  const candidates=[...root.models.slice(0,3).map(v=>[v,1] as const),...more.map(v=>[v,2] as const)];
  for(const [value,rank] of candidates){
   if(faders.length>=FADER_LIMIT)break;
@@ -92,7 +100,7 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
   if(!recommendedStarred)continue;
   const sessions=(Array.isArray(live)?live:[]).flatMap(value=>{const session=object(value),ref=text(session?.sessionRef);return ref&&session?.model===id?[{ref,sub:text(session.subscriptionRef)}]:[];});
   taken.add(id);tierOf.set(id,rank);const tier=speedTierFor(root.speedTiers,id);
-  faders.push({id,name,short:name,rec:recommended,e:rows,accounts:developer?subscriptions.filter(s=>s.developer===developer).map(s=>s.key):[],sessions,...(tier?{tier}:{})});
+  faders.push({id,name,short:name,rec:recommended,e:rows,accounts:developer?subscriptions.filter(s=>s.developer===developer).map(s=>s.key):[],sessions,...(lastEffort.has(id)?{recordedEffort:lastEffort.get(id)!.effort,recordedFast:lastEffort.get(id)!.fast}:{}),...(tier?{tier}:{})});
  }
  // D123 order after favourites (applied by the deck): in use, most recent first; then the publication's starred
  // recommendations; then the others by published ability at their recommended effort, strongest first.

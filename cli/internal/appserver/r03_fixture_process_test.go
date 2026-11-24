@@ -63,7 +63,7 @@ func TestR03FixtureProcess(t *testing.T) {
 				{Entry: detect.Entry{ProviderID: "kimi", ReaderID: "kimi", Preferred: "native"}, Detected: true, Status: "detected"},
 			}}
 		},
-		Cleanup: func(string, bool) error { return nil },
+		Cleanup: func(string, bool, consent.EraseGuard) error { return nil },
 	})
 	if err != nil {
 		t.Fatal(err)
