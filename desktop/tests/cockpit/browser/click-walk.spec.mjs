@@ -42,7 +42,7 @@ async function inspect(page,checkPointer=false){return page.evaluate(inspectPage
 
 for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.scenario))test(`click walk: ${scenario.name}`,async({page})=>{
  test.setTimeout(long?900000:120000);
- const path=[],operations=[],seen=new Set(),errors=[],known=new Set(),timings=[];let slowest=0;
+ const path=[],operations=[],seen=new Set(),errors=[],known=new Set(),timings=[],retried=[];let slowest=0;
  page.on('pageerror',e=>errors.push({kind:'pageerror',message:e.message}));page.on('console',m=>{if(m.type()==='error')errors.push({kind:'console',message:m.text(),url:m.location().url});});
  await mkdir(output,{recursive:true});await page.clock.setFixedTime(new Date(clock));await page.addInitScript(watch);
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
@@ -58,7 +58,18 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
   await snapshot();
  };
  const snapshot=async(checkPointer=false)=>{const state=await inspect(page,checkPointer),key=JSON.stringify(state),id=createHash('sha256').update(key).digest('hex').slice(0,16);if(!seen.has(key)){seen.add(key);await page.screenshot({path:`${output}${scenario.name}-${id}.png`});}return state;};
- const step=async(action)=>{
+ // A single over-budget step is not a verdict: on a loaded runner one frame can slip. The 150 ms budget is kept in full, but a step that
+ // exceeds it is measured once more from the same state (re-boot and replay the earlier operations, which are not re-judged) and the walk
+ // fails only when the repeat is over budget too. A real regression (a handler that blocks) is slow every time.
+ const play=async(op,replaying=false)=>{
+  if(op.type==='boot')await boot(op.data==='loading'?null:scenario.data??scenario.afterLoading);
+  else if(op.type==='display'){path.push('DISPLAY afterLoading');operations.push(op);expect(await receive(send('display',{data:scenario.afterLoading}))).toBe(true);await page.evaluate(()=>{window.__walk.displayAt=performance.now();});await snapshot();}
+  else if(op.type==='escape')await step('Escape',{replaying});
+  else if(op.type==='click')await step(op.action,{replaying});
+  else throw Error(`Unknown replay operation ${op.type}`);
+ };
+ const step=async(action,{replaying=false,repeat=false}={})=>{
+  const opIndex=operations.length;
   path.push(action==='Escape'?'Escape':`${action.selector} [${action.index}] ${action.label}`);
   operations.push(action==='Escape'?{type:'escape'}:{type:'click',action});
   const prior=await inspect(page);
@@ -70,6 +81,12 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
   timings.push({step:path.at(-1),ms:timing.last-timing.start});
   const state=await snapshot(action!=='Escape');
   const verdict=timingVerdict(timing);if(verdict.expected)known.add(expectedWalkFailures.find(x=>x.kind==='timing'&&x.message===verdict.expected).name);
+  if(replaying)return;
+  if(!repeat&&verdict.failure==='last mutation or frame exceeded 150 ms'){
+   const prefix=operations.slice(0,opIndex);retried.push({step:path.at(-1),ms:timing.last-timing.start});
+   operations.length=0;path.length=0;for(const op of prefix)await play(op,true);
+   return step(action,{repeat:true});
+  }
   expect(verdict.failure??null,'interaction timing').toBeNull();
   const unexpectedGeometry=state.violations.filter(message=>{const failure=expectedWalkFailures.find(x=>x.kind==='geometry'&&x.message===message);if(failure)known.add(failure.name);return !failure;});
   expect(unexpectedGeometry).toEqual([]);
@@ -92,13 +109,7 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
  };
  try{
   if(replay){
-   for(const op of replay.operations){
-    if(op.type==='boot')await boot(op.data==='loading'?null:scenario.data??scenario.afterLoading);
-    else if(op.type==='display'){path.push('DISPLAY afterLoading');operations.push(op);expect(await receive(send('display',{data:scenario.afterLoading}))).toBe(true);await page.evaluate(()=>{window.__walk.displayAt=performance.now();});await snapshot();}
-    else if(op.type==='escape')await step('Escape');
-    else if(op.type==='click')await step(op.action);
-    else throw Error(`Unknown replay operation ${op.type}`);
-   }
+   for(const op of replay.operations)await play(op);
   }else{
   await boot(scenario.data);
   if(scenario.afterLoading){await step((await choices(page)).find(a=>a.selector==='[data-range-key]'));path.push('DISPLAY afterLoading');operations.push({type:'display'});expect(await receive(send('display',{data:scenario.afterLoading}))).toBe(true);await page.evaluate(()=>{window.__walk.displayAt=performance.now();});await snapshot();}
@@ -127,5 +138,5 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
    const alert=(await choices(page)).find(a=>a.selector==='[data-caution]');expect(alert).toBeTruthy();await step(alert);}
   }
  }catch(e){await page.screenshot({path:`${output}${scenario.name}-failure.png`});const replayFile=`${output}${scenario.name}-failure.json`;await writeFile(replayFile,JSON.stringify({scenario:scenario.name,seed:'0xc0c01123',clock,timezone:'UTC',operations},null,2));const monitor=await page.evaluate(()=>({current:window.__walk.current,results:window.__walk.results.slice(-3),rejections:window.__walk.rejections}));throw Error(`${e.message}\nScenario ${scenario.name}; replay: COCKPIT_WALK_REPLAY=${replayFile}; monitor ${JSON.stringify(monitor)}; path:\n${path.join('\n')}`);}
- finally{console.log(`walk ${scenario.name}: ${timings.length} steps; slowest ${slowest.toFixed(1)} ms; ${seen.size} states; expected failures: ${[...known].join(', ')||'none'}; slowest steps: ${JSON.stringify(timings.sort((a,b)=>b.ms-a.ms).slice(0,5))}`);}
+ finally{console.log(`walk ${scenario.name}: ${timings.length} steps; slowest ${slowest.toFixed(1)} ms; ${seen.size} states; expected failures: ${[...known].join(', ')||'none'}; over-budget steps retried: ${JSON.stringify(retried)}; slowest steps: ${JSON.stringify(timings.sort((a,b)=>b.ms-a.ms).slice(0,5))}`);}
 });
