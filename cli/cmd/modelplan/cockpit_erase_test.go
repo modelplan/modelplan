@@ -112,7 +112,7 @@ func TestHistoryRevokeAndForgetEraseAllLedgersAndDesktop(t *testing.T) {
 				if err := held.Close(); err != nil {
 					t.Fatal(err)
 				}
-				if err := consent.RetryCleanup(consent.Path(), hooks.Cleanup); err != nil {
+				if err := consent.RetryCleanup(consent.Path(), func(scope string, forget bool, _ consent.EraseGuard) error { return hooks.Cleanup(scope, forget) }); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -204,7 +204,7 @@ func TestHistoryCleanupNeverStealsSlowWriterLocks(t *testing.T) {
 				if len(receipt.CleanupPending) != 1 {
 					t.Fatalf("slow live lock stolen: %#v", receipt)
 				}
-				if err := consent.RetryCleanup(consent.Path(), hooks.Cleanup); err != nil {
+				if err := consent.RetryCleanup(consent.Path(), func(scope string, forget bool, _ consent.EraseGuard) error { return hooks.Cleanup(scope, forget) }); err != nil {
 					t.Fatal(err)
 				}
 				if !consent.Capture().CleanupPending(consent.ScopeCodexLocalHistory) {
@@ -229,7 +229,7 @@ func TestHistoryCleanupNeverStealsSlowWriterLocks(t *testing.T) {
 				if err := held.Close(); err != nil {
 					t.Fatal(err)
 				}
-				if err := consent.RetryCleanup(consent.Path(), hooks.Cleanup); err != nil {
+				if err := consent.RetryCleanup(consent.Path(), func(scope string, forget bool, _ consent.EraseGuard) error { return hooks.Cleanup(scope, forget) }); err != nil {
 					t.Fatal(err)
 				}
 				if consent.Capture().CleanupPending(consent.ScopeCodexLocalHistory) {

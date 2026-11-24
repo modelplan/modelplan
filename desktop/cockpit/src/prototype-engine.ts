@@ -136,10 +136,28 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  // CSS ellipsis is the last resort. Measured again whenever the table's width changes (not laid out yet: skipped).
  let watch:ResizeObserver|null=null;
  // The width watch starts once the table is in the page: WebKit reports nothing for a target observed while detached.
- function fit(){if(!watch&&host.isConnected&&typeof ResizeObserver!=='undefined'){watch=new ResizeObserver(fit);watch.observe(host);}for(const e of host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full],.ek-name[data-full],.qrv-c[data-full],.pl-fit[data-full]')){if(!e.isConnected||e.clientWidth<=0)continue;const forms=[e.dataset.full,e.dataset.short,e.dataset.small].filter((v):v is string=>!!v);e.textContent=forms[0]??'';for(const form of forms.slice(1)){if(e.scrollWidth<=e.clientWidth)break;e.textContent=form;}if(e.classList.contains('pl-side')&&e.scrollWidth>e.clientWidth)e.textContent='';}// D371 Q5: a plugin side value that does not fit even short is hidden, never cut
-  // CKP-ENG-53 (§14): a range row that does not fit drops its speed first, then its tokens; ≈cost always stays.
-  for(const row of host.querySelectorAll<HTMLElement>('.qrow-t')){if(!row.isConnected||row.clientWidth<=0)continue;const parts=[row.querySelector<HTMLElement>('.qaverage'),row.querySelector<HTMLElement>('.qtokens')];
-   for(const part of parts)part?.classList.remove('drop');for(const part of parts){if(row.scrollWidth<=row.clientWidth)break;part?.classList.add('drop');}}}
+ function fit(){
+  if(!watch&&host.isConnected&&typeof ResizeObserver!=='undefined'){watch=new ResizeObserver(fit);watch.observe(host);}
+  const entries=[...host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full],.ek-name[data-full],.qrv-c[data-full],.pl-fit[data-full]')]
+   .filter(e=>e.isConnected&&e.clientWidth>0).map(e=>({e,forms:[e.dataset.full,e.dataset.short,e.dataset.small].filter((v):v is string=>!!v)}));
+  // Batch writes and width reads: interleaving them forces a full layout for each label on a page switch.
+  const setText=(e:HTMLElement,text:string)=>{if(e.textContent!==text)e.textContent=text;};
+  for(const {e,forms} of entries)setText(e,forms[0]??'');
+  for(let i=1;i<=2;i++){
+   const shorten=entries.filter(({e,forms})=>i<forms.length&&e.scrollWidth>e.clientWidth);
+   for(const {e,forms} of shorten)setText(e,forms[i]);
+  }
+  const hidden=entries.filter(({e})=>e.classList.contains('pl-side')&&e.scrollWidth>e.clientWidth);
+  for(const {e} of hidden)setText(e,''); // D371 Q5: an unfit plugin side value is hidden, never cut.
+  // CKP-ENG-53 (§14): drop speed first, then tokens; ≈cost always stays.
+  const rows=[...host.querySelectorAll<HTMLElement>('.qrow-t')].filter(row=>row.isConnected&&row.clientWidth>0)
+   .map(row=>({row,parts:[row.querySelector<HTMLElement>('.qaverage'),row.querySelector<HTMLElement>('.qtokens')]}));
+  for(const {parts} of rows)for(const part of parts)part?.classList.remove('drop');
+  for(let i=0;i<2;i++){
+   const overflow=rows.filter(({row})=>row.scrollWidth>row.clientWidth);
+   for(const {parts} of overflow)parts[i]?.classList.add('drop');
+  }
+ }
 
  // Owner D76: the Reserve label's hint (and, macrevb-1020-2, a quota cell's own details: its unknown reset time), in the MFD's floating LCD tip style (study mfd.css .mfd-tip), on hover or focus.
  // Text only and never takes pointer events; the label also carries it as its accessible name.

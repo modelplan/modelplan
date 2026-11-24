@@ -58,7 +58,7 @@ const card=(page,name)=>page.locator('.fd-ch:not(.empty)').filter({has:page.loca
 // The visible text lines of a card; the effort line's two parts are spaced by layout (a flex gap), so join them with a space.
 const lines=ch=>ch.locator('.fd-strip').evaluate(s=>[...s.children].filter(e=>!e.matches('.st-vend,.cd-bar,.st-pin')).map(e=>e.matches('.cd-eff')&&e.children.length?[...e.children].map(c=>c.textContent.trim()).join(' '):e.textContent.trim()));
 const solSession=(n,effort,rate,state='running',minutesAgo=1)=>({sessionRef:String(n).padStart(16,'0'),source:'codex',subscriptionRef:null,model:'sol',effort,projectLabel:'p'+n,lastObservedAt:new Date(Date.parse(NOW)-minutesAgo*60e3).toISOString().replace('.000Z','Z'),state,rate});
-const row=(page,level)=>page.locator(`.sc-l[data-level="${level}"]`).evaluate(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;});
+const row=(page,level)=>page.locator(`.sc-l[data-level="${level}"]`).first().evaluate(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;});
 const centre=l=>l.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};});
 
 test('CKP-FAD-50/55 cards: use large (tokens until ≈cost exists), share bar in the subscription colour, "212M 17%", effort line; one session lamp under "Sessions"',async({page})=>{
@@ -153,7 +153,7 @@ test('CKP-FAD-54 the five steps, with their timings',async({page})=>{
  await expect(screen).toHaveCount(1);
  expect(await screen.evaluate(e=>{const s=getComputedStyle(e);return [s.animationName,s.animationDuration];})).toEqual(['cd-page-in','0.15s']);
  await expect(page.locator('.mfd-pk')).toHaveClass(/\bdark\b/);
- await expect(page.locator('.mfd-vk .vk-back')).toHaveCount(1);
+ await expect(page.locator('.mfd-vk .vk-back')).toHaveCount(0); // D405/D387: no back key on the strip
  expect(await page.locator('#cockpit').getAttribute('data-sel-model')).toBe('sol');
  // 3 drag to XHigh: the blue ghost follows the pointer; the real lever does not move.
  const t=await centre(travel),high=await row(page,'High'),xhigh=await row(page,'XHigh');
@@ -288,8 +288,11 @@ test('CKP-FAD-57 short cockpit: the fader lever scales to 0.825 of the tall one'
  const tall=await card(page,'Sol 6.1').locator('.fd-cap').boundingBox();
  await open(page,{tier:'compact'});
  const short=await card(page,'Sol 6.1').locator('.fd-cap').boundingBox();
- expect(short.width/tall.width).toBeGreaterThan(.8);expect(short.width/tall.width).toBeLessThan(.85);
- expect(short.height/tall.height).toBeGreaterThan(.8);expect(short.height/tall.height).toBeLessThan(.85);
+ // The short lever keeps its 0.825 u scale (96 px travel). D405 (owner 11-24) splits the tall deck into even tiers, so the
+ // tall lever is now 88.5/97 = 0.912 u (104.5 px travel) and the short one is 80/88.5 = 0.904 of it.
+ const ratio=80/88.5;
+ expect(Math.abs(short.width/tall.width-ratio)).toBeLessThan(.01);
+ expect(Math.abs(short.height/tall.height-ratio)).toBeLessThan(.01);
 });
 
 test('G3-134 an unlisted model with a readable name gets a card: its name, "Unlisted", no lever, and clicking it opens nothing',async({page})=>{
