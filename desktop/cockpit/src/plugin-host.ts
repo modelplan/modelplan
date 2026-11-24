@@ -259,7 +259,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   // D401: a plugin key follows the subscription-key logic. While a screen is open only its key is lit: the lit subscription
   // (or All) key goes dark and is remembered, then lit again when the screen closes (a new table is dimmed as it is drawn).
   const dimmed=new Set<HTMLElement>();
-  const dimSubs=()=>{for(const k of root.querySelectorAll<HTMLElement>('.eng-keys .ek:not(.pl-key),.ek[data-all]')){if(k.getAttribute('aria-pressed')==='true')dimmed.add(k);k.classList.remove('on');k.setAttribute('aria-pressed','false');}};
+  const dimSubs=()=>{for(const k of dimmed)if(!k.isConnected)dimmed.delete(k);for(const k of root.querySelectorAll<HTMLElement>('.eng-keys .ek:not(.pl-key),.ek[data-all]')){if(k.getAttribute('aria-pressed')==='true')dimmed.add(k);k.classList.remove('on');k.setAttribute('aria-pressed','false');}};
   const lightSubs=()=>{for(const k of dimmed)if(k.isConnected){k.classList.add('on');k.setAttribute('aria-pressed','true');}dimmed.clear();};
   // The plugin key is pressed (lit, aria-pressed) exactly while its screen is open, as a subscription key is while selected.
   const markKey=(key:HTMLElement,open:boolean)=>{key.classList.toggle('on',open);key.setAttribute('aria-expanded',String(open));key.setAttribute('aria-pressed',String(open));};
@@ -310,7 +310,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   function closeMenu(restoreFocus=false) {
     if(!menu)return;menu.remove();menu=null;
     document.removeEventListener('pointerdown',outside,true);
-    menuAnchor?.classList.remove('on');if(menuAnchor?.hasAttribute('data-add-subscription'))menuAnchor.setAttribute('aria-expanded','false');if(restoreFocus&&menuAnchor?.isConnected)menuAnchor.focus();menuAnchor=null;
+    if(menuAnchor&&!menuAnchor.classList.contains('pl-key'))menuAnchor.classList.remove('on');if(menuAnchor?.hasAttribute('data-add-subscription'))menuAnchor.setAttribute('aria-expanded','false');if(restoreFocus&&menuAnchor?.isConnected)menuAnchor.focus();menuAnchor=null;
   }
   const outside=(e:Event)=>{if(menu&&!menu.contains(e.target as Node)&&!menuAnchor?.contains(e.target as Node))closeMenu();};
   const escape=(e:KeyboardEvent)=>{
@@ -324,7 +324,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const m=el('div','pl-menu');m.setAttribute('role','menu');m.setAttribute('aria-label',label);m.dataset.mat='glass';return m;
   }
   function place(m:HTMLElement,anchor:HTMLElement,at?:{x:number;y:number}) {
-    root.append(m);menu=m;menuAnchor=anchor;anchor.classList.add('on');
+    root.append(m);menu=m;menuAnchor=anchor;if(!anchor.classList.contains('pl-key'))anchor.classList.add('on');
     const r=anchor.getBoundingClientRect(),x=at?.x??r.left,y=at?.y??r.bottom+6;
     m.style.left=Math.max(8,Math.min(window.innerWidth-m.offsetWidth-8,x))+'px';
     m.style.top=(y+m.offsetHeight>window.innerHeight-4?Math.max(4,(at?.y??r.top)-m.offsetHeight-6):y)+'px';

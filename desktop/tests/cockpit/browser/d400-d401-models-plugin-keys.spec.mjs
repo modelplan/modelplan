@@ -94,3 +94,20 @@ test('D401 with All selected a plugin leaves nothing but the plugin key lit, and
  await key(page,'calendar').click();let s=await snap(page);expect(s.all).toEqual([]);expect(s.plugins).toEqual(['calendar']);
  await page.keyboard.press('Escape');s=await snap(page);expect(s.all).toEqual(['all']);expect(s.plugins).toEqual([]);
 });
+// macrevb-1211-2: the plugin key's context menu never lights or darkens the key; lit and aria-pressed follow the screen alone.
+test('D401 a plugin key context menu leaves the key lit exactly while its screen is open',async({page})=>{
+ await open(page);
+ const state=async id=>({lit:await key(page,id).evaluate(k=>k.classList.contains('on')),pressed:await key(page,id).getAttribute('aria-pressed'),screen:await page.locator(`.pl-screen[data-plugin="${id}"]`).count()});
+ // Active key: the screen is open; the menu opens and Escape dismisses only the menu.
+ await key(page,'calendar').click();expect(await state('calendar')).toEqual({lit:true,pressed:'true',screen:1});
+ await key(page,'calendar').click({button:'right'});await expect(page.locator('.pl-menu')).toHaveCount(1);
+ expect(await state('calendar')).toEqual({lit:true,pressed:'true',screen:1});
+ await page.keyboard.press('Escape');await expect(page.locator('.pl-menu')).toHaveCount(0);
+ expect(await state('calendar'),'still lit with its screen open after the menu closes').toEqual({lit:true,pressed:'true',screen:1});
+ // Inactive key: the menu opens on it without lighting it, and closing it leaves it dark.
+ await key(page,'resources').click({button:'right'});await expect(page.locator('.pl-menu')).toHaveCount(1);
+ expect(await state('resources'),'a menu does not light a key whose screen is closed').toEqual({lit:false,pressed:'false',screen:0});
+ await page.keyboard.press('Escape');await expect(page.locator('.pl-menu')).toHaveCount(0);
+ expect(await state('resources')).toEqual({lit:false,pressed:'false',screen:0});
+ expect(await state('calendar')).toEqual({lit:true,pressed:'true',screen:1});
+});
