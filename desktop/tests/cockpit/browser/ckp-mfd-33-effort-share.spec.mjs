@@ -325,9 +325,9 @@ test('CKP-MFD-53 there is no Enter-to-apply: the keys are only ‹ back and fast
  await page.evaluate(()=>{window.webkit.messageHandlers.cockpit.postMessage=m=>window.__posted.push(JSON.stringify(m));});
  const screen=await openSol(page);
  expect(await screen.innerText()).not.toMatch(/Enter|回车|apply|应用/i);
- // the bottom keys are ‹ back and the fast key (dark when the tool has no fast mode); nothing else, no apply key
- await expect(page.locator('.mfd-ok.mfd-vk .vk-back')).toHaveCount(1);await expect(page.locator('.mfd-ok.mfd-vk .vk-fast')).toHaveCount(1);
- await expect(page.locator('.mfd-ok.mfd-vk > *:not(.vk-back):not(.vk-fast)')).toHaveCount(0);
+ // D405/D387: the bottom strip keeps only the fast key (and a dark spacer), no back key; (dark when the tool has no fast mode); nothing else, no apply key
+ await expect(page.locator('.mfd-ok.mfd-vk .vk-back')).toHaveCount(0);await expect(page.locator('.mfd-ok.mfd-vk .vk-fast')).toHaveCount(1);
+ await expect(page.locator('.mfd-ok.mfd-vk > *:not(.vk-pad):not(.vk-fast)')).toHaveCount(0);
  const before=await page.evaluate(()=>window.__posted.length);
  await screen.locator('.cmp-lad [data-mfd="try:XHigh"]').focus();await page.keyboard.press('Enter');
  await expect(screen.locator('.cmp-lad .lad.try')).toHaveText('XHigh');
