@@ -432,7 +432,7 @@ enum DockGripInk {
     public var onNeedsFreshPresentation:(()->Void)?
     private var windowObservers=[NSObjectProtocol]()
     private var workspaceObserver:NSObjectProtocol?
-    private var scale=1,locale="en",community=true,failed=false
+    private var scale=1,locale="en",community=true,failed=false,communityShowsPercentages=true
     public override var isFlipped:Bool{true}
     public override var acceptsFirstResponder:Bool{keyboardNavigationEnabled}
     public override func becomeFirstResponder() -> Bool {
@@ -452,9 +452,9 @@ enum DockGripInk {
     public override init(frame:NSRect){super.init(frame:frame);wantsLayer=true;layer?.isGeometryFlipped=true;setAccessibilityElement(false);setAccessibilityRole(.group)}
     deinit {for token in windowObservers{NotificationCenter.default.removeObserver(token)};if let workspaceObserver{NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)}}
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
-    public func applyCommunity(_ rows:[DockInstrumentReading],locale:String="en") throws {
+    public func applyCommunity(_ rows:[DockInstrumentReading],locale:String="en",showsPercentages:Bool=true) throws {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
-        clearFocusedHelpExplanation();resetVisuals();registerGripRects([]);restingInstrumentImage=nil;hoverViewport=nil;imageUsesHoverViewport=false;officialRenderer=nil;self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
+        clearFocusedHelpExplanation();resetVisuals();registerGripRects([]);restingInstrumentImage=nil;hoverViewport=nil;imageUsesHoverViewport=false;officialRenderer=nil;self.locale=locale;community=true;communityShowsPercentages=showsPercentages;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
         orderedIDs=rows.map(\.subscriptionID);readings=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)})
         communityRowHeight = requestedNozzleDiameter ?? 44
         guard communityRowHeight.isFinite, (8...256).contains(communityRowHeight) else { throw DockArtworkError.invalidManifest }
@@ -726,7 +726,7 @@ enum DockGripInk {
     private func invalidatePresentation(){resetVisuals();onNeedsFreshPresentation?()}
     public func communityRowText(_ id:String) -> String? {
         guard community,let r=readings[id] else { return nil }
-        let heading=[r.alias ?? r.name,r.readout].joined(separator:"  ")
+        let heading=communityShowsPercentages ? [r.alias ?? r.name,r.readout].joined(separator:"  ") : (r.alias ?? r.name)
         // A plugin ring has no quota percentage and is never "unavailable" (macrevb-1096-5).
         guard r.remainingPercent == nil,r.pluginRing == nil else { return heading }
         let reason=r.unavailableReason?.trimmingCharacters(in:.whitespacesAndNewlines)
@@ -760,7 +760,7 @@ enum DockGripInk {
             NSColor.secondaryLabelColor.setStroke(); ring.stroke()
         }
         for (index,id) in orderedIDs.enumerated(){guard let r=readings[id] else{continue}
-            let value=communityRowText(id) ?? [r.alias ?? r.name,r.readout].joined(separator:"  ")
+            let value=communityRowText(id) ?? (communityShowsPercentages ? [r.alias ?? r.name,r.readout].joined(separator:"  ") : (r.alias ?? r.name))
             let context = NSGraphicsContext.current?.cgContext
             context?.saveGState()
             if let control = stationRect(id) { context?.clip(to: control) }
@@ -805,7 +805,7 @@ enum DockGripInk {
         let font=NSFont.monospacedSystemFont(ofSize:12*scale,weight:.regular)
         let parts=DockPluginRing.readoutParts(r.readout)
         let text=NSMutableAttributedString(string:(r.alias ?? r.name)+"  "+parts.label,attributes:[.font:font,.foregroundColor:NSColor.labelColor,.paragraphStyle:paragraph])
-        text.append(NSAttributedString(string:parts.number,attributes:[.font:font,.foregroundColor:Self.communityNumberColor(ring.readoutTone),.paragraphStyle:paragraph]))
+        if communityShowsPercentages{text.append(NSAttributedString(string:parts.number,attributes:[.font:font,.foregroundColor:Self.communityNumberColor(ring.readoutTone),.paragraphStyle:paragraph]))}
         text.draw(in:g.text)
     }
     private func stationRect(_ id:String)->CGRect? {
@@ -885,7 +885,9 @@ enum DockGripInk {
             let stale = reading.dataState == .stale ? (reading.unavailableReason ?? (locale.hasPrefix("zh") ? "部分读数已过期" : "Some readings are stale")) : nil
             // B4f: a plugin ring draws its number alone; VoiceOver still reads what it measures ("内存 77%").
             let spoken=reading.pluginRing?.accessibilityReadout ?? reading.readout
-            append("subscription."+id,reading.alias ?? reading.name,spoken,[reading.selectedWindowLabel,spoken,stale].compactMap{$0}.joined(separator:" · "),rect,.subscription(id))
+            // The neutral edition has no separate spoken channel: with percentages hidden no number is exposed at all.
+            let shownSpoken:String?=community && !communityShowsPercentages ? nil : spoken
+            append("subscription."+id,reading.alias ?? reading.name,shownSpoken,[reading.selectedWindowLabel,shownSpoken,stale].compactMap{$0}.joined(separator:" · "),rect,.subscription(id))
             if !community,let notice=notices[id],let station=skin?.stations.first(where:{$0.subscriptionID==id}) {
                 let origin = layoutOrigin
                 let zh=locale.hasPrefix("zh"),label:String
