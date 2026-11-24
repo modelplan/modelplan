@@ -62,6 +62,10 @@ func newAppServer(ctx context.Context, options appServerOptions) (*appserver.Ser
 type appServerSources struct {
 	History func(appserver.Backend, queries.HistorySource) queries.HistorySource
 	Detect  func(func() detect.Report) func() detect.Report
+	// Clock paces history discovery (the idle-work gates' test clock); nil is time.Now.
+	Clock func() time.Time
+	// Built receives the shared backend and scheduler the server was built from.
+	Built func(*appserver.SharedBackend, *appserver.RefreshScheduler)
 }
 
 func newAppServerWithSources(ctx context.Context, options appServerOptions, sources appServerSources) (*appserver.Server, func(), error) {
@@ -69,7 +73,11 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	if err != nil {
 		return nil, func() {}, err
 	}
-	var codexIndex quota.CodexRolloutIndex
+	clock := sources.Clock
+	if clock == nil {
+		clock = time.Now
+	}
+	codexIndex := quota.CodexRolloutIndex{Clock: sources.Clock}
 	rawPaths := func(a consent.Admission) quota.Paths {
 		p := quota.ProductionPathsWithAdmission(st.Dir, version, a)
 		p.CodexIndex = &codexIndex
@@ -96,7 +104,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			}
 		},
 		ManualKeyPresent: func(provider string) bool { return quota.ManualKeyPresent(st.Dir, provider) },
-		Activity:         appActivity(st.Dir),
+		Activity:         appActivityClock(st.Dir, clock),
 		Reported: func(report quota.Report, now time.Time) {
 			if !options.ReadOnly {
 				observeQuotaHistory(st, report, now)
@@ -104,8 +112,8 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		},
 		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.LoadShared(st); return d, err }, // read only (WP-17)
 		Detect:           detectTools, LaterInstalled: seen.Observe, Paths: paths, WatchPaths: watchPaths, Offline: options.Offline, ReadOnly: options.ReadOnly,
-		Cleanup: func(scope string, forget bool) error {
-			return quota.EraseScope(quota.ProductionPaths(st.Dir, version), scope, forget)
+		Cleanup: func(scope string, forget bool, guard consent.EraseGuard) error {
+			return quota.EraseScopeGuarded(quota.ProductionPaths(st.Dir, version), scope, forget, guard)
 		},
 	})
 	var backend appserver.Backend = shared
@@ -199,5 +207,8 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	}
 	server = appserver.New(appserver.Config{Version: version, Backend: backend, Handlers: handlers, SessionStarted: sessionStarted, RefreshDecisions: decisions})
 	broker.Request = server.ReadCredential
+	if sources.Built != nil {
+		sources.Built(shared, scheduler)
+	}
 	return server, closeBackend, nil
 }

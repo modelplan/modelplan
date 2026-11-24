@@ -90,3 +90,6 @@ func cloneRecord(record Record) Record {
 	}
 	return record
 }
+
+// AnyCleanupPending is true while some committed Deny or Forget still owes erasure.
+func (a Admission) AnyCleanupPending() bool { return len(a.cleanup) > 0 }

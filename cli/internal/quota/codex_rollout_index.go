@@ -16,6 +16,8 @@ const codexRolloutDiscoveryInterval = 6 * time.Second
 // CodexRolloutIndex shares bounded rollout discovery between the app-server's
 // metadata watcher and quota views. Contents and credentials are never cached here.
 type CodexRolloutIndex struct {
+	// Clock replaces time.Now for the discovery interval (idle-work gates only).
+	Clock        func() time.Time
 	mu           sync.Mutex
 	home, thread string
 	fence        consent.Fence
@@ -34,7 +36,11 @@ func (p Paths) RecentCodexRollouts() ([]string, string) {
 		p.CodexIndex.clear()
 		return nil, ""
 	}
-	return p.CodexIndex.recent(p.CodexHome, p.CodexThread, admission.Fence(), time.Now())
+	now := time.Now()
+	if p.CodexIndex.Clock != nil {
+		now = p.CodexIndex.Clock()
+	}
+	return p.CodexIndex.recent(p.CodexHome, p.CodexThread, admission.Fence(), now)
 }
 
 func (i *CodexRolloutIndex) clear() {
