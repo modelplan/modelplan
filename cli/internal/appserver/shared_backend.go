@@ -392,15 +392,14 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		}
 		diagnostics = append(diagnostics, diag)
 	}
+	var todayDeadline time.Time
 	if !changed {
 		b.populateRefreshDeadlines(&projection, p, admission, scopes, in.Now)
 		perf := b.perfMemo.Read(p.Cache, admission, in.Now)
-		var todayDeadline time.Time
 		if perf.OK && !perf.Ledger.Since.IsZero() {
 			attachAccountToday(&projection, report.Accounts, perf)
 			todayDeadline = nextAccountTodayDeadline(report.Accounts, perf, in.Now)
 		}
-		b.todayDeadline.Store(&todayDeadline)
 	}
 	health := wire.Health{State: wire.HealthReady, Code: "ok"}
 	for _, fact := range facts.Scopes {
@@ -418,7 +417,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	// Evaluation time is not a displayed fact; keeping it would make every
 	// otherwise identical backend view look changed to rows subscribers.
 	report.EvaluatedAt = time.Time{}
-	return View{QuotaReport: report, PublicModels: publicModels, PublicSpeedTiers: publicSpeedTiers, Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
+	return View{QuotaReport: report, PublicModels: publicModels, PublicSpeedTiers: publicSpeedTiers, Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health, accountTodayDeadline: todayDeadline}
 }
 
 func (b *SharedBackend) paths(admission consent.Admission) quota.Paths {
@@ -652,6 +651,16 @@ func (b *SharedBackend) laterPending(detection detect.Report) bool {
 	return len(consent.AutoLocalLogScopes(state, later)) > 0 || len(consent.AutoLaterClosedScopes(state, consent.LaterLocalLogScopes(state, later))) > 0
 }
 
+// armAccountTodayDeadline is called only for the server's accepted subscriber
+// view. Incidental Get calls must not consume or postpone a withdrawal.
+func (b *SharedBackend) armAccountTodayDeadline(deadline time.Time) {
+	if deadline.IsZero() {
+		b.todayDeadline.Store(nil)
+		return
+	}
+	b.todayDeadline.Store(&deadline)
+}
+
 func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 	b.once.Do(func() {
 		if b.config.Activity != nil {
@@ -701,7 +710,7 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 					}
 					current := watchedStamps(paths, codexStamps)
 					deadline := b.todayDeadline.Load()
-					due := deadline != nil && !deadline.IsZero() && !now.Before(*deadline) &&
+					due := deadline != nil && !now.Before(*deadline) &&
 						b.todayDeadline.CompareAndSwap(deadline, nil)
 					if due || !reflect.DeepEqual(last, current) {
 						last = current

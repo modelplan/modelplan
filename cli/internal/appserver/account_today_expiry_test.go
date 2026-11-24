@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -63,10 +65,22 @@ func TestAccountTodaySubscriptionWithdrawsExpiredEvidence(t *testing.T) {
 	write("codex-account.json", map[string]any{"schemaVersion": 1, "status": "ok", "observedAt": start, "admission": state.CaptureStamp(consent.ScopeCodexRuntimeUsage), "subscriptionRef": ref, "windows": []any{map[string]any{"kind": "weekly", "usedPercent": 25, "windowMinutes": 10080, "resetsAt": start.Add(time.Hour), "observedAt": start}}})
 	ledger := speed.PerfLedger{SchemaVersion: 1, Since: start.Add(-time.Hour), Rows: []speed.PerfRow{{GrantEpoch: epoch, Day: start.Format("2006-01-02"), Source: "codex", ObservedRequests: 5, ObservedOutputTokens: 12000, EligibleRequests: 5, EligibleOutputTokens: 210, GenMs: 5000}}, Live: []speed.LiveRecord{{GrantEpoch: epoch, Ref: "1111111111111111", Source: "codex", SubscriptionRef: ref, LastAt: start.Add(-speed.LiveWithin + 5*time.Second), StartedAt: start.Add(-time.Hour), Running: true}}}
 	write("perf.json", ledger)
+	watchEntered, resumeWatch := make(chan struct{}), make(chan struct{})
+	var pauseWatch atomic.Bool
+	var resumeOnce sync.Once
+	resume := func() { resumeOnce.Do(func() { close(resumeWatch) }) }
+	defer resume()
+	paths := func(a consent.Admission) quota.Paths {
+		return quota.Paths{Cache: cache, CodexHome: codexHome, Admission: &a}
+	}
 	backend, err := NewSharedBackend(SharedConfig{now: clock.read, Detect: func() detect.Report {
 		return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "codex", ReaderID: "native:codex", Preferred: "native"}, Detected: true}}}
-	}, Paths: func(a consent.Admission) quota.Paths {
-		return quota.Paths{Cache: cache, CodexHome: codexHome, Admission: &a}
+	}, Paths: paths, WatchPaths: func(a consent.Admission) quota.Paths {
+		if pauseWatch.CompareAndSwap(true, false) {
+			close(watchEntered)
+			<-resumeWatch
+		}
+		return paths(a)
 	}, Cleanup: func(string, bool) error { return nil }})
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +126,27 @@ func TestAccountTodaySubscriptionWithdrawsExpiredEvidence(t *testing.T) {
 		return got != nil && got.tokens != nil && *got.tokens == 13000
 	}
 	client.next(t, changed)
+
+	// Hold the next watcher poll before it reads the clock. The rejected
+	// request can build a view to recover its error stamp, but that view is
+	// never installed for the subscriber and must not consume its expiry.
+	pauseWatch.Store(true)
+	select {
+	case <-watchEntered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("watcher did not reach its next poll")
+	}
 	clock.set(start.Add(5 * time.Second))
+	client.send(t, 3, "consent/grant", wire.ConsentGrantParams{
+		RequestID: "stale-at-expiry", ExpectStoreEpoch: state.StoreEpoch,
+		ExpectGeneration: state.Generation + 100, TextVersion: consent.TextVersion,
+		Allow: []string{consent.ScopeCodexLocalHistory}, Deny: []string{},
+	})
+	var stale wire.RPCError
+	if err := json.Unmarshal(client.response(t, 3)["error"], &stale); err != nil || stale.Code != wire.CodeConsentStale {
+		t.Fatalf("expected stale consent error, got %+v (%v)", stale, err)
+	}
+	resume()
 	expired := client.next(t, func(m map[string]json.RawMessage) bool {
 		if string(m["method"]) != `"rows/changed"` {
 			return false
