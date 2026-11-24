@@ -390,7 +390,7 @@ test("providers: quota detection (codes, billing limit, sustained 429) and the G
   assert.throws(() => P.openaiProvider({ key: "" }), (e) => e.kind === "config");
   const g = seq(reply(200, { choices: [{ message: { content: "G" } }], usage: { prompt_tokens: 5, completion_tokens: 2 } }));
   const glm = P.glmProvider({ key: "gk", baseUrl: "https://glm.example/api/paas/v4/", fetchImpl: g.f, waitMs: 0 });
-  assert.deepEqual(await glm.review("REQ"), { text: "G", usage: { input: 5, cached: 0, output: 2 } });
+  assert.deepEqual(await glm.review("REQ"), { text: "G", model: "unreported (requested GLM-5.4)", note: "GLM-5.4 requested, the response reported no model", usage: { input: 5, cached: 0, output: 2 } });
   assert.equal(g.calls[0].url, "https://glm.example/api/paas/v4/chat/completions");
   const sent = JSON.parse(g.calls[0].init.body);
   assert.equal(sent.model, "GLM-5.4", "the full model, spelled as ZCode spells it");
@@ -398,6 +398,43 @@ test("providers: quota detection (codes, billing limit, sustained 429) and the G
   assert.equal(g.calls[0].init.headers.authorization, "Bearer gk");
   assert.throws(() => P.glmProvider({ key: "k", baseUrl: "u", model: "GLM-5.4-Flash" }), /not flash/);
   assert.throws(() => P.glmProvider({ key: "", baseUrl: "u" }), (e) => e.kind === "config");
+});
+
+test("GLM attribution: the verdict names the model the response reports, never the requested one (macrev2-1177-1)", async () => {
+  const reply = (status, body) => ({ ok: status < 300, status, json: async () => body });
+  const done = (model) => reply(200, { ...(model === undefined ? {} : { model }), choices: [{ message: { content: "G" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+  const run = async (f) => P.reviewInOrder({ input: "x", order: ["glm"], build: () => P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: f, waitMs: 0 }) });
+  const title = (r) => S.renderSolComment({ answer: S.parseAnswer(`g\nRecord: ${H}\nVERDICT: merge`, H), head: H, lane: S.GLM_LANE, mode: "full", base: BASE, tier: 1, meta: { model: r.model, why: r.why } }).split("\n")[0];
+  const ok = await run(async () => done("GLM-5.4"));
+  assert.equal(ok.model, "GLM-5.4"); assert.equal(ok.why, undefined);
+  assert.match(title(ok), /^\*\*GLM-5\.4 workflow review/);
+  const mism = await run(async () => done("glm-5.3"));
+  assert.equal(mism.model, "glm-5.3");
+  assert.match(title(mism), /^\*\*GLM-5\.3 workflow review\*\*.*GLM-5\.4 requested, the response reported glm-5\.3/);
+  for (const bad of [undefined, "", 5, null]) {
+    const r = await run(async () => done(bad));
+    assert.ok(!/GLM-5\.4 workflow review/.test(title(r)), `reported ${JSON.stringify(bad)} is not attributed to GLM-5.4`);
+    assert.match(r.model, /^unreported/);
+  }
+});
+
+test("GLM refusal: an unsupported or unauthorized model falls back to glm-5.3 for that run and says so (macrev2-1177-2)", async () => {
+  const reply = (status, body) => ({ ok: status < 300, status, json: async () => body });
+  for (const status of [400, 401, 403, 404]) {
+    const sent = [];
+    const f = async (url, init) => { const m = JSON.parse(init.body).model; sent.push(m); return m === "GLM-5.4" ? reply(status, { error: { code: "model_not_found" } }) : reply(200, { model: "glm-5.3", choices: [{ message: { content: "G" } }], usage: {} }); };
+    const r = await P.reviewInOrder({ input: "x", order: ["glm", "openai"], build: (n) => P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: f, waitMs: 0 }) });
+    assert.deepEqual(sent, ["GLM-5.4", "glm-5.3"]);
+    assert.equal(r.provider, "glm"); assert.equal(r.model, "glm-5.3");
+    assert.match(r.why, new RegExp(`GLM-5\\.4 refused \\(glm: HTTP ${status} model_not_found\\), fell back to glm-5\\.3`));
+    assert.equal(S.glmName(r.model), "GLM-5.3");
+  }
+  // quota errors still move to GPT, not to glm-5.3; a refusal of the fallback itself surfaces; 5xx is not a refusal
+  const q = []; const fq = async (u, i) => { q.push(JSON.parse(i.body).model); return reply(429, { error: { code: "insufficient_quota" } }); };
+  await assert.rejects(P.glmProvider({ key: "k", baseUrl: "u", fetchImpl: fq, waitMs: 0 }).review("x"), (e) => e.kind === "quota");
+  assert.deepEqual(q, ["GLM-5.4"]);
+  const f2 = async () => reply(400, { error: { code: "model_not_found" } });
+  await assert.rejects(P.glmProvider({ key: "k", baseUrl: "u", fetchImpl: f2, waitMs: 0 }).review("x"), (e) => e.kind === "other");
 });
 
 test("tier gating: (ghglm) counts on the REVIEW_GLM_TIERS tiers (default none); a head no provider can review gets a one-per-head wait note", () => {
@@ -467,7 +504,7 @@ test("call: OpenAI quota out -> GLM where it counts, a wait marker where it does
         res.setHeader("content-type", "application/json");
         if (req.url.startsWith("/v1/responses")) { hits.openai++; res.statusCode = 429; return res.end(JSON.stringify({ error: { code: "insufficient_quota" } })); }
         hits.glm++;
-        res.end(JSON.stringify({ choices: [{ message: { content: `glm\nRecord: ${H}\nVERDICT: merge` } }], usage: { prompt_tokens: 3, completion_tokens: 1 } }));
+        res.end(JSON.stringify({ model: "GLM-5.4", choices: [{ message: { content: `glm\nRecord: ${H}\nVERDICT: merge` } }], usage: { prompt_tokens: 3, completion_tokens: 1 } }));
       });
     });
     await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
@@ -798,7 +835,7 @@ test("review:gpt: GPT quota out -> GLM answers and the provider line says so; GP
       req.on("end", () => {
         res.setHeader("content-type", "application/json");
         if (req.url.startsWith("/v1/responses")) { res.statusCode = 429; return res.end(JSON.stringify({ error: { code: "insufficient_quota" } })); }
-        res.end(JSON.stringify({ choices: [{ message: { content: `glm\nRecord: ${H}\nVERDICT: merge` } }], usage: { prompt_tokens: 3, completion_tokens: 1 } }));
+        res.end(JSON.stringify({ model: "GLM-5.4", choices: [{ message: { content: `glm\nRecord: ${H}\nVERDICT: merge` } }], usage: { prompt_tokens: 3, completion_tokens: 1 } }));
       });
     });
     await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
@@ -885,7 +922,7 @@ async function callTwice(answers) {
       req.on("end", () => {
         res.setHeader("content-type", "application/json");
         seen.push(b);
-        res.end(JSON.stringify({ choices: [{ message: { content: answers[Math.min(n++, answers.length - 1)] } }], usage: { prompt_tokens: 3, completion_tokens: 1 } }));
+        res.end(JSON.stringify({ model: "GLM-5.4", choices: [{ message: { content: answers[Math.min(n++, answers.length - 1)] } }], usage: { prompt_tokens: 3, completion_tokens: 1 } }));
       });
     });
     await new Promise((ok) => server.listen(0, "127.0.0.1", ok));

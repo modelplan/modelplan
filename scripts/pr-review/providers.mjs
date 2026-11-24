@@ -28,7 +28,9 @@ async function requestJson(fetchImpl, url, init, { retries = 5, waitMs = 8000, l
     if (isQuotaCode(code)) throw new ProviderError("quota", `${label}: HTTP ${r.status} ${code}`);
     if ((r.status === 429 || r.status >= 500) && attempt < retries) { await sleep(waitMs * (attempt + 1)); continue; }
     // Only the status and the error code are reported; error bodies never echo the key, but nothing else is needed.
-    throw new ProviderError(r.status === 429 ? "quota" : "other", `${label}: HTTP ${r.status} ${code}${r.status === 429 ? " (sustained)" : ""}`);
+    const err = new ProviderError(r.status === 429 ? "quota" : "other", `${label}: HTTP ${r.status} ${code}${r.status === 429 ? " (sustained)" : ""}`);
+    err.status = r.status;
+    throw err;
   }
 }
 
@@ -67,20 +69,46 @@ export function openaiProvider({ key, model, effort, url = "https://api.openai.c
 // case was sent, and a 5.4 request with the case as sent, so this is the only spelling seen accepted for 5.4. The
 // comments the review posts name this model through glmName() (sol.mjs); nothing else states the version.
 export const GLM_MODEL = "GLM-5.4";
-export function glmProvider({ key, baseUrl, model = GLM_MODEL, fetchImpl = fetch, waitMs }) {
+// The model GLM falls back to when the endpoint refuses GLM_MODEL (unsupported or unauthorized: a non-quota error that
+// would otherwise end the run before the GPT fallback). The verdict says so and names glm-5.3, never GLM-5.4.
+export const GLM_FALLBACK_MODEL = "glm-5.3";
+const REFUSED_STATUS = new Set([400, 401, 403, 404]);
+// What the verdict may call the model: the model the response reports. It counts as the requested one only when the
+// reported name equals it (case aside); a different name is recorded as reported, and a missing or non-string name is
+// never filled in from the request.
+export function attributeModel(requested, reported) {
+  const rep = typeof reported === "string" ? reported.trim() : "";
+  if (!rep) return { model: `unreported (requested ${requested})`, note: `${requested} requested, the response reported no model` };
+  if (rep.toLowerCase() === String(requested).toLowerCase()) return { model: rep };
+  return { model: rep, note: `${requested} requested, the response reported ${rep}` };
+}
+export function glmProvider({ key, baseUrl, model = GLM_MODEL, fallbackModel = GLM_FALLBACK_MODEL, fetchImpl = fetch, waitMs }) {
   if (!key || !baseUrl) throw new ProviderError("config", "GLM_API_KEY or GLM_BASE_URL is not set");
   if (/flash/i.test(model)) throw new ProviderError("config", "the GLM fallback uses the full model, not flash");
   const url = `${String(baseUrl).replace(/\/+$/, "")}/chat/completions`;
+  const call = (m, input) => requestJson(fetchImpl, url, {
+    method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({ model: m, messages: [{ role: "user", content: input }], stream: false, max_tokens: 32000 }),
+  }, { label: "glm", ...(waitMs !== undefined ? { waitMs } : {}) });
   return {
     name: "glm",
     model,
     async review(input) {
-      const j = await requestJson(fetchImpl, url, {
-        method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-        body: JSON.stringify({ model, messages: [{ role: "user", content: input }], stream: false, max_tokens: 32000 }),
-      }, { label: "glm", ...(waitMs !== undefined ? { waitMs } : {}) });
+      let asked = model, j, refused = "";
+      try { j = await call(model, input); }
+      catch (e) {
+        if (!(e instanceof ProviderError) || e.kind !== "other" || !REFUSED_STATUS.has(e.status) || !fallbackModel || fallbackModel.toLowerCase() === model.toLowerCase()) throw e;
+        refused = `${model} refused (${e.message}), fell back to ${fallbackModel}`;
+        asked = fallbackModel;
+        j = await call(fallbackModel, input);
+      }
       const u = j?.usage ?? {};
-      return { text: j?.choices?.[0]?.message?.content ?? "", usage: { input: u.prompt_tokens ?? 0, cached: u.prompt_tokens_details?.cached_tokens ?? 0, output: u.completion_tokens ?? 0 } };
+      const { model: answered, note } = attributeModel(asked, j?.model);
+      return {
+        text: j?.choices?.[0]?.message?.content ?? "", model: answered,
+        ...(refused || note ? { note: [refused, note].filter(Boolean).join("; ") } : {}),
+        usage: { input: u.prompt_tokens ?? 0, cached: u.prompt_tokens_details?.cached_tokens ?? 0, output: u.completion_tokens ?? 0 },
+      };
     },
   };
 }
@@ -110,7 +138,9 @@ export async function reviewInOrder({ input, order, build }) {
   for (const name of order) {
     try {
       const p = build(name);
-      return { provider: p.name, model: p.model, ...(out.length ? { why: out.join("; ") } : {}), ...(await p.review(input)) };
+      const { note, ...r } = await p.review(input);   // r.model, when the provider reports one, replaces the requested p.model
+      const why = [...out, ...(note ? [note] : [])].join("; ");
+      return { provider: p.name, model: p.model, ...(why ? { why } : {}), ...r };
     } catch (e) {
       if (!(e instanceof ProviderError) || e.kind !== "quota") throw e;
       out.push(e.message);
