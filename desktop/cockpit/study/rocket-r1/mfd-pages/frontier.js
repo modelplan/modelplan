@@ -8,10 +8,10 @@ import '../strings/review49.js';
 const plotted = m => m.e.filter(row => row[1] != null && row[2] > 0);
 const starRow = m => m.e.find(row => row[0] === m.rec) ?? plotted(m).at(-1) ?? null;
 
-/** Every point with no cheaper-or-equal point at least as able: walking up the cost axis, keep each new best. At one
- * cost the most able point comes first, so an equally priced but less able one never leads (audit F 3). */
+/** D386: the shared frontier uses each model's recommended effort, not its other plotted efforts.
+ * At one cost the most able point comes first (audit F 3). */
 export function frontierPoints(models) {
-  const points = models.flatMap(m => plotted(m).map(row => ({m, row}))).sort((a, b) => a.row[2] - b.row[2] || b.row[1] - a.row[1]);
+  const points = models.flatMap(m => {const row = starRow(m);return row && row[1] != null && row[2] > 0 ? [{m, row}] : [];}).sort((a, b) => a.row[2] - b.row[2] || b.row[1] - a.row[1]);
   const front = [];let best = -Infinity;
   for (const p of points) if (p.row[1] > best) { front.push(p); best = p.row[1]; }
   return front;
@@ -72,7 +72,9 @@ export function frontierSvg(models, {w: width, h: height, current = {}, axis = {
   const X = cost => left + (log(cost) - minCost) / spanCost * (width - left - right);
   const Y = ability => height - bottom - (ability - minAbility) / spanAbility * (height - top - bottom);
   const at = row => `${X(row[2]).toFixed(1)},${Y(row[1]).toFixed(1)}`;
-  const front = frontierPoints(models), leaders = new Set(front.map(p => p.m.id));
+  const front = frontierPoints(models);
+  // Coincident recommendations share one line vertex but all remain on the frontier.
+  const leaders = new Set(models.filter(m => {const row = starRow(m);return row && front.some(p => p.row[1] === row[1] && p.row[2] === row[2]);}).map(m => m.id));
   const curves = models.map(m => `<polyline class="fc-m ${leaders.has(m.id) ? '' : 'dim'} ${m.id === selected ? 'focus' : ''}" points="${plotted(m).map(at).join(' ')}"/>`).join('');
   // A session reports the wire key ("high"), a row names its label ("High"): the model's labels map one to the other
   // (audit F 4); a study model without them already reports labels.

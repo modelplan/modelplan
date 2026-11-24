@@ -169,6 +169,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var appearance: CockpitAppearance
   private let shellSession: CockpitShellSession
   private let anchor: () -> CGRect?
+  private let statusScreen: () -> CGRect?
   /// Build 14c (G3-79): the screen point an open came from (the widget's ignition click). Only a detached open uses it;
   /// an attached cockpit always belongs to the menu bar icon's display (G3-128).
   private let openPoint: () -> CGPoint?
@@ -684,12 +685,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public init(
     bundle: VerifiedCockpitBundle, context: CockpitEngineContext, appearance: CockpitAppearance,
     shellSession: CockpitShellSession? = nil, anchor: @escaping () -> CGRect? = { nil },
-    openPoint: @escaping () -> CGPoint? = { nil }, systemSignals: CockpitSystemSignalSource? = nil
+    statusScreen: @escaping () -> CGRect? = { nil }, openPoint: @escaping () -> CGPoint? = { nil }, systemSignals: CockpitSystemSignalSource? = nil
   ) {
     self.systemSignals = systemSignals
     self.bundle = bundle
     self.shellSession = shellSession ?? CockpitShellSession()
     self.anchor = anchor
+    self.statusScreen = statusScreen
     self.openPoint = openPoint
     self.appearance = appearance
     self.bridge = CockpitBridgeState(context: context)
@@ -1686,8 +1688,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func updateAppearance(_ value: CockpitAppearance) {
     let resized = value.size != appearance.size
+    if value.hiddenMembers.contains(scope) { scope = "all" }
     appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, showAllModels: value.showAllModels, size: value.size, memberOrder: value.memberOrder)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, showAllModels: value.showAllModels, size: value.size, memberOrder: value.memberOrder, hiddenMembers: value.hiddenMembers)
     applyPresentationTraits()
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
@@ -1789,7 +1792,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // and kept from an earlier open) only places a detached open.
     let asked = shellSession.detached
       ? CockpitScreenSelection.openScreen(point: openPoint(), anchor: requested, screens: displays)
-      : CockpitScreenSelection.attachedScreen(anchor: requested, screens: displays)
+      : CockpitScreenSelection.attachedScreen(anchor: requested, statusScreen: requested == nil ? statusScreen() : nil, screens: displays)
     guard let screen = remembered ?? asked else { return nil }
     // D378: no visible status item (the app's anchor is nil when it is hidden, not visible, occluded or off every
     // screen): the menu bar's edge right of the notch. An icon on another display: that display's top right (G3-46).
@@ -1856,7 +1859,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     layout = fit
     (window as? CockpitPanel)?.bottomOverhang = fit.hullBottomInset
     appearance = .init(theme: CockpitDayPolicy.resolve(appearance.theme), locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, showAllModels: appearance.showAllModels, size: appearance.size, memberOrder: appearance.memberOrder)
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, showAllModels: appearance.showAllModels, size: appearance.size, memberOrder: appearance.memberOrder, hiddenMembers: appearance.hiddenMembers)
     // G3-108: the web view keeps the open canvas on the window's bottom edge and the page keeps the body at one place on
     // it, open or closed. So the page's own relayout, whenever its message lands, never moves the body; only the window
     // frame does, and only where the owner wants it to (attached: the bottom edge, top pinned under the icon;
@@ -2117,7 +2120,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }
     return .init(attached: !shellSession.detached, frame: frame, sharing: window.sharingType, collection: window.collectionBehavior)
   }
-  /// CKP-SHELL-33 (D186): only an attached open from the icon, with motion and a real icon to hang the rack from,
+  /// CKP-SHELL-33 (D186): only an attached rack entrance, with motion and an anchor to hang the rack from,
   /// extends the rack first.
   nonisolated static func opensRackFirst(_ entrance: CockpitEntrance, reduceMotion: Bool, detached: Bool, icon: CGRect?) -> Bool {
     entrance == .fromIcon && !reduceMotion && !detached && icon != nil

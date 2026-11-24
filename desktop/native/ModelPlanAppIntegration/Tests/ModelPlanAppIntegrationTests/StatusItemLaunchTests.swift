@@ -180,9 +180,9 @@ import XCTest
         }
     }
 
-    /// D88: only the icon's own click grows the cockpit out of the icon; Open Cockpit, the shortcut and the
-    /// widget ignition reach the same console as a plain entrance.
-    func testD88OnlyTheIconClickAsksForTheGrowEntrance() async throws {
+    /// The status icon and attached red ignition request the rack. The widget's Open Cockpit action
+    /// and the other plain open commands still use the regular entrance.
+    func testStatusIconAndRedIgnitionRequestTheRackWhilePlainOpensFade() async throws {
         let console = AttachableStatusConsole()
         let app = try await application(cockpitEntryEnabled: true, console: console)
         defer { app.removeStatusItem(); app.composition.dock.close() }
@@ -192,11 +192,16 @@ import XCTest
         XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
         XCTAssertEqual(console.entries, [true], "the icon click grows from the icon")
         console.pageClosed()
-        app.composition.dock.showConsole?()
-        XCTAssertEqual(console.entries, [true, false], "the widget ignition keeps its own entrance")
+        let ignite = try XCTUnwrap(app.composition.dock.pressIgnition)
+        ignite(CGPoint(x: 100, y: 100))
+        XCTAssertEqual(console.entries, [true, true], "the attached red ignition also opens from the rack")
+        console.pageClosed()
+        let openCockpit = try XCTUnwrap(app.composition.dock.showConsole)
+        openCockpit()
+        XCTAssertEqual(console.entries, [true, true, false], "the widget’s Open Cockpit action fades")
         console.pageClosed()
         app.showConsole()
-        XCTAssertEqual(console.entries, [true, false, false])
+        XCTAssertEqual(console.entries, [true, true, false, false], "the regular open command fades")
     }
 
     /// D88: the icon shows its native pressed highlight while the attached cockpit is open; a detached cockpit

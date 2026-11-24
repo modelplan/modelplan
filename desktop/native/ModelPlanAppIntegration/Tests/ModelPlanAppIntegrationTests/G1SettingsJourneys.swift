@@ -480,6 +480,9 @@ private struct G1WaitTimedOut: Error {}
         try await press("subscriptions.visible." + ids[0])
         let hidden = await app.foundationStore.snapshot().preferences.subscriptions.hiddenIDs
         XCTAssertTrue(hidden.contains(ids[0]), "switching a row off hides it from the widget list")
+        let cockpit = CockpitConsoleOwner(bundle: FileManager.default.temporaryDirectory, settingsStore: app.foundationStore)
+        cockpit.adoptAppearance(await app.foundationStore.snapshot(), applied: app.composition.latestSettings)
+        XCTAssertTrue(cockpit.appearance.hiddenMembers.contains(ids[0]), "the real Settings switch reaches cockpit appearance")
         if case .idle = consentBefore, case .idle = app.scopeConsentEntry.controller.phase {} else { XCTFail("visibility and order never ask for reading consent") }
     }
 
