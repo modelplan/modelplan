@@ -178,8 +178,8 @@ test('CKP-PLG-07 week view opens from the key inside the MFD screen only; the ke
  await shot(page,'E3-week-fit',page.locator('.ck-deck'));
  // The key again closes.
  await k.click();await expect(o).toHaveCount(0);await expect(k).toHaveAttribute('aria-expanded','false');
- // Close
- await k.click();await o.locator('.pl-screen-x').click();await expect(o).toHaveCount(0);
+ // The Overview tab of the switch (D387: no Close button)
+ await k.click();await page.getByRole('tab',{name:/Overview|总览/}).click();await expect(o).toHaveCount(0);
  // Esc (focus returns to the key)
  await k.click();await expect(o).toBeVisible();await page.keyboard.press('Escape');await expect(o).toHaveCount(0);await expect(k).toBeFocused();
  // An MFD page key closes it and shows that page.

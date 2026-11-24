@@ -383,7 +383,6 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .mfd-screen .pl-screen-h{display:flex;align-items:center;gap:6px;min-width:0;font:500 12px/16px var(--f-silk);color:var(--silk-hi)}
 .mfd-screen .pl-screen-h .pl-icon{display:inline-grid;flex:none;width:16px;height:16px}.mfd-screen .pl-screen-h .pl-icon svg{width:16px;height:16px}
 .mfd-screen .pl-screen-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mfd-screen .pl-screen-x{flex:none;padding:2px 8px;border:0;border-radius:4px;background:linear-gradient(180deg,var(--key-1),var(--key-2));box-shadow:var(--raised);font:500 10px/14px var(--f-silk);color:var(--silk-hi)}
 .mfd-screen .pl-screen-l{margin:0;display:grid;row-gap:6px}
 /* The screen is a <section>: take pointer events back from the prototype's `.ck:not(.open) section` rule (Close, drawn controls). */
 #cockpit .mfd-screen .pl-screen{pointer-events:auto}
@@ -526,3 +525,12 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .eng-keys[data-slots="6"] .ek .ek-identity{gap:2px;max-width:calc(100% - 4px)}
 .ck-eng .eng-keys[data-slots="6"] .ek .ek-identity .lamp{width:12px;height:12px}
 .ck-eng .eng-keys[data-slots="6"] .ek-name{font-size:10px}
+/* D387: the Overview key as the two-way "Overview | <screen>" switch, in the big-screen bottom switch's look (.ok-l b, .ok-sep). */
+.mfd-pk .pk[hidden],.mfd-pk .pk-seg[hidden]{display:none}
+.mfd-pk .pk-seg{grid-column:1;grid-row:1;position:relative;display:flex;align-items:center;justify-content:center;min-width:0;height:var(--row-h,18px);padding:0 4px;border-radius:4px;background:linear-gradient(180deg,var(--key-1),var(--key-2));box-shadow:var(--raised);overflow:hidden}
+.pk-seg .pk-tab{position:relative;flex:0 1 auto;min-width:0;margin:0;padding:0 2px;border:0;background:none;font:500 10px/1 var(--f-silk);color:var(--silk-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.pk-seg .pk-tab.on{color:var(--silk-hi)}.pk-seg .pk-tab.on::after{content:"";position:absolute;left:20%;right:20%;bottom:-3px;height:2px;border-radius:1px;background:var(--key-led-on);box-shadow:var(--key-led-glow)}
+.pk-seg .pk-tab:focus-visible{outline:1px solid var(--silk-hi);outline-offset:1px;border-radius:3px}
+.pk-seg .ok-sep{flex:none;width:1px;height:9px;margin:0 5px;background:var(--silk-dim);opacity:.55}
+/* The Calendar and Resources keys are pressed while their screen is open, and press like every key. */
+.ck-eng .eng-keys .pl-key:active{transform:translateY(1px);box-shadow:var(--pressed)}

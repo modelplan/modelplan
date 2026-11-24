@@ -179,11 +179,11 @@ extension CommunityCockpitEntryTests {
                 try await click(selector, .leftMouseDown, .leftMouseUp)
             }
             let keySelector = ".eng-keys .pl-key[data-plugin=\"placeholder\"]", removeOpen = "document.querySelector('[data-pm-remove=\"placeholder\"]')!==null"
-            // CKP-PLG-53: a real click on the key opens its big screen in the MFD; its Close button closes it.
+            // CKP-PLG-53: a real click on the key opens its big screen in the MFD; the Overview tab of the "Overview | <screen>" switch closes it (D387).
             try await click(keySelector, .leftMouseDown, .leftMouseUp)
             try await eventually("the key opens the plugin screen") { await self.js(page, self.screenScript) as? Bool == true }
-            try await click(".pl-screen .pl-screen-x", .leftMouseDown, .leftMouseUp)
-            try await eventually("Close closes the plugin screen") { await self.js(page, self.screenScript) as? Bool == false }
+            try await click("[data-mfd=\"seg:overview\"]", .leftMouseDown, .leftMouseUp)
+            try await eventually("the Overview tab closes the plugin screen") { await self.js(page, self.screenScript) as? Bool == false }
             // macrev2-1104-3: a secondary click on the key reaches the page (its Remove menu), not the app's menu.
             try await click(keySelector, .rightMouseDown, .rightMouseUp)
             try await eventually("a right-click on the key opens its menu") { await self.js(page, removeOpen) as? Bool == true }

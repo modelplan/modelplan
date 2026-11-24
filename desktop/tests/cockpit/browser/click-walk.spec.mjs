@@ -58,6 +58,7 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
   await snapshot();
  };
  const snapshot=async(checkPointer=false)=>{const state=await inspect(page,checkPointer),key=JSON.stringify(state),id=createHash('sha256').update(key).digest('hex').slice(0,16);if(!seen.has(key)){seen.add(key);await page.screenshot({path:`${output}${scenario.name}-${id}.png`});}return state;};
+ let remembered=null;// D401: the subscription (or 'all') that was lit before a plugin screen covered the panel
  const step=async(action)=>{
   path.push(action==='Escape'?'Escape':`${action.selector} [${action.index}] ${action.label}`);
   operations.push(action==='Escape'?{type:'escape'}:{type:'click',action});
@@ -82,7 +83,13 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
   if(action!=='Escape'&&action.selector==='.mfd-pk .pk'){expect(state.page).toContain('pg-'+action.key.split(':')[1]);expect(state.plugin).toBeNull();}
   if(action!=='Escape'&&action.selector==='.hud .hp'){expect(state.page).toContain('pg-tune');expect(state.hud).toBe(action.key);expect(state.plugin).toBeNull();}
   if(action!=='Escape'&&action.selector==='.eng-keys .pl-key')expect(state.plugin).toBe(prior.plugin===action.key?null:action.key);
-  if(action!=='Escape'&&action.selector==='.eng-keys .ek[data-sub]')expect(state.scope).toBe(prior.scope===action.key?'all':action.key);
+  // D401: a plugin deselects the subscription (only its key is lit); whatever closes the screen except a subscription key
+  // brings the same selection back. A subscription or All key ends the screen and selects what it names.
+  if(state.plugin){if(!prior.plugin)remembered=prior.scope;expect(state.scope,'a plugin leaves no subscription lit').toBe('all');}
+  else if(prior.plugin&&!(action!=='Escape'&&['.eng-keys .ek[data-sub]','.eng-krow [data-all]'].includes(action.selector)))expect(state.scope,'closing a plugin restores the selection').toBe(remembered);
+  if(!state.plugin)remembered=null;
+  if(action!=='Escape'&&action.selector==='.eng-krow [data-all]')expect(state.scope).toBe('all');
+  if(action!=='Escape'&&action.selector==='.eng-keys .ek[data-sub]')expect(state.scope).toBe(prior.plugin?action.key:prior.scope===action.key?'all':action.key);
   if(action!=='Escape'&&action.selector==='.pl-screen-x')expect(state.plugin).toBeNull();
   if(action!=='Escape'&&action.selector==='.pl-screen .wk-dh')await expect(page.locator(action.selector).nth(action.index)).toHaveAttribute('aria-pressed','true');
   if(action!=='Escape'&&action.selector==='[data-caution]'&&prior.plugin){expect(state.plugin).toBeNull();expect(state.page).toContain('pg-alerts');}
