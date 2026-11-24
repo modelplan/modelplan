@@ -8,12 +8,12 @@ import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
 const NOW=Date.parse('2026-11-18T12:00:00Z'),iso=minutes=>new Date(NOW+minutes*60000).toISOString();
-async function open(page,data,locale='en') {
+async function open(page,data,locale='en',range=null) {
  await page.addInitScript(()=>{window.sent=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.sent.push(JSON.parse(raw));}}}};});
  await page.clock.setFixedTime(new Date(NOW));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,range:range??'today'},redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
 }
@@ -142,6 +142,21 @@ test('CKP-ENG-01/03 D376 seven subscriptions: the pager sits under the 全部 ke
  expect(reserve2.y+reserve2.height).toBeLessThanOrEqual(lcd2.y+lcd2.height+0.5);
 });
 
+test('sampling 11-22: the lower corners of All select All without paging',async({page})=>{
+ const {data}=fixture(7);await open(page,data);
+ for(const side of ['left','right']){
+  await page.locator('.eng-keys .ek[data-sub]').first().click();
+  await expect(page.locator('.ek-all')).toHaveAttribute('aria-pressed','false');
+  const box=await page.locator('.ek-all').boundingBox();
+  await page.mouse.click(side==='left'?box.x+2:box.x+box.width-2,box.y+box.height-1);
+  await expect(page.locator('.ek-all')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('.eng-pgn')).toHaveText('1/2');
+ }
+ const arrow=await page.locator('.eng-pk[data-bpage="1"]').boundingBox();
+ await page.mouse.click(arrow.x-0.5,arrow.y+arrow.height/2);
+ await expect(page.locator('.eng-pgn')).toHaveText('2/2');
+});
+
 test('CKP-ENG-53 six English columns: ≈cost never drops; speed drops before tokens',async({page})=>{
  const {data,sync}=fixture(6);
  for(const s of data.details.subscriptions)s.today=[{...s.today[0],observedOutputTokens:212e6,generationTps:52}];
@@ -182,3 +197,45 @@ for(const [locale,text,button] of [['en','No quota read yet. Sign in to a coding
   await expect(page.locator('#cockpit')).toHaveAttribute('data-engine-empty','true');
   expect(await page.locator('.ck-deck').evaluate(e=>getComputedStyle(e).filter)).toContain('brightness');
  });
+
+// G3-156 / CKP-ENG-53: the range row follows the header range (label, ≈cost, tokens, speed) in all three ranges, and a
+// narrow column drops speed first, then tokens, never the ≈cost.
+const localKey=back=>{const d=new Date(NOW);d.setDate(d.getDate()-back);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+const sums=(out,tps)=>({inputTokens:null,outputTokens:out,totalTokens:out,cacheReadTokens:null,cacheWriteTokens:null,cacheHitRatio:null,generationTps:tps,observedRequests:5,eligibleRequests:5});
+const ranking={measure:'observed-output-tokens',attribution:'unattributed',recent7d:{entities:0,totalObservedOutputTokens:0,top:[]},recent30d:{entities:0,totalObservedOutputTokens:0,top:[]}};
+function withHistory(data){
+ const refs=data.projection.rows.map(r=>r.accounts[0].subscriptionRef);
+ data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:localKey(40),
+  subscriptions:refs.map((ref,i)=>({subscriptionRef:ref,sources:[{source:`synthetic-${i+1}`,bindingBasis:'source-wide-current-binding',recent7d:sums(212e6,52),recent30d:sums(900e6,48)}]})),
+  models:ranking,tools:ranking,daily:[],hourly:[],projects:{recent7d:[],recent30d:[]},cycles:[],
+  cost:{basis:'api-list-price',currency:'USD',pricesAsOf:'2026-11-18',models:{today:[],recent7d:[],recent30d:[]},hourly:[],
+   daily:refs.flatMap((ref,i)=>[{at:localKey(0),source:`synthetic-${i+1}`,estimatedUsd:3,pricedTokens:1000,unpricedTokens:0},{at:localKey(3),source:`synthetic-${i+1}`,estimatedUsd:61,pricedTokens:1000,unpricedTokens:0},{at:localKey(20),source:`synthetic-${i+1}`,estimatedUsd:100,pricedTokens:1000,unpricedTokens:0}])}};
+}
+for(const [range,label,tokens,cost] of [['today','Today','12k','≈$3'],['7d','7d','212M','≈$64'],['30d','30d','900M','≈$164']])
+ test(`G3-156 CKP-ENG-53 the range row follows the ${range} key: label, ≈cost, tokens and speed`,async({page})=>{
+  const {data,sync}=fixture(3);withHistory(data);sync();await open(page,data,'en',range);
+  await expect(page.locator('.lb-t')).toHaveText(label);
+  const row=page.locator('.eng-cols > .ec[data-col]').first().locator('.qrow-t');
+  await expect(row.locator('.qq')).toHaveCount(0);
+  await expect(row.locator('.qcost')).toHaveText(cost);
+  await expect(row.locator('.qtokens')).toHaveText(tokens);
+  await expect(row.locator('.qaverage')).toContainText(range==='today'?'42':range==='7d'?'52':'48');
+ });
+for(const range of ['today','7d','30d'])
+ test(`G3-156 CKP-ENG-53 six columns, ${range}: the row never overflows and drops speed before tokens, never the cost`,async({page})=>{
+  const {data,sync}=fixture(6);withHistory(data);sync();await open(page,data,'en',range);
+  const row=page.locator('.eng-cols > .ec[data-col]').first().locator('.qrow-t');
+  const shown=async sel=>row.locator(sel).evaluate(e=>getComputedStyle(e).display!=='none').catch(()=>false);
+  expect(await row.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+  expect(await shown('.qcost'),'cost stays').toBe(true);
+  if(!(await shown('.qtokens')))expect(await shown('.qaverage'),'tokens only drop after speed').toBe(false);
+ });
+test('G3-156 the range row says no usage in the range, not "quota only", when history is read and nothing is recorded',async({page})=>{
+ for(const [range,text] of [['today','No usage today'],['7d','No usage in 7d'],['30d','No usage in 30d']]){
+  const {data,sync}=fixture(3);withHistory(data);
+  for(const s of data.history.subscriptions)for(const x of s.sources){x.recent7d={...x.recent7d,observedRequests:0,eligibleRequests:0,outputTokens:0,totalTokens:0};x.recent30d={...x.recent30d,observedRequests:0,eligibleRequests:0,outputTokens:0,totalTokens:0};}
+  data.history.cost.daily=[];data.details.subscriptions.forEach(s=>{s.today=[];});
+  sync();await open(page,data,'en',range);
+  await expect(page.locator('.eng-cols > .ec[data-col]').first().locator('.qrow-t .qq')).toHaveText(text);
+ }
+});

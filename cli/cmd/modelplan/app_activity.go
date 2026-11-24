@@ -17,30 +17,36 @@ import (
 // two seconds, so it opens session logs and ModelPlan's own cache only, never a credential file.
 func appActivity(cache string) func(context.Context, consent.Admission, time.Time) []rows.ActivityInput {
 	observer := speed.NewActivityObserver()
+	var logsIndex speed.ActivityLogIndex
 	return func(ctx context.Context, a consent.Admission, now time.Time) []rows.ActivityInput {
 		if speed.Off() {
+			logsIndex = speed.ActivityLogIndex{}
 			observer.Observe(ctx, nil, nil, now)
 			return nil
 		}
 		home, _ := os.UserHomeDir()
+		state := a.State()
+		allowed := func(scope, tool string) bool {
+			return state.AllowsScope(scope, a.Mode()) && !a.CleanupPending(scope) && !a.CleanupPending(tool)
+		}
 		claude, codex, zcode, zcodeRef := "", "", "", ""
-		if a.State().AllowsScope(consent.ScopeClaudeLocalHistory, a.Mode()) {
+		if allowed(consent.ScopeClaudeLocalHistory, "claude") {
 			claude = os.Getenv("CLAUDE_CONFIG_DIR")
 			if claude == "" {
 				claude = filepath.Join(home, ".claude")
 			}
 		}
-		if a.State().AllowsScope(consent.ScopeCodexLocalHistory, a.Mode()) {
+		if allowed(consent.ScopeCodexLocalHistory, "codex") {
 			codex = quota.CodexHome()
 		}
 		// ZCode's ledger has no account. Its one configured key does, and that reading also proves
 		// ZCode points at Z.ai, so nothing needs to open ZCode's own settings here.
-		if a.State().AllowsScope(consent.ScopeZaiLocalHistory, a.Mode()) {
-			if zcodeRef = quota.ZCodeSubscription(cache); zcodeRef != "" {
+		if allowed(consent.ScopeZaiLocalHistory, "zai") {
+			if zcodeRef = quota.ZCodeSubscription(cache, a, now); zcodeRef != "" {
 				zcode = filepath.Join(home, ".zcode")
 			}
 		}
-		logs := speed.ActivityLogs(claude, codex, zcode, now)
+		logs := logsIndex.Logs(claude, codex, zcode, a.Fence(), now, time.Now())
 		bindings := []speed.ActivityBinding{}
 		if len(logs) > 0 {
 			bindings = speed.ExistingActivityBindings(cache, a)
@@ -48,7 +54,7 @@ func appActivity(cache string) func(context.Context, consent.Admission, time.Tim
 		values := observer.Observe(ctx, logs, bindings, now)
 		out := []rows.ActivityInput{}
 		for _, v := range values {
-			if v.Source == "zcode" && !v.RecordAt.Before(a.State().Scopes[consent.ScopeZaiLocalHistory].At) {
+			if v.Source == "zcode" && !v.RecordAt.Before(state.Scopes[consent.ScopeZaiLocalHistory].At) {
 				v.SubscriptionRef = zcodeRef
 			}
 			if v.SubscriptionRef == "" {

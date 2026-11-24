@@ -290,7 +290,7 @@ func TestD369ConsentOnReadsCodingPlanQuota(t *testing.T) {
 	if a == nil || len(a.Windows) == 0 || a.Windows[0].UsedPercent == nil || *a.Windows[0].UsedPercent != 40 {
 		t.Fatalf("no quota row: account=%+v source=%+v", a, s)
 	}
-	if a.Subscription != nil || ZCodeSubscription(cache) != "" {
+	if a.Subscription != nil || ZCodeSubscription(cache, consent.Capture(), now) != "" {
 		t.Fatalf("a reference was derived from the sign-in: %+v", a.Subscription)
 	}
 	if after := zcodeSnapshot(t, dir); len(after) != len(before) {

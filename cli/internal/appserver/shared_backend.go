@@ -38,6 +38,7 @@ type SharedConfig struct {
 	// were absent when this Mac's engine first looked (D238). Optional.
 	LaterInstalled func(detect.Report) map[string]bool
 	Paths          func(consent.Admission) quota.Paths
+	WatchPaths     func(consent.Admission) quota.Paths // metadata-only watcher paths, if supplied
 	Cleanup        func(string, bool) error
 	// Granted runs after each committed, not replayed, consent change (optional); the history
 	// import retry hangs off it (G3-112).
@@ -63,6 +64,8 @@ type SharedBackend struct {
 	reportedAt    time.Time
 	config        SharedConfig
 	resetMemo     *resetevents.Memo
+	perfMemo      speed.PerfReadMemo
+	todayDeadline atomic.Pointer[time.Time]
 	changes       chan struct{}
 	// changeSeq counts every change notification; a view built under one count is not reused
 	// after the next (WP-17).
@@ -389,14 +392,13 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		}
 		diagnostics = append(diagnostics, diag)
 	}
+	var todayDeadline time.Time
 	if !changed {
 		b.populateRefreshDeadlines(&projection, p, admission, scopes, in.Now)
-		if !speed.Off() {
-			ledger, ok := speed.LoadPerf(p.Cache)
-			if ok && !ledger.Since.IsZero() {
-				perf := (speed.PerfView{Ledger: ledger, OK: true, Recording: true, Now: in.Now}).Admitted(admission)
-				attachAccountToday(&projection, report.Accounts, perf)
-			}
+		perf := b.perfMemo.Read(p.Cache, admission, in.Now)
+		if perf.OK && !perf.Ledger.Since.IsZero() {
+			attachAccountToday(&projection, report.Accounts, perf)
+			todayDeadline = nextAccountTodayDeadline(report.Accounts, perf, in.Now)
 		}
 	}
 	health := wire.Health{State: wire.HealthReady, Code: "ok"}
@@ -415,7 +417,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	// Evaluation time is not a displayed fact; keeping it would make every
 	// otherwise identical backend view look changed to rows subscribers.
 	report.EvaluatedAt = time.Time{}
-	return View{QuotaReport: report, PublicModels: publicModels, PublicSpeedTiers: publicSpeedTiers, Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
+	return View{QuotaReport: report, PublicModels: publicModels, PublicSpeedTiers: publicSpeedTiers, Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health, accountTodayDeadline: todayDeadline}
 }
 
 func (b *SharedBackend) paths(admission consent.Admission) quota.Paths {
@@ -503,9 +505,9 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 	return result, nil
 }
 
-// zcodeKeepsDetectedSource: the GLM key grant leaves ZCode's provider file as the source. Call it for the zai tool only.
-// The checks short-circuit in order: an earlier explicit choice, then the environment key, then the GLM manual-key
-// store, then ZCode's file, so nothing past the first deciding check is read.
+// zcodeKeepsDetectedSource: the GLM key grant leaves a detected ZCode provider or login source
+// neutral when no environment key was chosen. Call it for the zai tool only. The presence
+// checks use file metadata; no ZCode credential is opened here.
 func (b *SharedBackend) zcodeKeepsDetectedSource(keyEnv string) bool {
 	prior := consent.Capture().State().Tools["zai"]
 	if prior.KeyEnv != "" || len(prior.Profiles) > 0 || (prior.Backend != "" && prior.Backend != "native") {
@@ -519,7 +521,7 @@ func (b *SharedBackend) zcodeKeepsDetectedSource(keyEnv string) bool {
 		return false
 	}
 	fi, err := os.Lstat(quota.ZCodeProviderConfig(home))
-	return err == nil && fi.Mode().IsRegular()
+	return err == nil && fi.Mode().IsRegular() || detect.ZCodeLoginPresent(home)
 }
 
 func grantError(err error) error {
@@ -548,6 +550,13 @@ type localFileStamp struct {
 	fileStamp
 }
 
+func (b *SharedBackend) watchPaths(admission consent.Admission) quota.Paths {
+	if b.config.WatchPaths != nil {
+		return b.config.WatchPaths(admission)
+	}
+	return b.paths(admission)
+}
+
 // codexLocalStamps observes metadata only for the same permitted local source
 // that buildView reads. It never opens rollout contents or exposes file paths.
 func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFileStamp {
@@ -555,16 +564,16 @@ func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFil
 	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") || (decided && (!tool.Allowed || tool.ConsentTextVersion != consent.TextVersion)) {
 		return nil
 	}
-	paths := b.paths(admission)
+	paths := b.watchPaths(admission)
 	if paths.CodexHome == "" {
 		return nil
 	}
-	files := quota.CodexRollouts(paths.CodexHome, paths.CodexThread, 8)
+	files, _ := paths.RecentCodexRollouts()
 	sort.Strings(files)
 	stamps := make([]localFileStamp, 0, len(files))
 	for _, file := range files {
-		info, err := os.Stat(file)
-		if err == nil {
+		info, err := os.Lstat(file)
+		if err == nil && info.Mode().IsRegular() {
 			stamps = append(stamps, localFileStamp{file, fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}})
 		}
 	}
@@ -609,7 +618,7 @@ func (b *SharedBackend) captureViewToken() viewToken {
 	t := viewToken{seq: b.changeSeq.Load(), at: time.Now()}
 	admission := consent.Capture()
 	t.stamp = stampOf(admission.Fence())
-	t.inputs = watchedStamps(b.paths(admission), b.codexLocalStamps(admission))
+	t.inputs = watchedStamps(b.watchPaths(admission), b.codexLocalStamps(admission))
 	t.detection = b.config.Detect()
 	return t
 }
@@ -642,6 +651,16 @@ func (b *SharedBackend) laterPending(detection detect.Report) bool {
 	return len(consent.AutoLocalLogScopes(state, later)) > 0 || len(consent.AutoLaterClosedScopes(state, consent.LaterLocalLogScopes(state, later))) > 0
 }
 
+// armAccountTodayDeadline is called only for the server's accepted subscriber
+// view. Incidental Get calls must not consume or postpone a withdrawal.
+func (b *SharedBackend) armAccountTodayDeadline(deadline time.Time) {
+	if deadline.IsZero() {
+		b.todayDeadline.Store(nil)
+		return
+	}
+	b.todayDeadline.Store(&deadline)
+}
+
 func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 	b.once.Do(func() {
 		if b.config.Activity != nil {
@@ -670,14 +689,13 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 			var last []fileStamp
 			var codexStamps []localFileStamp
 			var nextCodexCheck time.Time
-			var todayDeadline time.Time
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
 					admission := consent.Capture()
-					paths := b.paths(admission)
+					paths := b.watchPaths(admission)
 					now := b.now()
 					tool, decided := admission.State().Tools["codex"]
 					localAllowed := admission.Allows("codex", consent.Local) && !admission.CleanupPending("codex") && (!decided || tool.Allowed && tool.ConsentTextVersion == consent.TextVersion)
@@ -691,9 +709,11 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 						nextCodexCheck = now.Add(time.Second)
 					}
 					current := watchedStamps(paths, codexStamps)
-					if !reflect.DeepEqual(last, current) || (!todayDeadline.IsZero() && !now.Before(todayDeadline)) {
+					deadline := b.todayDeadline.Load()
+					due := deadline != nil && !now.Before(*deadline) &&
+						b.todayDeadline.CompareAndSwap(deadline, nil)
+					if due || !reflect.DeepEqual(last, current) {
 						last = current
-						todayDeadline = nextAccountTodayDeadline(paths, admission, now)
 						b.notify()
 					}
 				}

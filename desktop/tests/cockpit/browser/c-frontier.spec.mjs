@@ -20,7 +20,9 @@ async function open(page,published) {
 test('D-B the frontier plots published points, stars each model and dims the dominated one',async({page})=>{
  await open(page,models);
  await expect(page.locator('.fc-star')).toHaveCount(2);await expect(page.locator('.fc-star.dim')).toHaveCount(1);
- expect((await page.locator('.fc-front').getAttribute('points')).trim().split(/\s+/).length).toBe(2);
+ // D386: only the leader's recommended effort is on the shared frontier;
+ // its lower effort remains inspectable but no longer extends the line.
+ expect((await page.locator('.fc-front').getAttribute('points')).trim().split(/\s+/).length).toBe(1);
  await expect(page.locator('.fc-l',{hasText:'Synthetic leader'})).toHaveCount(1);
  await expect(page.locator('.fc-inspect')).toHaveCount(3);
 });
@@ -31,4 +33,25 @@ test('D-B an effort without a published cost is not plotted',async({page})=>{
 test('D-B an older engine shows no chart and says so',async({page})=>{
  await open(page,null);
  await expect(page.locator('.fc')).toHaveCount(0);await expect(page.locator('.mfd-page .mp-empty')).toHaveText('Data unavailable');
+});
+
+test('D386 HUD and enlarged chart use the same recommended-effort frontier',async({page})=>{
+ const fleet=[model('A',[effort('high',60,.4,true)]),model('B',[effort('low',65,.3),effort('high',70,.7,true)]),model('C',[effort('low',40,.1),effort('high',45,.6,true)])];
+ await open(page,fleet);
+ const hud=await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel));
+ expect(hud).toEqual(['B','A']);
+ await expect(page.locator('.fc-l',{hasText:'Synthetic A'})).not.toHaveClass(/\bdim\b/);
+ await expect(page.locator('.fc-l',{hasText:'Synthetic B'})).not.toHaveClass(/\bdim\b/);
+ await expect(page.locator('.fc-l',{hasText:'Synthetic C'})).toHaveClass(/\bdim\b/);
+ await expect(page.locator('.fc-inspect')).toHaveCount(5);
+});
+
+test('D386 coincident recommended frontier models are both undimmed',async({page})=>{
+ const fleet=[model('tie-A',[effort('high',60,.4,true)]),model('tie-B',[effort('high',60,.4,true)]),model('beaten',[effort('high',45,.6,true)])];
+ await open(page,fleet);
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['tie-A','tie-B']);
+ await expect(page.locator('.fc-l',{hasText:'Synthetic tie-A'})).not.toHaveClass(/\bdim\b/);
+ await expect(page.locator('.fc-l',{hasText:'Synthetic tie-B'})).not.toHaveClass(/\bdim\b/);
+ await expect(page.locator('.fc-l',{hasText:'Synthetic beaten'})).toHaveClass(/\bdim\b/);
+ await expect(page.locator('.fc-star.dim')).toHaveCount(1);
 });

@@ -149,7 +149,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// not a current member is ignored once a reply is known; before the first reply it is held, and `showLastReply`
   /// resets it to All if the reply has no such member. A cockpit that is already open only switches.
   public func selectScope(_ key: String) {
-    guard CockpitMemberScopes.isValidKey(key), !CockpitMemberScopes.isIndexedFallback(key),
+    guard CockpitMemberScopes.isValidKey(key), !CockpitMemberScopes.isIndexedFallback(key), !hiddenMembers.contains(key),
       scopeMembers.isEmpty || scopeMembers.contains(key) else { return }
     selectedScope = key; page?.updateScope(key)
     scopeMemory?.save(Self.persistable(key) ? key : nil)
@@ -197,6 +197,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     key != "all" && CockpitMemberScopes.isValidKey(key) && !CockpitMemberScopes.isIndexedFallback(key)
   }
   private var scopeMembers = Set<String>()
+  private var hiddenMembers = Set<String>()
   private var request: Task<Void, Never>?
   private var requestToken: UUID?
   private var requestTicket: CockpitQueryTicket?
@@ -573,7 +574,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       pinnedModels=ids; pinMemory?.save(ids); return
     }
     if case .scopeSelect(let key)=intent {
-      guard delivery != nil,scopeMembers.contains(key) else { return }
+      guard delivery != nil,scopeMembers.contains(key), !hiddenMembers.contains(key) else { return }
       selectedScope=key; page?.updateScope(key)
       scopeMemory?.save(Self.persistable(key) ? key : nil); return
     }
@@ -583,7 +584,13 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     }
     onIntent?(intent)
   }
-  public func updateAppearance(_ appearance: CockpitAppearance) { page?.updateAppearance(appearance) }
+  public func updateAppearance(_ appearance: CockpitAppearance) {
+    hiddenMembers = Set(appearance.hiddenMembers)
+    if hiddenMembers.contains(selectedScope) {
+      selectedScope = "all"; scopeMemory?.save(nil); page?.updateScope("all")
+    }
+    page?.updateAppearance(appearance)
+  }
   /// WP-22 (macrevb-1062-3): the enlarged field's selection reaches the cockpit page (HUD, faders, porthole).
   public func selectModel(_ id: String?) { page?.selectModel(id) }
   /// Owner 11-19 (#1062): the enlarged field closed; the page guards its porthole against the close's bounce.

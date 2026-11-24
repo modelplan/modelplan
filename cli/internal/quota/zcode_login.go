@@ -53,14 +53,22 @@ func ZCodeLoginDir(home string) string { return filepath.Join(home, ".zcode", "v
 // ZCodeLoginPresent: ZCode's sign-in layout is there (detect.ZCodeLoginPresent; metadata only).
 func ZCodeLoginPresent(home string) bool { return detect.ZCodeLoginPresent(home) }
 
-// zcodeLoginStamp: size and modification time of the credential store, so a new sign-in releases
-// a held "sign in again" state. File metadata only; the value is never read here.
-func zcodeLoginStamp(home string) string {
-	fi, err := os.Lstat(filepath.Join(ZCodeLoginDir(home), "credentials.json"))
-	if err != nil {
-		return ""
+// zcodeLoginStamp follows the files that determine the selected login. It uses
+// metadata only, so checking it during discovery or projection opens no credentials.
+func zcodeLoginStamp(dir string) string {
+	var stamp strings.Builder
+	for _, name := range []string{"setting.json", "config.json", "credentials.json", "telemetry-state.json"} {
+		fi, err := os.Lstat(filepath.Join(dir, name))
+		if err == nil {
+			stamp.WriteString(strconv.FormatInt(fi.Size(), 10))
+			stamp.WriteByte('.')
+			stamp.WriteString(strconv.FormatInt(fi.ModTime().UnixNano(), 10))
+			stamp.WriteByte('.')
+			stamp.WriteString(strconv.FormatUint(uint64(fi.Mode()), 10))
+		}
+		stamp.WriteByte(':')
 	}
-	return strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
+	return stamp.String()
 }
 
 // zcodeLogin is one resolved read. credential is in memory only.
@@ -379,6 +387,10 @@ func fetchZCodeLogin(ctx context.Context, c *http.Client, source ZaiConfigSource
 		e.ErrorCode, e.Error = code, code
 		return e
 	}
+	if _, blocked := zaiConfigAdmission(ctx); blocked != "" {
+		e.ErrorCode, e.Error = "consent_required", "consent_required"
+		return e
+	}
 	if source.Region != "" && source.Region != login.region {
 		e.ErrorCode, e.Error = "region_refused", "region_refused"
 		return e
@@ -619,25 +631,43 @@ func parseZCodeBilling(r zcodeBillingResponse, now time.Time) codexbarEntry {
 }
 
 // zcodeProviderFileKeyless: ZCode's provider file selects no key (no selection, an account
-// selection, or a selected rule without a key), so the key route can never read. The file is read
-// only when its size or time changed (paths are built every watcher pass); the key, if any, is
-// dropped at once and only the verdict is kept.
-func zcodeProviderFileKeyless(path string) bool {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.Mode().IsRegular() {
+// selection, or a selected rule without a key), so the key route can never read.
+// The admitted scan reads each file revision once and keeps only the verdict.
+var zcodeProviderRead = zaiConfigFile
+
+// Discovery may use a previous admitted classification, but never opens the
+// provider file itself. A changed file requires another admitted scan.
+func zcodeProviderCachedKeyless(path string) bool {
+	stamp := zcodeProviderRevision(path)
+	if stamp == "" {
 		return false
 	}
-	stamp := strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
+	zcodeKeylessMu.Lock()
+	defer zcodeKeylessMu.Unlock()
+	m, ok := zcodeKeylessMemo[path]
+	return ok && m.stamp == stamp && m.keyless
+}
+
+func zcodeProviderFileKeyless(path string) bool {
+	stamp := zcodeProviderRevision(path)
+	if stamp == "" {
+		return false
+	}
 	zcodeKeylessMu.Lock()
 	defer zcodeKeylessMu.Unlock()
 	if m, ok := zcodeKeylessMemo[path]; ok && m.stamp == stamp {
 		return m.keyless
 	}
-	keyless := false
-	if b, err := zaiConfigFile(path); err == nil {
-		_, key, state, code := zcodeProviderKey(b)
-		keyless = (state != "" && (code == "unsupported_login" || code == "no_key")) || (state == "" && strings.TrimSpace(key) == "")
+	b, err := zcodeProviderRead(path)
+	if err != nil {
+		return false // An I/O failure is not a classification; retry on the next pass.
 	}
+	defer clear(b)
+	if zcodeProviderRevision(path) != stamp {
+		return false
+	}
+	_, key, state, code := zcodeProviderKey(b)
+	keyless := (state != "" && (code == "unsupported_login" || code == "no_key")) || (state == "" && strings.TrimSpace(key) == "")
 	zcodeKeylessMemo[path] = zcodeKeylessEntry{stamp, keyless}
 	return keyless
 }
