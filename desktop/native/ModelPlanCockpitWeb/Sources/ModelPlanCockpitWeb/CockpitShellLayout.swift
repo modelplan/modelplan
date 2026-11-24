@@ -214,10 +214,13 @@ public struct CockpitShellLayout: Equatable, Sendable {
         .init(closed: shutterClosed, attached: attached, forcedClosed: forcedClosed,
               tier: profile == .full ? .tall : .compact, scope: scope, range: range, refreshing: refreshing)
     }
+    /// G3-159: the transparent base reserve (bells and flames) under the hull, in window points. A detached cockpit is
+    /// kept on screen by its hull, so this strip may hang below the visible frame's bottom edge. AppKit places the
+    /// panel on whole points. Round the allowed overhang down so the panel cannot round past the hull's bottom edge.
+    public var hullBottomInset: CGFloat { (Self.baseReserve * scale).rounded(.down) }
     public func clamping(origin: CGPoint, usable: CGRect) -> CGRect {
-        CGRect(x: max(usable.minX, min(origin.x, usable.maxX - frame.width)),
-               y: max(usable.minY, min(origin.y, usable.maxY - frame.height)),
-               width: frame.width, height: frame.height)
+        CockpitScreenSelection.clamp(CGRect(origin: origin, size: frame.size), into: usable,
+                                     bottomOverhang: hullBottomInset)
     }
 }
 

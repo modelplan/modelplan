@@ -66,28 +66,32 @@ public enum CockpitScreenSelection {
     return screens.first { $0.frame.origin == .zero } ?? screens.first
   }
   /// `rect` moved just enough to lie inside `usable` (its left and bottom edges win when it is larger).
-  public static func clamp(_ rect: CGRect, into usable: CGRect) -> CGRect {
-    CGRect(x: max(usable.minX, min(rect.minX, usable.maxX - rect.width)),
-           y: max(usable.minY, min(rect.minY, usable.maxY - rect.height)),
+  /// `bottomOverhang` lets the bottom edge go that far below `usable` (the top edge rule is unchanged).
+  public static func clamp(_ rect: CGRect, into usable: CGRect, bottomOverhang: CGFloat = 0) -> CGRect {
+    let floor = usable.minY - max(0, bottomOverhang)
+    return CGRect(x: max(usable.minX, min(rect.minX, usable.maxX - rect.width)),
+           y: max(floor, min(rect.minY, usable.maxY - rect.height)),
            width: rect.width, height: rect.height)
   }
   /// A remembered window origin replayed: kept (clamped into its display's visible frame) only while a window of
   /// `size` there still overlaps some display's visible frame; nil when that display is gone or has moved away.
-  public static func replayFrame(origin: CGPoint, size: CGSize, screens: [CockpitScreen]) -> CGRect? {
+  public static func replayFrame(origin: CGPoint, size: CGSize, screens: [CockpitScreen], bottomOverhang: CGFloat = 0) -> CGRect? {
     guard origin.x.isFinite, origin.y.isFinite, size.width > 0, size.height > 0 else { return nil }
     let rect = CGRect(origin: origin, size: size)
     let visible = screens.filter { !$0.visibleFrame.intersection(rect).isEmpty }
     guard let screen = overlapping(rect, in: visible) ?? visible.first else { return nil }
-    return clamp(rect, into: screen.visibleFrame)
+    return clamp(rect, into: screen.visibleFrame, bottomOverhang: bottomOverhang)
   }
   /// A drag of a window that started at `start`: it moves with the pointer and stays inside the visible frame of the
   /// display under the pointer, so it can be taken to any display. `inset` keeps a margin from that frame's edges.
+  /// `bottomOverhang` (G3-159): the transparent strip under the visible body (the base bells' flame reserve) may hang
+  /// below the display's bottom edge, so the body itself, not the window, reaches it.
   public static func dragFrame(start: CGRect, from: CGPoint, to pointer: CGPoint, screens: [CockpitScreen],
-                               fallback: CGRect?, inset: CGFloat = 0) -> CGRect {
+                               fallback: CGRect?, inset: CGFloat = 0, bottomOverhang: CGFloat = 0) -> CGRect {
     let moved = start.offsetBy(dx: pointer.x - from.x, dy: pointer.y - from.y)
     guard let usable = containing(pointer, in: screens)?.visibleFrame ?? overlapping(moved, in: screens)?.visibleFrame ?? fallback
     else { return moved }
     let inner = usable.insetBy(dx: inset, dy: inset)
-    return clamp(moved, into: inner.isEmpty ? usable : inner)
+    return clamp(moved, into: inner.isEmpty ? usable : inner, bottomOverhang: bottomOverhang)
   }
 }
