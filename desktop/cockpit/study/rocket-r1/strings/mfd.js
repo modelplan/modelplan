@@ -52,7 +52,6 @@ register('mfd', {
   heatAria: ['aria', '近 {d} 天按日和小时的输出 token', 'Output tokens by day and hour, last {d} days'],
   heatAriaToday: ['aria', '今天按小时的输出 token', 'Output tokens by hour, today'],
   heatNoHours: ['text', '这段时间还没有按小时的记录', 'No hourly record for this range yet'],
-  heatNote: ['lcd', '小时明细只保留今天和昨天', 'Hourly detail covers today and yesterday'],
   oBarsHint: ['text', '柱：每天（今天按小时）的 ≈费用', 'Bars: estimated cost per day (per hour for Today)'],
   oGridHint: ['text', '点阵：按日和小时的输出 token，颜色越深越多', 'Grid: output tokens by day and hour, darker means more'],
   since: ['line', '从 {d} 开始记录', 'Recorded since {d}'],

@@ -116,3 +116,20 @@ func TestCockpitCyclesPickTheMainLimitThenTheCurrentPlan(t *testing.T) {
 		t.Fatalf("unbound %+v denied %+v", unbound, denied)
 	}
 }
+
+// D402. Invariant: the wire carries the hourly buckets of the whole 30-day window, not only today and yesterday.
+func TestCockpitBucketsCarryThirtyDaysOfHours(t *testing.T) {
+	old := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = old })
+	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+	var rows []speed.Hourly
+	for at := now.AddDate(0, 0, -29).Truncate(24 * time.Hour); !at.After(now); at = at.Add(time.Hour) {
+		rows = append(rows, speed.Hourly{Hour: at.Format(time.RFC3339), Source: "codex", Model: "a", ObservedOutputTokens: 1})
+	}
+	perf := speed.PerfView{OK: true, LongOK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Since: now.AddDate(0, 0, -300), Hourly: rows}}
+	_, _, hours := cockpitBuckets(perf, nil, map[string]bool{"codex": true}, now)
+	if len(hours) != len(rows) || hours[0].At != "2026-10-26T00:00:00Z" {
+		t.Fatalf("hours = %d (first %v), want %d", len(hours), hours[0], len(rows))
+	}
+}

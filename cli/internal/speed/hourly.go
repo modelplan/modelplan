@@ -44,16 +44,29 @@ func (l *PerfLedger) addHourly(source string, q request, _ time.Time) {
 // costHours is the rolling window of the hourly ≈cost (WP-06): an hour starting after now−48h.
 const costHours = 48 * time.Hour
 
+// HourlyKeepDays is how many local days (today included) of hourly rows the ledger retains (D402). The rows
+// are aggregate counts per hour, source and model, added as each request is counted; nothing is rescanned for them.
+const HourlyKeepDays = 30
+
+const (
+	hourlyPerKey = HourlyKeepDays*24 + 48 // one source and model: every hour of the window plus a repeated DST hour
+	hourlyTotal  = 8192
+)
+
 // hourlyRows is the hourly view: today and yesterday by local date.
 func hourlyRows(rows []Hourly, now time.Time) []Hourly {
-	from, to := windowFrom(now, 2), day(now)
+	return hourlyDays(rows, now, 2)
+}
+
+func hourlyDays(rows []Hourly, now time.Time, days int) []Hourly {
+	from, to := windowFrom(now, days), day(now)
 	return hourlyWhere(rows, now, func(t time.Time) bool { return day(t) >= from && day(t) <= to })
 }
 
-// hourlyKept is what the ledger retains: the hourly view plus every hour still inside the rolling
-// 48 hours of the ≈cost, which after local midnight reaches into the day before yesterday.
+// hourlyKept is what the ledger retains: the last HourlyKeepDays local days, and every hour still inside
+// the rolling 48 hours of the ≈cost.
 func hourlyKept(rows []Hourly, now time.Time) []Hourly {
-	from, to := windowFrom(now, 2), day(now)
+	from, to := windowFrom(now, HourlyKeepDays), day(now)
 	return hourlyWhere(rows, now, func(t time.Time) bool {
 		return (day(t) >= from && day(t) <= to) || t.After(now.Add(-costHours))
 	})
@@ -91,14 +104,14 @@ func hourlyWhere(rows []Hourly, now time.Time, keep func(time.Time) bool) []Hour
 	kept := out[:0]
 	for _, r := range out {
 		k := [2]string{r.Source, r.Model}
-		if counts[k] >= 48 {
+		if counts[k] >= hourlyPerKey {
 			continue
 		}
 		counts[k]++
 		kept = append(kept, r)
 	}
-	if len(kept) > 2048 {
-		kept = kept[:2048]
+	if len(kept) > hourlyTotal {
+		kept = kept[:hourlyTotal]
 	}
 	for len(kept) > 0 {
 		b, _ := json.Marshal(kept)
@@ -124,6 +137,14 @@ func (v PerfView) Hourly() []Hourly {
 		return []Hourly{}
 	}
 	return hourlyRows(v.Ledger.Hourly, v.Now)
+}
+
+// HourlyDays is the hourly view over the last n local days (today included), n between 1 and HourlyKeepDays.
+func (v PerfView) HourlyDays(n int) []Hourly {
+	if !v.OK {
+		return []Hourly{}
+	}
+	return hourlyDays(v.Ledger.Hourly, v.Now, min(max(n, 1), HourlyKeepDays))
 }
 
 // TodayTotal remains source-attributed, not proof of historic subscription ownership.

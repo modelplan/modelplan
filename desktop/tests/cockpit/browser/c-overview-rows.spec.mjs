@@ -32,8 +32,8 @@ function history(dailyFrom=localDay(39)){
 }
 const grid=page=>page.locator('[data-opt="chart"] b',{hasText:/^Grid$/}).click();
 
-// D390 (CKP-MFD-62): the Grid key draws the current range as days (columns) by four-hour bands (rows). The wire keeps
-// hourly rows for today and yesterday only, so older days have no cell.
+// hourly rows (30 days on the wire, D402); a day without rows has no cell.
+// hourly rows (the wire keeps 30 days, D402); a day without rows has no cell.
 const hours=[[0,9,500],[0,10,300],[1,22,1000],[1,23,400],[1,14,0]];
 function hourly(){
  const data=history();

@@ -1311,7 +1311,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "items": {
           "$ref": "#/$defs/CockpitSourceBucket"
         },
-        "maxItems": 192,
+        "maxItems": 2884,
         "type": "array"
       },
       "models": {

@@ -98,7 +98,7 @@ func TestHourlyMidnightDSTAndCap(t *testing.T) {
 		l.addHourly("codex", request{cfg: cfg, end: at.Add(time.Minute), out: 1}, at)
 	}
 	l.pruneHourly(now)
-	if len(l.Hourly) != 48 {
+	if len(l.Hourly) != 49 { // both local days in full: the repeated DST hour makes 25 + 24
 		t.Fatalf("%d", len(l.Hourly))
 	}
 	seen := map[string]bool{}
