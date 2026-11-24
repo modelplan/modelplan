@@ -517,14 +517,22 @@ func forgetZaiAccountNative(cache, scope string) error {
 	if status != "" || json.Unmarshal(b, &doc) != nil {
 		return errors.New("cached readings invalid")
 	}
-	if len(doc["providers"]) == 0 || string(doc["providers"]) == "null" {
-		return nil
-	}
 	var entries []json.RawMessage
-	if json.Unmarshal(doc["providers"], &entries) != nil {
+	if raw := doc["providers"]; len(raw) != 0 && json.Unmarshal(raw, &entries) != nil {
 		return errors.New("cached readings invalid")
 	}
 	changed := false
+	if raw := doc[zaiMembershipKey]; len(raw) != 0 {
+		var memberships map[string]json.RawMessage
+		if json.Unmarshal(raw, &memberships) != nil {
+			return errors.New("cached membership invalid")
+		}
+		if _, exists := memberships[scope]; exists {
+			delete(memberships, scope)
+			doc[zaiMembershipKey], _ = json.Marshal(memberships)
+			changed = true
+		}
+	}
 	for i, raw := range entries {
 		var e codexbarEntry
 		if json.Unmarshal(raw, &e) != nil {
@@ -540,7 +548,9 @@ func forgetZaiAccountNative(cache, scope string) error {
 	if !changed {
 		return nil
 	}
-	doc["providers"], _ = json.Marshal(entries)
+	if entries != nil {
+		doc["providers"], _ = json.Marshal(entries)
+	}
 	b, err := json.Marshal(doc)
 	if err != nil {
 		return err
@@ -571,6 +581,9 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, legacy 
 	var doc map[string]json.RawMessage
 	if json.Unmarshal(b, &doc) != nil {
 		return errors.New("cached readings invalid")
+	}
+	if name == "native.json" && tool == "zai" {
+		delete(doc, zaiMembershipKey)
 	}
 	keys := []string{"providers"}
 	if name == "cycles.json" || name == "pace.json" {

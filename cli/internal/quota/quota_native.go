@@ -123,10 +123,13 @@ func NativeReader(provider string) (regions []string, keyEnv string, ok bool) {
 	return n.Regions, n.KeyEnv, true
 }
 
+const zaiMembershipKey = "zaiMembership"
+
 type nativeSnap struct {
-	SchemaVersion int             `json:"schemaVersion"`
-	ObservedAt    time.Time       `json:"observedAt"`
-	Providers     []codexbarEntry `json:"providers"`
+	SchemaVersion int                              `json:"schemaVersion"`
+	ObservedAt    time.Time                        `json:"observedAt"`
+	Providers     []codexbarEntry                  `json:"providers"`
+	ZaiMembership map[string]*consent.CaptureStamp `json:"zaiMembership,omitempty"`
 }
 
 func nativePath(cache string) string { return filepath.Join(cache, "observed", "native.json") }
@@ -301,13 +304,15 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 	}
 	generations := manualKeyGenerations(p.Cache)
 	previous := map[string]codexbarEntry{}
-	if old := loadNative(p.Cache); old != nil {
+	old := loadNative(p.Cache)
+	if old != nil {
 		for _, entry := range old.Providers {
 			previous[entry.Provider] = entry
 		}
 	}
 	unlockSnapshot()
-	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
+	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{},
+		ZaiMembership: zaiMembership(p.Cache, old, state)}
 	if selected != nil {
 		ids := []string{}
 		for provider := range previous {
@@ -456,6 +461,9 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 				continue
 			}
 			kept = append(kept, e)
+			if e.Provider == "zai" {
+				rememberZaiMembership(s.ZaiMembership, &e, state)
+			}
 		}
 		s.Providers = kept
 		// A concurrent key change may have cleared GLM while this refresh was in
@@ -586,6 +594,11 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		}
 	}
 	s := loadNative(p.Cache)
+	admission := admissionFor(p)
+	if admission.Mode() == consent.Automatic && !nativeOff() {
+		_, pending := PolicyPending("zai")
+		r.ZaiSubscriptionEstablished = !pending && len(zaiMembership(p.Cache, s, admission.State())) != 0
+	}
 	by := map[string]codexbarEntry{}
 	if s != nil {
 		for _, e := range s.Providers {

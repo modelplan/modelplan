@@ -110,7 +110,12 @@ func TestGLMKeyChangeClearsSubscribedRows(t *testing.T) {
 				}
 				for _, row := range update.Data.Projection.Rows {
 					if row.ID == "zai" {
-						return len(row.Accounts) == 0
+						if len(row.Accounts) != 1 {
+							return false
+						}
+						account := row.Accounts[0]
+						return account.ValueState == rows.ValueStateNone && account.SubscriptionRef == nil &&
+							len(account.Windows) == 0 && hasDockSurface(row)
 					}
 				}
 				return false
@@ -123,4 +128,106 @@ func TestGLMKeyChangeClearsSubscribedRows(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The production rows backend reads existing sanitized cache provenance. The
+// real subscription survives failed, empty and missing detection snapshots,
+// while its previous account's private values and identity do not follow it.
+func TestEstablishedZCodeKeepsUnavailableRingAcrossCacheAndDetectionChanges(t *testing.T) {
+	testenv.IsolateHome(t)
+	t.Setenv("MODELPLAN_READERS", "")
+	cache := t.TempDir()
+	at := time.Now().UTC().Truncate(time.Second)
+	detected := true
+	paths := func(a consent.Admission) quota.Paths {
+		return quota.Paths{Cache: cache, ConnectionsFile: filepath.Join(cache, "connections.json"), Admission: &a}
+	}
+	backend, err := NewSharedBackend(SharedConfig{now: func() time.Time { return at }, Paths: paths,
+		Cleanup: func(scope string, forget bool) error {
+			return quota.EraseScope(paths(consent.Capture()), scope, forget)
+		},
+		Detect: func() detect.Report {
+			return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "zai", Preferred: "native", ReaderID: "native:zai"}, Detected: detected}}}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := quota.SetConnection(paths(consent.Capture()).ConnectionsFile, quota.QuotaSource{Provider: "zai", Backend: quota.BackendNative, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("Z_AI_API_KEY", "synthetic-key")
+	admission := consent.Capture()
+	// This is the only durable proof written by the native reader after a usable read.
+	stamp := admission.State().CaptureStamp(consent.ScopeZaiAccountUsageAPIKey)
+	observed := filepath.Join(cache, "observed")
+	if err := os.MkdirAll(observed, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeCache := func(entry map[string]any, established bool) {
+		t.Helper()
+		snap := map[string]any{"schemaVersion": 1, "providers": []any{entry}}
+		if established {
+			snap["zaiMembership"] = map[string]any{stamp.Scope: stamp}
+		}
+		data, _ := json.Marshal(snap)
+		if err := os.WriteFile(filepath.Join(observed, "native.json"), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	row := func() *rows.Row {
+		for _, r := range backend.buildView(consent.Capture(), false).Projection.Rows {
+			if r.ID == "zai" {
+				return &r
+			}
+		}
+		return nil
+	}
+	for _, tc := range []struct {
+		name, status, errorCode string
+		state                   rows.State
+	}{
+		{"failed", "error", "network", rows.StateFailed},
+		{"empty", "ok", "", rows.StateEmpty},
+	} {
+		entry := map[string]any{"provider": "zai", "status": tc.status, "errorCode": tc.errorCode, "admission": stamp, "observedAt": at}
+		writeCache(entry, false)
+		if r := row(); r == nil || hasDockSurface(*r) {
+			t.Fatalf("%s first read should have no ring: %+v", tc.name, r)
+		}
+		writeCache(entry, true)
+		r := row()
+		if r == nil || !hasDockSurface(*r) || r.State != tc.state || len(r.Accounts) != 1 {
+			t.Fatalf("%s read dropped the established ring: %+v", tc.name, r)
+		}
+		a := r.Accounts[0]
+		if a.ValueState != rows.ValueStateNone || len(a.Windows) != 0 || a.SubscriptionRef != nil || len(a.Activity) != 0 {
+			t.Fatalf("unavailable ring exposed an old account: %+v", a)
+		}
+	}
+	detected = false
+	if r := row(); r == nil || !hasDockSurface(*r) || r.Reason.Code != rows.CodeToolNotFound {
+		t.Fatalf("temporary loss of detection removed the established ring: %+v", r)
+	}
+	state := consent.Capture().State()
+	_, err = consent.ApplyGrant(consent.Path(), consent.Grant{RequestID: "deny-zai-ring", ExpectStoreEpoch: state.StoreEpoch,
+		ExpectGeneration: state.Generation, ConsentTextVersion: consent.TextVersion, Deny: []string{stamp.Scope}},
+		consent.GrantHooks{Cleanup: func(scope string, forget bool) error {
+			return quota.EraseScope(paths(consent.Capture()), scope, forget)
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := row(); r != nil && (hasDockSurface(*r) || len(r.Accounts) != 0) {
+		t.Fatalf("revoked scope left a ring or account: %+v", r)
+	}
+}
+
+func hasDockSurface(row rows.Row) bool {
+	for _, surface := range row.Surfaces {
+		if surface == rows.SurfaceDock {
+			return true
+		}
+	}
+	return false
 }
