@@ -59,6 +59,7 @@
         "ConsentCoreQ2Tests",
         "ConsentHostDisplayTests",
         "DockCodexRuntimeRealServerTests",
+        "DockFaceIdleBudgetTests",
         "DockHoverExplanationTests",
         "DockInteractionHostPortTests",
         "DockLiveFollowerTests",
