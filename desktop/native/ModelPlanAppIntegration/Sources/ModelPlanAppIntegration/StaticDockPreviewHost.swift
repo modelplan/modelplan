@@ -433,6 +433,13 @@ struct DockHelpInteraction: Equatable {
     /// G3-161: plugin ring updates that repainted only the ring (no rebuild pass).
     private(set) var ringOnlyRefreshesForChecks = 0
     var applicationForChecks: SettingsApplication? { application }
+    /// G3-161: official face paints across every view this host draws into.
+    var officialFacePaintsForChecks: Int {
+        var seen = Set<ObjectIdentifier>()
+        return ([dockView] + alternateViews + Array(edgeViews.values)).reduce(0) { total, view in
+            seen.insert(ObjectIdentifier(view)).inserted ? total + view.officialPaintsForChecks : total
+        }
+    }
     #endif
     func refreshPresence() { displayFollower.sample(); edge.refresh() }
     var isFollowingDisplay: Bool { displayFollower.isRunning }
@@ -1327,8 +1334,11 @@ struct DockHelpInteraction: Equatable {
 
     /// Synchronously retire cached values and accessibility nodes before replacement.
     /// Reset notice acknowledgements only on a privacy withdrawal, not on a timer tick.
+    /// G3-161: with `retainingFace` (an in-place replacement with no card open) the catalogue, painted face, sliver and
+    /// overflow tray stay as they are; the reinstall repaints only what changed, and `completeDeferredWithdrawal`
+    /// withdraws them if no content is reinstalled in the same step. A presented card or privacy always retires them.
     @discardableResult
-    func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = []) -> Bool {
+    func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = [], retainingFace: Bool = false) -> Bool {
         guard !retired else { return false }
         if !privacy, edge.isBackgroundPressed {
             // G3-113 (Pulse rebuilds nothing during a drag): a replacement that lands while the widget is pressed
@@ -1350,7 +1360,23 @@ struct DockHelpInteraction: Equatable {
         workingSignals = [:]; attentionSignals = []
         if privacy { attention = DockAttentionState() }
         menuNotice = nil; menuNoticeDidChange?(nil, false)
-        if !keepCard { catalogueKey = ""; if !catalogueReportedEmpty { reportCatalogue([]) } }
+        // An in-place replacement keeps the catalogue too, so an unchanged reinstall reports nothing.
+        if retainingFace && !privacy && !keepCard { return false }
+        if !keepCard { withdrawCatalogue() }
+        retireAdmittedFace(privacy: privacy)
+        return keepCard
+    }
+    private func withdrawCatalogue() { catalogueKey = ""; if !catalogueReportedEmpty { reportCatalogue([]) } }
+    /// Finishes a withdrawal that kept the face for a reinstall that did not come: the catalogue and the face.
+    func completeDeferredWithdrawal() {
+        guard !retired else { return }
+        withdrawCatalogue(); retireAdmittedFace()
+    }
+    /// True when a replacement can keep the painted face until its reinstall: no card is open and no press holds it.
+    var canReplaceInPlace: Bool { !retired && cardPresentedGeneration == nil && !edge.isBackgroundPressed }
+    /// The visual half of a withdrawal: the face, sliver and overflow tray.
+    private func retireAdmittedFace(privacy: Bool = false) {
+        guard !retired else { return }
         try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
         // G3-98: a plain replacement keeps a ring click's hidden number so the landed value fades in (#906);
         // a privacy withdrawal drops it with everything else.
@@ -1360,7 +1386,6 @@ struct DockHelpInteraction: Equatable {
         }
         sliver.noticeMarks = []
         try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
-        return keepCard
     }
 
     func finishCardReplacement() -> Bool {

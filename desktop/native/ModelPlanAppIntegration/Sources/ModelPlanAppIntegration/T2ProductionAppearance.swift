@@ -62,6 +62,10 @@ import ModelPlanSettings
     #if DEBUG
     private(set) var preparationsForChecks = 0
     private(set) var materialRendersForChecks = 0
+    /// Process-wide totals, for normal-entry checks that cannot reach the factory's instance.
+    static var preparationsTotalForChecks = 0
+    static var materialRendersTotalForChecks = 0
+    static var preparedEvictionsTotalForChecks = 0
     #endif
 
     enum Failure: Error { case missingDisplay }
@@ -79,7 +83,11 @@ import ModelPlanSettings
             prepared = try prepare(layout, rows)
             preparedViews.setObject(prepared, forKey: view)
             view.discardPreparedAppearance = { [weak self, weak view] in
-                if let view { self?.preparedViews.removeObject(forKey: view) }
+                guard let view, let self, self.preparedViews.object(forKey: view) != nil else { return }
+                self.preparedViews.removeObject(forKey: view)
+                #if DEBUG
+                Self.preparedEvictionsTotalForChecks += 1
+                #endif
             }
         }
         return try apply(prepared, to: view, rows: rows, language: preferences.language.rawValue)
@@ -87,7 +95,7 @@ import ModelPlanSettings
 
     private func prepare(_ layout: Layout, _ rows: [DockInstrumentReading]) throws -> Prepared {
         #if DEBUG
-        preparationsForChecks += 1
+        preparationsForChecks += 1; Self.preparationsTotalForChecks += 1
         #endif
         let edge: T2Edge
         switch layout.edge {
@@ -144,7 +152,7 @@ import ModelPlanSettings
         let material = T2FaceMaterial()
         let renderer = DockInstrumentRenderer(resources: official, supplementalResources: vendor) { [weak self] supplied, scale in
             #if DEBUG
-            self?.materialRendersForChecks += 1
+            self?.materialRendersForChecks += 1; T2ProductionAppearance.materialRendersTotalForChecks += 1
             #endif
             return try material.render(geometry: geometry, viewport: supplied.bounds, scale: scale)
         }
