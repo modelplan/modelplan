@@ -93,7 +93,7 @@ function columnOf(a, i, ui, status, now) {
   return {id: a.id, name: a.name, short: a.short, alias:a.alias, colour: a.colour, logo: a.logo, key: i + 1,
     on: ui.scope === a.id, off: !!ui.scope && ui.scope !== a.id,
     state: a.state, grey, ageMin: a.ageMin ?? null, status: st, tint: ui.tint && st ? st : null,
-    quotaOnly: a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), today: a.todayTokens ?? null,
+    quotaOnly: a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), noUsage: !!a.noUsage && a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), today: a.todayTokens ?? null,
     cost: a.state === 'ok' || a.state === 'stale' ? a.rangeCost ?? null : null,
     // Never substitute the current/recent-seven-day rate for today's subscription average.
     speed: a.state === 'ok' && a.support !== 'quota-only' ? a.todayAverageGenerationTps ?? null : null,
@@ -118,5 +118,5 @@ export function engineModel(d, ui) {
     level: list.slice(p * PER, p * PER + PER).reduce((l, a) => GREY.has(a.state) ? l : worse(l, status.get(a.id) || null), null)}));
   const c = d.caution || {level: null, key: ''};
   return {empty: !list.length, pages, page, slots, rich, cls: widthClass(slots), rows, reserve: cols.some(x => x.reserve),
-    rowPeriods: {first:'5h', second:'week', other:null}, cols, leds, caution: {level: c.level || null, flash: !!c.level && ui.ack !== c.key}, used: ui.pctMode === 'used', scoped: !!ui.scope};
+    rowPeriods: {first:'5h', second:'week', other:null}, cols, leds, caution: {level: c.level || null, flash: !!c.level && ui.ack !== c.key}, used: ui.pctMode === 'used', scoped: !!ui.scope, range: ui.range || 'today'};
 }

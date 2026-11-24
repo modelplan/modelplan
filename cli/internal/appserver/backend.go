@@ -34,6 +34,7 @@ type View struct {
 	Consent                   wire.ConsentFacts
 	Diagnostics               []wire.ScopeDiag
 	Health                    wire.Health
+	accountTodayDeadline      time.Time // server scheduling only, outside the wire snapshot
 }
 
 type GrantResult struct {

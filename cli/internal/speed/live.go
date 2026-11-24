@@ -153,8 +153,14 @@ type liveRoot struct {
 
 // ActivityLogs shares the existing bounded discovery with the ZCode lifecycle root.
 func ActivityLogs(claudeHome, codexHome, zcodeHome string, now time.Time) []LiveLog {
-	return activeLogs([]liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""}, {filepath.Join(codexHome, "sessions"), "codex", codexHome != ""}, {filepath.Join(zcodeHome, "cli", "log"), "zcode", zcodeHome != ""}}, now)
+	return activeLogs(activityRoots(claudeHome, codexHome, zcodeHome), now)
 }
+func activityRoots(claudeHome, codexHome, zcodeHome string) []liveRoot {
+	return []liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""},
+		{filepath.Join(codexHome, "sessions"), "codex", codexHome != ""},
+		{filepath.Join(zcodeHome, "cli", "log"), "zcode", zcodeHome != ""}}
+}
+
 func activeLogs(roots []liveRoot, now time.Time) []LiveLog {
 	type candidate struct {
 		log LiveLog

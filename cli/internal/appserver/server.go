@@ -534,6 +534,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 				}
 				if reply.subscribe {
 					s.subscribed = true
+					s.armAccountTodayDeadline(s.view)
 					reply.Scopes = s.view.Scopes
 					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents], s.clientCapabilities[CapabilityWindowSources], s.clientCapabilities[CapabilityMemberRefresh], s.clientCapabilities[CapabilityResetEventLinksV1], s.clientCapabilities[CapabilityAccountTodayV1], s.clientCapabilities[CapabilityCockpitForecastV1])}
 				}
@@ -696,6 +697,18 @@ func (s *Server) refreshForRequest(ctx context.Context) error {
 	defer s.refreshMu.Unlock()
 	return s.readView(ctx, true)
 }
+
+// armAccountTodayDeadline follows the subscriber projection accepted for
+// delivery. Called with s.mu held so an earlier publish cannot arm a later view.
+func (s *Server) armAccountTodayDeadline(view View) {
+	if !s.clientCapabilities[CapabilityAccountTodayV1] {
+		return
+	}
+	if backend, ok := s.backend.(interface{ armAccountTodayDeadline(time.Time) }); ok {
+		backend.armAccountTodayDeadline(view.accountTodayDeadline)
+	}
+}
+
 func (s *Server) readView(ctx context.Context, reuse bool) error {
 	var v View
 	var token any
@@ -731,8 +744,14 @@ func (s *Server) readView(ctx context.Context, reuse bool) error {
 	if !reused {
 		s.viewToken = token
 	}
+	// Scheduling metadata does not constitute a new wire projection.
+	old.accountTodayDeadline = v.accountTodayDeadline
 	changed := !reflect.DeepEqual(old, v)
 	if !changed && !s.rowsPending {
+		s.view.accountTodayDeadline = v.accountTodayDeadline
+		if s.subscribed {
+			s.armAccountTodayDeadline(v)
+		}
 		s.mu.Unlock()
 		return nil
 	}
@@ -767,6 +786,7 @@ func (s *Server) readView(ctx context.Context, reuse bool) error {
 			s.mu.Lock()
 			if s.sequence == seq {
 				s.rowsPending = false
+				s.armAccountTodayDeadline(v)
 			}
 			s.mu.Unlock()
 			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled, sourcesEnabled, membersEnabled, linksEnabled, todayEnabled, forecastEnabled)}), v.Stamp, func(error) {

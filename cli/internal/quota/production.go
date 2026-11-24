@@ -40,14 +40,22 @@ func CodexHome() string {
 	return filepath.Join(home, ".codex")
 }
 
+// ProductionWatchPaths only resolves the paths that the engine's metadata
+// watcher needs. Reader selection stays on actual view and refresh operations.
+func ProductionWatchPaths(cache string) Paths {
+	home, _ := os.UserHomeDir()
+	return Paths{Cache: cache, CodexHome: CodexHome(), LocalFile: profile.ConfigFile(home, "local.json"),
+		CodexThread: os.Getenv("CODEX_THREAD_ID")}
+}
+
 func ProductionPathsWithAdmission(cache, version string, admission consent.Admission) Paths {
 	home, _ := os.UserHomeDir()
-	p := Paths{Admission: &admission, CLIVersion: version, Cache: cache, CodexHome: CodexHome(),
-		LocalFile:       profile.ConfigFile(home, "local.json"),
-		CodexBarFile:    profile.ConfigFile(home, "codexbar.json"),
-		ConnectionsFile: profile.ConfigFile(home, "connections.json"),
-		CodexThread:     os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID"),
-		ReaderAccess: &ReaderAccess{Grants: map[string]ReaderGrant{}}}
+	p := ProductionWatchPaths(cache)
+	p.Admission, p.CLIVersion = &admission, version
+	p.CodexBarFile = profile.ConfigFile(home, "codexbar.json")
+	p.ConnectionsFile = profile.ConfigFile(home, "connections.json")
+	p.ClaudeSession = os.Getenv("CLAUDE_CODE_SESSION_ID")
+	p.ReaderAccess = &ReaderAccess{Grants: map[string]ReaderGrant{}}
 	state, mode := admission.State(), admission.Mode()
 	if mode == consent.Off || nativeOff() {
 		return p

@@ -120,7 +120,9 @@ export function card(c, f = {}) {
     const tr = c.trial, fastOnly = tr.fast != null && tr.effort === c.base;
     lines.state = 'try';
     lines.tryLine = t('fad.cardTry', {e: fastOnly ? t(tr.fast ? 'fad.tryFast' : 'fad.tryStd') : tr.effort});
-    lines.nowLine = c.cur ? t('fad.cardNow', {e: c.cur}) : t('fad.cardNowUnknown');
+    // G3-182 (owner row 35, build 2): the trial line names the effort being tried; with no reported current tier a
+    // "档位未报告" line under it read as a contradiction, so the second line is simply left out.
+    lines.nowLine = c.cur ? t('fad.cardNow', {e: c.cur}) : '';
     // D337 (owner, closes D190): on the short cockpit's small card the trial reads with letters, not colour alone:
     // "A92 C55" / "能92 费55" = ability and cost as shares of the top effort. Colour stays for alerts. The full figures
     // (cost, ability change) stay in the strip's accessible label.
@@ -159,12 +161,14 @@ const STAR_TEXT = rec => `<span class="cd-rec">${STAR}${esc(rec)}</span>`;
 export function lcdView(c) {
   if (!c) return '';
   const k = c.card;
-  const strip = `<i class="st-vend" aria-hidden="true">${c.segments.map(v => `<b style="--v:${esc(v)}"></b>`).join('')}</i>`;
+  // G3-181 (owner row 33, build 2): an unused card's top edge stays dark; the subscription-colour strip marks cards
+  // with use in the range (or live ones), not a model the range shows as unused.
+  const strip = k.state === 'unused' ? '' : `<i class="st-vend" aria-hidden="true">${c.segments.map(v => `<b style="--v:${esc(v)}"></b>`).join('')}</i>`;
   // A 9-character name ("Terra 6.1") is set 1 px smaller and tighter so it never clips on the 52 px card.
   const name = `<b class="st-name ${[...c.label].length > 8 ? 'long' : ''}">${esc(c.label)}</b>${c.pinned ? `<i class="st-pin" role="img" aria-label="${esc(t('fad.pinnedAria'))}"></i>` : ''}`;
   const eff = !k.eff ? '' : k.eff.note ? `<span class="cd-eff cd-note">${esc(k.eff.note)}</span>`
     : `<span class="cd-eff${k.eff.cur ? '' : ' cd-follows'}">${k.eff.cur ? `<span class="cd-cur">${esc(k.eff.cur)}</span>` : ''}${k.eff.rec ? STAR_TEXT(k.eff.rec) : ''}</span>`;
-  if (k.state === 'try') return strip + name + `<span class="cd-try">${esc(k.tryLine)}</span><span class="cd-now">${esc(k.nowLine)}</span>` + eff;
+  if (k.state === 'try') return strip + name + `<span class="cd-try">${esc(k.tryLine)}</span>` + (k.nowLine ? `<span class="cd-now">${esc(k.nowLine)}</span>` : '') + eff;
   const bar = k.bar == null ? '' : `<i class="cd-bar" aria-hidden="true" style="--s:${(k.bar * 100).toFixed(1)}%;--v:${esc(c.segments[0] || '')}"></i>`;
   const use = k.use ? `<span class="cd-use"><b>${esc(k.use[0])}</b> <span>${esc(k.use[1])}</span></span>` : '';
   return strip + name + `<span class="cd-big ${k.bigKind}">${esc(k.big)}</span>` + bar + use + eff;
