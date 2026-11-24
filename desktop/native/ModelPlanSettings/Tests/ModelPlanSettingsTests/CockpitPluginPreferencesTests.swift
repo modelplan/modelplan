@@ -229,7 +229,7 @@ final class CockpitPluginPreferencesTests: XCTestCase {
             return nil
         }
         let cases: [(SettingsLanguage, String, String)] = [
-            (.chinese, "插件列显示在订阅后面", "只显示挂件上的资源环时每 10 秒；两处都不显示时每 60 秒。"),
+            (.chinese, "插件列显示在订阅后面", "只显示额度挂件上的资源环时每 10 秒；两处都不显示时每 60 秒。"),
             (.english, "Plugin columns come after your subscriptions.", "Quota Widget ring only: every 10 s. Neither shown: every 60 s."),
         ]
         for (language, note, hint) in cases {
