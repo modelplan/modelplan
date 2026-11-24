@@ -120,6 +120,11 @@ private struct G1WaitTimedOut: Error {}
         let views = flatten(try XCTUnwrap(window.contentView))
         for id in ids { XCTAssertNotNil(views.first { $0.accessibilityIdentifier() == id }, "Missing \(id)") }
     }
+    /// D371 (B5, SET-9-29): a setting this build cannot offer is not drawn at all.
+    private func assertNoLabel(_ text: String, in window: NSWindow) throws {
+        let fields = flatten(try XCTUnwrap(window.contentView)).compactMap { $0 as? NSTextField }
+        XCTAssertFalse(fields.contains { !$0.isHiddenOrHasHiddenAncestor && $0.stringValue == text }, "\(text) is unavailable and must not be listed")
+    }
     private func assertLabel(_ text: String, in window: NSWindow) throws {
         let fields = flatten(try XCTUnwrap(window.contentView)).compactMap { $0 as? NSTextField }
         XCTAssertTrue(fields.contains { !$0.isHiddenOrHasHiddenAncestor && $0.stringValue == text }, "Missing \(text)")
@@ -422,7 +427,7 @@ private struct G1WaitTimedOut: Error {}
         let app = try await entry(locale: "en-US")
         let window = try await settings(app, pane: "dock")
         try assertControls(["settings.dockDisplay", "settings.dockEdge", "settings.fullscreen", "settings.activeDisplay"], in: window)
-        try assertLabel("Hide from capture", in: window)
+        try assertNoLabel("Hide from capture", in: window)
         try await choose("settings.dockEdge", value: "left", in: window)
         let saved = await app.foundationStore.snapshot()
         XCTAssertEqual(saved.preferences.dockEdge, .left)
@@ -433,7 +438,7 @@ private struct G1WaitTimedOut: Error {}
     func testG1_SET_9_12_CaptureVisibilityPersists() async throws {
         let app = try await entry(locale: "en-US")
         let window = try await settings(app, pane: "dock")
-        try assertLabel("Hide from capture", in: window)
+        try assertNoLabel("Hide from capture", in: window)
         throw XCTSkip("Actual widget sharing state and relaunch require an admitted GUI session")
     }
 

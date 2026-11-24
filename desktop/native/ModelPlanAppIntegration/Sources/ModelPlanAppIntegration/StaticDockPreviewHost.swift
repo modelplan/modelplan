@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import Foundation
 import OSLog
 import CoreGraphics
 import ModelPlanCore
@@ -1238,6 +1239,15 @@ struct DockHelpInteraction: Equatable {
     }
     public func apply(_ value: SettingsApplication) {
         guard !retired, value.snapshot.revision >= (application?.snapshot.revision ?? 0) else { return }
+        if value.reason == .context, heldDrop == nil, let old = application,
+           old.snapshot.revision == value.snapshot.revision, old.effective == value.effective {
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            if let previous = try? encoder.encode(old.snapshot.preferences),
+               let next = try? encoder.encode(value.snapshot.preferences), previous == next {
+                application = value // retain current context for later consumers without rebuilding the Dock
+                return
+            }
+        }
         inputGeneration &+= 1
         application = value
         let oldReveal = preferences.revealMilliseconds

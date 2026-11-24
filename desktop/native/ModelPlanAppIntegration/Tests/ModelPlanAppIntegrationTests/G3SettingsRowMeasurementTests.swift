@@ -156,7 +156,8 @@ private actor G316Engine: EngineClient {
                     for note in nestedNotesBelowControls(row.controls) {
                         offenders.append((note.convert(note.bounds, to: canvas), "\(pane.id).\(row.key.rawValue): text beneath control"))
                     }
-                    for line in descendants(row.controls).compactMap({ $0 as? NSStackView }) where line.orientation == .horizontal && !line.isHiddenOrHasHiddenAncestor {
+                    // D371: a per-subscription row keeps its name + dropdown lines in the row's indented list, under the title.
+                    for line in descendants(row).compactMap({ $0 as? NSStackView }) where line.orientation == .horizontal && !line.isHiddenOrHasHiddenAncestor {
                         let children = line.arrangedSubviews.filter { !$0.isHiddenOrHasHiddenAncestor }
                         guard let label = children.first(where: { $0 is NSTextField && !($0 is SettingsOwnedControl) }) else { continue }
                         for control in children where control is SettingsOwnedControl {
