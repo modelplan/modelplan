@@ -74,10 +74,45 @@ import ModelPlanResources
         let dock = app.composition.dock
         let reader = Reader()
         let ring = try await installRing(app, reader: reader)
-        let passes = dock.fullRebuildPassesForChecks, repaints = dock.ringOnlyRefreshesForChecks
+        let passes = dock.fullRebuildPassesForChecks, repaints = dock.ringOnlyRefreshesForChecks, faces = dock.officialFacesForChecks
         for tick in 1...12 { ring.run(Double(tick) * 10) }
         XCTAssertEqual(dock.fullRebuildPassesForChecks, passes, "G3-161: unchanged inputs cause no Dock rebuild")
         XCTAssertEqual(dock.ringOnlyRefreshesForChecks, repaints, "and no ring repaint")
+        XCTAssertEqual(dock.officialFacesForChecks, faces, "unchanged samples must not render a full official face")
+    }
+
+    /// Exercise accepted engine deliveries as well as the resource sampler through the normal composition.
+    /// The wall clock stays before every quota deadline, so these are unchanged idle inputs.
+    func testRepeatedEqualEngineRowsAndResourceTicksDoNotRenderFaces() async throws {
+        var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let app = try await makeEntry(wallNow: { wall }, includeSession: false)
+        await app.composition.start()
+        let composition = app.composition, dock = composition.dock
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
+        XCTAssertFalse(composition.presentedContent.snapshot.inputs.isEmpty, "the normal entry admitted the fixture")
+        func deliver(_ sequence: Int) async throws {
+            let rows = try HostPairedProjectionTests.rows(weekly: 75, secondWeekly: 12, sequence: sequence, includeSession: false)
+            let reply = try EngineReply(envelope: .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
+                consentGeneration: context.floor.generation, data: rows), delivery: context)
+            await composition.store.consume(.rowsChanged(reply, invalidRowCount: rows.projection.invalidRowCount))
+        }
+        var passes = dock.fullRebuildPassesForChecks, faces = dock.officialFacesForChecks
+        for tick in 1...12 { wall = wall.addingTimeInterval(10); try await deliver(7 + tick) }
+        XCTAssertEqual(dock.fullRebuildPassesForChecks, passes, "equal engine rows with Resources off must not rebuild")
+        XCTAssertEqual(dock.officialFacesForChecks, faces, "equal engine rows with Resources off must not render a face")
+        let ring = try await installRing(app, reader: Reader())
+        passes = dock.fullRebuildPassesForChecks; faces = dock.officialFacesForChecks
+        let repaints = dock.ringOnlyRefreshesForChecks
+        for tick in 1...12 { wall = wall.addingTimeInterval(10); ring.run(Double(tick) * 10); try await deliver(19 + tick) }
+        XCTAssertEqual(dock.fullRebuildPassesForChecks, passes, "equal rows and Resources samples must not rebuild")
+        XCTAssertEqual(dock.officialFacesForChecks, faces, "equal rows and Resources samples must not render a face")
+        XCTAssertEqual(dock.ringOnlyRefreshesForChecks, repaints, "equal Resources samples must not repaint the ring")
+        // A changed, admitted reading must still reach the Dock, so the idle assertion cannot pass by dropping rows.
+        let changed = try HostPairedProjectionTests.rows(weekly: 40, secondWeekly: 12, sequence: 32, includeSession: false)
+        let changedReply = try EngineReply(envelope: .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
+            consentGeneration: context.floor.generation, data: changed), delivery: context)
+        await composition.store.consume(.rowsChanged(changedReply, invalidRowCount: changed.projection.invalidRowCount))
+        XCTAssertGreaterThan(dock.fullRebuildPassesForChecks, passes, "a changed reading still reaches the Dock")
     }
 
     /// A changed value repaints the Resources ring alone: no rebuild pass, and the ring shows the new reading.
