@@ -336,6 +336,7 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	if mode == consent.Off || !s.Allows("codex", consent.Local, mode) {
 		// WP-17: nothing decoded from Codex rollouts outlives the admission to read them.
 		forgetCodexRollouts()
+		p.CodexIndex.clear()
 	}
 	if mode == consent.Off {
 		reason := "reader-privacy"
@@ -353,7 +354,7 @@ func ReadPermitted(p Paths, now time.Time) Report {
 		add(readClaudeCode(p.Cache, p.ClaudeSession, now))
 	}
 	if s.Allows("codex", consent.Local, mode) && codexHistoryStillAllowed() {
-		add(readCodexFenced(p.CodexHome, p.CodexThread, codexFence))
+		add(readCodexFenced(p, codexFence))
 	}
 	if s.Allows("codex", consent.Runtime, mode) && p.CodexHome != "" {
 		applyAccount(&r, p.Cache, now, admission)

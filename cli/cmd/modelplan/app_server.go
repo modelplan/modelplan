@@ -69,7 +69,17 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	if err != nil {
 		return nil, func() {}, err
 	}
-	rawPaths := func(a consent.Admission) quota.Paths { return quota.ProductionPathsWithAdmission(st.Dir, version, a) }
+	var codexIndex quota.CodexRolloutIndex
+	rawPaths := func(a consent.Admission) quota.Paths {
+		p := quota.ProductionPathsWithAdmission(st.Dir, version, a)
+		p.CodexIndex = &codexIndex
+		return p
+	}
+	watchPaths := func(a consent.Admission) quota.Paths {
+		p := quota.ProductionWatchPaths(st.Dir)
+		p.Admission, p.CodexIndex = &a, &codexIndex
+		return p
+	}
 	detectTools := func() detect.Report { return detection(st) }
 	// D238: tool ids only; a read-only engine keeps the ledger in memory.
 	seen := detect.NewSeenLedger(filepath.Join(st.Dir, "detected-tools.json"), options.ReadOnly)
@@ -93,7 +103,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			}
 		},
 		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.LoadShared(st); return d, err }, // read only (WP-17)
-		Detect:           detectTools, LaterInstalled: seen.Observe, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
+		Detect:           detectTools, LaterInstalled: seen.Observe, Paths: paths, WatchPaths: watchPaths, Offline: options.Offline, ReadOnly: options.ReadOnly,
 		Cleanup: func(scope string, forget bool) error {
 			return quota.EraseScope(quota.ProductionPaths(st.Dir, version), scope, forget)
 		},

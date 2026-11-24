@@ -3,7 +3,7 @@
 // current effort from the last 15 minutes with hysteresis, and the use / share a card shows for the time range.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {faderModel,cardText,effortLine,stripAria,CARD_LINE} from '../../../cockpit/study/rocket-r1/fader-view.js';
+import {faderModel,cardText,effortLine,stripAria,lcdView,CARD_LINE} from '../../../cockpit/study/rocket-r1/fader-view.js';
 import {approxCost,tokShort} from '../../../cockpit/study/rocket-r1/mfd-pages/fmt.js';
 import {setLanguage} from '../../../cockpit/study/rocket-r1/i18n.js';
 import {cardUsage,currentEffort,CURRENT_WINDOW_MS} from '../../../cockpit/.tmp/compiled/src/model-card.js';
@@ -132,8 +132,33 @@ test('G3-145 the card cost is a short form that fits the 52 px slot: under $0.01
  for(const v of [0.0004,0.004,0.012,0.09,0.42,0.999,1,9.1,64,310,1234,12345])assert.ok(chars(big(v).big)<=6,`${v} -> ${big(v).big}`);
 });
 
-test('G3-146 the unknown current effort reads "档位未报告" / "Effort ?", never the "no usage" look of 当前未报告',()=>{
- const tried=lang=>{setLanguage(lang);return channel(fader({current:null,use:{tokens:5e6,share:.4}}),{previews:{m:'XHigh'},view:{modelId:'m',trial:'XHigh',fast:null,from:'fader'}}).card.nowLine;};
- assert.equal(tried('zh-CN'),'档位未报告');assert.equal(tried('en'),'Effort ?');
+// G3-146 named the unknown current effort "档位未报告" / "Effort ?" and banned the "当前未报告" look. G3-182 (owner row 35,
+// build 2): under a trial line ("试 XHigh") that second line read as a contradiction, so a trial card with no reported
+// current drops the line; the wording itself stays on the non-trial card's note (CKP-FAD-51 above).
+test('G3-182 a trial on a model with no reported current shows the trial alone, no "档位未报告" line',()=>{
+ for(const lang of ['zh-CN','en']){
+  setLanguage(lang);
+  const c=channel(fader({current:null,use:{tokens:5e6,share:.4}}),{previews:{m:'XHigh'},view:{modelId:'m',trial:'XHigh',fast:null,from:'fader'}});
+  assert.equal(c.card.state,'try');assert.equal(c.card.tryLine,lang==='zh-CN'?'试 XHigh':'Try XHigh');
+  assert.equal(c.card.nowLine,'');assert.doesNotMatch(lcdView(c),/cd-now/);
+  assert.doesNotMatch(lcdView(c),/档位未报告|Effort \?/);assert.match(lcdView(c),/cd-try/);
+ }
+ setLanguage('zh-CN');
+ const known=channel(fader({current:'High',use:{tokens:5e6,share:.4}}),{previews:{m:'XHigh'},view:{modelId:'m',trial:'XHigh',fast:null,from:'fader'}});
+ assert.equal(known.card.nowLine,'当前 High');
+ setLanguage('en');
+});
+
+// G3-181 (owner row 33, build 2): the subscription-colour top edge is for cards with use (or live ones); a card the
+// range shows as unused carries no strip, so it no longer reads as active.
+test('G3-181 an unused card carries no vendor strip; used, live and no-record cards keep it',()=>{
+ // G3-181: owner row 33 (build 2, screenshot 20261122-141638): unused cards still showed the blue top edge.
+ setLanguage('zh-CN');
+ const unused=channel(fader({live:false,current:null,rec:'High'}));
+ assert.equal(unused.card.state,'unused');assert.doesNotMatch(lcdView(unused),/st-vend/);
+ for(const f of [fader({use:{tokens:5e6,share:.4}}),fader({current:null,use:{tokens:5e6,share:.4},live:true}),fader({recorded:true,live:false,current:null})]){
+  const c=channel(f);
+  assert.notEqual(c.card.state,'unused');assert.match(lcdView(c),/st-vend/);
+ }
  setLanguage('en');
 });
