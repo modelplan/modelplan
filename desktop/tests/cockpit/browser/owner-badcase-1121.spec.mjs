@@ -145,16 +145,27 @@ const geometry=page=>page.evaluate(()=>{const col=document.querySelector('.pl-co
   return {tag:tag.textContent,tagHeight:t.height,lineHeight:parseFloat(getComputedStyle(tag).lineHeight),tagCut:tag.scrollHeight>tag.clientHeight+.5||tag.scrollWidth>tag.clientWidth+.5,tagInside:inside(t,c),
    parts:parts.map(p=>({w:[p.scrollWidth,p.clientWidth,Math.round(c.width)].join('/'),text:p.textContent,cut:p.scrollWidth>p.clientWidth+.5,inside:inside(p.getBoundingClientRect(),c)}))};});});
 for(const tier of ['tall','compact'])for(const locale of ['en','zh-CN'])for(const subs of [1,2])
-test(`B8 resource tags CPU · Memory · Disk are whole and in order, values never clipped (${tier}, ${locale}, ${subs} subscription${subs>1?'s':''})`,async({page})=>{
+test(`B8 resource names CPU · Memory · Disk are whole and in order, values never clipped (${tier}, ${locale}, ${subs} subscription${subs>1?'s':''})`,async({page})=>{
  const {send,receive}=await open(page,{data:subscriptions(subs),locale,tier,plugins:{version:1,entries:[],settings:{}}});
  const words=locale==='en'?['CPU','Memory','Disk']:['CPU','内存','磁盘'];
  const check=async when=>{const cells=await geometry(page);expect(cells,when).not.toBeNull();expect(cells.map(c=>c.tag),when).toEqual(words);
   for(const c of cells){expect(c.tagHeight,`${when} ${c.tag} height`).toBeGreaterThanOrEqual(c.lineHeight-.5);expect(c.tagCut,`${when} ${c.tag} cut`).toBe(false);expect(c.tagInside,`${when} ${c.tag} inside`).toBe(true);
    for(const p of c.parts){expect(p.cut,`${when} ${c.tag} ${p.text} ${p.w}`).toBe(false);expect(p.inside,`${when} ${c.tag} ${p.text} inside`).toBe(true);}}};
  await check('before the first reading');
- expect(await receive(send('pluginData',{id:'resources',data:{samples:[reading(NOW-5000,{cpuUser:43}),reading(NOW)]}}))).toBe(true);
- await expect(page.locator('.pl-col[data-plugin="resources"] .qvalue')).toHaveCount(3);
- await check('first render with readings');
+ expect(await receive(send('pluginData',{id:'resources',data:{samples:[reading(NOW-5000,{cpuUser:43}),reading(NOW,{netIn:1_234_567,netOut:86_000})]}}))).toBe(true);
+ // D407 R1: with readings the column is the radar. Its names are whole and in order, and no text leaves the column or
+ // runs into another (the narrow one-subscription and compact cases included).
+ await expect(page.locator('.pl-col[data-plugin="resources"] .pl-radar')).toHaveCount(1);
+ const radar=await page.evaluate(()=>{const col=document.querySelector('.pl-col[data-plugin="resources"]'),area=col.querySelector('.pl-draw').getBoundingClientRect();
+  const texts=[...col.querySelectorAll('.pl-radar text')].map(t=>({t:t.textContent,r:t.getBoundingClientRect()}));
+  const overlaps=[];for(let i=0;i<texts.length;i++)for(let j=i+1;j<texts.length;j++){const a=texts[i].r,b=texts[j].r;
+   if(a.left<b.right-.5&&b.left<a.right-.5&&a.top<b.bottom-.5&&b.top<a.bottom-.5)overlaps.push(texts[i].t+' / '+texts[j].t);}
+  return {labels:[...col.querySelectorAll('.pl-radar [data-label]')].map(l=>l.textContent),overlaps,
+   outside:texts.filter(x=>x.r.left<area.left-.5||x.r.right>area.right+.5||x.r.top<area.top-.5||x.r.bottom>area.bottom+.5).map(x=>x.t)};});
+ const shortWords=locale==='en'?['CPU','Mem','Disk']:words;
+ radar.labels.forEach((l,i)=>expect([words[i],shortWords[i]],'first render with readings').toContain(l));
+ expect(radar.overlaps,'first render with readings: no text runs into another').toEqual([]);
+ expect(radar.outside,'first render with readings: every text inside the column').toEqual([]);
 });
 
 // ---- HUD: the ★ column and versioned names ----

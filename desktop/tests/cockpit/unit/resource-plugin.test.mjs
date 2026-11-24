@@ -6,9 +6,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PluginRegistry,PLUGIN_INKS} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
 import {builtinPlugins} from '../../../cockpit/.tmp/compiled/src/plugin-builtins.js';
-import {resourcePlugin,RESOURCE_INK,RESOURCE_WINDOW_MS,resourceLevels,chartData} from '../../../cockpit/.tmp/compiled/src/resource-plugin.js';
+import {resourcePlugin,RESOURCE_INK,RESOURCE_WINDOW_MS,resourceLevels,radarLayout,formatRate} from '../../../cockpit/.tmp/compiled/src/resource-plugin.js';
 import {tables} from '../../../cockpit/study/rocket-r1/i18n.js';
 import '../../../cockpit/study/rocket-r1/strings/plugins.js';
+import {readFileSync} from 'node:fs';
 
 const GB=1024**3;
 const fill=(text,vars)=>text.replace(/\{(\w+)\}/g,(m,n)=>String(vars?.[n]??m));
@@ -117,36 +118,117 @@ test('screen lines (the draw fallback): CPU, memory with the four kinds, disk, s
  assert.deepEqual(resourcePlugin.screen(undefined,context('en')).lines.map(l=>l.label),['Sampling']);
  let state;for(let i=0;i<3;i++)state=resourcePlugin.accept({samples:[sample(T0+i*10000)]},state);
  const lines=resourcePlugin.screen(state,context('zh-CN',10)).lines;
- assert.deepEqual(lines.map(l=>l.label),['CPU','用户 · 系统','负载','10 分钟最高','内存','内存压力','联动 · App · 压缩','已缓存 · 空闲','磁盘','采样']);
+ assert.deepEqual(lines.map(l=>l.label),['CPU','用户 · 系统','负载','10 分钟最高','内存','内存压力','联动 · App · 压缩','已缓存 · 空闲','磁盘','网络','采样']);
  assert.equal(lines[0].value,'22%');assert.equal(lines[1].value,'19% · 3%');assert.equal(lines[2].value,'2.4');
  assert.equal(lines[4].value,'47% · 15.1 / 32 GB');assert.equal(lines[5].value,'正常');
  assert.equal(lines[6].value,'4.5 · 9.2 · 1.4 GB');assert.equal(lines[7].value,'12.8 · 4.1 GB');
- assert.equal(lines[8].value,'76% · 剩 120 GB');assert.equal(lines[9].value,'每 10 秒');
+ assert.equal(lines[8].value,'76% · 剩 120 GB');assert.equal(lines[9].value,'');assert.equal(lines[10].value,'每 10 秒');
  assert.ok(lines.length<=12);
 });
 
-test('D323 big screen draws charts through the draw hook and keeps its lines as the fallback',()=>{
- const state=resourcePlugin.accept({samples:[sample(T0)]},undefined);
- const screen=resourcePlugin.screen(state,context('en'));
- assert.equal(typeof screen.draw,'function');assert.ok(screen.lines.length>=10,'lines stay for a failed draw');
- assert.equal(typeof resourcePlugin.column(state,context('en')).draw,'undefined','the column keeps its cells');
+/** A tiny SVG DOM (createElementNS, attributes, children, text) so the draw hook runs in node. */
+function fakeArea(){
+ const make=tag=>({tag,attrs:{},children:[],textContent:'',setAttribute(k,v){this.attrs[k]=String(v);},getAttribute(k){return this.attrs[k]??null;},
+  append(...c){this.children.push(...c);},replaceChildren(...c){this.children=c;}});
+ const doc={createElementNS:(_ns,tag)=>make(tag)};const area=make('div');area.ownerDocument=doc;return area;
+}
+const all=(node,pick)=>[...(pick(node)?[node]:[]),...node.children.flatMap(c=>all(c,pick))];
+const text=node=>[node.textContent,...node.children.map(text)].join('');
+const TOKENS={ink:'var(--lcd-ink)',muted:'var(--lcd-muted)',ghost:'var(--lcd-ghost)',rule:'var(--lcd-rule)',ok:'var(--st-ok)',mid:'var(--st-mid)',low:'var(--st-low)',silk:'var(--silk-hi)',lcdFont:'var(--f-lcd)',silkFont:'var(--f-silk)'};
+function drawInto(draw,locale='en',width=190,height=240){
+ const area=fakeArea();draw({...context(locale),area,width,height,tokens:TOKENS,memo:{},opening:false,redraw(){}});return area;
+}
+const history=(n,o=()=>({}))=>{let st;for(let i=0;i<n;i++)st=resourcePlugin.accept({samples:[sample(T0+i*5000,o(i))]},st);return st;};
+
+test('D407 R1 column: every arc (CPU, memory, disk) has a leader line, a label and its own row; network is a text row with no arc',()=>{
+ const state=history(6,i=>({netIn:1_200_000+i,netOut:86_000}));
+ const col=resourcePlugin.column(state,context('zh-CN'));
+ assert.equal(typeof col.draw,'function','the column draws the half-circle radar');
+ assert.deepEqual(col.cells.map(c=>c.tag.full),['CPU','内存','磁盘'],'the cells stay as the fallback');
+ const area=drawInto(col.draw,'zh-CN');
+ const arcs=all(area,n=>n.attrs['data-arc']).map(n=>n.attrs['data-arc']);
+ assert.deepEqual(arcs,['cpu','memory','disk'],'outer to inner, CPU · memory · disk');
+ for(const id of arcs){
+  const leader=all(area,n=>n.attrs['data-leader']===id);assert.equal(leader.length,1,`${id} leader`);
+  const row=all(area,n=>n.attrs['data-row']===id);assert.equal(row.length,1,`${id} row`);
+  const label=all(row[0],n=>n.attrs['data-label']!==undefined);assert.equal(label.length,1,`${id} label`);
+  assert.ok(label[0].textContent.length>0);
+  assert.equal(Number(leader[0].attrs.x1),Number(leader[0].attrs.x2),'the leader drops straight down');
+  assert.equal(Number(label[0].attrs.x),Number(leader[0].attrs.x1),'the label sits under its leader foot');
+  assert.ok(Number(leader[0].attrs.y2)<Number(label[0].attrs.y),'the leader ends above its label');
+ }
+ assert.deepEqual(all(area,n=>n.attrs['data-label']!==undefined).map(n=>n.textContent),['CPU','内存','磁盘']);
+ // Network: one text row, never an arc or a bar.
+ const net=all(area,n=>n.attrs['data-row']==='network');assert.equal(net.length,1);
+ assert.match(text(net[0]),/网络/);assert.match(text(net[0]),/↓1\.2M/);assert.match(text(net[0]),/↑86K/);
+ assert.equal(all(net[0],n=>n.tag==='path'||n.tag==='rect').length,0,'network is text only');
+ assert.equal(all(area,n=>n.attrs['data-arc']==='network').length,0);
+ // History sparklines for the rows whose data has history; no duplicated bars.
+ assert.equal(all(area,n=>n.attrs['data-spark']).length,3);
+ assert.equal(all(area,n=>n.tag==='rect'&&n.attrs['data-bar']!==undefined).length,0,'no bars beside the arcs');
+ // Radar details: range rings, ticks, bearing marks and one static sweep.
+ assert.ok(all(area,n=>n.attrs['data-ring']!==undefined).length>=2);
+ assert.ok(all(area,n=>n.attrs['data-tick']!==undefined).length>=10);
+ assert.ok(all(area,n=>n.attrs['data-bearing']!==undefined).length>=3);
+ assert.equal(all(area,n=>n.attrs['data-sweep']!==undefined).length,1);
 });
 
-test('chartData: memory 10-minute used/cached fractions, pressure strip, CPU 10-second bars, disk bar',()=>{
- const samples=Array.from({length:120},(_,i)=>sample(T0+i*5000,{cpuUser:10+(i%3),cpuSystem:5,pressure:i>=100?'warn':'normal',memApp:(8+i/40)*GB}));
- const state=resourcePlugin.accept({samples},undefined);
- const d=chartData(state.samples);
- assert.equal(d.memory.length,state.samples.length);
- const last=d.memory[d.memory.length-1],s=state.samples[state.samples.length-1];
- assert.ok(Math.abs(last.used-(s.memApp+s.memWired+s.memCompressed)/s.memTotal)<1e-9);
- assert.ok(Math.abs(last.cached-s.memCached/s.memTotal)<1e-9);
- assert.ok(d.memory.every(p=>p.used+p.cached<=1.0001),'stack never exceeds the whole');
- // Pressure strip: 60 ten-second cells, worst pressure in each cell, oldest first.
- assert.equal(d.strip.length,60);assert.equal(d.strip[0],'normal');assert.equal(d.strip[59],'warn');
- // CPU: one bar per 10 s (mean of the samples inside it), user and system stacked, at most 60 bars.
- assert.equal(d.cpu.length,60);
- for(const b of d.cpu){assert.ok(b.user>=0&&b.system>=0&&b.user+b.system<=100.0001);}
- assert.equal(d.cpuLine,80);assert.equal(d.diskNotch,90);
- assert.ok(Math.abs(d.disk-(494-120)/494*100)<1e-6);
- assert.deepEqual(chartData([]),{memory:[],strip:[],cpu:[],disk:0,cpuLine:80,diskNotch:90});
+test('D407 R1 one sample: no sparklines (no history yet); no network field: the network row shows its name only',()=>{
+ const state=resourcePlugin.accept({samples:[sample(T0)]},undefined);
+ const area=drawInto(resourcePlugin.column(state,context('en')).draw);
+ assert.equal(all(area,n=>n.attrs['data-spark']).length,0);
+ const net=all(area,n=>n.attrs['data-row']==='network');assert.equal(net.length,1);
+ assert.equal(text(net[0]).trim(),'Network');assert.doesNotMatch(text(net[0]),/--/);
+});
+
+test('D407 R1 arcs take the status colour by level (normal / amber / red), tracks stay ghost',()=>{
+ const state=resourcePlugin.accept({samples:[sample(T0,{cpuUser:71,cpuSystem:25,pressure:'warn',diskFree:200*GB})]},undefined);
+ const area=drawInto(resourcePlugin.column(state,context('en')).draw);
+ const stroke=id=>all(area,n=>n.attrs['data-arc']===id)[0].attrs.stroke;
+ assert.equal(stroke('cpu'),TOKENS.low);assert.equal(stroke('memory'),TOKENS.mid);assert.equal(stroke('disk'),TOKENS.ok);
+});
+
+test('D407 R1 the radar fills the whole area: the network row sits at the bottom whatever the height',()=>{
+ const state=history(10);
+ for(const [w,h] of [[150,160],[190,240],[190,420],[420,300]]){
+  const L=radarLayout(w,h,true);
+  assert.ok(L.cy<h&&L.cy-L.scale-5>=0,`radar inside ${w}×${h}`);
+  assert.ok(L.cx+L.scale<=w&&L.cx-L.scale>=0,`radar inside width ${w}`);
+  assert.ok(h-L.netY<=12,`network row at the bottom of ${h}`);
+  assert.ok(L.rows.every((r,i)=>i===0||r>L.rows[i-1]));
+  assert.ok(L.rows[0]>L.cy,'rows below the radar');
+  const area=drawInto(resourcePlugin.column(state,context('en')).draw,'en',w,h);
+  assert.ok(all(area,n=>n.attrs['data-row']).length===4);
+ }
+});
+
+test('D397 R1 draws once per reading: no animation frame, interval or timer, no SVG animation',()=>{
+ const src=readFileSync(new URL('../../../cockpit/src/resource-plugin.ts',import.meta.url),'utf8');
+ assert.doesNotMatch(src,/requestAnimationFrame|setInterval|setTimeout|\.animate\(|<animate|'animate|@keyframes|transition/);
+ const saved={raf:globalThis.requestAnimationFrame,si:globalThis.setInterval,st:globalThis.setTimeout};
+ const calls=[];globalThis.requestAnimationFrame=()=>calls.push('raf');globalThis.setInterval=()=>calls.push('interval');globalThis.setTimeout=()=>calls.push('timeout');
+ try{
+  const state=history(5);
+  const area=drawInto(resourcePlugin.column(state,context('en')).draw);drawInto(resourcePlugin.screen(state,context('en')).draw,'en',420,300);
+  assert.deepEqual(calls,[]);
+  assert.equal(all(area,n=>/^animate/.test(n.tag)).length,0);
+ }finally{globalThis.requestAnimationFrame=saved.raf;globalThis.setInterval=saved.si;globalThis.setTimeout=saved.st;}
+});
+
+test('D407 big screen draws the same radar with detail lines and keeps its lines as the fallback',()=>{
+ const state=history(3,()=>({netIn:5_400,netOut:120}));
+ const screen=resourcePlugin.screen(state,context('en'));
+ assert.equal(typeof screen.draw,'function');assert.ok(screen.lines.length>=10,'lines stay for a failed draw');
+ assert.ok(screen.lines.some(l=>l.label==='Network'&&l.value==='↓5K ↑120B'));
+ const area=drawInto(screen.draw,'en',420,300);
+ assert.deepEqual(all(area,n=>n.attrs['data-arc']).map(n=>n.attrs['data-arc']),['cpu','memory','disk']);
+ const detail=all(area,n=>n.attrs['data-detail']!==undefined).map(n=>n.textContent).join(' | ');
+ assert.match(detail,/Load 2\.4/);assert.match(detail,/Wired · app · compressed 4\.5 · 9\.2 · 1\.4/);assert.match(detail,/494 GB/);
+});
+
+test('accept: the optional network rates (bytes per second) come as a pair',()=>{
+ assert.ok(resourcePlugin.accept({samples:[sample(T0,{netIn:10,netOut:20})]},undefined));
+ for(const bad of [{netIn:10},{netOut:20},{netIn:-1,netOut:0},{netIn:1.5,netOut:0},{netIn:'1',netOut:0}])
+  assert.equal(resourcePlugin.accept({samples:[sample(T0,bad)]},undefined),undefined,JSON.stringify(bad));
+ assert.equal(formatRate(0),'0B');assert.equal(formatRate(999),'999B');assert.equal(formatRate(86_000),'86K');assert.equal(formatRate(1_234_567),'1.2M');assert.equal(formatRate(2_500_000_000),'2.5G');
 });

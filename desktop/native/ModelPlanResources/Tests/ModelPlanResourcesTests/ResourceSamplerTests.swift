@@ -28,6 +28,13 @@ final class ResourceHistoryAndFeedTests: XCTestCase {
         XCTAssertEqual(samples[0]["memTotal"] as? Int, Int(32 * GB))
         XCTAssertEqual(samples[0]["cpuUser"] as? Double, 19)
         XCTAssertTrue(JSONSerialization.isValidJSONObject(payload))
+        // D407: the network rates go as a pair, only when the reader has them.
+        var withNetwork = sample(at: 0); withNetwork.netIn = 1_200_000; withNetwork.netOut = 86_000
+        let row = try XCTUnwrap((ResourcePagePayload.data([withNetwork])["samples"] as? [[String: Any]])?.first)
+        XCTAssertEqual(row["netIn"] as? Int, 1_200_000); XCTAssertEqual(row["netOut"] as? Int, 86_000)
+        XCTAssertEqual(row.count, 16)
+        var half = sample(at: 0); half.netIn = 5
+        XCTAssertNil((ResourcePagePayload.data([half])["samples"] as? [[String: Any]])?.first?["netIn"], "never half a pair")
     }
 
     func testFeedSendsTheHistoryOnStartThenOnlyNewSamples() {

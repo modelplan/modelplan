@@ -113,6 +113,8 @@ register('plugin', {
   resourcesMemory: ['lcd', '内存', 'Memory'],
   resourcesMemoryShort: ['lcd', '内存', 'Mem'],
   resourcesDisk: ['lcd', '磁盘', 'Disk'],
+  resourcesNetwork: ['lcd', '网络', 'Network'],
+  resourcesNetworkShort: ['lcd', '网络', 'Net'],
   resourcesPeak: ['lcd', '最高 {n}%', 'peak {n}%'],
   resourcesPeakShort: ['lcd', '↑{n}%', '↑{n}%'],
   resourcesGb: ['lcd', '{used} / {total} GB', '{used} / {total} GB'],

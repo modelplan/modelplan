@@ -24,6 +24,28 @@ final class SystemResourceReaderTests: XCTestCase {
         XCTAssertEqual(second.cpuSystem, 10, accuracy: 0.001)
     }
 
+    /// D407: the network row's rates are bytes per second since the previous read; the first read only primes them.
+    func testNetworkRatesAreBytesPerSecondSinceThePreviousRead() throws {
+        var totals: (in: UInt64, out: UInt64)? = (1_000_000, 50_000)
+        let reader = SystemResourceReader(tickSource: { [[1, 1, 1, 0]] }, networkSource: { totals })
+        let first = try XCTUnwrap(reader.read(uptime: 100, unixMs: 0))
+        XCTAssertNil(first.netIn, "no rate on the first read"); XCTAssertNil(first.netOut)
+        totals = (13_000_000, 910_000)
+        let second = try XCTUnwrap(reader.read(uptime: 110, unixMs: 10_000))
+        XCTAssertEqual(second.netIn, 1_200_000); XCTAssertEqual(second.netOut, 86_000)
+        totals = (12_000_000, 920_000)
+        XCTAssertNil(try XCTUnwrap(reader.read(uptime: 120, unixMs: 20_000)).netIn, "a counter that went down gives no rate")
+        totals = nil
+        XCTAssertNil(try XCTUnwrap(reader.read(uptime: 130, unixMs: 30_000)).netOut, "unreadable counters give no rate")
+    }
+
+    func testTheSystemReaderReadsNetworkTotalsWithoutAChildProcess() throws {
+        let reader = SystemResourceReader()
+        _ = reader.read(uptime: ProcessInfo.processInfo.systemUptime, unixMs: 0)
+        let next = try XCTUnwrap(reader.read(uptime: ProcessInfo.processInfo.systemUptime + 1, unixMs: 1000))
+        XCTAssertNotNil(next.netIn, "NET_RT_IFLIST2 is readable on macOS"); XCTAssertNotNil(next.netOut)
+    }
+
     @MainActor func testSavedOffSamplerNeverReadsTicks() {
         var calls = 0
         let reader = SystemResourceReader(tickSource: { calls += 1; return [[1, 1, 1, 0]] })
