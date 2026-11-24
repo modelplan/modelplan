@@ -168,3 +168,28 @@ test('D405 the Models list uses the wider screen: aligned effort and ★ columns
  const fill=await rows.evaluateAll(list=>list.slice(0,2).map(r=>getComputedStyle(r.querySelector('.md-bar')).getPropertyValue('--p').trim()));
  expect(fill).toEqual(['90%','10%']);
 });
+
+// macrevc-1223-1: the knob is swappable by its CSS settings alone. Whatever --knob-frames says, the page's lever position maps
+// onto that strip: Max is the last frame, Low the first, every frame lies inside the sprite, and data-frame reports the drawn one.
+for(const frames of [33,17])
+ test(`D405 the knob frame follows the CSS frame count (${frames} frames)`,async({page})=>{
+  if(frames!==33)await page.route('**/cockpit.css',async r=>{const res=await r.fetch();await r.fulfill({response:res,body:(await res.text())+`\n.dk-fad{--knob-frames:${frames}}\n`});});
+  const {send,receive}=await openThrottles(page);
+  // Sol High (middle), Opus XHigh (3/4), GLM Max (top).
+  for(const [i,pos] of [[0,.5],[1,.75],[2,1]]){
+   const cap=channels(page).nth(i).locator('.fd-cap'),want=Math.round(pos*(frames-1));
+   await expect.poll(()=>cap.evaluate(e=>getComputedStyle(e).getPropertyValue('--fd-frame').trim())).toBe(String(want));
+   await expect(cap).toHaveAttribute('data-frame',String(want));
+   const g=await cap.evaluate(e=>{const s=getComputedStyle(e),[w,h]=s.backgroundSize.split(' ').map(parseFloat);return {y:parseFloat(s.backgroundPositionY),h,tile:e.getBoundingClientRect().height};});
+   expect(g.h/g.tile,'strip is frames x tile').toBeCloseTo(frames,1);
+   expect(Math.abs(g.y+want*g.tile),'offset selects the frame').toBeLessThanOrEqual(.5);
+   expect(-g.y+g.tile,'frame inside the strip').toBeLessThanOrEqual(g.h+.5);
+  }
+  // Low: Sol's real effort moves to Low through the bridge → the first frame.
+  const data=throttleData();data.details.sessions[0].effort='low';
+  expect(await receive(send('display',{data}))).toBe(true);
+  const sol=channels(page).nth(0).locator('.fd-cap');
+  await expect.poll(()=>sol.evaluate(e=>getComputedStyle(e).getPropertyValue('--fd-frame').trim()),{timeout:5000}).toBe('0');
+  await expect(sol).toHaveAttribute('data-frame','0');
+  expect(await sol.evaluate(e=>parseFloat(getComputedStyle(e).backgroundPositionY))).toBeCloseTo(0,1);
+ });
