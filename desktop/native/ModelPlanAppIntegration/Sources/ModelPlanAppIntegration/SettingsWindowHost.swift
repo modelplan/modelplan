@@ -12,10 +12,13 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
     func hide()
 }
 
+/// A Settings surface whose Plugins pane can be redrawn when the plugin choices change outside it.
+@MainActor public protocol SettingsPluginsRefreshing: AnyObject { func refreshPlugins() }
+
 /// While Settings is open the app is a regular app (Dock icon, standard main menu, so Command-comma, -W and -Q
 /// work). Native-shell spec item 4: the app's one `PulseDockPresence` decides, so closing Settings while a detached
 /// cockpit is open keeps the Dock icon (the old Settings-only presence dropped it).
-@MainActor final class NativeSettingsWindowSurface: SettingsWindowSurface {
+@MainActor final class NativeSettingsWindowSurface: SettingsWindowSurface, SettingsPluginsRefreshing {
     private let presence: PulseDockPresence
     private var closeObserver: NSObjectProtocol?
     private let controller: SettingsWindowController
@@ -43,6 +46,7 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
         controller.window?.makeKeyAndOrderFront(nil)
     }
     func hide() { controller.window?.orderOut(nil); presence.apply(closing: controller.window) }
+    func refreshPlugins() { controller.refreshCockpitPlugins() }
     func attachCockpitPlugins(_ model: CockpitPluginSettingsModel) { controller.attachCockpitPlugins(model) }
 }
 
@@ -65,6 +69,14 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
         guard let cockpitPlugins, let native = surface as? NativeSettingsWindowSurface else { return }
         native.attachCockpitPlugins(cockpitPlugins)
     }
+    /// D376: a plugin turned off from the widget (or any edit that does not go through the Settings window) leaves an open
+    /// Plugins pane stale. Observes the bridge's choices (the model has one onChange, owned by the bridge) and redraws the
+    /// pane on the main actor.
+    public func attachCockpitPlugins(_ bridge: CockpitPluginBridge) {
+        cockpitPlugins = bridge.model
+        bridge.observeChoices { [weak self] _ in Task { @MainActor [weak self] in self?.refreshPlugins() } }
+    }
+    func refreshPlugins() { (surface as? SettingsPluginsRefreshing)?.refreshPlugins() }
     private var request: UInt64 = 0
 
     public init(application: SettingsApplicationCoordinator,

@@ -204,7 +204,7 @@ import ModelPlanResources
                 dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
                 // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
                 host.setWidgetShown(dock.isWidgetShown)
-                application.settingsHost.cockpitPlugins = bridge.model
+                application.settingsHost.attachCockpitPlugins(bridge)
                 application.resourcePlugin = host; application.cockpitPluginModel = bridge.model
             }
             application.cockpitPluginsReady?(bridge)
