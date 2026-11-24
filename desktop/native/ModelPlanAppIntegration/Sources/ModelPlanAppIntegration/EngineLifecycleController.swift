@@ -148,14 +148,14 @@ import ModelPlanWire
     private let events: SystemEvents
     init(composition: EngineDockMenuComposition, workspace: NotificationCenter, local: NotificationCenter,
          lockEvents: NotificationCenter, displayIDs: @escaping @MainActor () -> Set<UInt32>, onConsole: @escaping @MainActor () -> Bool?,
-         displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool,
+         displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool, screenLocked: (@MainActor () -> Bool?)? = nil,
          onPause: @escaping @MainActor () -> Void, onReady: @escaping @MainActor () -> Void,
          onGateOpen: @escaping @MainActor () -> Void, onStartFailed: (@MainActor () -> Void)? = nil) {
         let worker = EngineLifecycleWorker(composition: composition, onPause: onPause, onReady: onReady, onStartFailed: onStartFailed)
         let gate = LifecycleCoordinator(store: worker)
         self.worker = worker; self.gate = gate
         self.events = SystemEvents(gate: gate, workspace: workspace, local: local, distributed: lockEvents, displayIDs: displayIDs,
-                                   onConsole: onConsole, displaysAsleep: displaysAsleep)
+                                   onConsole: onConsole, displaysAsleep: displaysAsleep, screenLocked: screenLocked)
         gate.onPresentationChange = { allowed in
             DiagnosticsLog.shared.info("lifecycle", "presentation allowed=\(allowed)")
             if allowed { onGateOpen() } else { onPause() }

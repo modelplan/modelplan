@@ -24,6 +24,8 @@ public enum SystemSignal: Equatable, Sendable {
     private let displayIDs: @MainActor () -> Set<UInt32>
     private let onConsole: @MainActor () -> Bool?
     private let displaysAsleep: @MainActor (Set<UInt32>) -> Bool
+    /// v1 full review 11-24 #4: a lock seed for a launch during a locked screen; nil seeds nothing (the lock edge only).
+    private let screenLocked: (@MainActor () -> Bool?)?
     private var previousDisplays: Set<UInt32> = []
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
     public typealias Schedule = @MainActor (_ milliseconds: UInt64, _ fire: @escaping @MainActor () -> Void) -> () -> Void
@@ -39,13 +41,28 @@ public enum SystemSignal: Equatable, Sendable {
                     (CGSessionCopyCurrentDictionary() as? [String: Any])?[kCGSessionOnConsoleKey as String] as? Bool
                 }, displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool = { ids in
                     !ids.isEmpty && ids.allSatisfy { CGDisplayIsAsleep($0) != 0 }
-                }, schedule: @escaping Schedule = SystemEvents.sleepSchedule) {
-        self.schedule = schedule
+                }, screenLocked: (@MainActor () -> Bool?)? = nil, schedule: @escaping Schedule = SystemEvents.sleepSchedule) {
+        self.schedule = schedule; self.screenLocked = screenLocked
         self.gate = gate; self.workspace = workspace; self.local = local
         self.distributed = distributed; self.displayIDs = displayIDs; self.onConsole = onConsole; self.displaysAsleep = displaysAsleep
     }
     public static func currentConsoleState() -> Bool? {
         (CGSessionCopyCurrentDictionary() as? [String: Any])?[kCGSessionOnConsoleKey as String] as? Bool
+    }
+    /// The session's screen-lock flag (`CGSSessionScreenIsLocked` in the public session dictionary); nil when absent.
+    public static func currentScreenLocked() -> Bool? {
+        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool
+    }
+    /// Review 11-24 #4: the OS pause reasons that hold right now, from the same queries `start()` seeds with. Used
+    /// before the lifecycle exists (the early engine start) so no helper starts while the gate would be closed.
+    public static func pauseReasonsNow(displayIDs: Set<UInt32> = currentDisplayIDs(), onConsole: Bool? = currentConsoleState(),
+                                       screenLocked: Bool? = currentScreenLocked()) -> Set<LifecycleCoordinator.PauseReason> {
+        var reasons: Set<LifecycleCoordinator.PauseReason> = []
+        if displayIDs.isEmpty { reasons.insert(.noDisplay) }
+        if onConsole == false { reasons.insert(.sessionInactive) }
+        if allDisplaysAsleep(displayIDs) { reasons.insert(.screenSleep) }
+        if screenLocked == true { reasons.insert(.screenLocked) }
+        return reasons
     }
     public static func allDisplaysAsleep(_ ids: Set<UInt32>) -> Bool {
         !ids.isEmpty && ids.allSatisfy { CGDisplayIsAsleep($0) != 0 }
@@ -91,6 +108,7 @@ public enum SystemSignal: Equatable, Sendable {
         // Public on-console/display-asleep queries seed state when launched during a paused session.
         if let onConsole = onConsole() { gate.set(.sessionInactive, blocked: !onConsole) }
         gate.set(.screenSleep, blocked: displaysAsleep(previousDisplays))
+        if let locked = screenLocked?() { gate.set(.screenLocked, blocked: locked) }
         gate.start()
     }
     public func stop() {
