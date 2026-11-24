@@ -162,6 +162,10 @@ func TestObservationSignalsOnlyWhatItWrote(t *testing.T) {
 		Backend: backend, Paths: paths,
 		Observe: func(time.Time) []ObserveResult {
 			if write {
+				// The observation log no longer lives in observed/, so the ledger writer makes it.
+				if err := os.MkdirAll(filepath.Join(cache, "observed"), 0o700); err != nil {
+					t.Error(err)
+				}
 				if err := os.WriteFile(filepath.Join(cache, "observed", ".tmp-ledger"), []byte("{}"), 0o600); err != nil {
 					t.Error(err)
 				}

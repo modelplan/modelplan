@@ -181,7 +181,20 @@ func TestObserverNeverCommitsAnEarlierBindingUnderALaterGrant(t *testing.T) {
 	h := newObserverHome(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	h.accountCaches("sub-codex-a", "sub-claude-a", now.Add(-time.Hour))
-	h.rollout("2026/11/24", now.Add(-5*time.Second))
+	// A recording that started before the turn, and one complete Codex turn: the speed
+	// observation records a session bound to the account.
+	h.write(speed.PerfPath(h.st.Dir), fmt.Sprintf(`{"schemaVersion":1,"since":%q,"rows":[]}`, now.Add(-time.Hour).Format(time.RFC3339Nano)), now.Add(-time.Hour))
+	cx := func(at time.Time, kind, payload string) string {
+		return fmt.Sprintf(`{"timestamp":%q,"type":%q,"payload":%s}`+"\n", at.Format(time.RFC3339Nano), kind, payload)
+	}
+	turn := now.Add(-60 * time.Second)
+	h.write(filepath.Join(h.codex, "sessions", "2026", "11", "24", "rollout-2026-11-24T10-00-00-turn.jsonl"),
+		cx(turn.Add(-time.Second), "session_meta", `{"id":"SYNTHETIC-TURN","source":"cli"}`)+
+			cx(turn, "event_msg", `{"type":"task_started"}`)+
+			cx(turn, "turn_context", `{"model":"gpt-6.1-sol","effort":"high"}`)+
+			cx(turn.Add(12*time.Second), "event_msg", fmt.Sprintf(`{"type":"item_completed","item":{"type":"AgentMessage","id":"i"},"started_at_ms":%d}`, turn.Add(2*time.Second).UnixMilli()))+
+			cx(turn.Add(12*time.Second), "event_msg", `{"type":"token_count","info":{"last_token_usage":{"output_tokens":600}}}`)+
+			cx(turn.Add(30*time.Second), "event_msg", `{"type":"task_complete","duration_ms":30000}`), now.Add(-5*time.Second))
 	fired := false
 	observeCommitHook = func(string) {
 		if fired {
