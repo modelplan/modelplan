@@ -160,7 +160,12 @@ func TestInteractiveCredentialOutcomePreservesClosedRemoteBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, outcome := range []string{"denied", "canceled", "timeout", "interaction_required", "not_found", "error", "ok"} {
-		paths, release := WithClaudeCredential(p, outcome, "U7-unused-closed-budget-canary", nil)
+		var expires *time.Time
+		if outcome == "ok" { // an app success always carries the login's real expiry
+			at := time.Now().Add(time.Hour)
+			expires = &at
+		}
+		paths, release := WithClaudeCredential(p, outcome, "U7-unused-closed-budget-canary", expires)
 		if err := KeychainGrantRead(context.Background(), paths, "claude", claudeTestNow); err != nil {
 			release()
 			t.Fatal(err)
@@ -180,5 +185,34 @@ func TestInteractiveCredentialOutcomePreservesClosedRemoteBudget(t *testing.T) {
 		if string(after) != string(floor) {
 			t.Fatal("credential outcome changed budget", outcome)
 		}
+	}
+}
+
+// Review 11-24 #8: a Keychain result without the login's real expiry, or with a past one,
+// never becomes a credential: zero provider requests, and a closed failure state.
+func TestClaudeAppCredentialWithoutRealExpiryFailsClosed(t *testing.T) {
+	past := time.Now().Add(-time.Minute)
+	for name, expires := range map[string]*time.Time{"missing": nil, "expired": &past} {
+		t.Run(name, func(t *testing.T) {
+			p := claudeTestPaths(t)
+			t.Setenv("CLAUDE_CONFIG_DIR", "")
+			root := filepath.Join(os.Getenv("HOME"), ".claude")
+			os.MkdirAll(root, 0700)
+			g := p.ReaderAccess.Grants["claude"]
+			g.Profiles = []ReaderProfile{{Root: root}}
+			g.Keychain = true
+			p.ReaderAccess.Grants["claude"] = g
+			status, paths := 200, []string{}
+			claudeTestServer(t, &status, &paths)
+			bound, release := WithClaudeCredential(p, "ok", "synthetic-access-token", expires)
+			defer release()
+			out := collectClaudeAccount(context.Background(), nativeClient, readerContext{Paths: bound, Grant: bound.ReaderAccess.Grants["claude"], Profile: g.Profiles[0], Now: claudeTestNow})
+			if len(paths) != 0 {
+				t.Fatal("provider called without the login's real expiry", paths)
+			}
+			if out.Entry.Account != nil || out.Entry.Status == "ok" {
+				t.Fatal("credential without real expiry produced a reading")
+			}
+		})
 	}
 }

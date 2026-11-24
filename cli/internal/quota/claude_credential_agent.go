@@ -44,14 +44,14 @@ func WithClaudeCredential(p Paths, outcome, token string, expiresAt *time.Time) 
 	status := outcome
 	var payload []byte
 	if outcome == "ok" {
-		expires := time.Now().Add(30 * time.Second)
-		if expiresAt != nil {
-			expires = *expiresAt
-		}
-		if token == "" || len(token) > 16<<10 || strings.ContainsAny(token, "\r\n") || !expires.After(time.Now()) {
+		// Review 11-24 #8: the app passes the Keychain login's own expiry. A result without
+		// one fails closed; no synthetic expiry or scope may stand in for the vendor's
+		// metadata, so an expired login sends no provider request.
+		if expiresAt == nil || token == "" || len(token) > 16<<10 || strings.ContainsAny(token, "\r\n") || !expiresAt.After(time.Now()) {
 			status = "unavailable"
 		} else {
-			payload, _ = json.Marshal(map[string]any{"claudeAiOauth": map[string]any{"accessToken": token, "expiresAt": expires.UnixMilli(), "scopes": []string{"user:profile"}}})
+			// The app admits only a login whose scopes include user:profile.
+			payload, _ = json.Marshal(map[string]any{"claudeAiOauth": map[string]any{"accessToken": token, "expiresAt": expiresAt.UnixMilli(), "scopes": []string{"user:profile"}}})
 			status = ""
 		}
 	}
