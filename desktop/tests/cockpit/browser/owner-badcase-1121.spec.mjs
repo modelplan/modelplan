@@ -114,6 +114,34 @@ test('B1 the held history never crosses the privacy barrier and expires after te
  expect(await receive(send('display',{...next,data:unread()}))).toBe(true);
  await expect(empty(page)).toHaveCount(1);
 });
+// Review 11-24 #11: the hold ends on its own deadline, and a redraw never restarts it.
+const HOLD=10*60*1000;
+test('B1 the held history ends at its ten-minute deadline with no new reply',async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);await expect(empty(page)).toHaveCount(0);
+ const last=await page.evaluate(()=>window.__msgs.filter(m=>m.type==='nextDeadline').at(-1));
+ expect(Number(last.deadlineUnixMs)).toBeLessThanOrEqual(NOW+HOLD);
+ expect(await receive(send('tick',{nowUnixMs:String(NOW+HOLD-1),reason:'deadline'}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ expect(await receive(send('tick',{nowUnixMs:String(NOW+HOLD),reason:'deadline'}))).toBe(true);
+ await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
+});
+test('B1 a member reorder while the history is held does not restart the hold',async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+5*60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ const order=await page.evaluate(()=>[...new Set([...document.querySelectorAll('.ec[data-col]')].map(e=>e.dataset.col))]);
+ expect(order.length).toBeGreaterThan(1);
+ await page.clock.setFixedTime(new Date(NOW+6*60*1000));
+ expect(await receive(send('appearance',{...appearance,memberOrder:[...order].reverse()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ await page.clock.setFixedTime(new Date(NOW+HOLD));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(empty(page)).toHaveCount(1);
+});
 test('B1 a fresh profile with nothing recorded still says "No usage record yet"',async({page})=>{
  await open(page,{data:unread()});
  await expect(empty(page)).toHaveCount(1);

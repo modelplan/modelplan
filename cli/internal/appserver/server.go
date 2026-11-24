@@ -141,14 +141,36 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.WriteCloser
 		}
 	}()
 	go func() {
+		// A failed rebuild is retried with a bounded backoff: a change notification or an
+		// Account Today expiry wake is consumed when it is delivered, so dropping the error
+		// would leave the previous view on screen until some unrelated change (review 11-24 #7).
+		var backoff time.Duration
+		var retry *time.Timer
+		defer func() {
+			if retry != nil {
+				retry.Stop()
+			}
+		}()
 		for {
 			select {
 			case <-s.ctx.Done():
 				return
 			case <-s.refreshWake:
 				ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
-				_ = s.refresh(ctx)
+				err := s.refresh(ctx)
 				cancel()
+				if s.ctx.Err() != nil {
+					return
+				}
+				if err == nil {
+					backoff = 0
+					continue
+				}
+				backoff = nextRefreshBackoff(backoff)
+				if retry != nil {
+					retry.Stop()
+				}
+				retry = time.AfterFunc(backoff, s.scheduleRefresh)
 			}
 		}
 	}()
@@ -667,6 +689,22 @@ func (s *Server) scheduleRefresh() {
 	default:
 	}
 }
+// Retry delays for a failed change-driven rebuild: 250 ms doubling to 30 s.
+const (
+	refreshRetryFirst = 250 * time.Millisecond
+	refreshRetryMax   = 30 * time.Second
+)
+
+func nextRefreshBackoff(previous time.Duration) time.Duration {
+	if previous <= 0 {
+		return refreshRetryFirst
+	}
+	if next := previous * 2; next < refreshRetryMax {
+		return next
+	}
+	return refreshRetryMax
+}
+
 func (s *Server) refresh(ctx context.Context) error {
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
