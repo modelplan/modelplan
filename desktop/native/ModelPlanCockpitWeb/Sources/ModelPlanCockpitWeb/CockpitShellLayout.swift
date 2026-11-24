@@ -151,7 +151,18 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public var portholeHeight: CGFloat { canvasHeight - frame.height }
     /// The smallest whole point count that holds `length`; float noise (913/939 * 939) never adds a point.
     static func wholePoints(_ length: CGFloat) -> CGFloat { (length - 1e-6).rounded(.up) }
-    /// G3-46: with no visible menu bar icon, open at the top-right of the screen, directly below the menu bar.
+    /// D378 (owner, 11-21; replaces G3-46's top-right corner for an icon that is not visible): with the status item
+    /// hidden or squeezed off, the cockpit anchors just below the RIGHT edge of the notch (the camera housing), and the
+    /// rack hangs from the menu bar's edge there, its left side on the notch's edge. Without a notch the same place a
+    /// notch edge would be: `nominalNotchHalfWidth` right of the menu bar's centre. The rect has the rack's width and
+    /// the menu bar's height, like a status item there.
+    public static let nominalNotchHalfWidth: CGFloat = 100
+    public static func menuBarEdgeAnchor(screen: CockpitScreen) -> CGRect {
+        let usable = screen.visibleFrame
+        let edge = (screen.notchRightEdge ?? screen.frame.midX + nominalNotchHalfWidth).rounded()
+        return CGRect(x: edge, y: usable.maxY, width: CockpitRackMast.width, height: max(1, screen.frame.maxY - usable.maxY))
+    }
+    /// G3-46: the top-right of a display that is not the status item's own (a detached open there), below the menu bar.
     public static func hiddenIconAnchor(usable: CGRect) -> CGRect {
         CGRect(x: usable.maxX, y: usable.maxY, width: 0, height: 0)
     }
@@ -199,9 +210,9 @@ public struct CockpitShellLayout: Equatable, Sendable {
         rect.applying(.init(scaleX: scale, y: scale)).offsetBy(dx: 0, dy: canvasHeight - pageSize.height * scale)
     }
 
-    public func shellState(attached: Bool, scope: String = "all", range: CockpitRange = .initial) -> CockpitShellState {
+    public func shellState(attached: Bool, scope: String = "all", range: CockpitRange = .initial, refreshing: Bool = false) -> CockpitShellState {
         .init(closed: shutterClosed, attached: attached, forcedClosed: forcedClosed,
-              tier: profile == .full ? .tall : .compact, scope: scope, range: range)
+              tier: profile == .full ? .tall : .compact, scope: scope, range: range, refreshing: refreshing)
     }
     /// G3-159: the transparent base reserve (bells and flames) under the hull, in window points. A detached cockpit is
     /// kept on screen by its hull, so this strip may hang below the visible frame's bottom edge. AppKit places the

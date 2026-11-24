@@ -280,6 +280,22 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(hidden.maxX, 1440, "a hidden icon opens the cockpit at the top-right")
         XCTAssertEqual(hidden.maxY, 1016, "10 pt below the menu bar")
     }
+    /// D378 (owner, 11-21): a status item that is not visible anchors the attached cockpit just below the notch's RIGHT
+    /// edge, the rack's left side on that edge; without a notch, where a notch edge would be (100 pt right of centre).
+    @MainActor func testAnInvisibleStatusItemAnchorsAtTheNotchsRightEdgeOrWhereItWouldBe() throws {
+        let frame = CGRect(x: 0, y: 0, width: 1512, height: 982), usable = CGRect(x: 0, y: 0, width: 1512, height: 945)
+        let notch = CockpitShellLayout.menuBarEdgeAnchor(screen: CockpitScreen(frame: frame, visibleFrame: usable, notchRightEdge: 851))
+        XCTAssertEqual(notch, CGRect(x: 851, y: 945, width: CockpitRackMast.width, height: 37), "right of the camera housing, the menu bar's height")
+        let plain = CockpitShellLayout.menuBarEdgeAnchor(screen: CockpitScreen(frame: frame, visibleFrame: usable))
+        XCTAssertEqual(plain.minX, 756 + 100, "no notch: the nominal notch edge right of the menu bar's centre")
+        XCTAssertEqual(plain.minY, usable.maxY)
+        let fit = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: notch, shutterClosed: false, size: .percent100))
+        XCTAssertEqual(fit.shoulder.x, notch.midX, accuracy: 0.5, "the left shoulder sits under the rack hanging there")
+        XCTAssertGreaterThan(fit.frame.minX, 851 - CockpitShellLayout.shoulderX(.full) - 1, "not at the top-right corner (G3-46)")
+        // The rack hangs from the anchor: its frame starts at the notch edge, from the menu bar's edge down.
+        let rack = CockpitLaunchRack.frame(icon: notch)
+        XCTAssertEqual(rack.minX, 851); XCTAssertEqual(rack.maxY, usable.maxY)
+    }
     @MainActor func testUpdatingOneArrangementDoesNotConsumeExtraMemorySlots() {
         let session = CockpitShellSession()
         for index in 0..<12 { session.remember(.init(x:index,y:index),arrangement:"same") }
