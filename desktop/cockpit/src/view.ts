@@ -180,6 +180,8 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  }
  function preserveFocus(update:()=>void,replacing=false){
   const focused=document.activeElement instanceof HTMLElement?document.activeElement:null;
+  const pointerFocused=focused?.hasAttribute('data-pointer-focus')===true;
+  const restore=(target:HTMLElement)=>{if(pointerFocused)target.dataset.pointerFocus='';target.focus({preventScroll:true});if(document.activeElement!==target)delete target.dataset.pointerFocus;};
   const area=focused&&(frame.engine.contains(focused)?frame.engine:frame.mfd.contains(focused)?frame.mfd:null);
   const quota=focused?.classList.contains('qcell')?focused:null;const quotaColumn=quota?.closest<HTMLElement>('.ec[data-col]');
   const memberKey=quotaColumn?.dataset.col??focused?.dataset.focusMember??(focused?.dataset.scope||undefined);
@@ -206,14 +208,14 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
     if(!quotaIdentity)return;
     const columns=[...frame.engine.querySelectorAll<HTMLElement>('.ec[data-col]')].filter(e=>e.dataset.col===memberKey);
     const cells=columns.flatMap(e=>[...e.querySelectorAll<HTMLElement>('.qcell[data-row]')]).filter(e=>e.dataset.row===quota.dataset.row&&quotaFocusIdentity?.(e)===quotaIdentity);
-    if(cells.length===1)cells[0].focus({preventScroll:true});return;
+    if(cells.length===1)restore(cells[0]!);return;
    }
   }
   let target:HTMLElement|null=null;
   if(key&&key!=='data-add-subscription'&&keyValue!==null){const matches=[...area.querySelectorAll<HTMLElement>(focused.tagName)].filter(e=>e.getAttribute(key)===keyValue);if(matches.length===1)target=matches[0];}
   // CKP-MFD-56: an alert row is found by its identity only; a refresh that re-sorts the list must never hand its focus to another subscription's row.
   if(!target&&path&&key!=='data-al-id'){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
-  target?.focus({preventScroll:true});
+  if(target)restore(target);
  }
  function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);plugins.tick(now);});}
  // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
