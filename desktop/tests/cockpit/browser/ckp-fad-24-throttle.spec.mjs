@@ -192,7 +192,9 @@ for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height
     for(const [name,x,y] of [['ghost',ghost.x,ghost.y],['rod',rod.x,rod.y],['lever',lever.x,await grip(ch)]])expect(Math.abs(x-await slotLine(ch,y)),name+' on the slot line').toBeLessThanOrEqual(.5);
     // the rod is faint but visible; in the day theme it is the dark blue
     // the ghost rod is as wide as the real lever's rod (5 u)
-    expect(Math.abs(rod.width-5*(tier==='tall'?88.5/97:81/97)),'ghost rod width').toBeLessThanOrEqual(.5);
+    // the rod's own width (its box, before the skew along the tilted slot line: macrevb-1229-2)
+    const rodWidth=await ch.locator('.fd-tline').evaluate(e=>parseFloat(getComputedStyle(e).width));
+    expect(Math.abs(rodWidth-5*(tier==='tall'?88.5/97:81/97)),'ghost rod width').toBeLessThanOrEqual(.5);
     const bg=await ch.locator('.fd-tline').evaluate(e=>getComputedStyle(e).backgroundColor);
     if(theme==='night')expect(bg).toMatch(/0\.25\)$/);
     if(theme==='day')expect(bg).toMatch(/0\.55\)$/);

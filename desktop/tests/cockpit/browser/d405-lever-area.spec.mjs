@@ -256,3 +256,48 @@ test('D405 the slot width is one CSS setting (--slot-w)',async({page})=>{
  const g=await slotGeometry(page);
  for(const c of g){expect(c.bottom.w).toBeGreaterThan(5.8);expect(c.bottom.w).toBeLessThan(6.4);}
 });
+
+// macrevb-1229 (review of #1229): the shared slot line also holds for the slot's inner shade, the blue trial rod's two ends and a
+// cancelled trial ghost while it glides back.
+const lineAt=(page,i,y)=>channels(page).nth(i).evaluate((ch,y)=>{const core=ch.querySelector('.fd-slotsvg .sl-core'),tb=ch.querySelector('.fd-travel').getBoundingClientRect();
+ const p=core.getAttribute('points').trim().split(/\s+/).map(s=>s.split(',').map(Number)),f=(y-tb.top-p[0][1])/(p[3][1]-p[0][1]);
+ return tb.left+((p[0][0]+(p[3][0]-p[0][0])*f)+(p[1][0]+(p[2][0]-p[1][0])*f))/2;},y);
+
+test('macrevb-1229-3 the 1 px side shade hugs the inner edge of the outer slots',async({page})=>{
+ await openThrottles(page);
+ const side=await channels(page).evaluateAll(list=>list.map(ch=>{const pts=e=>e.getAttribute('points').trim().split(/\s+/).map(s=>s.split(',').map(Number));
+  const core=pts(ch.querySelector('.sl-core')),shade=pts(ch.querySelector('.sl-shade'));
+  return {core:(core[0][0]+core[1][0])/2,shade:(shade[0][0]+shade[1][0])/2};}));
+ expect(side[0].shade-side[0].core,'left slot: shade on its right (inner) edge').toBeGreaterThan(.5);
+ expect(side[2].shade-side[2].core,'right slot: shade on its left (inner) edge').toBeLessThan(-.5);
+});
+
+test('macrevb-1229-2 the trial rod runs along the slot line at both ends (outer levers, Max and Low)',async({page})=>{
+ const glm=['low','max'];await openThrottles(page,{glmEfforts:glm});
+ // Sol (left) lever High: try Max (rod up) and Low (rod down); GLM (right) lever Max: try Low.
+ for(const [i,keys] of [[0,['ArrowUp','ArrowUp']],[0,['ArrowDown','ArrowDown','ArrowDown','ArrowDown']],[2,['ArrowDown']]]){
+  const ch=channels(page).nth(i),slider=ch.locator('[role=slider]');await slider.focus();for(const k of keys)await page.keyboard.press(k);
+  const rod=ch.locator('.fd-tline');await expect(rod).toBeVisible();
+  await page.waitForFunction(()=>[...document.querySelectorAll('.fd-ghost')].every(g=>!g.getAnimations().length));
+  const g=await rod.evaluate(e=>{const r=e.getBoundingClientRect(),m=getComputedStyle(e).transform,c=m==='none'?0:Number(m.slice(7,-1).split(',')[2]);return {cx:r.left+r.width/2,top:r.top,bottom:r.bottom,h:e.offsetHeight,c};});
+  const ends=[[g.top+(g.bottom-g.top-g.h)/2,g.cx-g.c*g.h/2],[g.bottom-(g.bottom-g.top-g.h)/2,g.cx+g.c*g.h/2]];
+  for(const [y,x] of ends)expect(Math.abs(x-await lineAt(page,i,y)),`rod end at ${y.toFixed(1)} on the slot line`).toBeLessThanOrEqual(.3);
+ }
+});
+
+test('macrevb-1229-4 a cancelled trial ghost glides back along the slot line',async({page})=>{
+ await openThrottles(page);
+ for(const i of [0,1]){
+  const ch=channels(page).nth(i),slider=ch.locator('[role=slider]');await slider.focus();
+  for(let n=0;n<4;n++)await page.keyboard.press('ArrowDown');
+  await expect(ch.locator('.fd-ghost')).toBeVisible();
+  await page.waitForFunction(()=>[...document.querySelectorAll('.fd-ghost')].every(g=>!g.getAnimations().length));
+  await ch.evaluate(ch=>{window.__glide=[];const g=ch.querySelector('.fd-ghost'),core=ch.querySelector('.fd-slotsvg .sl-core'),t0=performance.now();
+   const line=y=>{const tb=ch.querySelector('.fd-travel').getBoundingClientRect(),p=core.getAttribute('points').trim().split(/\s+/).map(s=>s.split(',').map(Number)),f=(y-tb.top-p[0][1])/(p[3][1]-p[0][1]);return tb.left+((p[0][0]+(p[3][0]-p[0][0])*f)+(p[1][0]+(p[2][0]-p[1][0])*f))/2;};
+   const look=()=>{if(!g.hidden&&g.classList.contains('back')){const r=g.getBoundingClientRect();window.__glide.push(Math.abs(r.left+r.width/2-line(r.top+r.height/2)));}if(performance.now()-t0<400)requestAnimationFrame(look);};requestAnimationFrame(look);});
+  await page.keyboard.press('Escape');await page.waitForTimeout(450);
+  const off=await page.evaluate(()=>window.__glide);
+  expect(off.length,'the return glide was sampled').toBeGreaterThan(2);
+  expect(Math.max(...off),`channel ${i} ghost on the slot line while it returns`).toBeLessThanOrEqual(.5);
+ }
+});

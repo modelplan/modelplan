@@ -17,7 +17,7 @@
 /* D405 (owner 11-24): the slot and its detent dashes are code-drawn by the MIT sheet on the tilted face; the plate bitmap is no
    longer drawn. The slot keeps only the ghost grip as a 1 px off-box layer so a first trial makes no request. */
 .dk-fad .fd-slot{background:url('./assets/throttle/ghost-night.png') -999px 0/1px 1px no-repeat}
-.dk-fad .fd-cap{--fd-frame:clamp(0,calc(var(--fd-pos,.5) * (var(--knob-frames) - 1)),calc(var(--knob-frames) - 1));top:calc(var(--knob-top) + 97 * var(--u) * (round(var(--fd-pos,.5) * (var(--knob-frames) - 1)) / (var(--knob-frames) - 1) - var(--fd-pos,.5)));left:50%;width:calc(var(--knob-w) * var(--u));height:calc(var(--knob-h) * var(--u));margin:0 0 0 calc((var(--knob-dx) - var(--knob-w) / 2) * var(--u));border-radius:0;box-shadow:none;pointer-events:none;transition:--fd-frame .28s cubic-bezier(.3,.7,.2,1),translate .28s cubic-bezier(.3,.7,.2,1);
+.dk-fad .fd-cap{--fd-frame:clamp(0,calc(var(--fd-pos,.5) * (var(--knob-frames) - 1)),calc(var(--knob-frames) - 1));top:calc(var(--knob-top) + 97 * var(--u) * (round(var(--fd-pos,.5) * (var(--knob-frames) - 1)) / (var(--knob-frames) - 1) - var(--fd-pos,.5)));left:50%;width:calc(var(--knob-w) * var(--u));height:calc(var(--knob-h) * var(--u));margin:0 0 0 calc((var(--knob-dx) - var(--knob-w) / 2) * var(--u));border-radius:0;box-shadow:none;pointer-events:none;transition:--fd-frame .28s cubic-bezier(.3,.7,.2,1),--fd-kx .28s cubic-bezier(.3,.7,.2,1);
   background:var(--knob-art) 0 calc(var(--fd-frame) * -1 * var(--knob-h) * var(--u))/calc(var(--knob-w) * var(--u)) calc(var(--knob-frames) * var(--knob-h) * var(--u)) no-repeat}
 .dk-fad .fd-cap::after{content:none}
 .dk-fad .fd-cap.parked{filter:brightness(.55) saturate(0)}

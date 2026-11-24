@@ -17,7 +17,8 @@ const ALLOWED_ANIMATIONS=new Set([
  'cockpit-bell-burn',     // the burn's stepped flutter, same gate
 ]);
 // Selector fragment -> transitioned properties allowed on it (interaction feedback and fader glide).
-const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top','--fd-frame']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],// WP-10: the porthole switch's two art layers and the date keys cross-fade in 120 ms (spec R3, section 6 and 7).
+// D405 (#1229): the lever and ghost glide along the tilted slot line; their row is mirrored in --fd-kx for the x half of the glide.
+const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top','--fd-frame','--fd-kx']],[/\bfd-ghost\b/,['top','opacity','--fd-kx']],[/\bfd-peek\b/,['opacity']],// WP-10: the porthole switch's two art layers and the date keys cross-fade in 120 ms (spec R3, section 6 and 7).
  [/\bshutter-slider\b/,['opacity']],[/\brk\b/,['color']],[/\brk-cap\b/,['opacity']],
  // CKP-SHELL-33 (D178/D186): the launch-rack ignition glow fades on the base bells (120 ms in, 220 ms out); off under Reduce Motion.
  // D294: the burn's plume also retracts by transform; the working light yields by opacity.

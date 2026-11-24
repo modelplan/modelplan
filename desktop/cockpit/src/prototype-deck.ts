@@ -179,6 +179,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    if(ch.classList.contains('empty')){if(slot.dataset.drawn){slot.replaceChildren();delete slot.dataset.drawn;}continue;}
    const height=travel.offsetHeight,width=travel.offsetWidth;if(!height||!width)continue;
    const pad=parseFloat(getComputedStyle(travel).getPropertyValue('--fd-pad'))||8,key=[width,height,pad,slotW,pitch].join();
+   // macrevb-1229-2: the slot's slope (x per y), from the same face geometry, for the skewed trial rod.
+   ch.style.setProperty('--slot-slope',String((i-1)*pitch*(1-TIER_Q)/Math.max(1,height-2*pad)));
    if(slot.dataset.drawn===key)continue;slot.dataset.drawn=key;slot.innerHTML=slotSvg({width,height,pad,slotW,off:i-1,pitch});
   }
  }

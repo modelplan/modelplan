@@ -34,7 +34,7 @@ export function slotSvg({width, height, pad, slotW, off, pitch}) {
   const at = y => { const f = (y - pad) / rows, s = tierScale(f); return {x: width / 2 + off * pitch * (s - 1), w: slotW * s}; };
   const top = at(y0), bot = at(y1), r = n => +n.toFixed(2);
   const poly = (a, b, ya, yb) => `${r(a.x - a.w / 2)},${r(ya)} ${r(a.x + a.w / 2)},${r(ya)} ${r(b.x + b.w / 2)},${r(yb)} ${r(b.x - b.w / 2)},${r(yb)}`;
-  const inner = off > 0 ? -1 : 1; // the inner edge faces the lever-area centre; the centre slot shades its left edge
+  const inner = off < 0 ? -1 : 1; // the inner edge faces the lever-area centre (right edge on the left slot); the centre slot shades its left edge
   const edge = (a, b) => { const sx = w => (inner < 0 ? w.x + w.w / 2 - 1 : w.x - w.w / 2); return `${r(sx(a))},${r(y0)} ${r(sx(a) + 1)},${r(y0)} ${r(sx(b) + 1)},${r(y1)} ${r(sx(b))},${r(y1)}`; };
   return `<svg class="fd-slotsvg" width="${width}" height="${r(height)}" viewBox="0 0 ${width} ${r(height)}" aria-hidden="true">`
     + `<polygon class="sl-core" points="${poly(top, bot, y0, y1)}"/>`

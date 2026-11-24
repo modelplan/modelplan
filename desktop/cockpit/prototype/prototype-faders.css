@@ -104,9 +104,14 @@
 .dk-fad .sc-travel[data-gap="1"]{--ch-off:-.5}.dk-fad .sc-travel[data-gap="2"]{--ch-off:.5}
 .dk-fad .fd-travel{container-type:size}
 .dk-fad .fd-travel>*,.dk-fad .fd-marks>*{--u:calc((100cqh - 2 * var(--fd-pad)) / 97)}
-.dk-fad :is(.fd-tick,.fd-rec,.fd-dot,.fd-cap,.fd-ghost,.fd-peek,.sc-l){--s:calc(var(--tq,1) + (1 - var(--tq,1)) * var(--k,0));translate:calc(var(--ch-off,0) * var(--fd-pitch) * (var(--s) - 1)) 0}
-.dk-fad .fd-tline{translate:calc(var(--ch-off,0) * var(--fd-pitch) * (var(--tq,1) + (1 - var(--tq,1)) * (var(--k0,0) + var(--k1,0)) / 2 - 1)) 0}
+.dk-fad :is(.fd-tick,.fd-rec,.fd-dot,.fd-peek,.sc-l){--s:calc(var(--tq,1) + (1 - var(--tq,1)) * var(--k,0));translate:calc(var(--ch-off,0) * var(--fd-pitch) * (var(--s) - 1)) 0}
+.dk-fad .fd-tline{transform:skewX(atan(var(--slot-slope,0)));translate:calc(var(--ch-off,0) * var(--fd-pitch) * (var(--tq,1) + (1 - var(--tq,1)) * (var(--k0,0) + var(--k1,0)) / 2 - 1)) 0}
 .dk-fad .fd-slot{position:absolute;inset:0;pointer-events:none}
+/* macrevb-1229-1/-4: the lever and the trial ghost glide along the slot line. Their row k is mirrored into the registered
+   number --fd-kx, which transitions with `top` (and the frame), so x follows the same 280 ms glide as y, also when a cancelled
+   ghost returns. The rod (macrevb-1229-2) is skewed to the slot's slope (--slot-slope, set by the page with the slot drawing). */
+@property --fd-kx{syntax:'<number>';inherits:false;initial-value:0}
+.dk-fad :is(.fd-cap,.fd-ghost){--fd-kx:var(--k,0);translate:calc(var(--ch-off,0) * var(--fd-pitch) * (var(--tq,1) + (1 - var(--tq,1)) * var(--fd-kx) - 1)) 0}
 .dk-fad .fd-slotsvg{position:absolute;left:0;top:0;overflow:visible}
 .dk-fad .fd-slotsvg .sl-core{fill:var(--slot-core,#0b0d10)}.dk-fad .fd-slotsvg .sl-shade{fill:var(--slot-shade,#000)}.dk-fad .fd-slotsvg .sl-lip{fill:var(--slot-lip,#ffffff2e)}
 .dk-fad .fd-tick,.dk-fad .fd-rec,.dk-fad .fd-dot,.dk-fad .fd-cap,.dk-fad .fd-ghost,.dk-fad .fd-peek{position:absolute;top:calc(var(--fd-pad) + (100% - 2 * var(--fd-pad)) * var(--k,0))}
@@ -122,15 +127,15 @@
 .dk-fad .fd-ch.xhl .fd-dot{box-shadow:0 0 0 2px color-mix(in srgb,var(--silk-hi) 50%,transparent)}
 .dk-fad .fd-cap,.dk-fad .fd-ghost,.dk-fad .fd-peek{left:50%;width:30px;height:12px;margin:-6px 0 0 -15px;border-radius:2px}
 .dk-fad .fd-cap{z-index:1;background:repeating-linear-gradient(180deg,#ffffff26 0 1px,transparent 1px 2.4px),linear-gradient(180deg,#f1f3f4,#bcc1c6 46%,#8b9298 54%,#c8cdd1);
-  box-shadow:0 2px 3px #000b,0 0 0 .5px #000;transition:top .28s cubic-bezier(.3,.7,.2,1),translate .28s cubic-bezier(.3,.7,.2,1)}
+  box-shadow:0 2px 3px #000b,0 0 0 .5px #000;transition:top .28s cubic-bezier(.3,.7,.2,1),--fd-kx .28s cubic-bezier(.3,.7,.2,1)}
 .dk-fad .fd-cap::after{content:"";position:absolute;left:3px;right:3px;top:5.5px;height:1px;background:#fff;box-shadow:0 0 2px #fff}
 .dk-fad .fd-cap.parked{filter:brightness(.42) saturate(0)}
 .dk-fad .fd-ghost{z-index:2;pointer-events:none;border:1.5px solid var(--trial);
   background:repeating-linear-gradient(180deg,color-mix(in srgb,var(--trial) 18%,transparent) 0 1px,transparent 1px 2.4px),color-mix(in srgb,var(--trial) 24%,transparent);
-  box-shadow:0 0 8px color-mix(in srgb,var(--trial) 45%,transparent);transition:top .28s cubic-bezier(.3,.7,.2,1),translate .28s cubic-bezier(.3,.7,.2,1),opacity .1s linear}
+  box-shadow:0 0 8px color-mix(in srgb,var(--trial) 45%,transparent);transition:top .28s cubic-bezier(.3,.7,.2,1),--fd-kx .28s cubic-bezier(.3,.7,.2,1),opacity .1s linear}
 .dk-fad .fd-ghost::after{content:"";position:absolute;left:3px;right:3px;top:calc(50% - .5px);height:1px;background:var(--trial);box-shadow:0 0 3px var(--trial)}
 .dk-fad .fd-ghost.drag{transition:none}
-.dk-fad .fd-ghost.back{opacity:0;transition:top .28s cubic-bezier(.3,.7,.2,1),opacity .1s linear .2s}
+.dk-fad .fd-ghost.back{opacity:0;transition:top .28s cubic-bezier(.3,.7,.2,1),--fd-kx .28s cubic-bezier(.3,.7,.2,1),opacity .1s linear .2s}
 .dk-fad .fd-peek{z-index:1;pointer-events:none;border:1px dashed color-mix(in srgb,var(--trial) 70%,transparent);opacity:0;transition:opacity .1s}
 .dk-fad .fd-peek.on{opacity:1}
 
