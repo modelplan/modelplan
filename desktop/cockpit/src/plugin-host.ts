@@ -169,8 +169,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     for(const entry of entries){
       const area=entry.target as HTMLElement,last=drawnAt.get(area);
       if(!last||!area.isConnected||area.clientWidth===last.w&&area.clientHeight===last.h)continue;
-      // Redrawn in the next frame: a redraw inside this callback can resize what it observes ("ResizeObserver loop").
-      requestAnimationFrame(()=>{if(!area.isConnected)return;if(area.classList.contains('pl-screen-d'))drawScreen();else redrawColumn(last.id);});
+      if(area.classList.contains('pl-screen-d'))drawScreen();else redrawColumn(last.id);
     }
   });
   const memo=(id:string)=>{let m=memos.get(id);if(!m){m={};memos.set(id,m);}return m;};
@@ -211,9 +210,12 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const drawn=guard(()=>plugin.column(readings.get(plugin.id),context(plugin.id)),{cells:[]});
     const cells=()=>Array.from({length:rows},(_,i)=>drawCell(drawn.cells?.[i],i));
     const key=focusKey(column);
-    for(const old of column.querySelectorAll<HTMLElement>(':scope > .pl-draw'))watch?.unobserve(old);
     // D323: a custom draw gets one clipped area over all the cell rows; the bottom line stays the framework's.
-    const area=typeof drawn.draw==='function'&&rows>0?el('div','pl-draw'):null;
+    // The same draw area is reused by a redraw: a fresh element would be a new observation at the depth the resize callback
+    // is delivering, which the browser reports as a "ResizeObserver loop" error.
+    const before=column.querySelector<HTMLElement>(':scope > .pl-draw');
+    const area=typeof drawn.draw==='function'&&rows>0?(before&&before.dataset.plugin===plugin.id?before:el('div','pl-draw')):null;
+    for(const old of column.querySelectorAll<HTMLElement>(':scope > .pl-draw'))if(old!==area)watch?.unobserve(old);
     if(area){area.style.gridRow=`1 / span ${rows}`;area.dataset.plugin=plugin.id;}
     const parts:HTMLElement[]=area?[area]:cells();
     const foot=el('div','qrow qrow-t pl-foot');
