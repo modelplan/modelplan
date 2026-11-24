@@ -29,6 +29,8 @@ import ModelPlanResources
     /// the editions and runs check-bundle-pins.py, which writes CockpitBundlePins.generated.swift from those exact
     /// bytes. Without that file the App has no pins and admits no cockpit page.
     public static let manifestPins = CockpitBuildPins.manifest
+    /// The widget's "Turn Off <plugin>…" confirmation, answered without the modal alert (true = Turn Off).
+    static var verificationClosePresenter: ((CockpitPluginClosePrompt) -> Bool)?
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
@@ -37,8 +39,6 @@ import ModelPlanResources
     /// Recovery contract seams for the console the factory makes: its scheduler and its monotonic clock.
     static var verificationConsoleSchedule: CockpitArm?
     static var verificationConsoleNow: (@MainActor () -> UInt64)?
-    /// The widget's "Turn Off <plugin>…" confirmation, answered without the modal alert (true = Turn Off).
-    static var verificationClosePresenter: ((CockpitPluginClosePrompt) -> Bool)?
     /// The coordinator's prewarm and open steps, for timing tests.
     public static var verificationCockpitTrace: ((String) -> Void)?
     /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
