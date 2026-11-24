@@ -69,3 +69,13 @@ test('G3-200 a live session that ages out on a native tick does not lend its Fas
  await card.locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
  await expect(page.locator('.mfd-vk button.vk-fast')).toHaveAttribute('aria-pressed','false');
 });
+test('G3-200 two live High sessions: Fast comes from the freshest in-window session, not an older expired one (macrevb-1204-1)',async({page})=>{
+ const {send,receive}=await open(page,{liveSessions:[live('a','high',true,4*60e3),live('b','high',false,20e3)],recent:[]});
+ const card=sol(page);
+ await expect(card.locator('.cd-cur')).toHaveText('High');
+ await expect(card.locator('.fd-indicator')).toHaveAttribute('data-fast-mode','off');
+ await card.locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
+ await expect(page.locator('.mfd-vk button.vk-fast')).toHaveAttribute('aria-pressed','false');
+ expect(await receive(send('tick',{nowUnixMs:String(Date.now()+12*60e3),reason:'deadline'}))).toBe(true);
+ await expect(card.locator('.fd-indicator')).not.toHaveAttribute('data-fast-mode','on');
+});
