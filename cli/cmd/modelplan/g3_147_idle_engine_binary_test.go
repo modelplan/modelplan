@@ -248,8 +248,16 @@ func TestG3147IdleWorkIgnoresInheritedSessionHints(t *testing.T) {
 	t.Setenv("CODEX_THREAD_ID", "synthetic-review-thread")
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "synthetic-review-session")
 	run := runIdleWork(t, 1, idleWindowStart(time.Now()))
-	if run.window.CodexWalks == 0 || run.codexFiles == 0 {
-		t.Fatalf("no per-root measurement: %+v", run.window)
+	if run.window.Walks == 0 || run.codexFiles == 0 {
+		t.Fatalf("no measurement: %+v", run.window)
+	}
+	if _, open := idleGaps["entries"]; !open {
+		// The entries gap is closed: with inherited hints, idle work must still list, open and
+		// decode nothing.
+		if w := run.window; w.Entries != 0 || w.Opens != 0 || w.Decodes != 0 {
+			t.Fatalf("an inherited session hint changed the measured workload: %+v", w)
+		}
+		return
 	}
 	if ok, detail := entriesWithinWalks(run); !ok {
 		t.Fatalf("an inherited session hint changed the measured workload: %s", detail)
