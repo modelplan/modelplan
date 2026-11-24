@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: MIT
-// G3-201 (owner row 42): opening the cockpit from the menu bar sometimes flashed the engine's "waiting" line. The page is
-// un-hidden when its bridge is ready (CKP-SHELL-33: the rack comes out with whatever it has), a moment before the first
-// display lands. The waiting and cleared lines now fade in only after a grace, so a display that arrives within it never
-// shows them; the empty state (a real, lasting answer) is not delayed.
+// G3-201 (owner row 42): the waiting and cleared lines show only after the page has been SHOWN for a grace. The behaviour is
+// proved on the built page by browser/g3-201-waiting-grace.spec.mjs (quick and slow first display, prewarmed page, reduce
+// motion); this guards the mechanism: the grace is a timer the view starts on visibility, never a CSS clock from install.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const read=p=>readFileSync(new URL(p,import.meta.url),'utf8');
 const css=read('../../../cockpit/web/cockpit.css'),view=read('../../../cockpit/src/view.ts');
 
-test('the waiting and cleared lines carry a marker the stylesheet delays',()=>{
- assert.match(view,/root\.dataset\.engineWait=key==='empty'\?'':key/);
- const rule=css.match(/\[data-engine-wait\]:not\(\[data-engine-wait=""\]\) \.ck-eng \.ec-empty\{([^}]*)\}/);
- assert.ok(rule,'a delayed rule for the waiting line exists');
- assert.match(rule[1],/animation:[^;]*ec-wait-in/);
- assert.match(css,/@keyframes ec-wait-in\{from\{opacity:0\}to\{opacity:1\}\}/);
- assert.match(rule[1],/opacity:0/);
- assert.match(rule[1],/animation:[^;]*(\.[0-9]+|[0-9]+)s[^;]*(\.[0-9]+|[0-9]+)s[^;]*forwards/);
+test('the grace starts when the page is shown, and the stylesheet never runs its own clock',()=>{
+ assert.match(view,/root\.dataset\.engineWait=key==='empty'\?'':key;armWait\(\)/);
+ assert.match(view,/visible\(value\)\{plugins\.setVisible\(value\);if\(value!==pageShown\)\{pageShown=value;armWait\(\);\}\}/);
+ assert.doesNotMatch(css,/ec-wait-in[^}]*\.7s/);
+ assert.match(css,/:not\(\[data-wait-shown\]\) \.ck-eng \.ec-empty\{opacity:0\}/);
+ assert.match(css,/html\[data-reduce-motion="true"\] \[data-wait-shown\] \.ck-eng \.ec-empty\{animation:none\}/);
+ assert.match(css,/@media\(prefers-reduced-motion:reduce\)\{\[data-wait-shown\] \.ck-eng \.ec-empty\{animation:none\}\}/);
 });

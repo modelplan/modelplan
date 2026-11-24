@@ -522,6 +522,9 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .pl-cell.pl-cal .pl-meter{min-height:0;overflow:hidden}
 .ck-eng .pl-cell.pl-cal .qline{justify-content:space-between}
 
-/* G3-201: the waiting and cleared lines show only after a grace (a display that lands sooner never flashes them). */
-[data-engine-wait]:not([data-engine-wait=""]) .ck-eng .ec-empty{opacity:0;animation:ec-wait-in .15s .7s forwards}
+/* G3-201: the waiting and cleared lines show only once the page has been shown for a grace (view.ts sets data-wait-shown); a display that lands sooner replaces them unseen. Reduce Motion (app setting or system) shows them without the fade. */
+[data-engine-wait]:not([data-engine-wait=""]):not([data-wait-shown]) .ck-eng .ec-empty{opacity:0}
+[data-wait-shown] .ck-eng .ec-empty{animation:ec-wait-in .15s}
+html[data-reduce-motion="true"] [data-wait-shown] .ck-eng .ec-empty{animation:none}
+@media(prefers-reduced-motion:reduce){[data-wait-shown] .ck-eng .ec-empty{animation:none}}
 @keyframes ec-wait-in{from{opacity:0}to{opacity:1}}
