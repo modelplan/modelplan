@@ -78,16 +78,19 @@ private actor CountingEngine: EngineClient {
         app.earlyStartGateOpen = { false }
         await app.startEngineAlongsidePreparation()
         await app.prepare(); try await settle()
-        XCTAssertEqual(try await counts().starts, 0, "no early start while the OS gate is closed")
+        let observed1 = try await counts().starts
+        XCTAssertEqual(observed1, 0, "no early start while the OS gate is closed")
         let locks = NotificationCenter()
         app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: locks, displayIDs: { [1] },
                            onConsole: { true }, displaysAsleep: { _ in false }, screenLocked: { true })
         try await settle()
-        XCTAssertEqual(try await counts().starts, 0, "the seeded lock keeps the engine stopped")
+        let observed2 = try await counts().starts
+        XCTAssertEqual(observed2, 0, "the seeded lock keeps the engine stopped")
         XCTAssertTrue(app.lifecyclePaused)
         locks.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
         for _ in 0..<500 where app.lifecyclePaused { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertEqual(try await counts().starts, 1, "the unlock is the first start")
+        let observed3 = try await counts().starts
+        XCTAssertEqual(observed3, 1, "the unlock is the first start")
         XCTAssertFalse(app.lifecyclePaused)
     }
 
@@ -96,10 +99,12 @@ private actor CountingEngine: EngineClient {
         let app = try await makeEntry("review-1124-pause-in-prep")
         app.earlyStartGateOpen = { true }
         await app.startEngineAlongsidePreparation(); try await settle()
-        XCTAssertEqual(try await counts().starts, 1, "an open gate keeps the WP-17 early start")
+        let observed4 = try await counts().starts
+        XCTAssertEqual(observed4, 1, "an open gate keeps the WP-17 early start")
         app.earlyPauseWorkspace.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
         await app.finishEarlyStartWindow()
-        XCTAssertEqual(try await counts().stops, 1, "the pause stops the early session before the lifecycle starts")
+        let observed5 = try await counts().stops
+        XCTAssertEqual(observed5, 1, "the pause stops the early session before the lifecycle starts")
     }
 
     /// #10: with the OS gate open and an engine that cannot start, Settings, About and diagnostics stay reachable; no
