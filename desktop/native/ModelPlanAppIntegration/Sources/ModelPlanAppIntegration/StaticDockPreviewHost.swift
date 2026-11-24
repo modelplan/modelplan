@@ -1085,6 +1085,7 @@ struct DockHelpInteraction: Equatable {
     private let container = StaticDockContainer()
     /// R64 D-9: the surface state last put on screen, so a sliver <-> expanded change can animate.
     private var presentedSurfaceState: DockSurfaceState?
+    private var presentedCarryLayout: DockEdgeLayout?
     private let collapseGhost = DockCollapseGhost()
     var collapseAnimatingForChecks: Bool { collapseGhost.animatingForChecks }
     var collapseCompletedForChecks: (() -> Void)? {
@@ -1797,6 +1798,17 @@ struct DockHelpInteraction: Equatable {
         pointerSurface.setActive(true)
     }
     private func present(_ value: DockEdgePresentation) {
+        // During a carry, the same surface only needs to move. Keep its live menu, tracking areas,
+        // ignition art and backing store until the layout changes or the drag ends.
+        let carryLayout = value.moving ? value.placement?.layout : nil
+        if let carryLayout, carryLayout == presentedCarryLayout,
+           permitted, !retired, let panel, panel.isVisible, panel.contentView === container,
+           let frame = value.paintedFrame, frame.size == panel.frame.size {
+            if panel.frame.origin != frame.origin { panel.setFrameOrigin(frame.origin) }
+            publishPlacementObservation(value)
+            return
+        }
+        presentedCarryLayout = nil
         defer {
             // The controller is still sampling during onPresent. Apply a queued
             // reveal after this delivery so its own reveal intent can be sampled.
@@ -1888,6 +1900,7 @@ struct DockHelpInteraction: Equatable {
             DockRevealMotion.reveal(container, edge: motionEdge, reduceMotion: reduceMotion); revealAnimationsForChecks += 1
         }
         presentedSurfaceState = panel.isVisible ? value.state : nil
+        presentedCarryLayout = panel.isVisible ? carryLayout : nil
         if panel.isVisible, value.state == .expanded, !attentionWasExpanded { acknowledgeDockReveal() }
         attentionWasExpanded = panel.isVisible && value.state == .expanded
         if panel.isVisible { pulsePresentedNotices(value) }
