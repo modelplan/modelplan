@@ -5,6 +5,8 @@ import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanWire
+import ModelPlanCore
+import ModelPlanShell
 @testable import ModelPlanAppIntegration
 
 /// Counts starts and stops; a start either publishes rows or fails like a missing or incompatible helper.
@@ -64,7 +66,8 @@ private actor CountingEngine: EngineClient {
         app.makeFirstRunSurface = { _ in ReviewNoWindowSurface() }
         app.makeFirstRunSurfaceWithConsent = { _, _ in ReviewNoWindowSurface() }
         // The pause notifications of the early window go to private centres, never the real session.
-        app.earlyPauseWorkspace = NotificationCenter(); app.earlyPauseLockEvents = NotificationCenter()
+        app.earlyPauseWorkspace = NotificationCenter(); app.earlyPauseLockEvents = NotificationCenter(); app.earlyPauseLocal = NotificationCenter()
+        app.earlyPauseSeed = { [] }; app.earlyDisplayIDs = { [1] }
         addTeardownBlock { @MainActor in await app.stopLifecycle(); await app.composition.stop() }
         return app
     }
@@ -75,7 +78,7 @@ private actor CountingEngine: EngineClient {
     /// before the lifecycle, and the lifecycle's own lock seed keeps it stopped until the unlock.
     func testACompletedProfileLaunchStartsNoEngineWhileTheOSGateIsClosed() async throws {
         let app = try await makeEntry("review-1124-closed-launch")
-        app.earlyStartGateOpen = { false }
+        app.earlyPauseSeed = { [.sessionInactive] }
         await app.startEngineAlongsidePreparation()
         await app.prepare(); try await settle()
         let observed1 = try await counts().starts
@@ -97,7 +100,7 @@ private actor CountingEngine: EngineClient {
     /// #4: a pause that arrives while preparation is still running stops the early session before the lifecycle exists.
     func testAPauseDuringPreparationStopsTheEarlyEngine() async throws {
         let app = try await makeEntry("review-1124-pause-in-prep")
-        app.earlyStartGateOpen = { true }
+        app.earlyPauseSeed = { [] }
         await app.startEngineAlongsidePreparation(); try await settle()
         let observed4 = try await counts().starts
         XCTAssertEqual(observed4, 1, "an open gate keeps the WP-17 early start")
@@ -129,5 +132,86 @@ private actor CountingEngine: EngineClient {
         locks.post(name: Notification.Name("com.apple.screenIsLocked"), object: nil); try await settle()
         XCTAssertFalse(app.settingsAvailable, "an OS pause gates Settings again")
         XCTAssertGreaterThan(surface.hidden, hidden, "and closes it")
+    }
+
+    /// macrevb-1215-1: no private Window Server property. An unknown lock state is open (the app never stays paused on a
+    /// guess); a lock edge seen during preparation stops the early helper and seeds the lifecycle, which then starts the
+    /// helper only on the unlock.
+    func testALockDuringPreparationIsTrackedFromTheDocumentedEdgesAndUnknownIsOpen() async throws {
+        XCTAssertTrue(SystemEvents.pauseReasons(displayIDs: [1], onConsole: true, screenLocked: nil).isEmpty, "unknown lock = open")
+        XCTAssertFalse(SystemEvents.pauseReasonsNow().contains(.screenLocked), "no lock query: the live seed never reports a lock")
+        let app = try await makeEntry("review-1124-lock-edge")
+        await app.startEngineAlongsidePreparation(); try await settle()
+        let started = try await counts()
+        XCTAssertEqual(started.starts, 1, "an unknown lock does not hold the early start")
+        app.earlyPauseLockEvents.post(name: SystemEvents.screenLockedNotification, object: nil); try await settle()
+        let locked = try await counts()
+        XCTAssertEqual(locked.stops, 1, "the lock edge stops the early helper")
+        XCTAssertTrue(app.earlyOSPaused)
+        await app.prepare(); await app.finishEarlyStartWindow()
+        let locks = NotificationCenter()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: locks, displayIDs: { [1] },
+                           onConsole: { true }, displaysAsleep: { _ in false })
+        try await settle()
+        let seeded = try await counts()
+        XCTAssertEqual(seeded.starts, 1, "the tracked lock seeds the lifecycle: zero starts before the unlock")
+        XCTAssertTrue(app.lifecyclePaused)
+        XCTAssertFalse(app.settingsAvailable)
+        locks.post(name: SystemEvents.screenUnlockedNotification, object: nil)
+        for _ in 0..<500 where app.lifecyclePaused { try await Task.sleep(for: .milliseconds(10)) }
+        let unlocked = try await counts()
+        XCTAssertEqual(unlocked.starts, 2, "the unlock is the one start after the lock")
+        XCTAssertFalse(app.lifecyclePaused)
+    }
+
+    /// macrevb-1215-2: the screen-parameter change that reports the last display gone during preparation stops the
+    /// early helper before preparation finishes, the same `.noDisplay` reason the lifecycle uses.
+    func testLosingTheLastDisplayDuringPreparationStopsTheEarlyEngine() async throws {
+        let app = try await makeEntry("review-1124-no-display")
+        await app.startEngineAlongsidePreparation(); try await settle()
+        let started = try await counts()
+        XCTAssertEqual(started.starts, 1)
+        var displays: Set<UInt32> = [1]
+        app.earlyDisplayIDs = { displays }
+        displays = []
+        app.earlyPauseLocal.post(name: NSApplication.didChangeScreenParametersNotification, object: nil); try await settle()
+        let stopped = try await counts()
+        XCTAssertEqual(stopped.stops, 1, "losing the last display stops the early helper before preparation ends")
+        XCTAssertEqual(app.earlyPauseReasons, [.noDisplay])
+        XCTAssertFalse(app.settingsAvailable, "and gates Settings")
+        displays = [2]
+        app.earlyPauseLocal.post(name: NSApplication.didChangeScreenParametersNotification, object: nil); try await settle()
+        XCTAssertTrue(app.earlyPauseReasons.isEmpty, "a display coming back reopens the early gate")
+        let after = try await counts()
+        XCTAssertEqual(after.starts, 1, "the early window never restarts the helper; the lifecycle does")
+    }
+
+    /// macrevb-1215-3: before the lifecycle exists, an OS pause retires an in-flight Settings request, refuses new ones and
+    /// closes an open Settings window; the gate reopening never opens Settings by itself.
+    func testAnEarlyOSPauseGatesSettingsIncludingRequestsInFlight() async throws {
+        let surface = TestSettingsSurface()
+        let app = try await makeEntry("review-1124-early-settings", settingsSurface: surface)
+        await app.startEngineAlongsidePreparation(); await app.prepare(); try await settle()
+        XCTAssertTrue(app.settingsAvailable, "the open OS gate admits Settings before the lifecycle")
+        let lockCentre = app.earlyPauseLockEvents
+        surface.preparation = {
+            lockCentre.post(name: SystemEvents.screenLockedNotification, object: nil)
+            for _ in 0..<5 { await Task.yield() }; try? await Task.sleep(for: .milliseconds(50))
+        }
+        await app.settingsHost.present(origin: .userInitiated)
+        XCTAssertEqual(surface.shown.count, 0, "a request in flight when the gate closes never presents")
+        XCTAssertFalse(app.settingsAvailable, "Command-comma and the tray item are disabled")
+        surface.preparation = nil
+        await app.settingsHost.present(origin: .userInitiated)
+        XCTAssertEqual(surface.shown.count, 0, "a new request is refused while paused")
+        app.earlyPauseLockEvents.post(name: SystemEvents.screenUnlockedNotification, object: nil); try await settle()
+        XCTAssertTrue(app.settingsAvailable)
+        XCTAssertEqual(surface.shown.count, 0, "reopening the gate does not open Settings")
+        await app.settingsHost.present(origin: .userInitiated)
+        XCTAssertEqual(surface.shown.count, 1)
+        let hidden = surface.hidden
+        app.earlyPauseWorkspace.post(name: NSWorkspace.screensDidSleepNotification, object: nil); try await settle()
+        XCTAssertFalse(app.settingsAvailable)
+        XCTAssertGreaterThan(surface.hidden, hidden, "an open Settings window is closed by the early pause")
     }
 }

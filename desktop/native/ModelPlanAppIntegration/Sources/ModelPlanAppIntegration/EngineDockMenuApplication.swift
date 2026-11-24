@@ -85,8 +85,11 @@ struct StatusNoticePresentation {
     /// v1 full review 11-24 #10: local Settings, About and diagnostics follow the OS gate, not engine readiness. A
     /// completed profile whose helper is missing or cannot start keeps the gate open while no fresh rows arrive; Settings
     /// must still open then. Account data stays withdrawn (the paused store shows none) and reader actions stay gated.
+    /// Review 11-24 macrevb-1215-3: before the lifecycle exists, the pre-lifecycle OS watcher is the gate, with the
+    /// same setup exception as the lifecycle's pause.
     var settingsAvailable: Bool {
-        !terminating && (!lifecyclePaused || setupActive || (lifecycleController != nil && dockPresentationGateOpen))
+        !terminating && (setupActive || (!earlyOSPaused
+            && (!lifecyclePaused || (lifecycleController != nil && dockPresentationGateOpen))))
     }
     private var accessibilityObserver: NSObjectProtocol?
     private var showSettingsObserver: UUID?
@@ -680,10 +683,14 @@ struct StatusNoticePresentation {
                         displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool = { SystemEvents.allDisplaysAsleep($0) },
                         screenLocked: (@MainActor () -> Bool?)? = nil) {
         guard !terminating, lifecycleController == nil else { return }
+        // Review 11-24 macrevb-1215-1: a lock seen by the pre-lifecycle watcher seeds the lifecycle in the same main-actor
+        // turn that ends the watcher, so no lock edge falls between the two. Unknown stays unseeded (fail open).
+        var lockSeed = screenLocked
+        if lockSeed == nil, earlyWindowActive, earlyPauseReasons.contains(.screenLocked) { lockSeed = { true } }
         endEarlyStartWindow()
         lifecyclePaused = true
         let controller = EngineLifecycleController(composition: composition, workspace: workspace, local: local,
-            lockEvents: lockEvents, displayIDs: displayIDs, onConsole: onConsole, displaysAsleep: displaysAsleep, screenLocked: screenLocked,
+            lockEvents: lockEvents, displayIDs: displayIDs, onConsole: onConsole, displaysAsleep: displaysAsleep, screenLocked: lockSeed,
             onPause: { [weak self] in self?.withdrawForLifecycle() },
             onReady: { [weak self] in
                 guard let self, !self.terminating else { return }
@@ -842,43 +849,78 @@ struct StatusNoticePresentation {
     func reopenSetup() async { await firstRunFlow?.reopenSetup() }
     /// The same restore used by the real launch; it never grants access itself.
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
-    /// v1 full review 11-24 #4: the OS pause state at the moment of the early start (console, displays, screen lock).
-    /// Test seam; the default reads the live session.
-    var earlyStartGateOpen: @MainActor () -> Bool = { SystemEvents.pauseReasonsNow().isEmpty }
-    /// Review 11-24 #4: the pause notifications watched between the early start and the lifecycle (test seams).
+    /// v1 full review 11-24 #4: the OS pause reasons at the start of the pre-lifecycle window (console, displays, display
+    /// sleep; the lock has no documented query and starts unknown = open). Test seam; the default reads the live session.
+    var earlyPauseSeed: @MainActor () -> Set<LifecycleCoordinator.PauseReason> = { SystemEvents.pauseReasonsNow() }
+    /// Review 11-24 macrevb-1215-2: the display set read on a screen-parameter change before the lifecycle (test seam).
+    var earlyDisplayIDs: @MainActor () -> Set<UInt32> = { SystemEvents.currentDisplayIDs() }
+    /// Review 11-24 #4: the centres watched between launch and the lifecycle (test seams).
     var earlyPauseWorkspace: NotificationCenter = NSWorkspace.shared.notificationCenter
     var earlyPauseLockEvents: NotificationCenter = DistributedNotificationCenter.default()
-    private var earlyStartRequested = false, earlyStopped = false
+    var earlyPauseLocal: NotificationCenter = .default
+    private var earlyStartRequested = false, earlyStopped = false, earlyWindowOpened = false
     private var earlyStop: Task<Void, Never>?
     private var earlyPauseTokens: [(NotificationCenter, NSObjectProtocol)] = []
+    /// The pre-lifecycle OS pause reasons: the lifecycle's reason set (same notifications, same seeds) before it exists.
+    private(set) var earlyPauseReasons: Set<LifecycleCoordinator.PauseReason> = []
+    private var earlyWindowActive: Bool { !earlyPauseTokens.isEmpty }
+    /// Review 11-24 macrevb-1215-3: the OS gate is closed before the lifecycle exists.
+    var earlyOSPaused: Bool { earlyWindowActive && lifecycleController == nil && !earlyPauseReasons.isEmpty }
     /// WP-17: starts the engine client for a profile whose setup is done, without waiting for it.
-    /// Review 11-24 #4: only while the OS gate would be open. A sleep, screen sleep, lock or inactive session before the
-    /// lifecycle takes over stops the early session; the lifecycle's seeded gate then owns every later start.
+    /// Review 11-24 #4: only while the OS gate would be open. Any pause reason the lifecycle knows (sleep, display sleep,
+    /// lock, inactive session, no display) before the lifecycle takes over stops the early session and closes Settings;
+    /// the lifecycle's seeded gate then owns every later start.
     func startEngineAlongsidePreparation() async {
+        beginEarlyPauseWindow()
         guard !terminating, lifecycleController == nil, !earlyStartRequested,
               await foundationStore.snapshot().preferences.onboarding.completed else { return }
         guard !terminating, lifecycleController == nil, !earlyStartRequested else { return }
-        guard earlyStartGateOpen() else { LaunchTimingLog.shared.mark("engine-early-start-skipped"); return }
+        guard !earlyOSPaused else { LaunchTimingLog.shared.mark("engine-early-start-skipped"); return }
         LaunchTimingLog.shared.mark("engine-early-start")
         earlyStartRequested = true
-        watchEarlyPause()
         let client = composition.client
         Task { @MainActor [weak self] in
-            guard let self, !self.earlyStopped, self.lifecycleController == nil else { return }
+            guard let self, !self.earlyStopped, !self.earlyOSPaused, self.lifecycleController == nil else { return }
             _ = try? await client.start()
         }
     }
-    private func watchEarlyPause() {
-        let pauses: [(NotificationCenter, Notification.Name)] = [
-            (earlyPauseWorkspace, NSWorkspace.willSleepNotification), (earlyPauseWorkspace, NSWorkspace.screensDidSleepNotification),
-            (earlyPauseWorkspace, NSWorkspace.sessionDidResignActiveNotification),
-            (earlyPauseLockEvents, Notification.Name("com.apple.screenIsLocked"))]
-        for (center, name) in pauses {
-            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.stopEarlyEngine() }
-            }
-            earlyPauseTokens.append((center, token))
+    /// Opens the pre-lifecycle window once per launch: seeds the reasons and watches the lifecycle's own notifications.
+    func beginEarlyPauseWindow() {
+        guard !terminating, lifecycleController == nil, !earlyWindowOpened else { return }
+        earlyWindowOpened = true
+        earlyPauseReasons = earlyPauseSeed()
+        for (pause, resume, reason) in SystemEvents.workspacePausePairs {
+            observeEarly(earlyPauseWorkspace, pause) { [weak self] in self?.setEarlyPause(reason, blocked: true) }
+            observeEarly(earlyPauseWorkspace, resume) { [weak self] in self?.setEarlyPause(reason, blocked: false) }
         }
+        observeEarly(earlyPauseLockEvents, SystemEvents.screenLockedNotification) { [weak self] in
+            self?.setEarlyPause(.screenLocked, blocked: true)
+        }
+        observeEarly(earlyPauseLockEvents, SystemEvents.screenUnlockedNotification) { [weak self] in
+            self?.setEarlyPause(.screenLocked, blocked: false)
+        }
+        observeEarly(earlyPauseLocal, NSApplication.didChangeScreenParametersNotification) { [weak self] in
+            guard let self else { return }
+            self.setEarlyPause(.noDisplay, blocked: self.earlyDisplayIDs().isEmpty)
+        }
+        if !earlyPauseReasons.isEmpty { settingsHost.suspend(); renderMenu() }
+    }
+    private func observeEarly(_ center: NotificationCenter, _ name: Notification.Name, _ action: @escaping @MainActor () -> Void) {
+        let token = center.addObserver(forName: name, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { action() }
+        }
+        earlyPauseTokens.append((center, token))
+    }
+    private func setEarlyPause(_ reason: LifecycleCoordinator.PauseReason, blocked: Bool) {
+        guard !terminating, earlyWindowActive, lifecycleController == nil else { return }
+        let wasPaused = !earlyPauseReasons.isEmpty
+        if blocked { earlyPauseReasons.insert(reason) } else { earlyPauseReasons.remove(reason) }
+        guard earlyPauseReasons.isEmpty == wasPaused else { return }
+        if wasPaused { renderMenu(); return }
+        // Closing: stop the early helper, retire admitted and in-flight Settings requests, close an open window.
+        stopEarlyEngine()
+        settingsHost.suspend()
+        renderMenu()
     }
     private func stopEarlyEngine() {
         guard earlyStartRequested, !earlyStopped, lifecycleController == nil else { return }
@@ -890,11 +932,13 @@ struct StatusNoticePresentation {
     private func endEarlyStartWindow() {
         for (center, token) in earlyPauseTokens { center.removeObserver(token) }
         earlyPauseTokens.removeAll()
+        earlyPauseReasons.removeAll()
     }
-    /// The launch waits for an early stop to finish before the lifecycle starts the engine again.
+    /// The launch waits for an early stop to finish before the lifecycle starts the engine again. The watcher stays on
+    /// while it waits; `startLifecycle` ends it in the same turn it seeds the lifecycle.
     func finishEarlyStartWindow() async {
-        endEarlyStartWindow()
-        await earlyStop?.value
+        var awaited: Task<Void, Never>?
+        while let stop = earlyStop, stop != awaited { awaited = stop; await stop.value }
     }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         LaunchTimingLog.shared.mark("did-finish-launching")
@@ -949,7 +993,7 @@ struct StatusNoticePresentation {
             guard !terminating else { return }
             await finishEarlyStartWindow()
             guard !terminating else { return }
-            startLifecycle(screenLocked: { SystemEvents.currentScreenLocked() }); renderMenu()
+            startLifecycle(); renderMenu()
             LaunchTimingLog.shared.mark("lifecycle-started")
         }
     }

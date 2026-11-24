@@ -24,7 +24,8 @@ public enum SystemSignal: Equatable, Sendable {
     private let displayIDs: @MainActor () -> Set<UInt32>
     private let onConsole: @MainActor () -> Bool?
     private let displaysAsleep: @MainActor (Set<UInt32>) -> Bool
-    /// v1 full review 11-24 #4: a lock seed for a launch during a locked screen; nil seeds nothing (the lock edge only).
+    /// v1 full review 11-24 #4: a lock seed from state tracked by the lock edges before this instance started (the
+    /// pre-lifecycle watcher); nil seeds nothing (the lock edge only). Never a private Window Server property.
     private let screenLocked: (@MainActor () -> Bool?)?
     private var previousDisplays: Set<UInt32> = []
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
@@ -49,14 +50,22 @@ public enum SystemSignal: Equatable, Sendable {
     nonisolated public static func currentConsoleState() -> Bool? {
         (CGSessionCopyCurrentDictionary() as? [String: Any])?[kCGSessionOnConsoleKey as String] as? Bool
     }
-    /// The session's screen-lock flag (`CGSSessionScreenIsLocked` in the public session dictionary); nil when absent.
-    nonisolated public static func currentScreenLocked() -> Bool? {
-        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool
+    /// The distributed screen-lock edges. macOS documents no query for the lock state (the documented session
+    /// properties are user, console and login keys only), so the lock is tracked from these edges and an unknown state
+    /// is "not locked" (fail open: the app never stays paused on a guess). Review 11-24 macrevb-1215-1.
+    nonisolated public static let screenLockedNotification = Notification.Name("com.apple.screenIsLocked")
+    nonisolated public static let screenUnlockedNotification = Notification.Name("com.apple.screenIsUnlocked")
+    /// The workspace pause/resume pairs. The lifecycle and the pre-lifecycle (early start) watcher both observe exactly
+    /// these, plus the lock edges and the screen-parameter change (`.noDisplay`), so the two phases share one reason set.
+    public static var workspacePausePairs: [(pause: Notification.Name, resume: Notification.Name, reason: LifecycleCoordinator.PauseReason)] {
+        [(NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification, .systemSleep),
+         (NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification, .screenSleep),
+         (NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification, .sessionInactive)]
     }
-    /// Review 11-24 #4: the OS pause reasons that hold right now, from the same queries `start()` seeds with. Used
-    /// before the lifecycle exists (the early engine start) so no helper starts while the gate would be closed.
+    /// Review 11-24 #4: the OS pause reasons that hold right now, from the same documented queries `start()` seeds
+    /// with (displays, console, display sleep). The lock has no documented query: it is unknown here, so not a reason.
     @MainActor public static func pauseReasonsNow() -> Set<LifecycleCoordinator.PauseReason> {
-        pauseReasons(displayIDs: currentDisplayIDs(), onConsole: currentConsoleState(), screenLocked: currentScreenLocked())
+        pauseReasons(displayIDs: currentDisplayIDs(), onConsole: currentConsoleState(), screenLocked: nil)
     }
     /// Pure reduction of the queries; `NSScreen` is read only by the main-actor entry above, never in a default argument.
     nonisolated public static func pauseReasons(displayIDs: Set<UInt32>, onConsole: Bool?,
@@ -78,10 +87,7 @@ public enum SystemSignal: Equatable, Sendable {
         guard tokens.isEmpty else { return }
         previousDisplays = displayIDs()
         gate.set(.noDisplay, blocked: previousDisplays.isEmpty)
-        let pairs: [(Notification.Name, Notification.Name, LifecycleCoordinator.PauseReason)] = [
-            (NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification, .systemSleep),
-            (NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification, .screenSleep),
-            (NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification, .sessionInactive)]
+        let pairs = Self.workspacePausePairs
         let resumeSignals: [Notification.Name: SystemSignal] = [NSWorkspace.didWakeNotification: .wake,
                                                                 NSWorkspace.screensDidWakeNotification: .screensWake]
         for (pause, resume, reason) in pairs {
@@ -92,8 +98,8 @@ public enum SystemSignal: Equatable, Sendable {
                 if let signal { self?.emit(signal) }
             }
         }
-        observe(distributed, Notification.Name("com.apple.screenIsLocked")) { [weak gate] in gate?.set(.screenLocked, blocked: true) }
-        observe(distributed, Notification.Name("com.apple.screenIsUnlocked")) { [weak self, weak gate] in
+        observe(distributed, Self.screenLockedNotification) { [weak gate] in gate?.set(.screenLocked, blocked: true) }
+        observe(distributed, Self.screenUnlockedNotification) { [weak self, weak gate] in
             gate?.set(.screenLocked, blocked: false); self?.emit(.unlock)
         }
         observe(local, .NSSystemClockDidChange) { [weak self, weak gate] in gate?.clockChanged(); self?.emit(.clockChanged) }
