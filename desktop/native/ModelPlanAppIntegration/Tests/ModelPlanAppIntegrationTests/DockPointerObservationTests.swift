@@ -64,11 +64,8 @@ import ModelPlanSettings
         XCTAssertNil(host.nativePanel)
         XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("settings.json")), bytes)
     }
-}
 
-@MainActor final class IdleEnergyGuardTests: XCTestCase {
     func testIdleVisibleWidgetUsesOneSamplePerSecond() async throws {
-        _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
@@ -105,11 +102,10 @@ import ModelPlanSettings
     }
 
     func testPreparingTheProductionCockpitDoesNotPrewarmAWebPage() async throws {
-        _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
-        try await store.update { $0.language = .chinese }
+        try await store.update { $0.language = .chinese; $0.theme = .night }
         let owner = CockpitConsoleOwner(bundle: root, settingsStore: store)
         let coordinator = EngineCockpitCoordinator { _ in
             XCTFail("Bundle preparation must not build a WebView")
