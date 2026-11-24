@@ -17,6 +17,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"io"
 	"math"
 	"os"
@@ -168,9 +169,14 @@ func Off() bool { return os.Getenv("MODELPLAN_HISTORY") == "off" }
 func Load(cache string) Ledger {
 	l := Ledger{SchemaVersion: 1}
 	b, err := os.ReadFile(Path(cache))
+	if err == nil {
+		idlework.Open()
+		idlework.Read(len(b))
+	}
 	if err != nil || len(b) > maxFile {
 		return l
 	}
+	idlework.Decode()
 	var on Ledger
 	if json.Unmarshal(b, &on) == nil && on.SchemaVersion == 1 {
 		l.Rows, l.Files, l.Counted = on.Rows, on.Files, on.Counted
@@ -291,6 +297,7 @@ func scanLog(files map[string]Cursor, path, source string, p parser, now time.Ti
 		return nil, false
 	}
 	defer fh.Close()
+	idlework.Open()
 	fi, err := fh.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
 		return nil, false
@@ -323,7 +330,8 @@ func scanLog(files map[string]Cursor, path, source string, p parser, now time.Ti
 	if carries {
 		cr.resume(base)
 	}
-	r := bufio.NewReaderSize(io.LimitReader(fh, maxScan), 256<<10)
+	idlework.Decode()
+	r := bufio.NewReaderSize(idlework.Reader(io.LimitReader(fh, maxScan)), 256<<10)
 	off := start
 	if partial { // starting inside a line: skip to the next one
 		_, n, err := readLine(r)

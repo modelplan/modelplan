@@ -689,6 +689,11 @@ func (s *Server) refresh(ctx context.Context) error {
 	return s.readView(ctx, false)
 }
 
+// RefreshAfterChange runs the refresh the serve loop starts after a backend change signal: the
+// view token capture, then the backend Get, with no reuse. The idle-work gates (D397) call it
+// in place of the loop so every cost of a change-driven refresh is measured.
+func (s *Server) RefreshAfterChange(ctx context.Context) error { return s.refresh(ctx) }
+
 // ViewReuse is a backend that can tell whether a view it built is still what Get would build
 // now (WP-17). ViewToken is taken just before a Get; ViewCurrent(token) is true only while
 // nothing that view depends on has changed since.
