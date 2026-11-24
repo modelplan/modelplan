@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// C-47: the Overview's heatmap, blue lower-effort advice and blue official-reset lines on the built page through its
+// C-47 / D390: the Overview's day-by-hour heatmap, blue lower-effort advice and blue official-reset lines on the built page through its
 // normal bridge (CKP-MFD-08, CKP-MFD-27, CKP-MFD-28). Synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
@@ -32,57 +32,49 @@ function history(dailyFrom=localDay(39)){
 }
 const grid=page=>page.locator('[data-opt="chart"] b',{hasText:/^Grid$/}).click();
 
-// WP-12 (CKP-MFD-62): the Grid key is not lit in v1, so the heatmap cannot be opened from the page. The four heatmap
-// tests below are skipped until v1.1 lights the key again; the heatmap code and its unit test stay.
-test.skip('CKP-MFD-08 the Grid key draws the 26-week heatmap with five neutral steps in All',async({page})=>{
- await open(page,history());await grid(page);
+// D390 (CKP-MFD-62): the Grid key draws the current range as days (columns) by four-hour bands (rows). The wire keeps
+// hourly rows for today and yesterday only, so older days have no cell.
+const hours=[[0,9,500],[0,10,300],[1,22,1000],[1,23,400],[1,14,0]];
+function hourly(){
+ const data=history();
+ data.history.hourly=hours.map(([back,h,n])=>({at:new Date(2026,10,4-back,h).toISOString(),source:'codex',origin:'live',observedOutputTokens:n}));
+ return data;
+}
+test('CKP-MFD-62 the Grid key draws days by four-hour bands for the 7-day range, with tips',async({page})=>{
+ await open(page,hourly());await grid(page);
  const heat=page.locator('.pg-overview svg.ov-heat');await expect(heat).toBeVisible();
- await expect(heat).toHaveAttribute('aria-label','Daily output tokens, last 26 weeks');await expect(heat).not.toHaveClass(/\bvendor\b/);
- const cells=await heat.locator('rect.hm').evaluateAll(list=>list.map(e=>({x:Number(e.getAttribute('x')),y:Number(e.getAttribute('y')),w:Number(e.getAttribute('width')),step:[...e.classList].find(c=>/^s\d$/.test(c)),today:e.classList.contains('today'),tip:e.dataset.tip})));
- // One cell per recorded day; unrecorded days, before or after the record began, have no cell.
- expect(cells.length).toBe(DAYS.length);
- expect(new Set(cells.map(c=>c.step))).toEqual(new Set(['s0','s1','s2','s3','s4']));
- const pitch=cells[0].w+2,cols=cells.map(c=>Math.round(c.x/pitch)),rows=new Set(cells.map(c=>c.y));
- expect(Math.max(...cols)).toBe(25);expect(rows.size).toBeLessThanOrEqual(7);
- expect(cells[0].w).toBeGreaterThanOrEqual(5);expect(cells[0].w).toBeLessThanOrEqual(14);
- const today=cells.filter(c=>c.today);expect(today.length).toBe(1);expect(today[0].tip).toBe('Nov 4\nCodex 200');
- // The record began inside the 26 weeks: the started-on line says so.
- await expect(page.locator('.pg-overview .hm-since')).toHaveText('Recorded since Sep 26');
- // The 7/30 and split/stacked keys belong to the bars only.
- await expect(page.locator('[data-opt="range"]')).toHaveCount(0);await expect(page.locator('[data-opt="stack"]')).toHaveCount(0);
+ await expect(heat).toHaveAttribute('aria-label','Output tokens by day and hour, last 7 days');await expect(heat).not.toHaveClass(/\bvendor\b/);
+ const cells=await heat.locator('rect.hm').evaluateAll(list=>list.map(e=>({x:Number(e.getAttribute('x')),y:Number(e.getAttribute('y')),step:[...e.classList].find(c=>/^s\d$/.test(c)),today:e.classList.contains('today'),tip:e.dataset.tip})));
+ // Today 08-12h (800) and 20-24h yesterday (1400), plus yesterday's recorded zero 12-16h.
+ expect(cells.length).toBe(3);expect(new Set(cells.map(c=>c.x)).size).toBe(2);
+ expect(cells.find(c=>c.tip.startsWith('Nov 4')).tip).toBe('Nov 4 08:00-12:00\nCodex 800');
+ expect(cells.find(c=>c.step==='s0')).toBeTruthy();
+ await expect(page.locator('[data-opt="range"]')).toHaveCount(1);await expect(page.locator('[data-opt="stack"]')).toHaveCount(0);
 });
 
-test.skip('CKP-MFD-08 hovering a heatmap cell shows its date and the tokens per subscription',async({page})=>{
- await open(page,history());await grid(page);
+test('CKP-MFD-62 hovering a heatmap cell shows its day, hours and the tokens per subscription',async({page})=>{
+ await open(page,hourly());await grid(page);
  const tip=page.locator('.dk-mfd .mfd-tip');await expect(tip).toBeHidden();
- await page.locator('.ov-heat rect.hm.today').hover();
- await expect(tip).toBeVisible();await expect(tip.locator('span')).toHaveText(['Nov 4','Codex 200']);await expect(tip.locator('span').first()).toHaveClass('h');
- const box=await tip.boundingBox(),screen=await page.locator('.dk-mfd .mfd-screen').boundingBox();
- expect(box.x).toBeGreaterThanOrEqual(screen.x);expect(box.x+box.width).toBeLessThanOrEqual(screen.x+screen.width+0.5);
+ await page.locator('.ov-heat rect.hm[data-tip^="Nov 4"]').hover();
+ await expect(tip).toBeVisible();await expect(tip.locator('span')).toHaveText(['Nov 4 08:00-12:00','Codex 800']);
  await page.mouse.move(2,2);await expect(tip).toBeHidden();
- // The bars' buckets use the same tooltip.
- await page.locator('[data-opt="chart"] b',{hasText:/^Bars$/}).click();
- await page.locator('.ov-bucket').last().hover();await expect(tip).toBeVisible();await expect(tip).toContainText('Codex');
 });
 
-test.skip('CKP-MFD-08 a subscription scope draws the heatmap in its vendor colour',async({page})=>{
- await open(page,history());await page.keyboard.press('1');await grid(page);
+test('CKP-MFD-62 a subscription scope draws the heatmap in its vendor colour',async({page})=>{
+ await open(page,hourly());await page.keyboard.press('1');await grid(page);
  const heat=page.locator('.pg-overview svg.ov-heat');await expect(heat).toHaveClass(/\bvendor\b/);
  const hv=await heat.evaluate(e=>e.style.getPropertyValue('--hv'));expect(hv).toMatch(/^#[0-9a-f]{6}$/i);
  const rgb=`rgb(${[1,3,5].map(i=>parseInt(hv.slice(i,i+2),16)).join(', ')})`;
  expect(await heat.locator('rect.hm.s4').first().evaluate(e=>getComputedStyle(e).fill)).toBe(rgb);
- // Placed by the measured area, not left at the corner: the CSP-dropped inline position is applied again.
- expect(await heat.evaluate(e=>e.style.left)).toMatch(/^\d+px$/);
  await page.keyboard.press('0');
- const ink=await page.locator('.pg-overview svg.ov-heat').evaluate(e=>({fill:getComputedStyle(e.querySelector('rect.hm.s4')).fill,ink:getComputedStyle(e).getPropertyValue('--lcd-ink').trim()}));
- expect(ink.fill).not.toBe(rgb);
+ expect(await page.locator('.pg-overview svg.ov-heat rect.hm.s4').first().evaluate(e=>getComputedStyle(e).fill)).not.toBe(rgb);
 });
 
-test.skip('CKP-MFD-08 a record that began before the 26 weeks has no started-on line, and Chinese reads 点阵',async({page})=>{
- await open(page,history(localDay(181)),'zh-CN');
+test('CKP-MFD-62 without hourly rows the grid says there is no hourly record, and Chinese reads 点阵',async({page})=>{
+ await open(page,history(),'zh-CN');
  await page.locator('[data-opt="chart"] b',{hasText:/^点阵$/}).click();
- await expect(page.locator('.pg-overview svg.ov-heat')).toHaveAttribute('aria-label','近 26 周每日输出 token');
- await expect(page.locator('.pg-overview .hm-since')).toHaveCount(0);
+ await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(0);
+ await expect(page.locator('.pg-overview .ov-heat-empty')).toContainText('小时');
 });
 
 // CKP-MFD-27: a running session on a red quota above its model's recommended effort.
