@@ -21,7 +21,7 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
 @MainActor final class NativeSettingsWindowSurface: SettingsWindowSurface, SettingsPluginsRefreshing {
     private let presence: PulseDockPresence
     private var closeObserver: NSObjectProtocol?
-    private let controller: SettingsWindowController
+    let controller: SettingsWindowController
     init(editor: SettingsEditor, environment: @escaping @MainActor () -> SettingsEnvironment, scopeConsentEntry: ScopeConsentEntry?,
          presence: PulseDockPresence) {
         controller = SettingsWindowController(editor: editor, environmentProvider: environment, scopeConsentEntry: scopeConsentEntry)
@@ -60,7 +60,7 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
     private let activate: @MainActor () -> Void
     private let environment: @MainActor () -> SettingsEnvironment
     private let makeSurface: @MainActor (SettingsEditor) -> any SettingsWindowSurface
-    private var surface: (any SettingsWindowSurface)? {
+    var surface: (any SettingsWindowSurface)? {
         didSet { attachPlugins() }
     }
     /// Settings › Plugins (switch, interval, pin to page 1) edits this model.
