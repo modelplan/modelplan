@@ -195,9 +195,8 @@ extension CommunityCockpitEntryTests {
         do {
             for _ in 0..<1500 where entry.composition.store.snapshot.delivery == nil { try await Task.sleep(for: .milliseconds(10)) }
             let session = try XCTUnwrap(entry.composition.store.snapshot.delivery != nil ? ContinuousClock.now : nil, "\(label): the engine session is up")
-            var closedAt = launch
             if prewarm {
-                // The hidden page is ready and the last reply is filled; a page that failed while hidden is replaced.
+                // The only prewarm must be ready and have a last reply before the click.
                 func warmPage() -> CockpitWindowController? {
                     guard let page = probe.made.last, page.verificationWebView != nil, page.bridge.ready,
                           probe.traced("warm.reply", after: launch) != nil else { return nil }
@@ -206,7 +205,8 @@ extension CommunityCockpitEntryTests {
                 for _ in 0..<3000 where warmPage() == nil { try await Task.sleep(for: .milliseconds(10)) }
                 let warm = try XCTUnwrap(warmPage(), "the app loads a hidden page after launch and fills the last reply without a click")
                 // The first page of a process may still be painting once at alpha 0, ignoring the mouse.
-                for _ in 0..<800 where warm.window?.isVisible == true { try await Task.sleep(for: .milliseconds(10)) }
+                for _ in 0..<800 where !warm.verificationFrozen { try await Task.sleep(for: .milliseconds(10)) }
+                XCTAssertTrue(warm.verificationFrozen, "the preloaded web view is detached from the window hierarchy")
                 XCTAssertEqual(probe.made.filter { $0.verificationWebView != nil }.count, 1, "one hidden page")
                 XCTAssertFalse(warm.window?.isVisible ?? true, "the hidden page is out of view once its warm paint ends")
                 XCTAssertFalse(warm.window?.isKeyWindow ?? true, "and never takes focus")
@@ -235,14 +235,8 @@ extension CommunityCockpitEntryTests {
             }
             for run in 1...(speedBudget ? 10 : 3) {
                 if prewarm, run > 1 {
-                    for _ in 0..<3000 where probe.traced("warm.ready", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
-                    let ready = try XCTUnwrap(probe.traced("warm.ready", after: closedAt), "run \(run): an empty page is loaded again after the close")
-                    // A page rebuilt after a close is warm-painted too, out of view; the click comes after that.
-                    for _ in 0..<800 where probe.timed("prewarm warm-paint", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
-                    let painted = try XCTUnwrap(probe.timed("prewarm warm-paint", after: closedAt), "run \(run): the rebuilt page is warm-painted")
-                    XCTAssertTrue(painted.hasPrefix("prewarm warm-paint painted=true"), "run \(run): \(painted)")
-                    XCTAssertFalse(probe.made.last?.window?.isVisible ?? true, "run \(run): and out of view again")
-                    print("G3-42-REWARM run=\(run) closeToWarmReadyMs=\(Self.ms(closedAt, ready)) \(painted) webKitFootprintKiB=\(kib(Self.webKitFootprints()))")
+                    XCTAssertEqual(probe.made.count, 1, "run \(run): closing never loads another prewarm")
+                    XCTAssertTrue(probe.made.last?.verificationFrozen == true, "run \(run): the same cleared page is frozen")
                     try await Task.sleep(for: .milliseconds(300))
                 } else if run > 1 {
                     try await Task.sleep(for: .seconds(2))
@@ -264,7 +258,7 @@ extension CommunityCockpitEntryTests {
                     try await Task.sleep(for: .seconds(6))
                     entry.showConsole()
                     for _ in 0..<5000 where shown() == nil { try await Task.sleep(for: .milliseconds(2)) }
-                    if shown() == nil { closedAt = .now; continue }
+                    if shown() == nil { continue }
                 }
                 let page = try XCTUnwrap(shown(), "\(label) run \(run): the click shows a page")
                 let renders = probe.renders(page, after: click)
@@ -321,12 +315,19 @@ extension CommunityCockpitEntryTests {
                 }
                 if page.verificationWebView != nil {
                     page.requestClose()
-                    for _ in 0..<300 where page.verificationWebView != nil { try await Task.sleep(for: .milliseconds(10)) }
+                    for _ in 0..<300 where page.verificationWebView != nil && !page.verificationFrozen {
+                        try await Task.sleep(for: .milliseconds(10))
+                    }
                 }
-                XCTAssertNil(page.verificationWebView, "\(label) run \(run): the user close discards the shown page")
+                if prewarm {
+                    XCTAssertTrue(page.verificationFrozen, "run \(run): the private view was cleared on the same page")
+                    XCTAssertEqual(probe.made.count, pagesBefore, "run \(run): no replacement page")
+                } else {
+                    XCTAssertNil(page.verificationWebView, "run \(run): the cold comparison disposes the page")
+                }
                 if speedBudget {
                     let lines = probe.timing.filter { $0.at > click }.map(\.line)
-                    XCTAssertNil(page.window, "cycle \(run): the cockpit window is gone")
+                    XCTAssertFalse(page.window?.isVisible ?? false, "cycle \(run): the cockpit window is gone")
                     print("G3-123 cycle=\(run) " + lines.joined(separator: " | "))
                     func milliseconds(_ prefix: String) throws -> Int {
                         let line = try XCTUnwrap(lines.first { $0.hasPrefix(prefix) }, "cycle \(run): missing \(prefix)")
@@ -342,10 +343,9 @@ extension CommunityCockpitEntryTests {
                     // Real clicks on MacCI (wp17-measure-plan.md) carry that hop in the `close requested` log line.
                     HostedRunnerTiming.enforce("G3-123 cycle \(run) close stage=gone ms", measured: Double(try milliseconds("close stage=gone")), atMost: 800)
                 }
-                closedAt = .now
             }
             if prewarm && !speedBudget {
-                // As the packaged walkthrough does: open again soon after a close, while the next page may still load.
+                // Open again soon after a close using the same page.
                 try await Task.sleep(for: .milliseconds(1000))
                 let pagesBefore = probe.made.count, click = ContinuousClock.now
                 entry.showConsole()
@@ -360,9 +360,9 @@ extension CommunityCockpitEntryTests {
                     + probe.timing.filter { $0.at > click }.map(\.line).joined(separator: " | "))
                 XCTAssertFalse(probe.renders(page, after: click).isEmpty, "an open soon after a close still shows data")
                 page.requestClose()
-                for _ in 0..<300 where page.verificationWebView != nil { try await Task.sleep(for: .milliseconds(10)) }
-                closedAt = .now
-                for _ in 0..<3000 where probe.traced("warm.ready", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
+                for _ in 0..<300 where !page.verificationFrozen { try await Task.sleep(for: .milliseconds(10)) }
+                XCTAssertTrue(page.verificationFrozen)
+                XCTAssertEqual(probe.made.count, pagesBefore)
                 print("G3-42-IDLE webKitFootprintKiB=\(kib(Self.webKitFootprints())) pagesBuilt=\(probe.made.count)")
             }
         } catch {
@@ -379,7 +379,7 @@ extension CommunityCockpitEntryTests {
 
     /// CKP-SHELL-20 (owner D50): after launch the app loads one hidden, empty page and fills the last reply;
     /// a click shows that page and the last reply at once, then the fresh reply replaces it without a layout
-    /// change, and after each close an empty page is loaded again. The prewarmed launch runs first, while this
+    /// change. Closing clears and freezes that same page. The prewarmed launch runs first, while this
     /// test process has not started WebKit, so its hidden page pays the cold start. The hosted bound
     /// (`hostedClickToDataBoundMs`, 1500 ms) is still far below a WebKit cold start (about 3.3 s there); the
     /// real-Mac target stays under 800 ms (C-01, C-36 on #470). The second launch, without prewarm, opens as

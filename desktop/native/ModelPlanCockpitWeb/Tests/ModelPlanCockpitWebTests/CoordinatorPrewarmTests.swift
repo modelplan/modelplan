@@ -49,6 +49,8 @@ private actor CountingClient: EngineClient {
   let state: CockpitBridgeState
   var onReady: (() -> Void)?, onIntent: ((CockpitIntent) -> Void)?, onClosed: (() -> Void)?, onShown: (() -> Void)?
   var onDataRendered: (() -> Void)?
+  var onFrozenClose: (() -> Void)?
+  var freezesOnClose = false
   /// Like the real page, reports each display it renders; off for the probes that predate G3-42.
   let reportsDataRendered: Bool
   var onRenderVerified: (() -> Void)?, onDisplayAbandoned: (() -> Void)?
@@ -98,7 +100,7 @@ private actor CountingClient: EngineClient {
     let raw = try! state.clear(adopting: adopting)
     ack(raw, "cleared")
   }
-  func requestClose() { discard() }
+  func requestClose() { if freezesOnClose { onFrozenClose?() } else { discard() } }
   func discard() {
     guard !discarded else { return }
     discarded = true
@@ -200,14 +202,12 @@ final class CoordinatorPrewarmTests: XCTestCase {
     }
   }
 
-  /// WP-17 (Fable perf plan 5.1 row 2, CKP-SHELL-54): with the app's defaults the hidden page is built as soon as the
-  /// session is known (no 0.5 s wait), and after a close the next one follows after about 0.1 s, not at once and not 0.5 s.
-  @MainActor func testPrewarmStartsAtOnceAndRebuildsShortlyAfterAClose() async throws {
+  /// WP-17: load the first page as soon as the session is known and close without starting a replacement.
+  @MainActor func testPrewarmStartsAtOnceAndDoesNotRepeatAfterClose() async throws {
     var pages: [WarmProbe] = []
     let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
     let client = CountingClient(); coordinator.bind(client: client)
     XCTAssertEqual(coordinator.prewarmDelay, .zero)
-    XCTAssertEqual(coordinator.rebuildAfterCloseDelay, .milliseconds(100))
     coordinator.prewarmEnabled = true
     let start = ContinuousClock.now
     await coordinator.consume(.context(delivery()))
@@ -216,11 +216,10 @@ final class CoordinatorPrewarmTests: XCTestCase {
     XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(400), "no half-second wait before the hidden page")
     coordinator.open()
     coordinator.requestClose()
-    let closed = ContinuousClock.now
-    XCTAssertEqual(pages.count, 1, "the close's last steps run before the next page is built")
-    await settle { pages.count == 2 }
-    XCTAssertEqual(pages.count, 2, "the next hidden page follows the close")
-    XCTAssertGreaterThanOrEqual(ContinuousClock.now - closed, .milliseconds(100))
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertEqual(pages.count, 1, "no speculative replacement after a close")
+    coordinator.open()
+    XCTAssertEqual(pages.count, 2, "the next click builds a page")
     await coordinator.shutdown(); await client.complete()
   }
 
@@ -262,18 +261,15 @@ final class CoordinatorPrewarmTests: XCTestCase {
 
     coordinator.requestClose()
     XCTAssertTrue(warm.discarded); XCTAssertEqual(closed, 1)
-    await settle { pages.count == 2 }
-    XCTAssertEqual(pages.count, 2, "a closed page is discarded and an empty one is prewarmed in its place")
-    XCTAssertTrue(pages[1].prewarmed); XCTAssertEqual(pages[1].opened, 0)
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertEqual(pages.count, 1, "the closed page is discarded")
     requests = await client.requests
-    XCTAssertEqual(requests, 2, "the replacement does not query while the last reply is current for this delivery")
+    XCTAssertEqual(requests, 2, "no replacement query runs while closed")
     await coordinator.shutdown(); await client.complete()
-    XCTAssertTrue(pages[1].discarded)
   }
 
   /// G3-42: the first open after prewarm draws the last reply before the fresh query is even asked, and the
-  /// query, held by a stalled engine, cannot delay it. The page's render of the last reply starts the query; a
-  /// page that never reports that render still gets its query after the grace.
+  /// query, held by a stalled engine, cannot delay it. The page's render of the last reply starts the query.
   @MainActor func testFirstOpenAfterPrewarmShowsTheLastReplyBeforeTheFreshQueryCompletes() async throws {
     var pages: [WarmProbe] = []
     let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0, reportsRenders: true); pages.append(page); return page }
@@ -309,17 +305,17 @@ final class CoordinatorPrewarmTests: XCTestCase {
     XCTAssertEqual(warm.displays, 2, "the fresh reply replaces it")
     await client.complete(); await coordinator.joinCurrentQueryForVerification()
 
-    // A page that never reports the render still gets its fresh query once the grace ends.
+    warm.freezesOnClose = true
     coordinator.requestClose()
-    await settle { pages.count == 2 }
-    let next = try XCTUnwrap(pages.last)
-    await settle { next.queryTicket != nil }
+    XCTAssertFalse(coordinator.presented)
+    XCTAssertFalse(warm.discarded)
     coordinator.lastRenderGrace = .milliseconds(20)
     coordinator.open()
-    XCTAssertEqual(next.displays, 1, "the next open draws the last reply at once too")
+    XCTAssertEqual(pages.count, 1, "the same page opens again")
+    XCTAssertEqual(warm.displays, 3, "the next open draws the last reply at once too")
     await settle { await client.requests == 3 }
     requests = await client.requests
-    XCTAssertEqual(requests, 3, "the grace bounds the hold")
+    XCTAssertEqual(requests, 3, "the grace bounds the hold without a render receipt")
     await coordinator.shutdown(); await client.complete()
   }
 
@@ -351,39 +347,26 @@ final class CoordinatorPrewarmTests: XCTestCase {
     await coordinator.shutdown(); await client.complete()
   }
 
-  /// Memory pressure releases only the hidden page, and normal pressure brings it back. Three hidden
-  /// pages that fail in a row stop prewarming until the next open. A close request never closes a hidden page.
-  @MainActor func testMemoryPressureAndRepeatedFailuresStopPrewarming() async throws {
+  /// Releasing the speculative page for memory pressure leaves the app idle until a click.
+  @MainActor func testMemoryPressureReleasesTheOnlyPrewarm() async throws {
     var pages: [WarmProbe] = [], closed = 0
     let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
     let client = CountingClient(); coordinator.bind(client: client)
     coordinator.onClosed = { closed += 1 }
-    coordinator.prewarmDelay = .zero
     coordinator.prewarmEnabled = true
     await coordinator.consume(.context(delivery()))
     await settle { pages.count == 1 }
+    let warm = try XCTUnwrap(pages.first)
     coordinator.requestClose()
-    XCTAssertFalse(pages[0].discarded, "a close request is for a shown page only")
+    XCTAssertFalse(warm.discarded, "a close request is for a shown page only")
     coordinator.memoryPressureChanged(pressured: true)
-    XCTAssertTrue(pages[0].discarded); XCTAssertEqual(closed, 0, "releasing a hidden page is not a close")
-    try await Task.sleep(for: .milliseconds(50))
-    XCTAssertEqual(pages.count, 1, "no page is rebuilt under pressure")
-    coordinator.memoryPressureChanged(pressured: false)
-    await settle { pages.count == 2 }
-    XCTAssertEqual(pages.count, 2)
-    for expected in 3...4 {
-      pages.last?.failWhileHidden()
-      await settle { pages.count == expected }
-    }
-    pages.last?.failWhileHidden()
-    try await Task.sleep(for: .milliseconds(50))
-    XCTAssertEqual(pages.count, 4, "three failures in a row stop prewarming")
+    XCTAssertTrue(warm.discarded)
     XCTAssertEqual(closed, 0)
+    coordinator.memoryPressureChanged(pressured: false)
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertEqual(pages.count, 1, "normal pressure does not start a replacement")
     coordinator.open()
-    XCTAssertEqual(pages.count, 5, "a click still opens a page")
-    coordinator.requestClose()
-    await settle { pages.count == 6 }
-    XCTAssertEqual(pages.count, 6, "after an open, prewarming resumes")
+    XCTAssertEqual(pages.count, 2, "a click still opens a page")
     await coordinator.shutdown(); await client.complete()
   }
 
