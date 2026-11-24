@@ -2,6 +2,7 @@
 // The porthole HUD from public published data: on the tall profile a mini frontier above the first six chart models,
 // on the compact profile one strip: a small frontier beside three stacked rows. It reads no scores of its own and shows nothing personal except which
 // effort a running session last reported. Prototype: rocket-r1/porthole.js:49-76 for behaviour; the code is written here.
+import {hudAxisPath} from './hud-axis.js';
 import {ht} from './host-text.js';
 import type {WireCockpitData} from '../generated/wire.js';
 import {FIELD_LIMIT,type FieldModel} from './field-model.js';
@@ -37,7 +38,7 @@ export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,r
  const a0=Math.floor((Math.min(...values.map(r=>r[1]))-4)/5)*5,a1=Math.ceil((Math.max(...values.map(r=>r[1]))+4)/5)*5;
  const L=8,R=9,T=6,B=12,X=(r:Row)=>L+(Math.log2(r[2]/base)-lx0)/(lx1-lx0)*(width-L-R),Y=(r:Row)=>T+(a1-r[1])/(a1-a0)*(height-T-B);
  const f=(v:number)=>v.toFixed(1);
- root.append(svg('path',{class:'hud-axis',d:`M${L} ${T}V${height-B}H${width-R}`}));
+ root.append(svg('path',{class:'hud-axis',d:hudAxisPath(width,height,L,R,T,B)}));
  const front:typeof points=[];for(const p of [...points].sort((a,b)=>a.r[2]-b.r[2]||b.r[1]-a.r[1]))if(!front.length||p.r[1]>front.at(-1)!.r[1])front.push(p);
  const leaders=new Set(front.map(p=>p.m.id));
  root.append(svg('polyline',{class:'hud-front',points:front.map(p=>`${f(X(p.r))},${f(Y(p.r))}`).join(' ')}));
