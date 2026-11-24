@@ -221,6 +221,7 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 			forgetScopes[id] = true
 		}
 		s.Requests[key] = Receipt{RequestHash: requestHash, Result: encoded, PendingForget: cleanup, ForgetScopes: forgetScopes}
+		pruneReceipts(s, key)
 		return nil
 	}, func(s *State) error {
 		if len(cleanup) == 0 {
@@ -351,4 +352,44 @@ func syncScopeTool(s *State, tool string) {
 		record.DeniedSources = cloneRecord(r).DeniedSources
 	}
 	s.Tools[tool] = record
+}
+
+// receiptWindow bounds the completed grant receipts a store keeps (review 11-24 #2). Every
+// committed request used to keep its receipt for ever, so a long-lived profile could fill the
+// 256 KiB store and then refuse the next Deny or Forget, leaving the old grant authoritative.
+const receiptWindow = 64
+
+// pruneReceipts keeps the receipt being written, every receipt that still owes cleanup, and the
+// newest completed receipts up to receiptWindow. A dropped receipt's request expected a
+// generation older than the store's, so replaying its ID is refused as stale_generation and can
+// never apply a second time.
+func pruneReceipts(s *State, keep string) {
+	type completed struct {
+		key        string
+		generation uint64
+	}
+	var done []completed
+	for key, receipt := range s.Requests {
+		if key == keep || len(receipt.PendingForget) > 0 {
+			continue
+		}
+		var result GrantReceipt
+		var generation uint64
+		if json.Unmarshal(receipt.Result, &result) == nil && result.CommittedGeneration != nil {
+			generation = *result.CommittedGeneration
+		}
+		done = append(done, completed{key, generation})
+	}
+	if len(done) < receiptWindow {
+		return
+	}
+	sort.Slice(done, func(i, j int) bool {
+		if done[i].generation != done[j].generation {
+			return done[i].generation > done[j].generation
+		}
+		return done[i].key < done[j].key
+	})
+	for _, old := range done[receiptWindow-1:] {
+		delete(s.Requests, old.key)
+	}
 }

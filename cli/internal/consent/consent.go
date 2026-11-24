@@ -493,6 +493,23 @@ func PublishContext(ctx context.Context, f Fence, write func() error) error {
 	return publish(ctx, f, write, true)
 }
 
+// PublishReadOnlyContext is PublishContext for a read-only client (review 11-24 #9). It never
+// creates the consent directory or its lock file: while no writer has created the lock, the
+// fence is checked against the store as it is, without migrating or locking it.
+func PublishReadOnlyContext(ctx context.Context, f Fence, write func() error) error {
+	if _, err := os.Stat(Path() + ".lock"); os.IsNotExist(err) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		s, err := ReadOnly(Path())
+		if err != nil || s.StoreEpoch == "" || s.Fence() != f {
+			return ErrChanged
+		}
+		return write()
+	}
+	return publish(ctx, f, write, true)
+}
+
 func publish(ctx context.Context, f Fence, write func() error, wait bool) error {
 	file := Path() + ".lock"
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {

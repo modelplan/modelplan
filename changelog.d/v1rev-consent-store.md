@@ -1,0 +1,1 @@
+Consent changes can no longer fill the consent store and block a later Deny or Forget, a Forget whose cleanup was held up by a running read now finishes without restarting the app, and the read-only app-server no longer writes to the consent store.
