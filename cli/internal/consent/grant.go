@@ -49,6 +49,9 @@ type GrantHooks struct {
 // EnsureStore establishes an epoch before a client takes its first floor. The
 // cache-only Load path remains read-only on a fresh home.
 func EnsureStore(file string) (State, error) {
+	if err := writable(); err != nil {
+		return Empty(), err
+	}
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return Empty(), err
 	}
@@ -354,23 +357,33 @@ func syncScopeTool(s *State, tool string) {
 	s.Tools[tool] = record
 }
 
-// receiptWindow bounds the completed grant receipts a store keeps (review 11-24 #2). Every
-// committed request used to keep its receipt for ever, so a long-lived profile could fill the
-// 256 KiB store and then refuse the next Deny or Forget, leaving the old grant authoritative.
+// receiptWindow bounds the grant receipts a store keeps (review 11-24 #2). Every committed request
+// used to keep its receipt for ever, so a long-lived profile could fill the 256 KiB store and then
+// refuse the next Deny or Forget, leaving the old grant authoritative.
 const receiptWindow = 64
 
-// pruneReceipts keeps the receipt being written, every receipt that still owes cleanup, and the
-// newest completed receipts up to receiptWindow. A dropped receipt's request expected a
-// generation older than the store's, so replaying its ID is refused as stale_generation and can
-// never apply a second time.
+// owedReceiptID names the receipt that carries erasure still owed by receipts that left the
+// window (macrevb-1218-1). It is longer than any request ID ApplyGrant accepts, so no request can
+// replay or overwrite it. Older CLIs read it as an ordinary pending receipt and retry it.
+var owedReceiptID = strings.Repeat("~", 129) + "owed-erasure"
+
+var owedReceiptHash = strings.Repeat("0", 64)
+
+// pruneReceipts keeps the receipt being written and the newest receipts up to receiptWindow,
+// whether or not they still owe cleanup. A dropped receipt's owed erasure moves into one owed
+// receipt, merged per scope (a Forget stays a Forget), so obligations are bounded by the scopes
+// that exist rather than by how many revocations failed to erase. A dropped receipt's request
+// expected a generation older than the store's, so replaying its ID is refused as
+// stale_generation and can never apply a second time.
 func pruneReceipts(s *State, keep string) {
-	type completed struct {
+	type entry struct {
 		key        string
 		generation uint64
 	}
-	var done []completed
+	owedKey := ReceiptKey(s.StoreEpoch, owedReceiptID)
+	var all []entry
 	for key, receipt := range s.Requests {
-		if key == keep || len(receipt.PendingForget) > 0 {
+		if key == keep || key == owedKey {
 			continue
 		}
 		var result GrantReceipt
@@ -378,18 +391,45 @@ func pruneReceipts(s *State, keep string) {
 		if json.Unmarshal(receipt.Result, &result) == nil && result.CommittedGeneration != nil {
 			generation = *result.CommittedGeneration
 		}
-		done = append(done, completed{key, generation})
+		all = append(all, entry{key, generation})
 	}
-	if len(done) < receiptWindow {
+	if len(all) < receiptWindow {
 		return
 	}
-	sort.Slice(done, func(i, j int) bool {
-		if done[i].generation != done[j].generation {
-			return done[i].generation > done[j].generation
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].generation != all[j].generation {
+			return all[i].generation > all[j].generation
 		}
-		return done[i].key < done[j].key
+		return all[i].key < all[j].key
 	})
-	for _, old := range done[receiptWindow-1:] {
+	owed := s.Requests[owedKey]
+	for _, old := range all[receiptWindow-1:] {
+		receipt := s.Requests[old.key]
 		delete(s.Requests, old.key)
+		for _, scope := range receipt.PendingForget {
+			owed = owe(owed, scope, receipt.ForgetScopes[scope])
+		}
 	}
+	if len(owed.PendingForget) > 0 {
+		owed.RequestHash, owed.Result = owedReceiptHash, json.RawMessage(`{}`)
+		s.Requests[owedKey] = owed
+	}
+}
+
+func owe(r Receipt, scope string, forget bool) Receipt {
+	found := false
+	for _, have := range r.PendingForget {
+		found = found || have == scope
+	}
+	if !found {
+		r.PendingForget = append(r.PendingForget, scope)
+		sort.Strings(r.PendingForget)
+	}
+	if forget {
+		if r.ForgetScopes == nil {
+			r.ForgetScopes = map[string]bool{}
+		}
+		r.ForgetScopes[scope] = true
+	}
+	return r
 }

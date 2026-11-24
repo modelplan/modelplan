@@ -81,8 +81,12 @@ func TestReceiptPruningKeepsPendingCleanup(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The receipt itself may leave the window (macrevb-1218-1); its Forget obligation may not.
 	current, _ := Load(file)
-	if receipt, ok := current.Requests[ReceiptKey(s.StoreEpoch, "forget-pending")]; !ok || len(receipt.PendingForget) == 0 {
-		t.Fatal("pending cleanup obligation pruned")
+	if owed := owedErasure(current); !owed["retired.old_path"] {
+		t.Fatal("pending cleanup obligation pruned", owed)
+	}
+	if !NewAdmission(current, Automatic).AnyCleanupPending() {
+		t.Fatal("admission no longer sees the owed cleanup")
 	}
 }

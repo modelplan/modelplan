@@ -84,6 +84,9 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	if config.Detect == nil || config.Paths == nil || config.Cleanup == nil {
 		return nil, errors.New("backend_unavailable")
 	}
+	// Review 11-24 #9 (macrevb-1218-3): the read-only mode covers every consent read and lock
+	// in this process (stamp, view, watcher, readers and publication), not only this constructor.
+	consent.SetReadOnlyProcess(config.ReadOnly)
 	var state consent.State
 	var err error
 	if config.ReadOnly {
@@ -133,11 +136,7 @@ func (b *SharedBackend) Publish(ctx context.Context, stamp Stamp, enqueue func()
 		return err
 	}
 	called := false
-	publish := consent.PublishContext
-	if b.config.ReadOnly {
-		publish = consent.PublishReadOnlyContext
-	}
-	err := publish(ctx, fenceOf(stamp), func() error {
+	err := consent.PublishContext(ctx, fenceOf(stamp), func() error {
 		called = true
 		if err := ctx.Err(); err != nil {
 			return err

@@ -78,6 +78,7 @@ func TestPendingForgetCleanupIsRetriedInTheRunningEngine(t *testing.T) {
 // Review 11-24 #9: a read-only app-server neither migrates a legacy store nor creates the
 // consent lock, backup or epoch while it starts, builds a view and publishes.
 func TestReadOnlyBackendLeavesConsentFilesUntouched(t *testing.T) {
+	t.Cleanup(func() { consent.SetReadOnlyProcess(false) })
 	snapshot := func(dir string) map[string]string {
 		out := map[string]string{}
 		entries, _ := os.ReadDir(dir)
@@ -122,6 +123,7 @@ func TestReadOnlyBackendLeavesConsentFilesUntouched(t *testing.T) {
 	t.Run("v2", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
+		consent.SetReadOnlyProcess(false)
 		if _, err := consent.EnsureStore(consent.Path()); err != nil {
 			t.Fatal(err)
 		}
@@ -136,9 +138,11 @@ func TestReadOnlyBackendLeavesConsentFilesUntouched(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// No lock file: the publication cannot be serialized with a writer, so it fails closed
+		// without creating one (macrevb-1218-3).
 		published := false
-		if err := b.Publish(context.Background(), view.Stamp, func() error { published = true; return nil }); err != nil || !published {
-			t.Fatal("read-only publish refused", err)
+		if err := b.Publish(context.Background(), view.Stamp, func() error { published = true; return nil }); err == nil || published {
+			t.Fatal("read-only publish without writer serialization", err)
 		}
 		after := snapshot(dir)
 		if len(after) != len(before) {
