@@ -130,6 +130,8 @@ export interface PluginHost {
   openScreen(id:string|null,keep?:boolean):boolean;
   /** D387: the deck follows the one open screen (its plugin id and shown name), or null when none is open. */
   onScreen(listener:(screen:{id:string;name:string}|null)=>void):void;
+  /** Close an open plugin screen and report whether one was covering the page. */
+  dismissScreen():boolean;
   /** Plugins currently running (for tests and diagnostics). */
   running():string[];
   /** The display data the page rendered, at the host's time: running plugins with `derive` get their shaped reading. */
@@ -251,7 +253,14 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   // Invariant (macrevb-835-2): the screen's frame (icon, title, Close) is built once per opening; readings, repaints,
   // locale and settings changes update its text and lines in place, so a focused control is never replaced.
   // D387: the screen is one view of the lower panel. Any other view key (a page key, a subscription key, All) ends it.
-  const pageKeys=(e:Event)=>{if(screen&&(e.target as Element|null)?.closest?.('.mfd-pk .pk,.eng-keys .ek:not(.pl-key),.ek[data-all]'))closeScreen();};
+  // D401: a subscription or All key is handled by the engine, which asks `dismissScreen` first (pressing the remembered
+  // selection again brings it back instead of toggling it off); only a page key ends the screen here.
+  const pageKeys=(e:Event)=>{if(screen&&(e.target as Element|null)?.closest?.('.mfd-pk .pk'))closeScreen();};
+  // D401: a plugin key follows the subscription-key logic. While a screen is open only its key is lit: the lit subscription
+  // (or All) key goes dark and is remembered, then lit again when the screen closes (a new table is dimmed as it is drawn).
+  const dimmed=new Set<HTMLElement>();
+  const dimSubs=()=>{for(const k of root.querySelectorAll<HTMLElement>('.eng-keys .ek:not(.pl-key),.ek[data-all]')){if(k.getAttribute('aria-pressed')==='true')dimmed.add(k);k.classList.remove('on');k.setAttribute('aria-pressed','false');}};
+  const lightSubs=()=>{for(const k of dimmed)if(k.isConnected){k.classList.add('on');k.setAttribute('aria-pressed','true');}dimmed.clear();};
   // The plugin key is pressed (lit, aria-pressed) exactly while its screen is open, as a subscription key is while selected.
   const markKey=(key:HTMLElement,open:boolean)=>{key.classList.toggle('on',open);key.setAttribute('aria-expanded',String(open));key.setAttribute('aria-pressed',String(open));};
   let listener:((s:{id:string;name:string}|null)=>void)|null=null,told='';
@@ -279,7 +288,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   function closeScreen(restoreFocus=false) {
     if(!screen)return;const id=screen.id;watch?.unobserve(screen.area);screen.box.remove();screen=null;
     document.removeEventListener('click',pageKeys,true);
-    for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))markKey(key,false);tell(null);
+    for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))markKey(key,false);lightSubs();tell(null);
     if(restoreFocus)root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`)?.focus();
     reconcile();// S4: a plugin that ran only for its screen stops.
   }
@@ -294,7 +303,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     head.append(icon(plugin,'pl-icon'),title);const list=el('dl','pl-screen-l'),area=el('div','pl-screen-d');area.hidden=true;area.dataset.plugin=id;box.append(head,list,area);
     well.append(box);screen={id,box,title,list,area,opening:true};reconcile();drawScreen();
     document.addEventListener('click',pageKeys,true);
-    const opened=root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`);if(opened)markKey(opened,true);
+    const opened=root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`);if(opened)markKey(opened,true);dimSubs();
     return true;
   }
   // ---- menus: the empty-slot "+" menu and the plugin key's right-click menu share one popup.
@@ -358,6 +367,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
         fill(col,plugin,bay.querySelectorAll('.qcell').length,bay.querySelectorAll('.qrow').length>1);
         bay.replaceWith(col);columns.set(id,col);placed.add(id);
       });
+      if(screen){dimSubs();const open=root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${screen.id}"]`);if(open)markKey(open,true);}
       reconcile();if(screen)drawScreen();
     },
     // Privacy barrier (clear, new view revision, waiting/empty; macrevc-844-2, macrev2-1104-2): readings, per-plugin draw
@@ -433,6 +443,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     closeMenu:()=>closeMenu(),
     openScreen,
     onScreen(next){listener=next;},
+    dismissScreen(){if(!screen)return false;closeScreen();return true;},
     running:()=>[...running],
     dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();memos.clear();pending=null;hostFed.clear();shown=null;watch?.disconnect();document.removeEventListener('focusin',moved,true);document.removeEventListener('keydown',escape,true);hosts.delete(root);},
   };

@@ -132,8 +132,10 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  host.addEventListener('focusin',e=>showHint(e.target));host.addEventListener('focusout',hideHint);
  host.onclick=e=>{if(!e.isTrusted)return;const b=(e.target as Element).closest<HTMLButtonElement>('button');if(!b||!host.contains(b))return;
     if(b.hasAttribute('data-add-subscription')){if(plugins){plugins.openMenu(b,{data,locale,mark:vendorKey=>vendorKey&&Object.hasOwn(logos,vendorKey)?'assets/brands/'+logos[vendorKey]:null,connect:onAdd});return;}onAdd();return;}
-  if(b.hasAttribute('data-all')){if(onSelect('all')){scope='';paint();}return;}
-  if(b.hasAttribute('data-sub')){const key=b.dataset.sub??'';if(!seen.has(key))return;if(key===scope){if(onSelect('all')){scope='';paint();}return;}if(onSelect(key)){scope=key;paint();}return;}
+  // D401: a screen covering the panel hides the selection (not changes it); the first press ends the screen, and the key of the remembered selection only brings it back.
+  const covered=(b.hasAttribute('data-all')||b.hasAttribute('data-sub'))&&(plugins?.dismissScreen()??false);
+  if(b.hasAttribute('data-all')){if(covered&&scope===''){paint();return;}if(onSelect('all')){scope='';paint();}return;}
+  if(b.hasAttribute('data-sub')){const key=b.dataset.sub??'';if(!seen.has(key))return;if(key===scope){if(covered){paint();return;}if(onSelect('all')){scope='';paint();}return;}if(onSelect(key)){scope=key;paint();}return;}
   if(b.hasAttribute('data-bpage')){const step=b.dataset.bpage==='1'?1:b.dataset.bpage==='-1'?-1:0;page=Math.max(0,Math.min(pageCount()-1,page+step));paint();}
  };
  const applyScope=(next:string)=>{scope=next!=='all'&&seen.has(next)?next:'';if(scope){const index=members.findIndex(m=>m.key===scope);page=pageOf(index);}paint();};
