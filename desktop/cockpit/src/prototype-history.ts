@@ -9,6 +9,16 @@ import {overviewCost,type OverviewCost} from './overview-cost.js';
 
 const HOUR=36e5,DAYS=182;
 const dayKey=(at:number)=>{const d=new Date(at);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+/** Hour series keyed by the producer's own bucket instants. The nominal grid steps in whole absolute hours from a local anchor,
+ * which is not where a bucket falls after a fractional-offset change (Lord Howe's 30-minute fall-back), so a recorded instant
+ * is never floored into a grid slot: it is added as its own slot and keeps its wall-clock hour. */
+function hourSeries(grid:number[],rows:ReadonlyArray<{at:string;source:string;observedOutputTokens:number}>,sources:ReadonlySet<string>,to:number){
+ const from=grid[0]!,at=new Set(grid);
+ for(const b of rows){const ms=Date.parse(b.at);if(sources.has(b.source)&&ms>=from&&ms<=to)at.add(ms);}
+ const instants=[...at].sort((a,b)=>a-b),index=new Map(instants.map((ms,i)=>[ms,i] as const)),values:(number|null)[]=instants.map(()=>null);
+ for(const b of rows){const i=index.get(Date.parse(b.at));if(sources.has(b.source)&&i!==undefined)values[i]=(values[i]??0)+b.observedOutputTokens;}
+ return {instants,values};
+}
 const startOfDay=(key:string)=>{const [y,m,d]=key.split('-').map(Number);return new Date(y!,m!-1,d!).getTime();};
 
 export interface HistoryView {
@@ -51,12 +61,8 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
    for(const b of h.daily)if(sources.has(b.source)){byDay.set(b.at,(byDay.get(b.at)??0)+b.observedOutputTokens);if(b.origin==='import')importedByDay.set(b.at,(importedByDay.get(b.at)??0)+b.observedOutputTokens);}
    daily.push({accountId,values:days.map(day=>byDay.get(day)??null),imported:days.map(day=>importedByDay.get(day)??null),coverageStart:first});
   }
-  const values:(number|null)[]=instants.map(()=>null);
-  for(const b of h.hourly){const index=Math.floor((Date.parse(b.at)-instants[0]!)/HOUR);if(sources.has(b.source)&&index>=0&&index<values.length)values[index]=(values[index]??0)+b.observedOutputTokens;}
-  hourly.push({accountId,instants,values});
-  const longValues:(number|null)[]=longInstants.map(()=>null);
-  for(const b of h.hourly){const index=Math.floor((Date.parse(b.at)-longInstants[0]!)/HOUR);if(sources.has(b.source)&&index>=0&&index<longValues.length)longValues[index]=(longValues[index]??0)+b.observedOutputTokens;}
-  hourlyLong.push({accountId,instants:longInstants,values:longValues});
+  hourly.push({accountId,...hourSeries(instants,h.hourly,sources,top)});
+  hourlyLong.push({accountId,...hourSeries(longInstants,h.hourly,sources,top)});
  }
  const projects=(rows:typeof h.projects.recent7d)=>rows.map((p,i)=>({project:p.label??ht(locale,'host.projectN',{n:i+1}),tokens:p.observedOutputTokens,tokenScope:'combined',share:p.share,configs:[{model:p.model??'',effort:p.effort,recommendedEffort:null}]}));
  const paceHistory:Record<string,Record<string,unknown[]>>={};

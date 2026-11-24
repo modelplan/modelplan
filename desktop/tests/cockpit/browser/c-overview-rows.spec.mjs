@@ -103,6 +103,31 @@ test.describe('D390 fall-back day',()=>{
  });
 });
 
+// macrevb-1212-3: Australia/Lord_Howe falls back 30 minutes on 2026-04-05. At 23:30 on Apr 6 the producer sends yesterday's
+// 04:00 LHST bucket (17:30Z); it must land in the 04:00-08:00 cell, with no 00:00-04:00 cell.
+test.describe('D390 half-hour fall-back',()=>{
+ test.use({timezoneId:'Australia/Lord_Howe'});
+ for(const range of ['7d','30d'])
+ test(`CKP-MFD-62 the Grid labels a 04:00 LHST record 04:00-08:00 (${range})`,async({page})=>{
+  const data=visualFixture().data,ref=data.projection.rows[0].accounts[0].subscriptionRef;
+  data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:'2026-04-01',
+   subscriptions:[{subscriptionRef:ref,sources:[{source:'codex',bindingBasis:'source-wide-current-binding',recent7d:sums(1),recent30d:sums(1)}]}],
+   models:ranking,tools:ranking,daily:[{at:'2026-04-05',source:'codex',origin:'live',observedOutputTokens:500}],
+   hourly:[{at:'2026-04-05T17:30:00Z',source:'codex',origin:'live',observedOutputTokens:500}],
+   projects:{recent7d:[],recent30d:[]},cycles:[]};
+  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+  await page.clock.setFixedTime(new Date('2026-04-06T13:00:00Z'));
+  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance,shell:{...shell,range},redBelow:25}))).toBe(true);
+  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  expect(await receive(send('display',{data}))).toBe(true);
+  await grid(page);
+  const tips=await page.locator('.pg-overview svg.ov-heat rect.hm').evaluateAll(list=>list.map(e=>e.dataset.tip));
+  expect(tips).toEqual(['Apr 5 04:00-08:00\nCodex 500']);
+ });
+});
+
 // macrevb-1212-2: on a fresh record the lit Grid key says its own hourly empty state; Bars keeps its existing one.
 test('CKP-MFD-62 a fresh Overview: Grid shows the hourly empty line with no cells, Bars its own empty state',async({page})=>{
  const data=visualFixture().data;delete data.history;
