@@ -81,6 +81,17 @@ test('B1 keyboard users keep the date keys\' ring: an arrow moves the choice and
  await page.locator('[data-range-key="30d"]').click();await page.keyboard.press('ArrowLeft');
  await expect(page.locator('[data-range-key="7d"]')).toBeFocused();
 });
+test('pointer focus on a generic keyboard control does not acquire a ring after a key press',async({page})=>{
+ await open(page,{data:visualFixture().data,range:'today'});
+ await page.evaluate(()=>{const control=document.createElement('div');control.tabIndex=0;control.id='focus-regression';control.textContent='Control';document.querySelector('#cockpit').append(control);});
+ const control=page.locator('#focus-regression');
+ await control.click();await page.keyboard.press('Escape');
+ await expect(control).toBeFocused();
+ expect(await control.evaluate(e=>e.hasAttribute('data-pointer-focus')&&getComputedStyle(e).outlineStyle==='none')).toBe(true);
+ await page.keyboard.press('Tab');
+ await control.focus();
+ expect(await control.evaluate(e=>e.hasAttribute('data-pointer-focus'))).toBe(false);
+});
 
 // ---- B1 (c): loading is never the empty state ----
 test('B1 a reply with an unread history keeps the last local history in the same page context; range switches never show the empty state',async({page})=>{
