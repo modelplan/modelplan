@@ -280,7 +280,7 @@ struct StatusNoticePresentation {
         composition.dock.menuNoticeDidChange = { [weak self] notice, first in self?.applyMenuNotice(notice, first: first) }
         composition.dock.showSettings = settingsHost.action
         composition.dock.resetPosition = { [weak self] in self?.resetPositions() }
-        composition.dock.showConsole = { [weak self] in self?.openConsole(rackEntrance: true, openPoint: NSEvent.mouseLocation) }
+        composition.dock.showConsole = { [weak self] in self?.showConsole(openPoint: NSEvent.mouseLocation) }
         // D204 (G3-94): the ignition itself toggles an attached cockpit and brings a detached one to the front.
         composition.dock.pressIgnition = { [weak self] point in self?.pressIgnition(at: point) }
     }
