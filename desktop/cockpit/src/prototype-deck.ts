@@ -66,9 +66,11 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // the model has (back on the real lever = no trial). The real lever shows one of 33 baked frames (Low 0 .. Max 32) and
  // glides through them when its effort changes (CKP-FAD-12); the community edition draws the same state flat.
  let drag:{pointer:number;model:string;k:number;prior:string|undefined}|null=null;
- // --fd-frame is a registered integer in the official throttle sheet, so its CSS transition steps through the frames.
- const FRAMES=32,frameOf=(k:number)=>Math.round((1-k)*FRAMES);
- function setLever(cap:HTMLElement,k:number){const frame=String(frameOf(k));cap.dataset.frame=frame;cap.style.setProperty('--fd-frame',frame);}
+ // macrevc-1223-1: the page gives only the lever position (--fd-pos, 0 = Low .. 1 = Max). The official throttle sheet turns it
+ // into a frame of its own sprite (--fd-frame = pos x (--knob-frames - 1), a registered integer, so its transition steps through
+ // the frames); new knob art with another frame count needs no page change. data-frame reports the same frame (33 by default).
+ const knobFrames=(cap:HTMLElement)=>{const n=parseInt(getComputedStyle(cap).getPropertyValue('--knob-frames'),10);return Number.isFinite(n)&&n>1?n:33;};
+ function setLever(cap:HTMLElement,k:number){const pos=Math.max(0,Math.min(1,1-k));cap.style.setProperty('--fd-pos',String(pos));cap.dataset.frame=String(Math.round(pos*(knobFrames(cap)-1)));}
  // The trial ghost and the thin blue slot line from the real lever to it (D122); k is continuous while dragging.
  function placeGhost(ch:HTMLElement,leverK:number,k:number|null,dragging:boolean){
   const ghost=ch.querySelector<HTMLElement>('.fd-ghost')!,line=ch.querySelector<HTMLElement>('.fd-tline')!;
