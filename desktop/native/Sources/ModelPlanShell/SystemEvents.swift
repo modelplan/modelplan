@@ -55,8 +55,12 @@ public enum SystemSignal: Equatable, Sendable {
     }
     /// Review 11-24 #4: the OS pause reasons that hold right now, from the same queries `start()` seeds with. Used
     /// before the lifecycle exists (the early engine start) so no helper starts while the gate would be closed.
-    public static func pauseReasonsNow(displayIDs: Set<UInt32> = currentDisplayIDs(), onConsole: Bool? = currentConsoleState(),
-                                       screenLocked: Bool? = currentScreenLocked()) -> Set<LifecycleCoordinator.PauseReason> {
+    @MainActor public static func pauseReasonsNow() -> Set<LifecycleCoordinator.PauseReason> {
+        pauseReasons(displayIDs: currentDisplayIDs(), onConsole: currentConsoleState(), screenLocked: currentScreenLocked())
+    }
+    /// Pure reduction of the queries; `NSScreen` is read only by the main-actor entry above, never in a default argument.
+    nonisolated public static func pauseReasons(displayIDs: Set<UInt32>, onConsole: Bool?,
+                                                screenLocked: Bool?) -> Set<LifecycleCoordinator.PauseReason> {
         var reasons: Set<LifecycleCoordinator.PauseReason> = []
         if displayIDs.isEmpty { reasons.insert(.noDisplay) }
         if onConsole == false { reasons.insert(.sessionInactive) }
