@@ -36,9 +36,7 @@ const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:strin
 /** D387 / D413: the one open screen as the Overview | screen switch and the bottom keys show it (plugin-host PluginScreenInfo). */
 type DeckScreen={readonly id:string;readonly name:string;readonly short:string|null;readonly icon:string;
  readonly toggle:{readonly value:string;readonly options:readonly {readonly value:string;readonly text:string}[];pick(value:string):void}|null};
-// D413: the HUD's screen on the switch (its short name is "HUD" in both languages), the switch's back chevron, and the
-// small Overview mark the English switch shows instead of the word (three bars, as the overview's chart).
-const HUD_ICON='<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4.5 10.5h4M4.5 7.5h7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+// D413: the switch's back chevron and the small Overview mark the English switch shows instead of the word (three bars, as the overview's chart).
 const SEG_CHEVRON='<svg class="ch" viewBox="0 0 4 7" width="4" height="7" aria-hidden="true"><path d="M3.4 .6 .8 3.5l2.6 2.9" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const SEG_OVERVIEW='<svg class="ic" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 8.5V5.5M5 8.5V2M8 8.5V4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,key:'host.pageOverview'}),Object.freeze({module:plans,key:'host.pageSubscription'}),Object.freeze({module:tune,key:'host.pageEffort'}),Object.freeze({module:where,key:'host.pageBreakdown'})]);
@@ -214,8 +212,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // fallback of a deck mounted without an app (tests).
  const rangeNow=():CockpitRange=>appRange?.()??uiRangeLocal;const pages=cockpitPageRegistry,modules=pages.map(p=>p.module);let uiWhere='proj',uiRangeLocal:CockpitRange=INITIAL_RANGE,painted:CockpitRange|null=null,uiChart='bars',uiStack=true,uiModels:'list'|'chart'='list',listPick:string|null=null,uiSubTab='now',uiCycle:string|null=null,gridFill:{w:number;h:number}|null=null;
  const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=i;paint();};bar.append(b);return {b,caption};});
- // D387 / D413: while a screen is open (a plugin's, or the HUD's) the Overview slot itself becomes the switch
- // "‹ Overview │ icon + short name": the same 86 px grid cell, never wider, in the pressed key body. The left half returns
+ // D387 / D413: while a plugin screen is open (Calendar, Resources; D400: a HUD click opens the Models page, which is
+ // not a screen) the Overview slot itself becomes the switch "‹ Overview │ icon + short name": the same 86 px grid cell, never wider, in the pressed key body. The left half returns
  // (as Escape does); the right half is the current screen, lit, and does nothing. One Tab stop: the arrows move between
  // the halves, Enter and Space press. No animation (D397).
  const seg=node('div','pk-seg'),segBack=node('button','h back'),segCur=node('button','h cur'),sepEl=node('i','sep');
@@ -230,10 +228,9 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // The screen half is the current view: pressing it changes nothing.
  segCur.onclick=e=>{if(e.isTrusted)e.preventDefault();};
  seg.onkeydown=e=>{if(!e.isTrusted||(e.key!=='ArrowLeft'&&e.key!=='ArrowRight'))return;e.preventDefault();const to=e.key==='ArrowLeft'?segBack:segCur,other=to===segBack?segCur:segBack;to.tabIndex=0;other.tabIndex=-1;to.focus();};
- const segScreen=():DeckScreen|null=>screenView??(returnPage!==null&&!alertsView&&!compare&&modules[selected]?.id==='tune'?{id:'hud',name:'HUD',short:'HUD',icon:HUD_ICON,toggle:null}:null);
  const svg=(markup:string)=>{const tpl=document.createElement('template');tpl.innerHTML=markup;return tpl.content.firstElementChild!;};
  function paintSwitch(){
-  const open=segScreen(),first=buttons[0]!.b,was=first.hidden?seg.contains(document.activeElement):first===document.activeElement;
+  const open=screenView,first=buttons[0]!.b,was=first.hidden?seg.contains(document.activeElement):first===document.activeElement;
   first.hidden=open!==null;seg.hidden=open===null;if(open===null)return;
   const overview=t(modules[0].title),en=locale==='en';
   // English has no room for "Overview": the left half shows the overview mark; the word stays in the tooltip and name.
@@ -369,7 +366,6 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   // The vendor mark (plans.js glyph): a monochrome mask in the vendor ink; an unknown vendor has no mark.
   for(const e of page.querySelectorAll<HTMLElement>('i.mg[style]')){const css=e.getAttribute('style')??'',ink=/--v:(#[0-9a-f]{6})/i.exec(css)?.[1],url=/url\('assets\/brands\/([a-z-]+\.svg)'\)/.exec(css)?.[1];e.removeAttribute('style');if(!url){e.remove();continue;}if(ink)e.style.setProperty('--v',ink);e.style.setProperty('-webkit-mask-image',`url('assets/brands/${url}')`);e.style.setProperty('mask-image',`url('assets/brands/${url}')`);}
   for(const e of page.querySelectorAll<SVGElement|HTMLElement>('svg.ov-heat[style],.hm-since[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const decl of css.split(';')){const at=decl.indexOf(':');if(at<0)continue;const name=decl.slice(0,at).trim(),value=decl.slice(at+1).trim();if(/^(left|top|--hv)$/.test(name)&&/^(-?\d+(\.\d+)?px|#[0-9a-f]{3,8})$/i.test(value))e.style.setProperty(name,value);}}
-  // Opened from the HUD: the same return rule as the alerts view.
   // D376 (CKP-ENG-27/55): the update time and refresh are the overview's bottom line, in every overview state. 全部 shows the
   // oldest reading and rereads everything; a selected subscription shows its own and rereads only it. Reads that keep
   // failing turn the line amber ("12 分钟前 · 重试", the full sentence on hover). The existing note sits on the same line.
