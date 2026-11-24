@@ -69,6 +69,11 @@ register('eng', {
   loadingShort: ['lcd', '读取', 'Wait'],
   ageCompact: ['lcd', '−{t}', '−{t}'],
   quotaOnly: ['lcd', '仅额度', 'Quota only'],
+  // G3-156 / CKP-ENG-53: the range row follows the header range; history is read but nothing is recorded in the range
+  noUsage: ['lcd', '{r}暂无用量', 'No usage {r}'],
+  rangeToday: ['silk', '今天', 'Today'], range7d: ['silk', '7天', '7d'], range30d: ['silk', '30天', '30d'],
+  noUsageRangeToday: ['lcd', '今天', 'today'], noUsageRange7d: ['lcd', '7天', 'in 7d'], noUsageRange30d: ['lcd', '30天', 'in 30d'],
+  rangeBasis: ['aria', '所选时间范围内的输出 token 与平均生成速度（可测速输出 token 总量除以生成秒数总量），按当前来源关联，非历史账户归属', 'Output tokens and average generation speed over the selected range (measurable output tokens over generation seconds); bound to the current source, not historic account ownership'],
   costHint: ['aria', '估算费用：按公开价格和你的用量估算，不是账单', 'Estimated cost: your usage at public prices, not a bill'], // CKP-ENG-53 ≈
   tps: ['lcd', 't/s', 't/s'],
   // 专项: extra quotas (a model's or a feature's own limit); +1 = one more extra in the column

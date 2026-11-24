@@ -13,8 +13,9 @@
 
 #cockpit{--pad-x:16px;--gutter:9px;--key-gap:4px;--row-h:18px;--bz:2px;--bz-r:6px;
   --bezel:0 1px 0 0 var(--bz-lip-b),0 0 0 1px var(--bz-lip),var(--bz-in);
-  --fd-ch:calc(60px + 2 * var(--bz));--fd-lane:4px;--fd-scale:34px;
-  --fad-w:calc(3 * var(--fd-ch) + 2 * var(--gutter) + var(--fd-lane) + var(--fd-scale))}
+  --fd-ch:calc(60px + 2 * var(--bz));--fd-gap:12px;
+  /* D405: three channels and the two gaps that carry the effort names; the big screen takes the rest (about 0.618). */
+  --fad-w:calc(3 * var(--fd-ch) + 2 * var(--fd-gap))}
 
 .ck{grid-template-rows:26px minmax(48px,1fr) auto auto auto;padding:12px var(--pad-x) 22px;gap:var(--gutter)}
 .ck.shut{grid-template-rows:26px 24px auto auto auto}

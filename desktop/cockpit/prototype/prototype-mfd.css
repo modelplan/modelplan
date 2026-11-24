@@ -13,6 +13,16 @@
 .pk.on{background:linear-gradient(180deg,var(--key-p1),var(--key-p2));box-shadow:var(--pressed);color:var(--silk-hi)}
 .pk.on .pk-led{background:var(--key-led-on);box-shadow:var(--key-led-glow)}
 .dk-mfd.has-view .pk.on .pk-led{opacity:.55}
+/* D405 (with D387): the wider big screen gives the page keys room to read as one segmented control: one recessed track,
+   the keys joined by 1 px seams, only the outer corners rounded. The D387 "总览 | <screen>" split key takes the first
+   segment and shows both halves as a switch (the lit half carries the key LED). */
+.mfd-pk{gap:1px;padding:1px;border-radius:5px;background:var(--slot-deep);box-shadow:inset 0 1px 2px #000a,0 1px 0 var(--bz-lip-b,#ffffff14)}
+.mfd-pk>.pk,.mfd-pk>.pk-seg{border-radius:0;box-shadow:inset 0 1px 0 #ffffff14}
+.mfd-pk>:first-child{border-radius:4px 0 0 4px}.mfd-pk>:last-child{border-radius:0 4px 4px 0}
+.mfd-pk>.pk.on{box-shadow:var(--pressed)}
+.mfd-pk .pk-seg{justify-content:space-evenly;padding:0 6px}
+.mfd-pk .pk-seg .pk-tab{flex:1 1 0;text-align:center;font-size:10px;letter-spacing:.04em}
+.mfd-pk .pk-seg .ok-sep{height:11px;margin:0 2px;opacity:.8}
 
 
 .mfd-ok{grid-row:3;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
@@ -76,6 +86,7 @@
 .ov-heat .hm.today{stroke:var(--lcd-ink);stroke-width:1}
 .ov-heat .hm:hover{stroke:var(--lcd-ink);stroke-width:1.2}
 .hm-since{position:absolute;left:0;bottom:0;margin:0;font:10px/12px var(--f-lcd);color:var(--muted)}
+.ov-heat-empty{margin:0;padding:8px 0;font:10px/12px var(--f-lcd);color:var(--muted)}
 
 
 .sp-h{display:flex;align-items:center;gap:5px;white-space:nowrap}
@@ -343,3 +354,10 @@ html[data-profile="compact"] .cmp-trial-i:hover::after,html[data-profile="compac
 .md-row.idle{opacity:.55}
 .md-row.sel{outline:1px solid var(--lcd-ink);outline-offset:-1px}
 .md-row:hover{background-color:var(--lcd-ghost)}
+/* D405: the wider big screen gives the Models list real columns instead of one stretched name: name, current effort and ★
+   in their own aligned columns, the share as a bar in the free width, then ≈cost and the share figure. */
+.md-row{grid-template-columns:6px minmax(0,88px) 86px minmax(16px,1fr) 44px 32px;background:none}
+.md-e{display:grid;grid-template-columns:40px auto;align-items:baseline;overflow:hidden}
+.md-e .md-cur{overflow:hidden;text-overflow:ellipsis}.md-e .md-star{margin-left:0}
+.md-bar{height:4px;border-radius:2px;background:linear-gradient(90deg,color-mix(in srgb,var(--lcd-ink) 55%,transparent) var(--p,0%),var(--lcd-rule) var(--p,0%))}
+.md-list[data-usage="false"] .md-bar,.md-row.idle .md-bar{visibility:hidden}

@@ -214,12 +214,13 @@ func claudeIdentity(cache string, prev *ccSnapshot, now time.Time) *ccIdentity {
 
 // CodexSubscription: the reference of the account in the recent Codex account reading, "" when
 // unknown. ClaudeSubscription: the one the status line recorded for Claude Code.
+// Both read their cache file only when its metadata moved (cache_memo.go).
 func CodexSubscription(cache string, now time.Time) string {
-	s := loadAccount(cache)
-	if s == nil || s.Status != "ok" || now.Sub(s.ObservedAt) > accountKeep || IdentityOff() {
+	s, ok := codexAccountBinding(cache)
+	if !ok || s.status != "ok" || now.Sub(s.observed) > accountKeep || IdentityOff() {
 		return ""
 	}
-	return s.SubscriptionRef
+	return s.ref
 }
 
 // ZCodeSubscription returns the recorded reference only while the same provider
@@ -244,12 +245,10 @@ func ZCodeSubscription(cache string, admission consent.Admission, now time.Time)
 }
 
 func ClaudeSubscription(cache string) string {
-	b, status := readBounded(snapshotPath(cache), 64<<10)
-	var s ccSnapshot
-	if status != "" || json.Unmarshal(b, &s) != nil || s.Identity == nil || IdentityOff() {
+	if IdentityOff() {
 		return ""
 	}
-	return s.Identity.Ref
+	return claudeSnapshotRef(cache)
 }
 
 // ---- Claude Code: the account metadata Claude Code keeps beside its settings. Only

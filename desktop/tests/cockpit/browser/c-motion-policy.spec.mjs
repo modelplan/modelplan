@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Motion policy audit (MOT-2.3-01/02/03/04/08, CKP-MOT-03) on the built page through its normal bridge.
-// Replaces the old blanket `*{animation:none;transition:none}` switch: every animation or transition that is
-// live in the rendered cockpit must be on this list, and none may run under Reduce Motion or while hidden.
+// Every live animation or transition must be on this list. Reduce Motion and hidden windows stop the motion.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture,renderVisualDeck} from '../visual-fixture.mjs';
@@ -79,6 +78,48 @@ for(const how of ['app setting','system setting'])test(`CKP-MOT-03 Reduce Motion
 const running=page=>page.evaluate(()=>document.getElementById('cockpit').getAnimations({subtree:true}).map(a=>({
  kind:a.constructor.name,name:a.transitionProperty??a.animationName,element:typeof a.effect.target?.className==='string'?a.effect.target.className:'',state:a.playState})));
 
+test('inactive cockpit schedules no animation frames or fast timers',async({page})=>{
+ await page.addInitScript(()=>{
+  const calls={frameRequests:0,frameCallbacks:0,fastTimers:0,fastCallbacks:0};window.idleEnergyCalls=calls;
+  const raf=window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame=(callback)=>{
+   calls.frameRequests++;return raf(time=>{calls.frameCallbacks++;callback(time);});
+  };
+  for(const name of ['setTimeout','setInterval']){
+   const timer=window[name].bind(window);
+   window[name]=(callback,delay,...args)=>{
+    if(!(Number(delay??0)<1000)||typeof callback!=='function')return timer(callback,delay,...args);
+    calls.fastTimers++;
+    return timer((...values)=>{calls.fastCallbacks++;callback(...values);},delay,...args);
+   };
+  }
+ });
+ const {data}=visualFixture();
+ data.details=null;data.projection.rows=data.projection.rows.slice(0,1);
+ const windows=data.projection.rows[0].accounts[0].windows;
+ for(const w of windows)w.remainingPercent=75;
+ const {send,receive}=await open(page,data);
+ windows[0].remainingPercent=0;
+ expect(await receive(send('display',{data}))).toBe(true);
+ windows[1].remainingPercent=10;
+ expect(await receive(send('display',{data}))).toBe(true);
+ await page.getByRole('button',{name:'Plans',exact:true}).click();
+ await page.locator('[data-caution]').click();
+ const flash=await page.evaluate(message=>{
+  const row=document.querySelector('.pg-alerts .mfd-alerts li.al-flash');
+  const before=row&&getComputedStyle(row).animationName;
+  const accepted=window.modelPlanCockpit.receive(message);
+  const after=row&&getComputedStyle(row).animationName;
+  return {before,accepted,after};
+ },send('visibility',{visible:true,occluded:true,key:false}));
+ expect(flash).toEqual({before:'cockpit-alert-row-flash',accepted:true,after:'none'});
+ expect(await running(page)).toEqual([]);
+ const before=await page.evaluate(()=>({...window.idleEnergyCalls}));
+ await page.waitForTimeout(1100);
+ expect(await page.evaluate(()=>window.idleEnergyCalls)).toEqual(before);
+ expect(await running(page)).toEqual([]);
+});
+
 test('MOT-2.3-08 a hidden or closed cockpit runs no animation',async({page})=>{
  const fx=visualFixture(),account=fx.data.projection.rows[0].accounts[0];account.windows[0].remainingPercent=20;
  const {send,receive}=await open(page,fx.data);
@@ -135,4 +176,46 @@ test('MOT-2.3-08 the landing burn runs only on a shown cockpit: ignition while h
  expect(await page.locator('#cockpit').getAttribute('data-ignite')).toBe('true');
  expect(await burn()).toEqual([]);
  expect((await motions(page)).filter(m=>/cockpit-bell-(flare|burn)/.test(m.animation))).toEqual([]);
+});
+
+test('display pulse ends without a late lamp DOM mutation',async({page})=>{
+ test.skip(process.env.COCKPIT_HEADED_MOTION!=='1','Natural WebKit animation events require headed rendering.');
+ const fx=visualFixture(),{send,receive}=await open(page,fx.data);
+ fx.data.projection.rows[0].accounts[0].windows[0].remainingPercent=19;
+ expect(await receive(send('display',{data:fx.data}))).toBe(true);
+ const result=await page.locator('.activity').evaluate(el=>new Promise((resolve,reject)=>{
+  const changes=[];const observer=new MutationObserver(records=>changes.push(...records));observer.observe(el,{attributes:true,attributeOldValue:true});
+  const timer=setTimeout(()=>reject(new Error('pulse did not finish')),5000);
+  el.addEventListener('animationend',event=>{if(event.animationName!=='cockpit-state-pulse')return;clearTimeout(timer);setTimeout(()=>{changes.push(...observer.takeRecords());observer.disconnect();resolve(changes.map(r=>({name:r.attributeName,old:r.oldValue})));},0);},{once:true});
+ }));
+ expect(result).toEqual([]);
+});
+
+test('system Reduce Motion does not replay a completed display pulse',async({page})=>{
+ test.skip(process.env.COCKPIT_HEADED_MOTION!=='1','Natural WebKit animation events require headed rendering.');
+ const fx=visualFixture(),{send,receive}=await open(page,fx.data);
+ await page.evaluate(()=>{window.__pulseStarts=0;document.querySelector('.activity').addEventListener('animationstart',e=>{if(e.animationName==='cockpit-state-pulse')window.__pulseStarts++;});});
+ fx.data.projection.rows[0].accounts[0].windows[0].remainingPercent=19;
+ expect(await receive(send('display',{data:fx.data}))).toBe(true);
+ await page.locator('.activity').evaluate(el=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('pulse did not finish')),5000);el.addEventListener('animationend',e=>{if(e.animationName==='cockpit-state-pulse'){clearTimeout(timer);resolve();}},{once:true});}));
+ expect(await page.evaluate(()=>window.__pulseStarts)).toBe(1);
+ await page.emulateMedia({reducedMotion:'reduce'});await page.waitForFunction(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);
+ await page.emulateMedia({reducedMotion:'no-preference'});await page.waitForFunction(()=>!matchMedia('(prefers-reduced-motion: reduce)').matches);
+ await page.waitForTimeout(200);expect(await page.evaluate(()=>window.__pulseStarts)).toBe(1);
+ fx.data.projection.rows[0].accounts[0].windows[0].remainingPercent=18;
+ expect(await receive(send('display',{data:fx.data}))).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.__pulseStarts)).toBe(2);
+});
+
+
+test('system Reduce Motion clears the display pulse before motion resumes',async({page})=>{
+ await page.addInitScript(()=>{const original=window.matchMedia.bind(window);window.__motionQueries=[];window.matchMedia=query=>{const result=original(query);if(query==='(prefers-reduced-motion: reduce)')window.__motionQueries.push(result);return result;};});
+ const fx=visualFixture(),{send,receive}=await open(page,fx.data);
+ fx.data.projection.rows[0].accounts[0].windows[0].remainingPercent=19;
+ expect(await receive(send('display',{data:fx.data}))).toBe(true);
+ const lamp=page.locator('.activity');await expect(lamp).toHaveClass(/state-pulse/);
+ await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>window.__motionQueries.forEach(q=>{Object.defineProperty(q,'matches',{configurable:true,value:true});q.dispatchEvent(new Event('change'));}));await expect(lamp).not.toHaveClass(/state-pulse/);
+ await page.emulateMedia({reducedMotion:'no-preference'});await expect(lamp).not.toHaveClass(/state-pulse/);
+ fx.data.projection.rows[0].accounts[0].windows[0].remainingPercent=18;
+ expect(await receive(send('display',{data:fx.data}))).toBe(true);await expect(lamp).toHaveClass(/state-pulse/);
 });
