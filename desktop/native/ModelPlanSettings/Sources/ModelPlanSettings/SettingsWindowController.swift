@@ -148,6 +148,7 @@ enum SettingsWords {
     private var displayedKeys: [SettingKey] = []
     private var sectionHeadings: [String: NSTextField] = [:]
     private var observers: [NSObjectProtocol] = []
+    private var unhideObserver: NSObjectProtocol?
     private var appearanceObservation: NSKeyValueObservation?
     private let environmentProvider: @MainActor () -> SettingsEnvironment
     private var refreshing = false, pendingEdit = false
@@ -211,13 +212,19 @@ enum SettingsWords {
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshEnvironment() } })
+        unhideObserver = NotificationCenter.default.addObserver(forName: NSApplication.didUnhideNotification, object: NSApplication.shared, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if let self, self.refreshDeferred, self.window?.isVisible == true { self.refresh() } }
+        }
         appearanceObservation = NSApplication.shared.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in self?.refreshEnvironment() }
         }
         refresh()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
-    deinit { for token in observers { NSWorkspace.shared.notificationCenter.removeObserver(token) } }
+    deinit {
+        for token in observers { NSWorkspace.shared.notificationCenter.removeObserver(token) }
+        if let unhideObserver { NotificationCenter.default.removeObserver(unhideObserver) }
+    }
 
     /// Reads only public OS UI preferences. The host may inject its authoritative environment instead.
     public static func systemEnvironment() -> SettingsEnvironment {

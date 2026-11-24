@@ -1697,11 +1697,22 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // Settings "Cockpit size" applies live to an open cockpit; the relayout publishes the appearance.
     if resized, window != nil { applyLayout() } else { publishAppearance() }
   }
+  private var memberRefreshActive = false
+  public func updateMemberRefreshInFlight(_ value: Bool) {
+    guard value != memberRefreshActive else { return }
+    memberRefreshActive = value
+    guard bridge.ready, !bridge.blocked, !ending, let shell = currentShell else { return }
+    do {
+      send(try bridge.setShell(shell), coalesce: "shell", dropped: { [weak self] in self?.backlog.appearance = true })
+    } catch { degrade("shell", error: error) }
+  }
   private var currentShell: CockpitShellState? {
     #if MODELPLAN_TEST_ONLY_SPI
-    if let shell = verificationNoWindowShell { return shell }
+    if let shell = verificationNoWindowShell {
+      return CockpitShellState(closed: shell.profile == .closed, attached: shell.attached, forcedClosed: shell.forcedClosed, tier: shell.tier, scope: shell.scope, range: shell.range, refreshing: memberRefreshActive)
+    }
     #endif
-    return layout?.shellState(attached: !shellSession.detached, scope: scope, range: range)
+    return layout?.shellState(attached: !shellSession.detached, scope: scope, range: range, refreshing: memberRefreshActive)
   }
   /// `behindPendingDisplay` (glm-959-1): send while a display receipt is still pending, as an uncorrelated change
   /// that derives no deadline, so the pending display's own deadline correlation is untouched.

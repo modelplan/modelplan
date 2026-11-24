@@ -35,6 +35,9 @@ func PlanScopeRefresh(p Paths, scope string, now time.Time) (ScopeRefreshPlan, e
 	if !admission.State().AllowsScope(scope, admission.Mode()) {
 		return plan, nil
 	}
+	if !zaiScopeMatches(p, scope) {
+		return plan, nil
+	}
 	switch definition.Class {
 	case consent.Local:
 		if definition.Tool == "codex" {

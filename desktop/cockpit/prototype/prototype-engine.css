@@ -73,8 +73,8 @@
 /* D376: the pager under the 全部 key. The key keeps the top 16pt of the band; the pager takes the rest. */
 .ck-eng .eng-krow.paged .ek-all{height:16px}
 .eng-pg{position:absolute;left:0;top:17.5px;width:calc(var(--bz) + var(--eng-pl) + var(--eng-lab));height:13px;display:flex;align-items:center;gap:1.25px}
-.ck-eng .eng-pk{flex:none;width:12.75px;min-width:0;height:13px;padding:0;font-size:6px;line-height:1;color:#87939e;border-radius:2px;position:relative}
-.ck-eng .eng-pk::after{content:"";position:absolute;left:-1px;right:-1px;top:-8px;bottom:-9px}
+.ck-eng .eng-pk{flex:none;width:12.75px;min-width:0;height:13px;padding:0;font-size:6px;line-height:1;color:#87939e;border-radius:2px;position:relative;z-index:1}
+.ck-eng .eng-pk::after{content:"";position:absolute;left:-1px;right:-1px;top:-1px;bottom:-9px}
 .ck-eng .eng-pk.lv-amber{color:#f2b84b}.ck-eng .eng-pk.lv-red{color:var(--st-low)}
 .ck-eng .eng-pk[aria-disabled=true]{opacity:.35}
 .ck-eng .eng-pgn{flex:1 1 0;min-width:0;height:13px;display:grid;place-items:center;font:700 9.5px/1 var(--f-lcd);color:#e9edf0;border-radius:2.5px}
