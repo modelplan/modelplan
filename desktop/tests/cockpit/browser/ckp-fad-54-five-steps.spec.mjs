@@ -317,7 +317,7 @@ test('a new model inherits its bound provider colour and running session light',
  const data=cardData({unlisted:true});
  Object.assign(data.details.sessions[2],{source:'codex',modelDisplay:'Future Codex',state:'running'});
  expect(await page.evaluate(raw=>window.modelPlanCockpit.receive(raw),send('display',{data}))).toBe(true);
- const future=card(page,'Future Codex'),known=card(page,'Sol 6.1');
+ const future=card(page,'Future'),known=card(page,'Sol 6.1');
  await expect(future.locator('.fd-indicator')).toHaveAttribute('data-state','live');
  const lamp=await future.locator('.fd-indicator').evaluate(e=>e.style.getPropertyValue('--lamp'));
  expect(lamp).toMatch(/^#/);
