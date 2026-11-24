@@ -142,6 +142,29 @@ test('B1 a member reorder while the history is held does not restart the hold',a
  expect(await receive(send('display',{data:unread()}))).toBe(true);
  await expect(empty(page)).toHaveCount(1);
 });
+// macrevc-1216-2: every redraw that carries a time ends an expired hold at once, whichever message comes first at the cutoff.
+test('B1 a locale-only appearance update at the cutoff, before any tick, clears the held history; before the cutoff it keeps it',async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ await page.clock.setFixedTime(new Date(NOW+HOLD-1));
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);await expect(empty(page)).toHaveCount(0);
+ await page.clock.setFixedTime(new Date(NOW+HOLD));
+ expect(await receive(send('appearance',{...appearance,locale:'en'}))).toBe(true);
+ await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
+});
+test('B1 the page becoming visible again at the cutoff, before any tick, clears the held history',async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);
+ await page.clock.setFixedTime(new Date(NOW+HOLD+1000));
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
+});
 test('B1 a fresh profile with nothing recorded still says "No usage record yet"',async({page})=>{
  await open(page,{data:unread()});
  await expect(empty(page)).toHaveCount(1);

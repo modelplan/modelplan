@@ -59,6 +59,10 @@ type Server struct {
 	backend                                         Backend
 	mu                                              sync.Mutex
 	refreshMu                                       sync.Mutex
+	retryMu                                         sync.Mutex
+	retryTimer                                      *time.Timer
+	retryBackoff                                    time.Duration
+	retryPending                                    bool
 	initialized, initializing, subscribed, stopping bool
 	rowsPending                                     bool
 	session                                         string
@@ -144,13 +148,9 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.WriteCloser
 		// A failed rebuild is retried with a bounded backoff: a change notification or an
 		// Account Today expiry wake is consumed when it is delivered, so dropping the error
 		// would leave the previous view on screen until some unrelated change (review 11-24 #7).
-		var backoff time.Duration
-		var retry *time.Timer
-		defer func() {
-			if retry != nil {
-				retry.Stop()
-			}
-		}()
+		// Every failing path, including a failed publication inside refresh, goes through
+		// retryRefresh, so no failure re-queues an immediate wake.
+		defer s.refreshSucceeded()
 		for {
 			select {
 			case <-s.ctx.Done():
@@ -163,14 +163,10 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.WriteCloser
 					return
 				}
 				if err == nil {
-					backoff = 0
+					s.refreshSucceeded()
 					continue
 				}
-				backoff = nextRefreshBackoff(backoff)
-				if retry != nil {
-					retry.Stop()
-				}
-				retry = time.AfterFunc(backoff, s.scheduleRefresh)
+				s.retryRefresh()
 			}
 		}
 	}()
@@ -696,6 +692,37 @@ const (
 	refreshRetryMax   = 30 * time.Second
 )
 
+// retryRefresh queues one wake after the next backoff step. While a retry is already pending a
+// further failure only waits for it, so a failure reported twice (by refresh and by its worker)
+// does not escalate and never wakes the worker immediately.
+func (s *Server) retryRefresh() {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	if s.retryPending {
+		return
+	}
+	s.retryBackoff = nextRefreshBackoff(s.retryBackoff)
+	s.retryPending = true
+	s.retryTimer = time.AfterFunc(s.retryBackoff, func() {
+		s.retryMu.Lock()
+		s.retryPending = false
+		s.retryMu.Unlock()
+		s.scheduleRefresh()
+	})
+}
+
+// refreshSucceeded resets the backoff and drops a pending retry: the view is current.
+func (s *Server) refreshSucceeded() {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	s.retryBackoff = 0
+	s.retryPending = false
+	if s.retryTimer != nil {
+		s.retryTimer.Stop()
+		s.retryTimer = nil
+	}
+}
+
 func nextRefreshBackoff(previous time.Duration) time.Duration {
 	if previous <= 0 {
 		return refreshRetryFirst
@@ -838,7 +865,7 @@ func (s *Server) readView(ctx context.Context, reuse bool) error {
 			})
 			return nil
 		}); err != nil {
-			s.scheduleRefresh()
+			s.retryRefresh()
 			return err
 		}
 	}
