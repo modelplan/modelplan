@@ -199,7 +199,8 @@ extension CommunityCockpitEntryTests {
             try await eventually("Remove asks for confirmation") { asked == 1 }
             try await Task.sleep(for: .milliseconds(200))
             XCTAssertTrue(plugins.model.preferences.enabledIDs().contains("placeholder"), "Cancel leaves the plugin on")
-            XCTAssertEqual(await self.js(page, self.keyScript) as? Bool, true, "Cancel leaves the key on the page")
+            let keyKept = await self.js(page, self.keyScript) as? Bool
+            XCTAssertEqual(keyKept, true, "Cancel leaves the key on the page")
             try await clickControl(keySelector)
             try await eventually("the menu opens again") { await self.js(page, removeOpen) as? Bool == true }
             confirm = true
