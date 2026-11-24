@@ -117,6 +117,17 @@ test('D406 no peak rules (Codex only): the column is still the day view, with re
  await shot(page,'D406-codex-only-zh',page.locator('.ck-eng'));
 });
 
+// macrevc-1224-1: the quiet note and a reset chip near the end of the 12 hours never overlap, narrow or wide.
+for(const [label,count] of [['wide',1],['narrow',4]])test(`D406 no peak rules, late weekly reset: the chip and the note stay apart (${label})`,async({page})=>{
+ const late={version:1,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:L(0,23,15),kind:'week'}],spans:[]};
+ await openWith(page,{count,push:late});
+ const col=column(page),chip=col.locator('.cal-ch'),note=col.locator('.cal-note');
+ await expect(chip).toHaveCount(1);await expect(note).toHaveCount(1);
+ const [c,n]=[await chip.boundingBox(),await note.boundingBox()];
+ expect(c.y+c.height<=n.y+0.5||n.y+n.height<=c.y+0.5,`chip ${JSON.stringify(c)} note ${JSON.stringify(n)}`).toBe(true);
+ const axis=await col.locator('.cal-ax').boundingBox();
+ expect(n.y>=axis.y&&n.y+n.height<=axis.y+axis.height+0.5).toBe(true);
+});
 test('D406 ZCode with rules: the day view shows the GLM peak block',async({page})=>{
  const zcode={version:1,peakRules:'yes',subs:[week.subs[2]],peaks:[{sub:0,from:L(0,22),to:L(1,2),tentative:true}],resets:[{sub:0,at:L(0,14,10),kind:'5h'}],spans:[]};
  await open(page,{push:zcode,locale:'zh-CN'});

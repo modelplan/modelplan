@@ -116,12 +116,14 @@ function paintStrip(context:PluginDrawContext,reading:CalendarData) {
 }
 /** Reset chips and moved-out peak times never overlap: one that would sit on the one above moves down (the axis is
  *  measured when drawn). */
+/** The no-rules note's own band at the foot of the axis (11 px line + 3 px offset): chips settle above it. */
+const NOTE_ROOM=14;
 function settleChips(axis:HTMLElement) {
- const h=axis.clientHeight||160,chips=[...axis.querySelectorAll<HTMLElement>('.cal-ch,.cal-pkt')].sort((a,b)=>Number(a.dataset.y)-Number(b.dataset.y)),ch=12,gap=1;
+ const h=axis.clientHeight||160,floor=axis.querySelector('.cal-note')?h-NOTE_ROOM:h,chips=[...axis.querySelectorAll<HTMLElement>('.cal-ch,.cal-pkt')].sort((a,b)=>Number(a.dataset.y)-Number(b.dataset.y)),ch=12,gap=1;
  const ys=chips.map(c=>Number(c.dataset.y)*h-ch/2);
  for(let i=0;i<ys.length;i++)ys[i]=Math.max(ys[i]!,i?ys[i-1]!+ch+gap:0);
  // Pushed past the bottom: settle upwards from the end instead (they only overlap when the axis cannot hold them all).
- for(let i=ys.length-1;i>=0;i--)ys[i]=Math.max(0,Math.min(ys[i]!,i===ys.length-1?h-ch:ys[i+1]!-ch-gap));
+ for(let i=ys.length-1;i>=0;i--)ys[i]=Math.max(0,Math.min(ys[i]!,i===ys.length-1?floor-ch:ys[i+1]!-ch-gap));
  chips.forEach((c,i)=>{c.style.top=`${ys[i]!.toFixed(1)}px`;});
 }
 /** "2h50", "35m": a duration the way the bottom line writes it. */

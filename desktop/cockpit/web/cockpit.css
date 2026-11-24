@@ -452,7 +452,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .cal-nl{position:absolute;left:calc(var(--cal-g) - 2px);right:2px;height:0;border-top:1.8px solid var(--cal-now);z-index:4}
 .ck-eng .cal-nl::before{content:"";position:absolute;left:-3px;top:-3.9px;width:6px;height:6px;border-radius:50%;background:var(--cal-now)}
 .ck-eng .cal-empty{position:absolute;left:var(--cal-g);right:0;top:40%;margin:0;text-align:center;font:400 9px/11px var(--f-silk);color:var(--silk-dim)}
-.ck-eng .cal-note{position:absolute;left:var(--cal-g);right:0;bottom:3px;margin:0;text-align:center;font:400 9px/11px var(--f-silk);color:var(--silk-dim);opacity:.8;pointer-events:none}
+.ck-eng .cal-note{position:absolute;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;left:var(--cal-g);right:0;bottom:3px;margin:0;text-align:center;font:400 9px/11px var(--f-silk);color:var(--silk-dim);opacity:.8;pointer-events:none}
 /* The week view: the calendar's big screen body (D323 custom draw inside .pl-screen-d). */
 .cal-wk{position:absolute;inset:0;display:flex;flex-direction:column;--wk-g:24px;--wk-r:5px;font:400 9px/11px var(--f-silk);color:var(--lcd-ink)}
 .cal-wk .wk-zoom{position:absolute;right:2px;top:-1px;z-index:7;font:400 9px/11px var(--f-silk);color:var(--cal-now);white-space:nowrap;pointer-events:none}.cal-wk .wk-zoom:not(.on){display:none}
