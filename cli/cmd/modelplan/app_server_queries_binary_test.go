@@ -277,6 +277,10 @@ func testRegisteredCockpitAndCursor(t *testing.T, p *queryBinary, home string) {
 	}
 }
 
+// hostSessionHints are the environment variables a calling agent session sets that change what
+// the production readers look up.
+var hostSessionHints = []string{"CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CONFIG_DIR", "ANTHROPIC_BASE_URL"}
+
 func setupQueryHome(t *testing.T) string {
 	t.Helper()
 	testenv.IsolateHome(t)
@@ -286,6 +290,12 @@ func setupQueryHome(t *testing.T) string {
 	t.Setenv("MODELPLAN_CODEX", filepath.Join(home, "no-real-codex"))
 	for name, value := range map[string]string{"MODELPLAN_CACHE": cache, "MODELPLAN_HISTORY": "", "MODELPLAN_READERS": "", "MODELPLAN_GEMINI": "", "MODELPLAN_GEMINI_HOME": "", "MODELPLAN_CODEX_ACCOUNT": "off", "MODELPLAN_CODEXBAR": "off"} {
 		t.Setenv(name, value)
+	}
+	// The host's session hints (a developer running the tests inside Codex or Claude Code) must
+	// not reach the fixture: a thread hint makes the production reader search the synthetic
+	// history for a thread it does not contain (macrev2-1219-6).
+	for _, name := range hostSessionHints {
+		t.Setenv(name, "")
 	}
 	now := time.Now().UTC()
 	file := filepath.Join(home, ".gemini", "tmp", "synthetic", "chats", "session-synthetic.json")

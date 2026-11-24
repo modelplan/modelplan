@@ -535,6 +535,9 @@ extension CommunityCockpitEntryTests {
             let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
             defer { page.discard() }
             page.verificationPlacement = (usable: usable, anchor: CGRect(x: usable.maxX - 340, y: usable.maxY, width: 28, height: 24))
+            // The fixture's display can extend beyond the hosted Mac's actual screen.
+            // Keep the synthetic page visible so the AppKit hit-test measures geometry.
+            page.verificationNoWindowVisibility = .init(visible: true, occluded: false, key: false)
             page.open()
             let window = try XCTUnwrap(page.window), region = try XCTUnwrap(page.verificationDragRegion), web = try XCTUnwrap(page.verificationWebView)
             if let live { page.updateAppearance(.init(theme: .night, locale: .en, profile: .full, size: live)) }
@@ -542,7 +545,7 @@ extension CommunityCockpitEntryTests {
             let deadline = ContinuousClock.now + .seconds(30)
             while box == nil, ContinuousClock.now < deadline {
                 let script = "(()=>{const b=document.querySelector('.ck-head .ck-brand'),s=document.querySelector('[data-shutter]'),c=document.querySelector('.ck');if(!b||!s||!c||!document.documentElement.dataset.profile)return null;const r=b.getBoundingClientRect(),t=s.getBoundingClientRect();return {brandX:r.x+r.width/2,brandY:r.y+r.height/2,shutterX:t.x+t.width/2,shutterY:t.y+t.height/2,width:innerWidth,height:innerHeight,root:c.getBoundingClientRect().height,rootBottom:c.getBoundingClientRect().bottom}})()"
-                box = (try? await web.evaluateJavaScript(script)) as? [String: Double]
+                if !web.isHidden { box = (try? await web.evaluateJavaScript(script)) as? [String: Double] }
                 if box == nil { try await Task.sleep(for: .milliseconds(50)) }
             }
             let painted = try XCTUnwrap(box, "\(name): the page must be painted")

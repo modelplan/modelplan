@@ -303,6 +303,39 @@ final class ShellLayoutTests: XCTestCase {
         let rack = CockpitLaunchRack.frame(icon: notch)
         XCTAssertEqual(rack.minX, 851); XCTAssertEqual(rack.maxY, usable.maxY)
     }
+    /// Owner question 11-22 (menubar-right-edge-check): a status item at the far right of a 13-inch MacBook Air menu bar
+    /// (1470 x 956 pt, 37 pt notched menu bar, 70 pt Dock, Auto = 85 %). NSPopover-style: the rack stays under the icon,
+    /// the cockpit slides left only as far as the screen edge needs, and the icon's rack still lands on the hull (the
+    /// page's 8 px transparent margin keeps the visible hull inside the screen edge). No detach.
+    @MainActor func testAFarRightIconOnA1470PointScreenClampsTheCockpitAndKeepsTheRackAttached() throws {
+        let width: CGFloat = 1470, bar: CGFloat = 37, dock: CGFloat = 70
+        let usable = CGRect(x: 0, y: dock, width: width, height: 956 - bar - dock)
+        let hullMargin: CGFloat = 8 // page px between the 636 px canvas edge and the hull (see `shoulderX`)
+        // A realistic rightmost third-party item (left of Control Center and the clock) and the extreme: flush right.
+        for iconX in [1300, width - 28] as [CGFloat] {
+            for closed in [false, true] {
+                let icon = CGRect(x: iconX, y: usable.maxY, width: 28, height: bar)
+                let label = "icon at \(iconX), closed \(closed)"
+                let fit = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: closed, screenWidth: width), label)
+                XCTAssertEqual(fit.profile, .full, label); XCTAssertEqual(fit.scale, 0.85, label)
+                XCTAssertEqual(fit.frame.width, 541, label)
+                // Clamped: flush with the screen's right edge, never past it, 10 pt below the menu bar, still attached.
+                XCTAssertEqual(fit.frame.maxX, width, "\(label): slides left just enough to stay on screen")
+                XCTAssertEqual(fit.frame.minX, width - 541, label)
+                XCTAssertGreaterThanOrEqual(fit.frame.minX, usable.minX, label)
+                XCTAssertEqual(fit.frame.maxY, usable.maxY - CockpitShellLayout.menuBarGap, "\(label): attached, under the menu bar")
+                XCTAssertLessThan(fit.shoulder.x, icon.midX, "\(label): the cockpit slid left of the icon (the shoulder no longer under it)")
+                // The rack (the tower) stays centred under the icon, hanging from the menu bar's edge.
+                let rack = CockpitLaunchRack.frame(icon: icon)
+                XCTAssertEqual(rack.midX, icon.midX, accuracy: 0.5, "\(label): the rack stays under the icon")
+                XCTAssertEqual(rack.maxY, usable.maxY, "\(label): the rack hangs from the menu bar")
+                // ...and lands on the hull: its centre over the visible hull, its foot below the rack's mask line.
+                let hull = (fit.frame.minX + hullMargin * fit.scale)...(fit.frame.maxX - hullMargin * fit.scale)
+                XCTAssertTrue(hull.contains(rack.midX), "\(label): the rack centre \(rack.midX) is over the hull \(hull)")
+                XCTAssertLessThanOrEqual(rack.minY, fit.frame.maxY - fit.rackMaskDrop, "\(label): the rack reaches the hull line, no gap")
+            }
+        }
+    }
     @MainActor func testUpdatingOneArrangementDoesNotConsumeExtraMemorySlots() {
         let session = CockpitShellSession()
         for index in 0..<12 { session.remember(.init(x:index,y:index),arrangement:"same") }

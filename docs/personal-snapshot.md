@@ -300,7 +300,11 @@ unchanged. Merely reading live data never adds historical token counts.
 
 Normal `desktop --json` discovers the newest 64 regular JSONL files modified within five minutes
 under Claude's configured `projects/` and Codex's `sessions/`, without following symlinks. Discovery
-visits at most 20,000 entries per root and parsing reads at most a 256-KiB tail per file. This is a
+keeps at most 20,000 entries per root and parsing reads at most a 256-KiB tail per file. In the
+app-server one in-memory inventory per root serves activity, rollout selection and observation: it
+lists a directory again only when its metadata changed, stats the directories where logs appear
+every 6 s and reconciles the whole root by metadata every 30 s, so a new log in a hot directory is
+found within 6 s and an append to an older log (a resumed session) within 30 s. This is a
 bounded observation set, not a claim to inventory all running processes. A tail missing its model
 context cannot produce a fabricated configuration. Pending SQLite reads follow the existing batch
 and 30-second bounds. Live state is kept in perf.json for five minutes, with at most 64 entries and

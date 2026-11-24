@@ -8,6 +8,7 @@ import ModelPlanWire
   var onReady: (() -> Void)? { get set }
   var onIntent: ((CockpitIntent) -> Void)? { get set }
   var onClosed: (() -> Void)? { get set }
+  var onFrozenClose: (() -> Void)? { get set }
   /// CKP-SHELL-20: once per open, when the page is first confirmed visible.
   var onShown: (() -> Void)? { get set }
   /// G3-42: the page admitted the rendered receipt of a display it was sent.
@@ -55,6 +56,7 @@ import ModelPlanWire
   func discard()
 }
 public extension CockpitPageSurface {
+  var onFrozenClose: (() -> Void)? { get { nil } set {} }
   var onShown: (() -> Void)? { get { nil } set {} }
   var onDataRendered: (() -> Void)? { get { nil } set {} }
   var reportsDataRendered: Bool { false }
@@ -228,10 +230,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       else { stopWatchingMemoryPressure(); releaseWarmPage() }
     }
   }
-  /// WP-17 (Fable perf plan 5.1 row 2, CKP-SHELL-54): the hidden page is built as soon as there is an engine session; it no
-  /// longer waits 0.5 s. After a close the next one waits `rebuildAfterCloseDelay`, so the close's last steps run first.
+  /// WP-17: one speculative load once the engine admits the page.
   public var prewarmDelay: Duration = .zero
-  public var rebuildAfterCloseDelay: Duration = .milliseconds(100)
+  private var attemptedPrewarm = false
   private var prewarmTask: Task<Void, Never>?
   /// Hidden pages that ended on their own (a failure, not a release or a clear) since the last open.
   /// Three stop prewarming until the next open, so a page that cannot load is not rebuilt in a loop.
@@ -353,6 +354,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     guard let delivery else { pendingOpen = true; onUnavailable?(.noDelivery); return }
     guard let context = try? Self.bridgeContext(delivery) else { onUnavailable?(.invalidContext); return }
     prewarmTask?.cancel(); prewarmTask = nil
+    attemptedPrewarm = true
     warmFailures = 0
     if let page {
       if !presented {
@@ -435,6 +437,15 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     newPage.onIntent = { [weak self] intent in
       guard self?.pageGeneration == generation else { return }; self?.receiveIntent(intent)
     }
+    newPage.onFrozenClose = { [weak self] in
+      guard let self, self.pageGeneration == generation, self.presented else { return }
+      self.cancelQuery()
+      self.scopeMembers.removeAll()
+      self.presented = false; self.presentedPageRendered = false
+      self.openingReply = nil; self.openingFreshPending = false; self.openingShown = false
+      self.reportPluginsRunning([])
+      self.onClosed?()
+    }
     newPage.onClosed = { [weak self] in
       guard let self, self.pageGeneration == generation else { return }
       self.pageGeneration = nil
@@ -451,7 +462,6 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         self.warmFailures += 1
         CockpitTimingLog.record("prewarm ended failures=\(self.warmFailures)")
       }
-      self.schedulePrewarm(after: self.rebuildAfterCloseDelay)
     }
     return newPage
   }
@@ -493,10 +503,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     trace("query.released")
     refresh()
   }
-  private func schedulePrewarm(after delay: Duration? = nil) {
-    guard prewarmEnabled, !memoryPressured, warmFailures < 3, page == nil, prewarmTask == nil,
+  private func schedulePrewarm() {
+    guard prewarmEnabled, !memoryPressured, !attemptedPrewarm, warmFailures < 3, page == nil, prewarmTask == nil,
       client != nil, delivery != nil else { return }
-    let delay = delay ?? prewarmDelay
+    let delay = prewarmDelay
     prewarmTask = Task { @MainActor [weak self] in
       if delay > .zero { do { try await Task.sleep(for: delay) } catch { return } }
       guard let self, !Task.isCancelled else { return }
@@ -505,8 +515,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     }
   }
   private func prewarmNow() {
-    guard prewarmEnabled, !memoryPressured, warmFailures < 3, page == nil, client != nil,
+    guard prewarmEnabled, !memoryPressured, !attemptedPrewarm, warmFailures < 3, page == nil, client != nil,
       let delivery, let context = try? Self.bridgeContext(delivery) else { return }
+    attemptedPrewarm = true
     do {
       let warm = try makeWiredPage(context)
       page = warm
@@ -610,7 +621,6 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     openingReply = nil; openingFreshPending = false; openingShown = false
     previous?.discard()
     if previous != nil, wasPresented { onClosed?() }
-    schedulePrewarm()
   }
   private func cancelQuery() {
     lastRenderHold?.task.cancel(); lastRenderHold = nil

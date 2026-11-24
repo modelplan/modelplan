@@ -333,7 +333,7 @@
     },
     {
       "id": "U3-backpressure",
-      "intent": "Stop reading stdout; two queries finish, a revoke arrives and health changes. Session ends within the write timeout; restart and replay the committed revoke receipt without undoing it.",
+      "intent": "Stop reading stdout; two queries finish and a revoke arrives. The private frame in flight is cut off without its newline (never completed after the revoke); otherwise the session ends within the write timeout; restart and replay the committed revoke receipt without undoing it.",
       "units": [
         "U3",
         "U14"

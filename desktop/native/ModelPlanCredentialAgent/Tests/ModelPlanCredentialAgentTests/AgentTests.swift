@@ -55,7 +55,8 @@ final class AgentTests: XCTestCase {
               delivery: .init(sessionID: "session", floor: .init(storeEpoch: "epoch", generation: 1), revision: 1),
               deadline: .now.advanced(by: .seconds(seconds)), userAction: action ? .init(id: UUID()) : nil)
     }
-    private let tokenData = Data(#"{"claudeAiOauth":{"accessToken":"U7_FAKE_CANARY","refreshToken":"NEVER_FORWARD"}}"#.utf8)
+    // 4102444800000 ms = 2100-01-01T00:00:00Z: a login that is still valid, with the scope the usage read needs.
+    private let tokenData = Data(#"{"claudeAiOauth":{"accessToken":"U7_FAKE_CANARY","refreshToken":"NEVER_FORWARD","expiresAt":4102444800000,"scopes":["user:inference","user:profile"]}}"#.utf8)
     func testActualEnumerationDictionaryIsSupportedByTheFakeOS() {
         XCTAssertEqual(queryStatus(FixedItemQuery(interactive: false).attributes), errSecSuccess)
     }
@@ -129,7 +130,22 @@ final class AgentTests: XCTestCase {
         let encoded = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
         XCTAssertFalse(encoded.contains("NEVER_FORWARD"))
         XCTAssertFalse(String(describing: result).contains("U7_FAKE_CANARY"))
-        XCTAssertNil(result.expiresAt)
+        XCTAssertEqual(result.expiresAt?.rawValue, "2100-01-01T00:00:00.000Z")
+    }
+    /// Review 11-24 #8: the Keychain route checks the item's own expiry and scopes like the credentials-file route;
+    /// an expired, wrong-scope or metadata-less login is a closed failure and yields no token.
+    func testExpiredWrongScopeOrMissingMetadataIsClosedFailure() async throws {
+        let cases = [
+            #"{"claudeAiOauth":{"accessToken":"U7_FAKE_CANARY","expiresAt":946684800000,"scopes":["user:profile"]}}"#,
+            #"{"claudeAiOauth":{"accessToken":"U7_FAKE_CANARY","expiresAt":4102444800000,"scopes":["user:inference"]}}"#,
+            #"{"claudeAiOauth":{"accessToken":"U7_FAKE_CANARY","scopes":["user:profile"]}}"#,
+            #"{"claudeAiOauth":{"accessToken":"U7_FAKE_CANARY","expiresAt":4102444800000}}"#,
+            #"{"claudeAiOauth":{"accessToken":"U7_FAKE_CANARY","expiresAt":true,"scopes":["user:profile"]}}"#,
+        ]
+        for json in cases {
+            let result = await NativeCredentialAgent(reader: FakeReader(data: Data(json.utf8)), isCurrent: { _ in true }).handle(try operation())
+            XCTAssertEqual(result.outcome, .error, json); XCTAssertNil(result.accessToken); XCTAssertNil(result.expiresAt)
+        }
     }
     func testInteractiveRequiresExplicitAction() async throws {
         let reader = FakeReader(data: tokenData), agent = NativeCredentialAgent(reader: reader, isCurrent: { _ in true })
