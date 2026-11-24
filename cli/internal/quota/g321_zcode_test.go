@@ -230,3 +230,88 @@ func TestZCodeQuotaRetainsAdmittedWindowsThroughTemporaryFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestZCodeProviderReplacementWithPreservedMetadataInvalidatesQuotaAndActivity(t *testing.T) {
+	isolateHome(t)
+	home, _ := os.UserHomeDir()
+	writeZCodeProviders(t, home, zcodeTemplateProvider)
+	cache := t.TempDir()
+	paths := func() Paths { return ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()) }
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		want := "zcode-key-canary"
+		if calls.Add(1) == 2 {
+			want = "zcode-key-change"
+		}
+		if r.Header.Get("Authorization") != want {
+			t.Error("quota request used the wrong synthetic credential")
+		}
+		fmt.Fprintf(w, `{"success":true,"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":25,"nextResetTime":%d}]}}`, now.Add(time.Hour).UnixMilli())
+	}))
+	defer server.Close()
+	useClient(t, server, "api.z.ai")
+	original := paths()
+	read := func(p Paths, at time.Time) {
+		t.Helper()
+		if err := ExecuteScopeRefresh(context.Background(), p, consent.ScopeZaiAccountUsageAPIKey, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read(original, now)
+	oldRef := ZCodeSubscription(cache, consent.Capture(), now)
+	if oldRef == "" || zcodeAccount(ReadPermitted(original, now)) == nil {
+		t.Fatal("fixture did not establish a quota reading and activity binding")
+	}
+
+	file := ZCodeProviderConfig(home)
+	opened, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := opened.Stat()
+	opened.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := file + ".replacement"
+	body := strings.Replace(zcodeTemplateProvider, "zcode-key-canary", "zcode-key-change", 1)
+	if err := os.WriteFile(replacement, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(replacement, before.ModTime(), before.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(replacement, file); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(before, after) || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) {
+		t.Fatal("fixture must replace the inode while preserving size and mtime")
+	}
+
+	at := now.Add(time.Minute)
+	replaced := paths()
+	for _, current := range []Paths{original, replaced} {
+		if a := zcodeAccount(ReadPermitted(current, at)); a != nil {
+			t.Error("provider replacement left its previous quota eligible")
+		}
+	}
+	if ref := ZCodeSubscription(cache, consent.Capture(), at); ref != "" {
+		t.Error("provider replacement left its previous activity binding eligible")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("passive projection made a request: %d total", calls.Load())
+	}
+
+	next := now.Add(NativeEvery)
+	read(replaced, next)
+	ref := ZCodeSubscription(cache, consent.Capture(), next)
+	a := zcodeAccount(ReadPermitted(paths(), next))
+	if calls.Load() != 2 || ref == "" || ref == oldRef || a == nil || a.Subscription == nil ||
+		a.Subscription.Ref != ref || !a.ObservedAt.Equal(next) {
+		t.Fatalf("replacement quota and binding were not established by the scheduled read: %d requests", calls.Load())
+	}
+}

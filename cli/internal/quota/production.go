@@ -264,16 +264,15 @@ func defaultZCodeGrant(home string, state consent.State, mode string, configured
 		return ReaderGrant{}, false
 	}
 	file := ZCodeProviderConfig(home)
-	fi, err := os.Lstat(file)
-	if err != nil || !fi.Mode().IsRegular() || !detect.LocalRoot(filepath.Dir(filepath.Dir(file))) {
+	if !detect.LocalRoot(filepath.Dir(filepath.Dir(file))) {
+		return ReaderGrant{}, false
+	}
+	stamp := zcodeProviderRevision(file)
+	if stamp == "" {
 		return ReaderGrant{}, false
 	}
 	scope := consent.ScopeZaiAccountUsageAPIKey
 	fence := state.Fence()
-	// The login generation also follows the provider file (size and modification time,
-	// from the same stat; the file is not read here), so replacing the selected key after
-	// a refusal releases the held "sign-in rejected" state at the next due read.
-	stamp := strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
 	return ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
 		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Revoked[scope], 10) + ":zcode:" + stamp,
 		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
@@ -282,8 +281,7 @@ func defaultZCodeGrant(home string, state consent.State, mode string, configured
 			if effective != consent.Automatic || nativeOff() || current.Fence() != fence || !current.AllowsScope(scope, effective) {
 				return false
 			}
-			latest, err := os.Lstat(file)
-			return err == nil && os.SameFile(fi, latest) && latest.Size() == fi.Size() && latest.ModTime().Equal(fi.ModTime())
+			return zcodeProviderRevision(file) == stamp
 		},
 		ConfigSource: &ZaiConfigSource{Tool: "zcode", SettingsPath: file}}, true
 }
