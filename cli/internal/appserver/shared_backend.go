@@ -35,11 +35,11 @@ type SharedConfig struct {
 	Detect           func() detect.Report
 	// LaterInstalled records each detection report and returns the tools detected now that
 	// were absent when this Mac's engine first looked (D238). Optional.
-	LaterInstalled        func(detect.Report) map[string]bool
-	Paths                 func(consent.Admission) quota.Paths
-	WatchPaths            func(consent.Admission) quota.Paths // metadata-only watcher paths, if supplied
-	ClearHistoryInventory func()
-	Cleanup               func(string, bool) error
+	LaterInstalled   func(detect.Report) map[string]bool
+	Paths            func(consent.Admission) quota.Paths
+	WatchPaths       func(consent.Admission) quota.Paths // metadata-only watcher paths, if supplied
+	AdmissionChanged func()
+	Cleanup          func(string, bool) error
 	// Granted runs after each committed, not replayed, consent change (optional); the history
 	// import retry hangs off it (G3-112).
 	Granted func()
@@ -499,8 +499,8 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 		result.Credentials = []CredentialNeed{{Provider: "claude", Scope: consent.ScopeClaudeAccountUsageSavedLogin, Interactive: true}}
 	}
 	if receipt.Committed && !receipt.Replayed {
-		if b.config.ClearHistoryInventory != nil {
-			b.config.ClearHistoryInventory()
+		if b.config.AdmissionChanged != nil {
+			b.config.AdmissionChanged()
 		}
 		if b.config.Granted != nil {
 			b.config.Granted()
@@ -720,8 +720,8 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 					currentConsent := statWatchFile(consent.Path())
 					if !consentStamp.same(currentConsent) {
 						next := consent.Capture()
-						if b.config.ClearHistoryInventory != nil && (next.Fence() != admission.Fence() || next.Mode() != admission.Mode()) {
-							b.config.ClearHistoryInventory()
+						if b.config.AdmissionChanged != nil && (next.Fence() != admission.Fence() || next.Mode() != admission.Mode()) {
+							b.config.AdmissionChanged()
 						}
 						admission = next
 						consentStamp = currentConsent

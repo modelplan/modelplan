@@ -20,6 +20,15 @@ func (s *RefreshScheduler) StartAutomatic() {
 	})
 }
 
+// AdmissionChanged wakes automatic scheduling so it drops jobs whose consent
+// fence was withdrawn without waiting for their deadlines.
+func (s *RefreshScheduler) AdmissionChanged() {
+	select {
+	case s.autoWake <- struct{}{}:
+	default:
+	}
+}
+
 func (s *RefreshScheduler) automatic() {
 	defer close(s.autoDone)
 	// Observation has its own loop: a refresh job that waits for its budget, a credential or a slow
@@ -44,6 +53,8 @@ func (s *RefreshScheduler) automatic() {
 				if job.stamp != stamp {
 					delete(s.scheduled, key)
 					delete(s.pending, key)
+					delete(s.credentialWait, key)
+					delete(s.requested, key)
 				}
 			}
 			s.signal()

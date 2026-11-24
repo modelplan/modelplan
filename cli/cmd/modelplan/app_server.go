@@ -93,6 +93,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	broker := &appserver.CredentialBroker{PathsFor: rawPaths, Offline: options.Offline, ReadOnly: options.ReadOnly}
 	paths := broker.Paths
 	var importer *appserver.ImportController
+	var scheduler *appserver.RefreshScheduler
 	shared, err := appserver.NewSharedBackend(appserver.SharedConfig{
 		Granted: func() {
 			if importer != nil {
@@ -101,10 +102,13 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		},
 		ManualKeyPresent: func(provider string) bool { return quota.ManualKeyPresent(st.Dir, provider) },
 		Activity:         appActivity(st.Dir, &activityIndex),
-		ClearHistoryInventory: func() {
+		AdmissionChanged: func() {
 			historyDirectories.Clear()
 			codexIndex.Reset()
 			activityIndex.Reset()
+			if scheduler != nil {
+				scheduler.AdmissionChanged()
+			}
 		},
 		Reported: func(report quota.Report, now time.Time) {
 			if !options.ReadOnly {
@@ -140,7 +144,6 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		importer.StartOwedAfter(owedLaunchDelay, speed.ImportDefaultDays)
 	}
 	closeBackend := func() {}
-	var scheduler *appserver.RefreshScheduler
 	var server *appserver.Server
 	if shared != nil {
 		var source queries.HistorySource = sharedHistory{backend: shared, cache: st.Dir}

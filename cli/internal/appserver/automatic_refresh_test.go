@@ -49,10 +49,7 @@ func (c *syntheticRefreshClock) read() time.Time  { c.mu.Lock(); defer c.mu.Unlo
 func (c *syntheticRefreshClock) set(at time.Time) { c.mu.Lock(); c.now = at; c.mu.Unlock() }
 func signalAutomatic(s *RefreshScheduler) {
 	s.signal()
-	select {
-	case s.autoWake <- struct{}{}:
-	default:
-	}
+	s.AdmissionChanged()
 }
 func waitAutomaticFloor(t *testing.T, s *RefreshScheduler, key string, after time.Time) {
 	t.Helper()
@@ -293,5 +290,52 @@ func TestRepeatedNotAttemptedDecisionsKeepRealOutcomesInTheRing(t *testing.T) {
 	}
 	if ring.items[0].scope != consent.ScopeMiniMaxAccountUsageAPIKey || ring.items[1].at != at.Add(49*time.Second) {
 		t.Fatalf("items = %+v", ring.items[:3])
+	}
+}
+
+func TestAdmissionChangeDropsQueuedRefreshBeforeItsDeadline(t *testing.T) {
+	scope := consent.ScopeCodexRuntimeUsage
+	backend, paths, _ := refreshFixture(t, scope)
+	clock := &syntheticRefreshClock{now: time.Now().UTC()}
+	ran := make(chan struct{}, 1)
+	s := NewRefreshScheduler(context.Background(), RefreshConfig{
+		Backend: backend, Paths: paths, Now: clock.read,
+		Plan: func(_ quota.Paths, _ string, now time.Time) (quota.ScopeRefreshPlan, error) {
+			return quota.ScopeRefreshPlan{At: now.Add(time.Hour), Admitted: true, BudgetKnown: true}, nil
+		},
+		Run: func(context.Context, quota.Paths, string, time.Time) error {
+			ran <- struct{}{}
+			return nil
+		},
+	})
+	defer s.Close()
+	s.StartAutomatic()
+	waitQueued := func(want bool) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			s.mu.Lock()
+			_, queued := s.scheduled["codex"]
+			s.mu.Unlock()
+			if queued == want {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatalf("queued refresh did not become %t", want)
+	}
+	waitQueued(true)
+	if err := consent.Change(consent.Path(), func(state *consent.State) error {
+		state.Scopes[scope] = consent.Record{Allowed: false, ConsentTextVersion: consent.TextVersion}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.AdmissionChanged()
+	waitQueued(false)
+	select {
+	case <-ran:
+		t.Fatal("the revoked queued refresh ran")
+	default:
 	}
 }

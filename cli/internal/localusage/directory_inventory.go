@@ -32,6 +32,9 @@ type DirectoryInventory struct {
 	coldBudgetAt time.Time
 	coldReads    int
 	coldChildren int
+	pendingCold  []string
+	queuedCold   map[string]bool
+	reservedCold map[string]bool
 	readDir      func(string) ([]os.DirEntry, error)
 }
 
@@ -98,7 +101,7 @@ func (i *DirectoryInventory) ForAdmission(admission consent.Admission, now time.
 				return old.entries, nil
 			}
 			atCapacity := len(i.cold) > 0 || len(i.dirs) >= directoryInventoryLimit || i.entries >= directoryListingLimit
-			if (watched || atCapacity) && !now.Equal(i.firstPass) && !i.takeColdRead(now) {
+			if (watched || atCapacity) && !now.Equal(i.firstPass) && !i.takeColdRead(dir, now) {
 				return old.entries, nil
 			}
 		}
@@ -135,6 +138,7 @@ func (i *DirectoryInventory) adopt(admission consent.Admission) {
 		i.fence, i.mode = admission.Fence(), admission.Mode()
 		i.dirs, i.entries, i.cold = nil, 0, nil
 		i.firstPass, i.coldBudgetAt, i.coldReads, i.coldChildren = time.Time{}, time.Time{}, 0, 0
+		i.pendingCold, i.queuedCold, i.reservedCold = nil, nil, nil
 	}
 }
 
@@ -149,15 +153,40 @@ func (i *DirectoryInventory) delete(dir string) {
 // history size. The first discovery is complete, so the caller can seed its
 // active candidates once. Later callers retain those candidates while each
 // cold subtree reconciles in turn.
-func (i *DirectoryInventory) takeColdRead(now time.Time) bool {
+func (i *DirectoryInventory) takeColdRead(dir string, now time.Time) bool {
 	if i.coldBudgetAt.IsZero() || now.Sub(i.coldBudgetAt) >= coldDiscoveryInterval {
 		i.coldBudgetAt, i.coldReads = now, 0
+		// Reserve this window for the oldest deferred paths. A reservation
+		// expires after one window if its directory is no longer visited.
+		clear(i.reservedCold)
+		count := min(len(i.pendingCold), coldDiscoveryBatch)
+		for _, waiting := range i.pendingCold[:count] {
+			if i.reservedCold == nil {
+				i.reservedCold = make(map[string]bool, coldDiscoveryBatch)
+			}
+			i.reservedCold[waiting] = true
+			delete(i.queuedCold, waiting)
+		}
+		clear(i.pendingCold[:count])
+		i.pendingCold = i.pendingCold[count:]
 	}
-	if i.coldReads >= coldDiscoveryBatch {
-		return false
+	if i.reservedCold[dir] {
+		delete(i.reservedCold, dir)
+		i.coldReads++
+		return true
 	}
-	i.coldReads++
-	return true
+	if i.coldReads+len(i.reservedCold) < coldDiscoveryBatch {
+		i.coldReads++
+		return true
+	}
+	if !i.queuedCold[dir] && len(i.pendingCold) < coldDirectoryLimit {
+		if i.queuedCold == nil {
+			i.queuedCold = make(map[string]bool)
+		}
+		i.queuedCold[dir] = true
+		i.pendingCold = append(i.pendingCold, dir)
+	}
+	return false
 }
 
 func (i *DirectoryInventory) remember(dir string, listing directoryListing, now time.Time) {

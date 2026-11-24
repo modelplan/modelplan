@@ -2,6 +2,7 @@
 package speed
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,5 +43,45 @@ func TestActivityIdleDirectoryBudget(t *testing.T) {
 	fence.Generation++
 	if got := index.Logs("", "", "", fence, now, clock.Add(ActivityDiscoveryInterval)); len(got) != 0 || len(index.logs) != 0 {
 		t.Fatalf("revoked root kept files: %v", got)
+	}
+}
+
+func TestDisplacedActivityParentsCannotCrowdOutValidCandidates(t *testing.T) {
+	home := t.TempDir()
+	parent := filepath.Join(home, "projects")
+	old, valid := filepath.Join(parent, "old"), filepath.Join(parent, "valid")
+	now := time.Now()
+	write := func(dir, name string, at time.Time) string {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("{}\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	keep := write(valid, "kept.jsonl", now.Add(-time.Minute))
+	for i := range maxLive {
+		write(old, fmt.Sprintf("displaced-%d.jsonl", i), now)
+	}
+	var index ActivityLogIndex
+	fence := consent.Fence{StoreEpoch: "test", Generation: 1}
+	if got := index.Logs(home, "", "", fence, now, now); len(got) != maxLive || got[0].Path == keep {
+		t.Fatalf("the initial full candidate set did not come from one project: %v", got)
+	}
+	replaced := filepath.Join(t.TempDir(), "after")
+	if err := os.Rename(old, replaced); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(replaced, old); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	next := now.Add(ActivityDiscoveryInterval)
+	if got := index.Logs(home, "", "", fence, next, next); len(got) != 1 || got[0].Path != keep {
+		t.Fatalf("replaced paths crowded out the valid log: %v", got)
 	}
 }

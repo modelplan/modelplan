@@ -2,6 +2,7 @@
 package quota
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -76,5 +77,44 @@ func TestCodexColdReconciliationKeepsKnownActiveCandidates(t *testing.T) {
 	fence.Generation++
 	if got, _ := index.recentFrom(home, "", fence, now.Add(2*codexRolloutDiscoveryInterval), partial); len(got) != 0 {
 		t.Fatalf("permission change retained a prior rollout: %v", got)
+	}
+}
+
+func TestDisplacedRolloutParentsCannotCrowdOutValidCandidates(t *testing.T) {
+	home := t.TempDir()
+	parent := filepath.Join(home, "sessions", "2026", "11")
+	old, valid := filepath.Join(parent, "23"), filepath.Join(parent, "24")
+	now := time.Now()
+	write := func(dir, name string, at time.Time) string {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		log := filepath.Join(dir, name)
+		if err := os.WriteFile(log, []byte("{}\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(log, at, at); err != nil {
+			t.Fatal(err)
+		}
+		return log
+	}
+	keep := write(valid, "rollout-valid.jsonl", now.Add(-time.Minute))
+	for i := range codexFiles {
+		write(old, fmt.Sprintf("rollout-displaced-%d.jsonl", i), now)
+	}
+	var index CodexRolloutIndex
+	fence := consent.Fence{StoreEpoch: "test", Generation: 1}
+	if got, _ := index.recent(home, "", fence, now); len(got) != codexFiles || got[0] == keep {
+		t.Fatalf("the initial full candidate set did not come from one day: %v", got)
+	}
+	replaced := filepath.Join(t.TempDir(), "after")
+	if err := os.Rename(old, replaced); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(replaced, old); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if got, _ := index.recent(home, "", fence, now.Add(codexRolloutDiscoveryInterval)); len(got) != 1 || got[0] != keep {
+		t.Fatalf("replaced paths crowded out the valid rollout: %v", got)
 	}
 }

@@ -415,7 +415,7 @@ func (s *RefreshScheduler) run(job refreshJob) {
 			// One section owns the flag and the slot: between them a request would see the slot
 			// taken, leave its flag and be lost when the slot is released.
 			s.mu.Lock()
-			if held && s.requested[job.key] {
+			if held && currentFence && s.requested[job.key] {
 				// A request arrived while this job was being held: it runs now instead.
 				delete(s.requested, job.key)
 				job.automatic, job.at = false, now
@@ -446,10 +446,7 @@ func (s *RefreshScheduler) run(job refreshJob) {
 		if s.ctx.Err() == nil && s.config.Changed != nil {
 			s.config.Changed()
 		}
-		select {
-		case s.autoWake <- struct{}{}:
-		default:
-		}
+		s.AdmissionChanged()
 		// An observation that found the reader lock taken tries again once this read lets it go.
 		select {
 		case s.observeWake <- struct{}{}:

@@ -53,29 +53,34 @@ func (i *ActivityLogIndex) logsFrom(claude, codex, zcode string, fence consent.F
 
 	homes := [3]string{claude, codex, zcode}
 	roots := activityRoots(claude, codex, zcode)
+	// Validate retained paths before looking at their mtimes or taking
+	// ranking slots. Share the parent checks across both candidate sets.
+	directories := map[string]bool{}
+	validParents := func(log LiveLog) bool {
+		for _, root := range roots {
+			if root.enabled && log.Source == root.source {
+				return checkedLogParents(log.Path, root.dir, directories)
+			}
+		}
+		return false
+	}
 	sameSource := i.roots == homes && i.fence == fence
 	if !sameSource || i.scannedAt.IsZero() || elapsed.Before(i.scannedAt) ||
 		elapsed.Sub(i.scannedAt) >= ActivityDiscoveryInterval {
 		discovered, claudeLogs := activeLogsFrom(roots, now, readDir)
 		if sameSource && !i.scannedAt.IsZero() {
-			discovered = rankKnownLiveLogs(append(discovered, i.logs...), now)
-			claudeLogs = rankKnownLiveLogs(append(claudeLogs, i.claude...), now)
+			discovered = rankKnownLiveLogs(append(discovered, i.logs...), now, validParents)
+			claudeLogs = rankKnownLiveLogs(append(claudeLogs, i.claude...), now, validParents)
 		}
 		i.roots, i.fence, i.scannedAt = homes, fence, elapsed
 		i.logs, i.claude = discovered, claudeLogs
 	}
 
-	// A remembered path doesn't authorize following a replacement ancestor.
-	// Share the directory checks across the bounded recent files in this tick.
-	directories := map[string]bool{}
 	validLogs := func(logs []LiveLog) []LiveLog {
 		var valid []LiveLog
 		for _, log := range logs {
-			for _, root := range roots {
-				if log.Source == root.source && checkedLogParents(log.Path, root.dir, directories) {
-					valid = append(valid, log)
-					break
-				}
+			if validParents(log) {
+				valid = append(valid, log)
 			}
 		}
 		return valid
@@ -105,11 +110,11 @@ func (i *ActivityLogIndex) Reset() {
 	i.logs, i.claude = nil, nil
 }
 
-func rankKnownLiveLogs(logs []LiveLog, now time.Time) []LiveLog {
+func rankKnownLiveLogs(logs []LiveLog, now time.Time, validParents func(LiveLog) bool) []LiveLog {
 	modified := make(map[string]time.Time, len(logs))
 	unique := make([]LiveLog, 0, len(logs))
 	for _, log := range logs {
-		if _, known := modified[log.Path]; known {
+		if _, known := modified[log.Path]; known || !validParents(log) {
 			continue
 		}
 		if info, err := os.Lstat(log.Path); err == nil && info.Mode().IsRegular() && !info.ModTime().Before(now.Add(-LiveWithin)) {

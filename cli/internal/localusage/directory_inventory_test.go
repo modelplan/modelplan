@@ -120,17 +120,37 @@ func TestDirectoryInventoryBoundsStableOverflowAndRevisitsChangedDirectory(t *te
 	if err := os.WriteFile(newFile, []byte("{}"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	for pass := 16; pass < 26; pass++ {
-		read := inventory.ForAdmission(admission, now.Add(time.Duration(pass)*6*time.Second))
-		names, err := read(last)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, name := range names {
-			if name.Name() == "new.jsonl" {
-				return
+	for pass := 16; pass < 36; pass++ {
+		at := now.Add(time.Duration(pass) * 6 * time.Second)
+		// These first cold directories compete in every pass. The new log
+		// in the last directory must get a turn despite the changing prefix.
+		firstCold := directoryListingLimit / 9
+		for _, dir := range dirs[firstCold : firstCold+16] {
+			if err := os.Chtimes(dir, at, at); err != nil {
+				t.Fatal(err)
 			}
 		}
+		read := inventory.ForAdmission(admission, at)
+		calls = 0
+		found := false
+		for _, dir := range dirs {
+			names, err := read(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if dir == last {
+				for _, name := range names {
+					found = found || name.Name() == "new.jsonl"
+				}
+			}
+		}
+		if calls > 16 {
+			t.Fatalf("contended overflow exceeded the fixed reconciliation budget: pass %d enumerated %d directories", pass, calls)
+		}
+		if found {
+			return
+		}
 	}
+
 	t.Fatal("a new log in the cold inventory was never discovered")
 }
