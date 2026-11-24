@@ -307,6 +307,7 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   selectModel(id){hudSelected=id;markPorthole(id);deck.selectModel(id);if(lastData)preserveFocus(()=>paintHud(frame.hud,lastData!,tier!=='tall',locale,hudOptions()));},
   render:renderData,
   nextDeadline(){if(!lastData)return null;const hold=holdEnds(),drawn=nextDeadline(lastData,lastRenderedAt),own=hold===null?drawn:drawn===null?hold:Math.min(drawn,hold),plugin=plugins.nextDeadline();return own===null?plugin:plugin===null?own:Math.min(own,plugin);},
+  expire(now){expireHold(now);},
   tick(now){if(expireHold(now))return;refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;heldHistory=null;lastReceived=null;showingHeld=false;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
   active(value,now){const was=active;active=value;plugins.setInteractive(value);root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}else if(!was&&lastData){if(now!==undefined)lastRenderedAt=now;syncCaution(lastData,lastRenderedAt);expireHold(now);}},

@@ -54,6 +54,8 @@ export interface CockpitView {
   clear():void;
   nextDeadline():number|null;
   tick(now:number):void;
+  /** Review 11-24 #11: ends an expired history hold at once; every accepted host message calls it first, so no redraw or reveal shows held history past its end. */
+  expire?(now:number):void;
   active(active:boolean,now?:number):void;
   /** Open = visible and not occluded (key or not); plugins sample only while this is true (D124). */
   visible?(visible:boolean):void;
@@ -199,6 +201,7 @@ export class CockpitBridge {
     if(!m) return false;
     if(m.pageId!==this.pageId) return this.no('recv.page');
     if(BigInt(m.sequence)<=this.sequence) return this.no('recv.sequence');
+    if(m.type!=='load'&&m.type!=='clear'&&m.type!=='display'&&m.type!=='tick'){try{this.view.expire?.(this.clock());}catch{return this.no('expire.view');}}
     if(m.type==='load') {
       if(this.loaded) return this.no('load.again');
       // First load is also an explicit privacy barrier.

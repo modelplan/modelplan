@@ -176,6 +176,28 @@ test('B1 the page becoming visible again at the cutoff, before any tick, clears 
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
 });
+// macrevc-1216-2 (round 2): the invariant is "no accepted host message leaves held history on screen at or after the cutoff".
+// Every route that is not a display, a tick or an appearance update must end an expired hold in its own response, and
+// none of them may end it early.
+const routes={
+ 'a member-refresh shell message':(send,r)=>send('shell',{...shell,refreshing:true,range:'7d'}),
+ 'a range shell message':(send,r)=>send('shell',{...shell,range:'30d'}),
+ 'a visible non-key return':(send,r)=>send('visibility',{visible:true,occluded:false,key:false}),
+};
+for(const [name,make] of Object.entries(routes))
+test(`B1 ${name} at the cutoff, before any tick, clears the held history; one millisecond earlier it keeps it`,async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);
+ await page.clock.setFixedTime(new Date(NOW+HOLD-1));
+ expect(await receive(make(send))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);await expect(empty(page)).toHaveCount(0);
+ await page.clock.setFixedTime(new Date(NOW+HOLD));
+ expect(await receive(make(send))).toBe(true);
+ await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
+});
 test('B1 a fresh profile with nothing recorded still says "No usage record yet"',async({page})=>{
  await open(page,{data:unread()});
  await expect(empty(page)).toHaveCount(1);
