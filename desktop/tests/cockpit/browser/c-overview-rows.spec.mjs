@@ -77,6 +77,47 @@ test('CKP-MFD-62 without hourly rows the grid says there is no hourly record, an
  await expect(page.locator('.pg-overview .ov-heat-empty')).toContainText('小时');
 });
 
+// macrevb-1212-1: a 25-hour fall-back day. America/Los_Angeles falls back on 2026-11-01 01:00 PDT -> 01:00 PST; at 23:30 on
+// Nov 2 the producer still sends yesterday's 00:00 PDT bucket and both 01:00 readings. All of them land in yesterday's 00:00-04:00
+// cell, in the 7-day and the 30-day range, and no earlier cell exists.
+test.describe('D390 fall-back day',()=>{
+ test.use({timezoneId:'America/Los_Angeles'});
+ for(const range of ['7d','30d'])
+ test(`CKP-MFD-62 the Grid keeps yesterday's 00:00 and both 01:00 readings of a 25-hour day (${range})`,async({page})=>{
+  const data=visualFixture().data,ref=data.projection.rows[0].accounts[0].subscriptionRef;
+  data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:'2026-10-01',
+   subscriptions:[{subscriptionRef:ref,sources:[{source:'codex',bindingBasis:'source-wide-current-binding',recent7d:sums(1),recent30d:sums(1)}]}],
+   models:ranking,tools:ranking,daily:[{at:'2026-11-01',source:'codex',origin:'live',observedOutputTokens:1000},{at:'2026-11-02',source:'codex',origin:'live',observedOutputTokens:50}],
+   hourly:[['2026-11-01T07:00:00Z',500],['2026-11-01T08:00:00Z',300],['2026-11-01T09:00:00Z',200],['2026-11-03T06:00:00Z',50]].map(([at,n])=>({at,source:'codex',origin:'live',observedOutputTokens:n})),
+   projects:{recent7d:[],recent30d:[]},cycles:[]};
+  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+  await page.clock.setFixedTime(new Date('2026-11-03T07:30:00Z'));
+  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance,shell:{...shell,range},redBelow:25}))).toBe(true);
+  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  expect(await receive(send('display',{data}))).toBe(true);
+  await grid(page);
+  const tips=await page.locator('.pg-overview svg.ov-heat rect.hm').evaluateAll(list=>list.map(e=>e.dataset.tip));
+  expect(tips).toEqual(['Nov 1 00:00-04:00\nCodex 1k','Nov 2 20:00-24:00\nCodex 50']);
+ });
+});
+
+// macrevb-1212-2: on a fresh record the lit Grid key says its own hourly empty state; Bars keeps its existing one.
+test('CKP-MFD-62 a fresh Overview: Grid shows the hourly empty line with no cells, Bars its own empty state',async({page})=>{
+ const data=visualFixture().data;delete data.history;
+ for(const s of data.details.subscriptions)s.today=[];
+ await open(page,data);
+ await expect(page.locator('.pg-overview .ov-empty')).toHaveCount(1);
+ await grid(page);
+ await expect(page.locator('[data-opt="chart"] b.on')).toHaveText('Grid');
+ await expect(page.locator('.pg-overview .ov-heat-empty')).toBeVisible();await expect(page.locator('.pg-overview .ov-heat-empty')).toContainText('hourly');
+ await expect(page.locator('.pg-overview rect.hm')).toHaveCount(0);await expect(page.locator('.pg-overview .ov-empty')).toHaveCount(0);
+ await page.locator('[data-opt="chart"] b',{hasText:/^Bars$/}).click();
+ await expect(page.locator('[data-opt="chart"] b.on')).toHaveText('Bars');
+ await expect(page.locator('.pg-overview .ov-empty')).toHaveCount(1);await expect(page.locator('.pg-overview .ov-heat-empty')).toHaveCount(0);
+});
+
 // CKP-MFD-27: a running session on a red quota above its model's recommended effort.
 function advice({remaining=20,state='running',effort='high',bound=true}={}){
  const data=visualFixture().data,row=data.projection.rows[0],account=row.accounts[0];

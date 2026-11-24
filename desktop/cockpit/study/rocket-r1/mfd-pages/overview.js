@@ -178,6 +178,9 @@ export const overview = {
     if (accounts.length && accounts.every(a => a.state === 'loading') && !list.length && !todayKnown)
       return `${alerts}<div class="ov-top ov-skel" aria-busy="true"><i></i></div>`;
     // No usage record: the alert rows stay, and three lines say why the rest is empty.
+    // D390 (macrevb-1212-2): the lit Grid key says its own hourly empty state, never the Bars message about future daily bars.
+    if (!list.length && !todayKnown && ui.chart === 'grid')
+      return `${alerts}<div class="mfd-fill" data-fill="ov">${heatmap(d, ui)}</div>`;
     if (!list.length && !todayKnown)
       return `${alerts}<div class="mp-empty ov-empty"><b>${t('mfd.ovNoRecord1')}</b><span>${t('mfd.ovNoRecord2')}</span><span>${t('mfd.ovNoRecord3')}</span></div>`;
     const row = totals(d, ui, list, costs);

@@ -37,7 +37,9 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
  const clock=new Date(now),top=now-clock.getMinutes()*6e4-clock.getSeconds()*1e3-clock.getMilliseconds();
  const instants=Array.from({length:24},(_,i)=>top-(23-i)*HOUR);
  // The study pages read a series from its end, so index 181 is today and the days before the record began stay null.
- const longInstants=Array.from({length:48},(_,i)=>top-(47-i)*HOUR);
+ // D390 (macrevb-1212-1): from local midnight of yesterday to the current hour, in absolute steps, so a 25-hour fall-back day keeps
+ // every hour the producer records for today and yesterday (a fixed 48 hours would drop its first one).
+ const yesterday=new Date(clock.getFullYear(),clock.getMonth(),clock.getDate()-1).getTime(),longInstants=Array.from({length:Math.max(1,Math.floor((top-yesterday)/HOUR)+1)},(_,i)=>yesterday+i*HOUR);
  const end=new Date(now),days=Array.from({length:DAYS},(_,i)=>dayKey(new Date(end.getFullYear(),end.getMonth(),end.getDate()-(DAYS-1-i)).getTime()));
  for(const sub of h.subscriptions){
   const accountId=ids.get(sub.subscriptionRef);if(!accountId)continue;
