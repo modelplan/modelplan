@@ -253,6 +253,9 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 			if id == "zai" && p.ZCodeLoginConsent && row.Consent != "denied" {
 				row.State = "unavailable:consent_required" // D369: ZCode's sign-in needs its own consent
 			}
+			if id == "zai" && p.ZCodeLoginDenied {
+				row.State = "unavailable:denied" // the saved-login scope was refused
+			}
 		case managed:
 			s, err := loadReaderState(p.Cache, id)
 			if err != nil {
