@@ -176,7 +176,7 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 	defer func() { oauth.AccessToken = "" }()
 	credentialKey := readerHash(r.Paths.Cache, "claude:credential", oauth.AccessToken)
 	changed = meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey)
-	if oauth.AccessToken == "" || len(oauth.AccessToken) > 16<<10 || strings.ContainsAny(oauth.AccessToken, "\r\n") || oauth.ExpiresAt <= r.Now.UnixMilli() {
+	if oauth.AccessToken == "" || len(oauth.AccessToken) > 16<<10 || strings.ContainsAny(oauth.AccessToken, "\r\n") || oauth.ExpiresAt <= r.Now.UnixMilli() || oauth.ExpiresAt <= claudeClock().UnixMilli() {
 		return fail("expired", "Open Claude Code to refresh")
 	}
 	if !contains(oauth.Scopes, "user:profile") {
@@ -185,11 +185,11 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 	if credentialKey == "" {
 		return fail("unavailable", "Identity key unavailable")
 	}
-	// macrevb-1217-1: the login's own expiry is checked again immediately before every request
-	// that sends it (each stage here, and in the transport as the last step before dispatch). A
-	// login that expires mid-read ends the read; nothing refreshes it.
-	started := claudeClock()
-	usable := func() bool { return r.Now.Add(claudeClock().Sub(started)).UnixMilli() < oauth.ExpiresAt }
+	// macrevb-1217-1: the login's own expiry is checked against the wall clock (the same clock
+	// as intake, with no offset from the read's start) immediately before every request that
+	// sends it: each stage here, and in the transport as the last step before dispatch. A login
+	// that expires before or during the read ends it; nothing refreshes it.
+	usable := func() bool { return claudeClock().UnixMilli() < oauth.ExpiresAt }
 	ctx = readers.WithLiveAdmission(ctx, usable)
 	cold := meta.CredentialKey != credentialKey || meta.AccountKey == "" || meta.VerifiedAt.After(r.Now) || r.Now.Sub(meta.VerifiedAt) >= 24*time.Hour
 	var binding *Binding

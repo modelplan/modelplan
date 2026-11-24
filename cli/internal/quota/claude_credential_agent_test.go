@@ -191,7 +191,7 @@ func TestInteractiveCredentialOutcomePreservesClosedRemoteBudget(t *testing.T) {
 // Review 11-24 #8: a Keychain result without the login's real expiry, or with a past one,
 // never becomes a credential: zero provider requests, and a closed failure state.
 func TestClaudeAppCredentialWithoutRealExpiryFailsClosed(t *testing.T) {
-	past := time.Now().Add(-time.Minute)
+	past := claudeTestNow.Add(-time.Minute) // the reader clock follows claudeTestNow
 	for name, expires := range map[string]*time.Time{"missing": nil, "expired": &past} {
 		t.Run(name, func(t *testing.T) {
 			p := claudeTestPaths(t)

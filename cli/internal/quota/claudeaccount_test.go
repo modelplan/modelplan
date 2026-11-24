@@ -23,6 +23,11 @@ func claudeTestPaths(t *testing.T) Paths {
 		t.Setenv(name, "")
 	}
 	p := nativePaths(t)
+	// Fixtures are dated around claudeTestNow; the wall clock the expiry is checked against
+	// follows them (restored after the test).
+	oldClock := claudeClock
+	claudeClock = func() time.Time { return claudeTestNow }
+	t.Cleanup(func() { claudeClock = oldClock })
 	root := filepath.Join(t.TempDir(), "claude")
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
