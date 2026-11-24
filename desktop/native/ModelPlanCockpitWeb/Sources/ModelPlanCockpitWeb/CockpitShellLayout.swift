@@ -45,7 +45,7 @@ public struct CockpitSizeBasis: Equatable, Sendable {
 public struct CockpitShellLayout: Equatable, Sendable {
     /// The base reserve under the root holds the base bells and their flames (owner D51: always shown),
     /// so every fit is computed on the root plus this reserve, never on the root alone.
-    public static let baseReserve: CGFloat = 34
+    public static let baseReserve: CGFloat = 46
     public static let width: CGFloat = 636
     /// CKP-SHELL-07 (owner D51): below this scale the full cockpit's smallest labels (8 CSS px) would
     /// fall under 6 pt and its 10 px readings under 7.5 pt; only then does the short version show.

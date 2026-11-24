@@ -7,7 +7,7 @@ import {firstPixel} from '../png-pixel.mjs';
 // CKP-SHELL-25 (owner 11-08 review): around the hull everything is transparent; only the hull, the canopy and the
 // base row are drawn. Pixels beside the canopy, above it, and in the base reserve outside the bells have alpha 0 on the page
 // the native window shows (the window and web view are clear).
-for(const [tier,canvas] of [['tall',939],['compact',669]])for(const closed of [false,true])
+for(const [tier,canvas] of [['tall',951],['compact',681]])for(const closed of [false,true])
 test(`CKP-SHELL-25 ${tier}${closed?' closed':''}: nothing is painted outside the hull silhouette`,async({page})=>{
  // G3-108: the page canvas is always the open root's; the closed root stands on its floor, `top` px down, and the band
  // above it is what the closed native window leaves out.
