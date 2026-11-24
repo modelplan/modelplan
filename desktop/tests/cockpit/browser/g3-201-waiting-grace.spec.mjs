@@ -15,12 +15,13 @@ async function load(page,app=appearance){
 }
 const visibility=(c,visible,gen={})=>c.receive(c.send('visibility',{...gen,visible,occluded:false,key:visible}));
 const line=page=>page.locator('.ck-eng .ec-empty');
-// Headless WebKit only advances CSS animations when frames are produced, so every observation delivers frames first
-// (macrevb-1205-3): without them a slow reveal reads opacity 0 and an old CSS-clock grace looks fine while hidden.
+// Frame speed must not decide the verdict (macrevb-1205-3): the grace is a CSS animation delay, so the line's animation is paused and
+// set to a chosen time ("at") and the rendered opacity read there; "elapsed" is how far the animation has run since it started.
 const frames=(page,ms=0)=>page.evaluate(ms=>new Promise(done=>{const end=performance.now()+ms;const step=()=>performance.now()>=end?requestAnimationFrame(()=>requestAnimationFrame(done)):requestAnimationFrame(step);step();}),ms);
-const opacity=async page=>{await frames(page);return Number(await line(page).first().evaluate(e=>getComputedStyle(e).opacity));};
-const anim=page=>line(page).first().evaluate(e=>getComputedStyle(e).animationName);
-const revealed=page=>expect.poll(async()=>{await frames(page,100);return opacity(page);},{timeout:4000}).toBe(1);
+const opacity=async page=>Number(await line(page).first().evaluate(e=>getComputedStyle(e).opacity));
+const at=(page,ms)=>line(page).first().evaluate((e,ms)=>{const a=e.getAnimations()[0];if(!a)return -1;a.pause();a.currentTime=ms;return Number(getComputedStyle(e).opacity);},ms);
+const elapsed=page=>line(page).first().evaluate(e=>{const a=e.getAnimations()[0];return a?Number(a.currentTime):-1;});
+const graceThenShown=async page=>{expect(await at(page,100)).toBe(0);expect(await at(page,850)).toBe(1);};
 const empty=()=>{const d=sample();d.projection.rows=[];d.subscriptions=[];return d;};
 
 test('a quick first display never shows the waiting line, even after the hidden page ran frames for longer than the grace (prewarm)',async({page})=>{
@@ -28,7 +29,8 @@ test('a quick first display never shows the waiting line, even after the hidden 
  expect(await visibility(c,false)).toBe(true);
  await frames(page,1000); // the prewarmed page paints frames for longer than the grace while hidden
  expect(await visibility(c,true)).toBe(true);
- expect(await opacity(page)).toBe(0);
+ expect(await elapsed(page)).toBeLessThan(600); // counted from the show, not from the hidden frames
+ expect(await at(page,100)).toBe(0);
  expect(await c.receive(c.send('display',{data:sample()}))).toBe(true);
  await expect(line(page)).toHaveCount(0);
 });
@@ -36,9 +38,8 @@ test('a slow first display shows the waiting line after the grace, counted from 
  const c=await load(page);
  expect(await visibility(c,false)).toBe(true);await frames(page,900);
  expect(await visibility(c,true)).toBe(true);
- expect(await opacity(page)).toBe(0);
- await frames(page,250);expect(await opacity(page)).toBe(0);
- await revealed(page);
+ expect(await elapsed(page)).toBeLessThan(600);
+ await graceThenShown(page);
 });
 test('a cleared page hidden and shown again waits the same grace, a quick display replaces it unseen, and an empty answer shows at once',async({page})=>{
  const c=await load(page),gen=g=>({generation:String(g),viewRevision:String(g-38)});
@@ -48,7 +49,7 @@ test('a cleared page hidden and shown again waits the same grace, a quick displa
  expect(await c.receive(c.send('clear',gen(42)))).toBe(true);
  expect(await visibility(c,false,gen(42))).toBe(true);await frames(page,1000);
  expect(await visibility(c,true,gen(42))).toBe(true);
- expect(await opacity(page)).toBe(0);
+ expect(await elapsed(page)).toBeLessThan(600);
  expect(await c.receive(c.send('display',{...gen(42),data:sample()}))).toBe(true);
  await expect(line(page)).toHaveCount(0);
  expect(await c.receive(c.send('clear',gen(43)))).toBe(true);
@@ -58,14 +59,13 @@ test('a cleared page hidden and shown again waits the same grace, a quick displa
  await expect(page.locator('.ec-empty-open')).toBeVisible();
  expect(await opacity(page)).toBe(1);
  expect(await c.receive(c.send('clear',gen(44)))).toBe(true);
- await revealed(page);
+ await graceThenShown(page);
 });
 for(const how of ['app setting','system'])
 test(`Reduce Motion (${how}): the line appears after the grace without a fade, and a quick display still suppresses it`,async({page})=>{
  if(how==='system')await page.emulateMedia({reducedMotion:'reduce'});
  const c=await load(page,{...appearance,reduceMotion:how==='app setting'});
  expect(await visibility(c,true)).toBe(true);
- expect(await opacity(page)).toBe(0);
- await revealed(page);
- expect(await anim(page)).toBe('none');
+ await at(page,0);await graceThenShown(page);
+ expect(await line(page).first().evaluate(e=>getComputedStyle(e).animationDuration)).toBe('0.001s');
 });

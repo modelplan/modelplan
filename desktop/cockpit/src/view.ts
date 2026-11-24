@@ -159,11 +159,12 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  // S18 (sampling 11-21, ADR 0005): the engine's floating tooltip is appended outside the table (the document body when
  // the page root is #cockpit itself); it goes with the table, synchronously, so no private text outlives a clear or a re-render.
  const dropEngineTips=()=>{for(const tip of root.ownerDocument.querySelectorAll('.eng-hint'))tip.remove();};
- // G3-201 (macrevb-1205-1): the grace for the waiting/cleared line counts from the moment the page is actually shown, not from
- // when the line was installed (a prewarmed page can hold it for longer than the grace while hidden).
- let waitTimer:ReturnType<typeof setTimeout>|null=null,pageShown=false;
- const stopWait=()=>{if(waitTimer!==null)clearTimeout(waitTimer);waitTimer=null;delete root.dataset.waitShown;};
- const armWait=()=>{stopWait();if(pageShown&&root.dataset.engineWait)waitTimer=setTimeout(()=>{waitTimer=null;if(pageShown&&root.dataset.engineWait)root.dataset.waitShown='true';},700);};
+ // G3-201 (macrevb-1205-1, -4): the grace for the waiting/cleared line counts from the moment the page is actually shown. The page
+ // owns no timers (bundle audit), so the grace is a CSS animation delay that this attribute restarts: it is removed while hidden
+ // and set again, after a style flush, on every show and every new waiting/cleared line.
+ let pageShown=false;
+ const stopWait=()=>{delete root.dataset.waitShown;};
+ const armWait=()=>{stopWait();if(pageShown&&root.dataset.engineWait){void root.offsetWidth;root.dataset.waitShown='true';}};
  const setEmpty=(key:'waiting'|'cleared'|'empty',keepDeck=false)=>{dropEngineTips();root.dataset.engineEmpty=String(key==='empty');root.dataset.engineWait=key==='empty'?'':key;armWait();headerRange.dim(key==='empty');plugins.bindEngine(null);plugins.clearPlacement();plugins.display(null,lastRenderedAt);base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;markPorthole(null);caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;engineRange=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
   // CKP-SHELL-39: with no subscription read yet the screen says so in one line and offers one way in, Settings > Subscriptions.
   if(key==='empty'){const open=element('button',ht(locale,'host.emptyOpen'),'ec-empty-open');bilingual(open,ht('en','host.emptyOpen'),ht('zh-CN','host.emptyOpen'));open.type='button';open.setAttribute('aria-label',ht(locale,'host.emptyOpen'));open.onclick=e=>{if(e.isTrusted)action('openSettingsSubscriptions');};const box=element('div',undefined,'ec-empty-box');box.append(line,open);frame.engine.replaceChildren(box);}
