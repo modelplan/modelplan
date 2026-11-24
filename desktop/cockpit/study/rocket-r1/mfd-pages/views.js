@@ -280,14 +280,15 @@ function useText(u) {
   const p = Math.max(u.share > 0 ? 1 : 0, Math.round(u.share * 100));
   return typeof u.cost === 'string' && u.cost ? t('mfd.cmpUseCost', {t: tokShort(u.tokens), c: u.cost, p}) : t('mfd.cmpUse', {t: tokShort(u.tokens), p});
 }
-// The bottom key row while the comparison is shown (round D1): back to the page underneath, fast mode in the trial
-// (both states printed, only for a tool with a fast mode; otherwise a dark key) only. The two keys share the footer width.
+// The bottom key row while the comparison is shown: fast mode in the trial (both states printed, only for a tool with a
+// fast mode; otherwise a dark key). D405 (with D387): the strip keeps only this view's own actions; the "‹ back" key is
+// gone (a page key, Esc, the same card or empty fader space returns), and a dark spacer keeps the fast key on the right.
 export function compareKeys(d, ui, args, {back = ''} = {}) {
   const s = cmpState(d, ui, args);
   const fast = s?.tier
     ? `<button class="ok soft vk-fast" data-mfd="fast" data-mat="part" aria-pressed="${s.trialFast}" aria-label="${esc(t('mfd.kFastAria', {on: t(s.trialFast ? 'mfd.fastOn' : 'mfd.fastOff')}))}"><span class="ok-l"><i class="vk-g" aria-hidden="true">${bolt()}</i><span class="vk-n">${t('mfd.kFast')}</span><b class="${s.trialFast ? '' : 'on'}">${t('mfd.fastOff')}</b><i class="ok-sep" aria-hidden="true"></i><b class="${s.trialFast ? 'on' : ''}">${t('mfd.fastOn')}</b></span></button>`
     : `<span class="ok soft off vk-fast" data-mat="part" aria-hidden="true"></span>`;
-  return `<div class="mfd-ok mfd-vk" role="toolbar" aria-label="${esc(t('mfd.vkAria'))}"><button class="ok soft vk-back" data-mfd="back" data-mat="part" aria-label="${esc(t('mfd.backAria', {p: back}))}"><span class="ok-l">${esc(t('mfd.kBack', {p: back}))}</span></button>${fast}</div>`;
+  return `<div class="mfd-ok mfd-vk" role="toolbar" aria-label="${esc(t('mfd.vkAria'))}"><span class="ok soft off vk-pad" data-mat="part" aria-hidden="true"></span>${fast}</div>`;
 }
 const cmpClick = (act, val, ui, d, args) => {
   if (act === 'try') return {trial: {...args, trial: val}};

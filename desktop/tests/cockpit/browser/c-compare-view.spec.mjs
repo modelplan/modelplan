@@ -52,7 +52,8 @@ test('CKP-MFD compare: a fader trial opens the comparison with the two share bar
  // fit beside the hint, so the one guaranteed link is a bare ↗ named by its tooltip.
  await expect(screen.locator('.cmp-foot .cmp-links a')).toHaveCount(1);
  await expect(screen.locator('.cmp-foot .cmp-links a')).toHaveAttribute('title','Compare on the website');
- await expect(page.locator('.mfd-ok.mfd-vk .vk-back')).toHaveText('‹ Overview');
+ // D405 (with D387): no back key on the bottom strip; it keeps only this view's own action (fast).
+ await expect(page.locator('.mfd-ok.mfd-vk .vk-back')).toHaveCount(0);
  await expect(page.locator('.mfd-ok.mfd-vk .vk-fast')).toHaveCount(1);
  await expect(page.locator('.mfd-pk')).toHaveClass(/dark/);await expect(page.locator('.mfd-pk .pk.on')).toHaveCount(0);
  // The fader shows the trial: ghost cap and blue "Try XHigh" on its card (WP-08: the lamp shows sessions only, CKP-FAD-55).
@@ -70,7 +71,7 @@ test('CKP-MFD compare: the effort keys move the trial, one trial at a time, and 
  await second.locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
  await expect(page.locator('.mfd-title')).toHaveText('Effort · Astra 6');
  await expect(page.locator('.fd-ch.trying')).toHaveCount(1);
- await page.locator('.mfd-vk .vk-back').click();
+ await page.locator('.mfd-pk .pk').first().click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);await expect(page.locator('.mfd-pk .pk.on')).toHaveCount(1);
  await expect(page.locator('.fd-ch.trying')).toHaveCount(0);
  // Esc returns too, and pressing the LCD again toggles the card.
@@ -137,13 +138,13 @@ test('CKP-MFD compare: Chinese labels match the study',async({page})=>{
  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
  await expect(page.locator('.mfd-title')).toHaveText('档位 · Sol 6.1');
  await expect(page.locator('.cmp-foot .cmp-links a')).toHaveText(['在网站上对比 ↗','怎么算的 ↗']);
- await expect(page.locator('.mfd-vk .vk-back')).toHaveText('‹ 返回 总览');
+ await expect(page.locator('.mfd-vk')).not.toContainText('返回');
 });
 
-test('CKP-MFD compare: the back key is named "Back …" for assistive tech, and a HUD row opens the Effort page instead',async({page})=>{
+test('CKP-MFD compare: no back key on the bottom strip (D405/D387), and a HUD row opens the Effort page instead',async({page})=>{
  await open(page);
  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
- await expect(page.locator('.mfd-vk .vk-back')).toHaveAttribute('aria-label',/^Back /);
+ await expect(page.locator('.mfd-vk .vk-back')).toHaveCount(0);
  await page.locator('.hud-list .hp').first().click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-tune/);
  await expect(page.locator('.fd-ch.trying')).toHaveCount(0);
@@ -175,7 +176,7 @@ test('CKP-FAD-11 fast key: a published speed tier lights the LCD lamp and the Of
  await open(page,'en',true);
  const fader=name=>page.locator('.fd-ch:not(.empty)').filter({hasText:name}).first();
  const trial=async name=>{const f=fader(name);await f.locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');await expect(page.locator('.mfd-page.pg-compare')).toBeVisible();return f;};
- const back=()=>page.locator('.mfd-vk .vk-back').click();
+ const back=()=>page.locator('.mfd-pk .pk').first().click();
  const key=page.locator('.mfd-vk button.vk-fast');
  // Overview: a model with a tier shows the fast lamp on its LCD (off until a fast session or trial), one without shows none.
  await expect(fader('Sol').locator('.fd-indicator')).toHaveAttribute('data-fast-mode','off');
@@ -279,7 +280,7 @@ test('CKP-FAD-24 fast symbol: ⚡ beside the lamp shows the real fast mode (whit
  await page.locator('.mfd-vk button.vk-fast').click();
  await expect(solFader.locator('.fd-fast')).toHaveAttribute('data-fast-state','on');
  // a model with no fast mode (Astra) shows none
- await page.locator('.mfd-vk .vk-back').click();
+ await page.locator('.mfd-pk .pk').first().click();
  await expect(page.locator('.fd-ch:not(.empty)').filter({hasText:'Astra'}).first().locator('.fd-fast')).toHaveCount(0);
 });
 test('CKP-FAD-24 fast symbol: a trial that turns fast on shows a solid blue ⚡; standard mode shows none',async({page})=>{
