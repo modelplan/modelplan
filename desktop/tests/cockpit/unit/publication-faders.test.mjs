@@ -48,8 +48,8 @@ test('D123 order: in use by recency, then starred recommendations, then others b
  assert.deepEqual(faders.map(f=>f.id),['newer','old','rec1','rec2','rec3','high','stale','low']);
  const all=publicationFaders(publication,live,more,subs,{now,ownPlansOnly:false}).faders.map(f=>f.id);
  assert.ok(all.includes('foreign'));
- // A subscription with no known developer cannot be matched, so nothing is filtered out.
- assert.ok(publicationFaders(publication,[],more,[...subs,{key:'s2',developer:null,colour:'#fff'}],{now,ownPlansOnly:true}).faders.some(f=>f.id==='foreign'));
+ // An unknown developer does not make unrelated unused models eligible.
+ assert.ok(!publicationFaders(publication,[],more,[...subs,{key:'s2',developer:null,colour:'#fff'}],{now,ownPlansOnly:true}).faders.some(f=>f.id==='foreign'));
 });
 
 test('D135 models used in the last 7 days stay even when no own plan offers them; others are still filtered',()=>{

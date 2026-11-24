@@ -5,8 +5,9 @@
 import {ht} from './host-text.js';
 import {accountLabel,updatedCopy,accountState,footerState} from './account-line.js';
 import {effectiveRedBelow} from './threshold.js';
-import type {WireCockpitData,WireWindow} from '../generated/wire.js';
+import type {WireCockpitData,WireWindow,WireAccount} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
+import {INITIAL_RANGE,type CockpitRange} from './range.js';
 import {cockpitMembers} from './members.js';
 import {memberColours} from './session-binding.js';
 import {NEUTRAL} from './livery.js';
@@ -26,8 +27,29 @@ const general=(w:WireWindow)=>!w.modelScope&&w.poolKey==='main'&&(w.role==='sess
 // CKP-ENG-53 / WP-06 (#1050): the range row's ≈cost reads the supplement's optional estCost for today when it is
 // present; absent (no price, or WP-06 not merged) means no ≈$, never a guess.
 const rangeCost=(detail:object):number|null=>{const usd=(detail as {estCost?:{today?:{usd?:unknown}|null}|null}).estCost?.today?.usd;return typeof usd==='number'&&Number.isFinite(usd)&&usd>0?usd:null;};
+// CKP-ENG-53 (G3-156): the column's range row follows the header range. Today: the supplement's today row (tokens, average
+// speed) and its ≈cost; 7d / 30d: the subscription's history sums over its bound sources (tokens summed, speed only when one
+// source stands alone since averages need their denominators) and the ≈cost of its priced days. History read but nothing
+// recorded in the range is "no usage", never "quota only" (which is for a subscription with no usage record at all).
+const dayKeyOf=(at:number)=>{const d=new Date(at);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+function rangeFields(account:WireAccount,data:WireCockpitData,detail:ReturnType<typeof prototypeEngineSupplement>,range:CockpitRange){
+ const ref=account.subscriptionRef,sub=ref===null?undefined:data.history?.subscriptions.find(h=>h.subscriptionRef===ref);
+ const sources=new Set((sub?.sources??[]).map(x=>x.source)),readHistory=sources.size>0;
+ const days=range==='today'?1:range==='7d'?7:30,clock=new Date(),keys=new Set(Array.from({length:days},(_,i)=>dayKeyOf(new Date(clock.getFullYear(),clock.getMonth(),clock.getDate()-i).getTime())));
+ let usd:number|null=null;
+ if(readHistory&&data.history?.cost?.basis==='api-list-price'){let sum=0;for(const b of data.history.cost.daily)if(sources.has(b.source)&&keys.has(b.at)&&b.pricedTokens>0)sum+=b.estimatedUsd;if(sum>0)usd=sum;}
+ let tokens:number|null=null,speed:number|null=null;
+ if(range==='today'){tokens=detail.todayTokens;speed=detail.todayAverageGenerationTps;usd=rangeCost(detail)??usd;}
+ else if(sub&&sub.sources.every(x=>x.bindingBasis==='source-wide-current-binding')){
+  let sum=0,requests=0;for(const x of sub.sources){const w=range==='7d'?x.recent7d:x.recent30d;sum+=w.totalTokens??w.outputTokens;requests+=w.observedRequests;}
+  if(requests>0&&sum>=0)tokens=sum;
+  if(tokens!==null&&sub.sources.length===1){const g=(range==='7d'?sub.sources[0]!.recent7d:sub.sources[0]!.recent30d).generationTps;speed=g!==null&&g>=0?g:null;}
+ }
+ const noUsage=readHistory&&tokens===null&&usd===null;
+ return {support:tokens!==null||usd!==null?'observed':'quota-only',noUsage,todayAverageGenerationTps:speed,todayTokens:tokens,rangeCost:usd};
+}
 const updatedText=(at:number,now:number,locale:Appearance['locale'])=>{const c=updatedCopy(at,now);return ht(locale,c.key,{n:c.n});};
-export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,onSelect:(key:string)=>boolean,onAdd:()=>boolean,priorPage=0,initialNow=0,redBelow:()=>number=()=>effectiveRedBelow(undefined),showUsed:()=>boolean=()=>false,onRefresh:(key:string)=>boolean=()=>false):{table:HTMLElement;applyScope:(scope:string)=>void;refresh:(now?:number)=>void;setLocale:(value:Appearance['locale'],now:number)=>void;focusIdentity:(element:HTMLElement)=>string|null;fit:()=>void}|null {
+export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,onSelect:(key:string)=>boolean,onAdd:()=>boolean,priorPage=0,initialNow=0,redBelow:()=>number=()=>effectiveRedBelow(undefined),showUsed:()=>boolean=()=>false,onRefresh:(key:string)=>boolean=()=>false,range:()=>CockpitRange=()=>INITIAL_RANGE):{table:HTMLElement;applyScope:(scope:string)=>void;setRange:()=>void;refresh:(now?:number)=>void;setLocale:(value:Appearance['locale'],now:number)=>void;focusIdentity:(element:HTMLElement)=>string|null;fit:()=>void}|null {
  const members=cockpitMembers(data);if(!members.length)return null;
  const seen=new Map(members.map(x=>[x.key,x]));let scope=seen.has(priorScope)?priorScope:'',page=Number.isSafeInteger(priorPage)?Math.max(0,Math.min(priorPage,Math.ceil(members.length/6)-1)):0;
  const host=document.createElement('div');host.className='u11-engine-table s6-page';const focusIdentities=new WeakMap<HTMLElement,string>();
@@ -50,7 +72,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   // G3-109: a money balance (Grok Build) has no credits/points; the reserve row shows it in its reported currency.
   const money=moneyText(account.credits,locale);
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(label),short:esc(label),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,rangeCost:rangeCost(detail),usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
+  return {id:esc(key),name:esc(label),short:esc(label),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
@@ -76,7 +98,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  };
  let renderedNow=initialNow;
  const paint=(time?:number)=>{
-  if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:showUsed()?'used':'left',redAt:redBelow(),ack:null,lang:locale,now};
+  if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,range:range(),tint:true,pctMode:showUsed()?'used':'left',redAt:redBelow(),ack:null,lang:locale,now};
   const {model,plugins:pluginPage}=pagedModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));// Unknown vendors have no mark: drop the study's neutral placeholder before parsing so nothing is requested.
   plugins?.hold();// D323: a focused drawn plugin control is taken back by its new column
   host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now}).replaceAll('<img class="lamp" src="assets/brands/../../neutral.png" alt="">','');
@@ -155,5 +177,5 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   if(b.hasAttribute('data-bpage')){const step=b.dataset.bpage==='1'?1:b.dataset.bpage==='-1'?-1:0;page=Math.max(0,Math.min(pageCount()-1,page+step));paint();}
  };
  const applyScope=(next:string)=>{scope=next!=='all'&&seen.has(next)?next:'';if(scope){const index=members.findIndex(m=>m.key===scope);page=pageOf(index);}paint();};
- plugins?.bindEngine(()=>paint());paint();return {table:host,applyScope,refresh:paint,setLocale(value,now){locale=value;paint(now);},focusIdentity(element){return focusIdentities.get(element)??null;},fit};
+ plugins?.bindEngine(()=>paint());paint();return {table:host,applyScope,setRange(){paint();},refresh:paint,setLocale(value,now){locale=value;paint(now);},focusIdentity(element){return focusIdentities.get(element)??null;},fit};
 }

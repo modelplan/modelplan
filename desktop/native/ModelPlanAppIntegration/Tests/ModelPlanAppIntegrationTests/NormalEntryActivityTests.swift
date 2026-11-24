@@ -194,7 +194,7 @@ private actor ActivityJourneyEngine: EngineClient {
             let root=FileManager.default.temporaryDirectory.appendingPathComponent("activity-"+tool+"-"+UUID().uuidString)
             defer { try? FileManager.default.removeItem(at:root) }
             var osReduced=false
-            let app=try entry(fixture(phase:"tool",sequence:1,tool:tool),root:root,systemReduceMotion:{osReduced})
+            let app=try entry(fixture(phase:nil,sequence:1,tool:tool),root:root,systemReduceMotion:{osReduced})
             try await app.foundationStore.update { $0.autoHide=false }
             let host=app.composition.dock
             var rotations:[String:Double]=[:]
@@ -202,6 +202,10 @@ private actor ActivityJourneyEngine: EngineClient {
             await app.prepare(); app.updateSystemAccessibility(.init())
             await app.composition.start(); app.allowDockPresentation()
             host.refreshDockContent()
+            XCTAssertTrue(rotations.isEmpty,tool)
+            XCTAssertTrue(host.activeWorkingEffectIDs.isEmpty,tool)
+            let engine=try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+            try await engine.publish(fixture(phase:"tool",sequence:2,tool:tool))
             XCTAssertEqual(rotations,[first:2],tool)
             osReduced=true;host.refreshDockContent()
             XCTAssertTrue(rotations.isEmpty,tool)
@@ -209,8 +213,7 @@ private actor ActivityJourneyEngine: EngineClient {
             XCTAssertEqual(host.activeWorkingEffectIDs,[first],"Reduce Motion holds the approved frame static")
             osReduced=false;host.refreshDockContent()
             XCTAssertEqual(rotations,[first:2],tool)
-            let engine=try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
-            try await engine.publish(fixture(phase:nil,sequence:2,tool:tool))
+            try await engine.publish(fixture(phase:"finished",sequence:3,tool:tool))
             XCTAssertTrue(host.activeWorkingEffectIDs.isEmpty,tool)
             await app.composition.stop()
         }

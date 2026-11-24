@@ -631,19 +631,17 @@ func parseZCodeBilling(r zcodeBillingResponse, now time.Time) codexbarEntry {
 }
 
 // zcodeProviderFileKeyless: ZCode's provider file selects no key (no selection, an account
-// selection, or a selected rule without a key), so the key route can never read. The file is read
-// only when its size or time changed (paths are built every watcher pass); the key, if any, is
-// dropped at once and only the verdict is kept.
+// selection, or a selected rule without a key), so the key route can never read.
+// The admitted scan reads each file revision once and keeps only the verdict.
 var zcodeProviderRead = zaiConfigFile
 
 // Discovery may use a previous admitted classification, but never opens the
 // provider file itself. A changed file requires another admitted scan.
 func zcodeProviderCachedKeyless(path string) bool {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.Mode().IsRegular() {
+	stamp := zcodeProviderRevision(path)
+	if stamp == "" {
 		return false
 	}
-	stamp := strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
 	zcodeKeylessMu.Lock()
 	defer zcodeKeylessMu.Unlock()
 	m, ok := zcodeKeylessMemo[path]
@@ -651,11 +649,10 @@ func zcodeProviderCachedKeyless(path string) bool {
 }
 
 func zcodeProviderFileKeyless(path string) bool {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.Mode().IsRegular() {
+	stamp := zcodeProviderRevision(path)
+	if stamp == "" {
 		return false
 	}
-	stamp := strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
 	zcodeKeylessMu.Lock()
 	defer zcodeKeylessMu.Unlock()
 	if m, ok := zcodeKeylessMemo[path]; ok && m.stamp == stamp {
@@ -664,6 +661,10 @@ func zcodeProviderFileKeyless(path string) bool {
 	b, err := zcodeProviderRead(path)
 	if err != nil {
 		return false // An I/O failure is not a classification; retry on the next pass.
+	}
+	defer clear(b)
+	if zcodeProviderRevision(path) != stamp {
+		return false
 	}
 	_, key, state, code := zcodeProviderKey(b)
 	keyless := (state != "" && (code == "unsupported_login" || code == "no_key")) || (state == "" && strings.TrimSpace(key) == "")

@@ -11,7 +11,7 @@
 // Spec: the component's INTEGRATION-SPEC 1.1.0 and the r7 FINAL SPEC (confirm 2026-11-18/03).
 import {FIELD_LIMIT,provisionalIds,windowModel,type PublishedModel,type WindowModel} from './field-model.js';
 
-interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly lowPower?:boolean;readonly contrast?:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null;readonly asOf?:string|null}
+interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly lowPower?:boolean;readonly contrast?:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly onlyMine?:boolean;readonly focus:string|null;readonly asOf?:string|null}
 interface Live {readonly contrast?:boolean;readonly reduceMotion?:boolean}
 type Language='en'|'zh';
 interface LaunchWindow {update(next:Record<string,unknown>):void;setOptions(next:{contrast?:'more'|'normal';reducedMotion?:boolean|null;language?:Language}):void;setSelection(id:string|null):void;dispose():void}
@@ -41,7 +41,7 @@ function mount(root:HTMLElement) {
    asOf=typeof value.asOf==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value.asOf)?value.asOf:null;
    focus=value.focus!==null&&known.has(value.focus)?value.focus:null;
    // My models first, else the publication's order; a rocket clicked in the porthole joins (the last of a full fleet makes room).
-   shown=(mine.length?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT);
+   shown=(mine.length||value.onlyMine?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT);
    if(focus!==null&&!shown.includes(focus))shown=[...shown.slice(0,FIELD_LIMIT-1),focus];
    if(!models.length){post({type:'failed'});return;}
    mode='loading';
