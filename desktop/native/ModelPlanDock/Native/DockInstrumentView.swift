@@ -490,9 +490,14 @@ enum DockGripInk {
             // the same immutable skin. Data withdrawal still retires all readings.
             let matchingMaterial = reusesPreparedMaterial && officialRenderer === renderer &&
                 self.scale == renderScale && appliedGeometryScale == factor && self.hoverViewport == viewport
-            if matchingMaterial, !failed, restingInstrumentImage != nil, self.locale == locale,
-               readings == values, self.notices == notices, orderedIDs == rows.map(\.subscriptionID),
-               readoutHolds.isEmpty, refreshSweepRing == nil { return }
+            // Skip only when everything this face renders is unchanged and the view is at rest: no hover, glow,
+            // nozzle pose, notice pulse, working effect or carried (hover-viewport) image, and its resting frame.
+            if matchingMaterial, !failed, let resting = restingInstrumentImage, image === resting, !imageUsesHoverViewport,
+               self.locale == locale, readings == values, self.notices == notices, orderedIDs == rows.map(\.subscriptionID),
+               readoutHolds.isEmpty, refreshSweepRing == nil, hotGlow == nil, hoveredGripIndex == nil,
+               nozzlePosesForChecks.isEmpty, noticePulseLayers.isEmpty,
+               workingLayerParents.values.allSatisfy({ $0.sublayers?.isEmpty ?? true }),
+               frame.size == (viewport?.size ?? skin.bounds.size) { return }
             let backing = matchingMaterial ? backgroundImage : nil
             resetVisuals()
             self.hoverViewport = viewport
