@@ -599,8 +599,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     var verificationProbe: ((@escaping @MainActor (String?) -> Void) -> Void)?
     var verificationHealth: CockpitPageHealth { health }
     func verificationWake() { grantHealthGrace(); freshnessDriver.notify(.wake) }
-    /// The window facts `visibilityChanged` reads, for a no-window page; `shown` marks the page as opened.
-    var verificationNoWindowVisibility: CockpitVisibility?
+    /// Window facts for test pages without a real display, or on a synthetic display.
+    public var verificationNoWindowVisibility: CockpitVisibility?
     /// The bridge.ts reject code a fake `.rejected` completion carries (the real path parses "rejected:<code>").
     var verificationRejectCode: String?
     /// A no-window page shown before it is ready, as open() shows a cold page: liveness runs and bootstrap is watched.
