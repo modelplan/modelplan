@@ -48,8 +48,6 @@ import ModelPlanWire
     /// The row whose ⌥↑ / ⌥↓ move is in flight: the keyboard selection returns to it after the list is redrawn.
     private var keyboardRowID: String?
     private var keyboardMoveAt = Date.distantPast
-    /// D371: the cockpit plugins section. Settings mounts it right after "My subscriptions", on the same grid.
-    public var pluginSection: NSView? { didSet { if pluginSection !== oldValue, compactTools, rowsContext != nil { render() } } }
     /// Key-only tools whose "Add key" fix was pressed: their key entry stays open on the row.
     private var keyEntryOpen: Set<String> = []
     /// Providers whose entry is already on a row in the current render (one view can sit in one place).
@@ -198,11 +196,6 @@ import ModelPlanWire
         addArrangedSubview(row); row.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
         let line = SettingsGrid.divider()
         addArrangedSubview(line); line.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
-    }
-    /// D371: the plugins section sits right after the subscription rows, on the same width.
-    private func mountPluginSection() {
-        guard let section = pluginSection else { return }
-        addArrangedSubview(section); section.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
     }
     private func button(_ text: SettingsText, id: String, enabled: Bool = true,
                         action: @escaping @MainActor () async -> Void) -> ScopeConsentButton {
@@ -637,7 +630,7 @@ import ModelPlanWire
         }
         if firstRun { renderFirstRunChooser(); return }
         let rowsMode = compactTools && rowsContext != nil
-        if rowsMode, let context = rowsContext { renderSubscriptionRows(context); mountPluginSection(); gap() }
+        if rowsMode, let context = rowsContext { renderSubscriptionRows(context); gap() }
         // D371: in Settings the reading permission, the two tool plugins and the read paths are rows (name and note on the
         // left, the button on the right, a thin line between), under one heading. The first-run page keeps its own layout.
         if rowsMode { label(.init("Read access and tool plugins", "读取和工具插件"), heading: true) }

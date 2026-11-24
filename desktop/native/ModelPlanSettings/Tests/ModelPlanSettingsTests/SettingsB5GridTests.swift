@@ -145,34 +145,47 @@ import ModelPlanWire
         XCTAssertFalse(pending.acceptsFirstResponder, "an unverified row cannot be reordered")
     }
 
-    /// Points 9 and 10, plus 11 and 12: plugins come right after "My subscriptions" on the same grid, then the read access
-    /// rows with their buttons on the right and a line between rows.
-    func testPluginsFollowSubscriptionsAndReadAccessAreRows() async throws {
+    /// Points 9 and 10, plus 11 and 12, with D376: the plugins have their own pane (no longer inside the Subscriptions
+    /// surface) but keep the subscription rows' grid when both span the window's column; the read access rows are rows
+    /// with their buttons on the right and a line between rows.
+    func testPluginsKeepTheSubscriptionGridOnTheirOwnPaneAndReadAccessAreRows() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("b5-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let model = CockpitPluginSettingsModel(store: CockpitPluginStore(directory: directory))
         let plugins = SettingsCockpitPluginsView(model: model, language: .chinese)
-        plugins.apply(language: .chinese, paneID: "subscriptions", query: "")
+        plugins.apply(language: .chinese, paneID: "plugins", query: "")
         let view = try page()
-        view.pluginSection = plugins
-        view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(all(view).contains { $0 === plugins }, "D376: the Subscriptions surface no longer holds the plugins")
+        XCTAssertNil(find(view, "settings.cockpitPlugins.calendar.enabled", NSView.self))
+        // The window's content column: both views take its full width.
+        let column = NSStackView(views: [view, plugins])
+        column.orientation = .vertical; column.alignment = .leading; column.spacing = 0
+        column.frame = NSRect(x: 0, y: 0, width: 760, height: 2000)
+        for child in [view, plugins] { child.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true }
+        column.layoutSubtreeIfNeeded()
         let order = view.arrangedSubviews
-        let rowsIndex = try XCTUnwrap(order.firstIndex { $0.accessibilityIdentifier() == "subscriptions.rows" })
-        let pluginIndex = try XCTUnwrap(order.firstIndex { $0 === plugins })
         let readIndex = try XCTUnwrap(order.firstIndex { $0.accessibilityIdentifier() == "scope.row.permissions" })
-        XCTAssertLessThan(rowsIndex, pluginIndex); XCTAssertLessThan(pluginIndex, readIndex, "the plugins come before the read access rows")
         // Same grid: a plugin's switch, grip and arrows are on the subscription rows' x lines.
         for (plugin, subscription) in [("enabled", "visible"), ("up", "up"), ("down", "down")] {
-            let p = rect(try XCTUnwrap(find(view, "settings.cockpitPlugins.calendar.\(plugin)", NSView.self)), in: view).minX
-            let s = rect(try XCTUnwrap(find(view, "subscriptions.\(subscription).a", NSView.self)), in: view).minX
+            let p = rect(try XCTUnwrap(find(plugins, "settings.cockpitPlugins.calendar.\(plugin)", NSView.self)), in: column).minX
+            let s = rect(try XCTUnwrap(find(view, "subscriptions.\(subscription).a", NSView.self)), in: column).minX
             XCTAssertEqual(p, s, accuracy: 1, "plugin \(plugin) shares the subscription \(subscription) column")
         }
         // The pin switch sits in the sub-row, off by default, in the same switch column.
-        let pin = try XCTUnwrap(find(view, "settings.cockpitPlugins.calendar.pinned", NSButton.self))
+        let pin = try XCTUnwrap(find(plugins, "settings.cockpitPlugins.calendar.pinned", NSButton.self))
         XCTAssertEqual(pin.state, .off, "pinning is off by default")
         XCTAssertEqual(pin.title, "固定到驾驶舱第 1 页")
-        XCTAssertEqual(rect(pin, in: view).minX, rect(try XCTUnwrap(find(view, "settings.cockpitPlugins.calendar.enabled", NSView.self)), in: view).minX, accuracy: 1)
+        XCTAssertEqual(rect(pin, in: column).minX, rect(try XCTUnwrap(find(plugins, "settings.cockpitPlugins.calendar.enabled", NSView.self)), in: column).minX, accuracy: 1)
+        // D376: the resource sampling note starts at the sub-row's 38 pt indent, under the options line.
+        let sampling = try XCTUnwrap(find(plugins, "settings.cockpitPlugins.resources.samplingNote", NSTextField.self))
+        let row = try XCTUnwrap(find(plugins, "settings.cockpitPlugins.resources", NSStackView.self))
+        // Measured on the label's alignment rect: a stack view places a label's text edge, and its frame overhangs that
+        // edge by the label's alignment inset (2 pt).
+        XCTAssertEqual(rect(sampling, in: column).minX + sampling.alignmentRectInsets.left - rect(row, in: column).minX,
+                       SettingsGrid.mark + SettingsGrid.gap, accuracy: 1)
+        XCTAssertEqual(row.arrangedSubviews.suffix(2).map { $0.accessibilityIdentifier() },
+                       ["settings.cockpitPlugins.resources.options", "settings.cockpitPlugins.resources.samplingLine"], "directly under the options line")
         // Reading permissions: name and note left, the buttons right of them.
         let readRow = order[readIndex]
         let note = try XCTUnwrap(all(readRow).compactMap { $0 as? NSTextField }.first { $0.stringValue == "读取权限" })

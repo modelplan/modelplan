@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 
-/// Settings › Subscriptions › "Plugins" (CKP-PLG-54, D293, D371): one row per plugin on the same column grid as "My
-/// subscriptions" (icon, name and one sentence, an empty alias cell, a switch, a grip, up, down). Under each row a small
-/// indented line holds the plugin's options (for example the sampling interval as one segmented control) and the
-/// "Pin to cockpit page 1" switch (at most two; off by default). Turning a plugin off here is the same edit as Remove in
-/// the cockpit key's right-click menu. Shown on the Subscriptions pane, right after "My subscriptions", and for matching
-/// searches.
+/// Settings › Plugins (CKP-PLG-54, D293, D371, D376): one row per plugin on the same column grid as "My subscriptions"
+/// (icon, name and one sentence, an empty alias cell, a switch, a grip, up, down). Under each row a small indented line
+/// holds the plugin's options (for example the sampling interval as one segmented control) and the "Pin to cockpit
+/// page 1" switch (at most two; off by default); the resource plugin has its sampling note under that line. Turning a
+/// plugin off here is the same edit as "Turn Off <plugin>…" on the widget ring, its card and the cockpit key
+/// (`CockpitPluginCloser`). D376: shown on its own Plugins pane, right after Subscriptions, and for matching searches.
 @MainActor public final class SettingsCockpitPluginsView: NSView {
     public let model: CockpitPluginSettingsModel
     private var language: SettingsLanguage
@@ -22,8 +22,9 @@ import AppKit
         translatesAutoresizingMaskIntoConstraints = false
         setAccessibilityIdentifier("settings.cockpitPlugins"); isHidden = true
         heading.font = .systemFont(ofSize: 13, weight: .semibold)
-        heading.setAccessibilityIdentifier("settings.section.subscriptions.plugins")
+        heading.setAccessibilityIdentifier("settings.section.plugins")
         note.font = .systemFont(ofSize: 12); note.textColor = .secondaryLabelColor
+        note.setAccessibilityIdentifier("settings.cockpitPlugins.note")
         list.orientation = .vertical; list.alignment = .leading; list.spacing = 0
         let stack = NSStackView(views: [heading, note, list])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
@@ -38,15 +39,25 @@ import AppKit
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
 
-    /// The pane that shows the section (WP-16 moved it from Cockpit to Subscriptions).
-    public static let paneID = "subscriptions"
+    /// The pane that shows the section (WP-16 moved it from Cockpit to Subscriptions; D376 gave it its own pane).
+    public static let paneID = "plugins"
+    /// Words a search names the section by (D376).
+    static let searchWords = ["plugin", "插件", "resource", "资源", "calendar", "日历", "cockpit", "驾驶舱"]
+    /// D376 / D324: the resource plugin's cadence note under its options line.
+    static func samplingNote(_ pluginID: String) -> SettingsText? {
+        pluginID == "resources"
+            ? .init("Every 2, 5 or 10 s while the cockpit is open · every 10 s with only the Quota Widget", "驾驶舱打开时 每 2、5、10 秒 · 只有额度挂件时每 10 秒")
+            : nil
+    }
     /// The pasteboard type of a plugin row's grip: plugin rows reorder among themselves only.
     static let dragType = NSPasteboard.PasteboardType("ai.modelplan.settings.plugin-row")
-    /// Re-labels and shows the section on the Subscriptions pane, or for a search that names it.
+    /// Re-labels and shows the section on the Plugins pane, or for a search that names it. On the pane the window's
+    /// pane title ("插件") heads it; the section's own small heading is shown only among search results.
     public func apply(language: SettingsLanguage, paneID: String, query: String) {
         self.language = language
         isHidden = query.isEmpty ? paneID != Self.paneID
-            : !["plugin", "subscription", "cockpit", "插件", "订阅", "驾驶舱"].contains(where: { query.localizedCaseInsensitiveContains($0) })
+            : !Self.searchWords.contains(where: { query.localizedCaseInsensitiveContains($0) })
+        heading.isHidden = query.isEmpty
         rebuild()
     }
     private func text(_ en: String, _ zh: String) -> String { SettingsWords.text(en, zh, language) }
@@ -60,14 +71,14 @@ import AppKit
 
     /// One row per listed plugin, in the saved order. Owner 11-21: a framework test plugin (the placeholder) is never
     /// listed. Owner D124: an unpinned plugin takes a free column after the subscriptions, so with few subscriptions it
-    /// shows on page 1 without a pin; the note says so (B4).
+    /// shows on page 1 without a pin; the note says so (B4). D376: the note is one line; the pin limit lives in the pin
+    /// switch's disabled tooltip.
     /// Counts rebuilds, for the G3-161 checks (an unchanged catalogue and state must not rebuild the section).
     private(set) var rebuildCountForChecks = 0
     func rebuild() {
         rebuildCountForChecks += 1
         heading.stringValue = text("Plugins", "插件")
-        note.stringValue = text("Plugin columns come after your subscriptions in the cockpit and use free columns on the last page. A pinned plugin always stays on page 1 (at most two).",
-                                "插件列排在驾驶舱订阅的后面，占用最后一页的空位。固定的插件总在第 1 页（最多两个）。")
+        note.stringValue = text("Plugin columns come after your subscriptions.", "插件列显示在订阅后面")
         for view in list.arrangedSubviews { list.removeArrangedSubview(view); view.removeFromSuperview() }
         wrapping = []
         let prefs = model.preferences.materialized(model.catalogue)
@@ -196,11 +207,25 @@ import AppKit
         let sub = NSStackView(views: subViews)
         sub.orientation = .horizontal; sub.alignment = .centerY; sub.distribution = .fill; sub.spacing = SettingsGrid.gap
         sub.setAccessibilityIdentifier(base + ".options")
-        let rowColumn = NSStackView(views: [main, sub])
+        var lines: [NSView] = [main, sub]
+        // D376: the resource plugin's cadence, directly under the options line at the same 38 pt indent; dimmed with
+        // the control while the plugin is off.
+        if let note = Self.samplingNote(plugin.id) {
+            let hint = NSTextField(wrappingLabelWithString: note.value(language))
+            hint.font = .systemFont(ofSize: 11)
+            hint.textColor = entry.enabled ? .secondaryLabelColor : .tertiaryLabelColor
+            hint.setAccessibilityIdentifier(base + ".samplingNote")
+            hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            wrapping.append(hint)
+            let line = NSStackView(views: [SettingsGrid.spacer(SettingsGrid.mark + SettingsGrid.gap), hint])
+            line.orientation = .horizontal; line.alignment = .centerY; line.spacing = 0; line.distribution = .fill
+            line.setAccessibilityIdentifier(base + ".samplingLine")
+            lines.append(line)
+        }
+        let rowColumn = NSStackView(views: lines)
         rowColumn.orientation = .vertical; rowColumn.alignment = .leading; rowColumn.spacing = 2
         rowColumn.edgeInsets = .init(top: 0, left: 0, bottom: 8, right: 0)
-        main.widthAnchor.constraint(equalTo: rowColumn.widthAnchor).isActive = true
-        sub.widthAnchor.constraint(equalTo: rowColumn.widthAnchor).isActive = true
+        for line in lines { line.widthAnchor.constraint(equalTo: rowColumn.widthAnchor).isActive = true }
         rowColumn.setAccessibilityIdentifier(base)
         return rowColumn
     }
