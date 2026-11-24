@@ -398,6 +398,12 @@ func ReadDeclared(p Paths, now time.Time) Report {
 // reconnect and catalogue rollback cannot reset a provider's request budget.
 func ForgetTool(p Paths, tool string) error { return forgetTool(p, tool, true, false, "", "") }
 
+// ForgetToolGuarded is ForgetTool for a retried obligation; see EraseScopeGuarded.
+func ForgetToolGuarded(p Paths, tool string, guard consent.EraseGuard) error {
+	p.eraseGuard = guard
+	return forgetTool(p, tool, true, false, "", "")
+}
+
 func forgetTool(p Paths, tool string, history, identity bool, scopeClass, scope string) error {
 	admission, err := consent.ReaderLockWait()
 	if err != nil {
@@ -406,6 +412,9 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass, scope 
 	defer admission()
 	if !consent.ValidTool(tool) {
 		return errors.New("invalid tool")
+	}
+	if err := p.eraseGuard.Check(); err != nil {
+		return err
 	}
 	if tool == "codex" {
 		// Sampling 11-20 S1 follow-up: disconnecting Codex or erasing any of its scopes leaves

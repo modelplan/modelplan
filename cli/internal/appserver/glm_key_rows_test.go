@@ -57,7 +57,7 @@ func TestGLMKeyChangeClearsSubscribedRows(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(cache, "observed", "native.json"), data, 0600); err != nil {
 				t.Fatal(err)
 			}
-			backend, err := NewSharedBackend(SharedConfig{now: func() time.Time { return at }, Paths: paths, Cleanup: func(string, bool) error { return nil },
+			backend, err := NewSharedBackend(SharedConfig{now: func() time.Time { return at }, Paths: paths, Cleanup: func(string, bool, consent.EraseGuard) error { return nil },
 				Detect: func() detect.Report {
 					return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "zai", Preferred: "native", ReaderID: "native:zai"}, Detected: true}}}
 				},
