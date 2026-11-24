@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 ModelPlan. Owner-released G/P6 port; source 1d3f82429f1b853314ee120d4bd0007f84fc051d. */
 :root[data-theme]{--fd-unlit:#ffffff2b;--fd-eb:#e9edf03d}
-:root[data-theme="night"]{--fd-tick:#ffffff21;--fd-dot:#e9edf0e0;--fd-dot-ring:#00000000;--fd-dot-ink:#e9edf0}
+:root[data-theme="night"]{--fd-tick:#ffffff33;--fd-dot:#e9edf0e0;--fd-dot-ring:#00000000;--fd-dot-ink:#e9edf0}
 :root[data-theme="day"]{--fd-tick:#0000002e;--fd-dot:#ffffff;--fd-dot-ring:#0000007a;--fd-dot-ink:#15181c}
 
 
@@ -18,8 +18,8 @@
   background:linear-gradient(180deg,var(--tier-up-1,#ffffff04),var(--tier-up-2,#ffffff12));
   box-shadow:inset 0 -2px 0 var(--tier-edge,#ffffff40),0 5px 5px -2px var(--tier-crease,#000000d9)}
 .dk-fad::after{top:calc(var(--row-h,18px) + var(--key-gap,4px) + var(--fd-lcd) + 3px);bottom:-3px;border-radius:0 0 6px 6px;
-  clip-path:polygon(5% 0,95% 0,100% 100%,0 100%);
-  background:linear-gradient(180deg,var(--tier-low-1,#ffffff08),var(--tier-low-2,#ffffff2b) 86%,var(--tier-lip,#ffffff59) calc(100% - 4px),var(--tier-lip-shade,#00000080) calc(100% - 1px));
+  clip-path:polygon(calc((1 - var(--tq,.955)) * 58.5%) 0,calc(100% - (1 - var(--tq,.955)) * 58.5%) 0,100% 100%,0 100%);
+  background:linear-gradient(180deg,var(--tier-low-1,#ffffff12),var(--tier-low-2,#ffffff30) 86%,var(--tier-lip,#ffffff59) calc(100% - 4px),var(--tier-lip-shade,#00000080) calc(100% - 1px));
   box-shadow:inset -5px 0 6px -2px var(--tier-wall,#000000c0),inset 0 6px 6px -4px var(--tier-crease,#000000d9)}
 :root[data-theme="day"] .dk-fad{--tier-up-1:#0000000a;--tier-up-2:#ffffff2e;--tier-edge:#ffffffb3;--tier-crease:#00000066;--tier-low-1:#ffffff1a;--tier-low-2:#ffffff66;--tier-lip:#ffffffd9;--tier-lip-shade:#00000040;--tier-wall:#00000059}
 /* D405: the effort names, printed twice, in the two gaps between the levers (an overlay on the channel grid); 会话 heads the lamps. */
@@ -95,24 +95,39 @@
 .dk-fad .fd-travel{grid-row:5;position:relative;width:100%;height:100%;min-height:0;touch-action:none;cursor:ns-resize;outline-offset:2px}
 .dk-fad .fd-travel:focus-visible{outline:1.5px solid color-mix(in srgb,var(--silk-hi) 55%,transparent)}
 .dk-fad .fd-ch.empty .fd-travel{opacity:.5;cursor:default}
-.dk-fad .fd-slot{position:absolute;left:50%;top:2px;bottom:2px;width:4px;margin-left:-2px;border-radius:2px;background:var(--slot-deep);box-shadow:inset 0 1px 2px #000,0 1px 0 #ffffff10}
+/* D405 (owner 11-24): the slots and detent dashes are code-drawn on the tilted lever face. One geometry (fader-view TIER_Q,
+   copied to --tq by the page) places everything: each element at face row k moves towards the lever-area centre by
+   --ch-off x pitch x (1 - s(k)), with s(k) = tq + (1 - tq) k, so the slots converge together and the detents (levelK) close up
+   towards the top. The slot itself is an SVG drawn by the page (slotSvg); --slot-w sets its width. No CSS 3D anywhere. */
+.dk-fad{--slot-w:4px;--fd-pitch:calc(var(--fd-ch,64px) + var(--fd-gap,12px))}
+.dk-fad .fd-ch:nth-child(1){--ch-off:-1}.dk-fad .fd-ch:nth-child(2){--ch-off:0}.dk-fad .fd-ch:nth-child(3){--ch-off:1}
+.dk-fad .sc-travel[data-gap="1"]{--ch-off:-.5}.dk-fad .sc-travel[data-gap="2"]{--ch-off:.5}
+.dk-fad .fd-travel{container-type:size}
+.dk-fad .fd-travel>*,.dk-fad .fd-marks>*{--u:calc((100cqh - 2 * var(--fd-pad)) / 97)}
+.dk-fad :is(.fd-tick,.fd-rec,.fd-dot,.fd-cap,.fd-ghost,.fd-peek,.sc-l){--s:calc(var(--tq,1) + (1 - var(--tq,1)) * var(--k,0));translate:calc(var(--ch-off,0) * var(--fd-pitch) * (var(--s) - 1)) 0}
+.dk-fad .fd-tline{translate:calc(var(--ch-off,0) * var(--fd-pitch) * (var(--tq,1) + (1 - var(--tq,1)) * (var(--k0,0) + var(--k1,0)) / 2 - 1)) 0}
+.dk-fad .fd-slot{position:absolute;inset:0;pointer-events:none}
+.dk-fad .fd-slotsvg{position:absolute;left:0;top:0;overflow:visible}
+.dk-fad .fd-slotsvg .sl-core{fill:var(--slot-core,#0b0d10)}.dk-fad .fd-slotsvg .sl-shade{fill:var(--slot-shade,#000)}.dk-fad .fd-slotsvg .sl-lip{fill:var(--slot-lip,#ffffff2e)}
 .dk-fad .fd-tick,.dk-fad .fd-rec,.dk-fad .fd-dot,.dk-fad .fd-cap,.dk-fad .fd-ghost,.dk-fad .fd-peek{position:absolute;top:calc(var(--fd-pad) + (100% - 2 * var(--fd-pad)) * var(--k,0))}
-.dk-fad .fd-tick{left:calc(50% - 14px);width:28px;height:0;margin-top:-.5px;border-top:1px solid var(--fd-tick)}
+.dk-fad .fd-tick{left:50%;width:0;height:0}
+.dk-fad .fd-tick::before,.dk-fad .fd-tick::after{content:"";position:absolute;top:-.75px;width:calc(6.5 * var(--u) * var(--s));height:1.5px;background:var(--fd-tick)}
+.dk-fad .fd-tick::before{right:calc(4 * var(--u) * var(--s))}.dk-fad .fd-tick::after{left:calc(4 * var(--u) * var(--s))}
 
-.dk-fad .fd-rec{left:calc(50% + 13px);width:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--gold-metal);box-shadow:0 0 3px color-mix(in srgb,var(--gold-metal) 45%,transparent)}
-.dk-fad .fd-rec .g-star{position:absolute;left:4px;top:-3.5px;width:8px;height:8px;fill:var(--gold-metal)}
+.dk-fad .fd-rec{left:calc(50% + 12px);width:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--gold-metal);box-shadow:0 0 3px color-mix(in srgb,var(--gold-metal) 45%,transparent)}
+.dk-fad .fd-rec .g-star{position:absolute;left:3.5px;top:-3.5px;width:8px;height:8px;fill:var(--gold-metal)}
 /* D405: another effort a running session uses = a short glowing tick on the lever's left (was a white dot). */
 .dk-fad .fd-dot{left:calc(50% - 22px);width:6px;height:2px;margin-top:-1px;border-radius:1px;background:var(--fd-dot);box-shadow:0 0 4px #ffffffa6,0 0 0 .5px var(--fd-dot-ring)}
 .dk-fad .fd-dot b{position:absolute;right:7px;top:-3px;font:400 10px/1 var(--f-lcd);color:var(--fd-dot-ink)}
 .dk-fad .fd-ch.xhl .fd-dot{box-shadow:0 0 0 2px color-mix(in srgb,var(--silk-hi) 50%,transparent)}
 .dk-fad .fd-cap,.dk-fad .fd-ghost,.dk-fad .fd-peek{left:50%;width:30px;height:12px;margin:-6px 0 0 -15px;border-radius:2px}
 .dk-fad .fd-cap{z-index:1;background:repeating-linear-gradient(180deg,#ffffff26 0 1px,transparent 1px 2.4px),linear-gradient(180deg,#f1f3f4,#bcc1c6 46%,#8b9298 54%,#c8cdd1);
-  box-shadow:0 2px 3px #000b,0 0 0 .5px #000;transition:top .28s cubic-bezier(.3,.7,.2,1)}
+  box-shadow:0 2px 3px #000b,0 0 0 .5px #000;transition:top .28s cubic-bezier(.3,.7,.2,1),translate .28s cubic-bezier(.3,.7,.2,1)}
 .dk-fad .fd-cap::after{content:"";position:absolute;left:3px;right:3px;top:5.5px;height:1px;background:#fff;box-shadow:0 0 2px #fff}
 .dk-fad .fd-cap.parked{filter:brightness(.42) saturate(0)}
 .dk-fad .fd-ghost{z-index:2;pointer-events:none;border:1.5px solid var(--trial);
   background:repeating-linear-gradient(180deg,color-mix(in srgb,var(--trial) 18%,transparent) 0 1px,transparent 1px 2.4px),color-mix(in srgb,var(--trial) 24%,transparent);
-  box-shadow:0 0 8px color-mix(in srgb,var(--trial) 45%,transparent);transition:top .28s cubic-bezier(.3,.7,.2,1),opacity .1s linear}
+  box-shadow:0 0 8px color-mix(in srgb,var(--trial) 45%,transparent);transition:top .28s cubic-bezier(.3,.7,.2,1),translate .28s cubic-bezier(.3,.7,.2,1),opacity .1s linear}
 .dk-fad .fd-ghost::after{content:"";position:absolute;left:3px;right:3px;top:calc(50% - .5px);height:1px;background:var(--trial);box-shadow:0 0 3px var(--trial)}
 .dk-fad .fd-ghost.drag{transition:none}
 .dk-fad .fd-ghost.back{opacity:0;transition:top .28s cubic-bezier(.3,.7,.2,1),opacity .1s linear .2s}
@@ -128,8 +143,10 @@ body.reduced #cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s line
 @media(prefers-reduced-motion:reduce){#cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s linear!important}}
 
 
-#cockpit[data-layout="640"] .dk-fad{--fd-lcd:73px}
-#cockpit[data-layout="640"] .dk-fad .fd-strip{padding:6px 2px 3px 3px}
+/* D405: 72 px keeps the short travel at 97 px, so its top detents (closest under the tilt) stay 19.5 px apart (CKP-FAD-13). */
+#cockpit[data-layout="640"] .dk-fad{--fd-lcd:72px}
+#cockpit[data-layout="640"] .dk-fad .cd-use{line-height:12px}
+#cockpit[data-layout="640"] .dk-fad .fd-strip{padding:5px 2px 3px 3px}
 #cockpit[data-layout="640"] .dk-fad .cd-big,#cockpit[data-layout="640"] .dk-fad .cd-try{margin-top:2px}
 #cockpit[data-layout="640"] .dk-fad .cd-bar,#cockpit[data-layout="640"] .dk-fad .cd-use{margin-top:2px}
 #cockpit[data-layout="640"] .dk-fad .st-pin{top:9px}
