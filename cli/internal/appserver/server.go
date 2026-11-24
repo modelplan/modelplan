@@ -689,6 +689,7 @@ func (s *Server) scheduleRefresh() {
 	default:
 	}
 }
+
 // Retry delays for a failed change-driven rebuild: 250 ms doubling to 30 s.
 const (
 	refreshRetryFirst = 250 * time.Millisecond
