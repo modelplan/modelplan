@@ -208,6 +208,7 @@ var signalCodes = map[signalKey]Code{
 	// D369: ZCode's QR-code sign-in. Its own saved-login scope is off (the tool's local reader is
 	// implicit, so the tool-level consent cannot say so), or the sign-in has ended.
 	{SignalError, "consent_required"}: CodeConsentRequired,
+	{SignalError, "consent_denied"}:   CodeConsentDenied,
 	{SignalError, "login_expired"}:    CodeLoginExpired,
 }
 

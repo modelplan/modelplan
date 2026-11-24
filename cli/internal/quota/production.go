@@ -219,7 +219,12 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 	delete(p.ReaderAccess.Grants, "zai")
 	p.ZCodeNoProviderFile = false
 	if !state.AllowsScope(scope, mode) {
-		p.ZCodeLoginConsent = true
+		// Offer consent only for an undecided scope; a refusal stays refused (#1182 sampling).
+		if state.ScopeDenied(scope) {
+			p.ZCodeLoginDenied = true
+		} else {
+			p.ZCodeLoginConsent = true
+		}
 		return
 	}
 	fence := state.Fence()

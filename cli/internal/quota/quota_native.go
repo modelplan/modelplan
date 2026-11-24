@@ -222,6 +222,7 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 	}
 	// Classify the provider file only during a live, admitted read, under the
 	// consent reader lock. Route discovery itself remains metadata-only.
+	rerouted := false
 	if g, ok := p.ReaderAccessGrant("zai"); ok && g.ConfigSource != nil && g.ConfigSource.Tool == "zcode" &&
 		(selected == nil || selected["zai"]) && (g.StillValid == nil || g.StillValid()) {
 		if zcodeProviderFileKeyless(g.ConfigSource.SettingsPath) {
@@ -235,9 +236,16 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 			home, _ := os.UserHomeDir()
 			_, mode := consent.Current()
 			applyZCodeLogin(&p, home, state, mode, glmSourceConfigured(p))
+			rerouted = zcodeLoginRoute(p, "zai")
 		}
 	}
 	if scope, _ := ctx.Value(refreshScopeKey{}).(string); scope != "" && !zaiScopeMatches(p, scope) {
+		if rerouted {
+			// The memory-only keyless classification moved the route to the saved login during
+			// this check (first read after each engine start). Nothing was read or sent: defer
+			// with a quick retry, whose fresh plan follows the new route (#1182 sampling).
+			return fmt.Errorf("zai route moved to the saved login: %w", consent.ErrReaderBusy)
+		}
 		return errors.New("reader scope does not match selected route")
 	}
 	sessionRead := false
@@ -895,7 +903,7 @@ func credentialStageFailure(e readerEntry) bool {
 // With ZCode's QR-code sign-in present but its saved-login scope not allowed (D369), the fixed reason
 // is "consent required": the row offers the consent action and shows no data.
 func applyZCodeNoProviderFile(r *Report, p Paths) {
-	if !p.ZCodeNoProviderFile && !p.ZCodeLoginConsent {
+	if !p.ZCodeNoProviderFile && !p.ZCodeLoginConsent && !p.ZCodeLoginDenied {
 		return
 	}
 	// S6 (#1031 sampling): a selected, admitted pasted GLM key is a route that can run; its own
@@ -906,6 +914,10 @@ func applyZCodeNoProviderFile(r *Report, p Paths) {
 	cause := SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"}
 	if p.ZCodeLoginConsent {
 		cause = SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "consent_required", ErrorCode: "consent_required"}
+	}
+	if p.ZCodeLoginDenied {
+		// A refused saved-login scope is shown as refused and never offered again (#1182 sampling).
+		cause = SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "consent_denied", ErrorCode: "consent_denied"}
 	}
 	for i, s := range r.Sources {
 		if s.Source == "native:zai" {

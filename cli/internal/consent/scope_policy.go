@@ -193,6 +193,17 @@ func (s State) AllowsScope(id, mode string) bool {
 	return mode == Automatic || mode == Passive && (d.Class == Local || d.Class == Runtime || d.Class == ExplicitKey)
 }
 
+// ScopeDenied reports a recorded refusal of this scope (or of its access class within it).
+// An undecided or outdated scope is not denied: it may still be offered for consent.
+func (s State) ScopeDenied(id string) bool {
+	d, known := Definition(id)
+	if !known {
+		return false
+	}
+	r, decided := s.Scopes[id]
+	return decided && (!r.Allowed || r.DeniedSources[d.Class])
+}
+
 func (s State) scopeFor(tool, class string) string {
 	if class == Bridge {
 		return HelperScope(tool, s.Tools[tool].BrowserSession)
