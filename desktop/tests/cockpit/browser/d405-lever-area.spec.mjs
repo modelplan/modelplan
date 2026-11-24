@@ -7,6 +7,7 @@ import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {renderVisualDeck,visualFixture} from '../visual-fixture.mjs';
 import {build13Profile} from '../build13-fixture.mjs';
+import {levelK} from '../../../cockpit/study/rocket-r1/fader-view.js';
 
 // The CKP-FAD-24 throttle fixture (Sol ★Med current High, Opus ★Med current XHigh, GLM ★Max).
 const effort=(e,ability,cost,star=false)=>({effort:e,label:e,star,ability,cost,time:null});
@@ -38,6 +39,9 @@ async function openThrottles(page,{theme='night',tier='tall',height=890,glmEffor
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:throttleData({glmEfforts})}))).toBe(true);
  await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(3);
+ // D405: the code-drawn slots follow the travel's size; wait until they are drawn for the current one.
+ await page.waitForFunction(()=>[...document.querySelectorAll('.fd-ch .fd-travel')].every(t=>{const s=t.querySelector('.fd-slotsvg');return s&&Math.abs(Number(s.getAttribute('height'))-t.offsetHeight)<1;}));
+ await page.waitForFunction(()=>document.querySelectorAll('.fd-cap').length&&[...document.querySelectorAll('.fd-cap')].every(c=>!c.getAnimations().length));
  return {send,receive};
 }
 
@@ -59,14 +63,16 @@ for(const [tier,height] of [['tall',890],['compact',640]]){
   const cols=page.locator('.fd-scale .sc-travel');
   await expect(cols).toHaveCount(2);
   const ch=await channels(page).evaluateAll(list=>list.map(c=>{const r=c.getBoundingClientRect();return {l:r.left,r:r.right};}));
-  const gaps=[(ch[0].r+ch[1].l)/2,(ch[1].r+ch[2].l)/2];
+  // On the tilted face a gap's centre at a row is midway between its two slot lines at that row (D405, owner 11-24).
+  const lines=await slotGeometry(page),lineX=(c,y)=>{const p=c.pts,f=(y-c.box.top-p[0][1])/(p[3][1]-p[0][1]);return c.box.left+((p[0][0]+(p[3][0]-p[0][0])*f)+(p[1][0]+(p[2][0]-p[1][0])*f))/2;};
+  const gapAt=(i,y)=>(lineX(lines[i],y)+lineX(lines[i+1],y))/2;
   expect(ch[1].l-ch[0].r).toBeCloseTo(12,0);expect(ch[2].l-ch[1].r).toBeCloseTo(12,0);
-  for(const [i,gap] of gaps.entries()){
+  for(const i of [0,1]){
    const col=cols.nth(i);
    await expect(col.locator('.sc-l')).toHaveText(['Low','Med','High','XHigh','Max']);
    for(const level of ['Max','XHigh','High','Med','Low']){
     const label=await rect(col.locator(`.sc-l[data-level="${level}"]`)),first=await rect(cols.nth(0).locator(`.sc-l[data-level="${level}"]`));
-    expect(Math.abs(label.x-gap),`gap ${i+1} ${level} centred on the gap`).toBeLessThanOrEqual(1);
+    expect(Math.abs(label.x-gapAt(i,label.y)),`gap ${i+1} ${level} centred on the gap at its row`).toBeLessThanOrEqual(1);
     expect(Math.abs(label.y-first.y),`gap ${i+1} ${level} on the same row`).toBeLessThanOrEqual(.5);
    }
   }
@@ -175,8 +181,8 @@ for(const frames of [33,17])
  test(`D405 the knob frame follows the CSS frame count (${frames} frames)`,async({page})=>{
   if(frames!==33)await page.route('**/cockpit.css',async r=>{const res=await r.fetch();await r.fulfill({response:res,body:(await res.text())+`\n.dk-fad{--knob-frames:${frames}}\n`});});
   const {send,receive}=await openThrottles(page);
-  // Sol High (middle), Opus XHigh (3/4), GLM Max (top).
-  for(const [i,pos] of [[0,.5],[1,.75],[2,1]]){
+  // Sol High, Opus XHigh, GLM Max (top), at their rows on the tilted face.
+  for(const [i,pos] of [[0,1-levelK('High')],[1,1-levelK('XHigh')],[2,1]]){
    const cap=channels(page).nth(i).locator('.fd-cap'),want=Math.round(pos*(frames-1));
    await expect.poll(()=>cap.evaluate(e=>getComputedStyle(e).getPropertyValue('--fd-frame').trim())).toBe(String(want));
    await expect(cap).toHaveAttribute('data-frame',String(want));
@@ -193,3 +199,60 @@ for(const frames of [33,17])
   await expect(sol).toHaveAttribute('data-frame','0');
   expect(await sol.evaluate(e=>parseFloat(getComputedStyle(e).backgroundPositionY))).toBeCloseTo(0,1);
  });
+
+
+// D405 owner feedback 11-24 on #1223 (direction 06 prototype): the slots and detent dashes are code-drawn (no bitmap), about
+// 4 px wide (--slot-w), and all of them take ONE perspective from the tilted lever face: the outer slots converge towards the
+// top, the detents close up towards the top, and the sprite knobs sit on the slot centre line at their row.
+const slotGeometry=page=>channels(page).evaluateAll(list=>list.map(ch=>{
+ const r=e=>e.getBoundingClientRect(),travel=ch.querySelector('.fd-travel'),slot=ch.querySelector('.fd-slot'),svg=slot.querySelector('svg.fd-slotsvg'),core=svg?.querySelector('.sl-core');
+ const box=r(travel),pts=core?core.getAttribute('points').trim().split(/\s+/).map(p=>p.split(',').map(Number)):[];
+ const tq=parseFloat(getComputedStyle(ch.closest('.dk-fad')).getPropertyValue('--tq'));
+ const at=y=>{const [a,b,c,d]=pts,f=(y-a[1])/(d[1]-a[1]),l=a[0]+(d[0]-a[0])*f,rr=b[0]+(c[0]-b[0])*f;return {x:box.left+(l+rr)/2,w:rr-l};};
+ const dashes=[...ch.querySelectorAll('.fd-tick')].map(t=>{const tb=r(t),be=getComputedStyle(t,'::before'),af=getComputedStyle(t,'::after'),y=tb.top-box.top;
+  return {y,l:{right:tb.left-parseFloat(be.right),w:parseFloat(be.width),h:parseFloat(be.height)},r:{left:tb.left+parseFloat(af.left),w:parseFloat(af.width),h:parseFloat(af.height)},content:[be.content,af.content]};});
+ const cap=ch.querySelector('.fd-cap'),cb=r(cap);
+ return {box:{top:box.top,left:box.left,h:box.height},tq,slotImage:getComputedStyle(slot).backgroundImage,svg:!!svg,shade:svg?svg.querySelectorAll('.sl-shade').length:0,lip:svg?svg.querySelectorAll('.sl-lip').length:0,
+  top:pts.length?at(pts[0][1]):null,bottom:pts.length?at(pts[3][1]):null,atRow:y=>null,pts,dashes,cap:{x:cb.left+cb.width/2},capRow:parseFloat(cap.style.getPropertyValue('--k')),
+  slotAt:dashes.map(d=>at(d.y)),capSlot:at(parseFloat(getComputedStyle(travel).getPropertyValue('--fd-pad'))+(box.height-2*parseFloat(getComputedStyle(travel).getPropertyValue('--fd-pad')))*parseFloat(cap.style.getPropertyValue('--k')))};
+}));
+
+for(const [tier,height] of [['tall',890],['compact',640]])
+ test(`D405 code-drawn slots share one tilted-face perspective (${tier})`,async({page})=>{
+  await openThrottles(page,{tier,height});
+  const g=await slotGeometry(page);
+  for(const [i,c] of g.entries()){
+   // code-drawn: an SVG slot (core, upper/inner shade, lower-lip highlight); no plate bitmap
+   expect(c.svg,`slot ${i} is drawn in code`).toBe(true);expect(c.shade).toBe(2);expect(c.lip).toBe(1);
+   expect(c.slotImage).not.toMatch(/plate-(night|day)\.png/);
+   // about 4 px at the near (bottom) end, a little narrower at the far end
+   expect(c.bottom.w).toBeGreaterThan(3.8);expect(c.bottom.w).toBeLessThan(4.3);expect(c.top.w).toBeLessThan(c.bottom.w);
+  }
+  // one perspective: the outer slots lean in by the same amount, mirrored; the centre slot stays upright
+  const lean=g.map(c=>c.top.x-c.bottom.x);
+  expect(lean[0]).toBeGreaterThan(2);expect(lean[2]).toBeLessThan(-2);expect(Math.abs(lean[0]+lean[2])).toBeLessThanOrEqual(.2);expect(Math.abs(lean[1])).toBeLessThanOrEqual(.1);
+  // the detents close up towards the top: each gap is smaller than the one below it, and the effort names follow
+  const rows=await page.locator('.fd-scale .sc-travel[data-gap="1"] .sc-l').evaluateAll(l=>l.map(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;}).sort((a,b)=>a-b));
+  const gaps=rows.slice(1).map((y,i)=>y-rows[i]);
+  for(let i=1;i<gaps.length;i++)expect(gaps[i],'detent gaps grow towards the pilot').toBeGreaterThan(gaps[i-1]);
+  expect(gaps[0]/gaps.at(-1)).toBeLessThan(.97);expect(Math.min(...gaps)).toBeGreaterThanOrEqual(19.5);
+  for(const [i,c] of g.entries()){
+   // a pair of code-drawn dashes either side of the slot at every detent, centred on the slot at that row
+   expect(c.dashes.length).toBeGreaterThan(0);
+   for(const [j,d] of c.dashes.entries()){
+    expect(d.content).toEqual(['""','""']);expect(d.l.h).toBeCloseTo(1.5,1);
+    const sx=c.slotAt[j].x;
+    expect(Math.abs((sx-d.l.right)-(d.r.left-sx)),`slot ${i} dash pair centred on the slot`).toBeLessThanOrEqual(.6);
+    expect(d.r.left-sx).toBeGreaterThan(c.slotAt[j].w/2);
+   }
+   // the knob sprite sits on the slot centre line at its row
+   expect(Math.abs(c.cap.x-c.capSlot.x),`knob ${i} on the slot line`).toBeLessThanOrEqual(.6);
+  }
+ });
+
+test('D405 the slot width is one CSS setting (--slot-w)',async({page})=>{
+ await page.route('**/cockpit.css',async r=>{const res=await r.fetch();await r.fulfill({response:res,body:(await res.text())+'\n.dk-fad{--slot-w:6px}\n'});});
+ await openThrottles(page);
+ const g=await slotGeometry(page);
+ for(const c of g){expect(c.bottom.w).toBeGreaterThan(5.8);expect(c.bottom.w).toBeLessThan(6.4);}
+});
