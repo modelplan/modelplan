@@ -11,6 +11,7 @@
 // the group commit (QUEUE_WORKFLOWS) tests "PR + latest main".
 
 import referenceMap from "./reference-map.json" with { type: "json" };
+import reviewRouting from "./review-routing.json" with { type: "json" };
 export const CONTEXT = "modelplan-gates";
 // The repository whose runs count; evaluate.mjs passes GITHUB_REPOSITORY, this is the default.
 export const REPO = "modelplan/modelplan";
@@ -193,7 +194,8 @@ export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)", "(macrevd)", "
 export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)", "(gh-terra)"]);
 // (ghglm) is the GLM-5.3 provider of the workflow reviewer (pr-review-sol.yml, D352): it reviews as a fallback when
 // the OpenAI quota is out, or by routing (vars.REVIEW_PROVIDER_MODE). The tiers it may decide are configuration, not a
-// constant: the repository variable REVIEW_GLM_TIERS (default empty: GLM never decides; D358/D361) reaches evaluatePr as glmTiers.
+// constant: the repository variable REVIEW_GLM_TIERS (default empty; D358/D361, D366 fallback) reaches evaluatePr as glmTiers,
+// and since D395 it also decides every tier-1/2 head of a NORMAL PR (reviewClass below).
 // On a tier it may not decide, its verdict (a block too) is advice. Its shadow name (ghglmshadow) counts for nothing.
 export const GLM_LANE = "(ghglm)";
 export const DEFAULT_GLM_TIERS = Object.freeze([]);   // D358/D361: GLM is advisory only unless REVIEW_GLM_TIERS names a tier
@@ -204,11 +206,40 @@ export function parseGlmTiers(value) {
   if (!/^[12](\s*,\s*[12])*$/.test(v)) return [...DEFAULT_GLM_TIERS];
   return [...new Set(v.split(",").map((x) => Number(x.trim())))].sort();
 }
-// The GPT/GLM lanes whose verdict decides a head of this tier: Sol always; Terra on tier 1; (ghglm) on glmTiers.
-export function eligibleLanes(tier, glmTiers = DEFAULT_GLM_TIERS) {
-  // (ghglm) decides only a tier that is itself listed: tier 0 needs no verdict, so a GLM verdict never counts there.
-  return [...SOL_LANES, ...(tier === 2 ? [] : TERRA_LANES), ...((tier === 1 || tier === 2) && glmTiers.includes(tier) ? [GLM_LANE] : [])];
+// ---- Review routing (owner D395/D396/D404, 2026-11-24) ----
+// Most PRs are reviewed by the GitHub GLM reviewer and its exact-head (ghglm) verdict counts; only an IMPORTANT PR (consent,
+// privacy, credentials, readers, wire, the Swift<->Go seam, timing/lifecycle, release, pins, security, the gate itself: the
+// table review-routing.json) still needs a GPT (Codex) lane verdict. One important path makes the whole PR important, and so
+// do path tier 2, a review:codex or review:gpt label, and a file list of maxFiles or more (it may be cut, so fail closed).
+// The coordinator classifies with the same file from main (decide.py review_class), so the two gates agree.
+export const REVIEW_ROUTING = reviewRouting;
+const ROUTING_AREAS = reviewRouting.areas.map((a) => ({ area: a.area, re: new RegExp(a.re, "i") }));
+export const NORMAL = "normal";
+export const IMPORTANT = "important";
+// paths: prPaths(files); labels: REST label objects or names; tier: the PR's path tier (an override too); fileCount: files.length.
+// Returns { cls: "normal" | "important", why }.
+export function reviewClass({ paths = [], labels = [], tier = 1, fileCount = paths.length } = {}) {
+  const names = (labels ?? []).map((l) => (typeof l === "string" ? l : l?.name));
+  const lab = reviewRouting.labels.find((l) => names.includes(l));
+  if (lab) return { cls: IMPORTANT, why: `label ${lab}` };
+  if (Number(tier) === 2) return { cls: IMPORTANT, why: "tier 2" };
+  if (!paths.length) return { cls: IMPORTANT, why: "no file list" };
+  if (fileCount >= reviewRouting.maxFiles || paths.length >= reviewRouting.maxFiles) return { cls: IMPORTANT, why: `${reviewRouting.maxFiles}+ files` };
+  for (const p of paths.filter((x) => !TEST_RE.test(x))) for (const a of ROUTING_AREAS) if (a.re.test(p)) return { cls: IMPORTANT, why: `${a.area}: ${p}` };
+  return { cls: NORMAL, why: "no important path" };
 }
+// The GPT/GLM lanes whose verdict decides a head of this tier: Sol always; Terra on tier 1; (ghglm) on glmTiers (the D366
+// fallback) and, by D395, on every tier-1/2 head of a NORMAL PR (cls).
+export function eligibleLanes(tier, glmTiers = DEFAULT_GLM_TIERS, cls = IMPORTANT) {
+  // (ghglm) decides only tiers 1 and 2: tier 0 needs no verdict, so a GLM verdict never counts there.
+  const glm = (tier === 1 || tier === 2) && (glmTiers.includes(tier) || cls === NORMAL);
+  return [...SOL_LANES, ...(tier === 2 ? [] : TERRA_LANES), ...(glm ? [GLM_LANE] : [])];
+}
+// The workflow reviewer pair: "REVIEWER: ghsol" or "REVIEWER: ghglm" assigns the Actions workflow, whichever provider answers
+// (D396: GPT in the Zhipu peak, GLM otherwise, each the other's quota fallback). So a sticky (ghsol) also accepts the (ghglm)
+// verdict, and the reverse, wherever (ghglm) may decide; any other sticky lane stays the only one.
+export const stickyLanes = (sticky, eligible) =>
+  !sticky ? null : ["(ghsol)", GLM_LANE].includes(sticky) ? ["(ghsol)", GLM_LANE].filter((l) => eligible.includes(l)) : [sticky];
 // Every lane that could be eligible on some tier (an assignment to anything else is never valid).
 // A shadow lane (any lane name ending in "shadow": (ghsolshadow), (gh-terra-shadow)) is advisory and counts nowhere.
 export const isShadowLane = (lane) => /shadow\)?$/i.test(String(lane));
@@ -703,9 +734,11 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const paths = prPaths(files);
   const override = tierOverride(items);
   const tier = ledgerPr(pr) ? Math.max(2, override ?? pathTier(paths)) : (override ?? pathTier(paths));
+  // D395: on a NORMAL PR the (ghglm) verdict decides tiers 1 and 2 like a GPT lane (review:gpt makes a PR important).
+  const route = reviewClass({ paths, labels: pr.labels, tier, fileCount: files.length });
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
   const fbGlm = gpt ? gptFallbackVerdict(items, head) : null;   // labelled PR, GPT out of quota: the marked GLM verdict counts
-  const glmAdvice = !eligibleLanes(tier, glmTiers).includes(GLM_LANE) && fbGlm === null;
+  const glmAdvice = !eligibleLanes(tier, glmTiers, route.cls).includes(GLM_LANE) && fbGlm === null;
   const auto = chain.length ? null : autoCarry(items, head, proveMainMerges, (lane) => glmAdvice && lane === GLM_LANE);
   const carried = auto ? [auto.from] : chain;
   const fb = { until: glmFallbackUntil, now, used: [] };
@@ -716,16 +749,21 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // head (or a verified carried head) stops every tier, tier 0 included. GLM, (sonnet) and other lanes are input.
   const allLanes = verdicts(items, head, carried);
   if (fbGlm) allLanes.set(GLM_LANE, fbGlm);
-  const eligible = [...eligibleLanes(tier, glmTiers), ...(fbGlm ? [GLM_LANE] : [])];
+  const eligible = [...eligibleLanes(tier, glmTiers, route.cls), ...(fbGlm ? [GLM_LANE] : [])];
   const gptLanes = [...eligible, "(unnamed)"];
   const assigned = reviewerLane(items, gpt);
   // An assignment naming a lane that cannot review this tier (Sonnet, unknown, Terra on tier 2) is invalid: it filters
   // nothing, so no GPT block is hidden, and it holds the PR until the coordinator fixes it.
   const sticky = assigned && eligible.includes(assigned) ? assigned : null;
-  const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l) && (!sticky || l === sticky)));
+  // D395/D396 (no sticky state against the GLM reviewer): on a NORMAL PR the (ghglm) verdict counts whoever is assigned (a Codex
+  // lane that reviewed an earlier head during a GLM outage keeps nothing); a workflow sticky accepts either provider (stickyLanes).
+  const pinned = stickyLanes(sticky, eligible);
+  const counts = (l) => !pinned || pinned.includes(l) || (route.cls === NORMAL && l === GLM_LANE);
+  const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l) && counts(l)));
   // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
   const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);
   if (sticky) notes.unshift(`reviewer ${sticky}`);
+  if (tier !== 0) notes.push(route.cls === NORMAL ? "D395 normal: GLM counts" : `D395 important (${route.why.slice(0, 60)})`);
   if (tier !== 0 && glmInScope(paths)) {
     const g = glmVerdict(items, head, fb);
     if (g) notes.push(`GLMREV ${g}`);
@@ -742,7 +780,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   if (gap) notes.push(gap);
   const refNote = referenceProblem(pr, paths);
   if (refNote) notes.push(refNote);
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried, ...(auto ? { autoCarried: auto.from } : {}), glmFallback: fb.used, notes };
+  const extra = { tier, review: route.cls, design: design.touching ? design.surfaces : [], carried, ...(auto ? { autoCarried: auto.from } : {}), glmFallback: fb.used, notes };
   const say = (why) => [why, ...(auto ? [auto.why] : []), ...(notes.length ? [`info: ${notes.join("; ")}`] : [])].join("; ");
   if (pr.draft) return res(PENDING, say("draft"), extra);
 

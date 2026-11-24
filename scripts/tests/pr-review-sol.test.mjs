@@ -24,7 +24,9 @@ const pr = (over = {}) => ({
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } },
   ...over,
 });
-const t1 = [{ filename: "cli/main.go" }];
+// t1 is an IMPORTANT tier-1 head (D395: a timing path), so the tests below keep the GPT-only rules; t1n is a NORMAL one.
+const t1 = [{ filename: "cli/internal/advise/lock_unix.go" }];
+const t1n = [{ filename: "cli/main.go" }];
 const t2 = [{ filename: "clients/swift/Wire.swift" }];
 const native = [{ filename: "desktop/native/ModelPlanApp/App.swift" }];
 const green = { ci: true, compile: true };
@@ -41,13 +43,15 @@ test("decide: open, ready, trusted same-repository tier 1 and 2 heads only; the 
   assert.deepEqual(decide({ files: t2, glmTiers: [1] }).providers, ["openai"], "REVIEW_GLM_TIERS=1: tier 2 stays GPT only");
   assert.deepEqual(S.decideSol({ pr: pr(), files: t2, items: [], lane: S.SOL_LANE, triggerSha: H, checks: green, glmTiers: [1, 2] }).providers, ["openai", "glm"], "REVIEW_GLM_TIERS=1,2");
   assert.deepEqual(decide({ comments: [comment("REVIEWER: ghsol")] }).providers, ["openai"], "assigned ghsol: only GPT counts");
-  assert.deepEqual(decide({ comments: [comment("REVIEWER: ghglm")], glmTiers: [1] }).providers, ["glm"], "assigned ghglm: only GLM counts");
+  assert.deepEqual(decide({ comments: [comment("REVIEWER: ghglm")], glmTiers: [1] }).providers, ["openai", "glm"], "D396-1: a workflow assignment is the provider pair");
   assert.equal(decide({ files: t2, comments: [comment("REVIEWER: ghglm")] }).why, "the assigned reviewer (ghglm) cannot review tier 2", "an invalid assignment spends no tokens");
   assert.equal(decide({ pr: { draft: true } }).why, "draft");
   assert.equal(decide({ pr: { state: "closed" } }).why, "PR is closed");
-  assert.equal(decide({ pr: { user: { login: "guanbear", id: 1 } } }).why, "not a trusted same-repository PR");
-  assert.equal(decide({ pr: { head: { sha: H, repo: { full_name: "fork/modelplan" } } } }).why, "not a trusted same-repository PR");
-  assert.equal(decide({ files: [{ filename: "docs/a.md" }] }).why, "tier 0 needs no Sol review");
+  const outside = "not a trusted same-repository PR (the owner's dispatch reviews it, advisory)";
+  assert.equal(decide({ pr: { user: { login: "guanbear", id: 1 } } }).why, outside);
+  assert.equal(decide({ pr: { head: { sha: H, repo: { full_name: "fork/modelplan" } } } }).why, outside);
+  // D395: a tier-0 head gets one advisory GLM review
+  assert.deepEqual(decide({ files: [{ filename: "docs/a.md" }] }).providers, ["glm"]);
   assert.equal(decide({ triggerSha: OLD }).why, "the trigger was for an older head");
   assert.equal(decide({ triggerSha: "" }).review, true, "a dispatch names no head");
   assert.equal(decide({ lane: "macrevb" }).why, "unknown lane macrevb");
@@ -683,8 +687,10 @@ test("post: a late assignment, a late counting verdict and a forced duplicate be
   const post = (cs, over = {}) => S.postProblem({ pr: pr(), items: items(cs), head: H, lane: "ghsol", posted: "ghsol", tier: 1, glmTiers: [1], ...over });
   assert.equal(post([]), null);
   assert.match(post([comment("REVIEWER: macrevd")]), /assigned reviewer is \(macrevd\)/);
-  assert.match(post([comment("REVIEWER: ghglm")]), /assigned reviewer is \(ghglm\)/, "assigned to the other provider");
-  assert.match(post([comment("REVIEWER: ghsol")], { posted: "ghglm" }), /assigned reviewer is \(ghsol\)/, "a GLM fallback post with ghsol assigned");
+  // D396-1: REVIEWER: ghsol / ghglm assigns the workflow pair, so either provider posts where it may decide
+  assert.equal(post([comment("REVIEWER: ghglm")]), null, "assigned to the other provider of the pair");
+  assert.equal(post([comment("REVIEWER: ghsol")], { posted: "ghglm" }), null, "a GLM fallback post with ghsol assigned");
+  assert.match(post([comment("REVIEWER: ghsol")], { posted: "ghglm", glmTiers: [] }), /assigned reviewer is \(ghsol\)|may not decide tier 1/, "GLM where it may not decide");
   assert.equal(post([comment("REVIEWER: ghsol")]), null);
   assert.match(post([comment(v("merge", H, "macrevc"))]), /counting verdict already exists/);
   assert.match(post([comment(`VERDICT: merge @ ${H}`)]), /counting verdict already exists/);
@@ -723,7 +729,7 @@ test("post: a tier change between prepare and post suppresses a provider that lo
   assert.match(post([comment("REVIEW-TIER: 2")]), /may not decide tier 2/, "stale prepared tier 1, fresh override 2");
   assert.match(post([comment("REVIEW-TIER: 2")], { posted: "ghsol" }), /^scope changed, full review required/, "Sol prepared for tier 1 may not count on tier 2");
   assert.equal(post([comment("REVIEW-TIER: 2")], { posted: "ghsol", tier: 2 }), null, "prepared for tier 2: Sol posts");
-  assert.match(post([comment("REVIEW-TIER: 0")], { posted: "ghsol" }), /tier 0 needs no Sol review/);
+  assert.match(post([comment("REVIEW-TIER: 0")], { posted: "ghsol" }), /tier 0 gets only the advisory GLM review/);
   assert.match(post([], { files: t2 }), /may not decide tier 2/, "the files moved the tier to 2");
   assert.equal(post([comment("REVIEW-TIER: 2")], { files: null }), null, "without a file list only the prepared tier is known (the script always passes files)");
   assert.match(readFileSync(join(root, "scripts/pr-review/sol-post.mjs"), "utf8"), /files, glmTiers/, "sol-post passes the fresh files");
@@ -783,7 +789,7 @@ test("review:gpt: a GLM verdict at the head does not settle a labelled PR; a GPT
   // an old REVIEWER: ghglm assignment no longer pins a labelled PR: ghsol reviews it (an unlabelled one stays pinned)
   const pinned = decide({ pr: labelled, glmTiers, comments: [comment("REVIEWER: ghglm")] });
   assert.deepEqual([pinned.review, pinned.gpt, pinned.providers[0]], [true, true, "openai"]);
-  assert.equal(decide({ glmTiers, comments: [comment("REVIEWER: ghglm")] }).providers.includes("openai"), false);
+  assert.equal(decide({ glmTiers, comments: [comment("REVIEWER: ghglm")] }).providers.includes("openai"), true, "D396-1: the pair, not one provider");
 });
 
 test("review:gpt: GPT quota out -> GLM answers and the provider line says so; GPT answering adds nothing", async () => {
@@ -925,4 +931,65 @@ test("D374: the post step turns the noverdict marker into the advisory note and 
   assert.match(wf, /Review \(model credentials only here\)\n\s+if: [^\n]+\n\s+env:\n\s+HEAD_SHA: \$\{\{ steps\.prep\.outputs\.head \}\}/);
   assert.deepEqual(prReviewSolProblems(wf), []);
   assert.match(wf, /workflows: \[ci, mac-compile, review-label\]/, "the mac-compile workflow_run stays an extra trigger");
+});
+
+// ---- D395/D396 (owner 2026-11-24): GLM reviews NORMAL PRs and counts; no assignment holds it back ----
+test("D395 decide: a NORMAL head is offered to both providers whoever is assigned; an IMPORTANT one keeps the GPT rules", () => {
+  assert.deepEqual(decide({ files: t1n }).providers, ["openai", "glm"], "normal: GLM counts, so both providers may answer");
+  assert.equal(decide({ files: t1n }).cls, R.NORMAL);
+  assert.deepEqual(decide({ files: t1 }).providers, ["openai"], "important tier 1: GPT only outside a D366 fallback");
+  assert.equal(decide({ files: t1 }).cls, R.IMPORTANT);
+  // a Codex lane assigned during a GLM outage does not stop the GLM reviewer on a normal PR
+  assert.equal(decide({ files: t1n, comments: [comment("REVIEWER: macrevb")] }).review, true);
+  assert.equal(decide({ files: t1, comments: [comment("REVIEWER: macrevb")] }).why, "the assigned reviewer is (macrevb)");
+  // a counting Codex verdict at the head settles a normal head too (no double review)
+  assert.equal(decide({ files: t1n, comments: [comment(v("merge", H, "macrevb"))] }).why, "a counting verdict already exists at this head");
+  // the exact-head GLM verdict settles it; an older head's does not
+  assert.equal(decide({ files: t1n, comments: [comment(v("merge", H, "ghglm"))] }).why, "this lane already reviewed this head");
+  assert.equal(decide({ files: t1n, comments: [comment(v("merge", OLD, "ghglm"))] }).review, true);
+  // mixed: one important path keeps GLM advisory
+  assert.deepEqual(decide({ files: [...t1n, { filename: "cli/cmd/modelplan/consent_scopes.go" }] }).providers, ["openai"]);
+  // post-time re-check agrees: GLM may post on a normal PR whoever is assigned
+  const post = (files, cs) => S.postProblem({ pr: pr(), items: R.feed(cs), head: H, lane: "ghsol", posted: "ghglm", tier: 1, files });
+  assert.equal(post(t1n, [comment("REVIEWER: macrevb")]), null);
+  assert.match(post(t1, []), /may not decide tier 1/);
+});
+
+test("D396-1: ghsol seeded on head A; at head B the GLM quota-fallback verdict is posted and both gates honor it", async () => {
+  const H2 = "d".repeat(40);
+  const seeded = [comment("REVIEWER: ghsol"), comment(`Sol review\n\nRecord: ${H}\n\nVERDICT: merge @ ${H} (ghsol)`)];
+  for (const files of [t1n, t1]) {
+    const glmTiers = files === t1 ? [1, 2] : [];   // important: inside a D366 fallback only
+    const d = S.decideSol({ pr: pr({ head: { ...pr().head, sha: H2 } }), files, items: R.feed(seeded), lane: S.SOL_LANE, triggerSha: H2, checks: green, glmTiers });
+    assert.equal(d.review, true);
+    assert.deepEqual(d.providers, ["openai", "glm"]);
+    for (const [when, first] of [[new Date("2026-11-24T07:00:00Z"), "openai"], [new Date("2026-11-24T11:00:00Z"), "glm"]]) {
+      const order = P.providerOrder({ mode: "schedule", now: when, allowed: d.providers });
+      assert.equal(order[0], first);
+      // GPT out of quota (peak) or GLM answering first (off-peak): GLM posts
+      const r = await P.reviewInOrder({ input: "x", order, build: (name) => ({ name, model: name, review: async () => {
+        if (name === "openai") throw new P.ProviderError("quota", "openai: HTTP 429 insufficient_quota");
+        return { text: "ok", usage: { input: 1, cached: 0, output: 1 } };
+      } }) });
+      assert.equal(r.provider, "glm");
+      assert.equal(S.postProblem({ pr: pr({ head: { ...pr().head, sha: H2 } }), items: R.feed(seeded), head: H2, lane: S.SOL_LANE, posted: S.postLane(S.SOL_LANE, "glm"), tier: 1, files, glmTiers }), null);
+      const gate = R.evaluatePr({ pr: pr({ head: { ...pr().head, sha: H2 } }), items: R.feed([...seeded, comment(v("merge", H2, "ghglm"))]), files: files.map((f) => ({ ...f })), runs: [{ name: "ci", path: ".github/workflows/ci.yml", head_sha: H2, event: "pull_request", status: "completed", conclusion: "success", created_at: at(), repository: { full_name: "modelplan/modelplan" }, head_repository: { full_name: "modelplan/modelplan" } }], statuses: [], verifiedEdge: () => false, conf: { include: [], exclude: [], pinonly: [] }, glmTiers });
+      assert.doesNotMatch(gate.why, /needs VERDICT/, `${files[0].filename} at ${when.toISOString()}: ${gate.why}`);
+    }
+  }
+});
+
+test("D395-4: a tier-0 head gets one advisory GLM review; a fork PR only on the owner's dispatch", () => {
+  const docs = [{ filename: "docs/a.md" }];
+  const d = decide({ files: docs });
+  assert.deepEqual([d.review, d.tier, d.providers], [true, 0, ["glm"]]);
+  assert.equal(decide({ files: docs, comments: [comment(v("merge", H, "ghglm"))] }).why, "this lane already reviewed this head", "once per head");
+  assert.equal(S.postProblem({ pr: pr(), items: [], head: H, lane: S.SOL_LANE, posted: "ghglm", tier: 0, files: docs }), null);
+  assert.match(S.postProblem({ pr: pr(), items: [], head: H, lane: S.SOL_LANE, posted: "ghsol", tier: 0, files: docs }), /only the advisory GLM/);
+  const fork = { head: { sha: H, repo: { full_name: "fork/modelplan" } }, user: { login: "someone", id: 5 } };
+  assert.equal(decide({ pr: fork }).review, false, "an event anybody can start never spends tokens on a fork");
+  const fd = decide({ pr: fork, force: true });
+  assert.deepEqual([fd.review, fd.providers], [true, ["glm"]], "the owner's dispatch reviews it with GLM, as advice");
+  // the gate leaves a fork PR to the coordinator, whatever was posted
+  assert.match(R.evaluatePr({ pr: pr(fork), items: R.feed([comment(v("merge", H, "ghglm"))]), files: t1n, runs: [], statuses: [], verifiedEdge: () => false, conf: { include: [], exclude: [], pinonly: [] } }).why, /coordinator decides/);
 });
