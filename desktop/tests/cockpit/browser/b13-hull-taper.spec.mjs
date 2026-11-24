@@ -11,10 +11,10 @@ import {inflateSync} from 'node:zlib';
 // each shape, relative to the root. The D74 canopy (#801) is 28 px (tall) and 8 px (compact) taller than the study's,
 // so the open shapes, the root and every row below the canopy move down by as much; the closed shapes are unchanged.
 const shapes=[
- {tier:'tall',closed:false,canvas:939,plate:890,upper:[244,270],cone:514,lower:338,phase:253},
- {tier:'compact',closed:false,canvas:669,plate:640,upper:[56,264],cone:320,lower:262,phase:65},
- {tier:'tall',closed:true,canvas:939,plate:890,upper:[30,270],cone:300,lower:338,phase:39},
- {tier:'compact',closed:true,canvas:669,plate:640,upper:[30,264],cone:294,lower:262,phase:39},
+ {tier:'tall',closed:false,canvas:951,plate:890,upper:[244,270],cone:514,lower:338,phase:253},
+ {tier:'compact',closed:false,canvas:681,plate:640,upper:[56,264],cone:320,lower:262,phase:65},
+ {tier:'tall',closed:true,canvas:951,plate:890,upper:[30,270],cone:300,lower:338,phase:39},
+ {tier:'compact',closed:true,canvas:681,plate:640,upper:[30,264],cone:294,lower:262,phase:39},
 ];
 async function open(page,s){
  await page.setViewportSize({width:636,height:s.canvas});
