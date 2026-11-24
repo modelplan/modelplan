@@ -113,7 +113,7 @@ test.describe('D390 half-hour fall-back',()=>{
   data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:'2026-04-01',
    subscriptions:[{subscriptionRef:ref,sources:[{source:'codex',bindingBasis:'source-wide-current-binding',recent7d:sums(1),recent30d:sums(1)}]}],
    models:ranking,tools:ranking,daily:[{at:'2026-04-05',source:'codex',origin:'live',observedOutputTokens:500}],
-   hourly:[{at:'2026-04-05T17:30:00Z',source:'codex',origin:'live',observedOutputTokens:500}],
+   hourly:[{at:'2026-04-04T17:30:00Z',source:'codex',origin:'live',observedOutputTokens:500}],
    projects:{recent7d:[],recent30d:[]},cycles:[]};
   await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
   await page.clock.setFixedTime(new Date('2026-04-06T13:00:00Z'));
