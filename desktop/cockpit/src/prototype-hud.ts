@@ -5,7 +5,7 @@
 import {ht} from './host-text.js';
 import type {WireCockpitData} from '../generated/wire.js';
 import {FIELD_LIMIT,type FieldModel} from './field-model.js';
-import {chartFleetOf,frontierFleetOf,type HudModel,type HudOptions} from './hud-fleet.js';
+import {chartFleetOf,frontierFleetOf,fleetOf,type HudModel,type HudOptions} from './hud-fleet.js';
 import {shortLabel} from '../study/rocket-r1/short-label.js';
 
 export type {HudModel,HudOptions};
@@ -14,6 +14,8 @@ const svg=<K extends keyof SVGElementTagNameMap>(tag:K,attributes:Record<string,
 
 /** The scope's models in the order the enlarged chart takes them (frontier first, then dim points). */
 export const publishedFleet=(data:WireCockpitData|null|undefined,scope='all',now=Date.now(),limit=FIELD_LIMIT):HudModel[]=>chartFleetOf(shortLabel,data,scope,now,limit);
+/** The Models list retains its recent-use ordering independently of the chart's frontier order. */
+export const listFleet=(data:WireCockpitData|null|undefined,scope='all',now=Date.now(),limit=FIELD_LIMIT):HudModel[]=>fleetOf(shortLabel,data,scope,now,limit,Infinity);
 /** D386: the small HUD lists only the ability frontier, best ability first. */
 export const hudFleet=(data:WireCockpitData|null|undefined,scope='all',now=Date.now()):HudModel[]=>frontierFleetOf(shortLabel,data,scope,now);
 /** Each model's most recently seen effort, when a session reported one that the model publishes. */

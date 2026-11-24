@@ -71,3 +71,52 @@ test('D391 a ticked subscription keeps its sessions\' models (the filter is the 
  expect(labels).toContain('Synthetic claude-used');
  expect(labels.some(l=>l.includes('GLM'))).toBe(false);
 });
+
+test('D391 a Settings visibility update removes model cards but preserves the session tape',async({page})=>{
+ const data=fixture(),zai=data.projection.rows[1],ref='1122334455667788';
+ zai.surfaces=['dock','menu','settings'];zai.accounts[0].subscriptionRef=ref;zai.accounts[0].accountLocator=ref;
+ data.subscriptions.push({subscriptionRef:ref,accounts:[{tool:'zai',account:structuredClone(zai.accounts[0])}]});
+ const {send,receive}=await open(page,data);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Synthetic glm-live:"]')).toHaveCount(1);
+ await expect(page.locator('.ck-tape [data-session="00000000000000a2"]')).toHaveCount(1);
+ expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);
+ await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');
+ expect(await receive(send('appearance',{...appearance,hiddenMembers:[ref]}))).toBe(true);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Synthetic glm-live:"]')).toHaveCount(0);
+ await expect(page.locator('.ck-tape [data-session="00000000000000a2"]')).toHaveCount(1);
+ await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','all');
+ expect(await receive(send('appearance',{...appearance}))).toBe(true);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Synthetic glm-live:"]')).toHaveCount(1);
+ const codexRef=data.projection.rows[0].accounts[0].subscriptionRef;
+ expect(await receive(send('appearance',{...appearance,hiddenMembers:[ref,codexRef]}))).toBe(true);
+ await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(0);
+ await expect(page.locator('.ck-tape [data-session="00000000000000a2"]')).toHaveCount(1);
+});
+
+test('D391 OpenCode Go cannot admit an unticked tool from unattributed history',async({page})=>{
+ const data=fixture(),oc=structuredClone(data.projection.rows[0]);
+ oc.id='opencodego';oc.name={en:'OpenCode Go',zh:'OpenCode Go'};oc.surfaces=['dock','menu','settings'];
+ oc.accounts.forEach(a=>{a.subscriptionRef=null;a.accountLocator=null;});data.projection.rows.push(oc);
+ data.details.sessions=data.details.sessions.filter(s=>s.source!=='zcode');
+ data.details.publishedModels.push(model('oc-live','xai'));
+ data.details.sessions.push({sessionRef:'00000000000000a4',source:'opencodego',subscriptionRef:null,model:'oc-live',effort:'medium',projectLabel:null,lastObservedAt:new Date().toISOString(),state:'running',rate:null});
+ await open(page,data);
+ const names=await page.locator('.fd-ch:not(.empty) .fd-strip').evaluateAll(list=>list.map(e=>e.getAttribute('aria-label')));
+ expect(names.some(n=>n.startsWith('Synthetic glm-live:'))).toBe(false);
+ expect(names.some(n=>n.startsWith('Synthetic oc-live:'))).toBe(true);
+});
+
+test('D391 a hidden same-tool account cannot add a fader while its session stays on tape',async({page})=>{
+ const data=fixture(),zai=data.projection.rows[1],hidden='1122334455667788',visible='2233445566778899';
+ zai.surfaces=['dock','menu','settings'];
+ const account=zai.accounts[0];account.subscriptionRef=hidden;account.accountLocator=hidden;
+ const sibling=structuredClone(account);sibling.subscriptionRef=visible;sibling.accountLocator=visible;zai.accounts.push(sibling);
+ for(const a of [account,sibling])data.subscriptions.push({subscriptionRef:a.subscriptionRef,accounts:[{tool:'zai',account:structuredClone(a)}]});
+ const session=data.details.sessions.find(s=>s.sessionRef==='00000000000000a3');session.subscriptionRef=hidden;session.modelDisplay='Hidden session only';
+ const {send,receive}=await open(page,data);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Hidden session only:"]')).toHaveCount(1);
+ expect(await receive(send('appearance',{...appearance,hiddenMembers:[hidden]}))).toBe(true);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Hidden session only:"]')).toHaveCount(0);
+ await expect(page.locator('.fd-ch:not(.empty) .fd-strip[aria-label^="Synthetic glm-live:"]')).toHaveCount(1);
+ await expect(page.locator('.ck-tape [data-session="00000000000000a3"]')).toHaveCount(1);
+});

@@ -30,10 +30,11 @@ export function sessionMember(members:readonly Member[],session:Pick<Session,'so
 }
 /** D391 (owner 2026-11-22): a subscription unticked in Settings has no subscription card, so its sessions never add
  * models to any cockpit model view (fader banks, model cards, the All scope) — this replaces the D123/D135 live-use
- * inclusion. A session stays when it binds to a member or its tool row has one; two accounts of one ticked tool
- * cannot be told apart, but that tool itself is ticked. */
-export function sessionAdmittedBy(members:readonly Member[],session:Pick<Session,'source'|'subscriptionRef'>):boolean {
- return sessionMember(members,session)!==null||members.some(m=>m.row.id===sessionTool(session.source));
+ * inclusion. A reference to a known hidden member is refused. An unbound or unknown reference may use the same-tool
+ * fallback: two accounts of one ticked tool cannot be told apart, but that tool itself is ticked. */
+export function sessionAdmittedBy(members:readonly Member[],session:Pick<Session,'source'|'subscriptionRef'>,allMembers:readonly Member[]=members):boolean {
+ const bound=session.subscriptionRef?sessionMember(allMembers,session):null;
+ return bound?members.some(m=>m.key===bound.key):members.some(m=>m.row.id===sessionTool(session.source));
 }
 /** Every session's member key (null when unbound), for one render. */
 export function sessionMembers(data:WireCockpitData|null|undefined):Map<string,string|null> {
