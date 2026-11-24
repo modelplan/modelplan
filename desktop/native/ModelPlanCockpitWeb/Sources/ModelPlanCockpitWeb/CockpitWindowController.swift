@@ -1222,7 +1222,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       case .ready:
         LaunchTimingLog.shared.mark("page-bridge-ready")
         bootstrapCheck?(); bootstrapCheck = nil
-        web?.isHidden = false
+        if !shown { web?.isHidden = false }
         publishAppearance()
         visibilityChanged()
         publishPluginState(force: true)
@@ -1234,7 +1234,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         let waiter = clearWaiter
         clearWaiter = nil
         if bridge.queryTicket != nil {
-          web?.isHidden = false
+          if !shown { web?.isHidden = false }
           publishAppearance()
           lastVisibility = nil
           visibilityChanged()
@@ -1425,7 +1425,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let visible = value.visible && !value.occluded
     // Withdraw the actual surface at once, even if WebKit has yet to
     // acknowledge the message that stops its page's motion.
-    if shown { web?.isHidden = !visible }
+    if shown { web?.isHidden = !visible || bridge.queryTicket == nil }
     if !visible { if !health.paused { pauseHealth() }; stopPluginSampling() }
     else {
       health.resume()
