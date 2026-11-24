@@ -348,6 +348,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   if(selected===2)for(const e of page.querySelectorAll<HTMLElement>('.mp-empty:not(.period)'))e.textContent=ht(locale,'host.dataUnavailable');
   // Projects are not reported yet; the 时间 list is empty for a period only when last-seen sessions are admitted.
   if(selected===3&&!(uiWhere==='time'?data?.details?.sessionCoverage==='local-last-seen':data?.history?.coverage==='local-history'))for(const e of page.querySelectorAll<HTMLElement>('.mp-empty'))e.textContent=ht(locale,'host.dataUnavailable');
+  // The subscription list's chip colour comes from the inert study markup; restore only a validated hex colour.
+  for(const e of page.querySelectorAll<HTMLElement>('i.chip[data-study-style]')){const colour=/^--v:\s*(#[0-9a-f]{6})\s*;?$/i.exec(e.getAttribute('data-study-style')??'')?.[1];e.removeAttribute('data-study-style');if(colour)e.style.setProperty('--v',colour);}
   // WP-13: the Models and Breakdown rows' share bars and colour chips; the page CSP drops inline style attributes, so they are set through CSSOM.
   for(const e of page.querySelectorAll<HTMLElement>('[data-p]'))e.style.setProperty('--p',e.dataset.p+'%');for(const e of page.querySelectorAll<HTMLElement>('i.chip[data-v]'))e.style.setProperty('--v',e.dataset.v!);
   if(selected===3)for(const b of page.querySelectorAll<HTMLElement>('.ws[data-mfd^="session:"]')){const x=d.sessionRanking.find((s:{ref:string})=>'session:'+s.ref===b.dataset.mfd) as {sub:string|null}|undefined,a=x?.sub?d.accounts.find(a=>a.id===x.sub):null;b.querySelector<HTMLElement>('.chip')?.style.setProperty('--v',a?.colour??'#c6ccd4');}
