@@ -402,6 +402,12 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		if x.Provider == "zai" && hasManual {
 			e.ManualKeyGeneration = generations["zai"] // S8: read with this pasted key
+			old := previous[x.Provider]
+			if zaiTransientFailure(e.ErrorCode) && old.ManualKeyGeneration == e.ManualKeyGeneration &&
+				old.ManualKeyGeneration != 0 && captureAllowed(p, x.Provider, old.Admission, false) {
+				e.ObservedAt, e.Windows, e.Plan = old.ObservedAt, old.Windows, old.Plan
+				e.Admission, e.SubscriptionRef = old.Admission, old.SubscriptionRef
+			}
 		}
 		if x.Provider == "zai" && !loginRoute && !IdentityOff() {
 			// One row (owner 2026-11-14): Settings says when the entered key differs from a detected one.
@@ -599,21 +605,39 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		}
 		st := SourceStatus{Source: "native:" + x.Provider}
 		e, ok := by[x.Provider]
-		if ok && e.Status == "ok" && !captureAllowed(p, x.Provider, e.Admission, false) {
+		if x.Provider == "zai" {
+			g, granted := p.ReaderAccessGrant(x.Provider)
+			login := zcodeLoginRoute(p, x.Provider)
+			_, pasted, err := loadManualKeyChecked(p.Cache, x.Provider)
+			switch {
+			case login:
+				if ok && (e.Status == "ok" || len(e.Windows) != 0) {
+					ctx := productionReaderContext(context.Background(), p, x.Provider)
+					access, blocked := zaiConfigAdmission(ctx)
+					// Saved-login results become visible only after the aggregate write.
+					ok = blocked == "" && e.ZCodeLoginGeneration != "" && e.ZCodeLoginGeneration == access.LoginGeneration
+				}
+			case err != nil || pasted:
+				ok = err == nil && ok && glmEntryOfPastedKey(p.Cache, e)
+			case granted && g.ConfigSource != nil && g.ConfigSource.Tool == "zcode":
+				// The typed cache carries the exact credential generation. An aggregate
+				// capture can lag behind a provider-file change or a concurrent refresh.
+				ctx := productionReaderContext(context.Background(), p, x.Provider)
+				access, blocked := zaiConfigAdmission(ctx)
+				state := loadZaiConfigState(p.Cache)
+				ok = blocked == "" && state.LoginGeneration == access.LoginGeneration
+				if ok {
+					e = zaiConfigCachedEntryScope(state, now, access.LoginGeneration, zaiConfigScope(ctx))
+				}
+			}
+		}
+		if ok && (e.Status == "ok" || len(e.Windows) != 0) && !captureAllowed(p, x.Provider, e.Admission, false) {
 			ok = false
 		}
 		if ok && x.Provider == "zai" {
-			if zcodeLoginRoute(p, x.Provider) {
-				if e.Status == "ok" {
-					ctx := productionReaderContext(context.Background(), p, "zai")
-					access, blocked := zaiConfigAdmission(ctx)
-					// The entry's own provenance remains correct even between the typed and aggregate writes.
-					ok = blocked == "" && e.ZCodeLoginGeneration != "" && e.ZCodeLoginGeneration == access.LoginGeneration
-				}
-			} else if _, pasted, err := loadManualKeyChecked(p.Cache, x.Provider); err == nil && pasted && !glmEntryOfPastedKey(p.Cache, e) {
-				// A saved pasted key admits only that key's cached reading.
-				ok = false
-			}
+			account := Account{Windows: append([]Window(nil), e.Windows...)}
+			pruneReaderWindows(&account, now)
+			e.Windows = account.Windows
 		}
 		switch {
 		case x.Blocked == "no-native-reader":
@@ -645,6 +669,11 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		case e.Status != "ok":
 			st.ErrorCode = ReaderErrorCode(e.ErrorCode)
 			st.Status, st.Reason = "unavailable", st.ErrorCode
+			if x.Provider == "zai" && zaiTransientFailure(e.ErrorCode) && len(e.Windows) > 0 {
+				account := Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: append([]Window(nil), e.Windows...),
+					Via: "native", Subscription: e.binding("api-key"), retained: true}
+				r.Accounts = append(r.Accounts, account)
+			}
 		case len(e.Windows) == 0:
 			st.Status, st.Reason = "empty", "no usage windows"
 		default:
@@ -680,6 +709,15 @@ func kimiCacheMatches(cache string, x Selection, e codexbarEntry) bool {
 	}
 	ref := lookupSubscription(cache, nativeIdentityBasis(x), os.Getenv(x.KeyEnv))
 	return ref != "" && ref == e.SubscriptionRef
+}
+
+// A rejected or unreadable credential cannot keep a previously valid reading on screen.
+func zaiTransientFailure(code string) bool {
+	switch code {
+	case "timeout", "network", "http_429", "http_5xx":
+		return true
+	}
+	return false
 }
 
 // glmEntryOfPastedKey: e is reference-only, or was read with the pasted GLM key saved now.

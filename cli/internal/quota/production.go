@@ -264,22 +264,24 @@ func defaultZCodeGrant(home string, state consent.State, mode string, configured
 		return ReaderGrant{}, false
 	}
 	file := ZCodeProviderConfig(home)
-	fi, err := os.Lstat(file)
-	if err != nil || !fi.Mode().IsRegular() || !detect.LocalRoot(filepath.Dir(filepath.Dir(file))) {
+	if !detect.LocalRoot(filepath.Dir(filepath.Dir(file))) {
+		return ReaderGrant{}, false
+	}
+	stamp := zcodeProviderRevision(file)
+	if stamp == "" {
 		return ReaderGrant{}, false
 	}
 	scope := consent.ScopeZaiAccountUsageAPIKey
 	fence := state.Fence()
-	// The login generation also follows the provider file (size and modification time,
-	// from the same stat; the file is not read here), so replacing the selected key after
-	// a refusal releases the held "sign-in rejected" state at the next due read.
-	stamp := strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
 	return ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
-		Generation: state.ReadingKey() + ":zcode:" + stamp,
+		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Revoked[scope], 10) + ":zcode:" + stamp,
 		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
 		StillValid: func() bool {
 			current, effective := consent.Current()
-			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence
+			if effective != consent.Automatic || nativeOff() || current.Fence() != fence || !current.AllowsScope(scope, effective) {
+				return false
+			}
+			return zcodeProviderRevision(file) == stamp
 		},
 		ConfigSource: &ZaiConfigSource{Tool: "zcode", SettingsPath: file}}, true
 }
@@ -332,8 +334,7 @@ func productionReaderContext(ctx context.Context, p Paths, provider string) cont
 	} // compatibility for explicit legacy callers
 	g, ok := p.ReaderAccess.Grants[provider]
 	valid := ok && (g.StillValid == nil || g.StillValid())
-	sum := sha256.Sum256([]byte("modelplan/consent/" + g.Generation))
-	generation := hex.EncodeToString(sum[:])
+	generation := readerGenerationID(g.Generation)
 	switch provider {
 	case "copilot":
 		return WithCopilotAccess(ctx, CopilotAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
@@ -346,6 +347,11 @@ func productionReaderContext(ctx context.Context, p Paths, provider string) cont
 		}
 	}
 	return ctx
+}
+
+func readerGenerationID(generation string) string {
+	sum := sha256.Sum256([]byte("modelplan/consent/" + generation))
+	return hex.EncodeToString(sum[:])
 }
 
 func (p Paths) ReaderAccessGrant(provider string) (ReaderGrant, bool) {
