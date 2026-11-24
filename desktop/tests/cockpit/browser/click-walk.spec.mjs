@@ -68,7 +68,7 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
   else if(op.type==='click')await step(op.action,{replaying});
   else throw Error(`Unknown replay operation ${op.type}`);
  };
- const step=async(action,{replaying=false,repeat=false}={})=>{
+ const step=async(action,{replaying=false,repeat=null}={})=>{
   const opIndex=operations.length;
   path.push(action==='Escape'?'Escape':`${action.selector} [${action.index}] ${action.label}`);
   operations.push(action==='Escape'?{type:'escape'}:{type:'click',action});
@@ -85,7 +85,8 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
   // Only the timing measurement may be repeated; every other invariant is judged on the first attempt below.
   const slow=!repeat&&verdict.failure==='last mutation or frame exceeded 150 ms';
   if(repeat||!slow)expect(verdict.failure??null,'interaction timing').toBeNull();
-  if(repeat)return;
+  // The repeat must reproduce the first attempt's state change; every assertion below runs on it too, before its timing counts.
+  if(repeat)expect(JSON.stringify(state),'the repeated step reproduces the first attempt state').toBe(repeat.state);
   const unexpectedGeometry=state.violations.filter(message=>{const failure=expectedWalkFailures.find(x=>x.kind==='geometry'&&x.message===message);if(failure)known.add(failure.name);return !failure;});
   expect(unexpectedGeometry).toEqual([]);
   const normal=value=>value?.replace(/http:\/\/127\.0\.0\.1:\d+/g,'http://127.0.0.1:41783');
@@ -107,7 +108,7 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
   if(slow){
    const prefix=operations.slice(0,opIndex),mark=operations.length,pathMark=path.length;retried.push({step:path.at(-1),ms:timing.last-timing.start});
    operations.length=0;path.length=0;for(const op of prefix)await play(op,true);
-   await step(action,{repeat:true});
+   await step(action,{repeat:{state:JSON.stringify(state)}});
    // the repeat re-created the same operations; keep one record of the step
    operations.length=Math.min(operations.length,mark);path.length=Math.min(path.length,pathMark);
   }
