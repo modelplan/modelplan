@@ -31,6 +31,13 @@ final class ShellLayoutTests: XCTestCase {
         try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: macDock, width: width, height: height - bar - macDock),
             anchor: .init(x: width - 200, y: height - bar, width: 28, height: bar), shutterClosed: closed, size: size))
     }
+    func testPortraitAutoUsesTheFractionalViewportCoveredByTheHullRasterTest() throws {
+        let layout = try placed(width: 1440, height: 2560, bar: 24)
+        XCTAssertEqual(layout.profile, .full)
+        XCTAssertEqual(layout.scale, 0.85)
+        XCTAssertEqual(layout.webFrame.size, CGSize(width: 541, height: 809))
+    }
+
     /// The window server places borderless panels on whole points: the layout frame is already whole, so the
     /// real window equals it, and it holds the scaled page with under 1 pt to spare.
     /// G3-108: the web view keeps the open canvas; closed, the window leaves out the porthole band above the slab.
