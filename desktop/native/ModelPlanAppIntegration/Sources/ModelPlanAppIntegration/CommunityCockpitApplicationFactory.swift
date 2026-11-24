@@ -45,6 +45,8 @@ import ModelPlanResources
     static var verificationResourcePlugin = false
     /// The resource journey's synthetic reader (the installed app reads this Mac with SystemResourceReader).
     static var verificationResourceReader: (() -> ResourceReader)?
+    /// The widget's "Turn Off <plugin>…" confirmation, answered without the modal alert (true = Turn Off).
+    static var verificationClosePresenter: ((CockpitPluginClosePrompt) -> Bool)?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -196,6 +198,9 @@ import ModelPlanResources
                 let closer = CockpitPluginCloser(model: bridge.model, language: { [weak application] in
                     application?.composition.latestSettings?.snapshot.preferences.language ?? .fallback
                 })
+                #if MODELPLAN_TEST_ONLY_SPI
+                if let presenter = verificationClosePresenter { closer.presenter = presenter }
+                #endif
                 dock.pluginCloseTitle = { dockID in ResourceDockBridge.pluginID(dockID: dockID).flatMap { closer.prompt($0)?.menuTitle } }
                 dock.pluginCloseRequested = { dockID in
                     guard let id = ResourceDockBridge.pluginID(dockID: dockID) else { return }
