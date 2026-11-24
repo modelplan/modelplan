@@ -112,7 +112,8 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
   const session=object(value),display=text(session?.modelDisplay),ref=text(session?.sessionRef);
   if(!session||session.model!=='unknown'||!display||!ref||display.length>48)continue;
   const id='unlisted:'+display,found=unlisted.find(f=>f.id===id);
-  const sub=text(session.subscriptionRef),account=sub&&subscriptions.some(s=>s.key===sub)?sub:null;
+  // A single-tool fallback can bind a session for display without proving which subscription ran it.
+  const sub=text(session.subscriptionRef),confirmed=text(session.confirmedSubscriptionRef),account=confirmed&&confirmed===sub&&subscriptions.some(s=>s.key===confirmed)?confirmed:null;
   if(found){found.sessions.push({ref,sub});if(account&&!found.accounts.includes(account))found.accounts.push(account);}
   else if(faders.length+unlisted.length<FADER_LIMIT)unlisted.push({id,name:display,short:display,rec:'',e:[],accounts:account?[account]:[],sessions:[{ref,sub}],unlisted:true});
  }

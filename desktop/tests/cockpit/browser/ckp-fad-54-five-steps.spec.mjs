@@ -315,7 +315,7 @@ test('G3-134 an unlisted model with a readable name gets a card: its name, "Unli
 test('a new model inherits its bound provider colour and running session light',async({page})=>{
  const send=await open(page,{unlisted:true});
  const data=cardData({unlisted:true});
- Object.assign(data.details.sessions[2],{source:'codex',modelDisplay:'Future Codex',state:'running'});
+ Object.assign(data.details.sessions[2],{source:'codex',subscriptionRef:data.projection.rows[0].accounts[0].subscriptionRef,modelDisplay:'Future Codex',state:'running'});
  expect(await page.evaluate(raw=>window.modelPlanCockpit.receive(raw),send('display',{data}))).toBe(true);
  const future=card(page,'Future'),known=card(page,'Sol 6.1');
  await expect(future.locator('.fd-indicator')).toHaveAttribute('data-state','live');
@@ -323,4 +323,19 @@ test('a new model inherits its bound provider colour and running session light',
  expect(lamp).toMatch(/^#/);
  expect(lamp).toBe(await known.locator('.fd-indicator').evaluate(e=>e.style.getPropertyValue('--lamp')));
  expect(await future.locator('.st-vend b').first().evaluate(e=>e.style.getPropertyValue('--v'))).toBe(lamp);
+});
+
+test('unlisted session gets segments only from explicitly verified bindings across account changes',async({page})=>{
+ const send=await open(page,{unlisted:true}),data=cardData({unlisted:true}),row=data.projection.rows[0],first=row.accounts[0].subscriptionRef,second='fedcba9876543210';
+ const account=structuredClone(row.accounts[0]);account.subscriptionRef=second;account.accountLocator=second;row.accounts.push(account);
+ data.subscriptions.push({subscriptionRef:second,accounts:[{tool:row.id,account:structuredClone(account)}]});
+ const session=data.details.sessions[2];Object.assign(session,{source:'codex',subscriptionRef:null,modelDisplay:'Future Codex',state:'running'});
+ const display=async()=>expect(await page.evaluate(raw=>window.modelPlanCockpit.receive(raw),send('display',{data}))).toBe(true);
+ const future=card(page,'Future');await display();await expect(future.locator('.fd-indicator')).toHaveAttribute('data-state','live');await expect(future.locator('.st-vend b')).toHaveCount(0);
+ row.accounts.pop();data.subscriptions=data.subscriptions.filter(s=>s.subscriptionRef!==second);await display();
+ await expect(future.locator('.fd-indicator')).toHaveAttribute('data-state','live');await expect(future.locator('.st-vend b')).toHaveCount(0);
+ session.subscriptionRef=first;await display();await expect(future.locator('.st-vend b')).toHaveCount(1);
+ row.accounts.push(account);data.subscriptions.push({subscriptionRef:second,accounts:[{tool:row.id,account:structuredClone(account)}]});
+ data.details.sessions.push({...session,sessionRef:'0000000000000004',subscriptionRef:first},{...session,sessionRef:'0000000000000005',subscriptionRef:second});
+ await display();await expect(future.locator('.st-vend b')).toHaveCount(2);
 });
