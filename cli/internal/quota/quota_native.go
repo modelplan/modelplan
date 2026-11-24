@@ -610,9 +610,16 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			login := zcodeLoginRoute(p, x.Provider)
 			_, pasted, err := loadManualKeyChecked(p.Cache, x.Provider)
 			switch {
-			case !login && (err != nil || pasted):
+			case login:
+				if ok && (e.Status == "ok" || len(e.Windows) != 0) {
+					ctx := productionReaderContext(context.Background(), p, x.Provider)
+					access, blocked := zaiConfigAdmission(ctx)
+					// Saved-login results become visible only after the aggregate write.
+					ok = blocked == "" && e.ZCodeLoginGeneration != "" && e.ZCodeLoginGeneration == access.LoginGeneration
+				}
+			case err != nil || pasted:
 				ok = err == nil && ok && glmEntryOfPastedKey(p.Cache, e)
-			case granted && g.ConfigSource != nil && (login || g.ConfigSource.Tool == "zcode"):
+			case granted && g.ConfigSource != nil && g.ConfigSource.Tool == "zcode":
 				// The typed cache carries the exact credential generation. An aggregate
 				// capture can lag behind a provider-file change or a concurrent refresh.
 				ctx := productionReaderContext(context.Background(), p, x.Provider)
