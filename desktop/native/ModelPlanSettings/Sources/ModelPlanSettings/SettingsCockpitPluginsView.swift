@@ -46,7 +46,7 @@ import AppKit
     /// D376 / D324: the resource plugin's cadence note under its options line.
     static func samplingNote(_ pluginID: String) -> SettingsText? {
         pluginID == "resources"
-            ? .init("Every 2, 5 or 10 s while the cockpit is open · every 10 s with only the Quota Widget", "驾驶舱打开时 每 2、5、10 秒 · 只有额度挂件时每 10 秒")
+            ? .init("Widget only: every 10 s · neither shown: every 60 s", "只有额度挂件时每 10 秒 · 都看不到时每 60 秒")
             : nil
     }
     /// The pasteboard type of a plugin row's grip: plugin rows reorder among themselves only.
