@@ -22,6 +22,12 @@ PLAYWRIGHT_BROWSERS_PATH=/path/to/ms-playwright npm run test:webkit --prefix des
 
 Builds are in `desktop/cockpit/.tmp/{community,official}/`, with a SHA-256 file
 inventory, edition, MIT notice and (for official) reserved-visual/OFL notices.
+
+The click walk runs its short version in the WebKit suite. Set `COCKPIT_WALK_LONG=1`
+for 200 seeded steps per fixture and the complete reachable top-level control-pair walk.
+To replay a failure, set `COCKPIT_WALK_REPLAY` to its JSON file under
+`desktop/tests/cockpit/.tmp/walk/` and run `click-walk.spec.mjs` with the cockpit
+Playwright config. That directory also holds state and failure screenshots; it is not committed.
 The default community build never reads reserved artwork. The explicit official
 build uses the already-public c01 canopy and local OFL fonts. The public A5
 pack remains available in the official runtime directory. It loads no remote content. No third-party UI/animation
