@@ -3,7 +3,7 @@
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,currentSample,pageId,shell} from '../fixture.mjs';
 for(const theme of ['day','night'])for(const profile of ['closed','open'])test(`Option help starts inside the visible window (${theme}, shutter ${profile})`,async({page})=>{
- await page.setViewportSize({width:1000,height:939});
+ await page.setViewportSize({width:1000,height:951});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,theme},shell:{...shell,tier:'tall',profile}}))).toBe(true);
@@ -22,7 +22,7 @@ for(const theme of ['day','night'])for(const profile of ['closed','open'])test(`
 // Sampling #953: on the closed tall cockpit the crop leaves less room, two columns narrow the captions and they grow
 // taller. Every caption must still end inside the window (the body does not scroll).
 for(const locale of ['en','zh-CN'])test(`Option help captions end inside the closed tall window (${locale})`,async({page})=>{
- await page.setViewportSize({width:1000,height:939});
+ await page.setViewportSize({width:1000,height:951});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,tier:'tall',profile:'closed'}}))).toBe(true);

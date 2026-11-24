@@ -35,8 +35,15 @@ func TestG3158StaleKeylessProviderFileFallsThroughToSignIn(t *testing.T) {
 			now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 			cache := t.TempDir()
 
-			// Before consent: the row asks for the sign-in's consent, not "unsupported".
+			// An admitted key read classifies the old file under the reader lock; route
+			// discovery itself cannot open a file that may contain a credential.
 			p := ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture())
+			_ = RefreshNativeProviders(context.Background(), p, now, []string{"zai"})
+			if z.calls.Load() != 0 {
+				t.Fatal("keyless provider unexpectedly sent a request")
+			}
+			// Before login consent: the row asks for consent, not "unsupported".
+			p = ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture())
 			if !p.ZCodeLoginConsent {
 				t.Fatal("a keyless provider file hid the QR sign-in")
 			}

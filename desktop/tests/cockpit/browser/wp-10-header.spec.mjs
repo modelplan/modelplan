@@ -213,10 +213,18 @@ test('WP-10 the header tab order is ALERT, porthole switch, the selected date ke
 });
 
 // macrev2-1056-3: the community edition keeps its art-free one-row header; the date keys are an official-edition control.
-test('WP-10 the community edition header stays one row and shows no date keys',async({page})=>{
- const {execFileSync}=await import('node:child_process'),{createServer}=await import('node:http'),{readFile}=await import('node:fs/promises'),{resolve,extname}=await import('node:path'),{fileURLToPath}=await import('node:url');
+test.describe('community header',()=>{
+// Building is setup, not part of the page's 30-second interaction budget. On a
+// busy runner a synchronous build can consume that budget before navigation.
+test.beforeAll(async()=>{
+ test.setTimeout(90_000);
+ const {execFile}=await import('node:child_process'),{promisify}=await import('node:util'),{fileURLToPath}=await import('node:url');
  const cockpit=fileURLToPath(new URL('../../../cockpit/',import.meta.url));
- execFileSync(process.execPath,['build.mjs'],{cwd:cockpit,stdio:'ignore'});
+ await promisify(execFile)(process.execPath,['build.mjs'],{cwd:cockpit});
+});
+test('WP-10 the community edition header stays one row and shows no date keys',async({page})=>{
+ const {createServer}=await import('node:http'),{readFile}=await import('node:fs/promises'),{resolve,extname}=await import('node:path'),{fileURLToPath}=await import('node:url');
+ const cockpit=fileURLToPath(new URL('../../../cockpit/',import.meta.url));
  const root=resolve(cockpit,'.tmp/community'),mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2','.png':'image/png','.svg':'image/svg+xml','.json':'application/json'};
  const server=createServer(async(req,res)=>{try{const path=new URL(req.url,'http://x').pathname,file=resolve(root,'.'+(path==='/'?'/index.html':path));res.setHeader('Content-Type',mime[extname(file)]??'text/plain');res.end(await readFile(file));}catch{res.writeHead(404);res.end();}});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -232,6 +240,7 @@ test('WP-10 the community edition header stays one row and shows no date keys',a
   await expect(page.locator('.ck-head .ck-range')).toBeHidden();
   for(const s of ['[data-shutter]','[data-settings]','[data-detach]','[data-close]'])await expect(page.locator(s)).toBeVisible();
  }finally{server.close();}
+});
 });
 
 // macrevb-1056-5: the date label line starts 3 pt above the header content box, as in the R3 mock (y -3).
