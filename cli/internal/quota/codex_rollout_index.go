@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 )
 
 const codexRolloutDiscoveryInterval = 6 * time.Second
@@ -16,6 +17,7 @@ const codexRolloutDiscoveryInterval = 6 * time.Second
 // CodexRolloutIndex shares bounded rollout discovery between the app-server's
 // metadata watcher and quota views. Contents and credentials are never cached here.
 type CodexRolloutIndex struct {
+	Directories  *localusage.DirectoryInventory
 	mu           sync.Mutex
 	home, thread string
 	fence        consent.Fence
@@ -31,13 +33,14 @@ func (p Paths) RecentCodexRollouts() ([]string, string) {
 	admission := admissionFor(p)
 	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") ||
 		admission.CleanupPending(consent.ScopeCodexLocalHistory) || p.CodexHome == "" {
-		p.CodexIndex.clear()
+		p.CodexIndex.Reset()
 		return nil, ""
 	}
-	return p.CodexIndex.recent(p.CodexHome, p.CodexThread, admission.Fence(), time.Now())
+	now := time.Now()
+	return p.CodexIndex.recentFrom(p.CodexHome, p.CodexThread, admission.Fence(), now, p.CodexIndex.Directories.ForAdmission(admission, now))
 }
 
-func (i *CodexRolloutIndex) clear() {
+func (i *CodexRolloutIndex) Reset() {
 	if i == nil {
 		return
 	}
@@ -47,12 +50,16 @@ func (i *CodexRolloutIndex) clear() {
 }
 
 func (i *CodexRolloutIndex) recent(home, thread string, fence consent.Fence, now time.Time) ([]string, string) {
+	return i.recentFrom(home, thread, fence, now, os.ReadDir)
+}
+
+func (i *CodexRolloutIndex) recentFrom(home, thread string, fence consent.Fence, now time.Time, readDir func(string) ([]os.DirEntry, error)) ([]string, string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if i.home != home || i.thread != thread || i.fence != fence || i.scannedAt.IsZero() ||
 		now.Before(i.scannedAt) || now.Sub(i.scannedAt) >= codexRolloutDiscoveryInterval {
 		i.home, i.thread, i.fence, i.scannedAt = home, thread, fence, now
-		i.files, i.own = discoverCodexRollouts(home, thread, codexFiles)
+		i.files, i.own = discoverCodexRolloutsFrom(home, thread, codexFiles, readDir)
 	}
 
 	// The older discovery rejected symlink date directories. Recheck that
@@ -63,10 +70,13 @@ func (i *CodexRolloutIndex) recent(home, thread string, fence consent.Fence, now
 		if err != nil || !info.Mode().IsRegular() {
 			return true
 		}
-		for dir := filepath.Dir(file); dir != root; dir = filepath.Dir(dir) {
+		for dir := filepath.Dir(file); ; dir = filepath.Dir(dir) {
 			info, err := os.Lstat(dir)
-			if err != nil || !info.IsDir() {
+			if err != nil || !info.IsDir() || dir == filepath.Dir(dir) {
 				return true
+			}
+			if dir == root {
+				break
 			}
 		}
 		return false

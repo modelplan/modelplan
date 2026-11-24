@@ -8,8 +8,6 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -42,15 +40,48 @@ func observeQuotaHistory(st *store.Store, report quota.Report, now time.Time) {
 // only while a plugin hook runs. It runs every 30 seconds, so it must stay off the readers: session
 // logs and ModelPlan's own cache only (TestObserveForAppStaysOffReaders).
 func observeForApp(st *store.Store) func(time.Time) []appserver.ObserveResult {
+	return observeForAppIndexed(st, &quota.CodexRolloutIndex{}, &speed.ActivityLogIndex{})
+}
+
+func observeForAppIndexed(st *store.Store, codexIndex *quota.CodexRolloutIndex, activity *speed.ActivityLogIndex) func(time.Time) []appserver.ObserveResult {
 	return func(now time.Time) []appserver.ObserveResult {
-		codex := quota.CodexHome()
+		admission := consent.Capture()
+		paths := quota.ProductionWatchPaths(st.Dir)
+		paths.Admission, paths.CodexIndex = &admission, codexIndex
+		// The background accounting pass uses the same active set and directory
+		// listings as activity. Keep ZCode’s own ledger on its existing adapter.
+		var logs []speed.LiveLog
+		if !speed.Off() {
+			claude, codex, zcode, _ := appLogHomes(st.Dir, admission, now)
+			logs = activity.AdmittedLogs(claude, codex, zcode, admission, now, time.Now())
+		}
 		results := []appserver.ObserveResult{
-			{Source: "codex", Outcome: observeCodexHomeSpeed(st, codex, now)},
-			{Source: "claude", Outcome: observeClaudeSpeed(st, now)},
+			{Source: "codex", Outcome: observeCodexWithLogs(st, now, func() []string {
+				files, own := paths.RecentCodexRollouts()
+				if len(files) > 8 && files[0] == own {
+					files = files[1:] // the reader may add a ninth, older thread
+				}
+				return files
+			})},
+			{Source: "claude", Outcome: observeClaudeSpeed(st, logs, now)},
 		}
 		results = append(results, observeAgents(st, now)...)
-		return append(results, appserver.ObserveResult{Source: "live", Outcome: observeLiveLogs(st, codex, cachedSubscriptions(st, now), now)})
+		return append(results, appserver.ObserveResult{Source: "live", Outcome: observeLiveWithLogs(st, paths.CodexHome, cachedSubscriptions(st, now), quota.Report{
+			ConsentStoreEpoch: admission.Fence().StoreEpoch, ConsentGeneration: admission.Fence().Generation,
+		}, now, func(claude, codex string) []speed.LiveLog {
+			return admittedLiveLogs(logs, claude != "", codex != "")
+		})})
 	}
+}
+
+func admittedLiveLogs(logs []speed.LiveLog, claude, codex bool) []speed.LiveLog {
+	var admitted []speed.LiveLog
+	for _, log := range logs {
+		if log.Source == "claude-code" && claude || log.Source == "codex" && codex {
+			admitted = append(admitted, log)
+		}
+	}
+	return admitted
 }
 
 // cachedSubscriptions: the accounts the last completed reads recorded for the tools with session logs.
@@ -67,20 +98,15 @@ func cachedSubscriptions(st *store.Store, now time.Time) map[string]string {
 
 // observeClaudeSpeed measures the active Claude Code logs, which the plugin hook does on each
 // turn. Without the plugin, nothing else records their sessions, project labels or Today totals.
-func observeClaudeSpeed(st *store.Store, now time.Time) appserver.ObserveOutcome {
+func observeClaudeSpeed(st *store.Store, logs []speed.LiveLog, now time.Time) appserver.ObserveOutcome {
 	if !consent.Allowed("claude", consent.Local) {
 		return appserver.ObserveSkippedConsent
 	}
 	if speed.Off() {
 		return appserver.ObserveSkippedOff
 	}
-	home, _ := os.UserHomeDir()
-	claude := os.Getenv("CLAUDE_CONFIG_DIR")
-	if claude == "" {
-		claude = filepath.Join(home, ".claude")
-	}
 	outcome := appserver.ObserveSkippedNoLogs
-	for _, log := range speed.ActiveLogs(claude, "", now) {
+	for _, log := range logs {
 		if log.Source != "claude-code" || log.Sidechain {
 			continue
 		}

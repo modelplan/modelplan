@@ -2,7 +2,6 @@ package speed
 
 import (
 	"encoding/json"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -162,6 +161,10 @@ func activityRoots(claudeHome, codexHome, zcodeHome string) []liveRoot {
 }
 
 func activeLogs(roots []liveRoot, now time.Time) []LiveLog {
+	return activeLogsFrom(roots, now, os.ReadDir)
+}
+
+func activeLogsFrom(roots []liveRoot, now time.Time, readDir func(string) ([]os.DirEntry, error)) []LiveLog {
 	type candidate struct {
 		log LiveLog
 		at  time.Time
@@ -171,22 +174,38 @@ func activeLogs(roots []liveRoot, now time.Time) []LiveLog {
 		if !root.enabled || !filepath.IsAbs(root.dir) {
 			continue
 		}
-		visited := 0
-		_ = filepath.WalkDir(root.dir, func(path string, d fs.DirEntry, err error) error {
-			visited++
-			if visited > 20000 {
-				return fs.SkipAll
+		info, err := os.Lstat(root.dir)
+		if err != nil && !os.IsNotExist(err) || err == nil && !info.IsDir() {
+			continue
+		}
+		remaining := 19999 // the history root itself consumes one entry
+		var visit func(string)
+		visit = func(dir string) {
+			if remaining <= 0 {
+				return
 			}
-			if err != nil || d.IsDir() || d.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(path, ".jsonl") {
-				return nil
+			entries, _ := readDir(dir)
+			for _, entry := range entries {
+				if remaining <= 0 {
+					break
+				}
+				remaining--
+				path := filepath.Join(dir, entry.Name())
+				if entry.IsDir() {
+					visit(path)
+					continue
+				}
+				if entry.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(path, ".jsonl") {
+					continue
+				}
+				fi, err := entry.Info()
+				if err != nil || !fi.Mode().IsRegular() || fi.ModTime().Before(now.Add(-LiveWithin)) {
+					continue
+				}
+				all = append(all, candidate{LiveLog{Path: path, Source: root.source, Sidechain: filepath.Base(dir) == "subagents"}, fi.ModTime()})
 			}
-			fi, e := d.Info()
-			if e != nil || !fi.Mode().IsRegular() || fi.ModTime().Before(now.Add(-LiveWithin)) {
-				return nil
-			}
-			all = append(all, candidate{LiveLog{Path: path, Source: root.source, Sidechain: filepath.Base(filepath.Dir(path)) == "subagents"}, fi.ModTime()})
-			return nil
-		})
+		}
+		visit(root.dir)
 	}
 	sort.Slice(all, func(i, j int) bool {
 		if all[i].at.Equal(all[j].at) {

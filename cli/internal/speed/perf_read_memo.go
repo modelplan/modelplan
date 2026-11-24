@@ -31,7 +31,7 @@ func (m *PerfReadMemo) Read(cache string, admission consent.Admission, now time.
 		m.ledger = PerfLedger{}
 		return PerfView{}
 	}
-	paths := [3]string{PerfPath(cache), accountingPath(cache), ClearedPath(cache)}
+	paths := PerfWatchFiles(cache)
 	files, cacheable := perfFileInfo(paths)
 	ledger, ok := m.ledger, m.valid
 	if !ok || !cacheable || m.cache != cache || m.fence != admission.Fence() ||
@@ -77,4 +77,9 @@ func samePerfFiles(a, b [3]os.FileInfo) bool {
 		}
 	}
 	return true
+}
+
+// PerfWatchFiles lists the persisted inputs to the app server's Today projection.
+func PerfWatchFiles(cache string) [3]string {
+	return [3]string{PerfPath(cache), accountingPath(cache), ClearedPath(cache)}
 }

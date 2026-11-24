@@ -1323,6 +1323,13 @@ func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, 
 }
 
 func observeLive(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time) appserver.ObserveOutcome {
+	return observeLiveWithLogs(st, codexHome, refs, report, now, func(claude, codex string) []speed.LiveLog {
+		return speed.ActiveLogs(claude, codex, now)
+	})
+}
+
+func observeLiveWithLogs(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time, logs func(string, string) []speed.LiveLog) appserver.ObserveOutcome {
+
 	// Each harness's logs are read under its own grant: a Codex-only user still gets live Codex sessions (owner
 	// build 13), and Claude Code's logs stay unread without its grant. An empty home disables that root.
 	claudeAllowed, codexAllowed := consent.Allowed("claude", consent.Local), consent.Allowed("codex", consent.Local)
@@ -1343,7 +1350,7 @@ func observeLive(st *store.Store, codexHome string, refs map[string]string, repo
 		codexHome = ""
 	}
 	return observeOutcome(reportWrite(report, func() error {
-		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, codexHome, now), projectLabels(), refs, now)
+		return speed.ObserveLive(st.Dir, logs(claude, codexHome), projectLabels(), refs, now)
 	}))
 }
 
@@ -1354,13 +1361,18 @@ func observeCodexSpeed(st *store.Store, now time.Time) {
 }
 
 func observeCodexHomeSpeed(st *store.Store, home string, now time.Time) appserver.ObserveOutcome {
+	return observeCodexWithLogs(st, now, func() []string { return quota.RecentRollouts(home, 8) })
+}
+
+func observeCodexWithLogs(st *store.Store, now time.Time, rolloutFiles func() []string) appserver.ObserveOutcome {
+
 	if !consent.Allowed("codex", consent.Local) {
 		return appserver.ObserveSkippedConsent
 	}
 	if speed.Off() {
 		return appserver.ObserveSkippedOff
 	}
-	rollouts := quota.RecentRollouts(home, 8)
+	rollouts := rolloutFiles()
 	if len(rollouts) == 0 {
 		return appserver.ObserveSkippedNoLogs
 	}

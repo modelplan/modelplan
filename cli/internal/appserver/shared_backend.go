@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"sync"
@@ -36,10 +35,11 @@ type SharedConfig struct {
 	Detect           func() detect.Report
 	// LaterInstalled records each detection report and returns the tools detected now that
 	// were absent when this Mac's engine first looked (D238). Optional.
-	LaterInstalled func(detect.Report) map[string]bool
-	Paths          func(consent.Admission) quota.Paths
-	WatchPaths     func(consent.Admission) quota.Paths // metadata-only watcher paths, if supplied
-	Cleanup        func(string, bool) error
+	LaterInstalled        func(detect.Report) map[string]bool
+	Paths                 func(consent.Admission) quota.Paths
+	WatchPaths            func(consent.Admission) quota.Paths // metadata-only watcher paths, if supplied
+	ClearHistoryInventory func()
+	Cleanup               func(string, bool) error
 	// Granted runs after each committed, not replayed, consent change (optional); the history
 	// import retry hangs off it (G3-112).
 	Granted func()
@@ -498,8 +498,13 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 	if !b.config.Offline && receipt.Committed && !receipt.Replayed && keychain[consent.ScopeClaudeAccountUsageSavedLogin] == "allow" {
 		result.Credentials = []CredentialNeed{{Provider: "claude", Scope: consent.ScopeClaudeAccountUsageSavedLogin, Interactive: true}}
 	}
-	if receipt.Committed && !receipt.Replayed && b.config.Granted != nil {
-		b.config.Granted()
+	if receipt.Committed && !receipt.Replayed {
+		if b.config.ClearHistoryInventory != nil {
+			b.config.ClearHistoryInventory()
+		}
+		if b.config.Granted != nil {
+			b.config.Granted()
+		}
 	}
 	b.notify()
 	return result, nil
@@ -540,14 +545,34 @@ func grantError(err error) error {
 }
 
 type fileStamp struct {
-	path           string
-	size, modified int64
-	exists         bool
+	path string
+	info os.FileInfo
 }
 
-type localFileStamp struct {
-	path string
-	fileStamp
+func statWatchFile(path string) fileStamp {
+	info, _ := os.Stat(path)
+	return fileStamp{path, info}
+}
+
+func (s fileStamp) same(other fileStamp) bool {
+	if s.path != other.path {
+		return false
+	}
+	x, y := s.info, other.info
+	return x == nil && y == nil || x != nil && y != nil && os.SameFile(x, y) &&
+		x.Size() == y.Size() && x.ModTime().Equal(y.ModTime()) && x.Mode() == y.Mode()
+}
+
+func sameFileStamps(a, b []fileStamp) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, prior := range a {
+		if !prior.same(b[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func (b *SharedBackend) watchPaths(admission consent.Admission) quota.Paths {
@@ -559,7 +584,7 @@ func (b *SharedBackend) watchPaths(admission consent.Admission) quota.Paths {
 
 // codexLocalStamps observes metadata only for the same permitted local source
 // that buildView reads. It never opens rollout contents or exposes file paths.
-func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFileStamp {
+func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []fileStamp {
 	tool, decided := admission.State().Tools["codex"]
 	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") || (decided && (!tool.Allowed || tool.ConsentTextVersion != consent.TextVersion)) {
 		return nil
@@ -570,35 +595,30 @@ func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFil
 	}
 	files, _ := paths.RecentCodexRollouts()
 	sort.Strings(files)
-	stamps := make([]localFileStamp, 0, len(files))
+	stamps := make([]fileStamp, 0, len(files))
 	for _, file := range files {
 		info, err := os.Lstat(file)
 		if err == nil && info.Mode().IsRegular() {
-			stamps = append(stamps, localFileStamp{file, fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}})
+			stamps = append(stamps, fileStamp{file, info})
 		}
 	}
 	return stamps
 }
 
-// watchedStamps is the metadata of every file whose change makes a new snapshot: the consent
-// store, the reader state, the local file, the observed captures and the permitted Codex rollouts.
-func watchedStamps(paths quota.Paths, codexStamps []localFileStamp) []fileStamp {
-	files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
+// watchedStamps stats exact ModelPlan inputs. Diagnostics, lock files and
+// temporary writes in the observed directory do not invalidate a view.
+func watchedStamps(paths quota.Paths, codexStamps []fileStamp) []fileStamp {
+	files := append(quota.ViewWatchFiles(paths), consent.Path())
+	perf := speed.PerfWatchFiles(paths.Cache)
+	files = append(files, perf[:]...)
 	current := make([]fileStamp, 0, len(files)+len(codexStamps))
 	for _, file := range files {
-		info, err := os.Stat(file)
-		stamp := fileStamp{}
-		if err == nil {
-			stamp = fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}
+		if file == "" {
+			continue
 		}
-		current = append(current, stamp)
+		current = append(current, statWatchFile(file))
 	}
-	for _, stamp := range codexStamps {
-		observed := stamp.fileStamp
-		observed.path = stamp.path
-		current = append(current, observed)
-	}
-	return current
+	return append(current, codexStamps...)
 }
 
 // viewReuseWindow bounds how long a view may answer requests in place of a new one, about the
@@ -618,7 +638,8 @@ func (b *SharedBackend) captureViewToken() viewToken {
 	t := viewToken{seq: b.changeSeq.Load(), at: time.Now()}
 	admission := consent.Capture()
 	t.stamp = stampOf(admission.Fence())
-	t.inputs = watchedStamps(b.watchPaths(admission), b.codexLocalStamps(admission))
+	paths := b.watchPaths(admission)
+	t.inputs = watchedStamps(paths, b.codexLocalStamps(admission))
 	t.detection = b.config.Detect()
 	return t
 }
@@ -635,7 +656,7 @@ func (b *SharedBackend) ViewCurrent(token any) bool {
 		return false
 	}
 	now := b.captureViewToken()
-	return now.seq == held.seq && now.stamp == held.stamp && reflect.DeepEqual(now.inputs, held.inputs) && reflect.DeepEqual(now.detection, held.detection)
+	return now.seq == held.seq && now.stamp == held.stamp && sameFileStamps(now.inputs, held.inputs) && reflect.DeepEqual(now.detection, held.detection)
 }
 
 // laterPending: a later-installed tool still owes its D240 grant, which only a Get applies.
@@ -687,14 +708,25 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
 			var last []fileStamp
-			var codexStamps []localFileStamp
+			var codexStamps []fileStamp
 			var nextCodexCheck time.Time
+			var consentStamp fileStamp
+			var admission consent.Admission
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					admission := consent.Capture()
+					currentConsent := statWatchFile(consent.Path())
+					if !consentStamp.same(currentConsent) {
+						next := consent.Capture()
+						if b.config.ClearHistoryInventory != nil && (next.Fence() != admission.Fence() || next.Mode() != admission.Mode()) {
+							b.config.ClearHistoryInventory()
+						}
+						admission = next
+						consentStamp = currentConsent
+						codexStamps, nextCodexCheck = nil, time.Time{}
+					}
 					paths := b.watchPaths(admission)
 					now := b.now()
 					tool, decided := admission.State().Tools["codex"]
@@ -705,14 +737,22 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 					} else if !now.Before(nextCodexCheck) {
 						// Match the local reader's recent files and its active thread;
 						// inspect metadata only, under the same admission fence.
-						codexStamps = b.codexLocalStamps(admission)
+						// Authorize private metadata access from current consent, independently
+						// of the cached marker used by the fast poll.
+						live := consent.Capture()
+						if live.Fence() == admission.Fence() && live.Mode() == admission.Mode() {
+							codexStamps = b.codexLocalStamps(live)
+						} else {
+							codexStamps = nil
+							consentStamp = fileStamp{}
+						}
 						nextCodexCheck = now.Add(time.Second)
 					}
 					current := watchedStamps(paths, codexStamps)
 					deadline := b.todayDeadline.Load()
 					due := deadline != nil && !now.Before(*deadline) &&
 						b.todayDeadline.CompareAndSwap(deadline, nil)
-					if due || !reflect.DeepEqual(last, current) {
+					if due || !sameFileStamps(last, current) {
 						last = current
 						b.notify()
 					}

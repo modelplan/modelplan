@@ -398,10 +398,14 @@ func CodexRollouts(home, thread string, n int) []string {
 }
 
 func discoverCodexRollouts(home, thread string, n int) (files []string, own string) {
+	return discoverCodexRolloutsFrom(home, thread, n, os.ReadDir)
+}
+
+func discoverCodexRolloutsFrom(home, thread string, n int, readDir func(string) ([]os.DirEntry, error)) (files []string, own string) {
 	root := filepath.Join(home, "sessions")
-	files = newestRollouts(root, n)
+	files = newestRolloutsFrom(root, n, readDir)
 	if thread = clip(thread); thread != "" {
-		own = findThread(root, thread)
+		own = findThreadFrom(root, thread, readDir)
 		if own != "" && !contains(files, own) {
 			files = append([]string{own}, files...)
 		}
@@ -420,14 +424,18 @@ func contains(xs []string, x string) bool {
 
 // findThread looks for rollout-*-<thread>.jsonl in the most recent day directories.
 func findThread(root, thread string) string {
+	return findThreadFrom(root, thread, os.ReadDir)
+}
+
+func findThreadFrom(root, thread string, readDir func(string) ([]os.DirEntry, error)) string {
 	suffix, days := "-"+thread+".jsonl", 0
-	for _, y := range dirsDesc(root) {
-		for _, m := range dirsDesc(y) {
-			for _, d := range dirsDesc(m) {
+	for _, y := range dirsDesc(root, readDir) {
+		for _, m := range dirsDesc(y, readDir) {
+			for _, d := range dirsDesc(m, readDir) {
 				if days++; days > 62 {
 					return ""
 				}
-				es, _ := os.ReadDir(d)
+				es, _ := readDir(d)
 				for _, e := range es {
 					if e.Type().IsRegular() && rolloutName.MatchString(e.Name()) && strings.HasSuffix(e.Name(), suffix) {
 						return filepath.Join(d, e.Name())
@@ -530,16 +538,20 @@ var rolloutName = regexp.MustCompile(`^rollout-.*\.jsonl$`)
 // listed (names and stats only, no reads): a resumed session keeps appending to the file in
 // its start day's directory, so a busier newer day must not hide it.
 func newestRollouts(root string, n int) []string {
+	return newestRolloutsFrom(root, n, os.ReadDir)
+}
+
+func newestRolloutsFrom(root string, n int, readDir func(string) ([]os.DirEntry, error)) []string {
 	type f struct {
 		path string
 		mod  time.Time
 	}
 	var out []f
-	years := dirsDesc(root)
+	years := dirsDesc(root, readDir)
 	for _, y := range years {
-		for _, m := range dirsDesc(y) {
-			for _, d := range dirsDesc(m) {
-				es, _ := os.ReadDir(d)
+		for _, m := range dirsDesc(y, readDir) {
+			for _, d := range dirsDesc(m, readDir) {
+				es, _ := readDir(d)
 				for _, e := range es {
 					if e.Type().IsRegular() && rolloutName.MatchString(e.Name()) {
 						if info, err := e.Info(); err == nil {
@@ -558,8 +570,8 @@ func newestRollouts(root string, n int) []string {
 	return paths
 }
 
-func dirsDesc(p string) []string {
-	es, _ := os.ReadDir(p)
+func dirsDesc(p string, readDir func(string) ([]os.DirEntry, error)) []string {
+	es, _ := readDir(p)
 	var out []string
 	for _, e := range es {
 		if e.IsDir() {

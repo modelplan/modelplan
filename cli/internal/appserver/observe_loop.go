@@ -87,9 +87,6 @@ func (s *RefreshScheduler) observeLoop() {
 			busy = busy || r.Outcome == ObserveSkippedLockBusy
 		}
 		s.writeObserveLog(now)
-		if s.ctx.Err() == nil && s.config.Changed != nil {
-			s.config.Changed()
-		}
 		wait, wake := observeEvery, (<-chan struct{})(nil)
 		if s.config.ObserveEvery > 0 {
 			wait = s.config.ObserveEvery
@@ -115,10 +112,7 @@ func (s *RefreshScheduler) ObserveDecisions() []ObserveDecision {
 }
 
 func (s *RefreshScheduler) writeObserveLog(now time.Time) {
-	if s.config.Paths == nil {
-		return
-	}
-	cache := s.config.Paths(consent.Capture()).Cache
+	cache := s.cacheDir(consent.Capture())
 	if cache == "" {
 		return
 	}

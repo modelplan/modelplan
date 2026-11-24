@@ -21,6 +21,7 @@ import (
 // Run must enforce its own provider lock, admission and persisted budget again;
 // a projected deadline is never permission to bypass those gates.
 type RefreshConfig struct {
+	Cache             string // ModelPlan's own cache, independent of reader configuration
 	Backend           Backend
 	Paths             func(consent.Admission) quota.Paths
 	Run               func(context.Context, quota.Paths, string, time.Time) error
@@ -330,6 +331,16 @@ func (s *RefreshScheduler) replanQueued(admission consent.Admission, scope, key 
 }
 
 func stampOfFence(f consent.Fence) Stamp { return Stamp{Epoch: f.StoreEpoch, Generation: f.Generation} }
+func (s *RefreshScheduler) cacheDir(admission consent.Admission) string {
+	if s.config.Cache != "" {
+		return s.config.Cache
+	}
+	if s.config.Paths != nil {
+		return s.config.Paths(admission).Cache
+	}
+	return ""
+}
+
 func (s *RefreshScheduler) paths(admission consent.Admission) quota.Paths {
 	return s.safePaths(s.config.Paths(admission))
 }

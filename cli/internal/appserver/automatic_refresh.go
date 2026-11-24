@@ -64,7 +64,7 @@ func (s *RefreshScheduler) automatic() {
 			}
 		}
 		if !s.config.Offline && !s.config.ReadOnly && state.AllowsScope(consent.ScopeCodexLocalHistory, mode) &&
-			(!runtimeGranted || !quota.CodexRuntimeAvailable(s.paths(admission).Cache, admission, now)) {
+			(!runtimeGranted || !quota.CodexRuntimeAvailable(s.cacheDir(admission), admission, now)) {
 			scopes = append(scopes, consent.ScopeCodexLocalHistory)
 		}
 		next := now.Add(time.Minute)

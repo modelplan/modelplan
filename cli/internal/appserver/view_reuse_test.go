@@ -144,3 +144,31 @@ func TestSharedViewTokenHoldsOnlyWhileNothingChanged(t *testing.T) {
 	time.Sleep(viewReuseWindow + 20*time.Millisecond)
 	expect(false, token, "older than the reuse window")
 }
+
+// Observation diagnostics share the directory with model inputs, but a diagnostic
+// write alone cannot change a row. A quota capture written the same way still can.
+func TestDiagnosticWritesDoNotInvalidateViewInputs(t *testing.T) {
+	cache := t.TempDir()
+	observed := filepath.Join(cache, "observed")
+	if err := os.Mkdir(observed, 0700); err != nil {
+		t.Fatal(err)
+	}
+	first := time.Unix(1100, 0)
+	if err := os.Chtimes(observed, first, first); err != nil {
+		t.Fatal(err)
+	}
+	paths := quota.Paths{Cache: cache}
+	initial := watchedStamps(paths, nil)
+	if err := os.WriteFile(filepath.Join(observed, ObserveLogFile), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !sameFileStamps(initial, watchedStamps(paths, nil)) {
+		t.Fatal("diagnostic write invalidated the row inputs")
+	}
+	if err := os.WriteFile(filepath.Join(observed, "codex-account.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if sameFileStamps(initial, watchedStamps(paths, nil)) {
+		t.Fatal("a new quota capture did not invalidate the row inputs")
+	}
+}

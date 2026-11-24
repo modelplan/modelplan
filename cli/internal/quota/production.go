@@ -10,6 +10,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -45,15 +46,36 @@ func CodexHome() string {
 func ProductionWatchPaths(cache string) Paths {
 	home, _ := os.UserHomeDir()
 	return Paths{Cache: cache, CodexHome: CodexHome(), LocalFile: profile.ConfigFile(home, "local.json"),
+		CodexBarFile: profile.ConfigFile(home, "codexbar.json"), ConnectionsFile: profile.ConfigFile(home, "connections.json"),
 		CodexThread: os.Getenv("CODEX_THREAD_ID")}
+}
+
+// ViewWatchFiles returns ModelPlan's exact quota inputs for the app server.
+// Watching their directories would treat diagnostics and lock files as readings.
+func ViewWatchFiles(p Paths) []string {
+	files := []string{filepath.Join(p.Cache, "state.json"), p.LocalFile, p.ConnectionsFile, p.CodexBarFile, ManualKeyPath(p.Cache),
+		accountPath(p.Cache), snapshotPath(p.Cache), nativePath(p.Cache), codexbarPath(p.Cache),
+		subscriptionsPath(p.Cache), manualKeyGenerationPath(p.Cache), zaiConfigStatePath(p.Cache),
+		copilotStatePath(p.Cache), antigravityStatePath(p.Cache), ampPath(p.Cache),
+		xSubscriptionPath(p.Cache), kimiBudgetPath(p.Cache)}
+	providers := make([]string, 0, len(nativeReaders))
+	for provider := range nativeReaders {
+		providers = append(providers, provider)
+	}
+	sort.Strings(providers)
+	for _, provider := range providers {
+		files = append(files, readerAttemptPath(p.Cache, provider))
+		if nativeReaders[provider].Managed != nil {
+			files = append(files, readerPath(p.Cache, provider))
+		}
+	}
+	return files
 }
 
 func ProductionPathsWithAdmission(cache, version string, admission consent.Admission) Paths {
 	home, _ := os.UserHomeDir()
 	p := ProductionWatchPaths(cache)
 	p.Admission, p.CLIVersion = &admission, version
-	p.CodexBarFile = profile.ConfigFile(home, "codexbar.json")
-	p.ConnectionsFile = profile.ConfigFile(home, "connections.json")
 	p.ClaudeSession = os.Getenv("CLAUDE_CODE_SESSION_ID")
 	p.ReaderAccess = &ReaderAccess{Grants: map[string]ReaderGrant{}}
 	state, mode := admission.State(), admission.Mode()

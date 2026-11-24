@@ -15,43 +15,30 @@ import (
 
 // This observer lives in the existing app-server, not in the UI or an extra child. It runs every
 // two seconds, so it opens session logs and ModelPlan's own cache only, never a credential file.
-func appActivity(cache string) func(context.Context, consent.Admission, time.Time) []rows.ActivityInput {
+func appActivity(cache string, logsIndex *speed.ActivityLogIndex) func(context.Context, consent.Admission, time.Time) []rows.ActivityInput {
 	observer := speed.NewActivityObserver()
-	var logsIndex speed.ActivityLogIndex
+	var lastFence consent.Fence
+	var lastMode string
 	return func(ctx context.Context, a consent.Admission, now time.Time) []rows.ActivityInput {
-		if speed.Off() {
-			logsIndex = speed.ActivityLogIndex{}
+		if speed.Off() || lastFence != a.Fence() || lastMode != a.Mode() {
 			observer.Observe(ctx, nil, nil, now)
+			lastFence, lastMode = a.Fence(), a.Mode()
+		}
+		if speed.Off() {
+			logsIndex.AdmittedLogs("", "", "", a, now, time.Now())
 			return nil
 		}
-		home, _ := os.UserHomeDir()
+		claude, codex, zcode, zcodeRef := appLogHomes(cache, a, now)
 		state := a.State()
-		allowed := func(scope, tool string) bool {
-			return state.AllowsScope(scope, a.Mode()) && !a.CleanupPending(scope) && !a.CleanupPending(tool)
-		}
-		claude, codex, zcode, zcodeRef := "", "", "", ""
-		if allowed(consent.ScopeClaudeLocalHistory, "claude") {
-			claude = os.Getenv("CLAUDE_CONFIG_DIR")
-			if claude == "" {
-				claude = filepath.Join(home, ".claude")
-			}
-		}
-		if allowed(consent.ScopeCodexLocalHistory, "codex") {
-			codex = quota.CodexHome()
-		}
-		// ZCode's ledger has no account. Its one configured key does, and that reading also proves
-		// ZCode points at Z.ai, so nothing needs to open ZCode's own settings here.
-		if allowed(consent.ScopeZaiLocalHistory, "zai") {
-			if zcodeRef = quota.ZCodeSubscription(cache, a, now); zcodeRef != "" {
-				zcode = filepath.Join(home, ".zcode")
-			}
-		}
-		logs := logsIndex.Logs(claude, codex, zcode, a.Fence(), now, time.Now())
+		logs := logsIndex.AdmittedLogs(claude, codex, zcode, a, now, time.Now())
 		bindings := []speed.ActivityBinding{}
 		if len(logs) > 0 {
 			bindings = speed.ExistingActivityBindings(cache, a)
 		}
-		values := observer.Observe(ctx, logs, bindings, now)
+		values := observer.ObserveAdmitted(ctx, logs, bindings, now, func() bool {
+			current := consent.Capture()
+			return current.Fence() == a.Fence() && current.Mode() == a.Mode()
+		})
 		out := []rows.ActivityInput{}
 		for _, v := range values {
 			if v.Source == "zcode" && !v.RecordAt.Before(state.Scopes[consent.ScopeZaiLocalHistory].At) {
@@ -71,4 +58,29 @@ func appActivity(cache string) func(context.Context, consent.Admission, time.Tim
 		}
 		return out
 	}
+}
+
+func appLogHomes(cache string, a consent.Admission, now time.Time) (claude, codex, zcode, zcodeRef string) {
+	home, _ := os.UserHomeDir()
+	state := a.State()
+	allowed := func(scope, tool string) bool {
+		return state.AllowsScope(scope, a.Mode()) && !a.CleanupPending(scope) && !a.CleanupPending(tool)
+	}
+	if allowed(consent.ScopeClaudeLocalHistory, "claude") {
+		claude = os.Getenv("CLAUDE_CONFIG_DIR")
+		if claude == "" {
+			claude = filepath.Join(home, ".claude")
+		}
+	}
+	if allowed(consent.ScopeCodexLocalHistory, "codex") {
+		codex = quota.CodexHome()
+	}
+	// ZCode's log has no account. Only a current admitted binding can
+	// associate activity with a ZCode subscription.
+	if allowed(consent.ScopeZaiLocalHistory, "zai") {
+		if zcodeRef = quota.ZCodeSubscription(cache, a, now); zcodeRef != "" {
+			zcode = filepath.Join(home, ".zcode")
+		}
+	}
+	return
 }

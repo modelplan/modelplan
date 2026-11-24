@@ -24,6 +24,7 @@ import (
 var observerQuotaCalls = map[string]bool{
 	"Background": true, "ClaudeSubscription": true, "CodexHome": true, "CodexSubscription": true,
 	"RecentRollouts": true, "ThreadOrigin": true, "ZCodeSubscription": true,
+	"CodexRolloutIndex": true, "ProductionWatchPaths": true,
 }
 
 // Packages that reach a provider, a credential store or another process.
@@ -97,7 +98,7 @@ func TestObserveForAppStaysOffReaders(t *testing.T) {
 	}
 	visit("observeForApp")
 	visit("appActivity")
-	if !seen["observeLiveLogs"] || !seen["observeAgents"] {
+	if !seen["observeLiveWithLogs"] || !seen["observeCodexWithLogs"] || !seen["observeAgents"] {
 		t.Fatalf("the walk missed the observers: %v", seen)
 	}
 	raw, err := exec.Command("go", "list", "-deps", "../../internal/speed").CombinedOutput()

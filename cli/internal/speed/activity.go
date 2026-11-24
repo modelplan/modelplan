@@ -35,6 +35,7 @@ type SessionActivity struct {
 	Source, SessionKey, SessionRef, SubscriptionRef string
 }
 type activityCache struct {
+	info     os.FileInfo
 	modified time.Time
 	size     int64
 	verdicts []SessionActivity
@@ -52,6 +53,12 @@ func NewActivityObserver() *ActivityObserver {
 // Observe never overlaps a previous scan. Its cache retains verdicts, not tails,
 // content, configuration, turn IDs or credentials. Expiry is recomputed on hits.
 func (o *ActivityObserver) Observe(ctx context.Context, logs []LiveLog, bindings []ActivityBinding, now time.Time) []SessionActivity {
+	return o.ObserveAdmitted(ctx, logs, bindings, now, nil)
+}
+
+// ObserveAdmitted rechecks the caller's live admission before opening a changed log.
+func (o *ActivityObserver) ObserveAdmitted(ctx context.Context, logs []LiveLog, bindings []ActivityBinding, now time.Time, stillAllowed func() bool) []SessionActivity {
+
 	if !o.mu.TryLock() {
 		return nil
 	}
@@ -84,13 +91,18 @@ func (o *ActivityObserver) Observe(ctx context.Context, logs []LiveLog, bindings
 		}
 		seen[log.Path] = true
 		cached, ok := o.cache[log.Path]
-		if !ok || !cached.modified.Equal(fi.ModTime()) || cached.size != fi.Size() {
+		if !ok || !os.SameFile(cached.info, fi) || !cached.modified.Equal(fi.ModTime()) || cached.size != fi.Size() {
+			if stillAllowed != nil && !stillAllowed() {
+				clear(o.cache)
+				clear(o.refs)
+				return nil
+			}
 			verdicts, err := readActivityTail(log, fi, now)
 			if err != nil {
 				delete(o.cache, log.Path)
 				continue
 			}
-			cached = activityCache{fi.ModTime(), fi.Size(), verdicts}
+			cached = activityCache{fi, fi.ModTime(), fi.Size(), verdicts}
 			o.cache[log.Path] = cached
 		}
 		for _, v := range cached.verdicts {

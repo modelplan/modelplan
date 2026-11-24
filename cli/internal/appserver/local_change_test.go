@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
@@ -49,7 +48,7 @@ func TestCodexLocalStampsIncludeOlderOwnThread(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := b.codexLocalStamps(admission)
-	if reflect.DeepEqual(before, after) {
+	if sameFileStamps(before, after) {
 		t.Fatal("own thread update did not change stamps")
 	}
 }
@@ -86,7 +85,7 @@ func TestCodexLocalChangeRespectsConsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := b.codexLocalStamps(allow)
-	if len(after) != 1 || before[0] == after[0] {
+	if len(after) != 1 || sameFileStamps(before, after) {
 		t.Fatal("local file modification was missed")
 	}
 }
