@@ -311,3 +311,16 @@ test('G3-134 an unlisted model with a readable name gets a card: its name, "Unli
  // The published models keep their cards.
  await expect(card(page,'Sol 6.1')).toHaveCount(1);
 });
+
+test('a new model inherits its bound provider colour and running session light',async({page})=>{
+ const send=await open(page,{unlisted:true});
+ const data=cardData({unlisted:true});
+ Object.assign(data.details.sessions[2],{source:'codex',modelDisplay:'Future Codex',state:'running'});
+ expect(await page.evaluate(raw=>window.modelPlanCockpit.receive(raw),send('display',{data}))).toBe(true);
+ const future=card(page,'Future Codex'),known=card(page,'Sol 6.1');
+ await expect(future.locator('.fd-indicator')).toHaveAttribute('data-state','live');
+ const lamp=await future.locator('.fd-indicator').evaluate(e=>e.style.getPropertyValue('--lamp'));
+ expect(lamp).toMatch(/^#/);
+ expect(lamp).toBe(await known.locator('.fd-indicator').evaluate(e=>e.style.getPropertyValue('--lamp')));
+ expect(await future.locator('.st-vend b').first().evaluate(e=>e.style.getPropertyValue('--v'))).toBe(lamp);
+});

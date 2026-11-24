@@ -112,8 +112,9 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
   const session=object(value),display=text(session?.modelDisplay),ref=text(session?.sessionRef);
   if(!session||session.model!=='unknown'||!display||!ref||display.length>48)continue;
   const id='unlisted:'+display,found=unlisted.find(f=>f.id===id);
-  if(found)found.sessions.push({ref,sub:text(session.subscriptionRef)});
-  else if(faders.length+unlisted.length<FADER_LIMIT)unlisted.push({id,name:display,short:display,rec:'',e:[],accounts:[],sessions:[{ref,sub:text(session.subscriptionRef)}],unlisted:true});
+  const sub=text(session.subscriptionRef),account=sub&&subscriptions.some(s=>s.key===sub)?sub:null;
+  if(found){found.sessions.push({ref,sub});if(account&&!found.accounts.includes(account))found.accounts.push(account);}
+  else if(faders.length+unlisted.length<FADER_LIMIT)unlisted.push({id,name:display,short:display,rec:'',e:[],accounts:account?[account]:[],sessions:[{ref,sub}],unlisted:true});
  }
  return {accounts,faders:[...inUse,...unlisted,...history,...starred,...others]};
 }
