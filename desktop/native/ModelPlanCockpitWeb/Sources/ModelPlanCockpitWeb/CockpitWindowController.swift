@@ -1422,7 +1422,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // #981 sampling P2: liveness follows the host's window facts before the page is ready too. A hidden unready page
     // accrues nothing; shown again, it gets a fresh grace period and its bootstrap is monitored again. Everything
     // that delivers to the page stays behind the query-ticket guard below.
-    if !(value.visible && !value.occluded) { if !health.paused { pauseHealth() }; stopPluginSampling() }
+    let visible = value.visible && !value.occluded
+    // Withdraw the actual surface at once, even if WebKit has yet to
+    // acknowledge the message that stops its page's motion.
+    if shown { web?.isHidden = !visible }
+    if !visible { if !health.paused { pauseHealth() }; stopPluginSampling() }
     else {
       health.resume()
       if shown, !bridge.ready, bootstrapCheck == nil, !health.isWaiting { armBootstrapCheck() }
@@ -1430,7 +1434,6 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard bridge.queryTicket != nil else { return }
     guard value != lastVisibility else { return }
     lastVisibility = value
-    let visible = value.visible && !value.occluded
     let retainVisibleSchedule = visible && freshnessDriver.isVisible
     let token = visibilityFence.begin(visible: visible)
     // macrev2-981-4: the host's own facts resume liveness accounting with a fresh grace period. Waiting for the page to

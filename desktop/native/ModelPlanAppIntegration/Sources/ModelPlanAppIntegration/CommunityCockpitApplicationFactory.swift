@@ -323,12 +323,9 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
     private func beginPrewarm(_ snapshot: SettingsSnapshot) {
         if coordinator?.presented != true { adoptAppearance(snapshot, applied: prewarmApplied?()) }
-        // WP-17: the prewarm no longer waits 0.5 s; it waits for the launch check of the bundle instead, so the hidden page
-        // never hashes the bundle on the main thread.
-        Task { @MainActor [weak self] in
-            await self?.awaitPreparedBundle()
-            self?.coordinator?.prewarmEnabled = true
-        }
+        // Verify the bundle ahead of the click. Keep WebKit out of the idle
+        // app: the cockpit creates its page on demand and disposes it on close.
+        prepare()
     }
     func adoptAppearance(_ snapshot: SettingsSnapshot, applied: SettingsApplication?) {
         let theme:CockpitAppearance.Theme
