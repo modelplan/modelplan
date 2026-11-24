@@ -14,6 +14,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
@@ -77,7 +78,10 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	if clock == nil {
 		clock = time.Now
 	}
-	codexIndex := quota.CodexRolloutIndex{Clock: sources.Clock}
+	// One history inventory for the activity observer, the rollout selection and the
+	// observation pass: discovery is paid once per root (D397).
+	inventory := &logindex.Inventory{}
+	codexIndex := quota.CodexRolloutIndex{Clock: sources.Clock, Inventory: inventory}
 	rawPaths := func(a consent.Admission) quota.Paths {
 		p := quota.ProductionPathsWithAdmission(st.Dir, version, a)
 		p.CodexIndex = &codexIndex
@@ -104,7 +108,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			}
 		},
 		ManualKeyPresent: func(provider string) bool { return quota.ManualKeyPresent(st.Dir, provider) },
-		Activity:         appActivityClock(st.Dir, clock),
+		Activity:         appActivityClock(st.Dir, clock, inventory),
 		Reported: func(report quota.Report, now time.Time) {
 			if !options.ReadOnly {
 				observeQuotaHistory(st, report, now)
@@ -157,7 +161,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			return nil, func() {}, err
 		}
 		handlers["cockpit/query"] = cockpit
-		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Observe: observeForApp(st), ObserveAfter: appserver.ObserveFirstDelay, Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify, CredentialHold: func(provider string) (bool, time.Time) {
+		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Observe: observeForAppIn(st, inventory), ObserveAfter: appserver.ObserveFirstDelay, Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify, CredentialHold: func(provider string) (bool, time.Time) {
 			if server == nil {
 				return false, time.Time{}
 			}

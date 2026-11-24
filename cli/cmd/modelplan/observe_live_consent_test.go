@@ -68,7 +68,7 @@ func TestObserveLiveRecordsCodexWithoutClaudeConsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	observeLiveLogs(st, codexHome, nil, now)
+	observeLiveLogs(st, codexHome, nil, now, observeIndex{})
 	ledger, ok := speed.LoadPerf(st.Dir)
 	if !ok {
 		t.Fatal("no performance ledger written")

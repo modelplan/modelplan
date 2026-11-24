@@ -203,13 +203,21 @@ struct DockHelpInteraction: Equatable {
     /// The resource sampler's widget cadence follows `isWidgetShown` (the community delegate owns `visibilityChanged`).
     public var widgetShownChanged: ((Bool) -> Void)?
     private func reportVisibility(_ visible: Bool, expanded: Bool = false) {
-        reportWidgetShown(visible && expanded)
+        reportWidgetShown(visible && expanded && panel?.occlusionState.contains(.visible) == true)
         guard visible != isVisible else { return }
         isVisible = visible; visibilityChanged?()
     }
     private func reportWidgetShown(_ shown: Bool) {
         guard shown != isWidgetShown else { return }
-        isWidgetShown = shown; widgetShownChanged?(shown)
+        isWidgetShown = shown
+        if !shown {
+            workingDriver?.stop()
+        } else if model?.inputs.contains(where: { $0.working != nil }) == true {
+            // A hidden or collapsed surface retired its layers. Reattach only
+            // when there is still admitted activity to draw.
+            rebuild()
+        }
+        widgetShownChanged?(shown)
     }
     /// macrevb-1096-4: a plugin ring's card as it is now (rows, footer, action); nil keeps the rows of the last redraw.
     public var livePluginCard: ((String) -> DockPluginCard?)?
@@ -433,6 +441,13 @@ struct DockHelpInteraction: Equatable {
     /// G3-161: plugin ring updates that repainted only the ring (no rebuild pass).
     private(set) var ringOnlyRefreshesForChecks = 0
     var applicationForChecks: SettingsApplication? { application }
+    /// G3-161: official face paints across every view this host draws into.
+    var officialFacePaintsForChecks: Int {
+        var seen = Set<ObjectIdentifier>()
+        return ([dockView] + alternateViews + Array(edgeViews.values)).reduce(0) { total, view in
+            seen.insert(ObjectIdentifier(view)).inserted ? total + view.officialPaintsForChecks : total
+        }
+    }
     #endif
     func refreshPresence() { displayFollower.sample(); edge.refresh() }
     var isFollowingDisplay: Bool { displayFollower.isRunning }
@@ -1327,8 +1342,11 @@ struct DockHelpInteraction: Equatable {
 
     /// Synchronously retire cached values and accessibility nodes before replacement.
     /// Reset notice acknowledgements only on a privacy withdrawal, not on a timer tick.
+    /// G3-161: with `retainingFace` (an in-place replacement with no card open) the catalogue, painted face, sliver and
+    /// overflow tray stay as they are; the reinstall repaints only what changed, and `completeDeferredWithdrawal`
+    /// withdraws them if no content is reinstalled in the same step. A presented card or privacy always retires them.
     @discardableResult
-    func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = []) -> Bool {
+    func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = [], retainingFace: Bool = false) -> Bool {
         guard !retired else { return false }
         if !privacy, edge.isBackgroundPressed {
             // G3-113 (Pulse rebuilds nothing during a drag): a replacement that lands while the widget is pressed
@@ -1350,14 +1368,32 @@ struct DockHelpInteraction: Equatable {
         workingSignals = [:]; attentionSignals = []
         if privacy { attention = DockAttentionState() }
         menuNotice = nil; menuNoticeDidChange?(nil, false)
-        if !keepCard { catalogueKey = ""; if !catalogueReportedEmpty { reportCatalogue([]) } }
+        // An in-place replacement keeps the catalogue too, so an unchanged reinstall reports nothing.
+        if retainingFace && !privacy && !keepCard { return false }
+        if !keepCard { withdrawCatalogue() }
+        retireAdmittedFace(privacy: privacy)
+        return keepCard
+    }
+    private func withdrawCatalogue() { catalogueKey = ""; if !catalogueReportedEmpty { reportCatalogue([]) } }
+    /// Finishes a withdrawal that kept the face for a reinstall that did not come: the catalogue and the face.
+    func completeDeferredWithdrawal() {
+        guard !retired else { return }
+        withdrawCatalogue(); retireAdmittedFace()
+    }
+    /// True when a replacement can keep the painted face until its reinstall: no card is open and no press holds it.
+    var canReplaceInPlace: Bool { !retired && cardPresentedGeneration == nil && !edge.isBackgroundPressed }
+    /// The visual half of a withdrawal: the face, sliver and overflow tray.
+    private func retireAdmittedFace(privacy: Bool = false) {
+        guard !retired else { return }
         try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
         // G3-98: a plain replacement keeps a ring click's hidden number so the landed value fades in (#906);
         // a privacy withdrawal drops it with everything else.
-        for view in [dockView] + alternateViews { view.retireOfficialPresentation(keepingRefreshHolds: !privacy) }
+        for view in [dockView] + alternateViews {
+            if privacy { view.discardPreparedAppearance?() }
+            view.retireOfficialPresentation(keepingRefreshHolds: !privacy)
+        }
         sliver.noticeMarks = []
         try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
-        return keepCard
     }
 
     func finishCardReplacement() -> Bool {
@@ -1425,7 +1461,7 @@ struct DockHelpInteraction: Equatable {
         guard permitted, !retired, preferences.showDock, preferences.followActiveDisplay else {
             displayFollower.stop(); followedDisplayID = nil; return
         }
-        displayFollower.start(); displayFollower.sample()
+        displayFollower.start(externallySampled: true); displayFollower.sample()
     }
     private func rebuild() {
         guard !retired, !retiring, application != nil else { return }
@@ -1640,16 +1676,24 @@ struct DockHelpInteraction: Equatable {
     }
     private func makeEdge(preference: DockEdgePreference = .init(), policy: DockVisibilityPolicy = .init()) -> DockEdgeController {
         let read: () -> DockEdgeEnvironment = { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) }
+        let controller: DockEdgeController
         #if DEBUG
-        if let timing = visibilityTimingForChecks {
-            return DockEdgeController(preference: preference, policy: policy, clock: timing.clock,
-                                      scheduler: timing.scheduler, read: read, position: PulseDockPositioning.resolve)
-        }
+        let timing = visibilityTimingForChecks ?? (elapsedClock.flatMap { clock in edgeScheduling.map { (clock, $0) } })
+        #else
+        let timing = elapsedClock.flatMap { clock in edgeScheduling.map { (clock, $0) } }
         #endif
-        if let elapsedClock, let edgeScheduling {
-            return DockEdgeController(preference: preference, policy: policy, clock: elapsedClock, scheduler: edgeScheduling, read: read, position: PulseDockPositioning.resolve)
+        if let (clock, scheduler) = timing {
+            controller = DockEdgeController(preference: preference, policy: policy, clock: clock, scheduler: scheduler,
+                                            read: read, position: PulseDockPositioning.resolve)
+        } else {
+            controller = DockEdgeController(preference: preference, policy: policy, read: read, position: PulseDockPositioning.resolve)
         }
-        return DockEdgeController(preference: preference, policy: policy, read: read, position: PulseDockPositioning.resolve)
+        controller.onScheduledSample = { [weak self] in
+            guard let self, self.permitted, !self.retired else { return }
+            self.pointerSurface.sampleNow()
+            self.displayFollower.sample()
+        }
+        return controller
     }
     private func topology(of environment: DockEdgeEnvironment) -> DockDisplayTopology {
         .init(displays: environment.displays, primaryID: environment.primaryDisplayID)
@@ -1764,7 +1808,7 @@ struct DockHelpInteraction: Equatable {
         }
     }
     private func makePointerSurface() -> PulsePanelPointerSurface {
-        let surface = PulsePanelPointerSurface(pointSource: pointerSampleSource)
+        let surface = PulsePanelPointerSurface(pointSource: pointerSampleSource, externallySampled: true)
         surface.onChange = { [weak self] _ in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
             // Local samples invalidate input observation. Resolve fresh global
@@ -1928,6 +1972,7 @@ struct DockHelpInteraction: Equatable {
     }
     @objc private func dockHelpOcclusionChanged(_ notification: Notification) {
         guard let current = edge.presentation else { withdrawDockHelpSurface(); return }
+        reportVisibility(panel?.isVisible == true, expanded: current.state == .expanded)
         publishDockHelpSurface(current)
     }
     func isCurrentDockHelpSurface(_ value: DockHelpSurface) -> Bool {

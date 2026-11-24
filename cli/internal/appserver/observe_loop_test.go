@@ -76,7 +76,7 @@ func TestObservationRunsWhileARefreshJobStaysPending(t *testing.T) {
 	if n := len(s.ObserveDecisions()); n != 2 {
 		t.Fatalf("repeated outcomes must move only their time, got %d entries", n)
 	}
-	raw, err := os.ReadFile(filepath.Join(cache, "observed", ObserveLogFile))
+	raw, err := os.ReadFile(ObserveLogPath(cache))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestObservationOffWhenOfflineOrReadOnly(t *testing.T) {
 		s.StartAutomatic()
 		time.Sleep(50 * time.Millisecond)
 		s.Close()
-		if _, err := os.Stat(filepath.Join(cache, "observed", ObserveLogFile)); !os.IsNotExist(err) {
+		if _, err := os.Stat(ObserveLogPath(cache)); !os.IsNotExist(err) {
 			t.Fatal("observation log written while offline or read-only")
 		}
 	}
@@ -147,5 +147,80 @@ func TestFirstObservationWaitsObserveAfter(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no observation after ObserveAfter")
+	}
+}
+
+// D397 (energy plan item 2): a pass that wrote no ledger signals no change, and repeating its
+// outcomes does not rewrite observe-decisions.json, whose rename would move the watched observed
+// directory. So an idle 30-second pass builds no view. A pass that writes a ledger still
+// signals, and a changed outcome is still recorded.
+func TestObservationSignalsOnlyWhatItWrote(t *testing.T) {
+	backend, paths, cache := refreshFixture(t, consent.ScopeCodexRuntimeUsage)
+	outcome, write := ObserveRan, false
+	var changed int
+	s := NewRefreshScheduler(context.Background(), RefreshConfig{
+		Backend: backend, Paths: paths,
+		Observe: func(time.Time) []ObserveResult {
+			if write {
+				// The observation log no longer lives in observed/, so the ledger writer makes it.
+				if err := os.MkdirAll(filepath.Join(cache, "observed"), 0o700); err != nil {
+					t.Error(err)
+				}
+				if err := os.WriteFile(filepath.Join(cache, "observed", ".tmp-ledger"), []byte("{}"), 0o600); err != nil {
+					t.Error(err)
+				}
+				if err := os.Rename(filepath.Join(cache, "observed", ".tmp-ledger"), filepath.Join(cache, "observed", "perf.json")); err != nil {
+					t.Error(err)
+				}
+			}
+			return []ObserveResult{{Source: "codex", Outcome: outcome}}
+		},
+		Changed: func() { changed++ },
+	})
+	defer s.Close()
+	logFile := ObserveLogPath(cache)
+	at := time.Now()
+	pass := func() (signalled bool, logInfo os.FileInfo, dirInfo os.FileInfo) {
+		t.Helper()
+		before := changed
+		s.ObserveOnce(at)
+		at = at.Add(30 * time.Second)
+		var err error
+		if logInfo, err = os.Stat(logFile); err != nil {
+			t.Fatal(err)
+		}
+		if dirInfo, err = os.Stat(filepath.Dir(logFile)); err != nil {
+			t.Fatal(err)
+		}
+		return changed > before, logInfo, dirInfo
+	}
+	_, firstLog, firstDir := pass()
+	time.Sleep(20 * time.Millisecond) // a rename now would carry a later time
+	for i := 0; i < 3; i++ {
+		signalled, log, dir := pass()
+		if signalled {
+			t.Fatalf("pass %d wrote nothing and signalled a change", i)
+		}
+		if !os.SameFile(firstLog, log) || !dir.ModTime().Equal(firstDir.ModTime()) {
+			t.Fatalf("pass %d rewrote the observation log with the same outcomes", i)
+		}
+	}
+	write = true
+	if signalled, _, _ := pass(); !signalled {
+		t.Fatal("a pass that replaced a ledger signalled no change")
+	}
+	write, outcome = false, ObserveSkippedLockBusy
+	if _, log, _ := pass(); os.SameFile(firstLog, log) {
+		t.Fatal("a changed outcome was not recorded in the observation log")
+	}
+	raw, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Decisions []ObserveDecision `json:"decisions"`
+	}
+	if json.Unmarshal(raw, &got) != nil || len(got.Decisions) != 2 || got.Decisions[1].Outcome != ObserveSkippedLockBusy {
+		t.Fatalf("observation log = %s", raw)
 	}
 }

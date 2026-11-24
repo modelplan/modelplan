@@ -360,6 +360,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() },
             statusScreen:{ [weak self] in self?.statusScreen?() },openPoint:{ [weak self] in self?.openPoint?() },
             systemSignals:systemSignals?())
+        page.keepClearedPageAfterClose = coordinator?.prewarmEnabled == true
         page.ignitionFrame = { [weak self] in self?.ignitionFrame?() }
         page.widgetFrame = { [weak self] in self?.widgetFrame?() }
         // Spec item 4: a detached cockpit gives the app its Dock icon and Cmd-Tab entry, through the one presence.
