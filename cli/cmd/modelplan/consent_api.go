@@ -204,7 +204,9 @@ func consentFailure(stdout io.Writer, code string) int {
 
 func consentCmd(args []string, stdin io.Reader, stdout io.Writer, st *store.Store, c common) int {
 	if c.json && len(args) == 1 && args[0] == "cleanup" {
-		if err := consent.RetryCleanup(consent.Path(), func(scope string, forget bool) error { return cleanupScope(st, scope, forget) }); err != nil {
+		if err := consent.RetryCleanup(consent.Path(), func(scope string, forget bool, guard consent.EraseGuard) error {
+			return cleanupScopeGuarded(st, scope, forget, guard)
+		}); err != nil {
 			return consentFailure(stdout, "consent_unavailable")
 		}
 		return printJSON(stdout, map[string]bool{"ok": true})
@@ -214,7 +216,9 @@ func consentCmd(args []string, stdin io.Reader, stdout io.Writer, st *store.Stor
 		if err != nil {
 			return consentFailure(stdout, "consent_unavailable")
 		}
-		if err := consent.RetryCleanup(consent.Path(), func(scope string, forget bool) error { return cleanupScope(st, scope, forget) }); err != nil {
+		if err := consent.RetryCleanup(consent.Path(), func(scope string, forget bool, guard consent.EraseGuard) error {
+			return cleanupScopeGuarded(st, scope, forget, guard)
+		}); err != nil {
 			return consentFailure(stdout, "consent_unavailable")
 		}
 		return printJSON(stdout, map[string]any{"storeEpoch": s.StoreEpoch, "generation": s.Generation})

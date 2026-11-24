@@ -107,7 +107,7 @@ func TestSharedViewTokenHoldsOnlyWhileNothingChanged(t *testing.T) {
 	detected := detect.Report{SchemaVersion: 1}
 	b, err := NewSharedBackend(SharedConfig{Detect: func() detect.Report { detectMu.Lock(); defer detectMu.Unlock(); return detected }, Paths: func(a consent.Admission) quota.Paths {
 		return quota.Paths{CodexHome: codex, Cache: filepath.Join(home, "cache"), Admission: &a}
-	}, Cleanup: func(string, bool) error { return nil }})
+	}, Cleanup: func(string, bool, consent.EraseGuard) error { return nil }})
 	if err != nil {
 		t.Fatal(err)
 	}
