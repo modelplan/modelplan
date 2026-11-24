@@ -118,6 +118,40 @@ func TestActivityPartialMalformedAndCachedTail(t *testing.T) {
 	}
 }
 
+func TestZCodeHeartbeatDoesNotStartOrExtendATurn(t *testing.T) {
+	now := time.Now().UTC()
+	path := filepath.Join(t.TempDir(), "zcode.jsonl")
+	line := func(at time.Time, event string) string {
+		return fmt.Sprintf("{\"timestamp\":%q,\"event\":%q,\"sessionId\":\"synthetic\",\"turnId\":\"a\"}\n", at.Format(time.RFC3339Nano), event)
+	}
+	write := func(at time.Time, body string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	o := NewActivityObserver()
+	logs := []LiveLog{{Path: path, Source: "zcode"}}
+	write(now, line(now, "session.heartbeat"))
+	if got := o.Observe(context.Background(), logs, nil, now); len(got) != 0 {
+		t.Fatalf("idle heartbeat appeared as work: %+v", got)
+	}
+	next := now.Add(time.Second)
+	turn := line(now, "turn.started") + line(next, "model.request.completed")
+	write(next, turn)
+	if got := o.Observe(context.Background(), logs, nil, next); len(got) != 1 || got[0].Phase != "model" || !got[0].RecordAt.Equal(next) {
+		t.Fatalf("an in-flight turn needs its latest work event: %+v", got)
+	}
+	idle := next.Add(91 * time.Second)
+	write(idle, turn+line(idle, "session.heartbeat"))
+	if got := o.Observe(context.Background(), logs, nil, idle); len(got) != 1 || got[0].Phase != "finished" {
+		t.Fatalf("heartbeat extended an idle turn: %+v", got)
+	}
+}
+
 func TestZCodeOverlappingTurns(t *testing.T) {
 	now := time.Now().UTC()
 	dir := t.TempDir()

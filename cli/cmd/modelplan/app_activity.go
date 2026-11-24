@@ -36,7 +36,7 @@ func appActivity(cache string) func(context.Context, consent.Admission, time.Tim
 		// ZCode's ledger has no account. Its one configured key does, and that reading also proves
 		// ZCode points at Z.ai, so nothing needs to open ZCode's own settings here.
 		if a.State().AllowsScope(consent.ScopeZaiLocalHistory, a.Mode()) {
-			if zcodeRef = quota.ZCodeSubscription(cache); zcodeRef != "" {
+			if zcodeRef = quota.ZCodeSubscription(cache, a, now); zcodeRef != "" {
 				zcode = filepath.Join(home, ".zcode")
 			}
 		}

@@ -3,6 +3,7 @@ package quota
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 )
@@ -95,7 +97,7 @@ func TestG321FreshProfileReadsZCodeCodingPlanByDefault(t *testing.T) {
 		if a.Source == "native:zai" && len(a.Windows) > 0 && a.Windows[0].UsedPercent != nil {
 			found = true
 			// The working signal binds ZCode's turns to this account; it needs no second key read.
-			if ref := ZCodeSubscription(cache); ref == "" || a.Subscription == nil || a.Subscription.Ref != ref {
+			if ref := ZCodeSubscription(cache, consent.Capture(), now); ref == "" || a.Subscription == nil || a.Subscription.Ref != ref {
 				t.Fatalf("ZCode account ref = %q, binding = %+v", ref, a.Subscription)
 			}
 		}
@@ -134,5 +136,97 @@ func TestG321ExplicitGLMDecisionWins(t *testing.T) {
 	t.Setenv("MODELPLAN_READERS", "off")
 	if _, ok := ProductionPathsWithAdmission(t.TempDir(), "1.0.0", consent.Capture()).ReaderAccessGrant("zai"); ok {
 		t.Fatal("readers off still admitted ZCode")
+	}
+}
+
+func TestZCodeQuotaRetainsAdmittedWindowsThroughTemporaryFailure(t *testing.T) {
+	for _, entered := range []bool{false, true} {
+		name := "provider file"
+		if entered {
+			name = "entered key"
+		}
+		t.Run(name, func(t *testing.T) {
+			isolateHome(t)
+			home, _ := os.UserHomeDir()
+			writeZCodeProviders(t, home, zcodeTemplateProvider)
+			cache := t.TempDir()
+			paths := func() Paths { return ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()) }
+			if entered {
+				if err := SetManualKey(cache, "zai", fakeZaiKey, "global"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reset := now.Add(time.Hour)
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				key := "zcode-key-canary"
+				if entered {
+					key = "Bearer " + fakeZaiKey
+				}
+				if r.Header.Get("Authorization") != key {
+					t.Error("unexpected credential source")
+				}
+				if calls.Add(1) > 1 {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				fmt.Fprintf(w, `{"success":true,"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":25,"nextResetTime":%d}]}}`, reset.UnixMilli())
+			}))
+			defer server.Close()
+			useClient(t, server, "api.z.ai")
+			reportAccount := func(report Report) *Account {
+				for _, account := range report.Accounts {
+					if account.Source == "native:zai" {
+						return &account
+					}
+				}
+				return nil
+			}
+			p := paths()
+			refresh := func(at time.Time) {
+				t.Helper()
+				if err := ExecuteScopeRefresh(context.Background(), p, consent.ScopeZaiAccountUsageAPIKey, at); err != nil {
+					t.Fatal(err)
+				}
+			}
+			refresh(now)
+			fresh := reportAccount(ReadPermitted(paths(), now))
+			if fresh == nil || fresh.Stale || len(fresh.Windows) != 1 {
+				t.Fatalf("fresh reading: %+v", fresh)
+			}
+			failedAt := now.Add(NativeEvery)
+			refresh(failedAt)
+			retained := ReadPermitted(paths(), failedAt)
+			account := reportAccount(retained)
+			if account == nil || !account.Stale || !account.ObservedAt.Equal(fresh.ObservedAt) || len(account.Windows) != 1 {
+				t.Fatalf("retained reading: %+v, sources: %+v", account, retained.Sources)
+			}
+			for _, source := range retained.Sources {
+				if source.Source == "native:zai" && source.ErrorCode != "http_5xx" {
+					t.Fatalf("temporary failure hidden: %+v", source)
+				}
+			}
+			if account := reportAccount(ReadPermitted(paths(), reset)); account != nil {
+				t.Fatalf("expired window retained: %+v", account)
+			}
+			if entered {
+				if err := SetManualKey(cache, "zai", fakeOtherKey, "global"); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				writeZCodeProviders(t, home, strings.Replace(zcodeTemplateProvider, "zcode-key-canary", "replacement-key", 1))
+				if ref := ZCodeSubscription(cache, consent.Capture(), failedAt); ref != "" {
+					t.Fatal("replaced provider file retained the old activity binding")
+				}
+			}
+			for _, current := range []Paths{p, paths()} {
+				if account := reportAccount(ReadPermitted(current, failedAt)); account != nil {
+					t.Fatalf("old credential reading after replacement: %+v", account)
+				}
+			}
+			if calls.Load() != 2 {
+				t.Fatalf("passive reads must not reach the endpoint: %d calls", calls.Load())
+			}
+		})
 	}
 }
