@@ -521,3 +521,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .pl-cell.pl-cal .qnum{line-height:18px}
 .ck-eng .pl-cell.pl-cal .pl-meter{min-height:0;overflow:hidden}
 .ck-eng .pl-cell.pl-cal .qline{justify-content:space-between}
+
+/* G3-201: the waiting and cleared lines show only after a grace (a display that lands sooner never flashes them). */
+[data-engine-wait]:not([data-engine-wait=""]) .ck-eng .ec-empty{opacity:0;animation:ec-wait-in .15s .7s forwards}
+@keyframes ec-wait-in{from{opacity:0}to{opacity:1}}
