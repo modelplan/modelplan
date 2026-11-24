@@ -1076,6 +1076,15 @@ import ModelPlanShell
         XCTAssertEqual(panel.frame, start, "D-11 face click")
         try event(.leftMouseDown, point: down)
         let before = await store.snapshot()
+        let midCarry = CGPoint(x: topology.b.frame.midX, y: 300)
+        try event(.leftMouseDragged, point: midCarry)
+        let carriedFrame = panel.frame
+        let carriedMenu = try XCTUnwrap(panel.contentView?.menu)
+        try event(.leftMouseDragged, point: CGPoint(x: midCarry.x, y: midCarry.y + 12))
+        XCTAssertNotEqual(panel.frame.origin, carriedFrame.origin, "the panel follows the pointer")
+        XCTAssertEqual(panel.frame.size, carriedFrame.size)
+        XCTAssertTrue(panel.contentView?.menu === carriedMenu, "a translated panel keeps the same live menu")
+
         for (display, point) in [(topology.b, CGPoint(x: topology.b.frame.midX, y: 300)),
                                  (topology.c, CGPoint(x: topology.c.frame.midX, y: topology.c.visibleFrame.minY + 2))] {
             try event(.leftMouseDragged, point: point)
