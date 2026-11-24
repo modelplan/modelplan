@@ -671,6 +671,24 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let allHiddenObject=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(allHiddenPayload.utf8)) as? [String:Any])
         XCTAssertEqual(allHiddenObject["mine"] as? [String],[])
         XCTAssertEqual(allHiddenObject["onlyMine"] as? Bool,true)
+        // A formerly unique fallback key must not hide either numbered member after a collision.
+        var unbound=accounts[0];unbound["subscriptionRef"]=NSNull();unbound["route"]="saved_login_api"
+        rows[0]["accounts"]=[unbound];projection["rows"]=rows;data["projection"]=projection
+        let fallbackSaved=try await settings.update { preferences in preferences.subscriptions.hiddenIDs = ["codex#saved_login_api"] }
+        owner.adoptAppearance(fallbackSaved,applied:nil)
+        let single=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
+        await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:single),delivery:context))))
+        XCTAssertEqual(CockpitFieldFleet.runnable(single,hiddenMembers:["codex#saved_login_api"]),[])
+        rows[0]["accounts"]=[unbound,unbound];projection["rows"]=rows;data["projection"]=projection
+        let pair=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
+        await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:pair),delivery:context))))
+        let collision=try XCTUnwrap(surface.fieldPayload())
+        let collisionObject=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(collision.utf8)) as? [String:Any])
+        XCTAssertEqual(collisionObject["mine"] as? [String],["synthetic-model"],"both current unbound members remain visible")
+        XCTAssertEqual(collisionObject["onlyMine"] as? Bool,false)
+        surface.wantsVisible=true;surface.handle(.openField)
+        XCTAssertTrue(surface.fieldIsOpen)
+        surface.hide()
         await composition.stop()
     }
 
