@@ -39,8 +39,8 @@ func TestHistorySourceReadsSanitizedCacheWithoutRefreshing(t *testing.T) {
 	paths := func(a consent.Admission) quota.Paths { return quota.ProductionPathsWithAdmission(cache, "1.0.0", a) }
 	backend, err := appserver.NewSharedBackend(appserver.SharedConfig{Detect: func() detect.Report {
 		return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "gemini", Preferred: "native", ReaderID: "native:gemini"}, Detected: true}}}
-	}, Paths: paths, Cleanup: func(scope string, forget bool) error {
-		return quota.EraseScope(quota.ProductionPaths(cache, "1.0.0"), scope, forget)
+	}, Paths: paths, Cleanup: func(scope string, forget bool, guard consent.EraseGuard) error {
+		return quota.EraseScopeGuarded(quota.ProductionPaths(cache, "1.0.0"), scope, forget, guard)
 	}})
 	if err != nil {
 		t.Fatal(err)
