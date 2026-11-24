@@ -35,7 +35,7 @@ func laterToolBackend(t *testing.T, later string, paths func(consent.Admission) 
 			}}
 		},
 		LaterInstalled: ledger.Observe,
-		Paths:          paths, Cleanup: func(string, bool) error { return nil },
+		Paths:          paths, Cleanup: func(string, bool, consent.EraseGuard) error { return nil },
 	})
 	if err != nil {
 		t.Fatal(err)

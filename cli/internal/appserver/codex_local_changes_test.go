@@ -40,7 +40,7 @@ func TestCodexLocalRolloutAppendSignalsChanges(t *testing.T) {
 	}
 	b, err := NewSharedBackend(SharedConfig{Detect: func() detect.Report { return detect.Report{} }, Paths: func(a consent.Admission) quota.Paths {
 		return quota.Paths{CodexHome: codex, Cache: filepath.Join(home, "cache"), Admission: &a}
-	}, Cleanup: func(string, bool) error { return nil }})
+	}, Cleanup: func(string, bool, consent.EraseGuard) error { return nil }})
 	if err != nil {
 		t.Fatal(err)
 	}
