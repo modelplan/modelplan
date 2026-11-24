@@ -56,8 +56,8 @@ test('S2: deck checkpoints restore the selected page, alert overlay and tune ret
   expect(tune).toContain('Synthetic A');
   await page.evaluate(()=>{const d=window.checkpointDeck,restore=d.checkpoint();d.clear();restore();d.refresh();});
   expect(await page.locator('.mfd-screen').innerHTML()).toBe(tune);
-  await page.keyboard.press('Escape');
-  // D387: Escape from tune lands on Overview, not on the page the tune was opened from.
+  // D400: the Models page opened by the deck is the 模型 page itself; the Overview key leaves it.
+  await page.locator('[data-mfd="page:overview"]').click();
   await expect(page.locator('[data-mfd="page:overview"]')).toHaveAttribute('aria-pressed','true');
   await page.evaluate(()=>window.checkpointDeck.showAlerts());
   const alerts=await page.locator('.mfd-screen').innerHTML();

@@ -40,29 +40,29 @@ const snap=page=>page.evaluate(()=>{
   plugins,
  };});
 // The expected state machine. A view is 'overview', 'plans', 'tune', 'where' (pages), 'calendar', 'resources' (plugin screens)
-// or 'hud' (the HUD's big chart, the Models page opened from the HUD).
+// (D400: a HUD click opens the Models page, 'tune', exactly as its key does.)
 const PAGE={overview:'pg-overview',sub:'pg-sub',tune:'pg-tune',where:'pg-where'};
-const SCREEN_NAME={calendar:'Calendar',resources:'Resources',hud:'Models'};
+const SCREEN_NAME={calendar:'Calendar',resources:'Resources'};
 const next=(view,action)=>{
  const [kind,arg]=action.split(':');
  switch(kind){
   case 'scope':return ['calendar','resources'].includes(view)?'overview':view;
   case 'plugin':return view===arg?'overview':arg;
-  case 'hud':return 'hud';
+  case 'hud':return 'tune';
   case 'page':return arg;
   case 'overviewtab':return 'overview';
-  case 'esc':return ['calendar','resources','hud'].includes(view)?'overview':view;
+  case 'esc':return ['calendar','resources'].includes(view)?'overview':view;
   default:return view;// range
  }};
 async function expectView(page,view,label,{keys=true}={}){
  const s=await snap(page),at=`${label}: ${JSON.stringify(s)}`;
- const screen=['calendar','resources'].includes(view),big=screen||view==='hud';
+ const screen=['calendar','resources'].includes(view),big=screen;
  // Visible content: exactly the one view's own.
  if(screen){expect(s.plugin,at).toBe(view);expect(s.page,at).toBe(null);expect(s.options,at).toBe(0);}
- else{expect(s.plugin,at).toBe(null);expect(s.page,at).toBe(view==='hud'?'pg-tune':PAGE[view]);}
+ else{expect(s.plugin,at).toBe(null);expect(s.page,at).toBe(PAGE[view]);}
  if(view==='overview')expect(s.options,at).toBeGreaterThan(0);
  // Active key: the plugin key is lit exactly for its open screen; page keys follow the visible page (none under a plugin screen).
- expect(s.pageKeysOn,at).toEqual(screen?[]:[view==='hud'?'tune':view]);
+ expect(s.pageKeysOn,at).toEqual(screen?[]:[view]);
  expect(s.oldBack,at).toBe(0);
  if(!keys)return;
  for(const id of ['calendar','resources'])expect(s.plugins[id],at).toEqual({on:view===id,pressed:String(view===id)});
@@ -87,8 +87,8 @@ const act={
 async function walk(page,actions,opts){
  let view='overview';await expectView(page,view,'start',opts);
  for(const [i,a] of actions.entries()){
-  if(a==='overviewtab'&&!['calendar','resources','hud'].includes(view))continue;// the switch exists only over a screen
-  if(a==='page:overview'&&['calendar','resources','hud'].includes(view))continue;// over a screen the Overview key is the switch's tab
+  if(a==='overviewtab'&&!['calendar','resources'].includes(view))continue;// the switch exists only over a screen
+  if(a==='page:overview'&&['calendar','resources'].includes(view))continue;// over a screen the Overview key is the switch's tab
   if(a==='hud')await page.waitForTimeout(350);// a porthole press right after a repaint can be a drag
   await act[a](page);view=next(view,a);await page.waitForTimeout(60);await expectView(page,view,`#${i} ${a} -> ${view}`,opts);
  }
@@ -126,8 +126,8 @@ test('D387 the switch is keyboard operable: arrows move between its tabs, Enter 
  await page.keyboard.press('Enter');await expectView(page,'overview','enter');
  await page.locator('.eng-keys .pl-key[data-plugin="resources"]').click();await expectView(page,'resources','reopen');
  await page.keyboard.press('Escape');await expectView(page,'overview','esc');
- await page.locator('.hud .hp').first().click();await expectView(page,'hud','hud');
- await page.keyboard.press('Escape');await expectView(page,'overview','hud esc');
+ await page.locator('.hud .hp').first().click();await expectView(page,'tune','hud');
+ await page.keyboard.press('Escape');await expectView(page,'tune','hud esc: the page stays, as from its key');
 });
 test('D387 the Calendar and Resources keys press and light like a subscription key',async({page})=>{
  await open(page);
