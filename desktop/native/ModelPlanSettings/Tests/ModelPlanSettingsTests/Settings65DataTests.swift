@@ -14,8 +14,13 @@ final class Settings65DataTests: XCTestCase {
     }
     func testDiagnosticsPaneAndKnownHomesStayDataDriven() {
         XCTAssertFalse(Settings65Homes.paneCountPending)
-        XCTAssertEqual(SettingsStructure.task65.panes.map(\.id), ["general","dock","cockpit","appearance","subscriptions","notifications","privacy","diagnostics","about"])
-        XCTAssertEqual(SettingsStructure.task65.panes.count, 9)
+        // D376: Plugins is its own pane right after Subscriptions.
+        XCTAssertEqual(SettingsStructure.task65.panes.map(\.id), ["general","dock","cockpit","appearance","subscriptions","plugins","notifications","privacy","diagnostics","about"])
+        XCTAssertEqual(SettingsStructure.task65.panes.map(\.title.chinese), ["通用","额度挂件","驾驶舱","外观","订阅","插件","通知","数据与隐私","诊断","关于"])
+        XCTAssertEqual(SettingsStructure.task65.panes.first { $0.id == "plugins" }?.title.english, "Plugins")
+        XCTAssertEqual(SettingsStructure.task65.panes.first { $0.id == "plugins" }?.groups.isEmpty, true, "the plugin rows are the pane's own view, not catalogue rows")
+        XCTAssertEqual(SettingsPane(rawValue: "plugins")?.title.chinese, "插件")
+        XCTAssertEqual(SettingsStructure.task65.panes.count, 10)
         XCTAssertEqual(SettingsStructure.task65.panes.last?.id, "about")
         XCTAssertEqual(Settings65Homes.dock.map(\.id), ["display","numbers","location"])
         XCTAssertFalse(Settings65Homes.dock.flatMap(\.keys).contains(.order))

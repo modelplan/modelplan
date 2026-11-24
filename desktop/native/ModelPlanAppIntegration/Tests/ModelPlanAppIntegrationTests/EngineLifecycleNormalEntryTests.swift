@@ -71,11 +71,17 @@ private actor LifecycleEngine: EngineClient {
     func holdNextSubscribe() { holdSubscribe = true }
     func isSubscribeHeld() -> Bool { subscribeHeld }
     func releaseSubscribe() { subscribeGate?.resume(); subscribeGate = nil }
+    private var busySubscribe = false
+    func makeNextSubscribeBusy() { busySubscribe = true }
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion {
         if holdSubscribe {
             holdSubscribe = false; subscribeHeld = true
             await withCheckedContinuation { subscribeGate = $0 }
             subscribeHeld = false
+        }
+        if busySubscribe, let current {
+            busySubscribe = false
+            throw EngineClientError.rpc(code: WireErrorCode.busy, context: try .init(sessionId: current.sessionID))
         }
         if starts == 1, let current { try await publish(current) }
         return .init(requestID: .string("synthetic-subscribe-\(starts)"))
@@ -199,6 +205,26 @@ private actor LifecycleEngine: EngineClient {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         return try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
     }
+    func testBusySubscriptionWaitsForRecoveredRowsOnTheSameSession() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lifecycle-busy-rows-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let (app, engine) = try await supervisedApp(root, rows: try rowsFixture())
+        addTeardownBlock { @MainActor in await app.stopLifecycle() }
+        await engine.makeNextSubscribeBusy()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        for _ in 0..<200 { if await engine.consentCount() > 0 { break }; try await Task.sleep(for: .milliseconds(5)) }
+        let consentCalls = await engine.consentCount()
+        XCTAssertEqual(consentCalls, 1, "the busy rows reply still allows consent reconciliation")
+        XCTAssertTrue(app.lifecyclePaused, "the gate still waits for accepted rows")
+
+        try await engine.publishFresh()
+        await until({ !app.lifecyclePaused }, "accepted rows restore readiness on the original session")
+        XCTAssertEqual(app.composition.store.snapshot.delivery?.sessionID, "synthetic-1")
+        let (starts, stops) = await engine.counts()
+        XCTAssertEqual(starts, 1)
+        XCTAssertEqual(stops, 0)
+    }
+
     /// Recovery step 6: the resume's own start failed (a child that crashed during its handshake), so the readings are
     /// withdrawn. The supervisor then brings a fresh session up by itself: the lifecycle adopts it and the readings come
     /// back without Refresh, without another start, and without showing the failed session's data.

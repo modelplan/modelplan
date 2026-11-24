@@ -14,7 +14,7 @@ export interface BridgeSource { readonly origin:string; readonly isMainFrame:boo
 export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly reduceMotion:boolean; readonly reduceTransparency:boolean; readonly showProjectNames:boolean }
 export type LiveAppearance = Appearance;
 /** CKP-SHELL-50: `range` is the app's time range, sent with every shell (absent only from an older host: 7d). */
-export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string; readonly range?:CockpitRange }
+export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string; readonly range?:CockpitRange; readonly refreshing?:boolean }
 export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'rangeSelect'|'openField'|'openWebsite'|'refreshMember';
 export interface Header extends Context { readonly version:2; readonly pageId:string; readonly requestId:string; readonly sequence:string }
 export type HostMessage = Header & (
@@ -107,11 +107,11 @@ function message(raw:string,quarantined?:(data:unknown)=>boolean,refused?:(data:
   const validScope=(v:unknown):boolean=>{if(typeof v!=='string')return false;if(v==='all'||/^[a-f0-9]{16}$/.test(v))return true;const parts=v.split('#');let last=parts.pop()??'';if(/^\d+$/.test(last)){if(!/^[1-9]\d*$/.test(last)||Number(last)>1024)return false;last=parts.pop()??'';}return identity(parts.join('#'))&&['saved_login_api','runtime_rpc','local_log','api_key_api','local_sqlite','status_line','browser_session','manual','unknown'].includes(last);};
   // D244: the saved member order is member keys only, at most 256, no repeats.
   const validOrder=(v:unknown):boolean=>Array.isArray(v)&&v.length>0&&v.length<=256&&v.every(k=>k!=='all'&&validScope(k))&&new Set(v).size===v.length;
-  const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope',...(record(v)&&Object.hasOwn(v,'range')?['range']:[])])&&(!record(v)||v.range===undefined||isCockpitRange(v.range))&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
+  const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope',...(record(v)&&Object.hasOwn(v,'range')?['range']:[]),...(record(v)&&Object.hasOwn(v,'refreshing')?['refreshing']:[])])&&(!record(v)||v.range===undefined||isCockpitRange(v.range))&&(!record(v)||v.refreshing===undefined||typeof v.refreshing==='boolean')&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
   switch(m.type) {
     case 'load': if(!keys(['appearance','shell'],['redBelow','showUsedPercent','showAllModels','ackedCautions','pinnedModels','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||!validAppearance(m.appearance)||!validShell(m.shell)||(m.ackedCautions!==undefined&&!validAcked(m.ackedCautions))||(m.pinnedModels!==undefined&&!validAcked(m.pinnedModels))) return no('load.keys'); break;
     case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow','showUsedPercent','showAllModels','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
-    case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'],['range'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope,...(Object.hasOwn(m,'range')?{range:m.range}:{})})) return no('shell.fields'); break;
+    case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'],['range','refreshing'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope,...(Object.hasOwn(m,'range')?{range:m.range}:{}),...(Object.hasOwn(m,'refreshing')?{refreshing:m.refreshing}:{})})) return no('shell.fields'); break;
     case 'ignition': if(!keys(['on'])||typeof m.on!=='boolean') return no('ignition.fields'); break;
     case 'fieldClosed': if(!keys()) return no('fieldClosed.keys'); break;
     case 'select': if(!keys(['model'])||(m.model!==null&&!identity(m.model))) return no('select.fields'); break;
@@ -232,7 +232,7 @@ export class CockpitBridge {
         try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow),m.showUsedPercent===true,m.showAllModels===true,m.memberOrder??[]);} catch {return this.no('appearance.view');}
         this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       case 'shell': {
-        const shell:ShellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope,...(m.range!==undefined?{range:m.range}:{})};
+        const shell:ShellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope,...(m.range!==undefined?{range:m.range}:{}),...(m.refreshing!==undefined?{refreshing:m.refreshing}:{})};
         try {this.view.shell(shell);} catch {return this.no('shell.view');}
         this.shellState=shell;this.sequence=BigInt(m.sequence);return true;
       }

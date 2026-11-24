@@ -98,14 +98,16 @@ public struct CockpitShellState: Equatable, Sendable {
   public let scope: String
   /// CKP-SHELL-50: the app's range, sent with the shell so the page has it before its first render.
   public let range: CockpitRange
+  /// A native member read is in flight; the Overview refresh waits for it.
+  public let refreshing: Bool
   public let attached: Bool, forcedClosed: Bool
-  public init(closed: Bool, attached: Bool, forcedClosed: Bool, tier: Tier, scope: String = "all", range: CockpitRange = .initial) {
-    self.tier = tier; self.scope = scope; self.range = range
+  public init(closed: Bool, attached: Bool, forcedClosed: Bool, tier: Tier, scope: String = "all", range: CockpitRange = .initial, refreshing: Bool = false) {
+    self.tier = tier; self.scope = scope; self.range = range; self.refreshing = refreshing
     self.profile = closed || forcedClosed ? .closed : .open
     self.attached = attached; self.forcedClosed = forcedClosed
   }
   var fields: [String: Any] {
-    ["profile": profile.rawValue, "attached": attached, "forcedClosed": forcedClosed, "tier": tier.rawValue, "scope": scope, "range": range.rawValue]
+    ["profile": profile.rawValue, "attached": attached, "forcedClosed": forcedClosed, "tier": tier.rawValue, "scope": scope, "range": range.rawValue, "refreshing": refreshing]
   }
 }
 public struct CockpitVisibility: Equatable, Sendable {

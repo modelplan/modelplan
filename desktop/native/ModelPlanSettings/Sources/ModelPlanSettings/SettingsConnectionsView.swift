@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 
-@MainActor final class ConnectionButton: NSButton {
+@MainActor class ConnectionButton: NSButton {
     var invoke: (() -> Void)?
     init(title: String, identifier: String, invoke: @escaping () -> Void) {
         super.init(frame: .zero)

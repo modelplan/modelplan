@@ -47,6 +47,20 @@ import ModelPlanWire
         XCTAssertFalse(composition.presentedContent.snapshot.inputs.isEmpty, "the admitted rings stay admitted")
     }
 
+    func testFirstAllowedConsentUpdatesAboutWithoutRedrawingDock() async throws {
+        let app = try await makeEntry(rows: try HostPairedProjectionTests.rows(weekly: 75, secondWeekly: 12))
+        await app.composition.start()
+        let composition = app.composition, dock = composition.dock
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireConsentFacts.json").standardizedFileURL
+        let facts = try WireDecoder.decode(WireConsentFacts.self, from: Data(contentsOf: capture))
+        let before = dock.fullRebuildPassesForChecks
+        await composition.store.consume(.response(requestID: .string("sampling-consent"), .consent(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: context.floor.generation, data: facts), delivery: context))))
+        XCTAssertTrue(app.settingsHost.application.editor.context.about.diagnosticText.contains("codex"), "About receives the allowed reader")
+        XCTAssertEqual(dock.fullRebuildPassesForChecks, before, "unchanged Dock settings must not redraw after a consent reply")
+        XCTAssertFalse(composition.presentedContent.snapshot.inputs.isEmpty)
+    }
+
     /// A rows change still redraws, and a clear still withdraws everything at once (the privacy fence).
     func testRowsChangeStillRedrawsAndAClearStillWithdraws() async throws {
         let app = try await makeEntry(rows: try HostPairedProjectionTests.rows(weekly: 75, secondWeekly: 12))

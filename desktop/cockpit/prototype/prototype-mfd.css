@@ -35,6 +35,7 @@
 .mfd-page.is-view{padding-top:22px}
 .mfd-fill{position:relative;flex:1 1 0!important;min-height:0;overflow:hidden}
 .mfd-fill>svg:first-child{position:absolute;left:0;top:0;overflow:visible}
+.pg-overview .ov-chart{max-width:100%;max-height:calc(100% - 2px)}
 .mfd-back{position:absolute;left:6px;top:4px;z-index:2;padding:1px 4px;border-radius:3px;font:10px/14px var(--f-lcd);color:var(--muted);white-space:nowrap}
 .mfd-back:hover,.mfd-back:focus-visible{color:var(--text);background:var(--lcd-ghost)}
 .mfd-page .sp{flex:1}
