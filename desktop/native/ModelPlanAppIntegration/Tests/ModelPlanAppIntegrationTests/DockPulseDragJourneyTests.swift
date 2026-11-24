@@ -431,6 +431,55 @@ import ModelPlanShell
 }
 
 @MainActor final class DockPulseDragPersistenceTests: XCTestCase {
+    func testTranslatingTheCarriedPanelKeepsItsMenu() async throws {
+        _ = NSApplication.shared
+        let topology = DragTopology()
+        topology.active = [topology.a]
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "drag-translation", allowedEnvironment: [:]), settingsStore: store,
+            createsNativePanels: true, dockEnvironment: topology.read,
+            isolatedResetNotificationLedger: root.appendingPathComponent("reset-notifications.json"),
+            activateSettings: {})
+        defer {
+            app.composition.dock.close()
+            try? FileManager.default.removeItem(at: root)
+        }
+        await app.prepare()
+        app.allowDockPresentation()
+        let dock = app.composition.dock
+        let panel = try XCTUnwrap(dock.nativePanel)
+        let view = dock.dockView
+        let drag = try XCTUnwrap(view.backgroundDragDelegate)
+        let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
+            stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
+        }.first { drag.backgroundCanDrag(local: $0) })
+        let press = panel.convertPoint(toScreen: view.convert(local, to: nil))
+        topology.pointer = press
+        let arrival = ContinuousClock.now + .seconds(2)
+        while !drag.beginBackgroundMove(local: local, global: press) {
+            guard ContinuousClock.now < arrival else { return XCTFail("Could not press the widget") }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        defer { drag.cancelBackgroundMove() }
+
+        let direction: CGFloat = press.y > topology.a.visibleFrame.midY ? -1 : 1
+        func move(_ offset: CGFloat) {
+            let point = CGPoint(x: press.x, y: press.y + offset * direction)
+            topology.pointer = point
+            drag.updateBackgroundMove(global: point)
+        }
+        move(30)
+        let first = panel.frame
+        let menu = try XCTUnwrap(panel.contentView?.menu)
+        move(55)
+        XCTAssertTrue(drag.isBackgroundMoving)
+        XCTAssertNotEqual(panel.frame.origin, first.origin, "the panel follows the pointer")
+        XCTAssertEqual(panel.frame.size, first.size)
+        XCTAssertTrue(panel.contentView?.menu === menu, "a translated panel keeps its existing live menu")
+    }
+
     func testD19NormalEntryMigratesLegacyFloatingWithoutCoordinates() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-floating-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
@@ -1076,15 +1125,6 @@ import ModelPlanShell
         XCTAssertEqual(panel.frame, start, "D-11 face click")
         try event(.leftMouseDown, point: down)
         let before = await store.snapshot()
-        let midCarry = CGPoint(x: topology.b.frame.midX, y: 300)
-        try event(.leftMouseDragged, point: midCarry)
-        let carriedFrame = panel.frame
-        let carriedMenu = try XCTUnwrap(panel.contentView?.menu)
-        try event(.leftMouseDragged, point: CGPoint(x: midCarry.x, y: midCarry.y + 12))
-        XCTAssertNotEqual(panel.frame.origin, carriedFrame.origin, "the panel follows the pointer")
-        XCTAssertEqual(panel.frame.size, carriedFrame.size)
-        XCTAssertTrue(panel.contentView?.menu === carriedMenu, "a translated panel keeps the same live menu")
-
         for (display, point) in [(topology.b, CGPoint(x: topology.b.frame.midX, y: 300)),
                                  (topology.c, CGPoint(x: topology.c.frame.midX, y: topology.c.visibleFrame.minY + 2))] {
             try event(.leftMouseDragged, point: point)
