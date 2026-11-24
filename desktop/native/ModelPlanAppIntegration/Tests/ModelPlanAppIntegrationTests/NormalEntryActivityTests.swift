@@ -224,6 +224,36 @@ private actor ActivityJourneyEngine: EngineClient {
         await app.composition.stop()
     }
 
+    func testLegacySettingsKeepTheUnavailableZCodeRingHiddenWithoutEditing() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("zcode-legacy-hidden-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try entry(fixture(phase: nil, sequence: 1, tool: "zai"), root: root)
+        let id = first
+        let original = try await app.foundationStore.update { $0.subscriptions.hiddenIDs = [id] }
+        await app.prepare()
+        await app.composition.start()
+        app.allowDockPresentation()
+        try await wait("legacy hidden member in the Settings catalogue") {
+            app.currentSettingsContext.subscriptions.contains { $0.id == id && $0.tool == "zai" }
+        }
+
+        let cockpit = CockpitConsoleOwner(bundle: root, settingsStore: app.foundationStore)
+        let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+        for (offset, state) in ["failed", "empty"].enumerated() {
+            try await engine.publish(fixture(phase: nil, sequence: offset + 2, tool: "zai", unavailableState: state))
+            let dock = app.composition.dock.interactionEnvironment()
+            XCTAssertEqual(dock.catalogue, ["zai#unknown"], state)
+            XCTAssertTrue(try dock.preferences.orderedIDs(in: dock.catalogue, visibleOnly: true).isEmpty, state)
+            let presentation = try XCTUnwrap(app.composition.latestSettings)
+            XCTAssertTrue(cockpit.cockpitAppearance(presentation).hiddenMembers.contains("zai#unknown"), state)
+        }
+        let saved = await app.foundationStore.snapshot()
+        XCTAssertEqual(saved.revision, original.revision)
+        XCTAssertEqual(saved.preferences.subscriptions.hiddenIDs, [id])
+        await app.composition.stop()
+    }
+
     func testSettingsKeepsTheUnavailableZCodeRingHidden() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("zcode-hidden-" + UUID().uuidString)
