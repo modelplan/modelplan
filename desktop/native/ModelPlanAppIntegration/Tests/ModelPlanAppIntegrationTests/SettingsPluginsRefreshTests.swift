@@ -26,10 +26,12 @@ import ModelPlanSettings
         let bridge = CockpitPluginBridge(model: model, coordinator: nil)
         host.attachCockpitPlugins(bridge)
         await host.present(paneID: "plugins")
+        let plugin = try XCTUnwrap(CockpitPluginCatalogue.listed(model.catalogue).first, "a listed plugin")
+        _ = await model.perform(.setEnabled(plugin.id, true))
         let before = surface.refreshes
         let closer = CockpitPluginCloser(model: model, language: { .english })
         closer.presenter = { _ in true }
-        let plugin = try XCTUnwrap(CockpitPluginCatalogue.listed(model.catalogue).first { closer.prompt($0.id) != nil }, "a plugin that is on")
+        XCTAssertNotNil(closer.prompt(plugin.id), "the plugin is on")
         let closed = await closer.requestClose(plugin.id)
         XCTAssertTrue(closed)
         for _ in 0..<200 where surface.refreshes == before { try await Task.sleep(for: .milliseconds(10)) }
