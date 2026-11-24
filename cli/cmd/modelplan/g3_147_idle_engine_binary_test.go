@@ -138,7 +138,10 @@ type idleWork struct {
 	hotEntries   int64           // entries enumerated by steps that started no discovery walk
 	loops        idlework.Counts // work of the watcher and activity steps outside observation passes
 	observations int
-	treeEntries  int64 // directory entries in the synthetic history: the most one walk can list
+	treeEntries  int64 // directory entries in the synthetic history (both roots)
+	codexTree    int64 // entries under the Codex sessions root, the root included: the most one walk of it can list
+	claudeTree   int64 // the same for the Claude Code projects root
+	codexFiles   int64 // rollouts: what one more listing of every Codex day directory costs
 	windowTime   time.Duration
 	discovered   time.Duration // positive control: delay from insertion until the rollout was signalled
 	watched      bool          // the signal carried the new rollout itself
@@ -149,8 +152,23 @@ type idleWork struct {
 // gate fails when the gap gets worse. Its plan item removes it.
 type idleGap struct {
 	why string
-	// allowance returns the run's measured value of the metric and the most it may reach.
-	allowance func(run idleWork) (got, ceiling int64)
+	// allowance reports whether the run stays within the gap's ceiling, and what it measured.
+	allowance func(run idleWork) (ok bool, detail string)
+}
+
+// entriesWithinWalks: every discovery walk lists at most its own root once. Codex walks are
+// bounded by the Codex tree and Claude Code walks by the Claude tree, and no entry is listed
+// outside an attributed walk, so listing any directory twice in a walk exceeds the ceiling.
+func entriesWithinWalks(r idleWork) (bool, string) {
+	w := r.window
+	codex, claude := w.CodexWalks*r.codexTree, w.ClaudeWalks*r.claudeTree
+	ok := w.CodexEntries <= codex && w.ClaudeEntries <= claude && w.Entries == w.CodexEntries+w.ClaudeEntries
+	return ok, fmt.Sprintf("codex %d entries in %d walks (ceiling %d), claude %d in %d (ceiling %d), unattributed %d",
+		w.CodexEntries, w.CodexWalks, codex, w.ClaudeEntries, w.ClaudeWalks, claude, w.Entries-w.CodexEntries-w.ClaudeEntries)
+}
+
+func atMost(name string, got, ceiling int64) (bool, string) {
+	return got <= ceiling, fmt.Sprintf("%d %s against an allowance of %d", got, name, ceiling)
 }
 
 // idleGaps lists the open gaps. A listed check that passes fails the gate, so the fix that
@@ -159,18 +177,18 @@ type idleGap struct {
 var idleGaps = map[string]idleGap{
 	"entries": {
 		why: "energy plan item 2: the activity observer and the Codex rollout index walk every admitted history root each 6 s, and each 30 s observation walks them again, so enumeration grows with history",
-		// Each walk lists its root at most once; walks themselves are budgeted separately.
-		allowance: func(r idleWork) (int64, int64) { return r.window.Entries, r.window.Walks * r.treeEntries },
+		// Each walk lists its own root at most once; walks themselves are budgeted separately.
+		allowance: entriesWithinWalks,
 	},
 	"views": {
 		why: "energy plan item 2: each 30 s observation signals a change even when it wrote nothing, and its observe-decisions.json rewrite moves the watched observed directory, so the server builds two views per pass",
 		// Two change-driven refreshes per observation, one view build each.
-		allowance: func(r idleWork) (int64, int64) { return r.window.Views, 2 * int64(r.observations) },
+		allowance: func(r idleWork) (bool, string) { return atMost("views", r.window.Views, 2*int64(r.observations)) },
 	},
 	"decodes": {
 		why: "energy plan item 2: each 30 s observation re-reads the unchanged ledgers and the views it triggers decode them again",
-		allowance: func(r idleWork) (int64, int64) {
-			return r.window.Decodes, idleDecodesPerObservation * int64(r.observations)
+		allowance: func(r idleWork) (bool, string) {
+			return atMost("decodes", r.window.Decodes, idleDecodesPerObservation*int64(r.observations))
 		},
 	},
 }
@@ -210,6 +228,31 @@ func TestG3147IdleWorkGateRunsNearMidnight(t *testing.T) {
 
 // idleWindow is how much test-clock time one run spans (warm-up, measurement, positive control).
 const idleWindow = 6 * time.Minute
+
+// macrev2-1219-3 (round 2): the entries allowance is per root and per walk, so one extra
+// listing of the Codex day directories, with the same number of walks, exceeds it. The run is
+// the real measured workload; the mutation adds exactly that listing's entries to it.
+func TestG3147EntriesAllowanceRejectsARepeatedDayListing(t *testing.T) {
+	run := runIdleWork(t, 1, idleWindowStart(time.Now()))
+	if run.window.CodexWalks == 0 || run.window.ClaudeWalks == 0 || run.codexFiles == 0 {
+		t.Fatalf("no per-root measurement: %+v", run.window)
+	}
+	if ok, detail := entriesWithinWalks(run); !ok {
+		t.Fatalf("the unchanged workload exceeds its entries allowance: %s", detail)
+	}
+	doubled := run
+	doubled.window.CodexEntries += run.codexFiles
+	doubled.window.Entries += run.codexFiles
+	if ok, detail := entriesWithinWalks(doubled); ok {
+		t.Fatalf("one extra listing of every Codex day directory stayed within the allowance: %s", detail)
+	}
+	// Work no walk accounts for is never within the allowance either.
+	stray := run
+	stray.window.Entries++
+	if ok, _ := entriesWithinWalks(stray); ok {
+		t.Fatal("an enumeration outside any attributed walk stayed within the allowance")
+	}
+}
 
 func clearOfMidnight(start time.Time) bool {
 	start = start.UTC()
@@ -259,8 +302,8 @@ func idleWorkGate(t *testing.T, wall time.Time) {
 		}
 		t.Logf("known idle gap %q: %s (%s)", name, msg, gap.why)
 		for size, run := range map[string]idleWork{"small": small, "large": large} {
-			if got, ceiling := gap.allowance(run); got > ceiling {
-				t.Errorf("%s: known idle gap %q got worse: %d against its allowance of %d", size, name, got, ceiling)
+			if ok, detail := gap.allowance(run); !ok {
+				t.Errorf("%s: known idle gap %q got worse: %s", size, name, detail)
 			}
 		}
 	}
@@ -308,6 +351,14 @@ func runIdleWork(t *testing.T, scale int, start time.Time) idleWork {
 	for _, root := range []string{filepath.Join(home, ".claude"), filepath.Join(home, ".codex")} {
 		_ = filepath.WalkDir(root, func(string, fs.DirEntry, error) error { run.treeEntries++; return nil })
 	}
+	_ = filepath.WalkDir(filepath.Join(home, ".codex", "sessions"), func(_ string, d fs.DirEntry, err error) error {
+		run.codexTree++
+		if err == nil && d.Type().IsRegular() {
+			run.codexFiles++
+		}
+		return nil
+	})
+	_ = filepath.WalkDir(filepath.Join(home, ".claude", "projects"), func(string, fs.DirEntry, error) error { run.claudeTree++; return nil })
 	if err := consent.Change(consent.Path(), func(s *consent.State) error {
 		for _, tool := range []string{"codex", "claude"} {
 			if err := consent.Set(s, tool, true, "native:"+tool, "native", start.Add(-30*24*time.Hour)); err != nil {
@@ -457,5 +508,15 @@ func writeStaticHistory(t *testing.T, home string, now time.Time, scale int) {
 			line := fmt.Sprintf(`{"timestamp":%q,"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1},"total_token_usage":{"input_tokens":10,"output_tokens":1}}}}`+"\n", at.Format(time.RFC3339Nano))
 			write(filepath.Join(dir, fmt.Sprintf("rollout-%s-%d.jsonl", at.Format("2006-01-02T15-04-05"), r)), line, at.Add(time.Duration(r)*time.Minute))
 		}
+	}
+	// Static means the directories too: the last change to any of them was long ago.
+	settled := now.Add(-24 * time.Hour)
+	for _, root := range []string{filepath.Join(home, ".claude", "projects"), filepath.Join(home, ".codex", "sessions")} {
+		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err == nil && d.IsDir() {
+				defer os.Chtimes(path, settled, settled) // after its children are written
+			}
+			return nil
+		})
 	}
 }

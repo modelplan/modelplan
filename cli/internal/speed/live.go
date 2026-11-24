@@ -173,13 +173,13 @@ func activeLogs(roots []liveRoot, now time.Time) []LiveLog {
 			continue
 		}
 		visited := 0
-		idlework.Walk()
+		idlework.WalkOf(root.source)
 		_ = filepath.WalkDir(root.dir, func(path string, d fs.DirEntry, err error) error {
 			visited++
 			if visited > 20000 {
 				return fs.SkipAll
 			}
-			idlework.Entries(1)
+			idlework.EntriesOf(root.source, 1)
 			if err != nil || d.IsDir() || d.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(path, ".jsonl") {
 				return nil
 			}

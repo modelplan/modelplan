@@ -429,7 +429,7 @@ func findThread(root, thread string) string {
 					return ""
 				}
 				es, _ := os.ReadDir(d)
-				idlework.Entries(len(es))
+				idlework.EntriesOf("codex", len(es))
 				for _, e := range es {
 					if e.Type().IsRegular() && rolloutName.MatchString(e.Name()) && strings.HasSuffix(e.Name(), suffix) {
 						return filepath.Join(d, e.Name())
@@ -537,13 +537,13 @@ func newestRollouts(root string, n int) []string {
 		mod  time.Time
 	}
 	var out []f
-	idlework.Walk()
+	idlework.WalkOf("codex")
 	years := dirsDesc(root)
 	for _, y := range years {
 		for _, m := range dirsDesc(y) {
 			for _, d := range dirsDesc(m) {
 				es, _ := os.ReadDir(d)
-				idlework.Entries(len(es))
+				idlework.EntriesOf("codex", len(es))
 				for _, e := range es {
 					if e.Type().IsRegular() && rolloutName.MatchString(e.Name()) {
 						if info, err := e.Info(); err == nil {
@@ -564,7 +564,7 @@ func newestRollouts(root string, n int) []string {
 
 func dirsDesc(p string) []string {
 	es, _ := os.ReadDir(p)
-	idlework.Entries(len(es))
+	idlework.EntriesOf("codex", len(es))
 	var out []string
 	for _, e := range es {
 		if e.IsDir() {
