@@ -68,6 +68,20 @@ import XCTest
     XCTAssertEqual(page.attachedHome(), placed.frame, "home is that same place")
   }
 
+  func testSqueezedStatusItemKeepsTheCockpitAndRackOnItsDisplay() throws {
+    let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
+    let barDisplay = b
+    let page = CockpitWindowController(bundle: try bundle(), context: context,
+      appearance: .init(theme: .night, locale: .en, profile: .full), statusScreen: { barDisplay.frame },
+      openPoint: { CGPoint(x: 500, y: 400) })
+    let displays = [a, b]
+    page.screens = { displays }
+    let placement = try XCTUnwrap(page.placement())
+    assertInside(placement.frame, barDisplay.visibleFrame, "a hidden icon still owns its cockpit display")
+    XCTAssertEqual(page.rackIcon(), CockpitShellLayout.menuBarEdgeAnchor(screen: barDisplay))
+    XCTAssertTrue(CockpitWindowController.opensRackFirst(.fromIcon, reduceMotion: false, detached: false, icon: page.rackIcon()))
+  }
+
   /// G3-128 (b): a cockpit opened from B, detached and left on B, goes home to the status item's display. Before, the
   /// put back target was computed with the open's click point and so stayed on B.
   func testPutBackHomeIsOnTheStatusItemsDisplayAfterADetachToTheOtherDisplay() throws {

@@ -112,6 +112,7 @@ import ModelPlanResources
         owner.presence = application.dockPresence
         application.currentCockpitPage = { [weak owner] in owner?.currentPage }
         owner.anchor = { [weak application] in application?.cockpitAnchor }
+        owner.statusScreen = { [weak application] in application?.cockpitStatusScreen }
         owner.openPoint = { [weak application] in application?.cockpitOpenPoint }
         owner.ignitionFrame = { [weak application] in application?.composition.dock.ignitionScreenFrame }
         owner.widgetFrame = { [weak application] in application?.composition.dock.widgetScreenFrame }
@@ -251,6 +252,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
+    var statusScreen: (() -> CGRect?)?
     /// Build 14c (G3-79): where the latest open was clicked; only a detached open uses it (G3-128: attached is always
     /// the menu bar icon's display).
     var openPoint: (() -> CGPoint?)?
@@ -355,7 +357,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
     func makePage(context: CockpitEngineContext, verified: VerifiedCockpitBundle) -> CockpitWindowController {
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
-            shellSession:shell,anchor:{ [weak self] in self?.anchor?() },openPoint:{ [weak self] in self?.openPoint?() },
+            shellSession:shell,anchor:{ [weak self] in self?.anchor?() },
+            statusScreen:{ [weak self] in self?.statusScreen?() },openPoint:{ [weak self] in self?.openPoint?() },
             systemSignals:systemSignals?())
         page.ignitionFrame = { [weak self] in self?.ignitionFrame?() }
         page.widgetFrame = { [weak self] in self?.widgetFrame?() }
@@ -662,8 +665,8 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     var attachmentHintAnchor: CockpitAttachmentHintAnchor? { wantsVisible ? owner.coordinator?.attachmentHintAnchor : nil }
     func show() { show(fromStatusItem: false) }
     func show(fromStatusItem: Bool) {
-        // CKP-SHELL-33 (D186): the menu bar icon opens rack-first; the ignition keeps its own fade.
-        entrance = fromStatusItem ? .fromIcon : .fade
+        // CKP-SHELL-33 (D186): an attached status-item or ignition open starts with the launch rack.
+        entrance = fromStatusItem && !owner.shell.detached ? .fromIcon : .fade
         wantsVisible=true
         attempt += 1
         // A new click starts its own grace period and opens at once. Recovery contract: it does not reset the rebuild
