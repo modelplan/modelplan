@@ -72,6 +72,7 @@ type RefreshScheduler struct {
 	decisions      refreshDecisionRing
 	observeWake    chan struct{}
 	observations   observeRing
+	observeLogged  string // the outcome codes observe-decisions.json holds
 }
 
 func (s *RefreshScheduler) now() time.Time {

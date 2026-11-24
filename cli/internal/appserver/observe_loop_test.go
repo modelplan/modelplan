@@ -149,3 +149,74 @@ func TestFirstObservationWaitsObserveAfter(t *testing.T) {
 		t.Fatal("no observation after ObserveAfter")
 	}
 }
+
+// D397 (energy plan item 2): a pass that wrote no ledger signals no change, and repeating its
+// outcomes does not rewrite observe-decisions.json, whose rename would move the watched observed
+// directory. So an idle 30-second pass builds no view. A pass that writes a ledger still
+// signals, and a changed outcome is still recorded.
+func TestObservationSignalsOnlyWhatItWrote(t *testing.T) {
+	backend, paths, cache := refreshFixture(t, consent.ScopeCodexRuntimeUsage)
+	outcome, write := ObserveRan, false
+	var changed int
+	s := NewRefreshScheduler(context.Background(), RefreshConfig{
+		Backend: backend, Paths: paths,
+		Observe: func(time.Time) []ObserveResult {
+			if write {
+				if err := os.WriteFile(filepath.Join(cache, "observed", ".tmp-ledger"), []byte("{}"), 0o600); err != nil {
+					t.Error(err)
+				}
+				if err := os.Rename(filepath.Join(cache, "observed", ".tmp-ledger"), filepath.Join(cache, "observed", "perf.json")); err != nil {
+					t.Error(err)
+				}
+			}
+			return []ObserveResult{{Source: "codex", Outcome: outcome}}
+		},
+		Changed: func() { changed++ },
+	})
+	defer s.Close()
+	logFile := filepath.Join(cache, "observed", ObserveLogFile)
+	at := time.Now()
+	pass := func() (signalled bool, logInfo os.FileInfo, dirInfo os.FileInfo) {
+		t.Helper()
+		before := changed
+		s.ObserveOnce(at)
+		at = at.Add(30 * time.Second)
+		var err error
+		if logInfo, err = os.Stat(logFile); err != nil {
+			t.Fatal(err)
+		}
+		if dirInfo, err = os.Stat(filepath.Dir(logFile)); err != nil {
+			t.Fatal(err)
+		}
+		return changed > before, logInfo, dirInfo
+	}
+	_, firstLog, firstDir := pass()
+	time.Sleep(20 * time.Millisecond) // a rename now would carry a later time
+	for i := 0; i < 3; i++ {
+		signalled, log, dir := pass()
+		if signalled {
+			t.Fatalf("pass %d wrote nothing and signalled a change", i)
+		}
+		if !os.SameFile(firstLog, log) || !dir.ModTime().Equal(firstDir.ModTime()) {
+			t.Fatalf("pass %d rewrote the observation log with the same outcomes", i)
+		}
+	}
+	write = true
+	if signalled, _, _ := pass(); !signalled {
+		t.Fatal("a pass that replaced a ledger signalled no change")
+	}
+	write, outcome = false, ObserveSkippedLockBusy
+	if _, log, _ := pass(); os.SameFile(firstLog, log) {
+		t.Fatal("a changed outcome was not recorded in the observation log")
+	}
+	raw, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Decisions []ObserveDecision `json:"decisions"`
+	}
+	if json.Unmarshal(raw, &got) != nil || len(got.Decisions) != 2 || got.Decisions[1].Outcome != ObserveSkippedLockBusy {
+		t.Fatalf("observation log = %s", raw)
+	}
+}

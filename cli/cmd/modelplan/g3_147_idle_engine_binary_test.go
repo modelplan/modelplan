@@ -143,11 +143,7 @@ type idleWork struct {
 // idleGaps lists checks of the idle-work gate that main does not pass yet, each with the plan
 // item that removes it. A listed check that passes fails the gate, so the fix that closes a gap
 // must delete its entry here; an unlisted check that fails is a regression.
-var idleGaps = map[string]string{
-	"entries": "energy plan item 2: the activity observer and the Codex rollout index walk every admitted history root each 6 s, and each 30 s observation walks them again, so enumeration grows with history",
-	"views":   "energy plan item 2: each 30 s observation signals a change even when it wrote nothing, and its observe-decisions.json rewrite moves the watched observed directory, so the server builds two views per pass",
-	"decodes": "energy plan item 2: each 30 s observation re-reads the unchanged ledgers and the views it triggers decode them again",
-}
+var idleGaps = map[string]string{}
 
 // D397 (energy plan item 5, energy-p0-1124). TestG3147IdleAppServerPublishesNothing watches the
 // wire only; an engine can stay quiet there while it walks, opens and decodes history on every

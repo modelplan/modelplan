@@ -5,25 +5,26 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 )
 
-const codexRolloutDiscoveryInterval = 6 * time.Second
+// codexRolloutDiscoveryInterval is the longest a new rollout in today's directory waits to be
+// discovered: the shared inventory's hot check (D397).
+const codexRolloutDiscoveryInterval = logindex.HotInterval
 
-// CodexRolloutIndex shares bounded rollout discovery between the app-server's
-// metadata watcher and quota views. Contents and credentials are never cached here.
+// CodexRolloutIndex selects the bounded recent rollouts for the app-server's metadata watcher
+// and quota views from the shared history inventory. Contents and credentials are never
+// cached here.
 type CodexRolloutIndex struct {
 	// Clock replaces time.Now for the discovery interval (idle-work gates only).
-	Clock        func() time.Time
-	mu           sync.Mutex
-	home, thread string
-	fence        consent.Fence
-	scannedAt    time.Time
-	files        []string
-	own          string
+	Clock func() time.Time
+	// Inventory is shared with the activity observer and the observation pass; nil keeps a
+	// private one.
+	Inventory *logindex.Inventory
+	own       logindex.Inventory
 }
 
 func (p Paths) RecentCodexRollouts() ([]string, string) {
@@ -33,7 +34,7 @@ func (p Paths) RecentCodexRollouts() ([]string, string) {
 	admission := admissionFor(p)
 	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") ||
 		admission.CleanupPending(consent.ScopeCodexLocalHistory) || p.CodexHome == "" {
-		p.CodexIndex.clear()
+		p.CodexIndex.clear(p.CodexHome)
 		return nil, ""
 	}
 	now := time.Now()
@@ -43,28 +44,32 @@ func (p Paths) RecentCodexRollouts() ([]string, string) {
 	return p.CodexIndex.recent(p.CodexHome, p.CodexThread, admission.Fence(), now)
 }
 
-func (i *CodexRolloutIndex) clear() {
+func (i *CodexRolloutIndex) inventory() *logindex.Inventory {
+	if i.Inventory != nil {
+		return i.Inventory
+	}
+	return &i.own
+}
+
+func (i *CodexRolloutIndex) clear(home string) {
 	if i == nil {
 		return
 	}
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	i.home, i.thread, i.own, i.files, i.scannedAt = "", "", "", nil, time.Time{}
+	if home == "" {
+		home = CodexHome()
+	}
+	if home != "" {
+		i.inventory().Drop(filepath.Join(home, "sessions"))
+	}
 }
 
 func (i *CodexRolloutIndex) recent(home, thread string, fence consent.Fence, now time.Time) ([]string, string) {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	if i.home != home || i.thread != thread || i.fence != fence || i.scannedAt.IsZero() ||
-		now.Before(i.scannedAt) || now.Sub(i.scannedAt) >= codexRolloutDiscoveryInterval {
-		i.home, i.thread, i.fence, i.scannedAt = home, thread, fence, now
-		i.files, i.own = discoverCodexRollouts(home, thread, codexFiles)
-	}
+	selected, selectedOwn := selectRollouts(i.inventory(), fence, home, thread, codexFiles, now)
 
 	// The older discovery rejected symlink date directories. Recheck that
 	// property before returning a remembered filename, including after rename.
 	root := filepath.Join(home, "sessions")
-	files := slices.DeleteFunc(slices.Clone(i.files), func(file string) bool {
+	files := slices.DeleteFunc(selected, func(file string) bool {
 		info, err := os.Lstat(file)
 		if err != nil || !info.Mode().IsRegular() {
 			return true
@@ -77,7 +82,7 @@ func (i *CodexRolloutIndex) recent(home, thread string, fence consent.Fence, now
 		}
 		return false
 	})
-	own := i.own
+	own := selectedOwn
 	if !slices.Contains(files, own) {
 		own = ""
 	}

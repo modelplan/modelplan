@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"time"
 
@@ -99,18 +100,43 @@ func (s *RefreshScheduler) observeLoop() {
 	}
 }
 
-// observeOnce is one observation pass; it reports whether a reader lock was busy.
+// observeOnce is one observation pass; it reports whether a reader lock was busy. It signals a
+// change only when the pass moved a ledger the views read, and its own diagnostics never do:
+// an idle pass builds no view (D397).
 func (s *RefreshScheduler) observeOnce(now time.Time) (busy bool) {
+	cache := ""
+	if s.config.Paths != nil {
+		cache = s.config.Paths(consent.Capture()).Cache
+	}
+	before := observedStamp(cache)
 	results := s.config.Observe(now)
 	for _, r := range results {
 		s.observations.add(now, r)
 		busy = busy || r.Outcome == ObserveSkippedLockBusy
 	}
-	s.writeObserveLog(now)
-	if s.ctx.Err() == nil && s.config.Changed != nil {
+	wrote := !reflect.DeepEqual(before, observedStamp(cache))
+	s.writeObserveLog(cache, now)
+	if wrote && s.ctx.Err() == nil && s.config.Changed != nil {
 		s.config.Changed()
 	}
 	return busy
+}
+
+// observedStamp is the metadata of the ledger directories the watcher stamps. The ledgers are
+// replaced by rename, which moves their directory.
+func observedStamp(cache string) []fileStamp {
+	if cache == "" {
+		return nil
+	}
+	var out []fileStamp
+	for _, dir := range []string{filepath.Join(cache, "observed"), filepath.Join(cache, "observed", "readers")} {
+		stamp := fileStamp{path: dir}
+		if info, err := os.Stat(dir); err == nil {
+			stamp.size, stamp.modified, stamp.exists = info.Size(), info.ModTime().UnixNano(), true
+		}
+		out = append(out, stamp)
+	}
+	return out
 }
 
 // ObserveOnce runs one pass of the observation loop at now, without its timers. The idle-work
@@ -122,15 +148,22 @@ func (s *RefreshScheduler) ObserveDecisions() []ObserveDecision {
 	return s.observations.snapshot()
 }
 
-func (s *RefreshScheduler) writeObserveLog(now time.Time) {
-	if s.config.Paths == nil {
-		return
-	}
-	cache := s.config.Paths(consent.Capture()).Cache
+// writeObserveLog rewrites observe-decisions.json when an outcome changed (or the file is
+// gone). Its rename moves the watched observed directory, so a pass that only repeats its
+// outcomes leaves it alone; the times of repeated outcomes stay in ObserveDecisions.
+func (s *RefreshScheduler) writeObserveLog(cache string, now time.Time) {
 	if cache == "" {
 		return
 	}
 	dir := filepath.Join(cache, "observed")
+	decisions := s.observations.snapshot()
+	codes := ""
+	for _, d := range decisions {
+		codes += d.Source + "=" + string(d.Outcome) + ";"
+	}
+	if _, err := os.Stat(filepath.Join(dir, ObserveLogFile)); err == nil && codes == s.observeLogged {
+		return
+	}
 	if os.MkdirAll(dir, 0700) != nil {
 		return
 	}
@@ -138,7 +171,7 @@ func (s *RefreshScheduler) writeObserveLog(now time.Time) {
 		SchemaVersion int               `json:"schemaVersion"`
 		WrittenAt     time.Time         `json:"writtenAt"`
 		Decisions     []ObserveDecision `json:"decisions"`
-	}{1, now.UTC(), s.observations.snapshot()})
+	}{1, now.UTC(), decisions})
 	if err != nil {
 		return
 	}
@@ -156,7 +189,9 @@ func (s *RefreshScheduler) writeObserveLog(now time.Time) {
 	}
 	if err != nil {
 		_ = os.Remove(tmp)
+		return
 	}
+	s.observeLogged = codes
 }
 
 // observeRing keeps the last outcomes. An observer that keeps doing the same thing moves only its
