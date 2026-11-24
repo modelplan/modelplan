@@ -139,6 +139,12 @@ enum SettingsWords {
     private let iconNoticeShortcut = NSButton(), iconNoticeClose = NSButton()
     private let empty = NSTextField(wrappingLabelWithString: "")
     private var rows: [SettingKey: SettingsNativeRow] = [:]
+    /// D371: with the Subscriptions rows, each verified subscription's alias field sits in its own row. The window owns
+    /// the fields (so a draft survives a redraw of the rows) and they commit through the same alias edit.
+    private var inlineAliases: [String: SettingsAliasControl] = [:]
+    /// SET-9-16: true while the catalogue lists the per-subscription alias setting for this pane or search, even though
+    /// the inline row fields draw it instead of a separate block. Acceptance reports it as a visible key.
+    private var aliasServedInline = false
     private var displayedKeys: [SettingKey] = []
     private var sectionHeadings: [String: NSTextField] = [:]
     private var observers: [NSObjectProtocol] = []
@@ -243,8 +249,14 @@ enum SettingsWords {
     public func attachCockpitPlugins(_ model: CockpitPluginSettingsModel) {
         guard cockpitPluginsView == nil else { return }
         let view = SettingsCockpitPluginsView(model: model, language: language)
-        cockpitPluginsView = view; pluginViewKey = nil; stack.addArrangedSubview(view)
-        view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        cockpitPluginsView = view; pluginViewKey = nil
+        if let entry = scopeConsentEntry {
+            // D371: the plugins sit right after "My subscriptions", on the same grid, inside the Subscriptions surface.
+            entry.view.pluginSection = view
+        } else {
+            stack.addArrangedSubview(view)
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
         refresh()
     }
     public func windowWillClose(_ notification: Notification) {
@@ -351,8 +363,9 @@ enum SettingsWords {
         guard let snapshot = editor.snapshot, let effective = editor.effective else {
             heading.stringValue = SettingsWords.text("Loading settings…", "正在读取设置…", language); return
         }
-        let hasAliasDraft = rows.values.contains { $0.aliases.values.contains { $0.hasUnsavedDraft } }
+        let hasAliasDraft = rows.values.contains { $0.aliases.values.contains { $0.hasUnsavedDraft } } || inlineAliases.values.contains { $0.hasUnsavedDraft }
         let completedAliasDraft = rows.values.contains { $0.aliases.values.contains { $0.hasUnsavedDraft && !$0.editing } }
+            || inlineAliases.values.contains { $0.hasUnsavedDraft && !$0.editing }
         if errorSource == .aliasDraft, !hasAliasDraft { errorMessage = nil; errorSource = nil }
         if errorMessage == nil, !pendingEdit, !editor.isSaving, completedAliasDraft {
             errorMessage = SettingsWords.text("An alias is not saved. Finish editing it again to retry, or press Escape to cancel.", "有别名尚未保存。请重新结束该项编辑以重试，或按 Escape 取消。", language)
@@ -369,7 +382,7 @@ enum SettingsWords {
         let connectionContent: NSView = scopeConsentEntry?.view ?? connectionsView
         let connectionsWereHidden = connectionContent.isHidden
         connectionContent.isHidden = query.isEmpty ? selectedPaneID != "subscriptions"
-            : !["connect", "tool", "plugin", "连接", "工具", "插件", "订阅"].contains(where: { query.localizedCaseInsensitiveContains($0) })
+            : !["connect", "tool", "plugin", "alias", "连接", "工具", "插件", "订阅", "别名"].contains(where: { query.localizedCaseInsensitiveContains($0) })
         if let view = historyImportView {
             view.apply(language: language)
             view.isHidden = query.isEmpty ? selectedPaneID != "privacy"
@@ -405,12 +418,19 @@ enum SettingsWords {
         do {
             let catalogued = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
                                                      paneID: query.isEmpty ? selectedPaneID : nil, query: query)
-            let visible = (scopeConsentEntry?.retainingNonConsentRows(catalogued) ?? catalogued)
+            let consentRows = scopeConsentEntry?.retainingNonConsentRows(catalogued) ?? catalogued
+            aliasServedInline = scopeConsentEntry != nil && !editor.context.subscriptions.isEmpty && consentRows.contains { $0.key == .alias }
+            let visible = consentRows
                 .filter { row in
                     return !editor.connections.isAvailable || (row.key != .detectedReaders && row.key != .optionalReaders)
                 }
                 // D87/D89: with the Subscriptions rows, visibility and order live in the rows, not in separate controls.
                 .filter { row in scopeConsentEntry == nil || (row.key != .visible && row.key != .order) }
+                // D371: the alias field is a column of the subscription rows, so the separate alias block is gone.
+                .filter { row in scopeConsentEntry == nil || row.key != .alias }
+                // D371 / SET-9-29: a setting that is unavailable in this build is not listed (hiding from arbitrary
+                // recorders is not supported). The catalogue row stays for the catalogue tests; the page does not draw it.
+                .filter { row in row.key != .captureHiding }
             let ordered = try snapshot.preferences.presentedSubscriptionIDs(editor.context.subscriptions.map(\.id), includingHidden: true)
             let inputs = SettingsDiagrams.inputs(snapshot.preferences, orderedIDs: ordered, lastChangedSubscriptionID: editor.lastChangedSubscriptionID)
             let diagrams: [SettingKey: SettingsDiagramInput] = [.dockEdge: inputs[0], .showPercentages: inputs[1], .autoHide: inputs[2], .size: inputs[3], .percentagePin: inputs[4]]
@@ -479,6 +499,16 @@ enum SettingsWords {
             guard let self else { return }
             self.submit(operation: { [editor = self.editor] in try await editor.commit(SettingsB21Edit.visible(id, visible)) })
         }
+        view.rowActions.aliasField = { [weak self] id in self?.inlineAliasField(id) }
+        // Keep the fields in step with the saved aliases; a field for a subscription that is gone is retired.
+        let known = Set(subscriptions.map(\.id))
+        for id in Array(inlineAliases.keys) where !known.contains(id) { inlineAliases.removeValue(forKey: id)?.retire() }
+        for sub in subscriptions {
+            let field = inlineAliasField(sub.id)
+            field.configure(committed: snapshot.preferences.subscriptionSettings[sub.id]?.alias ?? "", language: language)
+            field.isEnabled = (!editor.isSaving && !pendingEdit) || field.editing
+            field.setAccessibilityLabel(SettingsWords.text("Alias: ", "别名：", language) + sub.name.value(language))
+        }
         view.rowActions.resetOrder = { [weak self] in
             guard let self else { return }
             self.submit(operation: { [editor = self.editor] in try await editor.commit(SettingsB21Edit.resetOrder) })
@@ -497,7 +527,22 @@ enum SettingsWords {
                                                          canSave: !editor.isSaving && !pendingEdit,
                                                          canResetOrder: !snapshot.preferences.subscriptions.order.isEmpty))
     }
+    private func inlineAliasField(_ id: String) -> SettingsAliasControl {
+        if let field = inlineAliases[id] { return field }
+        let field = SettingsAliasControl(subscriptionID: id)
+        field.font = .systemFont(ofSize: 12)
+        field.placeholderString = SettingsWords.text("Alias", "别名", language)
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.widthAnchor.constraint(equalToConstant: SettingsGrid.alias).isActive = true
+        field.onFinish = { [weak self] sender, draft in self?.changeBehavior(.alias(draft), sender: sender) }
+        field.onDraftCleared = { [weak self] sender in guard let self, self.owns(sender) else { return }; self.refresh() }
+        inlineAliases[id] = field
+        return field
+    }
     private func owns(_ sender: NSView & SettingsOwnedControl) -> Bool {
+        if let alias = sender as? SettingsAliasControl, let id = alias.subscriptionID, inlineAliases[id] === alias {
+            return scopeConsentEntry != nil && alias.isEnabled && !alias.isRetired && !alias.isHiddenOrHasHiddenAncestor
+        }
         guard sender.isEnabled, !sender.isRetired,
               displayedKeys.contains(sender.settingKey), let row = rows[sender.settingKey],
               row.superview === stack, !row.isHiddenOrHasHiddenAncestor,
@@ -604,18 +649,21 @@ enum SettingsWords {
             if let order=row.order{controls.append(("settings.order",order))}
             if let action=row.surfaceAction{controls.append(("settings.action."+key.rawValue,action))}
         }
+        for alias in inlineAliases.values {
+            controls.append(("settings.alias",alias));if alias.editing{editing+=1};if alias.hasUnsavedDraft{unsaved+=1}
+        }
         let current=editor.snapshot?.revision
         return .init(surface:.settings,editorRevision:current,storeRevision:stored.revision,
             consistentRevision:before==current && current==stored.revision,isSaving:editor.isSaving,
             windowVisible:window?.isVisible ?? false,windowKey:window?.isKeyWindow ?? false,
             focus:settingsAcceptanceFocus(window:window,controls:controls),
-            settings:.init(selectedPane:selectedPaneID,searchLength:searchField.stringValue.count,visibleKeys:displayedKeys.map(\.rawValue),editingAliases:editing,unsavedAliases:unsaved,popups:popups),
+            settings:.init(selectedPane:selectedPaneID,searchLength:searchField.stringValue.count,visibleKeys:displayedKeys.map(\.rawValue)+(aliasServedInline && !displayedKeys.contains(.alias) ? [SettingKey.alias.rawValue] : []),editingAliases:editing,unsavedAliases:unsaved,popups:popups),
             firstRun:nil,loginStateFromContext:editor.context.capabilities.login.rawValue)
     }
     func choice(key: SettingKey, subscriptionID: String = "") -> SettingsChoiceControl? { rows[key]?.choices[subscriptionID] }
     func diagram(key: SettingKey) -> SettingsDiagramView? { rows[key]?.diagram }
     var visibleSettingKeys: [SettingKey] { displayedKeys }
-    func aliasControl(subscriptionID: String) -> SettingsAliasControl? { rows[.alias]?.aliases[subscriptionID] }
+    func aliasControl(subscriptionID: String) -> SettingsAliasControl? { rows[.alias]?.aliases[subscriptionID] ?? inlineAliases[subscriptionID] }
     func shortcutControl(key: SettingKey) -> SettingsShortcutControl? { rows[key]?.shortcut }
     var iconNoticeVisible: Bool { !iconNoticeBox.isHidden }
     var iconNoticeText: String { iconNoticeLabel.stringValue }
