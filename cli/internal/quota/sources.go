@@ -354,24 +354,19 @@ const codexHead = 1 << 20 // session_meta is the first line; it carries the inst
 // one named by thread (CODEX_THREAD_ID or a hook's session id) when its log is found, else the
 // most recent interactive thread, marked as such. Background threads never supply them.
 func readCodex(home, thread string) ([]Account, SourceStatus) {
-	return readCodexFenced(home, thread, codexRolloutFence())
+	return readCodexFenced(Paths{CodexHome: home, CodexThread: thread}, codexRolloutFence())
 }
 
 // readCodexFenced is readCodex for a caller that took the memo fence before evaluating its
 // consent (codexRolloutFence), so a Forget during the read leaves nothing decoded behind.
-func readCodexFenced(home, thread string, fence uint64) ([]Account, SourceStatus) {
+func readCodexFenced(p Paths, fence uint64) ([]Account, SourceStatus) {
 	st := SourceStatus{Source: "codex"}
-	if home == "" {
+	if p.CodexHome == "" {
 		st.Status, st.Reason = "missing", "not read"
 		return nil, st
 	}
-	root := filepath.Join(home, "sessions")
-	files := CodexRollouts(home, thread, codexFiles)
+	files, own := p.RecentCodexRollouts()
 	keepCodexRollouts(files)
-	own := ""
-	if thread = clip(thread); thread != "" {
-		own = findThread(root, thread)
-	}
 	if len(files) == 0 {
 		st.Status, st.Reason = "missing", "no Codex session logs found"
 		return nil, st
@@ -398,14 +393,20 @@ func readCodexFenced(home, thread string, fence uint64) ([]Account, SourceStatus
 // CodexRollouts returns the bounded recent rollout set plus the caller's own
 // thread when present, matching the files used by the local Codex reader.
 func CodexRollouts(home, thread string, n int) []string {
+	files, _ := discoverCodexRollouts(home, thread, n)
+	return files
+}
+
+func discoverCodexRollouts(home, thread string, n int) (files []string, own string) {
 	root := filepath.Join(home, "sessions")
-	files := newestRollouts(root, n)
+	files = newestRollouts(root, n)
 	if thread = clip(thread); thread != "" {
-		if own := findThread(root, thread); own != "" && !contains(files, own) {
+		own = findThread(root, thread)
+		if own != "" && !contains(files, own) {
 			files = append([]string{own}, files...)
 		}
 	}
-	return files
+	return files, own
 }
 
 func contains(xs []string, x string) bool {
