@@ -10,6 +10,7 @@ package idlework
 
 import (
 	"io"
+	"os"
 	"sync/atomic"
 )
 
@@ -52,6 +53,16 @@ func (c countingReader) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
 	bytes.Add(int64(n))
 	return n, err
+}
+
+// ReadFile is os.ReadFile counted as one content open and the bytes it read.
+func ReadFile(path string) ([]byte, error) {
+	b, err := os.ReadFile(path)
+	if err == nil {
+		Open()
+		Read(len(b))
+	}
+	return b, err
 }
 
 // Snapshot returns the current counts.

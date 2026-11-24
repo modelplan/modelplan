@@ -662,7 +662,9 @@ func readRolloutEvents(path string) (rolloutScan, bool) {
 	idlework.Open()
 	idlework.Decode()
 	var scan rolloutScan
-	head := bufio.NewReaderSize(io.LimitReader(fh, codexHead), 64<<10)
+	// Both bounded reads go through the counted reader (D397): the idle-work gate measures
+	// the bytes a rollout costs, head and tail.
+	head := bufio.NewReaderSize(idlework.Reader(io.LimitReader(fh, codexHead)), 64<<10)
 	if first, err := head.ReadBytes('\n'); err == nil || err == io.EOF {
 		var l rolloutLine
 		if json.Unmarshal(first, &l) == nil && l.Type == "session_meta" {
@@ -678,7 +680,7 @@ func readRolloutEvents(path string) (rolloutScan, bool) {
 	if info, err := fh.Stat(); err == nil && info.Size() > codexTail {
 		fh.Seek(info.Size()-codexTail, io.SeekStart)
 	}
-	sc := bufio.NewScanner(fh)
+	sc := bufio.NewScanner(idlework.Reader(fh))
 	sc.Buffer(make([]byte, 64<<10), 16<<20)
 	for sc.Scan() {
 		line := sc.Bytes()
@@ -1091,7 +1093,9 @@ func ThreadOrigin(path string) string {
 		return ""
 	}
 	defer fh.Close()
-	first, _ := bufio.NewReaderSize(io.LimitReader(fh, codexHead), 64<<10).ReadBytes('\n')
+	idlework.Open()
+	idlework.Decode()
+	first, _ := bufio.NewReaderSize(idlework.Reader(io.LimitReader(fh, codexHead)), 64<<10).ReadBytes('\n')
 	var l rolloutLine
 	var meta struct {
 		Source json.RawMessage `json:"source"`

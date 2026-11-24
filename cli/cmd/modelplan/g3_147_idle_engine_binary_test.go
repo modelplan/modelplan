@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -132,48 +133,114 @@ func TestG3147IdleAppServerPublishesNothing(t *testing.T) {
 
 // idleWork is what one run of the production idle loops cost over the measured window.
 type idleWork struct {
+	measured     bool // the run reached the end of its measured window
 	window       idlework.Counts
 	hotEntries   int64           // entries enumerated by steps that started no discovery walk
 	loops        idlework.Counts // work of the watcher and activity steps outside observation passes
 	observations int
+	treeEntries  int64 // directory entries in the synthetic history: the most one walk can list
 	windowTime   time.Duration
-	discovered   time.Duration // positive control: delay until a new rollout was signalled
+	discovered   time.Duration // positive control: delay from insertion until the rollout was signalled
+	watched      bool          // the signal carried the new rollout itself
 }
 
-// idleGaps lists checks of the idle-work gate that main does not pass yet, each with the plan
-// item that removes it. A listed check that passes fails the gate, so the fix that closes a gap
-// must delete its entry here; an unlisted check that fails is a regression.
-var idleGaps = map[string]string{}
+// idleGap is a check of the idle-work gate that main does not pass yet. While it is open, its
+// metric still has a ceiling: the work measured today, per observation or per walk, so the
+// gate fails when the gap gets worse. Its plan item removes it.
+type idleGap struct {
+	why string
+	// allowance returns the run's measured value of the metric and the most it may reach.
+	allowance func(run idleWork) (got, ceiling int64)
+}
+
+// idleGaps lists the open gaps. A listed check that passes fails the gate, so the fix that
+// closes a gap must delete its entry here; an unlisted check that fails is a regression, and a
+// listed one that exceeds its allowance is one too.
+var idleGaps = map[string]idleGap{}
+
+// idleDiscoveryDeadline is the agreed pickup time for a new Codex rollout (D397): one 6 s
+// discovery interval plus the watcher's one-second metadata cadence. It is fixed here, not read
+// from the implementation, so a slower discovery fails the gate.
+const idleDiscoveryDeadline = 6*time.Second + time.Second
 
 // D397 (energy plan item 5, energy-p0-1124). TestG3147IdleAppServerPublishesNothing watches the
 // wire only; an engine can stay quiet there while it walks, opens and decodes history on every
-// tick. This gate drives the production watcher, activity observer, observation pass and view
-// path under a test clock on a large synthetic static home, at two tree sizes, and counts the
-// work itself: entries enumerated, content opens and bytes, decodes and view builds. With
-// nothing changing, each count must be zero or bounded independently of the tree size.
-func TestG3147IdleWorkIsFlatOnLargeStaticHome(t *testing.T) {
+// tick. This gate drives the production watcher, activity observer, observation pass and
+// change-driven server refresh under a test clock on a large synthetic static home, at two tree
+// sizes, and counts the work itself: entries enumerated, content opens and bytes, decodes and
+// view builds. With nothing changing, each count must be zero or bounded independently of the
+// tree size.
+func TestG3147IdleWorkIsFlatOnLargeStaticHome(t *testing.T) { idleWorkGate(t, time.Now()) }
+
+// macrev2-1219-2: the gate's window comes from its own start time, not the wall clock, so a run
+// a few minutes before midnight UTC still measures (and still fails on a regression).
+func TestG3147IdleWorkGateRunsNearMidnight(t *testing.T) {
+	wall := time.Now().UTC().Truncate(24 * time.Hour).Add(-5 * time.Minute) // yesterday 23:55
+	if start := idleWindowStart(wall); !clearOfMidnight(start) {
+		t.Fatalf("window start %s for wall clock %s is not clear of midnight", start, wall)
+	}
+	for _, wall := range []time.Time{wall, wall.Add(4*time.Minute + 59*time.Second), wall.Add(5 * time.Minute), wall.Add(-12 * time.Hour)} {
+		if start := idleWindowStart(wall); !clearOfMidnight(start) || start.After(wall) {
+			t.Errorf("window start %s for wall clock %s: not clear of midnight or in the future", start, wall)
+		}
+	}
+	idleWorkGate(t, wall)
+}
+
+// idleWindow is how much test-clock time one run spans (warm-up, measurement, positive control).
+const idleWindow = 6 * time.Minute
+
+func clearOfMidnight(start time.Time) bool {
+	start = start.UTC()
+	return start.Truncate(24*time.Hour).Add(24*time.Hour).Sub(start) > idleWindow
+}
+
+// idleWindowStart is the gate's test-clock start for a run at wall: the wall clock itself, or an
+// hour earlier when the run would cross midnight UTC (a scheduled republication, not idle work).
+func idleWindowStart(wall time.Time) time.Time {
+	start := wall.UTC()
+	if !clearOfMidnight(start) {
+		start = start.Add(-time.Hour)
+	}
+	return start
+}
+
+func idleWorkGate(t *testing.T, wall time.Time) {
+	start := idleWindowStart(wall)
 	var small, large idleWork
-	t.Run("small", func(t *testing.T) { small = runIdleWork(t, 1) })
-	t.Run("large", func(t *testing.T) { large = runIdleWork(t, 10) })
+	t.Run("small", func(t *testing.T) { small = runIdleWork(t, 1, start) })
+	t.Run("large", func(t *testing.T) { large = runIdleWork(t, 10, start) })
 	if t.Failed() {
 		return
 	}
-	t.Logf("small: %+v hotEntries=%d discovered=%s", small.window, small.hotEntries, small.discovered)
-	t.Logf("large: %+v hotEntries=%d discovered=%s", large.window, large.hotEntries, large.discovered)
+	// A child that skipped or stopped early leaves zero values, which would read as closed gaps.
+	for name, run := range map[string]idleWork{"small": small, "large": large} {
+		if !run.measured || run.observations == 0 || run.window.Walks == 0 || run.treeEntries == 0 {
+			t.Fatalf("%s: the run produced no measurement (%+v); the gate cannot pass without one", name, run)
+		}
+	}
+	t.Logf("small: %+v hotEntries=%d observations=%d tree=%d discovered=%s", small.window, small.hotEntries, small.observations, small.treeEntries, small.discovered)
+	t.Logf("large: %+v hotEntries=%d observations=%d tree=%d discovered=%s", large.window, large.hotEntries, large.observations, large.treeEntries, large.discovered)
 
 	check := func(name string, ok bool, format string, args ...any) {
 		t.Helper()
 		msg := fmt.Sprintf(format, args...)
-		if gap, known := idleGaps[name]; known {
-			if ok {
-				t.Errorf("idle gap %q is closed; delete its idleGaps entry (%s)", name, gap)
-			} else {
-				t.Logf("known idle gap %q: %s (%s)", name, msg, gap)
+		gap, known := idleGaps[name]
+		if !known {
+			if !ok {
+				t.Errorf("%s: %s", name, msg)
 			}
 			return
 		}
-		if !ok {
-			t.Errorf("%s: %s", name, msg)
+		if ok {
+			t.Errorf("idle gap %q is closed; delete its idleGaps entry (%s)", name, gap.why)
+			return
+		}
+		t.Logf("known idle gap %q: %s (%s)", name, msg, gap.why)
+		for size, run := range map[string]idleWork{"small": small, "large": large} {
+			if got, ceiling := gap.allowance(run); got > ceiling {
+				t.Errorf("%s: known idle gap %q got worse: %d against its allowance of %d", size, name, got, ceiling)
+			}
 		}
 	}
 	w, l := small.window, large.window
@@ -200,25 +267,26 @@ func TestG3147IdleWorkIsFlatOnLargeStaticHome(t *testing.T) {
 	check("decodes-bounded", l.Decodes == w.Decodes, "%d (large) against %d (small) decodes", l.Decodes, w.Decodes)
 	check("decodes", w.Decodes == 0 && l.Decodes == 0, "%d (small) and %d (large) decodes of unchanged content", w.Decodes, l.Decodes)
 	check("views", w.Views == 0 && l.Views == 0, "%d (small) and %d (large) view builds with nothing changed", w.Views, l.Views)
-	// The positive control: the gate cannot pass by no longer looking.
+	// The positive control: the gate cannot pass by no longer looking. The rollout goes in right
+	// after a discovery pass, the worst case, and must be signalled by the agreed deadline.
 	for name, run := range map[string]idleWork{"small": small, "large": large} {
-		if run.discovered <= 0 || run.discovered > speed.ActivityDiscoveryInterval+2*time.Second {
-			t.Errorf("%s: a new Codex rollout was not signalled within the discovery interval (%s)", name, run.discovered)
+		if run.discovered <= 0 || run.discovered > idleDiscoveryDeadline || !run.watched {
+			t.Errorf("%s: a new Codex rollout inserted right after a discovery pass was not signalled within %s (took %s, watched %v)",
+				name, idleDiscoveryDeadline, run.discovered, run.watched)
 		}
 	}
 }
 
 // runIdleWork builds the production app-server on a synthetic static home of the given scale,
-// steps its idle loops under a test clock and returns the work done after warm-up.
-func runIdleWork(t *testing.T, scale int) idleWork {
+// steps its idle loops under a test clock from start and returns the work done after warm-up.
+func runIdleWork(t *testing.T, scale int, start time.Time) idleWork {
 	t.Setenv("TZ", "UTC")
 	home := setupQueryHome(t)
-	start := time.Now().UTC()
-	// Pick a window clear of midnight: the day rollover is a scheduled republication.
-	if untilMidnight := start.Truncate(24 * time.Hour).Add(24 * time.Hour).Sub(start); untilMidnight < 10*time.Minute {
-		t.Skip("too close to midnight UTC for a clear idle window")
-	}
 	writeStaticHistory(t, home, start, scale)
+	var run idleWork
+	for _, root := range []string{filepath.Join(home, ".claude"), filepath.Join(home, ".codex")} {
+		_ = filepath.WalkDir(root, func(string, fs.DirEntry, error) error { run.treeEntries++; return nil })
+	}
 	if err := consent.Change(consent.Path(), func(s *consent.State) error {
 		for _, tool := range []string{"codex", "claude"} {
 			if err := consent.Set(s, tool, true, "native:"+tool, "native", start.Add(-30*24*time.Hour)); err != nil {
@@ -238,19 +306,19 @@ func runIdleWork(t *testing.T, scale int) idleWork {
 	var scheduler *appserver.RefreshScheduler
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, closeBackend, err := newAppServerWithSources(ctx, appServerOptions{}, appServerSources{Clock: clock,
+	server, closeBackend, err := newAppServerWithSources(ctx, appServerOptions{}, appServerSources{Clock: clock,
 		Built: func(b *appserver.SharedBackend, s *appserver.RefreshScheduler) { shared, scheduler = b, s }})
-	if err != nil || shared == nil || scheduler == nil {
+	if err != nil || server == nil || shared == nil || scheduler == nil {
 		t.Fatalf("app-server: %v", err)
 	}
 	defer closeBackend()
 	steps := shared.IdleSteps()
 
 	// The production cadences: watcher 200 ms, activity 2 s, observation 2.5 s after start and
-	// then every 30 s. A signalled change costs the view the server builds for it.
+	// then every 30 s. A signalled change costs the refresh the server runs for it: the view
+	// token capture and the view build (macrev2-1219-5), through the server's own entry.
 	const tick = 200 * time.Millisecond
 	observeAt := start.Add(appserver.ObserveFirstDelay)
-	var run idleWork
 	afterObserve := false
 	step := func() {
 		before, observed := idlework.Snapshot(), false
@@ -265,8 +333,8 @@ func runIdleWork(t *testing.T, scale int) idleWork {
 			observed = true
 		}
 		if steps.Pending() {
-			if _, err := shared.Get(ctx); err != nil {
-				t.Fatalf("view: %v", err)
+			if err := server.RefreshAfterChange(ctx); err != nil {
+				t.Fatalf("change-driven refresh: %v", err)
 			}
 		}
 		done := idlework.Snapshot().Since(before)
@@ -293,23 +361,43 @@ func runIdleWork(t *testing.T, scale int) idleWork {
 	run.window = idlework.Snapshot().Since(base)
 	run.windowTime = at.Sub(measured)
 
-	// Positive control: a new rollout today must still be noticed within the discovery interval.
-	day := filepath.Join(home, ".codex", "sessions", start.Format("2006"), start.Format("01"), start.Format("02"))
-	if err := os.MkdirAll(day, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(day, "rollout-new-g3147.jsonl"), []byte(`{"type":"session_meta","payload":{}}`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	// Positive control (macrev2-1219-4): a new rollout today must still be noticed by the agreed
+	// deadline. Wait for a watcher poll that ran a discovery walk, then insert at once, so the
+	// rollout waits a whole discovery interval: a slower cadence cannot hide behind a lucky timer.
 	steps.Pending()
-	for from := at; at.Before(from.Add(30 * time.Second)); {
+	for from := at; ; {
+		if at.Sub(from) > time.Minute {
+			t.Fatal("the change watcher ran no discovery walk in a minute")
+		}
+		before := idlework.Snapshot()
 		steps.Watch(at)
 		at = at.Add(tick)
-		if steps.Pending() {
-			run.discovered = at.Sub(from)
+		if idlework.Snapshot().Since(before).Walks > 0 {
 			break
 		}
 	}
+	steps.Pending()
+	inserted := at
+	day := filepath.Join(home, ".codex", "sessions", inserted.Format("2006"), inserted.Format("01"), inserted.Format("02"))
+	rollout := filepath.Join(day, "rollout-"+inserted.Format("2006-01-02T15-04-05")+"-g3147new.jsonl")
+	if err := os.MkdirAll(day, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rollout, []byte(`{"type":"session_meta","payload":{}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(rollout, inserted, inserted); err != nil {
+		t.Fatal(err)
+	}
+	for at.Before(inserted.Add(30 * time.Second)) {
+		steps.Watch(at)
+		if steps.Pending() {
+			run.discovered, run.watched = at.Sub(inserted), steps.Watching(rollout)
+			break
+		}
+		at = at.Add(tick)
+	}
+	run.measured = true
 	return run
 }
 

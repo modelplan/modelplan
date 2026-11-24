@@ -752,6 +752,16 @@ func (s *IdleSteps) Watch(now time.Time) { s.b.pollWatch(&s.watch, now) }
 // Activity runs one activity observation at now.
 func (s *IdleSteps) Activity(ctx context.Context, now time.Time) { s.b.observeActivity(ctx, now) }
 
+// Watching reports whether the watcher's last Codex metadata check included path.
+func (s *IdleSteps) Watching(path string) bool {
+	for _, stamp := range s.watch.codexStamps {
+		if stamp.path == path {
+			return true
+		}
+	}
+	return false
+}
+
 // Pending reports whether a change was signalled since the last call; the server would build
 // a view for it.
 func (s *IdleSteps) Pending() bool {
