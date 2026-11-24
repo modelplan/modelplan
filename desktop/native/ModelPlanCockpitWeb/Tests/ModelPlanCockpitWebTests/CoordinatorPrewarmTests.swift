@@ -60,6 +60,7 @@ private actor CountingClient: EngineClient {
   var holdShown = false
   var entersWithRack: Bool { holdShown && opened > 0 }
   private(set) var displays = 0, displayedWhileHidden = 0
+  private var visible = false
   private(set) var displayedNames: [String] = []
   private var sequence = 0
   init(_ context: CockpitEngineContext, reportsRenders: Bool = false) {
@@ -90,17 +91,25 @@ private actor CountingClient: EngineClient {
   func open() {
     opened += 1
     load()
-    if opened == 1, !holdShown { onShown?(); if displays > 0 { onRenderVerified?() } }
+    // Like CockpitWindowController, `onShown` fires once per open: the first open and each open after a frozen close.
+    guard !visible else { return }
+    visible = true
+    if !holdShown { onShown?(); if displays > 0 { onRenderVerified?() } }
   }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {
     guard ticket == queryTicket else { return }
-    if opened == 0 { displayedWhileHidden += 1 } else { displays += 1; displayedNames.append(data.projection.rows.first?.name.en ?? "") }
+    if !visible { displayedWhileHidden += 1 } else { displays += 1; displayedNames.append(data.projection.rows.first?.name.en ?? "") }
   }
   func clearPrivateViews(adopting: CockpitEngineContext?) async {
     let raw = try! state.clear(adopting: adopting)
     ack(raw, "cleared")
   }
-  func requestClose() { if freezesOnClose { onFrozenClose?() } else { discard() } }
+  func requestClose() {
+    guard freezesOnClose else { discard(); return }
+    // The real page orders out, clears its private view and keeps the same frozen page and query ticket.
+    visible = false
+    onFrozenClose?()
+  }
   func discard() {
     guard !discarded else { return }
     discarded = true
@@ -316,6 +325,17 @@ final class CoordinatorPrewarmTests: XCTestCase {
     await settle { await client.requests == 3 }
     requests = await client.requests
     XCTAssertEqual(requests, 3, "the grace bounds the hold without a render receipt")
+    await coordinator.consume(try reply(session))
+    XCTAssertEqual(warm.displays, 4)
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+
+    // D397: every later open reuses the one frozen page and draws the last reply at once; nothing reaches it while hidden.
+    coordinator.requestClose()
+    XCTAssertFalse(coordinator.presented)
+    coordinator.open()
+    XCTAssertEqual(pages.count, 1, "still one page")
+    XCTAssertEqual(warm.displays, 5, "a later open draws the last reply at once")
+    XCTAssertEqual(warm.displayedWhileHidden, 0, "nothing is displayed on the frozen page")
     await coordinator.shutdown(); await client.complete()
   }
 
