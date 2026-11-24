@@ -24,6 +24,7 @@ async function open(page,{liveSessions,recent}){
  data.details.publishedModels=data.details.publishedModels.map(fix);
  data.details.sessions=liveSessions;data.details.recentSessions=recent;
  expect(await receive(send('display',{data}))).toBe(true);
+ return {send,receive};
 }
 const sol=page=>page.locator('.fd-ch:not(.empty)').filter({has:page.locator('.st-name',{hasText:'Sol 6.1'})});
 
@@ -56,4 +57,15 @@ test('G3-200 a live session that reports effort and Fast keeps precedence over t
 test('G3-200 a record older than seven days gives no effort',async({page})=>{
  await open(page,{liveSessions:[],recent:[recorded('2','high',8*DAY)]});
  await expect(sol(page).locator('.cd-cur')).toHaveCount(0);
+});
+test('G3-200 a live session that ages out on a native tick does not lend its Fast flag to the recorded effort (macrevb-1204-1)',async({page})=>{
+ const {send,receive}=await open(page,{liveSessions:[live('a','high',true,4*60e3)],recent:[recorded('2','high',2*60e3)]});
+ const card=sol(page);
+ await expect(card.locator('.cd-cur')).toHaveText('High');
+ await expect(card.locator('.fd-indicator')).toHaveAttribute('data-fast-mode','on');
+ expect(await receive(send('tick',{nowUnixMs:String(Date.now()+12*60e3),reason:'deadline'}))).toBe(true);
+ await expect(card.locator('.cd-cur')).toHaveText('High');
+ await expect(card.locator('.fd-indicator')).toHaveAttribute('data-fast-mode','off');
+ await card.locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
+ await expect(page.locator('.mfd-vk button.vk-fast')).toHaveAttribute('aria-pressed','false');
 });
