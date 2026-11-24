@@ -390,6 +390,8 @@ type codexbarEntry struct {
 	// is saved) this GLM entry was read with; 0 when it was not read with a pasted key. While a key is pasted, only an
 	// entry of the current generation is shown.
 	ManualKeyGeneration uint64 `json:"manualKeyGeneration,omitempty"`
+	// ZCodeLoginGeneration binds this capture to the scope watermark and provider file metadata.
+	ZCodeLoginGeneration string `json:"zcodeLoginGeneration,omitempty"`
 	// NativeNextAttemptAt preserves a legacy request deadline when a key change erases its reading.
 	NativeNextAttemptAt *time.Time `json:"nativeNextAttemptAt,omitempty"`
 	ObservedAt          time.Time  `json:"observedAt"`

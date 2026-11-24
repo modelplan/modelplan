@@ -61,9 +61,9 @@ func EraseScope(p Paths, scope string, forget bool) error {
 		return nil
 	}
 	if !known {
-		return forgetTool(p, tool, false, forget, "")
+		return forgetTool(p, tool, false, forget, "", scope)
 	} // Erase established cache formats even after a reader retires.
-	return forgetTool(p, tool, false, forget, d.Class)
+	return forgetTool(p, tool, false, forget, d.Class, scope)
 }
 
 // Caller holds ReaderLock. perf.flock also guards the daily-long rollup.

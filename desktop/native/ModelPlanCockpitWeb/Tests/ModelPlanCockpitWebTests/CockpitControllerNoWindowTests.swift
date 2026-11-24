@@ -44,6 +44,15 @@ import ModelPlanWire
     _ = try page.bridge.accept(reply(load, type: "ready", sequence: 1), source: source)
     try page.verificationConfirmVisible()
   }
+  func testMemberRefreshStateIsCarriedByTheCurrentShell() throws {
+    let page = try page()
+    page.verificationNoWindowShell = CockpitShellState(closed: false, attached: true, forcedClosed: false, tier: .tall)
+    page.updateMemberRefreshInFlight(true)
+    XCTAssertEqual(page.verificationShellState?.refreshing, true)
+    page.updateMemberRefreshInFlight(false)
+    XCTAssertEqual(page.verificationShellState?.refreshing, false)
+    page.discard()
+  }
   func testDisplayCompletionBeforeRenderedDefersAppearanceForBothReceiptOrders() throws {
     for reportBeforeRendered in [true, false] {
       let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []

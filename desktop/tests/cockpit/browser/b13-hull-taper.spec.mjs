@@ -11,10 +11,10 @@ import {inflateSync} from 'node:zlib';
 // each shape, relative to the root. The D74 canopy (#801) is 28 px (tall) and 8 px (compact) taller than the study's,
 // so the open shapes, the root and every row below the canopy move down by as much; the closed shapes are unchanged.
 const shapes=[
- {tier:'tall',closed:false,canvas:939,plate:890,upper:[244,270],cone:514,lower:338,phase:253},
- {tier:'compact',closed:false,canvas:669,plate:640,upper:[56,264],cone:320,lower:262,phase:65},
- {tier:'tall',closed:true,canvas:939,plate:890,upper:[30,270],cone:300,lower:338,phase:39},
- {tier:'compact',closed:true,canvas:669,plate:640,upper:[30,264],cone:294,lower:262,phase:39},
+ {tier:'tall',closed:false,canvas:951,plate:890,upper:[244,270],cone:514,lower:338,phase:253},
+ {tier:'compact',closed:false,canvas:681,plate:640,upper:[56,264],cone:320,lower:262,phase:65},
+ {tier:'tall',closed:true,canvas:951,plate:890,upper:[30,270],cone:300,lower:338,phase:39},
+ {tier:'compact',closed:true,canvas:681,plate:640,upper:[30,264],cone:294,lower:262,phase:39},
 ];
 async function open(page,s){
  await page.setViewportSize({width:636,height:s.canvas});
@@ -25,9 +25,9 @@ async function open(page,s){
  expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
  await page.waitForTimeout(200);
 }
-// Per-row extent of what the page paints (alpha >= 128), from a transparent screenshot (8-bit RGBA PNG).
-async function silhouette(page,height){
- const buffer=await page.screenshot({omitBackground:true,clip:{x:0,y:0,width:636,height}});
+// Decode the transparent screenshot (8-bit RGBA PNG).
+async function pixelRows(page,viewportWidth,height){
+ const buffer=await page.screenshot({omitBackground:true,clip:{x:0,y:0,width:viewportWidth,height}});
  let offset=8,width=0,rowsN=0;const data=[];
  while(offset<buffer.length){const size=buffer.readUInt32BE(offset),name=buffer.toString('latin1',offset+4,offset+8),body=buffer.subarray(offset+8,offset+8+size);
   if(name==='IHDR'){width=body.readUInt32BE(0);rowsN=body.readUInt32BE(4);if(body[8]!==8||body[9]!==6)throw new Error('expected 8-bit RGBA');}
@@ -37,9 +37,40 @@ async function silhouette(page,height){
   for(let i=0;i<stride;i++){const a=i>=4?row[i-4]:0,b=up[i],c=i>=4?up[i-4]:0;let p=src[i];
    if(f===1)p+=a;else if(f===2)p+=b;else if(f===3)p+=(a+b)>>1;else if(f===4){const q=a+b-c,pa=Math.abs(q-a),pb=Math.abs(q-b),pc=Math.abs(q-c);p+=pa<=pb&&pa<=pc?a:pb<=pc?b:c;}
    row[i]=p&255;}
-  let l=-1,r=-1;for(let x=0;x<width;x++)if(row[x*4+3]>=128){if(l<0)l=x;r=x;}rows.push([l,r]);}
+  rows.push(row);}
  return rows;
 }
+
+// Per-row extent of what the page paints (alpha >= 128).
+async function silhouette(page,height){
+ return (await pixelRows(page,636,height)).map(row=>{
+  let left=-1,right=-1;
+  for(let x=0;x<row.length/4;x++)if(row[x*4+3]>=128){if(left<0)left=x;right=x;}
+  return [left,right];
+ });
+}
+
+test('the inner hull joints stay opaque at the portrait display scale',async({page})=>{
+ await open(page,shapes[0]);
+ // The native 1440 × 2560 Auto fit gives a 541 pt viewport at 85% page zoom.
+ const scale=0.85,width=541,height=809;
+ await page.setViewportSize({width,height});
+ const shellRect=await page.evaluate(zoom=>{
+  document.body.style.zoom=zoom;
+  const r=document.querySelector('.ck-shell').getBoundingClientRect();
+  return {left:r.left,right:r.right,top:r.top};
+ },scale);
+ const rows=await pixelRows(page,width,height);
+ for(const y of [280,360,550,700]){
+  const row=rows[Math.floor((shellRect.top+y)*scale)];
+  for(const joint of [(shellRect.left+16)*scale,(shellRect.right-16)*scale]){
+   const column=Math.floor(joint);
+   for(const x of [column-1,column,column+1]){
+    expect(row[4*x+3],`visible desktop at hull joint x=${x}, y=${y}`).toBeGreaterThanOrEqual(224);
+   }
+  }
+ }
+});
 for(const s of shapes)test(`B13 ${s.tier}${s.closed?' closed':''}: study hull walls narrow above the taper, wide below`,async({page})=>{
  const bad=[];page.on('response',r=>{if(r.status()>=400)bad.push(new URL(r.url()).pathname);});
  await open(page,s);

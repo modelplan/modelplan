@@ -218,7 +218,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     if(area){area.style.gridRow=`1 / span ${rows}`;area.dataset.plugin=plugin.id;}
     const parts:HTMLElement[]=area?[area]:cells();
     const foot=el('div','qrow qrow-t pl-foot');
-    if(drawn.foot){foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value)foot.append(fitted('pl-foot-v',drawn.foot.value));}
+    if(drawn.foot){foot.setAttribute('role','group');foot.setAttribute('aria-label',[drawn.foot.label.full,drawn.foot.value?.full].filter(Boolean).join(' · '));foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value)foot.append(fitted('pl-foot-v',drawn.foot.value));}
     parts.push(foot);if(reserve)parts.push(el('div','qrow qrow-r'));
     column.replaceChildren(...parts);column.dataset.rows=String(rows);column.dataset.reserve=String(reserve);
     const ink=plugin.ink;if(ink)column.style.setProperty('--pl-ink',ink);else column.style.removeProperty('--pl-ink');

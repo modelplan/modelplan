@@ -59,7 +59,7 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
     private var surface: (any SettingsWindowSurface)? {
         didSet { attachPlugins() }
     }
-    /// Settings › Subscriptions › Plugins (switch, interval, pin to page 1) edits this model.
+    /// Settings › Plugins (switch, interval, pin to page 1) edits this model.
     public var cockpitPlugins: CockpitPluginSettingsModel? { didSet { attachPlugins() } }
     private func attachPlugins() {
         guard let cockpitPlugins, let native = surface as? NativeSettingsWindowSurface else { return }

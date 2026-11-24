@@ -47,6 +47,17 @@ const screen=page=>page.locator('.dk-mfd .mfd-screen .pl-screen[data-plugin="cal
 const weekView=page=>screen(page).locator('.pl-screen-d .cal-wk');
 const deadlines=page=>page.evaluate(()=>window.__events.filter(e=>e.type==='nextDeadline').map(e=>e.deadlineUnixMs));
 
+test('the unknown-peak footer fits on a crowded Chinese plugin page',async({page})=>{
+ const {send,receive}=await open(page,{data:dataWith(9),locale:'zh-CN',push:null});
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'calendar',enabled:true,pinned:false},{id:'resources',enabled:true,pinned:false}],settings:{}}}))).toBe(true);
+ await page.locator('[data-bpage="1"]').click();
+ const value=column(page).locator('.pl-foot-v');
+ await expect(value).toHaveAttribute('data-full','暂无高峰数据');
+ await expect(value).toHaveText('暂无数据');
+ await expect(column(page).locator('.pl-foot')).toHaveAttribute('aria-label','高峰 · 暂无高峰数据');
+ expect(await value.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+});
+
 test('D328 column: the next 12 hours only; peaks, capsules with the time, the now line, one all-day line, no picker or fold',async({page})=>{
  await open(page);
  // Default on (D121) once the host knows plugins: 4 subscriptions + the calendar = 5 equal columns.

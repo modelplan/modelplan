@@ -14,7 +14,7 @@ function data(){
  return d;
 }
 async function open(page){
- await page.setViewportSize({width:636,height:939});
+ await page.setViewportSize({width:636,height:951});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell}))).toBe(true);
@@ -47,7 +47,7 @@ test('G3-131 every bell has one dark finish; only the working bell lights its mo
 
 // D294: an empty slot has the same finish (the silver raster, no night bell) and no light.
 test('G3-131 an empty slot shows the same dark finish and no light',async({page})=>{
- await page.setViewportSize({width:636,height:939});
+ await page.setViewportSize({width:636,height:951});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const d=data();d.projection.rows=d.projection.rows.slice(0,2);d.subscriptions=d.subscriptions.slice(0,2);if(d.details)d.details.subscriptions=d.details.subscriptions.slice(0,2);
