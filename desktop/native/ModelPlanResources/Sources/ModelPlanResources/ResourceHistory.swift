@@ -83,7 +83,9 @@ public struct ResourcePageFeed: Equatable, Sendable {
         return history.minutes
     }
     public mutating func next(_ history: ResourceHistory, running: Bool) -> [ResourceSample]? {
-        guard running else { delivered = nil; return nil }
+        // macrevc-1225-2: a stop forgets both marks, so the next page (a reopened cockpit) gets the whole raw window and
+        // the whole hour of minutes with its first reading, even within the same minute.
+        guard running else { delivered = nil; deliveredMinute = nil; return nil }
         let fresh = history.samples.filter { s in delivered.map { s.uptime > $0 } ?? true }.suffix(Self.maximumPerReading)
         guard let last = fresh.last else { return nil }
         delivered = last.uptime

@@ -60,6 +60,11 @@ final class ResourceHistoryAndFeedTests: XCTestCase {
         XCTAssertNil(feed.minutes(history, running: false))
         XCTAssertEqual(feed.minutes(history, running: true)?.count, 60, "all minutes when the column starts")
         XCTAssertNil(feed.minutes(history, running: true), "nothing until a new minute closes")
+        // macrevc-1225-2: the page stops (the host's push sees running false first) and a new one starts in the same
+        // minute: it gets the hour again.
+        XCTAssertNil(feed.next(history, running: false))
+        XCTAssertNotNil(feed.next(history, running: true))
+        XCTAssertEqual(feed.minutes(history, running: true)?.count, 60, "a restarted page gets the whole hour at once")
         let body = ResourcePagePayload.data([cpu(20, at: 4200)], minutes: history.minutes)
         let rows = try XCTUnwrap(body["minutes"] as? [[String: Any]])
         XCTAssertEqual(rows.count, 60); XCTAssertEqual(Set(rows[0].keys), ["t", "cpu", "cpuPeak", "memory", "memoryPeak", "disk", "diskPeak"])

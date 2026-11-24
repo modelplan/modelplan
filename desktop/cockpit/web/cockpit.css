@@ -525,7 +525,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 /* D387 / D413: while a screen is open the Overview slot is the switch "‹ Overview │ icon + short name": the same grid
    cell as every page key (never wider), in the pressed key body; only the right half is lit. No animation (D397). */
 .mfd-pk .pk[hidden],.mfd-pk .pk-seg[hidden]{display:none}
-.mfd-pk .pk-seg{grid-column:1;grid-row:1;position:relative;display:flex;align-items:center;justify-content:center;min-width:0;height:var(--row-h,18px);padding:0 3px;border-radius:4px;background:linear-gradient(180deg,var(--key-p1),var(--key-p2));box-shadow:var(--pressed);overflow:hidden}
+.mfd-pk .pk-seg{grid-column:1;grid-row:1;position:relative;display:flex;align-items:center;justify-content:center;min-width:0;height:var(--row-h,18px);padding:0 3px;border-radius:4px 0 0 4px;background:linear-gradient(180deg,var(--key-p1),var(--key-p2));box-shadow:var(--pressed);overflow:hidden}
 .pk-seg .h{-webkit-appearance:none;appearance:none;position:relative;display:flex;align-items:center;gap:3px;flex:none;height:14px;margin:0;padding:0 2px;border:0;border-radius:3px;background:none;font:500 10px/1 var(--f-silk);letter-spacing:.04em;white-space:nowrap;cursor:pointer}
 .pk-seg .back{color:var(--silk)}
 .pk-seg .cur{color:var(--silk-hi);cursor:default}
