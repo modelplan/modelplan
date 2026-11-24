@@ -190,6 +190,16 @@ import ModelPlanResources
                     guard let id = ResourceDockBridge.pluginID(dockID: dockID) else { application?.showConsole(); return }
                     bridge?.openScreen(id)
                 }
+                // D376: a plugin ring's (and its card's) right-click "Turn Off <plugin>…" asks first, then applies the same
+                // setEnabled(id, false) edit as the Settings switch; the bridge publishes it to the page and the sampler.
+                let closer = CockpitPluginCloser(model: bridge.model, language: { [weak application] in
+                    application?.composition.latestSettings?.snapshot.preferences.language ?? .fallback
+                })
+                dock.pluginCloseTitle = { dockID in ResourceDockBridge.pluginID(dockID: dockID).flatMap { closer.prompt($0)?.menuTitle } }
+                dock.pluginCloseRequested = { dockID in
+                    guard let id = ResourceDockBridge.pluginID(dockID: dockID) else { return }
+                    Task { @MainActor in await closer.requestClose(id) }
+                }
                 dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
                 // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
                 host.setWidgetShown(dock.isWidgetShown)

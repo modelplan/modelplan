@@ -142,6 +142,21 @@ test('CKP-ENG-01/03 D376 seven subscriptions: the pager sits under the 全部 ke
  expect(reserve2.y+reserve2.height).toBeLessThanOrEqual(lcd2.y+lcd2.height+0.5);
 });
 
+test('sampling 11-22: the lower corners of All select All without paging',async({page})=>{
+ const {data}=fixture(7);await open(page,data);
+ for(const side of ['left','right']){
+  await page.locator('.eng-keys .ek[data-sub]').first().click();
+  await expect(page.locator('.ek-all')).toHaveAttribute('aria-pressed','false');
+  const box=await page.locator('.ek-all').boundingBox();
+  await page.mouse.click(side==='left'?box.x+2:box.x+box.width-2,box.y+box.height-1);
+  await expect(page.locator('.ek-all')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('.eng-pgn')).toHaveText('1/2');
+ }
+ const arrow=await page.locator('.eng-pk[data-bpage="1"]').boundingBox();
+ await page.mouse.click(arrow.x-0.5,arrow.y+arrow.height/2);
+ await expect(page.locator('.eng-pgn')).toHaveText('2/2');
+});
+
 test('CKP-ENG-53 six English columns: ≈cost never drops; speed drops before tokens',async({page})=>{
  const {data,sync}=fixture(6);
  for(const s of data.details.subscriptions)s.today=[{...s.today[0],observedOutputTokens:212e6,generationTps:52}];

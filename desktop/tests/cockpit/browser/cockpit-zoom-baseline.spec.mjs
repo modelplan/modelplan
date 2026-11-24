@@ -15,7 +15,7 @@ const OUT=fileURLToPath(new URL('../../../cockpit/.tmp/test-results/visual-captu
 const PENDING=JSON.parse(readFileSync(new URL('../cockpit-zoom-baselines.pending.json',import.meta.url),'utf8'));
 
 async function renderAtZoom(page,percent){
-  await page.setViewportSize({width:636,height:939});await page.emulateMedia({reducedMotion:'reduce'});
+  await page.setViewportSize({width:636,height:951});await page.emulateMedia({reducedMotion:'reduce'});
   await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
   const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),fixture=visualFixture();
   expect(await receive(send('load',{appearance,shell}))).toBe(true);
