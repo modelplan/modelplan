@@ -145,7 +145,7 @@ final class CockpitLaunchRackTests: XCTestCase {
     XCTAssertEqual(CockpitLaunchRackTiming.landingStep, 56)
     let icon = CGRect(x: 900, y: 1080, width: 28, height: 37)
     XCTAssertTrue(CockpitWindowController.opensRackFirst(.fromIcon, reduceMotion: false, detached: false, icon: icon))
-    XCTAssertFalse(CockpitWindowController.opensRackFirst(.fade, reduceMotion: false, detached: false, icon: icon), "the ignition keeps its fade")
+    XCTAssertFalse(CockpitWindowController.opensRackFirst(.fade, reduceMotion: false, detached: false, icon: icon), "an ordinary open keeps its fade")
     XCTAssertFalse(CockpitWindowController.opensRackFirst(.fromIcon, reduceMotion: true, detached: false, icon: icon))
     XCTAssertFalse(CockpitWindowController.opensRackFirst(.fromIcon, reduceMotion: false, detached: true, icon: icon))
     XCTAssertFalse(CockpitWindowController.opensRackFirst(.fromIcon, reduceMotion: false, detached: false, icon: nil))

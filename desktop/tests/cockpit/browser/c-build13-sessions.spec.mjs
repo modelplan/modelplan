@@ -24,7 +24,9 @@ test('B13 the model in use leads the faders with its short name, its brand strip
  await open(page,build13Profile());
  const list=await channels(page);
  expect(list.map(c=>c.name)).toEqual(['Sol 6.1','Astra 6','Terra 6.1']);// owner badcase 11-21: GPT-6 Astra keeps its version
- for(const c of list){expect(c.clipped).toBe(false);expect(c.strip).toEqual(['#6aa8ff']);}
+ for(const c of list)expect(c.clipped).toBe(false);
+ // G3-181: the running model keeps its strip; unused models have no coloured top edge.
+ expect(list.map(c=>c.strip)).toEqual([['#6aa8ff'],[],[]]);
  expect(list[0].current).toBe('High');
 });
 

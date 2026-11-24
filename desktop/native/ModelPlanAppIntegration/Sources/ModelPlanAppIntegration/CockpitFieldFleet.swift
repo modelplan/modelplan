@@ -13,16 +13,40 @@ enum CockpitFieldFleet {
     "codex": "openai", "claude": "anthropic", "gemini": "google", "grok": "xai", "kimi": "kimi", "zai": "zhipuai",
     "minimax": "minimax", "qwen": "alibaba",
   ]
+  /// Match the cockpit's verified identities and numbered fallback identities over dock rows.
+  private static func members(_ data: WireCockpitData) -> [(String, RowsRow, RowsAccount)] {
+    let verified = Set(data.subscriptions.map(\.subscriptionRef))
+    let rows = data.projection.rows.filter { $0.surfaces.contains(.dock) }
+    var counts: [String: Int] = [:]
+    for row in rows { for account in row.accounts {
+      if let ref = account.subscriptionRef, verified.contains(ref) { continue }
+      counts[row.id + "#" + account.route.rawValue, default: 0] += 1
+    }}
+    var positions: [String: Int] = [:], seen = Set<String>()
+    var result: [(String, RowsRow, RowsAccount)] = []
+    for row in rows { for account in row.accounts {
+      if let ref = account.subscriptionRef, verified.contains(ref) {
+        if seen.insert(ref).inserted { result.append((ref, row, account)) }
+        continue
+      }
+      let base = row.id + "#" + account.route.rawValue
+      positions[base, default: 0] += 1
+      let key = counts[base, default: 0] > 1 ? base + "#" + String(positions[base]!) : base
+      result.append((key, row, account))
+    }}
+    return result
+  }
+  static func hasHiddenMembers(_ data: WireCockpitData, hiddenMembers: Set<String>) -> Bool {
+    members(data).contains { hiddenMembers.contains($0.0) }
+  }
   /// The runnable published model ids, in publication order.
-  static func runnable(_ data: WireCockpitData) -> [String] {
+  static func runnable(_ data: WireCockpitData, hiddenMembers: Set<String> = []) -> [String] {
     guard let details = data.details, let published = details.publishedModels, !published.isEmpty else { return [] }
     var lists: [(models: Set<String>?, developer: String?)] = []
-    for row in data.projection.rows where row.surfaces.contains(.dock) {
-      for account in row.accounts {
+    for (key, row, account) in members(data) where !hiddenMembers.contains(key) {
         let reported = account.subscriptionRef.flatMap { ref in details.subscriptions.first { $0.subscriptionRef == ref }?.reportedModels }
         let list = reported.flatMap { $0.isEmpty ? nil : Set($0) } ?? planModels(details.planModels, tool: row.id, plan: account.plan.id)
         lists.append((list, toolDevelopers[row.id]))
-      }
     }
     return published.filter { model in
       lists.contains { $0.models.map { $0.contains(model.id) } ?? ($0.developer != nil && $0.developer == model.developerId) }

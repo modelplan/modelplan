@@ -226,6 +226,17 @@ test('same verified quota keeps focus across value and observation updates',asyn
  const data=twoVerified(),{send,receive}=await open(page,data),ref='0123456789abcdef',cell=()=>page.locator(`.eng-cols .ec[data-col="${ref}"] .qcell[data-row="other"]`);await cell().focus();await expect(cell()).toBeFocused();
  const w=data.projection.rows[0].accounts[0].windows[0];w.remainingPercent=10;w.observedAt='2026-10-29T11:59:59Z';expect(await receive(send('display',{data}))).toBe(true);await expect(cell()).toBeFocused();await expect(cell().locator('.qvalue')).toHaveText('10');
 });
+test('pointer-focused quota stays ringless after display replacement and keyboard navigation shows focus',async({page})=>{
+ const data=twoVerified(),{send,receive}=await open(page,data),cell=()=>page.locator('.eng-cols .ec[data-col="0123456789abcdef"] .qcell[data-row="other"]');
+ await cell().click();await page.keyboard.press('Escape');await expect(cell()).toBeFocused();
+ await expect(cell()).toHaveAttribute('data-pointer-focus','');
+ data.projection.rows[0].accounts[0].windows[0].remainingPercent=10;
+ expect(await receive(send('display',{data}))).toBe(true);await expect(cell()).toBeFocused();
+ await page.keyboard.press('Escape');await expect(cell()).toHaveAttribute('data-pointer-focus','');
+ expect(await cell().evaluate(e=>getComputedStyle(e).outlineStyle)).toBe('none');
+ await page.keyboard.press('Tab');
+ expect(await page.evaluate(()=>{const e=document.activeElement;return e instanceof HTMLElement&&e.matches(':focus-visible')&&!e.hasAttribute('data-pointer-focus')&&getComputedStyle(e).outlineStyle!=='none';})).toBe(true);
+});
 test('irrelevant window changes do not remove verified quota focus',async({page})=>{
  const data=twoVerified(),{send,receive}=await open(page,data),cell=()=>page.locator('.eng-cols .ec[data-col="0123456789abcdef"] .qcell[data-row="other"]');await cell().focus();await expect(cell()).toBeFocused();
  data.projection.rows[0].accounts[0].windows[1].remainingPercent=70;expect(await receive(send('display',{data}))).toBe(true);await expect(cell()).toBeFocused();

@@ -136,3 +136,45 @@ test('MOT-2.3-08 the landing burn runs only on a shown cockpit: ignition while h
  expect(await burn()).toEqual([]);
  expect((await motions(page)).filter(m=>/cockpit-bell-(flare|burn)/.test(m.animation))).toEqual([]);
 });
+
+test('display pulse ends without a late lamp DOM mutation',async({page})=>{
+ test.skip(process.env.COCKPIT_HEADED_MOTION!=='1','Natural WebKit animation events require headed rendering.');
+ const fx=visualFixture(),{send,receive}=await open(page,fx.data);
+ fx.data.projection.rows[0].accounts[0].windows[0].remainingPercent=19;
+ expect(await receive(send('display',{data:fx.data}))).toBe(true);
+ const result=await page.locator('.activity').evaluate(el=>new Promise((resolve,reject)=>{
+  const changes=[];const observer=new MutationObserver(records=>changes.push(...records));observer.observe(el,{attributes:true,attributeOldValue:true});
+  const timer=setTimeout(()=>reject(new Error('pulse did not finish')),5000);
+  el.addEventListener('animationend',event=>{if(event.animationName!=='cockpit-state-pulse')return;clearTimeout(timer);setTimeout(()=>{changes.push(...observer.takeRecords());observer.disconnect();resolve(changes.map(r=>({name:r.attributeName,old:r.oldValue})));},0);},{once:true});
+ }));
+ expect(result).toEqual([]);
+});
+
+test('system Reduce Motion does not replay a completed display pulse',async({page})=>{
+ test.skip(process.env.COCKPIT_HEADED_MOTION!=='1','Natural WebKit animation events require headed rendering.');
+ const fx=visualFixture(),{send,receive}=await open(page,fx.data);
+ await page.evaluate(()=>{window.__pulseStarts=0;document.querySelector('.activity').addEventListener('animationstart',e=>{if(e.animationName==='cockpit-state-pulse')window.__pulseStarts++;});});
+ fx.data.projection.rows[0].accounts[0].windows[0].remainingPercent=19;
+ expect(await receive(send('display',{data:fx.data}))).toBe(true);
+ await page.locator('.activity').evaluate(el=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('pulse did not finish')),5000);el.addEventListener('animationend',e=>{if(e.animationName==='cockpit-state-pulse'){clearTimeout(timer);resolve();}},{once:true});}));
+ expect(await page.evaluate(()=>window.__pulseStarts)).toBe(1);
+ await page.emulateMedia({reducedMotion:'reduce'});await page.waitForFunction(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);
+ await page.emulateMedia({reducedMotion:'no-preference'});await page.waitForFunction(()=>!matchMedia('(prefers-reduced-motion: reduce)').matches);
+ await page.waitForTimeout(200);expect(await page.evaluate(()=>window.__pulseStarts)).toBe(1);
+ fx.data.projection.rows[0].accounts[0].windows[0].remainingPercent=18;
+ expect(await receive(send('display',{data:fx.data}))).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.__pulseStarts)).toBe(2);
+});
+
+
+test('system Reduce Motion clears the display pulse before motion resumes',async({page})=>{
+ await page.addInitScript(()=>{const original=window.matchMedia.bind(window);window.__motionQueries=[];window.matchMedia=query=>{const result=original(query);if(query==='(prefers-reduced-motion: reduce)')window.__motionQueries.push(result);return result;};});
+ const fx=visualFixture(),{send,receive}=await open(page,fx.data);
+ fx.data.projection.rows[0].accounts[0].windows[0].remainingPercent=19;
+ expect(await receive(send('display',{data:fx.data}))).toBe(true);
+ const lamp=page.locator('.activity');await expect(lamp).toHaveClass(/state-pulse/);
+ await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>window.__motionQueries.forEach(q=>{Object.defineProperty(q,'matches',{configurable:true,value:true});q.dispatchEvent(new Event('change'));}));await expect(lamp).not.toHaveClass(/state-pulse/);
+ await page.emulateMedia({reducedMotion:'no-preference'});await expect(lamp).not.toHaveClass(/state-pulse/);
+ fx.data.projection.rows[0].accounts[0].windows[0].remainingPercent=18;
+ expect(await receive(send('display',{data:fx.data}))).toBe(true);await expect(lamp).toHaveClass(/state-pulse/);
+});

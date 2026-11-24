@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // The porthole HUD from published public data, through the normal bridge. Synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
-import {appearance,commands,pageId,shell} from '../fixture.mjs';
+import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 import {shortLabel} from '../../../cockpit/study/rocket-r1/short-label.js';
 
@@ -21,9 +21,9 @@ async function open(page,{tier='tall',published=models,session=null,sessions=nul
 }
 // Window-local: the prototype's window is the 620 pt cockpit, centred in the test viewport.
 const local=async page=>{const [hud,window]=await Promise.all([page.locator('.hud').boundingBox(),page.locator('#cockpit').boundingBox()]);return [hud.x-window.x,hud.y-window.y,hud.width,hud.height];};
-test('CKP-PORT-04 the tall HUD lists the first six models, complete, under a mini chart',async({page})=>{
+test('CKP-PORT-04 D386 the tall HUD lists the six best-ability frontier models, complete, under a mini chart',async({page})=>{
  await open(page);const hud=page.locator('.hud');
- await expect(hud.locator('.hp')).toHaveCount(6);await expect(hud.locator('.hp b').first()).toHaveText('Synthetic m0');await expect(hud.locator('.hp-rec').first()).toHaveText('★high');
+ await expect(hud.locator('.hp')).toHaveCount(6);await expect(hud.locator('.hp b').first()).toHaveText('Synthetic m7');await expect(hud.locator('.hp-rec').first()).toHaveText('★high');
  const box=await hud.boundingBox();expect([box.width,box.height]).toEqual([180,160]);
  const svg=await hud.locator('svg.hud-mini').boundingBox();expect([svg.width,svg.height]).toEqual([162,77]);
 });
@@ -39,8 +39,8 @@ test('CKP-PORT-03 D371 the HUD has no panel: transparent box, no border, no shad
 });
 test('CKP-PORT-03 D371 list and chart text carry a 1 px dark outline',async({page})=>{
  await open(page);
- const outline=await page.locator('.hud').evaluate(h=>{const w=e=>parseFloat(getComputedStyle(e).webkitTextStrokeWidth||'0');return {name:w(h.querySelector('.hp b')),rec:w(h.querySelector('.hp-rec')),num:w(h.querySelector('.hp-n')),axis:parseFloat(getComputedStyle(h.querySelector('.hud-axis-label')).strokeWidth)};});
- expect(outline).toEqual({name:1,rec:1,num:1,axis:1});
+ const outline=await page.locator('.hud').evaluate(h=>{const w=e=>parseFloat(getComputedStyle(e).webkitTextStrokeWidth||'0');return {name:w(h.querySelector('.hp b')),rec:w(h.querySelector('.hp-rec')),num:w(h.querySelector('.hp-n'))};});
+ expect(outline).toEqual({name:1,rec:1,num:1});
 });
 test('CKP-PORT-03 D371 the whole HUD stays inside the safe area, 10 px in from the glass edge',async({page})=>{
  await open(page);
@@ -74,12 +74,11 @@ test('CKP-PORT-04 D371 when six rows do not fit the safe area, fewer whole rows 
  expect(room).toBeGreaterThanOrEqual(-0.5);
  expect(await page.locator('.hud .hp b').evaluateAll(a=>a.some(e=>e.scrollWidth>e.clientWidth+.5||getComputedStyle(e).textOverflow==='ellipsis'))).toBe(false);
 });
-test('CKP-PORT-04 chart order: this week\'s models, the lineup, then developers in turn, dominated last',async({page})=>{
+test('CKP-PORT-04 D386 the HUD lists only the ability frontier, best ability first; a beaten model is not listed',async({page})=>{
  const other=m=>({...m,developerId:'anthropic'}),a=model('a',40,.1),b=model('b',50,.3),c=other(model('c',60,.5)),d=other(model('d',70,.7)),e=model('e',80,.9),beaten=model('beaten',30,2);
- const session={sessionRef:'0'.repeat(16),source:'codex',subscriptionRef:null,model:'e',effort:'high',projectLabel:null,lastObservedAt:observed(),state:'running',rate:null};
- await open(page,{published:[beaten,a,b,c,d,e],lineup:[d],session});
- expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['e','d','a','c','b','beaten']);
- await expect(page.locator('.hud .hp').last()).toHaveClass(/dominated/);
+ await open(page,{published:[beaten,a,b,c,d,e]});
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['e','d','c','b','a']);
+ await expect(page.locator('.hud .hp.dominated')).toHaveCount(0);await expect(page.locator('.hud [data-hud-model=beaten]')).toHaveCount(0);
 });
 test('CKP-PORT-04 a session at ★ glows the star, at another effort the name turns gold',async({page})=>{
  const at=(ref,id,effort)=>({sessionRef:ref.repeat(16),source:'codex',subscriptionRef:null,model:id,effort,projectLabel:null,lastObservedAt:observed(),state:'running',rate:null});
@@ -98,9 +97,65 @@ test('CKP-PORT-07 a subscription scope narrows the HUD and 全部 restores it',a
  await expect(page.locator('.hud .hp')).toHaveCount(1);await expect(page.locator('.hud .hp b')).toHaveText('Synthetic claude-model');
  expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(page.locator('.hud .hp')).toHaveCount(4);
 });
+
+test('D386 a running dominated model remains selectable in the scoped Models list',async({page})=>{
+ const fleet=Array.from({length:10},(_,i)=>model('front-'+i,40+i,.1*(i+1)));
+ fleet.push(model('running-overflow',20,2));let ref='';
+ const session={sessionRef:'00000000000000aa',source:'codex',subscriptionRef:null,model:'running-overflow',effort:'high',projectLabel:null,lastObservedAt:observed(),state:'running',rate:null};
+ const {send,receive}=await open(page,{published:fleet,session,edit:data=>{keepRows(['codex'])(data);ref=data.subscriptions[0].subscriptionRef;}});
+ expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ const row=page.locator('.md-row[data-model="running-overflow"]');await expect(row).toBeVisible();await row.click();
+ await expect(row).toHaveClass(/\bsel\b/);
+});
+
+test('D386 all eleven running models precede unused scoped Models rows',async({page})=>{
+ test.setTimeout(60000);await excludePortholeFlicker(page);
+ const fleet=Array.from({length:10},(_,i)=>model('front-'+i,40+i,.1*(i+1)));
+ const sessions=Array.from({length:11},(_,i)=>{
+  fleet.push(model('running-'+i,20,2+i));
+  return {sessionRef:'00000000000000'+(160+i).toString(16),source:'codex',subscriptionRef:null,model:'running-'+i,effort:'high',projectLabel:null,lastObservedAt:new Date(Date.now()-i*1000).toISOString(),state:'running',rate:null};
+ });
+ let ref='';const {send,receive}=await open(page,{published:fleet,sessions,edit:data=>{keepRows(['codex'])(data);ref=data.subscriptions[0].subscriptionRef;}});
+ expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ const ids=await page.locator('.md-row').evaluateAll(rows=>rows.map(row=>row.dataset.model));
+ expect(ids.slice(0,11)).toEqual(Array.from({length:11},(_,i)=>'running-'+i));
+ expect(ids.slice(11).some(id=>id.startsWith('front-'))).toBe(true);
+ for(let i=0;i<11;i++){const row=page.locator(`.md-row[data-model="running-${i}"]`);await row.click();await expect(row).toHaveClass(/\bsel\b/);}
+ await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
+ const chart=(await page.locator('.pg-tune [data-fill="fc"]').getAttribute('data-models')).split(' ');
+ expect(chart.filter(id=>id.startsWith('front-'))).toHaveLength(10);
+ expect(chart).toContain('running-10'); // The selected list model may join the capped chart field.
+});
 // D86: "All" is the union of the user's own subscriptions, never the whole published field.
 const keepRows=ids=>data=>{data.projection.rows=data.projection.rows.filter(r=>ids.includes(r.id));data.subscriptions=data.subscriptions.filter(s=>data.projection.rows.some(r=>r.accounts.some(a=>a.subscriptionRef===s.subscriptionRef)));};
 const mixed=()=>[model('gpt-a',50,.3),model('gpt-b',45,.2),{...model('claude-a',60,.5),developerId:'anthropic'},{...model('google-a',55,.4),developerId:'google'}];
+test('a clicked subscription scope immediately narrows the HUD',async({page})=>{
+ await open(page,{published:mixed(),edit:keepRows(['codex','claude'])});
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+ await page.locator('.eng-keys .ek[data-sub]').nth(1).click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.locator('.eng-krow [data-all]').click();
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+ await page.keyboard.press('2');
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.keyboard.press('0');
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+});
+test('subscription-list and session-tape scope picks immediately update the HUD',async({page})=>{
+ await open(page,{published:mixed(),edit:data=>{
+  keepRows(['codex','claude','gemini'])(data);
+  const ref=data.projection.rows.find(r=>r.id==='claude').accounts[0].subscriptionRef;
+  data.details.sessions=[{sessionRef:'0000000000000099',source:'claude',subscriptionRef:ref,model:'claude-a',effort:'high',projectLabel:null,lastObservedAt:new Date().toISOString(),state:'running',rate:null}];
+ }});
+ await page.locator('[data-mfd="page:sub"]').click();
+ await page.locator('.sa-list .sa').nth(1).click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.locator('.eng-krow [data-all]').click();
+ await page.locator('.ck-tape .t-observed').first().click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+});
 test('CKP-PORT-04 D86 one GPT subscription: All lists only that plan\'s models, on the HUD and the 模型 page',async({page})=>{
  await open(page,{published:mixed(),edit:keepRows(['codex'])});
  expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['gpt-a','gpt-b']);
@@ -136,13 +191,12 @@ test('CKP-PORT-03 the HUD hides while the shutter is closed',async({page})=>{
  expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);await expect(page.locator('.hud')).toBeHidden();
  expect(await receive(send('shell',{...shell,profile:'open'}))).toBe(true);await expect(page.locator('.hud')).toBeVisible();
 });
-test('CKP-PORT-08 one point per model at ★, a dashed frontier, dominated dots dimmed, no names inside',async({page})=>{
+test('CKP-PORT-08 D386 one point per listed frontier model at ★, a dashed frontier, no dominated dots, no names or captions inside',async({page})=>{
  await open(page,{published:[model('a',40,.1),model('b',50,.3),model('c',35,.9)]});
- await expect(page.locator('.hud-dot')).toHaveCount(3);await expect(page.locator('.hud-dot.dominated')).toHaveCount(1);
+ await expect(page.locator('.hud-dot')).toHaveCount(2);await expect(page.locator('.hud-dot.dominated')).toHaveCount(0);
  expect((await page.locator('.hud-front').getAttribute('points')).trim().split(/\s+/).length).toBe(2);
- // No names inside: the chart's only text is its two axis captions and the rank digits of the first three points.
- expect(await page.locator('.hud-mini text').allTextContents()).toEqual(expect.arrayContaining(['Ability ↑','Cost ×']));
- expect((await page.locator('.hud-mini text.hud-rank').allTextContents()).sort()).toEqual(['1','2','3']);
+ // No names or captions inside: the chart's only text is the rank digits of the listed models.
+ expect((await page.locator('.hud-mini text').allTextContents()).sort()).toEqual(['1','2']);
  for(const text of await page.locator('.hud-mini text').allTextContents())expect(text).not.toContain('Synthetic');
 });
 // QA 11-08 (G3-48): six rows of real-length names fit the tall HUD whole, and the chart carries the study's axis captions.
@@ -150,16 +204,16 @@ const longNames=['GPT-6 Astra','GPT-6.1 Terra','GPT-6 Luna','Gemini 4 Argon','Mi
 test('CKP-PORT-04 six real-length names fit the tall HUD: no row clipped, no name or effort cut',async({page})=>{
  await open(page,{published:longNames.map((name,i)=>({...model('n'+i,40+i,.1*(i+1)),name,recommended:'max',efforts:[effort('low',32+i,.03*(i+1)),effort('max',40+i,.1*(i+1),true)]}))});
  const hud=page.locator('.hud');await expect(hud.locator('.hp')).toHaveCount(6);
- await expect(hud.locator('.hp b')).toHaveText(longNames.map(name=>shortLabel(name)));// the HUD shows the study's short names (#761)
+ await expect(hud.locator('.hp b')).toHaveText([...longNames].reverse().map(name=>shortLabel(name)));// the HUD shows the study's short names (#761)
  const geometry=await hud.evaluate(h=>{const box=e=>e.getBoundingClientRect(),H=box(h);return [...h.querySelectorAll('.hp')].map(r=>{const b=r.querySelector('b'),rec=r.querySelector('.hp-rec');return {bottom:box(r).bottom-H.bottom,right:box(rec).right-H.right,cut:b.scrollWidth>b.clientWidth+.5,recCut:rec.scrollWidth>rec.clientWidth+.5};});});
  for(const row of geometry){expect(row.bottom).toBeLessThanOrEqual(0.5);expect(row.right).toBeLessThanOrEqual(0.5);expect(row.cut).toBe(false);expect(row.recCut).toBe(false);}
  await expect(hud.locator('.hp-rec').nth(4)).toHaveText('★max');
- await expect(page.locator('.hud-b .hud-axis-label')).toHaveText(['Ability ↑','Cost ×']);
 });
-test('CKP-PORT-04 the axis captions follow the language',async({page})=>{
+test('CKP-PORT-04 D386 the small HUD chart has no axis captions in any language',async({page})=>{
  const {send,receive}=await open(page);
+ await expect(page.locator('.hud-b svg.hud-mini')).toHaveCount(1);await expect(page.locator('.hud .hud-axis-label')).toHaveCount(0);
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
- await expect(page.locator('.hud-b .hud-axis-label')).toHaveText(['能力 ↑','成本 ×']);
+ await expect(page.locator('.hud .hud-axis-label')).toHaveCount(0);await expect(page.locator('.hud')).not.toContainText(/Ability|能力|成本|Cost/);
 });
 test('CKP-PORT-08 a different current effort is a white dot linked to its ★',async({page})=>{
  await open(page,{published:[model('a',40,.1)],session:{sessionRef:'0000000000000001',source:'Codex',subscriptionRef:null,model:'a',effort:'low',projectLabel:null,lastObservedAt:observed(),state:'running',rate:null}});
@@ -324,7 +378,7 @@ test('CKP-PORT-51 a green dot follows the ★ effort of each model a session is 
  await expect(page.locator('.hud .hp[data-hud-model=m7] .hp-on')).toHaveAttribute('aria-label','Running');
 });
 test('CKP-PORT-51 the compact strip keeps the dot inside its row',async({page})=>{
- await open(page,{tier:'compact',sessions:[running('a','m0')]});
+ await open(page,{tier:'compact',sessions:[running('a','m7')]});
  const row=page.locator('.hud.hud-strip .hp').first();await expect(row.locator('.hp-on')).toHaveCount(1);
  const [r,d,hud]=await Promise.all([row.boundingBox(),row.locator('.hp-on').boundingBox(),page.locator('.hud').boundingBox()]);
  expect(d.y).toBeGreaterThanOrEqual(r.y-.5);expect(d.y+d.height).toBeLessThanOrEqual(r.y+r.height+.5);expect(d.x+d.width).toBeLessThanOrEqual(hud.x+hud.width+.5);

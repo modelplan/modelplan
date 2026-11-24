@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
-/* Copyright (c) 2026 ModelPlan. The prototype rules below are unchanged. */
+/* Copyright (c) 2026 ModelPlan. Strip material rules derived from the owner-released prototype. */
 /* Selected C1/P2, native 620 px anchors. Only 2 blank px at each vertical
    plate edge are clipped to preserve the existing frame and instrument grid. */
 .ck-head{grid-row:2;grid-column:1;position:relative;z-index:5;display:block;padding:0;min-width:0}
@@ -21,27 +21,40 @@
 .shutter-slider.dragging :is(.shutter-thumb,.shutter-blind){transition:none}
 .ck-head .ck-lamp{position:absolute;left:388px;top:-3px;width:44px;height:32px;margin:0;display:block;clip-path:inset(-6px -26px -6px -14px)}
 .ck-head .key,.ck-head .caution{position:absolute;top:-3px;width:32px;height:32px;min-width:0;padding:0;border:0;border-radius:4px;background:none;box-shadow:none;transform:none;cursor:pointer}
-.ck-head .key::before{content:"";position:absolute;inset:-4px;background:var(--strip-key,none) center/40px 40px no-repeat,var(--strip-base) center/40px 40px no-repeat;pointer-events:none}
-.ck-head [data-settings]{left:460px;--strip-base:url('./assets/gear-normal@3x.png')}
-.ck-head [data-settings]:hover{--strip-key:url('./assets/gear-hover@3x.png')}
-.ck-head [data-settings]:active{--strip-key:url('./assets/gear-pressed@3x.png')}
-.ck-head [data-detach]{left:502px;--strip-base:url('./assets/detach-normal@3x.png')}
-.ck-head [data-detach]:hover{--strip-key:url('./assets/detach-hover@3x.png')}
-.ck-head [data-detach]:active{--strip-key:url('./assets/detach-pressed@3x.png')}
+/* Direct image declarations avoid WebKit reclassifying cached custom-property URLs on reload. */
+.ck-head .key::before{content:"";position:absolute;inset:-4px;background-position:center;background-size:40px 40px;background-repeat:no-repeat;pointer-events:none}
+.ck-head [data-settings]{left:460px}
+.ck-head [data-settings]::before{background-image:url('./assets/gear-normal@3x.png')}
+.ck-head [data-settings]:hover::before{background-image:url('./assets/gear-hover@3x.png'),url('./assets/gear-normal@3x.png')}
+.ck-head [data-settings]:active::before{background-image:url('./assets/gear-pressed@3x.png'),url('./assets/gear-normal@3x.png')}
+.ck-head [data-detach]{left:502px}
+.ck-head [data-detach]::before{background-image:url('./assets/detach-normal@3x.png')}
+.ck-head [data-detach]:hover::before{background-image:url('./assets/detach-hover@3x.png'),url('./assets/detach-normal@3x.png')}
+.ck-head [data-detach]:active::before{background-image:url('./assets/detach-pressed@3x.png'),url('./assets/detach-normal@3x.png')}
 .ck-head .detach-glyph{position:absolute;inset:0;pointer-events:none;background:#e9edf4;mask:url('./assets/detach.svg') center/18.5px 18.5px no-repeat}
 .ck-head [data-detach][aria-pressed=true] .detach-glyph{mask-image:url('./assets/put-back.svg')}
-.ck-head [data-close]{left:544px;--strip-base:url('./assets/close-normal@3x.png')}
-.ck-head [data-close]:hover{--strip-key:url('./assets/close-hover@3x.png')}
-.ck-head [data-close]:active{--strip-key:url('./assets/close-pressed@3x.png')}
+.ck-head [data-close]{left:544px}
+.ck-head [data-close]::before{background-image:url('./assets/close-normal@3x.png')}
+.ck-head [data-close]:hover::before{background-image:url('./assets/close-hover@3x.png'),url('./assets/close-normal@3x.png')}
+.ck-head [data-close]:active::before{background-image:url('./assets/close-pressed@3x.png'),url('./assets/close-normal@3x.png')}
 .ck-head .key:active{background:none;transform:none}
-.ck-head .caution{position:relative;top:0;width:44px;height:32px;background:none;--lamp-body:none;--lamp-rest:url('./assets/lamp-off-body@3x.png');--lamp-glow:url('./assets/lamp-off-glow@3x.png')}
-.ck-head .caution::before{content:"";position:absolute;left:-24px;top:-24px;width:92px;height:80px;background:var(--lamp-glow) center/92px 80px no-repeat;pointer-events:none}
-.ck-head .caution::after{content:"";position:absolute;inset:-4px;background:var(--lamp-body) center/52px 40px no-repeat,var(--lamp-rest) center/52px 40px no-repeat;pointer-events:none}
-.ck-head .caution.lit.amber{background:none;box-shadow:none;--lamp-rest:url('./assets/lamp-amber-body@3x.png');--lamp-glow:url('./assets/lamp-amber-glow@3x.png')}
-.ck-head .caution.lit.red{background:none;box-shadow:none;--lamp-rest:url('./assets/lamp-red-body@3x.png');--lamp-glow:url('./assets/lamp-red-glow@3x.png')}
-.ck-head .caution:active{transform:none;--lamp-body:url('./assets/lamp-off-pressed-body@3x.png');--lamp-glow:url('./assets/lamp-off-pressed-glow@3x.png')}
-.ck-head .caution.lit.amber:active{--lamp-body:url('./assets/lamp-amber-pressed-body@3x.png');--lamp-glow:url('./assets/lamp-amber-pressed-glow@3x.png')}
-.ck-head .caution.lit.red:active{--lamp-body:url('./assets/lamp-red-pressed-body@3x.png');--lamp-glow:url('./assets/lamp-red-pressed-glow@3x.png')}
+.ck-head .caution{position:relative;top:0;width:44px;height:32px;background:none}
+.ck-head .caution::before{content:"";position:absolute;left:-24px;top:-24px;width:92px;height:80px;background-position:center;background-size:92px 80px;background-repeat:no-repeat;pointer-events:none}
+.ck-head .caution::after{content:"";position:absolute;inset:-4px;background-position:center;background-size:52px 40px;background-repeat:no-repeat;pointer-events:none}
+.ck-head .caution.lit{background:none;box-shadow:none}
+.ck-head .caution:active{transform:none}
+.ck-head .caution::before{background-image:url('./assets/lamp-off-glow@3x.png')}
+.ck-head .caution::after{background-image:url('./assets/lamp-off-body@3x.png')}
+.ck-head .caution:active::before{background-image:url('./assets/lamp-off-pressed-glow@3x.png')}
+.ck-head .caution:active::after{background-image:url('./assets/lamp-off-pressed-body@3x.png'),url('./assets/lamp-off-body@3x.png')}
+.ck-head .caution.lit.amber::before{background-image:url('./assets/lamp-amber-glow@3x.png')}
+.ck-head .caution.lit.amber::after{background-image:url('./assets/lamp-amber-body@3x.png')}
+.ck-head .caution.lit.amber:active::before{background-image:url('./assets/lamp-amber-pressed-glow@3x.png')}
+.ck-head .caution.lit.amber:active::after{background-image:url('./assets/lamp-amber-pressed-body@3x.png'),url('./assets/lamp-amber-body@3x.png')}
+.ck-head .caution.lit.red::before{background-image:url('./assets/lamp-red-glow@3x.png')}
+.ck-head .caution.lit.red::after{background-image:url('./assets/lamp-red-body@3x.png')}
+.ck-head .caution.lit.red:active::before{background-image:url('./assets/lamp-red-pressed-glow@3x.png')}
+.ck-head .caution.lit.red:active::after{background-image:url('./assets/lamp-red-pressed-body@3x.png'),url('./assets/lamp-red-body@3x.png')}
 .ck-head .caution.flash{animation:strip-alert 1s steps(1,end) 10}
 @keyframes strip-alert{50%{filter:brightness(.45)}}
 .ck-head :is(button,.shutter-slider):focus-visible{outline:2px solid var(--gold);outline-offset:2px}
