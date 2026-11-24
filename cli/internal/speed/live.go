@@ -161,10 +161,11 @@ func activityRoots(claudeHome, codexHome, zcodeHome string) []liveRoot {
 }
 
 func activeLogs(roots []liveRoot, now time.Time) []LiveLog {
-	return activeLogsFrom(roots, now, os.ReadDir)
+	logs, _ := activeLogsFrom(roots, now, os.ReadDir)
+	return logs
 }
 
-func activeLogsFrom(roots []liveRoot, now time.Time, readDir func(string) ([]os.DirEntry, error)) []LiveLog {
+func activeLogsFrom(roots []liveRoot, now time.Time, readDir func(string) ([]os.DirEntry, error)) ([]LiveLog, []LiveLog) {
 	type candidate struct {
 		log LiveLog
 		at  time.Time
@@ -198,7 +199,7 @@ func activeLogsFrom(roots []liveRoot, now time.Time, readDir func(string) ([]os.
 				if entry.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(path, ".jsonl") {
 					continue
 				}
-				fi, err := entry.Info()
+				fi, err := os.Lstat(path)
 				if err != nil || !fi.Mode().IsRegular() || fi.ModTime().Before(now.Add(-LiveWithin)) {
 					continue
 				}
@@ -213,14 +214,19 @@ func activeLogsFrom(roots []liveRoot, now time.Time, readDir func(string) ([]os.
 		}
 		return all[i].at.After(all[j].at)
 	})
-	out := []LiveLog{}
-	for i, c := range all {
-		if i == maxLive {
+	out, claude := []LiveLog{}, []LiveLog{}
+	for _, c := range all {
+		if len(out) < maxLive {
+			out = append(out, c.log)
+		}
+		if c.log.Source == "claude-code" && len(claude) < maxLive {
+			claude = append(claude, c.log)
+		}
+		if len(out) == maxLive && len(claude) == maxLive {
 			break
 		}
-		out = append(out, c.log)
 	}
-	return out
+	return out, claude
 }
 
 // ObserveLive reads only bounded local log tails. It neither adds historical token counts nor

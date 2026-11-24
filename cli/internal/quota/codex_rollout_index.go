@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"sync"
 	"time"
 
@@ -56,10 +57,22 @@ func (i *CodexRolloutIndex) recent(home, thread string, fence consent.Fence, now
 func (i *CodexRolloutIndex) recentFrom(home, thread string, fence consent.Fence, now time.Time, readDir func(string) ([]os.DirEntry, error)) ([]string, string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if i.home != home || i.thread != thread || i.fence != fence || i.scannedAt.IsZero() ||
-		now.Before(i.scannedAt) || now.Sub(i.scannedAt) >= codexRolloutDiscoveryInterval {
+	sameSource := i.home == home && i.thread == thread && i.fence == fence
+	if !sameSource || i.scannedAt.IsZero() || now.Before(i.scannedAt) || now.Sub(i.scannedAt) >= codexRolloutDiscoveryInterval {
+		files, own := discoverCodexRolloutsFrom(home, thread, codexFiles, readDir)
+		if sameSource && !i.scannedAt.IsZero() {
+			// A cold-directory reconciliation observes a subset of the tree.
+			// Keep previously admitted candidates in the current mtime ranking.
+			files = rankKnownRollouts(append(files, i.files...))
+			if own == "" {
+				own = i.own
+			}
+			if own != "" && !slices.Contains(files, own) {
+				files = append([]string{own}, files...)
+			}
+		}
 		i.home, i.thread, i.fence, i.scannedAt = home, thread, fence, now
-		i.files, i.own = discoverCodexRolloutsFrom(home, thread, codexFiles, readDir)
+		i.files, i.own = files, own
 	}
 
 	// The older discovery rejected symlink date directories. Recheck that
@@ -86,4 +99,20 @@ func (i *CodexRolloutIndex) recentFrom(home, thread string, fence consent.Fence,
 		own = ""
 	}
 	return files, own
+}
+
+func rankKnownRollouts(files []string) []string {
+	modified := make(map[string]time.Time, len(files))
+	unique := make([]string, 0, len(files))
+	for _, path := range files {
+		if _, known := modified[path]; known {
+			continue
+		}
+		if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+			modified[path] = info.ModTime()
+			unique = append(unique, path)
+		}
+	}
+	sort.SliceStable(unique, func(i, j int) bool { return modified[unique[i]].After(modified[unique[j]]) })
+	return unique[:min(len(unique), codexFiles)]
 }

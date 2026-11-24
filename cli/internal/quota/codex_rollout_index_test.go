@@ -47,3 +47,34 @@ func TestCodexIdleDirectoryBudget(t *testing.T) {
 		t.Fatalf("returned a cached path through a replaced directory: %v", files)
 	}
 }
+
+func TestCodexColdReconciliationKeepsKnownActiveCandidates(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "sessions", "2026", "11", "24")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "rollout-retained.jsonl")
+	if err := os.WriteFile(path, []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var index CodexRolloutIndex
+	fence := consent.Fence{StoreEpoch: "hello", Generation: 1}
+	now := time.Unix(1100, 0)
+	if got, _ := index.recent(home, "", fence, now); len(got) != 1 || got[0] != path {
+		t.Fatal(got)
+	}
+	partial := func(request string) ([]os.DirEntry, error) {
+		if request == dir {
+			return nil, nil // deferred cold leaf, no new enumeration in this pass
+		}
+		return os.ReadDir(request)
+	}
+	if got, _ := index.recentFrom(home, "", fence, now.Add(codexRolloutDiscoveryInterval), partial); len(got) != 1 || got[0] != path {
+		t.Fatalf("partial discovery dropped a known rollout: %v", got)
+	}
+	fence.Generation++
+	if got, _ := index.recentFrom(home, "", fence, now.Add(2*codexRolloutDiscoveryInterval), partial); len(got) != 0 {
+		t.Fatalf("permission change retained a prior rollout: %v", got)
+	}
+}

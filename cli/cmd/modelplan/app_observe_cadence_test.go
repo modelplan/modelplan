@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +13,9 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver"
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
 	"github.com/modelplan/modelplan/cli/internal/testenv"
 )
@@ -174,4 +177,61 @@ func TestAppObservationRecordsConsentSkipAndWritesNothing(t *testing.T) {
 			t.Fatalf("%s written without the Codex grant: %v %+v", name, err, s.ObserveDecisions())
 		}
 	}
+}
+
+func TestAppAccountingKeepsClaudeCandidatesWhenCodexFillsMixedBudget(t *testing.T) {
+	st := observeCadenceHome(t, true)
+	now := time.Now().UTC()
+	home := os.Getenv("HOME")
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
+	if err := changeConsentWhenFree(func(state *consent.State) error {
+		return consent.Set(state, "claude", true, "native:claude", "native", now)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	codex := filepath.Join(home, ".codex", "sessions", now.Format("2006/01/02"))
+	for i := range 64 {
+		path := filepath.Join(codex, fmt.Sprintf("rollout-newer-%02d.jsonl", i))
+		if err := os.WriteFile(path, []byte("{}\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, now.Add(-time.Second), now.Add(-time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	claude := filepath.Join(home, ".claude", "projects", "synthetic", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(claude), 0700); err != nil {
+		t.Fatal(err)
+	}
+	at := now.Add(-time.Minute)
+	body := fmt.Sprintf(`{"type":"assistant","timestamp":%q,"sessionId":"synthetic","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-5-20250929","role":"assistant","content":[],"usage":{"input_tokens":100,"output_tokens":10}}}`+"\n", at.Format(time.RFC3339Nano))
+	if err := os.WriteFile(claude, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(claude, at, at); err != nil {
+		t.Fatal(err)
+	}
+	var inventory localusage.DirectoryInventory
+	rollouts := quota.CodexRolloutIndex{Directories: &inventory}
+	activity := speed.ActivityLogIndex{DirectoryReader: inventory.ForAdmission}
+	var observed bool
+	for _, result := range observeForAppIndexed(st, &rollouts, &activity)(now) {
+		if result.Source == "claude" {
+			observed = result.Outcome == appserver.ObserveRan
+		}
+	}
+	if !observed {
+		t.Fatal("the mixed Codex set displaced admitted Claude accounting")
+	}
+	ledger, ok := speed.LoadPerf(st.Dir)
+	if !ok {
+		t.Fatal("the background accounting entry did not write the ledger")
+	}
+	for _, row := range ledger.UsageRows {
+		if row.Source == "claude-code" {
+			return
+		}
+	}
+	t.Fatal("the accounting ledger lost the Claude transcript")
 }

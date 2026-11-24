@@ -554,8 +554,10 @@ func newestRolloutsFrom(root string, n int, readDir func(string) ([]os.DirEntry,
 				es, _ := readDir(d)
 				for _, e := range es {
 					if e.Type().IsRegular() && rolloutName.MatchString(e.Name()) {
-						if info, err := e.Info(); err == nil {
-							out = append(out, f{filepath.Join(d, e.Name()), info.ModTime()})
+						path := filepath.Join(d, e.Name())
+						// A cached DirEntry can hold the metadata of its first enumeration.
+						if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+							out = append(out, f{path, info.ModTime()})
 						}
 					}
 				}

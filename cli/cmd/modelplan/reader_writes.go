@@ -50,10 +50,10 @@ func observeForAppIndexed(st *store.Store, codexIndex *quota.CodexRolloutIndex, 
 		paths.Admission, paths.CodexIndex = &admission, codexIndex
 		// The background accounting pass uses the same active set and directory
 		// listings as activity. Keep ZCode’s own ledger on its existing adapter.
-		var logs []speed.LiveLog
+		var logs, claudeLogs []speed.LiveLog
 		if !speed.Off() {
 			claude, codex, zcode, _ := appLogHomes(st.Dir, admission, now)
-			logs = activity.AdmittedLogs(claude, codex, zcode, admission, now, time.Now())
+			logs, claudeLogs = activity.AdmittedLogSets(claude, codex, zcode, admission, now, time.Now())
 		}
 		results := []appserver.ObserveResult{
 			{Source: "codex", Outcome: observeCodexWithLogs(st, now, func() []string {
@@ -63,7 +63,7 @@ func observeForAppIndexed(st *store.Store, codexIndex *quota.CodexRolloutIndex, 
 				}
 				return files
 			})},
-			{Source: "claude", Outcome: observeClaudeSpeed(st, logs, now)},
+			{Source: "claude", Outcome: observeClaudeSpeed(st, claudeLogs, now)},
 		}
 		results = append(results, observeAgents(st, now)...)
 		return append(results, appserver.ObserveResult{Source: "live", Outcome: observeLiveWithLogs(st, paths.CodexHome, cachedSubscriptions(st, now), quota.Report{
