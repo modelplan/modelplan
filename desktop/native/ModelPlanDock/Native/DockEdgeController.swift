@@ -162,8 +162,11 @@ public struct DockEdgePresentation:Equatable,Sendable {
             if result.didReveal || reset?.didReveal == true{onReveal?()}
             guard running,timerGeneration==token else{return}
             guard input.lifecycleActive, input.enabled else{return}
-            let due = result.nextDeadline.map { min($0, now + visibility.policy.sampleInterval) }
-                ?? now + visibility.policy.idleSampleInterval
+            // The painted sliver's tracking area covers only part of the wake
+            // strip. Sample the whole strip promptly until the widget expands.
+            let activeInterval = visibility.policy.sampleInterval
+            let idleInterval = result.state == .sliver ? activeInterval : visibility.policy.idleSampleInterval
+            let due = result.nextDeadline.map { min($0, now + activeInterval) } ?? now + idleInterval
             guard due.isFinite,due>now else{throw DockLogicError.invalidTime}
             scheduler.arm(at: due) { [weak self] in
                 guard let self, self.running, self.timerGeneration == token else { return }

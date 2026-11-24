@@ -220,7 +220,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// so a change here is what asks the cockpit again (HIST-IMP-05).
   private var importState: String?
   /// CKP-SHELL-20 (owner D50): keep one loaded, hidden, empty page ready so a click does not wait for a
-  /// WebKit cold start. Off by default; the app turns it on when the cockpit entry is enabled.
+  /// WebKit cold start. Off by default; the installed app prepares only the bundle.
   public var prewarmEnabled = false {
     didSet {
       guard prewarmEnabled != oldValue else { return }

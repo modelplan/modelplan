@@ -94,8 +94,26 @@ test('inactive cockpit schedules no animation frames or fast timers',async({page
    };
   }
  });
- const {send,receive}=await open(page,visualFixture().data);
- expect(await receive(send('visibility',{visible:false,occluded:true,key:false}))).toBe(true);
+ const {data}=visualFixture();
+ data.details=null;data.projection.rows=data.projection.rows.slice(0,1);
+ const windows=data.projection.rows[0].accounts[0].windows;
+ for(const w of windows)w.remainingPercent=75;
+ const {send,receive}=await open(page,data);
+ windows[0].remainingPercent=0;
+ expect(await receive(send('display',{data}))).toBe(true);
+ windows[1].remainingPercent=10;
+ expect(await receive(send('display',{data}))).toBe(true);
+ await page.getByRole('button',{name:'Plans',exact:true}).click();
+ await page.locator('[data-caution]').click();
+ const flash=await page.evaluate(message=>{
+  const row=document.querySelector('.pg-alerts .mfd-alerts li.al-flash');
+  const before=row&&getComputedStyle(row).animationName;
+  const accepted=window.modelPlanCockpit.receive(message);
+  const after=row&&getComputedStyle(row).animationName;
+  return {before,accepted,after};
+ },send('visibility',{visible:true,occluded:true,key:false}));
+ expect(flash).toEqual({before:'cockpit-alert-row-flash',accepted:true,after:'none'});
+ expect(await running(page)).toEqual([]);
  const before=await page.evaluate(()=>({...window.idleEnergyCalls}));
  await page.waitForTimeout(1100);
  expect(await page.evaluate(()=>window.idleEnergyCalls)).toEqual(before);

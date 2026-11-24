@@ -23,11 +23,7 @@ extension CommunityCockpitEntryTests {
     private final class PerfProbe {
         var made: [CockpitWindowController] = []
         var renders: [ContinuousClock.Instant] = []
-        var trace: [(step: String, at: ContinuousClock.Instant)] = []
         var timing: [(line: String, at: ContinuousClock.Instant)] = []
-        func traced(_ step: String, after: ContinuousClock.Instant) -> ContinuousClock.Instant? {
-            trace.first { $0.step == step && $0.at > after }?.at
-        }
         func timed(_ prefix: String, after: ContinuousClock.Instant) -> String? {
             timing.first { $0.line.hasPrefix(prefix) && $0.at > after }?.line
         }
@@ -38,13 +34,10 @@ extension CommunityCockpitEntryTests {
         return Int(seconds) * 1000 + Int(attoseconds / 1_000_000_000_000_000)
     }
 
-    /// The production page factory with prewarm, observed. Returns the restore closure.
+    /// The on-demand production page factory, observed. Returns the restore closure.
     @MainActor private static func perfHooks(_ probe: PerfProbe) -> () -> Void {
-        let saved = (CommunityCockpitApplicationFactory.verificationPage, CommunityCockpitApplicationFactory.verificationCockpitTrace,
-                     CommunityCockpitApplicationFactory.verificationConsoleNotice, CockpitFailureLog.verificationLine,
-                     CommunityCockpitApplicationFactory.verificationPrewarm, CockpitTimingLog.verificationLine)
-        CommunityCockpitApplicationFactory.verificationPrewarm = true
-        CommunityCockpitApplicationFactory.verificationCockpitTrace = { probe.trace.append((step: $0, at: ContinuousClock.now)) }
+        let saved = (CommunityCockpitApplicationFactory.verificationPage, CommunityCockpitApplicationFactory.verificationConsoleNotice,
+                     CockpitFailureLog.verificationLine, CockpitTimingLog.verificationLine)
         CommunityCockpitApplicationFactory.verificationConsoleNotice = { _ in }
         CockpitFailureLog.verificationLine = { _ in }
         // The hook receives the bare line; ModelPlan.log carries it after "timing ", the form summarize_timing.py reads.
@@ -55,11 +48,9 @@ extension CommunityCockpitEntryTests {
         }
         return {
             CommunityCockpitApplicationFactory.verificationPage = saved.0
-            CommunityCockpitApplicationFactory.verificationCockpitTrace = saved.1
-            CommunityCockpitApplicationFactory.verificationConsoleNotice = saved.2
-            CockpitFailureLog.verificationLine = saved.3
-            CommunityCockpitApplicationFactory.verificationPrewarm = saved.4
-            CockpitTimingLog.verificationLine = saved.5
+            CommunityCockpitApplicationFactory.verificationConsoleNotice = saved.1
+            CockpitFailureLog.verificationLine = saved.2
+            CockpitTimingLog.verificationLine = saved.3
         }
     }
 
@@ -147,21 +138,15 @@ extension CommunityCockpitEntryTests {
         let probe = PerfProbe(), restore = Self.perfHooks(probe)
         defer { restore() }
         let setup = try await Self.perfEntry(root: root, app: app, helper: helper)
-        let sessionStart = ContinuousClock.now
         let entry = setup.make()
         await entry.prepare()
         await entry.composition.start()
         for _ in 0..<1500 where entry.composition.store.snapshot.delivery == nil { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNotNil(entry.composition.store.snapshot.delivery, "the engine session is up")
-        var closedAt = sessionStart
-        // The hidden prewarmed page is ready, as it is a few seconds after a real launch.
-        for _ in 0..<3000 where probe.traced("warm.ready", after: sessionStart) == nil { try await Task.sleep(for: .milliseconds(10)) }
         try await Task.sleep(for: .seconds(3))
 
-        // After a close the engine loads the next hidden page; a cycle starts once it is ready and has painted, plus 1.5 s.
+        // Leave an idle interval between on-demand cycles.
         func settle() async throws {
-            for _ in 0..<3000 where probe.traced("warm.ready", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
-            for _ in 0..<800 where probe.timed("prewarm warm-paint", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
             try await Task.sleep(for: .milliseconds(1500))
         }
         /// One open (through the console entry), a hold of 1.5 s, one user close. Returns the cycle's timing lines (after the
@@ -176,7 +161,6 @@ extension CommunityCockpitEntryTests {
             let attachmentOK = page.isAttached != detached
             try await Self.perfClose(page, probe)
             for _ in 0..<500 where probe.timed("close stage=gone", after: click) == nil { try await Task.sleep(for: .milliseconds(10)) }
-            closedAt = .now
             let bare = probe.timing.filter { $0.at > click }.map(\.line)
             // A cycle counts only with the stages the report needs.
             let complete = ["open stage=window-visible", "open stage=animation-complete", "close stage=gone"].allSatisfy { stage in bare.contains { $0.hasPrefix(stage) } }
@@ -222,7 +206,6 @@ extension CommunityCockpitEntryTests {
         try Self.perfWrite(idle, "idle-cpu.txt", in: out)
         XCTAssertNotNil(processes.web, "the page's WebContent process is attributable")
         try await Self.perfClose(idlePage, probe)
-        closedAt = .now
 
         // Detached: open attached, press the page's detach key, close; the next opens are detached.
         try await settle()
@@ -236,7 +219,6 @@ extension CommunityCockpitEntryTests {
         XCTAssertFalse(detachPage.isAttached, "the cockpit is detached")
         try await Task.sleep(for: .seconds(2))
         try await Self.perfClose(detachPage, probe)
-        closedAt = .now
         try await section("detached", detached: true)
         await entry.composition.stop()
     }

@@ -39,8 +39,6 @@ import ModelPlanResources
     static var verificationConsoleNow: (@MainActor () -> UInt64)?
     /// The coordinator's prewarm and open steps, for timing tests.
     public static var verificationCockpitTrace: ((String) -> Void)?
-    /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
-    static var verificationPrewarm = true
     /// SPI test apps can ask for the resource plugin (with a synthetic reader); every other test app leaves it out.
     static var verificationResourcePlugin = false
     /// The resource journey's synthetic reader (the installed app reads this Mac with SystemResourceReader).
@@ -118,13 +116,12 @@ import ModelPlanResources
         owner.widgetFrame = { [weak application] in application?.composition.dock.widgetScreenFrame }
         if application.cockpitEntryEnabled {
             owner.prepare()
-            // CKP-SHELL-20: a synthetic page from a test factory is made only by a click.
             #if MODELPLAN_TEST_ONLY_SPI
-            let prewarms = verificationFactory == nil && verificationPrewarm
+            let preparesAppearance = verificationFactory == nil
             #else
-            let prewarms = true
+            let preparesAppearance = true
             #endif
-            if prewarms {
+            if preparesAppearance {
                 application.releaseCockpitPrewarm = { [weak owner] in owner?.releasePrewarm() }
                 owner.startPrewarm(applied: { [weak application] in application?.composition.latestSettings })
             }
