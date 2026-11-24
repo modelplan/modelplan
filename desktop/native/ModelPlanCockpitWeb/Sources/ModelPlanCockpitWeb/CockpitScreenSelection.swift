@@ -58,11 +58,12 @@ public enum CockpitScreenSelection {
   /// put back go: always the display of the menu bar status item (the screen of the status item button's window, which
   /// `anchor` is measured in), whatever opened it. The widget's ignition on another display, a stale click point or the
   /// display a detached cockpit was dragged to never moves home. Without a visible icon (G3-46/D378: hidden or squeezed
-  /// off by a full menu bar) it is the display at the global origin, which carries the menu bar, else the first.
+  /// off by a full menu bar) prefer the status item window’s display when known, then the display at the global origin.
   /// Reference: CodexBar and Pulse anchor their status item's panel to the status item button, so on several displays
   /// it always drops from the menu bar that holds the item.
-  public static func attachedScreen(anchor: CGRect?, screens: [CockpitScreen]) -> CockpitScreen? {
+  public static func attachedScreen(anchor: CGRect?, statusScreen: CGRect? = nil, screens: [CockpitScreen]) -> CockpitScreen? {
     if let anchor, let screen = overlapping(anchor, in: screens) { return screen }
+    if let statusScreen, let screen = screens.first(where: { $0.frame == statusScreen }) { return screen }
     return screens.first { $0.frame.origin == .zero } ?? screens.first
   }
   /// `rect` moved just enough to lie inside `usable` (its left and bottom edges win when it is larger).

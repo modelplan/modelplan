@@ -21,6 +21,16 @@ const ready=page=>expect.poll(()=>page.evaluate(()=>window.posted.includes('read
 const state=page=>page.evaluate(()=>window.modelPlanField.state());
 const closes=page=>page.evaluate(()=>window.messages.filter(m=>m.type==='close').map(m=>m.reason));
 
+test('WP-22 hidden subscriptions do not make the field fall back to every published rocket',async({page})=>{
+ await open(page,{noWebGL:true});await show(page,payload(4,{mine:[],onlyMine:true}));await ready(page);
+ expect((await state(page)).shown).toEqual([]);
+});
+
+test('WP-22 the initial field uses only the visible subscription models',async({page})=>{
+ await open(page,{noWebGL:true});await show(page,payload(4,{mine:['m1'],onlyMine:true}));await ready(page);
+ expect((await state(page)).shown).toEqual(['m1']);
+});
+
 test('WP-22 the field is the launch-field window: native dims, so the component\'s dim is off, and my models fly first',async({page})=>{
  await open(page);expect(await show(page,payload())).toBe(true);await ready(page);
  const s=await state(page);

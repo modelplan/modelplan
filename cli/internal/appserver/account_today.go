@@ -6,7 +6,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/speed"
@@ -14,15 +13,7 @@ import (
 
 // nextAccountTodayDeadline returns the earliest time a cached today value can
 // change without a cache write. It observes only consent-admitted local data.
-func nextAccountTodayDeadline(paths quota.Paths, admission consent.Admission, now time.Time) time.Time {
-	if paths.Cache == "" || speed.Off() || admission.Mode() == consent.Off {
-		return time.Time{}
-	}
-	ledger, ok := speed.LoadPerf(paths.Cache)
-	if !ok || ledger.Since.IsZero() {
-		return time.Time{}
-	}
-	view := (speed.PerfView{Ledger: ledger, OK: true, Recording: true, Now: now}).Admitted(admission)
+func nextAccountTodayDeadline(accounts []quota.Account, view speed.PerfView, now time.Time) time.Time {
 	var next time.Time
 	add := func(at time.Time) {
 		if at.After(now) && (next.IsZero() || at.Before(next)) {
@@ -39,7 +30,7 @@ func nextAccountTodayDeadline(paths quota.Paths, admission consent.Admission, no
 		add(localday.Next(local))
 		// The source-wide association requires a binding observed no more
 		// than an hour ago. Its expiry is another time-only invalidation.
-		for _, account := range quota.ReadPermitted(paths, now).Accounts {
+		for _, account := range accounts {
 			if account.Subscription != nil && account.Subscription.Status == "verified" && !account.Subscription.ObservedAt.IsZero() {
 				add(account.Subscription.ObservedAt.Add(quota.ObservationFreshness + time.Nanosecond))
 			}

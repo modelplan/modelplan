@@ -195,6 +195,18 @@ test('scope selection only emits an exact currently displayed member or All',()=
   assert.equal(f.bridge.action('scopeSelect',key),false);assert.equal(f.bridge.action('scopeSelect','all'),false);
 });
 
+test('hidden members cannot be scoped or refreshed until visible again',()=>{
+  const f=fixture(),data=capture(),ref=data.projection.rows[0].accounts[0].subscriptionRef;
+  assert.equal(f.bridge.receive(f.send('display',{data}),source),true);
+  assert.equal(f.bridge.action('scopeSelect',ref),true);
+  assert.equal(f.bridge.receive(f.send('appearance',{...appearance,hiddenMembers:[ref]}),source),true);
+  assert.equal(f.bridge.action('scopeSelect',ref),false);
+  assert.equal(f.bridge.action('refreshMember',ref),false);
+  assert.equal(f.bridge.receive(f.send('appearance',{...appearance}),source),true);
+  assert.equal(f.bridge.action('scopeSelect',ref),true);
+  assert.equal(f.bridge.receive(f.send('appearance',{...appearance,hiddenMembers:['/secret']}),source),false);
+});
+
 test('macrev-403-2: indexed fallback scopes are current, canonical and session-only',()=>{
   const f=fixture(),data=capture(),row=data.projection.rows[0];data.subscriptions=[];row.accounts[0].subscriptionRef=null;
   const duplicate=structuredClone(row.accounts[0]);duplicate.subscriptionRef='fedcba9876543210';row.accounts.push(duplicate);

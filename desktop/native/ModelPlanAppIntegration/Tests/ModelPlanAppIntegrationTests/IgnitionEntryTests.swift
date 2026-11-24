@@ -53,7 +53,7 @@ import ModelPlanSettings
         let app = try await makeApp()
         pressIgnition(app)
         let console = try XCTUnwrap(console)
-        XCTAssertEqual(console.opens, [false], "the first press opens, with the ignition's own entrance")
+        XCTAssertEqual(console.opens, [true], "attached ignition uses the menu-bar rack entrance")
         pressIgnition(app)
         XCTAssertEqual(console.closes, 1, "a press on the open attached cockpit closes it")
         XCTAssertEqual(console.opens.count, 1, "and does not open it again")
@@ -122,7 +122,7 @@ import ModelPlanSettings
         console.detached = true
         console.closeFromPage()
         pressIgnition(app)
-        XCTAssertEqual(console.opens.count, 2)
+        XCTAssertEqual(console.opens, [true, false], "a detached reopen does not use the rack")
         XCTAssertTrue(console.isShowing)
     }
 
@@ -135,6 +135,7 @@ import ModelPlanSettings
         let press = try XCTUnwrap(app.composition.dock.pressIgnition)
         press(onSecondDisplay)
         XCTAssertEqual(app.cockpitOpenPoint, onSecondDisplay)
+        XCTAssertEqual(console?.opens, [true], "a widget press on another display still uses the rack entrance")
         press(CGPoint(x: 10, y: 10))
         XCTAssertEqual(console?.closes, 1)
         XCTAssertEqual(app.cockpitOpenPoint, onSecondDisplay, "closing keeps the last open's display")

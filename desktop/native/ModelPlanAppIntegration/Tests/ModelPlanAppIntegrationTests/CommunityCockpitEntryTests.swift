@@ -613,12 +613,22 @@ final class CommunityCockpitEntryTests:XCTestCase {
         capture=capture.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
         var data=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
         var details=try XCTUnwrap(data["details"] as? [String:Any])
-        // WP-22: the capture's Codex account reports the model "synthetic" (D98), so that one is "mine"; the publication's
-        // lineup model is not, since the tool did not report it.
+        // WP-22: the capture's Codex account reports "synthetic" (D98).
         details["publishedModels"]=[["id":"synthetic-model","name":"Synthetic","developerId":"openai","recommended":"medium",
             "efforts":[["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]]],
             ["id":"synthetic","name":"Synthetic reported","developerId":"google","recommended":"medium",
             "efforts":[["effort":"medium","label":"Med","star":true,"ability":42.0,"cost":0.3,"time":30.0]]]]
+        // Two subscriptions report distinct models; hiding the second must update the real field payload.
+        let secondRef="1122334455667788"
+        var detailSubscriptions=try XCTUnwrap(details["subscriptions"] as? [[String:Any]])
+        var secondDetail=detailSubscriptions[0];secondDetail["subscriptionRef"]=secondRef;secondDetail["reportedModels"]=["synthetic-model"]
+        detailSubscriptions.append(secondDetail);details["subscriptions"]=detailSubscriptions
+        var projection=try XCTUnwrap(data["projection"] as? [String:Any]),rows=try XCTUnwrap(projection["rows"] as? [[String:Any]])
+        var accounts=try XCTUnwrap(rows[0]["accounts"] as? [[String:Any]]),secondAccount=accounts[0]
+        secondAccount["subscriptionRef"]=secondRef;secondAccount["accountLocator"]=secondRef;accounts.append(secondAccount)
+        rows[0]["accounts"]=accounts;projection["rows"]=rows;data["projection"]=projection
+        var subscriptions=try XCTUnwrap(data["subscriptions"] as? [[String:Any]])
+        subscriptions.append(["subscriptionRef":secondRef,"accounts":[["tool":"codex","account":secondAccount]]]);data["subscriptions"]=subscriptions
         data["details"]=details
         let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
         let context=EngineDeliveryContext(sessionID:"s-field",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
@@ -634,10 +644,16 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertFalse(try XCTUnwrap(surface.fieldPayload(focusName:"Not published")).contains("Not published"),"An unknown name focuses nothing")
         // CKP-PORT-11D: the payload is exactly presentation plus published models; no account or local field is in it.
         let object=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(payload.utf8)) as? [String:Any])
-        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","lowPower","models","mine","focus","asOf"]),"only presentation and published models: \(object.keys.sorted())")
-        XCTAssertEqual(object["mine"] as? [String],["synthetic"],"WP-22: mine is what the connected tools can run, not the publication's lineup")
+        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","lowPower","models","mine","onlyMine","focus","asOf"]),"only presentation and published models: \(object.keys.sorted())")
+        XCTAssertEqual(object["mine"] as? [String],["synthetic-model","synthetic"],"both visible subscriptions contribute their reported models")
         XCTAssertEqual(object["asOf"] as? String,"2026-10-29","the publication's date for the menu header")
         for forbidden in ["account","email","subscriptionRef","usedPercent","remaining","projectName","token"] { XCTAssertFalse(payload.contains(forbidden),"no \(forbidden) in the field payload") }
+        let saved=try await settings.update { preferences in _ = preferences.subscriptions.hiddenIDs.insert(secondRef) }
+        owner.adoptAppearance(saved,applied:nil)
+        let hiddenPayload=try XCTUnwrap(surface.fieldPayload())
+        let hiddenObject=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(hiddenPayload.utf8)) as? [String:Any])
+        XCTAssertEqual(hiddenObject["mine"] as? [String],["synthetic"],"the hidden subscription cannot contribute to Mine")
+        XCTAssertEqual(hiddenObject["onlyMine"] as? Bool,true)
         var opened:[URL]=[]
         owner.openWebsite={ opened.append($0) }
         surface.handle(.openField)
@@ -649,6 +665,30 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(opened.map(\.absoluteString),["https://modelplan.ai/models/synthetic-model"],"a bad slug is ignored")
         surface.hide()
         XCTAssertFalse(surface.fieldIsOpen,"Closing the cockpit closes the field")
+        let allHidden=try await settings.update { preferences in _ = preferences.subscriptions.hiddenIDs.insert("0123456789abcdef") }
+        owner.adoptAppearance(allHidden,applied:nil)
+        let allHiddenPayload=try XCTUnwrap(surface.fieldPayload())
+        let allHiddenObject=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(allHiddenPayload.utf8)) as? [String:Any])
+        XCTAssertEqual(allHiddenObject["mine"] as? [String],[])
+        XCTAssertEqual(allHiddenObject["onlyMine"] as? Bool,true)
+        // A formerly unique fallback key must not hide either numbered member after a collision.
+        var unbound=accounts[0];unbound["subscriptionRef"]=NSNull();unbound["route"]="saved_login_api"
+        rows[0]["accounts"]=[unbound];projection["rows"]=rows;data["projection"]=projection
+        let fallbackSaved=try await settings.update { preferences in preferences.subscriptions.hiddenIDs = ["codex#saved_login_api"] }
+        owner.adoptAppearance(fallbackSaved,applied:nil)
+        let single=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
+        await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:single),delivery:context))))
+        XCTAssertEqual(CockpitFieldFleet.runnable(single,hiddenMembers:["codex#saved_login_api"]),[])
+        rows[0]["accounts"]=[unbound,unbound];projection["rows"]=rows;data["projection"]=projection
+        let pair=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
+        await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:pair),delivery:context))))
+        let collision=try XCTUnwrap(surface.fieldPayload())
+        let collisionObject=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(collision.utf8)) as? [String:Any])
+        XCTAssertEqual(collisionObject["mine"] as? [String],["synthetic-model"],"both current unbound members remain visible")
+        XCTAssertEqual(collisionObject["onlyMine"] as? Bool,false)
+        surface.wantsVisible=true;surface.handle(.openField)
+        XCTAssertTrue(surface.fieldIsOpen)
+        surface.hide()
         await composition.stop()
     }
 
