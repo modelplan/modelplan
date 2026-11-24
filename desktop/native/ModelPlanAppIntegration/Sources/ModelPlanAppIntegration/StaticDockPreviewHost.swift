@@ -203,13 +203,21 @@ struct DockHelpInteraction: Equatable {
     /// The resource sampler's widget cadence follows `isWidgetShown` (the community delegate owns `visibilityChanged`).
     public var widgetShownChanged: ((Bool) -> Void)?
     private func reportVisibility(_ visible: Bool, expanded: Bool = false) {
-        reportWidgetShown(visible && expanded)
+        reportWidgetShown(visible && expanded && panel?.occlusionState.contains(.visible) == true)
         guard visible != isVisible else { return }
         isVisible = visible; visibilityChanged?()
     }
     private func reportWidgetShown(_ shown: Bool) {
         guard shown != isWidgetShown else { return }
-        isWidgetShown = shown; widgetShownChanged?(shown)
+        isWidgetShown = shown
+        if !shown {
+            workingDriver?.stop()
+        } else if model?.inputs.contains(where: { $0.working != nil }) == true {
+            // A hidden or collapsed surface retired its layers. Reattach only
+            // when there is still admitted activity to draw.
+            rebuild()
+        }
+        widgetShownChanged?(shown)
     }
     /// macrevb-1096-4: a plugin ring's card as it is now (rows, footer, action); nil keeps the rows of the last redraw.
     public var livePluginCard: ((String) -> DockPluginCard?)?
@@ -1425,7 +1433,7 @@ struct DockHelpInteraction: Equatable {
         guard permitted, !retired, preferences.showDock, preferences.followActiveDisplay else {
             displayFollower.stop(); followedDisplayID = nil; return
         }
-        displayFollower.start(); displayFollower.sample()
+        displayFollower.start(externallySampled: true); displayFollower.sample()
     }
     private func rebuild() {
         guard !retired, !retiring, application != nil else { return }
@@ -1640,16 +1648,24 @@ struct DockHelpInteraction: Equatable {
     }
     private func makeEdge(preference: DockEdgePreference = .init(), policy: DockVisibilityPolicy = .init()) -> DockEdgeController {
         let read: () -> DockEdgeEnvironment = { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) }
+        let controller: DockEdgeController
         #if DEBUG
-        if let timing = visibilityTimingForChecks {
-            return DockEdgeController(preference: preference, policy: policy, clock: timing.clock,
-                                      scheduler: timing.scheduler, read: read, position: PulseDockPositioning.resolve)
-        }
+        let timing = visibilityTimingForChecks ?? (elapsedClock.flatMap { clock in edgeScheduling.map { (clock, $0) } })
+        #else
+        let timing = elapsedClock.flatMap { clock in edgeScheduling.map { (clock, $0) } }
         #endif
-        if let elapsedClock, let edgeScheduling {
-            return DockEdgeController(preference: preference, policy: policy, clock: elapsedClock, scheduler: edgeScheduling, read: read, position: PulseDockPositioning.resolve)
+        if let (clock, scheduler) = timing {
+            controller = DockEdgeController(preference: preference, policy: policy, clock: clock, scheduler: scheduler,
+                                            read: read, position: PulseDockPositioning.resolve)
+        } else {
+            controller = DockEdgeController(preference: preference, policy: policy, read: read, position: PulseDockPositioning.resolve)
         }
-        return DockEdgeController(preference: preference, policy: policy, read: read, position: PulseDockPositioning.resolve)
+        controller.onScheduledSample = { [weak self] in
+            guard let self, self.permitted, !self.retired else { return }
+            self.pointerSurface.sampleNow()
+            self.displayFollower.sample()
+        }
+        return controller
     }
     private func topology(of environment: DockEdgeEnvironment) -> DockDisplayTopology {
         .init(displays: environment.displays, primaryID: environment.primaryDisplayID)
@@ -1764,7 +1780,7 @@ struct DockHelpInteraction: Equatable {
         }
     }
     private func makePointerSurface() -> PulsePanelPointerSurface {
-        let surface = PulsePanelPointerSurface(pointSource: pointerSampleSource)
+        let surface = PulsePanelPointerSurface(pointSource: pointerSampleSource, externallySampled: true)
         surface.onChange = { [weak self] _ in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
             // Local samples invalidate input observation. Resolve fresh global
@@ -1928,6 +1944,7 @@ struct DockHelpInteraction: Equatable {
     }
     @objc private func dockHelpOcclusionChanged(_ notification: Notification) {
         guard let current = edge.presentation else { withdrawDockHelpSurface(); return }
+        reportVisibility(panel?.isVisible == true, expanded: current.state == .expanded)
         publishDockHelpSurface(current)
     }
     func isCurrentDockHelpSurface(_ value: DockHelpSurface) -> Bool {

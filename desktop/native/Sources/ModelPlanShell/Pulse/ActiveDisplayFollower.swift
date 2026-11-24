@@ -49,23 +49,27 @@ public final class ActiveDisplayFollower {
     private var timer: Timer?
     private var lastIdentifier: String?
 
-    public var isRunning: Bool { timer != nil }
+    public private(set) var isRunning = false
 
-    public func start() {
-        guard timer == nil else { return }
+    public func start(externallySampled: Bool = false) {
+        guard !isRunning else { return }
         generation &+= 1
+        isRunning = true
+        guard !externallySampled else { return }
 
         let timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sample() }
         }
         // Keep sampling while a menu or another modal run loop is up: crossing
         // to the other display with the menu bar's menu open is still crossing.
+        timer.tolerance = Self.interval * 0.1
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
 
     public func stop() {
         generation &+= 1
+        isRunning = false
         timer?.invalidate()
         timer = nil
         lastIdentifier = nil
@@ -85,12 +89,12 @@ public final class ActiveDisplayFollower {
 
     // Same seam the production timer invokes; tests supply only synthetic ids.
     public func sample() {
-        guard timer != nil else { return }
+        guard isRunning else { return }
         let token = generation
         guard let identifier = currentDisplayIdentifier(), identifier != lastIdentifier else { return }
         let accepted = onEnter?(identifier) != false
         // A callback may stop or restart tracking; it cannot latch old state.
-        guard timer != nil, generation == token else { return }
+        guard isRunning, generation == token else { return }
         if accepted { lastIdentifier = identifier }
     }
 }
