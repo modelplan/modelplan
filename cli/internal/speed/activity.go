@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"io"
 	"os"
 	"sort"
@@ -268,11 +269,14 @@ func readActivityTail(log LiveLog, fi os.FileInfo, now time.Time) ([]SessionActi
 	if _, err = f.Seek(offset, io.SeekStart); err != nil {
 		return nil, err
 	}
+	idlework.Open()
 	b, err := io.ReadAll(io.LimitReader(f, liveTail))
+	idlework.Read(len(b))
 	if err != nil {
 		return nil, err
 	}
 	defer clear(b)
+	idlework.Decode()
 	after, err := f.Stat()
 	if err != nil || after.Size() != fi.Size() || !after.ModTime().Equal(fi.ModTime()) {
 		return nil, os.ErrInvalid
