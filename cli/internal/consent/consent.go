@@ -230,6 +230,9 @@ func Transaction(file string, change, finalize func(*State) error) error {
 }
 
 func transaction(file string, change, finalize func(*State) error, wait bool) error {
+	if err := writable(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return err
 	}
@@ -294,6 +297,9 @@ func transaction(file string, change, finalize func(*State) error, wait bool) er
 }
 
 func save(file string, s State) error {
+	if err := writable(); err != nil {
+		return err
+	}
 	if err := storeReceipts(&s); err != nil {
 		return err
 	}
@@ -418,6 +424,9 @@ func lockConsent(file string) (func(), error) {
 // revoked provider is reselected only after this lock, never from a stale list.
 func ReaderLock() (func(), error) {
 	file := Path() + ".readers.lock"
+	if err := writable(); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return nil, err
 	}
@@ -507,8 +516,10 @@ func PublishContext(ctx context.Context, f Fence, write func() error) error {
 
 func publish(ctx context.Context, f Fence, write func() error, wait bool) error {
 	file := Path() + ".lock"
-	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
-		return err
+	if !readOnlyProcess.Load() {
+		if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+			return err
+		}
 	}
 	var timer *time.Timer
 	if wait {
@@ -521,7 +532,7 @@ func publish(ctx context.Context, f Fence, write func() error, wait bool) error 
 			return err
 		}
 		var err error
-		unlock, err = lockFile(file)
+		unlock, err = lockPublication(file)
 		if err == nil {
 			break
 		}

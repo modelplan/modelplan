@@ -34,7 +34,7 @@ func TestSampling1122SettingsGrantKeepsQRLoginWhenNoEnvironmentKey(t *testing.T)
 	paths := func(a consent.Admission) quota.Paths { return quota.ProductionPathsWithAdmission(cache, "1.0.0", a) }
 	b, err := NewSharedBackend(SharedConfig{Detect: func() detect.Report {
 		return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "zai", Preferred: "native", ReaderID: "native:zai"}, Detected: true}}}
-	}, Paths: paths, Cleanup: func(string, bool) error { return nil }})
+	}, Paths: paths, Cleanup: func(string, bool, consent.EraseGuard) error { return nil }})
 	if err != nil {
 		t.Fatal(err)
 	}

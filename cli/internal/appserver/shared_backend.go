@@ -40,7 +40,9 @@ type SharedConfig struct {
 	LaterInstalled func(detect.Report) map[string]bool
 	Paths          func(consent.Admission) quota.Paths
 	WatchPaths     func(consent.Admission) quota.Paths // metadata-only watcher paths, if supplied
-	Cleanup        func(string, bool) error
+	// Cleanup is the fenced erasure hook: retries pass a guard (macrevb-1218-5); a foreground
+	// commit calls it with a nil guard under the consent lock.
+	Cleanup consent.Eraser
 	// Granted runs after each committed, not replayed, consent change (optional); the history
 	// import retry hangs off it (G3-112).
 	Granted func()
@@ -62,6 +64,9 @@ type SharedBackend struct {
 	activityStamp Stamp
 	activityBusy  atomic.Bool
 	reportBusy    atomic.Bool
+	cleanupBusy   atomic.Bool
+	cleanupNext   atomic.Int64
+	cleanupDelay  atomic.Int64
 	reportedAt    time.Time
 	config        SharedConfig
 	resetMemo     *resetevents.Memo
@@ -82,10 +87,16 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	if config.Detect == nil || config.Paths == nil || config.Cleanup == nil {
 		return nil, errors.New("backend_unavailable")
 	}
+	// Review 11-24 #9 (macrevb-1218-3): the read-only mode covers every consent read and lock
+	// in this process (stamp, view, watcher, readers and publication), not only this constructor.
+	consent.SetReadOnlyProcess(config.ReadOnly)
 	var state consent.State
 	var err error
 	if config.ReadOnly {
-		state, err = consent.Load(consent.Path())
+		// Review 11-24 #9: a read-only client never migrates, backs up or locks the store. A
+		// legacy store has no authoritative epoch yet, so it stays unavailable until a
+		// writable launch migrates it.
+		state, err = consent.ReadOnly(consent.Path())
 		if err == nil && state.StoreEpoch == "" {
 			err = errors.New("consent_unavailable")
 		}
@@ -489,7 +500,7 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 			}
 		}
 		return record, nil
-	}, Cleanup: b.config.Cleanup})
+	}, Cleanup: func(scope string, forget bool) error { return b.config.Cleanup(scope, forget, nil) }})
 	if err != nil && !receipt.Committed {
 		return GrantResult{}, grantError(err)
 	}
@@ -640,6 +651,45 @@ func (b *SharedBackend) ViewCurrent(token any) bool {
 	return now.seq == held.seq && now.stamp == held.stamp && reflect.DeepEqual(now.inputs, held.inputs) && reflect.DeepEqual(now.detection, held.detection)
 }
 
+// Cleanup retry delays while a committed Deny or Forget still owes erasure: 1 s doubling to 60 s.
+const (
+	cleanupRetryFirst = time.Second
+	cleanupRetryMax   = time.Minute
+)
+
+// retryPendingCleanup retries owed erasure in the running engine (review 11-24 #6). A Forget
+// whose cleanup lost the bounded wait for a long read's ReaderLock used to stay pending until
+// the helper restarted. One retry runs at a time, with backoff for a lock held elsewhere; the
+// receipt's original response is never rewritten, and the view is told when cleanup finishes.
+func (b *SharedBackend) retryPendingCleanup(admission consent.Admission, now time.Time) {
+	if b.config.ReadOnly || b.config.Cleanup == nil || !admission.AnyCleanupPending() {
+		b.cleanupDelay.Store(0)
+		return
+	}
+	if now.UnixNano() < b.cleanupNext.Load() || !b.cleanupBusy.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer b.cleanupBusy.Store(false)
+		_ = consent.RetryCleanup(consent.Path(), b.config.Cleanup)
+		if consent.Capture().AnyCleanupPending() {
+			delay := 2 * time.Duration(b.cleanupDelay.Load())
+			if delay < cleanupRetryFirst {
+				delay = cleanupRetryFirst
+			}
+			if delay > cleanupRetryMax {
+				delay = cleanupRetryMax
+			}
+			b.cleanupDelay.Store(int64(delay))
+			b.cleanupNext.Store(b.now().Add(delay).UnixNano())
+			return
+		}
+		b.cleanupDelay.Store(0)
+		b.cleanupNext.Store(0)
+		b.notify()
+	}()
+}
+
 // laterPending: a later-installed tool still owes its D240 grant, which only a Get applies.
 func (b *SharedBackend) laterPending(detection detect.Report) bool {
 	if b.config.ReadOnly {
@@ -714,6 +764,7 @@ type watchState struct {
 func (b *SharedBackend) pollWatch(w *watchState, now time.Time) {
 	admission := consent.Capture()
 	paths := b.watchPaths(admission)
+	b.retryPendingCleanup(admission, now)
 	tool, decided := admission.State().Tools["codex"]
 	localAllowed := admission.Allows("codex", consent.Local) && !admission.CleanupPending("codex") && (!decided || tool.Allowed && tool.ConsentTextVersion == consent.TextVersion)
 	if !localAllowed || paths.CodexHome == "" {

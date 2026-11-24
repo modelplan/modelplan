@@ -40,7 +40,7 @@ func TestFirstRunDoneKeepsZCodesDetectedGLMSource(t *testing.T) {
 			return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "zai", Preferred: "native", ReaderID: "native:zai"}, Detected: true}}}
 		},
 		ManualKeyPresent: func(provider string) bool { return quota.ManualKeyPresent(cache, provider) },
-		Paths:            paths, Cleanup: func(string, bool) error { return nil },
+		Paths:            paths, Cleanup: func(string, bool, consent.EraseGuard) error { return nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func TestOtherProvidersKeyGrantDoesNotReadTheGLMKeyStore(t *testing.T) {
 					}
 					return quota.ManualKeyPresent(cache, p)
 				},
-				Paths: paths, Cleanup: func(string, bool) error { return nil },
+				Paths: paths, Cleanup: func(string, bool, consent.EraseGuard) error { return nil },
 			})
 			if err != nil {
 				t.Fatal(err)
