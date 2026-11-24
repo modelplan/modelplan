@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 ModelPlan.
-// G3-47: the cockpit base row in the 34 px reserve below the root, one bell per visible subscription, directly
+// G3-47: the cockpit base row in the 46 px reserve below the root, one bell per visible subscription, directly
 // under its engine column, plus a dimmed socket under each empty bay. Port of the study's rocket-r1/base.js
 // (spec 3.9, entrance C) and base-bells notes: a subscription with a running session bound to it burns (a status-
 // coloured sheet below the bell, 12-24 px by output rate); a stale or failed reading is grey; otherwise idle.

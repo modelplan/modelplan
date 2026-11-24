@@ -41,6 +41,11 @@ import XCTest
     XCTAssertTrue(usable.contains(frame), "\(message): \(NSStringFromRect(frame)) is not inside \(NSStringFromRect(usable))", file: file, line: line)
   }
 
+  private func hull(_ windowFrame: CGRect, reserve: CGFloat) -> CGRect {
+    let (_, hull) = windowFrame.divided(atDistance: reserve, from: .minYEdge)
+    return hull
+  }
+
   func testTheClickScreenWinsOverTheIconScreen() {
     XCTAssertEqual(CockpitScreenSelection.openScreen(point: clickOnB, anchor: icon, screens: [a, b]), b, "a click on B opens on B")
     XCTAssertEqual(CockpitScreenSelection.openScreen(point: nil, anchor: icon, screens: [a, b]), a, "no click: the icon's display")
@@ -122,16 +127,19 @@ import XCTest
 
   func testADragOntoTheOtherDisplayEndsInsideIt() throws {
     let page = try page(click: nil)
-    let start = try XCTUnwrap(page.placement()).frame
+    let placement = try XCTUnwrap(page.placement())
+    let start = placement.frame
+    let reserve = placement.fit.hullBottomInset
     let from = CGPoint(x: start.minX + 100, y: start.maxY - 20)
     // Well into B, then hard against B's bottom-right corner: before 14c this was clamped back into A.
     for to in [CGPoint(x: 2600, y: 600), CGPoint(x: 4071, y: 1)] {
       let moved = page.dragFrame(start: start, from: from, to: to)
-      assertInside(moved, b.visibleFrame, "drag to \(to)")
+      assertInside(hull(moved, reserve: reserve), b.visibleFrame, "drag to \(to)")
       XCTAssertEqual(moved.size, start.size, "a drag never resizes")
     }
     let back = page.dragFrame(start: start, from: from, to: CGPoint(x: 300, y: 300))
-    assertInside(back, a.visibleFrame, "and back onto A")
+    assertInside(hull(back, reserve: reserve), a.visibleFrame, "and back onto A")
+    XCTAssertEqual(back.size, start.size, "the return drag keeps the same size")
   }
 
   /// The normal drag entry: the title strip's phases move the real window onto B and remember the origin there.
@@ -186,7 +194,9 @@ import XCTest
     page.titleDrag(.moved, point: CGPoint(x: 600, y: 400))
     page.titleDrag(.ended, point: CGPoint(x: 600, y: 400))
     XCTAssertEqual(window.frame.size, size, "and back on the short display: the same size")
-    assertInside(window.frame, short.visibleFrame, "the whole cockpit is on the short display")
+    let droppedHull = hull(window.frame, reserve: smallest.hullBottomInset)
+    assertInside(droppedHull, short.visibleFrame, "the hull is on the short display")
+    XCTAssertEqual(droppedHull.minY, short.visibleFrame.minY, accuracy: 1, "the hull reaches the bottom")
     XCTAssertEqual(try XCTUnwrap(page.placement()).frame.size, size)
     XCTAssertEqual(session.origin(for: page.arrangement), window.frame.origin, "the place is remembered")
   }
@@ -213,8 +223,8 @@ import XCTest
     XCTAssertEqual(try scales([wide, air]), [0.85, 0.85], "whichever display is listed first")
     // Two external displays: 100 % on both, capped by neither (the 1080p one has 1045 pt under the gap).
     XCTAssertEqual(try scales([wide, hd]), [1, 1])
-    // A fixed 100 % with a small display connected: capped on both by the small display's room (765 / 939).
-    for value in try scales([small, wide], .percent100) { XCTAssertEqual(value, 765 / 939, accuracy: 1e-9) }
+    // A fixed 100 % with a small display connected: capped on both by the small display's room (765 / 951).
+    for value in try scales([small, wide], .percent100) { XCTAssertEqual(value, 765 / 951, accuracy: 1e-9) }
     for value in try scales([small, wide], .percent80) { XCTAssertEqual(value, 0.8, accuracy: 1e-9, "80 % fits the small display") }
     // D51 floor kept: a display too short for the full cockpit at 75 % gives the short version on every display.
     let tiny = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1280, height: 720), visibleFrame: CGRect(x: 0, y: 0, width: 1280, height: 695))
@@ -241,7 +251,7 @@ import XCTest
     XCTAssertEqual(try XCTUnwrap(page.placement()).frame.width, 636, "the Air unplugged: the external display alone is 100 %")
     page.screens = { [wide, small] }
     session.remember(CGPoint(x: 2000, y: 300), arrangement: page.arrangement)
-    XCTAssertEqual(try XCTUnwrap(page.placement()).frame.width, (636 * 765 / 939).rounded(.up), accuracy: 1,
+    XCTAssertEqual(try XCTUnwrap(page.placement()).frame.width, (636 * 765 / 951).rounded(.up), accuracy: 1,
                    "a small display plugged in: Auto 85 % capped by its 775 pt")
   }
 
@@ -271,5 +281,47 @@ import XCTest
     // Partly off A's bottom: pulled back inside A rather than dropped.
     let clamped = try XCTUnwrap(CockpitScreenSelection.replayFrame(origin: CGPoint(x: 1300, y: -100), size: CGSize(width: 400, height: 300), screens: [a, b]))
     assertInside(clamped, a.visibleFrame, "clamped into the display it overlaps most")
+  }
+
+  func testReopeningAfterABottomEdgeDragKeepsTheTargetDisplayAndSize() throws {
+    let session = CockpitShellSession()
+    let drag = try page(session: session, click: nil)
+    let start = try XCTUnwrap(drag.placement())
+    let from = CGPoint(x: start.frame.minX + 100, y: start.frame.maxY - 20)
+    let dropped = drag.dragFrame(start: start.frame, from: from, to: CGPoint(x: 2600, y: 1))
+    session.detached = true
+    session.remember(dropped.origin, arrangement: drag.arrangement)
+
+    let reopened = try page(session: session, click: nil)
+    let placement = try XCTUnwrap(reopened.placement())
+    let visibleHull = hull(placement.frame, reserve: placement.fit.hullBottomInset)
+    assertInside(visibleHull, b.visibleFrame, "the reopened hull is on the display where it was dropped")
+    XCTAssertEqual(visibleHull.minY, b.visibleFrame.minY, accuracy: 1)
+    XCTAssertEqual(placement.frame, dropped, "reopening keeps the origin and window size")
+  }
+
+  /// G3-159 (owner, build 2): the clamp counted the transparent flame reserve under the hull as part of the window, so a
+  /// detached cockpit stopped a gap above the screen's bottom edge. The hull's bottom reaches the visible frame's bottom.
+  func testADragToTheBottomPutsTheHullOnTheVisibleFramesBottomEdge() throws {
+    let page = try page(click: nil)
+    let start = try XCTUnwrap(page.placement())
+    let from = CGPoint(x: start.frame.minX + 100, y: start.frame.maxY - 20)
+    for (screen, target) in [(a, CGPoint(x: 700, y: 1)), (b, CGPoint(x: 2600, y: 1))] {
+      let moved = page.dragFrame(start: start.frame, from: from, to: target)
+      let hullBottom = moved.minY + start.fit.hullBottomInset
+      XCTAssertEqual(hullBottom, screen.visibleFrame.minY, accuracy: 2, "hull bottom on \(NSStringFromRect(screen.visibleFrame))")
+      XCTAssertGreaterThan(start.fit.hullBottomInset, 20, "the reserve under the hull is real")
+      XCTAssertEqual(moved.size, start.frame.size)
+    }
+    // Top edge rule unchanged: dragged to the very top it stays under the menu bar.
+    let top = page.dragFrame(start: start.frame, from: from, to: CGPoint(x: 700, y: 5000))
+    XCTAssertLessThanOrEqual(top.maxY, a.visibleFrame.maxY)
+  }
+  func testTheClampLetsOnlyTheBottomOverhang() {
+    let usable = CGRect(x: 0, y: 0, width: 1000, height: 800)
+    let rect = CGRect(x: 10, y: -500, width: 300, height: 400)
+    XCTAssertEqual(CockpitScreenSelection.clamp(rect, into: usable).minY, 0)
+    XCTAssertEqual(CockpitScreenSelection.clamp(rect, into: usable, bottomOverhang: 34).minY, -34)
+    XCTAssertEqual(CockpitScreenSelection.clamp(CGRect(x: 10, y: 900, width: 300, height: 400), into: usable, bottomOverhang: 34).maxY, 800)
   }
 }

@@ -506,14 +506,22 @@ public actor ProcessEngineClient: EngineClient {
         // ordered delivery and consent fence; a cancelled caller only detaches, the bootstrap keeps going.
         if timeout == nil, grant == nil, prepared == nil, method == "rows/subscribe" || method == "consent/get",
            let key = pending.first(where: { $0.value.method == method && $0.value.purpose == .bootstrap && $0.value.continuation == nil })?.key {
+            let processID = child!.id
             let cancellation = RequestCancellation()
-            return try await withTaskCancellationHandler {
-                try await withCheckedThrowingContinuation { continuation in
-                    pending[key]?.continuation = continuation
-                    coalescedRequests += 1
-                    cancellation.install { [weak self] in Task { await self?.detachCoalesced(key) } }
-                }
-            } onCancel: { cancellation.cancel() }
+            do {
+                return try await withTaskCancellationHandler {
+                    try await withCheckedThrowingContinuation { continuation in
+                        pending[key]?.continuation = continuation
+                        coalescedRequests += 1
+                        cancellation.install { [weak self] in Task { await self?.detachCoalesced(key) } }
+                    }
+                } onCancel: { cancellation.cancel() }
+            } catch EngineClientError.rpc(let code, _) where method == "rows/subscribe" && code == WireErrorCode.busy {
+                // The background retry cannot complete this caller. Fall through to one ordinary
+                // subscription so the lifecycle can reach readiness on this same session.
+                if Task.isCancelled { throw EngineClientError.interrupted(.notSent) }
+                guard handshaken, child?.id == processID, epochProbe == nil, !epochUncertain else { throw EngineClientError.notReady }
+            }
         }
         let parameters = try wireJSON(params)
         if let grant, let userAction { try registerIntent(grant, action: userAction) }

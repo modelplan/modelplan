@@ -1,0 +1,1 @@
+A detached cockpit can now be dragged all the way down: its hull reaches the bottom of the visible screen area. The transparent flame strip under the hull may hang below the edge instead of leaving a gap. The top edge still stays under the menu bar.

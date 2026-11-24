@@ -247,8 +247,8 @@ extension ProcessEngineClient {
         }
     }
 
-    // Only retry the internal, read-only bootstrap subscription. Public request
-    // callers receive the typed busy error and decide their own retry policy.
+    // Recover the initial read-only subscription in the background. Callers
+    // waiting on a busy request still receive its typed error.
     /// The wait before busy retry `attempt` (1-based) of the initial rows subscription: four quick ones, then 1, 2, 4 ...
     /// at most 30 s, for as long as the server stays busy.
     static func rowsBootstrapRetryDelay(attempt: Int) -> Duration {
@@ -345,7 +345,10 @@ extension ProcessEngineClient {
                 }
                 if let key, let entry = pending[key] {
                     let error = EngineClientError.rpc(code: failure.error.code, context: failure.error.data)
-                    if entry.purpose == .bootstrap, entry.method == "rows/subscribe", failure.error.code == WireErrorCode.busy {
+                    // The bootstrap timer can expire while the coalesced caller's fallback request
+                    // is pending. Its busy reply must keep bootstrap recovery active on this child.
+                    if entry.method == "rows/subscribe", failure.error.code == WireErrorCode.busy,
+                       entry.purpose == .bootstrap || rowsBootstrapBusyCount > 0 {
                         finishRequest(key, error: error)
                         retryBusyRowsBootstrap(id, error: error)
                         return

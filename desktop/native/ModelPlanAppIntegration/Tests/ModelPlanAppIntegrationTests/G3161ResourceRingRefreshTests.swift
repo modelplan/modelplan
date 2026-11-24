@@ -14,6 +14,10 @@ import ModelPlanResources
 /// the owner's `sample`. Invariant: unchanged inputs cause no Dock rebuild; a changed reading repaints the ring alone.
 /// Driven through the app composition's `installResourceWidget`, the entry the app uses.
 @MainActor final class G3161ResourceRingRefreshTests: XCTestCase {
+    @MainActor private final class HeldDeadline: DockEdgeScheduling {
+        func arm(at deadline: TimeInterval, _ action: @escaping @MainActor () -> Void) {}
+        func cancel() {}
+    }
     private final class Reader: ResourceReader {
         var cpu: Double = 22
         func read(uptime: TimeInterval, unixMs: Int64) -> ResourceSample? {
@@ -24,15 +28,15 @@ import ModelPlanResources
         }
     }
 
-    private func makeEntry() async throws -> EngineDockMenuApplication {
+    private func makeEntry(wallNow: (@MainActor () -> Date)? = nil, deadline: String = "2028-12-01T00:00:00Z", scheduling: (any DockEdgeScheduling)? = nil, includeSession: Bool = true) async throws -> EngineDockMenuApplication {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3161-ring-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let rows = try HostPairedProjectionTests.rows(weekly: 75, secondWeekly: 12)
+        let rows = try HostPairedProjectionTests.rows(weekly: 75, secondWeekly: 12, weeklyDeadline: deadline, includeSession: includeSession)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
-            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: wallNow ?? { wall }, deadlineScheduling: scheduling,
             makeClient: { _, store in EntrySyntheticClient(store: store, rows: rows) }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation()
         addTeardownBlock { @MainActor in await app.composition.stop() }
@@ -93,5 +97,18 @@ import ModelPlanResources
         XCTAssertNotEqual(before, after)
         XCTAssertEqual(after, 0.60, accuracy: 0.001, "the ring shows the new CPU")
         XCTAssertFalse(app.composition.presentedContent.snapshot.inputs.isEmpty, "the subscription rings stay")
+    }
+
+    func testResourcesTickDoesNotRetainExpiredQuotaBeforeDeadlineCallback() async throws {
+        var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let app = try await makeEntry(wallNow: { wall }, deadline: "2026-12-02T00:01:00Z", scheduling: HeldDeadline(), includeSession: false)
+        await app.composition.start()
+        let reader = Reader(), ring = try await installRing(app, reader: reader)
+        let view = app.composition.dock.dockView, id = "aaaaaaaaaaaaaaaa"
+        XCTAssertNotNil(view.presentedReadingsForChecks[id]?.remainingPercent)
+        wall = wall.addingTimeInterval(120)
+        reader.cpu = 60
+        ring.run(10)
+        XCTAssertNil(view.presentedReadingsForChecks[id]?.remainingPercent, "the Resources tick must withdraw or replace expired quota")
     }
 }
