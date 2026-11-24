@@ -1,1 +1,1 @@
-Settings > Plugins: the resource sampling row now reads "驾驶舱打开时 每 2/5/10 秒" (5 s default while the cockpit is open) with a note for widget only (10 s) and neither (60 s), instead of a bare "采样间隔" (D324).
+Settings > Plugins: the resource sampling row now says it samples every 2, 5 or 10 seconds (5 by default) while the Resources column is shown, with a note that the Quota Widget ring alone samples every 10 seconds and neither surface every 60 seconds, instead of a bare "Sampling interval" row (D324).

@@ -229,8 +229,8 @@ final class CockpitPluginPreferencesTests: XCTestCase {
             return nil
         }
         let cases: [(SettingsLanguage, String, String)] = [
-            (.chinese, "插件列显示在订阅后面", "只有额度挂件时每 10 秒 · 都看不到时每 60 秒"),
-            (.english, "Plugin columns come after your subscriptions.", "Widget only: every 10 s · neither shown: every 60 s"),
+            (.chinese, "插件列显示在订阅后面", "只显示挂件上的资源环时每 10 秒；两处都不显示时每 60 秒。"),
+            (.english, "Plugin columns come after your subscriptions.", "Quota Widget ring only: every 10 s. Neither shown: every 60 s."),
         ]
         for (language, note, hint) in cases {
             let model = CockpitPluginSettingsModel(store: CockpitPluginStore(directory: try directory()))
@@ -242,7 +242,7 @@ final class CockpitPluginPreferencesTests: XCTestCase {
             XCTAssertEqual(sampling.stringValue, hint)
             // D324: the row label states the rule (5 s default while the cockpit is open), not a bare "5 s" interval.
             let spec = try XCTUnwrap(CockpitPluginCatalogue.builtIn.first { $0.id == "resources" }?.settings.first)
-            XCTAssertEqual(spec.title.value(language), language == .chinese ? "驾驶舱打开时 每" : "Sample while cockpit is open")
+            XCTAssertEqual(spec.title.value(language), language == .chinese ? "资源栏显示时 每" : "While the Resources column is shown, every")
             XCTAssertEqual(spec.choices, [2, 5, 10]); XCTAssertEqual(spec.defaultValue, 5)
             XCTAssertEqual(sampling.font?.pointSize, 11)
             XCTAssertEqual(sampling.textColor, .secondaryLabelColor, "on: secondary")

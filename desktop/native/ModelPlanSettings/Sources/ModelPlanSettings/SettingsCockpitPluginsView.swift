@@ -46,7 +46,7 @@ import AppKit
     /// D376 / D324: the resource plugin's cadence note under its options line.
     static func samplingNote(_ pluginID: String) -> SettingsText? {
         pluginID == "resources"
-            ? .init("Widget only: every 10 s · neither shown: every 60 s", "只有额度挂件时每 10 秒 · 都看不到时每 60 秒")
+            ? .init("Quota Widget ring only: every 10 s. Neither shown: every 60 s.", "只显示挂件上的资源环时每 10 秒；两处都不显示时每 60 秒。")
             : nil
     }
     /// The pasteboard type of a plugin row's grip: plugin rows reorder among themselves only.
