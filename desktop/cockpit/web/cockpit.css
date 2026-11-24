@@ -530,3 +530,8 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .pk-seg .ok-sep{flex:none;width:1px;height:9px;margin:0 5px;background:var(--silk-dim);opacity:.55}
 /* The Calendar and Resources keys are pressed while their screen is open, and press like every key. */
 .ck-eng .eng-keys .pl-key:active{transform:translateY(1px);box-shadow:var(--pressed)}
+
+/* Give the six-column label room while keeping the vendor mark alongside it. */
+.ck-eng .eng-keys[data-slots="6"] .ek .ek-identity{gap:2px;max-width:calc(100% - 4px)}
+.ck-eng .eng-keys[data-slots="6"] .ek .ek-identity .lamp{width:12px;height:12px}
+.ck-eng .eng-keys[data-slots="6"] .ek-name{font-size:10px}
