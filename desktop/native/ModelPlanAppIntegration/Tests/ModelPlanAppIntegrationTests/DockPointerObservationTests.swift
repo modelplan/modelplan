@@ -78,7 +78,7 @@ import ModelPlanSettings
         var elapsed: TimeInterval = 0
         var auxiliarySamples = 0
         let scheduler = PointerObservationScheduler()
-        let host = StaticDockPreviewHost(createsNativePanels: false,
+        let host = StaticDockPreviewHost(currentDate: { Date() }, createsNativePanels: false,
             nativeEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: screen.id,
                                        pointer: CGPoint(x: frame.midX, y: frame.midY)) },
             elapsedClock: { elapsed }, edgeScheduling: scheduler,
