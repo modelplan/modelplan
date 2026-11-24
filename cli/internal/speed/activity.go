@@ -366,7 +366,7 @@ func readActivityTail(log LiveLog, fi os.FileInfo, now time.Time) ([]SessionActi
 // ExistingActivityBindings deliberately excludes Live's historical source-level
 // fallback. Only the per-session observation ledger supplies provenance.
 func ExistingActivityBindings(cache string, admission consent.Admission) []ActivityBinding {
-	l, ok := LoadPerf(cache)
+	l, ok := loadPerf(cache)
 	if !ok {
 		return nil
 	}

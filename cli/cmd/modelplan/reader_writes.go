@@ -46,7 +46,7 @@ func observeForApp(st *store.Store) func(time.Time) []appserver.ObserveResult {
 		codex := quota.CodexHome()
 		results := []appserver.ObserveResult{
 			{Source: "codex", Outcome: observeCodexHomeSpeed(st, codex, now)},
-			{Source: "claude", Outcome: observeClaudeSpeed(st, codex, now)},
+			{Source: "claude", Outcome: observeClaudeSpeed(st, now)},
 		}
 		results = append(results, observeAgents(st, now)...)
 		return append(results, appserver.ObserveResult{Source: "live", Outcome: observeLiveLogs(st, codex, cachedSubscriptions(st, now), now)})
@@ -67,7 +67,7 @@ func cachedSubscriptions(st *store.Store, now time.Time) map[string]string {
 
 // observeClaudeSpeed measures the active Claude Code logs, which the plugin hook does on each
 // turn. Without the plugin, nothing else records their sessions, project labels or Today totals.
-func observeClaudeSpeed(st *store.Store, codexHome string, now time.Time) appserver.ObserveOutcome {
+func observeClaudeSpeed(st *store.Store, now time.Time) appserver.ObserveOutcome {
 	if !consent.Allowed("claude", consent.Local) {
 		return appserver.ObserveSkippedConsent
 	}
@@ -80,7 +80,7 @@ func observeClaudeSpeed(st *store.Store, codexHome string, now time.Time) appser
 		claude = filepath.Join(home, ".claude")
 	}
 	outcome := appserver.ObserveSkippedNoLogs
-	for _, log := range speed.ActiveLogs(claude, codexHome, now) {
+	for _, log := range speed.ActiveLogs(claude, "", now) {
 		if log.Source != "claude-code" || log.Sidechain {
 			continue
 		}
