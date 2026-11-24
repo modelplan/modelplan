@@ -110,24 +110,25 @@ test('D371 the Resources tab icon has no small square frame (the Calendar icon i
  expect(frames).toEqual([0,1]);
 });
 
-test('the big screen: the same R1 radar on the draw hook, redrawn by readings, closed by Escape',async({page})=>{
+test('D413 the big screen: the four-card grid on the draw hook, redrawn by readings, closed by Escape',async({page})=>{
  const {push}=await open(page,{plugins:{version:1,entries:[],settings:{resources:{intervalSeconds:10}}}});
  expect(await push(Array.from({length:60},(_,i)=>reading(T0+i*10000,{cpuUser:10+i%40,pressure:i>50?'warn':'normal',netIn:5000,netOut:120})))).toBe(true);
  await key(page).click();
  const screen=page.locator('.mfd-screen .pl-screen[data-plugin="resources"]');
  await expect(screen).toBeVisible();
  await expect(screen).toHaveAttribute('data-draw','custom');
- const SCREEN='.mfd-screen .pl-screen[data-plugin="resources"]';
- const r=await radar(page,SCREEN);
- expect(r.arcs).toEqual(['cpu','memory','disk']);expect(r.labels.length).toBe(3);expect(r.network).toMatch(/↓5K ↑120B/);
- await expect(screen.locator('[data-row="pressure"]')).toContainText('Elevated');
- // D347: the rows read CPU, Memory, Disk top to bottom, and the radar sits inside the big-screen well.
- const boxes=await page.evaluate(()=>{const b=s=>document.querySelector(s).getBoundingClientRect(),w=b('.dk-mfd .mfd-screen');
-  const tops=['cpu','memory','disk'].map(id=>b(`.pl-screen [data-row="${id}"]`).top);const svg=b('.pl-screen .pl-radar');
-  return {tops,inside:svg.left>=w.left-.5&&svg.right<=w.right+.5&&svg.top>=w.top-.5&&svg.bottom<=w.bottom+.5};});
- expect(boxes.tops[0]).toBeLessThan(boxes.tops[1]);expect(boxes.tops[1]).toBeLessThan(boxes.tops[2]);expect(boxes.inside).toBe(true);
+ const grid=screen.locator('.pl-grid');
+ await expect(grid.locator('[data-card]')).toHaveCount(4);
+ await expect(grid.locator('[data-arc]')).toHaveCount(0);
+ await expect(grid).toContainText('Elevated');
+ await expect(grid.locator('[data-card="network"] [data-detail]')).toHaveText('↑ 120 B/s');
+ // D347: CPU, Memory, Disk in reading order (left to right, then down), and the grid sits inside the big-screen well.
+ const boxes=await page.evaluate(()=>{const b=s=>document.querySelector(s).getBoundingClientRect(),w=b('.dk-mfd .mfd-screen'),svg=b('.pl-screen .pl-grid');
+  const at=id=>b(`.pl-screen [data-card="${id}"] rect`);
+  return {cpu:at('cpu'),mem:at('memory'),disk:at('disk'),inside:svg.left>=w.left-.5&&svg.right<=w.right+.5&&svg.top>=w.top-.5&&svg.bottom<=w.bottom+.5};});
+ expect(boxes.cpu.left).toBeLessThan(boxes.mem.left);expect(boxes.mem.top).toBeLessThan(boxes.disk.top);expect(boxes.inside).toBe(true);
  expect(await push([reading(T0+600000,{cpuUser:71,cpuSystem:25})])).toBe(true);
- await expect(screen.locator('[data-arc="cpu"]')).toHaveAttribute('data-value','96');
+ await expect(grid.locator('[data-card="cpu"] [data-value]')).toHaveText('96%');
  await page.keyboard.press('Escape');
  await expect(screen).toHaveCount(0);
 });
@@ -181,7 +182,7 @@ function dataWith(count) {
  data.projection.rows=[data.projection.rows[0],...Array.from({length:count-1},(_,i)=>{const row=structuredClone(seed);row.id=`tool-${i+2}`;row.name={en:`Tool ${i+2}`,zh:`工具 ${i+2}`};row.order=i+2;return row;})];
  return data;
 }
-test('sample S4 (#1104 PLG-A2): the host-opened screen runs and draws its radar with six subscriptions and Resources unpinned',async({page})=>{
+test('sample S4 (#1104 PLG-A2): the host-opened screen runs and draws its grid with six subscriptions and Resources unpinned',async({page})=>{
  const {send,receive,push}=await open(page,{plugins:{version:1,entries:[CAL_OFF],settings:{}}});
  expect(await receive(send('display',{data:dataWith(6)}))).toBe(true);
  await expect(column(page)).toHaveCount(0);
@@ -194,11 +195,10 @@ test('sample S4 (#1104 PLG-A2): the host-opened screen runs and draws its radar 
  await expect(screen).toBeVisible();
  expect((await running(page)).at(-1)).toEqual(['resources']);
  expect(await push(Array.from({length:6},(_,i)=>reading(T0+i*5000,{cpuUser:10+i})))).toBe(true);
- const chart=screen.locator('.pl-radar');
- // The readings reach the radar: the newest sample is 15 % user + 3 % system.
- await expect(chart.locator('[data-arc="cpu"]')).toHaveAttribute('data-value','18');
- await expect(chart.locator('[data-arc="memory"]')).toHaveCount(1);
- await expect(chart.locator('[data-arc="disk"]')).toHaveCount(1);
+ const chart=screen.locator('.pl-grid');
+ // The readings reach the grid: the newest sample is 15 % user + 3 % system.
+ await expect(chart.locator('[data-card="cpu"] [data-value]')).toHaveText('18%');
+ await expect(chart.locator('[data-card]')).toHaveCount(4);
  // Closing the screen stops it again (nothing samples for a plugin that is neither placed nor on screen).
  await page.keyboard.press('Escape');
  await expect(screen).toHaveCount(0);

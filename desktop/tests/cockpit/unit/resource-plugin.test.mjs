@@ -4,16 +4,17 @@
 // column (CPU · 内存 · 磁盘 cells) and the big screen. Order CPU · memory · disk everywhere a list is drawn (board 11-20).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {PluginRegistry,PLUGIN_INKS} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
+import {PluginRegistry,PLUGIN_INKS,screenShortText,placeholderPlugin} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
+import {calendarPlugin} from '../../../cockpit/.tmp/compiled/src/calendar-plugin.js';
 import {builtinPlugins} from '../../../cockpit/.tmp/compiled/src/plugin-builtins.js';
-import {resourcePlugin,RESOURCE_INK,RESOURCE_WINDOW_MS,resourceLevels,radarLayout,formatRate} from '../../../cockpit/.tmp/compiled/src/resource-plugin.js';
+import {resourcePlugin,RESOURCE_INK,RESOURCE_WINDOW_MS,resourceLevels,radarLayout,formatRate,resourceSeries} from '../../../cockpit/.tmp/compiled/src/resource-plugin.js';
 import {tables} from '../../../cockpit/study/rocket-r1/i18n.js';
 import '../../../cockpit/study/rocket-r1/strings/plugins.js';
 import {readFileSync} from 'node:fs';
 
 const GB=1024**3;
 const fill=(text,vars)=>text.replace(/\{(\w+)\}/g,(m,n)=>String(vars?.[n]??m));
-const context=(locale,intervalSeconds=5)=>({locale,settings:{intervalSeconds},words:(key,vars)=>{
+const context=(locale,intervalSeconds=5,memo={})=>({locale,settings:{intervalSeconds},memo,words:(key,vars)=>{
  assert.ok(tables[locale][key],`missing ${locale} ${key}`);
  return {full:fill(tables[locale][key],vars),short:fill(tables[locale][key+'Short']??tables[locale][key],vars)};
 }});
@@ -209,21 +210,79 @@ test('D397 R1 draws once per reading: no animation frame, interval or timer, no 
  const calls=[];globalThis.requestAnimationFrame=()=>calls.push('raf');globalThis.setInterval=()=>calls.push('interval');globalThis.setTimeout=()=>calls.push('timeout');
  try{
   const state=history(5);
-  const area=drawInto(resourcePlugin.column(state,context('en')).draw);drawInto(resourcePlugin.screen(state,context('en')).draw,'en',420,300);
+  const area=drawInto(resourcePlugin.column(state,context('en')).draw);drawInto(resourcePlugin.screen(state,context('en')).draw,'en',362,213);
   assert.deepEqual(calls,[]);
   assert.equal(all(area,n=>/^animate/.test(n.tag)).length,0);
  }finally{globalThis.requestAnimationFrame=saved.raf;globalThis.setInterval=saved.si;globalThis.setTimeout=saved.st;}
 });
 
-test('D407 big screen draws the same radar with detail lines and keeps its lines as the fallback',()=>{
- const state=history(3,()=>({netIn:5_400,netOut:120}));
- const screen=resourcePlugin.screen(state,context('en'));
+test('D413 big screen B: four cards (CPU, memory, disk, network), each with lamp, name, value, 峰/均, detail and a thin-line history; no radar',()=>{
+ const state=history(30,i=>({cpuUser:i===12?80:15,cpuSystem:5,netIn:5_400+i*100,netOut:120}));
+ const screen=resourcePlugin.screen(state,context('zh-CN'));
  assert.equal(typeof screen.draw,'function');assert.ok(screen.lines.length>=10,'lines stay for a failed draw');
- assert.ok(screen.lines.some(l=>l.label==='Network'&&l.value==='↓5K ↑120B'));
- const area=drawInto(screen.draw,'en',420,300);
- assert.deepEqual(all(area,n=>n.attrs['data-arc']).map(n=>n.attrs['data-arc']),['cpu','memory','disk']);
- const detail=all(area,n=>n.attrs['data-detail']!==undefined).map(n=>n.textContent).join(' | ');
- assert.match(detail,/Load 2\.4/);assert.match(detail,/Wired · app · compressed 4\.5 · 9\.2 · 1\.4/);assert.match(detail,/494 GB/);
+ assert.ok(screen.lines.some(l=>l.label==='网络'));
+ const area=drawInto(screen.draw,'zh-CN',362,213);
+ assert.equal(all(area,n=>n.attrs['data-arc']).length,0,'no second radar on the big screen');
+ const cards=all(area,n=>n.attrs['data-card']);
+ assert.deepEqual(cards.map(c=>c.attrs['data-card']),['cpu','memory','disk','network']);
+ for(const card of cards){
+  for(const part of ['data-lamp','data-name','data-value','data-pv','data-line','data-now','data-peak','data-avg'])
+   assert.equal(all(card,n=>n.attrs[part]!==undefined).length,1,`${card.attrs['data-card']} ${part}`);
+  assert.ok(all(card,n=>n.attrs['data-ring']!==undefined).length>=2&&all(card,n=>n.attrs['data-bearing']!==undefined).length>=4,'grid rings and bearings');
+  assert.equal(all(card,n=>n.attrs['data-sweep']!==undefined).length,1,'one still sweep');
+ }
+ const net=cards[3];assert.equal(all(net,n=>n.attrs['data-threshold']).length,0,'network has no 80/90 marks');
+ assert.equal(all(net,n=>n.attrs['data-line-up']!==undefined).length,1,'upload is the dotted line');
+ for(const card of cards.slice(0,3))assert.deepEqual(all(card,n=>n.attrs['data-threshold']).map(n=>n.attrs['data-threshold']),['80','90']);
+ // The line is white below 80 %, amber 80–90 %, red above 90 % (three clipped strokes); the big number white until 80 %.
+ const cpu=cards[0];assert.equal(all(cpu,n=>n.attrs['data-line-mid']!==undefined).length,1);assert.equal(all(cpu,n=>n.attrs['data-line-low']!==undefined).length,1);
+ assert.equal(all(cpu,n=>n.attrs['data-value']!==undefined)[0].attrs.fill,'#e9edf0');
+ assert.match(text(all(area,n=>n.attrs['data-head']!==undefined)[0]),/资源 · 最近 10 分钟/);
+ // Times under the bottom row only.
+ assert.equal(all(cards[0],n=>n.attrs['data-tick']!==undefined).length,0);assert.equal(all(cards[2],n=>n.attrs['data-tick']!==undefined).length,11);
+});
+
+test('D413 the 10 min | 1 h toggle switches the series: raw readings, or one point a minute with the raw peak kept',()=>{
+ const minute=60_000,t0=Math.ceil(T0/minute)*minute;
+ // The host's hour: 50 folded minutes, one with a 96 % spike that its mean (30 %) hides.
+ const minutes=Array.from({length:50},(_,i)=>({t:t0+i*minute,cpu:i===20?30:20,cpuPeak:i===20?96:25,memory:47,memoryPeak:48,disk:76,diskPeak:76}));
+ const samples=Array.from({length:120},(_,i)=>sample(t0+50*minute+i*5000,{netIn:1000,netOut:10}));
+ const state=resourcePlugin.accept({samples,minutes},undefined);
+ assert.equal(state.minutes.length,50);
+ const ten=resourceSeries(state,'10m'),hour=resourceSeries(state,'1h');
+ assert.equal(ten.points.cpu.length,120,'10 min: every raw reading');
+ assert.equal(hour.points.cpu.length,60,'1 h: 50 host minutes + 10 of the page\'s own');
+ assert.equal(hour.peak.cpu,96,'the peak keeps the raw reading');
+ assert.ok(Math.max(...hour.points.cpu.map(p=>p.v))<40,'the line draws the minute means');
+ assert.equal(ten.end-ten.start,10*minute);assert.equal(hour.end-hour.start,60*minute);
+ // The screen follows the view memory; the toggle offers the two ranges, the current one picked.
+ const memo={};
+ const s10=resourcePlugin.screen(state,context('zh-CN',5,memo));
+ assert.deepEqual(s10.toggle.options.map(o=>o.label.full),['10分钟','1小时']);assert.equal(s10.toggle.value,'10m');assert.equal(s10.toggle.key,'range');
+ memo.range='1h';
+ const s60=resourcePlugin.screen(state,context('zh-CN',5,memo));assert.equal(s60.toggle.value,'1h');
+ const area=drawInto(s60.draw,'zh-CN',362,213);
+ assert.equal(all(area,n=>n.attrs['data-range']==='1h').length,1);
+ assert.match(text(all(area,n=>n.attrs['data-head']!==undefined)[0]),/最近 1 小时/);
+ const line=all(area,n=>n.attrs['data-card']==='cpu')[0];
+ assert.equal((all(line,n=>n.attrs['data-line']!==undefined)[0].attrs.d.match(/L/g)??[]).length,59,'60 points');
+ assert.equal(all(area,n=>n.attrs['data-card']==='disk')[0].children.filter(n=>n.tag==='text').map(n=>n.textContent).slice(-3).join(' '),'−60 分 −30 现在');
+ // Bad minutes refuse the whole reading.
+ for(const bad of [{...minutes[0],t:t0+1},{...minutes[0],cpu:101},{...minutes[0],extra:1},{...minutes[0],netIn:5}])
+  assert.equal(resourcePlugin.accept({samples,minutes:[bad]},undefined),undefined,JSON.stringify(bad));
+ assert.equal(resourcePlugin.accept({samples,minutes:Array.from({length:61},(_,i)=>({...minutes[0],t:t0+i*minute}))},undefined),undefined);
+ // Minutes persist across later readings that carry none.
+ assert.equal(resourcePlugin.accept({samples:[sample(t0+61*minute)]},state).minutes.length,50);
+});
+
+test('D413 switch short names: two characters in Chinese, at most four letters in English, else the icon alone',()=>{
+ assert.equal(screenShortText('资源','zh-CN'),'资源');assert.equal(screenShortText('资源占用','zh-CN'),null);assert.equal(screenShortText('日','zh-CN'),null);
+ assert.equal(screenShortText('Sys','en'),'Sys');assert.equal(screenShortText('Cal','en'),'Cal');assert.equal(screenShortText('HUD','en'),'HUD');
+ assert.equal(screenShortText('Resources','en'),null);assert.equal(screenShortText('Holder','en'),null);assert.equal(screenShortText(undefined,'en'),null);
+ const word=(locale,key)=>tables[locale][key];
+ assert.equal(screenShortText(word('zh-CN',resourcePlugin.screenShort),'zh-CN'),'资源');assert.equal(screenShortText(word('en',resourcePlugin.screenShort),'en'),'Sys');
+ assert.equal(screenShortText(word('zh-CN',calendarPlugin.screenShort),'zh-CN'),'日历');assert.equal(screenShortText(word('en',calendarPlugin.screenShort),'en'),'Cal');
+ assert.equal(placeholderPlugin.screenShort,undefined,'no short name: icon only');
 });
 
 test('accept: the optional network rates (bytes per second) come as a pair',()=>{

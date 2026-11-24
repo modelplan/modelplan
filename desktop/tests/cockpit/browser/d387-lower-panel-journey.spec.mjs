@@ -42,7 +42,8 @@ const snap=page=>page.evaluate(()=>{
 // The expected state machine. A view is 'overview', 'plans', 'tune', 'where' (pages), 'calendar', 'resources' (plugin screens)
 // (D400: a HUD click opens the Models page, 'tune', exactly as its key does.)
 const PAGE={overview:'pg-overview',sub:'pg-sub',tune:'pg-tune',where:'pg-where'};
-const SCREEN_NAME={calendar:'Calendar',resources:'Resources'};
+// D413: the switch reads "‹ [overview mark] │ icon + short name" in English (Cal, Sys); the full names are the tabs' accessible names.
+const SCREEN_NAME={calendar:'Cal',resources:'Sys'};
 const next=(view,action)=>{
  const [kind,arg]=action.split(':');
  switch(kind){
@@ -58,7 +59,7 @@ async function expectView(page,view,label,{keys=true}={}){
  const s=await snap(page),at=`${label}: ${JSON.stringify(s)}`;
  const screen=['calendar','resources'].includes(view),big=screen;
  // Visible content: exactly the one view's own.
- if(screen){expect(s.plugin,at).toBe(view);expect(s.page,at).toBe(null);expect(s.options,at).toBe(0);}
+ if(screen){expect(s.plugin,at).toBe(view);expect(s.page,at).toBe(null);expect(s.options,at).toBe(view==='resources'?1:0);}
  else{expect(s.plugin,at).toBe(null);expect(s.page,at).toBe(PAGE[view]);}
  if(view==='overview')expect(s.options,at).toBeGreaterThan(0);
  // Active key: the plugin key is lit exactly for its open screen; page keys follow the visible page (none under a plugin screen).
@@ -66,8 +67,8 @@ async function expectView(page,view,label,{keys=true}={}){
  expect(s.oldBack,at).toBe(0);
  if(!keys)return;
  for(const id of ['calendar','resources'])expect(s.plugins[id],at).toEqual({on:view===id,pressed:String(view===id)});
- // The Overview tab: plain "Overview" key, or the two-way switch "Overview | <screen>" with the screen tab selected.
- if(big){expect(s.overviewKeyShown,at).toBe(false);expect(s.tablist,at).toBe('tablist');expect(s.tabs,at).toEqual([{text:'Overview',selected:'false'},{text:SCREEN_NAME[view],selected:'true'}]);}
+ // The Overview tab: plain "Overview" key, or the D413 switch in the same slot with the screen half selected.
+ if(big){expect(s.overviewKeyShown,at).toBe(false);expect(s.tablist,at).toBe('tablist');expect(s.tabs,at).toEqual([{text:'',selected:'false'},{text:SCREEN_NAME[view],selected:'true'}]);}
  else{expect(s.overviewKeyShown,at).toBe(true);expect(s.tablist,at).toBe(null);}
 }
 const act={
@@ -79,7 +80,7 @@ const act={
  'page:overview':page=>page.locator('[data-mfd="page:overview"]').click(),
  'page:sub':page=>page.locator('[data-mfd="page:sub"]').click(),
  'page:where':page=>page.locator('[data-mfd="page:where"]').click(),
- 'overviewtab':page=>page.getByRole('tab',{name:'Overview'}).click(),
+ 'overviewtab':page=>page.getByRole('tab',{name:'Overview (Esc)'}).click(),
  'esc':page=>page.keyboard.press('Escape'),
  'range:today':page=>page.locator('[data-range-key="today"]').click(),
  'range:30d':page=>page.locator('[data-range-key="30d"]').click(),

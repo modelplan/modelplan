@@ -8,8 +8,9 @@
 // bars and numbers take the status colour (normal / amber from 80 % / red from 90 %, 3 % hysteresis), as the quota rings.
 // The widget ring, its readout switch and the hover card are native (ModelPlanResources ResourceReadout / ResourceCard).
 //
-// D407 (owner 11-24, option R1): the column and the big screen both paint the half-circle radar through the D323 draw
-// hook (drawRadar below). The cells and the label/value lines stay as the fallback when a draw fails.
+// D407 (owner 11-24, option R1): the column paints the half-circle radar through the D323 draw hook (drawRadar below).
+// D413 (option B): the big screen is a four-card history grid (drawGrid). The cells and the label/value lines stay as the
+// fallback when a draw fails.
 //
 // No import of plugin-registry values needed: plugin-builtins.ts lists this plugin (type imports are erased).
 import type {CockpitPlugin,PluginCell,PluginColumn,PluginContext,PluginDrawContext,PluginScreen,PluginWords} from './plugin-registry.js';
@@ -29,11 +30,27 @@ export interface ResourceSample {
    *  no rate yet (its first read) or cannot read it. */
   readonly netIn?:number;readonly netOut?:number;
 }
-export interface ResourceState {readonly samples:readonly ResourceSample[]}
+/** D413: one host minute (ModelPlanResources ResourceMinute): the mean and the raw peak of every reading in it. */
+export interface ResourceMinute {
+  readonly t:number;readonly cpu:number;readonly cpuPeak:number;readonly memory:number;readonly memoryPeak:number;readonly disk:number;readonly diskPeak:number;
+  readonly netIn?:number;readonly netInPeak?:number;readonly netOut?:number;readonly netOutPeak?:number;
+}
+export interface ResourceState {readonly samples:readonly ResourceSample[];readonly minutes?:readonly ResourceMinute[]}
 const KEYS=['t','cpuUser','cpuSystem','load','memTotal','memApp','memWired','memCompressed','memCached','memFree','swapUsed','pressure','diskTotal','diskFree'] as const;
 const BYTES=['memTotal','memApp','memWired','memCompressed','memCached','memFree','swapUsed','diskTotal','diskFree'] as const;
 const NET=['netIn','netOut'] as const;
 const rate=(v:unknown)=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0&&v<=1e12;
+const MINUTE_KEYS=['t','cpu','cpuPeak','memory','memoryPeak','disk','diskPeak'] as const,MINUTE_NET=['netIn','netInPeak','netOut','netOutPeak'] as const;
+const MINUTE_MS=60_000,HOUR_MS=60*MINUTE_MS;
+function parseMinute(raw:unknown):ResourceMinute|null {
+  if(raw===null||typeof raw!=='object'||Array.isArray(raw))return null;
+  const o=raw as Record<string,unknown>,keys=Object.keys(o),net='netIn' in o;
+  if(keys.length!==MINUTE_KEYS.length+(net?MINUTE_NET.length:0)||!MINUTE_KEYS.every(k=>k in o)||net&&!MINUTE_NET.every(k=>k in o&&rate(o[k])))return null;
+  if(typeof o.t!=='number'||!Number.isSafeInteger(o.t)||o.t<=0||o.t%MINUTE_MS!==0)return null;
+  if(!['cpu','cpuPeak','memory','memoryPeak','disk','diskPeak'].every(k=>percent(o[k])))return null;
+  const copy:Record<string,unknown>={};for(const k of net?[...MINUTE_KEYS,...MINUTE_NET]:MINUTE_KEYS)copy[k]=o[k];
+  return Object.freeze(copy) as unknown as ResourceMinute;
+}
 const PRESSURES:readonly string[]=['normal','warn','critical'];
 const percent=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=100;
 const bytes=(v:unknown)=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
@@ -213,10 +230,139 @@ function drawRadar(c:PluginDrawContext,state:unknown,detail:boolean):void {
   if(pick[1])node('text',{'data-net':'',x:f(right),y:f(L.netY),'text-anchor':'end','font-size':fs,'font-family':T.lcdFont,fill:T.ink},n).textContent=pick[1];
   c.area.replaceChildren(svg);
 }
+// ---- D413 (owner 11-24, option B): the big screen is a four-card grid, CPU · memory · disk · network. Each card: a status
+// lamp and the name, the big current value, a 峰/均 pair, a detail line, and a white thin-line history (amber above 80 %,
+// red above 90 %, a dotted average, a hollow peak dot, a bright "now" dot) in the effort page's type and grid. Radar
+// details stay static (range lines, bearing dots, 80/90 ticks, a still sweep at "now"). The centre bottom key picks
+// 10 min (the raw readings) or 1 h (one point a minute, its peak from the raw readings). Nothing animates (D397).
+export type ResourceRange='10m'|'1h';
+export type ResourceMetric='cpu'|'memory'|'disk'|'netIn'|'netOut';
+export interface SeriesPoint {readonly t:number;readonly v:number;readonly peak:number}
+export interface ResourceSeries {
+  readonly range:ResourceRange;readonly start:number;readonly end:number;
+  readonly points:Readonly<Record<ResourceMetric,readonly SeriesPoint[]>>;
+  readonly peak:Readonly<Record<ResourceMetric,number|null>>;readonly avg:Readonly<Record<ResourceMetric,number|null>>;
+}
+const METRICS:readonly ResourceMetric[]=['cpu','memory','disk','netIn','netOut'];
+const sampleValue=(s:ResourceSample,m:ResourceMetric):number|null=>{const v=resourceView(s);return m==='netIn'?s.netIn??null:m==='netOut'?s.netOut??null:v[m];};
+/** The screen's series (pure, unit-tested). 10 min: every raw reading. 1 h: one point a minute: the host's folds, and
+ *  for minutes the host has not folded yet (the current one, or a host that sends none) the page's own readings. */
+export function resourceSeries(state:unknown,range:ResourceRange):ResourceSeries {
+  const samples=statesOf(state),end=samples.length?samples[samples.length-1]!.t:0,span=range==='1h'?HOUR_MS:RESOURCE_WINDOW_MS,start=end-span;
+  const points={} as Record<ResourceMetric,SeriesPoint[]>;for(const m of METRICS)points[m]=[];
+  if(range==='10m'){for(const s of samples){if(s.t<=start)continue;for(const m of METRICS){const v=sampleValue(s,m);if(v!==null)points[m].push({t:s.t,v,peak:v});}}}
+  else{
+    const host=new Map<number,ResourceMinute>();for(const x of (state as ResourceState|undefined)?.minutes??[])if(x.t>start-MINUTE_MS)host.set(x.t,x);
+    const own=new Map<number,ResourceSample[]>();for(const s of samples){const k=Math.floor(s.t/MINUTE_MS)*MINUTE_MS;if(host.has(k))continue;let l=own.get(k);if(!l){l=[];own.set(k,l);}l.push(s);}
+    const keys=[...new Set([...host.keys(),...own.keys()])].sort((a,b)=>a-b);
+    for(const k of keys){
+      const h=host.get(k);
+      if(h){const net:Record<string,[number|undefined,number|undefined]>={netIn:[h.netIn,h.netInPeak],netOut:[h.netOut,h.netOutPeak]};
+        for(const m of METRICS){const [v,p]=m==='cpu'?[h.cpu,h.cpuPeak]:m==='memory'?[h.memory,h.memoryPeak]:m==='disk'?[h.disk,h.diskPeak]:net[m]!;
+          if(v!==undefined&&p!==undefined)points[m].push({t:k+MINUTE_MS/2,v,peak:p});}continue;}
+      const list=own.get(k)!;
+      for(const m of METRICS){const vs=list.map(x=>sampleValue(x,m)).filter((x):x is number=>x!==null);if(vs.length)points[m].push({t:k+MINUTE_MS/2,v:vs.reduce((a,b)=>a+b,0)/vs.length,peak:Math.max(...vs)});}
+    }
+    for(const m of METRICS)points[m]=points[m].filter(p=>p.t>start);
+  }
+  const peakOf={} as Record<ResourceMetric,number|null>,avgOf={} as Record<ResourceMetric,number|null>;
+  for(const m of METRICS){const p=points[m];peakOf[m]=p.length?Math.max(...p.map(x=>x.peak)):null;avgOf[m]=p.length?p.reduce((a,x)=>a+x.v,0)/p.length:null;}
+  return {range,start,end,points,peak:peakOf,avg:avgOf};
+}
+const rangeToggle=(c:PluginContext,range:ResourceRange)=>({key:'range',value:range,options:[{value:'10m',label:c.words('plugin.resourcesRange10')},{value:'1h',label:c.words('plugin.resourcesRange60')}]});
+/** Bytes per second as the network card's big number: value and unit apart. */
+function rateParts(bps:number):[string,string] {
+  if(bps>=1e9)return [String(Math.round(bps/1e8)/10),'GB/s'];if(bps>=1e6)return [String(Math.round(bps/1e5)/10),'MB/s'];
+  if(bps>=1e3)return [String(Math.round(bps/1e3)),'KB/s'];return [String(Math.round(bps)),'B/s'];
+}
+let gridIds=0;
+/** Paints the D413 four-card grid into the screen's clipped area (drawn at its measured size; 362 × 213 in the app). */
+function drawGrid(c:PluginDrawContext,state:unknown,range:ResourceRange):void {
+  const samples=statesOf(state),last=samples[samples.length-1];if(!last||c.width<=0||c.height<=0)return;
+  const doc=c.area.ownerDocument,T=c.tokens,W=Math.max(1,c.width),H=Math.max(1,c.height),f=(n:number)=>n.toFixed(1),id=`rg${++gridIds}-`;
+  const node=(tag:string,attrs:Record<string,string|number>,parent?:Element)=>{const e=doc.createElementNS(SVG,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));parent?.append(e);return e;};
+  const w=(key:string,vars?:Readonly<Record<string,string|number>>)=>c.words(key,vars).full;
+  const MUTED='#87939e',DETAIL='#6f7a85',TICK='#5d6873',INK='#e9edf0',GLASS='#04070c',font=T.lcdFont;
+  const series=resourceSeries(state,range),v=resourceView(last),lv=levelsOf(samples);
+  const tone=(l:ResourceLevel)=>l==='low'?T.low:l==='mid'?T.mid:T.ok,figure=(l:ResourceLevel)=>l==='low'?T.low:l==='mid'?T.mid:INK;
+  const rangeWord=w(range==='1h'?'plugin.resourcesLast60':'plugin.resourcesLast10');
+  const svg=node('svg',{class:'pl-draw-chart pl-grid',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'img','data-range':range,
+    'aria-label':`${w('plugin.resourcesTitle')} · ${rangeWord} · ${w('plugin.resourcesCpu')} ${pct(v.cpu)}% · ${w('plugin.resourcesMemory')} ${pct(v.memory)}% · ${w('plugin.resourcesDisk')} ${pct(v.disk)}%`});
+  const text=(x:number,y:number,size:number,fill:string,content:string,attrs:Record<string,string|number>={},parent:Element=svg)=>{const t=node('text',{x:f(x),y:f(y),'font-size':size,'font-family':font,fill,...attrs},parent);t.textContent=content;return t;};
+  const span=(parent:Element,content:string,attrs:Record<string,string|number>)=>{node('tspan',attrs,parent).textContent=content;};
+  // Top line: "资源 · 最近 10 分钟" left; memory pressure and load right (values in ink).
+  text(8,17,11,INK,w('plugin.resourcesHead',{range:rangeWord}),{'data-head':''});
+  const right=text(W-8,17,10,MUTED,`${w('plugin.resourcesPressure')} `,{'text-anchor':'end'});
+  span(right,pressureWords(c,last).full,{fill:INK});span(right,` · ${w('plugin.resourcesLoad')} `,{});span(right,String(Math.round(last.load*100)/100),{fill:INK});
+  const gap=7,cw=Math.floor((W-16-gap)/2),top=25.5,ch=Math.max(40,Math.floor((H-top-23.5-6)/2));
+  const netName=w('plugin.resourcesNetwork'),netLast=last.netIn!==undefined&&last.netOut!==undefined;
+  type Card={metric:ResourceMetric;name:string;lamp:string;big:[string,string];colour:string;detail:string;pv:[string,string]|null;percent:boolean};
+  const pctText=(n:number|null)=>n===null?'':`${Math.round(n)}%`,rateText=(n:number|null)=>n===null?'':formatRate(n);
+  const [netBig,netUnit]=netLast?rateParts(last.netIn!):['',''];
+  const cards:Card[]=[
+    {metric:'cpu',name:w('plugin.resourcesCpu'),lamp:tone(lv.cpu),big:[String(pct(v.cpu)),'%'],colour:figure(lv.cpu),detail:w('plugin.resourcesUserSys',{u:pct(last.cpuUser),s:pct(last.cpuSystem)}),pv:[pctText(series.peak.cpu),pctText(series.avg.cpu)],percent:true},
+    {metric:'memory',name:w('plugin.resourcesMemory'),lamp:tone(lv.memory),big:[String(pct(v.memory)),'%'],colour:figure(lv.memory),detail:c.words('plugin.resourcesGb',{used:gb(v.memoryUsed),total:gb(last.memTotal)}).short,pv:[pctText(series.peak.memory),pctText(series.avg.memory)],percent:true},
+    {metric:'disk',name:w('plugin.resourcesDisk'),lamp:tone(lv.disk),big:[String(pct(v.disk)),'%'],colour:figure(lv.disk),detail:c.words('plugin.resourcesFree',{gb:gb(last.diskFree)}).short,pv:[pctText(series.peak.disk),pctText(series.avg.disk)],percent:true},
+    {metric:'netIn',name:`${netName} ↓`,lamp:T.ok,big:[netBig,netUnit],colour:INK,detail:netLast?`↑ ${rateParts(last.netOut!).join(' ')}`:'',pv:netLast?[rateText(series.peak.netIn),rateText(series.avg.netIn)]:null,percent:false},
+  ];
+  const ticks=range==='1h'?{n:12,major:6,labels:[w('plugin.resourcesAgo',{n:60}),'−30',w('plugin.resourcesNow')]}:{n:10,major:5,labels:[w('plugin.resourcesAgo',{n:10}),'−5',w('plugin.resourcesNow')]};
+  cards.forEach((card,i)=>{
+    const x0=8.5+(i%2)*(cw+gap),y0=top+Math.floor(i/2)*(ch+6),g=node('g',{'data-card':card.metric==='netIn'?'network':card.metric},svg);
+    node('rect',{x:f(x0),y:f(y0),width:cw,height:ch,rx:3,fill:'#ffffff','fill-opacity':0.018,stroke:'#ffffff12'},g);
+    node('rect',{'data-lamp':'',x:f(x0+6.5),y:f(y0+5.5),width:2,height:7,rx:0.6,fill:card.lamp},g);
+    text(x0+12.5,y0+12.5,9,MUTED,card.name,{'data-name':''},g);
+    if(card.detail)text(x0+cw-6.5,y0+12.5,9,DETAIL,card.detail,{'text-anchor':'end','data-detail':''},g);
+    if(card.big[0]){const big=text(x0+6.5,y0+32.5,16,card.colour,card.big[0],{'font-weight':600,'data-value':''},g);span(big,card.big[1],{'font-size':9,'font-weight':400,fill:MUTED,dx:1});}
+    if(card.pv){const pv=text(x0+cw-6.5,y0+31.5,10,INK,'',{'text-anchor':'end','data-pv':''},g);span(pv,`${w('plugin.resourcesPk')} `,{'font-size':9,fill:MUTED});span(pv,card.pv[0],{});span(pv,`${w('plugin.resourcesAvg')} `,{'font-size':9,fill:MUTED,dx:6});span(pv,card.pv[1],{});}
+    // The chart: x by time over the range, y 0–100 % (network: 0 to the range's peak).
+    const cx0=x0+6.5,cx1=x0+cw-10.5,cy0=y0+38.5,cy1=y0+ch-7.5,hgt=cy1-cy0;
+    const pts=series.points[card.metric],max=card.percent?100:Math.max(1,series.peak.netIn??0,series.peak.netOut??0);
+    const X=(t:number)=>cx0+Math.max(0,Math.min(1,(t-series.start)/Math.max(1,series.end-series.start)))*(cx1-cx0),Y=(val:number)=>cy1-Math.min(1,Math.max(0,val/max))*hgt;
+    node('line',{x1:f(cx0),x2:f(cx1),y1:f(cy1+0.5),y2:f(cy1+0.5),stroke:INK,'stroke-opacity':0.14},g);
+    for(const [k,op] of [[0.5,0.07],[1,0.045]] as const)node('line',{'data-ring':'',x1:f(cx0),x2:f(cx1),y1:f(cy1-k*hgt),y2:f(cy1-k*hgt),stroke:'#ffffff','stroke-opacity':op,'stroke-dasharray':'2 3'},g);
+    for(let k=1;k<5;k++){const x=cx0+k/5*(cx1-cx0);node('line',{'data-bearing':'',x1:f(x),x2:f(x),y1:f(cy0),y2:f(cy1),stroke:'#ffffff','stroke-opacity':0.05,'stroke-dasharray':'1 3'},g);}
+    const defs=node('defs',{},g),gid=id+i;
+    const grad=(name:string,x2:number,y2:number,stops:[number,number][])=>{const l=node('linearGradient',{id:gid+name,x1:0,y1:0,x2,y2},defs);for(const [o,op] of stops)node('stop',{offset:o,'stop-color':INK,'stop-opacity':op},l);};
+    grad('a',0,1,[[0,0.16],[1,0.015]]);grad('s',1,0,[[0,0],[1,0.07]]);
+    node('rect',{'data-sweep':'',x:f(cx1-22),y:f(cy0-1),width:22,height:f(hgt+1),fill:`url(#${gid}s)`},g);
+    node('line',{x1:f(cx1+0.5),x2:f(cx1+0.5),y1:f(cy0-1),y2:f(cy1),stroke:INK,'stroke-opacity':0.2},g);
+    if(pts.length){
+      const line=pts.map(p=>`${f(X(p.t))},${f(Y(p.v))}`).join(' L'),area=`M${line} L${f(X(pts[pts.length-1]!.t))},${f(cy1)} L${f(X(pts[0]!.t))},${f(cy1)} Z`;
+      const clip=(name:string,y:number,h:number)=>{const cp=node('clipPath',{id:gid+name},defs);node('rect',{x:f(cx0-2),y:f(y),width:f(cx1-cx0+4),height:f(Math.max(0,h))},cp);return `url(#${gid+name})`;};
+      node('path',{d:area,fill:`url(#${gid}a)`},g);
+      const d=`M${line}`;
+      if(card.percent){
+        const y80=Y(LEVEL_AMBER),y90=Y(LEVEL_RED),cw80=clip('w',y80,cy1+3-y80),ca=clip('m',y90,y80-y90),cr=clip('r',cy0-6,y90-cy0+6);
+        const ga=node('g',{'clip-path':ca},g),gr=node('g',{'clip-path':cr},g);
+        node('path',{d:area,fill:T.mid,'fill-opacity':0.22},ga);node('path',{d:area,fill:T.low,'fill-opacity':0.2},gr);
+        node('path',{'data-line':'',d,fill:'none',stroke:INK,'stroke-opacity':0.88,'stroke-width':1.2,'stroke-linejoin':'round','clip-path':cw80},g);
+        node('path',{'data-line-mid':'',d,fill:'none',stroke:T.mid,'stroke-width':1.3,'stroke-linejoin':'round','clip-path':ca},g);
+        node('path',{'data-line-low':'',d,fill:'none',stroke:T.low,'stroke-width':1.3,'stroke-linejoin':'round','clip-path':cr},g);
+      }else{
+        node('path',{'data-line':'',d,fill:'none',stroke:INK,'stroke-opacity':0.88,'stroke-width':1.2,'stroke-linejoin':'round'},g);
+        const up=series.points.netOut;if(up.length)node('path',{'data-line-up':'',d:`M${up.map(p=>`${f(X(p.t))},${f(Y(p.v))}`).join(' L')}`,fill:'none',stroke:INK,'stroke-opacity':0.6,'stroke-width':1,'stroke-dasharray':'1 2'},g);
+      }
+      const avg=series.avg[card.metric];if(avg!==null)node('line',{'data-avg':'',x1:f(cx0),x2:f(cx1),y1:f(Y(avg)),y2:f(Y(avg)),stroke:MUTED,'stroke-width':1,'stroke-dasharray':'.1 2.6','stroke-linecap':'round'},g);
+      const hi=pts.reduce((a,p)=>p.peak>a.peak?p:a,pts[0]!);
+      node('circle',{'data-peak':'',cx:f(X(hi.t)),cy:f(Y(hi.peak)),r:2,fill:GLASS,stroke:INK,'stroke-opacity':0.85,'stroke-width':1},g);
+      const now=pts[pts.length-1]!,nowInk=card.percent&&now.v>=LEVEL_RED?T.low:card.percent&&now.v>=LEVEL_AMBER?T.mid:INK;
+      node('circle',{cx:f(X(now.t)),cy:f(Y(now.v)),r:4.5,fill:nowInk,'fill-opacity':0.14},g);
+      node('circle',{'data-now':'',cx:f(X(now.t)),cy:f(Y(now.v)),r:2.1,fill:nowInk,stroke:GLASS,'stroke-width':1},g);
+    }
+    // The scale at the right edge: 0 / 50 / 100, and the amber and red ticks at 80 / 90 % (percent cards only).
+    for(const k of [0,0.5,1])node('line',{x1:f(cx1+1.5),x2:f(cx1+4.5),y1:f(cy1-k*hgt),y2:f(cy1-k*hgt),stroke:INK,'stroke-opacity':0.25},g);
+    if(card.percent)for(const [t,ink] of [[LEVEL_AMBER,T.mid],[LEVEL_RED,T.low]] as const)node('line',{'data-threshold':t,x1:f(cx1+1.5),x2:f(cx1+4.5),y1:f(Y(t)),y2:f(Y(t)),stroke:ink,'stroke-opacity':0.7},g);
+    // The time axis under the bottom row: a short tick each minute (1 h: each 5 minutes), a long one each 5 (30).
+    if(i>=2){for(let k=0;k<=ticks.n;k++){const x=cx0+k/ticks.n*(cx1-cx0),major=k%ticks.major===0;node('line',{'data-tick':'',x1:f(x),x2:f(x),y1:f(cy1+1),y2:f(cy1+(major?4:2.5)),stroke:INK,'stroke-opacity':major?0.35:0.2},g);}
+      const ly=y0+ch+11.5;text(cx0,ly,8,TICK,ticks.labels[0]!,{},g);text((cx0+cx1)/2,ly,8,TICK,ticks.labels[1]!,{'text-anchor':'middle'},g);text(cx1,ly,8,TICK,ticks.labels[2]!,{'text-anchor':'end'},g);}
+  });
+  c.area.replaceChildren(svg);
+}
 const peak=(samples:readonly ResourceSample[])=>samples.reduce((m,s)=>Math.max(m,resourceView(s).cpu),0);
 export const resourcePlugin:CockpitPlugin=Object.freeze({
   id:'resources',
   title:'plugin.resourcesTitle',
+  screenShort:'plugin.resourcesScreenShort',
   summary:'plugin.resourcesSummary',
   // D371: white line art without the small square frame: just the heartbeat line.
   icon:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 8.5h3.5l1.8-5 3.2 9 1.8-4H15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>',
@@ -227,8 +373,16 @@ export const resourcePlugin:CockpitPlugin=Object.freeze({
   // D324: the column samples every 2, 5 or 10 s while it is shown (the host snaps other saved values to these).
   settings:Object.freeze([Object.freeze({key:'intervalSeconds',kind:'seconds' as const,min:2,max:10,default:5,choices:Object.freeze([2,5,10])})]),
   accept(data:unknown,previous:unknown){
-    if(data===null||typeof data!=='object'||Array.isArray(data)||Object.keys(data).length!==1)return undefined;
-    const raw=(data as {samples?:unknown}).samples;
+    // A reading is {samples} or (D413) {samples, minutes}: the host's last hour of one-minute folds, sent when it changed.
+    if(data===null||typeof data!=='object'||Array.isArray(data))return undefined;
+    const keys=Object.keys(data);if(!keys.includes('samples')||keys.some(k=>k!=='samples'&&k!=='minutes'))return undefined;
+    const raw=(data as {samples?:unknown}).samples,rawMinutes=(data as {minutes?:unknown}).minutes;
+    let minutes:readonly ResourceMinute[]|undefined=(previous as ResourceState|undefined)?.minutes;
+    if(rawMinutes!==undefined){
+      if(!Array.isArray(rawMinutes)||rawMinutes.length>60)return undefined;
+      const parsed:ResourceMinute[]=[];for(const m of rawMinutes){const x=parseMinute(m);if(!x)return undefined;parsed.push(x);}
+      minutes=Object.freeze(parsed.sort((a,b)=>a.t-b.t));
+    }
     if(!Array.isArray(raw)||raw.length<1||raw.length>MAX_PER_READING)return undefined;
     const incoming:ResourceSample[]=[];
     for(const r of raw){const s=parseSample(r);if(!s)return undefined;incoming.push(s);}
@@ -236,7 +390,7 @@ export const resourcePlugin:CockpitPlugin=Object.freeze({
     for(const s of [...statesOf(previous),...incoming])byTime.set(s.t,s);
     const sorted=[...byTime.values()].sort((a,b)=>a.t-b.t),newest=sorted[sorted.length-1].t;
     const kept=sorted.filter(s=>s.t>newest-RESOURCE_WINDOW_MS).slice(-MAX_KEPT);
-    return Object.freeze({samples:Object.freeze(kept)}) as ResourceState;
+    return Object.freeze(minutes?{samples:Object.freeze(kept),minutes}:{samples:Object.freeze(kept)}) as ResourceState;
   },
   column(state:unknown,c:PluginContext):PluginColumn{
     const samples=statesOf(state),s=latest(state);
@@ -255,9 +409,10 @@ export const resourcePlugin:CockpitPlugin=Object.freeze({
   screen(state:unknown,c:PluginContext):PluginScreen{
     const s=latest(state),w=(key:string,vars?:Readonly<Record<string,string|number>>)=>c.words(key,vars).full;
     const every={label:w('plugin.resourcesSampling'),value:w('plugin.resourcesEvery',{n:c.settings.intervalSeconds})};
-    if(!s)return {lines:[every]};
+    if(!s)return {lines:[every],toggle:rangeToggle(c,c.memo?.range==='1h'?'1h':'10m')};
     const v=resourceView(s),samples=statesOf(state),unit=(text:string)=>`${text} GB`;
-    return {draw:(ctx:PluginDrawContext)=>drawRadar(ctx,state,true),lines:[
+    const range:ResourceRange=c.memo?.range==='1h'?'1h':'10m';
+    return {draw:(ctx:PluginDrawContext)=>drawGrid(ctx,state,range),toggle:rangeToggle(c,range),lines:[
       {label:w('plugin.resourcesCpu'),value:`${pct(v.cpu)}%`},
       {label:w('plugin.resourcesUserSystem'),value:`${pct(s.cpuUser)}% · ${pct(s.cpuSystem)}%`},
       {label:w('plugin.resourcesLoad'),value:String(Math.round(s.load*10)/10)},

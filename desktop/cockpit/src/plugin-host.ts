@@ -25,13 +25,25 @@
 // data the page rendered, through its own `accept`, unless the host pushes readings for it. A running plugin with
 // `nextDeadline` names its next redraw; the view reports the earliest to the host, whose `tick` redraws it.
 import type {WireCockpitData,WireRow} from '../generated/wire.js';
-import {PLUGIN_TOKENS,PluginRegistry,type CockpitPlugin,type PluginCell,type PluginContext,type PluginDrawContext,type PluginLocale,type PluginWords} from './plugin-registry.js';
+import {PLUGIN_TOKENS,PluginRegistry,screenShortText,type CockpitPlugin,type PluginCell,type PluginContext,type PluginDrawContext,type PluginLocale,type PluginWords} from './plugin-registry.js';
 import {builtinPlugins} from './plugin-builtins.js';
 import {pluginLayout,type LayoutPage,type PluginLayout} from './plugin-layout.js';
 import {disablePlugin,emptyPluginState,enablePlugin,enabledPlugins,parsePluginState,pluginSettings,type PluginState} from './plugin-state.js';
 import {ht} from './host-text.js';
 import '../study/rocket-r1/strings/plugins.js';
 /** Long and short forms of a `plugin.*` string-table key in one locale (`<key>Short` when it exists). */
+/** D387 / D413: what the Overview | screen switch and the bottom keys show for the one open screen. */
+export interface PluginScreenInfo {
+  readonly id:string;
+  /** The full name (tooltip and accessible name). */
+  readonly name:string;
+  /** The switch's short name, or null: the switch shows the icon alone. */
+  readonly short:string|null;
+  /** Trusted, bundled SVG markup (the plugin's own key icon). */
+  readonly icon:string;
+  /** The centre bottom key's two-way choice, when the screen has one. */
+  readonly toggle:{readonly value:string;readonly options:readonly {readonly value:string;readonly text:string}[];pick(value:string):void}|null;
+}
 export function pluginWords(locale:PluginLocale,key:string,vars?:Readonly<Record<string,string|number>>):PluginWords {
   const full=ht(locale,key,vars),shortKey=key+'Short',short=ht(locale,shortKey,vars);
   return {full,short:short===shortKey?full:short};
@@ -129,7 +141,7 @@ export interface PluginHost {
    *  request such as the widget card's action) leaves an already open screen open. */
   openScreen(id:string|null,keep?:boolean):boolean;
   /** D387: the deck follows the one open screen (its plugin id and shown name), or null when none is open. */
-  onScreen(listener:(screen:{id:string;name:string}|null)=>void):void;
+  onScreen(listener:(screen:PluginScreenInfo|null)=>void):void;
   /** Close an open plugin screen and report whether one was covering the page. */
   dismissScreen():boolean;
   /** Plugins currently running (for tests and diagnostics). */
@@ -152,7 +164,7 @@ export interface PluginReports {
 }
 export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=new PluginRegistry(builtinPlugins)):PluginHost {
   let state:PluginState=emptyPluginState,negotiated=false,visible=false,interactive=false,disposed=false,locale:PluginLocale='en';
-  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement;title:HTMLElement;list:HTMLElement;area:HTMLElement;opening:boolean}|null=null;
+  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement;list:HTMLElement;area:HTMLElement;opening:boolean}|null=null;
   const readings=new Map<string,unknown>(),columns=new Map<string,HTMLElement>(),running=new Set<string>(),placed=new Set<string>(),hostFed=new Set<string>();
   let shown:WireCockpitData|null=null,now=0;
   // D323 custom draw: per-plugin view memory, the size each area was last drawn at, and one observer that draws an area
@@ -263,12 +275,11 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   const lightSubs=()=>{for(const k of dimmed)if(k.isConnected){k.classList.add('on');k.setAttribute('aria-pressed','true');}dimmed.clear();};
   // The plugin key is pressed (lit, aria-pressed) exactly while its screen is open, as a subscription key is while selected.
   const markKey=(key:HTMLElement,open:boolean)=>{key.classList.toggle('on',open);key.setAttribute('aria-expanded',String(open));key.setAttribute('aria-pressed',String(open));};
-  let listener:((s:{id:string;name:string}|null)=>void)|null=null,told='';
-  const tell=(s:{id:string;name:string}|null)=>{const sig=s?s.id+'\0'+s.name:'';if(sig===told)return;told=sig;listener?.(s);};
+  let listener:((s:PluginScreenInfo|null)=>void)|null=null,told='';
+  const tell=(s:PluginScreenInfo|null)=>{const sig=s?[s.id,s.name,s.short,s.toggle?.value,s.toggle?.options.map(o=>o.value+o.text).join()].join('\0'):'';if(sig===told)return;told=sig;listener?.(s);};
   function drawScreen() {
     if(!screen)return;const plugin=registry.get(screen.id);if(!plugin){closeScreen();return;}
     const title=pluginWords(locale,plugin.title);
-    screen.title.dataset.full=title.full;screen.title.dataset.short=title.short;
     const shown=guard(()=>plugin.screen(readings.get(plugin.id),context(plugin.id)),{lines:[]});
     // D323: a custom draw paints the body under the title bar; when it throws, the lines are shown instead.
     const opening=screen.opening;screen.opening=false;
@@ -283,7 +294,11 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       const [dt,dd]=[row.children[0]!,row.children[1]!];if(dt.textContent!==line.label)dt.textContent=line.label;if(dd.textContent!==line.value)dd.textContent=line.value;});
     for(const row of rows.slice(lines.length))row.remove();
     screen.box.setAttribute('aria-label',ht(locale,'plugin.screenAria',{name:title.full}));fitIn(screen.box);
-    tell({id:screen.id,name:title.full});
+    // D413: the switch's short name and icon, and the screen's bottom toggle (its pick lives in the view memory only).
+    const id=screen.id,toggle=shown.toggle&&Array.isArray(shown.toggle.options)&&shown.toggle.options.length===2?shown.toggle:null;
+    tell({id,name:title.full,short:plugin.screenShort?screenShortText(pluginWords(locale,plugin.screenShort).full,locale):null,icon:plugin.icon,
+      toggle:toggle?{value:toggle.value,options:toggle.options.map(o=>({value:o.value,text:o.label.full})),pick:(value:string)=>{
+        if(screen?.id!==id||!toggle.options.some(o=>o.value===value))return;memo(id)[toggle.key]=value;drawScreen();}}:null});
   }
   function closeScreen(restoreFocus=false) {
     if(!screen)return;const id=screen.id;watch?.unobserve(screen.area);screen.box.remove();screen=null;
@@ -299,9 +314,9 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     if(screen?.id===id){if(!keep)closeScreen();return true;}
     const well=root.querySelector<HTMLElement>('.dk-mfd .mfd-screen');if(!well)return false;
     closeScreen();const box=el('section','pl-screen');box.dataset.plugin=id;box.setAttribute('role','region');box.tabIndex=-1;
-    const head=el('div','pl-screen-h'),title=fitted('pl-screen-t',pluginWords(locale,plugin.title));
-    head.append(icon(plugin,'pl-icon'),title);const list=el('dl','pl-screen-l'),area=el('div','pl-screen-d');area.hidden=true;area.dataset.plugin=id;box.append(head,list,area);
-    well.append(box);screen={id,box,title,list,area,opening:true};reconcile();drawScreen();
+    // D413: no title row and no Close key; the Overview | screen switch names the screen and returns.
+    const list=el('dl','pl-screen-l'),area=el('div','pl-screen-d');area.hidden=true;area.dataset.plugin=id;box.append(list,area);
+    well.append(box);screen={id,box,list,area,opening:true};reconcile();drawScreen();
     document.addEventListener('click',pageKeys,true);
     const opened=root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`);if(opened)markKey(opened,true);dimSubs();
     return true;

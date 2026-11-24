@@ -37,6 +37,31 @@ final class ResourceHistoryAndFeedTests: XCTestCase {
         XCTAssertNil((ResourcePagePayload.data([half])["samples"] as? [[String: Any]])?.first?["netIn"], "never half a pair")
     }
 
+    /// D413: the 1-hour view's one-minute folds: mean and the raw peak, at most an hour, cleared with the history.
+    func testMinuteFoldsKeepTheRawPeakForAnHourInMemory() throws {
+        var history = ResourceHistory(), feed = ResourcePageFeed()
+        // 5 s readings for 70 minutes.
+        for t in stride(from: 0.0, to: 4200, by: 5) { history.append(cpu(20, at: t)) }
+        XCTAssertEqual(history.minutes.count, ResourceHistory.minuteCapacity, "an hour of closed minutes")
+        XCTAssertLessThanOrEqual(history.samples.count, ResourceHistory.capacity, "raw samples stay ten minutes")
+        var short = ResourceHistory()
+        for t in stride(from: 0.0, to: 400, by: 5) { short.append(cpu(t == 185 ? 96 : 20, at: t)) }
+        let spike = try XCTUnwrap(short.minutes.first { $0.cpuPeak > 90 })
+        XCTAssertEqual(spike.cpuPeak, 96, accuracy: 0.001, "the peak keeps the 5 s reading")
+        XCTAssertLessThan(spike.cpu, 30, "the mean folds it")
+        XCTAssertEqual(spike.count, 12)
+        XCTAssertNil(feed.minutes(history, running: false))
+        XCTAssertEqual(feed.minutes(history, running: true)?.count, 60, "all minutes when the column starts")
+        XCTAssertNil(feed.minutes(history, running: true), "nothing until a new minute closes")
+        let body = ResourcePagePayload.data([cpu(20, at: 4200)], minutes: history.minutes)
+        let rows = try XCTUnwrap(body["minutes"] as? [[String: Any]])
+        XCTAssertEqual(rows.count, 60); XCTAssertEqual(Set(rows[0].keys), ["t", "cpu", "cpuPeak", "memory", "memoryPeak", "disk", "diskPeak"])
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(body))
+        XCTAssertNil(ResourcePagePayload.data([cpu(20, at: 0)], minutes: [])["minutes"], "no minutes key when there are none")
+        history.removeAll()
+        XCTAssertTrue(history.minutes.isEmpty, "turning the plugin off drops the hour too")
+    }
+
     func testFeedSendsTheHistoryOnStartThenOnlyNewSamples() {
         var history = ResourceHistory(), feed = ResourcePageFeed()
         for t in stride(from: 0.0, through: 598, by: 2) { history.append(sample(at: t)) }

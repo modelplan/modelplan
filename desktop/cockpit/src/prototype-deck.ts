@@ -33,6 +33,14 @@ import {comparison,compareKeys,compareView,type CompareArgs} from '../study/rock
 import '../study/rocket-r1/strings/mfd.js';
 type Locale='en'|'zh-CN';
 const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
+/** D387 / D413: the one open screen as the Overview | screen switch and the bottom keys show it (plugin-host PluginScreenInfo). */
+type DeckScreen={readonly id:string;readonly name:string;readonly short:string|null;readonly icon:string;
+ readonly toggle:{readonly value:string;readonly options:readonly {readonly value:string;readonly text:string}[];pick(value:string):void}|null};
+// D413: the HUD's screen on the switch (its short name is "HUD" in both languages), the switch's back chevron, and the
+// small Overview mark the English switch shows instead of the word (three bars, as the overview's chart).
+const HUD_ICON='<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4.5 10.5h4M4.5 7.5h7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+const SEG_CHEVRON='<svg class="ch" viewBox="0 0 4 7" width="4" height="7" aria-hidden="true"><path d="M3.4 .6 .8 3.5l2.6 2.9" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const SEG_OVERVIEW='<svg class="ic" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 8.5V5.5M5 8.5V2M8 8.5V4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,key:'host.pageOverview'}),Object.freeze({module:plans,key:'host.pageSubscription'}),Object.freeze({module:tune,key:'host.pageEffort'}),Object.freeze({module:where,key:'host.pageBreakdown'})]);
 export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
 export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange,isRefreshing:()=>boolean=()=>false,onOpenCompare:()=>boolean=()=>false){
@@ -45,7 +53,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // D387: a plugin screen (Calendar, Resources) is one view of this panel, drawn by the plugin host over the page. While it
  // is open the page and its bottom keys are not shown, the Overview tab is the "Overview | <screen>" switch, and any other
  // view of the panel ends it first (endScreen), so a view never shows another view's content.
- let screenView:{id:string;name:string}|null=null,closeScreenHook:(()=>void)|null=null;const endScreen=()=>{if(screenView)closeScreenHook?.();screenView=null;};
+ let screenView:DeckScreen|null=null,closeScreenHook:(()=>void)|null=null;const endScreen=()=>{if(screenView)closeScreenHook?.();screenView=null;};
  let pageFill:{w:number;h:number}|null=null,alertsView:{from:'caution'|'mfd';mark?:string|null;flash?:boolean}|null=null,returnPage:number|null=null,tuneModel:string|null=null;
  // The study's comparison view (mfd.js openComparison, views.js round D1): a fader trial shows "Compare · <model>" over
  // the current page, whose key goes dark; ‹ back, Esc, a page key or the same source again returns. One trial at a time.
@@ -204,25 +212,37 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // fallback of a deck mounted without an app (tests).
  const rangeNow=():CockpitRange=>appRange?.()??uiRangeLocal;const pages=cockpitPageRegistry,modules=pages.map(p=>p.module);let uiWhere='proj',uiRangeLocal:CockpitRange=INITIAL_RANGE,painted:CockpitRange|null=null,uiChart='bars',uiStack=true,uiModels:'list'|'chart'='list',listPick:string|null=null,uiSubTab='now',uiCycle:string|null=null,gridFill:{w:number;h:number}|null=null;
  const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=i;paint();};bar.append(b);return {b,caption};});
- // D387: the Overview key is the two-way switch "Overview | <screen>" while a screen (a plugin's, or the HUD's big chart)
- // is open: a tablist in the big-screen bottom switch's look (.ok-l b / .ok-sep). It replaces "‹ Back" and the screen's Close.
- const seg=node('div','pk-seg'),segTabs=[node('button','pk-tab'),node('button','pk-tab')] as const;
- seg.hidden=true;seg.setAttribute('role','tablist');seg.dataset.mat='part';
- segTabs.forEach((x,j)=>{x.type='button';x.setAttribute('role','tab');x.dataset.mfd=j?'seg:screen':'seg:overview';});
- const sepEl=node('i','ok-sep');sepEl.setAttribute('aria-hidden','true');seg.append(segTabs[0],sepEl,segTabs[1]);bar.append(seg);
- const toOverview=()=>{if(screenView!==null){closeScreenHook?.();screenView=null;}alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=0;paint();};
- segTabs[0].onclick=e=>{if(e.isTrusted)toOverview();};
- // The screen tab is the current view: pressing it again changes nothing.
- segTabs[1].onclick=e=>{if(e.isTrusted)e.preventDefault();};
- seg.onkeydown=e=>{if(!e.isTrusted||(e.key!=='ArrowLeft'&&e.key!=='ArrowRight'))return;e.preventDefault();(e.key==='ArrowLeft'?segTabs[0]:segTabs[1]).focus();};
- const segName=():string|null=>screenView?screenView.name:returnPage!==null&&!alertsView&&!compare&&modules[selected]?.id==='tune'?t(modules[selected].title):null;
+ // D387 / D413: while a screen is open (a plugin's, or the HUD's) the Overview slot itself becomes the switch
+ // "‹ Overview │ icon + short name": the same 86 px grid cell, never wider, in the pressed key body. The left half returns
+ // (as Escape does); the right half is the current screen, lit, and does nothing. One Tab stop: the arrows move between
+ // the halves, Enter and Space press. No animation (D397).
+ const seg=node('div','pk-seg'),segBack=node('button','h back'),segCur=node('button','h cur'),sepEl=node('i','sep');
+ seg.hidden=true;seg.setAttribute('role','tablist');seg.dataset.mat='part';sepEl.setAttribute('aria-hidden','true');
+ segBack.type='button';segBack.dataset.mfd='seg:overview';segBack.setAttribute('role','tab');
+ segCur.type='button';segCur.dataset.mfd='seg:screen';segCur.setAttribute('role','tab');
+ seg.append(segBack,sepEl,segCur);bar.append(seg);
+ const toOverview=()=>{if(screenView!==null){closeScreenHook?.();screenView=null;}alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=0;paint();buttons[0]?.b.focus({preventScroll:true});};
+ segBack.onclick=e=>{if(e.isTrusted)toOverview();};
+ // Roving tab stop: the half that has focus is the switch's one Tab stop.
+ for(const [a,b] of [[segBack,segCur],[segCur,segBack]] as const)a.onfocus=()=>{a.tabIndex=0;b.tabIndex=-1;};
+ // The screen half is the current view: pressing it changes nothing.
+ segCur.onclick=e=>{if(e.isTrusted)e.preventDefault();};
+ seg.onkeydown=e=>{if(!e.isTrusted||(e.key!=='ArrowLeft'&&e.key!=='ArrowRight'))return;e.preventDefault();const to=e.key==='ArrowLeft'?segBack:segCur,other=to===segBack?segCur:segBack;to.tabIndex=0;other.tabIndex=-1;to.focus();};
+ const segScreen=():DeckScreen|null=>screenView??(returnPage!==null&&!alertsView&&!compare&&modules[selected]?.id==='tune'?{id:'hud',name:'HUD',short:'HUD',icon:HUD_ICON,toggle:null}:null);
+ const svg=(markup:string)=>{const tpl=document.createElement('template');tpl.innerHTML=markup;return tpl.content.firstElementChild!;};
  function paintSwitch(){
-  const name=segName(),first=buttons[0]!.b,was=first.hidden?seg.contains(document.activeElement):first===document.activeElement;
-  first.hidden=name!==null;seg.hidden=name===null;if(name===null)return;
-  segTabs[0].textContent=t(modules[0].title);segTabs[1].textContent=name;
-  segTabs[0].setAttribute('aria-label',ht(locale,pages[0].key));segTabs[0].setAttribute('aria-selected','false');segTabs[0].tabIndex=-1;
-  segTabs[1].setAttribute('aria-selected','true');segTabs[1].tabIndex=0;segTabs.forEach((x,j)=>x.classList.toggle('on',j===1));
-  seg.setAttribute('aria-label',t('mfd.keysAria'));if(was)segTabs[1].focus({preventScroll:true});
+  const open=segScreen(),first=buttons[0]!.b,was=first.hidden?seg.contains(document.activeElement):first===document.activeElement;
+  first.hidden=open!==null;seg.hidden=open===null;if(open===null)return;
+  const overview=t(modules[0].title),en=locale==='en';
+  // English has no room for "Overview": the left half shows the overview mark; the word stays in the tooltip and name.
+  segBack.replaceChildren(svg(SEG_CHEVRON),en?svg(SEG_OVERVIEW):node('span','',overview));
+  segBack.title=`${overview} (Esc)`;segBack.setAttribute('aria-label',`${ht(locale,pages[0].key)} (Esc)`);segBack.setAttribute('aria-selected','false');
+  const icon=svg(open.icon);icon.setAttribute('class','ic');icon.setAttribute('width','10');icon.setAttribute('height','10');icon.setAttribute('aria-hidden','true');
+  // No short name (or one too long): the icon alone, never an ellipsis.
+  segCur.replaceChildren(icon,...(open.short?[node('span','',open.short)]:[]),node('i','led'));
+  segCur.dataset.short=open.short?'true':'false';segCur.title=open.name;segCur.setAttribute('aria-label',open.name);segCur.setAttribute('aria-selected','true');
+  if(segBack.tabIndex!==0&&segCur.tabIndex!==0)segBack.tabIndex=0;if(segBack.tabIndex===0)segCur.tabIndex=-1;
+  seg.dataset.screen=open.id;seg.setAttribute('aria-label',t('mfd.keysAria'));if(was&&!seg.contains(document.activeElement))(segBack.tabIndex===0?segBack:segCur).focus({preventScroll:true});
  }
  mfd.replaceChildren(bar,screen,footer);
  // The study's floating LCD tooltip (mfd.css .mfd-tip) for chart cells and buckets: hover shows a [data-tip]'s lines,
@@ -308,7 +328,17 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   page.hidden=screenView!==null;
   // G3-171: before the first reply there is nothing to show yet; say so (busy) on every view the page carries, so a restored alerts list does not keep a stale busy flag.
   if(data||completedEmpty)page.removeAttribute('aria-busy');else page.setAttribute('aria-busy','true');
-  if(screenView!==null){page.replaceChildren();footer.replaceChildren(...Array.from({length:3},()=>{const e=node('span','ok soft off');e.dataset.mat='part';e.setAttribute('aria-hidden','true');return e;}));return;}
+  if(screenView!==null){
+   // D413: the screen's own choice (Resources: 10 min | 1 h) on the centre key; the side keys are blank flat keycaps, so
+   // the row does not jump when the screen closes.
+   const dead=()=>{const e=node('span','ok soft off dead');e.dataset.mat='part';e.setAttribute('aria-hidden','true');return e;},toggle=screenView.toggle;
+   let centre:HTMLElement=dead();
+   if(toggle){const b=node('button','ok soft'),label=node('span','ok-l');b.type='button';b.dataset.mfd='opt:screen';b.dataset.opt='screen';b.dataset.mat='part';
+    toggle.options.forEach((x,j)=>{if(j){const sep=node('i','ok-sep');sep.setAttribute('aria-hidden','true');label.append(sep);}const c=node('b',x.value===toggle.value?'on':'',x.text);c.dataset.choice=x.value;label.append(c);});
+    b.setAttribute('aria-label',toggle.options.map(x=>x.text).join(' | ')+': '+(toggle.options.find(x=>x.value===toggle.value)?.text??''));b.append(label);
+    b.onclick=e=>{if(!e.isTrusted)return;const v=(e.target as HTMLElement).closest<HTMLElement>('[data-choice]')?.dataset.choice??toggle.options.find(x=>x.value!==toggle.value)?.value;if(v&&v!==toggle.value)toggle.pick(v);};
+    centre=b;}
+   page.replaceChildren();footer.replaceChildren(dead(),centre,dead());return;}
   if(compare&&!alertsView&&paintCompare(d,ui))return;
   if(alertsView){
    // CKP-MFD-55/56 (WP-11): the list view (mfd-pages/alerts.js). A row selects its subscription and returns to the
@@ -456,7 +486,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   /** Recovery contract: the deck's own render state, restored with the view after a refused render (glm-990-1). */
   checkpoint(){const held=new Map(heldCurrent),saved={details,publicationKey,scope,data,renderedNow,completedEmpty,compare,bankIndex,selectedModel,selected,alertsView,returnPage,tuneModel,previews:{...previews},press};return ()=>{({details,publicationKey,scope,data,renderedNow,completedEmpty,compare,bankIndex,selectedModel,selected,alertsView,returnPage,tuneModel,press}=saved);previews={...saved.previews};heldCurrent.clear();for(const [k,v] of held)heldCurrent.set(k,v);};},
   /** D387: the plugin host's one open screen (null = none); the deck follows it and calls `close` to end it. */
-  bindScreen(close:()=>void){closeScreenHook=close;},screen(next:{id:string;name:string}|null){if(next===null){if(screenView===null)return;screenView=null;selected=0;paint(true);return;}if(screenView?.id===next.id&&screenView.name===next.name)return;if(compare){delete previews[compare.modelId];compare=null;selectedModel=null;}alertsView=null;returnPage=null;tuneModel=null;screenView=next;paint(true);},
+  bindScreen(close:()=>void){closeScreenHook=close;},screen(next:DeckScreen|null){if(next===null){if(screenView===null)return;screenView=null;selected=0;paint(true);return;}if(screenView?.id===next.id){const focus=footer.contains(document.activeElement);screenView=next;paint(true);if(focus)footer.querySelector<HTMLElement>('[data-opt="screen"]')?.focus({preventScroll:true});return;}if(compare){delete previews[compare.modelId];compare=null;selectedModel=null;}alertsView=null;returnPage=null;tuneModel=null;screenView=next;paint(true);},
   restorePins(ids:readonly string[]){pins=[...new Set(ids)].slice(0,64);unpinned.clear();if(data)this.render(data,renderedNow);},showAllModels(value:boolean){if(showAllModels===value)return;showAllModels=value;if(data)this.render(data,renderedNow);},/** WP-22 (macrevb-1062-3): the enlarged field's selection, by public model id; a model without a fader here, or null, selects none. */selectModel(id:string|null){selectedModel=id===null?null:faderInput().faders.find(f=>f.sourceId===id)?.id??null;showSelectedBank();paint();},showTune(id:string){/* D400: the same page as the 模型 key, in the user's last list/chart view, with this model selected. */const tune=modules.findIndex(m=>m.id==='tune');if(tune<0)return;endScreen();if(compare){delete previews[compare.modelId];compare=null;}alertsView=null;returnPage=null;selected=tune;tuneModel=id;listPick=null;paint();},knowsSession(ref:string){return sessionModel(ref)!==null;},highlightSession(ref:string|null){const id=ref?sessionModel(ref):null;for(const ch of channels.querySelectorAll<HTMLElement>('.fd-ch'))ch.classList.toggle('xhl',!!id&&ch.dataset.model===id);},showWhere(){const at=modules.findIndex(m=>m.id==='where');if(at<0)return;if(compare){delete previews[compare.modelId];compare=null;}selected=at;alertsView=null;paint();},sessionSelected(ref:string){const id=sessionModel(ref);return id!==null&&selectedModel===id;},clearSession(){selectedModel=null;if(compare){delete previews[compare.modelId];compare=null;}paint();},selectSession(ref:string){const id=sessionModel(ref);if(compare){delete previews[compare.modelId];compare=null;}if(id)selectedModel=id;const at=modules.findIndex(m=>m.id==='where');if(at>=0){selected=at;uiWhere='time';}alertsView=null;paint();},alertsOpen:()=>alertsView?.from==='caution',showAlerts(mark?:string|null){if(alertsView?.from==='caution'){closeAlerts();return false;}alertsView={from:'caution',mark:mark??null,flash:mark!=null};paint();return true;},refresh(now?:number){paint(true,now);},locale(value:Locale,now?:number){locale=value;paint(false,now);},render(value:WireCockpitData,now:number){press=null;completedEmpty=false;
  // D391 (owner 11-22): a subscription unticked in Settings has no card, so its sessions add no models to any view
  // (faders, cards, All) — the D123/D135 live-use inclusion is gone. The unfiltered sessions still feed the record strip.

@@ -317,6 +317,7 @@ function fallbackLines(data:CalendarData|null,context:PluginContext):{label:stri
 export const calendarPlugin:CockpitPlugin=Object.freeze({
  id:'calendar',
  title:'plugin.calendarTitle',
+ screenShort:'plugin.calendarTitleShort',
  summary:'plugin.calendarSummary',
  // D328 key icon: a white line calendar sheet with two rings, on the shared 16 px frame at the vendor marks' stroke (currentColor); the underline is the grey dashed #87939e.
  icon:`<svg viewBox="0 0 16 16" aria-hidden="true">${PLUGIN_ICON_FRAME}<path d="M1 6h14M5 0.5v3M11 0.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>`,

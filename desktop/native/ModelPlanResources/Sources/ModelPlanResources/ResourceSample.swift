@@ -47,6 +47,22 @@ enum ResourceFormat {
 
 /// The page's `pluginData` body for the resource plugin (desktop/cockpit/src/resource-plugin.ts accepts exactly this).
 public enum ResourcePagePayload {
+    /// D413: the one-minute folds for the 1-hour view; sent beside the samples only when they changed.
+    public static func data(_ samples: [ResourceSample], minutes: [ResourceMinute]) -> [String: Any] {
+        var body = data(samples)
+        guard !minutes.isEmpty else { return body }
+        func p(_ v: Double) -> Double { (min(100, max(0, v)) * 10).rounded() / 10 }
+        func r(_ v: UInt64) -> Int { Int(min(v, 1_000_000_000_000)) }
+        body["minutes"] = minutes.suffix(ResourceHistory.minuteCapacity).map { m -> [String: Any] in
+            var row: [String: Any] = ["t": Int(m.unixMs), "cpu": p(m.cpu), "cpuPeak": p(m.cpuPeak), "memory": p(m.memory),
+                                      "memoryPeak": p(m.memoryPeak), "disk": p(m.disk), "diskPeak": p(m.diskPeak)]
+            if let i = m.netIn, let o = m.netOut {
+                row["netIn"] = r(i); row["netOut"] = r(o); row["netInPeak"] = r(m.netInPeak); row["netOutPeak"] = r(m.netOutPeak)
+            }
+            return row
+        }
+        return body
+    }
     public static func data(_ samples: [ResourceSample]) -> [String: Any] {
         func p(_ v: Double) -> Double { (min(100, max(0, v)) * 10).rounded() / 10 }
         func b(_ v: UInt64) -> Int { Int(min(v, UInt64(1) << 53)) }
