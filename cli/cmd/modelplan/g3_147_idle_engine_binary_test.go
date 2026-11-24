@@ -241,6 +241,27 @@ func TestG3147EntriesAllowanceRejectsARepeatedDayListing(t *testing.T) {
 	}
 }
 
+// macrev2-1219-6: the gate measures its fixture, not the developer's session. With synthetic
+// session hints inherited from the host (as inside Codex or Claude Code), the measured workload
+// stays within its allowance, and the repeated day listing still exceeds it.
+func TestG3147IdleWorkIgnoresInheritedSessionHints(t *testing.T) {
+	t.Setenv("CODEX_THREAD_ID", "synthetic-review-thread")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "synthetic-review-session")
+	run := runIdleWork(t, 1, idleWindowStart(time.Now()))
+	if run.window.CodexWalks == 0 || run.codexFiles == 0 {
+		t.Fatalf("no per-root measurement: %+v", run.window)
+	}
+	if ok, detail := entriesWithinWalks(run); !ok {
+		t.Fatalf("an inherited session hint changed the measured workload: %s", detail)
+	}
+	doubled := run
+	doubled.window.CodexEntries += run.codexFiles
+	doubled.window.Entries += run.codexFiles
+	if ok, detail := entriesWithinWalks(doubled); ok {
+		t.Fatalf("with inherited hints, a repeated day listing stayed within the allowance: %s", detail)
+	}
+}
+
 func clearOfMidnight(start time.Time) bool {
 	start = start.UTC()
 	return start.Truncate(24*time.Hour).Add(24*time.Hour).Sub(start) > idleWindow
