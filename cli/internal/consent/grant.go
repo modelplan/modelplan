@@ -331,7 +331,9 @@ func ReceiptKey(epoch, requestID string) string { return epoch + "/" + requestID
 
 func syncScopeTool(s *State, tool string) {
 	record := s.Tools[tool]
-	record.Allowed = false
+	// The independent Z.ai key can still be admitted by default after the saved
+	// login is denied or forgotten. Preserve the legacy route descriptor in that case.
+	record.Allowed = tool == "zai" && s.AllowsScope(ScopeZaiAccountUsageAPIKey, Automatic)
 	record.ConsentTextVersion = TextVersion
 	// Prefer an explicitly configured key when both key and saved-login scopes
 	// are granted. Local scope metadata never changes an account reader's route.
