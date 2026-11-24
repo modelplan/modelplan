@@ -219,7 +219,10 @@ public struct EngineMenuRefreshResult {
         dock.setDockContentProvider(provider)
         let binding = ResourceWidgetBinding(sampler: sampler, provider: provider, language: language,
                                             refreshCard: { [weak self] in self?.dock.refreshPluginCard() },
-                                            refreshRing: { [weak self] in self?.dock.refreshPluginRing($0) ?? false }) { [weak self] in self?.dock.refreshDockContent() }
+                                            refreshRing: { [weak self] input in
+                                                guard let self, self.admittedCache.isAdmissible(at: self.deadlineWall()) else { return false }
+                                                return self.dock.refreshPluginRing(input)
+                                            }) { [weak self] in self?.dock.refreshDockContent() }
         // macrevb-1096-4: the hover card reads the latest sample, not the rows captured at the last ring redraw.
         dock.livePluginCard = { [weak binding] id in id == ResourceDockBridge.subscriptionID ? binding?.liveCard() : nil }
         return binding
@@ -348,11 +351,19 @@ public struct EngineMenuRefreshResult {
     /// engine delivery, a withdrawn or suspended projection).
     var menuTitleReading: StatusTitleReading {
         guard let settings = latestSettings else { return .unavailable }
-        guard settings.snapshot.preferences.menuDisplay != .icon else { return .none }
+        guard settings.snapshot.preferences.menuDisplay != .icon, settings.snapshot.preferences.menuDisplay != .automatic else { return .none }
         if provider.dockContent.status == .cleared || provider.dockContent.status == .empty { return .none }
         let now = deadlineWall()
         guard let content = admittedCache.admittedContent(.init(snapshot: nil, diagnostics: .init(), now: now)) else { return .unavailable }
         return EngineMenuBarTitle.reading(inputs: content.snapshot.inputs, preferences: settings.snapshot.preferences, now: now)
+    }
+    /// D377: the tracked quota for the automatic display, with the same gap rules as `menuTitleReading`.
+    var menuAutoInput: StatusAutoInput {
+        guard let settings = latestSettings else { return .unavailable }
+        if provider.dockContent.status == .cleared || provider.dockContent.status == .empty { return .none }
+        let now = deadlineWall()
+        guard let content = admittedCache.admittedContent(.init(snapshot: nil, diagnostics: .init(), now: now)) else { return .unavailable }
+        return EngineMenuBarTitle.autoInput(inputs: content.snapshot.inputs, preferences: settings.snapshot.preferences, now: now)
     }
     public var menuPresentation: CommunityMenuBarPresentation {
         let now = deadlineWall()

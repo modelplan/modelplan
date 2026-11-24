@@ -81,7 +81,7 @@ struct StatusNoticePresentation {
     private(set) var launchOpen: (fromStatusItem: Bool, openPoint: CGPoint?)?
     /// WP-17: the launch pause (lifecycle started, never ready yet), as opposed to an OS pause. Every cockpit open
     /// entry (icon click, menu item, shortcut, ignition, reopen) keeps its open during it through `showConsole`.
-    var inLaunchPause: Bool { lifecyclePaused && lifecycleController != nil && !lifecycleEverReady }
+    var inLaunchPause: Bool { lifecyclePaused && lifecycleController != nil && !lifecycleEverReady && dockPresentationGateOpen }
     private var accessibilityObserver: NSObjectProtocol?
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
@@ -381,9 +381,8 @@ struct StatusNoticePresentation {
     private func activateMember(_ id: String) {
         guard !terminating, !lifecyclePaused,
               composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }
-        _ = composition.dock.sweepRefresh(id)
-        // G3-98: a repeated click while this member's refresh runs keeps its number hidden for that result.
         guard !memberRefreshInFlight.contains(id) else { return }
+        _ = composition.dock.sweepRefresh(id)
         var handedOff = false
         defer { if !handedOff { composition.dock.resolveRefreshReadout(id) } }
         guard let member = composition.accountMembers.members.first(where: { $0.id == id && $0.isStable }),
@@ -397,11 +396,16 @@ struct StatusNoticePresentation {
         }
         unavailableMemberRefreshes.remove(id)
         memberRefreshInFlight.insert(id)
+        currentCockpitPage?()?.updateMemberRefreshInFlight(true)
         handedOff = true
         Task { @MainActor [weak self, weak adapter] in
             guard let self else { return }
             var landed = true
-            defer { self.memberRefreshInFlight.remove(id); if !landed { self.composition.dock.resolveRefreshReadout(id) } }
+            defer {
+                self.memberRefreshInFlight.remove(id)
+                self.currentCockpitPage?()?.updateMemberRefreshInFlight(!self.memberRefreshInFlight.isEmpty)
+                if !landed { self.composition.dock.resolveRefreshReadout(id) }
+            }
             guard let adapter, !self.terminating, !self.lifecyclePaused,
                   self.composition.client.isCurrent(delivery),
                   self.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }),
@@ -461,6 +465,7 @@ struct StatusNoticePresentation {
         }
         if let value = composition.latestSettings { console?.applySettings(value) }
         console?.show(fromStatusItem: fromStatusItem)
+        currentCockpitPage?()?.updateMemberRefreshInFlight(!memberRefreshInFlight.isEmpty)
         refreshStatusTooltip()
     }
     /// D88: the cockpit opened, closed, detached or was put back: the icon highlight and the one-time
@@ -469,6 +474,7 @@ struct StatusNoticePresentation {
         // The user closed a cockpit opened before the lifecycle started: the ready does not bring it back. A hide by
         // the launch pause itself runs while paused and keeps the open.
         if console?.isShowing != true, !lifecyclePaused { launchOpen = nil }
+        currentCockpitPage?()?.updateMemberRefreshInFlight(!memberRefreshInFlight.isEmpty)
         refreshStatusTooltip()
         dockHelp?.refresh()
     }
@@ -710,6 +716,7 @@ struct StatusNoticePresentation {
     private func withdrawForLifecycle() {
         guard !terminating else { return }
         lifecyclePaused = true
+        if !dockPresentationGateOpen { launchOpen = nil }
         // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
         statusHelpRequestID = nil
@@ -895,6 +902,35 @@ struct StatusNoticePresentation {
     private var forceStatusRewrite = false
     /// G3-122: decides the shown title; a projection gap keeps the last number.
     private var statusTitle = StatusTitleKeeper()
+    /// D377 option C: the automatic display's decision, the display-change counter it retries on, and its red dot.
+    private var statusAuto = StatusAutoDisplay()
+    private var displayEpoch = 0
+    private(set) var statusAutoMode: StatusAutoMode = .iconOnly
+    let usedUpDot = StatusUsedUpDotView(frame: .zero)
+    private var statusCompactFontApplied = false
+    private var statusAutoArmedFor: Date?
+    private var cancelStatusAuto: (() -> Void)?
+    /// Test seam like `statusHoldSchedule`, for the squeeze debounce.
+    var statusAutoSchedule: @MainActor (_ seconds: TimeInterval, _ fire: @escaping @MainActor () -> Void) -> () -> Void = { seconds, fire in
+        let task = Task { @MainActor in
+            do { try await Task.sleep(for: .milliseconds(Int64((max(0, seconds) * 1_000).rounded(.up)))) } catch { return }
+            guard !Task.isCancelled else { return }
+            fire()
+        }
+        return { task.cancel() }
+    }
+    /// A squeeze that has not lasted long enough is looked at again when it has: re-check the window, then render.
+    private func armStatusAutoRecheck(now: Date) {
+        let deadline = terminating ? nil : statusAuto.pendingDeadline
+        guard deadline != statusAutoArmedFor else { return }
+        cancelStatusAuto?(); cancelStatusAuto = nil; statusAutoArmedFor = deadline
+        guard let deadline else { return }
+        cancelStatusAuto = statusAutoSchedule(max(0, deadline.timeIntervalSince(now))) { [weak self] in
+            guard let self, !self.terminating else { return }
+            self.cancelStatusAuto = nil; self.statusAutoArmedFor = nil
+            self.checkStatusItemVisibility(); self.renderMenu()
+        }
+    }
     /// macrev2-976-2: arms `fire` after `seconds`; the result cancels it. Test seam with a fake clock.
     var statusHoldSchedule: @MainActor (_ seconds: TimeInterval, _ fire: @escaping @MainActor () -> Void) -> () -> Void = { seconds, fire in
         let task = Task { @MainActor in
@@ -981,7 +1017,7 @@ struct StatusNoticePresentation {
     /// One display-parameter notification: the next render rewrites the item's content (G3-57), the check waits.
     func displayParametersChanged() {
         guard !terminating else { return }
-        forceStatusRewrite = true
+        forceStatusRewrite = true; displayEpoch += 1
         displayRecheck.displaysChanged()
     }
     /// Shows the one-line notice in the widget menu and Settings while the item is covered; clears it when visible.
@@ -992,6 +1028,7 @@ struct StatusNoticePresentation {
         let hidden = visible == false
         guard hidden != statusItemHidden else { return }
         statusItemHidden = hidden
+        if composition.latestSettings?.snapshot.preferences.menuDisplay == .automatic { renderMenu() }
         var context = settings.editor.context
         context.statusItemNotice = hidden ? (cockpitEntryEnabled ? EngineRowsText.statusItemHidden : EngineRowsText.statusItemHiddenWithoutCockpit) : nil
         settings.update(context: context)
@@ -1072,7 +1109,7 @@ struct StatusNoticePresentation {
         self.status = nil
         if let statusClickMonitor { NSEvent.removeMonitor(statusClickMonitor) }
         statusClickMonitor = nil; statusPressPending = false
-        noticeIndicator.removeFromSuperview()
+        noticeIndicator.removeFromSuperview(); usedUpDot.removeFromSuperview()
         status.menu = nil
         NSStatusBar.system.removeStatusItem(status)
     }
@@ -1290,11 +1327,22 @@ struct StatusNoticePresentation {
         // Read first: reading the projection can re-render (a stale cache is replaced synchronously), which resolves
         // its own title; the keeper is only touched after that, never re-entrantly.
         let title: String
-        if setUp { title = "\u{00B7}\u{00B7}\u{00B7}" } else {
+        var autoMode: StatusAutoMode?
+        var autoReading: StatusAutoReading?
+        if setUp { title = "\u{00B7}\u{00B7}\u{00B7}" }
+        else if composition.latestSettings?.snapshot.preferences.menuDisplay == .automatic {
+            // D377 option C: the icon alone, a compact number below the alert line, a red dot when used up.
+            let now = composition.currentDate()
+            let mode = statusAuto.resolve(composition.menuAutoInput, squeezed: statusItemHidden, displayEpoch: displayEpoch, now: now)
+            armStatusAutoRecheck(now: now)
+            autoMode = mode; autoReading = statusAuto.reading; statusAutoMode = mode
+            if case .number(let text) = mode { title = text } else { title = "" }
+        } else {
             let reading = composition.menuTitleReading, now = composition.currentDate()
             title = statusTitle.resolve(reading, now: now)
             armStatusHoldExpiry(now: now)
         }
+        if autoMode == nil { statusAutoMode = .iconOnly; cancelStatusAuto?(); cancelStatusAuto = nil; statusAutoArmedFor = nil }
         if button.alphaValue != (setUp ? 0.5 : 1) { button.alphaValue = setUp ? 0.5 : 1 }
         // Never let the item collapse to zero width when the template image is unavailable.
         // Only changed values are written: re-setting the same title or position makes the item re-measure itself.
@@ -1307,13 +1355,18 @@ struct StatusNoticePresentation {
         if let item {
             // G3-22: an icon-only item takes the square menu-bar length (was 32 pt for a 16 pt image);
             // a percentage title keeps a variable length. The autosave name keeps a ⌘-dragged position.
-            let length = iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
+            // D377: the automatic number is a fixed compact width (icon, a small gap, up to three characters).
+            let compact = !iconOnly && autoMode != nil
+            let length = compact ? StatusAutoDisplay.compactLength : iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
             if forceStatusRewrite || appliedStatusLength != length || item.length != length { item.length = length; appliedStatusLength = length }
             forceStatusRewrite = false
         }
         // A11Y: an icon-only status item has no text, so AX clients (VoiceOver, the MacCI verification agent) found no
         // labelled button under AXExtrasMenuBar. Label it "ModelPlan" plus the remaining quota and keep the button role.
-        let label = Self.statusAccessibilityLabel(title: title)
+        // D377: the automatic display keeps the label complete in every state ("ModelPlan · Codex 0%").
+        let label = autoMode != nil ? StatusAutoDisplay.accessibilityLabel(autoReading) : Self.statusAccessibilityLabel(title: title)
+        applyStatusCompactFont(button, compact: !title.isEmpty && autoMode != nil)
+        applyUsedUpDot(button, show: autoMode == .usedUp)
         if button.accessibilityLabel() != label { button.setAccessibilityLabel(label) }
         button.setAccessibilityElement(true); button.setAccessibilityRole(.button)
         button.setAccessibilityIdentifier("status.item")
@@ -1326,6 +1379,24 @@ struct StatusNoticePresentation {
             button.setAccessibilityHelp(detail); statusAccessibilityHelp = detail
         }
     }
+    /// D377: monospaced digits for the compact number, so the width does not move as the value changes; the menu-bar
+    /// font is restored when the number goes.
+    private func applyStatusCompactFont(_ button: NSButton, compact: Bool) {
+        if compact {
+            button.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular); statusCompactFontApplied = true
+        } else if statusCompactFontApplied {
+            button.font = NSFont.menuBarFont(ofSize: 0); statusCompactFontApplied = false
+        }
+    }
+    /// D377: the used-up dot sits at the icon's top-right corner, unless a notice dot already marks the icon.
+    private func applyUsedUpDot(_ button: NSButton, show: Bool) {
+        let visible = show && noticeIndicator.notice == nil
+        if visible { usedUpDot.attach(to: button) }
+        if usedUpDot.isHidden == visible { usedUpDot.isHidden = !visible }
+        if !visible, usedUpDot.superview != nil, !show { usedUpDot.removeFromSuperview() }
+    }
+    /// What the red dot shows now, for tests.
+    var usedUpDotVisibleForTesting: Bool { usedUpDot.superview != nil && !usedUpDot.isHidden }
     /// G3-49: the icon's tooltip sits above every app window and drew over the porthole when a click left the
     /// pointer on the icon. While the cockpit is showing the icon has no tooltip; the accessible help stays.
     private var statusTooltip = ""

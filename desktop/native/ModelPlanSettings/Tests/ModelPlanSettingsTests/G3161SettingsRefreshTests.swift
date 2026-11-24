@@ -52,4 +52,21 @@ final class G3161SettingsRefreshTests: XCTestCase {
         XCTAssertEqual(controller.refreshCountForChecks, refreshes + 1, "showing the window brings it up to date, once")
         controller.close()
     }
+
+    @MainActor func testAppUnhideFlushesDeferredSettingsContext() async throws {
+        let (controller, _, editor) = try await makeController()
+        defer { NSApplication.shared.unhide(nil); controller.close() }
+        controller.defersContextRefreshWhileHidden = true
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApplication.shared.hide(nil)
+        XCTAssertNotEqual(controller.window?.isVisible, true)
+        let refreshes = controller.refreshCountForChecks
+        var context = editor.context
+        context.statusItemNotice = SettingsText("Updated while hidden", "隐藏时更新")
+        editor.update(context: context)
+        XCTAssertEqual(controller.refreshCountForChecks, refreshes)
+        NSApplication.shared.unhide(nil)
+        XCTAssertEqual(controller.refreshCountForChecks, refreshes + 1, "unhide must present the latest context without another engine event")
+    }
 }

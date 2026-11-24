@@ -9,7 +9,7 @@ final class SettingsCatalogueCopyTests: XCTestCase {
         XCTAssertEqual(try row(.percentagePin).subtitle.chinese, "为每个订阅选择最紧的、5小时或每周窗口。")
         XCTAssertEqual(try row(.detectedReaders).subtitle.english, "Read-only local reader status.")
         XCTAssertEqual(try row(.detectedReaders).subtitle.chinese, "本地读取器的只读状态。")
-        XCTAssertEqual(try row(.menuDisplay).subtitle.chinese, "图标、最紧的百分比或并列两个窗口。")
+        XCTAssertEqual(try row(.menuDisplay).subtitle.chinese, "自动：平时只显示图标，额度偏低时才显示数字；也可选仅图标、最紧的百分比或并列两个窗口。")
         XCTAssertEqual(try row(.openShortcut).title.chinese, "打开驾驶舱快捷键")
         XCTAssertEqual(try row(.opening).title.chinese, "打开驾驶舱方式")
         XCTAssertEqual(try row(.resetHints).subtitle.chinese, "重置首次提示及打开驾驶舱、额度挂件展开的提示预算。")

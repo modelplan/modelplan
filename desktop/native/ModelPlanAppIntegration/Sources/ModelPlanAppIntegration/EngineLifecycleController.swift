@@ -5,6 +5,7 @@ import ModelPlanCore
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanShell
+import ModelPlanWire
 
 /// Adapts the existing multi-reason lifecycle gate to the app-server client.
 @MainActor private final class EngineLifecycleWorker: LifecycleStore, EngineStoreEventSink {
@@ -68,7 +69,11 @@ import ModelPlanShell
                 }
                 guard self.desired, self.generation == token, !Task.isCancelled else { return }
                 self.expected = context
-                _ = try await self.composition.client.subscribeRows(timeout: nil)
+                do { _ = try await self.composition.client.subscribeRows(timeout: nil) }
+                catch EngineClientError.rpc(let code, _) where code == WireErrorCode.busy {
+                    // The client's bootstrap recovery will deliver the first rows. Keep this
+                    // session and let publishIfFresh wait for its accepted rows and consent.
+                }
                 guard self.desired, self.generation == token, !Task.isCancelled else { return }
                 do { _ = try await self.composition.client.consent(timeout: nil) }
                 catch EngineClientError.unsupportedCapability { /* Older engines may not expose consent. */ }
