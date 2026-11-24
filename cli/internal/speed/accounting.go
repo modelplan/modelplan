@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"io"
 	"os"
 	"path/filepath"
@@ -85,7 +86,9 @@ func loadAccounting(cache string) (accountingLedger, bool) {
 		return l, false
 	}
 	defer f.Close()
-	z, err := gzip.NewReader(f)
+	idlework.Open()
+	idlework.Decode()
+	z, err := gzip.NewReader(idlework.Reader(f))
 	if err != nil {
 		return l, false
 	}
