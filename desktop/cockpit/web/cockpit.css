@@ -528,3 +528,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 html[data-reduce-motion="true"] [data-wait-shown] .ck-eng .ec-empty{animation:none}
 @media(prefers-reduced-motion:reduce){[data-wait-shown] .ck-eng .ec-empty{animation:none}}
 @keyframes ec-wait-in{from{opacity:0}to{opacity:1}}
+/* Give the six-column label room while keeping the vendor mark alongside it. */
+.ck-eng .eng-keys[data-slots="6"] .ek .ek-identity{gap:2px;max-width:calc(100% - 4px)}
+.ck-eng .eng-keys[data-slots="6"] .ek .ek-identity .lamp{width:12px;height:12px}
+.ck-eng .eng-keys[data-slots="6"] .ek-name{font-size:10px}
