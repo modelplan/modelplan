@@ -23,7 +23,9 @@ import (
 // or a file ModelPlan wrote; none opens a credential or a connection.
 var observerQuotaCalls = map[string]bool{
 	"Background": true, "ClaudeSubscription": true, "CodexHome": true, "CodexSubscription": true,
-	"RecentRollouts": true, "ThreadOrigin": true, "ZCodeSubscription": true,
+	"RecentRollouts": true, "RecentRolloutsIn": true, "ThreadOrigin": true, "ZCodeSubscription": true,
+	// Metadata only: the confinement check right before a rollout is read (D397).
+	"ConfinedRollouts": true,
 }
 
 // Packages that reach a provider, a credential store or another process.

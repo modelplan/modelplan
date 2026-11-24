@@ -138,11 +138,28 @@ test('CKP-FAD-24 a release snaps only to efforts the model has (GLM has Max only
 test('CKP-FAD-12 the real lever glides through the baked frames when the current effort changes',async({page})=>{
  const {send,receive}=await openThrottles(page);
  const lever=channel(page,0).locator('.fd-cap'),data=throttleData();data.details.sessions[0].effort='low';
- const seen=lever.evaluate(e=>new Promise(done=>{const frames=new Set(),t0=performance.now();const look=()=>{frames.add(getComputedStyle(e).getPropertyValue('--fd-frame').trim());if(performance.now()-t0<600)requestAnimationFrame(look);else done([...frames]);};requestAnimationFrame(look);}));
- expect(await receive(send('display',{data}))).toBe(true);
- const frames=(await seen).map(Number);
- expect(await lever.getAttribute('data-frame')).toBe('0');expect(frames.at(-1)).toBe(0);
- expect(frames.some(f=>f>0&&f<16),'intermediate frames').toBe(true);
+ expect(await lever.getAttribute('data-frame')).toBe('16');
+ // Deterministic: the glide is a CSS transition of --fd-frame. Deliver the display and capture the transition in the SAME task (it is
+ // still running there, however slow the runner is), pause it and drive its clock by hand: start, end and a monotonic path.
+ const raw=send('display',{data});
+ const path=await lever.evaluate((e,raw)=>{
+  const ok=window.modelPlanCockpit.receive(raw);
+  const glides=e.getAnimations().filter(a=>a.transitionProperty==='--fd-frame');
+  if(glides.length!==1)return {ok,glides:glides.length};
+  const [glide]=glides;glide.pause();const span=glide.effect.getComputedTiming().endTime;
+  const frames=[0,.1,.25,.5,.75,.9,1].map(f=>{glide.currentTime=f*span;return Number(getComputedStyle(e).getPropertyValue('--fd-frame').trim());});
+  glide.finish();
+  return {ok,glides:1,span,frames,end:Number(getComputedStyle(e).getPropertyValue('--fd-frame').trim())};
+ },raw);
+ expect(path.ok).toBe(true);
+ expect(path.glides,'one --fd-frame transition on the lever').toBe(1);
+ expect(path.span,'the glide takes time').toBeGreaterThan(0);
+ expect(path.frames[0],'starts on the old High frame').toBe(16);
+ expect(path.frames.at(-1),'ends on the Low frame').toBe(0);
+ expect(path.end).toBe(0);
+ for(let i=1;i<path.frames.length;i++)expect(path.frames[i],'monotonic glide '+path.frames).toBeLessThanOrEqual(path.frames[i-1]);
+ expect(path.frames.some(f=>f>0&&f<16),'intermediate frames '+path.frames).toBe(true);
+ expect(await lever.getAttribute('data-frame')).toBe('0');
 });
 
 // G3-92 (owner 11-12): detent -> y is one mapping from the effort NAME on the full Low..Max scale, for the lever, the ghost and the

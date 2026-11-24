@@ -8,13 +8,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/confine"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/idlework"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -399,10 +402,19 @@ func CodexRollouts(home, thread string, n int) []string {
 }
 
 func discoverCodexRollouts(home, thread string, n int) (files []string, own string) {
-	root := filepath.Join(home, "sessions")
-	files = newestRollouts(root, n)
+	return selectRollouts(&logindex.Inventory{}, consent.Fence{}, home, thread, n, time.Now())
+}
+
+// selectRollouts picks the n newest rollouts under home's sessions/YYYY/MM/DD from the
+// inventory, plus the thread's own rollout when one of the 62 newest days has it.
+func selectRollouts(inv *logindex.Inventory, fence consent.Fence, home, thread string, n int, now time.Time) (files []string, own string) {
+	if home == "" {
+		return nil, ""
+	}
+	all := inv.Files(fence, []logindex.Root{{Dir: filepath.Join(home, "sessions"), Source: "codex"}}, now, now)
+	files = newestIn(all, n)
 	if thread = clip(thread); thread != "" {
-		own = findThread(root, thread)
+		own = findThreadIn(all, thread)
 		if own != "" && !contains(files, own) {
 			files = append([]string{own}, files...)
 		}
@@ -419,26 +431,48 @@ func contains(xs []string, x string) bool {
 	return false
 }
 
-// findThread looks for rollout-*-<thread>.jsonl in the most recent day directories.
+// findThread looks for rollout-*-<thread>.jsonl in the most recent day directories under root.
 func findThread(root, thread string) string {
-	suffix, days := "-"+thread+".jsonl", 0
-	for _, y := range dirsDesc(root) {
-		for _, m := range dirsDesc(y) {
-			for _, d := range dirsDesc(m) {
-				if days++; days > 62 {
-					return ""
-				}
-				es, _ := os.ReadDir(d)
-				idlework.EntriesOf("codex", len(es))
-				for _, e := range es {
-					if e.Type().IsRegular() && rolloutName.MatchString(e.Name()) && strings.HasSuffix(e.Name(), suffix) {
-						return filepath.Join(d, e.Name())
-					}
-				}
-			}
+	return findThreadIn((&logindex.Inventory{}).Files(consent.Fence{}, []logindex.Root{{Dir: root, Source: "codex"}}, time.Now(), time.Now()), thread)
+}
+
+// findThreadIn looks for rollout-*-<thread>.jsonl in the 62 most recent day directories.
+func findThreadIn(all []logindex.File, thread string) string {
+	suffix := "-" + thread + ".jsonl"
+	days := map[string]bool{}
+	var matches []string
+	for _, f := range all {
+		if !isRollout(f) {
+			continue
+		}
+		days[filepath.Dir(f.Path)] = true
+		if strings.HasSuffix(filepath.Base(f.Path), suffix) {
+			matches = append(matches, f.Path)
+		}
+	}
+	if len(matches) == 0 {
+		return ""
+	}
+	recent := make([]string, 0, len(days))
+	for d := range days {
+		recent = append(recent, d)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(recent)))
+	if len(recent) > 62 {
+		recent = recent[:62]
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(matches)))
+	for _, m := range matches {
+		if slices.Contains(recent, filepath.Dir(m)) {
+			return m
 		}
 	}
 	return ""
+}
+
+// isRollout: a regular rollout-*.jsonl in a sessions/YYYY/MM/DD directory.
+func isRollout(f logindex.File) bool {
+	return f.Depth == 4 && rolloutName.MatchString(filepath.Base(f.Path))
 }
 
 func background(origin, model string) bool {
@@ -532,47 +566,28 @@ var rolloutName = regexp.MustCompile(`^rollout-.*\.jsonl$`)
 // listed (names and stats only, no reads): a resumed session keeps appending to the file in
 // its start day's directory, so a busier newer day must not hide it.
 func newestRollouts(root string, n int) []string {
-	type f struct {
-		path string
-		mod  time.Time
-	}
-	var out []f
-	idlework.WalkOf("codex")
-	years := dirsDesc(root)
-	for _, y := range years {
-		for _, m := range dirsDesc(y) {
-			for _, d := range dirsDesc(m) {
-				es, _ := os.ReadDir(d)
-				idlework.EntriesOf("codex", len(es))
-				for _, e := range es {
-					if e.Type().IsRegular() && rolloutName.MatchString(e.Name()) {
-						if info, err := e.Info(); err == nil {
-							out = append(out, f{filepath.Join(d, e.Name()), info.ModTime()})
-						}
-					}
-				}
-			}
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].mod.After(out[j].mod) })
-	var paths []string
-	for i := 0; i < len(out) && i < n; i++ {
-		paths = append(paths, out[i].path)
-	}
-	return paths
+	return newestIn((&logindex.Inventory{}).Files(consent.Fence{}, []logindex.Root{{Dir: root, Source: "codex"}}, time.Now(), time.Now()), n)
 }
 
-func dirsDesc(p string) []string {
-	es, _ := os.ReadDir(p)
-	idlework.EntriesOf("codex", len(es))
-	var out []string
-	for _, e := range es {
-		if e.IsDir() {
-			out = append(out, filepath.Join(p, e.Name()))
+// newestIn: the n most recently modified rollouts, newest first.
+func newestIn(all []logindex.File, n int) []string {
+	var out []logindex.File
+	for _, f := range all {
+		if isRollout(f) {
+			out = append(out, f)
 		}
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(out)))
-	return out
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].Mod.Equal(out[j].Mod) {
+			return out[i].Mod.After(out[j].Mod)
+		}
+		return out[i].Path > out[j].Path
+	})
+	var paths []string
+	for i := 0; i < len(out) && i < n; i++ {
+		paths = append(paths, out[i].Path)
+	}
+	return paths
 }
 
 type rollout struct {
@@ -639,7 +654,7 @@ type rolloutEvent struct {
 
 // readRolloutEvents reads the first line (session_meta) and the file's tail.
 func readRolloutEvents(path string) (rolloutScan, bool) {
-	fh, err := os.Open(path)
+	fh, err := openRollout(path)
 	if err != nil {
 		return rolloutScan{}, false
 	}
@@ -1056,15 +1071,31 @@ func DeclarePlan(path, planID, generation string, remove bool, regions ...string
 	return writeAtomic(path, append(nb, '\n'))
 }
 
+// openRollout opens a rollout for its content, anchored to the Codex sessions root when it lies
+// below it, so an ancestor swapped for a symlink after any check fails the open (macrevb-1222-4).
+func openRollout(path string) (*os.File, error) {
+	return confine.OpenUnder([]string{filepath.Join(CodexHome(), "sessions")}, path)
+}
+
 // RecentRollouts: the newest n Codex session logs under codexHome, newest first.
 func RecentRollouts(codexHome string, n int) []string {
 	return newestRollouts(filepath.Join(codexHome, "sessions"), n)
 }
 
+// RecentRolloutsIn is RecentRollouts from the app-server's shared history inventory, under the
+// caller's consent fence.
+func RecentRolloutsIn(inv *logindex.Inventory, fence consent.Fence, codexHome string, n int, now time.Time) []string {
+	if codexHome == "" {
+		return nil
+	}
+	files, _ := selectRollouts(inv, fence, codexHome, "", n, now)
+	return files
+}
+
 // ThreadOrigin: where the thread of a rollout came from (cli, vscode, exec, subagent:review, …),
 // from its first line; "" when unknown.
 func ThreadOrigin(path string) string {
-	fh, err := os.Open(path)
+	fh, err := openRollout(path)
 	if err != nil {
 		return ""
 	}
@@ -1090,7 +1121,7 @@ func CodexBackgroundThread(home, thread string) bool {
 		return false
 	}
 	p := findThread(filepath.Join(home, "sessions"), thread)
-	return p != "" && background(ThreadOrigin(p), "")
+	return p != "" && len(ConfinedRollouts(home, []string{p})) == 1 && background(ThreadOrigin(p), "")
 }
 
 // Background: a thread Codex runs by itself (subagent reviews, internal guardians, auto review),
