@@ -136,14 +136,14 @@ import ModelPlanSettings
         XCTAssertNil(scheduler.deadline)
     }
 
-    func testPreparingTheProductionCockpitDoesNotPrewarmAWebPage() async throws {
+    func testPreparingTheProductionCockpitWaitsForAnAdmittedSession() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .chinese; $0.theme = .night }
         let owner = CockpitConsoleOwner(bundle: root, settingsStore: store)
         let coordinator = EngineCockpitCoordinator { _ in
-            XCTFail("Bundle preparation must not build a WebView")
+            XCTFail("Bundle preparation without an admitted engine session cannot build a WebView")
             throw CocoaError(.fileNoSuchFile)
         }
         owner.coordinator = coordinator
@@ -154,7 +154,9 @@ import ModelPlanSettings
         }
         XCTAssertEqual(owner.appearance.locale, .zhCN)
         await owner.awaitPreparedBundle()
-        await Task.yield()
-        XCTAssertFalse(coordinator.prewarmEnabled)
+        for _ in 0..<100 where !coordinator.prewarmEnabled {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(coordinator.prewarmEnabled)
     }
 }
