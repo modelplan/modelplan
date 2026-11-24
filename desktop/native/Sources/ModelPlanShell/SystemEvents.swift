@@ -46,11 +46,11 @@ public enum SystemSignal: Equatable, Sendable {
         self.gate = gate; self.workspace = workspace; self.local = local
         self.distributed = distributed; self.displayIDs = displayIDs; self.onConsole = onConsole; self.displaysAsleep = displaysAsleep
     }
-    public static func currentConsoleState() -> Bool? {
+    nonisolated public static func currentConsoleState() -> Bool? {
         (CGSessionCopyCurrentDictionary() as? [String: Any])?[kCGSessionOnConsoleKey as String] as? Bool
     }
     /// The session's screen-lock flag (`CGSSessionScreenIsLocked` in the public session dictionary); nil when absent.
-    public static func currentScreenLocked() -> Bool? {
+    nonisolated public static func currentScreenLocked() -> Bool? {
         (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool
     }
     /// Review 11-24 #4: the OS pause reasons that hold right now, from the same queries `start()` seeds with. Used
@@ -64,7 +64,7 @@ public enum SystemSignal: Equatable, Sendable {
         if screenLocked == true { reasons.insert(.screenLocked) }
         return reasons
     }
-    public static func allDisplaysAsleep(_ ids: Set<UInt32>) -> Bool {
+    nonisolated public static func allDisplaysAsleep(_ ids: Set<UInt32>) -> Bool {
         !ids.isEmpty && ids.allSatisfy { CGDisplayIsAsleep($0) != 0 }
     }
     public static func currentDisplayIDs() -> Set<UInt32> {
