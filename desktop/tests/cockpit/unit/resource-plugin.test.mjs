@@ -271,6 +271,14 @@ test('D413 the 10 min | 1 h toggle switches the series: raw readings, or one poi
  for(const bad of [{...minutes[0],t:t0+1},{...minutes[0],cpu:101},{...minutes[0],extra:1},{...minutes[0],netIn:5}])
   assert.equal(resourcePlugin.accept({samples,minutes:[bad]},undefined),undefined,JSON.stringify(bad));
  assert.equal(resourcePlugin.accept({samples,minutes:Array.from({length:61},(_,i)=>({...minutes[0],t:t0+i*minute}))},undefined),undefined);
+ // D413 fix: a full hour from the host (60 closed minutes) plus the open minute's raw readings: 61 points, and the
+ // oldest one's minute holds the window's start, so the view covers the whole hour.
+ const full=Array.from({length:60},(_,i)=>({t:t0+i*minute,cpu:20,cpuPeak:i===0?88:25,memory:47,memoryPeak:48,disk:76,diskPeak:76}));
+ const open=Array.from({length:6},(_,i)=>sample(t0+60*minute+20_000+i*5000));
+ const fullState=resourcePlugin.accept({samples:open,minutes:full},undefined),fullHour=resourceSeries(fullState,'1h');
+ assert.equal(fullHour.points.cpu.length,61,'60 closed minutes + the open one');
+ assert.ok(fullHour.points.cpu[0].t-minute/2<=fullHour.start,'the oldest minute starts at or before the window');
+ assert.equal(fullHour.peak.cpu,88,'the oldest minute\'s raw peak is still in the hour');
  // Minutes persist across later readings that carry none.
  assert.equal(resourcePlugin.accept({samples:[sample(t0+61*minute)]},state).minutes.length,50);
 });

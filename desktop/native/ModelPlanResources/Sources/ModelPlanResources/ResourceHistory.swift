@@ -37,7 +37,8 @@ public struct ResourceHistory: Equatable, Sendable {
     /// D413: closed minutes kept for the 1-hour view.
     public static let minuteCapacity = 60
     public private(set) var samples: [ResourceSample] = []
-    /// Closed minutes, oldest first (at most an hour); the minute still being filled is not in here.
+    /// Closed minutes, oldest first: at most the 60 before the open minute. The minute still being filled is not in here
+    /// (the page folds it from its own raw readings). Nothing until the first minute after launch closes.
     public private(set) var minutes: [ResourceMinute] = []
     private var current: ResourceMinute?
     public init() {}
@@ -54,8 +55,10 @@ public struct ResourceHistory: Equatable, Sendable {
         }
         if current == nil { current = ResourceMinute(unixMs: minute) }
         current?.fold(s)
-        // An hour back from the newest minute; also bounded by count.
-        minutes.removeAll { $0.unixMs <= minute - Int64(Self.minuteCapacity) * 60_000 }
+        // D413 convention: the 60 closed minutes before the open one (oldest = open minute - 60 min). With the page's own
+        // fold of the open minute that is 60 closed folds + the open one, so the 1-hour window [now - 60 min, now] is
+        // always fully covered (its start falls inside the oldest closed minute). Also bounded by count.
+        minutes.removeAll { $0.unixMs < minute - Int64(Self.minuteCapacity) * 60_000 }
         if minutes.count > Self.minuteCapacity { minutes.removeFirst(minutes.count - Self.minuteCapacity) }
     }
     public mutating func removeAll() { samples.removeAll(); minutes.removeAll(); current = nil }

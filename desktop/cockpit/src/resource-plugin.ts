@@ -263,7 +263,8 @@ export function resourceSeries(state:unknown,range:ResourceRange):ResourceSeries
       const list=own.get(k)!;
       for(const m of METRICS){const vs=list.map(x=>sampleValue(x,m)).filter((x):x is number=>x!==null);if(vs.length)points[m].push({t:k+MINUTE_MS/2,v:vs.reduce((a,b)=>a+b,0)/vs.length,peak:Math.max(...vs)});}
     }
-    for(const m of METRICS)points[m]=points[m].filter(p=>p.t>start);
+    // A minute that overlaps the window counts (its start may be before the window's): 60 closed minutes + the open one.
+    for(const m of METRICS)points[m]=points[m].filter(p=>p.t+MINUTE_MS/2>start);
   }
   const peakOf={} as Record<ResourceMetric,number|null>,avgOf={} as Record<ResourceMetric,number|null>;
   for(const m of METRICS){const p=points[m];peakOf[m]=p.length?Math.max(...p.map(x=>x.peak)):null;avgOf[m]=p.length?p.reduce((a,x)=>a+x.v,0)/p.length:null;}
