@@ -83,7 +83,7 @@ func TestReviewDenyCommitsAtCapacityWhileErasureIsOwed(t *testing.T) {
 	// Once erasure works, each owed scope is erased with its original Forget flag.
 	var mu sync.Mutex
 	erased := map[string]bool{}
-	if err := RetryCleanup(file, func(scope string, forget bool) error {
+	if err := RetryCleanup(file, func(scope string, forget bool, _ EraseGuard) error {
 		mu.Lock()
 		defer mu.Unlock()
 		erased[scope] = forget
@@ -126,7 +126,7 @@ func TestReviewRetryCleanupLetsForegroundDenyCommit(t *testing.T) {
 	var once sync.Once
 	retried := make(chan error, 1)
 	go func() {
-		retried <- RetryCleanup(file, func(string, bool) error {
+		retried <- RetryCleanup(file, func(string, bool, EraseGuard) error {
 			once.Do(func() { close(entered) })
 			<-release // a long read still holds the reader lock
 			return nil
@@ -162,7 +162,7 @@ func TestReviewRetryCleanupLetsForegroundDenyCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The racing commit leaves the obligations for the next retry; erasure is idempotent.
-	if err := RetryCleanup(file, func(string, bool) error { return nil }); err != nil {
+	if err := RetryCleanup(file, func(string, bool, EraseGuard) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	done, _ := Load(file)

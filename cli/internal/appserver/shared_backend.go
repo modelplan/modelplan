@@ -39,7 +39,9 @@ type SharedConfig struct {
 	LaterInstalled func(detect.Report) map[string]bool
 	Paths          func(consent.Admission) quota.Paths
 	WatchPaths     func(consent.Admission) quota.Paths // metadata-only watcher paths, if supplied
-	Cleanup        func(string, bool) error
+	// Cleanup is the fenced erasure hook: retries pass a guard (macrevb-1218-5); a foreground
+	// commit calls it with a nil guard under the consent lock.
+	Cleanup consent.Eraser
 	// Granted runs after each committed, not replayed, consent change (optional); the history
 	// import retry hangs off it (G3-112).
 	Granted func()
@@ -496,7 +498,7 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 			}
 		}
 		return record, nil
-	}, Cleanup: b.config.Cleanup})
+	}, Cleanup: func(scope string, forget bool) error { return b.config.Cleanup(scope, forget, nil) }})
 	if err != nil && !receipt.Committed {
 		return GrantResult{}, grantError(err)
 	}

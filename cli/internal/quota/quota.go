@@ -337,6 +337,7 @@ type Paths struct {
 	ReaderAccess                *ReaderAccess             // explicit shared-consent admission for saved-login readers
 	ZCodeNoProviderFile         bool                      // ZCode is present on the default route but keeps no provider file (G3-21)
 	ZCodeLoginConsent           bool                      // ZCode's sign-in is there but its saved-login scope is not allowed (D369)
+	eraseGuard                  consent.EraseGuard        // retry erasure fence, checked under the reader lock (macrevb-1218-5)
 }
 
 // Read gathers every available source and evaluates it at now.

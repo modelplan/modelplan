@@ -104,8 +104,8 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		},
 		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.LoadShared(st); return d, err }, // read only (WP-17)
 		Detect:           detectTools, LaterInstalled: seen.Observe, Paths: paths, WatchPaths: watchPaths, Offline: options.Offline, ReadOnly: options.ReadOnly,
-		Cleanup: func(scope string, forget bool) error {
-			return quota.EraseScope(quota.ProductionPaths(st.Dir, version), scope, forget)
+		Cleanup: func(scope string, forget bool, guard consent.EraseGuard) error {
+			return quota.EraseScopeGuarded(quota.ProductionPaths(st.Dir, version), scope, forget, guard)
 		},
 	})
 	var backend appserver.Backend = shared

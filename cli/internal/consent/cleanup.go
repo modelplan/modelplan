@@ -6,6 +6,39 @@ import (
 	"strings"
 )
 
+// EraseGuard fences one erasure at the point of deletion (macrevb-1218-5). An eraser calls it
+// after it has taken the reader lock, which every private capture holds while it commits, and
+// erases nothing unless it returns nil. While the eraser keeps the reader lock no capture can
+// land, so whatever it then deletes predates the check. A nil guard means the caller already
+// holds the consent lock (a foreground Deny or Forget finalizing its own commit).
+type EraseGuard func() error
+
+// Check runs the guard; a nil guard always passes.
+func (g EraseGuard) Check() error {
+	if g == nil {
+		return nil
+	}
+	return g()
+}
+
+// Eraser is a fenced erasure hook: it must call guard.Check under the reader lock before each
+// destructive step and stop when it fails.
+type Eraser func(scope string, forget bool, guard EraseGuard) error
+
+// owes reports whether state still owes erasure of scope, and whether any owing receipt asks
+// for the stronger Forget erasure.
+func owes(state State, scope string) (owed, forget bool) {
+	for _, receipt := range state.Requests {
+		for _, pending := range receipt.PendingForget {
+			if pending == scope {
+				owed = true
+				forget = forget || receipt.ForgetScopes[scope] || !strings.Contains(scope, ".")
+			}
+		}
+	}
+	return owed, forget
+}
+
 // RetryCleanup retries durable erasure obligations without replaying a mutation,
 // changing permissions, or changing the original receipt returned to a client.
 // The engine calls it after in-flight readers drain and on restart.
@@ -15,7 +48,13 @@ import (
 // before it committed. Completed obligations are then cleared under the lock, only if no consent
 // commit happened meanwhile; otherwise they stay owed and the next retry erases again, which is
 // idempotent. A failed erasure always stays owed.
-func RetryCleanup(file string, cleanup func(scope string, forget bool) error) error {
+//
+// Erasure authority never outlives the store that granted it (macrevb-1218-5): each callback
+// gets a guard that, at the point of deletion, passes only while the authoritative store is
+// still the snapshot's epoch and still owes that scope at least as strongly. A confirmed reset,
+// or a re-grant after the obligation was met, therefore makes a waiting retry erase nothing,
+// so a capture admitted afterwards survives.
+func RetryCleanup(file string, cleanup Eraser) error {
 	if err := writable(); err != nil {
 		return err
 	}
@@ -29,6 +68,19 @@ func RetryCleanup(file string, cleanup func(scope string, forget bool) error) er
 			owed[scope] = owed[scope] || receipt.ForgetScopes[scope] || !strings.Contains(scope, ".")
 		}
 	}
+	guard := func(scope string, forget bool) EraseGuard {
+		return func() error {
+			current, err := loadAuthoritative(file)
+			if err != nil {
+				return err
+			}
+			still, strong := owes(current, scope)
+			if current.StoreEpoch != snapshot.StoreEpoch || !still || (forget && !strong) {
+				return ErrChanged
+			}
+			return nil
+		}
+	}
 	scopes := make([]string, 0, len(owed))
 	for scope := range owed {
 		scopes = append(scopes, scope)
@@ -36,7 +88,7 @@ func RetryCleanup(file string, cleanup func(scope string, forget bool) error) er
 	sort.Strings(scopes)
 	done := map[string]bool{}
 	for _, scope := range scopes {
-		if cleanup != nil && cleanup(scope, owed[scope]) == nil {
+		if cleanup != nil && cleanup(scope, owed[scope], guard(scope, owed[scope])) == nil {
 			done[scope] = true
 		}
 	}

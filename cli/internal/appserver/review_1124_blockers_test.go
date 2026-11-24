@@ -24,7 +24,7 @@ import (
 func reviewConfig(home string, readOnly bool, cleanup func(string, bool) error) SharedConfig {
 	return SharedConfig{ReadOnly: readOnly, Detect: func() detect.Report { return detect.Report{} }, Paths: func(a consent.Admission) quota.Paths {
 		return quota.Paths{Cache: filepath.Join(home, "cache"), Admission: &a}
-	}, Cleanup: cleanup}
+	}, Cleanup: func(scope string, forget bool, _ consent.EraseGuard) error { return cleanup(scope, forget) }}
 }
 
 func owedScopes(t *testing.T) []string {
@@ -270,7 +270,7 @@ func TestReviewReadOnlyServerNeverWritesOrLocksConsent(t *testing.T) {
 		start(t)
 		dir := filepath.Dir(consent.Path())
 		before := snapshotDir(t, dir)
-		if err := consent.RetryCleanup(consent.Path(), func(string, bool) error { return nil }); !errors.Is(err, consent.ErrReadOnly) {
+		if err := consent.RetryCleanup(consent.Path(), func(string, bool, consent.EraseGuard) error { return nil }); !errors.Is(err, consent.ErrReadOnly) {
 			t.Fatal("cleanup ran in a read-only process", err)
 		}
 		if _, err := consent.ReaderLock(); !errors.Is(err, consent.ErrReadOnly) {

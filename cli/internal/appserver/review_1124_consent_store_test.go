@@ -40,7 +40,7 @@ func TestPendingForgetCleanupIsRetriedInTheRunningEngine(t *testing.T) {
 	}
 	b, err := NewSharedBackend(SharedConfig{Detect: func() detect.Report { return detect.Report{} }, Paths: func(a consent.Admission) quota.Paths {
 		return quota.Paths{Cache: filepath.Join(home, "cache"), Admission: &a}
-	}, Cleanup: cleanup})
+	}, Cleanup: func(scope string, forget bool, _ consent.EraseGuard) error { return cleanup(scope, forget) }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestReadOnlyBackendLeavesConsentFilesUntouched(t *testing.T) {
 	config := func(home string) SharedConfig {
 		return SharedConfig{ReadOnly: true, Detect: func() detect.Report { return detect.Report{} }, Paths: func(a consent.Admission) quota.Paths {
 			return quota.Paths{Cache: filepath.Join(home, "cache"), Admission: &a}
-		}, Cleanup: func(string, bool) error { return nil }}
+		}, Cleanup: func(string, bool, consent.EraseGuard) error { return nil }}
 	}
 	t.Run("legacy", func(t *testing.T) {
 		home := t.TempDir()
