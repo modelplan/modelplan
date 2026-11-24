@@ -17,13 +17,14 @@ final class CatalogueTests: XCTestCase {
         let rows = try SettingsCatalogue.rows(preferences: .init(), context: context())
         XCTAssertEqual(Set(rows.map(\.key)), Set(SettingKey.allCases))
         XCTAssertEqual(rows.count, SettingKey.allCases.count)
-        XCTAssertEqual(Set(rows.map(\.paneID)), Set(SettingsStructure.task65.panes.map(\.id)))
+        // D376: Plugins draws its own rows (no catalogue keys); every other pane has catalogue rows.
+        XCTAssertEqual(Set(rows.map(\.paneID)), Set(SettingsStructure.task65.panes.filter { !$0.groups.isEmpty }.map(\.id)))
         for row in rows {
             for text in [row.title.english, row.title.chinese, row.subtitle.english, row.subtitle.chinese] {
                 XCTAssertFalse(text.isEmpty); XCTAssertFalse(text.contains("\n"))
             }
         }
-        for definition in SettingsStructure.task65.panes {
+        for definition in SettingsStructure.task65.panes where !definition.groups.isEmpty {
             let pane = try XCTUnwrap(SettingsPane(rawValue: definition.id))
             let page = try SettingsCatalogue.rows(preferences: .init(), context: context(), pane: pane)
             XCTAssertFalse(page.isEmpty); XCTAssertTrue(page.allSatisfy { $0.pane == pane })
