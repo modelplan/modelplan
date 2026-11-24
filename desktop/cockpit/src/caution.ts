@@ -144,12 +144,11 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   if(!m||!Number.isFinite(start)||(Number.isFinite(end)&&end<=now))continue;
   const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['peak',peak.rowId,peak.startsAt]),stable=JSON.stringify(['peak',peak.rowId]);
   // A peak the producer did not confirm (a tool-read ZCode subscription, or a tentative window) says so, in the sentence and the tooltip.
-  const tentative=peak.status!=='confirmed',tip=tentative?{en:"From Zhipu's published rules; may change",zh:'智谱高峰时段来自公开规则，可能调整'}:undefined;
-  const mark=(t:Both):Both=>tentative?{en:t.en.replace(' peak ',' Peak (tentative) '),zh:t.zh.replace('高峰','高峰（暂定）')}:t;
-  if(start<=now){list.push({id,stable,level:'blue',member:m.key,tip,text:tentative?{en:`${s('en')} Peak (tentative) · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} 高峰（暂定） · ${tables['zh-CN']['mfd.peakNow']}`}:{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
+  const tentative=peak.status!=='confirmed',tip=tentative?both('host.alPeakTip',()=>({})):undefined;
+  if(start<=now){list.push({id,stable,level:'blue',member:m.key,tip,text:tentative?both('host.alPeakNowT',lang=>({s:s(lang)})):{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
   const wait=(start-now)/60000;
-  if(Number.isFinite(end))list.push({id,stable,level:'blue',member:m.key,tip,text:mark(both('alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)})))});
-  else list.push({id,stable,level:'blue',member:m.key,tip,text:mark(both('host.alPeakOpen',lang=>({s:s(lang),in:dhm(wait)})))});
+  if(Number.isFinite(end))list.push({id,stable,level:'blue',member:m.key,tip,text:both(tentative?'host.alPeakT':'alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)}))});
+  else list.push({id,stable,level:'blue',member:m.key,tip,text:both(tentative?'host.alPeakOpenT':'host.alPeakOpen',lang=>({s:s(lang),in:dhm(wait)}))});
  }
  // CKP-MFD-55: tightest first within a colour: the lowest remaining, then the soonest reset.
  lamp.sort((a,b)=>rank[a.item.level]-rank[b.item.level]||a.remaining-b.remaining||a.resetAt-b.resetAt);
