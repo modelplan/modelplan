@@ -27,6 +27,13 @@ test('CKP-PORT-04 D386 the tall HUD lists the six best-ability frontier models, 
  const box=await hud.boundingBox();expect([box.width,box.height]).toEqual([180,160]);
  const svg=await hud.locator('svg.hud-mini').boundingBox();expect([svg.width,svg.height]).toEqual([162,77]);
 });
+// G3-202 (macrevc-1206-1): the tall chart's vertical axis starts 5 px lower so it clears the porthole rim; the compact strip keeps its start.
+test('CKP-PORT-03 G3-202 the tall HUD axis starts at 11 px; the compact strip axis is unchanged',async({page})=>{
+ await open(page);
+ expect(await page.locator('.hud svg.hud-mini path.hud-axis').getAttribute('d')).toBe('M8 11V65H153');
+ await open(page,{tier:'compact'});
+ expect(await page.locator('.hud svg.hud-mini path.hud-axis').first().getAttribute('d')).toBe('M8 6V18H77');
+});
 test('CKP-PORT-03 HUD B sits at window-local (76,24)',async({page})=>{
  await open(page);expect(await local(page)).toEqual([76,24,180,160]);
 });
