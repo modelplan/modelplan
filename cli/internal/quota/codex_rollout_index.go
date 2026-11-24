@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -68,23 +69,51 @@ func (i *CodexRolloutIndex) recent(home, thread string, fence consent.Fence, now
 
 	// The older discovery rejected symlink date directories. Recheck that
 	// property before returning a remembered filename, including after rename.
-	root := filepath.Join(home, "sessions")
-	files := slices.DeleteFunc(selected, func(file string) bool {
-		info, err := os.Lstat(file)
-		if err != nil || !info.Mode().IsRegular() {
-			return true
-		}
-		for dir := filepath.Dir(file); dir != root; dir = filepath.Dir(dir) {
-			info, err := os.Lstat(dir)
-			if err != nil || !info.IsDir() {
-				return true
-			}
-		}
-		return false
-	})
+	files := ConfinedRollouts(home, selected)
 	own := selectedOwn
 	if !slices.Contains(files, own) {
 		own = ""
 	}
 	return files, own
+}
+
+// ConfinedRollouts keeps the rollouts that are still regular files under home's sessions
+// directory through real directories only. A path remembered by the inventory may have changed
+// ancestry since it was listed (a date directory replaced by a symlink), so every content
+// reader runs this right before it opens them (D397, macrevb-1222-4).
+func ConfinedRollouts(home string, files []string) []string {
+	if home == "" {
+		return nil
+	}
+	root := filepath.Clean(filepath.Join(home, "sessions"))
+	if info, err := os.Lstat(root); err != nil || !info.IsDir() {
+		return nil
+	}
+	checked := map[string]bool{root: true}
+	return slices.DeleteFunc(slices.Clone(files), func(file string) bool { return !rolloutConfined(root, file, checked) })
+}
+
+func rolloutConfined(root, file string, checked map[string]bool) bool {
+	file = filepath.Clean(file)
+	if !strings.HasPrefix(file, root+string(filepath.Separator)) {
+		return false
+	}
+	info, err := os.Lstat(file)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	for dir := filepath.Dir(file); dir != root; dir = filepath.Dir(dir) {
+		if valid, known := checked[dir]; known {
+			if !valid {
+				return false
+			}
+			continue
+		}
+		info, err := os.Lstat(dir)
+		checked[dir] = err == nil && info.IsDir()
+		if !checked[dir] {
+			return false
+		}
+	}
+	return true
 }

@@ -283,6 +283,23 @@ func runIdleWork(t *testing.T, scale int, start time.Time) idleWork {
 	t.Setenv("TZ", "UTC")
 	home := setupQueryHome(t)
 	writeStaticHistory(t, home, start, scale)
+	// ModelPlan's own account caches, which bind what the observation records (macrevb-1222-3):
+	// an unchanged pair is not opened or decoded again, and the counters must say so.
+	for name, body := range map[string]string{
+		"codex-account.json": fmt.Sprintf(`{"schemaVersion":1,"observedAt":%q,"status":"ok","subscriptionRef":"sub-codex-g3147"}`, start.Add(-time.Hour).Format(time.RFC3339Nano)),
+		"claude-code.json":   fmt.Sprintf(`{"schemaVersion":1,"source":"claude-code","observedAt":%q,"identity":{"subscriptionRef":"sub-claude-g3147"}}`, start.Add(-time.Hour).Format(time.RFC3339Nano)),
+	} {
+		path := filepath.Join(home, "cache", "observed", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, start.Add(-time.Hour), start.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	var run idleWork
 	for _, root := range []string{filepath.Join(home, ".claude"), filepath.Join(home, ".codex")} {
 		_ = filepath.WalkDir(root, func(string, fs.DirEntry, error) error { run.treeEntries++; return nil })

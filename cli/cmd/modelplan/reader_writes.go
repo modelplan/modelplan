@@ -31,6 +31,11 @@ func observeOutcome(err error) appserver.ObserveOutcome {
 		return appserver.ObserveRan
 	case errors.Is(err, consent.ErrBusy) || errors.Is(err, consent.ErrReaderBusy):
 		return appserver.ObserveSkippedLockBusy
+	case errors.Is(err, consent.ErrChanged):
+		// The admission moved during the pass: nothing was published; the next pass starts over.
+		return appserver.ObserveSkippedConsent
+	case errors.Is(err, errNoConfinedLogs):
+		return appserver.ObserveSkippedNoLogs
 	default:
 		return appserver.ObserveError
 	}
@@ -46,6 +51,19 @@ func observeForApp(st *store.Store) func(time.Time) []appserver.ObserveResult {
 	return observeForAppIn(st, &logindex.Inventory{})
 }
 
+// errNoConfinedLogs: every discovered log left its admitted root before it could be opened.
+var errNoConfinedLogs = errors.New("no log still under its admitted root")
+
+// observeCommitHook runs between a pass's discovery and its commit (tests only: an account or
+// consent change in that gap must not reach the ledgers under the earlier binding).
+var observeCommitHook func(source string)
+
+func beforeObserveCommit(source string) {
+	if observeCommitHook != nil {
+		observeCommitHook(source)
+	}
+}
+
 // observeForAppIn discovers the logs from the app-server's shared history inventory and skips
 // an observer whose logs and ledgers are as its last clean pass left them (D397).
 func observeForAppIn(st *store.Store, inventory *logindex.Inventory) func(time.Time) []appserver.ObserveResult {
@@ -58,11 +76,13 @@ func observeForAppIn(st *store.Store, inventory *logindex.Inventory) func(time.T
 			{Source: "claude", Outcome: observeClaude(st, now, x)},
 		}
 		results = append(results, observeAgents(st, now)...)
-		return append(results, appserver.ObserveResult{Source: "live", Outcome: observeLiveLogs(st, codex, cachedSubscriptions(st, now), now, x)})
+		// The live records are bound inside the commit, under the pass's fence (macrevb-1222-5).
+		return append(results, appserver.ObserveResult{Source: "live", Outcome: observeLiveLogs(st, codex, func() map[string]string { return cachedSubscriptions(st, now) }, now, x)})
 	}
 }
 
-// cachedSubscriptions: the accounts the last completed reads recorded for the tools with session logs.
+// cachedSubscriptions: the accounts the last completed reads recorded for the tools with session
+// logs. Both cache files are read only when their metadata moved (quota/cache_memo.go).
 func cachedSubscriptions(st *store.Store, now time.Time) map[string]string {
 	refs := map[string]string{}
 	if ref := quota.ClaudeSubscription(st.Dir); ref != "" {
@@ -101,11 +121,18 @@ func observeClaude(st *store.Store, now time.Time, x observeIndex) appserver.Obs
 	if len(logs) == 0 {
 		return appserver.ObserveSkippedNoLogs
 	}
-	in := speed.Ingest{Labels: projectLabels(), Subscription: quota.ClaudeSubscription(st.Dir)}
-	return x.memo.skipUnchanged("claude", st.Dir, x.fence, in.Labels, in.Subscription, logs, observeSettle, now, func() appserver.ObserveOutcome {
+	labels, root := projectLabels(), filepath.Join(claude, "projects")
+	// The memo keys on the binding seen now; the commit binds again under its own fence.
+	return x.memo.skipUnchanged("claude", st.Dir, x.fence, labels, quota.ClaudeSubscription(st.Dir), logs, observeSettle, now, func() appserver.ObserveOutcome {
 		outcome := appserver.ObserveSkippedNoLogs
 		for _, log := range logs {
-			next := observeOutcome(consent.LocalWrite("claude", func() error {
+			beforeObserveCommit("claude")
+			next := observeOutcome(consent.LocalWriteUnder("claude", x.fence, func() error {
+				// Right before the open: the remembered path is still under the admitted root.
+				if !speed.LogConfined(log, root, nil) {
+					return errNoConfinedLogs
+				}
+				in := speed.Ingest{Labels: labels, Subscription: quota.ClaudeSubscription(st.Dir)}
 				return speed.ObserveClaude(st.Dir, log, false, in, now)
 			}))
 			// The worst outcome of the pass is the one worth reading later.

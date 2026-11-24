@@ -1314,12 +1314,13 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly, withHisto
 
 // observeLiveSessions never queries accounts; it only reuses local bindings already read above.
 func observeLiveSessions(st *store.Store, paths quota.Paths, report quota.Report, now time.Time) {
-	observeLive(st, paths.CodexHome, quota.UniqueSubscriptionRefs(report.Accounts), report, now, observeIndex{})
+	refs := quota.UniqueSubscriptionRefs(report.Accounts)
+	observeLive(st, paths.CodexHome, func() map[string]string { return refs }, report, now, observeIndex{})
 }
 
 // observeLiveLogs is observeLiveSessions for a caller without a report: the current consent fences it.
 // The app-server's pass hands in its inventory and memo; the zero index discovers afresh.
-func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, now time.Time, x observeIndex) appserver.ObserveOutcome {
+func observeLiveLogs(st *store.Store, codexHome string, refs func() map[string]string, now time.Time, x observeIndex) appserver.ObserveOutcome {
 	fence := consent.Capture().Fence()
 	if x.inventory != nil {
 		fence = x.fence
@@ -1327,7 +1328,12 @@ func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, 
 	return observeLive(st, codexHome, refs, quota.Report{ConsentStoreEpoch: fence.StoreEpoch, ConsentGeneration: fence.Generation}, now, x)
 }
 
-func observeLive(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time, x observeIndex) appserver.ObserveOutcome {
+// refs resolves the subscription bindings; it is called again inside the commit, so what is
+// published is bound under the fence that publishes it (macrevb-1222-5).
+func observeLive(st *store.Store, codexHome string, refs func() map[string]string, report quota.Report, now time.Time, x observeIndex) appserver.ObserveOutcome {
+	if refs == nil {
+		refs = func() map[string]string { return nil }
+	}
 	// Each harness's logs are read under its own grant: a Codex-only user still gets live Codex sessions (owner
 	// build 13), and Claude Code's logs stay unread without its grant. An empty home disables that root.
 	claudeAllowed, codexAllowed := consent.Allowed("claude", consent.Local), consent.Allowed("codex", consent.Local)
@@ -1355,9 +1361,15 @@ func observeLive(st *store.Store, codexHome string, refs map[string]string, repo
 	labels := projectLabels()
 	// The live records age by the clock while their logs are recent, so only a pass with no
 	// recent log at all is skipped when nothing changed.
-	return x.memo.skipUnchanged("live", st.Dir, x.fence, labels, subscriptionKey(refs), paths, speed.LiveWithin, now, func() appserver.ObserveOutcome {
+	return x.memo.skipUnchanged("live", st.Dir, x.fence, labels, subscriptionKey(refs()), paths, speed.LiveWithin, now, func() appserver.ObserveOutcome {
+		beforeObserveCommit("live")
 		return observeOutcome(reportWrite(report, func() error {
-			return speed.ObserveLive(st.Dir, logs, labels, refs, now)
+			// Right before the opens: every remembered path is still under its admitted root.
+			confined := speed.ConfinedLogs(logs, claude, codexHome)
+			if len(logs) > 0 && len(confined) == 0 {
+				return errNoConfinedLogs
+			}
+			return speed.ObserveLive(st.Dir, confined, labels, refs(), now)
 		}))
 	})
 }
@@ -1398,10 +1410,19 @@ func observeCodexHome(st *store.Store, home string, now time.Time, x observeInde
 	if len(rollouts) == 0 {
 		return appserver.ObserveSkippedNoLogs
 	}
-	in := speed.Ingest{Labels: projectLabels(), Subscription: quota.CodexSubscription(st.Dir, now)}
-	return x.memo.skipUnchanged("codex", st.Dir, x.fence, in.Labels, in.Subscription, rollouts, observeSettle, now, func() appserver.ObserveOutcome {
-		return observeOutcome(consent.LocalWrite("codex", func() error {
-			return speed.ObserveCodex(st.Dir, rollouts, func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") }, in, now)
+	labels := projectLabels()
+	// The memo keys on the binding seen now; the commit binds again under its own fence, which
+	// must still be the one the rollouts were discovered under (macrevb-1222-5).
+	return x.memo.skipUnchanged("codex", st.Dir, x.fence, labels, quota.CodexSubscription(st.Dir, now), rollouts, observeSettle, now, func() appserver.ObserveOutcome {
+		beforeObserveCommit("codex")
+		return observeOutcome(consent.LocalWriteUnder("codex", x.fence, func() error {
+			// Right before the opens: every remembered path is still under the sessions root.
+			confined := quota.ConfinedRollouts(home, rollouts)
+			if len(confined) == 0 {
+				return errNoConfinedLogs
+			}
+			in := speed.Ingest{Labels: labels, Subscription: quota.CodexSubscription(st.Dir, now)}
+			return speed.ObserveCodex(st.Dir, confined, func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") }, in, now)
 		}))
 	})
 }

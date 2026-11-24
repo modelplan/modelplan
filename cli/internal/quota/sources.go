@@ -1114,7 +1114,7 @@ func CodexBackgroundThread(home, thread string) bool {
 		return false
 	}
 	p := findThread(filepath.Join(home, "sessions"), thread)
-	return p != "" && background(ThreadOrigin(p), "")
+	return p != "" && len(ConfinedRollouts(home, []string{p})) == 1 && background(ThreadOrigin(p), "")
 }
 
 // Background: a thread Codex runs by itself (subagent reviews, internal guardians, auto review),

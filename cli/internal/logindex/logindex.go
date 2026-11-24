@@ -13,6 +13,10 @@
 // idle discovery costs stats, never directory listings, and a new log is found within
 // HotInterval in a hot directory and within ColdInterval anywhere else.
 //
+// A root keeps at most MaxEntries directories and logs. One that holds more is not listed
+// again at each cold check: its retained part is reconciled by stats, and the rest is relisted
+// every TruncatedRescan.
+//
 // It holds only paths and file metadata of the roots its callers are admitted to, in memory. A
 // new consent fence discards everything, and Drop or Clear forgets a root at once. It never
 // opens a file: a caller rechecks consent and file identity before any content read.
@@ -37,8 +41,13 @@ const (
 	ColdInterval = 30 * time.Second
 	// HotWindow keeps a directory or file hot after it last changed.
 	HotWindow = time.Hour
-	// MaxEntries bounds the entries kept per root, as the walks this replaces did.
-	MaxEntries = 20000
+	// MaxEntries bounds what one root retains in memory: its directories and .jsonl files
+	// (other entries are listed but not kept). Every retained file is statted at each cold
+	// check, so an append to any of them (a resumed session) is found within ColdInterval.
+	MaxEntries = 100000
+	// TruncatedRescan paces the full rescan of a root that holds more than MaxEntries: the
+	// part it could not retain is listed again this rarely, never at every cold check.
+	TruncatedRescan = 10 * time.Minute
 	// unused drops a root no caller asked for within this time.
 	unused = 5 * time.Minute
 	// racyWindow: a directory modified this close to its listing may change again within the
@@ -46,6 +55,9 @@ const (
 	// again at its next check instead of being trusted by its stamp.
 	racyWindow = 2 * time.Second
 )
+
+// maxEntries is MaxEntries, lowered by tests that exercise an over-cap root.
+var maxEntries = MaxEntries
 
 // Root is one admitted history directory and the source its logs belong to.
 type Root struct {
@@ -70,8 +82,9 @@ type Inventory struct {
 type root struct {
 	dirs          map[string]*dirState
 	files         map[string]fileState
-	entries       int
+	entries       int // retained directories and files, bounded by maxEntries
 	truncated     bool
+	scannedAt     time.Time // elapsed time of the last full scan
 	hotAt, coldAt time.Time
 	usedAt        time.Time
 	now           time.Time // wall time of the current refresh
@@ -86,10 +99,18 @@ type dirState struct {
 	files   []string
 }
 
+// fileState is a retained file's last stat, kept compact: a root may hold many of them.
 type fileState struct {
-	info  os.FileInfo
-	depth int
+	size  int64
+	mod   int64 // UnixNano
+	depth int32
 }
+
+func stateOf(info os.FileInfo, depth int) fileState {
+	return fileState{size: info.Size(), mod: info.ModTime().UnixNano(), depth: int32(depth)}
+}
+
+func (f fileState) modTime() time.Time { return time.Unix(0, f.mod) }
 
 // Files returns the .jsonl files under the given roots, refreshing each root by its own
 // schedule: a full scan the first time, a metadata reconciliation every ColdInterval and a hot
@@ -117,7 +138,7 @@ func (inv *Inventory) Files(fence consent.Fence, roots []Root, now, elapsed time
 			r.now = now
 		}
 		switch {
-		case r == nil || r.truncated && due(r.coldAt, elapsed, ColdInterval):
+		case r == nil || r.truncated && due(r.scannedAt, elapsed, TruncatedRescan):
 			r = &root{now: now}
 			inv.roots[want] = r
 			r.scan(want.Dir, elapsed)
@@ -128,7 +149,7 @@ func (inv *Inventory) Files(fence consent.Fence, roots []Root, now, elapsed time
 		}
 		r.usedAt = elapsed
 		for path, f := range r.files {
-			out = append(out, File{Path: path, Source: want.Source, Depth: f.depth, Size: f.info.Size(), Mod: f.info.ModTime()})
+			out = append(out, File{Path: path, Source: want.Source, Depth: int(f.depth), Size: f.size, Mod: f.modTime()})
 		}
 	}
 	return out
@@ -161,19 +182,24 @@ func due(at, elapsed time.Time, every time.Duration) bool {
 func (r *root) scan(dir string, elapsed time.Time) {
 	idlework.Walk()
 	r.dirs, r.files, r.entries, r.truncated = map[string]*dirState{}, map[string]fileState{}, 0, false
-	r.hotAt, r.coldAt = elapsed, elapsed
+	r.hotAt, r.coldAt, r.scannedAt = elapsed, elapsed, elapsed
 	info, err := os.Lstat(dir)
 	if err != nil || !info.IsDir() {
 		return // missing: the next hot check looks again
 	}
 	r.dirs[dir] = &dirState{info: info}
+	r.entries = 1
 	r.list(dir)
 }
 
 // list enumerates one directory and adds the children it did not know.
 func (r *root) list(path string) {
 	d := r.dirs[path]
-	d.racy = r.now.Sub(d.info.ModTime()) < racyWindow
+	// Racy is about the file system's timestamp tick at the real moment of listing, so it is
+	// judged by the wall clock, not the caller's now: a directory stamped in the future (clock
+	// skew, a test clock) must not be listed again at every check.
+	since := time.Since(d.info.ModTime())
+	d.racy = since < racyWindow && since > -racyWindow
 	es, err := os.ReadDir(path)
 	idlework.Entries(len(es))
 	if err != nil {
@@ -187,19 +213,24 @@ func (r *root) list(path string) {
 	d.n, d.subdirs, d.files = 0, nil, nil
 	var fresh []string
 	for i := len(es) - 1; i >= 0; i-- { // newest names first: Codex days sort by date
-		if r.entries >= MaxEntries {
+		e := es[i]
+		keep := e.Type()&os.ModeSymlink == 0 && (e.IsDir() || e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".jsonl"))
+		if !keep {
+			continue
+		}
+		if r.entries >= maxEntries {
 			r.truncated = true
 			break
 		}
 		r.entries++
 		d.n++
-		e := es[i]
 		child := filepath.Join(path, e.Name())
 		switch {
-		case e.Type()&os.ModeSymlink != 0:
 		case e.IsDir():
 			info, err := os.Lstat(child)
 			if err != nil || !info.IsDir() {
+				r.entries--
+				d.n--
 				continue
 			}
 			d.subdirs = append(d.subdirs, child)
@@ -209,13 +240,15 @@ func (r *root) list(path string) {
 			}
 			r.dirs[child] = &dirState{info: info, depth: d.depth + 1}
 			fresh = append(fresh, child)
-		case e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".jsonl"):
+		default:
 			info, err := e.Info()
 			if err != nil || !info.Mode().IsRegular() {
+				r.entries--
+				d.n--
 				continue
 			}
 			d.files = append(d.files, child)
-			r.files[child] = fileState{info: info, depth: d.depth + 1}
+			r.files[child] = stateOf(info, d.depth+1)
 		}
 	}
 	for gone := range known {
@@ -275,7 +308,7 @@ func (r *root) reconcile(dir string, now, elapsed time.Time, cold bool) {
 	for path, d := range r.dirs {
 		hot := cold || d.depth <= 1 || chain[path] || recent(d.info.ModTime())
 		for i := 0; !hot && i < len(d.files); i++ {
-			if f, ok := r.files[d.files[i]]; ok && recent(f.info.ModTime()) {
+			if f, ok := r.files[d.files[i]]; ok && recent(f.modTime()) {
 				hot = true
 			}
 		}
@@ -311,7 +344,7 @@ func (r *root) reconcile(dir string, now, elapsed time.Time, cold bool) {
 		}
 		for _, f := range d.files {
 			old, ok := r.files[f]
-			if !ok || !cold && !recent(old.info.ModTime()) {
+			if !ok || !cold && !recent(old.modTime()) {
 				continue
 			}
 			info, err := os.Lstat(f)
@@ -319,7 +352,7 @@ func (r *root) reconcile(dir string, now, elapsed time.Time, cold bool) {
 				delete(r.files, f)
 				continue
 			}
-			r.files[f] = fileState{info: info, depth: old.depth}
+			r.files[f] = stateOf(info, int(old.depth))
 		}
 	}
 }

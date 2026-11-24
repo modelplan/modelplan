@@ -76,7 +76,7 @@ func TestObservationRunsWhileARefreshJobStaysPending(t *testing.T) {
 	if n := len(s.ObserveDecisions()); n != 2 {
 		t.Fatalf("repeated outcomes must move only their time, got %d entries", n)
 	}
-	raw, err := os.ReadFile(filepath.Join(cache, "observed", ObserveLogFile))
+	raw, err := os.ReadFile(ObserveLogPath(cache))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestObservationOffWhenOfflineOrReadOnly(t *testing.T) {
 		s.StartAutomatic()
 		time.Sleep(50 * time.Millisecond)
 		s.Close()
-		if _, err := os.Stat(filepath.Join(cache, "observed", ObserveLogFile)); !os.IsNotExist(err) {
+		if _, err := os.Stat(ObserveLogPath(cache)); !os.IsNotExist(err) {
 			t.Fatal("observation log written while offline or read-only")
 		}
 	}
@@ -174,7 +174,7 @@ func TestObservationSignalsOnlyWhatItWrote(t *testing.T) {
 		Changed: func() { changed++ },
 	})
 	defer s.Close()
-	logFile := filepath.Join(cache, "observed", ObserveLogFile)
+	logFile := ObserveLogPath(cache)
 	at := time.Now()
 	pass := func() (signalled bool, logInfo os.FileInfo, dirInfo os.FileInfo) {
 		t.Helper()

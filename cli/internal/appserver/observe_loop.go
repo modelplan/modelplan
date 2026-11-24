@@ -38,9 +38,17 @@ type ObserveDecision struct {
 	Outcome ObserveOutcome `json:"outcome"`
 }
 
-// ObserveLogFile is where the latest observation outcomes are kept beside the files the
-// observers write, so "nothing was written" can be told apart from "never ran".
-const ObserveLogFile = "observe-decisions.json"
+// ObserveLogFile keeps the latest observation outcomes, so "nothing was written" can be told
+// apart from "never ran". It lives in ObserveLogDir, outside the observed/ directory the change
+// watcher stamps: a diagnostics-only change never invalidates the view (D397). Earlier builds
+// kept it in observed/; that copy is removed once.
+const (
+	ObserveLogFile = "observe-decisions.json"
+	ObserveLogDir  = "diagnostics"
+)
+
+// ObserveLogPath is the observation log under cache.
+func ObserveLogPath(cache string) string { return filepath.Join(cache, ObserveLogDir, ObserveLogFile) }
 
 // ObserveFirstDelay is how long the app's engine waits after its automatic start before the
 // first ledger observation (WP-17, Fable perf plan 5.1 row 2: 2-3 s after the handshake).
@@ -149,13 +157,13 @@ func (s *RefreshScheduler) ObserveDecisions() []ObserveDecision {
 }
 
 // writeObserveLog rewrites observe-decisions.json when an outcome changed (or the file is
-// gone). Its rename moves the watched observed directory, so a pass that only repeats its
-// outcomes leaves it alone; the times of repeated outcomes stay in ObserveDecisions.
+// gone); the times of repeated outcomes stay in ObserveDecisions. It writes outside the watched
+// observed/ directory, so no outcome change, however frequent, makes the watcher build a view.
 func (s *RefreshScheduler) writeObserveLog(cache string, now time.Time) {
 	if cache == "" {
 		return
 	}
-	dir := filepath.Join(cache, "observed")
+	dir := filepath.Join(cache, ObserveLogDir)
 	decisions := s.observations.snapshot()
 	codes := ""
 	for _, d := range decisions {
@@ -190,6 +198,14 @@ func (s *RefreshScheduler) writeObserveLog(cache string, now time.Time) {
 	if err != nil {
 		_ = os.Remove(tmp)
 		return
+	}
+	if s.observeLogged == "" {
+		// The copy earlier builds kept in the watched observed/ directory: removed once, which
+		// moves that directory one time only.
+		legacy := filepath.Join(cache, "observed", ObserveLogFile)
+		if info, err := os.Lstat(legacy); err == nil && info.Mode().IsRegular() {
+			_ = os.Remove(legacy)
+		}
 	}
 	s.observeLogged = codes
 }

@@ -461,6 +461,15 @@ func ReaderLockContext(ctx context.Context) (func(), error) {
 }
 
 func LocalWrite(tool string, write func() error) error {
+	return LocalWriteUnder(tool, Fence{}, write)
+}
+
+// LocalWriteUnder is LocalWrite for a pass that discovered its input under expect: a commit
+// under any other fence returns ErrChanged without calling write, so nothing found or bound
+// under an earlier admission is published under a later one; the caller's next pass starts
+// over. write runs inside Publish, so the fence cannot move while it binds and commits. A zero
+// expect checks only the current admission (LocalWrite).
+func LocalWriteUnder(tool string, expect Fence, write func() error) error {
 	unlock, err := ReaderLock()
 	if err != nil {
 		return err
@@ -469,6 +478,9 @@ func LocalWrite(tool string, write func() error) error {
 	s, mode := Current()
 	if !s.Allows(tool, Local, mode) {
 		return errors.New("local reader not permitted")
+	}
+	if expect != (Fence{}) && s.Fence() != expect {
+		return ErrChanged
 	}
 	return Publish(s.Fence(), write)
 }

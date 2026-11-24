@@ -4,6 +4,7 @@ package speed
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -64,4 +65,42 @@ func checkedLogParents(path, root string, checked map[string]bool) bool {
 	valid := err == nil && info.IsDir()
 	checked[dir] = valid
 	return valid
+}
+
+// ConfinedLogs keeps the logs that are still regular files under their source's admitted
+// history root (Claude Code projects, Codex sessions) through real directories only. A path the
+// inventory remembered may have changed ancestry since it was listed, so the observation pass
+// runs this right before it opens the logs (D397, macrevb-1222-4). An empty home admits nothing.
+func ConfinedLogs(logs []LiveLog, claudeHome, codexHome string) []LiveLog {
+	roots := map[string]string{}
+	if claudeHome != "" {
+		roots["claude-code"] = filepath.Join(claudeHome, "projects")
+	}
+	if codexHome != "" {
+		roots["codex"] = filepath.Join(codexHome, "sessions")
+	}
+	checked := map[string]bool{}
+	out := []LiveLog{}
+	for _, log := range logs {
+		if root, ok := roots[log.Source]; ok && LogConfined(log.Path, root, checked) {
+			out = append(out, log)
+		}
+	}
+	return out
+}
+
+// LogConfined: path is a regular file below root, reached through real directories only.
+// checked shares the directory checks between calls; nil checks afresh.
+func LogConfined(path, root string, checked map[string]bool) bool {
+	root, path = filepath.Clean(root), filepath.Clean(path)
+	if !filepath.IsAbs(root) || !strings.HasPrefix(path, root+string(filepath.Separator)) {
+		return false
+	}
+	if info, err := os.Lstat(path); err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	if checked == nil {
+		checked = map[string]bool{}
+	}
+	return checkedLogParents(path, root, checked)
 }
