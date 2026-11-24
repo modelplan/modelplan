@@ -101,10 +101,18 @@ public struct CockpitRackMast: Equatable, Sendable {
   public let cap: CGFloat, collar1: CGFloat, collar2: CGFloat, foot: CGFloat, beacon1: CGFloat, beacon2: CGFloat
   public static let night = CockpitRackMast(cap: 15, collar1: 702, collar2: 1119, foot: 1480, beacon1: 688, beacon2: 1107)
   public static let day = CockpitRackMast(cap: 21, collar1: 698, collar2: 1115, foot: 1476, beacon1: 685, beacon2: 1104)
-  /// 400 x 1500 px art drawn as 40 x 150 pt.
+  /// The accepted 400 x 1500 px art's nominal size. The panel can vary in width independently of its 150 pt height.
   public static let pointsPerPixel: CGFloat = 0.1
   public static let width: CGFloat = 40
+  public static let minimumWidth: CGFloat = 24
+  public static let maximumWidth: CGFloat = 96
   public static let length: CGFloat = 150
+
+  /// Use the actual status-item slot, bounded for very narrow or unusually wide items.
+  static func width(for slot: CGFloat) -> CGFloat {
+    guard slot.isFinite, slot > 0 else { return width }
+    return min(maximumWidth, max(minimumWidth, slot))
+  }
 
   public struct Section: Equatable, Sendable {
     /// Visible span in points below the menu bar (y down), and the art's top in the same space.
@@ -174,7 +182,7 @@ struct CockpitRackArt {
     let image = night ? art.night : art.day
     let k = CockpitRackMast.pointsPerPixel
     for section in geometry.sections where section.bottom - section.top > 0.05 {
-      let rect = CGRect(x: 0, y: section.top, width: CockpitRackMast.width, height: section.bottom - section.top)
+      let rect = CGRect(x: 0, y: section.top, width: bounds.width, height: section.bottom - section.top)
       // The packaged app ships the official cockpit bundle, which carries the approved rack art (owner 11-01: the normal
       // build has the official appearance). A bundle without it draws no rack rather than a stand-in.
       guard let image else { continue }
@@ -197,7 +205,7 @@ struct CockpitRackArt {
       let colors = [NSColor(red: 1, green: 0.84, blue: 0.55, alpha: 0.95 * alpha), NSColor(red: 1, green: 0.67, blue: 0.16, alpha: 0.55 * alpha),
                     NSColor(red: 1, green: 0.59, blue: 0.12, alpha: 0)].map(\.cgColor) as CFArray
       guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.35, 0.7]) else { continue }
-      let centre = CGPoint(x: CockpitRackMast.width / 2, y: beacon.y)
+      let centre = CGPoint(x: bounds.midX, y: beacon.y)
       context.drawRadialGradient(gradient, startCenter: centre, startRadius: 0, endCenter: centre, endRadius: 8, options: [])
     }
   }
@@ -214,10 +222,11 @@ struct CockpitRackArt {
   init(art: CockpitRackArt) { view.art = art }
   var extensionValue: CGFloat { view.extensionValue }
   var isVisible: Bool { panel?.isVisible == true && view.extensionValue > 0 }
-  /// The rack's frame for this icon: 40 pt wide, centred on the icon, from the menu bar's bottom edge down 150 pt.
+  /// The rack follows the status-item width, centred on the icon, from the menu bar's bottom edge down 150 pt.
   static func frame(icon: CGRect) -> CGRect {
-    CGRect(x: (icon.midX - CockpitRackMast.width / 2).rounded(), y: icon.minY - CockpitRackMast.length,
-           width: CockpitRackMast.width, height: CockpitRackMast.length)
+    let width = CockpitRackMast.width(for: icon.width)
+    return CGRect(x: (icon.midX - width / 2).rounded(), y: icon.minY - CockpitRackMast.length,
+                  width: width, height: CockpitRackMast.length)
   }
   /// Places the rack under `icon` and below `cockpit`, hidden inside `cockpitFrame` below its shoulder line.
   func update(icon: CGRect?, cockpit: NSWindow?, hidden cockpitHidden: CGRect?, extended value: CGFloat, moving: Bool) {

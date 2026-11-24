@@ -138,6 +138,19 @@ final class CockpitLaunchRackTests: XCTestCase {
     }
   }
 
+  @MainActor func testRackWidthTracksTheStatusItemWithinBounds() {
+    for (slot, expected) in [(CGFloat(8), CGFloat(24)), (28, 28), (40, 40), (72, 72), (140, 96)] {
+      let icon = CGRect(x: 900, y: 1080, width: slot, height: 37)
+      let frame = CockpitLaunchRack.frame(icon: icon)
+      XCTAssertEqual(frame.width, expected)
+      XCTAssertEqual(frame.midX, icon.midX, accuracy: 0.5, "the rack stays centred under the item")
+      XCTAssertEqual(frame.maxY, icon.minY)
+      XCTAssertEqual(frame.height, CockpitRackMast.length)
+    }
+    XCTAssertEqual(CockpitRackMast.width(for: 0), 40, "invalid slot size uses the nominal art width")
+    XCTAssertEqual(CockpitRackMast.width(for: .nan), 40)
+  }
+
   /// D186/D188: the visible rack first (0.25 s), then the cockpit (0.25 s); only an attached open from a real icon, with motion.
   func testTheIconOpenExtendsTheRackFirstOnlyWhenItCan() {
     XCTAssertEqual(CockpitLaunchRackTiming.rackOpen, 0.25); XCTAssertEqual(CockpitLaunchRackTiming.cockpitOpen, 0.25)
