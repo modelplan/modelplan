@@ -16,6 +16,12 @@ import (
 // This observer lives in the existing app-server, not in the UI or an extra child. It runs every
 // two seconds, so it opens session logs and ModelPlan's own cache only, never a credential file.
 func appActivity(cache string) func(context.Context, consent.Admission, time.Time) []rows.ActivityInput {
+	return appActivityClock(cache, time.Now)
+}
+
+// appActivityClock takes the monotonic clock that paces discovery, so the idle-work gates can
+// step the production observer through its discovery interval without waiting.
+func appActivityClock(cache string, elapsed func() time.Time) func(context.Context, consent.Admission, time.Time) []rows.ActivityInput {
 	observer := speed.NewActivityObserver()
 	var logsIndex speed.ActivityLogIndex
 	return func(ctx context.Context, a consent.Admission, now time.Time) []rows.ActivityInput {
@@ -46,7 +52,7 @@ func appActivity(cache string) func(context.Context, consent.Admission, time.Tim
 				zcode = filepath.Join(home, ".zcode")
 			}
 		}
-		logs := logsIndex.Logs(claude, codex, zcode, a.Fence(), now, time.Now())
+		logs := logsIndex.Logs(claude, codex, zcode, a.Fence(), now, elapsed())
 		bindings := []speed.ActivityBinding{}
 		if len(logs) > 0 {
 			bindings = speed.ExistingActivityBindings(cache, a)
