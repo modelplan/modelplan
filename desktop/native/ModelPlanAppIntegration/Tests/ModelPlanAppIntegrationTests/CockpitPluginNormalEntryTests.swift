@@ -191,6 +191,18 @@ extension CommunityCockpitEntryTests {
             try await eventually("Escape closes it") { await self.js(page, removeOpen) as? Bool == false }
             try await clickControl(keySelector)
             try await eventually("a Control-click on the key opens its menu") { await self.js(page, removeOpen) as? Bool == true }
+            // D376 / CKP-PLG-54: Remove asks first through the app's closer (deterministic seam in place of the NSAlert).
+            let closer = try XCTUnwrap(plugins.closer, "the factory installs the closer whatever the sampling state")
+            var asked = 0, confirm = false
+            closer.presenter = { _ in asked += 1; return confirm }
+            try await click("[data-pm-remove=\"placeholder\"]", .leftMouseDown, .leftMouseUp)
+            try await eventually("Remove asks for confirmation") { asked == 1 }
+            try await Task.sleep(for: .milliseconds(200))
+            XCTAssertTrue(plugins.model.preferences.enabledIDs().contains("placeholder"), "Cancel leaves the plugin on")
+            XCTAssertEqual(await self.js(page, self.keyScript) as? Bool, true, "Cancel leaves the key on the page")
+            try await clickControl(keySelector)
+            try await eventually("the menu opens again") { await self.js(page, removeOpen) as? Bool == true }
+            confirm = true
             try await click("[data-pm-remove=\"placeholder\"]", .leftMouseDown, .leftMouseUp)
             try await eventually("the page edit is saved") { !plugins.model.preferences.enabledIDs().contains("placeholder") }
             try await eventually("the key leaves the page") { await self.js(page, self.keyScript) as? Bool == false }

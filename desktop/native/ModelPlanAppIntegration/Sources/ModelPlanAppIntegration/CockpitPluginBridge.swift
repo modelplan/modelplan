@@ -92,7 +92,7 @@ import ModelPlanSettings
         // D376: the key's right-click Remove asks first (the widget's confirmation), then turns the plugin off through the
         // model; the page keeps the plugin until the committed state comes back to it.
         coordinator?.onPluginClose = { [weak self] id in
-            Task { @MainActor [weak self] in _ = await self?.closer?.requestClose(id) }
+            Task { @MainActor [weak self] in _ = await self?.closer?.requestClose(id, anyPlugin: true) }
         }
         model.onChange = { [weak self] preferences in self?.publish(preferences) }
         publish(model.preferences)
