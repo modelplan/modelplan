@@ -20,7 +20,7 @@ for(const [tier,height] of [['compact',640],['tall',890]]){
    return {gaps:tops.slice(1).map((top,i)=>top-tops[i]),clipped:strip.scrollHeight>strip.clientHeight+1,lcd:strip.getBoundingClientRect().height};
   });
   expect(measured.gaps.length).toBeGreaterThan(0);
-  const levels=await page.evaluate(()=>document.querySelectorAll('.sc-l').length);
+  const levels=await page.evaluate(()=>document.querySelectorAll('.sc-travel[data-gap="1"] .sc-l').length);
   const travel=await page.evaluate(()=>{const t=document.querySelector('.fd-ch:not(.empty) .fd-travel').getBoundingClientRect().height;return t-16;});
   expect(travel/(levels-1)).toBeGreaterThanOrEqual(20);
   expect(Math.min(...measured.gaps)).toBeGreaterThanOrEqual(19.5);

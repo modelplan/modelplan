@@ -38,7 +38,7 @@ export async function openThrottles(page,{theme='night',tier='tall',height=890,g
 const centres=page=>page.locator('.fd-ch:not(.empty)').evaluateAll(list=>list.map(ch=>{const mid=e=>{const r=e.getBoundingClientRect();return r.left+r.width/2;};
  return {name:ch.querySelector('.st-name').textContent,column:mid(ch),slot:mid(ch.querySelector('.fd-slot')),lever:mid(ch.querySelector('.fd-cap')),strip:mid(ch.querySelector('.fd-strip')),frame:ch.querySelector('.fd-cap').dataset.frame};}));
 // The vertical centre of a level label (Max .. Low) beside the travels: the detent rows.
-const row=(page,level)=>page.locator(`.sc-l[data-level="${level}"]`).evaluate(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;});
+const row=(page,level)=>page.locator(`.sc-l[data-level="${level}"]`).first().evaluate(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;});
 const box=locator=>locator.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,top:r.top,bottom:r.bottom,width:r.width,height:r.height};});
 const channel=(page,i)=>page.locator('.fd-ch:not(.empty)').nth(i);
 
@@ -77,7 +77,8 @@ test('G3-92 a Max-only model shows no ghost: keys, drag and label clicks all lan
  await expect(slider).toHaveAttribute('aria-valuetext','Max');await expect(glm.locator('.fd-ghost')).toBeHidden();await expect(glm.locator('.fd-tline')).toBeHidden();
 });
 
-for(const [tier,height,u] of [['tall',890,1],['compact',640,80/97]])
+// D405: the tall travel is half the deck below the lamps and cards: (257 - 48) / 2 = 104.5 px.
+for(const [tier,height,u] of [['tall',890,88.5/97],['compact',640,80/97]])
  test(`CKP-FAD-24 the baked throttle is drawn per theme at the travel's scale (${tier})`,async({page})=>{
   const {send,receive}=await openThrottles(page,{tier,height});
   const sol=channel(page,0),slot=await box(sol.locator('.fd-slot')),lever=await box(sol.locator('.fd-cap'));
@@ -96,7 +97,7 @@ test('CKP-FAD-24 the recommended effort is a small gold ★ tick on the slot sca
  for(const [i,level] of [[0,'Med'],[1,'Med'],[2,'Max']]){
   const ch=channel(page,i),rec=await box(ch.locator('.fd-rec')),star=await box(ch.locator('.fd-rec .g-star')),slot=await box(ch.locator('.fd-slot'));
   expect(Math.abs(rec.y-await row(page,level)),'★ on the '+level+' row').toBeLessThanOrEqual(1);
-  expect(rec.x-slot.x).toBeGreaterThan(19);expect(rec.x-slot.x).toBeLessThan(22);   // right of the plate's ticks (11.6 u)
+  expect(rec.x-slot.x).toBeGreaterThan(12);expect(rec.x-slot.x).toBeLessThan(16);   // D405: just right of the grip (15.5 u), clear of the gap names
   expect(rec.width).toBeCloseTo(3,0);expect(star.width).toBeLessThanOrEqual(9);
   expect(await ch.locator('.fd-rec').evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(212, 185, 148)');
  }
@@ -174,7 +175,7 @@ for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height
     for(const [name,x] of [['ghost',ghost.x],['rod',rod.x],['slot',slot.x]])expect(Math.abs(x-lever.x),name+' axis vs lever').toBeLessThanOrEqual(.5);
     // the rod is faint but visible; in the day theme it is the dark blue
     // the ghost rod is as wide as the real lever's rod (5 u)
-    expect(Math.abs(rod.width-5*(tier==='tall'?1:80/97)),'ghost rod width').toBeLessThanOrEqual(.5);
+    expect(Math.abs(rod.width-5*(tier==='tall'?88.5/97:80/97)),'ghost rod width').toBeLessThanOrEqual(.5);
     const bg=await ch.locator('.fd-tline').evaluate(e=>getComputedStyle(e).backgroundColor);
     if(theme==='night')expect(bg).toMatch(/0\.25\)$/);
     if(theme==='day')expect(bg).toMatch(/0\.55\)$/);
