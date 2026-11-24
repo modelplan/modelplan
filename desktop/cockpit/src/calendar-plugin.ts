@@ -91,6 +91,15 @@ function paintStrip(context:PluginDrawContext,reading:CalendarData) {
   const label=live?(p.to===null?[`${abbr} ${w.peak}`,w.peak]:[`${abbr} ${w.until} ${stop}`,`${w.until} ${stop}`,stop]):[`${abbr} ${hhmm(p.from)}–${stop}`,`${hhmm(p.from)}–${stop}`,hhmm(p.from)];
   const text=el('b','',label[0]!);block.append(text);axis.append(block);
   for(let i=1;i<label.length&&text.scrollWidth>text.clientWidth;i++)text.textContent=label[i]!;
+  // G3-179 (sampling 11-22): a split lane can stay narrower than even HH:MM, and a block with less than one line of
+  // height (the strip's end) clips its text vertically. The time then leaves the lane: a tag on the axis in the
+  // peak's colour, settled with the reset chips so tags never cover each other; the block keeps its tooltip.
+  if(text.scrollWidth>text.clientWidth||block.clientHeight<12){
+   text.remove();
+   const tag=el('div','cal-pkt');tag.style.setProperty('--c',colourOf(data,p.sub));
+   tag.dataset.y=String(Y(start));tag.textContent=label[label.length-1]!;tag.title=block.title;
+   axis.append(tag);
+  }
  }
  // The user's own resets: capsules with the time only after the subscription and kind ("CL 周 09:00").
  const chips=data.resets.filter(r=>r.at>=span.from&&r.at<span.to);
@@ -104,9 +113,10 @@ function paintStrip(context:PluginDrawContext,reading:CalendarData) {
  if(!pieces.length&&!chips.length&&!rows.length)axis.append(el('p','cal-empty',w.empty));
  settleChips(axis);
 }
-/** Reset chips never overlap: a chip that would sit on the one above moves down (the axis is measured when drawn). */
+/** Reset chips and moved-out peak times never overlap: one that would sit on the one above moves down (the axis is
+ *  measured when drawn). */
 function settleChips(axis:HTMLElement) {
- const h=axis.clientHeight||160,chips=[...axis.querySelectorAll<HTMLElement>('.cal-ch')].sort((a,b)=>Number(a.dataset.y)-Number(b.dataset.y)),ch=12,gap=1;
+ const h=axis.clientHeight||160,chips=[...axis.querySelectorAll<HTMLElement>('.cal-ch,.cal-pkt')].sort((a,b)=>Number(a.dataset.y)-Number(b.dataset.y)),ch=12,gap=1;
  const ys=chips.map(c=>Number(c.dataset.y)*h-ch/2);
  for(let i=0;i<ys.length;i++)ys[i]=Math.max(ys[i]!,i?ys[i-1]!+ch+gap:0);
  // Pushed past the bottom: settle upwards from the end instead (they only overlap when the axis cannot hold them all).
@@ -193,7 +203,7 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
  for(let i=0;i<WEEK_DAYS;i++){const at=addDays(today,i),c=el('div','wk-col'+(isWeekend(at)?' we':'')+(i===selected?' sel':''));c.dataset.day=String(i);place(c,i);c.onclick=e=>{if(e.isTrusted&&!(e.target as Element).closest('.wk-ch'))pickDay(i);};inner.append(c);}
  const step=fit?6:2;
  for(let h=0;h<=24;h+=fit?6:1){const g=el('div','wk-g'+(h%step?' minor':'')+(h===0?' top':''));g.style.top=Y(h);if(h%step===0&&h<24)g.append(el('i','',narrow?String(h).padStart(2,'0'):`${String(h).padStart(2,'0')}:00`));inner.append(g);}
- const items:WeekItem[]=[],times:[HTMLElement,string][]=[];
+ const items:WeekItem[]=[],times:[HTMLElement,string,number,string,string][]=[],dayChips=new Map<number,HTMLElement[]>();
  // Peaks: split at local midnights; overlapping peaks in one day sit side by side.
  const pieces=data.peaks.flatMap(p=>dayPieces(p.from,p.to??Math.max(p.from+HOUR,now),today,WEEK_DAYS).map(x=>({...x,p})));
  for(let i=0;i<WEEK_DAYS;i++)for(const {item,lane,lanes} of packLanes(pieces.filter(x=>x.day===i))){
@@ -203,7 +213,7 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
   const abbr=nameOf(data,p.sub,zh);block.title=peakTitle(data,p,w,zh);
   const time=el('i','',`${hhmm(p.from)}–${p.to===null?'…':hhmm(p.to)}`);
   block.append(el('b','',fit?abbr:`${abbr} ${w.peak}${cont?w.cont:''}`),time);
-  inner.append(block);times.push([time,hhmm(p.from)]);
+  inner.append(block);times.push([time,hhmm(p.from),i,Y(start),colourOf(data,p.sub)]);
   items.push({day:i,start,end:stop,label:`${abbr} ${w.peak} ${hhmm(p.from)}`,kind:'peak'});
  }
  // Chips: weekly resets on their day, and today's next 5-hour reset of each subscription.
@@ -213,7 +223,7 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
   const sub=data.subs[r.sub]!,h=wallHours(r.at),c=el('div','wk-ch'+(r.kind==='week'?' wk':''));c.style.setProperty('--c',sub.colour);c.style.top=Y(h);c.style.left=`calc(${col(i)} + ${narrow?3:10}px)`;c.style.maxWidth=`calc(${colW} - ${narrow?5:14}px)`;
   const short=r.kind==='5h'?`${nameOf(data,r.sub,zh)} 5h ${hhmm(r.at)}`:`${nameOf(data,r.sub,zh)} ${w.wk} ${hhmm(r.at)}`;
   c.textContent=hhmm(r.at);c.title=`${zh?sub.name.zh:sub.name.en} · ${resetText(zh?sub.name.zh:sub.name.en,r.kind,r.at,'',w,true)} · ${dayLabel(r.at,w,zh)}`;
-  inner.append(c);items.push({day:i,start:h,end:h,label:short,kind:'chip'});
+  inner.append(c);dayChips.set(i,[...(dayChips.get(i)??[]),c]);items.push({day:i,start:h,end:h,label:short,kind:'chip'});
  }
  // Now: today's past is dimmed, the now line crosses today's column and the time sits in the gutter.
  const nh=wallHours(now),past=el('div','wk-past');place(past,0);past.style.top='0%';past.style.height=Y(nh);
@@ -222,8 +232,27 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
  const hints=el('div','wk-hints');
  body.replaceChildren(heads,allDay,scroll,hints,status);hints.style.top=`${scroll.offsetTop}px`;
  // G3-179: measured only now that the body is in the document — a zoomed time line drops its end before it clips
- // (a block holds ~40 px across seven columns); the block's tooltip keeps the whole window.
- if(!fit)for(const [time,start] of times)if(time.scrollWidth>time.clientWidth)time.textContent=start;
+ // (a block holds ~40 px across seven columns). A split lane can stay narrower than even HH:MM (sampling 11-22);
+ // the time then leaves the lane as a tag on the day column, in the peak's colour; the block keeps its tooltip.
+ const peakTags=new Map<number,HTMLElement[]>();
+ if(!fit)for(const [time,start,i,top,colour] of times)if(time.scrollWidth>time.clientWidth){
+  time.textContent=start;
+  if(time.scrollWidth>time.clientWidth){
+   const title=time.parentElement?.title??'';time.remove();
+   const tag=el('i','wk-pkt');tag.style.setProperty('--c',colour);
+   tag.style.top=top;tag.style.left=`calc(${col(i)} + 2px)`;tag.textContent=start;tag.title=title;
+   inner.append(tag);peakTags.set(i,[...(peakTags.get(i)??[]),tag]);
+  }
+ }
+ // Adjacent peaks and reset chips can start less than one label-height apart. Settle them
+ // within each day so moved peak times do not cover another time.
+ for(const [day,moved] of peakTags){
+  const tags=[...moved,...(dayChips.get(day)??[])].sort((a,b)=>parseFloat(a.style.top)-parseFloat(b.style.top));
+  const h=inner.clientHeight,ys=tags.map(tag=>parseFloat(tag.style.top)*h/100-6);
+  for(let i=0;i<ys.length;i++)ys[i]=Math.max(ys[i]!,i?ys[i-1]!+13:0);
+  for(let i=ys.length-1;i>=0;i--)ys[i]=Math.max(0,Math.min(ys[i]!,i===ys.length-1?h-12:ys[i+1]!-13));
+  tags.forEach((tag,i)=>{tag.style.top=`${ys[i]!+6}px`;});
+ }
  // Zoomed: keep the centre hour (first zoom: centre on now), and keep the edge hints in step with the scroll.
  if(!fit){
   const centre=s.centre??nh,vh=scroll.clientHeight,ch=inner.clientHeight;

@@ -61,10 +61,12 @@ function cell(col,c,row,m,ui,fresh,lead){
 }
 // CKP-ENG-53: the range row, ≈cost first and brightest, then tokens, then speed; the host drops speed and then tokens
 // when they do not fit (never a clipped "42/s"). No usage record at all: "quota only" (CKP-ENG-50).
+const cap=r=>r==='today'?'Today':r;
 function today(col,m){
+ const range=m.range||'today';
  const cost=approxCost(col.cost);
  const parts=(cost?`<span class="qcost" title="${esc(t('eng.costHint'))}" aria-label="${esc(cost+' · '+t('eng.costHint'))}">${esc(cost)}</span>`:'')+(col.today==null?'':`<span class="qtokens">${tok(col.today)}</span>`)+(col.speed==null?'':`<span class="qaverage" aria-label="${esc(t('eng.averageAria',{n:col.speed}))}">${Math.round(col.speed)}<em> t/s</em></span>`);
- return `<div class="qrow qrow-t" aria-label="${esc(t('eng.todayBasis'))}">${parts||(col.quotaOnly?`<span class="qq">${t('eng.quotaOnly')}</span>`:'')}</div>`;}
+ return `<div class="qrow qrow-t" aria-label="${esc(t(range==='today'?'eng.todayBasis':'eng.rangeBasis'))}">${parts||(col.noUsage?`<span class="qq">${t('eng.noUsage',{r:t('eng.noUsageRange'+cap(range))})}</span>`:col.quotaOnly?`<span class="qq">${t('eng.quotaOnly')}</span>`:'')}</div>`;}
 function reserve(col,m,ui){
   const r=col.reserve;if(!r)return '<div class="qrow qrow-r"></div>';
   // CKP-ENG-52: the row names what it holds ("重置 2 次 · 30h 后到期", "点数 2,368"); the model leaves out zeros.
@@ -121,7 +123,7 @@ export function engineView(m,{changed=new Set(),lang='zh-CN',now=Date.now()}={})
  // CKP-ENG-56 / D95: one add affordance in the first empty bay; paged bays stay blank (CKP-ENG-03).
  const empty=Array.from({length:n-m.cols.length},(_,i)=>emptyColumn(m,m.cols.length+i,addLabel,i===0&&m.pages<2)).join('');
  const emptyKeys=Array.from({length:n-m.cols.length},()=>emptyKey(addLabel)).join('');
- const labels=m.empty?'':m.rows.map(r=>`<span class="lb lb-${r}">${t(r==='other'?'eng.other':LABEL[m.rowPeriods[r]]||'eng.other')}</span>`).join('')+`<span class="lb lb-t" aria-label="${esc(t('eng.todayBasis'))}">${t('eng.today')}</span>`+(m.reserve?`<span class="lb lb-r" tabindex="0" aria-label="${esc(t('eng.reserveHint'))}" data-tip="${esc(t('eng.reserveHint'))}">${t('eng.reserve')}</span>`:'');
+ const labels=m.empty?'':m.rows.map(r=>`<span class="lb lb-${r}">${t(r==='other'?'eng.other':LABEL[m.rowPeriods[r]]||'eng.other')}</span>`).join('')+`<span class="lb lb-t" aria-label="${esc(t((m.range||'today')==='today'?'eng.todayBasis':'eng.rangeBasis'))}">${t('eng.range'+cap(m.range||'today'))}</span>`+(m.reserve?`<span class="lb lb-r" tabindex="0" aria-label="${esc(t('eng.reserveHint'))}" data-tip="${esc(t('eng.reserveHint'))}">${t('eng.reserve')}</span>`:'');
  const keys=`<div class="eng-krow${m.pages>1?' paged':''}"><button class="ek ek-all${m.scoped?'':' on'}" data-all data-mat="part" aria-pressed="${!m.scoped}" aria-label="${t('eng.allAria')}"><span>${t('eng.all')}</span><i class="bl" aria-hidden="true"></i></button>${pager(m)}<div class="eng-keys" style="--n:${n}">${m.cols.map(key).join('')}${emptyKeys}</div></div>`;
  return `${keys}<div class="eng-lcd cls-${m.cls}${m.rich?' few-rich':''}" data-mat="well" style="--n:${n};--rows:${rowsTemplate(m)}">${m.empty?`<p class="ec-empty">${t('eng.empty')}</p>`:`<div class="eng-labels">${labels}</div><div class="eng-cols">${m.cols.map(col=>column(col,m,ui,changed)).join('')}${empty}</div>`}</div>`;
 }

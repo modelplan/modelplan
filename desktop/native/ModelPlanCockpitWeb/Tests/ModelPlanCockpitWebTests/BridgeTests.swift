@@ -20,7 +20,7 @@ final class BridgeTests: XCTestCase {
     -> String
   {
     var value = try object(outgoing)
-    for key in ["data", "appearance", "shell", "visible", "occluded", "key", "nowUnixMs", "reason", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels", "memberOrder"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "visible", "occluded", "key", "nowUnixMs", "reason", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels", "memberOrder", "hiddenMembers"] { value[key] = nil }
     if type == "ready" {
       value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     }
@@ -399,6 +399,15 @@ final class BridgeTests: XCTestCase {
     XCTAssertNil(try object(reset)["memberOrder"], "no saved order: the page keeps the engine order")
     let plain = CockpitBridgeState(context: try context())
     XCTAssertNil(try object(try ready(plain))["memberOrder"])
+  }
+  func testHiddenMembersReachThePageOnLoadAndCanBeCleared() throws {
+    let state = CockpitBridgeState(context: try context())
+    let load = try state.load(.init(theme: .night, locale: .en, profile: .full, hiddenMembers: ["aaaaaaaaaaaaaaaa", "all", "aaaaaaaaaaaaaaaa"]),
+      shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+    XCTAssertEqual(try object(load)["hiddenMembers"] as? [String], ["aaaaaaaaaaaaaaaa"])
+    XCTAssertEqual(try state.accept(reply(load, "ready", 1), source: source), .ready)
+    let reset = try state.setAppearance(.init(theme: .night, locale: .en, profile: .full))
+    XCTAssertNil(try object(reset)["hiddenMembers"], "absence clears the visibility override")
   }
   func testEarlyAppearanceReportSurvivesLaterValidActionBeforeAck() throws {
     let state=CockpitBridgeState(context:try context()),load=try ready(state)

@@ -207,6 +207,9 @@ func zaiConfigCachedEntryScope(s zaiConfigState, now time.Time, generation, scop
 		return codexbarEntry{Status: "error", ErrorCode: s.ErrorCode, ObservedAt: now.UTC(), Error: zaiConfigNext(s.Availability)}
 	}
 	e := *s.Good
+	if scope == consent.ScopeZaiAccountUsageSavedLogin {
+		e.ZCodeLoginGeneration = s.GoodGeneration
+	}
 	// The native dispatcher must receive the latest attempt's availability,
 	// independently of the retained historical payload. It persists this error
 	// in native.json, so RefreshNative -> Read cannot call a failed source ok.

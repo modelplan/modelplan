@@ -62,10 +62,14 @@ public struct CockpitAppearance: Equatable, Sendable {
   /// D244 (owner 2026-11-13): the saved subscription order from Settings › Subscriptions, shared with the
   /// widget. Members it names come first in this order; the rest follow in the engine's order. Empty = default.
   public let memberOrder: [String]
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, showAllModels: Bool = false, size: CockpitSize = .standard, memberOrder: [String] = []) {
+  /// Subscription visibility from Settings; session data remains available to the tape.
+  public let hiddenMembers: [String]
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, showAllModels: Bool = false, size: CockpitSize = .standard, memberOrder: [String] = [], hiddenMembers: [String] = []) {
     self.showProjectNames = showProjectNames; self.showUsedPercent = showUsedPercent; self.showAllModels = showAllModels; self.size = size
     var seen = Set<String>()
     self.memberOrder = Array(memberOrder.filter { $0 != "all" && CockpitMemberScopes.isValidKey($0) && seen.insert($0).inserted }.prefix(256))
+    seen.removeAll()
+    self.hiddenMembers = Array(hiddenMembers.filter { $0 != "all" && CockpitMemberScopes.isValidKey($0) && seen.insert($0).inserted }.prefix(256))
     if let redBelow, [10, 15, 20, 25, 30, 40].contains(redBelow) {
       self.redBelow = redBelow
     } else {
@@ -98,14 +102,16 @@ public struct CockpitShellState: Equatable, Sendable {
   public let scope: String
   /// CKP-SHELL-50: the app's range, sent with the shell so the page has it before its first render.
   public let range: CockpitRange
+  /// A native member read is in flight; the Overview refresh waits for it.
+  public let refreshing: Bool
   public let attached: Bool, forcedClosed: Bool
-  public init(closed: Bool, attached: Bool, forcedClosed: Bool, tier: Tier, scope: String = "all", range: CockpitRange = .initial) {
-    self.tier = tier; self.scope = scope; self.range = range
+  public init(closed: Bool, attached: Bool, forcedClosed: Bool, tier: Tier, scope: String = "all", range: CockpitRange = .initial, refreshing: Bool = false) {
+    self.tier = tier; self.scope = scope; self.range = range; self.refreshing = refreshing
     self.profile = closed || forcedClosed ? .closed : .open
     self.attached = attached; self.forcedClosed = forcedClosed
   }
   var fields: [String: Any] {
-    ["profile": profile.rawValue, "attached": attached, "forcedClosed": forcedClosed, "tier": tier.rawValue, "scope": scope, "range": range.rawValue]
+    ["profile": profile.rawValue, "attached": attached, "forcedClosed": forcedClosed, "tier": tier.rawValue, "scope": scope, "range": range.rawValue, "refreshing": refreshing]
   }
 }
 public struct CockpitVisibility: Equatable, Sendable {
@@ -433,6 +439,7 @@ public final class CockpitBridgeState {
     if CockpitCautionIdentities.valid(pinnedModels), Set(pinnedModels).count == pinnedModels.count, !pinnedModels.isEmpty { extra["pinnedModels"] = pinnedModels }
     // D244: likewise the saved member order; absent means the engine's default order.
     if !appearance.memberOrder.isEmpty { extra["memberOrder"] = appearance.memberOrder }
+    if !appearance.hiddenMembers.isEmpty { extra["hiddenMembers"] = appearance.hiddenMembers }
     return try envelope("load", extra: extra, receipt: "ready")
   }
   public func setAppearance(_ appearance: CockpitAppearance, deadlineEligible: Bool = false) throws -> String {
@@ -445,6 +452,7 @@ public final class CockpitBridgeState {
     ]
     // D244: absent means the default order, so a reset in Settings reaches an open page too.
     if !appearance.memberOrder.isEmpty { extra["memberOrder"] = appearance.memberOrder }
+    if !appearance.hiddenMembers.isEmpty { extra["hiddenMembers"] = appearance.hiddenMembers }
     return try envelope("appearance", extra: extra, appearanceDeadline: correlated)
   }
   public func setShell(_ shell: CockpitShellState) throws -> String {
