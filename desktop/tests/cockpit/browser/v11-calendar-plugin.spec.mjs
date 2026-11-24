@@ -128,6 +128,15 @@ for(const [label,count] of [['wide',1],['narrow',4]])test(`D406 no peak rules, l
  const axis=await col.locator('.cal-ax').boundingBox();
  expect(n.y>=axis.y&&n.y+n.height<=axis.y+axis.height+0.5).toBe(true);
 });
+// macrevc-1224-6: the now-time label sits fully inside the clipped day axis, with and without peak blocks.
+for(const [label,push] of [['no peaks',{version:1,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:L(0,14,10),kind:'5h'}],spans:[]}],['with a peak',week]])test(`D406 the now-time label is inside the day axis (${label})`,async({page})=>{
+ await open(page,{push,locale:'zh-CN'});
+ const nt=strip(page).locator('.cal-nt'),ax=strip(page).locator('.cal-ax');
+ await expect(nt).toHaveCount(1);
+ const [n,a]=[await nt.boundingBox(),await ax.boundingBox()];
+ expect(n.y>=a.y-0.01&&n.y+n.height<=a.y+a.height+0.01,`label ${JSON.stringify(n)} axis ${JSON.stringify(a)}`).toBe(true);
+});
+
 test('D406 ZCode with rules: the day view shows the GLM peak block',async({page})=>{
  const zcode={version:1,peakRules:'yes',subs:[week.subs[2]],peaks:[{sub:0,from:L(0,22),to:L(1,2),tentative:true}],resets:[{sub:0,at:L(0,14,10),kind:'5h'}],spans:[]};
  await open(page,{push:zcode,locale:'zh-CN'});
