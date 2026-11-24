@@ -39,6 +39,8 @@ import ModelPlanResources
     static var verificationConsoleNow: (@MainActor () -> UInt64)?
     /// The coordinator's prewarm and open steps, for timing tests.
     public static var verificationCockpitTrace: ((String) -> Void)?
+    /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
+    static var verificationPrewarm = true
     /// SPI test apps can ask for the resource plugin (with a synthetic reader); every other test app leaves it out.
     static var verificationResourcePlugin = false
     /// The resource journey's synthetic reader (the installed app reads this Mac with SystemResourceReader).
@@ -116,12 +118,13 @@ import ModelPlanResources
         owner.widgetFrame = { [weak application] in application?.composition.dock.widgetScreenFrame }
         if application.cockpitEntryEnabled {
             owner.prepare()
+            // CKP-SHELL-20: a synthetic page from a test factory is made only by a click.
             #if MODELPLAN_TEST_ONLY_SPI
-            let preparesAppearance = verificationFactory == nil
+            let prewarms = verificationFactory == nil && verificationPrewarm
             #else
-            let preparesAppearance = true
+            let prewarms = true
             #endif
-            if preparesAppearance {
+            if prewarms {
                 application.releaseCockpitPrewarm = { [weak owner] in owner?.releasePrewarm() }
                 owner.startPrewarm(applied: { [weak application] in application?.composition.latestSettings })
             }
@@ -320,9 +323,12 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
     private func beginPrewarm(_ snapshot: SettingsSnapshot) {
         if coordinator?.presented != true { adoptAppearance(snapshot, applied: prewarmApplied?()) }
-        // Verify the bundle ahead of the click. Keep WebKit out of the idle
-        // app: the cockpit creates its page on demand and disposes it on close.
-        prepare()
+        // WP-17: the prewarm no longer waits 0.5 s; it waits for the launch check of the bundle instead, so the hidden page
+        // never hashes the bundle on the main thread.
+        Task { @MainActor [weak self] in
+            await self?.awaitPreparedBundle()
+            self?.coordinator?.prewarmEnabled = true
+        }
     }
     func adoptAppearance(_ snapshot: SettingsSnapshot, applied: SettingsApplication?) {
         let theme:CockpitAppearance.Theme
