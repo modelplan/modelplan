@@ -67,6 +67,7 @@ register('plugin', {
   calPeakLabel: ['lcd', '高峰', 'Peak'],
   calNoRules: ['lcd', '没有时段规则', 'No rules'],
   calPeaksUnknown: ['lcd', '暂无高峰数据', 'No data'],
+  calPeaksUnknownShort: ['lcd', '暂无数据', 'No data'],
   calAllDay: ['lcd', '全天', 'All day'],
   calPeak: ['lcd', '高峰', 'peak'],
   calCont: ['lcd', '（续）', ' (cont.)'],

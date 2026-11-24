@@ -6,7 +6,7 @@ import {visualFixture} from '../visual-fixture.mjs';
 // D68 / CKP-SHELL-16, -25 (owner 2026-11-08): the hull is the r3 plain plates as the opus-r7 study composes them,
 // not a CSS plate. Below the c01 canopy the side walls are the study's upper wall, taper and lower wall (owner build 13); no crown plate,
 // record panel or detail layer; no CSS plate, rim or booster. The wall tile is the study's canopy-h1 lower skin. Numbers measured on the study in each shape.
-for(const [tier,closed,wallTop,canvas] of [['tall',false,244,939],['tall',true,30,939],['compact',false,56,669],['compact',true,30,669]])
+for(const [tier,closed,wallTop,canvas] of [['tall',false,244,951],['tall',true,30,951],['compact',false,56,681],['compact',true,30,681]])
 test(`D68 ${tier}${closed?' closed':''}: r3 plain wall from ${wallTop} px to the aft plate`,async({page})=>{
  const bad=[];page.on('response',r=>{if(r.status()>=400)bad.push(new URL(r.url()).pathname);});
  await page.setViewportSize({width:636,height:canvas});

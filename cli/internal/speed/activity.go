@@ -233,7 +233,7 @@ func activityPhase(l activityLine, source string) string {
 			return "model"
 		case "tool.call.started":
 			return "tool"
-		case "tool.call.completed", "tool.call.failed":
+		case "tool.call.completed", "tool.call.failed", "model.request.completed", "model.request.failed":
 			return "model"
 		case "turn.completed", "turn.failed", "turn.aborted", "turn.cancelled":
 			return "finished"
@@ -350,7 +350,9 @@ func readActivityTail(log LiveLog, fi os.FileInfo, now time.Time) ([]SessionActi
 			break
 		}
 	}
-	if !recognized {
+	// ZCode writes process heartbeats to this same log while idle. Only a
+	// timestamped turn lifecycle can make it active.
+	if !recognized && log.Source != "zcode" {
 		key := fileKey(log.Path)
 		sessions[key] = SessionActivity{TurnActivity: turnActivity("fallback", fi.ModTime()), Source: log.Source, SessionKey: key}
 	}

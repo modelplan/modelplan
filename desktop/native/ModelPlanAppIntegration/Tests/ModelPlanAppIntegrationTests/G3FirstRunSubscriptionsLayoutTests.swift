@@ -201,14 +201,20 @@ private actor G3LayoutEngine: EngineClient {
                 let window = try await settings(app, pane: "subscriptions")
                 let root = try XCTUnwrap(window.contentView)
                 let rows = flatten(root).compactMap { $0 as? SettingsNativeRow }.filter { !$0.isHiddenOrHasHiddenAncestor }
-                XCTAssertFalse(rows.isEmpty, "Subscriptions pane must show rows")
+                // D371 (B5): the separate alias block is gone (aliases are a column of the subscription rows), so no
+                // catalogue row is left on this pane; the pane is the subscription rows and their sections.
+                XCTAssertTrue(rows.isEmpty, "the alias block is gone from the Subscriptions pane")
+                XCTAssertTrue(flatten(root).contains { $0.accessibilityIdentifier() == "subscriptions.rows" && !$0.isHiddenOrHasHiddenAncestor },
+                              "Subscriptions pane must show the subscription rows")
                 let scope = flatten(root).filter { $0.accessibilityIdentifier() == "settings.scopeConsent" && !$0.isHiddenOrHasHiddenAncestor }
                 let views: [NSView] = rows.map { $0 as NSView } + rows.flatMap { flatten($0).filter { $0 is NSControl || $0 is SettingsDiagramView } }
                     + scope.flatMap { flatten($0).filter { $0 is NSControl } }
                 var problems = layoutProblems(in: views, root: root)
-                problems += leadingEdgeProblems(rows, label: "row edge")
-                problems += leadingEdgeProblems(rows.map(\.titleLabel), label: "title column")
-                problems += leadingEdgeProblems(rows.map(\.controls), label: "control column")
+                if !rows.isEmpty {
+                    problems += leadingEdgeProblems(rows, label: "row edge")
+                    problems += leadingEdgeProblems(rows.map(\.titleLabel), label: "title column")
+                    problems += leadingEdgeProblems(rows.map(\.controls), label: "control column")
+                }
                 XCTAssertEqual(problems, [], "G3-26 Subscriptions layout (\(locale), \(members) members)")
                 if !problems.isEmpty { print("G3-26 geometry \(locale) \(members)\n" + geometry(root)) }
                 window.close()

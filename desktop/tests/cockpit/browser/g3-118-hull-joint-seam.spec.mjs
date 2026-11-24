@@ -11,7 +11,7 @@ import {decodePng} from '../png-pixel.mjs';
 // same fault between the closed slab and the upper walls). Every wall layer now reaches 1 px under the next one.
 // Playwright has no page zoom, so a root `zoom` stands in for it (WebKit implements page zoom as the root's zoom),
 // as in g3-65-side-walls.
-const canvas=939;
+const canvas=951;
 async function open(page,tier,profile,zoom){
  await page.setViewportSize({width:Math.ceil(636*zoom),height:Math.ceil(canvas*zoom)});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);

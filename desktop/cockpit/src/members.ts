@@ -14,6 +14,7 @@ export const dockRows=(data:WireCockpitData):readonly WireRow[]=>data.projection
 // Members the saved order names come first, in that order; the rest keep the emitted order after them — the same
 // rule as the native DockSubscriptionPreferences.orderedIDs. A refresh never re-sorts: every paint reads this order.
 let savedOrder:readonly string[]=[];
+let hiddenMembers:ReadonlySet<string>=new Set();
 export function memberOrder():readonly string[]{return savedOrder;}
 /** Replaces the saved order; returns whether it changed. */
 export function setMemberOrder(order:readonly string[]):boolean{
@@ -21,8 +22,16 @@ export function setMemberOrder(order:readonly string[]):boolean{
  if(next.length===savedOrder.length&&next.every((key,i)=>key===savedOrder[i]))return false;
  savedOrder=next;return true;
 }
-export function cockpitMembers(data:WireCockpitData):{key:string;row:WireRow;account:WireAccount;unstable:boolean}[] {
- const members=emittedMembers(data);if(!savedOrder.length)return members;
+/** Visibility is a display preference; it never removes sessions from the wire payload. */
+export function setHiddenMembers(ids:readonly string[]):boolean {
+ const next=new Set(ids),changed=next.size!==hiddenMembers.size||[...next].some(id=>!hiddenMembers.has(id));
+ hiddenMembers=next;return changed;
+}
+export function hasHiddenMembers(data:WireCockpitData):boolean {
+ return emittedMembers(data).some(member=>hiddenMembers.has(member.key));
+}
+export function cockpitMembers(data:WireCockpitData,includeHidden=false):{key:string;row:WireRow;account:WireAccount;unstable:boolean}[] {
+ const members=emittedMembers(data).filter(m=>includeHidden||!hiddenMembers.has(m.key));if(!savedOrder.length)return members;
  const rank=new Map(savedOrder.map((key,i)=>[key,i] as const));
  return members.map((member,i)=>({member,i,r:rank.get(member.key)??savedOrder.length})).sort((a,b)=>a.r-b.r||a.i-b.i).map(x=>x.member);
 }

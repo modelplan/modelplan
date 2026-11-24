@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // The porthole HUD from published public data, through the normal bridge. Synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
-import {appearance,commands,pageId,shell} from '../fixture.mjs';
+import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 import {shortLabel} from '../../../cockpit/study/rocket-r1/short-label.js';
 
@@ -97,9 +97,65 @@ test('CKP-PORT-07 a subscription scope narrows the HUD and 全部 restores it',a
  await expect(page.locator('.hud .hp')).toHaveCount(1);await expect(page.locator('.hud .hp b')).toHaveText('Synthetic claude-model');
  expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(page.locator('.hud .hp')).toHaveCount(4);
 });
+
+test('D386 a running dominated model remains selectable in the scoped Models list',async({page})=>{
+ const fleet=Array.from({length:10},(_,i)=>model('front-'+i,40+i,.1*(i+1)));
+ fleet.push(model('running-overflow',20,2));let ref='';
+ const session={sessionRef:'00000000000000aa',source:'codex',subscriptionRef:null,model:'running-overflow',effort:'high',projectLabel:null,lastObservedAt:observed(),state:'running',rate:null};
+ const {send,receive}=await open(page,{published:fleet,session,edit:data=>{keepRows(['codex'])(data);ref=data.subscriptions[0].subscriptionRef;}});
+ expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ const row=page.locator('.md-row[data-model="running-overflow"]');await expect(row).toBeVisible();await row.click();
+ await expect(row).toHaveClass(/\bsel\b/);
+});
+
+test('D386 all eleven running models precede unused scoped Models rows',async({page})=>{
+ test.setTimeout(60000);await excludePortholeFlicker(page);
+ const fleet=Array.from({length:10},(_,i)=>model('front-'+i,40+i,.1*(i+1)));
+ const sessions=Array.from({length:11},(_,i)=>{
+  fleet.push(model('running-'+i,20,2+i));
+  return {sessionRef:'00000000000000'+(160+i).toString(16),source:'codex',subscriptionRef:null,model:'running-'+i,effort:'high',projectLabel:null,lastObservedAt:new Date(Date.now()-i*1000).toISOString(),state:'running',rate:null};
+ });
+ let ref='';const {send,receive}=await open(page,{published:fleet,sessions,edit:data=>{keepRows(['codex'])(data);ref=data.subscriptions[0].subscriptionRef;}});
+ expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ const ids=await page.locator('.md-row').evaluateAll(rows=>rows.map(row=>row.dataset.model));
+ expect(ids.slice(0,11)).toEqual(Array.from({length:11},(_,i)=>'running-'+i));
+ expect(ids.slice(11).some(id=>id.startsWith('front-'))).toBe(true);
+ for(let i=0;i<11;i++){const row=page.locator(`.md-row[data-model="running-${i}"]`);await row.click();await expect(row).toHaveClass(/\bsel\b/);}
+ await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
+ const chart=(await page.locator('.pg-tune [data-fill="fc"]').getAttribute('data-models')).split(' ');
+ expect(chart.filter(id=>id.startsWith('front-'))).toHaveLength(10);
+ expect(chart).toContain('running-10'); // The selected list model may join the capped chart field.
+});
 // D86: "All" is the union of the user's own subscriptions, never the whole published field.
 const keepRows=ids=>data=>{data.projection.rows=data.projection.rows.filter(r=>ids.includes(r.id));data.subscriptions=data.subscriptions.filter(s=>data.projection.rows.some(r=>r.accounts.some(a=>a.subscriptionRef===s.subscriptionRef)));};
 const mixed=()=>[model('gpt-a',50,.3),model('gpt-b',45,.2),{...model('claude-a',60,.5),developerId:'anthropic'},{...model('google-a',55,.4),developerId:'google'}];
+test('a clicked subscription scope immediately narrows the HUD',async({page})=>{
+ await open(page,{published:mixed(),edit:keepRows(['codex','claude'])});
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+ await page.locator('.eng-keys .ek[data-sub]').nth(1).click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.locator('.eng-krow [data-all]').click();
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+ await page.keyboard.press('2');
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.keyboard.press('0');
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+});
+test('subscription-list and session-tape scope picks immediately update the HUD',async({page})=>{
+ await open(page,{published:mixed(),edit:data=>{
+  keepRows(['codex','claude','gemini'])(data);
+  const ref=data.projection.rows.find(r=>r.id==='claude').accounts[0].subscriptionRef;
+  data.details.sessions=[{sessionRef:'0000000000000099',source:'claude',subscriptionRef:ref,model:'claude-a',effort:'high',projectLabel:null,lastObservedAt:new Date().toISOString(),state:'running',rate:null}];
+ }});
+ await page.locator('[data-mfd="page:sub"]').click();
+ await page.locator('.sa-list .sa').nth(1).click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.locator('.eng-krow [data-all]').click();
+ await page.locator('.ck-tape .t-observed').first().click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+});
 test('CKP-PORT-04 D86 one GPT subscription: All lists only that plan\'s models, on the HUD and the 模型 page',async({page})=>{
  await open(page,{published:mixed(),edit:keepRows(['codex'])});
  expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['gpt-a','gpt-b']);

@@ -79,7 +79,7 @@ import XCTest
                     case .paneMembership,.searchFilter:
                         XCTAssertEqual(observation.settings?.selectedPane,pane)
                         let rows=try SettingsCatalogue.rows(preferences:saved.preferences,context:fixture.editor.context,paneID:query.isEmpty ? pane:nil,query:query)
-                        XCTAssertEqual(observation.settings?.visibleKeys,rows.map{$0.key.rawValue})
+                        XCTAssertEqual(observation.settings?.visibleKeys,rows.filter{$0.key != .captureHiding}.map{$0.key.rawValue}) // D371 / SET-9-29: the unavailable capture-hiding row is not drawn
                         XCTAssertEqual(observation.settings?.searchLength,query.count)
                     case .localPopupCommit:
                         let (key,value)=try XCTUnwrap(popup)

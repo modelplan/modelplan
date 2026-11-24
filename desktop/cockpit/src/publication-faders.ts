@@ -27,8 +27,7 @@ const DAY=86_400_000;
 export type FaderSetOptions={
  /** Current time (ms). With it, only sessions seen in the last 7 days count as "in use" (D123). */
  readonly now?:number;
- /** Keep only models of developers the user's subscriptions run (D123). Models used in the last 7 days are exempt (D135);
-  * ignored when a subscription's developer is unknown. */
+ /** Keep only models of known subscribed developers, or models in admitted recent sessions. */
  readonly ownPlansOnly?:boolean;
  /** Recorded sessions (details.recentSessions, the 7-day ledger). They count as "in use" like live ones (sampling #930)
   * but never attach to a fader: a fader's `sessions` stay live only. */
@@ -49,16 +48,15 @@ export function historyUsage(history:{readonly models?:{readonly recent7d?:{read
 /** D391 (owner 11-22): the history ranking carries no tool attribution (`WireCockpitRankedEntity` is name and tokens),
  * so a ranked model contributes only when a ticked subscription runs its developer — its recorded use cannot be the
  * user's own plans'. With no ticked subscription at all, no ranked model can be the user's own use, so every id is
- * filtered (the empty set). The conservative plan-filter rule applies the other way round: a subscription whose
- * developer is unknown cannot be matched, so then nothing is filtered (null). */
-const historyDevelopers=(subscriptions:readonly {readonly developer:string|null}[]):ReadonlySet<string>|null=>
- subscriptions.every(s=>s.developer!==null)?new Set(subscriptions.map(s=>s.developer as string)):null;
+ * filtered (the empty set). An unknown developer cannot establish ownership of an unattributed history row. */
+const historyDevelopers=(subscriptions:readonly {readonly developer:string|null}[]):ReadonlySet<string>=>
+ new Set(subscriptions.flatMap(s=>s.developer===null?[]:[s.developer]));
 /** Beyond the engine's three: published models in use (live or recorded), then those of a developer one of the user's
  * subscriptions runs, in publication order. Every subscription counts, whatever the state of its reading: a stale or
  * loading reading is still the user's plan (sampling #930). `publicationFaders` applies the 7-day and own-plan rules.
  * D391: sessions arrive already admitted, and history-ranked models pass the developer rule above. */
 export function moreFaderModels<T extends {readonly id:string;readonly developerId:string}>(published:readonly T[],live:readonly {readonly model:string}[],recorded:readonly {readonly model:string}[],subscriptions:readonly {readonly developer:string|null}[],historyModels:ReadonlySet<string>=new Set()):T[]{
- const ranked=historyDevelopers(subscriptions),history=ranked===null?[...historyModels]:[...historyModels].filter(id=>published.some(m=>m.id===id&&ranked.has(m.developerId)));
+ const ranked=historyDevelopers(subscriptions),history=[...historyModels].filter(id=>published.some(m=>m.id===id&&ranked.has(m.developerId)));
  const used=new Set([...live,...recorded].map(s=>s.model).concat(history)),vendors=new Set(subscriptions.map(s=>s.developer));
  return [...published.filter(m=>used.has(m.id)),...published.filter(m=>!used.has(m.id)&&vendors.has(m.developerId))];
 }
@@ -67,11 +65,10 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
  const root=object(publication);
  if(!root||root.contractVersion!==1||!Array.isArray(root.models))return {accounts:[],faders:[]};
  const faders:Fader[]=[],taken=new Set<string>(),lastUsed=new Map<string,number>(),tierOf=new Map<string,number>();
- const planDevelopers=new Set(subscriptions.map(s=>s.developer)),filterPlans=options.ownPlansOnly===true&&subscriptions.length>0&&!planDevelopers.has(null);
+ const planDevelopers=new Set(subscriptions.map(s=>s.developer)),filterPlans=options.ownPlansOnly===true&&subscriptions.length>0;
  // D391: ranked history has no tool attribution, so usage exempts a model from the plan filter only when a ticked
- // subscription runs its developer; with an unknown developer among the subscriptions nothing can be matched, and the
- // usage keeps its old exempting power (the plan filter is off in that case anyway).
- const ranked=historyDevelopers(subscriptions),historyExempt=(id:string,developer:string|null)=>options.usage?.has(id)===true&&(ranked===null||developer!==null&&ranked.has(developer));
+ // subscription runs its developer; an unknown developer does not grant unrelated history.
+ const ranked=historyDevelopers(subscriptions),historyExempt=(id:string,developer:string|null)=>options.usage?.has(id)===true&&developer!==null&&ranked.has(developer);
  const recent=[...(Array.isArray(live)?live:[]),...(options.recorded??[])].flatMap(value=>{
   const s=object(value),model=text(s?.model),at=typeof s?.lastObservedAt==='string'?Date.parse(s.lastObservedAt):NaN;
   if(!model||!text(s?.sessionRef))return [];
@@ -112,8 +109,10 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
   const session=object(value),display=text(session?.modelDisplay),ref=text(session?.sessionRef);
   if(!session||session.model!=='unknown'||!display||!ref||display.length>48)continue;
   const id='unlisted:'+display,found=unlisted.find(f=>f.id===id);
-  if(found)found.sessions.push({ref,sub:text(session.subscriptionRef)});
-  else if(faders.length+unlisted.length<FADER_LIMIT)unlisted.push({id,name:display,short:display,rec:'',e:[],accounts:[],sessions:[{ref,sub:text(session.subscriptionRef)}],unlisted:true});
+  // A single-tool fallback can bind a session for display without proving which subscription ran it.
+  const sub=text(session.subscriptionRef),confirmed=text(session.confirmedSubscriptionRef),account=confirmed&&confirmed===sub&&subscriptions.some(s=>s.key===confirmed)?confirmed:null;
+  if(found){found.sessions.push({ref,sub});if(account&&!found.accounts.includes(account))found.accounts.push(account);}
+  else if(faders.length+unlisted.length<FADER_LIMIT)unlisted.push({id,name:display,short:display,rec:'',e:[],accounts:account?[account]:[],sessions:[{ref,sub}],unlisted:true});
  }
  return {accounts,faders:[...inUse,...unlisted,...history,...starred,...others]};
 }

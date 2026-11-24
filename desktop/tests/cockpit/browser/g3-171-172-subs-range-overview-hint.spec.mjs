@@ -70,6 +70,21 @@ test('G3-171 opening Subscriptions before the first reply shows a loading state,
  await expect(header(page)).toHaveAttribute('data-range-key','30d');
 });
 
+test('G3-171 an empty accepted reply ends loading on Overview and Plans',async({page})=>{
+ const {send,receive}=await open(page,{display:false});
+ await expect(page.locator('.mfd-page')).toHaveAttribute('aria-busy','true');
+ await expect(page.locator('.mfd-page .mp-loading')).toHaveText('Reading');
+ const data=history();data.projection.rows=[];data.subscriptions=[];data.details=null;
+ expect(await receive(send('display',{data}))).toBe(true);
+ await expect(page.locator('.mfd-page')).not.toHaveAttribute('aria-busy','true');
+ await expect(page.locator('.mfd-page .mp-loading')).toHaveCount(0);
+ await expect(page.locator('.mfd-page .mp-empty')).toContainText('No subscriptions found');
+ await plans(page);
+ await expect(page.locator('.mfd-page')).not.toHaveAttribute('aria-busy','true');
+ await expect(page.locator('.mfd-page .mp-loading')).toHaveCount(0);
+ await expect(page.locator('.mfd-page .mp-empty')).toContainText('No subscriptions found');
+});
+
 test('G3-172 the Overview bottom keys always name the chart mode that is drawn',async({page})=>{
  await open(page);
  const chart=page.locator('[data-opt="chart"]');
