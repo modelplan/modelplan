@@ -92,12 +92,20 @@ test('WP-12 CKP-MFD-61 the first read shows a placeholder block, no totals',asyn
  await expect(page.locator('.pg-overview .ov-skel')).toHaveCount(1);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);
 });
 
-test('WP-12 CKP-MFD-62 the Grid key is not lit and pressing it changes nothing',async({page})=>{
- await open(page,recorded(60));
- const grid=page.locator('[data-opt="chart"] b',{hasText:/^Grid$/});
- await expect(grid).not.toHaveClass(/\bon\b/);await grid.click();
- await expect(page.locator('[data-opt="chart"] b.on')).toHaveText('Bars');
- await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(0);
+test('WP-12 CKP-MFD-62 the Grid key switches to the day-by-hour heatmap and back to the bars, and the hint follows',async({page})=>{
+ const data=recorded(60);data.history.hourly=[{at:new Date(2026,10,4,9).toISOString(),source:'codex',origin:'live',observedOutputTokens:500}];
+ await open(page,data);
+ const chart=page.locator('[data-opt="chart"]');
+ await expect(chart.locator('b.on')).toHaveText('Bars');
+ await page.locator('[data-opt="chart"] b',{hasText:/^Grid$/}).click();
+ await expect(chart.locator('b.on')).toHaveText('Grid');
+ await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(1);await expect(page.locator('.pg-overview svg.ov-chart')).toHaveCount(0);
+ await expect(chart).toHaveAttribute('data-tip',/hour/i);
+ // The range key applies; the stack key belongs to the bars only.
+ await expect(page.locator('[data-opt="range"]')).toHaveCount(1);await expect(page.locator('[data-opt="stack"]')).toHaveCount(0);
+ await page.locator('[data-opt="chart"] b',{hasText:/^Bars$/}).click();
+ await expect(chart.locator('b.on')).toHaveText('Bars');await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(0);
+ await expect(chart).toHaveAttribute('data-tip',/bar/i);await expect(page.locator('[data-opt="stack"]')).toHaveCount(1);
 });
 
 // CKP-MFD-60 through the wire's real cost section (WP-06, history.cost): bars, the ≈cost total and the unpriced note.
