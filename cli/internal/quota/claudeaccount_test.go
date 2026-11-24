@@ -296,7 +296,7 @@ func TestClaudeDoesNotForwardCredentialOnRedirect(t *testing.T) {
 	claudeOAuthHost = srv.URL
 	defer func() { claudeOAuthHost = old }()
 	var profile claudeOAuthProfile
-	state, _, _ := claudeGet(context.Background(), srv.Client(), "/api/oauth/profile", "synthetic-token", &profile, claudeTestNow)
+	state, _, _ := claudeGet(context.Background(), srv.Client(), "/api/oauth/profile", "synthetic-token", func() bool { return true }, &profile, claudeTestNow)
 	if forwarded || state == "" {
 		t.Fatal("credential followed a redirect")
 	}

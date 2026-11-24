@@ -47,7 +47,7 @@ func WithClaudeCredential(p Paths, outcome, token string, expiresAt *time.Time) 
 		// Review 11-24 #8: the app passes the Keychain login's own expiry. A result without
 		// one fails closed; no synthetic expiry or scope may stand in for the vendor's
 		// metadata, so an expired login sends no provider request.
-		if expiresAt == nil || token == "" || len(token) > 16<<10 || strings.ContainsAny(token, "\r\n") || !expiresAt.After(time.Now()) {
+		if expiresAt == nil || token == "" || len(token) > 16<<10 || strings.ContainsAny(token, "\r\n") || !expiresAt.After(claudeClock()) {
 			status = "unavailable"
 		} else {
 			// The app admits only a login whose scopes include user:profile.

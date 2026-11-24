@@ -21,6 +21,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/keychain"
+	"github.com/modelplan/modelplan/cli/internal/readers"
 )
 
 var claudeAccountReader = &nativeReader{
@@ -35,6 +36,9 @@ func claudeLoginFiles(profile ReaderProfile) []string {
 
 // Compiled endpoint; never selected by settings, detection or publication data.
 var claudeOAuthHost = "https://api.anthropic.com"
+
+// claudeClock is the wall clock a login's expiry is checked against before every request.
+var claudeClock = time.Now
 var claudeSecurity keychain.Execute // legacy injected adapter; nil has no app identity
 var claudeID = regexp.MustCompile(`^[A-Za-z0-9-]{1,128}$`)
 
@@ -181,11 +185,17 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 	if credentialKey == "" {
 		return fail("unavailable", "Identity key unavailable")
 	}
+	// macrevb-1217-1: the login's own expiry is checked again immediately before every request
+	// that sends it (each stage here, and in the transport as the last step before dispatch). A
+	// login that expires mid-read ends the read; nothing refreshes it.
+	started := claudeClock()
+	usable := func() bool { return r.Now.Add(claudeClock().Sub(started)).UnixMilli() < oauth.ExpiresAt }
+	ctx = readers.WithLiveAdmission(ctx, usable)
 	cold := meta.CredentialKey != credentialKey || meta.AccountKey == "" || meta.VerifiedAt.After(r.Now) || r.Now.Sub(meta.VerifiedAt) >= 24*time.Hour
 	var binding *Binding
 	if cold {
 		var profile claudeOAuthProfile
-		state, retry, code := claudeGet(ctx, c, "/api/oauth/profile", oauth.AccessToken, &profile, r.Now)
+		state, retry, code := claudeGet(ctx, c, "/api/oauth/profile", oauth.AccessToken, usable, &profile, r.Now)
 		if state != "" {
 			out := claudeFailure(state, claudeNextStep(state))
 			out.Invalidate = changed
@@ -212,7 +222,7 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		}
 	}
 	var usage map[string]json.RawMessage
-	state, retry, code := claudeGet(ctx, c, "/api/oauth/usage", oauth.AccessToken, &usage, r.Now)
+	state, retry, code := claudeGet(ctx, c, "/api/oauth/usage", oauth.AccessToken, usable, &usage, r.Now)
 	if state != "" {
 		out := claudeFailure(state, claudeNextStep(state))
 		out.Invalidate = changed
@@ -299,7 +309,10 @@ func claudeNextStep(state string) string {
 	return "Claude usage temporarily unavailable"
 }
 
-func claudeGet(ctx context.Context, c *http.Client, path, token string, v any, now time.Time) (string, time.Time, string) {
+func claudeGet(ctx context.Context, c *http.Client, path, token string, usable func() bool, v any, now time.Time) (string, time.Time, string) {
+	if !usable() {
+		return "expired", time.Time{}, "login_expired"
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, claudeOAuthHost+path, nil)
 	if err != nil {
 		return "unavailable", time.Time{}, "other"
