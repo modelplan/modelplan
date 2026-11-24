@@ -28,7 +28,7 @@ func TestSharedBackendRegrantPreservesLegacyKeychain(t *testing.T) {
 			return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "claude", Preferred: "native", ReaderID: "native:claude"}, Detected: true}}}
 		},
 		Paths:   func(a consent.Admission) quota.Paths { return quota.Paths{Admission: &a} },
-		Cleanup: func(string, bool) error { return nil },
+		Cleanup: func(string, bool, consent.EraseGuard) error { return nil },
 	})
 	if err != nil {
 		t.Fatal(err)
