@@ -183,6 +183,12 @@ func TestEstablishedZCodeKeepsUnavailableRingAcrossCacheAndDetectionChanges(t *t
 		}
 		return nil
 	}
+	expiredWindow := quota.Window{Kind: "five_hour", UsedPercent: new(float64), ObservedAt: at, ResetsAt: timePointer(at)}
+	writeCache(map[string]any{"provider": "zai", "status": "ok", "admission": stamp,
+		"observedAt": at, "windows": []quota.Window{expiredWindow}}, false)
+	if r := row(); r == nil || hasDockSurface(*r) {
+		t.Fatalf("expired first response established a ring: %+v", r)
+	}
 	for _, tc := range []struct {
 		name, status, errorCode string
 		state                   rows.State

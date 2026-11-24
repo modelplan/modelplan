@@ -25,10 +25,15 @@ func zaiMembership(cache string, snap *nativeSnap, state consent.State) map[stri
 }
 
 func rememberZaiMembership(result map[string]*consent.CaptureStamp, e *codexbarEntry, state consent.State) {
-	if e == nil {
+	if e == nil || e.ObservedAt.IsZero() {
 		return
 	}
 	for _, window := range e.Windows {
+		// Historical readings may expire after establishing the ring. A
+		// window already expired when observed was never usable.
+		if window.ResetsAt != nil && !window.ResetsAt.After(e.ObservedAt) {
+			continue
+		}
 		if window.UsedPercent != nil || window.RemainingPercent != nil {
 			addZaiMembership(result, e.Admission, state)
 			return

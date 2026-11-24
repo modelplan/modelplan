@@ -10,7 +10,7 @@ import {engineModel} from '../../../cockpit/study/rocket-r1/engine-model.js';
 import {engineView} from '../../../cockpit/study/rocket-r1/engine-view.js';
 import {setLanguage} from '../../../cockpit/study/rocket-r1/i18n.js';
 import {dhm,approxCost} from '../../../cockpit/study/rocket-r1/mfd-pages/fmt.js';
-import {cockpitMembers,unavailableZCodeMember} from '../../../cockpit/.tmp/compiled/src/members.js';
+import {cockpitMembers,setHiddenMembers,unavailableZCodeMember} from '../../../cockpit/.tmp/compiled/src/members.js';
 import {sessionMember} from '../../../cockpit/.tmp/compiled/src/session-binding.js';
 import {accountLabel,accountState,footerState} from '../../../cockpit/.tmp/compiled/src/account-line.js';
 
@@ -165,4 +165,19 @@ test('an established ZCode column renders unavailable without adopting a session
   assert.equal(sessionMember(members,{source:'zcode',subscriptionRef:null}),null);
   assert.equal(sessionMember(members,{source:'zcode',subscriptionRef:'previous-account'}),null);
  }
+});
+
+test('the cockpit honors the local visibility setting while the ZCode ring is unavailable',()=>{
+ const ref='aaaaaaaaaaaaaaaa';
+ const verified={route:'api_key_api',valueState:'current',windows:[],subscriptionRef:ref};
+ const fallback={route:'unknown',valueState:'none',windows:[]};
+ const data=(account,state)=>({projection:{rows:[{id:'zai',state,surfaces:['dock'],accounts:[account]}]},subscriptions:[{subscriptionRef:ref}]});
+ setHiddenMembers([ref,'zai#unknown']);
+ try{
+  assert.deepEqual(cockpitMembers(data(verified,'fresh')),[]);
+  for(const state of ['failed','empty'])assert.deepEqual(cockpitMembers(data(fallback,state)),[]);
+ }finally{
+  setHiddenMembers([]);
+ }
+ assert.deepEqual(cockpitMembers(data(fallback,'empty')).map(member=>member.key),['zai#unknown']);
 });

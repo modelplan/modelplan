@@ -174,7 +174,22 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         else { ids = context.subscriptions.map(\.id) }
         let kind: SettingsCommittedEdit.Kind
         if case .resetHints = edit { kind = .resetHelpHints } else { kind = .preferences }
-        let committed = try await transact(subscriptionID: edit.subscriptionID, kind: kind) { try edit.apply(to: &$0, catalogue: ids) }
+        // The unavailable station is an anonymous presentation fallback for the sole
+        // ZCode member. Save its display choice with the normal toggle, in the same
+        // local preferences transaction, without attaching an account to that station.
+        let fallbackVisibility: Bool?
+        if case .visible(let id, let visible) = edit,
+           context.subscriptions.filter({ $0.tool == "zai" }).map(\.id) == [id] {
+            fallbackVisibility = visible
+        } else {
+            fallbackVisibility = nil
+        }
+        let committed = try await transact(subscriptionID: edit.subscriptionID, kind: kind) { preferences in
+            try edit.apply(to: &preferences, catalogue: ids)
+            if let fallbackVisibility {
+                try SettingsB21Edit.visible("zai#unknown", fallbackVisibility).apply(to: &preferences, catalogue: ids)
+            }
+        }
         let intent: SettingsHostIntent?
         switch edit {
         case .login(let enabled):

@@ -224,6 +224,34 @@ private actor ActivityJourneyEngine: EngineClient {
         await app.composition.stop()
     }
 
+    func testSettingsKeepsTheUnavailableZCodeRingHidden() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("zcode-hidden-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try entry(fixture(phase: nil, sequence: 1, tool: "zai"), root: root)
+        await app.prepare()
+        await app.composition.start()
+        app.allowDockPresentation()
+        try await wait("ZCode settings member") {
+            app.currentSettingsContext.subscriptions.contains { $0.id == self.first && $0.tool == "zai" }
+        }
+        let settings = SettingsApplicationCoordinator(store: app.foundationStore, context: app.currentSettingsContext) {
+            app.composition.applySettings($0)
+        }
+        await settings.reload()
+        _ = try await settings.editor.commit(.visible(first, false))
+        let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+        for (offset, state) in ["failed", "empty"].enumerated() {
+            try await engine.publish(fixture(phase: nil, sequence: offset + 2, tool: "zai", unavailableState: state))
+            let dock = app.composition.dock.interactionEnvironment()
+            XCTAssertEqual(dock.catalogue, ["zai#unknown"], state)
+            XCTAssertTrue(try dock.preferences.orderedIDs(in: dock.catalogue, visibleOnly: true).isEmpty, state)
+        }
+        let saved = await app.foundationStore.snapshot()
+        XCTAssertEqual(saved.preferences.subscriptions.hiddenIDs, [first, "zai#unknown"])
+        await app.composition.stop()
+    }
+
     func testClaudeAndZCodeActivityUseVerifiedMembersAndSystemReduceMotion() async throws {
         _ = NSApplication.shared
         for tool in ["claude","zai"] {
