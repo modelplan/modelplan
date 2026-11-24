@@ -1524,7 +1524,7 @@
     {
       "id": "j-opt-grid",
       "title": "Overview option key Bars | Grid",
-      "expected": "Back on Overview, the Bars | Grid key shows Grid not lit; pressing it changes nothing and the bars stay (CKP-MFD-62, WP-12).",
+      "expected": "Back on Overview, pressing the Bars | Grid key lights Grid and swaps the bars for the day-by-hour heatmap, or its no-hourly-record line when none exists; its hint now names the heatmap (CKP-MFD-62, D390).",
       "prototype": "feature journey (D75)",
       "requires": [
         "cockpit-open"

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"io"
 	"io/fs"
 	"os"
@@ -115,13 +116,14 @@ func ImportPath(cache string) string { return filepath.Join(cache, "observed", "
 // LoadImported reads the ledger. A missing file is an empty ledger; ok is false when the file is
 // there but unusable (unreadable, too large or another schema), and it is then left as it is.
 func LoadImported(cache string) (l ImportLedger, ok bool) {
-	b, err := os.ReadFile(ImportPath(cache))
+	b, err := idlework.ReadFile(ImportPath(cache))
 	if errors.Is(err, os.ErrNotExist) {
 		return ImportLedger{SchemaVersion: 1, Rows: []PerfRow{}}, true
 	}
 	if err != nil || len(b) > maxFile {
 		return ImportLedger{}, false
 	}
+	idlework.Decode()
 	if json.Unmarshal(b, &l) != nil || l.SchemaVersion != 1 {
 		return ImportLedger{}, false
 	}
@@ -810,7 +812,7 @@ func inRange(ranges []span, t time.Time) bool {
 // folder listing or a log read without depending on file permissions (which root ignores).
 var (
 	importWalkDir = filepath.WalkDir
-	importOpen    = os.Open
+	importOpen    = openLog
 )
 
 // files lists the source's logs modified since `since`, in a stable order. Links, directories and

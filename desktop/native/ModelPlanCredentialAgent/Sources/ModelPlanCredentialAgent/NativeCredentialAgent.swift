@@ -36,6 +36,25 @@ public final class NativeCredentialAgent: CredentialAgent, @unchecked Sendable {
     public init(reader: any FixedItemReading, isCurrent: @escaping @Sendable (EngineDeliveryContext) -> Bool) {
         self.reader = reader; self.isCurrent = isCurrent
     }
+    /// Review 11-24 #8: the Keychain item's own expiry and scopes decide, as on the credentials-file route. A login
+    /// that is expired, lacks `user:profile`, or misses either field is a closed failure, so no provider request is
+    /// made for it. Only the access token and its real expiry leave this read; the refresh token is never read out.
+    static func claudeLogin(_ data: Data, now: Date = Date()) -> (token: String, expiresAt: WireTimestamp)? {
+        guard data.count <= 64 * 1024,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let oauth = object["claudeAiOauth"] as? [String: Any],
+              let token = oauth["accessToken"] as? String, !token.isEmpty,
+              let number = oauth["expiresAt"] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let scopes = oauth["scopes"] as? [String], scopes.contains("user:profile") else { return nil }
+        let millis = number.doubleValue
+        guard millis.isFinite, millis > 0 else { return nil }
+        let expires = Date(timeIntervalSince1970: millis / 1000)
+        guard expires > now else { return nil }
+        let format = ISO8601DateFormatter()
+        format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let stamp = try? WireTimestamp(format.string(from: expires)) else { return nil }
+        return (token, stamp)
+    }
     private func acquire() -> Bool { lock.lock(); defer { lock.unlock() }; guard !busy else { return false }; busy = true; return true }
     private func release() { lock.lock(); busy = false; lock.unlock() }
     public func handle(_ operation: EngineCredentialOperation) async -> WireCredentialResult {
@@ -75,11 +94,9 @@ public final class NativeCredentialAgent: CredentialAgent, @unchecked Sendable {
                     guard let status = result.status else { completion.finish(outcome(.error)); return }
                     let kind = SecurityOutcome.map(status)
                     guard kind == .ok else { completion.finish(outcome(kind)); return }
-                    guard let data = result.data, data.count <= 64 * 1024,
-                          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let oauth = object["claudeAiOauth"] as? [String: Any],
-                          let token = oauth["accessToken"] as? String,
-                          let wire = try? WireCredentialResult(operationId: id, outcome: .ok, accessToken: token) else {
+                    guard let data = result.data, let login = NativeCredentialAgent.claudeLogin(data),
+                          let wire = try? WireCredentialResult(operationId: id, outcome: .ok, accessToken: login.token,
+                                                               expiresAt: login.expiresAt) else {
                         completion.finish(outcome(.error)); return
                     }
                     completion.finish(wire)
