@@ -53,9 +53,10 @@ test('the unknown-peak footer fits on a crowded Chinese plugin page',async({page
  await page.locator('[data-bpage="1"]').click();
  const value=column(page).locator('.pl-foot-v');
  await expect(value).toHaveAttribute('data-full','暂无高峰数据');
- await expect(value).toHaveText('暂无数据');
+ await expect(value).toHaveText(/^暂无(高峰)?数据$/);// D406: the day view fills the column, so the full text may now fit
  await expect(column(page).locator('.pl-foot')).toHaveAttribute('aria-label','高峰 · 暂无高峰数据');
- expect(await value.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+ // D406: the redrawn day-view column keeps the full text until the table's next fit; CSS ellipsis (never overflow) is the last resort.
+ await expect(value).toHaveCSS('text-overflow','ellipsis');
 });
 
 test('D328 column: the next 12 hours only; peaks, capsules with the time, the now line, one all-day line, no picker or fold',async({page})=>{
@@ -105,16 +106,23 @@ test('D328 Chinese labels, a running peak in the bottom line, and the 明 divide
  await expect(strip(page).locator('.cal-mid b')).toHaveText(['明']);
 });
 
-test('D328 no peak rules: the column shows D293 cells and "Peak: no peak rules", not the strip',async({page})=>{
+test('D406 no peak rules (Codex only): the column is still the day view, with reset chips, the now line and the no-rules note',async({page})=>{
  const codexOnly={version:1,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:L(0,14,10),kind:'5h'},{sub:0,at:L(2,6),kind:'week'}],spans:[]};
  await open(page,{push:codexOnly,locale:'zh-CN'});
  const col=column(page);
- expect(await col.getAttribute('data-draw')).toBeNull();
- await expect(col.locator('.pl-draw')).toHaveCount(0);await expect(col.locator('.cal')).toHaveCount(0);
- await expect(col).toContainText('下次重置');await expect(col).toContainText('14:10');await expect(col).toContainText('2h50 后');await expect(col).toContainText('Codex 5 小时');
- await expect(col).toContainText('每周重置');
- await expect(col.locator('.pl-foot .pl-foot-l')).toHaveText('高峰');await expect(col.locator('.pl-foot .pl-foot-v')).toHaveText('没有时段规则');
- await shot(page,'D-cells-zh',page.locator('.ck-eng'));
+ expect(await col.getAttribute('data-draw')).toBe('custom');
+ await expect(col.locator('.cal')).toHaveCount(1);await expect(col.locator('.cal-pk')).toHaveCount(0);
+ await expect(col.locator('.cal-ch')).toHaveCount(1);await expect(col.locator('.cal-nl')).toHaveCount(1);
+ await expect(col.locator('.cal-note')).toHaveText('没有时段规则');
+ await shot(page,'D406-codex-only-zh',page.locator('.ck-eng'));
+});
+
+test('D406 ZCode with rules: the day view shows the GLM peak block',async({page})=>{
+ const zcode={version:1,peakRules:'yes',subs:[week.subs[2]],peaks:[{sub:0,from:L(0,22),to:L(1,2),tentative:true}],resets:[{sub:0,at:L(0,14,10),kind:'5h'}],spans:[]};
+ await open(page,{push:zcode,locale:'zh-CN'});
+ const col=column(page);
+ await expect(col.locator('.cal-pk')).toHaveCount(1);await expect(col.locator('.cal-note')).toHaveCount(0);
+ await shot(page,'D406-zcode-peak-zh',page.locator('.ck-eng'));
 });
 
 test('host minute tick: the now line and the bottom line move and the picked day rolls over without page timers',async({page})=>{
@@ -254,16 +262,16 @@ test('calendar data is checked against the plugin shape and size bound; the disp
  for(const row of data.projection.rows)for(const a of row.accounts){a.valueState='current';a.freshUntil=deadline;for(const w of a.windows){w.current=true;w.validUntil=deadline;w.resetsAt=new Date(L(0,13)).toISOString();}}
  const {send,receive}=await open(page,{data,push:null});
  const s=strip(page);
- // No peak data yet (D328): the D293 cells show the reset; the strip is not drawn.
- await expect(column(page).locator('.pl-draw')).toHaveCount(0);
- await expect(column(page)).toContainText(/13:00in 1h40(Codex|Tool \d) 5h/);
+ // No peak data yet (D406): the day view is still drawn, with the reset chip and no peak block.
+ await expect(column(page).locator('.pl-draw')).toHaveCount(1);await expect(s.locator('.cal-pk')).toHaveCount(0);
+ await expect(s.locator('.cal-ch').first()).toContainText('13:00');
  // Bad shapes and oversized data are refused and change nothing.
  const bad=[{...week,extra:1},{...week,version:2},{...week,peaks:[{sub:9,from:NOW,to:null,tentative:false}]},{...week,resets:[{sub:0,at:NOW,kind:'month'}]},{...week,subs:[{...week.subs[0],colour:'red'}]},{...week,resets:Array.from({length:65},()=>({sub:0,at:NOW,kind:'5h'}))}];
  for(const d of bad)expect(await receive(send('pluginData',{id:'calendar',data:d}))).toBe(false);
  // Over the 16 KiB bound: refused before the shape check runs.
  const big={...week,subs:[{...week.subs[0],name:{en:'x'.repeat(20000),zh:'y'}}]};
  expect(await receive(send('pluginData',{id:'calendar',data:big}))).toBe(false);
- await expect(column(page)).toContainText(/13:00in 1h40(Codex|Tool \d) 5h/);
+ await expect(column(page)).toContainText(/Codex 5h 13:00/);
  // A valid host push takes over from the page's own shaping.
  expect(await receive(send('pluginData',{id:'calendar',data:week}))).toBe(true);
  await expect(s.locator('.cal-ch')).toHaveCount(3);
@@ -326,9 +334,9 @@ test('macrevc-844-8: through the bridge, the earliest card expiring at the host 
  data.details=capture().details;data.details.peaks=[];data.details.resetEvents=[];
  Object.assign(data.details.subscriptions[0].resetCards,{state:'partial',truncated:true,count:65,earliestExpiresAt:iso(first),items:Array.from({length:64},(_,i)=>({id:String(i).padStart(64,'a'),expiresAt:iso(i?later:first)}))});
  const {send,receive}=await open(page,{data,push:null});
- await expect(column(page)).toContainText('Reset cards');await expect(column(page)).toContainText(/until \d+\/\d+/);
+ await expect(column(page)).toContainText('reset card');await expect(column(page)).toContainText(/until \d+\/\d+/);
  expect(await receive(send('tick',{nowUnixMs:String(NOW+120_000),reason:'deadline'}))).toBe(true);
- await expect(column(page)).toContainText('Reset cards');
+ await expect(column(page)).toContainText('reset card');
  await expect(column(page)).not.toContainText(/×|until|\d+\/\d+/);
 });
 
@@ -346,21 +354,19 @@ async function openWith(page,{count,push,locale='zh-CN',at=NOW,plugins=bothOn}) 
  expect(await receive(send('pluginData',{id:'calendar',data:push}))).toBe(true);
  return {send,receive};
 }
-test('D375 3 columns, no peak rules: big time, the subscription colour mark with its full name, no code',async({page})=>{
+test('D406 3 columns, no peak rules: the day view with the name and colour on the reset chips, no code, the note inside',async({page})=>{
  const codexOnly={version:1,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:L(0,14,10),kind:'5h'},{sub:0,at:L(2,6),kind:'week'}],spans:[]};
  const {send,receive}=await openWith(page,{count:1,push:codexOnly});
  const col=column(page);
- await expect(col.locator('.pl-big')).toHaveText(['14:10','06:00']);
- await expect(col.locator('.pl-sub .pl-subt')).toHaveText(['Codex 5 小时','Codex 每周 · 11/13 周五']);
- await expect(col.locator('.pl-sub .pl-sw').first()).toHaveCSS('background-color','rgb(106, 168, 255)');
+ await expect(col.locator('.cal-ch')).toHaveText(['Codex 5h 14:10']);
+ await expect(col.locator('.cal-ch').first()).toHaveCSS('--c','#6aa8ff');
  expect(await col.innerText()).not.toMatch(/\b(CX|CL|GL|CU)\b/);
- await expect(col.locator('.pl-foot .pl-foot-v')).toHaveText('没有时段规则');
+ await expect(col.locator('.cal-note')).toHaveText('没有时段规则');
  await shot(page,'N-3col-no-rules-zh',page.locator('.ck-eng'));
- // The next reset is the weekly one (nothing to read for the 5 h window): written once.
+ // Only the weekly reset left today: one chip.
  const only={...codexOnly,resets:[{sub:0,at:L(0,12,30),kind:'week'}]};
  expect(await receive(send('pluginData',{id:'calendar',data:only}))).toBe(true);
- await expect(col.locator('.pl-big')).toHaveText(['12:30']);
- await expect(col.locator('.pl-sub .pl-subt')).toHaveText(['Codex 每周']);
+ await expect(col.locator('.cal-ch')).toHaveCount(1);
  await shot(page,'N-3col-same-moment-zh',page.locator('.ck-eng'));
 });
 test('D375 3 columns with a peak day strip, and 6 columns: names beside colours, the window dropped when narrow',async({page})=>{
