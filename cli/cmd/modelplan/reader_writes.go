@@ -64,6 +64,16 @@ func beforeObserveCommit(source string) {
 	}
 }
 
+// observeOpenHook runs after a commit's confinement check and before its reads (tests only:
+// an ancestor swapped in that gap must not lead a read outside the admitted root).
+var observeOpenHook func(source string)
+
+func beforeObserveOpen(source string) {
+	if observeOpenHook != nil {
+		observeOpenHook(source)
+	}
+}
+
 // observeForAppIn discovers the logs from the app-server's shared history inventory and skips
 // an observer whose logs and ledgers are as its last clean pass left them (D397).
 func observeForAppIn(st *store.Store, inventory *logindex.Inventory) func(time.Time) []appserver.ObserveResult {
@@ -132,6 +142,7 @@ func observeClaude(st *store.Store, now time.Time, x observeIndex) appserver.Obs
 				if !speed.LogConfined(log, root, nil) {
 					return errNoConfinedLogs
 				}
+				beforeObserveOpen("claude")
 				in := speed.Ingest{Labels: labels, Subscription: quota.ClaudeSubscription(st.Dir)}
 				return speed.ObserveClaude(st.Dir, log, false, in, now)
 			}))

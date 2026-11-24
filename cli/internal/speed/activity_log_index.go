@@ -2,6 +2,7 @@
 package speed
 
 import (
+	"github.com/modelplan/modelplan/cli/internal/confine"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,3 +105,29 @@ func LogConfined(path, root string, checked map[string]bool) bool {
 	}
 	return checkedLogParents(path, root, checked)
 }
+
+// HistoryRoots are the admitted history roots a log can be found under: Claude Code's projects,
+// Codex's sessions and ZCode's CLI logs, as the observers derive them.
+func HistoryRoots() []string {
+	home, _ := os.UserHomeDir()
+	claude := os.Getenv("CLAUDE_CONFIG_DIR")
+	if claude == "" && home != "" {
+		claude = filepath.Join(home, ".claude")
+	}
+	codex := os.Getenv("CODEX_HOME")
+	if codex == "" && home != "" {
+		codex = filepath.Join(home, ".codex")
+	}
+	var roots []string
+	for _, root := range []string{filepath.Join(claude, "projects"), filepath.Join(codex, "sessions"), filepath.Join(home, ".zcode", "cli", "log")} {
+		if filepath.IsAbs(root) {
+			roots = append(roots, root)
+		}
+	}
+	return roots
+}
+
+// openLog opens a history log for its content. A log below an admitted history root is opened
+// anchored to that root (confine.Open), so a check of its ancestry cannot be raced by swapping
+// an ancestor for a symlink before the open (D397, macrevb-1222-4).
+func openLog(path string) (*os.File, error) { return confine.OpenUnder(HistoryRoots(), path) }

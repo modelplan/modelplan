@@ -203,48 +203,51 @@ func TestInventoryForgetsOnFenceChangeAndDrop(t *testing.T) {
 	}
 }
 
-// D397 (macrevb-1222-1): a root that holds more than the retained bound is not listed again at
-// every cold check; its known part is reconciled by stats, and only TruncatedRescan relists it.
-func TestInventoryOverCapRootIsNotRelistedAtEachColdCheck(t *testing.T) {
-	defer func(n int) { maxEntries = n }(maxEntries)
-	maxEntries = 20
+// D397 (macrevb-1222-1): a large static root lists nothing at any later check, across the
+// cold interval and the ten-minute mark alike, and an append to its oldest-named log (a resumed
+// session, whose directory stamp does not move) is found within ColdInterval. No entry bound
+// leaves part of the root unknown, so neither depends on the tree's size.
+func TestInventoryLargeStaticRootListsNothingAndFindsAResumedLog(t *testing.T) {
 	f := newInvFixture(t)
 	old := f.now.Add(-48 * time.Hour)
-	for d := 0; d < 6; d++ {
-		for s := 0; s < 5; s++ {
-			f.write(filepath.Join(fmt.Sprintf("d%02d", d), fmt.Sprintf("s%d.jsonl", s)), old)
+	var oldest string
+	for d := 0; d < 40; d++ {
+		for s := 0; s < 50; s++ {
+			p := f.write(filepath.Join(fmt.Sprintf("d%02d", d), fmt.Sprintf("s%02d.jsonl", s)), old)
+			if oldest == "" {
+				oldest = p
+			}
+			f.write(filepath.Join(fmt.Sprintf("d%02d", d), fmt.Sprintf("notes-%02d.txt", s)), old)
 		}
 		f.age(fmt.Sprintf("d%02d", d), old)
 	}
 	f.age(".", old)
-	if _, first := f.step(0); first.Walks != 1 || first.Entries == 0 {
-		t.Fatalf("first scan: %+v", first)
+	files, first := f.step(0)
+	if len(files) != 2000 || first.Walks != 1 {
+		t.Fatalf("first scan: %d files, %+v", len(files), first)
 	}
 	var total idlework.Counts
-	for i := 0; i < int(3*ColdInterval/time.Second); i++ {
-		_, done := f.step(time.Second)
+	for i := 0; i < int(11*time.Minute/time.Second); i++ {
+		got, done := f.step(time.Second)
+		if len(got) != 2000 {
+			t.Fatalf("lost files on a static root: %d", len(got))
+		}
 		total = total.Plus(done)
 	}
 	if total.Entries != 0 {
-		t.Fatalf("an over-cap static root was listed again at its cold checks: %+v", total)
+		t.Fatalf("a static root was listed again within eleven minutes: %+v", total)
 	}
-	if _, done := f.step(TruncatedRescan); done.Entries == 0 {
-		t.Fatal("an over-cap root was never rescanned for the part it could not retain")
+	if err := os.WriteFile(oldest, []byte("{}\n{}\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-}
-
-// Only directories and .jsonl files count against the bound: other entries are not retained.
-func TestInventoryBoundCountsRetainedEntriesOnly(t *testing.T) {
-	defer func(n int) { maxEntries = n }(maxEntries)
-	maxEntries = 10
-	f := newInvFixture(t)
-	old := f.now.Add(-48 * time.Hour)
-	for i := 0; i < 30; i++ {
-		f.write(fmt.Sprintf("a/notes-%02d.txt", i), old)
+	if err := os.Chtimes(oldest, f.now, f.now); err != nil {
+		t.Fatal(err)
 	}
-	log := f.write("a/s.jsonl", old)
-	files, _ := f.step(0)
-	if _, ok := has(files, log); !ok {
-		t.Fatalf("non-log entries pushed a log out of the bound: %v", files)
+	for waited := time.Duration(0); waited <= ColdInterval; waited += time.Second {
+		files, _ := f.step(time.Second)
+		if got, ok := has(files, oldest); ok && got.Size == 6 {
+			return
+		}
 	}
+	t.Fatalf("the resumed oldest-named log was not found within %s", ColdInterval)
 }

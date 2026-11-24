@@ -812,7 +812,7 @@ func inRange(ranges []span, t time.Time) bool {
 // folder listing or a log read without depending on file permissions (which root ignores).
 var (
 	importWalkDir = filepath.WalkDir
-	importOpen    = os.Open
+	importOpen    = openLog
 )
 
 // files lists the source's logs modified since `since`, in a stable order. Links, directories and

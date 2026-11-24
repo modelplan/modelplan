@@ -15,8 +15,9 @@ import (
 )
 
 // D397 (macrevb-1222-1): a static Codex history larger than the former 20,000-entry bound
-// costs no directory listing at a cold check, and a resumed rollout whose name sorts outside
-// the newest 20,000 is selected by the rollout selection within the 30 s cold interval.
+// costs no directory listing at any later check, across the ten-minute mark too, and a resumed
+// rollout whose name sorts outside the newest 20,000 is selected within the 30 s cold
+// interval. The inventory has no entry bound, so the same holds at any size.
 func TestLargeStaticInventoryAndResumedRollout(t *testing.T) {
 	home := t.TempDir()
 	start := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
@@ -56,11 +57,12 @@ func TestLargeStaticInventoryAndResumedRollout(t *testing.T) {
 		t.Fatalf("warm-up selected %d rollouts", len(files))
 	}
 	before := idlework.Snapshot()
-	for now = now.Add(time.Second); now.Before(start.Add(logindex.ColdInterval + time.Second)); now = now.Add(time.Second) {
+	// Past the cold interval and the ten-minute mark: metadata reconciliation only.
+	for now = now.Add(time.Second); now.Before(start.Add(11 * time.Minute)); now = now.Add(time.Second) {
 		index.recent(home, "", fence, now)
 	}
-	if got := idlework.Snapshot().Since(before); got.Entries != 0 || got.Walks != 1 {
-		t.Fatalf("a static over-cap history cost %+v through a cold check, want 0 entries and 1 walk", got)
+	if got := idlework.Snapshot().Since(before); got.Entries != 0 || got.Walks > int64(11*time.Minute/logindex.ColdInterval)+1 {
+		t.Fatalf("a large static history cost %+v in eleven minutes, want 0 entries and one walk per cold interval", got)
 	}
 	// The session in the oldest-named rollout resumes: Codex appends to its start day's file.
 	f, err := os.OpenFile(oldest, os.O_APPEND|os.O_WRONLY, 0)

@@ -292,7 +292,7 @@ func (l *Ledger) scan(path, source string, p parser, now time.Time) bool {
 // scanLog reads one log from its cursor in files and returns its finished turns. A log seen for
 // the first time is read from its last maxScan bytes; a log that shrank (rewritten) starts over.
 func scanLog(files map[string]Cursor, path, source string, p parser, now time.Time) ([]turn, bool) {
-	fh, err := os.Open(path)
+	fh, err := openLog(path)
 	if err != nil {
 		return nil, false
 	}

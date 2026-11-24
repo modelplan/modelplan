@@ -1369,6 +1369,7 @@ func observeLive(st *store.Store, codexHome string, refs func() map[string]strin
 			if len(logs) > 0 && len(confined) == 0 {
 				return errNoConfinedLogs
 			}
+			beforeObserveOpen("live")
 			return speed.ObserveLive(st.Dir, confined, labels, refs(), now)
 		}))
 	})
@@ -1421,6 +1422,7 @@ func observeCodexHome(st *store.Store, home string, now time.Time, x observeInde
 			if len(confined) == 0 {
 				return errNoConfinedLogs
 			}
+			beforeObserveOpen("codex")
 			in := speed.Ingest{Labels: labels, Subscription: quota.CodexSubscription(st.Dir, now)}
 			return speed.ObserveCodex(st.Dir, confined, func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") }, in, now)
 		}))

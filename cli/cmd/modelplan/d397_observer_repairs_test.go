@@ -174,6 +174,82 @@ func TestObserverRefusesRememberedPathsWithChangedAncestry(t *testing.T) {
 	}
 }
 
+// D397 (macrevb-1222-4, round 2): the ancestry changes after the confinement check passed and
+// before the readers open the logs. The opens are anchored to the admitted roots, so they fail:
+// no content is read and no ledger changes.
+func TestObserverOpensStayUnderTheRootWhenAncestryChangesAfterTheCheck(t *testing.T) {
+	for _, source := range []string{"codex", "claude", "live"} {
+		t.Run(source, func(t *testing.T) { observerOpenRace(t, source) })
+	}
+}
+
+// observerOpenRace swaps the ancestors when the given observer has passed its check.
+func observerOpenRace(t *testing.T, source string) {
+	h := newObserverHome(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	recent := now.Add(-5 * time.Second)
+	h.rollout("2026/11/24", recent)
+	h.claudeLog("p", recent)
+	pass := observeForAppIn(h.st, &logindex.Inventory{})
+	pass(now)
+
+	swapped := false
+	observeOpenHook = func(at string) {
+		if swapped || at != source {
+			return
+		}
+		swapped = true
+		outside := filepath.Join(h.home, "outside")
+		for _, dir := range []string{filepath.Join(h.codex, "sessions", "2026", "11", "24"), filepath.Join(h.claude, "projects", "p")} {
+			moved := filepath.Join(outside, filepath.Base(dir)+"-"+filepath.Base(filepath.Dir(dir)))
+			if err := os.MkdirAll(outside, 0o700); err != nil {
+				t.Error(err)
+			}
+			if err := os.Rename(dir, moved); err != nil {
+				t.Error(err)
+			}
+			if err := os.Symlink(moved, dir); err != nil {
+				t.Error(err)
+			}
+			// What sits outside the root now has unread lines: a read through the swapped
+			// ancestor would record them.
+			entries, _ := os.ReadDir(moved)
+			for _, e := range entries {
+				f, err := os.OpenFile(filepath.Join(moved, e.Name()), os.O_APPEND|os.O_WRONLY, 0)
+				if err != nil {
+					t.Error(err)
+					continue
+				}
+				at := now.Add(-2 * time.Second).Format(time.RFC3339Nano)
+				// Bulk that only a read of the outside copy can account for.
+				filler := fmt.Sprintf(`{"timestamp":%q,"type":"response_item","payload":{"text":"%s"}}`+"\n", at, strings.Repeat("x", 1000))
+				fmt.Fprint(f, strings.Repeat(filler, 1024))
+				fmt.Fprintf(f, `{"type":"assistant","timestamp":%q,"sessionId":"s","requestId":"r2","message":{"id":"m2","model":"claude-outside-model","role":"assistant","content":[],"usage":{"input_tokens":20,"output_tokens":2}}}`+"\n", at)
+				fmt.Fprintf(f, `{"timestamp":%q,"type":"turn_context","payload":{"model":"gpt-outside-model","effort":"low"}}`+"\n", at)
+				fmt.Fprintf(f, `{"timestamp":%q,"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":200,"output_tokens":20},"total_token_usage":{"input_tokens":300,"output_tokens":30}}}}`+"\n", at)
+				f.Close()
+			}
+		}
+	}
+	t.Cleanup(func() { observeOpenHook = nil })
+	before := idlework.Snapshot()
+	results := pass(now.Add(time.Second))
+	if !swapped {
+		t.Fatalf("the %s observer never reached its reads: %+v", source, results)
+	}
+	// ModelPlan's own ledgers are a few kilobytes; the outside copies carry a megabyte each.
+	if got := idlework.Snapshot().Since(before); got.Bytes >= 128<<10 {
+		t.Fatalf("%d content bytes read after the ancestor was swapped out of the root: %+v", got.Bytes, results)
+	}
+	// The other observers may still write; what must never reach a ledger is the content only
+	// the outside copies hold.
+	for _, p := range observeLedgers(h.st.Dir) {
+		if b, _ := os.ReadFile(p); strings.Contains(string(b), "outside-model") {
+			t.Fatalf("a read followed an ancestor swapped after the check and recorded it in %s: %+v", filepath.Base(p), results)
+		}
+	}
+}
+
 // D397 / privacy (macrevb-1222-5): when the consent generation and the cached account change
 // between an observation's discovery and its commit, nothing bound to the earlier account is
 // published under the new generation; the next pass binds the new account.

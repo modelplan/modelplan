@@ -13,9 +13,11 @@
 // idle discovery costs stats, never directory listings, and a new log is found within
 // HotInterval in a hot directory and within ColdInterval anywhere else.
 //
-// A root keeps at most MaxEntries directories and logs. One that holds more is not listed
-// again at each cold check: its retained part is reconciled by stats, and the rest is relisted
-// every TruncatedRescan.
+// A root retains every directory and .jsonl file under it, with no entry bound: a bound would
+// leave a resumed log outside the retained set, which no stat can find and only a relisting
+// could (macrevb-1222-1). Memory is what bounds it instead: a retained log costs its path and a
+// 24-byte stamp, about 100 bytes, so 100,000 logs cost about 10 MB. Other entries are listed
+// at a directory's (re)listing but never kept.
 //
 // It holds only paths and file metadata of the roots its callers are admitted to, in memory. A
 // new consent fence discards everything, and Drop or Clear forgets a root at once. It never
@@ -41,13 +43,6 @@ const (
 	ColdInterval = 30 * time.Second
 	// HotWindow keeps a directory or file hot after it last changed.
 	HotWindow = time.Hour
-	// MaxEntries bounds what one root retains in memory: its directories and .jsonl files
-	// (other entries are listed but not kept). Every retained file is statted at each cold
-	// check, so an append to any of them (a resumed session) is found within ColdInterval.
-	MaxEntries = 100000
-	// TruncatedRescan paces the full rescan of a root that holds more than MaxEntries: the
-	// part it could not retain is listed again this rarely, never at every cold check.
-	TruncatedRescan = 10 * time.Minute
 	// unused drops a root no caller asked for within this time.
 	unused = 5 * time.Minute
 	// racyWindow: a directory modified this close to its listing may change again within the
@@ -55,9 +50,6 @@ const (
 	// again at its next check instead of being trusted by its stamp.
 	racyWindow = 2 * time.Second
 )
-
-// maxEntries is MaxEntries, lowered by tests that exercise an over-cap root.
-var maxEntries = MaxEntries
 
 // Root is one admitted history directory and the source its logs belong to.
 type Root struct {
@@ -82,9 +74,6 @@ type Inventory struct {
 type root struct {
 	dirs          map[string]*dirState
 	files         map[string]fileState
-	entries       int // retained directories and files, bounded by maxEntries
-	truncated     bool
-	scannedAt     time.Time // elapsed time of the last full scan
 	hotAt, coldAt time.Time
 	usedAt        time.Time
 	now           time.Time // wall time of the current refresh
@@ -94,7 +83,6 @@ type dirState struct {
 	info    os.FileInfo
 	depth   int
 	racy    bool     // listed within racyWindow of its modification
-	n       int      // direct entries counted against MaxEntries
 	subdirs []string // newest name first
 	files   []string
 }
@@ -138,7 +126,7 @@ func (inv *Inventory) Files(fence consent.Fence, roots []Root, now, elapsed time
 			r.now = now
 		}
 		switch {
-		case r == nil || r.truncated && due(r.scannedAt, elapsed, TruncatedRescan):
+		case r == nil:
 			r = &root{now: now}
 			inv.roots[want] = r
 			r.scan(want.Dir, elapsed)
@@ -178,17 +166,16 @@ func due(at, elapsed time.Time, every time.Duration) bool {
 	return elapsed.Before(at) || elapsed.Sub(at) >= every
 }
 
-// scan lists the whole root, newest names first, within MaxEntries.
+// scan lists the whole root, newest names first.
 func (r *root) scan(dir string, elapsed time.Time) {
 	idlework.Walk()
-	r.dirs, r.files, r.entries, r.truncated = map[string]*dirState{}, map[string]fileState{}, 0, false
-	r.hotAt, r.coldAt, r.scannedAt = elapsed, elapsed, elapsed
+	r.dirs, r.files = map[string]*dirState{}, map[string]fileState{}
+	r.hotAt, r.coldAt = elapsed, elapsed
 	info, err := os.Lstat(dir)
 	if err != nil || !info.IsDir() {
 		return // missing: the next hot check looks again
 	}
 	r.dirs[dir] = &dirState{info: info}
-	r.entries = 1
 	r.list(dir)
 }
 
@@ -209,8 +196,7 @@ func (r *root) list(path string) {
 	for _, sub := range d.subdirs {
 		known[sub] = true
 	}
-	r.entries -= d.n
-	d.n, d.subdirs, d.files = 0, nil, nil
+	d.subdirs, d.files = nil, nil
 	var fresh []string
 	for i := len(es) - 1; i >= 0; i-- { // newest names first: Codex days sort by date
 		e := es[i]
@@ -218,19 +204,11 @@ func (r *root) list(path string) {
 		if !keep {
 			continue
 		}
-		if r.entries >= maxEntries {
-			r.truncated = true
-			break
-		}
-		r.entries++
-		d.n++
 		child := filepath.Join(path, e.Name())
 		switch {
 		case e.IsDir():
 			info, err := os.Lstat(child)
 			if err != nil || !info.IsDir() {
-				r.entries--
-				d.n--
 				continue
 			}
 			d.subdirs = append(d.subdirs, child)
@@ -243,8 +221,6 @@ func (r *root) list(path string) {
 		default:
 			info, err := e.Info()
 			if err != nil || !info.Mode().IsRegular() {
-				r.entries--
-				d.n--
 				continue
 			}
 			d.files = append(d.files, child)
@@ -280,7 +256,6 @@ func (r *root) remove(path string) {
 	for _, f := range d.files {
 		delete(r.files, f)
 	}
-	r.entries -= d.n
 	delete(r.dirs, path)
 }
 
@@ -331,7 +306,7 @@ func (r *root) reconcile(dir string, now, elapsed time.Time, cold bool) {
 		info, err := os.Lstat(path)
 		if err != nil || !info.IsDir() {
 			if path == dir {
-				r.dirs, r.files, r.entries = map[string]*dirState{}, map[string]fileState{}, 0
+				r.dirs, r.files = map[string]*dirState{}, map[string]fileState{}
 				return
 			}
 			r.remove(path)

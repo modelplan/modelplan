@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/confine"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"github.com/modelplan/modelplan/cli/internal/logindex"
@@ -653,7 +654,7 @@ type rolloutEvent struct {
 
 // readRolloutEvents reads the first line (session_meta) and the file's tail.
 func readRolloutEvents(path string) (rolloutScan, bool) {
-	fh, err := os.Open(path)
+	fh, err := openRollout(path)
 	if err != nil {
 		return rolloutScan{}, false
 	}
@@ -1070,6 +1071,12 @@ func DeclarePlan(path, planID, generation string, remove bool, regions ...string
 	return writeAtomic(path, append(nb, '\n'))
 }
 
+// openRollout opens a rollout for its content, anchored to the Codex sessions root when it lies
+// below it, so an ancestor swapped for a symlink after any check fails the open (macrevb-1222-4).
+func openRollout(path string) (*os.File, error) {
+	return confine.OpenUnder([]string{filepath.Join(CodexHome(), "sessions")}, path)
+}
+
 // RecentRollouts: the newest n Codex session logs under codexHome, newest first.
 func RecentRollouts(codexHome string, n int) []string {
 	return newestRollouts(filepath.Join(codexHome, "sessions"), n)
@@ -1088,7 +1095,7 @@ func RecentRolloutsIn(inv *logindex.Inventory, fence consent.Fence, codexHome st
 // ThreadOrigin: where the thread of a rollout came from (cli, vscode, exec, subagent:review, …),
 // from its first line; "" when unknown.
 func ThreadOrigin(path string) string {
-	fh, err := os.Open(path)
+	fh, err := openRollout(path)
 	if err != nil {
 		return ""
 	}
