@@ -89,6 +89,11 @@ import ModelPlanSettings
                 if !saved { self.publish(self.model.preferences) }
             }
         }
+        // D376: the key's right-click Remove asks first (the widget's confirmation), then turns the plugin off through the
+        // model; the page keeps the plugin until the committed state comes back to it.
+        coordinator?.onPluginClose = { [weak self] id in
+            Task { @MainActor [weak self] in _ = await self?.closer?.requestClose(id) }
+        }
         model.onChange = { [weak self] preferences in self?.publish(preferences) }
         publish(model.preferences)
     }
@@ -107,6 +112,8 @@ import ModelPlanSettings
     public func observeChoices(_ observer: @escaping (CockpitPluginPreferences) -> Void) {
         choiceObservers.append(observer); observer(model.preferences)
     }
+    /// D376: asks and turns a plugin off for the page's Remove; set by the factory (the widget ring uses the same closer).
+    public var closer: CockpitPluginCloser?
     /// Shows the cockpit (the app's own open path); set by the factory.
     public var showCockpit: (() -> Void)?
     /// #1096 card action: open this plugin's big screen in the cockpit, showing the cockpit first if needed.

@@ -196,6 +196,8 @@ import ModelPlanResources
                 let closer = CockpitPluginCloser(model: bridge.model, language: { [weak application] in
                     application?.composition.latestSettings?.snapshot.preferences.language ?? .fallback
                 })
+                // D376: the cockpit key's right-click Remove runs the same closer (same NSAlert) through the page bridge.
+                bridge.closer = closer
                 dock.pluginCloseTitle = { dockID in ResourceDockBridge.pluginID(dockID: dockID).flatMap { closer.prompt($0)?.menuTitle } }
                 dock.pluginCloseRequested = { dockID in
                     guard let id = ResourceDockBridge.pluginID(dockID: dockID) else { return }
@@ -624,7 +626,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit,.pluginClose:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()

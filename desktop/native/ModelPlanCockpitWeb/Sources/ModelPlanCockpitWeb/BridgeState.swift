@@ -144,6 +144,8 @@ public enum CockpitIntent: Equatable, Sendable {
   case pluginsRunning([String])
   /// A plugin edit made on the page (right-click Remove or the + menu), as `CockpitPluginWire.canonical` JSON.
   case pluginsEdit(Data)
+  /// D376: the page's right-click Remove on a plugin key; the app confirms and turns that plugin off.
+  case pluginClose(String)
 }
 /// A typed public page, never a URL from the page: native builds the address from these fields.
 public struct CockpitWebsiteLink: Equatable, Sendable {
@@ -701,12 +703,12 @@ public final class CockpitBridgeState {
       let action = m["action"] as? String
       let history = action == "openHistory", scope = action == "scopeSelect" || action == "rangeSelect" || action == "refreshMember", website = action == "openWebsite", ack = action == "cautionAck" || action == "pinnedModels"
       let focusedField = action == "openField" && m["key"] != nil
-      let running = action == "pluginsRunning", pluginEdit = action == "pluginsEdit"
-      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack || running ? ["action","ids"] : pluginEdit ? ["action","plugins"] : ["action"]
+      let running = action == "pluginsRunning", pluginEdit = action == "pluginsEdit", pluginClose = action == "pluginClose"
+      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack || running ? ["action","ids"] : pluginEdit ? ["action","plugins"] : pluginClose ? ["action","id"] : ["action"]
       // Plugin actions exist only for a host that sent `plugins`. A page stops its plugins when it hides, so
       // `pluginsRunning` is accepted without focus; every other action needs the active page.
       guard Set(m.keys) == base.union(extra), ready, !blocked,
-        running ? pluginsSent : visibility.active, !pluginEdit || pluginsSent
+        running ? pluginsSent : visibility.active, !pluginEdit || pluginsSent, !pluginClose || pluginsSent
       else { throw CockpitBridgeError.invalidMessage }
       let intent: CockpitIntent
       switch action {
@@ -743,6 +745,9 @@ public final class CockpitBridgeState {
       case "pluginsEdit":
         guard let body = m["plugins"], let canonical = CockpitPluginWire.canonical(body) else { throw CockpitBridgeError.invalidMessage }
         intent = .pluginsEdit(canonical)
+      case "pluginClose":
+        guard let id = m["id"] as? String, CockpitPluginWire.validID(id) else { throw CockpitBridgeError.invalidMessage }
+        intent = .pluginClose(id)
       case "close": intent = .close
       case "detach": intent = .detach
       case "putBack": intent = .putBack
