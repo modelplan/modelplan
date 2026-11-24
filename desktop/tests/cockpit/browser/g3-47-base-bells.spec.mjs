@@ -32,14 +32,14 @@ const read=page=>page.evaluate(()=>{
 
 for(const tier of ['tall','compact'])test(`G3-47 ${tier}: one bell per column in the reserve, the running subscription burns`,async({page})=>{
  await open(page,{tier});const v=await read(page);
- expect(v.base).toEqual({top:v.rootBottom-2,height:46}); // D411: the bells tuck 2 px under the aft plate
+ expect(v.base).toEqual({top:v.rootBottom,height:46});
  expect(v.bells.length).toBe(v.cols.length);expect(v.cols.length).toBeGreaterThan(0);
  expect(v.empty).toBe(v.bays);
  for(const [i,b] of v.bells.entries()){
   expect(Math.abs(b.x-v.cols[i].x)).toBeLessThan(0.6);
   const w=Math.min(101,Math.max(81,v.cols[i].w*.7));
   expect(b.w).toBeCloseTo(w,0);expect(b.h).toBeCloseTo(10,1);expect(b.w/b.h).toBeLessThanOrEqual(81/10*1.25+.05);
-  expect(b.top).toBeGreaterThanOrEqual(v.rootBottom-2.5);
+  expect(b.top).toBeGreaterThanOrEqual(v.rootBottom-0.5);
   expect(b.image).toContain('assets/bells/bell-silver-2x.png');
  }
  expect(v.bells.map(b=>b.cls)).toEqual(v.bells.map((_,i)=>i<2?'bz work':'bz idle'));

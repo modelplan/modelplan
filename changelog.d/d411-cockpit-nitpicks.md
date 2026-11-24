@@ -1,1 +1,1 @@
-Fix twelve cockpit nitpicks in the night hull and panels (lower-wall blend, gutter bends, session-row height, nozzle collar, wall speck, aft seam and alpha, key row edge and label, rule crossings, wall edge alpha); the nozzle row offset is unchanged by decision.
+Fix six cockpit nitpicks in the night panels and hull (session row height, left-wall speck, aft highlight seam, key row edge, Gemini key label, rule crossings, right wall edge alpha); the nozzle row offset and the hull corner, gutter, collar and aft alpha items are left to the hull art pass.

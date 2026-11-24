@@ -5,10 +5,10 @@ Copyright (c) 2026 ModelPlan. The owner approved publishing the r3 hull's plain 
 
 | File | Size | Pixels | SHA-256 |
 | --- | --- | --- | --- |
-| assets/aft-640-1x.png | 24821 B | 636x22 | `05e3f0cd7373c714fc11f59c4c5ef4cecb6d813ed80c6c4fa3f784f5b4fc5eb9` |
-| assets/aft-640-2x.png | 94203 B | 1272x44 | `3ffced129e5f5b5276f978fc5beacd8a582273c1e5e2b8c2e47b516dcba6ba52` |
-| assets/aft-890-1x.png | 23898 B | 636x22 | `7805d65a9886c171d992113b204390548ffc6336b90d6a1cf9181da766cac686` |
-| assets/aft-890-2x.png | 83363 B | 1272x44 | `7767019950651090c3b030197ebddc2273efdef2d306f17dc2aeced0a73b1f37` |
+| assets/aft-640-1x.png | 19368 B | 636x22 | `49de9e471c3ae935924e42f56412b437ae8bdf47f1df1aa410c5d79523546798` |
+| assets/aft-640-2x.png | 74937 B | 1272x44 | `f2566898f7ed1ab174e778755b7f57f6b20cbae5ac475a3767ae65d6417dbdf5` |
+| assets/aft-890-1x.png | 24052 B | 636x22 | `f74f44eb74cc1bd6178e8d308bfaa9928d698643858ffbc8b572449d22b4effa` |
+| assets/aft-890-2x.png | 83603 B | 1272x44 | `cde0a4fc30f56086531b4e61a65a771168d79cad50f597075e706cfff84d9a7d` |
 | assets/cone-640-1x.png | 2371 B | 636x20 | `c4399404a236a79b85ec8b0ceda7d1d0e9b46f8722eec9bf02ec812ace09c240` |
 | assets/cone-640-2x.png | 8114 B | 1272x40 | `c414f411509b8129bb1275b68f34f3dabca2ead3201888e93482f8f3a1dd995a` |
 | assets/cone-890-1x.png | 2848 B | 636x24 | `53240314203371f4401e9d1f60f0145f69e394a2d50278c9d1c52b1569337c37` |
@@ -49,8 +49,8 @@ Closed state (owner D72, 2026-11-08): `aft-closed-1x.png` and `aft-closed-2x.png
 
 | File | Size | Pixels | SHA-256 |
 | --- | --- | --- | --- |
-| assets/aft-closed-1x.png | 23587 B | 636x22 | `02cd46a5417e23afede1462a448ee080b7a78f0839e52a494b8e1798ceffa147` |
-| assets/aft-closed-2x.png | 82796 B | 1272x44 | `249318d3398bfec850d098d8e362118894e5313cd122cc686c23e9dab6b60fbb` |
+| assets/aft-closed-1x.png | 23635 B | 636x22 | `2d4409612838ed3fb87a5e9f6b535b73460a6bbbaf5365d2bea444d9cb8f9ae1` |
+| assets/aft-closed-2x.png | 83001 B | 1272x44 | `81d7d4733cd2e047d8dc995350ce43a7f5eb6291fafab612718d3e7252505d7e` |
 | assets/cap-slab.svg | 1190 B | 620x16 (SVG) | `b42be81e9bed80298f7fdb8f7069d0640b1e860c68c4967d727eaef9118a07a8` |
 
 Hull shape (owner build 13, D72: publishing study art needs no separate approval): the study cuts the lower-skin wall tile with the alpha of these canopy-h1 parts, so the hull is narrow under the canopy and wide below the instruments: an upper wall 8 px inside the 636 px hull, a 31 px taper and the full-width lower wall. They are copied unchanged from the private study `design-handoffs/opus-r7/src/assets/canopy-h1/` at design commit `ae0245ec6d043a96f6d8fd7423f5cb7dc7716166`. The study's taper is byte-identical in its 890, 640 and closed copies and its closed lower stage is the 890 one, so only those names are published.
@@ -76,4 +76,4 @@ Hull shape (owner build 13, D72: publishing study art needs no separate approval
 | assets/lower-stage-640-1x.png | 26333 B | 636x262 | `ebed6d7e02fe359dd3126eab10f9d4d334681d8aed293af9b32a9ec7f59a8433` |
 | assets/lower-stage-640-2x.png | 106048 B | 1272x524 | `5c56b01c3f5425018528346940d68353e86ff29ee4a415d1e5f0e2f39d8f2c38` |
 
-Retouch (owner D411, 2026-11-24, cockpit nitpick list 13): the rows above that changed hash after their first publication were edited by pixel, with no new artwork. `lower-skin-890-1x/2x.png`: the 2x2 bright speck (36-37, 25-26 at 2x; 18, 12-13 at 1x) that repeated every 32 px on the left wall is replaced by a vertical interpolation of its neighbours. `aft-890-*`, `aft-closed-*`: a brightness step in the brushed highlight band at x=498 (1x) / 996 (2x) is smoothed over a 24 px (2x) / 12 px (1x) ramp. All `aft-*`: the last four rows' near-opaque alpha (240-254) is set to 255 away from the rounded corners. `upper-walls-*` and `upper-skin-*`: the right outer edge columns' alpha is mirrored from the left so the two wall edges match.
+Retouch (owner D411, 2026-11-24, cockpit nitpick list 13): the rows above that changed hash after their first publication were edited by pixel, with no new artwork. `lower-skin-890-1x/2x.png`: the 2x2 bright speck (36-37, 25-26 at 2x; 18, 12-13 at 1x) that repeated every 32 px on the left wall is replaced by a vertical interpolation of its neighbours. `aft-890-*`, `aft-closed-*`: a brightness step in the brushed highlight band at x=498 (1x) / 996 (2x) is smoothed over a 24 px (2x) / 12 px (1x) ramp (alpha untouched; `aft-640-*` unchanged). `upper-walls-*` and `upper-skin-*`: the right outer edge columns' alpha is mirrored from the left so the two wall edges match.
