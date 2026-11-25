@@ -1035,3 +1035,29 @@ test("macrevb-1237-2: a tier-0 PR labelled review:gpt gets one advisory GLM resu
   assert.ok(marked.includes(R.GPT_FALLBACK_MARKER));
   assert.doesNotMatch(gate(marked).why, /VERDICT block/);
 });
+
+test("quota classifier: every OpenAI credit, billing or quota failure and every Zhipu balance code is quota; a 402 is quota; other errors are not", async () => {
+  for (const code of ["credit_balance_exhausted", "credit_balance_too_low", "insufficient_credits", "insufficient_quota", "billing_hard_limit_reached", "billing_not_active", "quota_exceeded", "1113", "1308"])
+    assert.equal(P.isQuotaFailure({ code }), true, code);
+  assert.equal(P.isQuotaFailure({ status: 402 }), true, "HTTP 402 payment required");
+  assert.equal(P.isQuotaFailure({ message: "Your credit balance is too low to access the API" }), true, "a message-only credit failure");
+  for (const x of [{ code: "rate_limit_exceeded" }, { code: "bad" }, { status: 400 }, { code: "server_error", message: "overloaded" }, {}])
+    assert.equal(P.isQuotaFailure(x), false, JSON.stringify(x));
+});
+
+test("fallback: a GPT credit_balance_exhausted failure (background response or HTTP) falls back to GLM, and GLM quota falls back to GPT, in the same run", async () => {
+  const reply = (status, body) => ({ ok: status < 300, status, json: async () => body });
+  const done = (t) => reply(200, { id: "r", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: t }] }] });
+  const failedOa = async (url, init) => init.method === "POST" ? reply(200, { id: "r", status: "queued" }) : reply(200, { id: "r", status: "failed", error: { code: "credit_balance_exhausted" } });
+  const httpOa = async () => reply(400, { error: { code: "credit_balance_exhausted", message: "credit balance exhausted" } });
+  const glmOk = async () => reply(200, { choices: [{ message: { content: "G" } }], usage: {} });
+  const glmOut = async () => reply(429, { error: { code: "1113", message: "balance" } });
+  for (const oaFetch of [failedOa, httpOa]) {
+    const build = (n) => n === "openai" ? P.openaiProvider({ key: "k", model: "m", effort: "medium", fetchImpl: oaFetch, pollMs: 1, waitMs: 0 }) : P.glmProvider({ key: "g", baseUrl: "https://g.example", fetchImpl: glmOk, waitMs: 0 });
+    const r = await P.reviewInOrder({ input: "x", order: ["openai", "glm"], build });
+    assert.equal(r.provider, "glm", "GLM answers");
+    assert.match(r.why, /credit_balance_exhausted/, "the reason is recorded");
+  }
+  const build2 = (n) => n === "glm" ? P.glmProvider({ key: "g", baseUrl: "https://g.example", fetchImpl: glmOut, waitMs: 0 }) : P.openaiProvider({ key: "k", model: "m", effort: "medium", fetchImpl: async () => done("O"), pollMs: 1, waitMs: 0 });
+  assert.equal((await P.reviewInOrder({ input: "x", order: ["glm", "openai"], build: build2 })).provider, "openai");
+});
