@@ -18,13 +18,25 @@ final class ResourceCardTests: XCTestCase {
         XCTAssertEqual(c.rows.map(\.percent), [22, 47, 76])
         XCTAssertEqual(c.rows.map(\.side), ["最高 61%", "15.1 / 32 GB", "剩 120 GB"])
         XCTAssertEqual(c.rows[1].cachedFill ?? 0, 12.8 / 32, accuracy: 0.001)
-        XCTAssertEqual(c.rows.map(\.notch), [0.8, nil, 0.9], "lines: CPU at the amber 80 %, disk at the red 90 %")
+        // D421: no warning notch is modelled (so none can be drawn); only the bar's tone signals the thresholds.
+        for row in c.rows { XCTAssertFalse(Mirror(reflecting: row).children.contains { $0.label == "notch" }, "no notch on \(row.id)") }
         XCTAssertEqual(c.footer, "内存压力 正常", "D371 B4e: the cadence moved to the card header")
         XCTAssertEqual(c.cadence, "每 10 秒")
         XCTAssertEqual(c.screenLink, "在驾驶舱查看")
         XCTAssertEqual(card(sample(), key: .memory, language: .english).cadence, "every 10 s")
         XCTAssertEqual(card(sample(), key: .memory, language: .english).screenLink, "View in cockpit")
         XCTAssertEqual(card(sample(), key: .memory, language: .english).rows.map(\.label), ["CPU", "Memory", "Disk"])
+    }
+
+    func testToneStillChangesAtTheThresholdsWithoutANotch() {
+        let cpu = { (u: Double) in self.card(sample(cpuUser: u, cpuSystem: 0), key: .cpu).rows[0] }
+        XCTAssertEqual(cpu(79).tone, .normal)
+        XCTAssertEqual(cpu(80).tone, .warning)
+        XCTAssertEqual(cpu(90).tone, .critical)
+        let disk = { (free: Double) in self.card(sample(diskFree: free), key: .memory).rows[2] }
+        XCTAssertEqual(disk(120).tone, .normal)
+        XCTAssertEqual(disk(49).tone, .critical, "disk at 90 % turns red")
+        XCTAssertEqual(disk(98).tone, .warning, "disk at 80 % turns amber")
     }
 
     func testVariantAFollowsTheRingReadout() {

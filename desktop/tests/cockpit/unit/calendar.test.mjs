@@ -158,7 +158,7 @@ function display() {
  return {data,ref};
 }
 
-test('shaping from the display data: own subscriptions only, peaks, own 5 h and weekly resets, reset cards, announced resets',()=>{
+test('shaping from the display data: own subscriptions only, peaks, own 5 h and weekly resets, banked resets, announced resets',()=>{
  const {data,ref}=display();
  data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
  const cal=calendarFromCockpit(data,NOW);

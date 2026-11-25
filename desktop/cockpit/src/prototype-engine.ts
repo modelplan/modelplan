@@ -8,7 +8,7 @@ import {effectiveRedBelow} from './threshold.js';
 import type {WireCockpitData,WireWindow,WireAccount} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
 import {INITIAL_RANGE,type CockpitRange} from './range.js';
-import {cockpitMembers} from './members.js';
+import {cockpitMembers,unavailableZCodeMember} from './members.js';
 import {memberColours} from './session-binding.js';
 import {NEUTRAL} from './livery.js';
 import {cautionItems,cautionLevel,lights} from './caution.js';
@@ -72,7 +72,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   // G3-109: a money balance (Grok Build) has no credits/points; the reserve row shows it in its reported currency.
   const money=moneyText(account.credits,locale);
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(label),short:esc(label),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
+  return {id:esc(key),name:esc(label),short:esc(label),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account,unavailableZCodeMember(row,account)?row.state:undefined),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
@@ -101,7 +101,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,range:range(),tint:true,pctMode:showUsed()?'used':'left',redAt:redBelow(),ack:null,lang:locale,now};
   const {model,plugins:pluginPage}=pagedModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));// Unknown vendors have no mark: drop the study's neutral placeholder before parsing so nothing is requested.
   plugins?.hold();// D323: a focused drawn plugin control is taken back by its new column
-  host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now}).replaceAll('<img class="lamp" src="assets/brands/../../neutral.png" alt="">','');
+  host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now}).replace(/ style="/g,' data-study-style="').replaceAll('<img class="lamp" src="assets/brands/../../neutral.png" alt="">','');
   if(plugins&&pluginPage)plugins.decorate(host,pluginPage,locale);
   // Keep the selected source-window identity in memory, never in rendered HTML.
   for(const [index,column] of [...host.querySelectorAll<HTMLElement>('.eng-cols > .ec[data-col]')].entries()){const rendered=model.cols[index];for(const cell of column.querySelectorAll<HTMLElement>('.qcell[data-row]')){const identity=rendered?.cells?.[cell.dataset.row??'']?.focusIdentity;if(typeof identity==='string')focusIdentities.set(cell,identity);}}

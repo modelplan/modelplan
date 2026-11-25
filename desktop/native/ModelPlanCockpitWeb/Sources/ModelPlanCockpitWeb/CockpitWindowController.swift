@@ -1251,6 +1251,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           lastVisibility = nil
           visibilityChanged()
           publishPluginState(force: true)
+        } else {
+          // D397: a hidden (frozen or prewarmed) page is not woken, but the clear emptied its plugin state. Forget what it
+          // had taken so the next shown visibility receipt (or the open) sends the state again before any screen request.
+          pluginsAccepted = nil; pluginsConfirmedOnPage = false
         }
         waiter?.resume()
       case .action(let intent):

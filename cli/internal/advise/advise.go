@@ -2,7 +2,7 @@
 // of things worth telling the user now: a window that resets soon with allowance left, a
 // window running tight or used up, a reset that has passed since we suggested stepping up or
 // down, an announced provider reset that would void what is left, a quota-rate change for a
-// plan coming up, reset cards about to expire, and a public reset for a harness the user has. It only advises; it never changes a model, effort, fast
+// plan coming up, banked resets about to expire, and a public reset for a harness the user has. It only advises; it never changes a model, effort, fast
 // mode or setting.
 //
 // Derive is pure. The status line and the Claude Code hook keep a small State next to the
@@ -135,7 +135,7 @@ type Event struct {
 	RunsOutInMinutes *int   `json:"runsOutInMinutes,omitempty"`
 	Model            string `json:"model,omitempty"`  // harness model id as reported
 	Effort           string `json:"effort,omitempty"` // harness effort as reported
-	Count            *int   `json:"count,omitempty"`  // reset cards
+	Count            *int   `json:"count,omitempty"`  // banked resets
 	// Credits: window_exhausted only; the account's usage credits, which the harness draws on now.
 	Credits *quota.Credits `json:"credits,omitempty"`
 	Suggest *Step          `json:"suggest,omitempty"`
@@ -951,7 +951,7 @@ func contains(xs []string, v string) bool {
 	return false
 }
 
-// cardEvents: reset cards about to expire unused.
+// cardEvents: banked resets about to expire unused.
 func cardEvents(a *quota.Account, now time.Time) []Event {
 	var out []Event
 	for _, c := range a.Cards {

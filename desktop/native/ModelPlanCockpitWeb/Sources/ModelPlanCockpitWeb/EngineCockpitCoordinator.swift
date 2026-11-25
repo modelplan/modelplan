@@ -134,6 +134,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public var onPluginsRunning: (([String]) -> Void)?
   /// A page edit (right-click Remove or the + menu) as canonical JSON; the app saves it like a Settings edit.
   public var onPluginsEdit: ((Data) -> Void)?
+  /// D376: the page's right-click Remove on a plugin key (a valid plugin id); the app confirms before it turns the plugin off.
+  public var onPluginClose: ((String) -> Void)?
   public private(set) var pluginsRunning: [String] = []
   private func reportPluginsRunning(_ ids: [String]) {
     guard ids != pluginsRunning else { return }
@@ -576,6 +578,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       reportPluginsRunning(ids); return
     }
     if case .pluginsEdit(let state) = intent { onPluginsEdit?(state); return }
+    if case .pluginClose(let id) = intent { if CockpitPluginWire.validID(id) { onPluginClose?(id) }; return }
     if case .cautionAck(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids) else { return }
       ackedCautions=ids; cautionMemory?.save(CockpitCautionIdentities.durable(ids)); return

@@ -10,6 +10,8 @@ import {engineModel} from '../../../cockpit/study/rocket-r1/engine-model.js';
 import {engineView} from '../../../cockpit/study/rocket-r1/engine-view.js';
 import {setLanguage} from '../../../cockpit/study/rocket-r1/i18n.js';
 import {dhm,approxCost} from '../../../cockpit/study/rocket-r1/mfd-pages/fmt.js';
+import {cockpitMembers,setHiddenMembers,unavailableZCodeMember} from '../../../cockpit/.tmp/compiled/src/members.js';
+import {sessionMember} from '../../../cockpit/.tmp/compiled/src/session-binding.js';
 import {accountLabel,accountState,footerState} from '../../../cockpit/.tmp/compiled/src/account-line.js';
 
 globalThis.document??={documentElement:{}};
@@ -149,6 +151,35 @@ test('CKP-ENG-27 a plan is dropped only when the name already says it as a word 
  assert.equal(accountLabel('Codex',plan('Pro 200'),'en'),'Codex Pro 200');
  assert.equal(accountLabel('Codex Pro 200',plan('pro 200'),'en'),'Codex Pro 200');
  assert.equal(accountLabel('智谱 GLM 编程套餐',plan('编程套餐'),'zh-CN'),'智谱 GLM 编程套餐');
+});
+
+test('an established ZCode column renders unavailable without adopting a session',()=>{
+ for(const state of ['failed','empty']){
+  const account={route:'unknown',valueState:'none',windows:[]};
+  const row={id:'zai',state,surfaces:['dock','menu','settings'],accounts:[account]};
+  const members=cockpitMembers({projection:{rows:[row]},subscriptions:[]});
+  assert.equal(members.length,1);
+  assert.equal(members[0].key,'zai#unknown');
+  assert.ok(unavailableZCodeMember(row,account));
+  assert.equal(accountState(account,row.state),'error');
+  assert.equal(sessionMember(members,{source:'zcode',subscriptionRef:null}),null);
+  assert.equal(sessionMember(members,{source:'zcode',subscriptionRef:'previous-account'}),null);
+ }
+});
+
+test('the cockpit honors the local visibility setting while the ZCode ring is unavailable',()=>{
+ const ref='aaaaaaaaaaaaaaaa';
+ const verified={route:'api_key_api',valueState:'current',windows:[],subscriptionRef:ref};
+ const fallback={route:'unknown',valueState:'none',windows:[]};
+ const data=(account,state)=>({projection:{rows:[{id:'zai',state,surfaces:['dock'],accounts:[account]}]},subscriptions:[{subscriptionRef:ref}]});
+ setHiddenMembers([ref,'zai#unknown']);
+ try{
+  assert.deepEqual(cockpitMembers(data(verified,'fresh')),[]);
+  for(const state of ['failed','empty'])assert.deepEqual(cockpitMembers(data(fallback,state)),[]);
+ }finally{
+  setHiddenMembers([]);
+ }
+ assert.deepEqual(cockpitMembers(data(fallback,'empty')).map(member=>member.key),['zai#unknown']);
 });
 
 // G3-156 (owner build 2, CKP-ENG-53): the range row follows the header range; history read but nothing recorded in the range

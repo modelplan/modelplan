@@ -147,6 +147,8 @@ export interface PluginReports {
   readonly state:(state:PluginState)=>void;
   /** The plugins now running, in user order; the host samples exactly these. */
   readonly running:(ids:string[])=>void;
+  /** D376: right-click Remove asks the native host to confirm and turn the plugin off. False (no native host) = the page removes it itself. */
+  readonly close?:(id:string)=>boolean;
 }
 export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=new PluginRegistry(builtinPlugins)):PluginHost {
   let state:PluginState=emptyPluginState,negotiated=false,visible=false,interactive=false,disposed=false,locale:PluginLocale='en';
@@ -322,7 +324,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   function openKeyMenu(key:HTMLElement,id:string,at?:{x:number;y:number}) {
     const plugin=registry.get(id);if(disposed||!interactive||!plugin)return false;
     closeMenu();const name=pluginWords(locale,plugin.title).full,m=popup(key,ht(locale,'plugin.menuAria',{name}));
-    const remove=item('pm-remove',()=>{host.remove(id);});remove.dataset.pmRemove=id;remove.append(fitted('pm-n',pluginWords(locale,'plugin.remove')));m.append(remove);
+    const remove=item('pm-remove',()=>{if(report.close?.(id)!==true)host.remove(id);});remove.dataset.pmRemove=id;remove.append(fitted('pm-n',pluginWords(locale,'plugin.remove')));m.append(remove);
     place(m,key,at);return true;
   }
   const host:PluginHost={
