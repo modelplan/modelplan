@@ -60,6 +60,7 @@
         "ConsentHostDisplayTests",
         "D380ZCodeKeychainJourneyTests",
         "DockCodexRuntimeRealServerTests",
+        "DockFaceIdleBudgetTests",
         "DockHoverExplanationTests",
         "DockInteractionHostPortTests",
         "DockLiveFollowerTests",

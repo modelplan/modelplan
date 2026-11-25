@@ -1,0 +1,127 @@
+// SPDX-License-Identifier: MIT
+import AppKit
+import Foundation
+
+/// D377 option C (owner 2026-11-21): the automatic menu-bar display. The item is the icon alone by default; a compact
+/// number appears only while the tracked quota is below the alert line; a used-up quota shows the icon with a red dot;
+/// a squeezed item (its window off screen or covered) falls back to the icon alone.
+///
+/// Reference: Pulse and CodexBar status items (icon-only by default, a number only by choice; CodexBar's compact
+/// spacing). Behaviour is our own code; macOS has no "hidden behind the notch" query, so "squeezed" is the existing
+/// status-item window check (`EngineDockMenuApplication.checkStatusItemVisibility`): the window is not visible, is
+/// occluded, or is off every screen. When nothing can be detected the item stays icon-only by default (it never
+/// widens without a quota below the line).
+enum StatusAutoMode: Equatable {
+    case iconOnly
+    /// A compact number (for example "15%"); `StatusAutoDisplay.compactLength` wide.
+    case number(String)
+    /// The quota is used up: the icon with a red dot, no text.
+    case usedUp
+}
+
+/// What the admitted projection says about the tracked (tightest) quota. `remaining` is always the remaining truth
+/// (0...100); `shown` is the text for the user's percentage mode ("15%", or "85%" when percentages show used).
+struct StatusAutoReading: Equatable {
+    var name: String
+    var remaining: Double
+    var shown: String
+    var alertLine: Double
+}
+
+enum StatusAutoInput: Equatable {
+    case reading(StatusAutoReading)
+    /// No tracked quota (no rows, a privacy clear): icon only.
+    case none
+    /// A gap between two admitted states: the last reading is kept (up to `StatusTitleKeeper.holdLimit`).
+    case unavailable
+}
+
+struct StatusAutoDisplay {
+    /// The compact item width in points (icon, a 3 pt gap and up to three characters in monospaced digits).
+    static let compactLength: CGFloat = 42
+    /// A number goes away only when the remaining quota is this far above the alert line (no flicker at the line).
+    static let hysteresis: Double = 5
+    /// A squeeze must last this long before the item falls back to the icon.
+    static let squeezeDebounce: TimeInterval = 0.75
+    /// After a fall-back the wide form is tried again only on a display change or after this long.
+    static let retryWide: TimeInterval = 600
+    /// At most one squeeze-driven switch in this time.
+    static let minimumSwitchInterval: TimeInterval = 60
+
+    private var numberShown = false
+    private var held: StatusAutoReading?
+    private var unavailableSince: Date?
+    private var squeezedSince: Date?
+    private var fellBack = false
+    private var fellBackAt = Date.distantPast
+    private var fellBackEpoch = 0
+    private var lastSqueezeSwitch: Date?
+    /// The last reading decided on (for the accessibility label and tests).
+    private(set) var reading: StatusAutoReading?
+    /// When the next evaluation is due although nothing else renders (a squeeze that has not lasted long enough).
+    private(set) var pendingDeadline: Date?
+
+    /// The mode to show now. Pure in its inputs and the injected time.
+    mutating func resolve(_ input: StatusAutoInput, squeezed: Bool, displayEpoch: Int, now: Date) -> StatusAutoMode {
+        pendingDeadline = nil
+        let current: StatusAutoReading?
+        switch input {
+        case .reading(let value): held = value; unavailableSince = nil; current = value
+        case .none: held = nil; unavailableSince = nil; current = nil
+        case .unavailable:
+            if held != nil {
+                let since = min(unavailableSince ?? now, now)
+                unavailableSince = since
+                if now.timeIntervalSince(since) >= StatusTitleKeeper.holdLimit { held = nil; unavailableSince = nil }
+            }
+            current = held
+        }
+        reading = current
+        guard let current else { numberShown = false; squeezedSince = nil; return .iconOnly }
+        if current.remaining <= 0 { numberShown = false; squeezedSince = nil; return .usedUp }
+        if current.remaining <= current.alertLine { numberShown = true }
+        else if current.remaining > current.alertLine + Self.hysteresis { numberShown = false }
+        guard numberShown else { squeezedSince = nil; fellBack = false; return .iconOnly }
+        let wide = StatusAutoMode.number(current.shown)
+        if fellBack {
+            if displayEpoch != fellBackEpoch || now.timeIntervalSince(fellBackAt) >= Self.retryWide { fellBack = false }
+            else { return .iconOnly }
+        }
+        guard squeezed else { squeezedSince = nil; return wide }
+        let since = squeezedSince ?? now
+        squeezedSince = since
+        let ready = since.addingTimeInterval(Self.squeezeDebounce)
+        let allowed = lastSqueezeSwitch.map { $0.addingTimeInterval(Self.minimumSwitchInterval) } ?? .distantPast
+        let due = max(ready, allowed)
+        if now >= due {
+            fellBack = true; fellBackAt = now; fellBackEpoch = displayEpoch; lastSqueezeSwitch = now; squeezedSince = nil
+            return .iconOnly
+        }
+        pendingDeadline = due
+        return wide
+    }
+
+    /// The accessibility label: complete in every state, "ModelPlan · Codex 0%". Without a reading it is "ModelPlan".
+    static func accessibilityLabel(_ reading: StatusAutoReading?) -> String {
+        guard let reading else { return "ModelPlan" }
+        return "ModelPlan \u{00B7} \(reading.name) \(reading.shown)"
+    }
+}
+
+/// The red dot of a used-up quota, at the icon's top-right corner. It has no width of its own.
+@MainActor final class StatusUsedUpDotView: NSView {
+    static let side: CGFloat = 7
+    override var isFlipped: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    func attach(to button: NSButton) {
+        let bounds = button.bounds
+        let top = button.isFlipped ? bounds.minY : max(bounds.minY, bounds.maxY - Self.side)
+        frame = NSRect(x: max(bounds.minX, bounds.maxX - Self.side), y: top, width: Self.side, height: Self.side)
+        autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+        if superview !== button { button.addSubview(self) }
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.systemRed.setFill()
+        NSBezierPath(ovalIn: bounds.insetBy(dx: 0.5, dy: 0.5)).fill()
+    }
+}

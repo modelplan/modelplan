@@ -34,6 +34,9 @@ func Load(file string) (State, error) {
 }
 
 func loadAuthoritative(file string) (State, error) {
+	if readOnlyProcess.Load() {
+		return readOnlyRaw(file)
+	}
 	s, _, err := loadRaw(file)
 	if err != nil || s.SchemaVersion != 1 {
 		return s, err
@@ -47,6 +50,9 @@ func loadAuthoritative(file string) (State, error) {
 }
 
 func loadLocked(file string) (State, error) {
+	if readOnlyProcess.Load() {
+		return readOnlyRaw(file)
+	}
 	s, raw, err := loadRaw(file)
 	if err != nil || s.SchemaVersion != 1 {
 		return s, err
@@ -104,6 +110,9 @@ func loadLocked(file string) (State, error) {
 // It leaves the damaged store available for diagnosis and creates a fresh epoch;
 // no receipt, grant or generation from the old epoch becomes authoritative.
 func Reset(file string) (State, error) {
+	if err := writable(); err != nil {
+		return Empty(), err
+	}
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return Empty(), err
 	}

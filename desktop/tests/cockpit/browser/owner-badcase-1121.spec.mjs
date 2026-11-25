@@ -81,6 +81,17 @@ test('B1 keyboard users keep the date keys\' ring: an arrow moves the choice and
  await page.locator('[data-range-key="30d"]').click();await page.keyboard.press('ArrowLeft');
  await expect(page.locator('[data-range-key="7d"]')).toBeFocused();
 });
+test('pointer focus on a generic keyboard control does not acquire a ring after a key press',async({page})=>{
+ await open(page,{data:visualFixture().data,range:'today'});
+ await page.evaluate(()=>{const control=document.createElement('div');control.tabIndex=0;control.id='focus-regression';control.textContent='Control';document.querySelector('#cockpit').append(control);});
+ const control=page.locator('#focus-regression');
+ await control.click();await page.keyboard.press('Escape');
+ await expect(control).toBeFocused();
+ expect(await control.evaluate(e=>e.hasAttribute('data-pointer-focus')&&getComputedStyle(e).outlineStyle==='none')).toBe(true);
+ await page.keyboard.press('Tab');
+ await control.focus();
+ expect(await control.evaluate(e=>e.hasAttribute('data-pointer-focus'))).toBe(false);
+});
 
 // ---- B1 (c): loading is never the empty state ----
 test('B1 a reply with an unread history keeps the last local history in the same page context; range switches never show the empty state',async({page})=>{
@@ -153,7 +164,10 @@ test('HUD every ★ effort starts at the same x, whatever the name length',async
  const data=visualFixture().data;
  data.details.publishedModels=names.map((name,i)=>({id:'n'+i,name,developerId:'openai',recommended:recs[i],efforts:[effort('low',30+i,.02*(i+1),recs[i]==='low'),effort('medium',40+i,.05*(i+1),recs[i]==='medium'),effort('high',45+i,.1*(i+1),recs[i]==='high')]}));
  await open(page,{data});
- await expect(page.locator('.hud-b .hp')).toHaveCount(6);
+ // D386: the HUD lists only the ability frontier, best ability first. n5's ★ low (35, .12) is beaten by n0's ★ medium (40, .05),
+ // so it is off the frontier and five rows remain, n2, n4, n3, n1, n0.
+ await expect(page.locator('.hud-b .hp')).toHaveCount(5);
+ expect(await page.locator('.hud-b .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['n2','n4','n3','n1','n0']);
  const starts=await page.locator('.hud-b .hp-rec').evaluateAll(list=>list.map(e=>e.getBoundingClientRect().left));
  for(const x of starts)expect(Math.abs(x-starts[0])).toBeLessThanOrEqual(0.5);
  // Names never run into the ★ column.

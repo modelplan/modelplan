@@ -39,7 +39,7 @@ type CockpitCycleGroup struct {
 	Cycles          []CockpitCycle `json:"cycles" schema:"maxItems=10"`
 }
 
-// CockpitCycle is a closed cycle. HadDrop means the meter fell inside it: a reset card or a
+// CockpitCycle is a closed cycle. HadDrop means the meter fell inside it: a banked reset or a
 // correction, which the readings cannot tell apart.
 type CockpitCycle struct {
 	StartedAt time.Time           `json:"startedAt"`

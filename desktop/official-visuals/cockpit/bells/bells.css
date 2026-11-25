@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
-/* Copyright (c) 2026 ModelPlan. G3-47 base bells in the 34 px reserve, written for this page from the base-bells
+/* Copyright (c) 2026 ModelPlan. G3-47 base bells in the 46 px reserve, written for this page from the base-bells
    notes (see SOURCES.md); the images are the released, unchanged base-bell rasters. */
 /* G3-131 (owner D294, 2026-11-18): the bell is a fixed 10 px high; its width is the column x 0.7 clamped to 81-101 px,
    so the whole raster is stretched horizontally by at most 1.25x (natural shape 81:10, drawn center/100% 100%).
@@ -14,7 +14,7 @@
 /* Working light (CKP-ENG-17/18, D294): no flame. The sheet is only a container; the idle/empty bells have none.
    Its own opacity yields to the landing burn (cockpit.css), the breathing runs on the two pseudo-elements, so the
    animation can never override that yield. The colour is the subscription's vendor colour (--v, the livery table). */
-.ck-base .bz .bz-sheet{top:0;width:calc(var(--bell-w) * 1.2);height:34px;opacity:1;z-index:2;transition:opacity .3s ease-out .45s}
+.ck-base .bz .bz-sheet{top:0;width:calc(var(--bell-w) * 1.2);height:46px;opacity:1;z-index:2;transition:opacity .3s ease-out .45s}
 /* In-mouth wash. */
 .ck-base .bz .bz-sheet::before{border-radius:0;inset:auto;left:50%;top:calc(var(--bell-m) - .5px);width:calc(var(--bell-w) * .9);height:calc(var(--bell-h) - var(--bell-m) + 1.5px);transform:translateX(-50%);opacity:.85;
   background:radial-gradient(ellipse 50% 70% at 50% 40%,color-mix(in srgb,var(--v) 55%,white) 0%,color-mix(in srgb,var(--v) 80%,transparent) 40%,color-mix(in srgb,var(--v) 30%,transparent) 75%,transparent 100%) no-repeat}

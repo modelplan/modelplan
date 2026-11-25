@@ -169,6 +169,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var appearance: CockpitAppearance
   private let shellSession: CockpitShellSession
   private let anchor: () -> CGRect?
+  private let statusScreen: () -> CGRect?
   /// Build 14c (G3-79): the screen point an open came from (the widget's ignition click). Only a detached open uses it;
   /// an attached cockpit always belongs to the menu bar icon's display (G3-128).
   private let openPoint: () -> CGPoint?
@@ -285,7 +286,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let detached = shellSession.detached
     if let window {
       let level = Self.level(detached: detached), behavior = Self.collectionBehavior(detached: detached)
-      if window.level != level { window.level = level }
+      // G3-156: the rack follows the cockpit's level at once, so it is never above it for a frame.
+      if window.level != level { window.level = level; refreshRack() }
       if window.collectionBehavior != behavior { window.collectionBehavior = behavior }
     }
     // A widget press left over from before (its release never reached us) does not decide anything after this.
@@ -560,6 +562,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onRenderVerified: (() -> Void)?
   public var onDisplayAbandoned: (() -> Void)?
   public var onClosed: (() -> Void)?
+  /// A normal close can keep the same page after its private view is cleared.
+  public var keepClearedPageAfterClose = false
+  public var onFrozenClose: (() -> Void)?
+  private var freezeInProgress = false
+  private var reopenAfterFreeze = false
   /// Once per open, when the page is first confirmed visible. It replaces the hidden-display refresh then.
   public var onShown: (() -> Void)?
   private var shown = false, awaitingShown = false
@@ -597,8 +604,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     var verificationProbe: ((@escaping @MainActor (String?) -> Void) -> Void)?
     var verificationHealth: CockpitPageHealth { health }
     func verificationWake() { grantHealthGrace(); freshnessDriver.notify(.wake) }
-    /// The window facts `visibilityChanged` reads, for a no-window page; `shown` marks the page as opened.
-    var verificationNoWindowVisibility: CockpitVisibility?
+    /// Window facts for test pages without a real display, or on a synthetic display.
+    public var verificationNoWindowVisibility: CockpitVisibility?
     /// The bridge.ts reject code a fake `.rejected` completion carries (the real path parses "rejected:<code>").
     var verificationRejectCode: String?
     /// A no-window page shown before it is ready, as open() shows a cold page: liveness runs and bootstrap is watched.
@@ -626,6 +633,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       _ = try bridge.setVisibility(.init(visible: false, occluded: true, key: false))
     }
     public var verificationWebView: WKWebView? { web }
+    public var verificationFrozen: Bool {
+      !shown && !freezeInProgress && web != nil && web?.superview == nil && bridge.queryTicket != nil
+    }
     /// WP-17 measurement: the title-strip detach key, so a detached open and close can be timed without a pointer drag.
     public func verificationDetach() { setAttached(false) }
     public var verificationCloseStarted: ((TimeInterval) -> Void)?
@@ -658,6 +668,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationRack: (ext: CGFloat, target: CGFloat, panel: CGRect?, ignited: Bool, moving: Bool) {
       (rackExtension, rackTarget, rack.panel?.isVisible == true ? rack.panel?.frame : nil, ignited, motion != nil)
     }
+    /// G3-156: whether the rack is behind the cockpit window right now (nil while the rack is not on screen).
+    public var verificationRackBehindCockpit: Bool? { window.flatMap { rack.isBehind($0) } }
+    /// G3-156: called after every rack placement (each 60 Hz frame of an open, close, detach or put back).
+    public var verificationRackDrawn: (() -> Void)?
     /// The rack clipping rectangle in its flipped view coordinates.
     public var verificationRackMask: CGRect? { (rack.panel?.contentView as? CockpitRackView)?.maskedOut }
     /// Every ignition change sent to the page, in order.
@@ -679,12 +693,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public init(
     bundle: VerifiedCockpitBundle, context: CockpitEngineContext, appearance: CockpitAppearance,
     shellSession: CockpitShellSession? = nil, anchor: @escaping () -> CGRect? = { nil },
-    openPoint: @escaping () -> CGPoint? = { nil }, systemSignals: CockpitSystemSignalSource? = nil
+    statusScreen: @escaping () -> CGRect? = { nil }, openPoint: @escaping () -> CGPoint? = { nil }, systemSignals: CockpitSystemSignalSource? = nil
   ) {
     self.systemSignals = systemSignals
     self.bundle = bundle
     self.shellSession = shellSession ?? CockpitShellSession()
     self.anchor = anchor
+    self.statusScreen = statusScreen
     self.openPoint = openPoint
     self.appearance = appearance
     self.bridge = CockpitBridgeState(context: context)
@@ -704,6 +719,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     build()
   }
   public func open() {
+    if freezeInProgress { reopenAfterFreeze = true; return }
     // G3-123: an open during a running entrance (rack-first or fade) continues that transition's clock.
     if closeTask != nil || !(entering || fadeEntranceTiming != nil) {
       transitionTiming.beginOpen(requestedAt: CockpitTimingLog.clickAt)
@@ -724,7 +740,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       if !bridge.ready { armBootstrapCheck() }
       let entrance = shellSession.nextEntrance; shellSession.nextEntrance = .fade
       endWarmPaint(painted: false)
+      if let web, web.superview == nil, let root = panel.contentView, let dragRegion {
+        root.addSubview(web, positioned: .below, relativeTo: dragRegion)
+      }
       applyLayout()
+      publishPluginState()
       installOutsideMonitors()
       let target = panel.frame
       let rackFirst = Self.opensRackFirst(entrance, reduceMotion: appearance.reduceMotion, detached: shellSession.detached, icon: rackIcon())
@@ -913,11 +933,6 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     self.window = panel
     web = view
     let center = NotificationCenter.default
-    // The shutter's frame animation resizes the attached window; the rack's mask line follows that height each step.
-    observers.append(
-      center.addObserver(forName: NSWindow.didResizeNotification, object: panel, queue: .main) { [weak self] _ in
-        MainActor.assumeIsolated { if let self, self.shutterMoving, self.motion == nil { self.refreshRack() } }
-      })
     for name in [
       NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
       NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
@@ -1220,7 +1235,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       case .ready:
         LaunchTimingLog.shared.mark("page-bridge-ready")
         bootstrapCheck?(); bootstrapCheck = nil
-        web?.isHidden = false
+        if !shown { web?.isHidden = false }
         publishAppearance()
         visibilityChanged()
         publishPluginState(force: true)
@@ -1231,12 +1246,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         deadline = nil
         let waiter = clearWaiter
         clearWaiter = nil
-        if bridge.queryTicket != nil {
-          web?.isHidden = false
+        if shown, bridge.queryTicket != nil {
           publishAppearance()
           lastVisibility = nil
           visibilityChanged()
           publishPluginState(force: true)
+        } else {
+          // D397: a hidden (frozen or prewarmed) page is not woken, but the clear emptied its plugin state. Forget what it
+          // had taken so the next shown visibility receipt (or the open) sends the state again before any screen request.
+          pluginsAccepted = nil; pluginsConfirmedOnPage = false
         }
         waiter?.resume()
       case .action(let intent):
@@ -1322,6 +1340,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     window?.ignoresMouseEvents = false
     guard !shown, !ending else { return }
     window?.orderOut(nil)
+    detachHiddenPage()
+  }
+  private func detachHiddenPage() {
+    web?.isHidden = true
+    web?.removeFromSuperview()
   }
   private func recordRejectedBridgeMessage() {
     if rejectedBridgeMessageCount < UInt64.max { rejectedBridgeMessageCount += 1 }
@@ -1420,7 +1443,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // #981 sampling P2: liveness follows the host's window facts before the page is ready too. A hidden unready page
     // accrues nothing; shown again, it gets a fresh grace period and its bootstrap is monitored again. Everything
     // that delivers to the page stays behind the query-ticket guard below.
-    if !(value.visible && !value.occluded) { if !health.paused { pauseHealth() }; stopPluginSampling() }
+    let visible = value.visible && !value.occluded
+    // Withdraw the actual surface at once, even if WebKit has yet to
+    // acknowledge the message that stops its page's motion.
+    if shown { web?.isHidden = !visible || bridge.queryTicket == nil }
+    if !visible { if !health.paused { pauseHealth() }; stopPluginSampling() }
     else {
       health.resume()
       if shown, !bridge.ready, bootstrapCheck == nil, !health.isWaiting { armBootstrapCheck() }
@@ -1428,7 +1455,6 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard bridge.queryTicket != nil else { return }
     guard value != lastVisibility else { return }
     lastVisibility = value
-    let visible = value.visible && !value.occluded
     let retainVisibleSchedule = visible && freshnessDriver.isVisible
     let token = visibilityFence.begin(visible: visible)
     // macrev2-981-4: the host's own facts resume liveness accounting with a fresh grace period. Waiting for the page to
@@ -1558,6 +1584,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // shutter moves the bottom edge the content follows the live frame, so the cockpit slides instead of stretching.
     let size = shutterMoving ? window.frame.size : layout.frame.size
     if content.bounds.size != size { content.setBoundsSize(size) }
+    // The attached shutter's frame and the rack cutout advance together on every resize.
+    if shutterMoving && motion == nil { refreshRack() }
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
   public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }
@@ -1582,7 +1610,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// The plugin state, then any held screen request (which needs that state on the page first).
   private func publishPluginState(force: Bool = false) { publishPlugins(force: force); publishPluginScreen() }
   private func publishPlugins(force: Bool = false) {
-    guard let wanted = pluginsWanted, bridge.ready, !bridge.blocked, !ending,
+    guard (web == nil || web?.superview != nil), let wanted = pluginsWanted, bridge.ready, !bridge.blocked, !ending,
       force || (wanted != pluginsAccepted && wanted != pluginsInFlight),
       let raw = try? bridge.setPlugins(wanted) else { return }
     pluginsInFlight = wanted
@@ -1635,7 +1663,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     pluginScreenWanted = id; publishPluginScreen()
   }
   private func publishPluginScreen() {
-    guard let id = pluginScreenWanted, pluginScreenInFlight == nil, bridge.ready, !bridge.blocked, bridge.pluginsSent,
+    guard (web == nil || web?.superview != nil), let id = pluginScreenWanted, pluginScreenInFlight == nil, bridge.ready, !bridge.blocked, bridge.pluginsSent,
       pluginsConfirmedOnPage, pluginsWanted != nil, pluginsInFlight == nil, pluginsAccepted == pluginsWanted, !ending,
       let raw = try? bridge.openPluginScreen(id: id) else { return }
     pluginScreenWanted = nil; pluginScreenInFlight = id
@@ -1684,8 +1712,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func updateAppearance(_ value: CockpitAppearance) {
     let resized = value.size != appearance.size
+    if value.hiddenMembers.contains(scope) { scope = "all" }
     appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, showAllModels: value.showAllModels, size: value.size, memberOrder: value.memberOrder)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, showAllModels: value.showAllModels, size: value.size, memberOrder: value.memberOrder, hiddenMembers: value.hiddenMembers)
     applyPresentationTraits()
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
@@ -1695,11 +1724,22 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // Settings "Cockpit size" applies live to an open cockpit; the relayout publishes the appearance.
     if resized, window != nil { applyLayout() } else { publishAppearance() }
   }
+  private var memberRefreshActive = false
+  public func updateMemberRefreshInFlight(_ value: Bool) {
+    guard value != memberRefreshActive else { return }
+    memberRefreshActive = value
+    guard bridge.ready, !bridge.blocked, !ending, let shell = currentShell else { return }
+    do {
+      send(try bridge.setShell(shell), coalesce: "shell", dropped: { [weak self] in self?.backlog.appearance = true })
+    } catch { degrade("shell", error: error) }
+  }
   private var currentShell: CockpitShellState? {
     #if MODELPLAN_TEST_ONLY_SPI
-    if let shell = verificationNoWindowShell { return shell }
+    if let shell = verificationNoWindowShell {
+      return CockpitShellState(closed: shell.profile == .closed, attached: shell.attached, forcedClosed: shell.forcedClosed, tier: shell.tier, scope: shell.scope, range: shell.range, refreshing: memberRefreshActive)
+    }
     #endif
-    return layout?.shellState(attached: !shellSession.detached, scope: scope, range: range)
+    return layout?.shellState(attached: !shellSession.detached, scope: scope, range: range, refreshing: memberRefreshActive)
   }
   /// `behindPendingDisplay` (glm-959-1): send while a display receipt is still pending, as an uncorrelated change
   /// that derives no deadline, so the pending display's own deadline correlation is untouched.
@@ -1766,16 +1806,22 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let displays = self.screens(), requested = anchor()
     var remembered: CockpitScreen?
     if shellSession.detached, let origin = detachedOrigin,
-       let replayed = CockpitScreenSelection.replayFrame(origin: origin, size: layout?.frame.size ?? CGSize(width: 1, height: 1), screens: displays) {
+       // The stored layout only: `hullBottomInset` may fall back to `placement()`, which re-enters `environment()`
+       // here, so before the first layout (a detached reopen with a remembered origin) that pair recursed until
+       // the stack overflowed and the test process died with signal 11.
+       let replayed = CockpitScreenSelection.replayFrame(origin: origin, size: layout?.frame.size ?? CGSize(width: 1, height: 1), screens: displays, bottomOverhang: layout?.hullBottomInset ?? 0) {
       remembered = CockpitScreenSelection.overlapping(replayed, in: displays)
     }
     // G3-128: attached, the status item's display; the click point (the widget's ignition, possibly on another display
     // and kept from an earlier open) only places a detached open.
     let asked = shellSession.detached
       ? CockpitScreenSelection.openScreen(point: openPoint(), anchor: requested, screens: displays)
-      : CockpitScreenSelection.attachedScreen(anchor: requested, screens: displays)
+      : CockpitScreenSelection.attachedScreen(anchor: requested, statusScreen: requested == nil ? statusScreen() : nil, screens: displays)
     guard let screen = remembered ?? asked else { return nil }
-    let icon = requested.flatMap { screen.frame.intersects($0) ? $0 : nil } ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
+    // D378: no visible status item (the app's anchor is nil when it is hidden, not visible, occluded or off every
+    // screen): the menu bar's edge right of the notch. An icon on another display: that display's top right (G3-46).
+    guard let requested else { return (screen.visibleFrame, CockpitShellLayout.menuBarEdgeAnchor(screen: screen)) }
+    let icon = screen.frame.intersects(requested) ? requested : CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
   /// Where Put back takes the cockpit: the attached fit on the display an attached open uses. The catch zone, the
@@ -1792,9 +1838,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     return (fit, usable, icon)
   }
   /// CKP-SHELL-33: the menu bar icon the rack hangs from, only while it is a real icon on the attached cockpit's display.
+  /// D378: with no visible icon, the menu bar's edge right of the notch the attached cockpit anchors to.
   func rackIcon() -> CGRect? {
-    guard let (_, _, icon) = attachedFit(), let requested = anchor(), icon == requested, icon.width > 0, icon.height > 0,
+    guard let (_, usable, icon) = attachedFit(), icon.width > 0, icon.height > 0,
           [icon.minX, icon.minY, icon.width, icon.height].allSatisfy(\.isFinite) else { return nil }
+    if let requested = anchor() { return icon == requested ? icon : nil }
+    guard let screen = screens().first(where: { $0.visibleFrame == usable }),
+          icon == CockpitShellLayout.menuBarEdgeAnchor(screen: screen) else { return nil }
     return icon
   }
   /// G3-132 (owner, 11-18): one cockpit size on every display, from the smallest connected display. It depends only on
@@ -1821,7 +1871,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #if MODELPLAN_TEST_ONLY_SPI
     if verificationPlacement != nil { return (fit, fit.clamping(origin: detachedOrigin ?? fit.frame.origin, usable: usable)) }
     #endif
-    let replayed = detachedOrigin.flatMap { CockpitScreenSelection.replayFrame(origin: $0, size: fit.frame.size, screens: screens()) }
+    let replayed = detachedOrigin.flatMap { CockpitScreenSelection.replayFrame(origin: $0, size: fit.frame.size, screens: screens(), bottomOverhang: fit.hullBottomInset) }
     return (fit, replayed ?? fit.frame)
   }
   private func applyLayout(animated: Bool = false, shutter: Bool = false) {
@@ -1831,8 +1881,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard closeTask == nil, let window, let (fit, frame) = placement() else { return }
     shutterTask?.cancel(); shutterTask = nil
     layout = fit
+    (window as? CockpitPanel)?.bottomOverhang = fit.hullBottomInset
     appearance = .init(theme: CockpitDayPolicy.resolve(appearance.theme), locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, showAllModels: appearance.showAllModels, size: appearance.size, memberOrder: appearance.memberOrder)
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, showAllModels: appearance.showAllModels, size: appearance.size, memberOrder: appearance.memberOrder, hiddenMembers: appearance.hiddenMembers)
     // G3-108: the web view keeps the open canvas on the window's bottom edge and the page keeps the body at one place on
     // it, open or closed. So the page's own relayout, whenever its message lands, never moves the body; only the window
     // frame does, and only where the owner wants it to (attached: the bottom edge, top pinned under the icon;
@@ -2093,7 +2144,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }
     return .init(attached: !shellSession.detached, frame: frame, sharing: window.sharingType, collection: window.collectionBehavior)
   }
-  /// CKP-SHELL-33 (D186): only an attached open from the icon, with motion and a real icon to hang the rack from,
+  /// CKP-SHELL-33 (D186): only an attached rack entrance, with motion and an anchor to hang the rack from,
   /// extends the rack first.
   nonisolated static func opensRackFirst(_ entrance: CockpitEntrance, reduceMotion: Bool, detached: Bool, icon: CGRect?) -> Bool {
     entrance == .fromIcon && !reduceMotion && !detached && icon != nil
@@ -2173,14 +2224,18 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let window, let web, let drag = dragRegion, window.firstResponder === drag else { return }
     window.makeFirstResponder(web)
   }
+  /// G3-159: the transparent reserve under the hull for the current layout (the placement's fit before the first layout).
+  private var hullBottomInset: CGFloat { layout?.hullBottomInset ?? placement()?.fit.hullBottomInset ?? 0 }
   /// A drag's frame: on the display under the pointer (the test placement's usable frame under the SPI seam).
   func dragFrame(start: CGRect, from: CGPoint, to point: CGPoint) -> CGRect {
     #if MODELPLAN_TEST_ONLY_SPI
     if let verificationPlacement {
-      return CockpitScreenSelection.dragFrame(start: start, from: from, to: point, screens: [], fallback: verificationPlacement.usable)
+      return CockpitScreenSelection.dragFrame(start: start, from: from, to: point, screens: [], fallback: verificationPlacement.usable,
+                                                bottomOverhang: hullBottomInset)
     }
     #endif
-    return CockpitScreenSelection.dragFrame(start: start, from: from, to: point, screens: screens(), fallback: environment()?.0)
+    return CockpitScreenSelection.dragFrame(start: start, from: from, to: point, screens: screens(), fallback: environment()?.0,
+                                            bottomOverhang: hullBottomInset)
   }
   private func cancelDrag() {
     dragRegion?.resetDragState()
@@ -2278,7 +2333,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     closeAnimated()
   }
   public func closeAnimated() {
-    guard !ending, closeTask == nil else { return }
+    guard !ending, !freezeInProgress, closeTask == nil else { return }
     timing(transitionTiming.beginClose())
     fadeEntranceTiming = nil
     freshnessDriver.hide(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
@@ -2298,7 +2353,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     verificationCloseStarted?(appearance.reduceMotion ? 0 : reverse ? reverseDuration : 0.12)
     verificationEntrance?(appearance.reduceMotion ? "instant" : reverse ? "rack" : "fade")
     #endif
-    guard !appearance.reduceMotion, let window else { discard(); return }
+    guard !appearance.reduceMotion, let window else { finishUserClose(); return }
     finishEntrance(completesOpen: false)
     let duration = reverse ? reverseDuration : 0.12
     if reverse, let home = layout?.frame {
@@ -2325,7 +2380,41 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     closeTask = Task { @MainActor [weak self] in
       // The rack's last frame lands on the driver's next tick; a reversed close waits one more beat for it.
       do { try await Task.sleep(for: .milliseconds(Int(duration * 1_000) + (reverse ? 40 : 0))) } catch { return }
-      self?.discard()
+      self?.finishUserClose()
+    }
+  }
+
+  private func finishUserClose() {
+    guard keepClearedPageAfterClose, shown, let window, bridge.queryTicket != nil else {
+      discard()
+      return
+    }
+    freezeInProgress = true
+    closeTask = nil
+    shown = false; awaitingShown = false; openedAt = nil
+    lastVisibility = nil; occlusionReported = false
+    dismissal.disarm(); menuTrackingHold = nil; menuTrackingDepth = 0; endWidgetPress()
+    cancelDrag(); putBackActivation.retire(); stopRack()
+    if shellSession.detached { shellSession.remember(window.frame.origin, arrangement: arrangement) }
+    for monitor in [outsideMonitor, localMonitor, switchMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
+    outsideMonitor = nil; localMonitor = nil; switchMonitor = nil
+    window.orderOut(nil)
+    web?.isHidden = true
+    timing(transitionTiming.gone())
+    onPresenceChanged?(false)
+    let context = bridge.context
+    Task { @MainActor [weak self] in
+      guard let self, !self.ending else { return }
+      await self.clearPrivateViews(adopting: context)
+      guard !self.ending, self.bridge.queryTicket != nil else { self.discard(); return }
+      self.detachHiddenPage()
+      self.freezeInProgress = false
+      if self.reopenAfterFreeze {
+        self.reopenAfterFreeze = false
+        self.open()
+      } else {
+        self.onFrozenClose?()
+      }
     }
   }
   // MARK: Launch rack (CKP-SHELL-33)
@@ -2423,6 +2512,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // A prewarmed (never shown) page has no rack on screen.
     rack.update(icon: rackExtension > 0 && shown ? rackIcon() : nil, cockpit: window, hidden: hidden, extended: rackExtension,
                 moving: rackExtension != rackTarget || motion != nil)
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationRackDrawn?()
+    #endif
   }
   /// The nozzles: the page's amber glow on every base bell (D178/D186). Not under Reduce Motion.
   private func ignite(_ on: Bool) {
@@ -2515,10 +2607,18 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// cockpit: AppKit's constraint otherwise pulled the open-sized window down under the menu bar, so the body moved by
   /// up to the porthole band and the remembered origin (and the reopen) came back lower than where it was put.
   var pendingTopDrop: CGFloat = 0
+  /// G3-159: the transparent reserve under the hull; AppKit's constraint judges the window without it, so the hull
+  /// (not the flame margin) is what reaches the screen's bottom edge.
+  var bottomOverhang: CGFloat = 0
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
-    guard pendingTopDrop > 0, frameRect.height > pendingTopDrop else { return super.constrainFrameRect(frameRect, to: screen) }
-    var closed = frameRect; closed.size.height -= pendingTopDrop
-    return CGRect(origin: super.constrainFrameRect(closed, to: screen).origin, size: frameRect.size)
+    var judged = frameRect
+    if pendingTopDrop > 0, frameRect.height > pendingTopDrop { judged.size.height -= pendingTopDrop }
+    let drop = max(0, bottomOverhang)
+    guard judged.height > drop, drop > 0 || judged.height != frameRect.height else { return super.constrainFrameRect(frameRect, to: screen) }
+    judged.origin.y += drop; judged.size.height -= drop
+    var out = super.constrainFrameRect(judged, to: screen)
+    out.origin.y -= drop
+    return CGRect(origin: out.origin, size: frameRect.size)
   }
 }
 /// The drag area of the expanded cockpit's top strip. Hovering it shows an open hand (closed while

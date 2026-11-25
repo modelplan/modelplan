@@ -2,7 +2,7 @@
 // most, "+N ▸" for the rest); 2 the totals row (the range's ≈cost large, its tokens beside it, ≈cost per day on the right,
 // "since MM-DD" instead of the range when the record is shorter); 3 one bar per day (per hour for Today), stacked in the
 // subscription colours, its height the day's ≈cost from zero. No price data means no bars: there is no token fallback.
-// The 26-week heatmap code stays for v1.1; the Grid key is not lit in v1. Pure view (spec 2.6).
+// The Grid key switches layer 3 to the day-by-hour heatmap (D390). Pure view (spec 2.6).
 import {t} from '../i18n.js';
 import {chartPalette} from '../chart-colours.js';
 import {esc, tok, unit, md, mon, tip, fill} from './fmt.js';
@@ -110,53 +110,62 @@ export function overviewBars(d,ui,list){
 }
 const importNote=(imp,v)=>imp>0&&imp<v?` · ${t('mfd.importedPart',{v:tok(imp)})}`:imp>0&&imp>=v?` · ${t('mfd.importedDay')}`:'';
 
-/* 点阵: 26 weeks × 7 days (Monday on top), five steps. Neutral LCD ink in 全部, the vendor colour in a subscription
-   scope. Hover: the date and the tokens per subscription. Days before the record began have no cell. */
-export function heatCells(d, ui, list) {
-  const today = new Date(d.now), wdToday = (today.getDay() + 6) % 7, count = 25 * 7 + wdToday + 1;
-  const len = Math.max(...list.map(x => x.daily.values.length)), first = daysBefore(d.now, count - 1);
-  const cells = Array.from({length: count}, (_, k) => {
-    const at = daysBefore(d.now, count - 1 - k), per = list.map(x => ({a: x.a, v: x.daily.values[x.daily.values.length - count + k] ?? null, i: (x.daily.imported || [])[x.daily.values.length - count + k] ?? 0}));
-    const rec = per.filter(p => p.v != null);
-    return {k, at, col: Math.floor(k / 7), row: k % 7, recorded: rec.length > 0, total: rec.reduce((s, p) => s + p.v, 0), imported: rec.reduce((s, p) => s + p.i, 0), per: rec};
+/* 点阵 (D390): the current range as a day-by-hour grid. Columns are the days of the range, rows are six four-hour bands
+   (Today: one row of 24 hours). Only hours the hourly series records have a cell; the wire keeps hourly rows for today and
+   yesterday, so older days draw nothing and a range without any hourly record says so. Neutral LCD ink in 全部, the vendor
+   colour in a subscription scope. Hover: the day, the hours and the tokens per subscription. */
+const BAND = 4;
+const hourlySeries = (d, ui) => accountsIn(d, ui).map(a => ({a, h: (d.hourlyLong || d.hourly || []).find(x => x.accountId === a.id)})).filter(x => x.h).map(x => ({a: x.a, instants: x.h.instants, values: x.h.values}));
+export function heatCells(d, ui, list = hourlySeries(d, ui)) {
+  const today = ui.days === 24, cols = today ? 24 : ui.days, rows = today ? 1 : 24 / BAND, t0 = startOfDay(d.now);
+  const days = Array.from({length: cols}, (_, k) => today ? t0 : daysBefore(t0, cols - 1 - k));
+  const cells = [];
+  for (let col = 0; col < cols; col++) for (let row = 0; row < rows; row++) cells.push({col, row, at: days[col], from: today ? col : row * BAND, to: today ? col + 1 : (row + 1) * BAND, recorded: false, total: 0, per: []});
+  const at = (day, hour) => cells[today ? hour : days.indexOf(day) * rows + Math.floor(hour / BAND)];
+  for (const s of list) s.instants.forEach((ms, i) => {
+    const v = s.values[i]; if (v == null || ms > d.now) return;
+    const x = new Date(ms), day = startOfDay(ms);
+    if (today ? day !== t0 : !days.includes(day)) return;
+    const c = at(day, x.getHours()); if (!c) return;
+    c.recorded = true; c.total += v;
+    const p = c.per.find(q => q.a.id === s.a.id) || (c.per.push({a: s.a, v: 0}), c.per.at(-1)); p.v += v;
   });
-  const vals = cells.filter(c => c.recorded && c.total > 0).map(c => c.total).sort((a, b) => a - b);
-  const q = p => vals.length ? vals[Math.min(vals.length - 1, Math.floor(p * vals.length))] : Infinity;
-  const cut = [q(.25), q(.5), q(.75)];
-  for (const c of cells) c.step = !c.recorded ? null : c.total <= 0 ? 0 : c.total <= cut[0] ? 1 : c.total <= cut[1] ? 2 : c.total <= cut[2] ? 3 : 4;
-  const coverage = Math.min(...list.map(x => x.daily.coverageStart));
-  const hasImport = cells.some(c => c.imported > 0);
-  return {cells, first, coverage, short: coverage > first, len, hasImport};
+  // Four linear steps of the busiest cell (the busiest is always the darkest); a recorded zero is step 0.
+  const max = Math.max(0, ...cells.filter(c => c.recorded).map(c => c.total));
+  for (const c of cells) c.step = !c.recorded ? null : c.total <= 0 ? 0 : Math.min(4, Math.ceil(c.total / max * 4));
+  return {cells, cols, rows, today, days, any: cells.some(c => c.recorded)};
 }
-// polish A: the square cells take the largest size the measured area allows in both directions (5–14 px), so the
-// 26 weeks fill the wider screen at 890 and still fit the shorter one at 760; the block is centred in the area.
-function heatmap(d, ui, list) {
-  const {w: AW, h: AH} = fill(ui, 'ov', {w: 300, h: 110}), {cells, first, coverage, short, hasImport} = heatCells(d, ui, list);
-  const gap = 2, top = 12, since = short ? 14 : 0;
-  const c = Math.max(5, Math.min(14, Math.floor((AW + gap) / 26 - gap), Math.floor((AH - top - since + gap) / 7 - gap))), pitch = c + gap;
-  const colour = ui.scope ? list[0]?.a.colour : null;
-  const months = [];
-  for (let col = 0; col < 26; col++) { const at = daysBefore(first, -col * 7), prev = daysBefore(at, 7); if (col === 0 || new Date(at).getMonth() !== new Date(prev).getMonth()) months.push({col, at}); }
-  const H = top + 7 * pitch - gap, W = 26 * pitch - gap, x0 = Math.max(0, Math.floor((AW - W) / 2)), y0 = Math.max(0, Math.floor((AH - since - H) / 2));
-  const rects = cells.map(x => {
+const p2 = n => String(n).padStart(2, '0');
+function heatmap(d, ui) {
+  const {w: AW, h: AH} = fill(ui, 'ov', {w: 300, h: 110}), g = heatCells(d, ui);
+  if (!g.any) return `<p class="ov-heat-empty">${t('mfd.heatNoHours')}</p>`;
+  const gap = 2, top = 12, lab = g.today ? 0 : 16, note = 14;
+  const cw = Math.max(4, Math.min(g.today ? 18 : 28, Math.floor((AW - lab + gap) / g.cols - gap))), ch = Math.max(6, Math.min(g.today ? 24 : 20, Math.floor((AH - top - note + gap) / g.rows - gap)));
+  const W = lab + g.cols * (cw + gap) - gap, H = top + g.rows * (ch + gap) - gap, x0 = Math.max(0, Math.floor((AW - W) / 2)), y0 = Math.max(0, Math.floor((AH - note - H) / 2));
+  const colour = ui.scope ? accountsIn(d, ui)[0]?.colour : null, nowHour = new Date(d.now).getHours();
+  const rects = g.cells.map(x => {
     if (x.step == null) return '';
-    const lines = [md(x.at, ui), ...(x.per.length ? x.per.map(p => `${p.a.short} ${tok(p.v)}${importNote(p.i, p.v)}`) : [t('mfd.noRecord')])];
-    return `<rect class="hm s${x.step} ${startOfDay(x.at) === startOfDay(d.now) ? 'today' : ''}" x="${x.col * pitch}" y="${top + x.row * pitch}" width="${c}" height="${c}" rx="1.2" data-tip="${tip(lines)}"/>`;
+    const day = md(g.days[x.col], ui), hours = g.today ? `${p2(x.from)}:00` : `${p2(x.from)}:00-${p2(x.to)}:00`;
+    return `<rect class="hm s${x.step} ${x.col === g.cols - 1 && x.from <= nowHour && nowHour < x.to ? 'today' : ''}" x="${lab + x.col * (cw + gap)}" y="${top + x.row * (ch + gap)}" width="${cw}" height="${ch}" rx="1.2" data-tip="${tip([`${day} ${hours}`, ...x.per.map(p => `${p.a.short} ${tok(p.v)}`)])}"/>`;
   }).join('');
-  return `<svg class="ov-heat ${colour ? 'vendor' : ''}" style="left:${x0}px;top:${y0}px;${colour ? `--hv:${colour}` : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${t('mfd.heatAria')}">
-    ${months.filter((m, i) => !i || m.col - months[i - 1].col >= 3).map(m => `<text class="hm-m" x="${m.col * pitch}" y="9">${esc(mon(m.at, ui))}</text>`).join('')}${rects}</svg>
-    ${short ? `<p class="hm-since" style="left:${x0}px">${t('mfd.since', {d: md(coverage, ui)})}</p>` : ''}`;
+  const label = (i, anchor) => `<text class="hm-m" x="${lab + i * (cw + gap) + (anchor === 'end' ? cw : 0)}" y="9" text-anchor="${anchor}">${esc(g.today ? `${p2(i)}h` : md(g.days[i], ui))}</text>`;
+  const marks = g.today ? [0, 6, 12, 18].map(i => label(i, 'start')) : g.cols > 1 ? [label(0, 'start'), label(g.cols - 1, 'end')] : [label(0, 'start')];
+  const bands = g.today ? '' : Array.from({length: g.rows}, (_, r) => `<text class="hm-m" x="0" y="${top + r * (ch + gap) + ch / 2 + 3}">${p2(r * BAND)}</text>`).join('');
+  return `<svg class="ov-heat ${colour ? 'vendor' : ''}" style="left:${x0}px;top:${y0}px;${colour ? `--hv:${colour}` : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${t(g.today ? 'mfd.heatAriaToday' : 'mfd.heatAria', {d: g.cols})}">${marks.join('')}${bands}${rects}</svg>
+    <p class="hm-since" style="left:${x0}px">${t('mfd.heatNote')}</p>`;
 }
 
 
 export const overview = {
   id: 'overview', title: 'mfd.pOverview',
   optionKeys: ui => [
-    // v1: the Grid key is shown but not lit and changes nothing (CKP-MFD-62); the heatmap code above is for v1.1.
-    {id: 'chart', a: {value:'bars', text: t('mfd.oBars'), on: true}, b: {value:'bars', text: t('mfd.oGrid'), on: false}},
+    // CKP-MFD-62 (D390): the key switches between the bars and the day-by-hour heatmap; its hint follows the mode (G3-172:
+    // the lit side always names what is drawn).
+    {id: 'chart', hint: t(ui.chart === 'grid' ? 'mfd.oGridHint' : 'mfd.oBarsHint'), a: {value:'bars', text: t('mfd.oBars'), on: ui.chart !== 'grid'}, b: {value:'grid', text: t('mfd.oGrid'), on: ui.chart === 'grid'}},
     // CKP-SHELL-50: the app's range; Today is the 24-hour chart (ui.days follows the range in the deck).
     rangeKey(ui),
-    {id:'stack',a:{value:'stack', text:t('mfd.oStack'),on:ui.stack},b:{value:'split', text:t('mfd.oSplit'),on:!ui.stack}},
+    // Stack / split shapes the bars only; the heatmap has no layers to split.
+    ui.chart === 'grid' ? null : {id:'stack',a:{value:'stack', text:t('mfd.oStack'),on:ui.stack},b:{value:'split', text:t('mfd.oSplit'),on:!ui.stack}},
     null],
   render(d, ui) {
     // The taller screen shows four alert lines, the short one only the tightest plus "+N ▸" (V1-FINAL §13); the chart
@@ -169,6 +178,9 @@ export const overview = {
     if (accounts.length && accounts.every(a => a.state === 'loading') && !list.length && !todayKnown)
       return `${alerts}<div class="ov-top ov-skel" aria-busy="true"><i></i></div>`;
     // No usage record: the alert rows stay, and three lines say why the rest is empty.
+    // D390 (macrevb-1212-2): the lit Grid key says its own hourly empty state, never the Bars message about future daily bars.
+    if (!list.length && !todayKnown && ui.chart === 'grid')
+      return `${alerts}<div class="mfd-fill" data-fill="ov">${heatmap(d, ui)}</div>`;
     if (!list.length && !todayKnown)
       return `${alerts}<div class="mp-empty ov-empty"><b>${t('mfd.ovNoRecord1')}</b><span>${t('mfd.ovNoRecord2')}</span><span>${t('mfd.ovNoRecord3')}</span></div>`;
     const row = totals(d, ui, list, costs);
@@ -177,12 +189,12 @@ export const overview = {
     const c = rangeCost(costs, ui), share = c?.unpricedShare;
     const instants = d.cost?.hourly?.[0]?.instants, ids = new Set(costs.map(x => x.a.id));
     const bars = c?.usd != null && (ui.days !== 24 || (d.cost.hourly || []).some(h => ids.has(h.accountId) && h.values.some((v, i) => v != null && !(instants?.[i] < startOfDay(d.now)))));
-    const chart = (bars && ui.chart !== 'grid' ? `<div class="mfd-fill" data-fill="ov">${overviewBars(d, ui, costs)}</div>` : ui.chart === 'grid' && list.length ? `<div class="mfd-fill" data-fill="ov">${heatmap(d, ui, list)}</div>` : '')
+    const chart = (ui.chart === 'grid' ? `<div class="mfd-fill" data-fill="ov">${heatmap(d, ui)}</div>` : bars ? `<div class="mfd-fill" data-fill="ov">${overviewBars(d, ui, costs)}</div>` : '')
       + (share > 0 ? `<p class="ov-note">${t('mfd.ovUnpriced', {p: share < .01 ? '<1' : Math.round(share * 100)})}</p>` : '');
     return `${alerts}${row}${chart}`;
   },
   onClick(act, val, ui) {
-    if (act === 'opt' && val === 'chart') return {patch: {mfdChart: 'bars'}};
+    if (act === 'opt' && val === 'chart') return {patch: {mfdChart: ui.optionChoice != null ? (ui.optionChoice === 'grid' ? 'grid' : 'bars') : ui.chart === 'grid' ? 'bars' : 'grid'}};
     if (act === 'opt' && val === 'range') return {range: ui.optionChoice};
     if (act === 'opt' && val === 'stack') return {patch: {mfdStack: ui.optionChoice != null ? ui.optionChoice === 'stack' : !ui.stack}};
     if (act === 'alerts') return {open: ['alerts', {from: 'mfd', key: 'alerts'}]};

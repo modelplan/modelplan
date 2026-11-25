@@ -12,7 +12,7 @@ A menu bar app for ModelPlan: which model and effort fit, your quota and resets,
 - **Effort**: the effort curves and ladder for the model a session uses (the Codex dashboard's open curves), with Fast and the speed you measured.
 - **Notifications**, each sent once:
   - on by default: tight or exhausted quota, switch back after a reset, a better model;
-  - off by default: unused quota before a reset; peak hours, reset cards and public resets.
+  - off by default: unused quota before a reset; peak hours, banked resets and public resets.
 
 ## Data
 

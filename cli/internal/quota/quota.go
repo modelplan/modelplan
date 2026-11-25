@@ -326,6 +326,7 @@ type Paths struct {
 	Admission                   *consent.Admission // immutable command input; live reader/publication fences remain live
 	CLIVersion                  string             // framework admission: minCli for the verified catalogue
 	Cache, CodexHome, LocalFile string
+	CodexIndex                  *CodexRolloutIndex        // optional process-local index shared by the engine and its watcher
 	CodexBarFile                string                    // ~/.config/modelplan/codexbar.json: providers read through CodexBar
 	ConnectionsFile             string                    // ~/.config/modelplan/connections.json: which backend reads each provider
 	CodexThread                 string                    // the calling Codex thread, when known (CODEX_THREAD_ID)
@@ -337,6 +338,7 @@ type Paths struct {
 	ZCodeNoProviderFile         bool                      // ZCode is present on the default route but keeps no provider file (G3-21)
 	ZCodeKeychainPending        string                    // D380: ZCode's Keychain-bound sign-in awaits the Keychain choice ("unset" | "denied")
 	ZCodeLoginConsent           bool                      // ZCode's sign-in is there but its saved-login scope is not allowed (D369)
+	eraseGuard                  consent.EraseGuard        // retry erasure fence, checked under the reader lock (macrevb-1218-5)
 }
 
 // Read gathers every available source and evaluates it at now.

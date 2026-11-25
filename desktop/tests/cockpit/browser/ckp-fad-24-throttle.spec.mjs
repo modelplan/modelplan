@@ -8,15 +8,18 @@ const effort=(e,ability,cost,star=false)=>({effort:e,label:e,star,ability,cost,t
 // Sol: ★ Med, current High; Opus: ★ Med, current XHigh; GLM: one effort, ★ Max = current Max (owner build G3-92).
 export function throttleData({glmEfforts=['max']}={}){
  const data=visualFixture().data;
+ // GLM remains eligible after live sessions clear because this fixture has a visible ZCode subscription.
+ const zai=structuredClone(data.projection.rows[0]);zai.id='zai';zai.name={en:'ZCode',zh:'ZCode'};zai.vendorKey='glm';
+ zai.accounts.forEach(a=>{a.subscriptionRef=null;a.accountLocator=null;});data.projection.rows.push(zai);
  data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-11-12T00:00:00Z',source:'client',truncated:false,models:[
   {id:'sol',name:'Sol 6.1',developerId:'openai',recommended:'medium',efforts:[effort('low',33.9,.13),effort('medium',39.8,.25,true),effort('high',42.8,.38),effort('xhigh',46,.63),effort('max',47.5,1.06)]},
   {id:'opus',name:'Opus 5.5',developerId:'anthropic',recommended:'medium',efforts:[effort('low',45.6,1.2),effort('medium',55.4,2.9,true),effort('high',58.1,3.95),effort('xhigh',60.1,7.5),effort('max',62.4,13)]},
-  {id:'glm',name:'GLM-5.3',developerId:'zhipu',recommended:'max',efforts:glmEfforts.map((e,i)=>effort(e,40+i,1+i,e==='max'))},
+  {id:'glm',name:'GLM-5.3',developerId:'zhipuai',recommended:'max',efforts:glmEfforts.map((e,i)=>effort(e,40+i,1+i,e==='max'))},
  ]};
  data.details.sessions=[
   {sessionRef:'0000000000000001',source:'codex',subscriptionRef:null,model:'sol',effort:'high',projectLabel:'modelPlans',lastObservedAt:'2026-10-20T14:05:00Z',state:'running',rate:null},
   {sessionRef:'0000000000000002',source:'claude',subscriptionRef:null,model:'opus',effort:'xhigh',projectLabel:'desktop',lastObservedAt:'2026-10-20T14:04:00Z',state:'running',rate:null},
-  {sessionRef:'0000000000000003',source:'claude',subscriptionRef:null,model:'glm',effort:'max',projectLabel:'modelPlans',lastObservedAt:'2026-10-20T14:03:00Z',state:'idle',rate:null},
+  {sessionRef:'0000000000000003',source:'zcode',subscriptionRef:null,model:'glm',effort:'max',projectLabel:'modelPlans',lastObservedAt:'2026-10-20T14:03:00Z',state:'idle',rate:null},
  ];
  return data;
 }
@@ -35,7 +38,7 @@ export async function openThrottles(page,{theme='night',tier='tall',height=890,g
 const centres=page=>page.locator('.fd-ch:not(.empty)').evaluateAll(list=>list.map(ch=>{const mid=e=>{const r=e.getBoundingClientRect();return r.left+r.width/2;};
  return {name:ch.querySelector('.st-name').textContent,column:mid(ch),slot:mid(ch.querySelector('.fd-slot')),lever:mid(ch.querySelector('.fd-cap')),strip:mid(ch.querySelector('.fd-strip')),frame:ch.querySelector('.fd-cap').dataset.frame};}));
 // The vertical centre of a level label (Max .. Low) beside the travels: the detent rows.
-const row=(page,level)=>page.locator(`.sc-l[data-level="${level}"]`).evaluate(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;});
+const row=(page,level)=>page.locator(`.sc-l[data-level="${level}"]`).first().evaluate(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;});
 const box=locator=>locator.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,top:r.top,bottom:r.bottom,width:r.width,height:r.height};});
 const channel=(page,i)=>page.locator('.fd-ch:not(.empty)').nth(i);
 
@@ -74,7 +77,8 @@ test('G3-92 a Max-only model shows no ghost: keys, drag and label clicks all lan
  await expect(slider).toHaveAttribute('aria-valuetext','Max');await expect(glm.locator('.fd-ghost')).toBeHidden();await expect(glm.locator('.fd-tline')).toBeHidden();
 });
 
-for(const [tier,height,u] of [['tall',890,1],['compact',640,80/97]])
+// D405: the tall travel is half the deck below the lamps and cards: (257 - 48) / 2 = 104.5 px.
+for(const [tier,height,u] of [['tall',890,88.5/97],['compact',640,80/97]])
  test(`CKP-FAD-24 the baked throttle is drawn per theme at the travel's scale (${tier})`,async({page})=>{
   const {send,receive}=await openThrottles(page,{tier,height});
   const sol=channel(page,0),slot=await box(sol.locator('.fd-slot')),lever=await box(sol.locator('.fd-cap'));
@@ -93,7 +97,7 @@ test('CKP-FAD-24 the recommended effort is a small gold ★ tick on the slot sca
  for(const [i,level] of [[0,'Med'],[1,'Med'],[2,'Max']]){
   const ch=channel(page,i),rec=await box(ch.locator('.fd-rec')),star=await box(ch.locator('.fd-rec .g-star')),slot=await box(ch.locator('.fd-slot'));
   expect(Math.abs(rec.y-await row(page,level)),'★ on the '+level+' row').toBeLessThanOrEqual(1);
-  expect(rec.x-slot.x).toBeGreaterThan(19);expect(rec.x-slot.x).toBeLessThan(22);   // right of the plate's ticks (11.6 u)
+  expect(rec.x-slot.x).toBeGreaterThan(12);expect(rec.x-slot.x).toBeLessThan(16);   // D405: just right of the grip (15.5 u), clear of the gap names
   expect(rec.width).toBeCloseTo(3,0);expect(star.width).toBeLessThanOrEqual(9);
   expect(await ch.locator('.fd-rec').evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(212, 185, 148)');
  }
@@ -134,11 +138,28 @@ test('CKP-FAD-24 a release snaps only to efforts the model has (GLM has Max only
 test('CKP-FAD-12 the real lever glides through the baked frames when the current effort changes',async({page})=>{
  const {send,receive}=await openThrottles(page);
  const lever=channel(page,0).locator('.fd-cap'),data=throttleData();data.details.sessions[0].effort='low';
- const seen=lever.evaluate(e=>new Promise(done=>{const frames=new Set(),t0=performance.now();const look=()=>{frames.add(getComputedStyle(e).getPropertyValue('--fd-frame').trim());if(performance.now()-t0<600)requestAnimationFrame(look);else done([...frames]);};requestAnimationFrame(look);}));
- expect(await receive(send('display',{data}))).toBe(true);
- const frames=(await seen).map(Number);
- expect(await lever.getAttribute('data-frame')).toBe('0');expect(frames.at(-1)).toBe(0);
- expect(frames.some(f=>f>0&&f<16),'intermediate frames').toBe(true);
+ expect(await lever.getAttribute('data-frame')).toBe('16');
+ // Deterministic: the glide is a CSS transition of --fd-frame. Deliver the display and capture the transition in the SAME task (it is
+ // still running there, however slow the runner is), pause it and drive its clock by hand: start, end and a monotonic path.
+ const raw=send('display',{data});
+ const path=await lever.evaluate((e,raw)=>{
+  const ok=window.modelPlanCockpit.receive(raw);
+  const glides=e.getAnimations().filter(a=>a.transitionProperty==='--fd-frame');
+  if(glides.length!==1)return {ok,glides:glides.length};
+  const [glide]=glides;glide.pause();const span=glide.effect.getComputedTiming().endTime;
+  const frames=[0,.1,.25,.5,.75,.9,1].map(f=>{glide.currentTime=f*span;return Number(getComputedStyle(e).getPropertyValue('--fd-frame').trim());});
+  glide.finish();
+  return {ok,glides:1,span,frames,end:Number(getComputedStyle(e).getPropertyValue('--fd-frame').trim())};
+ },raw);
+ expect(path.ok).toBe(true);
+ expect(path.glides,'one --fd-frame transition on the lever').toBe(1);
+ expect(path.span,'the glide takes time').toBeGreaterThan(0);
+ expect(path.frames[0],'starts on the old High frame').toBe(16);
+ expect(path.frames.at(-1),'ends on the Low frame').toBe(0);
+ expect(path.end).toBe(0);
+ for(let i=1;i<path.frames.length;i++)expect(path.frames[i],'monotonic glide '+path.frames).toBeLessThanOrEqual(path.frames[i-1]);
+ expect(path.frames.some(f=>f>0&&f<16),'intermediate frames '+path.frames).toBe(true);
+ expect(await lever.getAttribute('data-frame')).toBe('0');
 });
 
 // G3-92 (owner 11-12): detent -> y is one mapping from the effort NAME on the full Low..Max scale, for the lever, the ghost and the
@@ -171,7 +192,7 @@ for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height
     for(const [name,x] of [['ghost',ghost.x],['rod',rod.x],['slot',slot.x]])expect(Math.abs(x-lever.x),name+' axis vs lever').toBeLessThanOrEqual(.5);
     // the rod is faint but visible; in the day theme it is the dark blue
     // the ghost rod is as wide as the real lever's rod (5 u)
-    expect(Math.abs(rod.width-5*(tier==='tall'?1:80/97)),'ghost rod width').toBeLessThanOrEqual(.5);
+    expect(Math.abs(rod.width-5*(tier==='tall'?88.5/97:80/97)),'ghost rod width').toBeLessThanOrEqual(.5);
     const bg=await ch.locator('.fd-tline').evaluate(e=>getComputedStyle(e).backgroundColor);
     if(theme==='night')expect(bg).toMatch(/0\.25\)$/);
     if(theme==='day')expect(bg).toMatch(/0\.55\)$/);
@@ -183,6 +204,7 @@ for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height
 test('G3-92 unknown current: the lever is on the ★ row and the ghost on the trial effort row',async({page})=>{
  const {send,receive}=await openThrottles(page);
  const data=throttleData();data.details.sessions=[];expect(await receive(send('display',{data}))).toBe(true);
+ await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(3);
  const rows=await scaleRows(page);
  for(const [i,star] of [[0,'Med'],[1,'Med'],[2,'Max']]){
   const ch=channel(page,i);await expect.poll(async()=>Math.abs(await grip(ch)-rows[star])).toBeLessThanOrEqual(.6);

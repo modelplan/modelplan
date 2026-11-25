@@ -49,9 +49,12 @@ extension CommunityCockpitEntryTests {
         catch { await entry.composition.stop(); throw error }
         await entry.composition.stop()
     }
-    @MainActor private func shownPage(_ probe: PluginPageProbe, other: CockpitWindowController? = nil) async throws -> CockpitWindowController {
+    /// The page the click shows. `reopening` is the page a close just hid: D397 keeps that one frozen page and shows it
+    /// again (`keepClearedPageAfterClose`); a page that is not kept is discarded and the click builds a new one.
+    @MainActor private func shownPage(_ probe: PluginPageProbe, reopening previous: CockpitWindowController? = nil) async throws -> CockpitWindowController {
         func shown() -> CockpitWindowController? {
-            guard let page = probe.made.last, page !== other, page.bridge.ready, page.window?.isVisible == true else { return nil }
+            guard let page = probe.made.last, page.bridge.ready, page.window?.isVisible == true else { return nil }
+            if let previous, (page === previous) != previous.keepClearedPageAfterClose { return nil }
             return page
         }
         for _ in 0..<3000 where shown() == nil { try await Task.sleep(for: .milliseconds(10)) }
@@ -131,7 +134,8 @@ extension CommunityCockpitEntryTests {
             try await eventually("the cockpit closes") { page.window?.isVisible != true }
             try await eventually("nothing runs without a shown page") { plugins.sampler.sampling.isEmpty }
             entry.showConsole()
-            let reopened = try await shownPage(probe, other: page)
+            let reopened = try await shownPage(probe, reopening: page)
+            if page.keepClearedPageAfterClose { XCTAssertTrue(reopened === page, "D397: the reopen shows the one kept page") }
             try await eventually("the reopened page shows the saved plugin") { await self.js(reopened, self.keyScript) as? Bool == true }
             XCTAssertEqual(onPage(reopened).map { $0["id"] as? String }, ["zz-newer-build", "placeholder", "calendar", "resources"])
             // #1096 card action: the app opens the plugin's big screen; asked again, it stays open.
@@ -191,6 +195,19 @@ extension CommunityCockpitEntryTests {
             try await eventually("Escape closes it") { await self.js(page, removeOpen) as? Bool == false }
             try await clickControl(keySelector)
             try await eventually("a Control-click on the key opens its menu") { await self.js(page, removeOpen) as? Bool == true }
+            // D376 / CKP-PLG-54: Remove asks first through the app's closer (deterministic seam in place of the NSAlert).
+            let closer = try XCTUnwrap(plugins.closer, "the factory installs the closer whatever the sampling state")
+            var asked = 0, confirm = false
+            closer.presenter = { _ in asked += 1; return confirm }
+            try await click("[data-pm-remove=\"placeholder\"]", .leftMouseDown, .leftMouseUp)
+            try await eventually("Remove asks for confirmation") { asked == 1 }
+            try await Task.sleep(for: .milliseconds(200))
+            XCTAssertTrue(plugins.model.preferences.enabledIDs().contains("placeholder"), "Cancel leaves the plugin on")
+            let keyKept = await self.js(page, self.keyScript) as? Bool
+            XCTAssertEqual(keyKept, true, "Cancel leaves the key on the page")
+            try await clickControl(keySelector)
+            try await eventually("the menu opens again") { await self.js(page, removeOpen) as? Bool == true }
+            confirm = true
             try await click("[data-pm-remove=\"placeholder\"]", .leftMouseDown, .leftMouseUp)
             try await eventually("the page edit is saved") { !plugins.model.preferences.enabledIDs().contains("placeholder") }
             try await eventually("the key leaves the page") { await self.js(page, self.keyScript) as? Bool == false }

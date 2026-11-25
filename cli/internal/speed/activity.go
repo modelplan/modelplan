@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"io"
 	"os"
 	"sort"
@@ -233,7 +234,7 @@ func activityPhase(l activityLine, source string) string {
 			return "model"
 		case "tool.call.started":
 			return "tool"
-		case "tool.call.completed", "tool.call.failed":
+		case "tool.call.completed", "tool.call.failed", "model.request.completed", "model.request.failed":
 			return "model"
 		case "turn.completed", "turn.failed", "turn.aborted", "turn.cancelled":
 			return "finished"
@@ -255,7 +256,7 @@ func turnActivity(phase string, at time.Time) TurnActivity {
 	return TurnActivity{phase, at, at.Add(grace)}
 }
 func readActivityTail(log LiveLog, fi os.FileInfo, now time.Time) ([]SessionActivity, error) {
-	f, err := os.Open(log.Path)
+	f, err := openLog(log.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -268,11 +269,14 @@ func readActivityTail(log LiveLog, fi os.FileInfo, now time.Time) ([]SessionActi
 	if _, err = f.Seek(offset, io.SeekStart); err != nil {
 		return nil, err
 	}
+	idlework.Open()
 	b, err := io.ReadAll(io.LimitReader(f, liveTail))
+	idlework.Read(len(b))
 	if err != nil {
 		return nil, err
 	}
 	defer clear(b)
+	idlework.Decode()
 	after, err := f.Stat()
 	if err != nil || after.Size() != fi.Size() || !after.ModTime().Equal(fi.ModTime()) {
 		return nil, os.ErrInvalid
@@ -350,7 +354,9 @@ func readActivityTail(log LiveLog, fi os.FileInfo, now time.Time) ([]SessionActi
 			break
 		}
 	}
-	if !recognized {
+	// ZCode writes process heartbeats to this same log while idle. Only a
+	// timestamped turn lifecycle can make it active.
+	if !recognized && log.Source != "zcode" {
 		key := fileKey(log.Path)
 		sessions[key] = SessionActivity{TurnActivity: turnActivity("fallback", fi.ModTime()), Source: log.Source, SessionKey: key}
 	}
@@ -364,7 +370,7 @@ func readActivityTail(log LiveLog, fi os.FileInfo, now time.Time) ([]SessionActi
 // ExistingActivityBindings deliberately excludes Live's historical source-level
 // fallback. Only the per-session observation ledger supplies provenance.
 func ExistingActivityBindings(cache string, admission consent.Admission) []ActivityBinding {
-	l, ok := LoadPerf(cache)
+	l, ok := loadPerf(cache)
 	if !ok {
 		return nil
 	}

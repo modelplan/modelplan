@@ -1,0 +1,1 @@
+Cockpit: the Subscriptions page always draws from the app's current range (the header's) and shows a Reading state, not an empty page, until the first reply arrives; the Overview's bottom Bars | Grid key always names the chart mode that is drawn (G3-171, G3-172).

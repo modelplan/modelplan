@@ -27,7 +27,7 @@ func TestSharedProjectionKeepsApprovedPOSTOptIn(t *testing.T) {
 		Detect: func() detect.Report {
 			return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "claude", Preferred: "native", ReaderID: "native:claude"}, Detected: true}, {Entry: detect.Entry{ProviderID: "gemini", Preferred: "native", ReaderID: "native:gemini"}, Detected: true}}}
 		},
-		Paths: func(a consent.Admission) quota.Paths { return quota.Paths{Admission: &a} }, Cleanup: func(string, bool) error { return nil },
+		Paths: func(a consent.Admission) quota.Paths { return quota.Paths{Admission: &a} }, Cleanup: func(string, bool, consent.EraseGuard) error { return nil },
 	})
 	if err != nil {
 		t.Fatal(err)

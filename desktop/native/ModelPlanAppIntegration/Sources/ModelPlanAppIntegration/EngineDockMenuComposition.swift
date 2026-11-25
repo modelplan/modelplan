@@ -46,6 +46,8 @@ public struct EngineMenuRefreshResult {
     /// The inputs of the last full withdrawal with no admitted content since; a second clear of the same empty state
     /// (the fence withdraws again when a recompute finds no admitted rows) only drops the cache.
     private var emptyClearInputs: DockInputs?
+    /// G3-161: an in-place replacement kept the painted face; the driver step's install releases it, `settled` retires it.
+    private var faceAwaitingReinstall = false
     func dockInputs() -> DockInputs {
         let snapshot = store.snapshot
         return DockInputs(status: provider.dockContent.status, connection: snapshot.connection, delivery: snapshot.delivery,
@@ -65,8 +67,16 @@ public struct EngineMenuRefreshResult {
                 // redrawing it again changes nothing (a kept card is never skipped: its replacement decides it).
                 let inputs = self.dockInputs()
                 if self.cardReplacementMembers.isEmpty, self.emptyClearInputs == inputs { return }
-                let keepCard = self.dock.withdrawAdmittedContent(privacy: self.provider.dockContent.status == .cleared,
-                                                                 keepingCardFor: self.cardReplacementMembers)
+                let privacy = self.provider.dockContent.status == .cleared
+                // G3-161: a replacement (clear, then recompute and install in the same driver step) with no card open
+                // keeps the painted face; the reinstall repaints only changed readings, and `settled` retires the face
+                // if nothing was reinstalled. Withdrawals, pauses, privacy and open cards retire it here as before.
+                let inPlace = !privacy && self.deadlineDriver.clearReinstalls && self.dock.canReplaceInPlace
+                let keepCard = self.dock.withdrawAdmittedContent(privacy: privacy, keepingCardFor: self.cardReplacementMembers,
+                                                                 retainingFace: inPlace)
+                self.faceAwaitingReinstall = inPlace
+                // No intermediate empty face: the install (or `settled`) refreshes the Dock and menu once.
+                if inPlace { self.emptyClearInputs = nil; return }
                 // On withdrawal or a failed replacement the empty cache still
                 // supplies the localized menu next step.
                 if !keepCard {
@@ -87,11 +97,20 @@ public struct EngineMenuRefreshResult {
                 guard let self else { return }
                 guard let evaluatedAt = self.pairedProjection.evaluatedAt else { return }
                 self.emptyClearInputs = nil
+                self.faceAwaitingReinstall = false
                 self.admittedCache.install(content, evaluatedAt: evaluatedAt)
                 self.dock.refreshDockContent(); self.menuDidChange?()
                 self.armActivityExpiry()
             }, sourceIsCurrent: { [weak self] token in self?.pairedProjection.isCurrent(token) == true },
-            installValidatedUnknown: true, presentationInterval: 60, refreshPresentation: { [weak self] now in
+            installValidatedUnknown: true, presentationInterval: 60, settled: { [weak self] in
+                guard let self, self.faceAwaitingReinstall else { return }
+                // The replacement installed nothing: finish the withdrawal it deferred.
+                self.faceAwaitingReinstall = false
+                self.dock.completeDeferredWithdrawal()
+                self.dock.refreshDockContent()
+                self.menuDidChange?()
+                self.emptyClearInputs = self.dockInputs()
+            }, refreshPresentation: { [weak self] now in
                 guard let self else { return }
                 if !self.refreshCurrentPresentation(at:now) {
                     self.pairedProjection.invalidate()
@@ -219,7 +238,10 @@ public struct EngineMenuRefreshResult {
         dock.setDockContentProvider(provider)
         let binding = ResourceWidgetBinding(sampler: sampler, provider: provider, language: language,
                                             refreshCard: { [weak self] in self?.dock.refreshPluginCard() },
-                                            refreshRing: { [weak self] in self?.dock.refreshPluginRing($0) ?? false }) { [weak self] in self?.dock.refreshDockContent() }
+                                            refreshRing: { [weak self] input in
+                                                guard let self, self.admittedCache.isAdmissible(at: self.deadlineWall()) else { return false }
+                                                return self.dock.refreshPluginRing(input)
+                                            }) { [weak self] in self?.dock.refreshDockContent() }
         // macrevb-1096-4: the hover card reads the latest sample, not the rows captured at the last ring redraw.
         dock.livePluginCard = { [weak binding] id in id == ResourceDockBridge.subscriptionID ? binding?.liveCard() : nil }
         return binding
@@ -348,11 +370,19 @@ public struct EngineMenuRefreshResult {
     /// engine delivery, a withdrawn or suspended projection).
     var menuTitleReading: StatusTitleReading {
         guard let settings = latestSettings else { return .unavailable }
-        guard settings.snapshot.preferences.menuDisplay != .icon else { return .none }
+        guard settings.snapshot.preferences.menuDisplay != .icon, settings.snapshot.preferences.menuDisplay != .automatic else { return .none }
         if provider.dockContent.status == .cleared || provider.dockContent.status == .empty { return .none }
         let now = deadlineWall()
         guard let content = admittedCache.admittedContent(.init(snapshot: nil, diagnostics: .init(), now: now)) else { return .unavailable }
         return EngineMenuBarTitle.reading(inputs: content.snapshot.inputs, preferences: settings.snapshot.preferences, now: now)
+    }
+    /// D377: the tracked quota for the automatic display, with the same gap rules as `menuTitleReading`.
+    var menuAutoInput: StatusAutoInput {
+        guard let settings = latestSettings else { return .unavailable }
+        if provider.dockContent.status == .cleared || provider.dockContent.status == .empty { return .none }
+        let now = deadlineWall()
+        guard let content = admittedCache.admittedContent(.init(snapshot: nil, diagnostics: .init(), now: now)) else { return .unavailable }
+        return EngineMenuBarTitle.autoInput(inputs: content.snapshot.inputs, preferences: settings.snapshot.preferences, now: now)
     }
     public var menuPresentation: CommunityMenuBarPresentation {
         let now = deadlineWall()

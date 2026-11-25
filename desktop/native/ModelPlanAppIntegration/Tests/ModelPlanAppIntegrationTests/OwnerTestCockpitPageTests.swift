@@ -334,7 +334,7 @@ extension CommunityCockpitEntryTests {
         let composition = EngineDockMenuComposition(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:]), createsNativePanels: false, makeClient: { _, _ in client })
         let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
         // An Air-width screen: Auto would draw 85 %, so 90 % and 100 % can only come from the setting. Tall enough
-        // for the full 939 pt canvas (905 canopy + 34) at 100 %, so only the setting, never the height fit, sets the scale.
+        // for the full 951 pt canvas (905 canopy + 46) at 100 %, so only the setting, never the height fit, sets the scale.
         let air = CGRect(x: 0, y: 0, width: 1470, height: 1026)
         var page: CockpitWindowController?
         let coordinator = EngineCockpitCoordinator { context in
@@ -378,7 +378,7 @@ extension CommunityCockpitEntryTests {
               FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
             throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
         }
-        for (name, usable, tier, closedRoot) in [("short", CGRect(x: 0, y: 0, width: 1440, height: 680), CockpitShellState.Tier.compact, CGFloat(609)),
+        for (name, usable, tier, closedRoot) in [("short", CGRect(x: 0, y: 0, width: 1440, height: 692), CockpitShellState.Tier.compact, CGFloat(609)),
                                                   ("full", CGRect(x: 0, y: 0, width: 1680, height: 1026), .tall, 691)] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-53-" + UUID().uuidString).resolvingSymlinksInPath()
             defer { try? FileManager.default.removeItem(at: root) }
@@ -522,7 +522,7 @@ extension CommunityCockpitEntryTests {
         }
         let cases: [(String, CGRect, CockpitSize?, CGFloat)] = [
             ("1470x956, Dock at the bottom (default 85 %)", CGRect(x: 0, y: 70, width: 1470, height: 849), nil, 0.85),
-            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 711), nil, (711 - CockpitShellLayout.menuBarGap) / 939),
+            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 720), nil, (720 - CockpitShellLayout.menuBarGap) / 951),
             ("80 % chosen live", CGRect(x: 0, y: 0, width: 1680, height: 1026), .percent80, 0.8),
         ]
         for (name, usable, live, expected) in cases {
@@ -535,6 +535,9 @@ extension CommunityCockpitEntryTests {
             let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
             defer { page.discard() }
             page.verificationPlacement = (usable: usable, anchor: CGRect(x: usable.maxX - 340, y: usable.maxY, width: 28, height: 24))
+            // The fixture's display can extend beyond the hosted Mac's actual screen.
+            // Keep the synthetic page visible so the AppKit hit-test measures geometry.
+            page.verificationNoWindowVisibility = .init(visible: true, occluded: false, key: false)
             page.open()
             let window = try XCTUnwrap(page.window), region = try XCTUnwrap(page.verificationDragRegion), web = try XCTUnwrap(page.verificationWebView)
             if let live { page.updateAppearance(.init(theme: .night, locale: .en, profile: .full, size: live)) }
@@ -542,7 +545,7 @@ extension CommunityCockpitEntryTests {
             let deadline = ContinuousClock.now + .seconds(30)
             while box == nil, ContinuousClock.now < deadline {
                 let script = "(()=>{const b=document.querySelector('.ck-head .ck-brand'),s=document.querySelector('[data-shutter]'),c=document.querySelector('.ck');if(!b||!s||!c||!document.documentElement.dataset.profile)return null;const r=b.getBoundingClientRect(),t=s.getBoundingClientRect();return {brandX:r.x+r.width/2,brandY:r.y+r.height/2,shutterX:t.x+t.width/2,shutterY:t.y+t.height/2,width:innerWidth,height:innerHeight,root:c.getBoundingClientRect().height,rootBottom:c.getBoundingClientRect().bottom}})()"
-                box = (try? await web.evaluateJavaScript(script)) as? [String: Double]
+                if !web.isHidden { box = (try? await web.evaluateJavaScript(script)) as? [String: Double] }
                 if box == nil { try await Task.sleep(for: .milliseconds(50)) }
             }
             let painted = try XCTUnwrap(box, "\(name): the page must be painted")
@@ -552,14 +555,14 @@ extension CommunityCockpitEntryTests {
             XCTAssertEqual(painted["root"]!, 905, accuracy: 0.5, "\(name): the full root")
             // The whole canvas, root plus the flame reserve, is laid out at 636 CSS px and fits the window.
             XCTAssertEqual(painted["width"]!, 636, accuracy: 1, name)
-            XCTAssertEqual(painted["height"]!, 939, accuracy: 1, name)
+            XCTAssertEqual(painted["height"]!, 951, accuracy: 1, name)
             // Whole-point window frames (fit rounds up) leave under 1 pt of transparent slack below the page: up to 1/scale CSS px.
             let reserve = painted["height"]! - painted["rootBottom"]!
-            XCTAssertGreaterThanOrEqual(reserve, 33, "\(name): the flame reserve is inside the window")
-            XCTAssertLessThanOrEqual(reserve, 34 + 1 / Double(scale) + 0.01, "\(name): the flame reserve plus at most 1 pt of rounding slack")
+            XCTAssertGreaterThanOrEqual(reserve, 45, "\(name): the flame reserve is inside the window")
+            XCTAssertLessThanOrEqual(reserve, 46 + 1 / Double(scale) + 0.01, "\(name): the flame reserve plus at most 1 pt of rounding slack")
             // The window server places borderless panels on whole points.
             XCTAssertEqual(window.frame.width, 636 * scale, accuracy: 1, name)
-            XCTAssertEqual(window.frame.height, 939 * scale, accuracy: 1, name)
+            XCTAssertEqual(window.frame.height, 951 * scale, accuracy: 1, name)
             // Placement on the requested screen (the hosted runner's real display is smaller, so the window
             // server may move the panel; its size is what the test can hold it to).
             XCTAssertEqual(layout.frame.maxY, usable.maxY - CockpitShellLayout.menuBarGap, accuracy: 1e-6, name)

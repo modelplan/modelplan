@@ -2,6 +2,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -247,8 +248,9 @@ func TestAppServerZCodeActivityReachesTheAccountRow(t *testing.T) {
 	used := 25.0
 	good := map[string]any{"admission": grant.Admission, "provider": "zai", "source": "api", "status": "ok", "observedAt": now, "subscriptionRef": "fedcba9876543210",
 		"windows": []map[string]any{{"kind": "five_hour", "windowMinutes": 300, "usedPercent": used, "resetsAt": now.Add(time.Hour), "observedAt": now}}}
+	generation := fmt.Sprintf("%x", sha256.Sum256([]byte("modelplan/consent/"+grant.Generation)))
 	writeObserved(t, filepath.Join(cache, "observed", "zai-config-v1.json"), map[string]any{"schemaVersion": 1, "attemptAt": now, "nextAt": now.Add(time.Hour), "availability": "ok",
-		"loginGeneration": grant.Generation, "goodGeneration": grant.Generation, "lastGood": good})
+		"loginGeneration": generation, "goodGeneration": generation, "lastGood": good})
 	writeObserved(t, filepath.Join(cache, "observed", "native.json"), map[string]any{"schemaVersion": 1, "observedAt": now, "providers": []any{good}})
 	log := filepath.Join(home, ".zcode", "cli", "log", "synthetic.jsonl")
 	if err := os.MkdirAll(filepath.Dir(log), 0o700); err != nil {

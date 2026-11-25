@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import Foundation
 import OSLog
 import CoreGraphics
 import ModelPlanCore
@@ -202,18 +203,31 @@ struct DockHelpInteraction: Equatable {
     /// The resource sampler's widget cadence follows `isWidgetShown` (the community delegate owns `visibilityChanged`).
     public var widgetShownChanged: ((Bool) -> Void)?
     private func reportVisibility(_ visible: Bool, expanded: Bool = false) {
-        reportWidgetShown(visible && expanded)
+        reportWidgetShown(visible && expanded && panel?.occlusionState.contains(.visible) == true)
         guard visible != isVisible else { return }
         isVisible = visible; visibilityChanged?()
     }
     private func reportWidgetShown(_ shown: Bool) {
         guard shown != isWidgetShown else { return }
-        isWidgetShown = shown; widgetShownChanged?(shown)
+        isWidgetShown = shown
+        if !shown {
+            workingDriver?.stop()
+        } else if model?.inputs.contains(where: { $0.working != nil }) == true {
+            // A hidden or collapsed surface retired its layers. Reattach only
+            // when there is still admitted activity to draw.
+            rebuild()
+        }
+        widgetShownChanged?(shown)
     }
     /// macrevb-1096-4: a plugin ring's card as it is now (rows, footer, action); nil keeps the rows of the last redraw.
     public var livePluginCard: ((String) -> DockPluginCard?)?
     /// macrevb-1096-6, D371 B4e: a plugin card's footer row ("在驾驶舱查看") opens that plugin's big screen. Nil opens the cockpit.
     public var pluginScreenRequested: ((String) -> Void)?
+    /// D376: "Turn Off <plugin>…" on a plugin ring's and its card's right-click menu, given the ring's Dock ID
+    /// ("plugin:resources"). The open card is closed first. Nil: no such item.
+    public var pluginCloseRequested: ((String) -> Void)?
+    /// D376: that item's title for a plugin ring's Dock ID ("关闭资源占用…"); nil when the plugin cannot be turned off now.
+    public var pluginCloseTitle: ((String) -> String?)?
     /// D371 B4e: a subscription card's footer row opens the cockpit on that subscription (the ring's ID). Nil opens the cockpit.
     public var subscriptionCockpitRequested: ((String) -> Void)?
     public var showConsole: (() -> Void)?
@@ -427,6 +441,13 @@ struct DockHelpInteraction: Equatable {
     /// G3-161: plugin ring updates that repainted only the ring (no rebuild pass).
     private(set) var ringOnlyRefreshesForChecks = 0
     var applicationForChecks: SettingsApplication? { application }
+    /// G3-161: official face paints across every view this host draws into.
+    var officialFacePaintsForChecks: Int {
+        var seen = Set<ObjectIdentifier>()
+        return ([dockView] + alternateViews + Array(edgeViews.values)).reduce(0) { total, view in
+            seen.insert(ObjectIdentifier(view)).inserted ? total + view.officialPaintsForChecks : total
+        }
+    }
     #endif
     func refreshPresence() { displayFollower.sample(); edge.refresh() }
     var isFollowingDisplay: Bool { displayFollower.isRunning }
@@ -612,6 +633,8 @@ struct DockHelpInteraction: Equatable {
     @_spi(DockResourceChecks) public var captureBackingScaleForChecks: Int?
     private var permitted = false, retired = false, retiring = false, rendering = false
     private weak var trackedDockMenu: NSMenu?
+    /// D376: the last menu built for one plugin ring; never kept as the widget's plain menu.
+    private weak var ringSpecificMenu: NSMenu?
     private var dockMenuGeneration: UInt64 = 0
     private var menuOpen: Bool { trackedDockMenu != nil }
     /// MENU-12: an actually open menu protects the widget; the flag is also cleared by AppKit's own
@@ -1077,6 +1100,7 @@ struct DockHelpInteraction: Equatable {
     private let container = StaticDockContainer()
     /// R64 D-9: the surface state last put on screen, so a sliver <-> expanded change can animate.
     private var presentedSurfaceState: DockSurfaceState?
+    private var presentedCarryLayout: DockEdgeLayout?
     private let collapseGhost = DockCollapseGhost()
     var collapseAnimatingForChecks: Bool { collapseGhost.animatingForChecks }
     var collapseCompletedForChecks: (() -> Void)? {
@@ -1151,6 +1175,7 @@ struct DockHelpInteraction: Equatable {
             return self.acceptsInstrumentAction(from: self.dockView, source: source)
         }
         dockView.onEscape = { [weak self] in self?.closeHeldCard() ?? false }
+        dockView.contextMenuForRing = { [weak self] id in self?.ringMenu(id) }
         for view in [dockView] + alternateViews {
             // G3-50: a shown card follows its ring when hover magnification moves it.
             view.onNozzlePosesChanged = { [weak self, weak view] in
@@ -1238,6 +1263,15 @@ struct DockHelpInteraction: Equatable {
     }
     public func apply(_ value: SettingsApplication) {
         guard !retired, value.snapshot.revision >= (application?.snapshot.revision ?? 0) else { return }
+        if value.reason == .context, heldDrop == nil, let old = application,
+           old.snapshot.revision == value.snapshot.revision, old.effective == value.effective {
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            if let previous = try? encoder.encode(old.snapshot.preferences),
+               let next = try? encoder.encode(value.snapshot.preferences), previous == next {
+                application = value // retain current context for later consumers without rebuilding the Dock
+                return
+            }
+        }
         inputGeneration &+= 1
         application = value
         let oldReveal = preferences.revealMilliseconds
@@ -1308,8 +1342,11 @@ struct DockHelpInteraction: Equatable {
 
     /// Synchronously retire cached values and accessibility nodes before replacement.
     /// Reset notice acknowledgements only on a privacy withdrawal, not on a timer tick.
+    /// G3-161: with `retainingFace` (an in-place replacement with no card open) the catalogue, painted face, sliver and
+    /// overflow tray stay as they are; the reinstall repaints only what changed, and `completeDeferredWithdrawal`
+    /// withdraws them if no content is reinstalled in the same step. A presented card or privacy always retires them.
     @discardableResult
-    func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = []) -> Bool {
+    func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = [], retainingFace: Bool = false) -> Bool {
         guard !retired else { return false }
         if !privacy, edge.isBackgroundPressed {
             // G3-113 (Pulse rebuilds nothing during a drag): a replacement that lands while the widget is pressed
@@ -1331,14 +1368,32 @@ struct DockHelpInteraction: Equatable {
         workingSignals = [:]; attentionSignals = []
         if privacy { attention = DockAttentionState() }
         menuNotice = nil; menuNoticeDidChange?(nil, false)
-        if !keepCard { catalogueKey = ""; if !catalogueReportedEmpty { reportCatalogue([]) } }
+        // An in-place replacement keeps the catalogue too, so an unchanged reinstall reports nothing.
+        if retainingFace && !privacy && !keepCard { return false }
+        if !keepCard { withdrawCatalogue() }
+        retireAdmittedFace(privacy: privacy)
+        return keepCard
+    }
+    private func withdrawCatalogue() { catalogueKey = ""; if !catalogueReportedEmpty { reportCatalogue([]) } }
+    /// Finishes a withdrawal that kept the face for a reinstall that did not come: the catalogue and the face.
+    func completeDeferredWithdrawal() {
+        guard !retired else { return }
+        withdrawCatalogue(); retireAdmittedFace()
+    }
+    /// True when a replacement can keep the painted face until its reinstall: no card is open and no press holds it.
+    var canReplaceInPlace: Bool { !retired && cardPresentedGeneration == nil && !edge.isBackgroundPressed }
+    /// The visual half of a withdrawal: the face, sliver and overflow tray.
+    private func retireAdmittedFace(privacy: Bool = false) {
+        guard !retired else { return }
         try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
         // G3-98: a plain replacement keeps a ring click's hidden number so the landed value fades in (#906);
         // a privacy withdrawal drops it with everything else.
-        for view in [dockView] + alternateViews { view.retireOfficialPresentation(keepingRefreshHolds: !privacy) }
+        for view in [dockView] + alternateViews {
+            if privacy { view.discardPreparedAppearance?() }
+            view.retireOfficialPresentation(keepingRefreshHolds: !privacy)
+        }
         sliver.noticeMarks = []
         try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
-        return keepCard
     }
 
     func finishCardReplacement() -> Bool {
@@ -1406,7 +1461,7 @@ struct DockHelpInteraction: Equatable {
         guard permitted, !retired, preferences.showDock, preferences.followActiveDisplay else {
             displayFollower.stop(); followedDisplayID = nil; return
         }
-        displayFollower.start(); displayFollower.sample()
+        displayFollower.start(externallySampled: true); displayFollower.sample()
     }
     private func rebuild() {
         guard !retired, !retiring, application != nil else { return }
@@ -1579,6 +1634,7 @@ struct DockHelpInteraction: Equatable {
                     bindEmptyStation(to: view)
                     view.onAction = dockView.onAction
                     view.onEscape = dockView.onEscape
+                    view.contextMenuForRing = dockView.contextMenuForRing
                     view.permitsAction = { [weak self, weak view] _, source in
                         guard let self, let view else { return false }
                         return self.acceptsInstrumentAction(from: view, source: source)
@@ -1620,16 +1676,24 @@ struct DockHelpInteraction: Equatable {
     }
     private func makeEdge(preference: DockEdgePreference = .init(), policy: DockVisibilityPolicy = .init()) -> DockEdgeController {
         let read: () -> DockEdgeEnvironment = { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) }
+        let controller: DockEdgeController
         #if DEBUG
-        if let timing = visibilityTimingForChecks {
-            return DockEdgeController(preference: preference, policy: policy, clock: timing.clock,
-                                      scheduler: timing.scheduler, read: read, position: PulseDockPositioning.resolve)
-        }
+        let timing = visibilityTimingForChecks ?? (elapsedClock.flatMap { clock in edgeScheduling.map { (clock, $0) } })
+        #else
+        let timing = elapsedClock.flatMap { clock in edgeScheduling.map { (clock, $0) } }
         #endif
-        if let elapsedClock, let edgeScheduling {
-            return DockEdgeController(preference: preference, policy: policy, clock: elapsedClock, scheduler: edgeScheduling, read: read, position: PulseDockPositioning.resolve)
+        if let (clock, scheduler) = timing {
+            controller = DockEdgeController(preference: preference, policy: policy, clock: clock, scheduler: scheduler,
+                                            read: read, position: PulseDockPositioning.resolve)
+        } else {
+            controller = DockEdgeController(preference: preference, policy: policy, read: read, position: PulseDockPositioning.resolve)
         }
-        return DockEdgeController(preference: preference, policy: policy, read: read, position: PulseDockPositioning.resolve)
+        controller.onScheduledSample = { [weak self] in
+            guard let self, self.permitted, !self.retired else { return }
+            self.pointerSurface.sampleNow()
+            self.displayFollower.sample()
+        }
+        return controller
     }
     private func topology(of environment: DockEdgeEnvironment) -> DockDisplayTopology {
         .init(displays: environment.displays, primaryID: environment.primaryDisplayID)
@@ -1744,7 +1808,7 @@ struct DockHelpInteraction: Equatable {
         }
     }
     private func makePointerSurface() -> PulsePanelPointerSurface {
-        let surface = PulsePanelPointerSurface(pointSource: pointerSampleSource)
+        let surface = PulsePanelPointerSurface(pointSource: pointerSampleSource, externallySampled: true)
         surface.onChange = { [weak self] _ in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
             // Local samples invalidate input observation. Resolve fresh global
@@ -1778,6 +1842,17 @@ struct DockHelpInteraction: Equatable {
         pointerSurface.setActive(true)
     }
     private func present(_ value: DockEdgePresentation) {
+        // During a carry, the same surface only needs to move. Keep its live menu, tracking areas,
+        // ignition art and backing store until the layout changes or the drag ends.
+        let carryLayout = value.moving ? value.placement?.layout : nil
+        if let carryLayout, carryLayout == presentedCarryLayout,
+           permitted, !retired, let panel, panel.isVisible, panel.contentView === container,
+           let frame = value.paintedFrame, frame.size == panel.frame.size {
+            if panel.frame.origin != frame.origin { panel.setFrameOrigin(frame.origin) }
+            publishPlacementObservation(value)
+            return
+        }
+        presentedCarryLayout = nil
         defer {
             // The controller is still sampling during onPresent. Apply a queued
             // reveal after this delivery so its own reveal intent can be sampled.
@@ -1846,7 +1921,8 @@ struct DockHelpInteraction: Equatable {
         // environment's `carrying`; it is never re-placed under a moving widget.
         bindPointerInput(value, content: content)
         // Keep the AppKit tracking instance attached while the surface redraws.
-        let contextualMenu = trackedDockMenu ?? menu()
+        // D376: a plugin ring's own menu stays with its ring; the view's plain menu is the widget menu.
+        let contextualMenu = trackedDockMenu.flatMap { $0 === ringSpecificMenu ? nil : $0 } ?? menu()
         content.menu = contextualMenu
         content.subviews.forEach { $0.menu = contextualMenu }
         #if MODELPLAN_DOCK_NATIVE_JOURNEY
@@ -1868,6 +1944,7 @@ struct DockHelpInteraction: Equatable {
             DockRevealMotion.reveal(container, edge: motionEdge, reduceMotion: reduceMotion); revealAnimationsForChecks += 1
         }
         presentedSurfaceState = panel.isVisible ? value.state : nil
+        presentedCarryLayout = panel.isVisible ? carryLayout : nil
         if panel.isVisible, value.state == .expanded, !attentionWasExpanded { acknowledgeDockReveal() }
         attentionWasExpanded = panel.isVisible && value.state == .expanded
         if panel.isVisible { pulsePresentedNotices(value) }
@@ -1895,6 +1972,7 @@ struct DockHelpInteraction: Equatable {
     }
     @objc private func dockHelpOcclusionChanged(_ notification: Notification) {
         guard let current = edge.presentation else { withdrawDockHelpSurface(); return }
+        reportVisibility(panel?.isVisible == true, expanded: current.state == .expanded)
         publishDockHelpSurface(current)
     }
     func isCurrentDockHelpSurface(_ value: DockHelpSurface) -> Bool {
@@ -2141,7 +2219,32 @@ struct DockHelpInteraction: Equatable {
             return sliver
         } catch { sliverPrepared = false; preparedSliverGeometrySize = nil; throw error }
     }
-    func menu() -> NSMenu {
+    /// D376: the right-click menu of the ring `id`: a plugin ring's is "Turn Off <plugin>…", a separator, then the widget
+    /// menu unchanged. Nil for a subscription ring (it keeps the plain widget menu).
+    func ringMenu(_ id: String) -> NSMenu? {
+        pluginCloseItem(id) == nil ? nil : menu(ringID: id)
+    }
+    /// D376: "Turn Off <plugin>…" for a plugin ring's Dock ID, while the widget can act and the app wired the close.
+    private func pluginCloseItem(_ id: String) -> DockMenuPresentationItem? {
+        guard permitted, !lifecycleSuspended, ResourceDockBridge.pluginID(dockID: id) != nil,
+              let request = pluginCloseRequested, let title = pluginCloseTitle?(id) else { return nil }
+        return .init(title: title, accessibilityID: "dock.menu.closePlugin", action: { [weak self] in
+            // The card goes away when the confirmation opens.
+            self?.closeHeldCardEverywhere()
+            request(id)
+        })
+    }
+    /// D376: the plugin card's right-click menu: the one "Turn Off <plugin>…" item.
+    func pluginCardMenu(_ id: String) -> NSMenu? {
+        guard let item = pluginCloseItem(id) else { return nil }
+        let component = DockSliverMenu(labels: [:], handlers: [:])
+        // Hold the menu before handing it its delegate: after retainWithMenu the component keeps it only weakly.
+        let menu = component.menu
+        component.retainWithMenu()
+        component.replace(with: [item])
+        return menu
+    }
+    func menu(ringID: String? = nil) -> NSMenu {
         let component = DockSliverMenu(labels: [:], handlers: [:])
         component.owner = self
         let menu = component.menu
@@ -2166,6 +2269,8 @@ struct DockHelpInteraction: Equatable {
         }
         let available = permitted && !lifecycleSuspended
         var items: [DockMenuPresentationItem] = []
+        let closePlugin = ringID.flatMap(pluginCloseItem)
+        if let closePlugin { items.append(closePlugin); items.append(.init(title: nil)) }
         if lifecycleSuspended {
             items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
             items.append(.init(title: nil))
@@ -2187,6 +2292,7 @@ struct DockHelpInteraction: Equatable {
         items.append(.init(title: quit, accessibilityID: "dock.menu.quit",
                            target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
         component.replace(with: items)
+        if closePlugin != nil { ringSpecificMenu = menu }
         return menu
     }
     public func menuWillOpen(_ menu: NSMenu) {
@@ -2481,7 +2587,7 @@ struct DockHelpInteraction: Equatable {
         }
         cardGeneration &+= 1
         let token = cardGeneration
-        cardID = Self.emptyCardID; cardPresentedRevision = content.revision; cardPresentedGeneration = inputGeneration; card.isHidden = false
+        cardID = Self.emptyCardID; cardPresentedRevision = content.revision; cardPresentedGeneration = inputGeneration; card.isHidden = false; card.menu = nil
         card.appearance = NSAppearance(named: (application?.effective.darkAppearance ?? true) ? .darkAqua : .aqua)
         card.permitsAction = { [weak self] id, _ in
             guard let self else { return false }
@@ -2561,6 +2667,8 @@ struct DockHelpInteraction: Equatable {
             try card.apply(content, style: style, brandImage: cardBrandImage(id), enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil,
                            cockpitGlyph: CockpitEntryGlyph.image)
         } catch { dismissCard(); return }
+        // D376: a plugin card's right-click is "Turn Off <plugin>…"; a subscription card has no menu.
+        card.menu = pluginCardMenu(id)
         if interactionController?.isActive != true { scheduleFallbackCardLeave() }
         // M-1: the ring whose card is open glows (only on the presented edge view).
         for view in edgeViews.values where view !== interactionView { view.setHotNozzle(nil) }
@@ -2688,7 +2796,7 @@ struct DockHelpInteraction: Equatable {
         fallbackCardLeaveTask?.cancel(); fallbackCardLeaveTask = nil
         removeOutsidePressMonitors()
         cardGeneration &+= 1; cardID = nil; cardPresentedRevision = nil; cardPresentedGeneration = nil
-        card.isHidden = true
+        card.isHidden = true; card.menu = nil
         card.dispose(); cardPanel?.orderOut(nil)
         dockView.setHotNozzle(nil); edgeViews.values.forEach { $0.setHotNozzle(nil) }
         if let current = edge.presentation { publishDockHelpSurface(current) }

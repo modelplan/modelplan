@@ -209,7 +209,8 @@ struct CockpitRackArt {
   private let view = CockpitRackView(frame: .zero)
   /// The icon the rack hangs from (screen coordinates) and the menu bar's bottom edge under it.
   private(set) var icon: CGRect?
-  private var orderedBelow = 0
+  /// The cockpit window and level the rack was last ordered below (G3-156: a level change needs a re-order too).
+  private var orderedBelow: (number: Int, level: NSWindow.Level)?
   init(art: CockpitRackArt) { view.art = art }
   var extensionValue: CGFloat { view.extensionValue }
   var isVisible: Bool { panel?.isVisible == true && view.extensionValue > 0 }
@@ -221,7 +222,7 @@ struct CockpitRackArt {
   /// Places the rack under `icon` and below `cockpit`, hidden inside `cockpitFrame` below its shoulder line.
   func update(icon: CGRect?, cockpit: NSWindow?, hidden cockpitHidden: CGRect?, extended value: CGFloat, moving: Bool) {
     self.icon = icon
-    guard let icon, let cockpit, value > 0 else { panel?.orderOut(nil); orderedBelow = 0; view.extensionValue = max(0, value); return }
+    guard let icon, let cockpit, value > 0 else { panel?.orderOut(nil); orderedBelow = nil; view.extensionValue = max(0, value); return }
     let frame = Self.frame(icon: icon)
     if panel == nil {
       let made = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -240,8 +241,24 @@ struct CockpitRackArt {
     view.moving = moving
     // Screen rect -> the flipped view's coordinates (y down from the menu bar edge).
     view.maskedOut = cockpitHidden.map { CGRect(x: $0.minX - frame.minX, y: frame.maxY - $0.maxY, width: $0.width, height: $0.height) }
-    // Just below the cockpit, at the cockpit's level; this also orders a hidden rack in.
-    if !panel.isVisible || cockpit.windowNumber != orderedBelow { panel.order(.below, relativeTo: cockpit.windowNumber); orderedBelow = cockpit.windowNumber }
+    // G3-156 (owner, build 2): the rack is ALWAYS behind the cockpit. Ordering below another window does not change a
+    // window's level, so the rack takes the cockpit's level first: a detaching or flying cockpit is at `.normal`
+    // (G3-102) and a rack left at the attached level drew over its canopy for the whole detach and put back. Then just
+    // below the cockpit; this also orders a hidden rack in.
+    if panel.level != cockpit.level { panel.level = cockpit.level }
+    if !panel.isVisible || orderedBelow?.number != cockpit.windowNumber || orderedBelow?.level != cockpit.level {
+      panel.order(.below, relativeTo: cockpit.windowNumber); orderedBelow = (cockpit.windowNumber, cockpit.level)
+    }
   }
-  func close() { panel?.orderOut(nil); panel?.close(); panel = nil; orderedBelow = 0 }
+  /// G3-156: whether the rack's panel is behind `cockpit` in the window server's front-to-back order (nil when the rack
+  /// is not on screen). A lower level is behind; at the same level the on-screen order decides.
+  func isBehind(_ cockpit: NSWindow) -> Bool? {
+    guard let panel, panel.isVisible else { return nil }
+    if panel.level != cockpit.level { return panel.level.rawValue < cockpit.level.rawValue }
+    let order = NSWindow.windowNumbers(options: []) ?? []
+    guard let rack = order.firstIndex(of: NSNumber(value: panel.windowNumber)),
+          let front = order.firstIndex(of: NSNumber(value: cockpit.windowNumber)) else { return false }
+    return rack > front
+  }
+  func close() { panel?.orderOut(nil); panel?.close(); panel = nil; orderedBelow = nil }
 }

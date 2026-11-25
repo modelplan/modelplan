@@ -90,6 +90,7 @@ function channel(f, ui, colour) {
 // CKP-FAD-52 / §14: every card line is at most 9 characters in every language.
 export const CARD_LINE = 9;
 const fits = s => [...s].length <= CARD_LINE;
+const USE_FIT = 7;
 // macrevb-1052-1: a visible line is never longer than the limit; the full text stays in the accessible name (stripAria).
 const clip = s => fits(s) ? s : [...s].slice(0, CARD_LINE - 1).join('') + '…';
 // The model name in at most 9 characters ("Sonnet 5.5" → "Sonnet5.5"); a name no alias shortens keeps its full text and
@@ -120,7 +121,9 @@ export function card(c, f = {}) {
     const tr = c.trial, fastOnly = tr.fast != null && tr.effort === c.base;
     lines.state = 'try';
     lines.tryLine = t('fad.cardTry', {e: fastOnly ? t(tr.fast ? 'fad.tryFast' : 'fad.tryStd') : tr.effort});
-    lines.nowLine = c.cur ? t('fad.cardNow', {e: c.cur}) : t('fad.cardNowUnknown');
+    // G3-182 (owner row 35, build 2): the trial line names the effort being tried; with no reported current tier a
+    // "档位未报告" line under it read as a contradiction, so the second line is simply left out.
+    lines.nowLine = c.cur ? t('fad.cardNow', {e: c.cur}) : '';
     // D337 (owner, closes D190): on the short cockpit's small card the trial reads with letters, not colour alone:
     // "A92 C55" / "能92 费55" = ability and cost as shares of the top effort. Colour stays for alerts. The full figures
     // (cost, ability change) stay in the strip's accessible label.
@@ -134,7 +137,9 @@ export function card(c, f = {}) {
     lines.bigFull = priced ? approxCost(use.cost) : tokShort(use.tokens); lines.big = clip(priced ? cardCost(use.cost) : lines.bigFull); lines.bigKind = priced ? 'cost' : 'tokens';
     // "1000B 100%" is 10 characters: the share (also drawn by the bar) drops off before the tokens are cut.
     const tok = tokShort(use.tokens), pct = pctOf(use.share) + '%';
-    lines.bar = Math.max(0, Math.min(1, use.share)); lines.useFull = [tok, pct]; lines.use = fits(`${tok} ${pct}`) ? [tok, pct] : [clip(tok)];
+    // D405: the token count is set larger than the share, so the share stays on the line only while both fit the 52 px slot
+    // (seven characters together); otherwise the bar alone shows it, and the accessible name keeps it.
+    lines.bar = Math.max(0, Math.min(1, use.share)); lines.useFull = [tok, pct]; lines.use = [...tok].length + [...pct].length <= USE_FIT ? [tok, pct] : [clip(tok)];
   } else if (f.live || f.recorded) {
     lines.state = 'norecord'; lines.big = t('fad.cardNoRecord'); lines.bigKind = 'note';
   } else {
@@ -159,14 +164,16 @@ const STAR_TEXT = rec => `<span class="cd-rec">${STAR}${esc(rec)}</span>`;
 export function lcdView(c) {
   if (!c) return '';
   const k = c.card;
-  const strip = `<i class="st-vend" aria-hidden="true">${c.segments.map(v => `<b style="--v:${esc(v)}"></b>`).join('')}</i>`;
+  // G3-181 (owner row 33, build 2): an unused card's top edge stays dark; the subscription-colour strip marks cards
+  // with use in the range (or live ones), not a model the range shows as unused.
+  const strip = k.state === 'unused' ? '' : `<i class="st-vend" aria-hidden="true">${c.segments.map(v => `<b style="--v:${esc(v)}"></b>`).join('')}</i>`;
   // A 9-character name ("Terra 6.1") is set 1 px smaller and tighter so it never clips on the 52 px card.
   const name = `<b class="st-name ${[...c.label].length > 8 ? 'long' : ''}">${esc(c.label)}</b>${c.pinned ? `<i class="st-pin" role="img" aria-label="${esc(t('fad.pinnedAria'))}"></i>` : ''}`;
   const eff = !k.eff ? '' : k.eff.note ? `<span class="cd-eff cd-note">${esc(k.eff.note)}</span>`
     : `<span class="cd-eff${k.eff.cur ? '' : ' cd-follows'}">${k.eff.cur ? `<span class="cd-cur">${esc(k.eff.cur)}</span>` : ''}${k.eff.rec ? STAR_TEXT(k.eff.rec) : ''}</span>`;
-  if (k.state === 'try') return strip + name + `<span class="cd-try">${esc(k.tryLine)}</span><span class="cd-now">${esc(k.nowLine)}</span>` + eff;
+  if (k.state === 'try') return strip + name + `<span class="cd-try">${esc(k.tryLine)}</span>` + (k.nowLine ? `<span class="cd-now">${esc(k.nowLine)}</span>` : '') + eff;
   const bar = k.bar == null ? '' : `<i class="cd-bar" aria-hidden="true" style="--s:${(k.bar * 100).toFixed(1)}%;--v:${esc(c.segments[0] || '')}"></i>`;
-  const use = k.use ? `<span class="cd-use"><b>${esc(k.use[0])}</b> <span>${esc(k.use[1])}</span></span>` : '';
+  const use = k.use ? `<span class="cd-use"><b class="cd-tok">${esc(k.use[0])}</b>${k.use[1] ? ` <span class="cd-pct">${esc(k.use[1])}</span>` : ''}</span>` : '';
   return strip + name + `<span class="cd-big ${k.bigKind}">${esc(k.big)}</span>` + bar + use + eff;
 }
 
@@ -202,6 +209,8 @@ export function indicatorView(c) {
 export const marksView = c => !c ? '' : `${c.ticks.map(k => `<i class="fd-tick" style="--k:${k}"></i>`).join('')}${c.unlisted ? '' : `<i class="fd-rec" data-l="${esc(c.rec)}" style="--k:${c.recK}">${STAR}</i>`}${c.dots.map(d => `<i class="fd-dot" data-l="${esc(d.e)}" style="--k:${d.k}"></i>`).join('')}`;
 // Round D1: the ⚡ lit push button above the travel is gone (the owner could not tell what it was); fast mode is tried
 // with the comparison view's own ⚡ key; its state shares the indicator above the LCD.
-// The scale beside the travels: 状态 over the indicators, and the level labels (Max … Low), which set the trial.
-export const scaleView = () => `<span class="silk sc-led">${t('fad.status')}</span><span class="sc-lcd"></span><span class="sc-travel">${LADDER.map(l => `<button class="silk sc-l" data-level="${l}" tabindex="-1" style="--k:${levelK(l)}">${l}</button>`).join('')}</span>`;
+// D405 (owner 2026-11-24): the effort names are printed in the two gaps between the three levers, shown twice, like the
+// detent labels on a thrust-lever quadrant; 会话 / Sessions heads the lamp row. Both columns set the same trial.
+const scaleColumn = gap => `<span class="sc-travel" data-gap="${gap}">${LADDER.map(l => `<button class="silk sc-l" data-level="${l}" tabindex="-1" style="--k:${levelK(l)}">${l}</button>`).join('')}</span>`;
+export const scaleView = () => `<span class="silk sc-led">${t('fad.status')}</span>${scaleColumn(1)}${scaleColumn(2)}`;
 export const bankView = M => M.banks > 1 ? `<button class="key sm" data-bank="-1" data-mat="part" aria-label="${esc(t('fad.bankPrevAria'))}">◀</button><span class="bank-lcd" data-mat="well">${esc(t('fad.bank', {i: M.bank + 1, n: M.banks}))}</span><button class="key sm" data-bank="1" data-mat="part" aria-label="${esc(t('fad.bankNextAria'))}">▶</button>` : '';

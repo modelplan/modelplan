@@ -271,6 +271,31 @@ func runtimeWindowCurrent(windows []Window, now time.Time) bool {
 	return false
 }
 
+// A newer account stamp can come from a different window. If logs include a still-current
+// runtime window, its own observation must be at least as new; a missing window stays missing.
+func logsCoverRuntimeWindows(logs Account, windows []Window, now time.Time) bool {
+	for _, runtime := range windows {
+		if runtime.ObservedAt.IsZero() || runtime.ObservedAt.After(now) || finite(runtime.UsedPercent, 0, 1000) == nil || (runtime.ResetsAt != nil && !now.Before(*runtime.ResetsAt)) {
+			continue
+		}
+		found, covered := false, false
+		for _, local := range logs.Windows {
+			if local.Kind != runtime.Kind {
+				continue
+			}
+			found = true
+			if (local.Limit == "" || runtime.Limit == "" || local.Limit == runtime.Limit) && (local.WindowMinutes == 0 || runtime.WindowMinutes == 0 || local.WindowMinutes == runtime.WindowMinutes) && finite(local.UsedPercent, 0, 1000) != nil && !local.ObservedAt.Before(runtime.ObservedAt) && !local.ObservedAt.After(now) {
+				covered = true
+				break
+			}
+		}
+		if found && !covered {
+			return false
+		}
+	}
+	return true
+}
+
 // AccountDue: the cached reading is old enough to ask Codex again.
 func AccountDue(cache string, now time.Time) bool {
 	if off() || cache == "" {
@@ -893,7 +918,7 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		// Turned off, or no window of the runtime reading still in its cycle: the logs stand.
 		newer := !off() && runtimeWindowCurrent(s.Windows, now)
 		for _, candidate := range r.Accounts {
-			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil && (!newer || !candidate.ObservedAt.Before(s.ObservedAt)) {
+			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil && (!newer || (!candidate.ObservedAt.Before(s.ObservedAt) && logsCoverRuntimeWindows(candidate, s.Windows, now))) {
 				failureSource(false) // the session-log reading wins; the retained windows are not merged
 				return
 			}
@@ -1119,7 +1144,7 @@ func rateLimitsFromErrorBody(message string, now time.Time) *rlSnapshot {
 			ResetAt            *int64   `json:"reset_at"`
 			ResetAfterSeconds  *int64   `json:"reset_after_seconds"`
 		}
-		if json.Unmarshal(raw, &w) != nil || w.UsedPercent == nil || w.LimitWindowSeconds == nil || *w.LimitWindowSeconds < 60 {
+		if json.Unmarshal(raw, &w) != nil || w.UsedPercent == nil || finite(w.UsedPercent, 0, 100) == nil || w.LimitWindowSeconds == nil || *w.LimitWindowSeconds < 60 {
 			return nil, false
 		}
 		minutes := *w.LimitWindowSeconds / 60

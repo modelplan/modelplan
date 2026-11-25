@@ -606,6 +606,20 @@ extension CoordinatorTests {
     replacement.onIntent?(.scopeSelect("0123456789abcdef"));XCTAssertEqual(coordinator.selectedScope,"all")
     await coordinator.shutdown();await client.stop()
   }
+  @MainActor func testHidingSelectedMemberResetsAndRejectsItsScope() async {
+    let coordinator = EngineCockpitCoordinator { PageProbe($0) }
+    let ref = "0123456789abcdef"
+    coordinator.selectScope(ref)
+    XCTAssertEqual(coordinator.selectedScope, ref)
+    coordinator.updateAppearance(.init(theme: .night, locale: .en, profile: .full, hiddenMembers: [ref]))
+    XCTAssertEqual(coordinator.selectedScope, "all")
+    coordinator.selectScope(ref)
+    XCTAssertEqual(coordinator.selectedScope, "all")
+    coordinator.updateAppearance(.init(theme: .night, locale: .en, profile: .full))
+    coordinator.selectScope(ref)
+    XCTAssertEqual(coordinator.selectedScope, ref)
+    await coordinator.shutdown()
+  }
   /// D371 B4e: a subscription card's footer row selects that subscription's scope (tab lit, engine table turned to it)
   /// through the coordinator, the same state as a tab click; an unknown key and a numbered fallback do nothing.
   @MainActor func testSelectScopeFromACardFooterSwitchesTheOpenPage() async throws {

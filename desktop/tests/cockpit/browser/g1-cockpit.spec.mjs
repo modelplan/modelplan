@@ -4,12 +4,12 @@ import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
-async function open(page,data=visualFixture().data) {
+async function open(page,data=visualFixture().data,range=null) {
  await page.addInitScript(()=>{window.__g1Messages=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__g1Messages.push(JSON.parse(raw));}}}};});
  await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance,shell:range?{...shell,range}:shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
  return {send,receive,data};
@@ -92,7 +92,7 @@ test('CKP-ENG-07 a monthly-only quota stays in Other and distinguishes unknown f
 
 test('CKP-ENG-08 Today uses today output and today average, with unknown left blank',async({page})=>{
  const data=visualFixture().data;const detail=data.details.subscriptions[0];detail.today[0].observedOutputTokens=12000;detail.today[0].generationTps=42;
- const {send,receive}=await open(page,data);const row=page.locator('.eng-cols .ec[data-col]').first().locator('.qrow-t');
+ const {send,receive}=await open(page,data,'today');const row=page.locator('.eng-cols .ec[data-col]').first().locator('.qrow-t');
  await expect(row.locator('.qtokens')).toHaveText('12k');await expect(row.locator('.qaverage')).toContainText('42');
  detail.today=[];expect(await receive(send('display',{data}))).toBe(true);
  await expect(row.locator('.qtokens')).toHaveCount(0);await expect(row.locator('.qaverage')).toHaveCount(0);
@@ -255,7 +255,7 @@ test('CKP-ENG-11 alert washes a whole column without warning marks and missing c
 test('CKP-ENG-03 paged subscriptions keep empty bays blank and signal an off-page caution',async({page})=>{
  const data=visualFixture().data;data.details=null;for(const row of data.projection.rows)for(const w of row.accounts[0].windows)w.remainingPercent=75;
  for(let i=data.projection.rows.length;i<7;i++){const row=structuredClone(data.projection.rows[0]),ref=(i+1).toString(16).padStart(16,'0');row.id='synthetic-'+i;row.name={en:'Synthetic '+i,zh:'模拟 '+i};row.accounts[0].subscriptionRef=ref;row.accounts[0].accountLocator=ref;for(const w of row.accounts[0].windows)w.remainingPercent=i===6?20:75;data.projection.rows.push(row);data.subscriptions.push({subscriptionRef:ref,accounts:[{tool:row.id,account:structuredClone(row.accounts[0])}]});}
- await open(page,data);await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(6);await expect(page.locator('.eng-led[data-page="1"]')).toHaveClass(/\blv-red\b/);
+ await open(page,data);await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(6);await expect(page.locator(".eng-pk[data-bpage=\"1\"]")).toHaveClass(/\blv-red\b/);
  await page.locator('[data-bpage="1"]').click();await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(1);await expect(page.locator('.eng-keys .ek-bay')).toHaveCount(5);const bays=page.locator('.eng-cols .ec-bay');await expect(bays).toHaveCount(5);await expect(bays.locator('.qvalue,.qbar,.qtime')).toHaveCount(0);for(const bay of await bays.all())expect((await bay.innerText()).trim()).toBe('');
 });
 
@@ -304,7 +304,7 @@ test('CKP-ENG-05 shortcuts appear in tooltip, accessible name and Option help an
 test('CKP-MFD-06 Overview shows delivered today total and puts threshold notices first',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);data.details.subscriptions=data.details.subscriptions.slice(0,1);const row=data.projection.rows[0],account=row.accounts[0],detail=data.details.subscriptions[0];detail.today[0].observedOutputTokens=12000;
  data.details.alerts=[{severity:'warning',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[1].id,remainingPercent:35},{severity:'critical',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[0].id,remainingPercent:20}];account.windows[0].remainingPercent=20;account.windows[0].resetsAt='2026-11-04T15:30:00Z';account.windows[1].remainingPercent=35;data.details.resetEvents=[{version:1,id:'synthetic-reset',provider:'openai',rowId:row.id,status:'confirmed',publishedAt:'2026-11-04T11:00:00Z',expiresAt:'2026-11-05T12:00:00Z',source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];const {send,receive}=await open(page,data);
- await expect(page.locator('.pg-overview .mfd-alerts')).toBeVisible();await expect(page.locator('.pg-overview .mfd-alerts li').first()).toHaveClass(/\bal-red\b/);await expect(page.locator('.pg-overview .mfd-alerts li').first()).toContainText('5h 20% · resets in 3h30');await expect(page.locator('.pg-overview .mfd-alerts li').nth(1)).toHaveClass(/\bal-blue\b/);await expect(page.locator('.pg-overview .mfd-alerts li.al-amber')).toHaveCount(0);await expect(page.locator('.pg-overview .mfd-alerts')).toContainText('official extra reset confirmed');await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
+ await expect(page.locator('.pg-overview .mfd-alerts')).toBeVisible();await expect(page.locator('.pg-overview .mfd-alerts li').first()).toHaveClass(/\bal-red\b/);await expect(page.locator('.pg-overview .mfd-alerts li').first()).toContainText('5h 20% · resets in 3h30');await expect(page.locator('.pg-overview .mfd-alerts li').nth(1)).toHaveClass(/\bal-blue\b/);await expect(page.locator('.pg-overview .mfd-alerts li.al-amber')).toHaveCount(0);await expect(page.locator('.pg-overview .mfd-alerts')).toContainText('official limit reset confirmed');await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
  const positions=await page.locator('.pg-overview').evaluate(e=>[...e.children].map(n=>n.className));expect(positions.indexOf('mfd-alerts')).toBeLessThan(positions.indexOf('ov-top'));
  const second=visualFixture().data;data.projection.rows.push(second.projection.rows[1]);data.details.subscriptions.push({...second.details.subscriptions[1],today:[]});expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);await page.locator('.eng-keys .ek[data-sub]').first().click();await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
  detail.today=[];expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);
