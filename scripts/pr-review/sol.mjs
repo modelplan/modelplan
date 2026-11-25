@@ -82,7 +82,8 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   const gpt = wantsGpt(pr);
   // D395: on a NORMAL PR no assignment holds the GLM reviewer back (a Codex lane that took an earlier head during a GLM outage
   // keeps nothing); a workflow assignment (ghsol or ghglm) is the provider pair, never one provider (D396-1).
-  const sticky = cls === NORMAL ? null : reviewerLane(items, gpt);
+  // An outside PR (owner dispatch, advice only) ignores any assignment too: nothing it posts can count (D395-4).
+  const sticky = cls === NORMAL || outside ? null : reviewerLane(items, gpt);
   const eligible = eligibleLanes(tier, glmTiers, cls);
   // The run's own lanes: its Sol lane, and its GLM lane only while (ghglm) may decide this tier (SOL-8: a GLM verdict
   // left over from a wider REVIEW_GLM_TIERS is advice and does not settle the head).
@@ -93,7 +94,7 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   // Once per lane per head, forced or not: force only lifts the "another counting lane already reviewed" skip below.
   if (atHead.some((v) => own.includes(v.lane))) return skip("this lane already reviewed this head");
   const ownCounting = [`(${SOL_LANE})`, `(${GLM_LANE})`];
-  if (lane === SOL_LANE && tier !== 0) {
+  if (lane === SOL_LANE && tier !== 0 && !outside) {
     // Counting mode spends no tokens when another lane owns or already settled this head.
     if (sticky && !eligible.includes(sticky)) return skip(`the assigned reviewer ${sticky} cannot review tier ${tier}`);
     if (sticky && !ownCounting.includes(sticky)) return skip(`the assigned reviewer is ${sticky}`);

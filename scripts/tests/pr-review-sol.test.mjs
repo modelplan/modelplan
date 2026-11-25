@@ -1003,4 +1003,11 @@ test("D395-4: an outside PR reviewed on the owner's dispatch posts its advisory 
   assert.equal(post({ force: true }), null, "the dispatched review is posted");
   assert.match(post({ force: false }), /owner's dispatch/, "an automatic run posts nothing on a fork");
   assert.match(post({ force: true, posted: S.SOL_LANE }), /only the advisory GLM review/);
+  // an assignment on the fork (REVIEWER: macrevb) changes nothing: prepare and post still go through on the dispatch
+  const assigned = [comment("REVIEWER: macrevb")];
+  const da = S.decideSol({ pr: pr(fork), files, items: R.feed(assigned), lane: S.SOL_LANE, triggerSha: "", checks: green, force: true });
+  assert.deepEqual([da.review, da.providers], [true, ["glm"]], da.why);
+  assert.equal(post({ force: true, items: R.feed(assigned) }), null);
+  assert.equal(S.decideSol({ pr: pr(fork), files, items: R.feed(assigned), lane: S.SOL_LANE, triggerSha: H, checks: green }).review, false);
+  assert.match(R.evaluatePr({ pr: pr(fork), items: R.feed([...assigned, comment(v("merge", H, "ghglm"))]), files, runs: [], statuses: [], verifiedEdge: () => false, conf: { include: [], exclude: [], pinonly: [] } }).why, /coordinator decides/);
 });
