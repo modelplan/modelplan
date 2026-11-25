@@ -461,11 +461,16 @@ enum DockGripInk {
         appliedGeometryScale = 1
         frame.size=CGSize(width:240 * communityRowHeight / 44,height:max(communityRowHeight,CGFloat(rows.count)*communityRowHeight));refreshNodes();needsDisplay=true
     }
-    public func applyOfficial(skin:DockInstrumentSkin,rows:[DockInstrumentReading],notices:[String:DockNotice]=[:],renderer:DockInstrumentRenderer,scale:Int,locale:String,hoverViewport:CGRect?=nil) throws {
+    #if DEBUG
+    @_spi(DockResourceChecks) public private(set) var officialPaintsForChecks = 0
+    #endif
+    /// Releases prepared geometry and its layout identifiers at the host privacy boundary.
+    @_spi(DockResourceChecks) public var discardPreparedAppearance: (() -> Void)?
+
+    public func applyOfficial(skin:DockInstrumentSkin,rows:[DockInstrumentReading],notices:[String:DockNotice]=[:],renderer:DockInstrumentRenderer,scale:Int,locale:String,hoverViewport:CGRect?=nil,reusesPreparedMaterial:Bool=false) throws {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
         let renderScale = presentationBackingScale ?? window.map { Int($0.backingScaleFactor) } ?? scale
         guard (1...2).contains(scale), (1...2).contains(renderScale) else{throw DockArtworkError.invalidManifest}
-        resetVisuals()
         do {
             let factor: CGFloat
             if let target = requestedNozzleDiameter, let station = skin.stations.first {
@@ -480,10 +485,28 @@ enum DockGripInk {
                     throw DockArtworkError.invalidManifest
                 }
             }
+            let values = Dictionary(uniqueKeysWithValues: rows.map { ($0.subscriptionID, $0) })
+            // Only the prepared supplier promises that renderer identity denotes
+            // the same immutable skin. Data withdrawal still retires all readings.
+            let matchingMaterial = reusesPreparedMaterial && officialRenderer === renderer &&
+                self.scale == renderScale && appliedGeometryScale == factor && self.hoverViewport == viewport
+            // Skip only when everything this face renders is unchanged and the view is at rest: no hover, glow,
+            // nozzle pose, notice pulse, working effect or carried (hover-viewport) image, and its resting frame.
+            if matchingMaterial, !failed, let resting = restingInstrumentImage, image === resting, !imageUsesHoverViewport,
+               self.locale == locale, readings == values, self.notices == notices, orderedIDs == rows.map(\.subscriptionID),
+               readoutHolds.isEmpty, refreshSweepRing == nil, hotGlow == nil, hoveredGripIndex == nil,
+               nozzlePosesForChecks.isEmpty, noticePulseLayers.isEmpty,
+               workingLayerParents.values.allSatisfy({ $0.sublayers?.isEmpty ?? true }),
+               frame.size == (viewport?.size ?? skin.bounds.size) { return }
+            let backing = matchingMaterial ? backgroundImage : nil
+            resetVisuals()
             self.hoverViewport = viewport
             imageUsesHoverViewport = false
             appliedGeometryScale = factor
-            let values=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)}),result=try renderer.render(skin:skin,readings:values,notices:notices,scale:renderScale)
+            let result = try renderer.render(skin: skin, readings: values, notices: notices, scale: renderScale, cachedBackground: backing)
+            #if DEBUG
+            officialPaintsForChecks += 1
+            #endif
             // G3-98: a landed result releases the hold; until then the new render keeps the number hidden.
             // A hold whose member is absent from this render is kept: the engine replaces content by clearing and
             // reinstalling it in one turn, so the member can be missing from the intermediate render. The sweep loop
@@ -492,7 +515,7 @@ enum DockGripInk {
                 if let new=values[id],hold.outgoing.readout != new.readout || hold.outgoing.remainingPercent != new.remainingPercent || hold.outgoing.dataState != new.dataState {resolveRefreshReadout(id)}
             }
             var held:DockRenderResult?
-            if !readoutHolds.isEmpty || refreshSweepRing != nil {let (heldReadings,heldSkin)=heldFrame(values,skin:skin,at:now);held=try renderer.render(skin:heldSkin,readings:heldReadings,notices:notices,scale:renderScale)}
+            if !readoutHolds.isEmpty || refreshSweepRing != nil {let (heldReadings,heldSkin)=heldFrame(values,skin:skin,at:now);held=try renderer.render(skin:heldSkin,readings:heldReadings,notices:notices,scale:renderScale,cachedBackground:result.backgroundImage)}
             community=false;failed=false;self.skin=skin;self.scale=renderScale;self.locale=locale;self.notices=notices
             self.officialRenderer=renderer
             presentedTextMetricsForChecks=result.metrics;orderedIDs=rows.map(\.subscriptionID);readings=values;image=held?.image ?? result.image;restingInstrumentImage=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
@@ -686,7 +709,7 @@ enum DockGripInk {
                 self.readoutHolds = self.readoutHolds.filter { time - $0.value.started < DockRefreshSweep.readoutEnd(resolvedAt: $0.value.resolvedAt) }
                 if let ring = self.refreshSweepRing, time - ring.started >= DockRefreshSweep.duration { self.refreshSweepRing = nil }
                 if self.readoutHolds.isEmpty && self.refreshSweepRing == nil { break }
-                try? await Task.sleep(for: .milliseconds(50))
+                try? await Task.sleep(for: .milliseconds(50), tolerance: .milliseconds(5))
             }
             guard let self, self.refreshSweepGeneration == token else { return }
             self.readoutHolds = [:]; self.refreshSweepRing = nil
@@ -891,7 +914,7 @@ enum DockGripInk {
                 let zh=locale.hasPrefix("zh"),label:String
                 switch notice.key.kind {
                 case .forecast:label=zh ? "可能提前耗尽":"May run out before reset"
-                case .resetAnnounced:label=zh ? "已公告额外重置":"Extra reset announced"
+                case .resetAnnounced:label=notice.banked ? (zh ? "已公告额外重置":"Banked reset announced") : (zh ? "已公告额度重置":"Limit reset announced")
                 case .resetConfirmed:label=zh ? "公开重置已确认，余量以本机读数为准":"Public reset confirmed; your balance is the local reading"
                 case .cardsExpiring:label=zh ? "额外重置即将过期":"Resets expiring"
                 case .credits:label=zh ? "正在使用点数":"Using credits"

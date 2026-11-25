@@ -50,14 +50,14 @@ final class D166ResetCreditTests: XCTestCase {
         let zh = EngineResetEventWording(english: false, calendar: shanghai), en = EngineResetEventWording(english: true, calendar: shanghai)
         let before = at("2026-11-11T20:00:00Z")
         XCTAssertEqual(zh.label(event), "↺ 额外重置")
-        XCTAssertEqual(en.label(event), "↺ Extra resets")
+        XCTAssertEqual(en.label(event), "↺ Banked resets")
         XCTAssertEqual(zh.title(event, now: before), "预计 11月12日–11月13日 之间")
         XCTAssertEqual(en.title(event, now: before), "Expected between Nov 12 and Nov 13")
         XCTAssertEqual(zh.detail(rose: false), "余量以本机读数为准")
         XCTAssertEqual(zh.title(event, now: at("2026-11-13T08:00:00Z")), "等待确认")
         XCTAssertEqual(en.title(event, now: at("2026-11-13T08:00:00Z")), "Awaiting confirmation")
         for text in [zh.label(event), zh.title(event, now: before), en.label(event), en.title(event, now: before)] {
-            XCTAssertFalse(text.contains("重置卡") || text.lowercased().contains("reset card"), "LBL-2.2-11: \(text)")
+            XCTAssertFalse(text.contains("重置卡") || text.lowercased().contains("reset card"), "LBL-2.2-11 (D428 bans 重置卡 / reset card): \(text)")
         }
 
         var signal = DockSubscriptionSignal(id: "member"); signal.dataState = .fresh
@@ -92,6 +92,11 @@ final class D166ResetCreditTests: XCTestCase {
         XCTAssertEqual(en.notification(reset, rose: true).title, "Codex limit reset confirmed")
         XCTAssertEqual(zh.notification(reset, rose: true).body, "已生效：本机读数已回升。")
         XCTAssertEqual(zh.detail(rose: true), "本机读数已回升 · 余量以本机读数为准")
+        // D428: a direct reset keeps its own wording and never uses the banked wording.
+        for text in [zh.label(reset), zh.title(reset, now: now), en.label(reset), en.title(reset, now: now),
+                     zh.notification(reset, rose: true).title, en.notification(reset, rose: true).title] {
+            XCTAssertFalse(text.contains("额外重置") || text.lowercased().contains("banked reset"), "D428: \(text)")
+        }
 
         // Older producers: no kind is a direct reset; no confirmation time falls back to publishedAt.
         var legacy = base; legacy["kind"] = NSNull(); legacy["confirmedAt"] = NSNull(); legacy["confirmedAtBasis"] = NSNull()
@@ -145,7 +150,7 @@ final class D166ResetCreditTests: XCTestCase {
         // A window that began at 10:01, read at 10:02: a restart.
         let restarted = try account(observed: confirmed.addingTimeInterval(120), resets: confirmed.addingTimeInterval(60 + 18000))
         XCTAssertTrue(direct.restartedReading(in: restarted))
-        XCTAssertFalse(credit.restartedReading(in: restarted), "extra resets wait for the user to redeem them")
+        XCTAssertFalse(credit.restartedReading(in: restarted), "banked resets wait for the user to redeem them")
         let zh = EngineResetEventWording(english: false, calendar: shanghai)
         XCTAssertEqual(zh.notification(direct, rose: direct.restartedReading(in: routine)).body, "余量以本机读数为准。")
     }
@@ -188,7 +193,7 @@ final class D166ResetCreditTests: XCTestCase {
             return try entry.composition.dock.cardContent(for: member)?.rows.first { $0.id.hasPrefix("reset-event:" + id) }
         }
         var row = try XCTUnwrap(notice())
-        XCTAssertEqual(row.label, "↺ Extra resets")
+        XCTAssertEqual(row.label, "↺ Banked resets")
         XCTAssertTrue(row.value.hasPrefix("Expected between"), row.value)
         XCTAssertEqual(entry.composition.resetSignals.first { $0.id == member }?.reset?.status, .announced)
         try await Task.sleep(for: .milliseconds(100))
@@ -210,7 +215,7 @@ final class D166ResetCreditTests: XCTestCase {
         let client = try XCTUnwrap(entry.composition.client as? S4RowsClient)
         try await client.replaceRows(confirmed)
         for _ in 0..<100 where titles.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertEqual(titles, ["Codex extra resets confirmed"])
+        XCTAssertEqual(titles, ["Codex banked resets confirmed"])
         row = try XCTUnwrap(notice())
         XCTAssertTrue(row.value.hasPrefix("Confirmed · "), row.value)
         XCTAssertEqual(row.detail, "Your balance is the local reading")

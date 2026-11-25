@@ -22,7 +22,7 @@ public enum ProductionEdition: String, Sendable {
     /// The official edition draws the T2 skin; the neutral edition uses the plain community rendering
     /// (no reserved artwork, no flame frames).
     public static func appearance(for edition: ProductionEdition) -> StaticDockPreviewHost.Appearance? {
-        edition == .official ? T2ProductionAppearance.apply : nil
+        edition == .official ? T2ProductionAppearance().apply : nil
     }
     public static func community(createsNativePanels: Bool = true,
                                  nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,

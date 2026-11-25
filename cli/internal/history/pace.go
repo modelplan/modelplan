@@ -15,7 +15,7 @@ import (
 // The pace ledger, <cache>/observed/pace.json, keeps how fast each window's percentage rose, as
 // evidence for later advice. It runs beside cycles.json, which is not changed and never mixed in:
 // every reading that counts is kept (at most one unchanged reading per paceThrottle), so the
-// observed span and its gaps are known; a drop under the same reset (a reset card, a correction)
+// observed span and its gaps are known; a drop under the same reset (a banked reset, a correction)
 // starts a new segment instead of being ignored; and a rise seen only after a gap longer than the
 // window's gap limit is not credited to any configuration. Points stay percentage points: they
 // are never converted to tokens, nor tokens to points.

@@ -310,6 +310,8 @@ type Report struct {
 	// Refresh: what `quota --refresh-account` did, so old figures never pass for a fresh reading.
 	Refresh *AccountRefresh `json:"refresh,omitempty"`
 	Note    string          `json:"note"`
+
+	ZaiSubscriptionEstablished bool `json:"-"` // local presentation evidence, independent of quota values
 }
 
 const note = "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."
@@ -337,6 +339,7 @@ type Paths struct {
 	ReaderAccess                *ReaderAccess             // explicit shared-consent admission for saved-login readers
 	ZCodeNoProviderFile         bool                      // ZCode is present on the default route but keeps no provider file (G3-21)
 	ZCodeLoginConsent           bool                      // ZCode's sign-in is there but its saved-login scope is not allowed (D369)
+	eraseGuard                  consent.EraseGuard        // retry erasure fence, checked under the reader lock (macrevb-1218-5)
 }
 
 // Read gathers every available source and evaluates it at now.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -160,4 +161,94 @@ func TestBusyAtFinalFenceReturnsBusyWithoutPrivateData(t *testing.T) {
 	_ = w.Close()
 	_ = r.Close()
 	<-done
+}
+
+// revokeOnFirstWrite stands in for a consumer that reads the start of a private frame,
+// pauses while another process commits a revoke, then resumes (review 11-24 #1).
+type revokeOnFirstWrite struct {
+	mu      sync.Mutex
+	written []byte
+	revoked bool
+	closed  bool
+}
+
+func (w *revokeOnFirstWrite) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return 0, io.ErrClosedPipe
+	}
+	w.written = append(w.written, p...)
+	w.revoked = true
+	return len(p), nil
+}
+func (w *revokeOnFirstWrite) Close() error { w.mu.Lock(); w.closed = true; w.mu.Unlock(); return nil }
+func (w *revokeOnFirstWrite) isRevoked() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.revoked
+}
+
+func TestPrivateFrameStartedBeforeRevokeNeverCompletes(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := &revokeOnFirstWrite{}
+	// The enqueue-time check passes; the revoke lands while the body is being written.
+	o := newOutbound(ctx, cancel, w, time.Second, func(Stamp) error { return nil })
+	commits := 0
+	o.commit = func(_ Stamp, write func() error) error {
+		commits++
+		if w.isRevoked() {
+			return ProtocolError{wire.CodeConsentChanged}
+		}
+		return write()
+	}
+	o.rowsMessage("private row", Stamp{}, nil)
+	done := make(chan struct{})
+	go o.run(done)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("session did not end after the frame lost its fence")
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if commits != 1 {
+		t.Fatalf("commit checks = %d, want 1", commits)
+	}
+	if strings.Contains(string(w.written), "\n") {
+		t.Fatalf("private frame completed after revoke: %q", w.written)
+	}
+	if !w.closed || ctx.Err() == nil {
+		t.Fatal("session stayed open with a partial private frame")
+	}
+}
+
+func TestPrivateFrameCommitsNewlineUnderFence(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := &recordingWriter{done: make(chan struct{})}
+	o := newOutbound(ctx, cancel, w, time.Second, func(Stamp) error { return nil })
+	inside := false
+	o.commit = func(_ Stamp, write func() error) error {
+		inside = true
+		defer func() { inside = false }()
+		return write()
+	}
+	o.rowsMessage("row", Stamp{}, nil)
+	o.controlMessage("after")
+	done := make(chan struct{})
+	go o.run(done)
+	select {
+	case <-w.done:
+	case <-time.After(time.Second):
+		t.Fatal("writer did not drain")
+	}
+	cancel()
+	<-done
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if strings.Join(w.messages, "") != "\"after\"\n\"row\"\n" || w.messages[2] != "\n" || inside {
+		t.Fatalf("private frame was not terminated under the fence: %q", w.messages)
+	}
 }

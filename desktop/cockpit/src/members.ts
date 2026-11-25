@@ -5,11 +5,14 @@ import type { WireCockpitData,WireRow,WireAccount } from '../generated/wire.js';
 // a shared row/route is numbered in the CLI's emitted account order.
 //
 // Build 14c (owner): the cockpit shows exactly the subscriptions the widget shows. The Dock reads only rows whose
-// surfaces include "dock" (native DockContentProvider dockRows -> EngineAccountMemberCatalogue); the producer drops
-// "dock" from a row that is signed out, unreadable or not permitted (cli/internal/rows/build.go, G3-38 D52/D76), but
-// keeps it on the menu and settings surfaces. Those rows are not cockpit members either, so they get no tab, column,
+// surfaces include "dock" (native DockContentProvider dockRows -> EngineAccountMemberCatalogue); the producer decides
+// membership even when a reading is unavailable (cli/internal/rows/build.go). Rows without this surface get no tab, column,
 // HUD row or caution. Fallback keys are numbered over the same rows as the native catalogue.
 export const dockRows=(data:WireCockpitData):readonly WireRow[]=>data.projection.rows.filter(row=>row.surfaces.includes('dock'));
+/** The engine's unavailable ZCode station carries only tool membership. */
+export function unavailableZCodeMember(row:WireRow,account:WireAccount):boolean{
+ return row.id==='zai'&&account.route==='unknown'&&account.valueState==='none'&&!account.subscriptionRef;
+}
 // D244 (owner 2026-11-13): one saved order for the widget, the cockpit and Settings (Settings › Subscriptions).
 // Members the saved order names come first, in that order; the rest keep the emitted order after them — the same
 // rule as the native DockSubscriptionPreferences.orderedIDs. A refresh never re-sorts: every paint reads this order.

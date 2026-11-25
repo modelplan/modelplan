@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
@@ -61,6 +62,13 @@ func grantScopes(r consentRequest, stdout io.Writer, st *store.Store) int {
 }
 
 func cleanupScope(st *store.Store, scope string, forget bool) error {
+	return cleanupScopeGuarded(st, scope, forget, nil)
+}
+
+// cleanupScopeGuarded erases one owed scope. A retried obligation passes the guard from
+// consent.RetryCleanup, checked under the reader lock before each destructive step, so a retry
+// whose store was reset or whose scope was re-granted erases nothing (macrevb-1218-5).
+func cleanupScopeGuarded(st *store.Store, scope string, forget bool, guard consent.EraseGuard) error {
 	if !strings.Contains(scope, ".") {
 		state, err := consent.Load(consent.Path())
 		if err != nil {
@@ -69,7 +77,34 @@ func cleanupScope(st *store.Store, scope string, forget bool) error {
 		if state.Tools[scope].BrowserCookieCache {
 			return errors.New("cookie cleanup requires explicit action")
 		}
-		return forgetConsentTool(st, scope, false)
+		if guard == nil {
+			return forgetConsentTool(st, scope, false)
+		}
+		return forgetConsentToolGuarded(st, scope, guard)
 	}
-	return quota.EraseScope(quotaPaths(st), scope, forget)
+	return quota.EraseScopeGuarded(quotaPaths(st), scope, forget, guard)
+}
+
+// forgetConsentToolGuarded is forgetConsentTool (without cookies) for a retried legacy
+// tool-level obligation: every step runs under the reader lock after the guard passes.
+func forgetConsentToolGuarded(st *store.Store, id string, guard consent.EraseGuard) error {
+	p := quotaPaths(st)
+	if quota.ProviderName(id) != "" {
+		unlock, err := consent.ReaderLockWait()
+		if err != nil {
+			return err
+		}
+		err = guard.Check()
+		if err == nil {
+			err = quota.SetConnection(p.ConnectionsFile, quota.QuotaSource{Provider: id, Backend: quota.BackendNative, Enabled: false})
+		}
+		unlock()
+		if err != nil {
+			return err
+		}
+	}
+	if err := quota.ForgetToolGuarded(p, id, guard); err != nil {
+		return err
+	}
+	return localusage.ForgetProductionHistoryGuarded(st.Dir, id, guard)
 }

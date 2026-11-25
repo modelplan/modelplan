@@ -25,7 +25,7 @@ for(const details of [false,true])test(`native tick withdraws elapsed current ze
 });
 test('reset event has its own deadline and tick',async({page})=>{
  const data=dataFor(true),a=data.projection.rows[0].accounts[0];a.windows[0].remainingPercent=80;a.windows[0].validUntil=week;a.windows[0].resetsAt=week;data.projection.rows[0].expiresAt=week;data.details.alerts=[];data.details.resetEvents=[{version:1,id:'synthetic-reset',provider:'openai',rowId:data.projection.rows[0].id,status:'announced',publishedAt:start,expiresAt:at,source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];
- const {tick}=await open(page,data);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(at)));await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toContainText('official extra reset · time TBA');expect(await tick(at)).toBe(true);await expect(page.locator('.pg-overview .mfd-alerts li')).toHaveCount(0);await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(week)));
+ const {tick}=await open(page,data);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(at)));await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toContainText('official limit reset · time TBA');expect(await tick(at)).toBe(true);await expect(page.locator('.pg-overview .mfd-alerts li')).toHaveCount(0);await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(week)));
 });
 test('replacement, stale context, hidden and show tick preserve current data',async({page})=>{
  const data=dataFor(),{send,receive,tick}=await open(page,data);data.projection.rows[0].accounts[0].windows[0].resetsAt=week;data.projection.rows[0].accounts[0].windows[0].validUntil=week;data.projection.rows[0].expiresAt=week;expect(await receive(send('display',{data}))).toBe(true);expect((await reports(page)).at(-1).deadlineUnixMs).toBe(String(Date.parse(week)));
@@ -225,6 +225,17 @@ for(const gate of ['hidden','non-key','clear'])test(`pointer release after ${gat
 test('same verified quota keeps focus across value and observation updates',async({page})=>{
  const data=twoVerified(),{send,receive}=await open(page,data),ref='0123456789abcdef',cell=()=>page.locator(`.eng-cols .ec[data-col="${ref}"] .qcell[data-row="other"]`);await cell().focus();await expect(cell()).toBeFocused();
  const w=data.projection.rows[0].accounts[0].windows[0];w.remainingPercent=10;w.observedAt='2026-10-29T11:59:59Z';expect(await receive(send('display',{data}))).toBe(true);await expect(cell()).toBeFocused();await expect(cell().locator('.qvalue')).toHaveText('10');
+});
+test('pointer-focused quota stays ringless after display replacement and keyboard navigation shows focus',async({page})=>{
+ const data=twoVerified(),{send,receive}=await open(page,data),cell=()=>page.locator('.eng-cols .ec[data-col="0123456789abcdef"] .qcell[data-row="other"]');
+ await cell().click();await page.keyboard.press('Escape');await expect(cell()).toBeFocused();
+ await expect(cell()).toHaveAttribute('data-pointer-focus','');
+ data.projection.rows[0].accounts[0].windows[0].remainingPercent=10;
+ expect(await receive(send('display',{data}))).toBe(true);await expect(cell()).toBeFocused();
+ await page.keyboard.press('Escape');await expect(cell()).toHaveAttribute('data-pointer-focus','');
+ expect(await cell().evaluate(e=>getComputedStyle(e).outlineStyle)).toBe('none');
+ await page.keyboard.press('Tab');
+ expect(await page.evaluate(()=>{const e=document.activeElement;return e instanceof HTMLElement&&e.matches(':focus-visible')&&!e.hasAttribute('data-pointer-focus')&&getComputedStyle(e).outlineStyle!=='none';})).toBe(true);
 });
 test('irrelevant window changes do not remove verified quota focus',async({page})=>{
  const data=twoVerified(),{send,receive}=await open(page,data),cell=()=>page.locator('.eng-cols .ec[data-col="0123456789abcdef"] .qcell[data-row="other"]');await cell().focus();await expect(cell()).toBeFocused();
