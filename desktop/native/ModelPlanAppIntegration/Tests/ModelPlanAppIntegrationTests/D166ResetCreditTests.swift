@@ -49,8 +49,8 @@ final class D166ResetCreditTests: XCTestCase {
         XCTAssertEqual(event.schedulePrecision, "date")
         let zh = EngineResetEventWording(english: false, calendar: shanghai), en = EngineResetEventWording(english: true, calendar: shanghai)
         let before = at("2026-11-11T20:00:00Z")
-        XCTAssertEqual(zh.label(event), "↺ 额外重置")
-        XCTAssertEqual(en.label(event), "↺ Extra resets")
+        XCTAssertEqual(zh.label(event), "↺ 重置卡")
+        XCTAssertEqual(en.label(event), "↺ Reset cards")
         XCTAssertEqual(zh.title(event, now: before), "预计 11月12日–11月13日 之间")
         XCTAssertEqual(en.title(event, now: before), "Expected between Nov 12 and Nov 13")
         XCTAssertEqual(zh.detail(rose: false), "余量以本机读数为准")
@@ -80,7 +80,7 @@ final class D166ResetCreditTests: XCTestCase {
         let now = at("2026-11-12T11:00:00Z")
         XCTAssertEqual(zh.title(credit, now: now), "已确认 · 18:20")
         XCTAssertEqual(en.title(credit, now: now), "Confirmed · 18:20")
-        XCTAssertEqual(zh.notification(credit, rose: false).title, "Codex 额外重置已确认")
+        XCTAssertEqual(zh.notification(credit, rose: false).title, "Codex 重置卡已确认")
         XCTAssertEqual(zh.notification(credit, rose: false).body, "余量以本机读数为准。")
 
         var direct = base; direct["kind"] = "direct_reset"; direct["confirmedAtBasis"] = "firstSeen"
@@ -145,7 +145,7 @@ final class D166ResetCreditTests: XCTestCase {
         // A window that began at 10:01, read at 10:02: a restart.
         let restarted = try account(observed: confirmed.addingTimeInterval(120), resets: confirmed.addingTimeInterval(60 + 18000))
         XCTAssertTrue(direct.restartedReading(in: restarted))
-        XCTAssertFalse(credit.restartedReading(in: restarted), "extra resets wait for the user to redeem them")
+        XCTAssertFalse(credit.restartedReading(in: restarted), "reset cards wait for the user to redeem them")
         let zh = EngineResetEventWording(english: false, calendar: shanghai)
         XCTAssertEqual(zh.notification(direct, rose: direct.restartedReading(in: routine)).body, "余量以本机读数为准。")
     }
@@ -188,7 +188,7 @@ final class D166ResetCreditTests: XCTestCase {
             return try entry.composition.dock.cardContent(for: member)?.rows.first { $0.id.hasPrefix("reset-event:" + id) }
         }
         var row = try XCTUnwrap(notice())
-        XCTAssertEqual(row.label, "↺ Extra resets")
+        XCTAssertEqual(row.label, "↺ Reset cards")
         XCTAssertTrue(row.value.hasPrefix("Expected between"), row.value)
         XCTAssertEqual(entry.composition.resetSignals.first { $0.id == member }?.reset?.status, .announced)
         try await Task.sleep(for: .milliseconds(100))
@@ -210,7 +210,7 @@ final class D166ResetCreditTests: XCTestCase {
         let client = try XCTUnwrap(entry.composition.client as? S4RowsClient)
         try await client.replaceRows(confirmed)
         for _ in 0..<100 where titles.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertEqual(titles, ["Codex extra resets confirmed"])
+        XCTAssertEqual(titles, ["Codex reset cards confirmed"])
         row = try XCTUnwrap(notice())
         XCTAssertTrue(row.value.hasPrefix("Confirmed · "), row.value)
         XCTAssertEqual(row.detail, "Your balance is the local reading")

@@ -173,7 +173,7 @@ public struct SettingsPageContext: Sendable {
             else if v1NormalEntry { unavailableControls[key] = dock }
         }
     }
-    /// SET-9-18: "Quota reset" and "Official extra reset" are delivered by the app once its
+    /// SET-9-18: "Quota reset" and "Official reset card" are delivered by the app once its
     /// notification delivery is wired; then their rows are usable. Saved kinds are unchanged.
     public mutating func observeNotificationDelivery(_ available: Bool) {
         let notices = SettingsText("Unavailable until notifications can be delivered.", "通知可以送达前不可用。")
@@ -275,8 +275,8 @@ public enum SettingsCatalogue {
         .init(.notificationConsent,"Enable notifications","开启通知","Ask for permission only after explicit opt-in.","仅在主动开启后请求通知权限。"),
         .init(.forecast,"May not last to reset","可能撑不到重置","Notify for a new forecast episode.","新出现的耗尽风险可通知。"),
         .init(.reset,"Quota reset","额度重置","Notify when a reset is read.","读取到重置时通知。"),
-        .init(.official,"Official extra reset","官方额外重置","Notify once per official event.","每个官方事件仅通知一次。"),
-        .init(.expiring,"Resets expiring","额外重置即将过期","Expired resets are never revived after wake.","已过期的重置不再重新显示。"),
+        .init(.official,"Official reset card","官方重置卡","Notify once per official event.","每个官方事件仅通知一次。"),
+        .init(.expiring,"Reset cards expiring","重置卡即将过期","Expired resets are never revived after wake.","已过期的重置不再重新显示。"),
         .init(.stale,"Data stopped arriving","数据停止更新","Notify once per stale-data episode.","每次数据停滞仅通知一次。"),
         .init(.visible,"Subscription visibility","订阅可见性","Apply to both Quota Widget and cockpit.","同时用于额度挂件与驾驶舱。"),
         .init(.alias,"Subscription alias","订阅别名","Commit only completed text, never an active IME composition.","仅提交已完成的文本，不提交输入法组合内容。"),
@@ -329,7 +329,7 @@ public enum SettingsCatalogue {
                     if c.v1NormalEntry && key == .loginSystemSettings && !c.systemSettingsFallbacks.contains(.loginItems) { return nil }
                     if c.v1NormalEntry && key == .notificationSystemSettings && !c.systemSettingsFallbacks.contains(.notifications) { return nil }
                     // ALR-52 (WP-11; supersedes SET-9-18/SET-9-29): v1 offers only the kinds it sends,
-                    // "Quota reset" and "Official extra reset"; the forecast shows on the ALERT lamp instead.
+                    // "Quota reset" and "Official reset card"; the forecast shows on the ALERT lamp instead.
                     if c.v1NormalEntry, let kind = NotificationKind(rawValue: key.rawValue), !NotificationKind.delivered.contains(kind) { return nil }
                     if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) && (!c.capabilities.updateServiceAvailable || c.unavailableControls[key] != nil) { return nil }
                     // No dead control: the export row appears once the app can write the file.
