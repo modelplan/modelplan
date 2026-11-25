@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import assert from "node:assert/strict";
 import test from "node:test";
-import { seedPlan, APP_INTEGRATION_MAX_CLASSES, FILTER_MAX, NEVER_RUN, ownerPackage, plan, testClasses, toTsv } from "../mac-compile/plan.mjs";
+import { SPI_FLAG, withTestTargets, seedPlan, APP_INTEGRATION_MAX_CLASSES, FILTER_MAX, NEVER_RUN, ownerPackage, plan, testClasses, toTsv } from "../mac-compile/plan.mjs";
 
 const files = {
   "desktop/native/Package.swift": "",
@@ -56,7 +56,7 @@ test("a long class list runs the whole package minus the never-run classes", () 
   const rows = plan(["desktop/native/Sub/Sources/S.swift"], all, (f) => (f === "desktop/native/Sub/Tests/SubTests.swift" ? many : read(f)));
   assert.ok(many.length > FILTER_MAX);
   assert.deepEqual([rows[0].mode, rows[0].filter], ["skip", ""]);
-  assert.equal(toTsv(rows), `desktop/native/Sub\tdesktop_native_Sub\tskip\t-\t${NEVER_RUN.join("|")}`);
+  assert.equal(toTsv(rows), `desktop/native/Sub\tdesktop_native_Sub\tskip\t-\t${NEVER_RUN.join("|")}\t-`);
 });
 
 const AI = "desktop/native/ModelPlanAppIntegration";
@@ -106,4 +106,26 @@ test("seed plan: every standalone-buildable package, tests built only, one scrat
   assert.deepEqual(rows.map((r) => r.dir), ["desktop/native", "desktop/native/Dep", "desktop/native/Free"]);
   assert.ok(rows.every((r) => r.mode === "build-tests" && r.filter === ""));
   assert.equal(new Set(rows.map((r) => r.scratch)).size, rows.length);
+});
+
+test("invariant: a PR whose test targets do not compile fails mac-compile (AppIntegration tests built in both configurations)", () => {
+  assert.deepEqual(withTestTargets([], []), []);
+  const every = [...all, ...Object.keys(aiFiles)];
+  const rows = withTestTargets(plan(["desktop/native/Sub/Sources/S.swift"], every, (f) => aiFiles[f] ?? files[f]), every);
+  assert.deepEqual(rows.map((r) => [r.dir, r.scratch, r.mode, r.flags ?? ""]), [
+    ["desktop/native/Sub", "desktop_native_Sub", "filter", ""],
+    [AI, "desktop_native_ModelPlanAppIntegration", "build-tests", ""],
+    [AI, "desktop_native_ModelPlanAppIntegration_spi", "build-tests", SPI_FLAG],
+  ]);
+  assert.match(toTsv(rows).split("\n")[2], new RegExp(`\\t${SPI_FLAG}$`));
+});
+
+test("a touched AppIntegration keeps its own row and gains only the SPI build; verification takes the SPI flag", () => {
+  const f = { ...aiFiles, "desktop/native/verification/Package.swift": "", "desktop/native/verification/U11WiredAdapter.swift": "" };
+  const rows = withTestTargets(plan([`${AI}/Tests/AAATests.swift`, "desktop/native/verification/U11WiredAdapter.swift"], Object.keys(f), (p) => f[p]), Object.keys(f));
+  assert.deepEqual(rows.map((r) => [r.dir.split("/").pop(), r.mode, r.flags ?? ""]), [
+    ["ModelPlanAppIntegration", "filter", ""],
+    ["verification", "build-tests", SPI_FLAG],
+    ["ModelPlanAppIntegration", "build-tests", SPI_FLAG],
+  ]);
 });

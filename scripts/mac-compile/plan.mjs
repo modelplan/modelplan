@@ -16,7 +16,7 @@
 //   full suite is the GUI and headless legs' job (desktop.yml, native-test-partition.json).
 // Usage: node scripts/mac-compile/plan.mjs <base> <head> (base: the merge base of main and the PR head), in a clone
 // that has both commits. Prints one TSV row per package:
-// dir, scratch name, mode (filter | skip | build-tests), filter pattern, skip pattern.
+// dir, scratch name, mode (filter | skip | build-tests), filter pattern, skip pattern, extra swiftc flags (- for none).
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -99,13 +99,28 @@ export function seedPlan(files, read) {
     // Both: the root declares this directory's sources as its own targets, and the package depends on the root.
     return rootPaths.some((p) => p.startsWith(rel + "/")) && /\.package\([^)]*path:\s*"\.\."/.test(read(`${dir}/Package.swift`));
   };
-  return plan(swift, files, read)
+  return withTestTargets(plan(swift, files, read)
     .filter((r) => !NOT_STANDALONE.includes(r.dir) && !embedded(r.dir))
-    .map((r) => ({ ...r, mode: "build-tests", filter: "" }));
+    .map((r) => ({ ...r, mode: "build-tests", filter: "" })), files);
+}
+
+// The merge group (trusted-mac.yml) builds test targets a PR's touched-package list never reaches: AppIntegration's tests
+// depend on most other packages (a source change elsewhere can break them, as #1051/#1103 did), and its U11 leg and the
+// verification host compile them with -DMODELPLAN_TEST_ONLY_SPI, which switches extra test-only code on (U11WiredAdapter
+// failed #1252 for lack of it). A PR whose test targets do not compile must fail mac-compile, so any Swift change also
+// builds (never runs) AppIntegration's tests in both configurations, and the verification host takes the flag.
+export const SPI_FLAG = "-DMODELPLAN_TEST_ONLY_SPI";
+export function withTestTargets(rows, files) {
+  if (!rows.length || !files.includes(`${ROOT}/${LIMITED_PACKAGE}/Package.swift`)) return rows;
+  const out = rows.map((r) => (NOT_STANDALONE.includes(r.dir) ? { ...r, flags: SPI_FLAG } : r));
+  const ai = `${ROOT}/${LIMITED_PACKAGE}`;
+  if (!out.some((r) => r.dir === ai && !r.flags)) out.push({ dir: ai, scratch: ai.replaceAll("/", "_"), mode: "build-tests", filter: "", skip: NEVER_RUN.join("|") });
+  out.push({ dir: ai, scratch: ai.replaceAll("/", "_") + "_spi", mode: "build-tests", filter: "", skip: NEVER_RUN.join("|"), flags: SPI_FLAG });
+  return out;
 }
 
 export function toTsv(rows) {
-  return rows.map((r) => [r.dir, r.scratch, r.mode, r.filter || "-", r.skip].join("\t")).join("\n");
+  return rows.map((r) => [r.dir, r.scratch, r.mode, r.filter || "-", r.skip, r.flags || "-"].join("\t")).join("\n");
 }
 
 function main(argv) {
@@ -122,7 +137,7 @@ function main(argv) {
   const changed = list("diff", "--no-renames", "--name-only", "-z", "--diff-filter=ACMRD", base, head, "--", ROOT);
   const files = list("ls-tree", "-r", "-z", "--name-only", head, "--", ROOT);
   // PR files are only read as text (git show), never checked out or run here.
-  const rows = plan(changed, files, (f) => git("show", `${head}:${f}`));
+  const rows = withTestTargets(plan(changed, files, (f) => git("show", `${head}:${f}`)), files);
   process.stdout.write(rows.length ? toTsv(rows) + "\n" : "");
 }
 
