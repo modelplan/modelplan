@@ -301,3 +301,16 @@ test('D406: reset-card notices with no stated time sit on the day they were publ
  const at=cal.spans.filter(x=>x.kind!=='cards').map(x=>[x.kind,x.from,x.to,x.count]);
  assert.deepEqual(at,[['credit',NOW,null,1],['credit',local(2026,11,14,8),local(2026,11,14,8),1],['announced',NOW,null,null]]);
 });
+
+test('D406 review: a point deadline before local midnight stays on its day; a confirmed reset card keeps its status',()=>{
+ const {data,ref}=display();
+ data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
+ const iso=t=>new Date(t).toISOString();
+ const ev=(id,status,schedule)=>({version:1,id,rowId:'codex',provider:'openai',kind:'reset_credit',status,publishedAt:iso(local(2026,11,10,9)),expiresAt:iso(local(2026,11,20)),...(schedule?{schedule}:{}),source:{kind:'publication',publicationId:'p'}});
+ const late=local(2026,11,14,23,50);
+ data.details.resetEvents=[ev('a','announced',{from:iso(late),through:iso(late),precision:'exact'}),ev('b','confirmed')];
+ const cal=calendarFromCockpit(data,NOW),credit=cal.spans.filter(x=>x.kind!=='cards');
+ assert.equal(new Date(credit[0].to).getDate(),14,'23:50 is still the 14th');
+ assert.deepEqual(credit.map(x=>x.kind),['credit','creditConfirmed']);
+ assert.ok(parseCalendarData(cal));
+});

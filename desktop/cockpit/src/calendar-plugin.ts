@@ -46,7 +46,7 @@ function spanText(data:CalendarData,s:CalendarSpan,w:Words,zh:boolean,full=false
   // No expiry known (a partial list, or none given): no date, never an epoch (macrevc-844-6).
   if(s.to===null)return `${name} ${w.cards}${n}`;
   return zh?`${name} ${w.cards}${n} ${w.until}${monthDay(s.to!)}`:`${name} ${w.cards}${n} · ${w.until} ${monthDay(s.to!)}`;}
- if(s.kind==='credit')return `${name} +1 ${w.credit}`;
+ if(s.kind==='credit'||s.kind==='creditConfirmed')return `${name} +1 ${w.credit}`;
  const what=s.kind==='confirmed'?w.confirmed:w.announced;
  if(s.to===null)return `${name} ${what}`;
  return zh?`${name} ${what} · ${monthDay(s.to)} ${w.effective}`:`${name} ${what} · ${monthDay(s.to)}`;
@@ -198,7 +198,7 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
    // website's board does the same for a past week; its "latest resets" strip is this calendar's all-day line in the 12 h column).
    const stamp=x.to??x.from,day=dayOffset(now,stamp);
    if(day<0||day>=WEEK_DAYS)continue;
-   const credit=x.kind==='credit',row=el('div','wk-adr mark chip '+(credit?'credit':x.kind==='confirmed'?'direct':'direct pending'));row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);place(row,day);
+   const credit=x.kind==='credit'||x.kind==='creditConfirmed',confirmed=x.kind==='creditConfirmed'||x.kind==='confirmed',row=el('div','wk-adr mark chip '+(credit?'credit':'direct')+(confirmed?'':' pending'));row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);place(row,day);
    // Chips of one day stack in lanes under each other; on a narrow column the direct reset keeps only its ↻ (the title has the words).
    const lane=chipsOn[day]!++;if(lane)row.style.top=`${2+lane*15}px`;
    row.append(el('span','',credit?`+1 ${w.credit}`:narrow?'↻':`↻ ${w.direct}`));allDay.append(row);rowsUsed++;
@@ -342,8 +342,9 @@ export const calendarPlugin:CockpitPlugin=Object.freeze({
  nextDeadline:(_state:unknown,now:number)=>now?nextMinute(now):null,
  column(state:unknown,context:PluginContext){
   const data=readingOf(state);
-  // D328: no peak rules (only Codex, say): the D293 cells and "Peak: no peak rules", no strip.
-  const strip=data&&data.peaks.length?(c:PluginDrawContext)=>paintStrip(c,data):null;
+  // D328: no peak rules (only Codex, say): the D293 cells and "Peak: no peak rules", no strip, unless a public reset notice
+  // is current: its all-day line must not be lost.
+  const strip=data&&(data.peaks.length||data.spans.some(x=>x.kind!=='cards'))?(c:PluginDrawContext)=>paintStrip(c,data):null;
   return {cells:fallbackCells(data,context),foot:footOf(data,context),draw:strip};
  },
  screen(state:unknown,context:PluginContext){

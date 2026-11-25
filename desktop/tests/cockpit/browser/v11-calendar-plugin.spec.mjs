@@ -402,3 +402,15 @@ test('D406 a reset-card notice published 2 days ago is not placed on today in th
  await key(page).click();
  await expect(weekView(page).locator('.wk-adr.chip')).toHaveCount(0);
 });
+
+test('D406 review: with no peak rules a current reset notice still gets the all-day line; announced is dashed, confirmed solid',async({page})=>{
+ const codexOnly={...week,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:L(0,14,10),kind:'5h'}],spans:[{sub:0,kind:'credit',from:L(-2,9),to:null,count:1}]};
+ await open(page,{push:codexOnly});
+ await expect(strip(page).locator('.cal-adr')).toHaveText(/\+1 Banked reset/);
+ const two={...codexOnly,spans:[{sub:0,kind:'credit',from:NOW,to:null,count:1},{sub:0,kind:'creditConfirmed',from:L(1,9),to:L(1,9),count:1}]};
+ await page.evaluate(()=>0);
+ const {send,receive}=await open(page,{push:two});
+ await key(page).click();
+ await expect(weekView(page).locator('.wk-adr.chip.credit.pending')).toHaveCount(1);
+ await expect(weekView(page).locator('.wk-adr.chip.credit:not(.pending)')).toHaveCount(1);
+});

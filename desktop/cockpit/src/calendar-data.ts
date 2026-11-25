@@ -17,7 +17,7 @@ export interface CalendarReset {readonly sub:number;readonly at:number;readonly 
 /** An all-day item: reset cards usable until `to`, a reset announced at `from` taking effect at `to` (null: no time; it
  *  then sits on the day it was published, as the website's week board does), or `credit`: a reset card handed out,
  *  placed at `from` (its stated effect time, else its publication) with `to` set only when the source states a time. */
-export interface CalendarSpan {readonly sub:number;readonly kind:'cards'|'credit'|'announced'|'confirmed';readonly from:number;readonly to:number|null;readonly count:number|null}
+export interface CalendarSpan {readonly sub:number;readonly kind:'cards'|'credit'|'creditConfirmed'|'announced'|'confirmed';readonly from:number;readonly to:number|null;readonly count:number|null}
 /** Whether the user has peak rules: `no` is known (the publication's feed is present and the user has no declared plan),
  *  `yes` means a declared plan exists (it may have no window in the next 24 h), `unknown` means the feed is missing. */
 export type PeakRules='yes'|'no'|'unknown';
@@ -54,7 +54,7 @@ export function parseCalendarData(v:unknown):CalendarData|null {
   resets.push(Object.freeze({sub:r.sub,at:r.at,kind:r.kind}));
  }
  for(const s of v.spans){
-  if(!exact(s,['sub','kind','from','to','count'])||!index(s.sub,n)||!['cards','credit','announced','confirmed'].includes(s.kind as string)||!time(s.from)||!(s.to===null||time(s.to)&&s.to>=s.from)||!(s.count===null||typeof s.count==='number'&&Number.isSafeInteger(s.count)&&s.count>=0&&s.count<=999))return null;
+  if(!exact(s,['sub','kind','from','to','count'])||!index(s.sub,n)||!['cards','credit','creditConfirmed','announced','confirmed'].includes(s.kind as string)||!time(s.from)||!(s.to===null||time(s.to)&&s.to>=s.from)||!(s.count===null||typeof s.count==='number'&&Number.isSafeInteger(s.count)&&s.count>=0&&s.count<=999))return null;
   spans.push(Object.freeze({sub:s.sub,kind:s.kind as CalendarSpan['kind'],from:s.from,to:s.to,count:s.count}));
  }
  return Object.freeze({version:1,peakRules:rules,subs:Object.freeze(subs),peaks:Object.freeze(peaks),resets:Object.freeze(resets),spans:Object.freeze(spans)});
@@ -79,12 +79,12 @@ function wirePeaks(data:WireCockpitData):{rowId:string;startsAt:string;endsAt:st
 }
 const label=(v:string,fallback:string)=>v.replace(/[\u0000-\u001f\u007f]/g,'').slice(0,64)||fallback.slice(0,64);
 const ms=(v:string|null|undefined)=>{const t=v?Date.parse(v):NaN;return Number.isFinite(t)?t:null;};
-/** When an announced reset takes effect: the middle of its window to the half hour (as the alert list places it), a
+/** When an announced reset takes effect: the middle of its window down to the half hour (never into the next local day), a
  *  date-only schedule at that local day's start, no schedule: unknown. */
 function effectiveAt(schedule:{from:string;through:string;precision:string}|undefined):number|null {
  if(!schedule)return null;const from=ms(schedule.from),through=ms(schedule.through);if(from===null)return null;
  if(schedule.precision==='date'){const d=new Date(from);return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();}
- const mid=through===null?from:(from+through)/2;return Math.round(mid/1_800_000)*1_800_000;
+ const mid=through===null?from:(from+through)/2;return Math.floor(mid/1_800_000)*1_800_000;
 }
 /** Shape the calendar from the cockpit display data at `now`. Only the user's own subscriptions (the engine's members)
  *  appear; a peak, reset event or reset card of a row the user does not have is left out. */
@@ -132,7 +132,7 @@ export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarDat
   if(sub===null||published===null||expires===null||expires<=now)continue;
   const at=effectiveAt(e.schedule);
   // A reset card (+1) is placed where the website puts it: the stated time, else the day it was published.
-  if(e.kind==='reset_credit'){spans.push({sub,kind:'credit',from:at??published,to:at,count:1});continue;}
+  if(e.kind==='reset_credit'){spans.push({sub,kind:e.status==='confirmed'?'creditConfirmed':'credit',from:at??published,to:at,count:1});continue;}
   spans.push({sub,kind:e.status==='confirmed'?'confirmed':'announced',from:Math.min(published,now),to:at!==null&&at>=Math.min(published,now)?at:null,count:null});
  }
  const clip=<T,>(xs:T[],n:number)=>xs.slice(0,n);
