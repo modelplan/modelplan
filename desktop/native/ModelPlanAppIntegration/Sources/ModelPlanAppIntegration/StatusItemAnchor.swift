@@ -40,12 +40,27 @@ struct StatusItemAnchor: Equatable {
     static func click(pointer: CGPoint, local: CGPoint, buttonBounds: CGRect, flipped: Bool, displays: [Display]) -> StatusItemAnchor? {
         let values = [pointer.x, pointer.y, local.x, local.y, buttonBounds.width, buttonBounds.height]
         guard values.allSatisfy(\.isFinite), buttonBounds.width > 0, buttonBounds.height > 0 else { return nil }
-        // A press reported just outside the button (its edge pixel) is taken at the nearest point inside it.
-        let x = min(max(local.x, buttonBounds.minX), buttonBounds.maxX), y = min(max(local.y, buttonBounds.minY), buttonBounds.maxY)
+        // A press reported just outside the button (its edge pixel) is taken at the nearest point inside it. Far outside,
+        // the local point was converted through a window whose reported geometry is not the pressed copy's (parked or
+        // another display's): only the screen point is trustworthy, so the rect is centred on it.
+        let stale = local.x < buttonBounds.minX - 1 || local.x > buttonBounds.maxX + 1 || local.y < buttonBounds.minY - 1 || local.y > buttonBounds.maxY + 1
+        let x = stale ? buttonBounds.midX : min(max(local.x, buttonBounds.minX), buttonBounds.maxX)
+        let y = stale ? buttonBounds.midY : min(max(local.y, buttonBounds.minY), buttonBounds.maxY)
         let fromLeft = x - buttonBounds.minX
         let fromBottom = flipped ? buttonBounds.maxY - y : y - buttonBounds.minY
         let rect = CGRect(x: pointer.x - fromLeft, y: pointer.y - fromBottom, width: buttonBounds.width, height: buttonBounds.height)
         return StatusItemAnchor(rect: rect, point: pointer, displays: displays.map(\.frame))
+    }
+
+    /// macrev2-1251-2 (round 2): where the press happened on screen. AppKit measures `locationInWindow` from the frame
+    /// it holds for the receiving window, so converting back through that same window (`event.window`, never a lookup by
+    /// window number) returns the window server's global point even when that frame is stale (parked, or another
+    /// display's copy). The stale part is the offset inside the button, which `click` detects and discards. Without a
+    /// receiving window, the window server's own record (`CGEvent.unflippedLocation`).
+    @MainActor static func eventScreenPoint(_ event: NSEvent) -> CGPoint? {
+        if let window = event.window { return window.convertPoint(toScreen: event.locationInWindow) }
+        guard let point = event.cgEvent?.unflippedLocation, point.x.isFinite, point.y.isFinite else { return nil }
+        return point
     }
 
     /// The display whose menu bar band holds the centre of `rect` (not at its left edge), or nil while the rect is not

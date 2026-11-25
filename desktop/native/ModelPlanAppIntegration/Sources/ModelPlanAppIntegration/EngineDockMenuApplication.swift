@@ -465,12 +465,6 @@ struct StatusNoticePresentation {
     /// never moves the anchor).
     private(set) var statusClickAnchor: StatusItemAnchor?
     private(set) var statusPress: StatusItemAnchor?
-    /// macrev2-1251-2: the mouse-down's own screen point, from its `locationInWindow` through the window it was
-    /// delivered to, never the live cursor (which may have moved before the monitor ran), so it pairs with the press
-    /// offset inside the button taken from the same event. Test seam; nil when the event has no window.
-    var statusPressScreenPoint: @MainActor (NSEvent) -> CGPoint? = { event in
-        (event.window ?? NSApp.window(withWindowNumber: event.windowNumber)).map { $0.convertPoint(toScreen: event.locationInWindow) }
-    }
     var statusDisplays: @MainActor () -> [StatusItemAnchor.Display] = { StatusItemAnchor.Display.system() }
 
     /// Build 14c (G3-79): the screen point the latest open came from (the widget's ignition click). Nil for the menu
@@ -1238,7 +1232,7 @@ struct StatusNoticePresentation {
               !terminating, setupActive || (cockpitEntryEnabled && (!lifecyclePaused || inLaunchPause)) else { return false }
         statusPressPending = true
         statusPress = status?.button.flatMap { button in
-            statusPressScreenPoint(event).flatMap { point in
+            StatusItemAnchor.eventScreenPoint(event).flatMap { point in
                 StatusItemAnchor.click(pointer: point, local: button.convert(event.locationInWindow, from: nil),
                                        buttonBounds: button.bounds, flipped: button.isFlipped, displays: statusDisplays())
             }

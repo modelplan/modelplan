@@ -254,9 +254,13 @@ import XCTest
         let other = StatusItemAnchor.Display(frame: CGRect(x: right, y: 0, width: 1512, height: 982),
                                              visibleFrame: CGRect(x: right, y: 0, width: 1512, height: 945))
         app.statusDisplays = { real + [other] }
-        // The mouse-down is delivered by the item's copy on the other display: its own screen point is there.
-        app.statusPressScreenPoint = { _ in CGPoint(x: right + 1200, y: 970) }
-        let centre = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
+        // macrev2-1251-2 round 2: the press is on the item's copy on the other display while AppKit's button window
+        // reports this display's geometry. AppKit delivers the event to that window with `locationInWindow` measured
+        // from its reported frame, so the production conversion runs unreplaced. bc4e03f0 / 6bb2d9cd subtracted that
+        // offset and rebuilt the reported window's rect on this display.
+        let window = try XCTUnwrap(button.window)
+        let pressed = CGPoint(x: right + 1200, y: 970)
+        let centre = NSPoint(x: pressed.x - window.frame.minX, y: pressed.y - window.frame.minY)
         func press() throws {
             XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button, at: centre)))
             XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button, at: centre)))
@@ -264,6 +268,7 @@ import XCTest
         try press()
         XCTAssertEqual(console.shows, 1)
         let anchor = try XCTUnwrap(app.cockpitAnchor, "the clicked copy anchors the cockpit")
+        XCTAssertEqual(anchor.midX, pressed.x, accuracy: 0.5, "the rack (centred on the anchor) hangs at the press")
         XCTAssertTrue(anchor.minX <= right + 1200 && right + 1200 <= anchor.maxX, "the anchor holds the click")
         XCTAssertEqual(anchor.width, button.bounds.width, accuracy: 0.5)
         XCTAssertEqual(app.cockpitStatusScreen, other.frame, "the clicked copy's display")

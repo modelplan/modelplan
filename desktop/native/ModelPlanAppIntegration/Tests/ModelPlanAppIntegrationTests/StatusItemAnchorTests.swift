@@ -44,6 +44,24 @@ final class StatusItemAnchorTests: XCTestCase {
         XCTAssertNil(StatusItemAnchor.click(pointer: CGPoint(x: CGFloat.nan, y: 0), local: .zero, buttonBounds: bounds, flipped: false, displays: displays))
     }
 
+    /// macrev2-1251-2 round 2: the press offset was converted through a window whose reported frame is not the pressed
+    /// copy's (parked at x 0, or the other display's copy), so it lies far outside the button. Subtracting it rebuilt
+    /// that stale window's rect; the rect is centred on the event's screen point instead, on the pressed display.
+    func testStaleWindowOffsetIsIgnoredAndTheRectCentresOnThePress() throws {
+        let bounds = CGRect(x: 0, y: 0, width: 36, height: 24)
+        let pressed = CGPoint(x: externalIcon.midX, y: externalIcon.midY)
+        let parkedOrigin = CGPoint(x: 0, y: 945), otherCopyOrigin = CGPoint(x: laptopIcon.minX, y: 945)
+        for origin in [parkedOrigin, otherCopyOrigin] {
+            for flipped in [false, true] {
+                let local = CGPoint(x: pressed.x - origin.x, y: flipped ? bounds.height - (pressed.y - origin.y) : pressed.y - origin.y)
+                let press = try XCTUnwrap(StatusItemAnchor.click(pointer: pressed, local: local, buttonBounds: bounds, flipped: flipped, displays: displays))
+                XCTAssertEqual(press.rect, CGRect(x: pressed.x - 18, y: pressed.y - 12, width: 36, height: 24), "origin \(origin) flipped \(flipped)")
+                XCTAssertEqual(StatusItemAnchor.clickedDisplay(press, displays: displays, menuHeight: menuHeight), external)
+                XCTAssertEqual(resolve(window: CGRect(origin: origin, size: CGSize(width: 36, height: 37)), click: press)?.midX ?? 0, pressed.x, accuracy: 0.5)
+            }
+        }
+    }
+
     /// PATH first open: the menu bar has not laid the item out yet, so its window is at a parking frame (x 0 in the band,
     /// or below the screen). fb53eb1c used it: the cockpit clamped to the display's left edge with the rack at its
     /// top-left corner. The click binds it to the item.
