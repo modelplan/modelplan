@@ -8,7 +8,7 @@ import {setLanguage,checkTables} from '../../../cockpit/study/rocket-r1/i18n.js'
 
 globalThis.document??={documentElement:{}};
 const NOW=Date.UTC(2026,10,24,12);
-const extra=(period,name)=>({kind:period,period,name,label:name,scope:{label:name},remaining:60,resetIn:600});
+const extra=(period,name,named=true)=>({kind:period,period,name,named,label:name,scope:{label:name},remaining:60,resetIn:600});
 const account=(id,name,extras)=>({id,name,short:name,alias:name,colour:'#888888',logo:'x.svg',state:'ok',support:'quota-only',todayTokens:null,windows:[],extras});
 const render=(lang,accounts)=>engineView(engineModel({accounts,alerts:[],now:NOW},{few:'c3',page:0,scope:null,tint:true,pctMode:'left',redAt:25,ack:null,lang,now:NOW}),{changed:new Set(),lang,now:NOW});
 const headings=html=>[...html.matchAll(/<span class="lb lb-other">([^<]*)<\/span>/g)].map(m=>m[1]);
@@ -38,4 +38,13 @@ test('D417 a truly unknown window still reads Other',()=>{
  const html=render('en',[account('g','Grok',[extra('other','')])]);
  assert.deepEqual(headings(html),['Extra']);
  assert.match(html,/Other/);
+});
+
+for(const [lang,label] of [['zh-CN','其他限额'],['en','Other limit']])test(`D417 an unnamed window's generic label keeps the compact fallback (${lang})`,()=>{
+ setLanguage(lang);
+ const html=render(lang,[account('g','Grok',[extra('other',label,false)])]);
+ const attrs=[...html.matchAll(/data-(?:short|small)="([^"]*)"/g)].map(m=>m[1]).filter(a=>a.includes(label[0]));
+ assert.ok(attrs.length>0);
+ for(const a of attrs)assert.ok(!a.includes(label),'the narrow variants do not repeat the full generic label: '+a);
+ assert.deepEqual(headings(html),[lang==='en'?'Extra':'额外']);
 });

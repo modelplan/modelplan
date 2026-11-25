@@ -57,7 +57,10 @@ function extraCell(a, w, ui, grey) {
   const period = PERIODS[w.period || w.kind] || w.kind, c = cellOf(a, {...w, kind: period}, ui, null, grey);
   c.runOutMin = w.trend != null && w.trend < 0 && w.runOutMin != null && c.remaining != null && !grey && a.state !== 'stale' ? w.runOutMin : null;
   const name = w.name || w.scope?.label || '';
-  return {...c, extra: true, period, name, label: w.label || name, tag: [...name].length <= 6 ? name : [...name][0], tagPeriod: [...name].length > 6};
+  // D417: only a window the engine names (a model scope or MCP) is shown in full, up to 6 characters; an unnamed
+  // window's generic label ("Other limit", 其他限额) keeps the compact first-character fallback.
+  const full = w.named ? [...name].length <= 6 : [...name].length <= 3;
+  return {...c, extra: true, named: !!w.named, period, name, label: w.label || name, tag: full ? name : [...name][0], tagPeriod: !full};
 }
 // Owner C01, 2026-10-25: headings remain 5小时 / 每周 / 其他. Only matching general windows enter the first two
 // rows; every other general window and scoped quota enters Other, tightest first with +N/full details.
