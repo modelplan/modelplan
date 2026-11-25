@@ -38,7 +38,7 @@ type record struct {
 	ConfirmedAt    *time.Time `json:"confirmedAt"`
 }
 
-// Kinds on the wire. A reset credit ("reset cards issued") is news about
+// Kinds on the wire. A reset credit ("banked resets issued") is news about
 // redeemable resets, never evidence that a quota window restarted.
 const (
 	KindResetCredit = "reset_credit"

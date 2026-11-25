@@ -914,9 +914,9 @@ enum DockGripInk {
                 let zh=locale.hasPrefix("zh"),label:String
                 switch notice.key.kind {
                 case .forecast:label=zh ? "可能提前耗尽":"May run out before reset"
-                case .resetAnnounced:label=zh ? "已公告重置卡":"Reset card announced"
+                case .resetAnnounced:label=zh ? "已公告额外重置":"Banked reset announced"
                 case .resetConfirmed:label=zh ? "公开重置已确认，余量以本机读数为准":"Public reset confirmed; your balance is the local reading"
-                case .cardsExpiring:label=zh ? "重置卡即将过期":"Reset cards expiring"
+                case .cardsExpiring:label=zh ? "额外重置即将过期":"Resets expiring"
                 case .credits:label=zh ? "正在使用点数":"Using credits"
                 }
                 append("notice."+id,label,nil,label,station.eventRect.offsetBy(dx:-origin.x,dy:-origin.y),.notice(id))

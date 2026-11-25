@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 
 /// SET-9-18 v1 delivery through the normal entry (real EngineRowsEntry composition, synthetic
-/// engine): "Quota reset" and "Official reset card" follow their toggles, deliver once per
+/// engine): "Quota reset" and "Official banked reset" follow their toggles, deliver once per
 /// event, and a denied system authorization shows the System Settings hint.
 @MainActor final class SET918NotificationDeliveryJourneyTests:XCTestCase {
     override func setUp() async throws {
