@@ -216,6 +216,12 @@ func recentLogsCached(inv *logindex.Inventory, fence consent.Fence, roots []live
 		have = c.gen
 	}
 	files, gen, changed := inv.FilesIfChanged(fence, want, now, elapsed, have)
+	if changed && gen == 0 { // refused: a fence older than the inventory's keeps nothing
+		if c != nil {
+			*c = liveSelection{}
+		}
+		return []LiveLog{}
+	}
 	var cands []liveCandidate
 	if changed {
 		for _, f := range files {

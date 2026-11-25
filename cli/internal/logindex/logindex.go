@@ -73,6 +73,65 @@ type Inventory struct {
 	// file's stamp changed or gone, a root added, dropped or evicted, a new fence. Callers cache
 	// what they select from the files under it (FilesIfChanged), so an idle tick copies nothing.
 	gen uint64
+	// retired: store epochs a newer fence replaced. A call under a retired epoch, or under an
+	// older generation of the current one, is refused: it reads nothing and writes nothing, so a
+	// call that captured its admission before a withdrawal cannot rebuild what the withdrawal
+	// discarded (macrev2-1261-2).
+	retired map[string]bool
+}
+
+// stale: f is older than the inventory's fence. Caller holds mu.
+func (inv *Inventory) stale(f consent.Fence) bool {
+	if inv.retired[f.StoreEpoch] {
+		return true
+	}
+	return f.StoreEpoch == inv.fence.StoreEpoch && f.Generation < inv.fence.Generation
+}
+
+// advance moves the inventory to fence f, discarding every root, unless f is its fence already
+// or older. It reports whether f may be used. Caller holds mu.
+func (inv *Inventory) advance(f consent.Fence) bool {
+	if inv.fence == f {
+		if inv.roots == nil {
+			inv.roots = map[Root]*root{}
+		}
+		return true
+	}
+	if inv.stale(f) {
+		return false
+	}
+	if inv.fence.StoreEpoch != "" && inv.fence.StoreEpoch != f.StoreEpoch {
+		if inv.retired == nil {
+			inv.retired = map[string]bool{}
+		}
+		inv.retired[inv.fence.StoreEpoch] = true
+	}
+	inv.roots, inv.fence = map[Root]*root{}, f
+	inv.gen++
+	return true
+}
+
+// Advance moves the inventory to a newer consent fence, discarding everything it holds, so no
+// call under an older fence can read or rebuild it afterwards. A withdrawal calls it with the
+// fence that withdrew. An older or equal fence changes nothing.
+func (inv *Inventory) Advance(f consent.Fence) {
+	inv.mu.Lock()
+	defer inv.mu.Unlock()
+	if inv.gen == 0 {
+		inv.gen = 1
+	}
+	inv.advance(f)
+}
+
+// Retained counts the files the inventory holds (tests and diagnostics; no path leaves).
+func (inv *Inventory) Retained() int {
+	inv.mu.Lock()
+	defer inv.mu.Unlock()
+	n := 0
+	for _, r := range inv.roots {
+		n += len(r.files)
+	}
+	return n
 }
 
 type root struct {
@@ -114,7 +173,8 @@ func (inv *Inventory) Files(fence consent.Fence, roots []Root, now, elapsed time
 	return files
 }
 
-// FilesIfChanged is Files for a caller that caches what it selects from the files. It refreshes
+// FilesIfChanged is Files for a caller that caches what it selects from the files. A call under a
+// fence older than the inventory's is refused with gen 0: the caller keeps nothing. It refreshes
 // the roots as Files does and returns the inventory's generation. When that generation is still
 // have (from an earlier call with the same fence and roots), nothing can have changed and it
 // returns no files and changed=false without copying anything. have 0 always copies.
@@ -124,9 +184,8 @@ func (inv *Inventory) FilesIfChanged(fence consent.Fence, roots []Root, now, ela
 	if inv.gen == 0 {
 		inv.gen = 1
 	}
-	if inv.roots == nil || inv.fence != fence {
-		inv.roots, inv.fence = map[Root]*root{}, fence
-		inv.gen++
+	if !inv.advance(fence) {
+		return nil, 0, true // an older fence: refused, nothing read or kept (gen 0)
 	}
 	for key, r := range inv.roots {
 		if elapsed.Sub(r.usedAt) > unused {

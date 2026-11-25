@@ -209,7 +209,7 @@ func TestCodexWithdrawalForgetsSelection(t *testing.T) {
 				t.Fatalf("withdrawn Codex still selected %v %q", files, own)
 			}
 		case "clear":
-			index.clear(home)
+			index.clear(home, consent.Fence{StoreEpoch: "test", Generation: 2})
 		}
 		if fmt.Sprint(index.cache) != fmt.Sprint(rolloutSelection{}) {
 			t.Fatalf("%s: withdrawn selection kept: %+v", how, index.cache)
@@ -233,5 +233,57 @@ func TestFindThreadSymlinkedRootListsNothing(t *testing.T) {
 	}
 	if n := idlework.Snapshot().Since(before).Entries; n != 0 {
 		t.Fatalf("listed %d entries through a symlinked sessions root", n)
+	}
+}
+
+// macrev2-1261-2 (round 2): a watcher call that captured its admission while Codex was allowed and
+// resumes after the withdrawal has been processed cannot rebuild the selection or the inventory:
+// both stay clear without another denied call.
+func TestMacrev1261WithdrawalCannotBeRepopulatedByOldSelection(t *testing.T) {
+	home := t.TempDir()
+	start := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	staticHistory(t, home, 3, 4, start.Add(-48*time.Hour))
+	admission := func(gen uint64, allowed bool) consent.Admission {
+		state := consent.Empty()
+		state.StoreEpoch, state.Generation = "0123456789abcdef0123456789abcdef", gen
+		state.Tools["codex"] = consent.Record{Allowed: allowed, ConsentTextVersion: consent.TextVersion}
+		return consent.NewAdmission(state, consent.Automatic)
+	}
+	allowed, denied := admission(1, true), admission(2, false)
+	if !allowed.Allows("codex", consent.Local) || denied.Allows("codex", consent.Local) {
+		t.Fatal("test admissions do not allow and deny Codex")
+	}
+	inv := &logindex.Inventory{}
+	index := CodexRolloutIndex{Inventory: inv, Clock: func() time.Time { return start }}
+	old := Paths{CodexHome: home, CodexThread: "thread1-2", CodexIndex: &index, Admission: &allowed}
+	if files, own := old.RecentCodexRollouts(); len(files) == 0 || own == "" {
+		t.Fatalf("warm-up: %v %q", files, own)
+	}
+	// The withdrawal is processed by a denied call (the view or the watcher under the new consent).
+	withdrawn := Paths{CodexHome: home, CodexThread: "thread1-2", CodexIndex: &index, Admission: &denied}
+	if files, _ := withdrawn.RecentCodexRollouts(); len(files) != 0 {
+		t.Fatalf("denied call selected %v", files)
+	}
+	// The paused watcher call resumes with the admission it captured before the withdrawal.
+	files, own := old.RecentCodexRollouts()
+	if len(files) != 0 || own != "" {
+		t.Fatalf("resumed old call selected %d paths, own %q", len(files), own)
+	}
+	if index.cache.gen != 0 || len(index.cache.files) != 0 || index.cache.own != "" || index.cache.thread != "" || index.cache.home != "" {
+		t.Fatalf("the selection was repopulated: %+v", index.cache)
+	}
+	if n := inv.Retained(); n != 0 {
+		t.Fatalf("the inventory was repopulated with %d files", n)
+	}
+	// So does a direct selection under the retired fence, and the observation pass's reader.
+	index.recent(home, "thread1-2", allowed.Fence(), start)
+	if got := RecentRolloutsIn(inv, allowed.Fence(), home, 8, start); len(got) != 0 || inv.Retained() != 0 || index.cache.thread != "" {
+		t.Fatalf("an old fence rebuilt the inventory or selection: %d paths, %d retained", len(got), inv.Retained())
+	}
+	// A new grant under a newer fence reads again.
+	regranted := admission(3, true)
+	again := Paths{CodexHome: home, CodexThread: "thread1-2", CodexIndex: &index, Admission: &regranted}
+	if files, _ := again.RecentCodexRollouts(); len(files) == 0 {
+		t.Fatal("a new grant read nothing")
 	}
 }

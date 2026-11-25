@@ -50,7 +50,7 @@ func (p Paths) RecentCodexRollouts() ([]string, string) {
 	admission := admissionFor(p)
 	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") ||
 		admission.CleanupPending(consent.ScopeCodexLocalHistory) || p.CodexHome == "" {
-		p.CodexIndex.clear(p.CodexHome)
+		p.CodexIndex.clear(p.CodexHome, admission.Fence())
 		return nil, ""
 	}
 	now := time.Now()
@@ -67,15 +67,19 @@ func (i *CodexRolloutIndex) inventory() *logindex.Inventory {
 	return &i.own
 }
 
-func (i *CodexRolloutIndex) clear(home string) {
+// clear forgets Codex under the withdrawing admission's fence: the cached selection (rollout
+// paths and the own thread's) and the inventory's sessions root. Advancing the inventory to that
+// fence makes any call still holding an older admission refused, so it cannot rebuild either
+// (macrev2-1261-2). It runs under the selection's lock, so a selection in progress finishes
+// before it and is discarded by it.
+func (i *CodexRolloutIndex) clear(home string, fence consent.Fence) {
 	if i == nil {
 		return
 	}
-	// The cached selection holds rollout paths and the own thread's: withdrawn with the root
-	// (macrev2-1261-2).
 	i.mu.Lock()
+	defer i.mu.Unlock()
 	i.cache = rolloutSelection{}
-	i.mu.Unlock()
+	i.inventory().Advance(fence)
 	if home == "" {
 		home = CodexHome()
 	}
@@ -108,6 +112,10 @@ func (i *CodexRolloutIndex) selection(home, thread string, fence consent.Fence, 
 		have = c.gen
 	}
 	files, own, gen, changed := selectRolloutsIfChanged(i.inventory(), fence, home, thread, codexFiles, now, have)
+	if changed && gen == 0 { // refused: an older fence than the inventory's, or no home
+		*c = rolloutSelection{}
+		return nil, ""
+	}
 	if changed {
 		*c = rolloutSelection{gen: gen, home: home, thread: thread, fence: fence, files: files, own: own}
 	}
