@@ -177,6 +177,18 @@ import ModelPlanResources
             XCTAssertEqual(dock.ringOnlyRefreshesForChecks, repaints + step + 1, "an unchanged sample repaints nothing")
         }
         XCTAssertEqual(StaticWork(dock), settled, "resource-only deltas build no geometry, material or full pass")
+
+        // macrevb-1220-1: a ring-only repaint, then an identical engine delivery. The kept face already shows the new
+        // ring, so the replacement is kept: no full pass, geometry or material, and the new CPU stays on the face.
+        let kept = dock.keptReplacementsForChecks, ringRepaints = dock.ringOnlyRefreshesForChecks
+        reader.cpu = 35
+        clock += 10; ring.run(clock)
+        XCTAssertEqual(dock.ringOnlyRefreshesForChecks, ringRepaints + 1, "the changed reading repaints the ring once")
+        try await deliver(app, sequence: 8)
+        XCTAssertEqual(dock.keptReplacementsForChecks, kept + 1, "the identical delivery after a ring repaint is kept")
+        XCTAssertEqual(StaticWork(dock), settled, "and builds no geometry, material or full pass")
+        let shownCPU = try XCTUnwrap(dock.dockView.presentedReadingsForChecks[ring.id]?.pluginRing?.inner)
+        XCTAssertEqual(shownCPU, 0.35, accuracy: 0.001, "the new CPU is still on the face")
         let after = dock.dockView.presentedReadingsForChecks.filter { $0.key != ring.id }
         XCTAssertEqual(Set(after.keys), Set(quota.keys), "the quota stations are unchanged")
         for (id, reading) in quota {

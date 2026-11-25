@@ -653,7 +653,7 @@ struct DockHelpInteraction: Equatable {
     private var withdrawHeldForPress = false
     /// D397: what a completed resting pass drew. Two passes with equal keys draw the same face.
     private struct PassKey: Equatable {
-        let rows: [DockInstrumentReading]
+        var rows: [DockInstrumentReading]
         let catalogue: String
         let menuStatusLines: [String]?, emptyText: String?
         let notices: [String: DockNotice]
@@ -1573,6 +1573,9 @@ struct DockHelpInteraction: Equatable {
                 #endif
                 publishAttention()
                 model = next
+                // macrevb-1220-2: the clear and this refresh advanced the input generation, so the Help surface, the
+                // interaction binding and the card are republished as after any resting pass.
+                finishRestingPass(generation, preferences: passPreferences, display: display, topology: topology, order: order)
                 return
             }
             lastPassKey = nil
@@ -1698,6 +1701,14 @@ struct DockHelpInteraction: Equatable {
         appearanceDisplay = display
         if carriedTo != nil { return }
         if !appearanceFallback { lastPassKey = passKey }
+        finishRestingPass(generation, preferences: passPreferences, display: display, topology: topology, order: order)
+    }
+    /// The presentation tail of a resting pass: sliver, edge preference, the card, and the edge presentation (which
+    /// republishes the generation-bound Help surface and interaction binding). A kept replacement (D397) runs it too:
+    /// it skips only the face, geometry and material, never this republication.
+    private func finishRestingPass(_ generation: UInt64, preferences passPreferences: SettingsPreferences, display: DockDisplayArea?,
+                                   topology: DockDisplayTopology, order: [String]) {
+        let selected = nativeEdge(passPreferences.dockEdge)
         if sliverPrepared {
             let logical = sliverLogicalSize
             // AppKit can round the owned window to whole backing pixels. A data-only
@@ -2587,6 +2598,11 @@ struct DockHelpInteraction: Equatable {
         guard let reading = try? DockInstrumentProjection.evaluate(value, now: currentDate(), redBelow: effectiveRedBelow),
               (try? dockView.replaceReading(reading)) == true else { return false }
         var inputs = model.inputs; inputs[index] = input
+        // macrevb-1220-1: the face now shows this ring, so the last pass's key does too; an identical delivery that
+        // follows is still a kept replacement (D397).
+        if var key = lastPassKey, let i = key.rows.firstIndex(where: { $0.subscriptionID == reading.subscriptionID }) {
+            key.rows[i] = reading; lastPassKey = key
+        }
         self.model = CommunityDockSnapshot(inputs: inputs, subscriptions: model.subscriptions, presentationRows: model.presentationRows,
                                            unavailableReason: model.unavailableReason, readerDiagnostics: model.readerDiagnostics,
                                            emptyDiagnostic: model.emptyDiagnostic)
