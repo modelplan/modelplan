@@ -7,6 +7,7 @@ import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {renderVisualDeck,visualFixture} from '../visual-fixture.mjs';
 import {build13Profile} from '../build13-fixture.mjs';
+import {decodePng} from '../png-pixel.mjs';
 import {levelK} from '../../../cockpit/study/rocket-r1/fader-view.js';
 
 // The CKP-FAD-24 throttle fixture (Sol ★Med current High, Opus ★Med current XHigh, GLM ★Max).
@@ -320,11 +321,12 @@ for(const [tier,height] of [['tall',890],['compact',640]])
   expect(g.bank.top-g.bottom,'bank keys below the panel').toBeGreaterThanOrEqual(.95);
   for(const [t,b] of g.cores){expect(t).toBeGreaterThanOrEqual(g.top);expect(b).toBeLessThanOrEqual(g.bottom);}
   // an opaque graphite face (not a faint overlay), brighter towards the pilot, with a lit top lip; still a trapezoid
-  const stops=rgbs(g.image);expect(stops.length).toBeGreaterThanOrEqual(2);
+  // the first gradient is the lip's cast shadow (D419 round 4); the face follows it
+   const stops=rgbs(g.image).slice(2);expect(stops.length).toBeGreaterThanOrEqual(2);
   expect(stops[0].length===3||stops[0][3]===1,'opaque face').toBe(true);
   // the face brightens towards the pilot up to its front edge (the last stop is the dark front lip)
-  expect(lum(stops.at(-2))).toBeGreaterThan(lum(stops[0])+4);expect(lum(stops[0])).toBeGreaterThan(35);
-  expect(g.shadow,"a lit top lip").toMatch(/^rgba?\(255, 255, 255[^)]*\) 0px 1px 0px 0px inset/);expect(g.clip).toMatch(/^polygon\(/);
+  expect(lum(stops.at(-3))).toBeGreaterThan(lum(stops[0])+4);expect(lum(stops[0])).toBeGreaterThan(30);
+  expect(g.shadow,"a matte deck: no lit top line, no side wall").toBe('none');expect(g.clip).toMatch(/^polygon\(/);
  });
 
 // D405/D419 (owner 11-25 on #1229): the lever column keeps the MEASURED proportions of the approved direction 06 prototype
@@ -360,4 +362,20 @@ test('D419 compact keeps the 19.5 px detent floor and a 72 px card, with the slo
  expect(g.tierBottom-g.slot.bottom,'slot bottom inside the tier').toBeGreaterThanOrEqual(2.5);
  const rows=await page.locator('.fd-scale .sc-travel[data-gap="1"] .sc-l').evaluateAll(l=>l.map(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;}).sort((a,b)=>a-b));
  expect(Math.min(...rows.slice(1).map((y,i)=>y-rows[i])),'closest detents (CKP-FAD-13)').toBeGreaterThanOrEqual(19.5);
+});
+
+// D419 round 4: the card panel's lip (lit edge over a lighter face) sits at the prototype's ratio of the column height and
+// casts a shadow on the top of the lever tier (whole-proposed.png: highlight row 1078 = .481 H, tier top 1086 = .499 H).
+test('D419 the upper panel ends in a lip at the measured ratio, with a shadow on the lever tier (full)',async({page})=>{
+ await openThrottles(page,{tier:'tall',height:890});
+ const fad=await rect(page.locator('.dk-fad')),H=fad.h;
+ const gap=Math.round(fad.l+15),y0=Math.floor(fad.t+.44*H),y1=Math.ceil(fad.t+.72*H);
+ const png=decodePng(await page.screenshot({clip:{x:gap,y:y0,width:1,height:y1-y0}}));
+ const lum=y=>{const o=y*png.channels;return png.data[o]+png.data[o+1]+png.data[o+2];};
+ const rows=[...Array(y1-y0).keys()],hi=rows.reduce((a,y)=>lum(y)>lum(a)?y:a,0);
+ expect((y0+hi-fad.t)/H,'lip highlight row (ratio of H)').toBeGreaterThan(.481-.012);
+ expect((y0+hi-fad.t)/H,'lip highlight row (ratio of H)').toBeLessThan(.481+.012);
+ const top=Math.round(fad.t+.499*H)-y0,at=d=>lum(top+d),deck=lum(top+Math.round(.2*H));
+ expect(at(2),'shadow at the tier top is darker than the deck 20% down').toBeLessThan(deck*.6);
+ expect(lum(top-3),'the lip face is lighter than the panel above it').toBeGreaterThan(lum(top-8));
 });
