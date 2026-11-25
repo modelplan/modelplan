@@ -355,7 +355,7 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
     const sticky = assigned && eligible.includes(assigned) ? assigned : null;
     const pinned = stickyLanes(sticky, eligible);
     if (assigned && !sticky) return `the assigned reviewer ${assigned} cannot review tier ${tier}`;
-    // An advisory GLM post (an IMPORTANT PR, where GLM never counts) is not an assigned-reviewer matter: the assignment pins who counts.
+    // An advisory GLM post (GLM may not count here: IMPORTANT and the tier not in REVIEW_GLM_TIERS) is not an assigned-reviewer matter.
     const advisoryGlmPost = posted === GLM_LANE && glmAdvisory(cls, tier, glmTiers);
     if (pinned && !advisoryGlmPost && (posted ? !pinned.includes(`(${posted})`) : !pinned.some((l) => [`(${SOL_LANE})`, `(${GLM_LANE})`].includes(l)))) return `the assigned reviewer is ${sticky}`;
     // (ghglm) where it may not decide posts advisory only (macrev2-1254): admitted, once per head by the check above.

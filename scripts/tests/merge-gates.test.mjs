@@ -1471,7 +1471,7 @@ test("gh lanes: shadow lanes never admit data-sync; ghglm counts only on its con
   assert.equal(evalSync({ files: [file("cli/internal/quota/x.go")], comments: [comment(v("merge", H, "ghglm"))] }).state, R.FAILURE, "ghglm does not admit tier 2 by default");
   assert.deepEqual(R.eligibleLanes(0), R.eligibleLanes(0, [1, 2]), "tier 0 has no GLM lane for any configuration");
   assert.ok(!R.eligibleLanes(0, [1, 2]).includes("(ghglm)") && !R.eligibleLanes(0).includes("(ghglm)"));
-  assert.ok(!R.eligibleLanes(1).includes("(ghglm)") && !R.eligibleLanes(1, [1]).includes("(ghglm)") && !R.eligibleLanes(2, [1]).includes("(ghglm)") && !R.eligibleLanes(2, [2]).includes("(ghglm)"), "IMPORTANT: REVIEW_GLM_TIERS is inert (macrev2-1254)");
+  assert.ok(!R.eligibleLanes(1).includes("(ghglm)") && R.eligibleLanes(1, [1]).includes("(ghglm)") && !R.eligibleLanes(2, [1]).includes("(ghglm)") && R.eligibleLanes(2, [2]).includes("(ghglm)"));
   const docs = [file("docs/a.md")];
   assert.equal(evalPr({ files: docs, comments: [comment(v("block", H, "ghglm"))] }).state, R.SUCCESS, "a tier-0 ghglm block is advice");
   // an IMPORTANT tier-1 PR (D395: a timing path); on a NORMAL PR the GLM verdict counts (see the D395 tests)
@@ -1491,9 +1491,9 @@ test("review:gpt: GLM is advisory and a REVIEWER: ghglm assignment pins nothing 
   assert.equal(ev(labelled, [comment(v("merge", H, "ghglm"))]).state, R.PENDING);
   // labelled: GLM block alone does not block either
   assert.equal(ev(labelled, [comment(v("block", H, "ghglm"))]).state, R.PENDING);
-  // unlabelled IMPORTANT: GLM is advice too whatever REVIEW_GLM_TIERS says (macrev2-1254)
-  assert.equal(ev(pr(), [comment(v("merge", H, "ghglm"))]).state, R.PENDING);
-  assert.equal(ev(pr(), [comment(v("block", H, "ghglm")), comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  // unlabelled: unchanged (GLM counts on its tiers: its block vetoes, its merge decides)
+  assert.equal(ev(pr(), [comment(v("merge", H, "ghglm"))]).state, R.SUCCESS);
+  assert.notEqual(ev(pr(), [comment(v("block", H, "ghglm")), comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
   // sticky: REVIEWER: ghglm pins an unlabelled PR, but not a labelled one, where ghsol's merge counts
   const pin = comment("REVIEWER: ghglm");
   assert.equal(R.reviewerLane(R.feed([pin])), "(ghglm)");
@@ -1522,7 +1522,7 @@ test("review:gpt / IMPORTANT: a GLM fallback verdict (marked or not) is advisory
     assert.equal(ev(p, [marked("merge"), comment(v("merge", H, "ghsol"))]).state, R.SUCCESS, "an exact-head Sol merge satisfies it");
     assert.equal(ev(p, [marked("merge"), comment(v("block", H, "ghsol"))]).state, R.FAILURE, "a Sol block still blocks");
   }
-  assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers: [2] }).state, R.PENDING, "REVIEW_GLM_TIERS never makes GLM count on an IMPORTANT PR");
+  assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers: [2] }).state, R.SUCCESS, "D366 REVIEW_GLM_TIERS fallback unchanged");
 });
 
 test("D374: a native head cannot merge without a mac-compile success status at its head", () => {
@@ -1613,10 +1613,10 @@ test("D396 sticky ghsol: the workflow pair accepts the GLM quota-fallback verdic
   const pin = comment("REVIEWER: ghsol");
   // normal PR: counts
   assert.equal(evalPr({ files: [file("scripts/tool.mjs")], comments: [pin, comment(v("merge", H, "ghglm"))] }).state, R.SUCCESS);
-  // important PR: GLM is advice even inside REVIEW_GLM_TIERS=1,2 (macrev2-1254)
+  // important PR inside a D366 fallback (REVIEW_GLM_TIERS=1,2): counts too
   const imp = [file("cli/cmd/modelplan/consent_scopes.go")];
   const ev = (glmTiers) => R.evaluatePr({ pr: pr(), items: R.feed([pin, comment(v("merge", H, "ghglm"))]), files: imp, runs: greenCi, statuses: [compileOk], verifiedEdge: () => false, conf, glmTiers });
-  assert.equal(ev([1, 2]).state, R.PENDING);
+  assert.equal(ev([1, 2]).state, R.SUCCESS);
   // important PR outside a fallback: GLM is advice
   assert.equal(ev([]).state, R.PENDING);
   assert.deepEqual(R.stickyLanes("(ghsol)", R.eligibleLanes(1, [], R.NORMAL)), ["(ghsol)", "(ghglm)"]);
