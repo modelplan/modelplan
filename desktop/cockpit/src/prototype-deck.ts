@@ -172,7 +172,6 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  function pressLevel(c:Channel,level:string){if(compare?.modelId===c.id&&level===(previews[c.id]??c.base)){if(!onOpenCompare())closeCompare();}else tryEffort(c,level);}
  function pressStrip(c:Channel){if(compare?.modelId===c.id){if(!onOpenCompare())closeCompare();}else openCompare(c,previews[c.id]??c.current??undefined);}
  function paintScale(){setLanguage(locale);scale.innerHTML=scaleView();for(const b of scale.querySelectorAll<HTMLButtonElement>('.sc-l')){b.disabled=true;b.classList.add('na');b.style.setProperty('--k',String(levelK(b.dataset.level??'')));}}
-<<<<<<< HEAD
  // D405: the code-drawn slots follow the tilted face (fader-view slotSvg); they are redrawn when the travel's height changes.
  function paintSlots(){
   const panel=root.querySelector<HTMLElement>('.dk-fad');if(!panel)return;
@@ -190,12 +189,10 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  }
  root.querySelector<HTMLElement>('.dk-fad')?.style.setProperty('--tq',String(TIER_Q));
  if(typeof ResizeObserver!=='undefined'){const watch=new ResizeObserver(()=>paintSlots());for(const t of channels.querySelectorAll<HTMLElement>('.fd-travel'))watch.observe(t);}
-=======
  // macrevb-1204-1: a native tick repaints the cards only when a model's current effort or Fast changed (a live session aged
  // out of the 15-minute window), so the card and the comparison never keep a configuration the data no longer supports.
  let faderSig='';
  const faderSignature=(d:{faders:readonly {id:string;current:string|null;currentFast:boolean}[]})=>d.faders.map(f=>`${f.id}:${f.current??''}:${f.currentFast}`).join('|');
->>>>>>> origin/main
  function paintFaders(){
   const data=faderInput();faderSig=faderSignature(data);const input=record(details.publication),requested=selectedModel??safeText(input?.selectedModel),target=data.faders.find(f=>f.id===requested||f.sourceId===requested)?.id??null,ui={bank:bankIndex,bankSize:BANK_SIZE,compact:root.dataset.layout==='640',selModel:target,previews,view:compare?{modelId:compare.modelId,trial:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true},model=faderModel(data,ui);bankIndex=model.bank;
   const targetChannel=model.all.find((c:{id:string})=>c.id===model.target);
