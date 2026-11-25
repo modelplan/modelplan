@@ -307,7 +307,9 @@ import CryptoKit
                 valueContent=max(valueContent,ceil(natural(label("row."+row.id+".value",row.value,font:readout,color:style.ink)).width))
             }
         }
-        let c0=min(labelContent,c[0]),c2=min(valueContent,c[2])
+        // A percent is never ellipsized (owner, build 5: "99.…"): the value column grows past the approved 34 pt to
+        // the widest value, and only the time column gives way (its detail wraps below the bar when it no longer fits).
+        let c0=min(labelContent,c[0]),c2=max(0,min(valueContent,rowWidth-c0-c[1]-3*g))
         for (index,row) in readings.enumerated(){
             if index>0{rowY+=style.rowGap}
             let rowID="row."+row.id

@@ -81,15 +81,15 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	// One history inventory for the activity observer, the rollout selection and the
 	// observation pass: discovery is paid once per root (D397).
 	inventory := &logindex.Inventory{}
-	codexIndex := quota.CodexRolloutIndex{Clock: sources.Clock, Inventory: inventory}
+	codexIndex := quota.CodexRolloutIndex{Clock: sources.Clock, Inventory: inventory, RequireTicket: true}
 	rawPaths := func(a consent.Admission) quota.Paths {
 		p := quota.ProductionPathsWithAdmission(st.Dir, version, a)
-		p.CodexIndex = &codexIndex
+		p.CodexIndex = &codexIndex // the appserver hands in the ticket it took before a
 		return p
 	}
 	watchPaths := func(a consent.Admission) quota.Paths {
 		p := quota.ProductionWatchPaths(st.Dir)
-		p.Admission, p.CodexIndex = &a, &codexIndex
+		p.Admission, p.CodexIndex = &a, &codexIndex // the appserver hands in the ticket it took before a
 		return p
 	}
 	detectTools := func() detect.Report { return detection(st) }
@@ -115,7 +115,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			}
 		},
 		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.LoadShared(st); return d, err }, // read only (WP-17)
-		Detect:           detectTools, LaterInstalled: seen.Observe, Paths: paths, WatchPaths: watchPaths, Offline: options.Offline, ReadOnly: options.ReadOnly,
+		Detect:           detectTools, LaterInstalled: seen.Observe, Paths: paths, WatchPaths: watchPaths, Ticket: codexIndex.Ticket, Offline: options.Offline, ReadOnly: options.ReadOnly,
 		Cleanup: func(scope string, forget bool, guard consent.EraseGuard) error {
 			return quota.EraseScopeGuarded(quota.ProductionPaths(st.Dir, version), scope, forget, guard)
 		},
@@ -161,7 +161,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			return nil, func() {}, err
 		}
 		handlers["cockpit/query"] = cockpit
-		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Observe: observeForAppIn(st, inventory), ObserveAfter: appserver.ObserveFirstDelay, Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify, CredentialHold: func(provider string) (bool, time.Time) {
+		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Ticket: codexIndex.Ticket, Run: quota.ExecuteScopeRefresh, Observe: observeForAppIn(st, inventory), ObserveAfter: appserver.ObserveFirstDelay, Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify, CredentialHold: func(provider string) (bool, time.Time) {
 			if server == nil {
 				return false, time.Time{}
 			}

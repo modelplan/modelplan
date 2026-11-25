@@ -199,49 +199,14 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 				t.Fatalf("%s links mismatch: %s", label, params)
 			}
 		}
-		// The session ended cleanly on a consent change (callUnlessEnded): reconnect and check
-		// the new session. An acknowledged Deny must already be in force there; only a Deny
-		// whose reply never arrived may be sent again.
-		afterEnd := func(acknowledged bool) {
-			t.Helper()
-			client = client.reconnect()
-			var facts wire.Envelope[wire.ConsentFacts]
-			if err := json.Unmarshal(client.call("consent/get", map[string]any{})["result"], &facts); err != nil {
-				t.Fatal(err)
-			}
-			denied := false
-			for _, s := range facts.Data.Scopes {
-				denied = denied || s.Scope == scope && s.State == wire.ConsentDenied
-			}
-			switch {
-			case acknowledged && !denied:
-				t.Fatalf("an acknowledged Deny of %s is not in force after reconnect: %+v", scope, facts.Data.Scopes)
-			case !denied:
-				grant := client.call("consent/grant", wire.ConsentGrantParams{RequestID: requestID + "-reconnected", ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{}, Deny: []string{scope}})
-				if grant["error"] != nil {
-					t.Fatalf("grant after reconnect: %s", grant["error"])
-				}
-			}
-			snapshot := client.call("rows/subscribe", map[string]any{})
-			if !strings.Contains(string(snapshot["result"]), `"synthetic-announcement"`) {
-				t.Fatalf("reconnected snapshot lost the announcement: %s %s", snapshot["result"], snapshot["error"])
-			}
-			linksMatch("reconnected snapshot", string(snapshot["result"]))
-		}
 		var facts wire.Envelope[wire.ConsentFacts]
-		current, open := client.callUnlessEnded("consent/get", map[string]any{})
-		if !open {
-			afterEnd(false)
-			return
-		}
+		// A consent change never ends the session (outbound.go drops a private frame whose
+		// fence moved before its first byte), so the Deny is answered on this session.
+		current := client.call("consent/get", map[string]any{})
 		if err := json.Unmarshal(current["result"], &facts); err != nil {
 			t.Fatal(err)
 		}
-		grant, open := client.callUnlessEnded("consent/grant", wire.ConsentGrantParams{RequestID: requestID, ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{}, Deny: []string{scope}})
-		if !open {
-			afterEnd(false)
-			return
-		}
+		grant := client.call("consent/grant", wire.ConsentGrantParams{RequestID: requestID, ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{}, Deny: []string{scope}})
 		if grant["error"] != nil {
 			t.Fatalf("grant: %s", grant["error"])
 		}
@@ -256,9 +221,7 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 				select {
 				case raw, ok = <-client.frames:
 					if !ok {
-						client.endedCleanly()
-						afterEnd(true)
-						return
+						t.Fatalf("the session ended after a consent change; unterminated tail %d bytes", len(client.dropped))
 					}
 				case <-deadline:
 					t.Fatal("rows/changed timed out")

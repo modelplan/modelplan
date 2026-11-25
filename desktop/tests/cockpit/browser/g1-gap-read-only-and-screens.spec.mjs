@@ -87,7 +87,7 @@ function withHistory(){
   models:ranking,tools:ranking,daily:[[0,200],[1,1000],[3,4000],[5,9000],[8,20000],[39,1500]].map(([back,n])=>({at:localDay(back),source:'codex',origin:'live',observedOutputTokens:n})),hourly:[{at:new Date(2026,10,4,9).toISOString(),source:'codex',origin:'live',observedOutputTokens:500}],projects:{recent7d:[],recent30d:[]},cycles:[]};
  return data;
 }
-for(const [tier,height] of [['tall',890],['compact',640]]){
+for(const [tier,height] of [['tall',890]]){
  test(`CKP-MFD-25 a click inside a page reaches its module and the charts take the measured screen at ${tier}`,async({page})=>{
   await page.clock.setFixedTime(new Date(NOW));
   await open(page,{data:withHistory(),tier,height});

@@ -12,6 +12,7 @@ package quota
 import (
 	"encoding/json"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"math"
@@ -329,6 +330,7 @@ type Paths struct {
 	CLIVersion                  string             // framework admission: minCli for the verified catalogue
 	Cache, CodexHome, LocalFile string
 	CodexIndex                  *CodexRolloutIndex        // optional process-local index shared by the engine and its watcher
+	CodexTicket                 logindex.Ticket           // the index's withdrawal count, taken with Admission (zero: taken at the call)
 	CodexBarFile                string                    // ~/.config/modelplan/codexbar.json: providers read through CodexBar
 	ConnectionsFile             string                    // ~/.config/modelplan/connections.json: which backend reads each provider
 	CodexThread                 string                    // the calling Codex thread, when known (CODEX_THREAD_ID)

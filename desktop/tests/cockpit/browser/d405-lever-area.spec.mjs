@@ -50,7 +50,7 @@ async function openThrottles(page,{theme='night',tier='tall',height=890,glmEffor
 const rect=l=>l.evaluate(e=>{const r=e.getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height,x:r.left+r.width/2,y:r.top+r.height/2};});
 const channels=page=>page.locator('.fd-ch:not(.empty)');
 
-for(const [tier,height] of [['tall',890],['compact',640]]){
+for(const [tier,height] of [['tall',890]]){
  test(`D405 the big screen takes about 61.8% of the deck (${tier})`,async({page})=>{
   await openThrottles(page,{tier,height});
   const deck=await rect(page.locator('.ck-deck')),mfd=await rect(page.locator('.dk-mfd')),fad=await rect(page.locator('.dk-fad'));
@@ -219,7 +219,7 @@ const slotGeometry=page=>channels(page).evaluateAll(list=>list.map(ch=>{
   slotAt:dashes.map(d=>at(d.y)),capSlot:at(parseFloat(getComputedStyle(travel).getPropertyValue('--fd-pad'))+(box.height-2*parseFloat(getComputedStyle(travel).getPropertyValue('--fd-pad')))*parseFloat(cap.style.getPropertyValue('--k')))};
 }));
 
-for(const [tier,height] of [['tall',890],['compact',640]])
+for(const [tier,height] of [['tall',890]])
  test(`D405 code-drawn slots share one tilted-face perspective (${tier})`,async({page})=>{
   await openThrottles(page,{tier,height});
   const g=await slotGeometry(page);
@@ -308,7 +308,7 @@ test('macrevb-1229-4 a cancelled trial ghost glides back along the slot line',as
 // top lip and brighter towards the pilot; the bank keys (◀ 1/2 ▶) sit below it, outside the panel. The slots stay inside it.
 const rgbs=s=>[...s.matchAll(/rgba?\(([^)]+)\)/g)].map(m=>m[1].split(',').map(Number));
 const lum=([r,g,b])=>.2126*r+.7152*g+.0722*b;
-for(const [tier,height] of [['tall',890],['compact',640]])
+for(const [tier,height] of [['tall',890]])
  test(`D419 the lever tier is a separate lighter panel and the bank keys sit below it (${tier})`,async({page})=>{
   await openThrottles(page,{tier,height,paged:true});
   const g=await page.locator('.dk-fad').evaluate(fad=>{const fr=fad.getBoundingClientRect(),a=getComputedStyle(fad,'::after'),top=fr.top+parseFloat(a.top),bottom=fr.top+parseFloat(a.top)+parseFloat(a.height);
@@ -355,15 +355,6 @@ test('D419 the full lever column follows the measured prototype ratios (cards ab
  const rows=await page.locator('.fd-scale .sc-travel[data-gap="1"] .sc-l').evaluateAll(l=>Object.fromEntries(l.map(e=>{const r=e.getBoundingClientRect();return [e.dataset.level,r.top+r.height/2];})));
  expect(Math.abs(at(rows.Max)-.554)).toBeLessThanOrEqual(.01);expect(Math.abs(at(rows.Low)-.866)).toBeLessThanOrEqual(.01);
 });
-test('D419 compact keeps the 19.5 px detent floor and a 72 px card, with the slots still inside the tier (two banks)',async({page})=>{
- await openThrottles(page,{tier:'compact',height:640,paged:true});
- const g=await columnGeometry(page);
- expect(g.card.bottom-g.card.top).toBeGreaterThanOrEqual(72);
- expect(g.slot.top-g.tierTop,'slot top inside the tier').toBeGreaterThanOrEqual(2.5);
- expect(g.tierBottom-g.slot.bottom,'slot bottom inside the tier').toBeGreaterThanOrEqual(2.5);
- const rows=await page.locator('.fd-scale .sc-travel[data-gap="1"] .sc-l').evaluateAll(l=>l.map(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;}).sort((a,b)=>a-b));
- expect(Math.min(...rows.slice(1).map((y,i)=>y-rows[i])),'closest detents (CKP-FAD-13)').toBeGreaterThanOrEqual(19.5);
-});
 
 // D419 round 4: the card panel's lip (lit edge over a lighter face) sits at the prototype's ratio of the column height and
 // casts a shadow on the top of the lever tier (whole-proposed.png: highlight row 1078 = .481 H, tier top 1086 = .499 H).
@@ -382,9 +373,9 @@ test('D419 the upper panel ends in a lip at the measured ratio, with a shadow on
 });
 
 // D433 (owner 11-25): with one bank (no page keys) the lever tier runs to the column bottom and the travel, detents and slot
-// re-fit to it with the paged tier's ratios of the tier length L (slot margins .0637 L top and .0796 L bottom, travel .7353 L + 16 px;
-// compact margins .032 L and .0515 L, travel .7867 L + 16 px); with two banks it stops above the bank keys. The detent floor holds either way.
-for(const [tier,height,len] of [['tall',890,.7353],['compact',640,.7867]])
+// re-fit to it with the paged tier's ratios of the tier length L (slot margins .0637 L top and .0796 L bottom, travel .7353 L + 16 px);
+// with two banks it stops above the bank keys. The detent floor holds either way.
+for(const [tier,height,len] of [['tall',890,.7353]])
  for(const paged of [false,true])
   test(`D433 the lever tier ${paged?'stops above the bank keys (two banks)':'runs to the column bottom (one bank)'}, slots and detents re-fit (${tier})`,async({page})=>{
    await openThrottles(page,{tier,height,paged});
@@ -392,7 +383,7 @@ for(const [tier,height,len] of [['tall',890,.7353],['compact',640,.7867]])
    if(paged){const bank=await rect(page.locator('.fd-bank'));expect(bank.h,'page keys shown').toBeGreaterThan(10);expect(g.tierBottom).toBeLessThanOrEqual(bank.t);}
    else{expect(Math.abs(g.tierBottom-(g.top+g.H)),'tier bottom at the column bottom').toBeLessThanOrEqual(.6);expect(await page.locator('.fd-bank [data-bank]').count()).toBe(0);expect(L,'taller than the paged tier').toBeGreaterThan(tier==='tall'?.46*g.H:.5*g.H);}
    const trv=await rect(channels(page).nth(0).locator('.fd-travel'));
-   expect(Math.abs(trv.h-Math.max(97,len*L+16)),'travel = .7353 L + 16 px (compact .7867 L), floor 97 px').toBeLessThanOrEqual(.6);
+   expect(Math.abs(trv.h-Math.max(97,len*L+16)),'travel = .7353 L + 16 px, floor 97 px').toBeLessThanOrEqual(.6);
    expect(g.slot.top,'slot inside the tier at the top').toBeGreaterThanOrEqual(g.tierTop+(tier==='tall'?.0637*L-.6:.032*L-.6));
    expect(g.slot.bottom,'slot inside the tier at the bottom').toBeLessThanOrEqual(g.tierBottom-(tier==='tall'?.0796*L-.6:.0515*L-.6));
    const rows=await page.locator('.fd-scale .sc-travel[data-gap="1"] .sc-l').evaluateAll(l=>l.map(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;}).sort((a,b)=>a-b));
@@ -404,7 +395,7 @@ for(const [tier,height,len] of [['tall',890,.7353],['compact',640,.7867]])
 // D434 (owner 11-25): the junction between the lever column and the big screen, measured on the prototype (whole-proposed.png):
 // a 3.5 px dark gutter (6 prototype px) between the left panel's edge and the big screen's own graphite frame, the frame 3 px above
 // the tab row and 2 px below the bottom key row, the tab row on the lamp row, and the bottom key row on the bank keys.
-for(const [tier,height] of [['tall',890],['compact',640]])
+for(const [tier,height] of [['tall',890]])
  test(`D434 the big screen sits in its own frame behind a 3.5 px gutter, aligned with the lever column (${tier})`,async({page})=>{
   await openThrottles(page,{tier,height,paged:true});
   const fad=await rect(page.locator('.dk-fad')),mfd=await rect(page.locator('.dk-mfd'));

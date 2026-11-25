@@ -111,3 +111,13 @@ func (c Counts) Since(base Counts) Counts {
 	return Counts{c.Walks - base.Walks, c.Entries - base.Entries, c.Opens - base.Opens, c.Bytes - base.Bytes, c.Decodes - base.Decodes, c.Views - base.Views,
 		c.CodexWalks - base.CodexWalks, c.CodexEntries - base.CodexEntries, c.ClaudeWalks - base.ClaudeWalks, c.ClaudeEntries - base.ClaudeEntries}
 }
+
+// copies counts history inventory entries copied out to a caller. It is kept out of Counts: it
+// measures in-memory work, which the idle gates bound separately (an idle tick copies nothing).
+var copies atomic.Int64
+
+// Copied records n inventory entries copied out of the shared history inventory.
+func Copied(n int) { copies.Add(int64(n)) }
+
+// CopiedCount returns the number of inventory entries copied out so far.
+func CopiedCount() int64 { return copies.Load() }

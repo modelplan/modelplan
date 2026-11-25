@@ -7,7 +7,6 @@
 import {shortLabel} from './short-label.js';
 import {t} from './i18n.js';
 import {tokShort, approxCost} from './mfd-pages/fmt.js';
-import {configShare} from './mfd-pages/views.js';
 import './strings/faders.js';
 
 export const LADDER = ['Low', 'Med', 'High', 'XHigh', 'Max'];
@@ -113,7 +112,7 @@ function channel(f, ui, colour) {
   const lamps = f.lamps || f.sessions, running = lamps.find(x => x.active && x.sub) || lamps.find(x => x.active);
   ch.session = running ? 'live' : f.live || f.recorded || f.use || lamps.length ? 'used' : 'off';
   ch.lampColour = running && running.sub ? colour.get(running.sub) || null : null;
-  ch.card = card(ch, {...f, compact: !!ui.compact});
+  ch.card = card(ch, f);
   return ch;
 }
 
@@ -154,12 +153,9 @@ export function card(c, f = {}) {
     // G3-182 (owner row 35, build 2): the trial line names the effort being tried; with no reported current tier a
     // "档位未报告" line under it read as a contradiction, so the second line is simply left out.
     lines.nowLine = c.cur ? t('fad.cardNow', {e: c.cur}) : '';
-    // D337 (owner, closes D190): on the short cockpit's small card the trial reads with letters, not colour alone:
-    // "A92 C55" / "能92 费55" = ability and cost as shares of the top effort. Colour stays for alerts. The full figures
-    // (cost, ability change) stay in the strip's accessible label.
-    const sh = f.compact && f.e ? configShare({e: f.e, rec: f.rec}, f.tier, tr.effort, !!(tr.fast ?? c.currentFast)) : null;
-    const pc = v => v == null ? '--' : String(Math.round(v * 100));
-    lines.eff = {cur: '', rec: '', note: sh ? clip(t('fad.cardTryShare', {a: pc(sh.abl), c: pc(sh.cost)})) : t('fad.cardTrying')};
+    // D444: the short cockpit's share line (D337, "A92 C55") is retired with the short layout; the full figures stay
+    // in the strip's accessible label.
+    lines.eff = {cur: '', rec: '', note: t('fad.cardTrying')};
     return lines;
   }
   if (use) {

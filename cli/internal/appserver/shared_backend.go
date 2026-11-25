@@ -18,6 +18,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/resetevents"
 	"github.com/modelplan/modelplan/cli/internal/rows"
@@ -32,7 +33,7 @@ type SharedConfig struct {
 	// quota history is kept without a second read.
 	Reported func(quota.Report, time.Time)
 	// Activity is an admitted, cache-only observer, independent of quota refresh/rate.
-	Activity         func(context.Context, consent.Admission, time.Time) []rows.ActivityInput
+	Activity         func(context.Context, consent.Admission, logindex.Ticket, time.Time) []rows.ActivityInput
 	ResetPublication func() (*digest.Digest, error)
 	Detect           func() detect.Report
 	// LaterInstalled records each detection report and returns the tools detected now that
@@ -40,6 +41,10 @@ type SharedConfig struct {
 	LaterInstalled func(detect.Report) map[string]bool
 	Paths          func(consent.Admission) quota.Paths
 	WatchPaths     func(consent.Admission) quota.Paths // metadata-only watcher paths, if supplied
+	// Ticket takes the history inventory's withdrawal ticket. Every caller takes exactly one
+	// before it captures an admission and hands it to the paths, the Codex stamps and the
+	// activity observer built for that admission (macrev2-1261-2). Nil: none (tests).
+	Ticket func() logindex.Ticket
 	// Cleanup is the fenced erasure hook: retries pass a guard (macrevb-1218-5); a foreground
 	// commit calls it with a nil guard under the consent lock.
 	Cleanup consent.Eraser
@@ -182,7 +187,8 @@ func (b *SharedBackend) Get(ctx context.Context) (View, error) {
 		return View{}, err
 	}
 	b.allowLaterLocalLogs(ctx)
-	result := consent.BuildStable(func(admission consent.Admission) View { return b.buildView(admission, false) }, func(admission consent.Admission) View { return b.buildView(admission, true) })
+	ticket := takeTicket(b.config.Ticket) // before BuildStable captures the admission
+	result := consent.BuildStable(func(admission consent.Admission) View { return b.buildView(admission, ticket, false) }, func(admission consent.Admission) View { return b.buildView(admission, ticket, true) })
 	if ctx.Err() != nil {
 		return View{}, ctx.Err()
 	}
@@ -235,9 +241,9 @@ func (b *SharedBackend) allowLaterLocalLogs(ctx context.Context) {
 		ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: scopes, Deny: deny})
 }
 
-func (b *SharedBackend) buildView(admission consent.Admission, changed bool) View {
+func (b *SharedBackend) buildView(admission consent.Admission, ticket logindex.Ticket, changed bool) View {
 	idlework.View()
-	p := b.paths(admission)
+	p := withTicket(b.paths(admission), ticket)
 	detection := b.config.Detect()
 	detected := map[string]bool{}
 	later := map[string]bool{}
@@ -564,21 +570,28 @@ type localFileStamp struct {
 	fileStamp
 }
 
-func (b *SharedBackend) watchPaths(admission consent.Admission) quota.Paths {
+func (b *SharedBackend) watchPaths(admission consent.Admission, ticket logindex.Ticket) quota.Paths {
 	if b.config.WatchPaths != nil {
-		return b.config.WatchPaths(admission)
+		return withTicket(b.config.WatchPaths(admission), ticket)
 	}
-	return b.paths(admission)
+	return withTicket(b.paths(admission), ticket)
+}
+
+// capture takes the withdrawal ticket, then the admission (macrev2-1261-2).
+func (b *SharedBackend) capture() (consent.Admission, logindex.Ticket) {
+	ticket := takeTicket(b.config.Ticket)
+	return consent.Capture(), ticket
 }
 
 // codexLocalStamps observes metadata only for the same permitted local source
 // that buildView reads. It never opens rollout contents or exposes file paths.
-func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFileStamp {
+// codexLocalStamps reuses the caller's ticket, taken before its admission; it never takes one.
+func (b *SharedBackend) codexLocalStamps(admission consent.Admission, ticket logindex.Ticket) []localFileStamp {
 	tool, decided := admission.State().Tools["codex"]
 	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") || (decided && (!tool.Allowed || tool.ConsentTextVersion != consent.TextVersion)) {
 		return nil
 	}
-	paths := b.watchPaths(admission)
+	paths := b.watchPaths(admission, ticket)
 	if paths.CodexHome == "" {
 		return nil
 	}
@@ -630,9 +643,9 @@ type viewToken struct {
 
 func (b *SharedBackend) captureViewToken() viewToken {
 	t := viewToken{seq: b.changeSeq.Load(), at: time.Now()}
-	admission := consent.Capture()
+	admission, ticket := b.capture()
 	t.stamp = stampOf(admission.Fence())
-	t.inputs = watchedStamps(b.watchPaths(admission), b.codexLocalStamps(admission))
+	t.inputs = watchedStamps(b.watchPaths(admission, ticket), b.codexLocalStamps(admission, ticket))
 	t.detection = b.config.Detect()
 	return t
 }
@@ -763,8 +776,8 @@ type watchState struct {
 // pollWatch is one poll of the change watcher: metadata of the watched inputs, the permitted
 // Codex rollouts at most once a second, and the subscriber's Today deadline.
 func (b *SharedBackend) pollWatch(w *watchState, now time.Time) {
-	admission := consent.Capture()
-	paths := b.watchPaths(admission)
+	admission, ticket := b.capture()
+	paths := b.watchPaths(admission, ticket)
 	b.retryPendingCleanup(admission, now)
 	tool, decided := admission.State().Tools["codex"]
 	localAllowed := admission.Allows("codex", consent.Local) && !admission.CleanupPending("codex") && (!decided || tool.Allowed && tool.ConsentTextVersion == consent.TextVersion)
@@ -774,7 +787,7 @@ func (b *SharedBackend) pollWatch(w *watchState, now time.Time) {
 	} else if !now.Before(w.nextCodexCheck) {
 		// Match the local reader's recent files and its active thread;
 		// inspect metadata only, under the same admission fence.
-		w.codexStamps = b.codexLocalStamps(admission)
+		w.codexStamps = b.codexLocalStamps(admission, ticket)
 		w.nextCodexCheck = now.Add(time.Second)
 	}
 	current := watchedStamps(paths, w.codexStamps)
@@ -824,9 +837,9 @@ func (s *IdleSteps) Pending() bool {
 }
 
 func (b *SharedBackend) observeActivity(ctx context.Context, now time.Time) {
-	admission := consent.Capture()
+	admission, ticket := b.capture()
 	stamp := stampOf(admission.Fence())
-	values := b.config.Activity(ctx, admission, now)
+	values := b.config.Activity(ctx, admission, ticket, now)
 	if ctx.Err() != nil {
 		return
 	}

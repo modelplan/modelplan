@@ -617,6 +617,8 @@ struct DockHelpInteraction: Equatable {
     var officialFacesForChecks = 0
     var preparedEdgesForChecks: Set<DockEdge> { Set(edgeViews.keys) }
     var catalogueReportsForChecks = 0
+    /// The subscription IDs of every completed rebuild pass, in order (what each painted face showed).
+    var paintedSubscriptionIDsForChecks: [[String]] = []
     #endif
     private func reportCatalogue(_ subscriptions: [SettingsSubscription]) {
         #if DEBUG
@@ -1575,6 +1577,9 @@ struct DockHelpInteraction: Equatable {
                                      rotation: .working, provider: { _ in provider })
             } catch { driver.stop(); lastWorkingEffectError = error }
         } else { workingDriver?.stop() }
+        #if DEBUG
+        paintedSubscriptionIDsForChecks.append(rows.map(\.subscriptionID))
+        #endif
         workingEffectsDidConfigureForChecks?()
         publishAttention()
         model = next

@@ -437,18 +437,37 @@ struct StatusNoticePresentation {
         try await foundationStore.updateCore(value, expectedRevision: expectedRevision)
     }
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
+    /// Checks drive the app's own Settings coordinator (the one the Dock catalogue reports to).
+    var settingsCoordinatorForChecks: SettingsApplicationCoordinator { settings }
     public func presentSettings(paneID: String? = nil) async { await settingsHost.present(paneID: paneID) }
     /// G3-46: a squeezed status item has no visible icon anchor. The cockpit uses the notch edge
     /// on the status item's display for that fallback (D378).
+    /// Build 5 (owner 11-25): resolved by `StatusItemAnchor` from the button window's rect, accepted only once the menu
+    /// bar has placed it, and the click that opened the cockpit, so a parking frame or another display's copy of the
+    /// item never becomes the anchor.
     var cockpitAnchor: CGRect? {
-        guard !statusItemHidden, let status, status.isVisible, let button = status.button, let window = button.window,
-              window.isVisible else { return nil }
-        let rect = window.convertToScreen(button.convert(button.bounds, to: nil))
-        guard NSScreen.screens.contains(where: { $0.frame.intersects(rect) }) else { return nil }
-        return rect
+        guard !statusItemHidden, let status, status.isVisible, let button = status.button else { return nil }
+        let window = button.window.flatMap { window in
+            window.isVisible ? window.convertToScreen(button.convert(button.bounds, to: nil)) : nil
+        }
+        return StatusItemAnchor.resolve(window: window, click: statusClickAnchor, itemWidth: button.bounds.width,
+                                        displays: statusDisplays(), menuHeight: NSStatusBar.system.thickness)
     }
-    /// The status item's window can identify its display even when the item is squeezed out.
-    var cockpitStatusScreen: CGRect? { status?.button?.window?.screen?.frame }
+    /// The status item's display even when the item is squeezed out: the clicked copy's display while that click is
+    /// current, else the button window's.
+    var cockpitStatusScreen: CGRect? {
+        // macrev2-1251-1: the clicked display does not depend on the item's width.
+        if let display = StatusItemAnchor.clickedDisplay(statusClickAnchor, displays: statusDisplays(), menuHeight: NSStatusBar.system.thickness) {
+            return display.frame
+        }
+        return status?.button?.window?.screen?.frame
+    }
+    /// The press on the status item that opened the cockpit; nil for every other entry and after the cockpit closes.
+    /// A press becomes this only on its release over the item (`statusPress` holds it until then, so an aborted press
+    /// never moves the anchor).
+    private(set) var statusClickAnchor: StatusItemAnchor?
+    private(set) var statusPress: StatusItemAnchor?
+    var statusDisplays: @MainActor () -> [StatusItemAnchor.Display] = { StatusItemAnchor.Display.system() }
 
     /// Build 14c (G3-79): the screen point the latest open came from (the widget's ignition click). Nil for the menu
     /// bar icon, the status menu and shortcuts. Only a detached open uses it; attached, the cockpit always opens under
@@ -458,6 +477,8 @@ struct StatusNoticePresentation {
     /// `openPoint` is the click that opened it elsewhere (the widget's ignition): a detached cockpit with no remembered
     /// place opens on that display; an attached one still opens under the icon (G3-128).
     public func showConsole(fromStatusItem: Bool = false, openPoint: CGPoint? = nil) {
+        // Only the status item's own click knows which copy of the item was pressed.
+        if !fromStatusItem { statusClickAnchor = nil }
         openConsole(rackEntrance: fromStatusItem, openPoint: fromStatusItem ? nil : openPoint)
     }
 
@@ -489,6 +510,8 @@ struct StatusNoticePresentation {
         // The user closed a cockpit opened before the lifecycle started: the ready does not bring it back. A hide by
         // the launch pause itself runs while paused and keeps the open.
         if console?.isShowing != true, !lifecyclePaused { launchOpen = nil }
+        // A closed cockpit forgets the click; the next open reads the item again.
+        if console?.isShowing != true, launchOpen == nil { statusClickAnchor = nil }
         currentCockpitPage?()?.updateMemberRefreshInFlight(!memberRefreshInFlight.isEmpty)
         refreshStatusTooltip()
         dockHelp?.refresh()
@@ -502,13 +525,14 @@ struct StatusNoticePresentation {
     func pressIgnition(at point: CGPoint) {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused || inLaunchPause else { return }
         if let console, console.isShowing, !console.isDetached { console.requestClose(); refreshStatusTooltip(); return }
+        statusClickAnchor = nil
         openConsole(rackEntrance: true, openPoint: point)
     }
     /// G3-40: the status icon toggles the cockpit where it is, attached or detached. Every other
     /// entry (menu item, shortcut, reopening the app) only ever opens; the ignition follows D204 (`pressIgnition`).
     func toggleConsole() {
         // A second click during launch takes the kept open back, like closing an open cockpit.
-        if launchOpen != nil, lifecyclePaused { launchOpen = nil; refreshStatusTooltip(); return }
+        if launchOpen != nil, lifecyclePaused { launchOpen = nil; statusClickAnchor = nil; refreshStatusTooltip(); return }
         if let console, console.isShowing { console.requestClose(); refreshStatusTooltip() } else { showConsole(fromStatusItem: true) }
     }
     /// OS accessibility changes are presentation facts, never saved user choices.
@@ -1127,6 +1151,8 @@ struct StatusNoticePresentation {
     func displayParametersChanged() {
         guard !terminating else { return }
         forceStatusRewrite = true; displayEpoch += 1
+        // The item moves with the displays; a click on the old arrangement no longer names it.
+        statusClickAnchor = nil
         displayRecheck.displaysChanged()
     }
     /// Shows the one-line notice in the widget menu and Settings while the item is covered; clears it when visible.
@@ -1194,14 +1220,25 @@ struct StatusNoticePresentation {
         if event.type == .leftMouseUp {
             guard statusPressPending else { return false }
             statusPressPending = false
+            let press = statusPress; statusPress = nil
             if onStatusItem {
-                if setupActive { Task { await reopenSetup() } } else { toggleConsole() }
+                if setupActive { Task { await reopenSetup() } } else {
+                    // The completed click is the one that names the item; toggleConsole forgets it again on a close.
+                    if let press { statusClickAnchor = press }
+                    toggleConsole()
+                }
             }
             return true
         }
         guard event.type == .leftMouseDown, onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
               !terminating, setupActive || (cockpitEntryEnabled && (!lifecyclePaused || inLaunchPause)) else { return false }
         statusPressPending = true
+        statusPress = status?.button.flatMap { button in
+            StatusItemAnchor.eventScreenPoint(event).flatMap { point in
+                StatusItemAnchor.click(pointer: point, local: button.convert(event.locationInWindow, from: nil),
+                                       buttonBounds: button.bounds, flipped: button.isFlipped, displays: statusDisplays())
+            }
+        }
         return true
     }
 
@@ -1217,7 +1254,7 @@ struct StatusNoticePresentation {
         guard let status else { return }
         self.status = nil
         if let statusClickMonitor { NSEvent.removeMonitor(statusClickMonitor) }
-        statusClickMonitor = nil; statusPressPending = false
+        statusClickMonitor = nil; statusPressPending = false; statusClickAnchor = nil; statusPress = nil
         noticeIndicator.removeFromSuperview(); usedUpDot.removeFromSuperview()
         status.menu = nil
         NSStatusBar.system.removeStatusItem(status)
@@ -1700,12 +1737,20 @@ struct StatusNoticePresentation {
         terminating = true
         retireApplicationSurfaces()
         Task {
-            if lifecycleController != nil { await stopLifecycle(); composition.dock.close() }
-            else { await composition.stop() }
-            await dockHelp?.dispose(); dockHelp = nil
+            await prepareForTermination(surfacesRetired: true)
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+    /// Everything quit does before the process may exit (checks call it directly and then reopen the same store).
+    func prepareForTermination(surfacesRetired: Bool = false) async {
+        terminating = true
+        if !surfacesRetired { retireApplicationSurfaces() }
+        // A hidden station already shown as hidden on its first account stays bound to that account across quit.
+        await settings.editor.finishAnonymousHideTakeover()
+        if lifecycleController != nil { await stopLifecycle(); composition.dock.close() }
+        else { await composition.stop() }
+        await dockHelp?.dispose(); dockHelp = nil
     }
     #if MODELPLAN_DOCK_NATIVE_JOURNEY
     var nativeJourneyStatusVisible: Bool {
@@ -1718,6 +1763,7 @@ struct StatusNoticePresentation {
         terminating = true
         if let status { NSStatusBar.system.removeStatusItem(status); self.status = nil }
         retireApplicationSurfaces()
+        await settings.editor.finishAnonymousHideTakeover()
         await stopLifecycle()
         await composition.stop()
         await dockHelp?.dispose()

@@ -53,7 +53,7 @@ const slotLine=(ch,y)=>ch.evaluate((ch,y)=>{const core=ch.querySelector('.fd-slo
 // The lever frame a level shows (Low 0 .. Max 32) on the tilted face's detent row.
 const frameFor=level=>String(Math.round((1-levelK(level))*32));
 
-for(const theme of ['night','day'])for(const [tier,height] of [['tall',890],['compact',640]])
+for(const theme of ['night','day'])for(const [tier,height] of [['tall',890]])
  test(`G3-92 every lever sits on its slot centre in its column (${theme}, ${tier})`,async({page})=>{
   await openThrottles(page,{theme,tier,height});
   const list=await centres(page);
@@ -70,7 +70,7 @@ for(const theme of ['night','day'])for(const [tier,height] of [['tall',890],['co
 
 // G3-92 (owner 11-12: the blue trial ghost grip looked off-centre in the GLM column): a trial in each column in turn, GLM with
 // two efforts so it can show one; the ghost grip, the lever and the slot share the column centre.
-for(const theme of ['night','day'])for(const [tier,height] of [['tall',890],['compact',640]])
+for(const theme of ['night','day'])for(const [tier,height] of [['tall',890]])
  test(`G3-92 every trial ghost grip sits on its slot centre in its column (${theme}, ${tier})`,async({page})=>{
   await openThrottles(page,{theme,tier,height,glmEfforts:['high','max']});
   for(const [i,trial] of [[0,'Med'],[1,'High'],[2,'High']]){
@@ -90,9 +90,9 @@ test('G3-92 a Max-only model shows no ghost: keys, drag and label clicks all lan
 });
 
 // D419/D433 (measured on the direction 06 prototype): this fixture has one bank, so the lever tier runs to the column bottom and the
-// travel is .7353 of the tier plus 16 px (u = (travel - 16)/97): tall tier .501 x 257 px, compact 217 - 95 px with .7867.
-const TALL_U=.7353*.501*257/97,SHORT_U=.7867*(217-95)/97;
-for(const [tier,height,u] of [['tall',890,TALL_U],['compact',640,SHORT_U]])
+// travel is .7353 of the tier plus 16 px (u = (travel - 16)/97): tall tier .501 x 257 px.
+const TALL_U=.7353*.501*257/97;
+for(const [tier,height,u] of [['tall',890,TALL_U]])
  test(`CKP-FAD-24 the baked throttle is drawn per theme at the travel's scale (${tier})`,async({page})=>{
   const {send,receive}=await openThrottles(page,{tier,height});
   const sol=channel(page,0),lever=await box(sol.locator('.fd-cap'));
@@ -186,7 +186,7 @@ test('CKP-FAD-12 the real lever glides through the baked frames when the current
 // The lever's grip centre: its baked tile is fixed, the grip moves inside it by frame (Max 32 at 16.5 u .. Low 0 at 113.5 u).
 const grip=async ch=>{const b=await box(ch.locator('.fd-cap')),f=Number(await ch.locator('.fd-cap').getAttribute('data-frame')),u=b.height/134;return b.top+(16.5+97*(1-f/32))*u;};
 const scaleRows=async page=>Object.fromEntries(await Promise.all(['Low','Med','High','XHigh','Max'].map(async l=>[l,await row(page,l)])));
-for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height] of [['tall',890],['compact',640]])
+for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height] of [['tall',890]])
  test(`G3-92 detent rows are one mapping for lever, ghost and rod; axis shared (${theme}, ${dsf}x, ${tier})`,async({browser})=>{
   const ctx=await browser.newContext({deviceScaleFactor:dsf,baseURL:'http://127.0.0.1:41783'});
   try {
@@ -212,7 +212,7 @@ for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height
     // the ghost rod is as wide as the real lever's rod (5 u)
     // the rod's own width (its box, before the skew along the tilted slot line: macrevb-1229-2)
     const rodWidth=await ch.locator('.fd-tline').evaluate(e=>parseFloat(getComputedStyle(e).width));
-    expect(Math.abs(rodWidth-5*(tier==='tall'?TALL_U:SHORT_U)),'ghost rod width').toBeLessThanOrEqual(.5);
+    expect(Math.abs(rodWidth-5*TALL_U),'ghost rod width').toBeLessThanOrEqual(.5);
     const bg=await ch.locator('.fd-tline').evaluate(e=>getComputedStyle(e).backgroundColor);
     if(theme==='night')expect(bg).toMatch(/0\.25\)$/);
     if(theme==='day')expect(bg).toMatch(/0\.55\)$/);

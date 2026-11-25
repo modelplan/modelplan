@@ -6,7 +6,9 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"sync/atomic"
 	"time"
 )
 
@@ -143,16 +145,16 @@ func probeTurns(turns []turn) liveProbe {
 // separate Claude subagent files. It follows no symlinks, keeps at most 20,000 entries per root,
 // and returns at most 64 newest logs changed in the last five minutes. Each read is a 256 KiB tail.
 func ActiveLogs(claudeHome, codexHome string, now time.Time) []LiveLog {
-	return ActiveLogsIn(nil, consent.Fence{}, claudeHome, codexHome, now)
+	return ActiveLogsIn(nil, consent.Fence{}, logindex.Ticket{}, claudeHome, codexHome, now)
 }
 
 // ActiveLogsIn is ActiveLogs from the app-server's shared history inventory, under the caller's
-// consent fence; a nil inventory scans afresh.
-func ActiveLogsIn(inv *logindex.Inventory, fence consent.Fence, claudeHome, codexHome string, now time.Time) []LiveLog {
+// consent fence and the withdrawal ticket it took with it; a nil inventory scans afresh.
+func ActiveLogsIn(inv *logindex.Inventory, fence consent.Fence, ticket logindex.Ticket, claudeHome, codexHome string, now time.Time) []LiveLog {
 	if inv == nil {
 		inv = &logindex.Inventory{}
 	}
-	return recentLogs(inv, fence, []liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""}, {filepath.Join(codexHome, "sessions"), "codex", codexHome != ""}}, now, now)
+	return recentLogsCached(inv, fence, []liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""}, {filepath.Join(codexHome, "sessions"), "codex", codexHome != ""}}, now, now, nil, ticket)
 }
 
 type liveRoot struct {
@@ -173,6 +175,27 @@ func activityRoots(claudeHome, codexHome, zcodeHome string) []liveRoot {
 // recentLogs: the newest (at most 64) logs under the enabled roots changed in the last five
 // minutes, from the inventory's metadata.
 func recentLogs(inv *logindex.Inventory, fence consent.Fence, roots []liveRoot, now, elapsed time.Time) []LiveLog {
+	return recentLogsCached(inv, fence, roots, now, elapsed, nil, logindex.Ticket{})
+}
+
+// liveCandidate is a log changed within LiveWithin of when its selection was made.
+type liveCandidate struct {
+	log LiveLog
+	at  time.Time
+}
+
+// liveSelection caches the candidates selected at an inventory generation. The window only moves
+// forward with now, so the candidates of an unchanged inventory stay a superset of the logs
+// that are still recent, and each tick filters only them (#1222 sampling P2).
+type liveSelection struct {
+	gen   uint64
+	want  []logindex.Root
+	fence consent.Fence
+	built time.Time
+	cands []liveCandidate
+}
+
+func recentLogsCached(inv *logindex.Inventory, fence consent.Fence, roots []liveRoot, now, elapsed time.Time, c *liveSelection, ticket logindex.Ticket) []LiveLog {
 	var want []logindex.Root
 	for _, root := range roots {
 		if root.enabled && filepath.IsAbs(root.dir) {
@@ -180,34 +203,68 @@ func recentLogs(inv *logindex.Inventory, fence consent.Fence, roots []liveRoot, 
 		}
 	}
 	if len(want) == 0 {
+		// Every source withdrawn (or the consent store unavailable): a withdrawal. Forget the
+		// cached selection and the roots it came from, and record it, so a read or commit under
+		// a ticket from before it is refused (macrev2-1261-2).
+		var dirs []string
+		if c != nil {
+			for _, r := range c.want {
+				dirs = append(dirs, r.Dir)
+			}
+			*c = liveSelection{}
+		}
+		inv.Withdraw(dirs...)
 		return []LiveLog{}
 	}
-	type candidate struct {
-		log LiveLog
-		at  time.Time
+	have := uint64(0)
+	if c != nil && c.gen != 0 && c.fence == fence && slices.Equal(c.want, want) && !now.Before(c.built) {
+		have = c.gen
 	}
-	var all []candidate
-	for _, f := range inv.Files(fence, want, now, elapsed) {
-		if f.Mod.Before(now.Add(-LiveWithin)) {
-			continue
-		}
-		all = append(all, candidate{LiveLog{Path: f.Path, Source: f.Source, Sidechain: filepath.Base(filepath.Dir(f.Path)) == "subagents"}, f.Mod})
+	files, gen, changed := inv.FilesIfChanged(fence, want, now, elapsed, have, ticket)
+	if changed && gen == 0 { // refused: a withdrawal since the ticket; keep nothing
+		return []LiveLog{}
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].at.Equal(all[j].at) {
-			return all[i].log.Path < all[j].log.Path
+	var cands []liveCandidate
+	if changed {
+		for _, f := range files {
+			if f.Mod.Before(now.Add(-LiveWithin)) {
+				continue
+			}
+			cands = append(cands, liveCandidate{LiveLog{Path: f.Path, Source: f.Source, Sidechain: filepath.Base(filepath.Dir(f.Path)) == "subagents"}, f.Mod})
 		}
-		return all[i].at.After(all[j].at)
-	})
+		sort.Slice(cands, func(i, j int) bool {
+			if cands[i].at.Equal(cands[j].at) {
+				return cands[i].log.Path < cands[j].log.Path
+			}
+			return cands[i].at.After(cands[j].at)
+		})
+		if c != nil {
+			next := liveSelection{gen: gen, want: want, fence: fence, built: now, cands: cands}
+			// Under the lock Withdraw takes: a withdrawal since the ticket drops the result.
+			if !inv.CommitIf(ticket, func() { *c = next }) {
+				return []LiveLog{}
+			}
+		} else if !inv.CommitIf(ticket, func() {}) {
+			return []LiveLog{}
+		}
+	} else {
+		cands = c.cands
+	}
+	// Newest first: the first expired candidate ends the recent ones, so a tick visits at most
+	// maxLive+1 of them however many have aged out under an unchanged inventory (macrev2-1261-1).
 	out := []LiveLog{}
-	for i, c := range all {
-		if i == maxLive {
+	for _, cand := range cands {
+		liveCandidateVisits.Add(1)
+		if len(out) == maxLive || cand.at.Before(now.Add(-LiveWithin)) {
 			break
 		}
-		out = append(out, c.log)
+		out = append(out, cand.log)
 	}
 	return out
 }
+
+// liveCandidateVisits counts cached candidates visited by the activity selection (tests).
+var liveCandidateVisits atomic.Int64
 
 // ObserveLive reads only bounded local log tails. It neither adds historical token counts nor
 // asks an account endpoint. Existing normal observations provide subscription references.

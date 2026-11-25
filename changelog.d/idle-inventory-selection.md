@@ -1,0 +1,1 @@
+The engine uses less CPU at idle with a long Codex or Claude Code history. The once-a-second Codex session selection and the two-second activity check now reuse their last result until a history file actually changes, instead of copying and sorting the whole history every time. The Codex subagent check looks only at the 62 newest days again.

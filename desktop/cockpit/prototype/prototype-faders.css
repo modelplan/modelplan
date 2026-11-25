@@ -166,21 +166,11 @@ body.reduced #cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s line
 @media(prefers-reduced-motion:reduce){#cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s linear!important}}
 
 
-/* D405/D419 compact (H = 217): the 97 px travel (top detents 19.5 px apart, CKP-FAD-13) and a 72 px card leave 11 px for the
-   prototype's shelf and the two in-tier margins, so they shrink to about half their measured size: card 18-90, lip 94, tier
-   95-198 (bank keys from 199), travel 97-194, so the slot (98.3-192.7) stays inside the tier by 3.3 / 5.3 px. */
-#cockpit[data-layout="640"] .dk-fad{--fd-lcd:72px;--fd-led-gap:0px;--fd-tier-top:95px;--fd-bot-paged:198px;--fd-trvk:.7867;--fd-trva:.0969}
 /* D433 (owner 11-25): with one bank (no page keys) the lever tier runs from the lip to the column bottom, as on main, and the
    travel, detents and slot re-fit to it with the same ratios of the tier's length L as the paged tier (slot margins .0637 L and
-   .0796 L; the travel is .7353 L + 16 px, the slot keeps its 8 u run past the end detents, u = (travel - 16 px) / 97; compact
-   margins .032 L and .0515 L, travel .7867 L + 16 px); the bank row collapses. Paged (two or more banks) keeps the
+   .0796 L; the travel is .7353 L + 16 px, the slot keeps its 8 u run past the end detents, u = (travel - 16 px) / 97); the bank row collapses. Paged (two or more banks) keeps the
    measured prototype tier that stops above the bank keys. */
 .dk-fad:not(.paged){--fd-tier-bot:var(--fd-H);grid-template-rows:minmax(0,1fr) 0;row-gap:0}
-#cockpit[data-layout="640"] .dk-fad .cd-use{line-height:12px}
-#cockpit[data-layout="640"] .dk-fad .fd-strip{padding:5px 2px 3px 3px}
-#cockpit[data-layout="640"] .dk-fad .cd-big,#cockpit[data-layout="640"] .dk-fad .cd-try{margin-top:2px}
-#cockpit[data-layout="640"] .dk-fad .cd-bar,#cockpit[data-layout="640"] .dk-fad .cd-use{margin-top:2px}
-#cockpit[data-layout="640"] .dk-fad .st-pin{top:9px}
 
 /* CKP-FAD-54 step 2: the effort page comes in over 150 ms when a card is clicked (none with reduced motion). */
 @keyframes cd-page-in{from{opacity:0}to{opacity:1}}
