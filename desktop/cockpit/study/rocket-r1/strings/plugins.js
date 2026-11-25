@@ -79,6 +79,7 @@ register('plugin', {
   calWeeklyLong: ['lcd', '周额度重置', 'weekly reset'],
   calWk: ['lcd', '周', 'wk'],
   calCards: ['lcd', '重置卡', 'reset card'],
+  calDirect: ['lcd', '直接重置', 'direct reset'],
   calUntil: ['lcd', '至', 'until'],
   calAnnounced: ['line', '预告重置', 'announced reset'],
   calConfirmed: ['line', '已确认重置', 'confirmed reset'],

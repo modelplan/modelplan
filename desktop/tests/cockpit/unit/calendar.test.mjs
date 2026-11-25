@@ -289,3 +289,15 @@ test('D375: an empty peaks list is "no rules"; a missing field is unknown (never
  delete data.details.peaks;
  assert.equal(foot(data),'plugin.calPeaksUnknown');
 });
+
+test('D406: reset-card notices with no stated time sit on the day they were published; direct resets stay a separate kind',()=>{
+ const {data,ref}=display();
+ data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
+  const iso=t=>new Date(t).toISOString();
+ const ev=(id,kind,publishedAt,schedule)=>({version:1,id,rowId:'codex',provider:'openai',kind,status:'announced',publishedAt:iso(publishedAt),expiresAt:iso(local(2026,11,20)),...(schedule?{schedule}:{}),source:{kind:'publication',publicationId:'p'}});
+ data.details.resetEvents=[ev('c1','reset_credit',NOW),ev('c2','reset_credit',local(2026,11,10,9),{from:iso(local(2026,11,14,8)),through:iso(local(2026,11,14,8)),precision:'exact'}),ev('d1','direct_reset',NOW)];
+ const cal=calendarFromCockpit(data,NOW);
+ assert.ok(parseCalendarData(cal));
+ const at=cal.spans.filter(x=>x.kind!=='cards').map(x=>[x.kind,x.from,x.to,x.count]);
+ assert.deepEqual(at,[['credit',NOW,null,1],['credit',local(2026,11,14,8),local(2026,11,14,8),1],['announced',NOW,null,null]]);
+});

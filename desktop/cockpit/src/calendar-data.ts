@@ -14,8 +14,10 @@ export interface CalendarSub {readonly abbr:string;readonly colour:string;readon
 export interface CalendarPeak {readonly sub:number;readonly from:number;readonly to:number|null;readonly tentative:boolean}
 /** One of the user's own quota resets. */
 export interface CalendarReset {readonly sub:number;readonly at:number;readonly kind:'5h'|'week'}
-/** An all-day item: reset cards usable until `to`, or a reset announced at `from` taking effect at `to` (null: no time). */
-export interface CalendarSpan {readonly sub:number;readonly kind:'cards'|'announced'|'confirmed';readonly from:number;readonly to:number|null;readonly count:number|null}
+/** An all-day item: reset cards usable until `to`, a reset announced at `from` taking effect at `to` (null: no time; it
+ *  then sits on the day it was published, as the website's week board does), or `credit`: a reset card handed out,
+ *  placed at `from` (its stated effect time, else its publication) with `to` set only when the source states a time. */
+export interface CalendarSpan {readonly sub:number;readonly kind:'cards'|'credit'|'announced'|'confirmed';readonly from:number;readonly to:number|null;readonly count:number|null}
 /** Whether the user has peak rules: `no` is known (the publication's feed is present and the user has no declared plan),
  *  `yes` means a declared plan exists (it may have no window in the next 24 h), `unknown` means the feed is missing. */
 export type PeakRules='yes'|'no'|'unknown';
@@ -52,7 +54,7 @@ export function parseCalendarData(v:unknown):CalendarData|null {
   resets.push(Object.freeze({sub:r.sub,at:r.at,kind:r.kind}));
  }
  for(const s of v.spans){
-  if(!exact(s,['sub','kind','from','to','count'])||!index(s.sub,n)||!['cards','announced','confirmed'].includes(s.kind as string)||!time(s.from)||!(s.to===null||time(s.to)&&s.to>=s.from)||!(s.count===null||typeof s.count==='number'&&Number.isSafeInteger(s.count)&&s.count>=0&&s.count<=999))return null;
+  if(!exact(s,['sub','kind','from','to','count'])||!index(s.sub,n)||!['cards','credit','announced','confirmed'].includes(s.kind as string)||!time(s.from)||!(s.to===null||time(s.to)&&s.to>=s.from)||!(s.count===null||typeof s.count==='number'&&Number.isSafeInteger(s.count)&&s.count>=0&&s.count<=999))return null;
   spans.push(Object.freeze({sub:s.sub,kind:s.kind as CalendarSpan['kind'],from:s.from,to:s.to,count:s.count}));
  }
  return Object.freeze({version:1,peakRules:rules,subs:Object.freeze(subs),peaks:Object.freeze(peaks),resets:Object.freeze(resets),spans:Object.freeze(spans)});
@@ -129,6 +131,8 @@ export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarDat
   const sub=subOfRow(e.rowId),published=ms(e.publishedAt),expires=ms(e.expiresAt);
   if(sub===null||published===null||expires===null||expires<=now)continue;
   const at=effectiveAt(e.schedule);
+  // A reset card (+1) is placed where the website puts it: the stated time, else the day it was published.
+  if(e.kind==='reset_credit'){spans.push({sub,kind:'credit',from:at??published,to:at,count:1});continue;}
   spans.push({sub,kind:e.status==='confirmed'?'confirmed':'announced',from:Math.min(published,now),to:at!==null&&at>=Math.min(published,now)?at:null,count:null});
  }
  const clip=<T,>(xs:T[],n:number)=>xs.slice(0,n);
