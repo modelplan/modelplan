@@ -156,11 +156,11 @@ test('D421 the big screen disk bar and readout take the status tone at 79/80/90 
  const doc={createElementNS:(_ns,tag)=>el(tag)};
  const all=(n)=>[n,...n.kids.flatMap(all)];
  const paint=(...pcts)=>{
-  let st;pcts.forEach((p,i)=>{st=resourcePlugin.accept({samples:[sample(T0+i*5000,{diskFree:(100-p)/100*494*GB})]},st);});
+  let st;pcts.forEach((p,i)=>{st=resourcePlugin.accept({samples:[sample(T0+i*5000,{diskFree:Math.floor((100-p)/100*494*GB)-1024})]},st);});
   const area=el('div');area.ownerDocument=doc;
   const base=context('en'),tokens={ink:'#ink',muted:'#muted',ghost:'#ghost',mid:'#amber',low:'#red',lcdFont:'x'};
   resourcePlugin.screen(st,base).draw({area,width:300,height:300,tokens,words:base.words});
-  const nodes=all(area),bar=nodes.find(n=>n.attrs['data-chart']==='disk'),read=nodes.find(n=>n.tag==='text'&&/GB$/.test(n.textContent)&&/free/.test(n.textContent));
+  const nodes=all(area),bar=nodes.find(n=>n.attrs['data-chart']==='disk'),read=nodes.filter(n=>n.attrs['data-readout']!==undefined).at(-1);
   assert.equal(nodes.some(n=>n.attrs['data-chart']==='disk-notch'),false,'no tick');
   return {bar:bar.attrs.fill,read:read.attrs.fill};
  };

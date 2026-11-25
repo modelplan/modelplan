@@ -8,8 +8,8 @@
 // bars and numbers take the status colour (normal / amber from 80 % / red from 90 %, 3 % hysteresis), as the quota rings.
 // The widget ring, its readout switch and the hover card are native (ModelPlanResources ResourceReadout / ResourceCard).
 //
-// The big screen paints its charts through the D323 draw hook (modelplan#1092): memory 10-minute stacked area (used /
-// Big screen: CKP-PLG-60 (D421). cached) with a pressure strip, CPU 10-second bars (user / system) with a 70 % dashed line, disk bar (D421: no threshold tick on it).
+// The big screen (CKP-PLG-60, D421) paints its charts through the D323 draw hook (modelplan#1092): memory 10-minute stacked area (used /
+// cached) with a pressure strip, CPU 10-second bars (user / system) with a 70 % dashed line, disk bar (D421: no threshold tick on it).
 // The label/value lines stay as the fallback when a draw fails.
 //
 // No import of plugin-registry values needed: plugin-builtins.ts lists this plugin (type imports are erased).
