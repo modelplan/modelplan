@@ -118,6 +118,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.WriteCloser
 	s.started = time.Now()
 	defer s.stop()
 	s.out = newOutbound(s.ctx, s.stop, out, s.config.WriteTimeout, s.mayEmit)
+	s.out.commit = s.commitPrivate
 	writerDone := make(chan struct{})
 	go s.out.run(writerDone)
 	closerDone := make(chan struct{})
@@ -217,6 +218,21 @@ func (s *Server) mayEmit(stamp Stamp) error {
 	}
 	if !s.isCurrent(stamp) {
 		return ProtocolError{wire.CodeConsentChanged}
+	}
+	return nil
+}
+
+// commitPrivate writes the end of a private frame while holding the shared publication
+// lock, after a final check of the authoritative consent fence (review 11-24 #1).
+func (s *Server) commitPrivate(stamp Stamp, write func() error) error {
+	if !s.isCurrent(stamp) {
+		return ProtocolError{wire.CodeConsentChanged}
+	}
+	ctx, cancel := context.WithTimeout(s.ctx, s.config.WriteTimeout)
+	defer cancel()
+	if err := s.backend.Publish(ctx, stamp, write); err != nil {
+		s.scheduleRefresh()
+		return err
 	}
 	return nil
 }
@@ -672,6 +688,11 @@ func (s *Server) refresh(ctx context.Context) error {
 	defer s.refreshMu.Unlock()
 	return s.readView(ctx, false)
 }
+
+// RefreshAfterChange runs the refresh the serve loop starts after a backend change signal: the
+// view token capture, then the backend Get, with no reuse. The idle-work gates (D397) call it
+// in place of the loop so every cost of a change-driven refresh is measured.
+func (s *Server) RefreshAfterChange(ctx context.Context) error { return s.refresh(ctx) }
 
 // ViewReuse is a backend that can tell whether a view it built is still what Get would build
 // now (WP-17). ViewToken is taken just before a Get; ViewCurrent(token) is true only while

@@ -32,7 +32,17 @@ type outbound struct {
 	writer       io.WriteCloser
 	timeout      time.Duration
 	current      func(Stamp) error
+	commit       func(Stamp, func() error) error
 }
+
+// commit, when set, runs its write under the authoritative consent fence. A private
+// frame's terminating newline is written only through it, so a revoke committed by
+// another process while the frame body is being written can never let that frame
+// complete (review 11-24 #1): the session closes and the client drops the partial line.
+//
+// commitTimeout bounds the one-byte newline written under the consent lock, so a stalled
+// consumer can hold off a revoke for at most this long before the session is closed.
+const commitTimeout = 200 * time.Millisecond
 
 func newOutbound(ctx context.Context, stop context.CancelFunc, w io.WriteCloser, timeout time.Duration, current func(Stamp) error) *outbound {
 	return &outbound{ctx: ctx, stop: stop, writer: w, timeout: timeout, wake: make(chan struct{}, 1), current: current}
@@ -155,20 +165,49 @@ func (o *outbound) run(done chan<- struct{}) {
 				continue
 			}
 		}
+		fenced := m.private && o.commit != nil && len(m.bytes) > 0
+		body := m.bytes
+		if fenced {
+			body = body[:len(body)-1]
+		}
 		// Closing our pipe interrupts a blocked write; no goroutine per write leaks.
 		timer := time.AfterFunc(o.timeout, func() { o.stop(); _ = o.writer.Close() })
-		for len(m.bytes) > 0 {
-			n, err := o.writer.Write(m.bytes)
-			if err != nil || n == 0 {
-				timer.Stop()
+		wrote := o.write(body)
+		timer.Stop()
+		if !wrote {
+			o.stop()
+			return
+		}
+		if fenced {
+			err := o.commit(m.stamp, func() error {
+				bound := time.AfterFunc(commitTimeout, func() { o.stop(); _ = o.writer.Close() })
+				defer bound.Stop()
+				if !o.write([]byte{'\n'}) {
+					return errFrame
+				}
+				return nil
+			})
+			if err != nil {
+				// The frame lost the fence after its first byte: end the session so the
+				// incomplete line is discarded rather than completed after a revoke.
 				o.stop()
+				_ = o.writer.Close()
 				return
 			}
-			m.bytes = m.bytes[n:]
 		}
-		timer.Stop()
 		if m.after != nil {
 			m.after()
 		}
 	}
+}
+
+func (o *outbound) write(b []byte) bool {
+	for len(b) > 0 {
+		n, err := o.writer.Write(b)
+		if err != nil || n == 0 {
+			return false
+		}
+		b = b[n:]
+	}
+	return true
 }

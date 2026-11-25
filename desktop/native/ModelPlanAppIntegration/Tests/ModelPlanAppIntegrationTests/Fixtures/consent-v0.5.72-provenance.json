@@ -1,0 +1,26 @@
+{
+  "command": [
+    "consent",
+    "--json"
+  ],
+  "syntheticHomeOnly": true,
+  "ownerHomeDenied": true,
+  "networkDenied": true,
+  "allReadersOff": true,
+  "capturePlatform": "linux_arm64",
+  "sourceRelease": "https://github.com/modelplan/modelplan/releases/tag/v0.5.72",
+  "sourceCommit": "f1a2a01bc9da8ee2eb1cabbcbba2abd00208a235",
+  "sourceArchiveSHA256": "ff62c0a8c37dbe91a120d213520525f96e904174ed171bbc145b39234344fde6",
+  "rawSourceHelperSHA256": "ca136769a239831eec552cd61b228e7fc6f2f82b023949030c52d335a8be7d96",
+  "outputSHA256": "0544eda3132bb8c863a813542df94a524659d6f6cadcb6949db1ed0405fee18c",
+  "bytes": 3328,
+  "exit": 0,
+  "isolation": {
+    "filesystem": "bubblewrap with synthetic HOME and empty Claude and Codex presence directories; owner home not mounted; empty environment and PATH; all readers off",
+    "network": "private network namespace and seccomp socket denial; closed local base URL",
+    "outsideDirectoryReadDenied": true,
+    "networkSocketDenied": true
+  },
+  "purpose": "complete real released-CLI contract fixture; synthetic metadata only, not an owner observation",
+  "cliVersion": "0.5.72"
+}

@@ -14,6 +14,7 @@ import (
 	"strconv"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/readers"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"strings"
 	"time"
@@ -471,6 +472,8 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 	}
 	call, cancel := context.WithTimeout(ctx, nativeTimeout)
 	defer cancel()
+	// Every credentialed dispatch of this read rechecks the live grant (review 11-24 #3).
+	call = readers.WithLiveAdmission(call, g.StillValid)
 	login := loginStamp(provider, profile)
 	out := n.Managed(call, nativeClient, readerContext{Paths: p, Grant: g, Profile: profile, ProfileKey: profileKey, Previous: previous, Now: now})
 	if g.StillValid != nil && !g.StillValid() {

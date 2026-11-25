@@ -301,3 +301,27 @@ test('macrevb-1229-4 a cancelled trial ghost glides back along the slot line',as
   expect(Math.max(...off),`channel ${i} ghost on the slot line while it returns`).toBeLessThanOrEqual(.5);
  }
 });
+
+// D419 (owner 11-24 on #1229): the lever tier is its own lighter graphite panel, as in the direction 06 prototype, with a lit
+// top lip and brighter towards the pilot; the bank keys (◀ 1/2 ▶) sit below it, outside the panel. The slots stay inside it.
+const rgbs=s=>[...s.matchAll(/rgba?\(([^)]+)\)/g)].map(m=>m[1].split(',').map(Number));
+const lum=([r,g,b])=>.2126*r+.7152*g+.0722*b;
+for(const [tier,height] of [['tall',890],['compact',640]])
+ test(`D419 the lever tier is a separate lighter panel and the bank keys sit below it (${tier})`,async({page})=>{
+  await openThrottles(page,{tier,height});
+  const g=await page.locator('.dk-fad').evaluate(fad=>{const fr=fad.getBoundingClientRect(),a=getComputedStyle(fad,'::after'),top=fr.top+parseFloat(a.top),bottom=fr.top+parseFloat(a.top)+parseFloat(a.height);
+   const bank=fad.querySelector('.fd-bank').getBoundingClientRect(),travels=[...fad.querySelectorAll('.fd-ch:not(.empty) .fd-travel')].map(t=>t.getBoundingClientRect());
+   const slots=[...fad.querySelectorAll('.fd-slotsvg')].map(s=>s.getBoundingClientRect()),cores=[...fad.querySelectorAll('.fd-slotsvg .sl-core')].map(c=>c.getBoundingClientRect());
+   const shell=getComputedStyle(fad.closest('.ck-deck')).backgroundColor;
+   return {top,bottom,bank:{top:bank.top,bottom:bank.bottom},travel:{top:Math.min(...travels.map(t=>t.top)),bottom:Math.max(...travels.map(t=>t.bottom))},cores:cores.map(c=>[c.top,c.bottom]),image:a.backgroundImage,shadow:a.boxShadow,clip:a.clipPath};});
+  // the panel holds the travels and stops above the bank keys, which sit outside it
+  expect(g.top).toBeLessThanOrEqual(g.travel.top);expect(g.bottom).toBeGreaterThanOrEqual(g.travel.bottom);
+  expect(g.bank.top-g.bottom,'bank keys below the panel').toBeGreaterThanOrEqual(1);
+  for(const [t,b] of g.cores){expect(t).toBeGreaterThanOrEqual(g.top);expect(b).toBeLessThanOrEqual(g.bottom);}
+  // an opaque graphite face (not a faint overlay), brighter towards the pilot, with a lit top lip; still a trapezoid
+  const stops=rgbs(g.image);expect(stops.length).toBeGreaterThanOrEqual(2);
+  expect(stops[0].length===3||stops[0][3]===1,'opaque face').toBe(true);
+  // the face brightens towards the pilot up to its front edge (the last stop is the dark front lip)
+  expect(lum(stops.at(-2))).toBeGreaterThan(lum(stops[0])+4);expect(lum(stops[0])).toBeGreaterThan(35);
+  expect(g.shadow,"a lit top lip").toMatch(/^rgba?\(255, 255, 255[^)]*\) 0px 1px 0px 0px inset/);expect(g.clip).toMatch(/^polygon\(/);
+ });

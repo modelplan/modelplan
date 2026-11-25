@@ -2,11 +2,11 @@ package speed
 
 import (
 	"encoding/json"
-	"io/fs"
+	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -140,10 +140,19 @@ func probeTurns(turns []turn) liveProbe {
 }
 
 // ActiveLogs discovers only regular JSONL files under the harness's history roots, including
-// separate Claude subagent files. It follows no symlinks, visits at most 20,000 entries per root,
+// separate Claude subagent files. It follows no symlinks, keeps at most 20,000 entries per root,
 // and returns at most 64 newest logs changed in the last five minutes. Each read is a 256 KiB tail.
 func ActiveLogs(claudeHome, codexHome string, now time.Time) []LiveLog {
-	return activeLogs([]liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""}, {filepath.Join(codexHome, "sessions"), "codex", codexHome != ""}}, now)
+	return ActiveLogsIn(nil, consent.Fence{}, claudeHome, codexHome, now)
+}
+
+// ActiveLogsIn is ActiveLogs from the app-server's shared history inventory, under the caller's
+// consent fence; a nil inventory scans afresh.
+func ActiveLogsIn(inv *logindex.Inventory, fence consent.Fence, claudeHome, codexHome string, now time.Time) []LiveLog {
+	if inv == nil {
+		inv = &logindex.Inventory{}
+	}
+	return recentLogs(inv, fence, []liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""}, {filepath.Join(codexHome, "sessions"), "codex", codexHome != ""}}, now, now)
 }
 
 type liveRoot struct {
@@ -153,7 +162,7 @@ type liveRoot struct {
 
 // ActivityLogs shares the existing bounded discovery with the ZCode lifecycle root.
 func ActivityLogs(claudeHome, codexHome, zcodeHome string, now time.Time) []LiveLog {
-	return activeLogs(activityRoots(claudeHome, codexHome, zcodeHome), now)
+	return recentLogs(&logindex.Inventory{}, consent.Fence{}, activityRoots(claudeHome, codexHome, zcodeHome), now, now)
 }
 func activityRoots(claudeHome, codexHome, zcodeHome string) []liveRoot {
 	return []liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""},
@@ -161,32 +170,28 @@ func activityRoots(claudeHome, codexHome, zcodeHome string) []liveRoot {
 		{filepath.Join(zcodeHome, "cli", "log"), "zcode", zcodeHome != ""}}
 }
 
-func activeLogs(roots []liveRoot, now time.Time) []LiveLog {
+// recentLogs: the newest (at most 64) logs under the enabled roots changed in the last five
+// minutes, from the inventory's metadata.
+func recentLogs(inv *logindex.Inventory, fence consent.Fence, roots []liveRoot, now, elapsed time.Time) []LiveLog {
+	var want []logindex.Root
+	for _, root := range roots {
+		if root.enabled && filepath.IsAbs(root.dir) {
+			want = append(want, logindex.Root{Dir: root.dir, Source: root.source})
+		}
+	}
+	if len(want) == 0 {
+		return []LiveLog{}
+	}
 	type candidate struct {
 		log LiveLog
 		at  time.Time
 	}
 	var all []candidate
-	for _, root := range roots {
-		if !root.enabled || !filepath.IsAbs(root.dir) {
+	for _, f := range inv.Files(fence, want, now, elapsed) {
+		if f.Mod.Before(now.Add(-LiveWithin)) {
 			continue
 		}
-		visited := 0
-		_ = filepath.WalkDir(root.dir, func(path string, d fs.DirEntry, err error) error {
-			visited++
-			if visited > 20000 {
-				return fs.SkipAll
-			}
-			if err != nil || d.IsDir() || d.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(path, ".jsonl") {
-				return nil
-			}
-			fi, e := d.Info()
-			if e != nil || !fi.Mode().IsRegular() || fi.ModTime().Before(now.Add(-LiveWithin)) {
-				return nil
-			}
-			all = append(all, candidate{LiveLog{Path: path, Source: root.source, Sidechain: filepath.Base(filepath.Dir(path)) == "subagents"}, fi.ModTime()})
-			return nil
-		})
+		all = append(all, candidate{LiveLog{Path: f.Path, Source: f.Source, Sidechain: filepath.Base(filepath.Dir(f.Path)) == "subagents"}, f.Mod})
 	}
 	sort.Slice(all, func(i, j int) bool {
 		if all[i].at.Equal(all[j].at) {
