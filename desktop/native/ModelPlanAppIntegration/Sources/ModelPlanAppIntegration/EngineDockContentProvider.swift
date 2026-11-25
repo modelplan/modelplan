@@ -607,7 +607,16 @@ public enum EngineDeadlineFacts {
         }
         return (row.reason, row.nextStep)
     }
-    private func quotaLabel(_ role:RowsRole) -> String {
+    /// D417: an extra window is named by what it is (MCP, Opus, Fable), from the engine's own short label, never "Other".
+    /// Only a window the engine names (a model scope or the MCP allowance) takes that label; the rest keep the role heading.
+    private func quotaLabel(_ window:RowsWindow) -> String {
+        Self.rowLabel(role: window.role, limitKey: window.limitKey, scoped: window.modelScope != nil, name: text(window.label), english: english)
+    }
+    static func rowLabel(role:RowsRole, limitKey:String, scoped:Bool, name:String, english:Bool) -> String {
+        if (scoped || limitKey == "mcp") && name.count <= 5 { return name }
+        return quotaLabel(role, english: english)
+    }
+    private static func quotaLabel(_ role:RowsRole, english:Bool) -> String {
         switch role {
         case .session:return english ? "5h":"5小时"
         case .weekly:return english ? "Weekly":"每周"
@@ -637,7 +646,7 @@ public enum EngineDeadlineFacts {
                 case .monthly: period = .month
                 case .other,.unknown: period = .other
                 }
-                var projected=DockQuotaWindowInput(id: window.id, period: period, label: quotaLabel(window.role),
+                var projected=DockQuotaWindowInput(id: window.id, period: period, label: quotaLabel(window),
                     remainingPercent: current ? window.remainingPercent : nil,
                     resetsAt: current ? date(window.resetsAt) : nil,
                     durationSeconds: window.durationSeconds.map { Double($0) })

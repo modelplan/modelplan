@@ -81,7 +81,7 @@ register('host', {
   helpNote9: ['prose', '近 60 秒生成速度：合格请求至少 5 个样本；-- 表示不可用', 'Generation speed in the last 60 seconds; at least 5 eligible samples; -- means unavailable'],
   helpNote10: ['prose', '5小时：这一行只放 5 小时额度，空白表示没有此额度。', '5h: only five-hour quota appears here; a blank means none exists.'],
   helpNote11: ['prose', '每周：这一行只放每周额度，空白表示没有此额度。', 'Weekly: only weekly quota appears here; a blank means none exists.'],
-  helpNote12: ['prose', '其他：其他周期和专项额度，+N 表示还有更多。', 'Other: remaining periods and scoped quotas; +N means more.'],
+  helpNote12: ['prose', '额外：其他周期和专项额度，格内写明名称（MCP、Opus 等），+N 表示还有更多。', 'Extra: remaining periods and scoped quotas, each cell naming its window (MCP, Opus, ...); +N means more.'],
   helpNote13: ['prose', '推杆：每个代表一个模型，拖动或点档位作本地比较，不会改会话。', 'Faders: each is a model; drag or press an effort for a local comparison that leaves the session unchanged.'],
   helpNote14: ['prose', '公共屏：页键切页，底键选项或返回原页。', 'Main screen: page keys change pages; bottom keys select or return.'],
   helpNote15: ['prose', '会话记录：运行中的在前，按一行查看详情。', 'Session record: running sessions come first; press a row for details.'],
