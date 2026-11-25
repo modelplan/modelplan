@@ -834,7 +834,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if wasClosing {
       // Re-opened during the close: stop the running close motion or fade (a zero-length group replaces it) and
       // present at the layout frame with the rack out, instead of leaving the window where the close had taken it.
-      entering = false; rackHidesInHome = false; motion = nil
+      // An interrupted release hold leaves the clamp open (the cockpit stays home; it closes again on the lug).
+      entering = false; rackHidesInHome = false; motion = nil; releaseClampNow()
       NSAnimationContext.runAnimationGroup { context in
         context.duration = 0
         panel.animator().alphaValue = 1
@@ -2022,6 +2023,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     updateAppearance(appearance)
     presentDetached(wasActive: wasActive, wasRegular: wasRegular)
     guard !appearance.reduceMotion else {
+      releaseClampNow()
       window.setFrame(plan.frame, display: true)
       rackExtension = 0; rackTarget = 0; refreshRack()
       onShellChanged?(); return
@@ -2047,11 +2049,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// then runs `departure`. With the clamp already open, or under Reduce Motion, `departure` runs at once.
   private func releaseClamp(_ departure: @escaping @MainActor () -> Void) {
     let hold = CockpitDockingBoom.releaseHold(closure: clampClosure, reduceMotion: appearance.reduceMotion)
-    guard hold > 0 else { clampClosure = 0; refreshRack(); departure(); return }
+    guard hold > 0 else { releaseClampNow(); refreshRack(); departure(); return }
     clampReleasing = true
     runMotion(hold, step: { _ in }, done: { [weak self] in
       guard let self else { return }
-      self.clampReleasing = false; self.clampClosure = 0
+      self.releaseClampNow()
       departure()
     })
   }
@@ -2194,7 +2196,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       if newlyDetached {
         // Tear-off (CKP-SHELL-33): the rack retracts straight up into the icon. The pointer moves the cockpit, so it
         // cannot be held: the clamp opens at once, before this first moved frame (D439, macrev2-1207-1).
-        clampReleasing = false; clampClosure = 0
+        releaseClampNow()
         shellSession.compactWhileDetached = false
         updateAppearance(appearance); retractRack()
       }
@@ -2477,6 +2479,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       rackExtension = rackExtension < rackTarget ? min(rackTarget, rackExtension + step) : max(rackTarget, rackExtension - step)
     }
     clampClosure = Self.advanceClamp(clampClosure, toward: clampTarget(), by: dt, reduceMotion: appearance.reduceMotion)
+    openClampIfDeparted()
     if let current = motion {
       let t = CGFloat(min(1, (now - current.start) / current.duration))
       current.step(t)
@@ -2528,7 +2531,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// Ends a running entrance, landing or flight at once, in its final state (a drag, a close or another key press).
   private func finishEntrance(completesOpen: Bool = true) {
     guard entering || motion != nil || flying || !rackSettledWaiters.isEmpty else { return }
-    motion = nil; rackSettledWaiters = []; clampReleasing = false
+    // D439 (macrev2-1207-1, round 3): an interrupted release hold (a drag, a key or a close during it) ends with the clamp open,
+    // in the same step and before anything below moves the boom or the cockpit.
+    if clampReleasing { releaseClampNow() }
+    motion = nil; rackSettledWaiters = []
     if flying { flying = false; latch(); return }
     if entering {
       entering = false; rackHidesInHome = false
@@ -2540,9 +2546,20 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       refreshRack(); return
     }
     // A key detach's landing: it stays where it is now (a drag or the user may have moved it), rack in, nozzles out.
+    // The boom leaves, so the clamp is open first (D439).
+    releaseClampNow()
     rackExtension = 0; rackTarget = 0; ignite(false)
     if let window { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     refreshRack()
+  }
+  /// D439: opens the clamp at once (no hold), for a path that cannot wait for it: a pointer-driven tear-off, an
+  /// interrupted hold, Reduce Motion. Callers run it before they change the boom's extension or the cockpit's frame.
+  private func releaseClampNow() { clampReleasing = false; clampClosure = 0 }
+  /// D439 (macrev2-1207-1, round 3) backstop: the clamp is never closed on a boom that is not fully down or a cockpit that is
+  /// not held at home. Any path that leaves without the hold (one this file does not know of yet) opens it at once
+  /// instead of carrying a closed clamp away.
+  private func openClampIfDeparted() {
+    if clampClosure > 0, !clampReleasing, rackExtension < 1 || !cockpitHome { clampClosure = 0 }
   }
   private func stopRack() {
     motion = nil; rackSettledWaiters = []; flying = false; clampClosure = 0; clampReleasing = false
@@ -2572,6 +2589,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     let home = cockpitHome || clampReleasing
     if appearance.reduceMotion { clampClosure = clampTarget() }
+    openClampIfDeparted()
     // The clamp closes once the cockpit is home and opens as soon as it leaves; the driver runs only for that travel.
     if clampClosure != clampTarget() { ensureRackTimer() }
     // The lug is part of the canopy frame: drawn at the attach point only while the cockpit is attached at home (or held

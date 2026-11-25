@@ -191,9 +191,17 @@ final class CockpitLaunchRackTests: XCTestCase {
   func testClosedShutterShowsOnlyTheClampAtEveryWidth() throws {
     let m = CockpitDockingBoom.metrics, gap = CockpitShellLayout.menuBarGap
     for widest in [CGFloat(24), 28, 32, 40, 58, 96] {
-      let width = CockpitDockingBoom.drawnWidth(widest: widest, line: gap, closed: 1)
+      // The width production draws: rounded up to whole points (CockpitLaunchRack.update).
+      let width = CockpitDockingBoom.drawnWidth(widest: widest, line: gap, closed: 1).rounded(.up)
       XCTAssertGreaterThanOrEqual(width, widest, "never narrower than the widest status width")
-      let pose = CockpitDockingBoom.pose(width: width, line: gap, slide: 1, closure: 1, lugShown: true)
+      // Round 3 (macrev2-1207-2): the whole clamp travel, not only the rest pose: the settle dip never shows shaft.
+      for step in 0...100 {
+        let closure = CGFloat(step) / 100
+        let moving = CockpitDockingBoom.pose(width: width, line: gap, slide: 1, closure: closure, lugShown: true, closed: 1)
+        XCTAssertLessThanOrEqual(moving.boom.minY + moving.boom.height * m.clampTop, 1e-9,
+                                 "\(widest) pt, closure \(closure): no shaft below the menu bar")
+      }
+      let pose = CockpitDockingBoom.pose(width: width, line: gap, slide: 1, closure: 1, lugShown: true, closed: 1)
       let clampTop = pose.boom.minY + pose.boom.height * m.clampTop
       XCTAssertLessThanOrEqual(clampTop, 1e-9, "\(widest) pt: no shaft below the menu bar")
       let lug = try XCTUnwrap(pose.lug)
@@ -207,6 +215,21 @@ final class CockpitLaunchRackTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(next, last - 1e-9); XCTAssertLessThanOrEqual(next - last, 2.5, "no jump while the shutter moves")
         last = next
       }
+    }
+  }
+
+  /// macrev2-1207-2: on a closed shell the settle is capped to the shaft's headroom above the bar (none when the shaft
+  /// would show); open it is the full dip; between, it changes continuously.
+  func testTheSettleNeverDipsTheShaftBelowTheBarOnAClosedShell() {
+    XCTAssertEqual(CockpitDockingBoom.settle(width: 40, restSplit: -5, closed: 0), 40 * CockpitDockingBoom.settleDepth, accuracy: 1e-12)
+    XCTAssertEqual(CockpitDockingBoom.settle(width: 40, restSplit: -5, closed: 1), 40 * CockpitDockingBoom.settleDepth, accuracy: 1e-12,
+                   "plenty of headroom: the full settle")
+    XCTAssertEqual(CockpitDockingBoom.settle(width: 42, restSplit: -0.108, closed: 1), 0.108, accuracy: 1e-12, "capped to the headroom")
+    XCTAssertEqual(CockpitDockingBoom.settle(width: 42, restSplit: 0.5, closed: 1), 0, "no headroom: no dip")
+    var last = CockpitDockingBoom.settle(width: 42, restSplit: -0.108, closed: 0)
+    for step in 1...20 {
+      let next = CockpitDockingBoom.settle(width: 42, restSplit: -0.108, closed: CGFloat(step) / 20)
+      XCTAssertLessThanOrEqual(next, last + 1e-12); XCTAssertLessThanOrEqual(last - next, 0.1, "no jump"); last = next
     }
   }
 

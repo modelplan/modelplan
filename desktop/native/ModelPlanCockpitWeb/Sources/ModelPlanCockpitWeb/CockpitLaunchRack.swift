@@ -126,7 +126,8 @@ public enum CockpitDockingBoom {
   public static let maximumWidth: CGFloat = 96
   /// The panel's height below the menu bar. The boom never reaches below the canopy line, far above this.
   public static let length: CGFloat = 150
-  /// The settle as the clamp closes (and opens): the boom dips this fraction of its width at mid-travel.
+  /// The settle as the clamp closes (and opens): the boom dips this fraction of its width at mid-travel (less on a closed
+  /// shell, `settle(width:restSplit:closed:)`).
   public static let settleDepth: CGFloat = 0.025
   /// The clamp's travel between open and closed.
   public static let clampTravel: TimeInterval = 0.14
@@ -151,7 +152,8 @@ public enum CockpitDockingBoom {
     m.lugWidth * m.lugAspect * (1 - m.lugPinY) + m.aspect * (m.gripY - m.clampTop)
   }
   /// Decision C (macrev2-1207-2): with the shutter closed only the clamp shows, at every width. The narrowest boom whose
-  /// clamp alone fills the gap down to `line` (its shaft stays behind the menu bar).
+  /// clamp alone fills the gap down to `line` at rest (its shaft stays behind the menu bar; the clamp's settle is capped
+  /// to the headroom that leaves, so the travel never shows shaft either, D449's ~41.5 pt).
   public static func clampOnlyWidth(line: CGFloat) -> CGFloat { max(0, line) / clampRise() }
   /// The width the boom is drawn at: the widest status width (D447), and while the shutter closes (`closed` 0 open ... 1
   /// closed, following the slab) at least `clampOnlyWidth`, so a narrow item's boom shows no shaft on the closed shell.
@@ -184,14 +186,23 @@ public enum CockpitDockingBoom {
     /// The lug on the canopy line, or nil while the cockpit is not attached.
     public let lug: CGRect?
   }
+  /// How far the boom dips at mid-travel of the clamp. Decision C (macrev2-1207-2): with the shutter closed (`closed` 1)
+  /// the dip never brings the shaft below the menu bar: it is at most the shaft's headroom above the bar at rest (`restSplit`
+  /// is the shaft's lower end at rest, below the bar when positive). Open (`closed` 0) the full settle; continuous between.
+  static func settle(width w: CGFloat, restSplit: CGFloat, closed: CGFloat) -> CGFloat {
+    let full = w * settleDepth, k = max(0, min(1, closed.isFinite ? closed : 1))
+    return full * (1 - k) + k * min(full, max(0, -restSplit))
+  }
   /// `line`: the canopy line under the boom, in points below the menu bar. `slide`: 0 (tucked into the menu bar) ... 1
-  /// (down, at rest). The boom moves as one rigid piece: only its offset changes, never its length.
-  public static func pose(width w: CGFloat, line: CGFloat, slide: CGFloat, closure: CGFloat, lugShown: Bool,
+  /// (down, at rest). `closed`: how closed the shutter is (0-1). The boom moves as one rigid piece: only its offset
+  /// changes, never its length.
+  public static func pose(width w: CGFloat, line: CGFloat, slide: CGFloat, closure: CGFloat, lugShown: Bool, closed: CGFloat = 0,
                           metrics m: Metrics = metrics) -> Pose {
     let h = w * m.aspect, lugWidth = w * m.lugWidth, lugHeight = lugWidth * m.lugAspect
     let restTop = line - lugHeight * (1 - m.lugPinY) - h * m.gripY
     let s = easeInOut(max(0, min(1, slide))), c = max(0, min(1, closure))
-    let top = -h + (restTop + h) * s + w * settleDepth * sin(.pi * c)
+    let dip = settle(width: w, restSplit: restTop + h * m.clampTop, closed: closed)
+    let top = -h + (restTop + h) * s + dip * sin(.pi * c)
     let lug = lugShown ? CGRect(x: w * m.gripX - lugWidth * m.lugPinTip, y: line - lugHeight, width: lugWidth, height: lugHeight) : nil
     return Pose(boom: CGRect(x: 0, y: top, width: w, height: h), closure: c, lug: lug)
   }
@@ -292,7 +303,7 @@ struct CockpitRackArt {
     guard let panel else { return }
     if panel.frame != frame { panel.setFrame(frame, display: false) }
     view.frame = CGRect(origin: .zero, size: frame.size)
-    view.pose = CockpitDockingBoom.pose(width: frame.width, line: line, slide: value, closure: closure, lugShown: lugShown)
+    view.pose = CockpitDockingBoom.pose(width: frame.width, line: line, slide: value, closure: closure, lugShown: lugShown, closed: closed)
     // Screen rect -> the flipped view's coordinates (y down from the menu bar edge).
     view.maskedOut = cockpitHidden.map { CGRect(x: $0.minX - frame.minX, y: frame.maxY - $0.maxY, width: $0.width, height: $0.height) }
     // G3-156 (owner, build 2): the rack is ALWAYS behind the cockpit. Ordering below another window does not change a
