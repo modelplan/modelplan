@@ -33,6 +33,8 @@ test(`G3-162 ${dir}: no part of the canopy shows outside the hull silhouette at 
  await receive(send('shell',{...shell,tier:'tall',profile:dir==='closing'?'closed':'open'}));
  for(const t of [20,60,125,190,240]){
   await seek(page,t);const v=await visible(page);
+  const clip=await page.evaluate(()=>getComputedStyle(document.querySelector('.ck-portrow')).clipPath);
+  expect(clip,`${dir} ${t} ms: the clip keeps the canopy's rounded outline, never a plain rectangle`).toMatch(/round/);
   expect(v.left,`${dir} ${t} ms: left`).toBeGreaterThanOrEqual(v.shellLeft);
   expect(v.right,`${dir} ${t} ms: right`).toBeLessThanOrEqual(v.shellRight);
   expect(v.top,`${dir} ${t} ms: nothing above the canopy row (the hull top)`).toBeGreaterThanOrEqual(v.rowTop);
