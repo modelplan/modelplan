@@ -394,3 +394,11 @@ test('D406 reset cards: an undated +1 chip on its published day, a dated one on 
  await expect(w.locator('.wk-adr.chip.direct')).not.toContainText('+1');
  await shot(page,'reset-chip',screen(page));
 });
+
+test('D406 a reset-card notice published 2 days ago is not placed on today in the week; the column line still carries it',async({page})=>{
+ const push={...week,spans:[{sub:1,kind:'credit',from:L(-2,9),to:null,count:1}]};
+ await open(page,{push});
+ await expect(strip(page).locator('.cal-adr')).toHaveText(/Codex \+1 reset card/);
+ await key(page).click();
+ await expect(weekView(page).locator('.wk-adr.chip')).toHaveCount(0);
+});

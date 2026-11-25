@@ -194,9 +194,10 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
    allDay.append(row);rowsUsed++;
   }else{
    // Reset notices are chips on their day: +1 for a reset card, ↻ for a direct reset (dashed until the vendor reports it done).
-   // With no stated time the day is the one it was published; a notice still current never sits before today.
-   const stamp=x.to??x.from,day=x.to===null?Math.max(0,dayOffset(now,stamp)):dayOffset(now,x.to);
-   if(x.to!==null&&x.to<today||day>=WEEK_DAYS)continue;
+   // With no stated time the day is the one it was published; one from before the first column is not drawn here (the
+   // website's board does the same for a past week; its "latest resets" strip is this calendar's all-day line in the 12 h column).
+   const stamp=x.to??x.from,day=dayOffset(now,stamp);
+   if(day<0||day>=WEEK_DAYS)continue;
    const credit=x.kind==='credit',row=el('div','wk-adr mark chip '+(credit?'credit':x.kind==='confirmed'?'direct':'direct pending'));row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);place(row,day);
    // Chips of one day stack in lanes under each other; on a narrow column the direct reset keeps only its ↻ (the title has the words).
    const lane=chipsOn[day]!++;if(lane)row.style.top=`${2+lane*15}px`;
