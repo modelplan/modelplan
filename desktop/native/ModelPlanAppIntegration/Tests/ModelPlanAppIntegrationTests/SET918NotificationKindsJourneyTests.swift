@@ -30,7 +30,7 @@ private actor ForecastCapabilityClient: EngineClient {
 }
 
 /// SET-9-18 / SET-9-29 through the normal entry: the packaged app's Settings (EngineRowsEntry,
-/// v1 normal entry) never lists "Reset cards expiring" or "Data stopped arriving" (v1.1, owner
+/// v1 normal entry) never lists "Resets expiring" or "Data stopped arriving" (v1.1, owner
 /// D36). The forecast-exhaustion kind is data-driven: hidden while the engine reports no
 /// forecast producer (F1), shown and enabled once it does. Saved kinds are never changed.
 @MainActor final class SET918NotificationKindsJourneyTests: XCTestCase {
@@ -57,7 +57,7 @@ private actor ForecastCapabilityClient: EngineClient {
             XCTAssertFalse(found.contains { $0.key == .forecast }, "Search finds the hidden forecast kind: \(query)")
         }
         XCTAssertFalse(rows.contains { [.expiring, .stale].contains($0.key) }, "SET-9-18: v1.1 notification kinds must not appear in v1")
-        for query in ["Reset cards expiring", "Data stopped", "重置卡即将过期", "数据停止更新"] {
+        for query in ["Resets expiring", "Data stopped", "额外重置即将过期", "数据停止更新"] {
             let found = try SettingsCatalogue.rows(preferences: preferences, context: editor.context, query: query)
             XCTAssertFalse(found.contains { [.expiring, .stale].contains($0.key) }, "Search finds a v1.1 kind: \(query)")
         }

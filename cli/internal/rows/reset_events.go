@@ -27,7 +27,7 @@ type ResetEvent struct {
 	Provider string `json:"provider"`
 	RowID    string `json:"rowId"`
 	Status   string `json:"status"`
-	// Kind is "reset_credit" (reset cards issued) or "direct_reset" (usage
+	// Kind is "reset_credit" (banked resets issued) or "direct_reset" (usage
 	// limits reset). Absent from older producers; clients treat it as direct_reset.
 	Kind string `json:"kind,omitempty" null:"coalesced"`
 	// ConfirmedAt is present only on a confirmed event: the publication's own

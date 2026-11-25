@@ -92,7 +92,7 @@ import XCTest
         for gone in ["设置", "关闭", "来源"] { XCTAssertFalse(text.contains(gone), gone) }
     }
     func testAnnouncedResetHasItsOwnWindow() throws {
-        let notice = DockCardRow(id: "reset-event:a:announced", kind: .notice, label: "↺ 重置卡", value: "预告 12:00 重置", detail: "公告不等于你的账户已重置", pill: "已预告")
+        let notice = DockCardRow(id: "reset-event:a:announced", kind: .notice, label: "↺ 额外重置", value: "预告 12:00 重置", detail: "公告不等于你的账户已重置", pill: "已预告")
         let view = try card(badCase + [notice], name: "train-card-notice")
         let window = try XCTUnwrap(view.readoutWindowForChecks), row = try XCTUnwrap(view.rowFrameForChecks("reset-event:a:announced"))
         XCTAssertGreaterThanOrEqual(row.minY - window.maxY, 13, "Below the readout: a 7 pt gap and a 6 pt inset")

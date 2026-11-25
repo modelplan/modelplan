@@ -13,7 +13,7 @@ public struct DockForecastSignal: Sendable {
 }
 public struct DockResetSignal: Sendable {
     public enum Status: Sendable { case announced, confirmed }
-    /// D166: reset cards issued (a reset credit) or a direct limit reset. Same dot rules; the card words differ.
+    /// D166: banked resets issued (a reset credit) or a direct limit reset. Same dot rules; the card words differ.
     public enum Kind: Sendable { case resetCredit, directReset }
     /// D166 PR 1: a confirmation's dot stays this long after the confirmation, within the event's own expiry
     /// and never past `confirmedDotHardCap`. A presence-based lifetime replaces the wall-clock one in PR 2 by

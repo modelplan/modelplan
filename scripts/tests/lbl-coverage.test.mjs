@@ -137,10 +137,10 @@ test("LBL-2.2-10 one name per concept across surfaces", todo("LBL-2.2-10"), () =
   }
 });
 
-test("LBL-2.2-11 reset_credit_issued is 重置卡 / reset card (D427); never 额外重置 / extra reset", todo("LBL-2.2-11"), () => {
+test("LBL-2.2-11 reset count wording (D428: 额外重置次数 / banked resets); never 重置卡 / reset cards", todo("LBL-2.2-11"), () => {
   for (const p of pairs) {
-    assert.doesNotMatch(p.zh, /额外重置/, `${p.at}`);
-    assert.doesNotMatch(p.en, /extra resets?/i, `${p.at}`);
+    assert.doesNotMatch(p.zh, /重置卡/, `${p.at}`);
+    assert.doesNotMatch(p.en, /reset cards?/i, `${p.at}`);
   }
 });
 
