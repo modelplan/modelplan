@@ -89,7 +89,7 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   // left over from a wider REVIEW_GLM_TIERS is advice and does not settle the head).
   // A labelled PR: a GLM verdict settles the head only when it is the marked fallback verdict (GPT out of quota, which counts).
   const fb = gpt && gptFallbackVerdict(items, head) !== null;
-  const own = gpt ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers, cls);
+  const own = gpt && tier !== 0 ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers, cls);   // tier 0: the advisory GLM review settles it
   const settles = (v) => (eligible.includes(v.lane) && !(gpt && !fb && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)";
   // Once per lane per head, forced or not: force only lifts the "another counting lane already reviewed" skip below.
   if (atHead.some((v) => own.includes(v.lane))) return skip("this lane already reviewed this head");
@@ -344,7 +344,7 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
   if (advisory && posted && posted !== GLM_LANE && posted !== GLM_SHADOW_LANE) return `${tier === 0 ? "tier 0" : "an outside PR"} gets only the advisory GLM review`;
   const atHead = verdictLines(items).filter((v) => v.sha === head);
   const fb = gpt && gptFallbackVerdict(items, head) !== null;
-  const own = [...(gpt ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers, cls)), ...(posted ? [`(${posted})`] : [])];
+  const own = [...(gpt && tier !== 0 ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers, cls)), ...(posted ? [`(${posted})`] : [])];
   if (atHead.some((v) => own.includes(v.lane))) return `(${posted ?? lane}) already has a verdict at ${head}`;
   if (lane === SOL_LANE && !advisory) {
     const eligible = eligibleLanes(Number(tier), glmTiers, cls);

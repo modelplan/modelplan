@@ -740,7 +740,9 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // D395: on a NORMAL PR the (ghglm) verdict decides tiers 1 and 2 like a GPT lane (review:gpt makes a PR important).
   const route = reviewClass({ paths, labels: pr.labels, tier, fileCount: files.length, renamed: hasRename(files) });
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
-  const fbGlm = gpt ? gptFallbackVerdict(items, head) : null;   // labelled PR, GPT out of quota: the marked GLM verdict counts
+  // labelled PR, GPT out of quota: the marked GLM verdict counts, on tiers 1 and 2 only (macrevb-1237-2: tier 0 stays advisory, so a
+  // labelled tier-0 GLM block never vetoes)
+  const fbGlm = gpt && tier !== 0 ? gptFallbackVerdict(items, head) : null;
   const glmAdvice = !eligibleLanes(tier, glmTiers, route.cls).includes(GLM_LANE) && fbGlm === null;
   const auto = chain.length ? null : autoCarry(items, head, proveMainMerges, (lane) => glmAdvice && lane === GLM_LANE);
   const carried = auto ? [auto.from] : chain;

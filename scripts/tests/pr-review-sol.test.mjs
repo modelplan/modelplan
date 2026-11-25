@@ -1011,3 +1011,27 @@ test("D395-4: an outside PR reviewed on the owner's dispatch posts its advisory 
   assert.equal(S.decideSol({ pr: pr(fork), files, items: R.feed(assigned), lane: S.SOL_LANE, triggerSha: H, checks: green }).review, false);
   assert.match(R.evaluatePr({ pr: pr(fork), items: R.feed([...assigned, comment(v("merge", H, "ghglm"))]), files, runs: [], statuses: [], verifiedEdge: () => false, conf: { include: [], exclude: [], pinonly: [] } }).why, /coordinator decides/);
 });
+
+test("macrevb-1237-2: a tier-0 PR labelled review:gpt gets one advisory GLM result: no GPT attempt, no fallback marker, no veto", () => {
+  const docs = [{ filename: "docs/a.md" }];
+  const p = pr({ labels: [{ name: "review:gpt" }] });
+  const d = S.decideSol({ pr: p, files: docs, items: [], lane: S.SOL_LANE, triggerSha: H, checks: green });
+  assert.deepEqual([d.review, d.tier, d.providers], [true, 0, ["glm"]]);
+  // the post script's rule (sol-post.mjs labelledFallback): no fallback marker on tier 0
+  const src = readFileSync(join(root, "scripts/pr-review/sol-post.mjs"), "utf8");
+  assert.match(src, /labelledFallback = env\.GPT_REQUESTED === "true" && provider !== "openai" && tierNow !== 0/);
+  assert.match(src, /gptFallback: labelledFallback && provider === "glm"/);
+  const answer = S.parseAnswer(`BLOCKER X-1 the docs are wrong\nTrigger: reading the page.\nConsequence: wrong advice.\nAcceptance test: page fixed.\n\nRecord: ${H}\n\nVERDICT: block`, H);
+  assert.ok(answer.ok, answer.why);
+  const body = S.renderSolComment({ answer, head: H, lane: "ghglm", mode: "full", base: BASE, tier: 0, gptFallback: false });
+  assert.ok(!body.includes(R.GPT_FALLBACK_MARKER));
+  assert.equal(S.postProblem({ pr: p, items: [], head: H, lane: S.SOL_LANE, posted: "ghglm", tier: 0, files: docs }), null);
+  // once per head: the posted GLM result settles the labelled tier-0 head
+  assert.equal(S.decideSol({ pr: p, files: docs, items: R.feed([comment(body)]), lane: S.SOL_LANE, triggerSha: H, checks: green }).why, "this lane already reviewed this head");
+  // the gate never vetoes tier 0 on it, marked or not
+  const gate = (b) => R.evaluatePr({ pr: p, items: R.feed([comment(b)]), files: docs, runs: [], statuses: [], verifiedEdge: () => false, conf: { include: [], exclude: [], pinonly: [] } });
+  assert.doesNotMatch(gate(body).why, /VERDICT block/);
+  const marked = S.renderSolComment({ answer, head: H, lane: "ghglm", mode: "full", base: BASE, tier: 0, gptFallback: true });
+  assert.ok(marked.includes(R.GPT_FALLBACK_MARKER));
+  assert.doesNotMatch(gate(marked).why, /VERDICT block/);
+});
