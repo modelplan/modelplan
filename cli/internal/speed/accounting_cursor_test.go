@@ -3,9 +3,11 @@ package speed
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -244,4 +246,107 @@ func BenchmarkLiveObserveSteady(b *testing.B) {
 			}
 		})
 	}
+}
+
+// usageLines: n Claude Code usage rows of about 600 bytes each, model m for row i when pick(i).
+func usageLines(n int, model func(i int) string) []byte {
+	var b bytes.Buffer
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, `{"type":"assistant","timestamp":"2026-11-20T10:%02d:%02dZ","sessionId":"s","requestId":"req_%d","message":{"id":"msg_%d","model":%q,"content":[{"type":"text","text":"%s"}],"usage":{"input_tokens":%d,"output_tokens":%d}}}`+"\n", i/60%60, i%60, i, i, model(i), strings.Repeat("x", 400), 10+i, 20+i)
+	}
+	return b.Bytes()
+}
+
+// observeBoth runs one observation with the live cursor and one full read, each into its own
+// cache, and fails when their ledgers differ.
+func observeBoth(t *testing.T, inc, full, path string, now time.Time, step string) {
+	t.Helper()
+	if err := observeAccounting(inc, "claude-code", []string{path}, now); err != nil {
+		t.Fatal(err)
+	}
+	liveIncremental = false
+	err := observeAccounting(full, "claude-code", []string{path}, now)
+	liveIncremental = true
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := loadAccounting(inc)
+	b, _ := loadAccounting(full)
+	if len(b.Files) == 0 || !reflect.DeepEqual(a, b) {
+		t.Fatalf("%s: incremental ledger differs from a full read", step)
+	}
+}
+
+// macrevc-1255-1 (a): truncated and regrown on the same inode past the cursor, with the first and
+// last KB before the cursor kept and a usage row in the middle changed.
+func TestLiveCursorTruncateRegrowKeepingEdges(t *testing.T) {
+	utc(t)
+	grantLocalHistory(t)
+	inc, full, dir := t.TempDir(), t.TempDir(), t.TempDir()
+	for _, c := range []string{inc, full} {
+		seedPerf(t, c, fixtureNow.AddDate(0, 0, -40))
+	}
+	path := filepath.Join(dir, "s.jsonl")
+	old := usageLines(40, func(int) string { return "old" })
+	os.WriteFile(path, old, 0o600)
+	now := fixtureNow
+	os.Chtimes(path, now, now)
+	observeBoth(t, inc, full, path, now, "first read")
+	// Same length, same first and last KB, row 20 now says "new"; then more rows appended.
+	regrown := usageLines(40, func(i int) string {
+		if i == 20 {
+			return "new"
+		}
+		return "old"
+	})
+	if len(regrown) != len(old) || !bytes.Equal(regrown[:1024], old[:1024]) || !bytes.Equal(regrown[len(old)-1024:], old[len(old)-1024:]) {
+		t.Fatal("fixture does not keep the edges")
+	}
+	regrown = append(regrown, usageLines(45, func(int) string { return "old" })[len(old):]...)
+	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0) // same inode
+	f.Write(regrown)
+	f.Close()
+	now = now.Add(time.Minute)
+	os.Chtimes(path, now, now)
+	observeBoth(t, inc, full, path, now, "truncated and regrown")
+}
+
+// macrevc-1255-1 (b): the file is rewritten in the middle after the cursor was checked and before
+// the appended bytes are parsed. The next observation must settle on a full read.
+func TestLiveCursorRewriteDuringRead(t *testing.T) {
+	utc(t)
+	grantLocalHistory(t)
+	inc, full, dir := t.TempDir(), t.TempDir(), t.TempDir()
+	for _, c := range []string{inc, full} {
+		seedPerf(t, c, fixtureNow.AddDate(0, 0, -40))
+	}
+	path := filepath.Join(dir, "s.jsonl")
+	os.WriteFile(path, usageLines(40, func(int) string { return "old" }), 0o600)
+	now := fixtureNow
+	os.Chtimes(path, now, now)
+	observeBoth(t, inc, full, path, now, "first read")
+	os.WriteFile(path, usageLines(45, func(int) string { return "old" }), 0o600) // appended
+	now = now.Add(time.Minute)
+	os.Chtimes(path, now, now)
+	rewritten := usageLines(45, func(i int) string {
+		if i == 20 {
+			return "new"
+		}
+		return "old"
+	})
+	liveAfterCheck = func(p string) {
+		liveAfterCheck = nil
+		f, _ := os.OpenFile(p, os.O_WRONLY, 0)
+		f.WriteAt(rewritten, 0)
+		f.Close()
+		later := now.Add(30 * time.Second)
+		os.Chtimes(p, later, later)
+	}
+	defer func() { liveAfterCheck = nil }()
+	if err := observeAccounting(inc, "claude-code", []string{path}, now); err != nil {
+		t.Fatal(err)
+	}
+	// The racing pass read whatever it read; the next one must match a full read of the file.
+	now = now.Add(time.Minute)
+	observeBoth(t, inc, full, path, now, "after the rewrite")
 }
