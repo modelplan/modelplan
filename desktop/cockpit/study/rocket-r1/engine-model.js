@@ -57,7 +57,7 @@ function extraCell(a, w, ui, grey) {
   const period = PERIODS[w.period || w.kind] || w.kind, c = cellOf(a, {...w, kind: period}, ui, null, grey);
   c.runOutMin = w.trend != null && w.trend < 0 && w.runOutMin != null && c.remaining != null && !grey && a.state !== 'stale' ? w.runOutMin : null;
   const name = w.name || w.scope?.label || '';
-  return {...c, extra: true, period, name, label: w.label || name, tag: [...name].length <= 5 ? name : [...name][0], tagPeriod: [...name].length > 5};
+  return {...c, extra: true, period, name, label: w.label || name, tag: [...name].length <= 6 ? name : [...name][0], tagPeriod: [...name].length > 6};
 }
 // Owner C01, 2026-10-25: headings remain 5小时 / 每周 / 其他. Only matching general windows enter the first two
 // rows; every other general window and scoped quota enters Other, tightest first with +N/full details.

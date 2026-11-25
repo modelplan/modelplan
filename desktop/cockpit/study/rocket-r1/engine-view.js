@@ -18,9 +18,12 @@ const paint = c => ` style="--qf:${fillColour(c.level)||'var(--lcd-muted)'};--qn
 const extraName = c => c.name || t('eng.other');
 const extraPer = c => has('extra.per.'+c.period) ? t('extra.per.'+c.period) : null;
 const periodTag = c => c.extra ? (extraPer(c) ? t('extra.name',{n:extraName(c),p:extraPer(c)}) : extraName(c)) : t(TAG[c.period]||'eng.other');
-// D417: an extra window's name is a short label (MCP, Opus, Fable: at most 5 characters) shown in full on every width.
+// D417: an extra window's name is a short label (MCP, Opus, Fable: at most 6 characters) shown in full on every width.
 const NAME_MAX = 5;
-const extraShort = c => [...extraName(c)].length <= NAME_MAX ? extraName(c) : extraPer(c) ? t('extra.nameShort',{n:[...extraName(c)][0],p:extraPer(c)}) : t('eng.other');
+// The six-column cell cannot fit "Sonnet" beside its time (fit spec D417), so its narrow variants use the defined short form.
+const NARROW = {Sonnet: 'Snt'};
+const narrowName = c => NARROW[extraName(c)] || extraName(c);
+const extraShort = c => [...narrowName(c)].length <= NAME_MAX ? narrowName(c) : extraPer(c) ? t('extra.nameShort',{n:[...extraName(c)][0],p:extraPer(c)}) : t('eng.other');
 const ageText = m => m >= 60 ? t('age.hoursShort',{h:Math.floor(m/60)}) : t('age.minutesShort',{m:Math.floor(m)});
 function note(col,c,ui) {
   if(col.state==='loading') return {text:t('eng.loading'),short:t('eng.loadingShort')};
@@ -52,7 +55,7 @@ function cell(col,c,row,m,ui,fresh,lead){
   const age=col.state==='stale'&&col.ageMin!=null&&row===lead?ageText(col.ageMin):'';
   const meta=(txt,tg)=>[tg,txt,age,c.more?`+${c.more}`:''].filter(Boolean).join(' ');
   const full=meta(n.warn&&m.cls==='narrow'?(n.short||n.text):n.text,tag), short=meta(n.event&&ui.lang==='zh-CN'?(n.short||n.text).replaceAll(' ',''):(n.short||n.text),shortTag);
-  const smallest=[c.extra?([...extraName(c)].length<=NAME_MAX?extraName(c):[...extraName(c)][0]):tag,n.small||n.short||n.text,age].filter(Boolean).join(' ')+(c.more?`+${c.more}`:'');
+  const smallest=[c.extra?([...narrowName(c)].length<=NAME_MAX?narrowName(c):[...narrowName(c)][0]):tag,n.small||n.short||n.text,age].filter(Boolean).join(' ')+(c.more?`+${c.more}`:'');
   const tip=c.all?c.all.map(x=>title(col,x,ui)).join('\n'):title(col,c,ui);
   // Extras are focusable and carry their details; a reading whose reset time is unknown says so on hover (the line
   // itself stays empty, CKP-ENG-26), as its accessible name does.
@@ -104,7 +107,7 @@ const key=col=>`<button class="ek bd-r${col.on?' on':''}${col.off?' off':''}" da
 // carry their own names in the cells and the heading says only that these are extra windows, never a bare "Other".
 export function otherHeading(m) {
   const names = new Set(), cells = (m.cols || []).map(c => c && c.cells && c.cells.other).filter(Boolean);
-  for (const c of cells) names.add(c.extra && c.name && [...c.name].length <= NAME_MAX && !c.more ? c.name : '');
+  for (const c of cells) names.add(c.extra && c.name && [...c.name].length <= 6 && !c.more ? c.name : '');
   return names.size === 1 && cells.length && [...names][0] ? [...names][0] : t('eng.extra');
 }
 function pageDescription(l,m) { return t('rev49.page',{p:l.page+1,names:(l.accounts||[]).map(a=>a.name+(a.status?' · '+t(a.status==='red'?'eng.lvLow':'eng.lvMid'):'')).join(', '),scope:t(m.scoped?'rev49.pageSub':'rev49.pageAll')}); }

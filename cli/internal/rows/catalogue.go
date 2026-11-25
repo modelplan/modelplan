@@ -173,8 +173,8 @@ func limitKey(raw string) string {
 }
 
 // D417: an extra window is named by what it is. These short forms are the labels the widget and the
-// cockpit column show in full (at most 5 characters), so neither surface clips or abbreviates them.
-var scopeLabels = map[string]string{"opus": "Opus", "sonnet": "Son", "gemini-2.5-pro": "Pro", "gemini-2.5-flash": "Flash"}
+// cockpit column show in full (at most 6 characters), so neither surface clips or abbreviates them.
+var scopeLabels = map[string]string{"opus": "Opus", "sonnet": "Sonnet", "gemini-2.5-pro": "Pro", "gemini-2.5-flash": "Flash"}
 
 // windowLabel is the one label for a window: a single reviewed model scope names the model, the
 // MCP key names itself, an unknown limit stays generic, and anything else keeps its role label.

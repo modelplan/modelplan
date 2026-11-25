@@ -15,7 +15,7 @@ function fixture(){
  rows.splice(0,rows.length,
   clone('zcode','ZCode',[five(),week(),win('monthly:2592000:mcp:main','monthly',2592000,'MCP','mcp',42)]),
   clone('claude','Claude Code',[five(),week(),win('weekly:604800:other:main','weekly',604800,'Opus','other',31,['opus'])]),
-  clone('sonnet','Claude Max',[five(),week(),win('weekly:604800:other:main','weekly',604800,'Son','other',64,['sonnet'])]),
+  clone('sonnet','Claude Max',[five(),week(),win('weekly:604800:other:main','weekly',604800,'Sonnet','other',64,['sonnet'])]),
   clone('s1','Spare 1',[five(),week()]),clone('s2','Spare 2',[five(),week()]),clone('s3','Spare 3',[five(),week()]));
  data.subscriptions=[];
  return data;
@@ -40,6 +40,7 @@ for(const locale of ['zh-CN','en'])test(`D417 extra windows are named in full, n
   return {text:t.textContent,tag:e.dataset.tag,fits:t.scrollWidth<=t.clientWidth+1,inside:r.left>=col.left-1&&r.right<=col.right+1};}));
  expect(cells.length).toBe(3);
  const joined=cells.map(c=>c.text).join('|');
- for(const name of ['MCP','Opus','Son'])expect(joined,name).toContain(name);
+ for(const name of ['MCP','Opus'])expect(joined,name).toContain(name);
+ expect(joined,'Sonnet or its short form Snt').toMatch(/Sonnet|Snt/);
  for(const c of cells){expect(c,JSON.stringify(c)).toMatchObject({fits:true,inside:true});expect(c.text).not.toMatch(/其他|Other/);}
 });

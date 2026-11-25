@@ -31,9 +31,9 @@ import ModelPlanWire
         var style = DockCardStyle()
         style.width = 240
         let font: NSFont = style.readoutSmallFont ?? .monospacedSystemFont(ofSize: style.smallFontSize, weight: .regular)
-        let names = ["MCP", "Opus", "Son", "Fable", "Flash", "Pro"]
+        let names = ["MCP", "Opus", "Sonnet", "Fable", "Flash", "Pro"]
         for name in names {
-            XCTAssertLessThanOrEqual(name.count, 5)
+            XCTAssertLessThanOrEqual(name.count, 6)
             let width = ceil((name as NSString).size(withAttributes: [.font: font]).width)
             XCTAssertLessThanOrEqual(width, style.columns[0], "\(name) fits the label column")
         }

@@ -613,7 +613,7 @@ public enum EngineDeadlineFacts {
         Self.rowLabel(role: window.role, limitKey: window.limitKey, scoped: window.modelScope != nil, name: text(window.label), english: english)
     }
     static func rowLabel(role:RowsRole, limitKey:String, scoped:Bool, name:String, english:Bool) -> String {
-        if (scoped || limitKey == "mcp") && name.count <= 5 { return name }
+        if (scoped || limitKey == "mcp") && name.count <= 6 { return name }
         return quotaLabel(role, english: english)
     }
     private static func quotaLabel(_ role:RowsRole, english:Bool) -> String {
