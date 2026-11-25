@@ -82,3 +82,17 @@ test('D207 the night still paints the r4 layers at their recorded rectangles and
   await expect(page.locator('.ck-still')).toHaveAttribute('data-projection',projections['day-compact']);
   expect(await page.evaluate(()=>window.glAsks)).toBe(0);
 });
+
+// Owner 11-25: the scene can sit lower in the glass (--ck-still-drop, fraction of the window height) and its glow can be
+// dimmed (--ck-still-dim). Defaults are 0, so the visual baselines (cockpit.spec.mjs "visual ...") change only when the
+// owner's pick sets them in web/cockpit.css and the baselines are regenerated.
+test('porthole scene drop and glow dim follow the port custom properties',async({page})=>{
+  await open(page,'night','tall');
+  const read=()=>page.evaluate(()=>{const s=document.querySelector('.ck-still-stage'),f=document.querySelector('.ck-field');
+    return {y:new DOMMatrixReadOnly(getComputedStyle(s).transform).f,H:f.clientHeight,dim:f.querySelectorAll('.ck-still-dim').length};});
+  const before=await read();expect(before.dim).toBe(0);
+  await page.evaluate(()=>{const p=document.querySelector('.ck-port');p.style.setProperty('--ck-still-drop','.15');p.style.setProperty('--ck-still-dim','.25');});
+  await page.setViewportSize({width:636,height:891});
+  await expect.poll(async()=>(await read()).dim).toBe(1);
+  const after=await read();expect(Math.abs(after.y-before.y-after.H*.15)).toBeLessThan(1.5);
+});
