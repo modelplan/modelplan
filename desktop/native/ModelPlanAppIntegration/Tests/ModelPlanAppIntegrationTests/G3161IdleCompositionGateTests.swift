@@ -163,7 +163,10 @@ import ModelPlanResources
         XCTAssertFalse(quota.isEmpty, "the quota rings are on the widget")
         let settled = StaticWork(dock), repaints = dock.ringOnlyRefreshesForChecks
         var clock: TimeInterval = 0
-        for (step, cpu) in [30.0, 45, 60, 75, 90].enumerated() {
+        // Every value stays below the D327 readout switch: CPU takes the readout once it has stayed at or above 70 %
+        // for 20 s, a decided second ring repaint inside the unchanged minute (75 % and 90 % counted one each).
+        // Staying below 80 % also keeps the D371 tone normal, so each step is exactly one changed reading.
+        for (step, cpu) in [30.0, 40, 50, 55, 65].enumerated() {
             reader.cpu = cpu
             clock += 10; ring.run(clock)
             XCTAssertEqual(dock.ringOnlyRefreshesForChecks, repaints + step + 1, "a changed reading repaints the ring once")
