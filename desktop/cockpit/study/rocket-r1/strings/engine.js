@@ -78,7 +78,7 @@ register('eng', {
   tps: ['lcd', 't/s', 't/s'],
   // 专项: extra quotas (a model's or a feature's own limit); +1 = one more extra in the column
   xMore: ['lcd', '+{n}', '+{n}'],
-  // 储备: reset cards and credits
+  // 储备: banked resets and credits
   cards: ['lcd', '↺{n}', '↺{n}'],
   credits: ['lcd', '{n}点', '{n} cr'],
   expires: ['lcd', '{t} 后到期', 'expires in {t}'], // CKP-ENG-52: what the reserve's time means

@@ -63,7 +63,7 @@ function paintStrip(context:PluginDrawContext,reading:CalendarData) {
  if(!now){panel.dataset.view='waiting';panel.replaceChildren(el('p','cal-empty',w.waiting));return;}
  panel.dataset.view='now';
  const data=reading,span=stripWindow(now);
- // All-day: at most one line (reset cards, announced resets); the rest is a "+N" on it.
+ // All-day: at most one line (banked resets, announced resets); the rest is a "+N" on it.
  const allDay=el('div','cal-ad'),rows=data.spans.filter(x=>x.from<span.to&&(x.to===null||x.to>=span.from));
  allDay.append(el('span','cal-adl',w.allDay));
  if(rows.length){

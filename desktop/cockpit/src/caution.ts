@@ -55,7 +55,7 @@ const finite=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v);
 export function cautionItems(data:WireCockpitData,now:number,redBelow:number):CautionItem[] {
  const lamp:{item:CautionItem;remaining:number;resetAt:number}[]=[],list:CautionItem[]=[],grey:CautionItem[]=[];
  const members=cockpitMembers(data),verified=new Set(data.subscriptions.map(s=>s.subscriptionRef));
- // CKP-MFD-55: available resets (reset cards with time left), joined only through a verified reference.
+ // CKP-MFD-55: available resets (banked resets with time left), joined only through a verified reference.
  // The producer may list only part of the cards (state partial, truncated, or a count above the items), so a count of the
  // visible items is exact only for a complete list: `partial` makes the line say "resets available" without a number.
  const cardFacts=(key:string,unstable:boolean)=>{
@@ -125,7 +125,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   const at=mid===null?null:Math.round(mid/(30*60000))*30*60000;
   list.push({id,stable,level:'blue',member:m.key,text:at===null?both('mfd.alResetSoon',lang=>({s:s(lang)})):both('mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
  }
- // D63: banked resets (reset cards) that expire within 48 hours, one blue line per subscription. Personal facts are joined
+ // D63: banked resets that expire within 48 hours, one blue line per subscription. Personal facts are joined
  // only through a verified reference, as the Subscription page joins them. List-only: they never light the lamp.
  for(const m of members){
   if(m.unstable||!verified.has(m.key))continue;

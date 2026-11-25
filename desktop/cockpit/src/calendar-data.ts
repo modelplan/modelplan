@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Calendar plugin data (CKP-PLG-06/07): the object that crosses the plugin seam, its strict bounded parser, and the
 // host-side shaping from what the cockpit already receives. Nothing here fetches: peaks are the publication's peak
-// windows (cockpitPeaksV1, #739), announced resets are the publication's reset events, reset cards and the user's own
+// windows (cockpitPeaksV1, #739), announced resets are the publication's reset events, banked resets and the user's own
 // 5 h / weekly resets come from the local quota readings, all inside the `display` data the native host already sends.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
@@ -14,7 +14,7 @@ export interface CalendarSub {readonly abbr:string;readonly colour:string;readon
 export interface CalendarPeak {readonly sub:number;readonly from:number;readonly to:number|null;readonly tentative:boolean}
 /** One of the user's own quota resets. */
 export interface CalendarReset {readonly sub:number;readonly at:number;readonly kind:'5h'|'week'}
-/** An all-day item: reset cards usable until `to`, or a reset announced at `from` taking effect at `to` (null: no time). */
+/** An all-day item: banked resets usable until `to`, or a reset announced at `from` taking effect at `to` (null: no time). */
 export interface CalendarSpan {readonly sub:number;readonly kind:'cards'|'announced'|'confirmed';readonly from:number;readonly to:number|null;readonly count:number|null}
 /** Whether the user has peak rules: `no` is known (the publication's feed is present and the user has no declared plan),
  *  `yes` means a declared plan exists (it may have no window in the next 24 h), `unknown` means the feed is missing. */
@@ -85,7 +85,7 @@ function effectiveAt(schedule:{from:string;through:string;precision:string}|unde
  const mid=through===null?from:(from+through)/2;return Math.round(mid/1_800_000)*1_800_000;
 }
 /** Shape the calendar from the cockpit display data at `now`. Only the user's own subscriptions (the engine's members)
- *  appear; a peak, reset event or reset card of a row the user does not have is left out. */
+ *  appear; a peak, reset event or banked reset of a row the user does not have is left out. */
 export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarData {
  const members=cockpitMembers(data).slice(0,LIMITS.subs);
  const colours=memberColours(members);
