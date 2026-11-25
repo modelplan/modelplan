@@ -156,7 +156,7 @@ function drawRadar(c:PluginDrawContext,state:unknown,detail:boolean):void {
   const v=resourceView(last),lv=levelsOf(samples),value:Record<Arc,number>={cpu:v.cpu,memory:v.memory,disk:v.disk};
   const tone=(l:ResourceLevel)=>l==='low'?T.low:l==='mid'?T.mid:T.ok;
   const tags:Record<Arc,PluginWords>={cpu:w('plugin.resourcesCpu'),memory:w('plugin.resourcesMemory'),disk:w('plugin.resourcesDisk')};
-  const net=networkWords(last),netName=w('plugin.resourcesNetwork').full;// the svg's label always has the full words
+  const netSample=[...samples].reverse().find(x=>x.netIn!==undefined&&x.netOut!==undefined),net=netSample?networkWords(netSample):null,netName=w('plugin.resourcesNetwork').full;// the svg's label always has the full words
   const svg=node('svg',{class:'pl-draw-chart pl-radar',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'img',
     'aria-label':[...ARCS.map(a=>`${tags[a].full} ${pct(value[a])}%`),...(net?[`${netName} ${net}`]:[])].join(' · ')});
   const {cx,cy,scale,r,bw,fs,vfs,pad}=L,f=(n:number)=>n.toFixed(2);
@@ -225,7 +225,7 @@ function drawRadar(c:PluginDrawContext,state:unknown,detail:boolean):void {
   // The name gives way to its short form, then the upload rate, when the row is narrow.
   const n=node('g',{'data-row':'network'},svg),netWords=w('plugin.resourcesNetwork'),left=detail?right-W/2:pad;
   const fits=(name:string,rate:string)=>width(name,fs)+6+width(rate,fs)<=right-left;
-  const down=net?`↓${formatRate(last.netIn!)}`:'',pick=!net?[netWords.full,'']:fits(netWords.full,net)?[netWords.full,net]:fits(netWords.short,net)?[netWords.short,net]:[netWords.short,down];
+  const down=net?`↓${formatRate(netSample!.netIn!)}`:'',pick=!net?[netWords.full,'']:fits(netWords.full,net)?[netWords.full,net]:fits(netWords.short,net)?[netWords.short,net]:[netWords.short,down];
   node('text',{x:detail?f(right-(pick[1]?width(pick[1],fs)+6:0)):pad,y:f(L.netY),'text-anchor':detail?'end':'start','font-size':fs,'font-family':T.lcdFont,fill:T.muted},n).textContent=pick[0]!;
   if(pick[1])node('text',{'data-net':'',x:f(right),y:f(L.netY),'text-anchor':'end','font-size':fs,'font-family':T.lcdFont,fill:T.ink},n).textContent=pick[1];
   c.area.replaceChildren(svg);
@@ -304,15 +304,15 @@ function drawGrid(c:PluginDrawContext,state:unknown,range:ResourceRange):void {
   const right=text(W-8,17,10,MUTED,sl,{'text-anchor':'end'});
   span(right,sv,{fill:INK});if(sx){const k=sx.indexOf(loadText);span(right,sx.slice(0,k),{});span(right,loadText,{fill:INK});}
   const gap=7,cw=Math.floor((W-16-gap)/2),top=25.5,ch=Math.max(40,Math.floor((H-top-23.5-6)/2));
-  const netName=w('plugin.resourcesNetwork'),netLast=last.netIn!==undefined&&last.netOut!==undefined;
+  const netName=w('plugin.resourcesNetwork'),netInNow=series.points.netIn.at(-1)?.v,netOutNow=series.points.netOut.at(-1)?.v,netLast=netInNow!==undefined&&netOutNow!==undefined;// the range decides, not the latest sample: one tick without rates (a counter reset) keeps the graph
   type Card={metric:ResourceMetric;name:string;lamp:string;big:[string,string];colour:string;detail:string;pv:[string,string]|null;percent:boolean};
   const pctText=(n:number|null)=>n===null?'':`${Math.round(n)}%`,rateText=(n:number|null)=>n===null?'':formatRate(n);
-  const [netBig,netUnit]=netLast?rateParts(last.netIn!):['',''];
+  const [netBig,netUnit]=netLast?rateParts(netInNow!):['',''];
   const cards:Card[]=[
     {metric:'cpu',name:w('plugin.resourcesCpu'),lamp:tone(lv.cpu),big:[String(pct(v.cpu)),'%'],colour:figure(lv.cpu),detail:w('plugin.resourcesUserSys',{u:pct(last.cpuUser),s:pct(last.cpuSystem)}),pv:[pctText(series.peak.cpu),pctText(series.avg.cpu)],percent:true},
     {metric:'memory',name:w('plugin.resourcesMemory'),lamp:tone(lv.memory),big:[String(pct(v.memory)),'%'],colour:figure(lv.memory),detail:c.words('plugin.resourcesGb',{used:gb(v.memoryUsed),total:gb(last.memTotal)}).short,pv:[pctText(series.peak.memory),pctText(series.avg.memory)],percent:true},
     {metric:'disk',name:w('plugin.resourcesDisk'),lamp:tone(lv.disk),big:[String(pct(v.disk)),'%'],colour:figure(lv.disk),detail:c.words('plugin.resourcesFree',{gb:gb(last.diskFree)}).short,pv:[pctText(series.peak.disk),pctText(series.avg.disk)],percent:true},
-    {metric:'netIn',name:`${netName} ↓`,lamp:T.ok,big:[netBig,netUnit],colour:INK,detail:netLast?`↑ ${rateParts(last.netOut!).join(' ')}`:'',pv:netLast?[rateText(series.peak.netIn),rateText(series.avg.netIn)]:null,percent:false},
+    {metric:'netIn',name:`${netName} ↓`,lamp:T.ok,big:[netBig,netUnit],colour:INK,detail:netLast?`↑ ${rateParts(netOutNow!).join(' ')}`:'',pv:netLast?[rateText(series.peak.netIn),rateText(series.avg.netIn)]:null,percent:false},
   ];
   const ticks=range==='1h'?{n:12,major:6,labels:[w('plugin.resourcesAgo',{n:60}),'−30',w('plugin.resourcesNow')]}:{n:10,major:5,labels:[w('plugin.resourcesAgo',{n:10}),'−5',w('plugin.resourcesNow')]};
   cards.forEach((card,i)=>{

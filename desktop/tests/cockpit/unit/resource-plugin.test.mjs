@@ -344,3 +344,33 @@ test('N2 with network readings there is no empty state (the page accepts the rat
  const has=state=>all(drawInto(resourcePlugin.screen(state,context('en')).draw,'en',362,213),n=>n.attrs['data-empty']!==undefined).length;
  assert.equal(has(history(30,()=>({netIn:5000,netOut:100}))),0);
 });
+
+// macrevb-1225-5. Invariant: the Network card shows the empty state ONLY when the selected range has no network
+// samples; one sample without the rate pair (a counter reset on the Mac) never blanks a graph that has data.
+// PATHS (a missing rate reaching the card): native reader (counter decrease / first read / unreadable -> no pair, series kept;
+//  SystemResourceReaderTests), bridge (payload sends the pair or nothing; ResourcePageFeed passes it on), page accept (14 or 16 keys),
+//  P1 latest sample without rates, P2 gap in the middle, P3 the 1 h range (host minutes with and without net), P4 the column text row.
+for(const [name,gap] of [['P1 the latest sample has no rates',i=>i===29],['P2 a sample in the middle has no rates',i=>i===15]])
+ test(`N4 ${name}: the graph, the value and peak/avg stay`,()=>{
+  const state=history(30,i=>gap(i)?{}:{netIn:5_400_000,netOut:120_000});
+  const area=drawInto(resourcePlugin.screen(state,context('en')).draw,'en',362,213);
+  const net=all(area,n=>n.attrs['data-card']==='network')[0];
+  assert.equal(all(net,n=>n.attrs['data-empty']!==undefined).length,0,'no empty state while the range has data');
+  assert.equal(all(net,n=>n.attrs['data-line']!==undefined).length,1);assert.equal(all(net,n=>n.attrs['data-value']!==undefined).length,1);
+  assert.match(text(all(net,n=>n.attrs['data-value']!==undefined)[0]),/5\.4MB\/s|5\.4/,'the last known rate');
+ });
+test('N5 1 h range: host minutes with a rate keep the graph although the page has no rate now; none at all gives the empty state',()=>{
+ const minute=60_000,t0=Math.ceil(T0/minute)*minute;
+ const mins=net=>Array.from({length:50},(_,i)=>({t:t0+i*minute,cpu:20,cpuPeak:25,memory:47,memoryPeak:48,disk:76,diskPeak:76,...(net?{netIn:1000,netInPeak:2000,netOut:10,netOutPeak:20}:{})}));
+ const samples=Array.from({length:12},(_,i)=>sample(t0+50*minute+i*5000));
+ for(const [net,expected] of [[true,0],[false,1]]){
+  const state=resourcePlugin.accept({samples,minutes:mins(net)},undefined);
+  const area=drawInto(resourcePlugin.screen(state,context('en',5,{range:'1h'})).draw,'en',362,213);
+  assert.equal(all(area,n=>n.attrs['data-card']==='network')[0].children.filter(n=>n.attrs['data-empty']!==undefined).length,expected);
+ }
+});
+test('N6 the column text row keeps the last known rate when the latest tick had none',()=>{
+ const state=history(6,i=>i===5?{}:{netIn:1_200_000,netOut:86_000});
+ const area=drawInto(resourcePlugin.column(state,context('en')).draw);
+ assert.match(text(all(area,n=>n.attrs['data-row']==='network')[0]),/1\.2M/);
+});

@@ -39,6 +39,22 @@ final class SystemResourceReaderTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(reader.read(uptime: 130, unixMs: 30_000)).netOut, "unreadable counters give no rate")
     }
 
+    /// macrevb-1225-5: a counter decrease (an interface went away) is a reset: no rate for that tick, and the next
+    /// tick measures from the lowered totals, so the series resumes at once instead of staying blank.
+    func testNetworkRatesResumeTheTickAfterACounterReset() throws {
+        var totals: (in: UInt64, out: UInt64)? = (5_000_000, 500_000)
+        let reader = SystemResourceReader(tickSource: { [[1, 1, 1, 0]] }, networkSource: { totals })
+        _ = try XCTUnwrap(reader.read(uptime: 100, unixMs: 0))
+        totals = (6_000_000, 600_000)
+        XCTAssertEqual(try XCTUnwrap(reader.read(uptime: 110, unixMs: 10_000)).netIn, 100_000)
+        totals = (2_000_000, 200_000)
+        let reset = try XCTUnwrap(reader.read(uptime: 120, unixMs: 20_000))
+        XCTAssertNil(reset.netIn); XCTAssertNil(reset.netOut)
+        totals = (3_000_000, 300_000)
+        let after = try XCTUnwrap(reader.read(uptime: 130, unixMs: 30_000))
+        XCTAssertEqual(after.netIn, 100_000, "the tick after a reset measures from the lowered totals"); XCTAssertEqual(after.netOut, 10_000)
+    }
+
     func testTheSystemReaderReadsNetworkTotalsWithoutAChildProcess() throws {
         let reader = SystemResourceReader()
         _ = reader.read(uptime: ProcessInfo.processInfo.systemUptime, unixMs: 0)
