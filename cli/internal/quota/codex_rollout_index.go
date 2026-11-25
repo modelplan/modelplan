@@ -27,6 +27,9 @@ type CodexRolloutIndex struct {
 	// private one.
 	Inventory *logindex.Inventory
 	own       logindex.Inventory
+	// RequireTicket: every caller hands in the ticket it took before its admission (the engine);
+	// a call without one selects nothing instead of taking a fresh ticket (macrev2-1261-2).
+	RequireTicket bool
 
 	// The last selection and the inventory generation it was made under: while the generation
 	// stands, the selection stands, so an idle watcher tick neither copies the inventory nor
@@ -50,14 +53,18 @@ func (p Paths) RecentCodexRollouts() ([]string, string) {
 	// The ticket goes with the admission: the engine takes it when it builds these paths for the
 	// admission it captured (Ticket), otherwise it is taken here, before the admission is read.
 	ticket := p.CodexTicket
-	if ticket == (logindex.Ticket{}) {
-		ticket = p.CodexIndex.Ticket()
+	missing := ticket == (logindex.Ticket{})
+	if missing && !p.CodexIndex.RequireTicket {
+		ticket = p.CodexIndex.Ticket() // CLI and tests: taken here, before the admission is read
 	}
 	admission := admissionFor(p)
 	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") ||
 		admission.CleanupPending(consent.ScopeCodexLocalHistory) || p.CodexHome == "" {
 		p.CodexIndex.clear(p.CodexHome)
 		return nil, ""
+	}
+	if missing && p.CodexIndex.RequireTicket {
+		return nil, "" // the engine handed in no ticket from before the admission: read nothing
 	}
 	now := time.Now()
 	if p.CodexIndex.Clock != nil {
@@ -180,4 +187,11 @@ func rolloutConfined(root, file string, checked map[string]bool) bool {
 		}
 	}
 	return true
+}
+
+// Cached reports what the selection cache holds, without any path (tests and diagnostics).
+func (i *CodexRolloutIndex) Cached() (paths int, own, thread bool) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return len(i.cache.files), i.cache.own != "", i.cache.thread != ""
 }
