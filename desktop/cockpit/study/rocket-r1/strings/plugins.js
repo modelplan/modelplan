@@ -81,6 +81,8 @@ register('plugin', {
   calCards: ['lcd', '额外重置', 'Banked'],
   // Tooltip form of calCards: the full D428 wording, outside the LCD budget.
   calCardsFull: ['aria', '额外重置次数', 'Banked resets'],
+  calCredit: ['lcd', '额外重置', 'Banked reset'],
+  calDirect: ['lcd', '直接重置', 'direct reset'],
   calUntil: ['lcd', '至', 'until'],
   calAnnounced: ['line', '预告重置', 'announced reset'],
   calConfirmed: ['line', '已确认重置', 'confirmed reset'],
