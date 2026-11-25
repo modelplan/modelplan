@@ -145,7 +145,28 @@ public enum CockpitDockingBoom {
     public var width: CGFloat { widest > 0 ? CockpitDockingBoom.width(for: widest) : nominalWidth }
   }
 
+  /// How far above the canopy line the clamp's top edge is, per point of boom width: the lug's pin height plus the
+  /// clamp's art from its top row down to the grip.
+  static func clampRise(_ m: Metrics = metrics) -> CGFloat {
+    m.lugWidth * m.lugAspect * (1 - m.lugPinY) + m.aspect * (m.gripY - m.clampTop)
+  }
+  /// Decision C (macrev2-1207-2): with the shutter closed only the clamp shows, at every width. The narrowest boom whose
+  /// clamp alone fills the gap down to `line` (its shaft stays behind the menu bar).
+  public static func clampOnlyWidth(line: CGFloat) -> CGFloat { max(0, line) / clampRise() }
+  /// The width the boom is drawn at: the widest status width (D447), and while the shutter closes (`closed` 0 open ... 1
+  /// closed, following the slab) at least `clampOnlyWidth`, so a narrow item's boom shows no shaft on the closed shell.
+  /// Continuous in `closed`, so a shutter toggle never jumps.
+  public static func drawnWidth(widest: CGFloat, line: CGFloat, closed: CGFloat) -> CGFloat {
+    let c = max(0, min(1, closed.isFinite ? closed : 1))
+    return widest + c * max(0, clampOnlyWidth(line: line) - widest)
+  }
+
   public enum Clamp: Equatable, Sendable { case open, closing, closed, opening }
+  /// D439 (macrev2-1207-1): a departure (key detach, the icon close) first opens the clamp and holds the cockpit and the
+  /// boom still for this long; only then do they move. At once under Reduce Motion.
+  public static func releaseHold(closure: CGFloat, reduceMotion: Bool) -> TimeInterval {
+    reduceMotion ? 0 : TimeInterval(max(0, min(1, closure.isFinite ? closure : 0))) * clampTravel
+  }
   /// The clamp closes only once the boom is fully down and the cockpit is home (its lug is there); otherwise it opens.
   public static func clampTarget(slide: CGFloat, cockpitHome: Bool) -> CGFloat { slide >= 1 && cockpitHome ? 1 : 0 }
   public static func clampPhase(closure: CGFloat, target: CGFloat) -> Clamp {
@@ -239,8 +260,10 @@ struct CockpitRackArt {
   init(art: CockpitRackArt) { view.art = art }
   /// D447: the widest status-item width seen this session (shared by every cockpit window of the process).
   static var statusWidths = CockpitDockingBoom.WidthTracker()
-  /// The last known canopy line under the boom, in points below the menu bar, kept while the cockpit is away from home.
+  /// The last known canopy line under the boom, in points below the menu bar, and how closed the shutter is there (0-1),
+  /// kept while the cockpit is away from home.
   private(set) var line: CGFloat = CockpitShellLayout.menuBarGap
+  private(set) var closed: CGFloat = 0
   var pose: CockpitDockingBoom.Pose? { view.pose }
   /// The boom follows the widest status-item width, centred on the icon, from the menu bar's bottom edge down 150 pt.
   static func frame(icon: CGRect, width: CGFloat? = nil) -> CGRect {
@@ -250,12 +273,13 @@ struct CockpitRackArt {
   }
   /// Places the boom under `icon` and below `cockpit`, hidden inside `cockpitHidden` below its shoulder line. `line` is
   /// the attached cockpit's canopy line (screen y) when known; `slide`, `closure` and `lugShown` set the pose.
-  func update(icon: CGRect?, cockpit: NSWindow?, hidden cockpitHidden: CGRect?, line canopy: CGFloat?, slide value: CGFloat,
-              closure: CGFloat, lugShown: Bool) {
+  func update(icon: CGRect?, cockpit: NSWindow?, hidden cockpitHidden: CGRect?, line canopy: (y: CGFloat, closed: CGFloat)?,
+              slide value: CGFloat, closure: CGFloat, lugShown: Bool) {
     self.icon = icon
-    if let icon, let canopy, canopy.isFinite { line = max(0, icon.minY - canopy) }
+    if let icon, let canopy, canopy.y.isFinite { line = max(0, icon.minY - canopy.y); closed = canopy.closed }
     guard let icon, let cockpit, value > 0 || closure > 0 else { panel?.orderOut(nil); orderedBelow = nil; view.pose = nil; return }
-    let frame = Self.frame(icon: icon, width: Self.statusWidths.widest > 0 ? Self.statusWidths.width : nil)
+    let widest = Self.statusWidths.widest > 0 ? Self.statusWidths.width : CockpitDockingBoom.width(for: icon.width)
+    let frame = Self.frame(icon: icon, width: CockpitDockingBoom.drawnWidth(widest: widest, line: line, closed: closed).rounded(.up))
     if panel == nil {
       let made = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
       made.isOpaque = false; made.backgroundColor = .clear; made.hasShadow = false

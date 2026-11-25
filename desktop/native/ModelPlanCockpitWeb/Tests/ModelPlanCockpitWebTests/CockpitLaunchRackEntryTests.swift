@@ -118,15 +118,76 @@ import XCTest
     fixture.page.verificationRackDrawn = { redraws += 1 }
     try await wait(250)
     XCTAssertEqual(redraws, 0, "nothing animates at rest")
+    // macrev2-1207-1: the key detach opens the clamp first; the cockpit and the boom stay home until it is fully open.
+    let home = window.frame
+    let ticks = record(fixture, window)
     fixture.page.setAttached(false)
-    try await wait(40)
     XCTAssertEqual(fixture.page.verificationBoom.clampTarget, 0, "detaching: the clamp opens")
-    if let opening = fixture.page.verificationBoom.pose {
-      XCTAssertLessThan(opening.closure, 1)
-      XCTAssertNil(opening.lug, "the lug leaves with the cockpit")
+    try await until("the cockpit has landed and the boom is in") {
+      fixture.page.verificationRack.panel == nil && !fixture.page.verificationRack.moving
     }
+    assertClampOpensBeforeDeparture(ticks.samples, home: home, label: "key detach")
     fixture.page.verificationRackDrawn = nil
     XCTAssertEqual(failures, [])
+  }
+
+  /// macrev2-1207-1: the close of an icon-opened cockpit (the reverse) also opens the clamp before the cockpit rises.
+  func testIconCloseOpensTheClampBeforeTheCockpitRises() async throws {
+    let fixture = try make()
+    defer { fixture.page.discard() }
+    let window = try open(fixture)
+    try await until("the clamp is closed on the lug") {
+      window.alphaValue == 1 && fixture.page.verificationBoom.pose?.closure == 1 && !fixture.page.verificationRack.moving
+    }
+    let home = window.frame
+    let ticks = record(fixture, window)
+    fixture.page.requestClose()
+    try await wait(900)
+    XCTAssertNil(fixture.page.window, "closed")
+    assertClampOpensBeforeDeparture(ticks.samples, home: home, label: "icon close")
+    fixture.page.verificationRackDrawn = nil
+    XCTAssertEqual(failures, [])
+  }
+
+  /// Reduce Motion: the detach releases the clamp and lands at once.
+  func testReduceMotionDetachReleasesTheClampAtOnce() throws {
+    let fixture = try make(reduceMotion: true)
+    defer { fixture.page.discard() }
+    let window = try open(fixture)
+    var landing: CockpitDetachLanding.Plan?
+    fixture.page.verificationLanding = { landing = $0 }
+    fixture.page.setAttached(false)
+    XCTAssertEqual(window.frame, try XCTUnwrap(landing).frame, "landed at once")
+    XCTAssertNil(fixture.page.verificationBoom.pose, "the boom is gone at once")
+    XCTAssertFalse(fixture.page.verificationRack.moving)
+    XCTAssertEqual(failures, [])
+  }
+
+  private final class Ticks { var samples: [(closure: CGFloat, slide: CGFloat, frame: CGRect)] = [] }
+  /// Every rack redraw (each 60 Hz tick of a motion) with the clamp, the slide and the cockpit's frame at that moment.
+  private func record(_ fixture: Fixture, _ window: NSWindow) -> Ticks {
+    let ticks = Ticks()
+    fixture.page.verificationRackDrawn = {
+      ticks.samples.append((fixture.page.verificationBoom.pose?.closure ?? 0, fixture.page.verificationRack.ext, window.frame))
+    }
+    return ticks
+  }
+  /// While the clamp is not fully open the cockpit's top-left and the boom stay home; the first tick that moves either
+  /// one has the clamp fully open.
+  private func assertClampOpensBeforeDeparture(_ samples: [(closure: CGFloat, slide: CGFloat, frame: CGRect)], home: CGRect,
+                                               label: String, file: StaticString = #filePath, line: UInt = #line) {
+    XCTAssertGreaterThan(samples.count, 4, "\(label): ticks were observed", file: file, line: line)
+    XCTAssertEqual(samples.first?.closure ?? 0, 1, accuracy: 0.2, "\(label): starts closed", file: file, line: line)
+    var sawPartlyOpen = false
+    for (index, sample) in samples.enumerated() {
+      let moved = abs(sample.frame.minX - home.minX) > 0.01 || abs(sample.frame.maxY - home.maxY) > 0.01 || sample.slide < 1
+      if sample.closure > 0, sample.closure < 1 { sawPartlyOpen = true }
+      if moved {
+        XCTAssertEqual(sample.closure, 0, "\(label): tick \(index) moved with the clamp \(sample.closure) not open", file: file, line: line)
+      }
+    }
+    XCTAssertTrue(sawPartlyOpen, "\(label): the clamp visibly opened in place", file: file, line: line)
+    XCTAssertTrue(samples.contains { $0.slide < 1 }, "\(label): then the boom left", file: file, line: line)
   }
 
   /// Owner 11-18: with the shutter closed, the rack must not show below the closed cockpit's top edge at any frame of the
@@ -241,11 +302,14 @@ import XCTest
     }
     XCTAssertNotNil(fixture.page.attachmentHintAnchor)
 
+    try await until("the clamp is closed on the lug") { fixture.page.verificationBoom.pose?.closure == 1 }
     var closes: [TimeInterval] = []
     fixture.page.verificationCloseStarted = { closes.append($0) }
     fixture.page.requestClose()
-    XCTAssertEqual(closes, [0.5], "the cockpit goes up (0.25 s), then the rack retracts (0.25 s)")
-    try await wait(150)
+    XCTAssertEqual(closes.count, 1)
+    XCTAssertEqual(closes.first ?? 0, CockpitDockingBoom.clampTravel + 0.5, accuracy: 1e-9,
+                   "the clamp opens (0.14 s, D439), the cockpit goes up (0.25 s), then the boom retracts (0.25 s)")
+    try await wait(300)
     XCTAssertNotNil(fixture.page.window)
     XCTAssertGreaterThan(fixture.page.window?.frame.minY ?? 0, home.minY, "the cockpit goes back up under the bar")
     try await wait(700)

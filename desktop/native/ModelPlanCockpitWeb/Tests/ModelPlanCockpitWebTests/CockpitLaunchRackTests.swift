@@ -183,9 +183,41 @@ final class CockpitLaunchRackTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(lug.minX, 0); XCTAssertLessThanOrEqual(lug.maxX, width, "the lug fits the panel")
       }
     }
-    let closedShutter = CockpitDockingBoom.pose(width: 40, line: 10, slide: 1, closure: 1, lugShown: true)
-    let clampTop = closedShutter.boom.minY + closedShutter.boom.height * m.clampTop
-    XCTAssertLessThan(clampTop, 1, "shutter closed: only the clamp shows below the menu bar")
+  }
+
+  /// Decision C / macrev2-1207-2: with the shutter closed only the clamp shows, at every width: no shaft ink below the
+  /// menu bar, the 10 pt gap and the pin in the grip. Open, the boom is the widest status width (D447); the shutter's
+  /// travel changes the drawn width continuously.
+  func testClosedShutterShowsOnlyTheClampAtEveryWidth() throws {
+    let m = CockpitDockingBoom.metrics, gap = CockpitShellLayout.menuBarGap
+    for widest in [CGFloat(24), 28, 32, 40, 58, 96] {
+      let width = CockpitDockingBoom.drawnWidth(widest: widest, line: gap, closed: 1)
+      XCTAssertGreaterThanOrEqual(width, widest, "never narrower than the widest status width")
+      let pose = CockpitDockingBoom.pose(width: width, line: gap, slide: 1, closure: 1, lugShown: true)
+      let clampTop = pose.boom.minY + pose.boom.height * m.clampTop
+      XCTAssertLessThanOrEqual(clampTop, 1e-9, "\(widest) pt: no shaft below the menu bar")
+      let lug = try XCTUnwrap(pose.lug)
+      XCTAssertEqual(lug.maxY, gap, accuracy: 1e-9, "\(widest) pt: the lug on the closed shell's top edge, 10 pt down")
+      XCTAssertEqual(pose.boom.minY + pose.boom.height * m.gripY, lug.minY + lug.height * m.lugPinY, accuracy: 1e-9, "pin in the grip")
+      XCTAssertEqual(pose.boom.minX + width * m.gripX, lug.minX + lug.width * m.lugPinTip, accuracy: 1e-9)
+      XCTAssertEqual(CockpitDockingBoom.drawnWidth(widest: widest, line: 35, closed: 0), widest, "open: the widest status width")
+      var last = CockpitDockingBoom.drawnWidth(widest: widest, line: gap, closed: 0)
+      for step in 1...20 {
+        let next = CockpitDockingBoom.drawnWidth(widest: widest, line: gap, closed: CGFloat(step) / 20)
+        XCTAssertGreaterThanOrEqual(next, last - 1e-9); XCTAssertLessThanOrEqual(next - last, 2.5, "no jump while the shutter moves")
+        last = next
+      }
+    }
+  }
+
+  /// D439 (macrev2-1207-1): a departure holds still while the clamp opens: its full travel from closed, part of it from
+  /// partly closed, nothing when it is open or under Reduce Motion.
+  func testTheReleaseHoldsForTheClampsRemainingTravel() {
+    XCTAssertEqual(CockpitDockingBoom.releaseHold(closure: 1, reduceMotion: false), CockpitDockingBoom.clampTravel)
+    XCTAssertEqual(CockpitDockingBoom.releaseHold(closure: 0.5, reduceMotion: false), CockpitDockingBoom.clampTravel / 2, accuracy: 1e-12)
+    XCTAssertEqual(CockpitDockingBoom.releaseHold(closure: 0, reduceMotion: false), 0)
+    XCTAssertEqual(CockpitDockingBoom.releaseHold(closure: 1, reduceMotion: true), 0)
+    XCTAssertEqual(CockpitDockingBoom.releaseHold(closure: .nan, reduceMotion: false), 0)
   }
 
   /// D439/D446: the clamp is open while the boom slides and while the cockpit is away, closes once the boom is down and

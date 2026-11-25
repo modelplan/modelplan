@@ -220,6 +220,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var rackExtension: CGFloat = 0, rackTarget: CGFloat = 0
   /// D439/D446: the boom's clamp, 0 open ... 1 closed on the lug. It closes once the boom is down and the cockpit is home.
   private var clampClosure: CGFloat = 0
+  /// D439 (macrev2-1207-1): a departure is holding the cockpit at home while the clamp opens.
+  private var clampReleasing = false
   private var rackPace: TimeInterval = CockpitLaunchRackTiming.fullTravel
   private var rackTimer: Timer?
   private var rackClock: TimeInterval = 0
@@ -2024,17 +2026,33 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       rackExtension = 0; rackTarget = 0; refreshRack()
       onShellChanged?(); return
     }
-    let start = window.frame
     ignite(true)
-    retractRack()
-    runMotion(CockpitLaunchRackTiming.keyDetachBurn, step: { [weak self] t in
-      let e = CockpitDockingBoom.easeInOut(t)
-      self?.window?.setFrame(Self.lerp(start, plan.frame, e), display: true)
-    }, done: { [weak self] in
+    // D439 (macrev2-1207-1): the clamp opens first; only then do the boom and the cockpit leave.
+    releaseClamp { [weak self] in
+      guard let self, let window = self.window else { return }
+      let start = window.frame
+      self.retractRack()
+      self.runMotion(CockpitLaunchRackTiming.keyDetachBurn, step: { [weak self] t in
+        let e = CockpitDockingBoom.easeInOut(t)
+        self?.window?.setFrame(Self.lerp(start, plan.frame, e), display: true)
+      }, done: { [weak self] in
+        guard let self else { return }
+        self.window?.setFrame(plan.frame, display: true)
+        self.ignite(false)
+        self.onShellChanged?()
+      })
+    }
+  }
+  /// D439 (macrev2-1207-1): holds the cockpit and the boom still (a motion that moves nothing) while the clamp opens,
+  /// then runs `departure`. With the clamp already open, or under Reduce Motion, `departure` runs at once.
+  private func releaseClamp(_ departure: @escaping @MainActor () -> Void) {
+    let hold = CockpitDockingBoom.releaseHold(closure: clampClosure, reduceMotion: appearance.reduceMotion)
+    guard hold > 0 else { clampClosure = 0; refreshRack(); departure(); return }
+    clampReleasing = true
+    runMotion(hold, step: { _ in }, done: { [weak self] in
       guard let self else { return }
-      self.window?.setFrame(plan.frame, display: true)
-      self.ignite(false)
-      self.onShellChanged?()
+      self.clampReleasing = false; self.clampClosure = 0
+      departure()
     })
   }
   private func keyPutBack(_ window: NSWindow) {
@@ -2174,7 +2192,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let newlyDetached = !shellSession.detached
       shellSession.detached = true
       if newlyDetached {
-        // Tear-off (CKP-SHELL-33): the rack retracts straight up into the icon.
+        // Tear-off (CKP-SHELL-33): the rack retracts straight up into the icon. The pointer moves the cockpit, so it
+        // cannot be held: the clamp opens at once, before this first moved frame (D439, macrev2-1207-1).
+        clampReleasing = false; clampClosure = 0
         shellSession.compactWhileDetached = false
         updateAppearance(appearance); retractRack()
       }
@@ -2356,7 +2376,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // CKP-SHELL-33 (D186/D188): an attached cockpit opened from the icon reverses the open: it goes up under the menu
     // bar while the hidden rack shortens behind it, then the rack's visible part retracts into the icon.
     let reverse = openedFromIcon && !appearance.reduceMotion && !shellSession.detached && rackIcon() != nil && window != nil
-    let reverseDuration = CockpitLaunchRackTiming.cockpitOpen + CockpitLaunchRackTiming.rackOpen
+    // D439 (macrev2-1207-1): the reverse first opens the clamp, then the cockpit goes up.
+    let release = reverse ? CockpitDockingBoom.releaseHold(closure: clampClosure, reduceMotion: false) : 0
+    let reverseDuration = release + CockpitLaunchRackTiming.cockpitOpen + CockpitLaunchRackTiming.rackOpen
     #if MODELPLAN_TEST_ONLY_SPI
     verificationCloseStarted?(appearance.reduceMotion ? 0 : reverse ? reverseDuration : 0.12)
     verificationEntrance?(appearance.reduceMotion ? "instant" : reverse ? "rack" : "fade")
@@ -2366,19 +2388,21 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let duration = reverse ? reverseDuration : 0.12
     if reverse, let home = layout?.frame {
       rackHidesInHome = true
-      runMotion(CockpitLaunchRackTiming.cockpitOpen, step: { [weak self] t in
-        guard let self, let window = self.window else { return }
-        window.alphaValue = 1 - min(1, t * 1.2)
-        window.setFrame(home.offsetBy(dx: 0, dy: CockpitLaunchRackTiming.openRise * t * t * t), display: true)
-        self.rackExtension = 1 - 2.0 / 3 * t; self.rackTarget = self.rackExtension
-      }, done: { [weak self] in
-        guard let self else { return }
-        self.window?.alphaValue = 0
-        self.runMotion(CockpitLaunchRackTiming.rackOpen, step: { [weak self] t in
+      releaseClamp { [weak self] in
+        self?.runMotion(CockpitLaunchRackTiming.cockpitOpen, step: { [weak self] t in
+          guard let self, let window = self.window else { return }
+          window.alphaValue = 1 - min(1, t * 1.2)
+          window.setFrame(home.offsetBy(dx: 0, dy: CockpitLaunchRackTiming.openRise * t * t * t), display: true)
+          self.rackExtension = 1 - 2.0 / 3 * t; self.rackTarget = self.rackExtension
+        }, done: { [weak self] in
           guard let self else { return }
-          self.rackExtension = (1 - t) / 3; self.rackTarget = self.rackExtension
-        }, done: { [weak self] in self?.rackExtension = 0; self?.rackTarget = 0; self?.refreshRack() })
-      })
+          self.window?.alphaValue = 0
+          self.runMotion(CockpitLaunchRackTiming.rackOpen, step: { [weak self] t in
+            guard let self else { return }
+            self.rackExtension = (1 - t) / 3; self.rackTarget = self.rackExtension
+          }, done: { [weak self] in self?.rackExtension = 0; self?.rackTarget = 0; self?.refreshRack() })
+        })
+      }
     } else {
       NSAnimationContext.runAnimationGroup { context in
         context.duration = duration
@@ -2475,7 +2499,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// The attached cockpit is at rest in its home place (not detached, not entering, flying or moving).
   private var cockpitHome: Bool { window != nil && shown && !shellSession.detached && !entering && !flying && motion == nil }
-  private func clampTarget() -> CGFloat { CockpitDockingBoom.clampTarget(slide: rackExtension, cockpitHome: cockpitHome) }
+  /// A releasing clamp opens while the cockpit is held at home (D439).
+  private func clampTarget() -> CGFloat {
+    CockpitDockingBoom.clampTarget(slide: rackExtension, cockpitHome: cockpitHome && !clampReleasing)
+  }
   private func extendRack() {
     guard rackIcon() != nil else { rackTarget = 0; return }
     rackPace = CockpitLaunchRackTiming.fullTravel; rackTarget = 1
@@ -2501,7 +2528,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// Ends a running entrance, landing or flight at once, in its final state (a drag, a close or another key press).
   private func finishEntrance(completesOpen: Bool = true) {
     guard entering || motion != nil || flying || !rackSettledWaiters.isEmpty else { return }
-    motion = nil; rackSettledWaiters = []
+    motion = nil; rackSettledWaiters = []; clampReleasing = false
     if flying { flying = false; latch(); return }
     if entering {
       entering = false; rackHidesInHome = false
@@ -2518,7 +2545,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     refreshRack()
   }
   private func stopRack() {
-    motion = nil; rackSettledWaiters = []; flying = false; clampClosure = 0
+    motion = nil; rackSettledWaiters = []; flying = false; clampClosure = 0; clampReleasing = false
     rackTimer?.invalidate(); rackTimer = nil
     ignite(false)
     rack.close()
@@ -2533,15 +2560,22 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let drop = layout.rackMaskDrop(windowHeight: frame.height)
       hidden = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: max(0, frame.height - drop))
     }
-    // A prewarmed (never shown) page has no rack on screen.
     // The canopy line the clamp meets: the attached frame's shoulder, known while the cockpit is home or the rack hides
     // in it (an open or close); otherwise the rack keeps the last one.
-    let line = (cockpitHome || rackHidesInHome) ? hidden.map(\.maxY) : nil
-    let home = cockpitHome
+    var line: (y: CGFloat, closed: CGFloat)?
+    if cockpitHome || rackHidesInHome || clampReleasing, let hidden, let layout {
+      // How closed the shutter is (0 open ... 1 closed), from the mask line's depth, which follows the slab.
+      let frame = rackHidesInHome ? layout.frame : window.frame
+      let open = CockpitShellLayout.shoulderDrop(layout.profile, closed: false) * layout.scale
+      let drop = layout.rackMaskDrop(windowHeight: frame.height)
+      line = (hidden.maxY, open > 0 ? 1 - min(1, max(0, drop / open)) : 1)
+    }
+    let home = cockpitHome || clampReleasing
     if appearance.reduceMotion { clampClosure = clampTarget() }
     // The clamp closes once the cockpit is home and opens as soon as it leaves; the driver runs only for that travel.
     if clampClosure != clampTarget() { ensureRackTimer() }
-    // The lug is part of the canopy frame: drawn at the attach point only while the cockpit is attached at home.
+    // The lug is part of the canopy frame: drawn at the attach point only while the cockpit is attached at home (or held
+    // there while the clamp releases it). A prewarmed (never shown) page has no rack on screen.
     rack.update(icon: (rackExtension > 0 || clampClosure > 0) && shown ? rackIcon() : nil, cockpit: window, hidden: hidden, line: line,
                 slide: rackExtension, closure: clampClosure, lugShown: home)
     #if MODELPLAN_TEST_ONLY_SPI
