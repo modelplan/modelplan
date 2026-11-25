@@ -187,3 +187,13 @@ body.reduced #cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s line
 .dk-mfd .mfd-page.pg-compare{animation:cd-page-in .15s ease-out}
 body.reduced #cockpit .dk-mfd .mfd-page.pg-compare{animation:none}
 @media(prefers-reduced-motion:reduce){#cockpit .dk-mfd .mfd-page.pg-compare{animation:none}}
+
+/* D434 (owner 11-25): the junction between the lever column and the big screen, measured on the prototype (whole-proposed.png;
+   SPEC.md "Junction" rows). The big screen sits in its own framed graphite panel, like the left column's: a 3.5 px dark gutter
+   (the left panel ends at x 399, the right frame starts at 406), a 4 px lighter frame, and the big screen's own 2.3 px dark bezel.
+   The panel reaches 3 px above the tab row and 2 px below the bottom key row; the darker well beside the tier (13,15,17 against 23,25,27) is not drawn (no element to carry it in CSS).
+   CSS only: the big screen's content keeps its place, the frame is drawn outside it in the deck's 9 px gutter and padding. */
+.ck-deck{isolation:isolate}
+.ck-deck::after{content:"";position:absolute;z-index:-1;grid-column:2;grid-row:1;inset:-3px -4px -2px -5.5px;border-radius:5px;pointer-events:none;
+  background:var(--mfd-frame,#1f2328);box-shadow:inset 0 0 0 1px var(--mfd-frame-edge,#ffffff0d),inset 0 1px 0 var(--mfd-frame-hi,#ffffff14)}
+:root[data-theme="day"] .ck-deck{--mfd-frame:#aab0b6;--mfd-frame-edge:#ffffff40;--mfd-frame-hi:#ffffff59}

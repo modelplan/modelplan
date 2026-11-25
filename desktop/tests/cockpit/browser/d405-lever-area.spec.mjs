@@ -400,3 +400,25 @@ for(const [tier,height,len] of [['tall',890,.7353],['compact',640,.7867]])
    // the knob follows the travel: its height scales with it (u = travel / 97)
    if(!paged){const k=await rect(channels(page).nth(0).locator('.fd-cap'));expect(k.h).toBeGreaterThan(8);}
   });
+
+// D434 (owner 11-25): the junction between the lever column and the big screen, measured on the prototype (whole-proposed.png):
+// a 3.5 px dark gutter (6 prototype px) between the left panel's edge and the big screen's own graphite frame, the frame 3 px above
+// the tab row and 2 px below the bottom key row, the tab row on the lamp row, and the bottom key row on the bank keys.
+for(const [tier,height] of [['tall',890],['compact',640]])
+ test(`D434 the big screen sits in its own frame behind a 3.5 px gutter, aligned with the lever column (${tier})`,async({page})=>{
+  await openThrottles(page,{tier,height,paged:true});
+  const fad=await rect(page.locator('.dk-fad')),mfd=await rect(page.locator('.dk-mfd'));
+  const frame=await page.locator('.ck-deck').evaluate(d=>{const a=getComputedStyle(d,'::after');return {content:a.content,bg:a.backgroundColor,inset:[a.top,a.right,a.bottom,a.left].map(parseFloat),radius:parseFloat(a.borderTopLeftRadius)};});
+  expect(frame.content).toBe('""');
+  expect(frame.bg,'a lighter graphite frame, not the console').not.toBe('rgba(0, 0, 0, 0)');
+  // gutter: the frame's left edge is mfd.l + inset (negative); the left panel ends at fad.r
+  const gutter=mfd.l+(-5.5)-fad.r;
+  expect(Math.abs(gutter-3.5),'dark gutter between the two panels').toBeLessThanOrEqual(.6);
+  // tab row on the lamp row; bottom key row on the bank keys; the screen ends a little above the tier's front edge
+  const tab=await rect(page.locator('.mfd-pk')),lamps=await rect(channels(page).nth(0).locator('.fd-leds')),keys=await rect(page.locator('.dk-mfd > :last-child')),bank=await rect(page.locator('.fd-bank'));
+  expect(Math.abs(tab.t-lamps.t),'tab row top on the lamp row top').toBeLessThanOrEqual(1);
+  expect(Math.abs(keys.b-bank.b),'bottom key row on the bank keys').toBeLessThanOrEqual(1);
+  const g=await columnGeometry(page),screen=await rect(page.locator('.mfd-screen'));
+  expect(g.tierBottom-screen.b,'screen bottom above the tier front edge (prototype: 10 px = 6 CSS px, within 3)').toBeGreaterThan(-1);
+  expect(Math.abs(g.tierBottom-screen.b-6),'screen bottom vs tier front edge').toBeLessThanOrEqual(tier==='tall'?3.5:6);
+ });
