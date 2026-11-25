@@ -1,0 +1,1 @@
+Settings > Plugins: the resource sampling row now says it samples every 2, 5 or 10 seconds (5 by default) while the Resources column is shown, with a note that the Quota Widget ring alone samples every 10 seconds and neither surface every 60 seconds, instead of a bare "Sampling interval" row (D324).
