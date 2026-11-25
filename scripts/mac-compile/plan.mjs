@@ -86,8 +86,9 @@ export function plan(changed, files, read) {
 // -DMODELPLAN_TEST_ONLY_SPI on its dependencies, which only trusted-mac.yml passes.
 export const NOT_STANDALONE = Object.freeze(["desktop/native/verification"]);
 
-// Seed run (owner dispatch on main): every package a PR run can build, each built with its tests (never run) in its own
-// scratch. Left out: NOT_STANDALONE, and sub-packages whose sources the root package already declares as its own targets
+// Seed run (owner dispatch on main): every row a PR run can schedule (withTestTargets), each built with its tests (never run)
+// in its own scratch and the same flags, so a PR row always finds its warm products. The verification host is built too, with
+// the SPI flag it needs. Left out: sub-packages whose sources the root package already declares as its own targets
 // (declared by the root and depending on it, so a standalone build fails with "conflicting name": ModelPlanCockpitShell,
 // ModelPlanField; run 44422368763).
 export function seedPlan(files, read) {
@@ -100,7 +101,7 @@ export function seedPlan(files, read) {
     return rootPaths.some((p) => p.startsWith(rel + "/")) && /\.package\([^)]*path:\s*"\.\."/.test(read(`${dir}/Package.swift`));
   };
   return withTestTargets(plan(swift, files, read)
-    .filter((r) => !NOT_STANDALONE.includes(r.dir) && !embedded(r.dir))
+    .filter((r) => !embedded(r.dir))
     .map((r) => ({ ...r, mode: "build-tests", filter: "" })), files, swift, read, { seed: true });
 }
 
@@ -157,7 +158,7 @@ export function withTestTargets(rows, files, changed, read, { seed = false } = {
     // Both: the root declares this directory's sources as its own targets, and the package depends on the root.
     return dependents.get(dir)?.has(ROOT) && dependents.get(ROOT)?.has(dir);
   };
-  const out = rows.map((r) => (NOT_STANDALONE.includes(r.dir) ? { ...r, flags: SPI_FLAG } : r));
+  const out = rows.map((r) => (NOT_STANDALONE.includes(r.dir) ? { ...r, scratch: r.dir.replaceAll("/", "_") + "_spi", flags: SPI_FLAG } : r)); // one scratch name per (package, flags)
   const skip = NEVER_RUN.join("|");
   const add = (dir, flags) => {
     const scratch = dir.replaceAll("/", "_") + (flags ? "_spi" : "");
@@ -166,7 +167,7 @@ export function withTestTargets(rows, files, changed, read, { seed = false } = {
   const closure = seed ? new Set(files.filter((f) => /(^|\/)Package\.swift$/.test(f)).map((f) => path.posix.dirname(f))) : dependentClosure(changed, files, read);
   for (const dir of [...closure].sort()) {
     if (!dir.startsWith(ROOT + "/") && dir !== ROOT) continue; // other trees (clients/swift...) have their own CI; here only their dependents matter
-    if (embedded(dir) || (seed && NOT_STANDALONE.includes(dir))) continue;
+    if (embedded(dir)) continue;
     if (!NOT_STANDALONE.includes(dir)) add(dir);
     if (SPI_PACKAGES.includes(dir)) add(dir, SPI_FLAG);
   }

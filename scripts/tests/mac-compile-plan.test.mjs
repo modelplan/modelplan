@@ -103,7 +103,8 @@ test("seed plan: every standalone-buildable package, tests built only, one scrat
     "desktop/native/verification/U.swift": "",
   };
   const rows = seedPlan(Object.keys(f), (p) => f[p]);
-  assert.deepEqual(rows.map((r) => r.dir), ["desktop/native", "desktop/native/Dep", "desktop/native/Free"]);
+  assert.deepEqual(rows.map((r) => r.dir), ["desktop/native", "desktop/native/Dep", "desktop/native/Free", "desktop/native/verification"]);
+  assert.equal(rows[3].flags, SPI_FLAG); // the host is no longer left out: it builds with the SPI flag, as a PR row does
   assert.ok(rows.every((r) => r.mode === "build-tests" && r.filter === ""));
   assert.equal(new Set(rows.map((r) => r.scratch)).size, rows.length);
 });
@@ -154,6 +155,16 @@ test("a change outside desktop/native reaches its dependents inside it; an unrel
 
 test("the seed builds every standalone package plus the SPI rows", () => {
   const rows = seedPlan(gAll, gRead);
-  assert.ok(rows.every((r) => r.mode === "build-tests" && r.dir !== `${N}/verification`));
+  assert.ok(rows.every((r) => r.mode === "build-tests"));
+  assert.deepEqual(rows.filter((r) => r.dir === `${N}/verification`).map((r) => [r.scratch, r.flags]), [["desktop_native_verification_spi", SPI_FLAG]]);
   assert.ok(rows.some((r) => r.flags === SPI_FLAG && r.scratch.endsWith("_spi")));
+});
+
+test("invariant: every row a PR can schedule has its products built by the seed in the same configuration", () => {
+  const key = (r) => [r.dir, r.scratch, r.flags ?? ""].join("|");
+  const seeded = new Set(seedPlan(gAll, gRead).map(key));
+  const swift = gAll.filter((f) => f.endsWith(".swift"));
+  for (const f of swift) {
+    for (const r of withTestTargets(plan([f], gAll, gRead), gAll, [f], gRead)) assert.ok(seeded.has(key(r)), `${f}: ${key(r)} is not seeded`);
+  }
 });
