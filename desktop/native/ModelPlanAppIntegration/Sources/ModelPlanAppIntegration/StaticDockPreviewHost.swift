@@ -658,7 +658,7 @@ struct DockHelpInteraction: Equatable {
         let menuStatusLines: [String]?, emptyText: String?
         let notices: [String: DockNotice]
         let display: DockDisplayArea?
-        let backingScale: CGFloat
+        let backingScale: Int
         let preferences: Data?
     }
     private static let passKeyEncoder: JSONEncoder = { let e = JSONEncoder(); e.outputFormatting = .sortedKeys; return e }()
