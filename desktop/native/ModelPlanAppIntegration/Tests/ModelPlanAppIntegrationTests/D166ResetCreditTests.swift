@@ -56,9 +56,9 @@ final class D166ResetCreditTests: XCTestCase {
         XCTAssertEqual(zh.detail(rose: false), "余量以本机读数为准")
         XCTAssertEqual(zh.title(event, now: at("2026-11-13T08:00:00Z")), "等待确认")
         XCTAssertEqual(en.title(event, now: at("2026-11-13T08:00:00Z")), "Awaiting confirmation")
-        for text in [zh.label(event), zh.title(event, now: before), en.label(event), en.title(event, now: before)] {
-            XCTAssertFalse(text.contains("重置卡") || text.lowercased().contains("reset card"), "LBL-2.2-11: \(text)")
-        }
+        // LBL-2.2-11 (amended by D427): a reset_credit_issued event is a 重置卡 / reset card.
+        XCTAssertTrue(zh.label(event).contains("重置卡"), "LBL-2.2-11: \(zh.label(event))")
+        XCTAssertTrue(en.label(event).lowercased().contains("reset card"), "LBL-2.2-11: \(en.label(event))")
 
         var signal = DockSubscriptionSignal(id: "member"); signal.dataState = .fresh
         var reset = DockResetSignal(id: event.id, status: .announced, announcedAt: event.publishedAt,
@@ -92,6 +92,11 @@ final class D166ResetCreditTests: XCTestCase {
         XCTAssertEqual(en.notification(reset, rose: true).title, "Codex limit reset confirmed")
         XCTAssertEqual(zh.notification(reset, rose: true).body, "已生效：本机读数已回升。")
         XCTAssertEqual(zh.detail(rose: true), "本机读数已回升 · 余量以本机读数为准")
+        // D427: a direct reset keeps its own wording and never says 重置卡 / reset card.
+        for text in [zh.label(reset), zh.title(reset, now: now), en.label(reset), en.title(reset, now: now),
+                     zh.notification(reset, rose: true).title, en.notification(reset, rose: true).title] {
+            XCTAssertFalse(text.contains("重置卡") || text.lowercased().contains("reset card"), "D427: \(text)")
+        }
 
         // Older producers: no kind is a direct reset; no confirmation time falls back to publishedAt.
         var legacy = base; legacy["kind"] = NSNull(); legacy["confirmedAt"] = NSNull(); legacy["confirmedAtBasis"] = NSNull()

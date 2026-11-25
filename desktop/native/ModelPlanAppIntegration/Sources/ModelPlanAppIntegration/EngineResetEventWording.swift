@@ -4,7 +4,7 @@ import Foundation
 /// D166: the words for a public Codex reset event on the Quota Widget card and in its one notification.
 /// Reset cards issued (a reset credit) and a direct limit reset are named apart; a forecast shows its
 /// expected window, a confirmation its time. Personal balance always comes from the local reading.
-/// "重置卡" / "reset card" is the product word (owner decision 11-25; supersedes LBL-2.2-11).
+/// "重置卡" / "reset card" is the product word for reset_credit_issued (LBL-2.2-11 as amended by D427); a direct reset keeps its own wording (D166) and never says it.
 public struct EngineResetEventWording: Sendable {
     public let english: Bool
     public var calendar: Calendar
