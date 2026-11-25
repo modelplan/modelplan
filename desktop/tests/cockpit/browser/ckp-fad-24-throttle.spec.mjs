@@ -89,10 +89,10 @@ test('G3-92 a Max-only model shows no ghost: keys, drag and label clicks all lan
  await expect(slider).toHaveAttribute('aria-valuetext','Max');await expect(glm.locator('.fd-ghost')).toBeHidden();await expect(glm.locator('.fd-tline')).toBeHidden();
 });
 
-// D419 (measured on the direction 06 prototype): the tall travel is .378 of the 257 px column (97.15 px, u = 81.15/97);
-// compact 97 px (u = 81/97).
-const TALL_U=(.378*257-16)/97;
-for(const [tier,height,u] of [['tall',890,TALL_U],['compact',640,81/97]])
+// D419/D433 (measured on the direction 06 prototype): this fixture has one bank, so the lever tier runs to the column bottom and the
+// travel is .7353 of the tier plus 16 px (u = (travel - 16)/97): tall tier .501 x 257 px, compact 217 - 95 px with .7867.
+const TALL_U=.7353*.501*257/97,SHORT_U=.7867*(217-95)/97;
+for(const [tier,height,u] of [['tall',890,TALL_U],['compact',640,SHORT_U]])
  test(`CKP-FAD-24 the baked throttle is drawn per theme at the travel's scale (${tier})`,async({page})=>{
   const {send,receive}=await openThrottles(page,{tier,height});
   const sol=channel(page,0),lever=await box(sol.locator('.fd-cap'));
@@ -212,7 +212,7 @@ for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height
     // the ghost rod is as wide as the real lever's rod (5 u)
     // the rod's own width (its box, before the skew along the tilted slot line: macrevb-1229-2)
     const rodWidth=await ch.locator('.fd-tline').evaluate(e=>parseFloat(getComputedStyle(e).width));
-    expect(Math.abs(rodWidth-5*(tier==='tall'?TALL_U:81/97)),'ghost rod width').toBeLessThanOrEqual(.5);
+    expect(Math.abs(rodWidth-5*(tier==='tall'?TALL_U:SHORT_U)),'ghost rod width').toBeLessThanOrEqual(.5);
     const bg=await ch.locator('.fd-tline').evaluate(e=>getComputedStyle(e).backgroundColor);
     if(theme==='night')expect(bg).toMatch(/0\.25\)$/);
     if(theme==='day')expect(bg).toMatch(/0\.55\)$/);

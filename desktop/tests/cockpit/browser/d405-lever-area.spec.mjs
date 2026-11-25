@@ -13,7 +13,7 @@ import {levelK} from '../../../cockpit/study/rocket-r1/fader-view.js';
 // The CKP-FAD-24 throttle fixture (Sol ★Med current High, Opus ★Med current XHigh, GLM ★Max).
 const effort=(e,ability,cost,star=false)=>({effort:e,label:e,star,ability,cost,time:null});
 // Sol: ★ Med, current High; Opus: ★ Med, current XHigh; GLM: one effort, ★ Max = current Max (owner build G3-92).
-function throttleData({glmEfforts=['max']}={}){
+function throttleData({glmEfforts=['max'],paged=false}={}){
  const data=visualFixture().data;
  // GLM remains eligible after live sessions clear because this fixture has a visible ZCode subscription.
  const zai=structuredClone(data.projection.rows[0]);zai.id='zai';zai.name={en:'ZCode',zh:'ZCode'};zai.vendorKey='glm';
@@ -23,6 +23,7 @@ function throttleData({glmEfforts=['max']}={}){
   {id:'opus',name:'Opus 5.5',developerId:'anthropic',recommended:'medium',efforts:[effort('low',45.6,1.2),effort('medium',55.4,2.9,true),effort('high',58.1,3.95),effort('xhigh',60.1,7.5),effort('max',62.4,13)]},
   {id:'glm',name:'GLM-5.3',developerId:'zhipuai',recommended:'max',efforts:glmEfforts.map((e,i)=>effort(e,40+i,1+i,e==='max'))},
  ]};
+ if(paged)data.details.publishedModels=[...data.details.publication.models,{id:'luna',name:'Luna 6',developerId:'openai',recommended:'high',efforts:[effort('low',30,.1),effort('medium',36,.2),effort('high',41,.3,true),effort('xhigh',44,.5),effort('max',45,.9)]}];
  data.details.sessions=[
   {sessionRef:'0000000000000001',source:'codex',subscriptionRef:null,model:'sol',effort:'high',projectLabel:'modelPlans',lastObservedAt:'2026-10-20T14:05:00Z',state:'running',rate:null},
   {sessionRef:'0000000000000002',source:'claude',subscriptionRef:null,model:'opus',effort:'xhigh',projectLabel:'desktop',lastObservedAt:'2026-10-20T14:04:00Z',state:'running',rate:null},
@@ -30,7 +31,7 @@ function throttleData({glmEfforts=['max']}={}){
  ];
  return data;
 }
-async function openThrottles(page,{theme='night',tier='tall',height=890,glmEfforts}={}){
+async function openThrottles(page,{theme='night',tier='tall',height=890,glmEfforts,paged=false}={}){
  await page.setViewportSize({width:636,height});
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.clock.setFixedTime(new Date('2026-10-20T14:05:00Z'));
@@ -38,7 +39,7 @@ async function openThrottles(page,{theme='night',tier='tall',height=890,glmEffor
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,theme},shell:{...shell,tier},redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
- expect(await receive(send('display',{data:throttleData({glmEfforts})}))).toBe(true);
+ expect(await receive(send('display',{data:throttleData({glmEfforts,paged})}))).toBe(true);
  await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(3);
  // D405: the code-drawn slots follow the travel's size; wait until they are drawn for the current one.
  await page.waitForFunction(()=>[...document.querySelectorAll('.fd-ch .fd-travel')].every(t=>{const s=t.querySelector('.fd-slotsvg');return s&&Math.abs(Number(s.getAttribute('height'))-t.offsetHeight)<1;}));
@@ -309,7 +310,7 @@ const rgbs=s=>[...s.matchAll(/rgba?\(([^)]+)\)/g)].map(m=>m[1].split(',').map(Nu
 const lum=([r,g,b])=>.2126*r+.7152*g+.0722*b;
 for(const [tier,height] of [['tall',890],['compact',640]])
  test(`D419 the lever tier is a separate lighter panel and the bank keys sit below it (${tier})`,async({page})=>{
-  await openThrottles(page,{tier,height});
+  await openThrottles(page,{tier,height,paged:true});
   const g=await page.locator('.dk-fad').evaluate(fad=>{const fr=fad.getBoundingClientRect(),a=getComputedStyle(fad,'::after'),top=fr.top+parseFloat(a.top),bottom=fr.top+parseFloat(a.top)+parseFloat(a.height);
    const bank=fad.querySelector('.fd-bank').getBoundingClientRect(),travels=[...fad.querySelectorAll('.fd-ch:not(.empty) .fd-travel')].map(t=>t.getBoundingClientRect());
    const slots=[...fad.querySelectorAll('.fd-slotsvg')].map(s=>s.getBoundingClientRect()),cores=[...fad.querySelectorAll('.fd-slotsvg .sl-core')].map(c=>c.getBoundingClientRect());
@@ -339,8 +340,8 @@ const columnGeometry=page=>page.locator('.dk-fad').evaluate(fad=>{const fr=fad.g
  const strips=[...fad.querySelectorAll('.fd-ch:not(.empty) .fd-strip')].map(r),cores=[...fad.querySelectorAll('.fd-slotsvg .sl-core')].map(r);
  return {top:fr.top,H:fr.height,upper:fr.top+parseFloat(b.top)+parseFloat(b.height),tierTop:fr.top+parseFloat(a.top),tierBottom:fr.top+parseFloat(a.top)+parseFloat(a.height),
   card:{top:Math.min(...strips.map(s=>s.top)),bottom:Math.max(...strips.map(s=>s.bottom))},slot:{top:Math.min(...cores.map(c=>c.top)),bottom:Math.max(...cores.map(c=>c.bottom))}};});
-test('D419 the full lever column follows the measured prototype ratios (cards about half, slots inside the tier)',async({page})=>{
- await openThrottles(page);
+test('D419 the full lever column follows the measured prototype ratios (cards about half, slots inside the tier; two banks)',async({page})=>{
+ await openThrottles(page,{paged:true});
  const g=await columnGeometry(page),at=y=>(y-g.top)/g.H;
  expect(g.H).toBeCloseTo(257,0);
  expect(Math.abs(at(g.upper)-.497),`upper tier (lamps + cards) ${at(g.upper).toFixed(3)} of the column`).toBeLessThanOrEqual(.02);
@@ -354,8 +355,8 @@ test('D419 the full lever column follows the measured prototype ratios (cards ab
  const rows=await page.locator('.fd-scale .sc-travel[data-gap="1"] .sc-l').evaluateAll(l=>Object.fromEntries(l.map(e=>{const r=e.getBoundingClientRect();return [e.dataset.level,r.top+r.height/2];})));
  expect(Math.abs(at(rows.Max)-.554)).toBeLessThanOrEqual(.01);expect(Math.abs(at(rows.Low)-.866)).toBeLessThanOrEqual(.01);
 });
-test('D419 compact keeps the 19.5 px detent floor and a 72 px card, with the slots still inside the tier',async({page})=>{
- await openThrottles(page,{tier:'compact',height:640});
+test('D419 compact keeps the 19.5 px detent floor and a 72 px card, with the slots still inside the tier (two banks)',async({page})=>{
+ await openThrottles(page,{tier:'compact',height:640,paged:true});
  const g=await columnGeometry(page);
  expect(g.card.bottom-g.card.top).toBeGreaterThanOrEqual(72);
  expect(g.slot.top-g.tierTop,'slot top inside the tier').toBeGreaterThanOrEqual(2.5);
@@ -379,3 +380,23 @@ test('D419 the upper panel ends in a lip at the measured ratio, with a shadow on
  expect(at(2),'shadow at the tier top is darker than the deck 20% down').toBeLessThan(deck*.6);
  expect(lum(top-3),'the lip face is lighter than the panel above it').toBeGreaterThan(lum(top-8));
 });
+
+// D433 (owner 11-25): with one bank (no page keys) the lever tier runs to the column bottom and the travel, detents and slot
+// re-fit to it with the paged tier's ratios of the tier length L (slot margins .0637 L top and .0796 L bottom, travel .7353 L + 16 px;
+// compact margins .032 L and .0515 L, travel .7867 L + 16 px); with two banks it stops above the bank keys. The detent floor holds either way.
+for(const [tier,height,len] of [['tall',890,.7353],['compact',640,.7867]])
+ for(const paged of [false,true])
+  test(`D433 the lever tier ${paged?'stops above the bank keys (two banks)':'runs to the column bottom (one bank)'}, slots and detents re-fit (${tier})`,async({page})=>{
+   await openThrottles(page,{tier,height,paged});
+   const g=await columnGeometry(page),L=g.tierBottom-g.tierTop;
+   if(paged){const bank=await rect(page.locator('.fd-bank'));expect(bank.h,'page keys shown').toBeGreaterThan(10);expect(g.tierBottom).toBeLessThanOrEqual(bank.t);}
+   else{expect(Math.abs(g.tierBottom-(g.top+g.H)),'tier bottom at the column bottom').toBeLessThanOrEqual(.6);expect(await page.locator('.fd-bank [data-bank]').count()).toBe(0);expect(L,'taller than the paged tier').toBeGreaterThan(tier==='tall'?.46*g.H:.5*g.H);}
+   const trv=await rect(channels(page).nth(0).locator('.fd-travel'));
+   expect(Math.abs(trv.h-Math.max(97,len*L+16)),'travel = .7353 L + 16 px (compact .7867 L), floor 97 px').toBeLessThanOrEqual(.6);
+   expect(g.slot.top,'slot inside the tier at the top').toBeGreaterThanOrEqual(g.tierTop+(tier==='tall'?.0637*L-.6:.032*L-.6));
+   expect(g.slot.bottom,'slot inside the tier at the bottom').toBeLessThanOrEqual(g.tierBottom-(tier==='tall'?.0796*L-.6:.0515*L-.6));
+   const rows=await page.locator('.fd-scale .sc-travel[data-gap="1"] .sc-l').evaluateAll(l=>l.map(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;}).sort((a,b)=>a-b));
+   expect(Math.min(...rows.slice(1).map((y,i)=>y-rows[i])),'closest detents (CKP-FAD-13)').toBeGreaterThanOrEqual(19.5);
+   // the knob follows the travel: its height scales with it (u = travel / 97)
+   if(!paged){const k=await rect(channels(page).nth(0).locator('.fd-cap'));expect(k.h).toBeGreaterThan(8);}
+  });

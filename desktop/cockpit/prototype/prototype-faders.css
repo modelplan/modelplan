@@ -12,7 +12,9 @@
    CKP-FAD-13). The compact layout (640) cannot hold these ratios with a readable card and the 19.5 px floor; it sets px values
    below. */
 .dk-fad{--fd-H:var(--console-h,217px);--fd-led-gap:max(0px,calc(var(--fd-H) * .066 - var(--row-h,18px)));--fd-lcd:calc(var(--fd-H) * .392);
-  --fd-trv-top:calc(var(--fd-H) * .521);--fd-trv:max(97px,calc(var(--fd-H) * .378));--fd-tier-top:calc(var(--fd-H) * .499);--fd-tier-bot:min(calc(var(--fd-H) * .928),calc(var(--fd-H) - var(--row-h,18px) - 1px));
+  --fd-tier-bot:var(--fd-bot-paged);--fd-bot-paged:min(calc(var(--fd-H) * .928),calc(var(--fd-H) - var(--row-h,18px) - 1px));
+  --fd-tier-top:calc(var(--fd-H) * .499);--fd-L:calc(var(--fd-tier-bot) - var(--fd-tier-top));--fd-trvk:.7353;--fd-trva:.1243;--fd-trv-min:97px;
+  --fd-trv-top:calc(var(--fd-tier-top) + var(--fd-L) * var(--fd-trva) - 8px);--fd-trv:max(var(--fd-trv-min),calc(var(--fd-L) * var(--fd-trvk) + 16px));
   --fd-rows:var(--row-h,18px) var(--fd-led-gap) var(--fd-lcd) calc(var(--fd-trv-top) - var(--row-h,18px) - var(--fd-led-gap) - var(--fd-lcd)) var(--fd-trv) minmax(0,1fr);--fd-pad:8px;
   position:relative;isolation:isolate;display:grid;grid-template-columns:calc(3 * var(--fd-ch,64px) + 2 * var(--fd-gap,12px));
   grid-template-rows:minmax(0,1fr) var(--row-h,18px);row-gap:var(--key-gap,4px);align-self:stretch;height:var(--console-h,217px);min-height:0;-webkit-user-select:none;user-select:none}
@@ -167,7 +169,13 @@ body.reduced #cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s line
 /* D405/D419 compact (H = 217): the 97 px travel (top detents 19.5 px apart, CKP-FAD-13) and a 72 px card leave 11 px for the
    prototype's shelf and the two in-tier margins, so they shrink to about half their measured size: card 18-90, lip 94, tier
    95-198 (bank keys from 199), travel 97-194, so the slot (98.3-192.7) stays inside the tier by 3.3 / 5.3 px. */
-#cockpit[data-layout="640"] .dk-fad{--fd-lcd:72px;--fd-led-gap:0px;--fd-tier-top:95px;--fd-trv-top:97px;--fd-trv:97px;--fd-tier-bot:198px}
+#cockpit[data-layout="640"] .dk-fad{--fd-lcd:72px;--fd-led-gap:0px;--fd-tier-top:95px;--fd-bot-paged:198px;--fd-trvk:.7867;--fd-trva:.0969}
+/* D433 (owner 11-25): with one bank (no page keys) the lever tier runs from the lip to the column bottom, as on main, and the
+   travel, detents and slot re-fit to it with the same ratios of the tier's length L as the paged tier (slot margins .0637 L and
+   .0796 L; the travel is .7353 L + 16 px, the slot keeps its 8 u run past the end detents, u = (travel - 16 px) / 97; compact
+   margins .032 L and .0515 L, travel .7867 L + 16 px); the bank row collapses. Paged (two or more banks) keeps the
+   measured prototype tier that stops above the bank keys. */
+.dk-fad:not(.paged){--fd-tier-bot:var(--fd-H);grid-template-rows:minmax(0,1fr) 0;row-gap:0}
 #cockpit[data-layout="640"] .dk-fad .cd-use{line-height:12px}
 #cockpit[data-layout="640"] .dk-fad .fd-strip{padding:5px 2px 3px 3px}
 #cockpit[data-layout="640"] .dk-fad .cd-big,#cockpit[data-layout="640"] .dk-fad .cd-try{margin-top:2px}

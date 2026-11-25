@@ -219,7 +219,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const lamp=leds.querySelector<HTMLElement>('.fd-indicator');if(lamp&&c.lampColour)lamp.style.setProperty('--lamp',c.lampColour);for(const [j,el] of [...strip.querySelectorAll<HTMLElement>('.st-vend b')].entries())el.style.setProperty('--v',c.segments[j]);
   }
   paintSlots();
-  bank.innerHTML=bankView(model);if(!model.all.length)bank.append(node('p','mp-empty sm',ht(locale,'host.dataUnavailable')));for(const b of bank.querySelectorAll<HTMLButtonElement>('[data-bank]'))b.onclick=e=>{if(!e.isTrusted)return;bankIndex+=b.dataset.bank==='1'?1:-1;paintFaders();};
+  bank.innerHTML=bankView(model);root.querySelector('.dk-fad')?.classList.toggle('paged',model.banks>1||!model.all.length);if(!model.all.length)bank.append(node('p','mp-empty sm',ht(locale,'host.dataUnavailable')));for(const b of bank.querySelectorAll<HTMLButtonElement>('[data-bank]'))b.onclick=e=>{if(!e.isTrusted)return;bankIndex+=b.dataset.bank==='1'?1:-1;paintFaders();};
  }
 
  const bar=node('div','mfd-pk'),screen=node('div','mfd-screen'),page=node('div','mfd-page pg-overview'),footer=node('div','mfd-ok');bar.setAttribute('role','toolbar');screen.dataset.mat='well';page.dataset.fill='page';screen.append(page);
