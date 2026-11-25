@@ -32,6 +32,15 @@ type queryBinary struct {
 	id            int
 	notifications []json.RawMessage
 	initialize    map[string]json.RawMessage
+	// How the session was started, so a session the server ended cleanly can be replaced.
+	limit        time.Duration
+	binary       string
+	capabilities []string
+	args         []string
+	stderr       string // the session's stderr file; a clean end leaves it empty
+	// dropped: an unterminated tail at end of stream, which the server never committed; it is
+	// never delivered as a frame. Written by the reader before it closes frames.
+	dropped []byte
 }
 
 func startQueryBinary(t *testing.T, binary string) *queryBinary {
@@ -66,22 +75,11 @@ func startQueryBinaryFor(t *testing.T, limit time.Duration, binary string, capab
 		t.Fatal(err)
 	}
 	cmd.Stderr = stderr
-	p := &queryBinary{t: t, cmd: cmd, in: in, frames: make(chan []byte, 128), done: make(chan error, 1)}
+	p := &queryBinary{t: t, cmd: cmd, in: in, frames: make(chan []byte, 128), done: make(chan error, 1), limit: limit, binary: binary, capabilities: capabilities, args: args, stderr: stderr.Name()}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	go func() {
-		scanner := bufio.NewScanner(out)
-		scanner.Buffer(make([]byte, 4096), wire.MaxFrameBytes)
-		for scanner.Scan() {
-			select {
-			case p.frames <- append([]byte(nil), scanner.Bytes()...):
-			case <-ctx.Done():
-				return
-			}
-		}
-		close(p.frames)
-	}()
+	go p.readFrames(ctx, out)
 	go func() { p.done <- cmd.Wait() }()
 	t.Cleanup(func() {
 		in.Close()
@@ -644,3 +642,115 @@ func TestU3cInvalidSelectorsNeverAdmitRealBinary(t *testing.T) {
 		}
 	}
 }
+
+// A consent change that lands while a private frame is being written ends the app-server
+// session cleanly (exit 0, nothing on stderr): the frame lost its fence after its first byte and
+// is discarded with the session (internal/appserver/outbound.go). The host reconnects. Tests
+// that change consent while a session is open use the helpers below to accept only that clean
+// end, reconnect and check the new session.
+
+// callUnlessEnded is call, except that a session the server ended cleanly (exit 0, nothing on
+// stderr) before answering reports false instead of failing the test.
+func (p *queryBinary) callUnlessEnded(method string, params any) (map[string]json.RawMessage, bool) {
+	p.t.Helper()
+	p.id++
+	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": p.id, "method": method, "params": params})
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	if _, err := p.in.Write(append(body, '\n')); err != nil {
+		return nil, p.endedCleanly()
+	}
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case raw, ok := <-p.frames:
+			if !ok {
+				return nil, p.endedCleanly()
+			}
+			var msg map[string]json.RawMessage
+			if json.Unmarshal(raw, &msg) != nil {
+				p.t.Fatal("invalid server frame")
+			}
+			var id int
+			if json.Unmarshal(msg["id"], &id) == nil && id == p.id {
+				return msg, true
+			}
+			p.notifications = append(p.notifications, raw)
+		case <-timer.C:
+			p.t.Fatalf("timed out waiting for %s", method)
+		}
+	}
+}
+
+// endedCleanly waits for the server to exit and fails the test unless it exited with status 0
+// and wrote nothing on stderr. An unterminated tail (p.dropped) was never committed or parsed.
+// It returns false (the session is over); the exit stays available to the cleanup.
+func (p *queryBinary) endedCleanly() bool {
+	p.t.Helper()
+	select {
+	case err := <-p.done:
+		p.done <- err
+		if err != nil {
+			p.t.Fatalf("app-server exited: %v", err)
+		}
+		if p.stderr != "" {
+			if b, _ := os.ReadFile(p.stderr); len(b) != 0 {
+				p.t.Fatalf("app-server ended with stderr: %s", b)
+			}
+		}
+	case <-time.After(5 * time.Second):
+		p.t.Fatal("app-server stdout closed but the process kept running")
+	}
+	return false
+}
+
+// reconnect starts a new session of the same binary with the same capabilities and arguments,
+// as the host does after the server ends a session. Call it only after endedCleanly.
+func (p *queryBinary) reconnect() *queryBinary {
+	p.t.Helper()
+	return startQueryBinaryFor(p.t, p.limit, p.binary, p.capabilities, p.args...)
+}
+
+// readFrames delivers the server's newline-terminated frames and closes frames at end of stream.
+// A frame is committed only by its newline (outbound.go writes it under the consent fence), so
+// an unterminated tail is kept aside in dropped and never delivered or parsed.
+func (p *queryBinary) readFrames(ctx context.Context, out io.Reader) {
+	reader := bufio.NewReaderSize(out, 4096)
+	for {
+		line, err := readCommittedFrame(reader, wire.MaxFrameBytes)
+		if err != nil {
+			p.dropped = line
+			close(p.frames)
+			return
+		}
+		select {
+		case p.frames <- line:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// readCommittedFrame returns one frame without its newline. At end of stream (or past max) it
+// returns the unterminated bytes read so far with an error; they are not a frame.
+func readCommittedFrame(r *bufio.Reader, max int) ([]byte, error) {
+	var line []byte
+	for {
+		chunk, err := r.ReadSlice('\n')
+		line = append(line, chunk...)
+		switch {
+		case err == nil:
+			return line[:len(line)-1], nil
+		case err == bufio.ErrBufferFull && len(line) <= max:
+			continue
+		case err == bufio.ErrBufferFull:
+			return line, errFrameTooLong
+		default:
+			return line, err
+		}
+	}
+}
+
+var errFrameTooLong = fmt.Errorf("server frame longer than %d bytes", wire.MaxFrameBytes)
