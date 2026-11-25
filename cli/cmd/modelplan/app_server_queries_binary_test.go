@@ -37,6 +37,10 @@ type queryBinary struct {
 	binary       string
 	capabilities []string
 	args         []string
+	stderr       string // the session's stderr file; a clean end leaves it empty
+	// dropped: an unterminated tail at end of stream, which the server never committed; it is
+	// never delivered as a frame. Written by the reader before it closes frames.
+	dropped []byte
 }
 
 func startQueryBinary(t *testing.T, binary string) *queryBinary {
@@ -71,22 +75,11 @@ func startQueryBinaryFor(t *testing.T, limit time.Duration, binary string, capab
 		t.Fatal(err)
 	}
 	cmd.Stderr = stderr
-	p := &queryBinary{t: t, cmd: cmd, in: in, frames: make(chan []byte, 128), done: make(chan error, 1), limit: limit, binary: binary, capabilities: capabilities, args: args}
+	p := &queryBinary{t: t, cmd: cmd, in: in, frames: make(chan []byte, 128), done: make(chan error, 1), limit: limit, binary: binary, capabilities: capabilities, args: args, stderr: stderr.Name()}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	go func() {
-		scanner := bufio.NewScanner(out)
-		scanner.Buffer(make([]byte, 4096), wire.MaxFrameBytes)
-		for scanner.Scan() {
-			select {
-			case p.frames <- append([]byte(nil), scanner.Bytes()...):
-			case <-ctx.Done():
-				return
-			}
-		}
-		close(p.frames)
-	}()
+	go p.readFrames(ctx, out)
 	go func() { p.done <- cmd.Wait() }()
 	t.Cleanup(func() {
 		in.Close()
@@ -691,7 +684,8 @@ func (p *queryBinary) callUnlessEnded(method string, params any) (map[string]jso
 	}
 }
 
-// endedCleanly waits for the server to exit and fails the test unless it exited with status 0.
+// endedCleanly waits for the server to exit and fails the test unless it exited with status 0
+// and wrote nothing on stderr. An unterminated tail (p.dropped) was never committed or parsed.
 // It returns false (the session is over); the exit stays available to the cleanup.
 func (p *queryBinary) endedCleanly() bool {
 	p.t.Helper()
@@ -700,6 +694,11 @@ func (p *queryBinary) endedCleanly() bool {
 		p.done <- err
 		if err != nil {
 			p.t.Fatalf("app-server exited: %v", err)
+		}
+		if p.stderr != "" {
+			if b, _ := os.ReadFile(p.stderr); len(b) != 0 {
+				p.t.Fatalf("app-server ended with stderr: %s", b)
+			}
 		}
 	case <-time.After(5 * time.Second):
 		p.t.Fatal("app-server stdout closed but the process kept running")
@@ -713,3 +712,45 @@ func (p *queryBinary) reconnect() *queryBinary {
 	p.t.Helper()
 	return startQueryBinaryFor(p.t, p.limit, p.binary, p.capabilities, p.args...)
 }
+
+// readFrames delivers the server's newline-terminated frames and closes frames at end of stream.
+// A frame is committed only by its newline (outbound.go writes it under the consent fence), so
+// an unterminated tail is kept aside in dropped and never delivered or parsed.
+func (p *queryBinary) readFrames(ctx context.Context, out io.Reader) {
+	reader := bufio.NewReaderSize(out, 4096)
+	for {
+		line, err := readCommittedFrame(reader, wire.MaxFrameBytes)
+		if err != nil {
+			p.dropped = line
+			close(p.frames)
+			return
+		}
+		select {
+		case p.frames <- line:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// readCommittedFrame returns one frame without its newline. At end of stream (or past max) it
+// returns the unterminated bytes read so far with an error; they are not a frame.
+func readCommittedFrame(r *bufio.Reader, max int) ([]byte, error) {
+	var line []byte
+	for {
+		chunk, err := r.ReadSlice('\n')
+		line = append(line, chunk...)
+		switch {
+		case err == nil:
+			return line[:len(line)-1], nil
+		case err == bufio.ErrBufferFull && len(line) <= max:
+			continue
+		case err == bufio.ErrBufferFull:
+			return line, errFrameTooLong
+		default:
+			return line, err
+		}
+	}
+}
+
+var errFrameTooLong = fmt.Errorf("server frame longer than %d bytes", wire.MaxFrameBytes)

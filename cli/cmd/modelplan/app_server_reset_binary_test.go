@@ -199,9 +199,10 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 				t.Fatalf("%s links mismatch: %s", label, params)
 			}
 		}
-		// The session ended cleanly on a consent change (callUnlessEnded): reconnect, make sure
-		// the denial is in force, and check what the new session is given.
-		afterEnd := func() {
+		// The session ended cleanly on a consent change (callUnlessEnded): reconnect and check
+		// the new session. An acknowledged Deny must already be in force there; only a Deny
+		// whose reply never arrived may be sent again.
+		afterEnd := func(acknowledged bool) {
 			t.Helper()
 			client = client.reconnect()
 			var facts wire.Envelope[wire.ConsentFacts]
@@ -212,7 +213,10 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 			for _, s := range facts.Data.Scopes {
 				denied = denied || s.Scope == scope && s.State == wire.ConsentDenied
 			}
-			if !denied {
+			switch {
+			case acknowledged && !denied:
+				t.Fatalf("an acknowledged Deny of %s is not in force after reconnect: %+v", scope, facts.Data.Scopes)
+			case !denied:
 				grant := client.call("consent/grant", wire.ConsentGrantParams{RequestID: requestID + "-reconnected", ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{}, Deny: []string{scope}})
 				if grant["error"] != nil {
 					t.Fatalf("grant after reconnect: %s", grant["error"])
@@ -227,7 +231,7 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 		var facts wire.Envelope[wire.ConsentFacts]
 		current, open := client.callUnlessEnded("consent/get", map[string]any{})
 		if !open {
-			afterEnd()
+			afterEnd(false)
 			return
 		}
 		if err := json.Unmarshal(current["result"], &facts); err != nil {
@@ -235,7 +239,7 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 		}
 		grant, open := client.callUnlessEnded("consent/grant", wire.ConsentGrantParams{RequestID: requestID, ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{}, Deny: []string{scope}})
 		if !open {
-			afterEnd()
+			afterEnd(false)
 			return
 		}
 		if grant["error"] != nil {
@@ -253,7 +257,7 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 				case raw, ok = <-client.frames:
 					if !ok {
 						client.endedCleanly()
-						afterEnd()
+						afterEnd(true)
 						return
 					}
 				case <-deadline:
