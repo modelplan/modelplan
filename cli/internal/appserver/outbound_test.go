@@ -4,6 +4,7 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -321,28 +322,133 @@ func (w *blockingWriter) Close() error {
 	return nil
 }
 
-// The write timeout is kept, and under the consent lock it is capped at commitTimeout: a
-// stalled consumer cannot hold off a revoke past that bound.
-func TestPrivateFrameStallUnderFenceIsBounded(t *testing.T) {
+// A stalled consumer never holds the consent lock past commitTimeout, so a consent change is
+// never stuck behind a frame write (#1262 macrevb-1262-1); the session itself still ends only
+// at the normal write timeout.
+func TestPrivateFrameStallReleasesFenceAndEndsAtWriteTimeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	w := &blockingWriter{closed: make(chan struct{})}
-	o := newOutbound(ctx, cancel, w, time.Minute, func(Stamp) error { return nil })
-	var held time.Duration
+	const writeTimeout = 1500 * time.Millisecond
+	o := newOutbound(ctx, cancel, w, writeTimeout, func(Stamp) error { return nil })
+	var mu sync.Mutex
+	var holds []time.Duration
 	o.commit = func(_ Stamp, write func() error) error {
 		start := time.Now()
-		defer func() { held = time.Since(start) }()
-		return write()
+		err := write()
+		mu.Lock()
+		holds = append(holds, time.Since(start))
+		mu.Unlock()
+		return err
 	}
 	o.rowsMessage("private row", Stamp{}, nil)
+	started := time.Now()
 	done := make(chan struct{})
 	go o.run(done)
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("a stalled consumer held the consent fence past the bound")
+		t.Fatal("a stalled consumer kept the session past the write timeout")
 	}
-	if held < commitTimeout || held > commitTimeout+time.Second || ctx.Err() == nil {
-		t.Fatalf("fence held %v, want about %v, then the session closed", held, commitTimeout)
+	elapsed := time.Since(started)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(holds) != 1 || holds[0] < commitTimeout || holds[0] > commitTimeout+300*time.Millisecond {
+		t.Fatalf("consent lock holds %v, want one of about %v", holds, commitTimeout)
+	}
+	if elapsed < writeTimeout || elapsed > writeTimeout+time.Second || ctx.Err() == nil {
+		t.Fatalf("session ended after %v, want about the write timeout %v", elapsed, writeTimeout)
+	}
+}
+
+// gateWriter blocks its first write until the consumer resumes (release is closed).
+type gateWriter struct {
+	release chan struct{}
+	closed  chan struct{}
+	mu      sync.Mutex
+	written []byte
+	once    sync.Once
+}
+
+func (w *gateWriter) Write(p []byte) (int, error) {
+	select {
+	case <-w.release:
+	case <-w.closed:
+		return 0, io.ErrClosedPipe
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.written = append(w.written, p...)
+	return len(p), nil
+}
+func (w *gateWriter) Close() error { w.once.Do(func() { close(w.closed) }); return nil }
+func (w *gateWriter) snapshot() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return string(w.written)
+}
+
+// A consumer stalls mid-frame past commitTimeout; the lock is released and the body finishes
+// outside it. A revoke committed meanwhile means the frame's newline is never written: the
+// session ends and the partial line is discarded (review 11-24 #1). Without a revoke the frame
+// completes under a second commit and the session continues.
+func TestPrivateFrameStalledPastBoundTerminatesOnlyUnderFence(t *testing.T) {
+	for _, revoke := range []bool{true, false} {
+		t.Run(fmt.Sprintf("revoke=%v", revoke), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			w := &gateWriter{release: make(chan struct{}), closed: make(chan struct{})}
+			o := newOutbound(ctx, cancel, w, 5*time.Second, func(Stamp) error { return nil })
+			var mu sync.Mutex
+			commits, newlineInside := 0, false
+			o.commit = func(_ Stamp, write func() error) error {
+				mu.Lock()
+				commits++
+				n := commits
+				mu.Unlock()
+				if n == 2 && revoke {
+					return ProtocolError{wire.CodeConsentChanged}
+				}
+				err := write()
+				if n == 1 {
+					// The lock is released: a consent change can commit now; then the consumer resumes.
+					close(w.release)
+				} else if strings.HasSuffix(w.snapshot(), "\n") {
+					newlineInside = true
+				}
+				return err
+			}
+			o.rowsMessage("private row", Stamp{}, nil)
+			done := make(chan struct{})
+			go o.run(done)
+			if revoke {
+				select {
+				case <-done:
+				case <-time.After(3 * time.Second):
+					t.Fatal("session did not end after the frame lost its fence")
+				}
+				if got := w.snapshot(); got != "\"private row\"" || ctx.Err() == nil {
+					t.Fatalf("written %q after a revoke, session ended %v", got, ctx.Err() != nil)
+				}
+				return
+			}
+			// Queue the next frame only once the private frame is being written.
+			<-w.release
+			o.controlMessage("after")
+			deadline := time.Now().Add(3 * time.Second)
+			for w.snapshot() != "\"private row\"\n\"after\"\n" {
+				if time.Now().After(deadline) {
+					t.Fatalf("written %q", w.snapshot())
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if commits != 2 || !newlineInside || ctx.Err() != nil {
+				t.Fatalf("commits %d, newline under fence %v, session ended %v", commits, newlineInside, ctx.Err() != nil)
+			}
+			cancel()
+			<-done
+		})
 	}
 }
