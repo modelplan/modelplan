@@ -619,8 +619,8 @@ import ModelPlanWire
     }
     /// D380: the same words as the engine row (rows.ZCodeKeychainText); a test pins them.
     public static let zcodeKeychainLine = SettingsText(
-        "ZCode keeps its sign-in key in the Keychain. Allow ModelPlan to read it in Settings; when macOS asks, choose Always Allow.",
-        "ZCode 的登录密钥保存在钥匙串中。请在设置中允许 ModelPlan 读取；macOS 询问时请选择“始终允许”。")
+        "ZCode may keep its sign-in key in the Keychain. Allow ModelPlan to read it in Settings; when macOS asks, choose Always Allow.",
+        "ZCode 的登录密钥可能保存在钥匙串中。请在设置中允许 ModelPlan 读取；macOS 询问时请选择“始终允许”。")
     private func keychainAllowButton() -> ScopeConsentButton {
         button(.init("Allow reading", "允许读取"), id: "scope.keychain.allow", enabled: controller.canMutate) { [weak self] in await self?.controller.allowKeychain() }
     }

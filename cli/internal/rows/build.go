@@ -438,8 +438,8 @@ func toolStepText(tool string, code Code) (Text, bool) {
 // ZCodeKeychainText (D380) and ZCodeUnreadableText (owner 11-22) are ZCode's own next steps. The
 // Swift copies in Settings, first run and the Dock card use the same words; a test pins them.
 var (
-	ZCodeKeychainText = Text{EN: "ZCode keeps its sign-in key in the Keychain. Allow ModelPlan to read it in Settings; when macOS asks, choose Always Allow.",
-		ZH: "ZCode 的登录密钥保存在钥匙串中。请在设置中允许 ModelPlan 读取；macOS 询问时请选择“始终允许”。"}
+	ZCodeKeychainText = Text{EN: "ZCode may keep its sign-in key in the Keychain. Allow ModelPlan to read it in Settings; when macOS asks, choose Always Allow.",
+		ZH: "ZCode 的登录密钥可能保存在钥匙串中。请在设置中允许 ModelPlan 读取；macOS 询问时请选择“始终允许”。"}
 	ZCodeUnreadableText = Text{EN: "Can't read the ZCode sign-in automatically · Paste a Zhipu / Z.ai API key to read the quota",
 		ZH: "无法自动读取 ZCode 登录 · 可粘贴智谱 / Z.ai 的 API key 读取额度"}
 )

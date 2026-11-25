@@ -127,7 +127,7 @@ public enum ReaderCauseTable {
         switch code {
         case "keychain_unset", "keychain_unavailable", "keychain_denied":
             // D380: ZCode 3.19+ keeps its sign-in key in the Keychain; macOS asks, and Always Allow keeps it readable.
-            return .init(reason: .init("ZCode keeps its sign-in key in the Keychain", "ZCode 的登录密钥保存在钥匙串中"),
+            return .init(reason: .init("ZCode may keep its sign-in key in the Keychain", "ZCode 的登录密钥可能保存在钥匙串中"),
                          action: .init("Allow reading in Settings; when macOS asks, choose Always Allow", "在设置中允许读取；macOS 询问时请选择“始终允许”"), target: .openSettings)
         case "unsupported_login", "unknown_store_format":
             // Owner 11-22: never a bare "not supported"; the pasted-key route (D90) still reads the quota.

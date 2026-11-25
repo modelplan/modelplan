@@ -364,6 +364,10 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 				// The saved key file is unsafe or unreadable: fail this provider closed. Neither the saved key
 				// nor a detected key is sent anywhere, so a different account's usage cannot be shown.
 				e = codexbarEntry{Status: "error", ErrorCode: "file_unreadable", ObservedAt: now.UTC()}
+			} else if hasManual && x.Provider == "zai" && !zaiPastedKeyAdmitted() {
+				// macrev2-1162-2: a pasted GLM key kept after its own API-key Deny is never sent, whatever
+				// else admitted this provider; the row shows the consent cause instead.
+				e = codexbarEntry{Status: "error", ErrorCode: "consent_required", ObservedAt: now.UTC()}
 			} else if hasManual {
 				// D90, owner decision 2026-11-14: a key the user entered wins over any detected key and is
 				// the only one used; it goes only to the compiled official host of its region.
@@ -863,9 +867,20 @@ func claudeBackoffIsLocal(cache string) bool {
 	return true
 }
 
+// zaiPastedKeyAdmitted: the GLM API-key scope (the pasted key's own admission) is not denied right now.
+// An undecided scope stays with the selection's own consent check, as before.
+func zaiPastedKeyAdmitted() bool {
+	current, mode := consent.Current()
+	if r, decided := current.Scopes[consent.ScopeZaiAccountUsageAPIKey]; decided && !r.Allowed {
+		return false
+	}
+	return mode != consent.Off
+}
+
 // pastedGLMKeyRoute: a pasted GLM key is saved and the GLM selection runs natively, unblocked.
+// The selected ZCode sign-in is not that route: it never reads the pasted key (macrev2-1162-2).
 func pastedGLMKeyRoute(p Paths) bool {
-	if !ManualKeyPresent(p.Cache, "zai") {
+	if !ManualKeyPresent(p.Cache, "zai") || zcodeLoginRoute(p, "zai") {
 		return false
 	}
 	ss, err := Selections(p)

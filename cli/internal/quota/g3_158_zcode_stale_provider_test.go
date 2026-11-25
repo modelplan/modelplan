@@ -51,7 +51,7 @@ func TestG3158StaleKeylessProviderFileFallsThroughToSignIn(t *testing.T) {
 			}
 
 			// After consent: the sign-in route reads the quota.
-			grantZCodeLogin(t)
+			grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 			p = ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture())
 			if g, ok := p.ReaderAccessGrant("zai"); !ok || g.ConfigSource == nil || g.ConfigSource.Tool != zcodeLoginTool {
 				t.Fatalf("sign-in route not admitted after consent: %+v", g.ConfigSource)
@@ -89,7 +89,11 @@ func TestD380DeniedKeyIgnoresStaleProviderFile(t *testing.T) {
 				writeZCodeLogin(t, home, fixture)
 			}
 			writeZCodeProviders(t, home, zcodeStaleProviderFiles["no_selection"])
-			grantZCodeLogin(t)
+			if keychain {
+				grantZCodeLogin(t)
+			} else {
+				grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
+			}
 			state, err := consent.EnsureStore(consent.Path())
 			if err != nil {
 				t.Fatal(err)

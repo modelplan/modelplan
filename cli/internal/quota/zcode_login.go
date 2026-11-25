@@ -362,27 +362,27 @@ func zcodeBaseRegion(base string) string {
 // readZCodeLogin resolves what one read may send and where, from ZCode's own files, read-only.
 // The code on failure is a reader error code; nothing of the files appears in it.
 func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, now time.Time) (zcodeLogin, string) {
-	pinned := detect.ZCodeKeychainMarkerPresent(dir)
-	if pinned {
-		if keychain == nil || keychain.Consent == "" || keychain.Consent == "unset" {
-			return zcodeLogin{}, "keychain_unset"
-		}
-		if keychain.Consent != "allowed" {
-			return zcodeLogin{}, "keychain_denied"
-		}
+	// D380 (macrev2-1162-1): nothing in ZCode's folder is opened before the scope's own Keychain
+	// choice is Allow, for any store: a markerless store may be Keychain-bound too.
+	if keychain == nil || keychain.Consent == "" || keychain.Consent == "unset" {
+		return zcodeLogin{}, "keychain_unset"
 	}
+	if keychain.Consent != "allowed" {
+		return zcodeLogin{}, "keychain_denied"
+	}
+	pinned := detect.ZCodeKeychainMarkerPresent(dir)
 	var settings zcodeSettings
 	var registry struct {
 		Provider map[string]zcodeProvider `json:"provider"`
 	}
-	b, err := zaiConfigFile(filepath.Join(dir, "setting.json"))
+	b, err := zcodeLoginRead(filepath.Join(dir, "setting.json"))
 	if err != nil {
 		return zcodeLogin{}, errorCode(err)
 	}
 	if json.Unmarshal(b, &settings) != nil {
 		return zcodeLogin{}, "parse_error"
 	}
-	if b, err = zaiConfigFile(filepath.Join(dir, "config.json")); err != nil {
+	if b, err = zcodeLoginRead(filepath.Join(dir, "config.json")); err != nil {
 		return zcodeLogin{}, errorCode(err)
 	}
 	if json.Unmarshal(b, &registry) != nil {
@@ -412,7 +412,7 @@ func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, no
 		return zcodeLogin{}, "region_refused"
 	}
 	var store map[string]any
-	if b, err = zaiConfigFile(filepath.Join(dir, "credentials.json")); err == nil {
+	if b, err = zcodeLoginRead(filepath.Join(dir, "credentials.json")); err == nil {
 		if json.Unmarshal(b, &store) != nil {
 			store = nil
 		}
@@ -528,7 +528,7 @@ func encodeURIComponent(s string) string {
 
 // zcodeDeviceMid: ZCode's own device id, which its billing gateway requires (code 3001 without it).
 func zcodeDeviceMid(dir string) string {
-	b, err := zaiConfigFile(filepath.Join(dir, "telemetry-state.json"))
+	b, err := zcodeLoginRead(filepath.Join(dir, "telemetry-state.json"))
 	if err != nil {
 		return ""
 	}
@@ -801,6 +801,10 @@ func parseZCodeBilling(r zcodeBillingResponse, now time.Time) codexbarEntry {
 // selection, or a selected rule without a key), so the key route can never read.
 // The admitted scan reads each file revision once and keeps only the verdict.
 var zcodeProviderRead = zaiConfigFile
+
+// zcodeLoginRead opens a file in ZCode's sign-in folder; every such open goes through it, so a test
+// can prove none happens before the Keychain choice (D380, macrev2-1162-1).
+var zcodeLoginRead = zaiConfigFile
 
 // Discovery may use a previous admitted classification, but never opens the
 // provider file itself. A changed file requires another admitted scan.

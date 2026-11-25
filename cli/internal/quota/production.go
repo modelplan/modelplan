@@ -223,11 +223,14 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 		p.ZCodeLoginConsent = true
 		return
 	}
-	// D380: a store ZCode bound to the macOS Keychain waits for the scope's own Keychain choice.
-	// Stat-only, as for Claude Code (D41): no reader runs, so no failed attempt holds back the
-	// read that follows Allow, and the plaintext mirror is never a stand-in.
+	// D380 (macrev2-1162-1): every store waits for the scope's own Keychain choice. ZCode can bind a
+	// store to the Keychain without its credential-source marker (enc:v2:os entries alone pin it,
+	// zai-org/ZCode systemCredentialCipher.ts), and only opening credentials.json would tell, so no
+	// private file is opened before that choice is Allow, marker or not. A 3.11-3.18 (enc:v1) store
+	// is still read without any Keychain operation once the choice is Allow. Metadata only here: no
+	// reader runs, so no failed attempt holds back the read that follows Allow.
 	keychain := &ZCodeKeychain{Consent: state.ScopeKeychainStatus(scope, mode)}
-	if detect.ZCodeKeychainMarkerPresent(ZCodeLoginDir(home)) && keychain.Consent != "allowed" {
+	if keychain.Consent != "allowed" {
 		p.ZCodeKeychainPending = keychain.Consent
 		return
 	}

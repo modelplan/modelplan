@@ -340,7 +340,10 @@ func TestD380StoreFormatMatrix(t *testing.T) {
 	}{
 		{"v1 file store (3.11-3.18)", func(t *testing.T, home string) string {
 			return writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
-		}, nil, ""},
+		}, &ZCodeKeychain{Consent: "allowed"}, ""}, // macrev2-1162-1: read after Allow, no Keychain operation (Key nil)
+		{"v1 file store without the Keychain choice", func(t *testing.T, home string) string {
+			return writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
+		}, nil, "keychain_unset"},
 		{"v2:os Keychain store (3.19+)", func(t *testing.T, home string) string {
 			return writeZCodeKeychainLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true}, key)
 		}, allowed(), ""},

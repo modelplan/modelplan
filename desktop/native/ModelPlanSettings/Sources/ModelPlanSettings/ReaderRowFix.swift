@@ -70,7 +70,7 @@ extension ReaderCauseTable {
         }
         if rowIsGLM(tool), ["keychain_unset", "keychain_unavailable", "keychain_denied"].contains(canon) {
             // D380: one button, the same Keychain consent as Claude Code's; macOS then asks (Always Allow).
-            return .init(reason: .init("ZCode keeps its sign-in key in the Keychain", "ZCode 的登录密钥保存在钥匙串中"),
+            return .init(reason: .init("ZCode may keep its sign-in key in the Keychain", "ZCode 的登录密钥可能保存在钥匙串中"),
                          action: .init("Allow reading", "允许读取"), target: .allowKeychain)
         }
         if canon == "region_refused", keyEntryAvailable, rowIsKeyProvider(tool) {
