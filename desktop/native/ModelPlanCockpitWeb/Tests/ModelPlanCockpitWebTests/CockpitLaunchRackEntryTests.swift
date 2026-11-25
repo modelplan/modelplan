@@ -290,10 +290,15 @@ import XCTest
     var ignition: [Bool] = []
     fixture.page.verificationIgnition = { ignition.append($0) }
     let grab = CGPoint(x: home.minX + 120, y: home.maxY - 16)
-    let away = CGPoint(x: grab.x, y: grab.y - 200)
+    // Fix main (0b82b5e6): D444 scales the one full layout to fill a short display's height (the hosted runner's), so a
+    // straight-down drag is clamped inside the 40 pt catch zone and never arms the put back. Tear off down AND sideways
+    // toward the roomier side, so the drag leaves the zone on any display.
+    let side: CGFloat = fixture.usable.maxX - home.maxX >= home.minX - fixture.usable.minX ? 200 : -200
+    let away = CGPoint(x: grab.x + side, y: grab.y - 200)
     fixture.page.titleDrag(.began, point: grab)
     fixture.page.titleDrag(.moved, point: away)
     XCTAssertFalse(fixture.page.isAttached)
+    XCTAssertFalse(fixture.page.inCatchZone(window.frame), "the tear-off leaves the catch zone (\(window.frame) from \(home))")
     XCTAssertEqual(fixture.page.verificationRack.target, 0, "tear-off: the rack retracts into the icon")
     XCTAssertEqual(ignition, [])
     let near = CGPoint(x: grab.x + 10, y: grab.y - 20)
