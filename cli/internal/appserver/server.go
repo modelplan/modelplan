@@ -59,6 +59,8 @@ type Server struct {
 	backend                                         Backend
 	mu                                              sync.Mutex
 	refreshMu                                       sync.Mutex
+	grantsMu                                        sync.Mutex // guards grants
+	grants                                          int        // consent changes in flight; an ending session waits for them
 	initialized, initializing, subscribed, stopping bool
 	rowsPending                                     bool
 	session                                         string
@@ -161,6 +163,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.WriteCloser
 			<-closerDone
 			<-writerDone
 			<-readDone
+			s.awaitGrants()
 			return nil
 		case frame, ok := <-frames:
 			if !ok {
@@ -201,6 +204,26 @@ func (s *Server) cancelAll() {
 		delete(s.credentials, key)
 	}
 }
+
+// grantDrain bounds how long an ending session waits for consent changes in flight. A consent
+// writer waits up to a second for the publication lock, so a Deny that was waiting behind a
+// frame write still becomes durable before the process exits (#1262 macrevb-1262-1).
+const grantDrain = 3 * time.Second
+
+// awaitGrants returns once no consent change is in flight, or after grantDrain.
+func (s *Server) awaitGrants() {
+	deadline := time.Now().Add(grantDrain)
+	for {
+		s.grantsMu.Lock()
+		n := s.grants
+		s.grantsMu.Unlock()
+		if n == 0 || time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func (s *Server) isCurrent(stamp Stamp) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -320,7 +343,13 @@ func (s *Server) dispatch(r wire.Request) {
 		control := len(p.Deny) > 0 || len(p.Forget) > 0
 		s.start(r, false, control, false, func(ctx context.Context) (Reply, error) {
 			defer s.holdCredentialForGrant(p)()
+			s.grantsMu.Lock()
+			s.grants++
+			s.grantsMu.Unlock()
 			result, err := s.backend.Grant(ctx, p)
+			s.grantsMu.Lock()
+			s.grants--
+			s.grantsMu.Unlock()
 			if err != nil && !result.Receipt.Committed {
 				stamp := result.Stamp
 				if stamp.Epoch == "" {

@@ -452,3 +452,66 @@ func TestPrivateFrameStalledPastBoundTerminatesOnlyUnderFence(t *testing.T) {
 		})
 	}
 }
+
+// newlineStall takes everything but a lone newline, which blocks until the pipe is closed.
+type newlineStall struct {
+	gateWriter
+	delay time.Duration
+}
+
+func (w *newlineStall) Write(p []byte) (int, error) {
+	if string(p) == "\n" {
+		<-w.closed
+		return 0, io.ErrClosedPipe
+	}
+	if w.delay > 0 {
+		time.Sleep(w.delay)
+	}
+	return w.gateWriter.Write(p)
+}
+
+// #1262 macrevb-1262-1: the session is never stopped while the consent lock is held. A stalled
+// newline is cut inside the commit (so the frame cannot complete) and the session ends only
+// after the lock is released; covers the initial commit and the second commit after a slow body.
+func TestStalledNewlineEndsSessionOnlyAfterReleasingFence(t *testing.T) {
+	for _, slowBody := range []bool{false, true} {
+		t.Run(fmt.Sprintf("slowBody=%v", slowBody), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			w := &newlineStall{gateWriter: gateWriter{release: make(chan struct{}), closed: make(chan struct{})}}
+			close(w.release)
+			if slowBody {
+				w.delay = commitTimeout + 200*time.Millisecond
+			}
+			var mu sync.Mutex
+			inside, stoppedInside := false, false
+			stop := func() {
+				mu.Lock()
+				stoppedInside = stoppedInside || inside
+				mu.Unlock()
+				cancel()
+			}
+			o := newOutbound(ctx, stop, w, 5*time.Second, func(Stamp) error { return nil })
+			o.commit = func(_ Stamp, write func() error) error {
+				mu.Lock()
+				inside = true
+				mu.Unlock()
+				defer func() { mu.Lock(); inside = false; mu.Unlock() }()
+				return write()
+			}
+			o.rowsMessage("private row", Stamp{}, nil)
+			done := make(chan struct{})
+			go o.run(done)
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("session did not end after its newline stalled")
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if stoppedInside || ctx.Err() == nil || strings.Contains(w.snapshot(), "\n") {
+				t.Fatalf("stopped under the fence %v, ended %v, written %q", stoppedInside, ctx.Err() != nil, w.snapshot())
+			}
+		})
+	}
+}

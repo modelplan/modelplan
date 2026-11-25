@@ -216,8 +216,7 @@ func (o *outbound) writeFenced(m message) bool {
 		}
 		o.chunks <- newline
 		if finished, ok := o.await(lockBound); !finished || !ok {
-			// The newline must not complete outside the fence: close while still holding it.
-			o.end()
+			o.cut()
 			return errFrame
 		}
 		return nil
@@ -245,7 +244,7 @@ func (o *outbound) writeFenced(m message) bool {
 	err = o.commit(m.stamp, func() error {
 		o.chunks <- newline
 		if finished, ok := o.await(time.Now().Add(commitTimeout)); !finished || !ok {
-			o.end()
+			o.cut()
 			return errFrame
 		}
 		return nil
@@ -284,8 +283,15 @@ func (o *outbound) await(deadline time.Time) (finished, ok bool) {
 	}
 }
 
-// end stops the session and closes our pipe, which interrupts a blocked write.
+// end stops the session and closes our pipe, which interrupts a blocked write. It is never
+// called while the consent lock is held (inside o.commit): stopping the session there could
+// end the process before a consent change waiting for that lock commits (#1262 macrevb-1262-1).
 func (o *outbound) end() { o.stop(); _ = o.writer.Close() }
+
+// cut closes our pipe without stopping the session. Inside o.commit it interrupts a stalled
+// newline so the frame can never complete outside its fence; the caller ends the session once
+// the lock is released.
+func (o *outbound) cut() { _ = o.writer.Close() }
 
 func (o *outbound) pump() {
 	for b := range o.chunks {
