@@ -71,7 +71,21 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
 @MainActor public final class SettingsEditor {
     public let store: SettingsStore
     public let connections: SettingsConnectionController
-    public private(set) var snapshot: SettingsSnapshot?
+    private var committedSnapshot: SettingsSnapshot?
+    private static let unavailableZCodeID = "zai#unknown"
+    // This association belongs to this app session. The anonymous row and the
+    // saved settings never need a copy of the account reference.
+    private var lastZCodeMemberID: String?
+    public var snapshot: SettingsSnapshot? {
+        guard let committedSnapshot, let lastZCodeMemberID else { return committedSnapshot }
+        var preferences = committedSnapshot.preferences
+        if preferences.subscriptions.hiddenIDs.contains(lastZCodeMemberID) {
+            preferences.subscriptions.hiddenIDs.insert(Self.unavailableZCodeID)
+        } else {
+            preferences.subscriptions.hiddenIDs.remove(Self.unavailableZCodeID)
+        }
+        return .init(revision: committedSnapshot.revision, preferences: preferences)
+    }
     public private(set) var environment: SettingsEnvironment
     public private(set) var context: SettingsPageContext
     public private(set) var isSaving = false
@@ -115,11 +129,12 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         self.commitObserverLimit = commitObserverLimit
         self.store = store; self.context = context; self.environment = environment
         self.connections = SettingsConnectionController(service: connectionService)
+        rememberZCodeMember(in: context)
     }
     public var effective: EffectiveSettings? { snapshot.map { EffectiveSettings($0.preferences, environment: environment) } }
     private func accept(_ candidate: SettingsSnapshot) {
         // A suspended reload must not replace a newer commit/reload that resumed first.
-        if candidate.revision >= (snapshot?.revision ?? 0) { snapshot = candidate }
+        if candidate.revision >= (committedSnapshot?.revision ?? 0) { committedSnapshot = candidate }
     }
     public func observeChanges(_ observer: @escaping () -> Void) -> UUID {
         let id = UUID(); changeObservers[id] = observer; return id
@@ -144,10 +159,19 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     public private(set) var isDeliveringContextUpdate = false
     public func update(context: SettingsPageContext) {
         self.context = context
+        rememberZCodeMember(in: context)
         if context.statusItemNotice == nil { statusItemNoticeDismissed = false }
         isDeliveringContextUpdate = true
         defer { isDeliveringContextUpdate = false }
         notifyChange()
+    }
+    private func rememberZCodeMember(in context: SettingsPageContext) {
+        let members = context.subscriptions.filter {
+            $0.tool == "zai" && !$0.isUnstable && $0.id != Self.unavailableZCodeID
+        }
+        // Empty or unavailable deliveries cannot replace the last known membership.
+        guard !members.isEmpty else { return }
+        lastZCodeMemberID = members.count == 1 ? members.first?.id : nil
     }
     /// The host's live read of the macOS login item. An explicit login choice is decided against it,
     /// not against the observation cached when the app started; nil keeps that cached observation.
@@ -174,7 +198,25 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         else { ids = context.subscriptions.map(\.id) }
         let kind: SettingsCommittedEdit.Kind
         if case .resetHints = edit { kind = .resetHelpHints } else { kind = .preferences }
-        let committed = try await transact(subscriptionID: edit.subscriptionID, kind: kind) { try edit.apply(to: &$0, catalogue: ids) }
+        // The unavailable station is an anonymous presentation fallback for the sole
+        // ZCode member. Save its display choice with the normal toggle, in the same
+        // local preferences transaction, without attaching an account to that station.
+        let fallbackVisibility: Bool?
+        let editsUnavailableZCode = edit.subscriptionID == Self.unavailableZCodeID
+        if case .visible(let id, let visible) = edit,
+           context.subscriptions.filter({ $0.tool == "zai" }).map(\.id) == [id] {
+            fallbackVisibility = visible
+        } else {
+            fallbackVisibility = nil
+        }
+        let fallbackID = Self.unavailableZCodeID
+        let committed = try await transact(subscriptionID: edit.subscriptionID, kind: kind,
+                                           editsUnavailableZCodeVisibility: editsUnavailableZCode && fallbackVisibility != nil) { preferences in
+            try edit.apply(to: &preferences, catalogue: ids)
+            if let fallbackVisibility {
+                try SettingsB21Edit.visible(fallbackID, fallbackVisibility).apply(to: &preferences, catalogue: ids)
+            }
+        }
         let intent: SettingsHostIntent?
         switch edit {
         case .login(let enabled):
@@ -236,6 +278,7 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         return result
     }
     private func transact(subscriptionID: String?, quotaPreviewID: String? = nil, kind: SettingsCommittedEdit.Kind = .preferences,
+                          editsUnavailableZCodeVisibility: Bool = false,
                           edit: @escaping @Sendable (inout SettingsPreferences) throws -> Void) async throws -> SettingsSnapshot {
         if let id = subscriptionID {
             guard let member = context.subscriptions.first(where: { $0.id == id }), !member.isUnstable else {
@@ -243,7 +286,8 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
             }
         }
         let unstable = Set(context.subscriptions.filter(\.isUnstable).map(\.id))
-        return try await persist(quotaPreviewID: quotaPreviewID, kind: kind, operation: { [store] revision in
+        return try await persist(quotaPreviewID: quotaPreviewID, kind: kind,
+                                 editsUnavailableZCodeVisibility: editsUnavailableZCodeVisibility, operation: { [store] revision in
             try await store.update(expectedRevision: revision) { preferences in
                 preferences.subscriptionSettings = preferences.subscriptionSettings.filter { !unstable.contains($0.key) }
                 preferences.subscriptions = .init(order: preferences.subscriptions.order.filter { !unstable.contains($0) },
@@ -254,6 +298,7 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     }
     private func persist<Value: Sendable>(expectedRevision: UInt64? = nil, quotaPreviewID: String? = nil,
         kind: SettingsCommittedEdit.Kind = .preferences,
+        editsUnavailableZCodeVisibility: Bool = false,
         operation: @escaping @Sendable (UInt64) async throws -> Value,
         snapshot receipt: @escaping @Sendable (Value) -> SettingsSnapshot) async throws -> Value {
         guard !isSaving else { throw SettingsEditorError.editInProgress }
@@ -266,6 +311,9 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         do {
             let result = try await operation(expectedRevision ?? before.revision)
             let committed = receipt(result)
+            if editsUnavailableZCodeVisibility && context.subscriptions.contains(where: { $0.id == Self.unavailableZCodeID }) {
+                lastZCodeMemberID = nil
+            }
             accept(committed)
             if let quotaPreviewID { lastChangedSubscriptionID = quotaPreviewID }
             onCommit?(committed, EffectiveSettings(committed.preferences, environment: environment))

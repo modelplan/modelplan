@@ -90,7 +90,7 @@ export function usageStats(data:WireCockpitData|null|undefined,ref:string|null|u
 }
 
 /** Reset history for one subscription, newest first: each closed cycle's reset, and public confirmed resets. A drop
- * inside a cycle is shown as a correction, because the readings cannot prove a reset card was used. */
+ * inside a cycle is shown as a correction, because the readings cannot prove a banked reset was used. */
 export function resetHistory(data:WireCockpitData|null|undefined,ref:string|null|undefined,rowId:string,now:number) {
  const rows:{kind:string;at:number;source:string}[]=[];
  for(const group of data?.history?.cycles??[]){

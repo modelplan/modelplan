@@ -31,6 +31,7 @@ async function open(page,data,plugins) {
  return {send,receive};
 }
 const pluginEdits=page=>page.evaluate(()=>window.__events.filter(e=>e.type==='action'&&e.action==='pluginsEdit').map(e=>e.plugins));
+const closeRequests=page=>page.evaluate(()=>window.__events.filter(e=>e.type==='action'&&e.action==='pluginClose').map(e=>e.id));
 const running=page=>page.evaluate(()=>window.__events.filter(e=>e.type==='action'&&e.action==='pluginsRunning').map(e=>e.ids));
 const column=page=>page.locator('.eng-cols .pl-col[data-plugin="placeholder"]');
 const key=page=>page.locator('.eng-keys .pl-key[data-plugin="placeholder"]');
@@ -87,8 +88,10 @@ test('CKP-PLG-50 the plugin key is a subscription key: same box and white name, 
  await page.keyboard.press('Escape');await expect(menu).toHaveCount(0);
  await key(page).focus();await page.keyboard.press('Shift+F10');await expect(menu).toBeVisible();
  await menu.getByRole('menuitem').click();
- await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
- expect(await pluginEdits(page)).toEqual([{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff,RES_OFF],settings:{placeholder:{}}}]);
+ // D376: the keyboard Remove asks the host too; the page keeps the column until the host sends the new state.
+ expect(await closeRequests(page)).toEqual(['placeholder']);
+ await expect(page.locator('.eng-cols .pl-col')).toHaveCount(1);
+ expect(await pluginEdits(page)).toEqual([]);
 });
 
 test('CKP-PLG-51 the plugin column has no inner frame; its cells use the Other-cell grammar and align with subscription rows',async({page})=>{
@@ -232,11 +235,14 @@ test('lifecycle: the plugin runs only while the cockpit is open and its column i
  // A settings change from the host redraws the column.
  expect(await receive(send('plugins',{plugins:on(false,{intervalSeconds:3})}))).toBe(true);
  await expect(column(page).locator('.qtxt')).toHaveText('every 3 s');
- // Removed from the right-click menu: stopped, the column turns back into a "+" slot and the host gets the edit.
+ // Removed from the right-click menu (D376): the page asks the host (which confirms), then the host's new state stops it
+ // and turns the column back into a "+" slot. The page itself removes nothing and sends no edit.
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  await key(page).click({button:'right'});await page.getByRole('menuitem',{name:'Remove from the cockpit'}).click();
+ expect(await closeRequests(page)).toEqual(['placeholder']);
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff,RES_OFF],settings:{placeholder:{intervalSeconds:3}}}}))).toBe(true);
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
- expect(await pluginEdits(page)).toEqual([{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff,RES_OFF],settings:{placeholder:{intervalSeconds:3}}}]);
+ expect(await pluginEdits(page)).toEqual([]);
  // Cleared readings stop everything.
  expect(await receive(send('plugins',{plugins:on(false)}))).toBe(true);
  await expect(column(page)).toHaveAttribute('data-running','true');
@@ -324,4 +330,14 @@ test('host plugin state is validated: a bad message is refused and changes nothi
   expect(await receive(send('plugins',{plugins}))).toBe(false);
  expect(await receive(send('plugins',{plugins:on(),extra:1}))).toBe(false);
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(1);
+});
+
+test('CKP-PLG-54 D376 right-click Remove on the plugin key asks the host to confirm; the page removes nothing itself',async({page})=>{
+ await open(page,dataWith(1),on(true));
+ await expect(column(page)).toHaveCount(1);
+ await key(page).click({button:'right'});await page.getByRole('menuitem',{name:'Remove from the cockpit'}).click();
+ expect(await closeRequests(page)).toEqual(['placeholder']);
+ await expect(column(page),'still there until the host confirms and sends the new state').toHaveCount(1);
+ await expect(key(page)).toHaveCount(1);
+ expect(await pluginEdits(page)).toEqual([]);
 });

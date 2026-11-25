@@ -351,6 +351,11 @@ export class CockpitBridge {
     if(!this.pluginsNegotiated||!this.isActive()||!parsePluginState(state))return false;
     this.emit('action',this.requestId(),{action:'pluginsEdit',plugins:state});return true;
   }
+  /** D376: right-click Remove on a plugin key; the host shows its confirmation and turns the plugin off (the page changes only when the host sends the new state). */
+  pluginClose(id:string):boolean {
+    if(!this.pluginsNegotiated||!this.isActive()||!PLUGIN_ID.test(id))return false;
+    this.emit('action',this.requestId(),{action:'pluginClose',id});return true;
+  }
   /** Plugin columns: the plugins now running (open cockpit, column shown); the host samples exactly these. */
   pluginsRunning(ids:string[]):boolean {
     if(!this.pluginsNegotiated||this.ended||!this.context||ids.length>16||!ids.every(id=>PLUGIN_ID.test(id)))return false;
