@@ -115,9 +115,11 @@ public enum CockpitDockingBoom {
     /// fractions of the lug art's width and height. The lug's base bottom sits on the canopy line.
     public let lugWidth: CGFloat, lugAspect: CGFloat, lugPinTip: CGFloat, lugPinY: CGFloat
   }
-  /// Measured on the cut v8 art (boom 628 x 1416 px, lug 866 x 436 px at the source scale).
-  public static let metrics = Metrics(aspect: 1416.0 / 628, gripY: 1289.0 / 1416, gripX: 222.0 / 628, clampTop: 1193.0 / 1416,
-                                      lugWidth: 0.7, lugAspect: 436.0 / 866, lugPinTip: 106.0 / 866, lugPinY: 116.0 / 436)
+  /// Measured on the v8x exports (boom crop 630 x 1414 px, lug crop 956 x 554 px, before the half-size downscale): the
+  /// closed jaws' gap centre is row 1285; the lug is scaled so its 267 px pin is 56 px (the gap is 60 px) and placed so
+  /// its upright stands just right of the jaw tips, the pin reaching into the clamp; the poses differ from row 1193.
+  public static let metrics = Metrics(aspect: 1414.0 / 630, gripY: 1285.0 / 1414, gripX: 380.0 / 630, clampTop: 1193.0 / 1414,
+                                      lugWidth: 0.318, lugAspect: 554.0 / 956, lugPinTip: 1.0 / 956, lugPinY: 269.5 / 554)
   /// #1207 bounds for the status-item width, and the width used before any status item was measured.
   public static let nominalWidth: CGFloat = 40
   public static let minimumWidth: CGFloat = 24
