@@ -21,7 +21,7 @@ const seek=(page,t)=>page.evaluate(t=>{const a=document.querySelector('.ck-portr
 // Visible bounds of the canopy row: its rect cut by the computed clip-path inset (percent of the row's own box).
 const visible=page=>page.evaluate(()=>{
  const el=document.querySelector('.ck-portrow'),r=el.getBoundingClientRect(),shell=document.querySelector('.ck-shell').getBoundingClientRect(),head=document.querySelector('.ck-head').getBoundingClientRect();
- const m=/inset\((.*)\)/.exec(getComputedStyle(el).clipPath),v=(m?m[1].split(/\s+/):['0px','0px','0px','0px']);
+ const m=/inset\((.*)\)/.exec(getComputedStyle(el).clipPath),v=(m?m[1].split(/\s+round\s+/)[0].trim().split(/\s+/):['0px','0px','0px','0px']);
  const px=(x,n)=>x.endsWith('%')?parseFloat(x)/100*n:parseFloat(x);
  const [t,rt,b,l]=[px(v[0],r.height),px(v[1]??v[0],r.width),px(v[2]??v[0],r.height),px(v[3]??v[1]??v[0],r.width)];
  return {top:r.top+t,bottom:r.bottom-b,left:r.left+l,right:r.right-rt,rowTop:r.top,shellLeft:shell.left,shellRight:shell.right,headTop:head.top};
