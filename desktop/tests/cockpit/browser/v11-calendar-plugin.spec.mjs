@@ -383,7 +383,7 @@ test('D406 reset cards: an undated +1 chip on its published day, a dated one on 
  const {send,receive}=await open(page,{push,locale:'zh-CN'});
  await key(page).click();
  const w=weekView(page);
- await expect(w.locator('.wk-adr.chip')).toHaveText(['+1 重置卡','+1 重置卡','↻']);
+ await expect(w.locator('.wk-adr.chip')).toHaveText(['+1 额外重置','+1 额外重置','↻']);
  const left=async n=>(await w.locator('.wk-adr.chip').nth(n).boundingBox()).x;
  const heads=await w.locator('.wk-dh').evaluateAll(es=>es.map(e=>e.getBoundingClientRect()));
  const day=x=>heads.findIndex(h=>x>=h.x-1&&x<h.x+h.width);
@@ -398,7 +398,7 @@ test('D406 reset cards: an undated +1 chip on its published day, a dated one on 
 test('D406 a reset-card notice published 2 days ago is not placed on today in the week; the column line still carries it',async({page})=>{
  const push={...week,spans:[{sub:1,kind:'credit',from:L(-2,9),to:null,count:1}]};
  await open(page,{push});
- await expect(strip(page).locator('.cal-adr')).toHaveText(/Codex \+1 reset card/);
+ await expect(strip(page).locator('.cal-adr')).toHaveText(/Codex \+1 Banked reset/);
  await key(page).click();
  await expect(weekView(page).locator('.wk-adr.chip')).toHaveCount(0);
 });

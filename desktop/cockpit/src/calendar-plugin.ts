@@ -14,7 +14,7 @@ import {HOUR,WEEK_DAYS,addDays,dayOffset,dayPieces,dayWindow,hhmm,hourMarks,isWe
 
 // Every word the calendar draws comes from the plugin string table (strings/plugins.js, `plugin.cal*`), in the locale
 // of the draw context; nothing here picks a language's text inline.
-const WORDS=['now','allDay','peak','cont','r5','week5','weekly','weeklyLong','wk','cards','direct','until','announced','confirmed','effective','empty','waiting','zoomed','tentative','announcedOn','winWeek','win5'] as const;
+const WORDS=['now','allDay','peak','cont','r5','week5','weekly','weeklyLong','wk','cards','credit','direct','until','announced','confirmed','effective','empty','waiting','zoomed','tentative','announcedOn','winWeek','win5'] as const;
 type Words={readonly [k in typeof WORDS[number]]:string}&{readonly days:readonly string[];readonly weekdays:readonly string[];readonly narrow:readonly string[]};
 function wordsOf(context:PluginContext):Words {
  const word=(key:string)=>context.words('plugin.'+key).full,out:Record<string,unknown>={};
@@ -46,7 +46,7 @@ function spanText(data:CalendarData,s:CalendarSpan,w:Words,zh:boolean,full=false
   // No expiry known (a partial list, or none given): no date, never an epoch (macrevc-844-6).
   if(s.to===null)return `${name} ${w.cards}${n}`;
   return zh?`${name} ${w.cards}${n} ${w.until}${monthDay(s.to!)}`:`${name} ${w.cards}${n} · ${w.until} ${monthDay(s.to!)}`;}
- if(s.kind==='credit')return `${name} +1 ${w.cards}`;
+ if(s.kind==='credit')return `${name} +1 ${w.credit}`;
  const what=s.kind==='confirmed'?w.confirmed:w.announced;
  if(s.to===null)return `${name} ${what}`;
  return zh?`${name} ${what} · ${monthDay(s.to)} ${w.effective}`:`${name} ${what} · ${monthDay(s.to)}`;
@@ -201,7 +201,7 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
    const credit=x.kind==='credit',row=el('div','wk-adr mark chip '+(credit?'credit':x.kind==='confirmed'?'direct':'direct pending'));row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);place(row,day);
    // Chips of one day stack in lanes under each other; on a narrow column the direct reset keeps only its ↻ (the title has the words).
    const lane=chipsOn[day]!++;if(lane)row.style.top=`${2+lane*15}px`;
-   row.append(el('span','',credit?`+1 ${w.cards}`:narrow?'↻':`↻ ${w.direct}`));allDay.append(row);rowsUsed++;
+   row.append(el('span','',credit?`+1 ${w.credit}`:narrow?'↻':`↻ ${w.direct}`));allDay.append(row);rowsUsed++;
   }
  }
  if(!rowsUsed)allDay.classList.add('none');
