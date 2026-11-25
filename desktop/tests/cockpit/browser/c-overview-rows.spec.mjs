@@ -184,11 +184,11 @@ function reset(status,schedule){
 }
 const window_=(a,b,precision='window')=>({from:new Date(NOW+a*H).toISOString(),through:new Date(NOW+b*H).toISOString(),precision});
 for(const [name,status,schedule,en,zh] of [
- ['an announced window reads its middle, to the half hour','announced',window_(2,4.2),'●Codex official extra reset · ~in 3h00','●Codex 官方额外重置 · 约 3h00后'],
- ['an approximate time reads that time','announced',window_(5,5,'approximate'),'●Codex official extra reset · ~in 5h00','●Codex 官方额外重置 · 约 5h00后'],
- ['a date-only announcement has no time to show','announced',window_(12,35.9,'date'),'●Codex official extra reset · time TBA','●Codex 官方额外重置 · 待定'],
- ['an announcement without a schedule','announced',null,'●Codex official extra reset · time TBA','●Codex 官方额外重置 · 待定'],
- ['a confirmed reset','confirmed',window_(-2,-1),'●Codex official extra reset confirmed','●Codex 官方额外重置已确认'],
+ ['an announced window reads its middle, to the half hour','announced',window_(2,4.2),'●Codex official reset card · ~in 3h00','●Codex 官方重置卡 · 约 3h00后'],
+ ['an approximate time reads that time','announced',window_(5,5,'approximate'),'●Codex official reset card · ~in 5h00','●Codex 官方重置卡 · 约 5h00后'],
+ ['a date-only announcement has no time to show','announced',window_(12,35.9,'date'),'●Codex official reset card · time TBA','●Codex 官方重置卡 · 待定'],
+ ['an announcement without a schedule','announced',null,'●Codex official reset card · time TBA','●Codex 官方重置卡 · 待定'],
+ ['a confirmed reset','confirmed',window_(-2,-1),'●Codex official reset card confirmed','●Codex 官方重置卡已确认'],
 ])test(`CKP-MFD-28 ${name}, blue and list-only`,async({page})=>{
  const {send,receive}=await open(page,reset(status,schedule));
  await expect(blue(page)).toHaveText(en);

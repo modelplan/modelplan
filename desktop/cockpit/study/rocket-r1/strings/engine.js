@@ -13,7 +13,7 @@ register('eng', {
   speed: ['silk', '速度', 'Speed'],
   reserve: ['silk', '储备', 'Reserve'],
   // Owner D76: what the Reserve row holds, as a hover hint on its label (not drawn otherwise).
-  reserveHint: ['aria', '储备：还能用的额外重置次数和剩余点数', 'Reserve: extra resets you can still use and remaining credits'],
+  reserveHint: ['aria', '储备：还能用的重置卡张数和剩余点数', 'Reserve: reset cards you can still use and remaining credits'],
   row5h: ['lcd', '5小时', '5h'],
   rowDay: ['lcd', '每日', 'Daily'],
   rowWeek: ['lcd', '每周', 'Weekly'],
@@ -58,8 +58,8 @@ register('eng', {
   evAt: ['lcd', '↺~{at}', '↺~{at}'], // a public reset announced for about this time (blue)
   evMark: ['lcd', '↺', '↺'], // the same in a narrow column
   evDone: ['lcd', '↺✓', '↺✓'], // a public reset confirmed, the next reading will show it
-  evTitle: ['aria', '官方预告约 {at} 额外重置', 'Public reset announced for about {at}'],
-  evDoneTitle: ['aria', '官方已确认额外重置，等下次读数', 'Public reset confirmed, waiting for the next reading'],
+  evTitle: ['aria', '官方预告约 {at} 重置卡', 'Public reset announced for about {at}'],
+  evDoneTitle: ['aria', '官方已确认重置卡，等下次读数', 'Public reset confirmed, waiting for the next reading'],
   failed: ['lcd', '读取失败', 'No read'],
   unreadable: ['lcd', '读不到', 'no reading'], // CKP-ENG-50: dim -- with this grey word; the cause is in the card, Settings and the overview
   usedUp: ['lcd', '已用完', 'used up'], // CKP-ENG-50: red 0% with this word; the reset time is in the dots and the alert line

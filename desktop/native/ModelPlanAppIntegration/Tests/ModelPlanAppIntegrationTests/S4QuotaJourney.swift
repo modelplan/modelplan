@@ -808,7 +808,7 @@ actor S4RowsClient: EngineClient {
         await entry.composition.stop()
     }
 
-    // MARK: SET-9-18 v1 notification delivery (quota reset and official extra reset)
+    // MARK: SET-9-18 v1 notification delivery (quota reset and official reset card)
 
     @MainActor private final class FixedNotificationAuthorization:SettingsNotificationAuthorizationServing {
         let value:NotificationAuthorization
@@ -866,7 +866,7 @@ actor S4RowsClient: EngineClient {
         try require(deliveries.count == (kindOn ? 1:0),"a repeated reading must not deliver again: \(deliveries)")
         await entry.composition.stop()
     }
-    /// A public reset event is the "Official extra reset" kind: on → one delivery on its confirmation, off → none.
+    /// A public reset event is the "Official reset card" kind: on → one delivery on its confirmation, off → none.
     /// D166: the forecast before it never notifies.
     static func officialResetDelivery(kindOn:Bool) async throws {
         let fixture=URL(fileURLWithPath:#filePath).deletingLastPathComponent()
@@ -900,10 +900,10 @@ actor S4RowsClient: EngineClient {
         try await client.replaceRows(confirmed)
         if kindOn {
             for _ in 0..<100 where deliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
-            try require(deliveries == ["official|"+id],"a public reset event must deliver one Official extra reset notice: \(deliveries)")
+            try require(deliveries == ["official|"+id],"a public reset event must deliver one Official reset card notice: \(deliveries)")
         } else {
             try await Task.sleep(for:.milliseconds(100))
-            try require(deliveries.isEmpty,"Official extra reset off must not deliver: \(deliveries)")
+            try require(deliveries.isEmpty,"Official reset card off must not deliver: \(deliveries)")
         }
         try await client.replaceRows(confirmed);try await Task.sleep(for:.milliseconds(50))
         try require(deliveries.count == (kindOn ? 1:0),"a repeated confirmation must not notify again: \(deliveries)")

@@ -60,9 +60,9 @@ register('mfd', {
   importedDay: ['lcd', '已导入', 'Imported'],
   importedPart: ['lcd', '含已导入 {v}', 'incl. imported {v}'],
   moreAlerts: ['lcd', '+{n} ▸', '+{n} ▸'],
-  alResetAnn: ['alert', '{s} 官方额外重置 · 约 {at}', '{s} official extra reset · ~{at}'],
-  alResetSoon: ['alert', '{s} 官方额外重置 · 待定', '{s} official extra reset · time TBA'],
-  alResetConf: ['alert', '{s} 官方额外重置已确认', '{s} official extra reset confirmed'],
+  alResetAnn: ['alert', '{s} 官方重置卡 · 约 {at}', '{s} official reset card · ~{at}'],
+  alResetSoon: ['alert', '{s} 官方重置卡 · 待定', '{s} official reset card · time TBA'],
+  alResetConf: ['alert', '{s} 官方重置卡已确认', '{s} official reset card confirmed'],
   alertsTitle: ['silk', '告警', 'Alerts'],
   // CKP-MFD-55 (WP-11, V1-FINAL §8.6): the alert list's title and its empty line.
   alertsCount: ['line', '提醒 · {n}', 'Alerts · {n}'],

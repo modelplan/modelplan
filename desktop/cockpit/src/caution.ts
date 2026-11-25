@@ -6,7 +6,7 @@
 // - AMBER: a quota forecast to run out before its reset while still above T (cockpitForecastV1). An engine
 //   that does not negotiate it creates no amber condition.
 //   WP-03: a forecast whose reset time is unknown is amber too ("约40m用完" with no reset part).
-// - Public reset announcements/confirmations, lower-effort advice and extra resets expiring within 48 hours are
+// - Public reset announcements/confirmations, lower-effort advice and reset cards expiring within 48 hours are
 //   list-only (blue); they never light the lamp. Credits being drawn and non-reset official notices have no producer
 //   field yet, so they are not listed.
 // - ALR-51 (WP-11, V1-FINAL §11, §12): a subscription that cannot be read, and a retained (stale) reading, are grey:
@@ -125,7 +125,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   const at=mid===null?null:Math.round(mid/(30*60000))*30*60000;
   list.push({id,stable,level:'blue',member:m.key,text:at===null?both('mfd.alResetSoon',lang=>({s:s(lang)})):both('mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
  }
- // D63: extra resets (reset cards) that expire within 48 hours, one blue line per subscription. Personal facts are joined
+ // D63: reset cards (reset cards) that expire within 48 hours, one blue line per subscription. Personal facts are joined
  // only through a verified reference, as the Subscription page joins them. List-only: they never light the lamp.
  for(const m of members){
   if(m.unstable||!verified.has(m.key))continue;

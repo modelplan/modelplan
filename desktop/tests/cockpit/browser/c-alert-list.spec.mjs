@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// D63: the full alert list adds extra resets expiring within 48 hours (with the lower-effort advice from #719); rows
+// D63: the full alert list adds reset cards expiring within 48 hours (with the lower-effort advice from #719); rows
 // whose data the producer does not send are left out. Built page, normal bridge, synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
@@ -26,7 +26,7 @@ const blue=page=>page.locator('.pg-overview .mfd-alerts li.al-blue');
 for(const [name,hours,en,zh] of [
  ['one card inside 48 h',[30,72],'●Codex · 1 reset expires within 48 hours','●Codex · 重置次数中有 1 次将在 48 小时内到期'],
  ['two cards inside 48 h',[2,47.5,100],'●Codex · 2 resets expire within 48 hours','●Codex · 重置次数中有 2 次将在 48 小时内到期'],
-])test(`D63 extra resets expiring soon are listed: ${name}`,async({page})=>{
+])test(`D63 reset cards expiring soon are listed: ${name}`,async({page})=>{
  const {send,receive}=await open(page,cards(hours));
  await expect(blue(page)).toHaveText(en);
  await expect(page.locator('[data-caution]')).not.toHaveClass(/\b(lit|red|amber)\b/);
