@@ -148,6 +148,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 	a := consent.Capture()
 	epoch := currentEpoch(a, source)
 	if epoch == nil {
+		forgetLiveCursors(sourceTool(source))
 		return nil
 	}
 	floor := LoadCleared(cache).floor(source)
@@ -163,13 +164,13 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Tiered && !old.Pending && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() {
 			continue
 		}
-		p := newAccountingParser(source, key)
-		_, err = readWhole(func() error {
+		// Only the bytes appended since the last observation are parsed (accounting_cursor.go).
+		p, err := readAccounting(func() error {
 			if !sameEpoch(epoch, currentEpoch(consent.Capture(), source)) {
 				return errGrantWithdrawn
 			}
 			return nil
-		}, path, p)
+		}, cache, source, path, epoch, now)
 		if err != nil {
 			continue
 		}
@@ -190,7 +191,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		}
 		// A response dated ahead of this clock is not recorded yet; the unchanged file must be read
 		// again until it is, so it is not skipped by size and time (G3-147 review). Checked
-		// before the filter below, which reuses p.records.
+		// before the filter below.
 		pending := false
 		for _, r := range p.records {
 			if r.At.After(now) {
@@ -198,7 +199,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 				break
 			}
 		}
-		records := p.records[:0]
+		records := make([]usageRecord, 0, len(p.records)) // p.records stays with the live cursor
 		for _, r := range p.records {
 			if day(r.At) >= windowFrom(now, 35) && !r.At.Before(floor) && (known[r.Key] || !r.At.Before(start)) && !r.At.After(now) {
 				records = append(records, r)
@@ -632,6 +633,7 @@ func usageNumber(u map[string]int64, keys ...string) int64 {
 
 // ForgetAccountingLocked erases only this tool's snapshots. Caller holds perf.lock.
 func ForgetAccountingLocked(cache, tool string) error {
+	forgetLiveCursors(tool)
 	l, ok := loadAccounting(cache)
 	if !ok {
 		return errors.New("accounting history unreadable; retry cleanup")
