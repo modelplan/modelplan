@@ -141,10 +141,16 @@ public struct DockEdgePresentation:Equatable,Sendable {
             if drag != nil, allowsDrag(input) {
                 return
             }
-            let changed=geometry != env.displays || layouts != env.layouts || primaryID != env.primaryDisplayID
+            // WP-17: the other edges' faces, and so their layouts, exist only while a press is held and are dropped
+            // by the next full rebuild. Their coming and going is not a geometry change: only the displays and the
+            // layout of the edge the widget is placed on re-arm the arrival guard (and collapse an auto-hide widget).
+            let placedEdge = preference.edge
+            let changed = geometry != env.displays || primaryID != env.primaryDisplayID
+                || layouts.filter { $0.edge == placedEdge } != env.layouts.filter { $0.edge == placedEdge }
             let extraClear: DockRecordedLocks = drag == nil ? [] : .drag
             if drag != nil { clearMove() }
-            if changed { geometry=env.displays;layouts=env.layouts;primaryID=env.primaryDisplayID }
+            layouts = env.layouts
+            if changed { geometry=env.displays;primaryID=env.primaryDisplayID }
             let place=try resolve(preference:preference,environment:env,pointer:env.pointer)
             input.outerEdge=place != nil
             if let p=place,let d=env.displays.first(where:{$0.id==p.displayID}),let pointer=env.pointer{
