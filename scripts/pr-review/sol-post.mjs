@@ -77,11 +77,13 @@ let usage = null;
 try { usage = JSON.parse(read(join(dir, "usage.json"))); } catch {}
 const fellBack = read(join(dir, "why")).trim() ? `quota fallback to ${provider}` : "";
 // A labelled PR (review:gpt) answered by GLM means GPT had no quota: say so in the provider line for the coordinator.
-const why = env.GPT_REQUESTED === "true" && provider !== "openai" ? `review:gpt requested; GPT quota out${fellBack ? `; ${fellBack}` : ""}` : fellBack;
+// macrevb-1237-2: a tier-0 head is only ever offered to GLM (advice), so GLM answering there is no GPT quota fallback.
+const labelledFallback = env.GPT_REQUESTED === "true" && provider !== "openai" && tierNow !== 0;
+const why = labelledFallback ? `review:gpt requested; GPT quota out${fellBack ? `; ${fellBack}` : ""}` : fellBack;
 const meta = { why, model: read(join(dir, "model")).trim() || env.MODEL, effort: provider === "openai" ? env.EFFORT : "default", seconds: read(join(dir, "seconds")).trim() || "?", usage, runUrl: env.RUN_URL };
 // Shadow runs log how the lane that counts has judged this head so far (D352: compare on three PRs before cutover).
 const agreeNow = isShadowLane(lane) ? agreement([...items, { kind: "comment", user: TRUSTED, body: `VERDICT: ${answer.verdict} @ ${head} (${lane})`, at: "~" }], head, lane, tierNow, parseGlmTiers(env.REVIEW_GLM_TIERS)) : null;
-const body = renderSolComment({ answer, head, lane, mode: env.MODE, base: env.BASE, tier: tierNow, meta, agree: agreeNow?.text ?? "", gptFallback: env.GPT_REQUESTED === "true" && provider === "glm" });
+const body = renderSolComment({ answer, head, lane, mode: env.MODE, base: env.BASE, tier: tierNow, meta, agree: agreeNow?.text ?? "", gptFallback: labelledFallback && provider === "glm" });
 if (secretHits(body)) fail("the comment looks like it contains a credential");
 await gh.post(`/issues/${n}/comments`, { body });
 say(`posted ${answer.verdict} @ ${head} as (${lane}) from ${provider}; ${meta.seconds} s${usage ? `, tokens in ${usage.input} (cached ${usage.cached}) out ${usage.output}` : ""}`);
