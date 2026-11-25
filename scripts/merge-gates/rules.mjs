@@ -754,18 +754,16 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // head (or a verified carried head) stops every tier, tier 0 included. GLM, (sonnet) and other lanes are input.
   const allLanes = verdicts(items, head, carried);
   if (fbGlm) allLanes.set(GLM_LANE, fbGlm);
-  const eligible = [...eligibleLanes(tier, glmTiers, route.cls), ...(fbGlm ? [GLM_LANE] : [])];
-  const gptLanes = [...eligible, "(unnamed)"];
+  // D395 stateless landing (coordinator design, 2026-11-25): landing never depends on who was assigned (REVIEWER: lines are dispatch
+  // hints only), which removes the whole class of reassignment races. An IMPORTANT tier-1/2 head lands only on an exact-head (or
+  // verified carried) merge from ANY Sol lane, or (ghglm) inside a D366 fallback (glmTiers) / the review:gpt marked fallback; a NORMAL
+  // head on a (ghglm) merge or any GPT (Sol or Terra) merge. A block from ANY of these lanes, Terra included, or an unnamed one blocks.
+  const glmCounts = eligibleLanes(tier, glmTiers, route.cls).includes(GLM_LANE) || fbGlm !== null;
+  const eligible = [...SOL_LANES, ...(route.cls === NORMAL ? TERRA_LANES : []), ...(glmCounts ? [GLM_LANE] : [])];
+  const blockers = [...new Set([...SOL_LANES, ...TERRA_LANES, ...(glmCounts ? [GLM_LANE] : []), "(unnamed)"])];
   const assigned = reviewerLane(items, gpt);
-  // An assignment naming a lane that cannot review this tier (Sonnet, unknown, Terra on tier 2) is invalid: it filters
-  // nothing, so no GPT block is hidden, and it holds the PR until the coordinator fixes it.
-  const sticky = assigned && eligible.includes(assigned) ? assigned : null;
-  // D395/D396 (no sticky state): on a NORMAL PR an assignment pins nothing: every eligible lane counts, so the GLM verdict counts after
-  // a Codex lane took an earlier head during a GLM outage, and a Codex verdict counts when the workflow (ghsol/ghglm) was assigned but
-  // GLM is out. On an IMPORTANT PR a workflow sticky accepts either provider (stickyLanes); any other sticky lane stays the only one.
-  const pinned = route.cls === NORMAL ? null : stickyLanes(sticky, eligible);
-  const counts = (l) => !pinned || pinned.includes(l);
-  const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l) && counts(l)));
+  const sticky = assigned && eligible.includes(assigned) ? assigned : null;   // reported only
+  const lanes = new Map([...allLanes].filter(([l]) => blockers.includes(l)));
   // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
   const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);
   if (sticky) notes.unshift(`reviewer ${sticky}`);
@@ -794,7 +792,6 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   if (blocked.length) return res(FAILURE, say(`VERDICT block ${blocked.join(" ")}`), extra);
 
   const missing = [];
-  if (assigned && !sticky) missing.push(`a valid REVIEWER (${assigned} cannot review tier ${tier})`);
   const merged = (names) => names.some((n) => lanes.get(n) === "merge");
   if (tier === 2 && !merged(eligible)) missing.push(`VERDICT ${eligible.join(" or ")} merge`);
   if (tier === 1 && !dataSync && !merged(eligible)) missing.push(`VERDICT ${[...eligible.filter((l) => !SOL_LANES.includes(l)), ...SOL_LANES].join(" or ")} merge`);

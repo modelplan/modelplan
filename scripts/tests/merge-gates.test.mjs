@@ -58,29 +58,19 @@ test("trust needs the login and the numeric id; deleted authors and drafts never
   assert.deepEqual(items.map((x) => x.body), ["z"]);
 });
 
-test("sticky REVIEWER: only the assigned lane's verdict counts; others are advisory", () => {
+test("D395 stateless landing: a REVIEWER assignment never changes what lands; any counting block at the head blocks", () => {
   const t2 = [file("cli/internal/quota/x.go")];
   const rv = (lane) => `REVIEWER: ${lane}`;
   const mixed = [comment(v("block", H, "macrev2")), comment(v("block", H, "macrevb")), comment(v("merge", H, "macrevd"))];
-  assert.equal(evalPr({ files: t2, comments: mixed }).state, R.FAILURE, "no REVIEWER: old behaviour, any block stops it");
-  const ok = evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed] });
-  assert.equal(ok.state, R.SUCCESS, "sticky merge passes over other lanes' blocks");
-  assert.match(ok.why, /info: .*\(macrev2\) block/);
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("block", H, "macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "sticky block fails");
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.PENDING, "other lane merge does not satisfy");
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrev2")), comment(rv("macrevd")), ...mixed] }).state, R.SUCCESS, "latest REVIEWER wins");
-  assert.equal(evalPr({ files: t2, comments: mixed, reviews: [review(rv("macrevd"))] }).state, R.FAILURE, "a REVIEWER line in a review never assigns");
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed], reviews: [review(rv("macrev2"))] }).state, R.SUCCESS, "a review cannot reassign");
-  for (const bad of ["sonnet", "nosuchlane"]) {
-    const r = evalPr({ files: [file("docs/a.md")], comments: [comment(rv(bad)), comment(v("block", H, "macrev2"))] });
-    assert.equal(r.state, R.FAILURE, `${bad} assignment hides no GPT block`);
-    assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(rv(bad))] }).state, R.PENDING, `${bad} assignment holds the PR`);
-    assert.equal(evalPr({ files: t2, comments: [comment(rv(bad)), comment(v("merge", H, bad)), comment(v("merge", H, "macrevd"))] }).state, R.PENDING, `${bad} cannot pass tier 2`);
-  }
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevc")), comment(v("merge", H, "macrevc")), comment(v("merge", H, "macrevd"))] }).state, R.PENDING, "Terra assignment is invalid on tier 2");
-  const stranger = { login: "mallory", id: 5 };
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd"), stranger), ...mixed] }).state, R.FAILURE, "untrusted REVIEWER ignored");
+  assert.equal(evalPr({ files: t2, comments: mixed }).state, R.FAILURE, "any block stops it");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed] }).state, R.FAILURE, "an assignment hides no block");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "any Sol lane's merge lands, whoever is assigned");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("nosuchlane")), comment(v("merge", H, "macrevd"))] }).state, R.SUCCESS, "an invalid assignment holds nothing");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevc")), comment(v("merge", H, "macrevc"))] }).state, R.PENDING, "Terra never admits tier 2");
+  assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(rv("sonnet")), comment(v("block", H, "macrev2"))] }).state, R.FAILURE, "a GPT block stops tier 0");
+  assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(rv("sonnet"))] }).state, R.SUCCESS, "tier 0 needs no verdict, whatever is assigned");
 });
+
 
 test("tier: path rules, test-only rule, override and gate self-protection", () => {
   assert.equal(R.pathTier(["docs/a.md", ".github/workflows/ci.yml", "x.png"]), 0);
@@ -120,7 +110,7 @@ test("tier gates: tier 1 needs a GPT merge, tier 2 needs a Sol lane, macrev is a
   const t2 = [file("clients/swift/Wire.swift")];
   const glm = comment(`GLMREV: OK @ ${H}`);
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev")), glm] }).state, R.PENDING);
-  assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "macrev")), comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS);
+  assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "macrev")), comment(v("merge", H, "macrev2")), glm] }).state, R.FAILURE, "D395 stateless: a Terra block blocks tier 2 too");
   // D243: one review gate. A GLM or (sonnet) block is reviewer input, shown in the description, never a FAILURE.
   const glmBlock = evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), comment(v("block", H, "glm")), glm] });
   assert.equal(glmBlock.state, R.SUCCESS);
@@ -172,8 +162,7 @@ test("workflow reviewer (gh-terra pilot): a Terra lane; its shadow name and othe
   assert.equal(evalPr({ comments: [comment(v("block", H, "gh-terra")), comment(v("merge", H, "macrevc"))] }).state, R.FAILURE, "a gh-terra block stops tier 1");
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "gh-terra"))] }).state, R.PENDING, "tier 2 needs Sol");
   const t2Block = evalPr({ files: t2, comments: [comment(v("block", H, "gh-terra")), comment(v("merge", H, "macrev2"))] });
-  assert.equal(t2Block.state, R.SUCCESS, "on tier 2 a Terra block is advice");
-  assert.match(t2Block.why, /info: .*\(gh-terra\) block/);
+  assert.equal(t2Block.state, R.FAILURE, "D395 stateless: any GPT block at the head blocks, Terra on tier 2 too");
   assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-terra-shadow"))] }).state, R.PENDING, "shadow never counts");
   const shadow = evalPr({ comments: [comment(v("block", H, "gh-terra-shadow")), comment(v("merge", H, "macrevc"))] });
   assert.equal(shadow.state, R.SUCCESS, "a shadow block is input");
@@ -194,11 +183,11 @@ test("Sol workflow reviewer (ghsol, D352): a Sol lane for tiers 1 and 2 and a va
     const tier = files === t2 ? 2 : 1;
     assert.equal(evalPr({ files, comments: [comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS, `tier ${tier}: ghsol merge passes`);
     assert.equal(evalPr({ files, comments: [comment(v("block", H, "ghsol")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, `tier ${tier}: a ghsol block stops it`);
-    // Sticky: the assigned ghsol is the only verdict that counts, either way round.
+    // D395 stateless: an assignment changes nothing; another lane's block blocks, another Sol lane's merge lands.
     const sticky = evalPr({ files, comments: [rv("ghsol"), comment(v("block", H, "macrevb")), comment(v("merge", H, "ghsol"))] });
-    assert.equal(sticky.state, R.SUCCESS, `tier ${tier}: sticky ghsol merge passes over another lane's block`);
-    assert.match(sticky.why, /info: reviewer \(ghsol\); \(macrevb\) block/);
-    assert.equal(evalPr({ files, comments: [rv("(ghsol)"), comment(v("merge", H, "macrevb"))] }).state, R.PENDING, `tier ${tier}: another lane's merge does not satisfy a ghsol assignment`);
+    assert.equal(sticky.state, R.FAILURE, `tier ${tier}: another lane's block stops it whoever is assigned`);
+    assert.match(sticky.why, /reviewer \(ghsol\)/);
+    assert.equal(evalPr({ files, comments: [rv("(ghsol)"), comment(v("merge", H, "macrevb"))] }).state, R.SUCCESS, `tier ${tier}: any Sol lane's merge lands`);
     assert.equal(evalPr({ files, comments: [rv("ghsol"), comment(v("block", H, "ghsol")), comment(v("merge", H, "macrevb"))] }).state, R.FAILURE, `tier ${tier}: sticky ghsol block fails`);
     // Shadow: never counts, never assigns; its block is reported only.
     assert.equal(evalPr({ files, comments: [comment(v("merge", H, "ghsolshadow"))] }).state, R.PENDING, `tier ${tier}: shadow never counts`);
@@ -206,8 +195,7 @@ test("Sol workflow reviewer (ghsol, D352): a Sol lane for tiers 1 and 2 and a va
     assert.equal(shadow.state, R.SUCCESS, `tier ${tier}: a shadow block is advice`);
     assert.match(shadow.why, /info: .*\(ghsolshadow\) block/);
     const badSticky = evalPr({ files, comments: [rv("ghsolshadow"), comment(v("merge", H, "ghsolshadow")), comment(v("merge", H, "macrev2"))] });
-    assert.equal(badSticky.state, R.PENDING, `tier ${tier}: the shadow lane cannot be the sticky reviewer`);
-    assert.match(badSticky.why, /a valid REVIEWER \(\(ghsolshadow\) cannot review/);
+    assert.equal(badSticky.state, R.SUCCESS, `tier ${tier}: a shadow assignment holds nothing (D395 stateless); macrev2's merge lands`);
   }
   assert.equal(evalPr({ comments: [comment(v("merge", H, "ghsol"), { login: "github-actions[bot]", id: 41898282 })] }).state, R.PENDING, "only the trusted account posts verdicts");
   // The comment format the workflow posts: the record and quoted answer first, the VERDICT as the last line.
@@ -1513,7 +1501,7 @@ test("review:gpt: GLM is advisory and a REVIEWER: ghglm assignment pins nothing 
   assert.equal(ev(labelled, [pin, comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
   // D396: REVIEWER: ghglm / ghsol assigns the workflow reviewer pair, so ghsol's merge counts there too; another lane's does not
   assert.equal(ev(pr(), [pin, comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
-  assert.notEqual(ev(pr(), [pin, comment(v("merge", H, "macrev2"))]).state, R.SUCCESS);
+  assert.equal(ev(pr(), [pin, comment(v("merge", H, "macrev2"))]).state, R.SUCCESS, "D395 stateless: any Sol lane's merge lands");
   // a REVIEWER: assignment to another lane still pins a labelled PR
   assert.equal(R.reviewerLane(R.feed([comment("REVIEWER: ghsol")]), true), "(ghsol)");
 });
@@ -1620,9 +1608,10 @@ test("D395 fallback: a NORMAL PR also lands on a Codex verdict, and a GLM verdic
   assert.equal(atB([comment(v("merge", H2, "ghglm"))]).state, R.SUCCESS);
   assert.equal(atB([comment(v("block", H2, "ghglm")), comment(v("merge", H2, "macrevb"))]).state, R.FAILURE);
   assert.equal(atB([]).state, R.PENDING);
-  // on an IMPORTANT PR the sticky Codex lane stays the only one
+  // on an IMPORTANT PR any Sol lane lands it too (D395 stateless), but never Terra or GLM outside a D366 fallback
   const imp = [file("cli/cmd/modelplan/consent_scopes.go")];
-  assert.equal(evalPr({ files: imp, comments: [comment("REVIEWER: macrevb"), comment(v("merge", H, "ghsol"))] }).state, R.PENDING);
+  assert.equal(evalPr({ files: imp, comments: [comment("REVIEWER: macrevb"), comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS);
+  assert.equal(evalPr({ files: [file("cli/internal/advise/lock_unix.go")], comments: [comment(v("merge", H, "macrevc"))] }).state, R.PENDING, "important tier 1: Terra does not admit");
 });
 
 test("D396 sticky ghsol: the workflow pair accepts the GLM quota-fallback verdict wherever GLM may decide", () => {
@@ -1644,8 +1633,8 @@ test("D395-5/6: on a NORMAL PR no assignment pins a lane (a Codex verdict counts
   const normal = [file("scripts/tool.mjs")];
   assert.equal(evalPr({ files: normal, comments: [comment("REVIEWER: ghsol"), comment(v("merge", H, "macrevb"))] }).state, R.SUCCESS);
   assert.equal(evalPr({ files: normal, comments: [comment("REVIEWER: ghsol"), comment(v("block", H, "macrevb")), comment(v("merge", H, "ghglm"))] }).state, R.FAILURE, "any counting block blocks");
-  // an important PR keeps the workflow pin
-  assert.equal(evalPr({ files: [file("cli/cmd/modelplan/consent_scopes.go")], comments: [comment("REVIEWER: ghsol"), comment(v("merge", H, "macrevb"))] }).state, R.PENDING);
+  // an important PR: no pin either (D395 stateless); any Sol lane's merge lands it
+  assert.equal(evalPr({ files: [file("cli/cmd/modelplan/consent_scopes.go")], comments: [comment("REVIEWER: ghsol"), comment(v("merge", H, "macrevb"))] }).state, R.SUCCESS);
   // a rename out of an important area, or any rename at all, is important on both gates (the coordinator sees no old path)
   const mv = [file("cli/internal/metrics/frame.go", { status: "renamed", previous_filename: "cli/internal/appserver/frame.go" })];
   const r = evalPr({ files: mv, comments: [comment(v("merge", H, "ghglm"))] });
