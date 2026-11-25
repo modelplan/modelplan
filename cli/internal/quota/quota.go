@@ -310,6 +310,8 @@ type Report struct {
 	// Refresh: what `quota --refresh-account` did, so old figures never pass for a fresh reading.
 	Refresh *AccountRefresh `json:"refresh,omitempty"`
 	Note    string          `json:"note"`
+
+	ZaiSubscriptionEstablished bool `json:"-"` // local presentation evidence, independent of quota values
 }
 
 const note = "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."

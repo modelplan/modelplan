@@ -50,7 +50,7 @@ private actor ActivityJourneyEngine: EngineClient {
 
 @MainActor final class NormalEntryActivityTests: XCTestCase {
     private let first = "aaaaaaaaaaaaaaaa", second = "bbbbbbbbbbbbbbbb"
-    private func fixture(phase: String?, sequence: Int, recordAt: Date = Date(), mismatched: Bool = false, tool: String = "codex") throws -> WireRowsSnapshot {
+    private func fixture(phase: String?, sequence: Int, recordAt: Date = Date(), mismatched: Bool = false, tool: String = "codex", unavailableState: String? = nil) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any]
@@ -73,7 +73,18 @@ private actor ActivityJourneyEngine: EngineClient {
                 "expiresAt": format.string(from: recordAt.addingTimeInterval(grace))]]
         }
         var peer = account; peer["subscriptionRef"] = second; peer.removeValue(forKey: "activity")
-        row["accounts"] = [account, peer]; projection["rows"] = [row]; projection.removeValue(forKey: "resetEvents")
+        if let unavailableState {
+            row["state"] = unavailableState
+            row["reason"] = ["code": unavailableState == "failed" ? "timeout" : "no_usage_windows",
+                             "text": ["en": "Reading unavailable", "zh": "读数不可用"]]
+            row.removeValue(forKey: "expiresAt")
+            row.removeValue(forKey: "stateAfterExpiry")
+            row["accounts"] = [["route": "unknown", "plan": ["id": "unknown"],
+                                "beta": false, "valueState": "none", "windows": []]]
+        } else {
+            row["accounts"] = tool == "zai" ? [account] : [account, peer]
+        }
+        projection["rows"] = [row]; projection.removeValue(forKey: "resetEvents")
         root["projection"] = projection; root["sequence"] = sequence
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
     }
@@ -188,6 +199,89 @@ private actor ActivityJourneyEngine: EngineClient {
         XCTAssertTrue(app.lifecyclePaused); XCTAssertTrue(app.composition.dock.activeWorkingEffectIDs.isEmpty)
         await app.stopLifecycle(); await app.composition.stop()
     }
+    func testEstablishedZCodeRingRendersAfterFailedAndEmptyReads() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("zcode-ring-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try entry(fixture(phase: nil, sequence: 1, tool: "zai"), root: root)
+        try await app.foundationStore.update { $0.autoHide = false }
+        await app.prepare()
+        await app.composition.start()
+        app.allowDockPresentation()
+        try await wait("ZCode quota ring") { app.composition.presentedContent.snapshot.inputs.map(\.id) == [self.first] }
+        let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+        for (offset, state) in ["failed", "empty"].enumerated() {
+            try await engine.publish(fixture(phase: nil, sequence: offset + 2, tool: "zai", unavailableState: state))
+            let snapshot = app.composition.presentedContent.snapshot
+            XCTAssertEqual(snapshot.inputs.map(\.id), ["zai#unknown"], state)
+            let input = try XCTUnwrap(snapshot.inputs.first)
+            XCTAssertEqual(input.dataState, .unavailable)
+            let reading = try DockInstrumentProjection.evaluate(input, now: Date())
+            XCTAssertNil(reading.remainingPercent)
+            XCTAssertFalse(reading.isWorking)
+            XCTAssertEqual(snapshot.subscriptions.first?.source, .unavailable)
+        }
+        await app.composition.stop()
+    }
+
+    func testLegacySettingsKeepTheUnavailableZCodeRingHiddenWithoutEditing() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("zcode-legacy-hidden-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try entry(fixture(phase: nil, sequence: 1, tool: "zai"), root: root)
+        let id = first
+        let original = try await app.foundationStore.update { $0.subscriptions.hiddenIDs = [id] }
+        await app.prepare()
+        await app.composition.start()
+        app.allowDockPresentation()
+        try await wait("legacy hidden member in the Settings catalogue") {
+            app.currentSettingsContext.subscriptions.contains { $0.id == id && $0.tool == "zai" }
+        }
+
+        let cockpit = CockpitConsoleOwner(bundle: root, settingsStore: app.foundationStore)
+        let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+        for (offset, state) in ["failed", "empty"].enumerated() {
+            try await engine.publish(fixture(phase: nil, sequence: offset + 2, tool: "zai", unavailableState: state))
+            let dock = app.composition.dock.interactionEnvironment()
+            XCTAssertEqual(dock.catalogue, ["zai#unknown"], state)
+            XCTAssertTrue(try dock.preferences.orderedIDs(in: dock.catalogue, visibleOnly: true).isEmpty, state)
+            let presentation = try XCTUnwrap(app.composition.latestSettings)
+            XCTAssertTrue(cockpit.cockpitAppearance(presentation).hiddenMembers.contains("zai#unknown"), state)
+        }
+        let saved = await app.foundationStore.snapshot()
+        XCTAssertEqual(saved.revision, original.revision)
+        XCTAssertEqual(saved.preferences.subscriptions.hiddenIDs, [id])
+        await app.composition.stop()
+    }
+
+    func testSettingsKeepsTheUnavailableZCodeRingHidden() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("zcode-hidden-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try entry(fixture(phase: nil, sequence: 1, tool: "zai"), root: root)
+        await app.prepare()
+        await app.composition.start()
+        app.allowDockPresentation()
+        try await wait("ZCode settings member") {
+            app.currentSettingsContext.subscriptions.contains { $0.id == self.first && $0.tool == "zai" }
+        }
+        let settings = SettingsApplicationCoordinator(store: app.foundationStore, context: app.currentSettingsContext) {
+            app.composition.applySettings($0)
+        }
+        await settings.reload()
+        _ = try await settings.editor.commit(.visible(first, false))
+        let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+        for (offset, state) in ["failed", "empty"].enumerated() {
+            try await engine.publish(fixture(phase: nil, sequence: offset + 2, tool: "zai", unavailableState: state))
+            let dock = app.composition.dock.interactionEnvironment()
+            XCTAssertEqual(dock.catalogue, ["zai#unknown"], state)
+            XCTAssertTrue(try dock.preferences.orderedIDs(in: dock.catalogue, visibleOnly: true).isEmpty, state)
+        }
+        let saved = await app.foundationStore.snapshot()
+        XCTAssertEqual(saved.preferences.subscriptions.hiddenIDs, [first, "zai#unknown"])
+        await app.composition.stop()
+    }
+
     func testClaudeAndZCodeActivityUseVerifiedMembersAndSystemReduceMotion() async throws {
         _ = NSApplication.shared
         for tool in ["claude","zai"] {

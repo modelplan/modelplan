@@ -261,15 +261,6 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		exists := native || id == "codex" || tool.Preferred == "codexbar" && tool.HelperStatus() == ""
 		in.Catalogue = append(in.Catalogue, rows.CatalogueEntry{ToolID: id, ReaderID: tool.ReaderID, Backend: tool.Preferred, Detected: tool.Detected, ReaderExists: exists, Status: tool.Status, InstalledLater: later[tool.ProviderID]})
 	}
-	// Implicit local permission becomes a candidate only when a real tool/source
-	// establishes it. A blank home must not acquire phantom Claude/Codex cards.
-	consents := in.Consents[:0]
-	for _, record := range in.Consents {
-		if record.State != rows.ConsentImplicit || detected[record.ToolID] {
-			consents = append(consents, record)
-		}
-	}
-	in.Consents = consents
 	if changed {
 		in = admission.ChangedRowsInput(in.Now)
 		in.ReadOnly = b.config.ReadOnly
@@ -280,6 +271,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if !changed && admission.Mode() != consent.Off {
 		quota.AppendManagedRows(&in, p)
 		report = quota.ReadPermitted(p, in.Now)
+		in.ZaiSubscriptionEstablished = report.ZaiSubscriptionEstablished
 		b.reported(report, in.Now)
 		projectionReport := report
 		if admission.Allows("codex", consent.Local) {
@@ -331,6 +323,15 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 			}
 		}
 	}
+	// Implicit local permission becomes a candidate only when a real tool/source
+	// establishes it. A blank home must not acquire phantom Claude/Codex cards.
+	consents := in.Consents[:0]
+	for _, record := range in.Consents {
+		if record.State != rows.ConsentImplicit || detected[record.ToolID] || (record.ToolID == "zai" && in.ZaiSubscriptionEstablished) {
+			consents = append(consents, record)
+		}
+	}
+	in.Consents = consents
 	projection := rows.Build(in)
 	var resetEvents *[]rows.ResetEvent
 	var publicModels []digest.Model
