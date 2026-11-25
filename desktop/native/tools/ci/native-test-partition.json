@@ -74,6 +74,7 @@
         "EngineDockInteractionBindingTests",
         "FindQuotaWidgetJourneyTests",
         "G1PresentationHelpJourneysB",
+        "G3161IdleCompositionGateTests",
         "G3_122StatusTitleTests",
         "HintExecutionHostTests",
         "HostPairedProjectionTests",
