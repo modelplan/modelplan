@@ -79,7 +79,8 @@ func beforeObserveOpen(source string) {
 func observeForAppIn(st *store.Store, inventory *logindex.Inventory) func(time.Time) []appserver.ObserveResult {
 	memo := &observeMemo{}
 	return func(now time.Time) []appserver.ObserveResult {
-		x := observeIndex{inventory: inventory, fence: consent.Capture().Fence(), memo: memo}
+		ticket := inventory.Ticket() // before the consent it goes with: a later withdrawal voids it
+		x := observeIndex{inventory: inventory, fence: consent.Capture().Fence(), ticket: ticket, memo: memo}
 		codex := quota.CodexHome()
 		results := []appserver.ObserveResult{
 			{Source: "codex", Outcome: observeCodexHome(st, codex, now, x)},
