@@ -49,9 +49,12 @@ extension CommunityCockpitEntryTests {
         catch { await entry.composition.stop(); throw error }
         await entry.composition.stop()
     }
-    @MainActor private func shownPage(_ probe: PluginPageProbe, other: CockpitWindowController? = nil) async throws -> CockpitWindowController {
+    /// The page the click shows. `reopening` is the page a close just hid: D397 keeps that one frozen page and shows it
+    /// again (`keepClearedPageAfterClose`); a page that is not kept is discarded and the click builds a new one.
+    @MainActor private func shownPage(_ probe: PluginPageProbe, reopening previous: CockpitWindowController? = nil) async throws -> CockpitWindowController {
         func shown() -> CockpitWindowController? {
-            guard let page = probe.made.last, page !== other, page.bridge.ready, page.window?.isVisible == true else { return nil }
+            guard let page = probe.made.last, page.bridge.ready, page.window?.isVisible == true else { return nil }
+            if let previous, (page === previous) != previous.keepClearedPageAfterClose { return nil }
             return page
         }
         for _ in 0..<3000 where shown() == nil { try await Task.sleep(for: .milliseconds(10)) }
@@ -131,7 +134,8 @@ extension CommunityCockpitEntryTests {
             try await eventually("the cockpit closes") { page.window?.isVisible != true }
             try await eventually("nothing runs without a shown page") { plugins.sampler.sampling.isEmpty }
             entry.showConsole()
-            let reopened = try await shownPage(probe, other: page)
+            let reopened = try await shownPage(probe, reopening: page)
+            if page.keepClearedPageAfterClose { XCTAssertTrue(reopened === page, "D397: the reopen shows the one kept page") }
             try await eventually("the reopened page shows the saved plugin") { await self.js(reopened, self.keyScript) as? Bool == true }
             XCTAssertEqual(onPage(reopened).map { $0["id"] as? String }, ["zz-newer-build", "placeholder", "calendar", "resources"])
             // #1096 card action: the app opens the plugin's big screen; asked again, it stays open.
