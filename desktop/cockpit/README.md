@@ -117,7 +117,7 @@ Page responses include `ready`, `rendered`, `cleared`, `nextDeadline` and `actio
 maps these to typed UI intents, never to a command/URL interpreter. No credential,
 consent mutation or plugin-install message exists in this protocol.
 
-## Plugin columns (D121/D124, D293; CKP-PLG-50…54)
+## Plugin columns (D121/D124, D293; CKP-PLG-50…54; resource big screen CKP-PLG-60, D421)
 
 Plugins are bundled modules in `src/plugin-registry.ts`: id, string-table keys for the title (long and short) and the
 one-sentence Settings summary, a trusted white line-art icon at the vendor-mark size, the dashed underline colour and

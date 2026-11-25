@@ -9,7 +9,7 @@
 // The widget ring, its readout switch and the hover card are native (ModelPlanResources ResourceReadout / ResourceCard).
 //
 // The big screen paints its charts through the D323 draw hook (modelplan#1092): memory 10-minute stacked area (used /
-// cached) with a pressure strip, CPU 10-second bars (user / system) with a 70 % dashed line, disk bar (D421: no threshold tick on it).
+// Big screen: CKP-PLG-60 (D421). cached) with a pressure strip, CPU 10-second bars (user / system) with a 70 % dashed line, disk bar (D421: no threshold tick on it).
 // The label/value lines stay as the fallback when a draw fails.
 //
 // No import of plugin-registry values needed: plugin-builtins.ts lists this plugin (type imports are erased).
@@ -122,12 +122,13 @@ function drawCharts(c:PluginDrawContext,state:unknown):void {
   // macrevb-1096-1: the readings sit beside the charts (CPU load, memory breakdown, disk capacity), right-aligned on the
   // label row and squeezed to the free width when the line is longer than the panel.
   const w=(key:string,vars?:Readonly<Record<string,string|number>>)=>c.words(key,vars).full,last0=samples[samples.length-1]!,view=resourceView(last0);
-  const value=(text:string,y:number,room:number,anchor:'start'|'end'='end')=>{
-    const t=node('text',{x:anchor==='end'?W-pad:pad,y,fill:T.ink,'font-size':fs,'font-family':T.lcdFont,'text-anchor':anchor,'data-readout':''},svg);t.textContent=text;
+  const value=(text:string,y:number,room:number,anchor:'start'|'end'='end',fill:string=T.ink)=>{
+    const t=node('text',{x:anchor==='end'?W-pad:pad,y,fill,'font-size':fs,'font-family':T.lcdFont,'text-anchor':anchor,'data-readout':''},svg);t.textContent=text;
     const need=text.length*fs*0.62;if(need>room){t.setAttribute('textLength',String(room));t.setAttribute('lengthAdjust','spacingAndGlyphs');}};
   // Order CPU · Memory · Disk (D347, same as the column). Heights come from one budget so the three sections always fit
   // inside the area: every section is label row + body + gap, and the bodies share what is left.
   const lab=fs+3,stripH=Math.max(3,Math.min(6,H*0.04)),diskH=Math.max(5,Math.min(10,H*0.05)),fixed=pad*2+4*lab+2*gap+stripH+gap+diskH+4;
+  const diskLevel=levelsOf(samples).disk,diskInk=diskLevel==='low'?T.low:diskLevel==='mid'?T.mid:RESOURCE_INK;
   const free=Math.max(12,H-fixed),cpuH=free*0.4,memH=free*0.6;
   let y=pad;
   // CPU: one bar per 10 s, user (ink) under system (lighter), with the 70 % dashed line.
@@ -155,11 +156,11 @@ function drawCharts(c:PluginDrawContext,state:unknown):void {
   const strip=node('g',{'data-chart':'pressure'},svg);
   d.strip.forEach((p,i)=>node('rect',{x:(pad+i*cw).toFixed(2),y,width:Math.max(0.5,cw-0.5).toFixed(2),height:stripH,fill:p==='critical'?T.low:p==='warn'?T.mid:T.ghost,'data-pressure':p},strip));
   y+=stripH+gap;
-  // Disk: one bar; D421 removed the 90 % tick (the tone change signals it).
+  // Disk: one bar; D421 removed the 90 % tick (the bar and readout take the amber/red status tone at 80/90 % with the shared hysteresis).
   label(w('plugin.resourcesDisk'),pad,y+fs);
-  value(`${pct(view.disk)}% · ${w('plugin.resourcesFree',{gb:gb(last0.diskFree)})} · ${gb(last0.diskTotal)} GB`,y+fs,innerW-48);y+=lab;
+  value(`${pct(view.disk)}% · ${w('plugin.resourcesFree',{gb:gb(last0.diskFree)})} · ${gb(last0.diskTotal)} GB`,y+fs,innerW-48,'end',diskLevel?diskInk:T.ink);y+=lab;
   node('rect',{x:pad,y,width:innerW,height:diskH,fill:T.ghost},svg);
-  node('rect',{'data-chart':'disk',x:pad,y,width:(innerW*d.disk/100).toFixed(2),height:diskH,fill:RESOURCE_INK},svg);
+  node('rect',{'data-chart':'disk',x:pad,y,width:(innerW*d.disk/100).toFixed(2),height:diskH,fill:diskInk,'data-level':diskLevel??'ok'},svg);
   c.area.replaceChildren(svg);
 }
 const peak=(samples:readonly ResourceSample[])=>samples.reduce((m,s)=>Math.max(m,resourceView(s).cpu),0);
