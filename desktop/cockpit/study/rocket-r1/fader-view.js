@@ -28,9 +28,10 @@ export function tierY(t) {
 export const levelK = label => tierY((4 - LADDER.indexOf(label)) / 4);
 // The code-drawn slot of channel `off` (channel offset from the lever-area centre in pitches: -1, 0, 1), as SVG in the
 // channel's own pixels: a dark core --slot-w wide on the face, a 1 px shadow on its upper end and inner edge, a 1 px faint
-// highlight on its lower lip. It runs 7 u past the Max and Low rows and follows the shared face geometry (it is not a bitmap).
+// highlight on its lower lip. It runs 8 u past the Max and Low rows, so it is .367 of the column
+// height long as on the direction 06 prototype (D419, measured: 161 px slot over a 439 px column) and follows the shared face geometry (it is not a bitmap).
 export function slotSvg({width, height, pad, slotW, off, pitch}) {
-  const u = (height - 2 * pad) / 97, rows = height - 2 * pad, y0 = pad - 7 * u, y1 = height - pad + 7 * u;
+  const u = (height - 2 * pad) / 97, rows = height - 2 * pad, y0 = pad - 8 * u, y1 = height - pad + 8 * u;
   const at = y => { const f = (y - pad) / rows, s = tierScale(f); return {x: width / 2 + off * pitch * (s - 1), w: slotW * s}; };
   const top = at(y0), bot = at(y1), r = n => +n.toFixed(2);
   const poly = (a, b, ya, yb) => `${r(a.x - a.w / 2)},${r(ya)} ${r(a.x + a.w / 2)},${r(ya)} ${r(b.x + b.w / 2)},${r(yb)} ${r(b.x - b.w / 2)},${r(yb)}`;

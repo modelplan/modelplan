@@ -5,19 +5,27 @@
 :root[data-theme="day"]{--fd-tick:#0000002e;--fd-dot:#ffffff;--fd-dot-ring:#0000007a;--fd-dot-ink:#15181c}
 
 
-.dk-fad{--fd-lcd:calc((var(--console-h,217px) - 2 * var(--row-h,18px) - 3 * var(--key-gap,4px)) / 2);--fd-rows:var(--row-h,18px) var(--key-gap,4px) var(--fd-lcd) 4px minmax(0,1fr);--fd-pad:8px;
+/* D405/D419 (owner 11-24/25): the lever area's vertical proportions are MEASURED from the approved direction 06 prototype
+   (whole-proposed.png; spec table in PR #1229, confirm 2026-11-24/19-lever-slots-compare/SPEC.md), as ratios of the column
+   height H (= --console-h): card top .066 H (the 18 px lamp row floors it at 18 px), card .392 H, upper-tier lip .497 H, lever tier .499-.928 H (it stops 1 px above the bank keys), travel from .521 H,
+   .378 H long (the slot lies inside the tier with the prototype's margins; 97 px keeps the top detents 19.5 px apart,
+   CKP-FAD-13). The compact layout (640) cannot hold these ratios with a readable card and the 19.5 px floor; it sets px values
+   below. */
+.dk-fad{--fd-H:var(--console-h,217px);--fd-led-gap:max(0px,calc(var(--fd-H) * .066 - var(--row-h,18px)));--fd-lcd:calc(var(--fd-H) * .392);
+  --fd-trv-top:calc(var(--fd-H) * .521);--fd-trv:max(97px,calc(var(--fd-H) * .378));--fd-tier-top:calc(var(--fd-H) * .499);--fd-tier-bot:min(calc(var(--fd-H) * .928),calc(var(--fd-H) - var(--row-h,18px) - 1px));
+  --fd-rows:var(--row-h,18px) var(--fd-led-gap) var(--fd-lcd) calc(var(--fd-trv-top) - var(--row-h,18px) - var(--fd-led-gap) - var(--fd-lcd)) var(--fd-trv) minmax(0,1fr);--fd-pad:8px;
   position:relative;isolation:isolate;display:grid;grid-template-columns:calc(3 * var(--fd-ch,64px) + 2 * var(--fd-gap,12px));
   grid-template-rows:minmax(0,1fr) var(--row-h,18px);row-gap:var(--key-gap,4px);align-self:stretch;height:var(--console-h,217px);min-height:0;-webkit-user-select:none;user-select:none}
 /* D405 (owner 2026-11-24, direction 06): two tilted tiers drawn with light only (no 3D transform; text and hit areas stay
    true). One light from above: the nearer a face is to level, the brighter. The upper tier (lamps and cards) leans back a
    little and ends in a lit front edge over a crease; the lower tier (levers and bank row) is nearly level, so brighter, a
    touch narrower at the far end, with a rounded lit front edge and a dark step wall towards the big screen. The tier
-   heights follow --fd-lcd, which splits the deck evenly: --fd-lcd = travel = (deck - 2 rows - 3 gaps) / 2. */
-.dk-fad::before,.dk-fad::after{content:"";position:absolute;z-index:-1;left:-4px;right:-5px;pointer-events:none}
-.dk-fad::before{top:-2px;height:calc(var(--row-h,18px) + var(--key-gap,4px) + var(--fd-lcd) + 3px);border-radius:5px 5px 0 0;
+   heights are the measured prototype ratios above; both panels are flush with the column, as in the prototype. */
+.dk-fad::before,.dk-fad::after{content:"";position:absolute;z-index:-1;left:0;right:0;pointer-events:none}
+.dk-fad::before{top:-2px;height:calc(var(--fd-tier-top) + 1px);border-radius:5px 5px 0 0;
   background:linear-gradient(180deg,var(--tier-up-1,#ffffff04),var(--tier-up-2,#ffffff12));
   box-shadow:inset 0 -2px 0 var(--tier-edge,#ffffff40),0 5px 5px -2px var(--tier-crease,#000000d9)}
-.dk-fad::after{top:calc(var(--row-h,18px) + var(--key-gap,4px) + var(--fd-lcd) + 3px);bottom:calc(var(--row-h,18px) + var(--key-gap,4px) - 2px);border-radius:2px 2px 5px 5px;
+.dk-fad::after{top:var(--fd-tier-top);bottom:calc(100% - var(--fd-tier-bot));border-radius:2px 2px 5px 5px;
   clip-path:polygon(calc((1 - var(--tq,.955)) * 61%) 0,calc(100% - (1 - var(--tq,.955)) * 61%) 0,100% 100%,0 100%);
   background:linear-gradient(180deg,var(--tier-face-1,#30353b),var(--tier-face-2,#3a4047) 70%,var(--tier-face-3,#454b53) calc(100% - 3px),var(--tier-face-lip,#23272c) calc(100% - 1px));
   box-shadow:inset 0 1px 0 var(--tier-top-lip,#ffffff3d),inset -5px 0 6px -2px var(--tier-wall,#000000a6)}
@@ -152,8 +160,10 @@ body.reduced #cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s line
 @media(prefers-reduced-motion:reduce){#cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s linear!important}}
 
 
-/* D405: 72 px keeps the short travel at 97 px, so its top detents (closest under the tilt) stay 19.5 px apart (CKP-FAD-13). */
-#cockpit[data-layout="640"] .dk-fad{--fd-lcd:72px}
+/* D405/D419 compact (H = 217): the 97 px travel (top detents 19.5 px apart, CKP-FAD-13) and a 72 px card leave 11 px for the
+   prototype's shelf and the two in-tier margins, so they shrink to about half their measured size: card 18-90, lip 94, tier
+   95-198 (bank keys from 199), travel 97-194, so the slot (98.3-192.7) stays inside the tier by 3.3 / 5.3 px. */
+#cockpit[data-layout="640"] .dk-fad{--fd-lcd:72px;--fd-led-gap:0px;--fd-tier-top:95px;--fd-trv-top:97px;--fd-trv:97px;--fd-tier-bot:198px}
 #cockpit[data-layout="640"] .dk-fad .cd-use{line-height:12px}
 #cockpit[data-layout="640"] .dk-fad .fd-strip{padding:5px 2px 3px 3px}
 #cockpit[data-layout="640"] .dk-fad .cd-big,#cockpit[data-layout="640"] .dk-fad .cd-try{margin-top:2px}

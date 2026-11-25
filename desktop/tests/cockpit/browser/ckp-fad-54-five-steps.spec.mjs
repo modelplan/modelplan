@@ -288,9 +288,9 @@ test('CKP-FAD-57 short cockpit: the fader lever scales to 0.825 of the tall one'
  const tall=await card(page,'Sol 6.1').locator('.fd-cap').boundingBox();
  await open(page,{tier:'compact'});
  const short=await card(page,'Sol 6.1').locator('.fd-cap').boundingBox();
- // D405 (owner 11-24): the tall deck splits into even tiers (104.5 px travel, u = 88.5/97) and the short travel is 97 px
- // (u = 81/97, so its closest detents stay 19.5 px apart under the tilt): the short lever is 81/88.5 = 0.915 of the tall one.
- const ratio=81/88.5;
+ // D419 (measured on the direction 06 prototype): the tall travel is .378 of the 257 px column (97.15 px, u = 81.15/97) and the
+ // short travel is 97 px (u = 81/97, so its closest detents stay 19.5 px apart under the tilt): the levers are nearly equal.
+ const ratio=81/(.378*257-16);
  expect(Math.abs(short.width/tall.width-ratio)).toBeLessThan(.01);
  expect(Math.abs(short.height/tall.height-ratio)).toBeLessThan(.01);
 });

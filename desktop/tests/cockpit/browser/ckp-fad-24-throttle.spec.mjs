@@ -89,9 +89,10 @@ test('G3-92 a Max-only model shows no ghost: keys, drag and label clicks all lan
  await expect(slider).toHaveAttribute('aria-valuetext','Max');await expect(glm.locator('.fd-ghost')).toBeHidden();await expect(glm.locator('.fd-tline')).toBeHidden();
 });
 
-// D405: the tall travel is half the deck below the lamps and cards: (257 - 48) / 2 = 104.5 px.
-// D405: tall travel 104.5 px (u = 88.5/97), compact 97 px (u = 81/97).
-for(const [tier,height,u] of [['tall',890,88.5/97],['compact',640,81/97]])
+// D419 (measured on the direction 06 prototype): the tall travel is .378 of the 257 px column (97.15 px, u = 81.15/97);
+// compact 97 px (u = 81/97).
+const TALL_U=(.378*257-16)/97;
+for(const [tier,height,u] of [['tall',890,TALL_U],['compact',640,81/97]])
  test(`CKP-FAD-24 the baked throttle is drawn per theme at the travel's scale (${tier})`,async({page})=>{
   const {send,receive}=await openThrottles(page,{tier,height});
   const sol=channel(page,0),lever=await box(sol.locator('.fd-cap'));
@@ -112,7 +113,7 @@ test('CKP-FAD-24 the recommended effort is a small gold ★ tick on the slot sca
   const ch=channel(page,i),rec=await box(ch.locator('.fd-rec')),star=await box(ch.locator('.fd-rec .g-star')),slotX=await slotLine(ch,rec.y);
   expect(Math.abs(rec.y-await row(page,level)),'★ on the '+level+' row').toBeLessThanOrEqual(1);
   expect(rec.x-slotX).toBeGreaterThan(12);expect(rec.x-slotX).toBeLessThan(16);   // D405: just right of the grip (15.5 u), clear of the gap names
-  expect(rec.width).toBeCloseTo(3,0);expect(star.width).toBeLessThanOrEqual(9);
+  expect(Math.abs(rec.width-3*TALL_U)).toBeLessThanOrEqual(.1);expect(star.width).toBeLessThanOrEqual(9);   // 3 u wide
   expect(await ch.locator('.fd-rec').evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(212, 185, 148)');
  }
 });
@@ -211,7 +212,7 @@ for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height
     // the ghost rod is as wide as the real lever's rod (5 u)
     // the rod's own width (its box, before the skew along the tilted slot line: macrevb-1229-2)
     const rodWidth=await ch.locator('.fd-tline').evaluate(e=>parseFloat(getComputedStyle(e).width));
-    expect(Math.abs(rodWidth-5*(tier==='tall'?88.5/97:81/97)),'ghost rod width').toBeLessThanOrEqual(.5);
+    expect(Math.abs(rodWidth-5*(tier==='tall'?TALL_U:81/97)),'ghost rod width').toBeLessThanOrEqual(.5);
     const bg=await ch.locator('.fd-tline').evaluate(e=>getComputedStyle(e).backgroundColor);
     if(theme==='night')expect(bg).toMatch(/0\.25\)$/);
     if(theme==='day')expect(bg).toMatch(/0\.55\)$/);

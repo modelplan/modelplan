@@ -316,7 +316,8 @@ for(const [tier,height] of [['tall',890],['compact',640]])
    return {top,bottom,bank:{top:bank.top,bottom:bank.bottom},travel:{top:Math.min(...travels.map(t=>t.top)),bottom:Math.max(...travels.map(t=>t.bottom))},cores:cores.map(c=>[c.top,c.bottom]),image:a.backgroundImage,shadow:a.boxShadow,clip:a.clipPath};});
   // the panel holds the travels and stops above the bank keys, which sit outside it
   expect(g.top).toBeLessThanOrEqual(g.travel.top);expect(g.bottom).toBeGreaterThanOrEqual(g.travel.bottom);
-  expect(g.bank.top-g.bottom,'bank keys below the panel').toBeGreaterThanOrEqual(1);
+  // 1 px, less WebKit's 1/64 px layout-unit rounding of the pseudo-element's top and height
+  expect(g.bank.top-g.bottom,'bank keys below the panel').toBeGreaterThanOrEqual(.95);
   for(const [t,b] of g.cores){expect(t).toBeGreaterThanOrEqual(g.top);expect(b).toBeLessThanOrEqual(g.bottom);}
   // an opaque graphite face (not a faint overlay), brighter towards the pilot, with a lit top lip; still a trapezoid
   const stops=rgbs(g.image);expect(stops.length).toBeGreaterThanOrEqual(2);
@@ -325,3 +326,38 @@ for(const [tier,height] of [['tall',890],['compact',640]])
   expect(lum(stops.at(-2))).toBeGreaterThan(lum(stops[0])+4);expect(lum(stops[0])).toBeGreaterThan(35);
   expect(g.shadow,"a lit top lip").toMatch(/^rgba?\(255, 255, 255[^)]*\) 0px 1px 0px 0px inset/);expect(g.clip).toMatch(/^polygon\(/);
  });
+
+// D405/D419 (owner 11-25 on #1229): the lever column keeps the MEASURED proportions of the approved direction 06 prototype
+// (whole-proposed.png, column = the big screen's height, 439 px there; spec table in the PR and in confirm
+// 2026-11-24/19-lever-slots-compare/SPEC.md). Ratios of the column height H: the upper tier (lamps + cards) ends at .497 H, the
+// card is .392 H, the lever tier runs .499-.928 H, and the slot lies inside it by at least the prototype's margins (12 and 15
+// prototype px = .027 H and .034 H; tolerance one prototype pixel, 0.6 px here). Compact keeps the 19.5 px detent floor and a 72 px card, so
+// its margins are smaller but the slot still never leaves the tier.
+const columnGeometry=page=>page.locator('.dk-fad').evaluate(fad=>{const fr=fad.getBoundingClientRect(),b=getComputedStyle(fad,'::before'),a=getComputedStyle(fad,'::after'),r=e=>e.getBoundingClientRect();
+ const strips=[...fad.querySelectorAll('.fd-ch:not(.empty) .fd-strip')].map(r),cores=[...fad.querySelectorAll('.fd-slotsvg .sl-core')].map(r);
+ return {top:fr.top,H:fr.height,upper:fr.top+parseFloat(b.top)+parseFloat(b.height),tierTop:fr.top+parseFloat(a.top),tierBottom:fr.top+parseFloat(a.top)+parseFloat(a.height),
+  card:{top:Math.min(...strips.map(s=>s.top)),bottom:Math.max(...strips.map(s=>s.bottom))},slot:{top:Math.min(...cores.map(c=>c.top)),bottom:Math.max(...cores.map(c=>c.bottom))}};});
+test('D419 the full lever column follows the measured prototype ratios (cards about half, slots inside the tier)',async({page})=>{
+ await openThrottles(page);
+ const g=await columnGeometry(page),at=y=>(y-g.top)/g.H;
+ expect(g.H).toBeCloseTo(257,0);
+ expect(Math.abs(at(g.upper)-.497),`upper tier (lamps + cards) ${at(g.upper).toFixed(3)} of the column`).toBeLessThanOrEqual(.02);
+ expect(Math.abs((g.card.bottom-g.card.top)/g.H-.392),`card ${((g.card.bottom-g.card.top)/g.H).toFixed(3)} of the column`).toBeLessThanOrEqual(.02);
+ expect(Math.abs(at(g.card.top)-.066)).toBeLessThanOrEqual(.012);
+ expect(Math.abs(at(g.tierTop)-.499)).toBeLessThanOrEqual(.01);expect(Math.abs(at(g.tierBottom)-.928)).toBeLessThanOrEqual(.01);
+ expect(g.slot.top-g.tierTop,'slot top inside the tier by the prototype margin').toBeGreaterThanOrEqual(.027*g.H-.6);
+ expect(g.tierBottom-g.slot.bottom,'slot bottom inside the tier by the prototype margin').toBeGreaterThanOrEqual(.034*g.H-.6);
+ expect(Math.abs((g.slot.bottom-g.slot.top)/g.H-.367),'slot length').toBeLessThanOrEqual(.01);
+ // the effort names sit on the prototype's detent rows: Max .554 H, Low .866 H
+ const rows=await page.locator('.fd-scale .sc-travel[data-gap="1"] .sc-l').evaluateAll(l=>Object.fromEntries(l.map(e=>{const r=e.getBoundingClientRect();return [e.dataset.level,r.top+r.height/2];})));
+ expect(Math.abs(at(rows.Max)-.554)).toBeLessThanOrEqual(.01);expect(Math.abs(at(rows.Low)-.866)).toBeLessThanOrEqual(.01);
+});
+test('D419 compact keeps the 19.5 px detent floor and a 72 px card, with the slots still inside the tier',async({page})=>{
+ await openThrottles(page,{tier:'compact',height:640});
+ const g=await columnGeometry(page);
+ expect(g.card.bottom-g.card.top).toBeGreaterThanOrEqual(72);
+ expect(g.slot.top-g.tierTop,'slot top inside the tier').toBeGreaterThanOrEqual(2.5);
+ expect(g.tierBottom-g.slot.bottom,'slot bottom inside the tier').toBeGreaterThanOrEqual(2.5);
+ const rows=await page.locator('.fd-scale .sc-travel[data-gap="1"] .sc-l').evaluateAll(l=>l.map(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;}).sort((a,b)=>a-b));
+ expect(Math.min(...rows.slice(1).map((y,i)=>y-rows[i])),'closest detents (CKP-FAD-13)').toBeGreaterThanOrEqual(19.5);
+});
