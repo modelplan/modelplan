@@ -147,13 +147,14 @@ page. The page has no timers; the host samples. Messages, all with the common he
 - host → page `{"type":"pluginData","id":…,"data":…}`: a reading for a running plugin; refused otherwise.
 - host → page `{"type":"pluginScreen","id":…}`: open that enabled plugin's big screen (a native action such as the
   widget card's); an open one stays open. Refused before `plugins` or for a plugin that is off.
-- page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's right-click Remove or the "+" menu.
+- page → host action `pluginClose` with `id`: right-click Remove on a key. The host asks for confirmation (the widget's NSAlert) and turns the plugin off; the page keeps it until the host sends the new state.
+- page → host action `pluginsEdit` with `plugins` (same shape): an edit made with the "+" menu.
 - page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
 
 Native host (macrevc-844-1): `CockpitPluginWire.canonical` applies `parsePluginState`'s rules in both directions;
 `plugins` is the one nested reply value (at most 4 levels, 64 unique keys per object, 32 items per array, 64 KiB).
 The window sends `plugins` on ready, after every clear and on change (never a state the page confirmed twice; a failed or lost call is sent again, and a change made while another state is in flight is sent once that one is answered); a `pluginScreen` request waits until the page confirmed a plugin state;
-`pluginsRunning` is accepted without focus, `pluginsEdit` only from the active page. The running set drops to `[]`
+`pluginsRunning` is accepted without focus, `pluginsEdit` and `pluginClose` only from the active page. The running set drops to `[]`
 when the page goes or is cleared. `CockpitPluginBridge` (ModelPlanAppIntegration) keeps the durable copy in
 `cockpit-plugins.json` and drives `CockpitPluginSampler`, which reads registered plugins at their interval.
 
