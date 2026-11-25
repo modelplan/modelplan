@@ -66,6 +66,20 @@ import XCTest
         XCTAssertEqual(cells[2].width, min(textWidth(value), 34), accuracy: 1.5, "the percent column is the value's own width (D388)")
         XCTAssertLessThan(cells[0].width, 56, "short labels leave no reserved gap")
     }
+    /// Build 5: a long MCP-monthly percent ("99.43%") was ellipsized to "99.…" by the 34 pt value column.
+    func testPercentIsNeverEllipsized() throws {
+        let rows: [DockCardRow] = [
+            .init(id: "quota:weekly", kind: .quota, label: "每周", value: "64%", detail: "约3d6h用完", remainingFraction: 0.64, tone: .warning),
+            .init(id: "quota:mcp", kind: .extraQuota, label: "其他", value: "99.43%", detail: "每月 · 17d18h 后重置", remainingFraction: 0.9943, tone: .normal),
+        ]
+        let view = try card(rows, name: "train-card-percent")
+        func fields(_ v: NSView) -> [NSTextField] { ((v as? NSTextField).map { [$0] } ?? []) + v.subviews.flatMap(fields) }
+        for id in ["quota:weekly", "quota:mcp"] {
+            let value = try XCTUnwrap(fields(view).first { $0.accessibilityIdentifier() == "dock.card.text.row.\(id).value" })
+            let natural = ceil(value.cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: 10_000, height: 10_000)).width ?? 0)
+            XCTAssertGreaterThanOrEqual(value.frame.width, natural, "the percent in \(id) fits its cell in full")
+        }
+    }
     /// Digits and Latin must reach the pixels: an unregistered readout font left them blank.
     func testReadoutValuesAreActuallyDrawn() throws {
         let view = try card(badCase, name: "train-card-ink")
