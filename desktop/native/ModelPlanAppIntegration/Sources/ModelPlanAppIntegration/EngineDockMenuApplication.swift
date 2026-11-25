@@ -454,17 +454,23 @@ struct StatusNoticePresentation {
     /// The status item's display even when the item is squeezed out: the clicked copy's display while that click is
     /// current, else the button window's.
     var cockpitStatusScreen: CGRect? {
-        let displays = statusDisplays()
-        if let click = statusClickAnchor, click.displays == displays.map(\.frame),
-           let display = StatusItemAnchor.menuBarDisplay(of: click.rect, displays: displays, menuHeight: NSStatusBar.system.thickness) {
+        // macrev2-1251-1: the clicked display does not depend on the item's width.
+        if let display = StatusItemAnchor.clickedDisplay(statusClickAnchor, displays: statusDisplays(), menuHeight: NSStatusBar.system.thickness) {
             return display.frame
         }
         return status?.button?.window?.screen?.frame
     }
-    /// The press on the status item that opened (or is opening) the cockpit; nil for every other entry and after the
-    /// cockpit closes. Test seams: `statusPointer` (the global pointer at the press) and `statusDisplays`.
+    /// The press on the status item that opened the cockpit; nil for every other entry and after the cockpit closes.
+    /// A press becomes this only on its release over the item (`statusPress` holds it until then, so an aborted press
+    /// never moves the anchor).
     private(set) var statusClickAnchor: StatusItemAnchor?
-    var statusPointer: @MainActor () -> CGPoint = { NSEvent.mouseLocation }
+    private(set) var statusPress: StatusItemAnchor?
+    /// macrev2-1251-2: the mouse-down's own screen point, from its `locationInWindow` through the window it was
+    /// delivered to, never the live cursor (which may have moved before the monitor ran), so it pairs with the press
+    /// offset inside the button taken from the same event. Test seam; nil when the event has no window.
+    var statusPressScreenPoint: @MainActor (NSEvent) -> CGPoint? = { event in
+        (event.window ?? NSApp.window(withWindowNumber: event.windowNumber)).map { $0.convertPoint(toScreen: event.locationInWindow) }
+    }
     var statusDisplays: @MainActor () -> [StatusItemAnchor.Display] = { StatusItemAnchor.Display.system() }
 
     /// Build 14c (G3-79): the screen point the latest open came from (the widget's ignition click). Nil for the menu
@@ -530,7 +536,7 @@ struct StatusNoticePresentation {
     /// entry (menu item, shortcut, reopening the app) only ever opens; the ignition follows D204 (`pressIgnition`).
     func toggleConsole() {
         // A second click during launch takes the kept open back, like closing an open cockpit.
-        if launchOpen != nil, lifecyclePaused { launchOpen = nil; refreshStatusTooltip(); return }
+        if launchOpen != nil, lifecyclePaused { launchOpen = nil; statusClickAnchor = nil; refreshStatusTooltip(); return }
         if let console, console.isShowing { console.requestClose(); refreshStatusTooltip() } else { showConsole(fromStatusItem: true) }
     }
     /// OS accessibility changes are presentation facts, never saved user choices.
@@ -1218,17 +1224,24 @@ struct StatusNoticePresentation {
         if event.type == .leftMouseUp {
             guard statusPressPending else { return false }
             statusPressPending = false
+            let press = statusPress; statusPress = nil
             if onStatusItem {
-                if setupActive { Task { await reopenSetup() } } else { toggleConsole() }
+                if setupActive { Task { await reopenSetup() } } else {
+                    // The completed click is the one that names the item; toggleConsole forgets it again on a close.
+                    if let press { statusClickAnchor = press }
+                    toggleConsole()
+                }
             }
             return true
         }
         guard event.type == .leftMouseDown, onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
               !terminating, setupActive || (cockpitEntryEnabled && (!lifecyclePaused || inLaunchPause)) else { return false }
         statusPressPending = true
-        if let button = status?.button {
-            statusClickAnchor = StatusItemAnchor.click(pointer: statusPointer(), local: button.convert(event.locationInWindow, from: nil),
-                                                       buttonBounds: button.bounds, flipped: button.isFlipped, displays: statusDisplays())
+        statusPress = status?.button.flatMap { button in
+            statusPressScreenPoint(event).flatMap { point in
+                StatusItemAnchor.click(pointer: point, local: button.convert(event.locationInWindow, from: nil),
+                                       buttonBounds: button.bounds, flipped: button.isFlipped, displays: statusDisplays())
+            }
         }
         return true
     }
@@ -1245,7 +1258,7 @@ struct StatusNoticePresentation {
         guard let status else { return }
         self.status = nil
         if let statusClickMonitor { NSEvent.removeMonitor(statusClickMonitor) }
-        statusClickMonitor = nil; statusPressPending = false; statusClickAnchor = nil
+        statusClickMonitor = nil; statusPressPending = false; statusClickAnchor = nil; statusPress = nil
         noticeIndicator.removeFromSuperview(); usedUpDot.removeFromSuperview()
         status.menu = nil
         NSStatusBar.system.removeStatusItem(status)

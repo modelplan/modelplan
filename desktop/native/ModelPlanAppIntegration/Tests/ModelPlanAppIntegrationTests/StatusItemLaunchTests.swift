@@ -254,21 +254,50 @@ import XCTest
         let other = StatusItemAnchor.Display(frame: CGRect(x: right, y: 0, width: 1512, height: 982),
                                              visibleFrame: CGRect(x: right, y: 0, width: 1512, height: 945))
         app.statusDisplays = { real + [other] }
-        app.statusPointer = { CGPoint(x: right + 1200, y: 970) }
+        // The mouse-down is delivered by the item's copy on the other display: its own screen point is there.
+        app.statusPressScreenPoint = { _ in CGPoint(x: right + 1200, y: 970) }
         let centre = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
-        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button, at: centre)))
-        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        func press() throws {
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button, at: centre)))
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button, at: centre)))
+        }
+        try press()
         XCTAssertEqual(console.shows, 1)
         let anchor = try XCTUnwrap(app.cockpitAnchor, "the clicked copy anchors the cockpit")
         XCTAssertTrue(anchor.minX <= right + 1200 && right + 1200 <= anchor.maxX, "the anchor holds the click")
         XCTAssertEqual(anchor.width, button.bounds.width, accuracy: 0.5)
         XCTAssertEqual(app.cockpitStatusScreen, other.frame, "the clicked copy's display")
-        app.showConsole()
-        XCTAssertNil(app.statusClickAnchor, "another entry reads the item again")
-        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
-        XCTAssertNotNil(app.statusClickAnchor)
         console.pageClosed()
         XCTAssertNil(app.statusClickAnchor, "a closed cockpit forgets the click")
+        try press()
+        XCTAssertEqual(console.shows, 2); XCTAssertNotNil(app.statusClickAnchor)
+        app.showConsole()
+        XCTAssertNil(app.statusClickAnchor, "another entry reads the item again")
+        // An aborted press (released off the item) never becomes the anchor.
+        console.pageClosed()
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button, at: centre)))
+        XCTAssertNotNil(app.statusPress)
+        let away = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseUp, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        XCTAssertTrue(app.handleStatusClick(away))
+        XCTAssertNil(app.statusPress); XCTAssertNil(app.statusClickAnchor, "an aborted press leaves no anchor")
+    }
+
+    /// macrev2-1251-2: the press point is the mouse-down's own location through the window it was delivered to, not
+    /// the live cursor (which may have moved before the monitor ran). On bc4e03f0 it was `NSEvent.mouseLocation`.
+    func testStatusPressUsesTheMouseDownsOwnLocation() async throws {
+        let app = try await application(cockpitEntryEnabled: true, console: TogglingStatusConsole())
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting), window = try XCTUnwrap(button.window)
+        let location = button.convert(NSPoint(x: button.bounds.minX + 3, y: button.bounds.midY), to: nil)
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button, at: location)))
+        let press = try XCTUnwrap(app.statusPress, "the press is recorded from the event")
+        let expected = window.convertPoint(toScreen: location)
+        XCTAssertEqual(press.point.x, expected.x, accuracy: 0.01); XCTAssertEqual(press.point.y, expected.y, accuracy: 0.01)
+        // The rect pairs that point with the same event's offset in the button: it is the button's rect in that window.
+        let icon = window.convertToScreen(button.convert(button.bounds, to: nil))
+        XCTAssertEqual(press.rect.minX, icon.minX, accuracy: 0.5); XCTAssertEqual(press.rect.minY, icon.minY, accuracy: 0.5)
     }
 
     /// G3-46: when macOS hides the icon behind a full menu bar, the cockpit has no anchor to open under and

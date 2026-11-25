@@ -5,7 +5,7 @@ import XCTest
 
 /// Build 5 (owner 11-25, menu-bar binding). Invariant: the attached cockpit and its rack hang from the ModelPlan status
 /// item on the display that holds it, on every open. One test per path of the PATHS table in the PR. Pure geometry, no
-/// window server. Each case fails on fb53eb1c, whose anchor was any button-window frame that merely touched a display.
+/// window server. Each path case fails on fb53eb1c, whose anchor was any button-window frame that merely touched a display.
 final class StatusItemAnchorTests: XCTestCase {
     /// A 1512 x 982 MacBook display (37 pt menu bar) at the origin and a 2560 x 1440 display (25 pt) on its right.
     private let laptop = StatusItemAnchor.Display(frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
@@ -78,13 +78,42 @@ final class StatusItemAnchorTests: XCTestCase {
         XCTAssertNil(resolve(window: CGRect(x: 0, y: -22, width: 36, height: 44), click: old), "stale click, parked window: no anchor")
     }
 
-    /// PATH status-item width change: the automatic display turns the icon into icon + percentage (36 -> 74 pt); the
-    /// click's rect has the old width and position, so the placed window is used.
-    func testStatusItemWidthChangeDropsTheClick() throws {
+    /// PATH status-item width change on the clicked display: the automatic display turns the icon into icon +
+    /// percentage (36 -> 74 pt) and the window there carries the new geometry, so it is used.
+    func testStatusItemWidthChangeOnTheClickedDisplayUsesItsWindow() throws {
         let press = try click(at: CGPoint(x: externalIcon.midX, y: externalIcon.midY))
         let wider = CGRect(x: 3822, y: 1415, width: 74, height: 25)
         XCTAssertEqual(resolve(window: wider, click: press, width: 74), wider)
         XCTAssertEqual(resolve(window: externalIcon, click: press, width: 36), externalIcon)
+    }
+
+    /// macrev2-1251-1: pressed on B (external), the item widens, and AppKit reports a valid widened window from A's copy.
+    /// bc4e03f0's width predicate dropped the click and with it the clicked display, so A's window won. The anchor stays
+    /// on B, resized about the item's right edge, and the clicked display does not depend on the width.
+    func testWidthChangeAfterThePressKeepsTheClickedDisplay() throws {
+        let press = try click(at: CGPoint(x: externalIcon.midX, y: externalIcon.midY))
+        let widenedOnLaptop = CGRect(x: 1262, y: 945, width: 74, height: 37)
+        let anchor = try XCTUnwrap(resolve(window: widenedOnLaptop, click: press, width: 74))
+        XCTAssertEqual(anchor, CGRect(x: externalIcon.maxX - 74, y: press.rect.minY, width: 74, height: press.rect.height))
+        XCTAssertEqual(StatusItemAnchor.menuBarDisplay(of: anchor, displays: displays, menuHeight: menuHeight), external)
+        XCTAssertEqual(StatusItemAnchor.clickedDisplay(press, displays: displays, menuHeight: menuHeight), external)
+        // A parked window with the new width: still B.
+        XCTAssertEqual(resolve(window: CGRect(x: 0, y: 945, width: 74, height: 37), click: press, width: 74)?.maxX ?? 0, externalIcon.maxX, accuracy: 0.5)
+        // Unplugging B makes the click stale: A's placed window takes over.
+        XCTAssertEqual(resolve(window: widenedOnLaptop, click: press, width: 74, on: [laptop]), widenedOnLaptop)
+        XCTAssertNil(StatusItemAnchor.clickedDisplay(press, displays: [laptop], menuHeight: menuHeight))
+    }
+
+    /// macrev2-1251-2: the click is built from one event's screen point and its offset in the button, so the rect is
+    /// the pressed button wherever in it the press was, flipped or not; the live cursor is not an input.
+    func testClickRectFromOneEventIsThePressedButton() throws {
+        let bounds = CGRect(x: 0, y: 0, width: 36, height: 24)
+        for (local, flipped) in [(CGPoint(x: 2, y: 3), false), (CGPoint(x: 30, y: 20), false), (CGPoint(x: 2, y: 3), true), (CGPoint(x: 30, y: 20), true)] {
+            // The event's screen point is the button's origin plus the press offset (Y from the bottom on screen).
+            let onScreen = CGPoint(x: externalIcon.minX + local.x, y: 1415 + (flipped ? bounds.height - local.y : local.y))
+            let press = try XCTUnwrap(StatusItemAnchor.click(pointer: onScreen, local: local, buttonBounds: bounds, flipped: flipped, displays: displays))
+            XCTAssertEqual(press.rect, CGRect(x: externalIcon.minX, y: 1415, width: 36, height: 24), "local \(local) flipped \(flipped)")
+        }
     }
 
     /// PATH wake: the same arrangement after sleep. The item is where it was, so window and click agree on the window;
