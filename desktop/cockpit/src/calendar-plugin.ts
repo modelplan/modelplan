@@ -201,7 +201,7 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
    const credit=x.kind==='credit'||x.kind==='creditConfirmed',confirmed=x.kind==='creditConfirmed'||x.kind==='confirmed',row=el('div','wk-adr mark chip '+(credit?'credit':'direct')+(confirmed?'':' pending'));row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);place(row,day);
    // Chips of one day stack in lanes under each other; on a narrow column the direct reset keeps only its ↻ (the title has the words).
    const lane=chipsOn[day]!++;if(lane)row.style.top=`${2+lane*15}px`;
-   row.append(el('span','',credit?`+1 ${w.credit}`:narrow?'↻':`↻ ${w.direct}`));allDay.append(row);rowsUsed++;
+   row.append(el('span','',credit?(narrow?'+1':`+1 ${w.credit}`):narrow?'↻':`↻ ${w.direct}`));allDay.append(row);rowsUsed++;
   }
  }
  if(!rowsUsed)allDay.classList.add('none');

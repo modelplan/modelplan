@@ -383,12 +383,13 @@ test('D406 reset cards: an undated +1 chip on its published day, a dated one on 
  const {send,receive}=await open(page,{push,locale:'zh-CN'});
  await key(page).click();
  const w=weekView(page);
- await expect(w.locator('.wk-adr.chip')).toHaveText(['+1 额外重置','+1 额外重置','↻']);
+ await expect(w.locator('.wk-adr.chip')).toHaveText(['+1','+1','↻']);
  const left=async n=>(await w.locator('.wk-adr.chip').nth(n).boundingBox()).x;
  const heads=await w.locator('.wk-dh').evaluateAll(es=>es.map(e=>e.getBoundingClientRect()));
  const day=x=>heads.findIndex(h=>x>=h.x-1&&x<h.x+h.width);
  expect([day(await left(0)),day(await left(1)),day(await left(2))]).toEqual([0,3,0]);
  await expect(w.locator('.wk-adr.chip.direct.pending')).toHaveAttribute('title',/预告重置/);
+ await expect(w.locator('.wk-adr.chip.credit').first()).toHaveAttribute('title',/\+1 额外重置/);
  await expect(w.locator('.wk-adr.chip.credit')).toHaveCount(2);
  await expect(w.locator('.wk-adr.chip.direct.pending')).toHaveText('↻');
  await expect(w.locator('.wk-adr.chip.direct')).not.toContainText('+1');
