@@ -101,27 +101,84 @@ export function seedPlan(files, read) {
   };
   return withTestTargets(plan(swift, files, read)
     .filter((r) => !NOT_STANDALONE.includes(r.dir) && !embedded(r.dir))
-    .map((r) => ({ ...r, mode: "build-tests", filter: "" })), files);
+    .map((r) => ({ ...r, mode: "build-tests", filter: "" })), files, swift, read, { seed: true });
 }
 
-// The merge group (trusted-mac.yml) builds test targets a PR's touched-package list never reaches: AppIntegration's tests
-// depend on most other packages (a source change elsewhere can break them, as #1051/#1103 did), and its U11 leg and the
-// verification host compile them with -DMODELPLAN_TEST_ONLY_SPI, which switches extra test-only code on (U11WiredAdapter
-// failed #1252 for lack of it). A PR whose test targets do not compile must fail mac-compile, so any Swift change also
-// builds (never runs) AppIntegration's tests in both configurations, and the verification host takes the flag.
+// The merge group (trusted-mac.yml) builds test targets a PR's touched-package list never reaches: a source change in one
+// package can break the tests or host of a package that depends on it (#1051/#1103: AppIntegration's tests; a Selection-
+// only change breaking a root-only test caller; a Settings-only change breaking the wired verification host). A PR whose
+// test targets do not compile must fail mac-compile, so every package that depends (transitively) on a changed package is
+// built too, tests built and never run. The graph comes from the Package.swift files, not a hand list: a `.package(...
+// path:)` dependency is an edge, and so is a root target whose `path:` lies inside a sub-package directory (the root
+// compiles those sources as its own targets). SwiftPM allows an import only along these edges, so they are the import graph.
+// The merge group also compiles AppIntegration and the verification host with -DMODELPLAN_TEST_ONLY_SPI, which switches
+// extra test-only code on (U11WiredAdapter failed #1252 for lack of it), so those two are built in that configuration
+// too (the verification host only in it); the seed builds the same rows.
 export const SPI_FLAG = "-DMODELPLAN_TEST_ONLY_SPI";
-export function withTestTargets(rows, files) {
-  if (!rows.length || !files.includes(`${ROOT}/${LIMITED_PACKAGE}/Package.swift`)) return rows;
+export const SPI_PACKAGES = Object.freeze([`${ROOT}/${LIMITED_PACKAGE}`, ...NOT_STANDALONE]);
+
+// dependents: package dir -> Set of package dirs that directly depend on it.
+export function dependencyGraph(files, read) {
+  const packages = new Set(files.filter((f) => /(^|\/)Package\.swift$/.test(f)).map((f) => path.posix.dirname(f)));
+  const dependents = new Map([...packages].map((d) => [d, new Set()]));
+  for (const dir of packages) {
+    const text = read(`${dir}/Package.swift`) ?? "";
+    for (const m of text.matchAll(/\.package\([^)]*?path:\s*"([^"]+)"/g)) {
+      const dep = path.posix.normalize(path.posix.join(dir, m[1]));
+      if (dep !== dir && dependents.has(dep)) dependents.get(dep).add(dir);
+    }
+    if (dir === ROOT) {
+      for (const m of text.matchAll(/path:\s*"([^"]+)"/g)) {
+        for (const sub of packages) if (sub !== ROOT && sub.startsWith(ROOT + "/") && m[1].startsWith(sub.slice(ROOT.length + 1) + "/")) dependents.get(sub).add(ROOT);
+      }
+    }
+  }
+  return { packages, dependents };
+}
+
+// Packages that depend, directly or not, on any package owning a changed Swift file (the touched ones included).
+export function dependentClosure(changed, files, read) {
+  const { packages, dependents } = dependencyGraph(files, read);
+  const seen = new Set();
+  const queue = changed.filter((f) => f.endsWith(".swift")).map((f) => ownerPackage(f, packages)).filter(Boolean);
+  while (queue.length) {
+    const d = queue.pop();
+    if (seen.has(d)) continue;
+    seen.add(d);
+    queue.push(...dependents.get(d));
+  }
+  return seen;
+}
+
+export function withTestTargets(rows, files, changed, read, { seed = false } = {}) {
+  const { dependents } = dependencyGraph(files, read);
+  const embedded = (dir) => {
+    if (dir === ROOT || !dir.startsWith(ROOT + "/")) return false;
+    // Both: the root declares this directory's sources as its own targets, and the package depends on the root.
+    return dependents.get(dir)?.has(ROOT) && dependents.get(ROOT)?.has(dir);
+  };
   const out = rows.map((r) => (NOT_STANDALONE.includes(r.dir) ? { ...r, flags: SPI_FLAG } : r));
-  const ai = `${ROOT}/${LIMITED_PACKAGE}`;
-  if (!out.some((r) => r.dir === ai && !r.flags)) out.push({ dir: ai, scratch: ai.replaceAll("/", "_"), mode: "build-tests", filter: "", skip: NEVER_RUN.join("|") });
-  out.push({ dir: ai, scratch: ai.replaceAll("/", "_") + "_spi", mode: "build-tests", filter: "", skip: NEVER_RUN.join("|"), flags: SPI_FLAG });
+  const skip = NEVER_RUN.join("|");
+  const add = (dir, flags) => {
+    const scratch = dir.replaceAll("/", "_") + (flags ? "_spi" : "");
+    if (!out.some((r) => r.dir === dir && (r.flags || "") === (flags || ""))) out.push({ dir, scratch, mode: "build-tests", filter: "", skip, ...(flags ? { flags } : {}) });
+  };
+  const closure = seed ? new Set(files.filter((f) => /(^|\/)Package\.swift$/.test(f)).map((f) => path.posix.dirname(f))) : dependentClosure(changed, files, read);
+  for (const dir of [...closure].sort()) {
+    if (!dir.startsWith(ROOT + "/") && dir !== ROOT) continue; // other trees (clients/swift...) have their own CI; here only their dependents matter
+    if (embedded(dir) || (seed && NOT_STANDALONE.includes(dir))) continue;
+    if (!NOT_STANDALONE.includes(dir)) add(dir);
+    if (SPI_PACKAGES.includes(dir)) add(dir, SPI_FLAG);
+  }
   return out;
 }
 
 export function toTsv(rows) {
   return rows.map((r) => [r.dir, r.scratch, r.mode, r.filter || "-", r.skip, r.flags || "-"].join("\t")).join("\n");
 }
+
+// Trees whose Package.swift files form the dependency graph (desktop/native packages depend on these).
+const TREES = [ROOT, "clients/swift", "desktop/official-visuals", "desktop/third-party"];
 
 function main(argv) {
   const seed = argv[0] === "--seed";
@@ -130,14 +187,15 @@ function main(argv) {
   const git = (...a) => execFileSync("git", a, { encoding: "utf8", maxBuffer: 64 << 20 });
   const list = (...a) => git(...a).split("\0").filter(Boolean);
   if (seed) {
-    const all = list("ls-tree", "-r", "-z", "--name-only", head, "--", ROOT);
+    const all = list("ls-tree", "-r", "-z", "--name-only", head, "--", ...TREES);
     process.stdout.write(toTsv(seedPlan(all, (f) => git("show", `${head}:${f}`))) + "\n");
     return;
   }
-  const changed = list("diff", "--no-renames", "--name-only", "-z", "--diff-filter=ACMRD", base, head, "--", ROOT);
-  const files = list("ls-tree", "-r", "-z", "--name-only", head, "--", ROOT);
+  const changed = list("diff", "--no-renames", "--name-only", "-z", "--diff-filter=ACMRD", base, head, "--", ...TREES);
+  const files = list("ls-tree", "-r", "-z", "--name-only", head, "--", ...TREES);
   // PR files are only read as text (git show), never checked out or run here.
-  const rows = withTestTargets(plan(changed, files, (f) => git("show", `${head}:${f}`)), files);
+  const read = (f) => git("show", `${head}:${f}`);
+  const rows = withTestTargets(plan(changed, files, read), files, changed, read);
   process.stdout.write(rows.length ? toTsv(rows) + "\n" : "");
 }
 
