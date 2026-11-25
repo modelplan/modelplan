@@ -26,7 +26,7 @@ const clipped=page=>page.locator('#cockpit').evaluate(root=>{
 // one of these stops clipping, so the list can only shrink.
 // D405: the wider big screen fits the fourth page key's pseudo-long label, so only the record strip's word is left.
 const known=['section.ck-tape:5>div.t-lines:0>button.tl:2>span.t-live:6'];
-for(const tier of ['tall','compact'])
+for(const tier of ['tall'])
 test(`pseudo-long English keeps key labels inside their boxes (${tier})`,async({page})=>{
  const found={};
  for(const pseudo of [false,true]){

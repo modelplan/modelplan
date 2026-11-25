@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -882,15 +883,25 @@ func readWhole(admitted func() error, path string, p parser) ([]turn, error) {
 	if fi, err := fh.Stat(); err != nil || !fi.Mode().IsRegular() {
 		return nil, errors.New("not a regular file")
 	}
-	r := bufio.NewReaderSize(fh, 256<<10)
+	// The read buffer and the line buffer are reused from log to log: a first-run import opens
+	// hundreds of logs, and fresh 256 KB buffers for each were a fifth of its allocations.
+	buf := wholeBufs.Get().(*wholeBuf)
+	defer buf.put()
+	buf.r.Reset(fh)
+	r := buf.r
 	var off int64
+	line := buf.line
+	defer func() { buf.line = line }()
 	for n := 0; ; n++ {
 		if n%importCancelEvery == 0 {
 			if err := admitted(); err != nil {
 				return nil, err
 			}
 		}
-		b, size, err := readLine(r)
+		b, size, err := readLineInto(r, line)
+		if b != nil {
+			line = b
+		}
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 				break
@@ -904,6 +915,21 @@ func readWhole(admitted func() error, path string, p parser) ([]turn, error) {
 	}
 	done, _ := p.finish()
 	return done, nil
+}
+
+type wholeBuf struct {
+	r    *bufio.Reader
+	line []byte
+}
+
+var wholeBufs = sync.Pool{New: func() any { return &wholeBuf{r: bufio.NewReaderSize(nil, 256<<10)} }}
+
+func (b *wholeBuf) put() {
+	b.r.Reset(nil)
+	if cap(b.line) > 1<<20 {
+		b.line = nil // one huge line is not kept for the next log
+	}
+	wholeBufs.Put(b)
 }
 
 // commitImport merges one source's rows and coverage into imported.json under perf.lock.

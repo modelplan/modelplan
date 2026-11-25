@@ -6,7 +6,7 @@ import XCTest
 /// landing rule on the accepted demo's three screens (menubar-rack-v8.html), the one-piece docking boom and the open order.
 /// Pure geometry; no window.
 final class CockpitLaunchRackTests: XCTestCase {
-  // The demo's cockpit art: 480 pt wide, tall 693 pt (shoulder 40 pt), short 489 pt (shoulder 16 pt), 10 pt under the bar.
+  // The demo's cockpit art: 480 pt wide, 693 pt tall (shoulder 40 pt), 10 pt under the bar. D444: one layout.
   private func home(screen: CGSize, icon: CGFloat, height: CGFloat = 693, shoulder: CGFloat = 40) -> CGRect {
     let x = max(0, min(icon - shoulder, screen.width - 480))
     return CGRect(x: x, y: screen.height - 10 - height, width: 480, height: height)
@@ -23,8 +23,8 @@ final class CockpitLaunchRackTests: XCTestCase {
   func testLandingOnTheBigDeskGoesStraightDown() {
     let screen = CGSize(width: 1512, height: 982), visible = CGRect(origin: .zero, size: screen)
     let start = home(screen: screen, icon: 360)
-    let plan = CockpitDetachLanding.plan(home: start, compactHome: home(screen: screen, icon: 360, height: 489, shoulder: 16), visible: visible)
-    XCTAssertEqual(plan.rule, .down); XCTAssertFalse(plan.compact)
+    let plan = CockpitDetachLanding.plan(home: start, visible: visible)
+    XCTAssertEqual(plan.rule, .down)
     XCTAssertEqual(plan.frame, start.offsetBy(dx: 0, dy: -56))
     assertOnScreen(plan.frame, visible, "big desk"); assertClearsTheZone(plan.frame, start, "big desk")
   }
@@ -33,8 +33,8 @@ final class CockpitLaunchRackTests: XCTestCase {
   func testLandingOnTheSmallLaptopMovesTowardTheCentre() {
     let screen = CGSize(width: 1280, height: 720), visible = CGRect(origin: .zero, size: screen)
     let start = home(screen: screen, icon: 360)
-    let plan = CockpitDetachLanding.plan(home: start, compactHome: home(screen: screen, icon: 360, height: 489, shoulder: 16), visible: visible)
-    XCTAssertEqual(plan.rule, .towardCentre); XCTAssertFalse(plan.compact)
+    let plan = CockpitDetachLanding.plan(home: start, visible: visible)
+    XCTAssertEqual(plan.rule, .towardCentre)
     XCTAssertEqual(plan.frame, start.offsetBy(dx: 56, dy: 0), "right, toward the screen centre")
     assertOnScreen(plan.frame, visible, "small laptop"); assertClearsTheZone(plan.frame, start, "small laptop")
   }
@@ -44,19 +44,20 @@ final class CockpitLaunchRackTests: XCTestCase {
     let screen = CGSize(width: 1280, height: 720), visible = CGRect(origin: .zero, size: screen)
     let start = home(screen: screen, icon: 840)
     XCTAssertEqual(start.maxX, 1280, "the cockpit already touches the right edge")
-    let plan = CockpitDetachLanding.plan(home: start, compactHome: home(screen: screen, icon: 840, height: 489, shoulder: 16), visible: visible)
+    let plan = CockpitDetachLanding.plan(home: start, visible: visible)
     XCTAssertEqual(plan.rule, .towardCentre)
     XCTAssertEqual(plan.frame, start.offsetBy(dx: -56, dy: 0), "left, toward the screen centre")
     assertOnScreen(plan.frame, visible, "right edge"); assertClearsTheZone(plan.frame, start, "right edge")
   }
 
-  /// D187: no diagonal. When neither step fits the full cockpit, the short version tries them again.
-  func testLandingSwitchesToTheShortVersionWhenTheFullOneHasNoRoom() {
+  /// D187 + D444: no diagonal, and no layout switch. When neither step fits, the detached cockpit keeps its size and
+  /// takes the least sideways step that clears the catch zone, on screen.
+  func testD444LandingWithNoRoomKeepsTheLayout() {
     let screen = CGSize(width: 500, height: 720), visible = CGRect(origin: .zero, size: screen)
-    let start = home(screen: screen, icon: 260), short = home(screen: screen, icon: 260, height: 489, shoulder: 16)
-    let plan = CockpitDetachLanding.plan(home: start, compactHome: short, visible: visible)
-    XCTAssertEqual(plan.rule, .compactDown); XCTAssertTrue(plan.compact)
-    XCTAssertEqual(plan.frame, short.offsetBy(dx: 0, dy: -56))
+    let start = home(screen: screen, icon: 260)
+    let plan = CockpitDetachLanding.plan(home: start, visible: visible)
+    XCTAssertEqual(plan.rule, .minimum)
+    XCTAssertEqual(plan.frame.size, start.size, "a detach never resizes or switches the cockpit")
     assertOnScreen(plan.frame, visible, "narrow screen")
   }
 
@@ -64,7 +65,7 @@ final class CockpitLaunchRackTests: XCTestCase {
   func testLandingNeverEndsPartlyOffScreen() {
     let visible = CGRect(x: 0, y: 0, width: 500, height: 520)
     let short = CGRect(x: 10, y: 21, width: 480, height: 489)
-    let plan = CockpitDetachLanding.plan(home: short, compactHome: nil, visible: visible)
+    let plan = CockpitDetachLanding.plan(home: short, visible: visible)
     XCTAssertEqual(plan.rule, .minimum)
     assertOnScreen(plan.frame, visible, "tiny screen")
     XCTAssertEqual(plan.frame.maxY, short.maxY, "it stays at the same height")
@@ -73,10 +74,11 @@ final class CockpitLaunchRackTests: XCTestCase {
     XCTAssertEqual(plan.frame.minX, visible.minX, "clamped to the visible edge (10 pt from home), not pushed off screen")
     for (w, h, icon) in [(1512, 982, 360), (1280, 720, 360), (1280, 720, 840), (640, 700, 600), (500, 560, 10)] as [(CGFloat, CGFloat, CGFloat)] {
       let screen = CGSize(width: w, height: h), visible = CGRect(origin: .zero, size: screen)
-      let tall = home(screen: screen, icon: icon), shortHome = home(screen: screen, icon: icon, height: 489, shoulder: 16)
-      let start = visible.contains(tall) ? tall : shortHome
-      let result = CockpitDetachLanding.plan(home: start, compactHome: start == tall ? shortHome : nil, visible: visible)
+      let tall = home(screen: screen, icon: icon), small = home(screen: screen, icon: icon, height: 489, shoulder: 16)
+      let start = visible.contains(tall) ? tall : small
+      let result = CockpitDetachLanding.plan(home: start, visible: visible)
       assertOnScreen(result.frame, visible, "\(Int(w))x\(Int(h)) icon \(Int(icon))")
+      XCTAssertEqual(result.frame.size, start.size, "D444: the landing keeps the size")
     }
   }
 
@@ -86,10 +88,11 @@ final class CockpitLaunchRackTests: XCTestCase {
   func testTheRackMaskLineFollowsTheShutterState() throws {
     let usable = CGRect(x: 0, y: 0, width: 1728, height: 1080)
     let icon = CGRect(x: 900, y: 1080, width: 28, height: 37)
-    for forceCompact in [false, true] {
-      let open = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false, screenWidth: 1728, forceCompact: forceCompact))
-      let closed = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: true, screenWidth: 1728, forceCompact: forceCompact))
-      XCTAssertEqual(open.rackMaskDrop, CockpitShellLayout.shoulderDrop(open.profile, closed: false) * open.scale)
+    for height in [1080, 700] as [CGFloat] {
+      let room = CGRect(x: 0, y: 0, width: 1728, height: height), at = icon.offsetBy(dx: 0, dy: height - 1080)
+      let open = try XCTUnwrap(CockpitShellLayout.fit(usable: room, anchor: at, shutterClosed: false, screenWidth: 1728))
+      let closed = try XCTUnwrap(CockpitShellLayout.fit(usable: room, anchor: at, shutterClosed: true, screenWidth: 1728))
+      XCTAssertEqual(open.rackMaskDrop, CockpitShellLayout.shoulderDrop(closed: false) * open.scale)
       XCTAssertGreaterThan(open.rackMaskDrop, 0, "open: the rack meets the canopy shoulder")
       XCTAssertEqual(closed.rackMaskDrop, 0, "closed: the rack ends at the slab's top edge, nothing hangs in empty space")
       XCTAssertEqual(closed.shoulder.y, closed.frame.maxY)
@@ -97,8 +100,9 @@ final class CockpitLaunchRackTests: XCTestCase {
       XCTAssertEqual(open.frame.maxY, closed.frame.maxY, "attached, the top edge stays when the shutter toggles")
       XCTAssertEqual(open.shoulder.x, closed.shoulder.x, "the icon stays over the same shoulder")
     }
-    let forced = try XCTUnwrap(CockpitShellLayout.fit(usable: CGRect(x: 0, y: 0, width: 1728, height: 500), anchor: icon.offsetBy(dx: 0, dy: -580), shutterClosed: false, screenWidth: 1728))
-    if forced.forcedClosed { XCTAssertEqual(forced.rackMaskDrop, 0, "a forced-closed cockpit is closed too") }
+    let forced = try XCTUnwrap(CockpitShellLayout.fit(usable: CGRect(x: 0, y: 0, width: 1728, height: 400), anchor: icon.offsetBy(dx: 0, dy: -680), shutterClosed: false, screenWidth: 1728))
+    XCTAssertTrue(forced.forcedClosed, "D444: under the 0.5 floor")
+    XCTAssertEqual(forced.rackMaskDrop, 0, "a forced-closed cockpit is closed too")
   }
 
   /// D158/D178: attached, the window top is 10 pt under the menu bar and the icon sits above the left canopy shoulder.
@@ -111,10 +115,11 @@ final class CockpitLaunchRackTests: XCTestCase {
     XCTAssertEqual(CockpitShellLayout.menuBarGap, 10)
     XCTAssertEqual(full.shoulder.x, icon.midX, accuracy: 0.5, "the icon is above the left shoulder")
     XCTAssertLessThan(full.shoulder.x, full.frame.minX + full.frame.width / 4, "the LEFT shoulder")
-    let short = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false, screenWidth: 1728, forceCompact: true))
-    XCTAssertEqual(short.profile, .compact, "a key-detach landing can force the short version")
+    // D444: a short room scales the same layout; the icon stays over the same shoulder.
+    let short = try XCTUnwrap(CockpitShellLayout.fit(usable: CGRect(x: 0, y: 0, width: 1728, height: 700), anchor: icon.offsetBy(dx: 0, dy: -380),
+                                                     shutterClosed: false, screenWidth: 1728))
+    XCTAssertEqual(short.profile, .full); XCTAssertLessThan(short.scale, 0.75)
     XCTAssertEqual(short.shoulder.x, icon.midX, accuracy: 0.5)
-    XCTAssertEqual(short.frame.maxY, full.frame.maxY)
     // Near the right edge the cockpit shifts just enough to stay on the screen.
     let edge = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: CGRect(x: 1700, y: 1080, width: 28, height: 37), shutterClosed: false, screenWidth: 1728))
     XCTAssertEqual(edge.frame.maxX, 1728)

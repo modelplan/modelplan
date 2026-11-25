@@ -287,10 +287,10 @@ import XCTest
   func testShutterToggleWhileAttachedMovesTheRackMaskLineSmoothly() async throws {
     let fixture = try make()
     defer { fixture.page.discard() }
-    // Give the layout room for an open compact cockpit even on a short CI desktop.
+    // A 720 pt room: the open cockpit, scaled down (D444: no short version), even on a short CI desktop.
     let usable = CGRect(x: fixture.usable.minX, y: fixture.usable.maxY - 720, width: fixture.usable.width, height: 720)
     fixture.page.verificationPlacement = (usable: usable, anchor: fixture.icon)
-    fixture.page.updateAppearance(.init(theme: .night, locale: .en, profile: .compact, size: .percent80))
+    fixture.page.updateAppearance(.init(theme: .night, locale: .en, profile: .full, size: .percent80))
     let window = try open(fixture)
     try await until("the attached entrance is settled") {
       window.alphaValue == 1 && fixture.page.verificationRack.ext == 1 && !fixture.page.verificationRack.moving
@@ -401,6 +401,10 @@ import XCTest
     XCTAssertTrue(fixture.usable.contains(plan.frame), "the landing is fully on screen")
     XCTAssertGreaterThanOrEqual(hypot(plan.frame.minX - home.minX, plan.frame.maxY - home.maxY), 56 - 0.01)
     XCTAssertNotEqual(plan.rule, .minimum, "a normal screen has room for a regular landing")
+    XCTAssertEqual(plan.frame.size, home.size, "D444: a detach keeps the attached size")
+    let detachedLayout = try XCTUnwrap(fixture.page.verificationLayout)
+    XCTAssertEqual(detachedLayout.profile, .full, "D444: a detached cockpit never switches layout")
+    XCTAssertEqual(fixture.page.verificationShellState?.tier, .tall)
     try await wait(300)
     XCTAssertEqual(ignition, [true], "still burning mid-move")
     XCTAssertNotEqual(window.frame, home); XCTAssertNotEqual(window.frame, plan.frame)

@@ -16,21 +16,6 @@
   --hull-record-detail:image-set(none 1x,none 2x);
   --hull-cone-h:24px;--hull-crown-height:64px;--hull-upper-height:428px;--hull-lower-height:250px;--hull-record-height:94px;
 }
-:root[data-theme="night"][data-cockpit-layout="640"]{
-    --hull-crown:image-set(none 1x,none 2x);
-    --hull-upper:image-set(none 1x,none 2x);
-    --hull-upper-detail:image-set(none 1x,none 2x);
-    --hull-cone:image-set(none 1x,none 2x);
-    --hull-lower:image-set(none 1x,none 2x);
-    --hull-lower-detail:image-set(none 1x,none 2x);
-    --hull-aft:image-set(none 1x,none 2x);
-    --hull-engine-gutter:image-set(none 1x,none 2x);
-    --hull-console-gutter:image-set(none 1x,none 2x);
-    --hull-record-gutter:image-set(none 1x,none 2x);
-    --hull-mouth:image-set(none 1x,none 2x);
-    --hull-record-detail:image-set(none 1x,none 2x);
-    --hull-cone-h:20px;--hull-crown-height:12px;--hull-upper-height:308px;--hull-lower-height:212px;--hull-record-height:58px;
-  }
 .ck-shell :is(.hull-crown,.hull-upper,.hull-cone,.hull-lower,.hull-record){display:none}
 :root[data-theme="night"] .ck-shell{background:none;box-shadow:none;border-radius:0;transition:none;pointer-events:none}
 
