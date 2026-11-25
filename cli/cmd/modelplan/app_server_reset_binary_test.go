@@ -190,12 +190,58 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	}
 	assertChanged := func(client *queryBinary, scope, requestID string, wantLinks bool) {
 		t.Helper()
+		linksMatch := func(label, params string) {
+			t.Helper()
+			if wantLinks && (!strings.Contains(params, "https://status.openai.com/incidents/only") || !strings.Contains(params, "https://status.openai.com/incidents/pair")) {
+				t.Fatalf("%s omitted official citations: %s", label, params)
+			}
+			if strings.Contains(params, `"links"`) != wantLinks {
+				t.Fatalf("%s links mismatch: %s", label, params)
+			}
+		}
+		// The session ended cleanly on a consent change (callUnlessEnded): reconnect and check
+		// the new session. An acknowledged Deny must already be in force there; only a Deny
+		// whose reply never arrived may be sent again.
+		afterEnd := func(acknowledged bool) {
+			t.Helper()
+			client = client.reconnect()
+			var facts wire.Envelope[wire.ConsentFacts]
+			if err := json.Unmarshal(client.call("consent/get", map[string]any{})["result"], &facts); err != nil {
+				t.Fatal(err)
+			}
+			denied := false
+			for _, s := range facts.Data.Scopes {
+				denied = denied || s.Scope == scope && s.State == wire.ConsentDenied
+			}
+			switch {
+			case acknowledged && !denied:
+				t.Fatalf("an acknowledged Deny of %s is not in force after reconnect: %+v", scope, facts.Data.Scopes)
+			case !denied:
+				grant := client.call("consent/grant", wire.ConsentGrantParams{RequestID: requestID + "-reconnected", ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{}, Deny: []string{scope}})
+				if grant["error"] != nil {
+					t.Fatalf("grant after reconnect: %s", grant["error"])
+				}
+			}
+			snapshot := client.call("rows/subscribe", map[string]any{})
+			if !strings.Contains(string(snapshot["result"]), `"synthetic-announcement"`) {
+				t.Fatalf("reconnected snapshot lost the announcement: %s %s", snapshot["result"], snapshot["error"])
+			}
+			linksMatch("reconnected snapshot", string(snapshot["result"]))
+		}
 		var facts wire.Envelope[wire.ConsentFacts]
-		current := client.call("consent/get", map[string]any{})
+		current, open := client.callUnlessEnded("consent/get", map[string]any{})
+		if !open {
+			afterEnd(false)
+			return
+		}
 		if err := json.Unmarshal(current["result"], &facts); err != nil {
 			t.Fatal(err)
 		}
-		grant := client.call("consent/grant", wire.ConsentGrantParams{RequestID: requestID, ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{}, Deny: []string{scope}})
+		grant, open := client.callUnlessEnded("consent/grant", wire.ConsentGrantParams{RequestID: requestID, ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{}, Deny: []string{scope}})
+		if !open {
+			afterEnd(false)
+			return
+		}
 		if grant["error"] != nil {
 			t.Fatalf("grant: %s", grant["error"])
 		}
@@ -206,8 +252,14 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 				raw = client.notifications[0]
 				client.notifications = client.notifications[1:]
 			} else {
+				var ok bool
 				select {
-				case raw = <-client.frames:
+				case raw, ok = <-client.frames:
+					if !ok {
+						client.endedCleanly()
+						afterEnd(true)
+						return
+					}
 				case <-deadline:
 					t.Fatal("rows/changed timed out")
 				}
@@ -219,12 +271,7 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 			if !strings.Contains(string(msg["params"]), `"synthetic-announcement"`) {
 				continue
 			}
-			if wantLinks && (!strings.Contains(string(msg["params"]), "https://status.openai.com/incidents/only") || !strings.Contains(string(msg["params"]), "https://status.openai.com/incidents/pair")) {
-				t.Fatalf("changed notification omitted official citations: %s", raw)
-			}
-			if strings.Contains(string(msg["params"]), `"links"`) != wantLinks {
-				t.Fatalf("changed links mismatch: %s", raw)
-			}
+			linksMatch("changed notification", string(msg["params"]))
 			return
 		}
 	}

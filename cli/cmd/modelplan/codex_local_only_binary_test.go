@@ -136,10 +136,9 @@ func TestCodexLocalOnlyAdmissionRealBinary(t *testing.T) {
 		t.Helper()
 		response, open := client.callUnlessEnded("rows/subscribe", map[string]any{})
 		if !open {
-			// A consent change that lands while a private frame is being written ends the
-			// session cleanly (the frame lost its fence; outbound.go). The host reconnects;
-			// the denial must hold on the new session too.
-			client = startQueryBinaryCapsArgs(t, binary, []string{"rows", "windowSourcesV1"}, "--read-only")
+			// The session ended cleanly on a consent change (see callUnlessEnded); the
+			// denial must hold on the reconnected session too.
+			client = client.reconnect()
 			response = client.call("rows/subscribe", map[string]any{})
 		}
 		var snapshot wire.Envelope[wire.RowsSnapshot]
@@ -201,55 +200,4 @@ func changeConsentWhenFree(change func(*consent.State) error) error {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-}
-
-// callUnlessEnded is call, except that a session the server ended cleanly (exit 0, nothing on
-// stderr) before answering reports false instead of failing the test.
-func (p *queryBinary) callUnlessEnded(method string, params any) (map[string]json.RawMessage, bool) {
-	p.t.Helper()
-	p.id++
-	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": p.id, "method": method, "params": params})
-	if err != nil {
-		p.t.Fatal(err)
-	}
-	if _, err := p.in.Write(append(body, '\n')); err != nil {
-		return nil, p.endedCleanly()
-	}
-	timer := time.NewTimer(5 * time.Second)
-	defer timer.Stop()
-	for {
-		select {
-		case raw, ok := <-p.frames:
-			if !ok {
-				return nil, p.endedCleanly()
-			}
-			var msg map[string]json.RawMessage
-			if json.Unmarshal(raw, &msg) != nil {
-				p.t.Fatal("invalid server frame")
-			}
-			var id int
-			if json.Unmarshal(msg["id"], &id) == nil && id == p.id {
-				return msg, true
-			}
-			p.notifications = append(p.notifications, raw)
-		case <-timer.C:
-			p.t.Fatalf("timed out waiting for %s", method)
-		}
-	}
-}
-
-// endedCleanly waits for the server to exit and fails the test unless it exited with status 0.
-// It returns false (the session is over); the exit stays available to the cleanup.
-func (p *queryBinary) endedCleanly() bool {
-	p.t.Helper()
-	select {
-	case err := <-p.done:
-		p.done <- err
-		if err != nil {
-			p.t.Fatalf("app-server exited: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		p.t.Fatal("app-server stdout closed but the process kept running")
-	}
-	return false
 }
