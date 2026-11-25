@@ -1,0 +1,1 @@
+First-run history import uses about 60% less CPU: Claude Code transcript lines are validated once and only the few fields the readers need are decoded, instead of decoding every line in full up to three times. The same saving applies when a live Claude Code transcript is read again. Imported numbers are unchanged.

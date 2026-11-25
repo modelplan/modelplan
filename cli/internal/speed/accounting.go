@@ -412,8 +412,11 @@ type accountingParser struct {
 func newAccountingParser(source, file string) *accountingParser {
 	return &accountingParser{source: source, file: file, model: "unknown", occurrences: map[string]int{}, pending: map[string]usageRecord{}, pendingTotals: map[string]usageBuckets{}, compacted: map[string]bool{}, emitted: map[string]bool{}}
 }
-func (p *accountingParser) finish() ([]turn, int64) { return nil, -1 }
-func (p *accountingParser) line(_, _ int64, b []byte) {
+func (p *accountingParser) finish() ([]turn, int64)       { return nil, -1 }
+func (p *accountingParser) line(off, end int64, b []byte) { p.lineDoc(off, end, b, nil) }
+
+// lineDoc is line with a Claude Code line's reduced form (claudeDoc) already made, or nil.
+func (p *accountingParser) lineDoc(_, _ int64, b, doc []byte) {
 	var e struct {
 		Type      string    `json:"type"`
 		Timestamp time.Time `json:"timestamp"`
@@ -447,7 +450,13 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 	if p.source == "codex" && !bytes.Contains(b, []byte("token_count")) && !bytes.Contains(b, []byte("token_usage_record")) && !bytes.Contains(b, []byte("turn_context")) && !bytes.Contains(b, []byte("session_meta")) && !bytes.Contains(b, []byte("compacted")) && !bytes.Contains(b, []byte("thread_settings_applied")) {
 		return
 	}
-	if json.Unmarshal(b, &e) != nil {
+	if p.source == "claude-code" {
+		if doc == nil {
+			doc = claudeDoc(b)
+		}
+		b = doc
+	}
+	if b == nil || json.Unmarshal(b, &e) != nil {
 		return
 	}
 	if e.Type == "compacted" {
@@ -647,6 +656,16 @@ type accountingTee struct {
 }
 
 func (p *accountingTee) line(start, end int64, b []byte) {
+	// A Claude Code line is validated and reduced once for both readers.
+	if c, ok := p.parser.(*claudeParser); ok && p.usage.source == "claude-code" {
+		doc := claudeDoc(b)
+		if doc == nil {
+			return // not JSON: both readers skip it
+		}
+		c.lineDoc(start, end, b, doc)
+		p.usage.lineDoc(start, end, b, doc)
+		return
+	}
 	p.parser.line(start, end, b)
 	p.usage.line(start, end, b)
 }
