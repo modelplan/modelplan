@@ -123,7 +123,7 @@ test('the big screen: charts on the draw hook, redrawn by readings, closed by Es
  await expect(chart.locator('[data-chart="pressure"] rect')).toHaveCount(60);
  await expect(chart.locator('[data-chart="cpu"] [data-bar]')).toHaveCount(60);
  await expect(chart.locator('[data-chart="cpu-line"]')).toHaveCount(1);
- await expect(chart.locator('[data-chart="disk-notch"]')).toHaveCount(0);
+ await expect(chart.locator('[data-chart="disk-notch"]')).toHaveCount(1);
  // D347: the charts read CPU, Memory, Disk top to bottom (as the column), and all three sit inside the panel.
  const boxes=await page.evaluate(()=>{const r=s=>document.querySelector(s).getBoundingClientRect(),panel=r('.dk-mfd .mfd-screen');
   return {panel:{top:panel.top,bottom:panel.bottom},cpu:r('[data-chart="cpu"]').top,memory:r('[data-chart="memory-used"]').top,disk:r('[data-chart="disk"]'),

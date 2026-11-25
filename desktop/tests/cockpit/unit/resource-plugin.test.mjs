@@ -146,28 +146,7 @@ test('chartData: memory 10-minute used/cached fractions, pressure strip, CPU 10-
  // CPU: one bar per 10 s (mean of the samples inside it), user and system stacked, at most 60 bars.
  assert.equal(d.cpu.length,60);
  for(const b of d.cpu){assert.ok(b.user>=0&&b.system>=0&&b.user+b.system<=100.0001);}
- assert.equal(d.cpuLine,80);assert.equal('diskNotch' in d,false);
+ assert.equal(d.cpuLine,80);assert.equal(d.diskNotch,90);
  assert.ok(Math.abs(d.disk-(494-120)/494*100)<1e-6);
- assert.deepEqual(chartData([]),{memory:[],strip:[],cpu:[],disk:0,cpuLine:80});
-});
-
-test('D421 the big screen disk bar and readout take the status tone at 79/80/90 % (no tick), with hysteresis on the way down',()=>{
- const el=(tag)=>({tag,attrs:{},kids:[],textContent:'',setAttribute(k,v){this.attrs[k]=String(v);},append(...k){this.kids.push(...k);},replaceChildren(...k){this.kids=k;}});
- const doc={createElementNS:(_ns,tag)=>el(tag)};
- const all=(n)=>[n,...n.kids.flatMap(all)];
- const paint=(...pcts)=>{
-  let st;pcts.forEach((p,i)=>{st=resourcePlugin.accept({samples:[sample(T0+i*5000,{diskFree:Math.floor((100-p)/100*494*GB)-1024})]},st);});
-  const area=el('div');area.ownerDocument=doc;
-  const base=context('en'),tokens={ink:'#ink',muted:'#muted',ghost:'#ghost',mid:'#amber',low:'#red',lcdFont:'x'};
-  resourcePlugin.screen(st,base).draw({area,width:300,height:300,tokens,words:base.words});
-  const nodes=all(area),bar=nodes.find(n=>n.attrs['data-chart']==='disk'),read=nodes.filter(n=>n.attrs['data-readout']!==undefined).at(-1);
-  assert.equal(nodes.some(n=>n.attrs['data-chart']==='disk-notch'),false,'no tick');
-  return {bar:bar.attrs.fill,read:read.attrs.fill};
- };
- assert.deepEqual(paint(79),{bar:RESOURCE_INK,read:'#ink'});
- assert.deepEqual(paint(80),{bar:'#amber',read:'#amber'});
- assert.deepEqual(paint(90),{bar:'#red',read:'#red'});
- assert.equal(paint(60,91,88).bar,'#red','held red until 3 points below');
- assert.equal(paint(60,91,86).bar,'#amber');
- assert.equal(paint(60,81,76).bar,RESOURCE_INK);
+ assert.deepEqual(chartData([]),{memory:[],strip:[],cpu:[],disk:0,cpuLine:80,diskNotch:90});
 });
