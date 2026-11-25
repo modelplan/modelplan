@@ -1,1 +1,1 @@
-Name the Codex reset_credit_issued concept 额外重置次数 / banked resets in the CLI and app (D428); the CLI advice now tells the user to use them in Codex. 重置卡 / reset card stays banned (LBL-2.2-11).
+Call the Codex banked-reset concept "banked resets" in the CLI and app (D428). The CLI advice now tells the user to use them in Codex. The phrase "reset card" stays banned (LBL-2.2-11).

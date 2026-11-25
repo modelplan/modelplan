@@ -119,11 +119,13 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
  for(const e of data.details?.resetEvents??[]){
   if(!(Date.parse(e.expiresAt)>now))continue;const m=members.find(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id)));if(!m)continue;// a plan-scoped announcement belongs to that plan's subscription only (CKP-MFD-56)
   const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['reset',e.id]),stable=id;
-  if(e.status==='confirmed'){list.push({id,stable,level:'blue',member:m.key,text:both('mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
+  // D166/D428: only reset_credit is a banked reset; a direct reset and a legacy event with no kind use the direct wording.
+  const bank=e.kind==='reset_credit';
+  if(e.status==='confirmed'){list.push({id,stable,level:'blue',member:m.key,text:both(bank?'mfd.alBankedConf':'mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
   const from=e.schedule?Date.parse(e.schedule.from):NaN,through=e.schedule?Date.parse(e.schedule.through):NaN;
   const mid=e.schedule&&e.schedule.precision!=='date'&&Number.isFinite(from)?Number.isFinite(through)?(from+through)/2:from:null;
   const at=mid===null?null:Math.round(mid/(30*60000))*30*60000;
-  list.push({id,stable,level:'blue',member:m.key,text:at===null?both('mfd.alResetSoon',lang=>({s:s(lang)})):both('mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
+  list.push({id,stable,level:'blue',member:m.key,text:at===null?both(bank?'mfd.alBankedSoon':'mfd.alResetSoon',lang=>({s:s(lang)})):both(bank?'mfd.alBankedAnn':'mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
  }
  // D63: banked resets that expire within 48 hours, one blue line per subscription. Personal facts are joined
  // only through a verified reference, as the Subscription page joins them. List-only: they never light the lamp.
