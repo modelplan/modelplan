@@ -103,7 +103,7 @@ function columnOf(a, i, ui, status, now) {
 
 /* ---------- the table ---------- */
 // {empty, pages, page, cls, rows, reserve, cols, leds, caution, used, scoped}. Rows: fixed 5h, Weekly, Other,
-// then the combined today row, then reserve when a column on the page has reset cards
+// then the combined today row, then reserve when a column on the page has banked resets
 // or credits (spec 4). Columns keep the user's order (never by activity); 6 to a page.
 export function engineModel(d, ui) {
   const list = d.accounts || [], pages = pageCount(list.length), page = clamp(ui.page | 0, 0, pages - 1);

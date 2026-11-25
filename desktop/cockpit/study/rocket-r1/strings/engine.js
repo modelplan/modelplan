@@ -13,7 +13,7 @@ register('eng', {
   speed: ['silk', '速度', 'Speed'],
   reserve: ['silk', '储备', 'Reserve'],
   // Owner D76: what the Reserve row holds, as a hover hint on its label (not drawn otherwise).
-  reserveHint: ['aria', '储备：还能用的额外重置次数和剩余点数', 'Reserve: extra resets you can still use and remaining credits'],
+  reserveHint: ['aria', '储备：还能用的额外重置次数和剩余点数', 'Reserve: banked resets you can still use and remaining credits'],
   row5h: ['lcd', '5小时', '5h'],
   rowDay: ['lcd', '每日', 'Daily'],
   rowWeek: ['lcd', '每周', 'Weekly'],
@@ -78,7 +78,7 @@ register('eng', {
   tps: ['lcd', 't/s', 't/s'],
   // 专项: extra quotas (a model's or a feature's own limit); +1 = one more extra in the column
   xMore: ['lcd', '+{n}', '+{n}'],
-  // 储备: reset cards and credits
+  // 储备: banked resets and credits
   cards: ['lcd', '↺{n}', '↺{n}'],
   credits: ['lcd', '{n}点', '{n} cr'],
   expires: ['lcd', '{t} 后到期', 'expires in {t}'], // CKP-ENG-52: what the reserve's time means
