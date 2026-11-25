@@ -200,12 +200,19 @@ class Host:
             return False
         return Path(path).exists()
 
-    def web_content_pids(self):
+    def web_content_pids(self, parent):
+        """WebContent processes that are children of `parent` (the app under test). Nothing else is ever sampled:
+        a process that cannot be attributed to the app by parent PID is left out."""
         try:
-            found = subprocess.run(["pgrep", "-f", "com.apple.WebKit.WebContent"], capture_output=True, text=True, timeout=10)
+            found = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,comm="], capture_output=True, text=True, timeout=10)
         except (subprocess.SubprocessError, OSError):
             return []
-        return [int(line) for line in found.stdout.split() if line.isdigit()]
+        pids = []
+        for line in found.stdout.splitlines():
+            fields = line.split(None, 2)
+            if len(fields) == 3 and fields[0].isdigit() and fields[1] == str(parent) and "WebContent" in fields[2]:
+                pids.append(int(fields[0]))
+        return pids
 
     def run(self, command, env, stdin=None, timeout=120):
         return subprocess.run(command, env=env, input=stdin, capture_output=True, text=True, timeout=timeout)
@@ -247,7 +254,7 @@ class Walkthrough:
         folder.mkdir(parents=True, exist_ok=True)
         saved = []
         try:
-            targets = [("app", self.pid)] + [("webcontent", p) for p in self.host.web_content_pids()]
+            targets = [("app", self.pid)] + [("webcontent", p) for p in self.host.web_content_pids(self.pid)]
             for kind, pid in targets:
                 path = folder / ("%03d-%s-%s.txt" % (self.ax_event_count, kind, pid))
                 if self.host.sample(pid, path):
@@ -269,6 +276,18 @@ class Walkthrough:
 
     def windows(self):
         return self.host.helper("windows", self.pid)
+
+    def is_absent(self, target, tree=None):
+        """True only when a complete tree lacks the target. A truncated or timed-out tree never proves absence."""
+        tree = self.tree() if tree is None else tree
+        return not tree.get("truncated") and resolve(tree, target) is None
+
+    def prove_absent(self, target, tree=None):
+        tree = self.tree() if tree is None else tree
+        if tree.get("truncated"):
+            raise WalkthroughError("cannot prove absent on an incomplete tree: " + target)
+        if resolve(tree, target) is not None:
+            raise WalkthroughError("still on screen: " + target)
 
     def need(self, target):
         node = resolve(self.tree(), target)
@@ -299,7 +318,7 @@ class Walkthrough:
     def op_awaitAbsent(self, action):
         """Wait until a target has left the screen, such as the first-run page still looking for tools."""
         deadline = self.host.now() + action.get("timeout", 15)
-        while resolve(self.tree(), action["target"]) is not None:
+        while not self.is_absent(action["target"]):
             if self.host.now() >= deadline:
                 raise WalkthroughError("still on screen after %ss: %s" % (action.get("timeout", 15), action["target"]))
             self.host.sleep(0.5)
@@ -330,7 +349,11 @@ class Walkthrough:
             hit = node is not None and str(node.get("value")) == action["equals"]["value"]
         else:
             target = action.get("present") or action.get("absent")
-            hit = (resolve(self.tree(), target) is not None) == ("present" in action)
+            tree = self.tree()
+            if "present" in action:
+                hit = resolve(tree, target) is not None
+            else:
+                hit = self.is_absent(target, tree)
         if hit:
             for nested in action["then"]:
                 getattr(self, "op_" + nested["op"])(nested)
@@ -430,10 +453,10 @@ class Walkthrough:
         # cockpit is closed, and a page caught mid-prewarm once passed for an open cockpit, so the Air 1470x956 step
         # never clicked the icon and found nothing to measure (build 6a084a0e). "Open" must also hold a moment later.
         target = "window-of:label:ModelPlan Cockpit"
-        shown = resolve(self.tree(), target) is not None
+        shown = not self.is_absent(target)
         if shown and action["want"] == "open":
             self.host.sleep(1.5)
-            shown = resolve(self.tree(), target) is not None
+            shown = not self.is_absent(target)
         if shown == (action["want"] == "open"):
             return
         self.host.helper("click", *centre(self.need("status-item")["frame"]))
@@ -449,9 +472,9 @@ class Walkthrough:
                     break
                 self.host.helper("click", *centre(button["frame"]))
             deadline = self.host.now() + action.get("timeout", 5)
-            while resolve(self.tree(), target) is not None and self.host.now() < deadline:
+            while not self.is_absent(target) and self.host.now() < deadline:
                 self.host.sleep(0.25)
-            if resolve(self.tree(), target) is None:
+            if self.is_absent(target):
                 return
         raise WalkthroughError("cockpit still open")
 
@@ -475,8 +498,7 @@ class Walkthrough:
             self.host.sleep(0.25)
 
     def op_assertAbsent(self, action):
-        if resolve(self.tree(), action["target"]) is not None:
-            raise WalkthroughError("still on screen: " + action["target"])
+        self.prove_absent(action["target"])
 
     def card_at(self, point):
         self.host.helper("move", *point, 0.4)
@@ -582,8 +604,8 @@ class Walkthrough:
             raise WalkthroughError("missing " + value)
         if kind == "opened" and resolve(tree, value) is None:
             raise WalkthroughError("not on screen: " + value)
-        if kind == "absent" and resolve(tree, value) is not None:
-            raise WalkthroughError("still on screen: " + value)
+        if kind == "absent":
+            self.prove_absent(value, tree)
         if kind == "checked" and str((resolve(tree, value) or {}).get("value")) != "0":
             raise WalkthroughError("not open: " + value)
         if kind == "on" and str((resolve(tree, value) or {}).get("value")) != "1":

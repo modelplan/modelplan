@@ -578,7 +578,7 @@ class SlowAxReadTests(unittest.TestCase):
                 self.samples.append(pid)
                 Path(path).write_text("sample")
                 return True
-            def web_content_pids(self):
+            def web_content_pids(self, parent):
                 return [901]
         host = Slow(windows=[{"id": 5}])
         host.samples = []
@@ -612,13 +612,42 @@ class SlowAxReadTests(unittest.TestCase):
         self.assertFalse([c for c in host.calls if c[0] == "tree"])
 
     def test_step_that_reads_the_tree_fails_on_truncation_and_records_the_event(self):
-        step = {"id": "s", "title": "t", "expected": "e", "shot": {}, "checks": [{"opened": "id:x"}]}
+        step = {"id": "s", "title": "t", "expected": "e", "shot": {}, "checks": [{"opened": "ax:x"}]}
         host = self.host(tree_error=True)
         walk, _ = self.walk(host, step)
         with mock.patch.object(w, "window_ids", return_value=set()):
             record = walk.run_step(1, step)
         self.assertEqual(record["status"], "fail")
         self.assertTrue(record["axEvents"])
+
+    def test_absent_check_fails_on_a_truncated_or_timed_out_tree(self):
+        # 1252-2 invariant: absence is never proven by incomplete evidence.
+        for host in (self.host(tree_error=True), self.host(tree={"windows": [], "extras": [], "truncated": True})):
+            walk, _ = self.walk(host, {})
+            with self.assertRaises(w.WalkthroughError):
+                walk.check({"absent": "ax:x"}, walk.out, {})
+            with self.assertRaises(w.WalkthroughError):
+                walk.op_assertAbsent({"target": "ax:x"})
+            self.assertFalse(walk.is_absent("ax:x"))
+
+    def test_absent_check_passes_on_a_complete_tree(self):
+        walk, _ = self.walk(self.host(tree={"windows": [], "extras": []}), {})
+        walk.check({"absent": "ax:x"}, walk.out, {})
+        walk.op_assertAbsent({"target": "ax:x"})
+
+    def test_await_absent_does_not_pass_on_an_incomplete_tree(self):
+        walk, _ = self.walk(self.host(tree_error=True), {})
+        clock = iter(range(0, 100, 10))
+        walk.host.now = lambda: next(clock)
+        walk.host.sleep = lambda s: None
+        with self.assertRaises(w.WalkthroughError):
+            walk.op_awaitAbsent({"target": "ax:x", "timeout": 15})
+
+    def test_only_children_of_the_app_are_sampled(self):
+        # 1252-1 invariant: only processes belonging to the app under test are sampled.
+        ps = "10 1 /usr/bin/other\n20 77 /x/com.apple.WebKit.WebContent\n30 1 /y/com.apple.WebKit.WebContent\n"
+        with mock.patch.object(w.subprocess, "run", return_value=mock.Mock(stdout=ps)):
+            self.assertEqual(w.Host("h").web_content_pids(77), [20])
 
 
 if __name__ == "__main__":
