@@ -155,7 +155,13 @@ import XCTest
         XCTAssertTrue(host.activeWorkingEffectIDs.isEmpty); XCTAssertEqual(pool.activeLeaseCount, 0)
         host.reportWidgetShownForChecks(true)
         XCTAssertEqual(host.rotatingWorkingEffectIDs, ["synthetic"], "shown again with the activity still admitted")
-        XCTAssertEqual(host.workingEffectRotationBeginTimesForChecks["synthetic"], begin, "it resumes the same phase")
+        // The recreated spin takes its origin from the host clock's last whole-period boundary, so a hide/reveal that
+        // straddles a turn boundary legitimately gets a later origin. The invariant is the global phase: the new origin
+        // is a whole number of periods after the old one (the angle at any host time is unchanged), never a reset.
+        let resumed = try XCTUnwrap(host.workingEffectRotationBeginTimesForChecks["synthetic"])
+        let turns = (resumed - begin) / spin.duration
+        XCTAssertGreaterThanOrEqual(turns, -1e-9, "the origin never moves back")
+        XCTAssertEqual(turns, turns.rounded(), accuracy: 1e-6, "it resumes the same global phase, a whole number of turns later")
 
         // Work stops: the animation goes with it.
         content.input.working = nil
