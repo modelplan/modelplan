@@ -172,6 +172,11 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         // Empty or unavailable deliveries cannot replace the last known membership.
         guard !members.isEmpty else { return }
         lastZCodeMemberID = members.count == 1 ? members.first?.id : nil
+        // A hide saved on the anonymous station while no account was known follows the account when it returns.
+        if let member = lastZCodeMemberID, let hidden = committedSnapshot?.preferences.subscriptions.hiddenIDs,
+           hidden.contains(Self.unavailableZCodeID), !hidden.contains(member) {
+            Task { [weak self] in _ = try? await self?.commit(.visible(member, false)) }
+        }
     }
     /// The host's live read of the macOS login item. An explicit login choice is decided against it,
     /// not against the observation cached when the app started; nil keeps that cached observation.
@@ -210,11 +215,18 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
             fallbackVisibility = nil
         }
         let fallbackID = Self.unavailableZCodeID
+        // Invariant: a hide choice persists across the station's availability changes. When the account is
+        // known, a station edit is saved on both keys in one transaction and the association is kept.
+        let carriedID: String? = (editsUnavailableZCode && fallbackVisibility != nil) ? lastZCodeMemberID : nil
         let committed = try await transact(subscriptionID: edit.subscriptionID, kind: kind,
-                                           editsUnavailableZCodeVisibility: editsUnavailableZCode && fallbackVisibility != nil) { preferences in
+                                           editsUnavailableZCodeVisibility: editsUnavailableZCode && fallbackVisibility != nil && carriedID == nil) { preferences in
             try edit.apply(to: &preferences, catalogue: ids)
             if let fallbackVisibility {
                 try SettingsB21Edit.visible(fallbackID, fallbackVisibility).apply(to: &preferences, catalogue: ids)
+                if let carriedID {
+                    if fallbackVisibility { preferences.subscriptions.hiddenIDs.remove(carriedID) }
+                    else { preferences.subscriptions.hiddenIDs.insert(carriedID) }
+                }
             }
         }
         let intent: SettingsHostIntent?

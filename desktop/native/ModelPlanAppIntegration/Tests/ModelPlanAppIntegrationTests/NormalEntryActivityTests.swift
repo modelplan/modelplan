@@ -224,6 +224,41 @@ private actor ActivityJourneyEngine: EngineClient {
         await app.composition.stop()
     }
 
+    /// Invariant: a user's hide choice for a station persists across its availability changes until unhidden.
+    func testHidingTheUnavailableZCodeStationSurvivesTheAccountReturning() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("zcode-station-hide-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try entry(fixture(phase: nil, sequence: 1, tool: "zai"), root: root)
+        await app.prepare()
+        await app.composition.start()
+        app.allowDockPresentation()
+        try await wait("ZCode settings member") {
+            app.currentSettingsContext.subscriptions.contains { $0.id == self.first && $0.tool == "zai" }
+        }
+        let settings = SettingsApplicationCoordinator(store: app.foundationStore, context: app.currentSettingsContext) {
+            app.composition.applySettings($0)
+        }
+        await settings.reload()
+        let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+        try await engine.publish(fixture(phase: nil, sequence: 2, tool: "zai", unavailableState: "failed"))
+        try await wait("station in Settings") {
+            app.currentSettingsContext.subscriptions.contains { $0.id == "zai#unknown" }
+        }
+        settings.editor.update(context: app.currentSettingsContext)
+        _ = try await settings.editor.commit(.visible("zai#unknown", false))
+        try await engine.publish(fixture(phase: nil, sequence: 3, tool: "zai"))
+        try await wait("account returns") {
+            app.currentSettingsContext.subscriptions.contains { $0.id == self.first }
+        }
+        settings.editor.update(context: app.currentSettingsContext)
+        let saved = await app.foundationStore.snapshot()
+        XCTAssertTrue(saved.preferences.subscriptions.hiddenIDs.contains(first))
+        let dock = app.composition.dock.interactionEnvironment()
+        XCTAssertTrue(try dock.preferences.orderedIDs(in: dock.catalogue, visibleOnly: true).isEmpty)
+        await app.composition.stop()
+    }
+
     func testLegacySettingsKeepTheUnavailableZCodeRingHiddenWithoutEditing() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("zcode-legacy-hidden-" + UUID().uuidString)
