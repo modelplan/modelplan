@@ -1828,13 +1828,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// rack and the put back all use this one frame; a detached layout's own frame can be another display's
   /// (post-merge sample 11-11: after a drop on another display the put back must still go home).
   func attachedHome() -> CGRect? { attachedFit()?.fit.frame }
-  /// The attached fit, the usable frame and the icon rect it was fitted to (`compact` forces the short version).
-  func attachedFit(compact: Bool = false) -> (fit: CockpitShellLayout, usable: CGRect, icon: CGRect)? {
+  /// The attached fit, the usable frame and the icon rect it was fitted to.
+  func attachedFit() -> (fit: CockpitShellLayout, usable: CGRect, icon: CGRect)? {
     let detached = shellSession.detached
     shellSession.detached = false; defer { shellSession.detached = detached }
     guard let (usable, icon) = environment(),
           let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size,
-                                           screenWidth: screenWidth(usable), forceCompact: compact, basis: sizeBasis()) else { return nil }
+                                           screenWidth: screenWidth(usable), basis: sizeBasis()) else { return nil }
     return (fit, usable, icon)
   }
   /// CKP-SHELL-33: the menu bar icon the rack hangs from, only while it is a real icon on the attached cockpit's display.
@@ -1866,7 +1866,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   func placement() -> (fit: CockpitShellLayout, frame: CGRect)? {
     guard let (usable, icon) = environment(),
           let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable),
-                                           forceCompact: shellSession.detached && shellSession.compactWhileDetached, basis: sizeBasis()) else { return nil }
+                                           basis: sizeBasis()) else { return nil }
     guard shellSession.detached else { return (fit, fit.frame) }
     #if MODELPLAN_TEST_ONLY_SPI
     if verificationPlacement != nil { return (fit, fit.clamping(origin: detachedOrigin ?? fit.frame.origin, usable: usable)) }
@@ -1991,10 +1991,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   private func keyDetach(_ window: NSWindow) {
     let home = window.frame
-    let current = attachedFit()
-    let compact = current.flatMap { $0.fit.profile == .full ? attachedFit(compact: true)?.fit.frame : nil }
-    let visible = current?.usable ?? window.screen?.visibleFrame ?? home
-    let plan = CockpitDetachLanding.plan(home: home, compactHome: compact, visible: visible)
+    let visible = attachedFit()?.usable ?? window.screen?.visibleFrame ?? home
+    // D444: the detached cockpit keeps the attached layout; only its place changes.
+    let plan = CockpitDetachLanding.plan(home: home, visible: visible)
     #if MODELPLAN_TEST_ONLY_SPI
     verificationLanding?(plan)
     #endif
@@ -2002,12 +2001,6 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let wasActive = applicationIsActive, wasRegular = applicationIsRegular
     shellSession.detached = true
     onPresenceChanged?(true)
-    if plan.compact, let compact {
-      // D187: no room for the full cockpit; it switches to the short version at home, then moves.
-      shellSession.compactWhileDetached = true
-      shellSession.remember(compact.origin, arrangement: arrangement)
-      applyLayout()
-    }
     shellSession.remember(plan.frame.origin, arrangement: arrangement)
     updateAppearance(appearance)
     presentDetached(wasActive: wasActive, wasRegular: wasRegular)
@@ -2031,7 +2024,6 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   private func keyPutBack(_ window: NSWindow) {
     putBackActivation.beginPutBack()
-    shellSession.compactWhileDetached = false
     // G3-102: with no fitting display the frame stays, but the level and the page's shell state still follow the session.
     guard let home = attachedHome() else { latch(); return }
     if window.frame.size != home.size || layout?.frame.size != home.size {
@@ -2078,7 +2070,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// The cockpit is caught: attached again under the icon, nozzles out.
   private func latch() {
     flying = false
-    shellSession.detached = false; shellSession.compactWhileDetached = false
+    shellSession.detached = false
     rackExtension = rackIcon() != nil ? 1 : 0; rackTarget = rackExtension
     ignite(false)
     if placement() != nil { applyLayout() }
@@ -2167,7 +2159,6 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       shellSession.detached = true
       if newlyDetached {
         // Tear-off (CKP-SHELL-33): the rack retracts straight up into the icon.
-        shellSession.compactWhileDetached = false
         updateAppearance(appearance); retractRack()
       }
       // Build 14c (G3-79): the window stays inside the display under the pointer, so it can go to any display.

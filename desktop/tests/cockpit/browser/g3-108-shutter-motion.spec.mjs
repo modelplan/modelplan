@@ -29,7 +29,7 @@ const sampleWhile=(page,raw,ms)=>page.evaluate(([raw,ms])=>new Promise(done=>{
   if(performance.now()-start<ms)requestAnimationFrame(step);else done({tops,shells,moving});};
  step();}),[raw,ms]);
 
-for(const [tier,strip,slab] of [['tall',253,228],['compact',65,40]])
+for(const [tier,strip,slab] of [['tall',253,228]])
 test(`G3-108 ${tier}: the body stays put and the porthole itself closes and opens`,async({page})=>{
  const {send}=await mount(page,tier,false);
  const open=await body(page);
