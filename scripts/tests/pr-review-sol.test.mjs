@@ -993,3 +993,14 @@ test("D395-4: a tier-0 head gets one advisory GLM review; a fork PR only on the 
   // the gate leaves a fork PR to the coordinator, whatever was posted
   assert.match(R.evaluatePr({ pr: pr(fork), items: R.feed([comment(v("merge", H, "ghglm"))]), files: t1n, runs: [], statuses: [], verifiedEdge: () => false, conf: { include: [], exclude: [], pinonly: [] } }).why, /coordinator decides/);
 });
+
+test("D395-4: an outside PR reviewed on the owner's dispatch posts its advisory GLM verdict; an automatic event posts nothing", () => {
+  const fork = { head: { sha: H, repo: { full_name: "fork/modelplan" } }, user: { login: "someone", id: 5 } };
+  const files = [{ filename: "cli/internal/appserver/frame.go" }];
+  const d = S.decideSol({ pr: pr(fork), files, items: [], lane: S.SOL_LANE, triggerSha: "", checks: green, force: true });
+  assert.deepEqual([d.review, d.providers], [true, ["glm"]]);
+  const post = (over) => S.postProblem({ pr: pr(fork), items: [], head: H, lane: S.SOL_LANE, posted: S.postLane(S.SOL_LANE, "glm"), tier: d.tier, files, ...over });
+  assert.equal(post({ force: true }), null, "the dispatched review is posted");
+  assert.match(post({ force: false }), /owner's dispatch/, "an automatic run posts nothing on a fork");
+  assert.match(post({ force: true, posted: S.SOL_LANE }), /only the advisory GLM review/);
+});

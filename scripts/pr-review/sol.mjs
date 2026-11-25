@@ -3,7 +3,7 @@
 // review from the interactive lanes into Actions. decideSol() picks whether one PR head gets a review, solPolicy() is
 // the coordinator's sol-consult.sh policy text, buildSolPrompt() the whole request, parseAnswer() checks the answer,
 // renderSolComment() writes the PR comment and agreement() compares a shadow verdict with the lane verdict.
-import { DEFAULT_GLM_TIERS, GPT_FALLBACK_MARKER, IMPORTANT, NORMAL, needsCompile, eligibleLanes, gptFallbackVerdict, gptLabelled, isShadowLane, isTrusted, pathTier, prPaths, reviewClass, reviewerLane, stickyLanes, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
+import { DEFAULT_GLM_TIERS, GPT_FALLBACK_MARKER, IMPORTANT, NORMAL, hasRename, needsCompile, eligibleLanes, gptFallbackVerdict, gptLabelled, isShadowLane, isTrusted, pathTier, prPaths, reviewClass, reviewerLane, stickyLanes, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
 import { verdictLines } from "./brief.mjs";
 
 export const SOL_LANE = "ghsol";
@@ -28,7 +28,9 @@ export const REVIEW_TIERS = Object.freeze([0, 1, 2]);
 // D395 (owner 2026-11-24): on an IMPORTANT PR (rules.mjs reviewClass) only a GPT verdict counts, as before: this workflow's GPT
 // provider (ghsol) or a local Codex lane. On a NORMAL PR the GLM provider's verdict counts too.
 // The routing class of a PR from the REST pull request and files, as the gate computes it.
-export const prClass = (pr, files, tier) => reviewClass({ paths: prPaths(files), labels: pr?.labels, tier, fileCount: files.length }).cls;
+export const prClass = (pr, files, tier) => reviewClass({ paths: prPaths(files), labels: pr?.labels, tier, fileCount: files.length, renamed: hasRename(files) }).cls;
+// A fork or a stranger's PR (D395-4): reviewed only on the owner's dispatch, by GLM, as advice.
+export const outsidePr = (pr) => !isTrusted(pr?.user) || !pr?.head?.repo?.full_name || pr.head.repo.full_name !== pr.base?.repo?.full_name;
 // The paths themselves live in rules.mjs: the merge gate needs them too (a native PR cannot merge without mac-compile).
 export { COMPILE_PATHS, needsCompile } from "../merge-gates/rules.mjs";
 // Verdict lanes whose earlier comments (findings and R19 record) a review carries forward.
@@ -61,7 +63,7 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   // D395: a fork or stranger's PR is reviewed only on the owner's dispatch (force; the workflow_dispatch job accepts the owner
   // alone), never by an event anybody can start, so nobody outside spends review tokens. Its verdict is advice: the gate leaves
   // such a PR to the coordinator. Nothing from the PR is checked out or run either way (sol-prepare fetches git objects only).
-  const outside = !isTrusted(pr.user) || !pr.head?.repo?.full_name || pr.head.repo.full_name !== pr.base?.repo?.full_name;
+  const outside = outsidePr(pr);
   if (outside && !force) return skip("not a trusted same-repository PR (the owner's dispatch reviews it, advisory)");
   const head = String(pr.head.sha ?? "").toLowerCase();
   if (!SHA.test(head)) return skip("head is not a full sha");
@@ -334,13 +336,16 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
   // D395: the class is read again too; without a file list it is IMPORTANT (fail closed: GLM decides nothing).
   const cls = files ? prClass(pr, files, tier) : IMPORTANT;
   const gpt = wantsGpt(pr);
-  // Tier 0 (D395 advisory review): only the GLM verdict goes out, once per head.
-  if (tier === 0 && posted && posted !== GLM_LANE && posted !== GLM_SHADOW_LANE) return "tier 0 gets only the advisory GLM review";
+  // Tier 0 and an outside PR (D395 advisory review): only the GLM verdict goes out, once per head, and only on the owner's dispatch
+  // for an outside PR; nothing else is checked (the gate counts no verdict there).
+  const advisory = tier === 0 || outsidePr(pr);
+  if (outsidePr(pr) && !force) return "not a trusted same-repository PR (the owner's dispatch reviews it, advisory)";
+  if (advisory && posted && posted !== GLM_LANE && posted !== GLM_SHADOW_LANE) return `${tier === 0 ? "tier 0" : "an outside PR"} gets only the advisory GLM review`;
   const atHead = verdictLines(items).filter((v) => v.sha === head);
   const fb = gpt && gptFallbackVerdict(items, head) !== null;
   const own = [...(gpt ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers, cls)), ...(posted ? [`(${posted})`] : [])];
   if (atHead.some((v) => own.includes(v.lane))) return `(${posted ?? lane}) already has a verdict at ${head}`;
-  if (lane === SOL_LANE && tier !== 0) {
+  if (lane === SOL_LANE && !advisory) {
     const eligible = eligibleLanes(Number(tier), glmTiers, cls);
     // NORMAL: no assignment holds the workflow back; otherwise a workflow assignment accepts either provider (D396-1).
     const assigned = cls === NORMAL ? null : reviewerLane(items, gpt);

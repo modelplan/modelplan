@@ -216,14 +216,17 @@ export const REVIEW_ROUTING = reviewRouting;
 const ROUTING_AREAS = reviewRouting.areas.map((a) => ({ area: a.area, re: new RegExp(a.re, "i") }));
 export const NORMAL = "normal";
 export const IMPORTANT = "important";
-// paths: prPaths(files); labels: REST label objects or names; tier: the PR's path tier (an override too); fileCount: files.length.
-// Returns { cls: "normal" | "important", why }.
-export function reviewClass({ paths = [], labels = [], tier = 1, fileCount = paths.length } = {}) {
+// paths: prPaths(files); labels: REST label objects or names; tier: the PR's path tier (an override too); fileCount: files.length;
+// renamed: a file of the PR is a rename (the coordinator's GraphQL file list has no old path, so any rename is IMPORTANT on both
+// sides: the two gates classify alike). Returns { cls: "normal" | "important", why }.
+export const hasRename = (files) => (files ?? []).some((f) => f?.status === "renamed" || f?.previous_filename);
+export function reviewClass({ paths = [], labels = [], tier = 1, fileCount = paths.length, renamed = false } = {}) {
   const names = (labels ?? []).map((l) => (typeof l === "string" ? l : l?.name));
   const lab = reviewRouting.labels.find((l) => names.includes(l));
   if (lab) return { cls: IMPORTANT, why: `label ${lab}` };
   if (Number(tier) === 2) return { cls: IMPORTANT, why: "tier 2" };
   if (!paths.length) return { cls: IMPORTANT, why: "no file list" };
+  if (renamed) return { cls: IMPORTANT, why: "renamed file" };
   if (fileCount >= reviewRouting.maxFiles || paths.length >= reviewRouting.maxFiles) return { cls: IMPORTANT, why: `${reviewRouting.maxFiles}+ files` };
   for (const p of paths.filter((x) => !TEST_RE.test(x))) for (const a of ROUTING_AREAS) if (a.re.test(p)) return { cls: IMPORTANT, why: `${a.area}: ${p}` };
   return { cls: NORMAL, why: "no important path" };
@@ -735,7 +738,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const override = tierOverride(items);
   const tier = ledgerPr(pr) ? Math.max(2, override ?? pathTier(paths)) : (override ?? pathTier(paths));
   // D395: on a NORMAL PR the (ghglm) verdict decides tiers 1 and 2 like a GPT lane (review:gpt makes a PR important).
-  const route = reviewClass({ paths, labels: pr.labels, tier, fileCount: files.length });
+  const route = reviewClass({ paths, labels: pr.labels, tier, fileCount: files.length, renamed: hasRename(files) });
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
   const fbGlm = gpt ? gptFallbackVerdict(items, head) : null;   // labelled PR, GPT out of quota: the marked GLM verdict counts
   const glmAdvice = !eligibleLanes(tier, glmTiers, route.cls).includes(GLM_LANE) && fbGlm === null;
@@ -755,10 +758,11 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // An assignment naming a lane that cannot review this tier (Sonnet, unknown, Terra on tier 2) is invalid: it filters
   // nothing, so no GPT block is hidden, and it holds the PR until the coordinator fixes it.
   const sticky = assigned && eligible.includes(assigned) ? assigned : null;
-  // D395/D396 (no sticky state against the GLM reviewer): on a NORMAL PR the (ghglm) verdict counts whoever is assigned (a Codex
-  // lane that reviewed an earlier head during a GLM outage keeps nothing); a workflow sticky accepts either provider (stickyLanes).
-  const pinned = stickyLanes(sticky, eligible);
-  const counts = (l) => !pinned || pinned.includes(l) || (route.cls === NORMAL && l === GLM_LANE);
+  // D395/D396 (no sticky state): on a NORMAL PR an assignment pins nothing: every eligible lane counts, so the GLM verdict counts after
+  // a Codex lane took an earlier head during a GLM outage, and a Codex verdict counts when the workflow (ghsol/ghglm) was assigned but
+  // GLM is out. On an IMPORTANT PR a workflow sticky accepts either provider (stickyLanes); any other sticky lane stays the only one.
+  const pinned = route.cls === NORMAL ? null : stickyLanes(sticky, eligible);
+  const counts = (l) => !pinned || pinned.includes(l);
   const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l) && counts(l)));
   // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
   const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);

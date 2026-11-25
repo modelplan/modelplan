@@ -189,8 +189,9 @@ test("Sol workflow reviewer (ghsol, D352): a Sol lane for tiers 1 and 2 and a va
   assert.ok(!R.SOL_LANES.includes("(ghsolshadow)"));
   const t2 = [file("clients/swift/Wire.swift")];
   const rv = (lane) => comment(`REVIEWER: ${lane}`);
-  for (const files of [undefined, t2]) {
-    const tier = files ? 2 : 1;
+  // tier 1 here is an IMPORTANT path (D395: on a NORMAL PR an assignment pins nothing, see the D395-5 test)
+  for (const files of [[file("scripts/refresh-tool.mjs")], t2]) {
+    const tier = files === t2 ? 2 : 1;
     assert.equal(evalPr({ files, comments: [comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS, `tier ${tier}: ghsol merge passes`);
     assert.equal(evalPr({ files, comments: [comment(v("block", H, "ghsol")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, `tier ${tier}: a ghsol block stops it`);
     // Sticky: the assigned ghsol is the only verdict that counts, either way round.
@@ -1637,4 +1638,17 @@ test("D396 sticky ghsol: the workflow pair accepts the GLM quota-fallback verdic
   assert.deepEqual(R.stickyLanes("(ghsol)", R.eligibleLanes(1, [], R.NORMAL)), ["(ghsol)", "(ghglm)"]);
   assert.deepEqual(R.stickyLanes("(ghsol)", R.eligibleLanes(1)), ["(ghsol)"]);
   assert.deepEqual(R.stickyLanes("(macrevb)", R.eligibleLanes(1, [], R.NORMAL)), ["(macrevb)"]);
+});
+
+test("D395-5/6: on a NORMAL PR no assignment pins a lane (a Codex verdict counts under a workflow sticky); any rename is IMPORTANT", () => {
+  const normal = [file("scripts/tool.mjs")];
+  assert.equal(evalPr({ files: normal, comments: [comment("REVIEWER: ghsol"), comment(v("merge", H, "macrevb"))] }).state, R.SUCCESS);
+  assert.equal(evalPr({ files: normal, comments: [comment("REVIEWER: ghsol"), comment(v("block", H, "macrevb")), comment(v("merge", H, "ghglm"))] }).state, R.FAILURE, "any counting block blocks");
+  // an important PR keeps the workflow pin
+  assert.equal(evalPr({ files: [file("cli/cmd/modelplan/consent_scopes.go")], comments: [comment("REVIEWER: ghsol"), comment(v("merge", H, "macrevb"))] }).state, R.PENDING);
+  // a rename out of an important area, or any rename at all, is important on both gates (the coordinator sees no old path)
+  const mv = [file("cli/internal/metrics/frame.go", { status: "renamed", previous_filename: "cli/internal/appserver/frame.go" })];
+  const r = evalPr({ files: mv, comments: [comment(v("merge", H, "ghglm"))] });
+  assert.equal(r.review, R.IMPORTANT); assert.equal(r.state, R.PENDING);
+  assert.equal(R.reviewClass({ paths: ["src/b.ts"], renamed: R.hasRename([{ filename: "src/b.ts", status: "renamed", previous_filename: "src/a.ts" }]) }).why, "renamed file");
 });
