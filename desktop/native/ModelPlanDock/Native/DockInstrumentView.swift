@@ -491,15 +491,17 @@ enum DockGripInk {
             let matchingMaterial = reusesPreparedMaterial && officialRenderer === renderer &&
                 self.scale == renderScale && appliedGeometryScale == factor && self.hoverViewport == viewport
             // Skip only when everything this face renders is unchanged and the view is at rest: no hover, glow,
-            // nozzle pose, notice pulse, working effect or carried (hover-viewport) image, and its resting frame.
+            // nozzle pose, notice pulse or carried (hover-viewport) image, and its resting frame. A running working
+            // effect lives in its own layers above the face (G3-91), so it neither blocks the skip nor is touched by it.
             if matchingMaterial, !failed, let resting = restingInstrumentImage, image === resting, !imageUsesHoverViewport,
                self.locale == locale, readings == values, self.notices == notices, orderedIDs == rows.map(\.subscriptionID),
                readoutHolds.isEmpty, refreshSweepRing == nil, hotGlow == nil, hoveredGripIndex == nil,
                nozzlePosesForChecks.isEmpty, noticePulseLayers.isEmpty,
-               workingLayerParents.values.allSatisfy({ $0.sublayers?.isEmpty ?? true }),
                frame.size == (viewport?.size ?? skin.bounds.size) { return }
             let backing = matchingMaterial ? backgroundImage : nil
-            resetVisuals()
+            // G3-91 / D171: a repaint keeps the working rings' layers and their running spin; the effects driver
+            // decides per ring whether its effect still applies. Hiding, occlusion and retirement still reset them.
+            resetVisuals(keepingWorkingEffects: true)
             self.hoverViewport = viewport
             imageUsesHoverViewport = false
             appliedGeometryScale = factor
@@ -573,7 +575,9 @@ enum DockGripInk {
         needsDisplay = true
     }
     public func dispose(){ringPress=nil;readoutHolds=[:];refreshSweepRing=nil;onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onEmptyHover=nil;emptyHovered=false;onVisualReset=nil}
-    private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+    private func resetVisuals(keepingWorkingEffects:Bool=false){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[]
+        guard !keepingWorkingEffects else{return}
+        onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
     /// The host turns this off under Reduce Motion. Prototype: design-handoffs/opus-r7/src/rocket-r1/dock.css:38

@@ -207,6 +207,10 @@ struct DockHelpInteraction: Equatable {
         guard visible != isVisible else { return }
         isVisible = visible; visibilityChanged?()
     }
+    #if DEBUG
+    /// D397: drives the hidden/occluded transition the panel's occlusion notification reports.
+    func reportWidgetShownForChecks(_ shown: Bool) { reportWidgetShown(shown) }
+    #endif
     private func reportWidgetShown(_ shown: Bool) {
         guard shown != isWidgetShown else { return }
         isWidgetShown = shown
@@ -409,6 +413,9 @@ struct DockHelpInteraction: Equatable {
     /// Observe real CA installation before a detached offscreen tree is flushed.
     @_spi(DockResourceChecks) public var workingEffectsDidConfigureForChecks: (() -> Void)?
     @_spi(DockResourceChecks) public var workingEffectRotationPeriodsForChecks: [String:Double] { workingDriver?.rotationPeriods ?? [:] }
+    /// G3-91: the running spin animation of each ring; a refresh keeps the same object (it is never re-added).
+    @_spi(DockResourceChecks) public var workingEffectRotationAnimationsForChecks: [String: CAAnimation] { workingDriver?.rotationAnimations ?? [:] }
+    @_spi(DockResourceChecks) public var workingEffectRotationBeginTimesForChecks: [String: CFTimeInterval] { workingDriver?.rotationBeginTimes ?? [:] }
     @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }
     @_spi(DockResourceChecks) public var workingEffectCycleSeconds: [String: Double] { workingDriver?.cycleSeconds ?? [:] }
     @_spi(DockResourceChecks) public func seekWorkingEffectsForChecks(_ seconds: Double) { workingDriver?.seekForCapture(seconds) }
