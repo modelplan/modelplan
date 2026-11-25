@@ -185,15 +185,15 @@ test('D63 the ⤢ key opens the field, with a label that says the field itself a
 });
 // Owner 11-09: the key must sit inside the glass. The c01 canopy aperture mask (laid 1:1 on the canopy art box, see below; origin at the box's
 // top left) is the truth: every pixel of the key's rect keeps at least 8 px from any frame pixel, and it clears the HUD.
-for(const theme of ['night','day'])for(const tier of ['tall','compact'])test(`D63 the key lies inside the aperture mask with 8 px of glass (${theme} ${tier})`,async({page})=>{
- await page.setViewportSize({width:636,height:tier==='tall'?905:635});
+for(const theme of ['night','day'])for(const tier of ['tall'])test(`D63 the key lies inside the aperture mask with 8 px of glass (${theme} ${tier})`,async({page})=>{
+ await page.setViewportSize({width:636,height:905});
  await page.addInitScript(()=>{window.posted=[];window.webkit={messageHandlers:{cockpit:{postMessage(m){window.posted.push(typeof m==='string'?JSON.parse(m):m);}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  await receive(send('load',{appearance:{...appearance,theme},shell:{...shell,tier}}));
  await receive(send('visibility',{visible:true,occluded:false,key:true}));await receive(send('display',{data:visualFixture().data}));
  await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
- const layout=tier==='tall'?890:640;
+ const layout=890;
  const r=await page.evaluate(async layout=>{
   // The art box is the port row grown by 24 px each side and 12 px at the top (cockpit.css .ck-portrow::before, inset -12px -24px 0),
   // drawn 1:1 with the canopy mask. The mask pixel (px,y) therefore lies at the box's origin plus (px,y), never at the page's.

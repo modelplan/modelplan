@@ -216,8 +216,8 @@ import XCTest
   }
 
   /// G3-132 (owner, 11-18; D66 amended): Auto is judged on the set of connected displays (85 % if any is laptop-width,
-  /// 100 % only if all are wider), and every choice is capped by the smallest display's visible height (D51 floor and
-  /// short version as before). Headless: the pure fit with the displays' basis, and the controller's `screens` seam.
+  /// 100 % only if all are wider), and every choice is capped by the smallest display's visible height, down to
+  /// the D444 floor. Headless: the pure fit with the displays' basis, and the controller's `screens` seam.
   func testAutoAndTheCapFollowTheSetOfDisplays() throws {
     let air = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1470, height: 956), visibleFrame: CGRect(x: 0, y: 70, width: 1470, height: 849))
     let wide = CockpitScreen(frame: CGRect(x: 1470, y: 0, width: 2560, height: 1440), visibleFrame: CGRect(x: 1470, y: 0, width: 2560, height: 1415))
@@ -240,12 +240,14 @@ import XCTest
     // A fixed 100 % with a small display connected: capped on both by the small display's room (765 / 951).
     for value in try scales([small, wide], .percent100) { XCTAssertEqual(value, 765 / 951, accuracy: 1e-9) }
     for value in try scales([small, wide], .percent80) { XCTAssertEqual(value, 0.8, accuracy: 1e-9, "80 % fits the small display") }
-    // D51 floor kept: a display too short for the full cockpit at 75 % gives the short version on every display.
+    // D444: a display too short for the full cockpit at 75 % scales the one layout down on every display (no short version).
     let tiny = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1280, height: 720), visibleFrame: CGRect(x: 0, y: 0, width: 1280, height: 695))
     let basis = try XCTUnwrap(CockpitSizeBasis(screens: [tiny, wide]))
     let onWide = try XCTUnwrap(CockpitShellLayout.fit(usable: wide.visibleFrame, anchor: CockpitShellLayout.hiddenIconAnchor(usable: wide.visibleFrame),
                                                       shutterClosed: false, screenWidth: wide.frame.width, basis: basis))
-    XCTAssertEqual(onWide.profile, .compact, "the tiny display's tier on the wide display too")
+    XCTAssertEqual(onWide.profile, .full)
+    XCTAssertEqual(onWide.scale, (695 - 10) / 951, accuracy: 1e-9, "the tiny display's scale on the wide display too")
+    XCTAssertFalse(onWide.forcedClosed)
     XCTAssertNil(CockpitSizeBasis(screens: []))
 
     // The controller: a drag (detached, remembered on either display) keeps the size; adding or removing a display

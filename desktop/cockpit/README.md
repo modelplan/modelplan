@@ -97,7 +97,7 @@ UTF-16 units. These bridge limits do not change the Go transport's 8 MiB cap.
 | --- | --- |
 | `load` | Version 2; exact `appearance: {theme, locale, reduceMotion, reduceTransparency}` and `shell: {profile, attached, forcedClosed, tier, scope}`. Optional top-level `redBelow` is 10, 15, 20, 25, 30 or 40; absent or invalid values use 25 with a fixed warning. Once per page; clears first and applies both before `ready`. |
 | `appearance` | Flat `theme`, `locale`, `reduceMotion`, `reduceTransparency` and optional top-level `redBelow`, applied without clearing data. Both day and night are supported by the web renderer. |
-| `shell` | `profile` is `open` or `closed`, `attached` and `forcedClosed` are booleans, `tier` is `tall` or `compact`, and `scope` is `all` or a member key. Native chooses tier; forced closure disables user shutter actions. |
+| `shell` | `profile` is `open` or `closed`, `attached` and `forcedClosed` are booleans, `tier` is always `tall` (D444: one layout; `compact` is refused), and `scope` is `all` or a member key. Native scales the one layout to fit and forces the shutter closed below the 0.5 floor; forced closure disables user shutter actions. |
 | `tick` | `nowUnixMs` is a bounded canonical decimal timestamp; `reason` is `deadline`, `show`, `wake`, `unlock` or `clockChange`. Only a visible page with a current display accepts it. |
 | `display` | `data: WireCockpitData`. Context must match exactly; no context is adopted from data. Render is synchronous; the current displayed data supports deadline refresh and is removed on clear or unload. |
 | `visibility` | `visible`, `occluded`, `key`: booleans. Defaults are inactive. Active requires DOM readiness, visible, unoccluded, key and `!document.hidden`. |
@@ -213,7 +213,7 @@ visible-again, cleared and unloaded states. `document.hidden` is controlled in
 headless tests, not presented as real OS window occlusion. The WebKit report
 attaches per-state counts; visual comparisons also enforce finite iteration counts.
 
-Visual comparisons cover full 636×890 and compact 636×640, both themes and both
+Visual comparisons cover the full 636×890 layout (the only one since D444), both themes and both
 languages, using synthetic Go captures. Ubuntu 24.04 arm64/WebKit 2203 is the
 pinned baseline profile. Reference images stay under the reserved visual license;
 regeneration requires review. They are implementation references, **not**
