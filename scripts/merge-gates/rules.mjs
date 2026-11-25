@@ -319,7 +319,12 @@ export const GPT_LABEL = "review:gpt";
 // whose own comment also carries this exact marker line (posted by the workflow only: the model's text is defused),
 // at the exact head. Without the marker (ghglm) stays advisory on a labelled PR. Returns "merge" | "block" | null.
 export const GPT_FALLBACK_MARKER = "REVIEW-GPT-FALLBACK: GPT quota out; GLM verdict counts; mandatory nightly sampling";
+// macrev2-1254 (owner invariant): a GLM fallback answer NEVER counts for an IMPORTANT PR; a review:gpt label makes a PR IMPORTANT.
+// The marker is therefore no longer honoured (old marked comments included): the verdict stays advisory and a Sol/GPT verdict
+// is still required. The function is kept so callers and old comments still parse; it always answers null.
 export function gptFallbackVerdict(items, head) {
+  return null;
+  // eslint-disable-next-line no-unreachable
   let out = null;
   for (const x of items) {
     const ls = lines(x.body);

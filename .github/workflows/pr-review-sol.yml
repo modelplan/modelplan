@@ -16,14 +16,16 @@
 # Per-PR override: a PR labelled review:gpt is always tried with GPT first, whatever REVIEW_PROVIDER_MODE says (the
 # label is read from the REST pull request in the prepare step, never from a PR file). Adding the label starts
 # review-label.yml (a no-op pull_request run); its completion starts this workflow like a ci run. A GLM verdict at the
-# head does not settle a labelled PR. If GPT is out of quota the quota fallback still answers, and the provider line
-# says "review:gpt requested; GPT quota out".
+# head does not settle a labelled PR. If GPT is out of quota the quota fallback still answers (GPT credit, billing and
+# quota errors all count as quota), and the provider line says "review:gpt requested; GPT quota out". That answer is
+# advisory: on an IMPORTANT PR (by path or label) a per-run GLM fallback never counts, whatever REVIEWER says.
 #
 # Providers (scripts/pr-review/providers.mjs): vars.REVIEW_PROVIDER_MODE is gpt-first (default; OpenAI Responses API,
 # gpt-6.2-sol medium), glm-first (Zhipu GLM-5.3) or schedule (GPT during the Zhipu peak 06:00-10:00 UTC on weekdays,
 # GLM otherwise). On insufficient_quota, a billing limit or a sustained 429 the other provider answers, unless
-# vars.PR_REVIEW_GLM_FALLBACK is "off". GLM is used only where (ghglm) counts: vars.REVIEW_GLM_TIERS (default empty: advisory only),
-# which modelplan-gates reads too. When every usable provider is out of quota, the head gets one advisory
+# vars.PR_REVIEW_GLM_FALLBACK is "off". GLM counts only on a NORMAL PR, or on an IMPORTANT PR whose tier is
+# in vars.REVIEW_GLM_TIERS (default empty; D366 codex-out window set by review-fallback.sh); elsewhere its answer is posted
+# as advice and the head still waits for GPT. modelplan-gates reads the same variable. When every usable provider is out of quota, the head gets one advisory
 # "tier-N review waiting: GPT quota out" note (the coordinator event) and no verdict.
 #
 # Trust boundary:
