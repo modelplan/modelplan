@@ -235,7 +235,9 @@ export function reviewClass({ paths = [], labels = [], tier = 1, fileCount = pat
 // fallback) and, by D395, on every tier-1/2 head of a NORMAL PR (cls).
 export function eligibleLanes(tier, glmTiers = DEFAULT_GLM_TIERS, cls = IMPORTANT) {
   // (ghglm) decides only tiers 1 and 2: tier 0 needs no verdict, so a GLM verdict never counts there.
-  const glm = (tier === 1 || tier === 2) && (glmTiers.includes(tier) || cls === NORMAL);
+  // macrev2-1254: the class alone decides. On an IMPORTANT PR (by path or label) NO GLM answer counts, whatever REVIEW_GLM_TIERS
+  // (glmTiers, kept in the signature for callers) or an assignment says; on a NORMAL PR it always counts (D395).
+  const glm = (tier === 1 || tier === 2) && cls === NORMAL;
   return [...SOL_LANES, ...(tier === 2 ? [] : TERRA_LANES), ...(glm ? [GLM_LANE] : [])];
 }
 // The workflow reviewer pair: "REVIEWER: ghsol" or "REVIEWER: ghglm" assigns the Actions workflow, whichever provider answers
