@@ -17,6 +17,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 APP_EXECUTABLE = "ModelPlan"
@@ -161,6 +162,21 @@ def window_ids(windows):
     return {w["id"] for w in windows if w.get("onScreen")}
 
 
+def redact_sample(text, binary, limit=15):
+    """Top frames of our own binary from `sample` output: symbol and image only, no paths, offsets or headers."""
+    frames = []
+    for line in text.splitlines():
+        found = re.search(r"([^\s(][^(]*?)\s+\(in ([^)]+)\)", line)
+        if not found:
+            continue
+        symbol, image = re.sub(r"^[\s+!:|]*(\d+\s+)?", "", found.group(1)).strip(), os.path.basename(found.group(2))
+        if image.lower() == binary.lower() and symbol not in frames:
+            frames.append(symbol[:120])
+        if len(frames) >= limit:
+            break
+    return frames
+
+
 class HelperTimeout(WalkthroughError):
     """The helper did not answer within its time limit."""
 
@@ -248,20 +264,36 @@ class Walkthrough:
         self.ax_event_count = 0
 
     def sample_slow_read(self, why):
-        """The helper timed out or returned a truncated tree: sample the app and its WebContent process(es)."""
+        """The helper timed out or returned a truncated tree: sample the app and its WebContent process(es).
+        Raw samples hold host paths and headers, so they stay in a local temp dir outside the uploaded output folder
+        and are deleted here; the result gets only a redacted summary of the app's own top frames."""
         self.ax_event_count += 1
-        folder = self.out / "ax-samples"
-        folder.mkdir(parents=True, exist_ok=True)
-        saved = []
+        event = {"event": why, "sampled": 0, "topFrames": []}
+        folder = None
         try:
+            folder = Path(tempfile.mkdtemp(prefix="ax-sample-"))
+            if folder.resolve().is_relative_to(self.out.resolve()):
+                raise RuntimeError("sample dir would be uploaded")
             targets = [("app", self.pid)] + [("webcontent", p) for p in self.host.web_content_pids(self.pid)]
             for kind, pid in targets:
-                path = folder / ("%03d-%s-%s.txt" % (self.ax_event_count, kind, pid))
+                path = folder / ("%s-%s.txt" % (kind, pid))
                 if self.host.sample(pid, path):
-                    saved.append(path.relative_to(self.out).as_posix())
+                    event["sampled"] += 1
+                    if kind == "app":
+                        event["topFrames"] = redact_sample(path.read_text(errors="replace"), self.app.stem)
         except Exception as error:  # Evidence is best effort; it never fails the walk.
-            saved.append("sample failed: %s: %s" % (type(error).__name__, error))
-        self.ax_events.append({"event": why, "samples": saved})
+            event["error"] = type(error).__name__
+        finally:
+            if folder is not None:
+                shutil.rmtree(folder, ignore_errors=True)
+        self.ax_events.append(event)
+
+    def full_tree(self):
+        """A tree that proves things: absence, collapse and visibility are never concluded from an incomplete one."""
+        tree = self.tree()
+        if tree.get("truncated"):
+            raise WalkthroughError("incomplete tree proves nothing")
+        return tree
 
     def tree(self):
         try:
@@ -345,15 +377,12 @@ class Walkthrough:
         ("equals": {"target", "value"}), so one walk fits a build with the flow and a build without it (the
         first-run chooser, a widget that starts collapsed)."""
         if "equals" in action:
-            node = resolve(self.tree(), action["equals"]["target"])
+            node = resolve(self.full_tree(), action["equals"]["target"])
             hit = node is not None and str(node.get("value")) == action["equals"]["value"]
         else:
             target = action.get("present") or action.get("absent")
-            tree = self.tree()
-            if "present" in action:
-                hit = resolve(tree, target) is not None
-            else:
-                hit = self.is_absent(target, tree)
+            tree = self.full_tree()
+            hit = (resolve(tree, target) is not None) == ("present" in action)
         if hit:
             for nested in action["then"]:
                 getattr(self, "op_" + nested["op"])(nested)
@@ -453,10 +482,10 @@ class Walkthrough:
         # cockpit is closed, and a page caught mid-prewarm once passed for an open cockpit, so the Air 1470x956 step
         # never clicked the icon and found nothing to measure (build 6a084a0e). "Open" must also hold a moment later.
         target = "window-of:label:ModelPlan Cockpit"
-        shown = not self.is_absent(target)
+        shown = resolve(self.full_tree(), target) is not None
         if shown and action["want"] == "open":
             self.host.sleep(1.5)
-            shown = not self.is_absent(target)
+            shown = resolve(self.full_tree(), target) is not None
         if shown == (action["want"] == "open"):
             return
         self.host.helper("click", *centre(self.need("status-item")["frame"]))
@@ -596,6 +625,10 @@ class Walkthrough:
     def check(self, check, shot_dir, record):
         kind, value = next(iter(check.items()))
         tree = self.tree() if kind not in WINDOW_ONLY_CHECKS else None
+        if tree is not None and tree.get("truncated"):
+            # exists, opened, absent, checked, on, moved, changed, cardNamed, collapsed, allOnScreen, fits, nonblank,
+            # differsFrom and matches all read the tree: an incomplete one proves none of them.
+            raise WalkthroughError("incomplete tree proves nothing for check " + kind)
         if kind == "differsFrom" and self.compare(value["step"], record) < value["min"]:
             raise WalkthroughError("too close to " + value["step"])
         if kind == "matches" and self.compare(value["step"], record) > value["max"]:

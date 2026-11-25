@@ -556,7 +556,8 @@ class SlowAxReadTests(unittest.TestCase):
         out = Path(tempfile.mkdtemp())
         walk = w.Walkthrough.__new__(w.Walkthrough)
         walk.host, walk.out, walk.pid = host, out, 77
-        walk.steps, walk.seed, walk.screen, walk.app = [step], {}, (1000, 800), Path(".")
+        walk.app = Path("/x/ModelPlan.app")
+        walk.steps, walk.seed, walk.screen = [step], {}, (1000, 800)
         walk.remembered, walk.results, walk.statuses, walk.after_step = None, [], {}, {}
         walk.frames_mirrored, walk.mirror_evidence, walk.crops, walk.measures = False, {}, {}, {}
         walk.expected_card = walk.facts = None
@@ -576,7 +577,7 @@ class SlowAxReadTests(unittest.TestCase):
                 return super().helper(*arguments)
             def sample(self, pid, path):
                 self.samples.append(pid)
-                Path(path).write_text("sample")
+                Path(path).write_text("Call graph:\n    3 Thread_1  DispatchQueue_1: main\n    + 3 handle  (in ModelPlan) + 12  [0x1] /Users/alice/secret/App.swift:9\n    + 3 read  (in libsystem.dylib) + 4  [0x2]\n")
                 return True
             def web_content_pids(self, parent):
                 return [901]
@@ -590,7 +591,12 @@ class SlowAxReadTests(unittest.TestCase):
         tree = walk.tree()
         self.assertTrue(tree["truncated"])
         self.assertEqual(host.samples, [77, 901])
-        self.assertEqual(len(list((out / "ax-samples").iterdir())), 2)
+        self.assertEqual(walk.ax_events[0]["sampled"], 2)
+        self.assertFalse(list(out.rglob("*")), "no raw sample may land in the uploaded folder")
+        text = json.dumps(walk.ax_events)
+        for leak in ("alice", "/Users", "Thread_1", "0x1"):
+            self.assertNotIn(leak, text)
+        self.assertEqual(walk.ax_events[0]["topFrames"], ["handle"])
         self.assertEqual(walk.ax_events[0]["event"], "helper tree timed out after 30s")
 
     def test_truncated_tree_from_the_helper_is_sampled_too(self):
@@ -648,6 +654,22 @@ class SlowAxReadTests(unittest.TestCase):
         ps = "10 1 /usr/bin/other\n20 77 /x/com.apple.WebKit.WebContent\n30 1 /y/com.apple.WebKit.WebContent\n"
         with mock.patch.object(w.subprocess, "run", return_value=mock.Mock(stdout=ps)):
             self.assertEqual(w.Host("h").web_content_pids(77), [20])
+
+    def test_every_tree_predicate_fails_on_an_incomplete_tree(self):
+        # 1252-2 invariant: an incomplete tree proves nothing (absence, collapse, visibility).
+        walk, _ = self.walk(self.host(tree={"windows": [], "extras": [], "truncated": True}), {})
+        walk.remembered = [0, 0, 100, 100]
+        checks = [{"exists": "ax:x"}, {"opened": "ax:x"}, {"absent": "ax:x"}, {"checked": "ax:x"}, {"on": "ax:x"},
+                  {"moved": "ax:x"}, {"changed": "ax:x"}, {"cardNamed": True}, {"collapsed": "ax:x"},
+                  {"allOnScreen": "ax:x"}, {"fits": "ax:x"}, {"nonblank": "ax:x"}]
+        for check in checks:
+            with self.assertRaises(w.WalkthroughError, msg=str(check)):
+                walk.check(check, walk.out, {})
+        for action in ({"op": "toggleCockpit", "want": "open"}, {"op": "toggleCockpit", "want": "closed"},
+                       {"op": "when", "absent": "ax:x", "then": []}, {"op": "when", "present": "ax:x", "then": []},
+                       {"op": "when", "equals": {"target": "ax:x", "value": "1"}, "then": []}):
+            with self.assertRaises(w.WalkthroughError, msg=str(action)):
+                getattr(walk, "op_" + action["op"])(action)
 
 
 if __name__ == "__main__":
