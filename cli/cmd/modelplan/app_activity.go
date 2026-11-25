@@ -30,6 +30,7 @@ func appActivityClock(cache string, elapsed func() time.Time, inventory *loginde
 	}
 	logsIndex := speed.ActivityLogIndex{Inventory: inventory}
 	return func(ctx context.Context, a consent.Admission, now time.Time) []rows.ActivityInput {
+		ticket := logsIndex.Ticket() // with a, before anything else runs under it (macrev2-1261-2)
 		if speed.Off() {
 			observer.Observe(ctx, nil, nil, now)
 			return nil
@@ -56,7 +57,7 @@ func appActivityClock(cache string, elapsed func() time.Time, inventory *loginde
 				zcode = filepath.Join(home, ".zcode")
 			}
 		}
-		logs := logsIndex.Logs(claude, codex, zcode, a.Fence(), now, elapsed())
+		logs := logsIndex.LogsWith(claude, codex, zcode, a.Fence(), now, elapsed(), ticket)
 		bindings := []speed.ActivityBinding{}
 		if len(logs) > 0 {
 			bindings = speed.ExistingActivityBindings(cache, a)

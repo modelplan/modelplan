@@ -408,18 +408,21 @@ func discoverCodexRollouts(home, thread string, n int) (files []string, own stri
 // selectRollouts picks the n newest rollouts under home's sessions/YYYY/MM/DD from the
 // inventory, plus the thread's own rollout when one of the 62 newest days has it.
 func selectRollouts(inv *logindex.Inventory, fence consent.Fence, home, thread string, n int, now time.Time) (files []string, own string) {
-	files, own, _, _ = selectRolloutsIfChanged(inv, fence, home, thread, n, now, 0)
+	files, own, _, _ = selectRolloutsIfChanged(inv, fence, home, thread, n, now, 0, logindex.Ticket{})
 	return files, own
 }
 
 // selectRolloutsIfChanged is selectRollouts for a caller holding the selection made at
 // generation have: when the inventory has not changed since, it returns changed=false and
 // selects nothing (logindex.FilesIfChanged).
-func selectRolloutsIfChanged(inv *logindex.Inventory, fence consent.Fence, home, thread string, n int, now time.Time, have uint64) (files []string, own string, gen uint64, changed bool) {
+func selectRolloutsIfChanged(inv *logindex.Inventory, fence consent.Fence, home, thread string, n int, now time.Time, have uint64, ticket logindex.Ticket) (files []string, own string, gen uint64, changed bool) {
 	if home == "" {
 		return nil, "", 0, true
 	}
-	all, gen, changed := inv.FilesIfChanged(fence, []logindex.Root{{Dir: filepath.Join(home, "sessions"), Source: "codex"}}, now, now, have)
+	all, gen, changed := inv.FilesIfChanged(fence, []logindex.Root{{Dir: filepath.Join(home, "sessions"), Source: "codex"}}, now, now, have, ticket)
+	if changed && gen == 0 {
+		return nil, "", 0, true // refused: a withdrawal since the ticket
+	}
 	if !changed {
 		return nil, "", gen, false
 	}
@@ -1146,12 +1149,13 @@ func RecentRollouts(codexHome string, n int) []string {
 }
 
 // RecentRolloutsIn is RecentRollouts from the app-server's shared history inventory, under the
-// caller's consent fence.
-func RecentRolloutsIn(inv *logindex.Inventory, fence consent.Fence, codexHome string, n int, now time.Time) []string {
+// caller's consent fence and the withdrawal ticket it took before reading that consent: after a
+// later withdrawal it reads and keeps nothing.
+func RecentRolloutsIn(inv *logindex.Inventory, fence consent.Fence, ticket logindex.Ticket, codexHome string, n int, now time.Time) []string {
 	if codexHome == "" {
 		return nil
 	}
-	files, _ := selectRollouts(inv, fence, codexHome, "", n, now)
+	files, _, _, _ := selectRolloutsIfChanged(inv, fence, codexHome, "", n, now, 0, ticket)
 	return files
 }
 

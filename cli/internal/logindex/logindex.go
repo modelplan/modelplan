@@ -73,54 +73,58 @@ type Inventory struct {
 	// file's stamp changed or gone, a root added, dropped or evicted, a new fence. Callers cache
 	// what they select from the files under it (FilesIfChanged), so an idle tick copies nothing.
 	gen uint64
-	// retired: store epochs a newer fence replaced. A call under a retired epoch, or under an
-	// older generation of the current one, is refused: it reads nothing and writes nothing, so a
-	// call that captured its admission before a withdrawal cannot rebuild what the withdrawal
-	// discarded (macrev2-1261-2).
-	retired map[string]bool
+	// withdrawals counts withdrawals (Withdraw). A caller takes a Ticket with its admission, and
+	// a read or commit under a ticket from before a later withdrawal is refused, so a call that
+	// captured Allow before a withdrawal cannot rebuild what the withdrawal discarded
+	// (macrev2-1261-2). Fences are never ordered: epochs have no order, and an empty fence from a
+	// failed consent read is not a replacement (macrev2-1261-4).
+	withdrawals uint64
 }
 
-// stale: f is older than the inventory's fence. Caller holds mu.
-func (inv *Inventory) stale(f consent.Fence) bool {
-	if inv.retired[f.StoreEpoch] {
-		return true
-	}
-	return f.StoreEpoch == inv.fence.StoreEpoch && f.Generation < inv.fence.Generation
+// Ticket is the withdrawal count a caller took together with its admission. The zero Ticket
+// stands for "now": it is never refused.
+type Ticket struct {
+	withdrawals uint64
+	taken       bool
 }
 
-// advance moves the inventory to fence f, discarding every root, unless f is its fence already
-// or older. It reports whether f may be used. Caller holds mu.
-func (inv *Inventory) advance(f consent.Fence) bool {
-	if inv.fence == f {
-		if inv.roots == nil {
-			inv.roots = map[Root]*root{}
-		}
-		return true
-	}
-	if inv.stale(f) {
-		return false
-	}
-	if inv.fence.StoreEpoch != "" && inv.fence.StoreEpoch != f.StoreEpoch {
-		if inv.retired == nil {
-			inv.retired = map[string]bool{}
-		}
-		inv.retired[inv.fence.StoreEpoch] = true
-	}
-	inv.roots, inv.fence = map[Root]*root{}, f
-	inv.gen++
-	return true
-}
-
-// Advance moves the inventory to a newer consent fence, discarding everything it holds, so no
-// call under an older fence can read or rebuild it afterwards. A withdrawal calls it with the
-// fence that withdrew. An older or equal fence changes nothing.
-func (inv *Inventory) Advance(f consent.Fence) {
+// Ticket takes the current withdrawal count. Take it before (or with) the admission it goes with.
+func (inv *Inventory) Ticket() Ticket {
 	inv.mu.Lock()
 	defer inv.mu.Unlock()
-	if inv.gen == 0 {
-		inv.gen = 1
+	return Ticket{withdrawals: inv.withdrawals, taken: true}
+}
+
+// current: the ticket still stands (no withdrawal since it was taken). Caller holds mu.
+func (inv *Inventory) current(t Ticket) bool { return !t.taken || t.withdrawals == inv.withdrawals }
+
+// Withdraw records a withdrawal and forgets the given roots at once. Every read and commit under
+// a ticket taken before it is refused afterwards.
+func (inv *Inventory) Withdraw(dirs ...string) {
+	inv.mu.Lock()
+	defer inv.mu.Unlock()
+	inv.withdrawals++
+	for _, dir := range dirs {
+		dir = filepath.Clean(dir)
+		for key := range inv.roots {
+			if key.Dir == dir {
+				delete(inv.roots, key)
+				inv.gen++
+			}
+		}
 	}
-	inv.advance(f)
+}
+
+// CommitIf runs commit, under the lock Withdraw takes, only when no withdrawal happened since t
+// was taken, and reports whether it ran. A caller stores what it selected through it.
+func (inv *Inventory) CommitIf(t Ticket, commit func()) bool {
+	inv.mu.Lock()
+	defer inv.mu.Unlock()
+	if !inv.current(t) {
+		return false
+	}
+	commit()
+	return true
 }
 
 // Retained counts the files the inventory holds (tests and diagnostics; no path leaves).
@@ -169,23 +173,27 @@ func (f fileState) modTime() time.Time { return time.Unix(0, f.mod) }
 // check every HotInterval of elapsed (a monotonic clock). now is the wall time that decides
 // what is recent. A root that is not absolute is ignored.
 func (inv *Inventory) Files(fence consent.Fence, roots []Root, now, elapsed time.Time) []File {
-	files, _, _ := inv.FilesIfChanged(fence, roots, now, elapsed, 0)
+	files, _, _ := inv.FilesIfChanged(fence, roots, now, elapsed, 0, Ticket{})
 	return files
 }
 
-// FilesIfChanged is Files for a caller that caches what it selects from the files. A call under a
-// fence older than the inventory's is refused with gen 0: the caller keeps nothing. It refreshes
+// FilesIfChanged is Files for a caller that caches what it selects from the files. A call whose
+// ticket a withdrawal has since outdated is refused with gen 0: it reads and keeps nothing. It refreshes
 // the roots as Files does and returns the inventory's generation. When that generation is still
 // have (from an earlier call with the same fence and roots), nothing can have changed and it
 // returns no files and changed=false without copying anything. have 0 always copies.
-func (inv *Inventory) FilesIfChanged(fence consent.Fence, roots []Root, now, elapsed time.Time, have uint64) (files []File, gen uint64, changed bool) {
+func (inv *Inventory) FilesIfChanged(fence consent.Fence, roots []Root, now, elapsed time.Time, have uint64, t Ticket) (files []File, gen uint64, changed bool) {
 	inv.mu.Lock()
 	defer inv.mu.Unlock()
 	if inv.gen == 0 {
 		inv.gen = 1
 	}
-	if !inv.advance(fence) {
-		return nil, 0, true // an older fence: refused, nothing read or kept (gen 0)
+	if !inv.current(t) {
+		return nil, 0, true // outdated by a withdrawal: refused, nothing read or kept (gen 0)
+	}
+	if inv.roots == nil || inv.fence != fence {
+		inv.roots, inv.fence = map[Root]*root{}, fence
+		inv.gen++
 	}
 	for key, r := range inv.roots {
 		if elapsed.Sub(r.usedAt) > unused {

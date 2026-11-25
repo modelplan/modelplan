@@ -84,12 +84,12 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	codexIndex := quota.CodexRolloutIndex{Clock: sources.Clock, Inventory: inventory}
 	rawPaths := func(a consent.Admission) quota.Paths {
 		p := quota.ProductionPathsWithAdmission(st.Dir, version, a)
-		p.CodexIndex = &codexIndex
+		p.CodexIndex, p.CodexTicket = &codexIndex, codexIndex.Ticket() // the ticket goes with a
 		return p
 	}
 	watchPaths := func(a consent.Admission) quota.Paths {
 		p := quota.ProductionWatchPaths(st.Dir)
-		p.Admission, p.CodexIndex = &a, &codexIndex
+		p.Admission, p.CodexIndex, p.CodexTicket = &a, &codexIndex, codexIndex.Ticket() // the ticket goes with a
 		return p
 	}
 	detectTools := func() detect.Report { return detection(st) }

@@ -209,7 +209,7 @@ func TestCodexWithdrawalForgetsSelection(t *testing.T) {
 				t.Fatalf("withdrawn Codex still selected %v %q", files, own)
 			}
 		case "clear":
-			index.clear(home, consent.Fence{StoreEpoch: "test", Generation: 2})
+			index.clear(home)
 		}
 		if fmt.Sprint(index.cache) != fmt.Sprint(rolloutSelection{}) {
 			t.Fatalf("%s: withdrawn selection kept: %+v", how, index.cache)
@@ -255,7 +255,9 @@ func TestMacrev1261WithdrawalCannotBeRepopulatedByOldSelection(t *testing.T) {
 	}
 	inv := &logindex.Inventory{}
 	index := CodexRolloutIndex{Inventory: inv, Clock: func() time.Time { return start }}
-	old := Paths{CodexHome: home, CodexThread: "thread1-2", CodexIndex: &index, Admission: &allowed}
+	// As the engine builds them: the withdrawal ticket is taken with the admission.
+	old := Paths{CodexHome: home, CodexThread: "thread1-2", CodexIndex: &index, Admission: &allowed, CodexTicket: index.Ticket()}
+	oldTicket := old.CodexTicket
 	if files, own := old.RecentCodexRollouts(); len(files) == 0 || own == "" {
 		t.Fatalf("warm-up: %v %q", files, own)
 	}
@@ -275,15 +277,110 @@ func TestMacrev1261WithdrawalCannotBeRepopulatedByOldSelection(t *testing.T) {
 	if n := inv.Retained(); n != 0 {
 		t.Fatalf("the inventory was repopulated with %d files", n)
 	}
-	// So does a direct selection under the retired fence, and the observation pass's reader.
-	index.recent(home, "thread1-2", allowed.Fence(), start)
-	if got := RecentRolloutsIn(inv, allowed.Fence(), home, 8, start); len(got) != 0 || inv.Retained() != 0 || index.cache.thread != "" {
+	// So does a selection under the old admission's ticket, and the observation pass's reader.
+	index.recentWith(home, "thread1-2", allowed.Fence(), start, oldTicket)
+	if got := RecentRolloutsIn(inv, allowed.Fence(), oldTicket, home, 8, start); len(got) != 0 || inv.Retained() != 0 || index.cache.thread != "" {
 		t.Fatalf("an old fence rebuilt the inventory or selection: %d paths, %d retained", len(got), inv.Retained())
 	}
 	// A new grant under a newer fence reads again.
 	regranted := admission(3, true)
-	again := Paths{CodexHome: home, CodexThread: "thread1-2", CodexIndex: &index, Admission: &regranted}
+	again := Paths{CodexHome: home, CodexThread: "thread1-2", CodexIndex: &index, Admission: &regranted, CodexTicket: index.Ticket()}
 	if files, _ := again.RecentCodexRollouts(); len(files) == 0 {
 		t.Fatal("a new grant read nothing")
+	}
+}
+
+// macrev2-1261-2 (round 3): a selection that captured epoch A pauses; the store is reset to epoch
+// B and a denied call under B processes the withdrawal; B is granted and read. The resumed A
+// selection keeps nothing and does not disturb B, which still reads (without a rescan).
+func TestMacrev1261UnseenOldEpochAfterReset(t *testing.T) {
+	home := t.TempDir()
+	start := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	staticHistory(t, home, 3, 4, start.Add(-48*time.Hour))
+	store := filepath.Join(t.TempDir(), "consent.json")
+	a, err := consent.Reset(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := consent.Reset(store)
+	if err != nil || a.StoreEpoch == b.StoreEpoch || a.StoreEpoch == "" {
+		t.Fatalf("two resets gave epochs %q and %q (%v)", a.StoreEpoch, b.StoreEpoch, err)
+	}
+	admit := func(reset consent.State, gen uint64, allowed bool) consent.Admission {
+		s := consent.Empty() // the reset's epoch, with a Codex decision recorded under it
+		s.StoreEpoch, s.Generation = reset.StoreEpoch, gen
+		s.Tools["codex"] = consent.Record{Allowed: allowed, ConsentTextVersion: consent.TextVersion}
+		return consent.NewAdmission(s, consent.Automatic)
+	}
+	allowA, denyB, allowB := admit(a, 1, true), admit(b, 1, false), admit(b, 2, true)
+	inv := &logindex.Inventory{}
+	index := CodexRolloutIndex{Inventory: inv, Clock: func() time.Time { return start }}
+	paths := func(adm *consent.Admission) Paths {
+		return Paths{CodexHome: home, CodexThread: "thread1-2", CodexIndex: &index, Admission: adm, CodexTicket: index.Ticket()}
+	}
+	paused := paths(&allowA) // captured A; has not reached the inventory yet
+	if files, _ := paths(&denyB).RecentCodexRollouts(); len(files) != 0 {
+		t.Fatalf("denied B selected %v", files)
+	}
+	current := paths(&allowB)
+	want, _ := current.RecentCodexRollouts()
+	if len(want) == 0 {
+		t.Fatal("B read nothing")
+	}
+	retained, cache := inv.Retained(), index.cache
+	if files, own := paused.RecentCodexRollouts(); len(files) != 0 || own != "" {
+		t.Fatalf("the resumed A selection returned %d paths, own %q", len(files), own)
+	}
+	if index.cache.fence != allowB.Fence() || fmt.Sprint(index.cache) != fmt.Sprint(cache) || inv.Retained() != retained {
+		t.Fatalf("the A selection replaced B's state: cache %+v, %d retained (was %d)", index.cache, inv.Retained(), retained)
+	}
+	if got := RecentRolloutsIn(inv, allowA.Fence(), paused.CodexTicket, home, 8, start); len(got) != 0 {
+		t.Fatalf("an A observation pass read %v", got)
+	}
+	before := idlework.CopiedCount()
+	if got, _ := paths(&allowB).RecentCodexRollouts(); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("B after the A attempt: %v, want %v", got, want)
+	}
+	if n := idlework.CopiedCount() - before; n != 0 {
+		t.Fatalf("B had to rebuild after the A attempt (%d copied): A reset the inventory", n)
+	}
+}
+
+// macrev2-1261-4: an unavailable consent store (empty fence, readers off) is a withdrawal that
+// clears without reading; when the same epoch recovers, the next selection equals a fresh one.
+// A selection still holding a ticket from before the outage stays refused.
+func TestMacrev1261UnavailableStoreThenRecovery(t *testing.T) {
+	home := t.TempDir()
+	start := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	staticHistory(t, home, 3, 4, start.Add(-48*time.Hour))
+	state := consent.Empty()
+	state.StoreEpoch, state.Generation = "0123456789abcdef0123456789abcdef", 4
+	state.Tools["codex"] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion}
+	allowA := consent.NewAdmission(state, consent.Automatic)
+	unavailable := consent.NewAdmission(consent.Empty(), consent.Off) // what Capture gives on a load error
+	inv := &logindex.Inventory{}
+	index := CodexRolloutIndex{Inventory: inv, Clock: func() time.Time { return start }}
+	paths := func(adm *consent.Admission) Paths {
+		return Paths{CodexHome: home, CodexThread: "thread1-2", CodexIndex: &index, Admission: adm, CodexTicket: index.Ticket()}
+	}
+	before := paths(&allowA)
+	if files, _ := before.RecentCodexRollouts(); len(files) == 0 {
+		t.Fatal("warm-up read nothing")
+	}
+	copied := idlework.CopiedCount()
+	if files, own := paths(&unavailable).RecentCodexRollouts(); len(files) != 0 || own != "" {
+		t.Fatalf("unavailable store selected %v %q", files, own)
+	}
+	if idlework.CopiedCount() != copied || inv.Retained() != 0 || fmt.Sprint(index.cache) != fmt.Sprint(rolloutSelection{}) {
+		t.Fatalf("the outage read or kept something: %d retained, cache %+v", inv.Retained(), index.cache)
+	}
+	got, own := paths(&allowA).RecentCodexRollouts()
+	want, wantOwn := selectRollouts(&logindex.Inventory{}, allowA.Fence(), home, "thread1-2", codexFiles, start)
+	want = ConfinedRollouts(home, want)
+	if len(got) == 0 || fmt.Sprint(got) != fmt.Sprint(want) || own != wantOwn {
+		t.Fatalf("recovered A: %v %q, fresh %v %q", got, own, want, wantOwn)
+	}
+	if files, _ := before.RecentCodexRollouts(); len(files) != 0 {
+		t.Fatalf("a selection from before the outage was accepted: %v", files)
 	}
 }

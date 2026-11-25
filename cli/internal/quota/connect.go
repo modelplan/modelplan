@@ -336,7 +336,7 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	if mode == consent.Off || !s.Allows("codex", consent.Local, mode) {
 		// WP-17: nothing decoded from Codex rollouts outlives the admission to read them.
 		forgetCodexRollouts()
-		p.CodexIndex.clear(p.CodexHome, admission.Fence())
+		p.CodexIndex.clear(p.CodexHome)
 	}
 	if mode == consent.Off {
 		reason := "reader-privacy"

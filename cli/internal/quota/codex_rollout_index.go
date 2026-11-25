@@ -47,18 +47,28 @@ func (p Paths) RecentCodexRollouts() ([]string, string) {
 	if p.CodexIndex == nil {
 		return discoverCodexRollouts(p.CodexHome, p.CodexThread, codexFiles)
 	}
+	// The ticket goes with the admission: the engine takes it when it builds these paths for the
+	// admission it captured (Ticket), otherwise it is taken here, before the admission is read.
+	ticket := p.CodexTicket
+	if ticket == (logindex.Ticket{}) {
+		ticket = p.CodexIndex.Ticket()
+	}
 	admission := admissionFor(p)
 	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") ||
 		admission.CleanupPending(consent.ScopeCodexLocalHistory) || p.CodexHome == "" {
-		p.CodexIndex.clear(p.CodexHome, admission.Fence())
+		p.CodexIndex.clear(p.CodexHome)
 		return nil, ""
 	}
 	now := time.Now()
 	if p.CodexIndex.Clock != nil {
 		now = p.CodexIndex.Clock()
 	}
-	return p.CodexIndex.recent(p.CodexHome, p.CodexThread, admission.Fence(), now)
+	return p.CodexIndex.recentWith(p.CodexHome, p.CodexThread, admission.Fence(), now, ticket)
 }
+
+// Ticket takes the index's withdrawal count; take it together with the admission a selection
+// will run under (macrev2-1261-2).
+func (i *CodexRolloutIndex) Ticket() logindex.Ticket { return i.inventory().Ticket() }
 
 func (i *CodexRolloutIndex) inventory() *logindex.Inventory {
 	if i.Inventory != nil {
@@ -67,29 +77,35 @@ func (i *CodexRolloutIndex) inventory() *logindex.Inventory {
 	return &i.own
 }
 
-// clear forgets Codex under the withdrawing admission's fence: the cached selection (rollout
-// paths and the own thread's) and the inventory's sessions root. Advancing the inventory to that
-// fence makes any call still holding an older admission refused, so it cannot rebuild either
-// (macrev2-1261-2). It runs under the selection's lock, so a selection in progress finishes
-// before it and is discarded by it.
-func (i *CodexRolloutIndex) clear(home string, fence consent.Fence) {
+// clear is a withdrawal (Codex denied, cleanup pending, or the consent store unavailable): it
+// forgets the cached selection (rollout paths and the own thread's) and the inventory's sessions
+// root, and records the withdrawal, so a selection holding a ticket from before it can neither
+// read the inventory nor commit (macrev2-1261-2). It runs under the selection's lock: a
+// selection in progress finishes first and is discarded here.
+func (i *CodexRolloutIndex) clear(home string) {
 	if i == nil {
 		return
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.cache = rolloutSelection{}
-	i.inventory().Advance(fence)
 	if home == "" {
 		home = CodexHome()
 	}
+	var dirs []string
 	if home != "" {
-		i.inventory().Drop(filepath.Join(home, "sessions"))
+		dirs = append(dirs, filepath.Join(home, "sessions"))
 	}
+	i.inventory().Withdraw(dirs...)
 }
 
 func (i *CodexRolloutIndex) recent(home, thread string, fence consent.Fence, now time.Time) ([]string, string) {
-	selected, selectedOwn := i.selection(home, thread, fence, now)
+	return i.recentWith(home, thread, fence, now, i.Ticket())
+}
+
+// recentWith is recent under the withdrawal ticket taken with the caller's admission.
+func (i *CodexRolloutIndex) recentWith(home, thread string, fence consent.Fence, now time.Time, ticket logindex.Ticket) ([]string, string) {
+	selected, selectedOwn := i.selection(home, thread, fence, now, ticket)
 
 	// The older discovery rejected symlink date directories. Recheck that
 	// property before returning a remembered filename, including after rename.
@@ -103,7 +119,7 @@ func (i *CodexRolloutIndex) recent(home, thread string, fence consent.Fence, now
 
 // selection is selectRollouts over the inventory, made again only when the inventory's
 // generation, the home, the thread or the fence moved.
-func (i *CodexRolloutIndex) selection(home, thread string, fence consent.Fence, now time.Time) ([]string, string) {
+func (i *CodexRolloutIndex) selection(home, thread string, fence consent.Fence, now time.Time, ticket logindex.Ticket) ([]string, string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	c := &i.cache
@@ -111,13 +127,16 @@ func (i *CodexRolloutIndex) selection(home, thread string, fence consent.Fence, 
 	if c.gen != 0 && c.home == home && c.thread == thread && c.fence == fence {
 		have = c.gen
 	}
-	files, own, gen, changed := selectRolloutsIfChanged(i.inventory(), fence, home, thread, codexFiles, now, have)
-	if changed && gen == 0 { // refused: an older fence than the inventory's, or no home
-		*c = rolloutSelection{}
+	files, own, gen, changed := selectRolloutsIfChanged(i.inventory(), fence, home, thread, codexFiles, now, have, ticket)
+	if changed && gen == 0 { // refused (a withdrawal since the ticket) or no home: keep nothing
 		return nil, ""
 	}
 	if changed {
-		*c = rolloutSelection{gen: gen, home: home, thread: thread, fence: fence, files: files, own: own}
+		next := rolloutSelection{gen: gen, home: home, thread: thread, fence: fence, files: files, own: own}
+		// Under the lock Withdraw takes: a withdrawal since the ticket drops the result.
+		if !i.inventory().CommitIf(ticket, func() { *c = next }) {
+			return nil, ""
+		}
 	}
 	return slices.Clone(c.files), c.own
 }

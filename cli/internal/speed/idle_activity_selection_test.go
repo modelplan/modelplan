@@ -167,3 +167,35 @@ func TestActivityWithdrawalForgetsSelection(t *testing.T) {
 		}
 	}
 }
+
+// macrev2-1261-4 (activity): an unavailable consent store disables every source for one pass; when
+// the same epoch recovers, the activity selection reads again and equals a fresh one, and a pass
+// holding a ticket from before the outage keeps nothing.
+func TestActivityRecoversAfterUnavailableStore(t *testing.T) {
+	home := t.TempDir()
+	claude := filepath.Join(home, "claude")
+	dir := filepath.Join(claude, "projects", "-p")
+	os.MkdirAll(dir, 0o700)
+	now := time.Now()
+	os.WriteFile(filepath.Join(dir, "s.jsonl"), []byte("{}\n"), 0o600)
+	a := consent.Fence{StoreEpoch: "0123456789abcdef0123456789abcdef", Generation: 3}
+	var index ActivityLogIndex
+	stale := index.Ticket()
+	if got := index.LogsWith(claude, "", "", a, now, now, stale); len(got) != 1 {
+		t.Fatalf("warm-up: %v", got)
+	}
+	// The outage: Capture returns an empty fence and readers off, so every source is disabled.
+	if got := index.LogsWith("", "", "", consent.Fence{}, now.Add(2*time.Second), now.Add(2*time.Second), index.Ticket()); len(got) != 0 {
+		t.Fatalf("outage: %v", got)
+	}
+	later := now.Add(4 * time.Second)
+	got := index.LogsWith(claude, "", "", a, later, later, index.Ticket())
+	if want := ActivityLogs(claude, "", "", later); len(got) != 1 || fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("recovered: %v, fresh %v", got, want)
+	}
+	var other ActivityLogIndex
+	other.Inventory = index.inventory()
+	if got := other.LogsWith(claude, "", "", a, later, later, stale); len(got) != 0 {
+		t.Fatalf("a pass from before the outage read %v", got)
+	}
+}
