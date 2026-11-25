@@ -447,6 +447,11 @@ func contains(xs []string, x string) bool {
 // calls it once per spawn under a deadline, and a long history must not cost it a full scan
 // (#1222 sampling P3). Days are root/YYYY/MM/DD, newest name first; symlinks are not followed.
 func findThread(root, thread string) string {
+	// As the inventory: a sessions root that is not a real directory (a symlink) is not listed
+	// at all (macrev2-1261-3).
+	if info, err := os.Lstat(root); err != nil || !info.IsDir() {
+		return ""
+	}
 	suffix, days := "-"+thread+".jsonl", 0
 	for _, y := range realDirsDesc(root) {
 		for _, m := range realDirsDesc(y) {

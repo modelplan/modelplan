@@ -100,3 +100,70 @@ func BenchmarkIdleActivityMinute(b *testing.B) {
 		})
 	}
 }
+
+// macrev2-1261-1: after every cached candidate has aged out under an unchanged inventory, a tick
+// visits at most maxLive+1 of them, and the selection still equals a fresh one.
+func TestIdleActivityExpiredCandidatesBounded(t *testing.T) {
+	home := t.TempDir()
+	start := time.Now().Truncate(time.Second)
+	claude := filepath.Join(home, "claude")
+	old := start.Add(-48 * time.Hour)
+	for d := 0; d < 10; d++ {
+		dir := filepath.Join(claude, "projects", fmt.Sprintf("-p%02d", d))
+		os.MkdirAll(dir, 0o700)
+		for i := 0; i < 200; i++ { // 2,000 logs changed within the last minute
+			p := filepath.Join(dir, fmt.Sprintf("s%03d.jsonl", i))
+			os.WriteFile(p, []byte("{}\n"), 0o600)
+			mod := start.Add(-time.Duration(d*200+i) * 20 * time.Millisecond)
+			os.Chtimes(p, mod, mod)
+		}
+		os.Chtimes(dir, old, old)
+	}
+	os.Chtimes(filepath.Join(claude, "projects"), old, old)
+	var index ActivityLogIndex
+	fence := consent.Fence{StoreEpoch: "test", Generation: 1}
+	if got := index.Logs(claude, "", "", fence, start, start); len(got) != maxLive {
+		t.Fatalf("warm-up: %d logs", len(got))
+	}
+	gen := index.selection.gen
+	for s := 2; s <= 7*60; s += 2 {
+		now := start.Add(time.Duration(s) * time.Second)
+		before := liveCandidateVisits.Load()
+		got := index.Logs(claude, "", "", fence, now, now)
+		if v := liveCandidateVisits.Load() - before; v > maxLive+1 {
+			t.Fatalf("at +%ds a tick visited %d cached candidates", s, v)
+		}
+		if s%60 == 0 {
+			if want := ActivityLogs(claude, "", "", now); fmt.Sprint(got) != fmt.Sprint(want) {
+				t.Fatalf("at +%ds: cached %d logs, fresh %d", s, len(got), len(want))
+			}
+		}
+	}
+	if index.selection.gen != gen {
+		t.Fatal("the inventory changed: the test did not keep one generation")
+	}
+}
+
+// macrev2-1261-2: when every source is withdrawn, the cached selection is forgotten at once,
+// with or without a new fence.
+func TestActivityWithdrawalForgetsSelection(t *testing.T) {
+	home := t.TempDir()
+	claude := filepath.Join(home, "claude")
+	dir := filepath.Join(claude, "projects", "-p")
+	os.MkdirAll(dir, 0o700)
+	now := time.Now()
+	os.WriteFile(filepath.Join(dir, "s.jsonl"), []byte("{}\n"), 0o600)
+	for _, next := range []consent.Fence{{StoreEpoch: "test", Generation: 1}, {StoreEpoch: "test", Generation: 2}} {
+		var index ActivityLogIndex
+		fence := consent.Fence{StoreEpoch: "test", Generation: 1}
+		if got := index.Logs(claude, "", "", fence, now, now); len(got) != 1 {
+			t.Fatalf("warm-up: %v", got)
+		}
+		if got := index.Logs("", "", "", next, now.Add(2*time.Second), now.Add(2*time.Second)); len(got) != 0 {
+			t.Fatalf("withdrawn: %v", got)
+		}
+		if fmt.Sprint(index.selection) != fmt.Sprint(liveSelection{}) {
+			t.Fatalf("fence %v: withdrawn selection kept: %+v", next, index.selection)
+		}
+	}
+}

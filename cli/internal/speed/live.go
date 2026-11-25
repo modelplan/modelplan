@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"sync/atomic"
 	"time"
 )
 
@@ -202,6 +203,12 @@ func recentLogsCached(inv *logindex.Inventory, fence consent.Fence, roots []live
 		}
 	}
 	if len(want) == 0 {
+		// Every source withdrawn: forget the cached selection, and let the inventory see the
+		// fence so a withdrawal discards its metadata too (macrev2-1261-2).
+		if c != nil {
+			*c = liveSelection{}
+		}
+		inv.FilesIfChanged(fence, nil, now, elapsed, 0)
 		return []LiveLog{}
 	}
 	have := uint64(0)
@@ -229,18 +236,21 @@ func recentLogsCached(inv *logindex.Inventory, fence consent.Fence, roots []live
 	} else {
 		cands = c.cands
 	}
+	// Newest first: the first expired candidate ends the recent ones, so a tick visits at most
+	// maxLive+1 of them however many have aged out under an unchanged inventory (macrev2-1261-1).
 	out := []LiveLog{}
 	for _, cand := range cands {
-		if len(out) == maxLive {
+		liveCandidateVisits.Add(1)
+		if len(out) == maxLive || cand.at.Before(now.Add(-LiveWithin)) {
 			break
-		}
-		if cand.at.Before(now.Add(-LiveWithin)) {
-			continue
 		}
 		out = append(out, cand.log)
 	}
 	return out
 }
+
+// liveCandidateVisits counts cached candidates visited by the activity selection (tests).
+var liveCandidateVisits atomic.Int64
 
 // ObserveLive reads only bounded local log tails. It neither adds historical token counts nor
 // asks an account endpoint. Existing normal observations provide subscription references.

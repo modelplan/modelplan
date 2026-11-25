@@ -71,6 +71,11 @@ func (i *CodexRolloutIndex) clear(home string) {
 	if i == nil {
 		return
 	}
+	// The cached selection holds rollout paths and the own thread's: withdrawn with the root
+	// (macrev2-1261-2).
+	i.mu.Lock()
+	i.cache = rolloutSelection{}
+	i.mu.Unlock()
 	if home == "" {
 		home = CodexHome()
 	}

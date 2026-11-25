@@ -179,3 +179,59 @@ func BenchmarkIdleRolloutMinute(b *testing.B) {
 		})
 	}
 }
+
+// macrev2-1261-2: withdrawing Codex forgets the cached selection, its rollout paths and the own
+// thread's path, through the normal withdrawal path (RecentCodexRollouts under an admission that
+// no longer allows Codex) and through clear itself.
+func TestCodexWithdrawalForgetsSelection(t *testing.T) {
+	home := t.TempDir()
+	start := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	staticHistory(t, home, 3, 4, start.Add(-48*time.Hour))
+	fence := consent.Fence{StoreEpoch: "test", Generation: 1}
+	for _, how := range []string{"admission", "clear"} {
+		var index CodexRolloutIndex
+		if _, own := index.recent(home, "thread1-2", fence, start); own == "" {
+			t.Fatal("warm-up found no own thread")
+		}
+		if index.cache.gen == 0 || len(index.cache.files) == 0 {
+			t.Fatal("warm-up cached nothing")
+		}
+		switch how {
+		case "admission":
+			state := consent.Empty()
+			state.Tools["codex"] = consent.Record{Allowed: false, ConsentTextVersion: consent.TextVersion}
+			denied := consent.NewAdmission(state, consent.Automatic)
+			if denied.Allows("codex", consent.Local) {
+				t.Fatal("the test admission still allows Codex")
+			}
+			files, own := Paths{CodexHome: home, CodexThread: "thread1-2", CodexIndex: &index, Admission: &denied}.RecentCodexRollouts()
+			if len(files) != 0 || own != "" {
+				t.Fatalf("withdrawn Codex still selected %v %q", files, own)
+			}
+		case "clear":
+			index.clear(home)
+		}
+		if fmt.Sprint(index.cache) != fmt.Sprint(rolloutSelection{}) {
+			t.Fatalf("%s: withdrawn selection kept: %+v", how, index.cache)
+		}
+	}
+}
+
+// macrev2-1261-3: a sessions root that is a symlink is not listed by the spawn hook's lookup.
+func TestFindThreadSymlinkedRootListsNothing(t *testing.T) {
+	home, elsewhere := t.TempDir(), t.TempDir()
+	staticHistory(t, elsewhere, 2, 2, time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC))
+	if err := os.Symlink(filepath.Join(elsewhere, "sessions"), filepath.Join(home, "sessions")); err != nil {
+		t.Fatal(err)
+	}
+	before := idlework.Snapshot()
+	if CodexBackgroundThread(home, "thread1-1") {
+		t.Fatal("a thread behind a symlinked sessions root was accepted")
+	}
+	if got := findThread(filepath.Join(home, "sessions"), "thread1-1"); got != "" {
+		t.Fatalf("found %q through a symlinked root", got)
+	}
+	if n := idlework.Snapshot().Since(before).Entries; n != 0 {
+		t.Fatalf("listed %d entries through a symlinked sessions root", n)
+	}
+}
