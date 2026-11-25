@@ -18,6 +18,11 @@ import (
 func pendingCredentialRequests(t *testing.T, p *queryBinary) []wire.CredentialRequest {
 	t.Helper()
 	p.call("diagnostics/get", map[string]any{}) // a round trip collects what arrived before it
+	return credentialRequestsIn(p)
+}
+
+// credentialRequestsIn lists the credential requests among the notifications collected so far.
+func credentialRequestsIn(p *queryBinary) []wire.CredentialRequest {
 	var out []wire.CredentialRequest
 	for _, raw := range p.notifications {
 		var m struct {
@@ -61,7 +66,21 @@ func testGrantCredentialRead(t *testing.T, binary string) {
 }
 
 // startGrantCredentialRead gives a fresh home the Keychain grant and returns its interactive request.
+// The grant moves the consent fence while the subscribed session may be writing a private frame;
+// the server then ends that session cleanly (see callUnlessEnded). The grant's interactive read
+// belongs to the ended session, so the setup starts over in a new fresh home.
 func startGrantCredentialRead(t *testing.T, binary string) (*queryBinary, wire.CredentialRequest) {
+	t.Helper()
+	for attempt := 0; attempt < 3; attempt++ {
+		if p, request, ok := tryGrantCredentialRead(t, binary); ok {
+			return p, request
+		}
+	}
+	t.Fatal("the session ended cleanly on every grant attempt")
+	return nil, wire.CredentialRequest{}
+}
+
+func tryGrantCredentialRead(t *testing.T, binary string) (*queryBinary, wire.CredentialRequest, bool) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -84,18 +103,24 @@ func startGrantCredentialRead(t *testing.T, binary string) (*queryBinary, wire.C
 	if err := json.Unmarshal(p.call("consent/get", map[string]any{})["result"], &facts); err != nil {
 		t.Fatal(err)
 	}
-	grant := p.call("consent/grant", wire.ConsentGrantParams{RequestID: "overlap-grant", ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{consent.ScopeClaudeAccountUsageSavedLogin}, Deny: []string{}, Keychain: map[string]wire.KeychainChoice{consent.ScopeClaudeAccountUsageSavedLogin: wire.KeychainAllow}})
+	grant, open := p.callUnlessEnded("consent/grant", wire.ConsentGrantParams{RequestID: "overlap-grant", ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{consent.ScopeClaudeAccountUsageSavedLogin}, Deny: []string{}, Keychain: map[string]wire.KeychainChoice{consent.ScopeClaudeAccountUsageSavedLogin: wire.KeychainAllow}})
+	if !open {
+		return nil, wire.CredentialRequest{}, false
+	}
 	if grant["error"] != nil {
 		t.Fatalf("grant: %s", grant["error"])
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		requests := pendingCredentialRequests(t, p)
+		if _, open := p.callUnlessEnded("diagnostics/get", map[string]any{}); !open {
+			return nil, wire.CredentialRequest{}, false
+		}
+		requests := credentialRequestsIn(p)
 		if len(requests) > 0 {
 			if !requests[0].Interactive {
 				t.Fatalf("first request: %+v", requests[0])
 			}
-			return p, requests[0]
+			return p, requests[0], true
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("no interactive credential request")
