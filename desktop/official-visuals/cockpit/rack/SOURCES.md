@@ -1,11 +1,14 @@
 <!-- SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 -->
-# Menu-bar launch rack sources
+# Docking boom sources
 
-Copyright (c) 2026 ModelPlan. The owner chose launch rack style C (D160, night: graphite lattice, three telescoping sections widest at the top, an amber beacon at each collar) and its day variant option 1 (D172, warm pearl lattice, graphite collars, beacons unlit) on 2026-11-11/12, and accepted the rack demos v7 (D187) and v8 (D188) that draw these exact rasters. They are copied unchanged from the confirm-folder demo files `menubar-rack-v8-mast-night.png` and `menubar-rack-v8-mast-day.png` (byte-identical to v4-v7). They remain subject to the official visual license (`../../LICENSE.md`). The packaged app ships the official cockpit bundle (the normal build has the official appearance, owner 2026-11-01), so it carries this art; the community-edition page bundle for forks excludes it, as it excludes the other reserved cockpit art.
+Copyright (c) 2026 ModelPlan. The owner accepted the docking boom round 8 on 2026-11-25 (D447; one piece, no telescoping, D430; the clamp closes on a lug on the canopy frame, D439/D446). It replaces the three-section launch rack (D160/D172). The files are cut from the confirm-folder art `24-rack-launch-tower` (`v8-open.png`, `v8-closed.png`, `v6-1-lug.png`, generated on #1a1d22): the boom is cropped to the mount plate's edges and from the plate's top edge to the clamp's bottom, the closed pose without the illustrative lug bar, and the lug alone. They remain subject to the official visual license (`../../LICENSE.md`). The packaged app ships the official cockpit bundle (the normal build has the official appearance, owner 2026-11-01), so it carries this art; the community-edition page bundle for forks excludes it.
+
+Night art only: there is no day variant yet, and the day appearance uses the same files (acceptable for now, D447).
 
 | File | Pixels | SHA-256 |
 | --- | --- | --- |
-| assets/mast-day.png | 400x1500 | `2031d6fae086fa0a027384766a87359f3fc4e47563f5e8c8b0e755ba0422ff20` |
-| assets/mast-night.png | 400x1500 | `374b6b31e18045fb2550cc2cb47ad897c3317787b0293ff42dde384fe410cafc` |
+| assets/boom-closed.png | 314x708 | `3c7fa5499643328b469effb7b29625250d7cc64d8bb86d77fa769b2bf8b3ae3d` |
+| assets/boom-open.png | 314x708 | `e41f889917b870524f6d37b6c4730f11372d5da7497a06206d103588d031df4e` |
+| assets/lug.png | 433x218 | `b4d682c0c99a95d4daed8ad3ced232e517043a71535d5bbbe9ad133d7cc290ec` |
 
-The native app draws them at 10 px per point (40 x 150 pt). Measured rows (px, top down) used for the telescoping sections: night cap 15, collar 1 bottom 702, collar 2 bottom 1119, foot 1480, beacons 688 and 1107; day cap 21, 698, 1115, 1476, beacons 685 and 1104.
+The native app draws the boom as wide as the widest status-item width of the session (24-96 pt) and scales its height from the art. Anchor points (fractions of the cut art) are `CockpitDockingBoom.metrics` in `CockpitLaunchRack.swift`.

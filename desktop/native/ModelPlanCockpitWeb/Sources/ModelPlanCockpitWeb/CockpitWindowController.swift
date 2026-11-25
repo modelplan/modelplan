@@ -218,6 +218,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// CKP-SHELL-33: the launch rack under the attached cockpit, and its motion (see the Launch rack section).
   private lazy var rack = CockpitLaunchRack(art: CockpitRackArt.load(bundle))
   private var rackExtension: CGFloat = 0, rackTarget: CGFloat = 0
+  /// D439/D446: the boom's clamp, 0 open ... 1 closed on the lug. It closes once the boom is down and the cockpit is home.
+  private var clampClosure: CGFloat = 0
   private var rackPace: TimeInterval = CockpitLaunchRackTiming.fullTravel
   private var rackTimer: Timer?
   private var rackClock: TimeInterval = 0
@@ -674,6 +676,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationRackDrawn: (() -> Void)?
     /// The rack clipping rectangle in its flipped view coordinates.
     public var verificationRackMask: CGRect? { (rack.panel?.contentView as? CockpitRackView)?.maskedOut }
+    /// D430/D439/D447: the docking boom's pose as last drawn (nil while it is not on screen) and its clamp target.
+    public var verificationBoom: (pose: CockpitDockingBoom.Pose?, clampTarget: CGFloat) { (rack.pose, clampTarget()) }
     /// Every ignition change sent to the page, in order.
     public var verificationIgnition: ((Bool) -> Void)?
     /// The cockpit's put-back motion reached home; carries the rack's extension (0-1) at that exact moment, observed
@@ -1842,7 +1846,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   func rackIcon() -> CGRect? {
     guard let (_, usable, icon) = attachedFit(), icon.width > 0, icon.height > 0,
           [icon.minX, icon.minY, icon.width, icon.height].allSatisfy(\.isFinite) else { return nil }
-    if let requested = anchor() { return icon == requested ? icon : nil }
+    if let requested = anchor() {
+      // D447: only the real status item's width counts toward the boom's widest width.
+      if icon == requested { CockpitLaunchRack.statusWidths.observe(icon.width) }
+      return icon == requested ? icon : nil
+    }
     guard let screen = screens().first(where: { $0.visibleFrame == usable }),
           icon == CockpitShellLayout.menuBarEdgeAnchor(screen: screen) else { return nil }
     return icon
@@ -2020,7 +2028,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     ignite(true)
     retractRack()
     runMotion(CockpitLaunchRackTiming.keyDetachBurn, step: { [weak self] t in
-      let e = CockpitRackMast.easeInOut(t)
+      let e = CockpitDockingBoom.easeInOut(t)
       self?.window?.setFrame(Self.lerp(start, plan.frame, e), display: true)
     }, done: { [weak self] in
       guard let self else { return }
@@ -2427,6 +2435,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   private func startRackTimer() {
     refreshRack()
+    ensureRackTimer()
+  }
+  /// The 60 Hz driver runs only while the boom slides, its clamp moves or a motion runs; nothing animates at rest.
+  private func ensureRackTimer() {
     guard rackTimer == nil else { return }
     rackClock = CACurrentMediaTime()
     let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.rackTick() } }
@@ -2440,6 +2452,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let step = CGFloat(dt / rackPace)
       rackExtension = rackExtension < rackTarget ? min(rackTarget, rackExtension + step) : max(rackTarget, rackExtension - step)
     }
+    clampClosure = Self.advanceClamp(clampClosure, toward: clampTarget(), by: dt, reduceMotion: appearance.reduceMotion)
     if let current = motion {
       let t = CGFloat(min(1, (now - current.start) / current.duration))
       current.step(t)
@@ -2450,8 +2463,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let waiters = rackSettledWaiters; rackSettledWaiters = []
       waiters.forEach { $0() }
     }
-    if motion == nil, rackExtension == rackTarget, rackSettledWaiters.isEmpty { rackTimer?.invalidate(); rackTimer = nil }
+    if motion == nil, rackExtension == rackTarget, rackSettledWaiters.isEmpty, clampClosure == clampTarget() {
+      rackTimer?.invalidate(); rackTimer = nil
+    }
   }
+  /// The clamp moves at its own pace (`CockpitDockingBoom.clampTravel`), at once under Reduce Motion.
+  nonisolated static func advanceClamp(_ closure: CGFloat, toward target: CGFloat, by dt: TimeInterval, reduceMotion: Bool) -> CGFloat {
+    if reduceMotion { return target }
+    let step = CGFloat(max(0, dt) / CockpitDockingBoom.clampTravel)
+    return closure < target ? min(target, closure + step) : max(target, closure - step)
+  }
+  /// The attached cockpit is at rest in its home place (not detached, not entering, flying or moving).
+  private var cockpitHome: Bool { window != nil && shown && !shellSession.detached && !entering && !flying && motion == nil }
+  private func clampTarget() -> CGFloat { CockpitDockingBoom.clampTarget(slide: rackExtension, cockpitHome: cockpitHome) }
   private func extendRack() {
     guard rackIcon() != nil else { rackTarget = 0; return }
     rackPace = CockpitLaunchRackTiming.fullTravel; rackTarget = 1
@@ -2494,7 +2518,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     refreshRack()
   }
   private func stopRack() {
-    motion = nil; rackSettledWaiters = []; flying = false
+    motion = nil; rackSettledWaiters = []; flying = false; clampClosure = 0
     rackTimer?.invalidate(); rackTimer = nil
     ignite(false)
     rack.close()
@@ -2510,8 +2534,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       hidden = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: max(0, frame.height - drop))
     }
     // A prewarmed (never shown) page has no rack on screen.
-    rack.update(icon: rackExtension > 0 && shown ? rackIcon() : nil, cockpit: window, hidden: hidden, extended: rackExtension,
-                moving: rackExtension != rackTarget || motion != nil)
+    // The canopy line the clamp meets: the attached frame's shoulder, known while the cockpit is home or the rack hides
+    // in it (an open or close); otherwise the rack keeps the last one.
+    let line = (cockpitHome || rackHidesInHome) ? hidden.map(\.maxY) : nil
+    let home = cockpitHome
+    if appearance.reduceMotion { clampClosure = clampTarget() }
+    // The clamp closes once the cockpit is home and opens as soon as it leaves; the driver runs only for that travel.
+    if clampClosure != clampTarget() { ensureRackTimer() }
+    // The lug is part of the canopy frame: drawn at the attach point only while the cockpit is attached at home.
+    rack.update(icon: (rackExtension > 0 || clampClosure > 0) && shown ? rackIcon() : nil, cockpit: window, hidden: hidden, line: line,
+                slide: rackExtension, closure: clampClosure, lugShown: home)
     #if MODELPLAN_TEST_ONLY_SPI
     verificationRackDrawn?()
     #endif

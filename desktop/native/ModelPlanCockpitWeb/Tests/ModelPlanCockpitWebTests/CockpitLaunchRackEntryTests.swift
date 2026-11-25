@@ -92,6 +92,43 @@ import XCTest
     XCTAssertEqual(failures, [])
   }
 
+  /// D430/D439/D446/D447 normal entry: the icon open slides the one-piece boom down with its clamp open; once the cockpit
+  /// is home the clamp closes on the lug (drawn only while attached), then nothing redraws at rest. The strip key's
+  /// detach opens the clamp and the lug goes with the cockpit.
+  func testIconOpenClosesTheClampOnTheLugAndDetachOpensIt() async throws {
+    let fixture = try make()
+    defer { fixture.page.discard() }
+    let window = try open(fixture)
+    var sawOpenWhileSliding = false
+    fixture.page.verificationRackDrawn = {
+      let boom = fixture.page.verificationBoom
+      if fixture.page.verificationRack.ext < 1, let pose = boom.pose, pose.closure == 0 { sawOpenWhileSliding = true }
+    }
+    try await until("the attached entrance is settled with the clamp closed") {
+      window.alphaValue == 1 && fixture.page.verificationRack.ext == 1 && fixture.page.verificationBoom.pose?.closure == 1
+    }
+    XCTAssertTrue(sawOpenWhileSliding, "the clamp is open while the boom slides")
+    let pose = try XCTUnwrap(fixture.page.verificationBoom.pose)
+    XCTAssertNotNil(pose.lug, "the lug is on the canopy while attached")
+    XCTAssertEqual(fixture.page.verificationBoom.clampTarget, 1)
+    let panel = try XCTUnwrap(fixture.page.verificationRack.panel)
+    XCTAssertEqual(panel.width, CockpitLaunchRack.statusWidths.width, "the boom is the widest status width seen")
+    XCTAssertGreaterThanOrEqual(CockpitLaunchRack.statusWidths.widest, fixture.icon.width)
+    var redraws = 0
+    fixture.page.verificationRackDrawn = { redraws += 1 }
+    try await wait(250)
+    XCTAssertEqual(redraws, 0, "nothing animates at rest")
+    fixture.page.setAttached(false)
+    try await wait(40)
+    XCTAssertEqual(fixture.page.verificationBoom.clampTarget, 0, "detaching: the clamp opens")
+    if let opening = fixture.page.verificationBoom.pose {
+      XCTAssertLessThan(opening.closure, 1)
+      XCTAssertNil(opening.lug, "the lug leaves with the cockpit")
+    }
+    fixture.page.verificationRackDrawn = nil
+    XCTAssertEqual(failures, [])
+  }
+
   /// Owner 11-18: with the shutter closed, the rack must not show below the closed cockpit's top edge at any frame of the
   /// open (it used to hang 27-32 pt into empty space from ~83 ms until the cockpit covered it at ~364 ms).
   func testClosedShutterIconOpenNeverShowsRackBelowTheClosedTopEdge() async throws {

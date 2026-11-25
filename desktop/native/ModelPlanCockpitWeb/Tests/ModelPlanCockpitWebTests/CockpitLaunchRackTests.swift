@@ -3,7 +3,7 @@ import XCTest
 @testable import ModelPlanCockpitWeb
 
 /// CKP-SHELL-33 logic (owner D158, D175, D178, D181, D186-D188): the attached place under the icon, the key-detach
-/// landing rule on the accepted demo's three screens (menubar-rack-v8.html), the rack's telescoping and the open order.
+/// landing rule on the accepted demo's three screens (menubar-rack-v8.html), the one-piece docking boom and the open order.
 /// Pure geometry; no window.
 final class CockpitLaunchRackTests: XCTestCase {
   // The demo's cockpit art: 480 pt wide, tall 693 pt (shoulder 40 pt), short 489 pt (shoulder 16 pt), 10 pt under the bar.
@@ -120,35 +120,98 @@ final class CockpitLaunchRackTests: XCTestCase {
     XCTAssertEqual(edge.frame.maxX, 1728)
   }
 
-  /// The rack telescopes from the icon: nothing below the bar when in, the top section (the part visible in the gap and at
-  /// the shoulder) fully out at one third, all three sections out at one.
-  func testTheRackTelescopesTopSectionFirst() {
-    for mast in [CockpitRackMast.night, .day] {
-      let folded = mast.geometry(at: 0)
-      XCTAssertTrue(folded.sections.allSatisfy { $0.bottom - $0.top <= 0.001 }, "retracted into the icon")
-      let third = mast.geometry(at: 1.0 / 3)
-      XCTAssertEqual(third.sections[0].top, 0, accuracy: 0.001)
-      XCTAssertEqual(third.sections[0].bottom, (mast.collar1 - mast.cap) * 0.1, accuracy: 0.001, "the top section is out")
-      XCTAssertEqual(third.sections[1].bottom - third.sections[1].top, 0, accuracy: 0.001, "the hidden sections are still in")
-      XCTAssertEqual(third.sections[2].bottom - third.sections[2].top, 0, accuracy: 0.001)
-      let out = mast.geometry(at: 1)
-      XCTAssertEqual(out.sections[2].bottom, (mast.foot - mast.cap) * 0.1, accuracy: 0.001, "fully out")
-      XCTAssertLessThanOrEqual(out.sections[2].bottom, CockpitRackMast.length)
-      XCTAssertTrue(out.beacons.allSatisfy { $0.out })
-    }
+  /// D447 (owner, 11-25): the boom is as wide as the status item's WIDEST occupied width this session, bounded 24-96 pt.
+  /// The item changes width with its text; the boom never shrinks below the widest width seen.
+  func testBoomWidthIsTheWidestStatusWidthClamped() {
+    var tracker = CockpitDockingBoom.WidthTracker()
+    XCTAssertEqual(tracker.width, 40, "nominal width before any status item was measured")
+    tracker.observe(30); XCTAssertEqual(tracker.width, 30)
+    tracker.observe(58); XCTAssertEqual(tracker.width, 58, "a wider item widens the boom")
+    tracker.observe(22); XCTAssertEqual(tracker.width, 58, "a narrower item never shrinks it")
+    tracker.observe(.nan); tracker.observe(-5); tracker.observe(.infinity); XCTAssertEqual(tracker.width, 58, "invalid widths are ignored")
+    tracker.observe(140); XCTAssertEqual(tracker.width, 96, "bounded at 96 pt")
+    var narrow = CockpitDockingBoom.WidthTracker()
+    narrow.observe(8); XCTAssertEqual(narrow.width, 24, "bounded at 24 pt")
+    XCTAssertEqual(narrow.widest, 8)
   }
 
-  @MainActor func testRackWidthTracksTheStatusItemWithinBounds() {
+  @MainActor func testBoomPanelIsCentredUnderTheIconAtTheGivenWidth() {
     for (slot, expected) in [(CGFloat(8), CGFloat(24)), (28, 28), (40, 40), (72, 72), (140, 96)] {
       let icon = CGRect(x: 900, y: 1080, width: slot, height: 37)
       let frame = CockpitLaunchRack.frame(icon: icon)
       XCTAssertEqual(frame.width, expected)
-      XCTAssertEqual(frame.midX, icon.midX, accuracy: 0.5, "the rack stays centred under the item")
+      XCTAssertEqual(frame.midX, icon.midX, accuracy: 0.5, "the boom stays centred under the item")
       XCTAssertEqual(frame.maxY, icon.minY)
-      XCTAssertEqual(frame.height, CockpitRackMast.length)
+      XCTAssertEqual(frame.height, CockpitDockingBoom.length)
+      let widest = CockpitLaunchRack.frame(icon: icon, width: 64)
+      XCTAssertEqual(widest.width, 64, "the session's widest width wins over the current slot")
+      XCTAssertEqual(widest.midX, icon.midX, accuracy: 0.5)
     }
-    XCTAssertEqual(CockpitRackMast.width(for: 0), 40, "invalid slot size uses the nominal art width")
-    XCTAssertEqual(CockpitRackMast.width(for: .nan), 40)
+    XCTAssertEqual(CockpitDockingBoom.width(for: 0), 40, "invalid slot size uses the nominal width")
+    XCTAssertEqual(CockpitDockingBoom.width(for: .nan), 40)
+  }
+
+  /// D430: one piece. The slide only moves the boom; its size never changes (no telescoping), and it goes from fully
+  /// tucked behind the menu bar to its rest place, monotonically. Decision C (11-25): at rest the clamp's grip sits on
+  /// the lug's pin above the canopy line and the upper part (mount plate included) stays behind the menu bar.
+  func testTheBoomSlidesAsOnePieceWithoutTelescoping() throws {
+    let m = CockpitDockingBoom.metrics
+    for width in [CGFloat(24), 40, 58, 96] {
+      for line in [CGFloat(10), 35] {
+        let h = width * m.aspect
+        var lastTop = -CGFloat.infinity
+        for step in 0...40 {
+          let slide = CGFloat(step) / 40
+          let pose = CockpitDockingBoom.pose(width: width, line: line, slide: slide, closure: 0, lugShown: false)
+          XCTAssertEqual(pose.boom.width, width, accuracy: 1e-9, "never narrower or wider")
+          XCTAssertEqual(pose.boom.height, h, accuracy: 1e-9, "never shorter: one rigid piece, no telescoping")
+          XCTAssertEqual(pose.boom.minX, 0)
+          XCTAssertGreaterThanOrEqual(pose.boom.minY, lastTop - 1e-9, "only moves down while it slides out")
+          lastTop = pose.boom.minY
+        }
+        let tucked = CockpitDockingBoom.pose(width: width, line: line, slide: 0, closure: 0, lugShown: false)
+        XCTAssertEqual(tucked.boom.maxY, 0, accuracy: 1e-9, "slide 0: entirely behind the menu bar")
+        let rest = CockpitDockingBoom.pose(width: width, line: line, slide: 1, closure: 1, lugShown: true)
+        let lug = try XCTUnwrap(rest.lug)
+        XCTAssertEqual(lug.maxY, line, accuracy: 1e-9, "the lug's base sits on the canopy line")
+        let grip = CGPoint(x: rest.boom.minX + width * m.gripX, y: rest.boom.minY + h * m.gripY)
+        let pin = CGPoint(x: lug.minX + lug.width * m.lugPinTip, y: lug.minY + lug.height * m.lugPinY)
+        XCTAssertEqual(grip.x, pin.x, accuracy: 1e-9, "the pin's tip is in the clamp")
+        XCTAssertEqual(grip.y, pin.y, accuracy: 1e-9, "closed and settled: the grip is on the pin")
+        XCTAssertLessThan(rest.boom.minY, 0, "the mount plate stays tucked behind the menu bar (gap unchanged)")
+        XCTAssertLessThanOrEqual(rest.boom.maxY, line + 1e-9, "the clamp never hangs below the canopy line")
+        XCTAssertGreaterThanOrEqual(lug.minX, 0); XCTAssertLessThanOrEqual(lug.maxX, width, "the lug fits the panel")
+      }
+    }
+    let closedShutter = CockpitDockingBoom.pose(width: 40, line: 10, slide: 1, closure: 1, lugShown: true)
+    let clampTop = closedShutter.boom.minY + closedShutter.boom.height * m.clampTop
+    XCTAssertLessThan(clampTop, 0.5, "shutter closed: only the clamp shows below the menu bar")
+  }
+
+  /// D439/D446: the clamp is open while the boom slides and while the cockpit is away, closes once the boom is down and
+  /// the cockpit is home, and opens first on the way back. The settle is a small dip that is gone at either end.
+  func testTheClampOpensAndClosesAtTheRightPhases() {
+    XCTAssertEqual(CockpitDockingBoom.clampTarget(slide: 0, cockpitHome: false), 0)
+    XCTAssertEqual(CockpitDockingBoom.clampTarget(slide: 0.6, cockpitHome: true), 0, "still sliding: open")
+    XCTAssertEqual(CockpitDockingBoom.clampTarget(slide: 1, cockpitHome: false), 0, "down but the cockpit has not arrived: open")
+    XCTAssertEqual(CockpitDockingBoom.clampTarget(slide: 1, cockpitHome: true), 1, "down and home: closes on the lug")
+    XCTAssertEqual(CockpitDockingBoom.clampPhase(closure: 0, target: 0), .open)
+    XCTAssertEqual(CockpitDockingBoom.clampPhase(closure: 0.3, target: 1), .closing)
+    XCTAssertEqual(CockpitDockingBoom.clampPhase(closure: 1, target: 1), .closed)
+    XCTAssertEqual(CockpitDockingBoom.clampPhase(closure: 0.7, target: 0), .opening)
+    // The driver: closes over `clampTravel`, opens the same way, at once under Reduce Motion.
+    var c: CGFloat = 0, elapsed: TimeInterval = 0
+    while c < 1 { c = CockpitWindowController.advanceClamp(c, toward: 1, by: 1.0 / 60, reduceMotion: false); elapsed += 1.0 / 60 }
+    XCTAssertEqual(elapsed, CockpitDockingBoom.clampTravel, accuracy: 1.0 / 60)
+    XCTAssertEqual(CockpitWindowController.advanceClamp(1, toward: 0, by: 1.0 / 60, reduceMotion: true), 0)
+    XCTAssertEqual(CockpitWindowController.advanceClamp(1, toward: 1, by: 1, reduceMotion: false), 1, "at rest nothing moves")
+    let open = CockpitDockingBoom.pose(width: 40, line: 35, slide: 1, closure: 0, lugShown: true)
+    let mid = CockpitDockingBoom.pose(width: 40, line: 35, slide: 1, closure: 0.5, lugShown: true)
+    let closed = CockpitDockingBoom.pose(width: 40, line: 35, slide: 1, closure: 1, lugShown: true)
+    XCTAssertEqual(open.boom.minY, closed.boom.minY, accuracy: 1e-9, "the settle leaves no offset at rest")
+    XCTAssertEqual(mid.boom.minY - open.boom.minY, 40 * CockpitDockingBoom.settleDepth, accuracy: 1e-9, "a small dip")
+    XCTAssertLessThanOrEqual(mid.boom.minY - open.boom.minY, 1.5)
+    XCTAssertNil(CockpitDockingBoom.pose(width: 40, line: 35, slide: 1, closure: 0, lugShown: false).lug, "no lug unless attached")
   }
 
   /// D186/D188: the visible rack first (0.25 s), then the cockpit (0.25 s); only an attached open from a real icon, with motion.
