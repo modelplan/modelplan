@@ -14,7 +14,7 @@ import {HOUR,WEEK_DAYS,addDays,dayOffset,dayPieces,dayWindow,hhmm,hourMarks,isWe
 
 // Every word the calendar draws comes from the plugin string table (strings/plugins.js, `plugin.cal*`), in the locale
 // of the draw context; nothing here picks a language's text inline.
-const WORDS=['now','allDay','peak','cont','r5','week5','weekly','weeklyLong','wk','cards','credit','direct','until','announced','confirmed','effective','empty','waiting','zoomed','tentative','announcedOn','winWeek','win5'] as const;
+const WORDS=['now','allDay','peak','cont','r5','week5','weekly','weeklyLong','wk','cards','cardsFull','credit','direct','until','announced','confirmed','effective','empty','waiting','zoomed','tentative','announcedOn','winWeek','win5'] as const;
 type Words={readonly [k in typeof WORDS[number]]:string}&{readonly days:readonly string[];readonly weekdays:readonly string[];readonly narrow:readonly string[]};
 function wordsOf(context:PluginContext):Words {
  const word=(key:string)=>context.words('plugin.'+key).full,out:Record<string,unknown>={};
@@ -44,8 +44,9 @@ function spanText(data:CalendarData,s:CalendarSpan,w:Words,zh:boolean,full=false
  const sub=data.subs[s.sub]!,name=full?(zh?sub.name.zh:sub.name.en):shortName(zh?sub.name.zh:sub.name.en);
  if(s.kind==='cards'){const n=s.count&&s.count>1?` ×${s.count}`:'';
   // No expiry known (a partial list, or none given): no date, never an epoch (macrevc-844-6).
-  if(s.to===null)return `${name} ${w.cards}${n}`;
-  return zh?`${name} ${w.cards}${n} ${w.until}${monthDay(s.to!)}`:`${name} ${w.cards}${n} · ${w.until} ${monthDay(s.to!)}`;}
+  const cards=full?w.cardsFull:w.cards;// the tooltip form carries the full wording
+  if(s.to===null)return `${name} ${cards}${n}`;
+  return zh?`${name} ${cards}${n} ${w.until}${monthDay(s.to!)}`:`${name} ${cards}${n} · ${w.until} ${monthDay(s.to!)}`;}
  if(s.kind==='credit'||s.kind==='creditConfirmed')return `${name} +1 ${w.credit}`;
  const what=s.kind==='confirmed'?w.confirmed:w.announced;
  if(s.to===null)return `${name} ${what}`;
@@ -64,11 +65,11 @@ function paintStrip(context:PluginDrawContext,reading:CalendarData) {
  if(!now){panel.dataset.view='waiting';panel.replaceChildren(el('p','cal-empty',w.waiting));return;}
  panel.dataset.view='now';
  const data=reading,span=stripWindow(now);
- // All-day: at most one line (reset cards, announced resets); the rest is a "+N" on it.
+ // All-day: at most one line (banked resets, announced resets); the rest is a "+N" on it.
  const allDay=el('div','cal-ad'),rows=data.spans.filter(x=>x.from<span.to&&(x.to===null||x.to>=span.from));
  allDay.append(el('span','cal-adl',w.allDay));
  if(rows.length){
-  const x=rows[0]!,sub=data.subs[x.sub]!,row=el('div','cal-adr '+(x.kind==='cards'?'bar':'line'));row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);
+  const x=rows[0]!,sub=data.subs[x.sub]!,row=el('div','cal-adr '+(x.kind==='cards'?'bar':'line'));row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true)+(rows.length>1?` +${rows.length-1}`:'');
   row.append(el('span','',spanText(data,x,w,zh)+(rows.length>1?` +${rows.length-1}`:'')));allDay.append(row);
  }else allDay.classList.add('none');
  // The axis: linear in real time over the 12 hours from now.
@@ -193,7 +194,7 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
    place(row,a,b-a+1);row.append(el('span','',narrow?`${nameOf(data,x.sub,zh)} ${w.cards}`:zh?`${sub.name.zh} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to)}`:`${sub.name.en} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to)}`));
    allDay.append(row);rowsUsed++;
   }else{
-   // Reset notices are chips on their day: +1 for a reset card, ↻ for a direct reset (dashed until the vendor reports it done).
+   // Reset notices are chips on their day: +1 for a banked reset, ↻ for a direct reset (dashed until the vendor reports it done).
    // With no stated time the day is the one it was published; one from before the first column is not drawn here (the
    // website's board does the same for a past week; its "latest resets" strip is this calendar's all-day line in the 12 h column).
    const stamp=x.to??x.from,day=dayOffset(now,stamp);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Calendar plugin data (CKP-PLG-06/07): the object that crosses the plugin seam, its strict bounded parser, and the
 // host-side shaping from what the cockpit already receives. Nothing here fetches: peaks are the publication's peak
-// windows (cockpitPeaksV1, #739), announced resets are the publication's reset events, reset cards and the user's own
+// windows (cockpitPeaksV1, #739), announced resets are the publication's reset events, banked resets and the user's own
 // 5 h / weekly resets come from the local quota readings, all inside the `display` data the native host already sends.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
@@ -14,8 +14,8 @@ export interface CalendarSub {readonly abbr:string;readonly colour:string;readon
 export interface CalendarPeak {readonly sub:number;readonly from:number;readonly to:number|null;readonly tentative:boolean}
 /** One of the user's own quota resets. */
 export interface CalendarReset {readonly sub:number;readonly at:number;readonly kind:'5h'|'week'}
-/** An all-day item: reset cards usable until `to`, a reset announced at `from` taking effect at `to` (null: no time; it
- *  then sits on the day it was published, as the website's week board does), or `credit`: a reset card handed out,
+/** An all-day item: banked resets usable until `to`, a reset announced at `from` taking effect at `to` (null: no time; it
+ *  then sits on the day it was published, as the website's week board does), or `credit`: a banked reset handed out,
  *  placed at `from` (its stated effect time, else its publication) with `to` set only when the source states a time. */
 export interface CalendarSpan {readonly sub:number;readonly kind:'cards'|'credit'|'creditConfirmed'|'announced'|'confirmed';readonly from:number;readonly to:number|null;readonly count:number|null}
 /** Whether the user has peak rules: `no` is known (the publication's feed is present and the user has no declared plan),
@@ -84,10 +84,11 @@ const ms=(v:string|null|undefined)=>{const t=v?Date.parse(v):NaN;return Number.i
 function effectiveAt(schedule:{from:string;through:string;precision:string}|undefined):number|null {
  if(!schedule)return null;const from=ms(schedule.from),through=ms(schedule.through);if(from===null)return null;
  if(schedule.precision==='date'){const d=new Date(from);return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();}
- const mid=through===null?from:(from+through)/2;return Math.floor(mid/1_800_000)*1_800_000;
+ const mid=through===null?from:(from+through)/2;// Floor on the local day's own half-hour grid (a zone like Kathmandu, UTC+5:45, has no UTC-aligned half hours).
+ const d=new Date(mid),day0=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();return day0+Math.floor((mid-day0)/1_800_000)*1_800_000;
 }
 /** Shape the calendar from the cockpit display data at `now`. Only the user's own subscriptions (the engine's members)
- *  appear; a peak, reset event or reset card of a row the user does not have is left out. */
+ *  appear; a peak, reset event or banked reset of a row the user does not have is left out. */
 export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarData {
  const members=cockpitMembers(data).slice(0,LIMITS.subs);
  const colours=memberColours(members);
@@ -131,7 +132,7 @@ export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarDat
   const sub=subOfRow(e.rowId),published=ms(e.publishedAt),expires=ms(e.expiresAt);
   if(sub===null||published===null||expires===null||expires<=now)continue;
   const at=effectiveAt(e.schedule);
-  // A reset card (+1) is placed where the website puts it: the stated time, else the day it was published.
+  // A banked reset (+1) is placed where the website puts it: the stated time, else the day it was published.
   if(e.kind==='reset_credit'){spans.push({sub,kind:e.status==='confirmed'?'creditConfirmed':'credit',from:at??published,to:at,count:1});continue;}
   spans.push({sub,kind:e.status==='confirmed'?'confirmed':'announced',from:Math.min(published,now),to:at!==null&&at>=Math.min(published,now)?at:null,count:null});
  }

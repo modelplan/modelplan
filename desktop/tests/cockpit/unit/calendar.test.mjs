@@ -158,7 +158,7 @@ function display() {
  return {data,ref};
 }
 
-test('shaping from the display data: own subscriptions only, peaks, own 5 h and weekly resets, reset cards, announced resets',()=>{
+test('shaping from the display data: own subscriptions only, peaks, own 5 h and weekly resets, banked resets, announced resets',()=>{
  const {data,ref}=display();
  data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
  const cal=calendarFromCockpit(data,NOW);
@@ -302,7 +302,7 @@ test('D406: reset-card notices with no stated time sit on the day they were publ
  assert.deepEqual(at,[['credit',NOW,null,1],['credit',local(2026,11,14,8),local(2026,11,14,8),1],['announced',NOW,null,null]]);
 });
 
-test('D406 review: a point deadline before local midnight stays on its day; a confirmed reset card keeps its status',()=>{
+test('D406 review: a point deadline before local midnight stays on its day; a confirmed banked reset keeps its status',()=>{
  const {data,ref}=display();
  data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
  const iso=t=>new Date(t).toISOString();
@@ -313,4 +313,16 @@ test('D406 review: a point deadline before local midnight stays on its day; a co
  assert.equal(new Date(credit[0].to).getDate(),14,'23:50 is still the 14th');
  assert.deepEqual(credit.map(x=>x.kind),['credit','creditConfirmed']);
  assert.ok(parseCalendarData(cal));
+});
+
+test('D406 round 2: the half-hour floor is local: 00:05 in Asia/Kathmandu stays on its own day',()=>{
+ const keep=process.env.TZ;process.env.TZ='Asia/Kathmandu';
+ try{
+  const {data,ref}=display();data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
+  const at=Date.UTC(2026,10,25,18,20);// 2026-11-26 00:05 in Kathmandu
+  const iso=t=>new Date(t).toISOString();
+  data.details.resetEvents=[{version:1,id:'k',rowId:'codex',provider:'openai',kind:'reset_credit',status:'announced',publishedAt:iso(at-3600e3),expiresAt:iso(at+9*86400e3),schedule:{from:iso(at),through:iso(at),precision:'exact'},source:{kind:'publication',publicationId:'p'}}];
+  const span=calendarFromCockpit(data,at-7200e3).spans.find(x=>x.kind==='credit');
+  assert.equal(new Date(span.to).getDate(),26);assert.equal(new Date(span.to).getHours(),0);
+ }finally{process.env.TZ=keep;}
 });
