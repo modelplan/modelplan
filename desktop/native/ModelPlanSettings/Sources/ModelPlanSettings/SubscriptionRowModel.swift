@@ -106,10 +106,12 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             return (entry.reason, true)
         }
         if tool.promptsKeychain {
-            return (SettingsText("A Keychain prompt will appear once; choose Always Allow.", "会弹出一次钥匙串授权，请选“始终允许”。"), false)
+            return (keychainPromptLine, false)
         }
         return (SettingsText("Ready: nothing else is needed.", "已就绪，无需其他操作。"), false)
     }
+
+    public static let keychainPromptLine = SettingsText("A Keychain prompt will appear once; choose Always Allow.", "会弹出一次钥匙串授权，请选“始终允许”。")
 
     /// Merge the engine's consent facts, row status, cause code and visibility into one row per subscription.
     /// - subscriptions/orderedIDs: the shared order (hidden ones keep their place);

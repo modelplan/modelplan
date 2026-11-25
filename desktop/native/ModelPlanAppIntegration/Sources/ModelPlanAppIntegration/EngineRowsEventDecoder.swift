@@ -19,7 +19,7 @@ public struct EngineResetEvent:Equatable,Sendable {
     public let sourceLinks: [EngineResetSourceLink]
     public let scheduledFrom: Date?, scheduledThrough: Date?
     public let schedulePrecision: String?
-    /// D166: "reset_credit" (extra resets issued) or "direct_reset" (an older producer sends no kind).
+    /// D166: "reset_credit" (banked resets issued) or "direct_reset" (an older producer sends no kind).
     public let kind: String
     /// Confirmed events: when it was confirmed; nil from an older producer (then publishedAt stands in).
     public let confirmedAt: Date?

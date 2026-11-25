@@ -542,3 +542,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .mfd-screen .pl-screen[data-plugin="resources"]{padding:0;gap:0}
 /* The Calendar and Resources keys are pressed while their screen is open, and press like every key. */
 .ck-eng .eng-keys .pl-key:active{transform:translateY(1px);box-shadow:var(--pressed)}
+.cal-wk .wk-adr.chip{height:13px;overflow:hidden}
+.cal-wk .wk-adr.chip span{line-height:11px;margin:0 1px;padding:0 3px;text-align:center;border-radius:5px;border:1px solid var(--c);background:color-mix(in srgb,var(--c) 22%,transparent);color:var(--c)}
+.cal-wk .wk-adr.chip.credit span{background:color-mix(in srgb,var(--c) 90%,transparent);color:#1a0d07}
+.cal-wk .wk-adr.chip.pending span{border-style:dashed;background:transparent;color:var(--c)}
