@@ -146,7 +146,7 @@ test('chartData: memory 10-minute used/cached fractions, pressure strip, CPU 10-
  // CPU: one bar per 10 s (mean of the samples inside it), user and system stacked, at most 60 bars.
  assert.equal(d.cpu.length,60);
  for(const b of d.cpu){assert.ok(b.user>=0&&b.system>=0&&b.user+b.system<=100.0001);}
- assert.equal(d.cpuLine,80);assert.equal(d.diskNotch,90);
+ assert.equal(d.cpuLine,80);assert.equal('diskNotch' in d,false);
  assert.ok(Math.abs(d.disk-(494-120)/494*100)<1e-6);
- assert.deepEqual(chartData([]),{memory:[],strip:[],cpu:[],disk:0,cpuLine:80,diskNotch:90});
+ assert.deepEqual(chartData([]),{memory:[],strip:[],cpu:[],disk:0,cpuLine:80});
 });
