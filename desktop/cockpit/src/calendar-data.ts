@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Calendar plugin data (CKP-PLG-06/07): the object that crosses the plugin seam, its strict bounded parser, and the
 // host-side shaping from what the cockpit already receives. Nothing here fetches: peaks are the publication's peak
-// windows (cockpitPeaksV1, #739), announced resets are the publication's reset events, reset cards and the user's own
+// windows (cockpitPeaksV1, #739), announced resets are the publication's reset events, banked resets and the user's own
 // 5 h / weekly resets come from the local quota readings, all inside the `display` data the native host already sends.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
@@ -14,8 +14,10 @@ export interface CalendarSub {readonly abbr:string;readonly colour:string;readon
 export interface CalendarPeak {readonly sub:number;readonly from:number;readonly to:number|null;readonly tentative:boolean}
 /** One of the user's own quota resets. */
 export interface CalendarReset {readonly sub:number;readonly at:number;readonly kind:'5h'|'week'}
-/** An all-day item: reset cards usable until `to`, or a reset announced at `from` taking effect at `to` (null: no time). */
-export interface CalendarSpan {readonly sub:number;readonly kind:'cards'|'announced'|'confirmed';readonly from:number;readonly to:number|null;readonly count:number|null}
+/** An all-day item: banked resets usable until `to`, a reset announced at `from` taking effect at `to` (null: no time; it
+ *  then sits on the day it was published, as the website's week board does), or `credit`: a banked reset handed out,
+ *  placed at `from` (its stated effect time, else its publication) with `to` set only when the source states a time. */
+export interface CalendarSpan {readonly sub:number;readonly kind:'cards'|'credit'|'creditConfirmed'|'announced'|'confirmed';readonly from:number;readonly to:number|null;readonly count:number|null}
 /** Whether the user has peak rules: `no` is known (the publication's feed is present and the user has no declared plan),
  *  `yes` means a declared plan exists (it may have no window in the next 24 h), `unknown` means the feed is missing. */
 export type PeakRules='yes'|'no'|'unknown';
@@ -52,7 +54,7 @@ export function parseCalendarData(v:unknown):CalendarData|null {
   resets.push(Object.freeze({sub:r.sub,at:r.at,kind:r.kind}));
  }
  for(const s of v.spans){
-  if(!exact(s,['sub','kind','from','to','count'])||!index(s.sub,n)||!['cards','announced','confirmed'].includes(s.kind as string)||!time(s.from)||!(s.to===null||time(s.to)&&s.to>=s.from)||!(s.count===null||typeof s.count==='number'&&Number.isSafeInteger(s.count)&&s.count>=0&&s.count<=999))return null;
+  if(!exact(s,['sub','kind','from','to','count'])||!index(s.sub,n)||!['cards','credit','creditConfirmed','announced','confirmed'].includes(s.kind as string)||!time(s.from)||!(s.to===null||time(s.to)&&s.to>=s.from)||!(s.count===null||typeof s.count==='number'&&Number.isSafeInteger(s.count)&&s.count>=0&&s.count<=999))return null;
   spans.push(Object.freeze({sub:s.sub,kind:s.kind as CalendarSpan['kind'],from:s.from,to:s.to,count:s.count}));
  }
  return Object.freeze({version:1,peakRules:rules,subs:Object.freeze(subs),peaks:Object.freeze(peaks),resets:Object.freeze(resets),spans:Object.freeze(spans)});
@@ -77,15 +79,16 @@ function wirePeaks(data:WireCockpitData):{rowId:string;startsAt:string;endsAt:st
 }
 const label=(v:string,fallback:string)=>v.replace(/[\u0000-\u001f\u007f]/g,'').slice(0,64)||fallback.slice(0,64);
 const ms=(v:string|null|undefined)=>{const t=v?Date.parse(v):NaN;return Number.isFinite(t)?t:null;};
-/** When an announced reset takes effect: the middle of its window to the half hour (as the alert list places it), a
+/** When an announced reset takes effect: the middle of its window down to the half hour (never into the next local day), a
  *  date-only schedule at that local day's start, no schedule: unknown. */
 function effectiveAt(schedule:{from:string;through:string;precision:string}|undefined):number|null {
  if(!schedule)return null;const from=ms(schedule.from),through=ms(schedule.through);if(from===null)return null;
  if(schedule.precision==='date'){const d=new Date(from);return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();}
- const mid=through===null?from:(from+through)/2;return Math.round(mid/1_800_000)*1_800_000;
+ const mid=through===null?from:(from+through)/2;// Floor on the local day's own half-hour grid (a zone like Kathmandu, UTC+5:45, has no UTC-aligned half hours).
+ const d=new Date(mid),day0=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();return day0+Math.floor((mid-day0)/1_800_000)*1_800_000;
 }
 /** Shape the calendar from the cockpit display data at `now`. Only the user's own subscriptions (the engine's members)
- *  appear; a peak, reset event or reset card of a row the user does not have is left out. */
+ *  appear; a peak, reset event or banked reset of a row the user does not have is left out. */
 export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarData {
  const members=cockpitMembers(data).slice(0,LIMITS.subs);
  const colours=memberColours(members);
@@ -129,6 +132,8 @@ export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarDat
   const sub=subOfRow(e.rowId),published=ms(e.publishedAt),expires=ms(e.expiresAt);
   if(sub===null||published===null||expires===null||expires<=now)continue;
   const at=effectiveAt(e.schedule);
+  // A banked reset (+1) is placed where the website puts it: the stated time, else the day it was published.
+  if(e.kind==='reset_credit'){spans.push({sub,kind:e.status==='confirmed'?'creditConfirmed':'credit',from:at??published,to:at,count:1});continue;}
   spans.push({sub,kind:e.status==='confirmed'?'confirmed':'announced',from:Math.min(published,now),to:at!==null&&at>=Math.min(published,now)?at:null,count:null});
  }
  const clip=<T,>(xs:T[],n:number)=>xs.slice(0,n);

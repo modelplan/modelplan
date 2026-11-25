@@ -490,9 +490,14 @@ enum DockGripInk {
             // the same immutable skin. Data withdrawal still retires all readings.
             let matchingMaterial = reusesPreparedMaterial && officialRenderer === renderer &&
                 self.scale == renderScale && appliedGeometryScale == factor && self.hoverViewport == viewport
-            if matchingMaterial, !failed, restingInstrumentImage != nil, self.locale == locale,
-               readings == values, self.notices == notices, orderedIDs == rows.map(\.subscriptionID),
-               readoutHolds.isEmpty, refreshSweepRing == nil { return }
+            // Skip only when everything this face renders is unchanged and the view is at rest: no hover, glow,
+            // nozzle pose, notice pulse, working effect or carried (hover-viewport) image, and its resting frame.
+            if matchingMaterial, !failed, let resting = restingInstrumentImage, image === resting, !imageUsesHoverViewport,
+               self.locale == locale, readings == values, self.notices == notices, orderedIDs == rows.map(\.subscriptionID),
+               readoutHolds.isEmpty, refreshSweepRing == nil, hotGlow == nil, hoveredGripIndex == nil,
+               nozzlePosesForChecks.isEmpty, noticePulseLayers.isEmpty,
+               workingLayerParents.values.allSatisfy({ $0.sublayers?.isEmpty ?? true }),
+               frame.size == (viewport?.size ?? skin.bounds.size) { return }
             let backing = matchingMaterial ? backgroundImage : nil
             resetVisuals()
             self.hoverViewport = viewport
@@ -909,7 +914,7 @@ enum DockGripInk {
                 let zh=locale.hasPrefix("zh"),label:String
                 switch notice.key.kind {
                 case .forecast:label=zh ? "可能提前耗尽":"May run out before reset"
-                case .resetAnnounced:label=zh ? "已公告额外重置":"Extra reset announced"
+                case .resetAnnounced:label=notice.banked ? (zh ? "已公告额外重置":"Banked reset announced") : (zh ? "已公告额度重置":"Limit reset announced")
                 case .resetConfirmed:label=zh ? "公开重置已确认，余量以本机读数为准":"Public reset confirmed; your balance is the local reading"
                 case .cardsExpiring:label=zh ? "额外重置即将过期":"Resets expiring"
                 case .credits:label=zh ? "正在使用点数":"Using credits"

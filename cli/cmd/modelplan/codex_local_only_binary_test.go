@@ -134,7 +134,13 @@ func TestCodexLocalOnlyAdmissionRealBinary(t *testing.T) {
 	}
 	assertNoCodexValues := func(client *queryBinary, label string) {
 		t.Helper()
-		response := client.call("rows/subscribe", map[string]any{})
+		response, open := client.callUnlessEnded("rows/subscribe", map[string]any{})
+		if !open {
+			// The session ended cleanly on a consent change (see callUnlessEnded); the
+			// denial must hold on the reconnected session too.
+			client = client.reconnect()
+			response = client.call("rows/subscribe", map[string]any{})
+		}
 		var snapshot wire.Envelope[wire.RowsSnapshot]
 		if err := json.Unmarshal(response["result"], &snapshot); err != nil {
 			t.Fatalf("%s subscribe: %s %v", label, response["error"], err)

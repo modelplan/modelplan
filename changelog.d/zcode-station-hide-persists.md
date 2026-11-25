@@ -1,0 +1,1 @@
+Hiding the unavailable ZCode station now stays hidden when the account's readings return: a hide made before any account is known covers the first account from its first appearance, and a hide of a known account never moves to a different account.

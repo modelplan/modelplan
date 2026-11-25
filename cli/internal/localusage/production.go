@@ -193,6 +193,20 @@ func ForgetProductionHistory(cache, tool string) error {
 	return ForgetProductionHistoryLocked(cache, tool)
 }
 
+// ForgetProductionHistoryGuarded is ForgetProductionHistory for a retried obligation: guard is
+// checked while the reader lock is held, before anything is removed (macrevb-1218-5).
+func ForgetProductionHistoryGuarded(cache, tool string, guard consent.EraseGuard) error {
+	unlock, err := consent.ReaderLockWait()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := guard.Check(); err != nil {
+		return err
+	}
+	return ForgetProductionHistoryLocked(cache, tool)
+}
+
 // ForgetProductionHistoryLocked is the same purge for callers already holding
 // consent.ReaderLock, such as quota.ForgetTool. It still acquires the engine's
 // own lock and preserves the shared reservation and installation identity key.

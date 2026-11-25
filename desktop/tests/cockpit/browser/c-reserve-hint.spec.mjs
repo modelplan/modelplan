@@ -4,7 +4,7 @@
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,currentSample,pageId,shell} from '../fixture.mjs';
 
-const words={en:'Reserve: extra resets you can still use and remaining credits','zh-CN':'储备：还能用的额外重置次数和剩余点数'};
+const words={en:'Reserve: banked resets you can still use and remaining credits','zh-CN':'储备：还能用的额外重置次数和剩余点数'};
 for(const locale of ['en','zh-CN'])test(`D76 the Reserve label has a hover and focus hint (${locale})`,async({page})=>{
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);

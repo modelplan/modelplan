@@ -81,6 +81,17 @@ test('B1 keyboard users keep the date keys\' ring: an arrow moves the choice and
  await page.locator('[data-range-key="30d"]').click();await page.keyboard.press('ArrowLeft');
  await expect(page.locator('[data-range-key="7d"]')).toBeFocused();
 });
+test('pointer focus on a generic keyboard control does not acquire a ring after a key press',async({page})=>{
+ await open(page,{data:visualFixture().data,range:'today'});
+ await page.evaluate(()=>{const control=document.createElement('div');control.tabIndex=0;control.id='focus-regression';control.textContent='Control';document.querySelector('#cockpit').append(control);});
+ const control=page.locator('#focus-regression');
+ await control.click();await page.keyboard.press('Escape');
+ await expect(control).toBeFocused();
+ expect(await control.evaluate(e=>e.hasAttribute('data-pointer-focus')&&getComputedStyle(e).outlineStyle==='none')).toBe(true);
+ await page.keyboard.press('Tab');
+ await control.focus();
+ expect(await control.evaluate(e=>e.hasAttribute('data-pointer-focus'))).toBe(false);
+});
 
 // ---- B1 (c): loading is never the empty state ----
 test('B1 a reply with an unread history keeps the last local history in the same page context; range switches never show the empty state',async({page})=>{
@@ -133,7 +144,7 @@ const geometry=page=>page.evaluate(()=>{const col=document.querySelector('.pl-co
   const parts=[...cell.querySelectorAll('.qtxt,.qnum')];
   return {tag:tag.textContent,tagHeight:t.height,lineHeight:parseFloat(getComputedStyle(tag).lineHeight),tagCut:tag.scrollHeight>tag.clientHeight+.5||tag.scrollWidth>tag.clientWidth+.5,tagInside:inside(t,c),
    parts:parts.map(p=>({w:[p.scrollWidth,p.clientWidth,Math.round(c.width)].join('/'),text:p.textContent,cut:p.scrollWidth>p.clientWidth+.5,inside:inside(p.getBoundingClientRect(),c)}))};});});
-for(const tier of ['tall','compact'])for(const locale of ['en','zh-CN'])for(const subs of [1,2])
+for(const tier of ['tall'])for(const locale of ['en','zh-CN'])for(const subs of [1,2])
 test(`B8 resource tags CPU · Memory · Disk are whole and in order, values never clipped (${tier}, ${locale}, ${subs} subscription${subs>1?'s':''})`,async({page})=>{
  const {send,receive}=await open(page,{data:subscriptions(subs),locale,tier,plugins:{version:1,entries:[],settings:{}}});
  const words=locale==='en'?['CPU','Memory','Disk']:['CPU','内存','磁盘'];

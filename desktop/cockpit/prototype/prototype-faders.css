@@ -5,18 +5,34 @@
 :root[data-theme="day"]{--fd-tick:#0000002e;--fd-dot:#ffffff;--fd-dot-ring:#0000007a;--fd-dot-ink:#15181c}
 
 
-.dk-fad{--fd-lcd:calc(92px + 2 * var(--bz,2px));--fd-rows:var(--row-h,18px) var(--key-gap,4px) var(--fd-lcd) 4px minmax(0,1fr);--fd-pad:8px;
-  display:grid;grid-template-columns:calc(3 * var(--fd-ch,64px) + 2 * var(--gutter,9px)) var(--fd-scale,34px);column-gap:var(--fd-lane,4px);
+.dk-fad{--fd-lcd:calc((var(--console-h,217px) - 2 * var(--row-h,18px) - 3 * var(--key-gap,4px)) / 2);--fd-rows:var(--row-h,18px) var(--key-gap,4px) var(--fd-lcd) 4px minmax(0,1fr);--fd-pad:8px;
+  position:relative;isolation:isolate;display:grid;grid-template-columns:calc(3 * var(--fd-ch,64px) + 2 * var(--fd-gap,12px));
   grid-template-rows:minmax(0,1fr) var(--row-h,18px);row-gap:var(--key-gap,4px);align-self:stretch;height:var(--console-h,217px);min-height:0;-webkit-user-select:none;user-select:none}
-.dk-fad .fd-scale{position:relative;grid-column:2;grid-row:1;display:grid;grid-template-rows:var(--fd-rows);min-height:0}
-.dk-fad .fd-scale .sc-led{grid-row:1;justify-self:start;align-self:center;line-height:var(--row-h,18px)}
+/* D405 (owner 2026-11-24, direction 06): two tilted tiers drawn with light only (no 3D transform; text and hit areas stay
+   true). One light from above: the nearer a face is to level, the brighter. The upper tier (lamps and cards) leans back a
+   little and ends in a lit front edge over a crease; the lower tier (levers and bank row) is nearly level, so brighter, a
+   touch narrower at the far end, with a rounded lit front edge and a dark step wall towards the big screen. The tier
+   heights follow --fd-lcd, which splits the deck evenly: --fd-lcd = travel = (deck - 2 rows - 3 gaps) / 2. */
+.dk-fad::before,.dk-fad::after{content:"";position:absolute;z-index:-1;left:-4px;right:-5px;pointer-events:none}
+.dk-fad::before{top:-2px;height:calc(var(--row-h,18px) + var(--key-gap,4px) + var(--fd-lcd) + 3px);border-radius:5px 5px 0 0;
+  background:linear-gradient(180deg,var(--tier-up-1,#ffffff04),var(--tier-up-2,#ffffff12));
+  box-shadow:inset 0 -2px 0 var(--tier-edge,#ffffff40),0 5px 5px -2px var(--tier-crease,#000000d9)}
+.dk-fad::after{top:calc(var(--row-h,18px) + var(--key-gap,4px) + var(--fd-lcd) + 3px);bottom:-3px;border-radius:0 0 6px 6px;
+  clip-path:polygon(5% 0,95% 0,100% 100%,0 100%);
+  background:linear-gradient(180deg,var(--tier-low-1,#ffffff08),var(--tier-low-2,#ffffff2b) 86%,var(--tier-lip,#ffffff59) calc(100% - 4px),var(--tier-lip-shade,#00000080) calc(100% - 1px));
+  box-shadow:inset -5px 0 6px -2px var(--tier-wall,#000000c0),inset 0 6px 6px -4px var(--tier-crease,#000000d9)}
+:root[data-theme="day"] .dk-fad{--tier-up-1:#0000000a;--tier-up-2:#ffffff2e;--tier-edge:#ffffffb3;--tier-crease:#00000066;--tier-low-1:#ffffff1a;--tier-low-2:#ffffff66;--tier-lip:#ffffffd9;--tier-lip-shade:#00000040;--tier-wall:#00000059}
+/* D405: the effort names, printed twice, in the two gaps between the levers (an overlay on the channel grid); 会话 heads the lamps. */
+.dk-fad .fd-scale{position:relative;z-index:2;grid-column:1;grid-row:1;display:grid;pointer-events:none;min-height:0;
+  grid-template-columns:var(--fd-ch,64px) var(--fd-gap,12px) var(--fd-ch,64px) var(--fd-gap,12px) var(--fd-ch,64px);grid-template-rows:var(--fd-rows)}
+.dk-fad .fd-scale .sc-led{grid-row:1;grid-column:2;justify-self:center;align-self:center;line-height:var(--row-h,18px)}
 .dk-fad .sc-travel{grid-row:5;position:relative;min-height:0}
-.dk-fad .sc-lcd{grid-row:3}
-.dk-fad .sc-l{position:absolute;left:0;top:calc(var(--fd-pad) + (100% - 2 * var(--fd-pad)) * var(--k,0));transform:translateY(-50%);padding:3px 6px 3px 0;
-  font:500 10px/1 var(--f-silk);letter-spacing:.04em;color:var(--silk);white-space:nowrap;cursor:pointer}
+.dk-fad .sc-travel[data-gap="1"]{grid-column:2}.dk-fad .sc-travel[data-gap="2"]{grid-column:4}
+.dk-fad .sc-l{position:absolute;left:50%;top:calc(var(--fd-pad) + (100% - 2 * var(--fd-pad)) * var(--k,0));transform:translate(-50%,-50%);padding:3px 1px;pointer-events:auto;
+  font:500 10px/1 var(--f-silk);letter-spacing:0;color:var(--silk);white-space:nowrap;cursor:pointer}
 .dk-fad .sc-l:hover,.dk-fad .sc-l.peek{color:var(--silk-hi)}
 .dk-fad .sc-l.na{color:var(--silk-dim);cursor:default}
-.dk-fad .fd-chs{grid-column:1;grid-row:1;display:grid;grid-template-columns:repeat(3,var(--fd-ch,64px));column-gap:var(--gutter,9px);min-height:0}
+.dk-fad .fd-chs{grid-column:1;grid-row:1;display:grid;grid-template-columns:repeat(3,var(--fd-ch,64px));column-gap:var(--fd-gap,12px);min-height:0}
 .dk-fad .fd-ch{display:grid;grid-template-rows:var(--fd-rows);justify-items:center;min-width:0;min-height:0}
 
 
@@ -40,6 +56,11 @@
    Every line ≤ 9 characters; text never below 10 px. */
 .dk-fad .fd-strip{grid-row:3;position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:stretch;
   padding:7px 2px 4px 3px;overflow:hidden;text-align:left;background:var(--lcd-glass);box-shadow:var(--bezel);font:10px/11px var(--f-lcd);color:var(--text)}
+/* D405: the cards lean back with the upper tier: a shallow eave shadow under the top bezel, a thicker, lighter lower bezel. */
+.ck .dk-fad .fd-strip{border-bottom-width:calc(var(--bz,2px) + 1px);border-bottom-color:color-mix(in srgb,var(--bz-ring) 72%,#fff 28%);
+}
+.dk-fad .fd-strip::before{content:"";position:absolute;left:0;right:0;top:0;height:9px;pointer-events:none;background:linear-gradient(180deg,var(--eave,#000000a6),transparent)}
+:root[data-theme="day"] .dk-fad .fd-strip{--eave:#00000040}
 .dk-fad .fd-strip::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(115deg,var(--lcd-glare),#ffffff02 34%,transparent 35%)}
 .dk-fad .fd-ch.empty .fd-strip{cursor:default}
 .dk-fad .fd-ch.sel .fd-strip{box-shadow:var(--bezel),0 0 0 2px color-mix(in srgb,var(--lcd-ink) 36%,transparent),0 0 8px color-mix(in srgb,var(--lcd-ink) 13%,transparent)}
@@ -56,6 +77,10 @@
 .dk-fad .cd-bar::before{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--s,0%);min-width:2px;border-radius:1px;background:var(--v,var(--lcd-ink))}
 .dk-fad .cd-use{flex:none;margin-top:3px;font:10px/11px var(--f-lcd);letter-spacing:-.02em;white-space:nowrap;color:var(--lcd-muted)}
 .dk-fad .cd-use b{font-weight:400;color:var(--lcd-ink)}
+/* D405: the token count is the card's second figure: larger, bold and in full ink; the share stays small beside it. */
+.dk-fad .cd-use{display:flex;align-items:baseline;gap:4px;margin-top:4px;line-height:13px;overflow:hidden}
+.dk-fad .cd-use .cd-tok{font:600 12px/13px var(--f-lcd);letter-spacing:-.04em;color:var(--lcd-ink)}
+.dk-fad .cd-use .cd-pct{font-size:10px;color:var(--lcd-muted)}
 .dk-fad .cd-eff{flex:none;margin-top:auto;display:flex;align-items:center;gap:4px;font:10px/11px var(--f-lcd);letter-spacing:-.02em;white-space:nowrap;color:var(--lcd-muted)}
 .dk-fad .cd-rec{display:inline-flex;align-items:center;gap:1px;color:var(--gold)}
 .dk-fad .cd-follows .cd-rec{color:color-mix(in srgb,var(--gold) 72%,var(--lcd-glass,#000))}
@@ -74,9 +99,10 @@
 .dk-fad .fd-tick,.dk-fad .fd-rec,.dk-fad .fd-dot,.dk-fad .fd-cap,.dk-fad .fd-ghost,.dk-fad .fd-peek{position:absolute;top:calc(var(--fd-pad) + (100% - 2 * var(--fd-pad)) * var(--k,0))}
 .dk-fad .fd-tick{left:calc(50% - 14px);width:28px;height:0;margin-top:-.5px;border-top:1px solid var(--fd-tick)}
 
-.dk-fad .fd-rec{left:calc(50% + 16px);width:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--gold-metal);box-shadow:0 0 3px color-mix(in srgb,var(--gold-metal) 45%,transparent)}
-.dk-fad .fd-rec .g-star{position:absolute;left:6px;top:-3.5px;width:8px;height:8px;fill:var(--gold-metal)}
-.dk-fad .fd-dot{left:calc(50% - 21px);width:5px;height:5px;margin-top:-2.5px;border-radius:50%;background:var(--fd-dot);box-shadow:0 0 4px #ffffff66,0 0 0 1px var(--fd-dot-ring)}
+.dk-fad .fd-rec{left:calc(50% + 13px);width:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--gold-metal);box-shadow:0 0 3px color-mix(in srgb,var(--gold-metal) 45%,transparent)}
+.dk-fad .fd-rec .g-star{position:absolute;left:4px;top:-3.5px;width:8px;height:8px;fill:var(--gold-metal)}
+/* D405: another effort a running session uses = a short glowing tick on the lever's left (was a white dot). */
+.dk-fad .fd-dot{left:calc(50% - 22px);width:6px;height:2px;margin-top:-1px;border-radius:1px;background:var(--fd-dot);box-shadow:0 0 4px #ffffffa6,0 0 0 .5px var(--fd-dot-ring)}
 .dk-fad .fd-dot b{position:absolute;right:7px;top:-3px;font:400 10px/1 var(--f-lcd);color:var(--fd-dot-ink)}
 .dk-fad .fd-ch.xhl .fd-dot{box-shadow:0 0 0 2px color-mix(in srgb,var(--silk-hi) 50%,transparent)}
 .dk-fad .fd-cap,.dk-fad .fd-ghost,.dk-fad .fd-peek{left:50%;width:30px;height:12px;margin:-6px 0 0 -15px;border-radius:2px}
@@ -102,11 +128,6 @@ body.reduced #cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s line
 @media(prefers-reduced-motion:reduce){#cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s linear!important}}
 
 
-#cockpit[data-layout="640"] .dk-fad{--fd-lcd:73px}
-#cockpit[data-layout="640"] .dk-fad .fd-strip{padding:6px 2px 3px 3px}
-#cockpit[data-layout="640"] .dk-fad .cd-big,#cockpit[data-layout="640"] .dk-fad .cd-try{margin-top:2px}
-#cockpit[data-layout="640"] .dk-fad .cd-bar,#cockpit[data-layout="640"] .dk-fad .cd-use{margin-top:2px}
-#cockpit[data-layout="640"] .dk-fad .st-pin{top:9px}
 
 /* CKP-FAD-54 step 2: the effort page comes in over 150 ms when a card is clicked (none with reduced motion). */
 @keyframes cd-page-in{from{opacity:0}to{opacity:1}}

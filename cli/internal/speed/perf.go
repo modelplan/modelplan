@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"math"
 	"os"
 	"path/filepath"
@@ -151,9 +152,14 @@ func loadPerf(cache string) (l PerfLedger, ok bool) {
 	if errors.Is(err, os.ErrNotExist) {
 		return PerfLedger{SchemaVersion: 1}, true
 	}
+	if err == nil {
+		idlework.Open()
+		idlework.Read(len(b))
+	}
 	if err != nil || len(b) > maxFile {
 		return PerfLedger{}, false
 	}
+	idlework.Decode()
 	if json.Unmarshal(b, &l) != nil || l.SchemaVersion != 1 || l.Since.IsZero() {
 		return PerfLedger{}, false
 	}

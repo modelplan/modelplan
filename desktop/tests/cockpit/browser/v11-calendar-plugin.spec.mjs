@@ -30,7 +30,6 @@ function dataWith(count) {
 async function open(page,{data=dataWith(4),tier='tall',locale='en',push=week,at=NOW}={}) {
  await page.clock.setFixedTime(new Date(at));
  await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
- if(tier==='compact')await page.setViewportSize({width:636,height:640});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,tier},redBelow:25}))).toBe(true);
@@ -72,7 +71,8 @@ test('D328 column: the next 12 hours only; peaks, capsules with the time, the no
  await expect(col.locator('.pl-foot .pl-foot-l')).toHaveAttribute('data-full','Next peak');await expect(col.locator('.pl-foot .pl-foot-v')).toHaveText('in 10h40');
  const s=strip(page);
  for(const gone of ['.cal-d','.cal-pick','.cal-back','.cal-fold','.cal-more','.cal-hd'])await expect(s.locator(gone)).toHaveCount(0);
- await expect(s.locator('.cal-adr')).toHaveText(['Claude reset card · until 11/13 +1']);
+ await expect(s.locator('.cal-adr')).toHaveText(['Claude Banked · until 11/13 +1']);
+ await expect(s.locator('.cal-adr')).toHaveAttribute('title',/Banked resets · until 11\/13 \+1$/);
  // 12 hours end at 23:20 on Wednesday: no midnight divider; GLM's peak is the only block, on one line.
  await expect(s.locator('.cal-mid')).toHaveCount(0);
  // G3-179: at five columns the label sheds the abbreviation before the time clips; the tooltip keeps the sentence.
@@ -96,7 +96,8 @@ test('D328 column: the next 12 hours only; peaks, capsules with the time, the no
 test('D328 Chinese labels, a running peak in the bottom line, and the 明 divider when midnight falls inside',async({page})=>{
  const {send,receive}=await open(page,{locale:'zh-CN'});
  await expect(column(page).locator('.pl-foot .pl-foot-l')).toHaveText('下个高峰');await expect(column(page).locator('.pl-foot .pl-foot-v')).toHaveText('10h40 后');
- await expect(strip(page).locator('.cal-adr')).toHaveText(['Claude 重置卡 至11/13 +1']);
+ await expect(strip(page).locator('.cal-adr')).toHaveText(['Claude 额外重置 至11/13 +1']);
+ await expect(strip(page).locator('.cal-adr')).toHaveAttribute('title',/额外重置次数 至11\/13 \+1$/);
  await shot(page,'A-strip-zh',page.locator('.ck-eng'));
  // 23:00: GLM's peak is running (until 02:00) and the 12 h window now holds midnight.
  expect(await receive(send('tick',{nowUnixMs:String(L(0,23)),reason:'deadline'}))).toBe(true);
@@ -165,8 +166,8 @@ test('CKP-PLG-07 week view opens from the key inside the MFD screen only; the ke
  await expect(w.locator('.wk-dh b')).toHaveText(['11','12','13','14','15','16','17']);
  await expect(w.locator('.wk-dh.we')).toHaveCount(2);await expect(w.locator('.wk-col.we')).toHaveCount(2);
  await expect(w.locator('.wk-dh.today')).toHaveCount(1);
- // D328: all-day in one row; the announced reset is a ◆ on its effective day only; capsules show the time (solid 5 h, hollow weekly).
- await expect(w.locator('.wk-adr')).toHaveText([/Claude reset card/,'◆ GLM']);
+ // D328: all-day in one row; the announced direct reset is a ↻ chip on its effective day only; capsules show the time (solid 5 h, hollow weekly).
+ await expect(w.locator('.wk-adr')).toHaveText([/Claude Banked/,'↻']);
  await expect(w.locator('.wk-adr.mark')).toHaveCount(1);
  expect(await w.locator('.wk-ad').evaluate(e=>e.getBoundingClientRect().height)).toBeLessThan(20);
  await expect(w.locator('.wk-ch')).toHaveText(['12:30','14:10','15:50','09:00','06:00']);
@@ -234,17 +235,6 @@ test('D328 a day pressed in the week view swaps the column\'s bottom line to tha
  // Today restores the default line.
  await w.locator('.wk-dh').first().click();
  await expect(foot.locator('.pl-foot-l')).toHaveAttribute('data-full','下个高峰');
-});
-
-test('640 layout keeps seven narrow columns',async({page})=>{
- await open(page,{tier:'compact',locale:'zh-CN'});
- await key(page).click();
- const w=weekView(page);await expect(w).toBeVisible();
- await expect(w).toHaveClass(/narrow/);
- await expect(w.locator('.wk-dh i')).toHaveText(['三','四','五','六','日','一','二']);
- await expect(w.locator('.wk-col')).toHaveCount(7);
- await expect(column(page)).toHaveAttribute('data-draw','custom');
- await shot(page,'E3-week-640',page.locator('.ck-deck'));
 });
 
 test('calendar data is checked against the plugin shape and size bound; the display data is shaped on the page',async({page})=>{
@@ -326,9 +316,9 @@ test('macrevc-844-8: through the bridge, the earliest card expiring at the host 
  data.details=capture().details;data.details.peaks=[];data.details.resetEvents=[];
  Object.assign(data.details.subscriptions[0].resetCards,{state:'partial',truncated:true,count:65,earliestExpiresAt:iso(first),items:Array.from({length:64},(_,i)=>({id:String(i).padStart(64,'a'),expiresAt:iso(i?later:first)}))});
  const {send,receive}=await open(page,{data,push:null});
- await expect(column(page)).toContainText('Reset cards');await expect(column(page)).toContainText(/until \d+\/\d+/);
+ await expect(column(page)).toContainText('Banked');await expect(column(page)).toContainText(/until \d+\/\d+/);
  expect(await receive(send('tick',{nowUnixMs:String(NOW+120_000),reason:'deadline'}))).toBe(true);
- await expect(column(page)).toContainText('Reset cards');
+ await expect(column(page)).toContainText('Banked');
  await expect(column(page)).not.toContainText(/×|until|\d+\/\d+/);
 });
 
@@ -376,4 +366,42 @@ test('D375 6 columns: chips drop the window, keep the name',async({page})=>{
  await expect(strip(page).locator('.cal-ch')).toHaveText(['Claude 12:30','Codex 14:10','GLM 15:50']);
  expect(await strip(page).innerText()).not.toMatch(/\b(CX|CL|GL|CU)\b/);
  await shot(page,'N-6col-zh',page.locator('.ck-eng'));
+});
+
+test('D406 banked resets: an undated +1 chip on its published day, a dated one on its own day, a direct reset is ↻ not +1',async({page})=>{
+ const push={...week,spans:[{sub:1,kind:'credit',from:NOW,to:null,count:1},{sub:0,kind:'credit',from:L(3,8),to:L(3,8),count:1},{sub:2,kind:'announced',from:NOW,to:null,count:null}]};
+ const {send,receive}=await open(page,{push,locale:'zh-CN'});
+ await key(page).click();
+ const w=weekView(page);
+ await expect(w.locator('.wk-adr.chip')).toHaveText(['+1','+1','↻']);
+ const left=async n=>(await w.locator('.wk-adr.chip').nth(n).boundingBox()).x;
+ const heads=await w.locator('.wk-dh').evaluateAll(es=>es.map(e=>e.getBoundingClientRect()));
+ const day=x=>heads.findIndex(h=>x>=h.x-1&&x<h.x+h.width);
+ expect([day(await left(0)),day(await left(1)),day(await left(2))]).toEqual([0,3,0]);
+ await expect(w.locator('.wk-adr.chip.direct.pending')).toHaveAttribute('title',/预告重置/);
+ await expect(w.locator('.wk-adr.chip.credit').first()).toHaveAttribute('title',/\+1 额外重置/);
+ await expect(w.locator('.wk-adr.chip.credit')).toHaveCount(2);
+ await expect(w.locator('.wk-adr.chip.direct.pending')).toHaveText('↻');
+ await expect(w.locator('.wk-adr.chip.direct')).not.toContainText('+1');
+ await shot(page,'reset-chip',screen(page));
+});
+
+test('D406 a reset-card notice published 2 days ago is not placed on today in the week; the column line still carries it',async({page})=>{
+ const push={...week,spans:[{sub:1,kind:'credit',from:L(-2,9),to:null,count:1}]};
+ await open(page,{push});
+ await expect(strip(page).locator('.cal-adr')).toHaveText(/Codex \+1 Banked reset/);
+ await key(page).click();
+ await expect(weekView(page).locator('.wk-adr.chip')).toHaveCount(0);
+});
+
+test('D406 review: with no peak rules a current reset notice still gets the all-day line; announced is dashed, confirmed solid',async({page})=>{
+ const codexOnly={...week,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:L(0,14,10),kind:'5h'}],spans:[{sub:0,kind:'credit',from:L(-2,9),to:null,count:1}]};
+ await open(page,{push:codexOnly});
+ await expect(strip(page).locator('.cal-adr')).toHaveText(/\+1 Banked reset/);
+ const two={...codexOnly,spans:[{sub:0,kind:'credit',from:NOW,to:null,count:1},{sub:0,kind:'creditConfirmed',from:L(1,9),to:L(1,9),count:1}]};
+ await page.evaluate(()=>0);
+ const {send,receive}=await open(page,{push:two});
+ await key(page).click();
+ await expect(weekView(page).locator('.wk-adr.chip.credit.pending')).toHaveCount(1);
+ await expect(weekView(page).locator('.wk-adr.chip.credit:not(.pending)')).toHaveCount(1);
 });

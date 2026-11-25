@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 )
 
 func TestCodexIdleDirectoryBudget(t *testing.T) {
@@ -30,8 +31,10 @@ func TestCodexIdleDirectoryBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	for offset := time.Second; offset < codexRolloutDiscoveryInterval; offset += time.Second {
-		if got, _ := read(offset); len(got) != 0 || index.scannedAt != start {
-			t.Fatalf("walked the root again at %s: %v", offset, got)
+		before := idlework.Snapshot()
+		got, _ := read(offset)
+		if done := idlework.Snapshot().Since(before); len(got) != 0 || done.Walks != 0 || done.Entries != 0 {
+			t.Fatalf("walked the root again at %s: %v (%+v)", offset, got, done)
 		}
 	}
 	if got, own := read(codexRolloutDiscoveryInterval); len(got) != 1 || got[0] != path || own != path {

@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1313,16 +1314,26 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly, withHisto
 
 // observeLiveSessions never queries accounts; it only reuses local bindings already read above.
 func observeLiveSessions(st *store.Store, paths quota.Paths, report quota.Report, now time.Time) {
-	observeLive(st, paths.CodexHome, quota.UniqueSubscriptionRefs(report.Accounts), report, now)
+	refs := quota.UniqueSubscriptionRefs(report.Accounts)
+	observeLive(st, paths.CodexHome, func() map[string]string { return refs }, report, now, observeIndex{})
 }
 
 // observeLiveLogs is observeLiveSessions for a caller without a report: the current consent fences it.
-func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, now time.Time) appserver.ObserveOutcome {
+// The app-server's pass hands in its inventory and memo; the zero index discovers afresh.
+func observeLiveLogs(st *store.Store, codexHome string, refs func() map[string]string, now time.Time, x observeIndex) appserver.ObserveOutcome {
 	fence := consent.Capture().Fence()
-	return observeLive(st, codexHome, refs, quota.Report{ConsentStoreEpoch: fence.StoreEpoch, ConsentGeneration: fence.Generation}, now)
+	if x.inventory != nil {
+		fence = x.fence
+	}
+	return observeLive(st, codexHome, refs, quota.Report{ConsentStoreEpoch: fence.StoreEpoch, ConsentGeneration: fence.Generation}, now, x)
 }
 
-func observeLive(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time) appserver.ObserveOutcome {
+// refs resolves the subscription bindings; it is called again inside the commit, so what is
+// published is bound under the fence that publishes it (macrevb-1222-5).
+func observeLive(st *store.Store, codexHome string, refs func() map[string]string, report quota.Report, now time.Time, x observeIndex) appserver.ObserveOutcome {
+	if refs == nil {
+		refs = func() map[string]string { return nil }
+	}
 	// Each harness's logs are read under its own grant: a Codex-only user still gets live Codex sessions (owner
 	// build 13), and Claude Code's logs stay unread without its grant. An empty home disables that root.
 	claudeAllowed, codexAllowed := consent.Allowed("claude", consent.Local), consent.Allowed("codex", consent.Local)
@@ -1342,9 +1353,36 @@ func observeLive(st *store.Store, codexHome string, refs map[string]string, repo
 	if !codexAllowed {
 		codexHome = ""
 	}
-	return observeOutcome(reportWrite(report, func() error {
-		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, codexHome, now), projectLabels(), refs, now)
-	}))
+	logs := x.activeLogs(claude, codexHome, now)
+	paths := make([]string, len(logs))
+	for i, log := range logs {
+		paths[i] = log.Path
+	}
+	labels := projectLabels()
+	// The live records age by the clock while their logs are recent, so only a pass with no
+	// recent log at all is skipped when nothing changed.
+	return x.memo.skipUnchanged("live", st.Dir, x.fence, labels, subscriptionKey(refs()), paths, speed.LiveWithin, now, func() appserver.ObserveOutcome {
+		beforeObserveCommit("live")
+		return observeOutcome(reportWrite(report, func() error {
+			// Right before the opens: every remembered path is still under its admitted root.
+			confined := speed.ConfinedLogs(logs, claude, codexHome)
+			if len(logs) > 0 && len(confined) == 0 {
+				return errNoConfinedLogs
+			}
+			beforeObserveOpen("live")
+			return speed.ObserveLive(st.Dir, confined, labels, refs(), now)
+		}))
+	})
+}
+
+// subscriptionKey is the memo's view of the cached subscription references.
+func subscriptionKey(refs map[string]string) string {
+	keys := make([]string, 0, len(refs))
+	for k, v := range refs {
+		keys = append(keys, k+"="+v)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
 }
 
 // observeCodexSpeed measures what is new in the most recent Codex threads, skipping the ones Codex
@@ -1354,20 +1392,41 @@ func observeCodexSpeed(st *store.Store, now time.Time) {
 }
 
 func observeCodexHomeSpeed(st *store.Store, home string, now time.Time) appserver.ObserveOutcome {
+	return observeCodexHome(st, home, now, observeIndex{})
+}
+
+func observeCodexHome(st *store.Store, home string, now time.Time, x observeIndex) appserver.ObserveOutcome {
 	if !consent.Allowed("codex", consent.Local) {
 		return appserver.ObserveSkippedConsent
 	}
 	if speed.Off() {
 		return appserver.ObserveSkippedOff
 	}
-	rollouts := quota.RecentRollouts(home, 8)
+	var rollouts []string
+	if x.inventory != nil {
+		rollouts = quota.RecentRolloutsIn(x.inventory, x.fence, home, 8, now)
+	} else {
+		rollouts = quota.RecentRollouts(home, 8)
+	}
 	if len(rollouts) == 0 {
 		return appserver.ObserveSkippedNoLogs
 	}
-	return observeOutcome(consent.LocalWrite("codex", func() error {
-		return speed.ObserveCodex(st.Dir, rollouts, func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
-			speed.Ingest{Labels: projectLabels(), Subscription: quota.CodexSubscription(st.Dir, now)}, now)
-	}))
+	labels := projectLabels()
+	// The memo keys on the binding seen now; the commit binds again under its own fence, which
+	// must still be the one the rollouts were discovered under (macrevb-1222-5).
+	return x.memo.skipUnchanged("codex", st.Dir, x.fence, labels, quota.CodexSubscription(st.Dir, now), rollouts, observeSettle, now, func() appserver.ObserveOutcome {
+		beforeObserveCommit("codex")
+		return observeOutcome(consent.LocalWriteUnder("codex", x.fence, func() error {
+			// Right before the opens: every remembered path is still under the sessions root.
+			confined := quota.ConfinedRollouts(home, rollouts)
+			if len(confined) == 0 {
+				return errNoConfinedLogs
+			}
+			beforeObserveOpen("codex")
+			in := speed.Ingest{Labels: labels, Subscription: quota.CodexSubscription(st.Dir, now)}
+			return speed.ObserveCodex(st.Dir, confined, func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") }, in, now)
+		}))
+	})
 }
 
 // projectLabelsCmd shows or sets the project-label switch: on unless the user turned it off (the

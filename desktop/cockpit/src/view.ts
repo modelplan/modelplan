@@ -21,12 +21,12 @@ import {INITIAL_RANGE,nextCockpitRange,type CockpitRange} from './range.js';
 import {mountPluginHost,pluginHostOf,type PluginReports} from './plugin-host.js';
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
 /** Controls focusable through their own tabindex that a pointer presses (B1): buttons, radios and sliders. */
-export const POINTER_UNFOCUSED='button,[role="radio"],[role="slider"]';
+export const POINTER_UNFOCUSED='button,a[href],input,select,textarea,[tabindex],[role="button"],[role="radio"],[role="slider"]';
 /** B1: how long a page keeps its last local history across replies whose history read was unavailable. */
 export const HISTORY_HOLD_MS=10*60*1000;
 export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void,reportAcked:(ids:string[])=>void=()=>{},reportPins:(ids:string[])=>void=()=>{},reportPlugins:PluginReports={state:()=>{},running:()=>{}}):CockpitView {
  let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
- let nativeShell:ShellState|null=null,tier:ShellState['tier']='tall';
+ let nativeShell:ShellState|null=null;
  // CKP-SHELL-50 / MENU-52: the range is the app's. A key or T asks for it and mirrors it at once, as a scope key does; the
  // host's shell echo is the same value, so nothing repaints twice.
  const requestRange=(range:CockpitRange):boolean=>{if(!active||disposed||!nativeShell)return false;action('rangeSelect',range);nativeShell={...nativeShell,range};engineRange?.();return true;};
@@ -43,7 +43,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   const member=lastData?cockpitMembers(lastData).find(m=>m.key===z.key):undefined,name=member?(locale==='en'?member.row.name.en:member.row.name.zh):'';
   const what=z.state==='work'?(ht(locale,'host.workingNow'))+(z.rate===null?'':` · ${Math.round(z.rate)} t/s`):z.state==='stale'?(ht(locale,'host.readingIsNotCurrent')):(ht(locale,'host.idle'));
   return name?`${name} · ${what}`:what;});
- function updateScopeHud(){if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());}
+ function updateScopeHud(){if(lastData)paintHud(frame.hud,lastData,locale,hudOptions());}
  const scopeShortcut=(event:KeyboardEvent)=>{if(!event.isTrusted||!active||disposed||!nativeShell||nativeShell.profile!=='open'||nativeShell.forcedClosed||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||event.repeat||!/^[0-6]$/.test(event.key))return;const target=event.target;if(target instanceof Element&&(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')))return;const button=event.key==='0'?frame.engine.querySelector<HTMLButtonElement>('.ek[data-all]'):[...frame.engine.querySelectorAll<HTMLButtonElement>('.eng-keys .ek[data-sub]')][Number(event.key)-1];if(!button||!applyScope)return;const key=button.dataset.scope;if(key===undefined)return;const scope=key||'all';event.preventDefault();retiredUnstableScopes.delete(scope);action('scopeSelect',scope);nativeShell={...nativeShell,scope};deck.scope(scope);applyScope(scope);updateScopeHud();};
  window.addEventListener('keydown',scopeShortcut);
  const rangeShortcut=(event:KeyboardEvent)=>{if(!event.isTrusted||!active||disposed||!nativeShell||event.altKey||event.ctrlKey||event.metaKey||event.repeat||event.key.toLowerCase()!=='t')return;const target=event.target;if(target instanceof Element&&(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')))return;const next=nextCockpitRange(nativeShell.range??INITIAL_RANGE);event.preventDefault();if(requestRange(next)){deck.range(next);headerRange.set(next);}};
@@ -89,7 +89,7 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  close.onclick=e=>{if(e.isTrusted)action('close');};
  // WP-22 (macrevb-1062-3): the porthole marks the selected model's rocket by its published name (the still's one key).
  const markPorthole=(id:string|null)=>{const name=id===null?null:lastData?.details?.publishedModels?.find(m=>m.id===id)?.name??null;root.dispatchEvent(new CustomEvent('model-select',{detail:name}));};
- const unwireHud=wireHud(frame.hud,id=>{plugins.openScreen(null);hudSelected=id;markPorthole(id);deck.showTune(id);if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());});
+ const unwireHud=wireHud(frame.hud,id=>{plugins.openScreen(null);hudSelected=id;markPorthole(id);deck.showTune(id);if(lastData)paintHud(frame.hud,lastData,locale,hudOptions());});
  let showProjectNames=true;
  const paintRecords=(data:WireCockpitData,at:number)=>{const shown=showProjectNames?data:withoutProjectNames(data);deck.render(shown,at);tape.render(shown,showProjectNames,at);};
  function shellControls(){
@@ -106,7 +106,7 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  function drawShell(closed:boolean){
   cap.hidden=!closed;cap.style.display=closed?'block':'none';
   root.querySelector<HTMLElement>('.ck-portrow')!.style.visibility=closed?'hidden':'';
-  root.dataset.shell=closed?'closed':'open';root.style.setProperty('--body-h',(closed?(tier==='tall'?691:609):(tier==='tall'?905:635))+'px');
+  root.dataset.shell=closed?'closed':'open';root.style.setProperty('--body-h',(closed?691:905)+'px');
  }
  // G3-108 (owner, build 14e): the porthole itself closes and opens; the body never moves on the page (the closed root
  // stands on the open root's floor, cockpit.css), so the native window's own motion is the only one the body makes.
@@ -179,6 +179,8 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  }
  function preserveFocus(update:()=>void,replacing=false){
   const focused=document.activeElement instanceof HTMLElement?document.activeElement:null;
+  const pointerFocused=focused?.hasAttribute('data-pointer-focus')===true;
+  const restore=(target:HTMLElement)=>{if(pointerFocused)target.dataset.pointerFocus='';target.focus({preventScroll:true});if(document.activeElement!==target)delete target.dataset.pointerFocus;};
   const area=focused&&(frame.engine.contains(focused)?frame.engine:frame.mfd.contains(focused)?frame.mfd:null);
   const quota=focused?.classList.contains('qcell')?focused:null;const quotaColumn=quota?.closest<HTMLElement>('.ec[data-col]');
   const memberKey=quotaColumn?.dataset.col??focused?.dataset.focusMember??(focused?.dataset.scope||undefined);
@@ -205,14 +207,14 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
     if(!quotaIdentity)return;
     const columns=[...frame.engine.querySelectorAll<HTMLElement>('.ec[data-col]')].filter(e=>e.dataset.col===memberKey);
     const cells=columns.flatMap(e=>[...e.querySelectorAll<HTMLElement>('.qcell[data-row]')]).filter(e=>e.dataset.row===quota.dataset.row&&quotaFocusIdentity?.(e)===quotaIdentity);
-    if(cells.length===1)cells[0].focus({preventScroll:true});return;
+    if(cells.length===1)restore(cells[0]!);return;
    }
   }
   let target:HTMLElement|null=null;
   if(key&&key!=='data-add-subscription'&&keyValue!==null){const matches=[...area.querySelectorAll<HTMLElement>(focused.tagName)].filter(e=>e.getAttribute(key)===keyValue);if(matches.length===1)target=matches[0];}
   // CKP-MFD-56: an alert row is found by its identity only; a refresh that re-sorts the list must never hand its focus to another subscription's row.
   if(!target&&path&&key!=='data-al-id'){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
-  target?.focus({preventScroll:true});
+  if(target)restore(target);
  }
  function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);plugins.tick(now);});}
  // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
@@ -277,7 +279,7 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
     // A routine refresh must not reset an open alert list: when the deck still has something to show (details, or list-only
     // alerts) it is kept and repainted from the new data; only a projection with nothing left clears it.
     const keep=!!data.details||cautionItems(data,now,redBelow()).length>0;
-    setEmpty('empty',keep);if(keep){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}root.dataset.engineEmpty='false';headerRange.dim(false);frame.engine.append(engine.table);engine.fit();plugins.display(data,now);applyScope=engine.applyScope;engineRange=engine.setRange;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,tier!=='tall',locale,hudOptions());syncCaution(data,now);help.refresh();
+    setEmpty('empty',keep);if(keep){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}root.dataset.engineEmpty='false';headerRange.dim(false);frame.engine.append(engine.table);engine.fit();plugins.display(data,now);applyScope=engine.applyScope;engineRange=engine.setRange;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,locale,hudOptions());syncCaution(data,now);help.refresh();
    if(before!==displayedState())pulse();
   },true);
  }
@@ -287,13 +289,13 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   restorePins(ids){deck.restorePins(ids);},
   forgetAcked(){cautions.forget();},
   configure(value,threshold,used=false,allModels=false,order=[],hidden=[]){setMemberOrder(order);setHiddenMembers(hidden);selectedRedBelow=threshold;showUsedPercent=used;deck.showAllModels(allModels);locale=value.locale;headerRange.locale(locale);showProjectNames=value.showProjectNames;reduceMotion=value.reduceMotion;syncReduced();document.documentElement.lang=locale;document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);deck.locale(locale);tape.locale(locale);frame.settings.setAttribute('aria-label',ht(locale,'host.settingsAria'));setEmpty('waiting');},
-  updateAppearance(value:LiveAppearance,now:number,threshold,used=false,allModels=false,order=[],hidden=[]){const orderChanged=setMemberOrder(order),hiddenChanged=setHiddenMembers(hidden);if(hiddenChanged&&nativeShell&&hidden.includes(nativeShell.scope))nativeShell={...nativeShell,scope:'all'};showUsedPercent=used;deck.showAllModels(allModels);const namesChanged=showProjectNames!==value.showProjectNames;showProjectNames=value.showProjectNames;selectedRedBelow=threshold;locale=value.locale;headerRange.locale(locale);reduceMotion=value.reduceMotion;syncReduced();document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion){stop();caution.classList.remove('flash');}if(lastData){lastRenderedAt=now;preserveFocus(()=>{localise(lastRenderedAt);localiseEngine?.(locale,lastRenderedAt);paintHud(frame.hud,lastData!,tier!=='tall',locale,hudOptions());if(namesChanged)paintRecords(lastData!,lastRenderedAt);syncCaution(lastData!,lastRenderedAt);});if(orderChanged||hiddenChanged)renderData(lastData,now);}else localise();},
-  shell(value:ShellState){if(lastData&&value.scope!=='all'&&!cockpitMembers(lastData).some(m=>m.key===value.scope))value={...value,scope:'all'};if(retiredUnstableScopes.has(value.scope))value={...value,scope:'all'};const changed=(nativeShell?.scope??'all')!==value.scope,refreshChanged=(nativeShell?.refreshing??false)!==(value.refreshing??false);nativeShell=value;preserveFocus(()=>{tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');tape.layout(layout.tapeLines);shellControls();headerRange.set(value.range??INITIAL_RANGE);deck.range(value.range??INITIAL_RANGE);engineRange?.();if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());if(changed){applyScope?.(value.scope);deck.scope(value.scope);}else if(refreshChanged)deck.refresh();});},
+  updateAppearance(value:LiveAppearance,now:number,threshold,used=false,allModels=false,order=[],hidden=[]){const orderChanged=setMemberOrder(order),hiddenChanged=setHiddenMembers(hidden);if(hiddenChanged&&nativeShell&&hidden.includes(nativeShell.scope))nativeShell={...nativeShell,scope:'all'};showUsedPercent=used;deck.showAllModels(allModels);const namesChanged=showProjectNames!==value.showProjectNames;showProjectNames=value.showProjectNames;selectedRedBelow=threshold;locale=value.locale;headerRange.locale(locale);reduceMotion=value.reduceMotion;syncReduced();document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion){stop();caution.classList.remove('flash');}if(lastData){lastRenderedAt=now;preserveFocus(()=>{localise(lastRenderedAt);localiseEngine?.(locale,lastRenderedAt);paintHud(frame.hud,lastData!,locale,hudOptions());if(namesChanged)paintRecords(lastData!,lastRenderedAt);syncCaution(lastData!,lastRenderedAt);});if(orderChanged||hiddenChanged)renderData(lastData,now);}else localise();},
+  shell(value:ShellState){if(lastData&&value.scope!=='all'&&!cockpitMembers(lastData).some(m=>m.key===value.scope))value={...value,scope:'all'};if(retiredUnstableScopes.has(value.scope))value={...value,scope:'all'};const changed=(nativeShell?.scope??'all')!==value.scope,refreshChanged=(nativeShell?.refreshing??false)!==(value.refreshing??false);nativeShell=value;preserveFocus(()=>{const layout=cockpitLayout(890);document.documentElement.dataset.profile='full';root.dataset.layout='890';root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');tape.layout(layout.tapeLines);shellControls();headerRange.set(value.range??INITIAL_RANGE);deck.range(value.range??INITIAL_RANGE);engineRange?.();if(lastData)paintHud(frame.hud,lastData,locale,hudOptions());if(changed){applyScope?.(value.scope);deck.scope(value.scope);}else if(refreshChanged)deck.refresh();});},
   ignite(on){if(on)root.dataset.ignite='true';else delete root.dataset.ignite;},
   // WP-22 (macrevb-1062-3): a rocket chosen or cleared in the enlarged field selects the same model on the HUD, the
   // faders and the porthole. Selection only: the MFD page does not change and no tried effort arrives with it.
   fieldClosed(){root.dispatchEvent(new CustomEvent('field-closed'));},
-  selectModel(id){hudSelected=id;markPorthole(id);deck.selectModel(id);if(lastData)preserveFocus(()=>paintHud(frame.hud,lastData!,tier!=='tall',locale,hudOptions()));},
+  selectModel(id){hudSelected=id;markPorthole(id);deck.selectModel(id);if(lastData)preserveFocus(()=>paintHud(frame.hud,lastData!,locale,hudOptions()));},
   render:renderData,
   nextDeadline(){if(!lastData)return null;const own=nextDeadline(lastData,lastRenderedAt),plugin=plugins.nextDeadline();return own===null?plugin:plugin===null?own:Math.min(own,plugin);},
   tick(now){refreshDeadlines(now);},

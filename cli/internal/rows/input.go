@@ -27,6 +27,8 @@ type Input struct {
 	// Union of keys from local.json plans, windows and resetCards, not array positions.
 	DeclaredPlanIDs []string        `json:"-"`
 	KeychainBlocks  []KeychainBlock `json:"-"`
+	// Proven membership can outlive ZCode's windows, account identity, and detection.
+	ZaiSubscriptionEstablished bool `json:"-"`
 }
 
 // ActivityInput is admitted session provenance, not a provider-level working flag.
