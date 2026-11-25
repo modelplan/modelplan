@@ -73,6 +73,7 @@ test('D328 column: the next 12 hours only; peaks, capsules with the time, the no
  const s=strip(page);
  for(const gone of ['.cal-d','.cal-pick','.cal-back','.cal-fold','.cal-more','.cal-hd'])await expect(s.locator(gone)).toHaveCount(0);
  await expect(s.locator('.cal-adr')).toHaveText(['Claude Banked · until 11/13 +1']);
+ await expect(s.locator('.cal-adr')).toHaveAttribute('title',/Banked resets · until 11\/13 \+1$/);
  // 12 hours end at 23:20 on Wednesday: no midnight divider; GLM's peak is the only block, on one line.
  await expect(s.locator('.cal-mid')).toHaveCount(0);
  // G3-179: at five columns the label sheds the abbreviation before the time clips; the tooltip keeps the sentence.
@@ -97,6 +98,7 @@ test('D328 Chinese labels, a running peak in the bottom line, and the 明 divide
  const {send,receive}=await open(page,{locale:'zh-CN'});
  await expect(column(page).locator('.pl-foot .pl-foot-l')).toHaveText('下个高峰');await expect(column(page).locator('.pl-foot .pl-foot-v')).toHaveText('10h40 后');
  await expect(strip(page).locator('.cal-adr')).toHaveText(['Claude 额外重置 至11/13 +1']);
+ await expect(strip(page).locator('.cal-adr')).toHaveAttribute('title',/额外重置次数 至11\/13 \+1$/);
  await shot(page,'A-strip-zh',page.locator('.ck-eng'));
  // 23:00: GLM's peak is running (until 02:00) and the 12 h window now holds midnight.
  expect(await receive(send('tick',{nowUnixMs:String(L(0,23)),reason:'deadline'}))).toBe(true);
