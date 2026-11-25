@@ -56,6 +56,72 @@ final class ShellLayoutTests: XCTestCase {
         let tiny = try fit(300)
         XCTAssertTrue(tiny.forcedClosed); XCTAssertLessThan(tiny.scale, 0.5)
         XCTAssertLessThanOrEqual(tiny.frame.height, 290)
+        assertNeverClipped(tiny, usable: .init(x: 100, y: 50, width: 1400, height: 300), "300 pt")
+    }
+    /// macrev2-1257-1 invariant: in any room the cockpit is never clipped. The window holds the whole open canvas, or
+    /// closed the whole canvas below the porthole band (the slab included), and fits the room in both directions;
+    /// the frame caps in `fit` never bind.
+    func assertNeverClipped(_ value: CockpitShellLayout, usable: CGRect, _ label: String, file: StaticString = #filePath, line: UInt = #line) {
+        let band = value.shutterClosed ? CockpitShellLayout.portholeBand(scale: value.scale) : 0
+        XCTAssertEqual(value.frame.height, value.canvasHeight - band, "\(label): the window is not cut (slab and body whole)", file: file, line: line)
+        XCTAssertLessThanOrEqual(value.portholeHeight, 228 * value.scale + 1e-9, "\(label): only the porthole band is left out, never the slab", file: file, line: line)
+        XCTAssertEqual(value.frame.width, CockpitShellLayout.wholePoints(636 * value.scale), "\(label): the width is not cut", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(value.frame.minX, usable.minX - 1e-9, "\(label): left edge on screen", file: file, line: line)
+        XCTAssertLessThanOrEqual(value.frame.maxX, usable.maxX + 1e-9, "\(label): right edge on screen", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(value.frame.minY, usable.minY - 1e-9, "\(label): bottom edge in the room", file: file, line: line)
+        XCTAssertLessThanOrEqual(value.frame.maxY, usable.maxY - CockpitShellLayout.menuBarGap + 1e-9, "\(label): top edge under the gap", file: file, line: line)
+        XCTAssertGreaterThan(value.scale, 0, label, file: file, line: line)
+    }
+    /// macrev2-1257-1 (failing first at e2d0930: the 300 pt room cut 0.548 pt of the closed slab): the very short room.
+    func testMacrev2_1257_1VeryShortRoomKeepsTheWholeClosedSlab() throws {
+        let usable = CGRect(x: 100, y: 50, width: 1400, height: 300)
+        let value = try fit(300)
+        XCTAssertTrue(value.forcedClosed)
+        XCTAssertLessThanOrEqual(value.frame.height, 290)
+        XCTAssertLessThanOrEqual(value.portholeHeight, 228 * value.scale)
+        XCTAssertEqual(value.frame.height, value.canvasHeight - CockpitShellLayout.portholeBand(scale: value.scale))
+        assertNeverClipped(value, usable: usable, "300 pt")
+    }
+    /// macrev2-1257-1, width-bound (failing first at e2d0930: a fractional width rounded the canvas one point past the
+    /// screen and the cap cut it): the room bounded by width, open and forced closed, attached anywhere on the display.
+    func testMacrev2_1257_1WidthBoundRoomIsNeverCut() throws {
+        for (minX, width) in [(0, 300.5), (0.5, 300), (0.25, 317.75), (0, 250), (10.5, 480.5)] as [(CGFloat, CGFloat)] {
+            for height in [1000, 600, 400] as [CGFloat] {
+                for closed in [false, true] {
+                    for anchorX in [minX, minX + width / 2, minX + width] {
+                        let usable = CGRect(x: minX, y: 0, width: width, height: height)
+                        let value = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: .init(x: anchorX, y: height, width: 20, height: 22), shutterClosed: closed))
+                        assertNeverClipped(value, usable: usable, "x \(minX) w \(width) h \(height) closed \(closed) icon \(anchorX)")
+                    }
+                }
+            }
+        }
+    }
+    /// macrev2-1257-1: every fit path (open / user-closed / forced closed at the floor / below the floor, bounded by height
+    /// or by width, whole and fractional frames, with and without a display basis) keeps the whole cockpit.
+    func testMacrev2_1257_1NoFitPathEverClips() throws {
+        var heights: [CGFloat] = Array(stride(from: CGFloat(60), through: 1200, by: 1))
+        heights += heights.map { $0 + 0.25 }
+        for height in heights {
+            for (minY, width) in [(0, 1400), (0.5, 1400), (70.5, 318.5)] as [(CGFloat, CGFloat)] {
+                for closed in [false, true] {
+                    let usable = CGRect(x: 0, y: minY, width: width, height: height)
+                    guard let value = CockpitShellLayout.fit(usable: usable, anchor: .init(x: 700, y: usable.maxY, width: 20, height: 22), shutterClosed: closed) else { continue }
+                    assertNeverClipped(value, usable: usable, "h \(height) y \(minY) w \(width) closed \(closed)")
+                    if value.forcedClosed { XCTAssertTrue(value.shutterClosed) } else { XCTAssertGreaterThanOrEqual(value.scale, CockpitShellLayout.minimumScale - 1e-9) }
+                }
+            }
+        }
+        // With a display basis (G3-132): the room is the smallest display's, possibly fractional.
+        for small in [300.5, 361.5, 485.25, 700.75] as [CGFloat] {
+            let basis = CockpitSizeBasis(visibleHeight: small, visibleWidth: 1280, screenWidth: 1280)
+            let usable = CGRect(x: 0, y: 0, width: 2560, height: 1415)
+            for closed in [false, true] {
+                let value = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: .init(x: 1300, y: 1415, width: 20, height: 22), shutterClosed: closed, basis: basis))
+                assertNeverClipped(value, usable: usable, "basis \(small) closed \(closed)")
+                XCTAssertLessThanOrEqual(value.frame.height, (small - CockpitShellLayout.menuBarGap).rounded(.down), "fits the smallest display")
+            }
+        }
     }
     func placed(width: CGFloat, height: CGFloat, bar: CGFloat, macDock: CGFloat = 0, closed: Bool = false, size: CockpitSize = .standard) throws -> CockpitShellLayout {
         try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: macDock, width: width, height: height - bar - macDock),

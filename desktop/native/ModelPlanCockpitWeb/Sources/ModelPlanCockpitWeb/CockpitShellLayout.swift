@@ -98,8 +98,12 @@ public struct CockpitShellLayout: Equatable, Sendable {
         guard available > 0 else { return nil }
         // G3-132: with a `basis`, Auto is judged on the set of displays and the room is the smallest display's, so every
         // display gets the same size. This display's own room stays a bound (it is never smaller than the basis).
-        let room = basis.map { min(available, ($0.visibleHeight - Self.menuBarGap).rounded(.down)) } ?? available
-        let narrowest = basis.map { min(usable.width, $0.visibleWidth) } ?? usable.width
+        // macrev2-1257-1: the room is whole points in both directions (the frame is placed on whole points), so a scale
+        // that fits the room can never round past it.
+        let room = (basis.map { min(available, ($0.visibleHeight - Self.menuBarGap).rounded(.down)) } ?? available).rounded(.down)
+        let usableWidth = usable.maxX.rounded(.down) - usable.minX.rounded(.up)
+        let narrowest = (basis.map { min(usableWidth, $0.visibleWidth) } ?? usableWidth).rounded(.down)
+        guard room >= 1, narrowest >= 1 else { return nil }
         // The chosen size, or less when the (smallest) display is too short or narrow for it.
         let chosen = size.scale(screenWidth: basis?.screenWidth ?? screenWidth ?? usable.width)
         func fitting(_ length: CGFloat, _ room: CGFloat) -> CGFloat { min(chosen, narrowest / Self.width, room / length) }
@@ -109,8 +113,14 @@ public struct CockpitShellLayout: Equatable, Sendable {
         // go under the floor, so it is never cut (no real display is that short).
         let forcedClosed = fitting(Self.openRoot + Self.baseReserve, room) < Self.minimumScale
         let closedCanvas = Self.openRoot + Self.baseReserve - (Self.stripTop - Self.closedSlabBand)
-        let scale = forcedClosed ? min(Self.minimumScale, fitting(closedCanvas, room))
+        var scale = forcedClosed ? min(Self.minimumScale, fitting(closedCanvas, room))
                                  : fitting(Self.openRoot + Self.baseReserve, room)
+        // macrev2-1257-1: the closed window is the canvas rounded UP less the band rounded DOWN, so at room / 723 it can
+        // come out one point over the room and the cap below would cut the slab. Step the scale down until the whole
+        // closed window fits (at most a few steps; the open window is exact by construction).
+        if forcedClosed {
+            while Self.closedWindowHeight(scale: scale) > room, scale > 0 { scale = max(0, scale - 0.5 / (Self.openRoot + Self.baseReserve)) }
+        }
         let fellBack = scale < chosen
         let closed = shutterClosed || forcedClosed
         let height: CGFloat = closed ? Self.closedRoot : Self.openRoot
@@ -125,13 +135,18 @@ public struct CockpitShellLayout: Equatable, Sendable {
         // G3-108: closed, the window leaves out the porthole band above the slab (strip top - 25 px: the 16 px slab and
         // its 9 px gutter), rounded down so the slab is never cut; the web view keeps the open canvas, bottom-anchored.
         let porthole = closed ? Self.portholeBand(scale: scale) : 0
-        let canvas = CGSize(width: min(Self.wholePoints(Self.width * scale), usable.width.rounded(.down)),
+        // The caps below never bind (ShellLayoutTests.testMacrev2_1257_1NoFitPathEverClips); they only keep a frame on screen.
+        let canvas = CGSize(width: min(Self.wholePoints(Self.width * scale), usableWidth),
                             height: min(canvasHeight - porthole, available.rounded(.down)))
         let x = max(usable.minX.rounded(.up), min(attachedX(anchor: anchor, width: canvas.width, scale: scale, usable: usable).rounded(),
                                                   (usable.maxX - canvas.width).rounded(.down)))
         return Self(profile: .full, shutterClosed: closed, forcedClosed: forcedClosed, scale: scale, rootHeight: height,
                     canvasRootHeight: openRoot, canvasHeight: canvasHeight,
                     frame: CGRect(x: x, y: top - canvas.height, width: canvas.width, height: canvas.height), sizeFellBack: fellBack)
+    }
+    /// The closed window at a scale: the open canvas on whole points less the porthole band (G3-108).
+    static func closedWindowHeight(scale: CGFloat) -> CGFloat {
+        wholePoints((openRoot + baseReserve) * scale) - portholeBand(scale: scale)
     }
     /// The strip's top in the page canvas (the open root's; the closed page keeps the strip there too, G3-108).
     static let stripTop: CGFloat = 253
