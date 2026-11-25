@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -26,6 +27,20 @@ type CodexRolloutIndex struct {
 	// private one.
 	Inventory *logindex.Inventory
 	own       logindex.Inventory
+
+	// The last selection and the inventory generation it was made under: while the generation
+	// stands, the selection stands, so an idle watcher tick neither copies the inventory nor
+	// matches and sorts it (#1222 sampling P2).
+	mu    sync.Mutex
+	cache rolloutSelection
+}
+
+type rolloutSelection struct {
+	gen          uint64
+	home, thread string
+	fence        consent.Fence
+	files        []string
+	own          string
 }
 
 func (p Paths) RecentCodexRollouts() ([]string, string) {
@@ -65,7 +80,7 @@ func (i *CodexRolloutIndex) clear(home string) {
 }
 
 func (i *CodexRolloutIndex) recent(home, thread string, fence consent.Fence, now time.Time) ([]string, string) {
-	selected, selectedOwn := selectRollouts(i.inventory(), fence, home, thread, codexFiles, now)
+	selected, selectedOwn := i.selection(home, thread, fence, now)
 
 	// The older discovery rejected symlink date directories. Recheck that
 	// property before returning a remembered filename, including after rename.
@@ -75,6 +90,23 @@ func (i *CodexRolloutIndex) recent(home, thread string, fence consent.Fence, now
 		own = ""
 	}
 	return files, own
+}
+
+// selection is selectRollouts over the inventory, made again only when the inventory's
+// generation, the home, the thread or the fence moved.
+func (i *CodexRolloutIndex) selection(home, thread string, fence consent.Fence, now time.Time) ([]string, string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	c := &i.cache
+	have := uint64(0)
+	if c.gen != 0 && c.home == home && c.thread == thread && c.fence == fence {
+		have = c.gen
+	}
+	files, own, gen, changed := selectRolloutsIfChanged(i.inventory(), fence, home, thread, codexFiles, now, have)
+	if changed {
+		*c = rolloutSelection{gen: gen, home: home, thread: thread, fence: fence, files: files, own: own}
+	}
+	return slices.Clone(c.files), c.own
 }
 
 // ConfinedRollouts keeps the rollouts that are still regular files under home's sessions

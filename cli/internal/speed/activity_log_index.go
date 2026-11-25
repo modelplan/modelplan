@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -26,6 +27,8 @@ type ActivityLogIndex struct {
 	// private one.
 	Inventory *logindex.Inventory
 	own       logindex.Inventory
+	mu        sync.Mutex
+	selection liveSelection
 }
 
 func (i *ActivityLogIndex) inventory() *logindex.Inventory {
@@ -37,7 +40,9 @@ func (i *ActivityLogIndex) inventory() *logindex.Inventory {
 
 func (i *ActivityLogIndex) Logs(claude, codex, zcode string, fence consent.Fence, now, elapsed time.Time) []LiveLog {
 	roots := activityRoots(claude, codex, zcode)
-	logs := recentLogs(i.inventory(), fence, roots, now, elapsed)
+	i.mu.Lock()
+	logs := recentLogsCached(i.inventory(), fence, roots, now, elapsed, &i.selection)
+	i.mu.Unlock()
 
 	// A remembered path doesn't authorize following a replacement ancestor.
 	// Share the directory checks across the bounded recent files in this tick.

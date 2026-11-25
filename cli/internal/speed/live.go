@@ -6,6 +6,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 )
@@ -173,6 +174,27 @@ func activityRoots(claudeHome, codexHome, zcodeHome string) []liveRoot {
 // recentLogs: the newest (at most 64) logs under the enabled roots changed in the last five
 // minutes, from the inventory's metadata.
 func recentLogs(inv *logindex.Inventory, fence consent.Fence, roots []liveRoot, now, elapsed time.Time) []LiveLog {
+	return recentLogsCached(inv, fence, roots, now, elapsed, nil)
+}
+
+// liveCandidate is a log changed within LiveWithin of when its selection was made.
+type liveCandidate struct {
+	log LiveLog
+	at  time.Time
+}
+
+// liveSelection caches the candidates selected at an inventory generation. The window only moves
+// forward with now, so the candidates of an unchanged inventory stay a superset of the logs
+// that are still recent, and each tick filters only them (#1222 sampling P2).
+type liveSelection struct {
+	gen   uint64
+	want  []logindex.Root
+	fence consent.Fence
+	built time.Time
+	cands []liveCandidate
+}
+
+func recentLogsCached(inv *logindex.Inventory, fence consent.Fence, roots []liveRoot, now, elapsed time.Time, c *liveSelection) []LiveLog {
 	var want []logindex.Root
 	for _, root := range roots {
 		if root.enabled && filepath.IsAbs(root.dir) {
@@ -182,29 +204,40 @@ func recentLogs(inv *logindex.Inventory, fence consent.Fence, roots []liveRoot, 
 	if len(want) == 0 {
 		return []LiveLog{}
 	}
-	type candidate struct {
-		log LiveLog
-		at  time.Time
+	have := uint64(0)
+	if c != nil && c.gen != 0 && c.fence == fence && slices.Equal(c.want, want) && !now.Before(c.built) {
+		have = c.gen
 	}
-	var all []candidate
-	for _, f := range inv.Files(fence, want, now, elapsed) {
-		if f.Mod.Before(now.Add(-LiveWithin)) {
-			continue
+	files, gen, changed := inv.FilesIfChanged(fence, want, now, elapsed, have)
+	var cands []liveCandidate
+	if changed {
+		for _, f := range files {
+			if f.Mod.Before(now.Add(-LiveWithin)) {
+				continue
+			}
+			cands = append(cands, liveCandidate{LiveLog{Path: f.Path, Source: f.Source, Sidechain: filepath.Base(filepath.Dir(f.Path)) == "subagents"}, f.Mod})
 		}
-		all = append(all, candidate{LiveLog{Path: f.Path, Source: f.Source, Sidechain: filepath.Base(filepath.Dir(f.Path)) == "subagents"}, f.Mod})
+		sort.Slice(cands, func(i, j int) bool {
+			if cands[i].at.Equal(cands[j].at) {
+				return cands[i].log.Path < cands[j].log.Path
+			}
+			return cands[i].at.After(cands[j].at)
+		})
+		if c != nil {
+			*c = liveSelection{gen: gen, want: want, fence: fence, built: now, cands: cands}
+		}
+	} else {
+		cands = c.cands
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].at.Equal(all[j].at) {
-			return all[i].log.Path < all[j].log.Path
-		}
-		return all[i].at.After(all[j].at)
-	})
 	out := []LiveLog{}
-	for i, c := range all {
-		if i == maxLive {
+	for _, cand := range cands {
+		if len(out) == maxLive {
 			break
 		}
-		out = append(out, c.log)
+		if cand.at.Before(now.Add(-LiveWithin)) {
+			continue
+		}
+		out = append(out, cand.log)
 	}
 	return out
 }

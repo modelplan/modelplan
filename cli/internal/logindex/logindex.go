@@ -69,9 +69,14 @@ type Inventory struct {
 	mu    sync.Mutex
 	fence consent.Fence
 	roots map[Root]*root
+	// gen moves whenever what Files would return may have changed: a root (re)listed, a retained
+	// file's stamp changed or gone, a root added, dropped or evicted, a new fence. Callers cache
+	// what they select from the files under it (FilesIfChanged), so an idle tick copies nothing.
+	gen uint64
 }
 
 type root struct {
+	dirty         bool // something Files returns changed since the inventory's gen last moved
 	dirs          map[string]*dirState
 	files         map[string]fileState
 	hotAt, coldAt time.Time
@@ -105,16 +110,31 @@ func (f fileState) modTime() time.Time { return time.Unix(0, f.mod) }
 // check every HotInterval of elapsed (a monotonic clock). now is the wall time that decides
 // what is recent. A root that is not absolute is ignored.
 func (inv *Inventory) Files(fence consent.Fence, roots []Root, now, elapsed time.Time) []File {
+	files, _, _ := inv.FilesIfChanged(fence, roots, now, elapsed, 0)
+	return files
+}
+
+// FilesIfChanged is Files for a caller that caches what it selects from the files. It refreshes
+// the roots as Files does and returns the inventory's generation. When that generation is still
+// have (from an earlier call with the same fence and roots), nothing can have changed and it
+// returns no files and changed=false without copying anything. have 0 always copies.
+func (inv *Inventory) FilesIfChanged(fence consent.Fence, roots []Root, now, elapsed time.Time, have uint64) (files []File, gen uint64, changed bool) {
 	inv.mu.Lock()
 	defer inv.mu.Unlock()
+	if inv.gen == 0 {
+		inv.gen = 1
+	}
 	if inv.roots == nil || inv.fence != fence {
 		inv.roots, inv.fence = map[Root]*root{}, fence
+		inv.gen++
 	}
 	for key, r := range inv.roots {
 		if elapsed.Sub(r.usedAt) > unused {
 			delete(inv.roots, key)
+			inv.gen++
 		}
 	}
+	var refreshed []*root
 	var out []File
 	for _, want := range roots {
 		if want.Dir == "" || !filepath.IsAbs(want.Dir) {
@@ -136,9 +156,34 @@ func (inv *Inventory) Files(fence consent.Fence, roots []Root, now, elapsed time
 			r.reconcile(want.Dir, now, elapsed, false)
 		}
 		r.usedAt = elapsed
+		if r.dirty {
+			r.dirty = false
+			inv.gen++
+		}
+		refreshed = append(refreshed, r)
+	}
+	if have != 0 && have == inv.gen {
+		return nil, inv.gen, false
+	}
+	for i, want := range validRoots(roots) {
+		r := refreshed[i]
+		idlework.Copied(len(r.files))
 		for path, f := range r.files {
 			out = append(out, File{Path: path, Source: want.Source, Depth: int(f.depth), Size: f.size, Mod: f.modTime()})
 		}
+	}
+	return out, inv.gen, true
+}
+
+// validRoots: the roots Files refreshes, in order, cleaned.
+func validRoots(roots []Root) []Root {
+	var out []Root
+	for _, want := range roots {
+		if want.Dir == "" || !filepath.IsAbs(want.Dir) {
+			continue
+		}
+		want.Dir = filepath.Clean(want.Dir)
+		out = append(out, want)
 	}
 	return out
 }
@@ -151,6 +196,7 @@ func (inv *Inventory) Drop(dir string) {
 	for key := range inv.roots {
 		if key.Dir == dir {
 			delete(inv.roots, key)
+			inv.gen++
 		}
 	}
 }
@@ -160,6 +206,7 @@ func (inv *Inventory) Clear() {
 	inv.mu.Lock()
 	defer inv.mu.Unlock()
 	inv.roots = nil
+	inv.gen++
 }
 
 func due(at, elapsed time.Time, every time.Duration) bool {
@@ -169,6 +216,7 @@ func due(at, elapsed time.Time, every time.Duration) bool {
 // scan lists the whole root, newest names first.
 func (r *root) scan(dir string, elapsed time.Time) {
 	idlework.Walk()
+	r.dirty = true
 	r.dirs, r.files = map[string]*dirState{}, map[string]fileState{}
 	r.hotAt, r.coldAt = elapsed, elapsed
 	info, err := os.Lstat(dir)
@@ -181,6 +229,7 @@ func (r *root) scan(dir string, elapsed time.Time) {
 
 // list enumerates one directory and adds the children it did not know.
 func (r *root) list(path string) {
+	r.dirty = true
 	d := r.dirs[path]
 	// Racy is about the file system's timestamp tick at the real moment of listing, so it is
 	// judged by the wall clock, not the caller's now: a directory stamped in the future (clock
@@ -250,6 +299,7 @@ func (r *root) remove(path string) {
 	if d == nil {
 		return
 	}
+	r.dirty = true
 	for _, sub := range d.subdirs {
 		r.remove(sub)
 	}
@@ -307,6 +357,7 @@ func (r *root) reconcile(dir string, now, elapsed time.Time, cold bool) {
 		if err != nil || !info.IsDir() {
 			if path == dir {
 				r.dirs, r.files = map[string]*dirState{}, map[string]fileState{}
+				r.dirty = true
 				return
 			}
 			r.remove(path)
@@ -325,9 +376,13 @@ func (r *root) reconcile(dir string, now, elapsed time.Time, cold bool) {
 			info, err := os.Lstat(f)
 			if err != nil || !info.Mode().IsRegular() {
 				delete(r.files, f)
+				r.dirty = true
 				continue
 			}
-			r.files[f] = stateOf(info, int(old.depth))
+			if st := stateOf(info, int(old.depth)); st != old {
+				r.files[f] = st
+				r.dirty = true
+			}
 		}
 	}
 }

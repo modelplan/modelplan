@@ -408,10 +408,21 @@ func discoverCodexRollouts(home, thread string, n int) (files []string, own stri
 // selectRollouts picks the n newest rollouts under home's sessions/YYYY/MM/DD from the
 // inventory, plus the thread's own rollout when one of the 62 newest days has it.
 func selectRollouts(inv *logindex.Inventory, fence consent.Fence, home, thread string, n int, now time.Time) (files []string, own string) {
+	files, own, _, _ = selectRolloutsIfChanged(inv, fence, home, thread, n, now, 0)
+	return files, own
+}
+
+// selectRolloutsIfChanged is selectRollouts for a caller holding the selection made at
+// generation have: when the inventory has not changed since, it returns changed=false and
+// selects nothing (logindex.FilesIfChanged).
+func selectRolloutsIfChanged(inv *logindex.Inventory, fence consent.Fence, home, thread string, n int, now time.Time, have uint64) (files []string, own string, gen uint64, changed bool) {
 	if home == "" {
-		return nil, ""
+		return nil, "", 0, true
 	}
-	all := inv.Files(fence, []logindex.Root{{Dir: filepath.Join(home, "sessions"), Source: "codex"}}, now, now)
+	all, gen, changed := inv.FilesIfChanged(fence, []logindex.Root{{Dir: filepath.Join(home, "sessions"), Source: "codex"}}, now, now, have)
+	if !changed {
+		return nil, "", gen, false
+	}
 	files = newestIn(all, n)
 	if thread = clip(thread); thread != "" {
 		own = findThreadIn(all, thread)
@@ -419,7 +430,7 @@ func selectRollouts(inv *logindex.Inventory, fence consent.Fence, home, thread s
 			files = append([]string{own}, files...)
 		}
 	}
-	return files, own
+	return files, own, gen, true
 }
 
 func contains(xs []string, x string) bool {
@@ -431,9 +442,56 @@ func contains(xs []string, x string) bool {
 	return false
 }
 
-// findThread looks for rollout-*-<thread>.jsonl in the most recent day directories under root.
+// findThread looks for rollout-*-<thread>.jsonl in the 62 most recent day directories under
+// root, as findThreadIn does over a whole inventory, but lists only those days: the spawn hook
+// calls it once per spawn under a deadline, and a long history must not cost it a full scan
+// (#1222 sampling P3). Days are root/YYYY/MM/DD, newest name first; symlinks are not followed.
 func findThread(root, thread string) string {
-	return findThreadIn((&logindex.Inventory{}).Files(consent.Fence{}, []logindex.Root{{Dir: root, Source: "codex"}}, time.Now(), time.Now()), thread)
+	suffix, days := "-"+thread+".jsonl", 0
+	for _, y := range realDirsDesc(root) {
+		for _, m := range realDirsDesc(y) {
+			for _, d := range realDirsDesc(m) {
+				es, _ := os.ReadDir(d)
+				idlework.Entries(len(es))
+				rollouts, match := false, ""
+				for _, e := range es {
+					if e.Type()&os.ModeSymlink != 0 || !e.Type().IsRegular() || !rolloutName.MatchString(e.Name()) {
+						continue
+					}
+					rollouts = true
+					if strings.HasSuffix(e.Name(), suffix) && e.Name() > match {
+						match = e.Name()
+					}
+				}
+				if !rollouts {
+					continue // as findThreadIn: a day counts when it holds a rollout
+				}
+				if match != "" {
+					return filepath.Join(d, match)
+				}
+				if days++; days >= 62 {
+					return ""
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// realDirsDesc lists dir's real subdirectories (no symlinks), newest name first.
+func realDirsDesc(dir string) []string {
+	es, err := os.ReadDir(dir)
+	idlework.Entries(len(es))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for i := len(es) - 1; i >= 0; i-- {
+		if es[i].Type()&os.ModeSymlink == 0 && es[i].IsDir() {
+			out = append(out, filepath.Join(dir, es[i].Name()))
+		}
+	}
+	return out
 }
 
 // findThreadIn looks for rollout-*-<thread>.jsonl in the 62 most recent day directories.
