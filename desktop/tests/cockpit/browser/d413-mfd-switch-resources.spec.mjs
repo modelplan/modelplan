@@ -120,3 +120,26 @@ test('D397 no timer or animation frame runs while the cockpit is hidden, with th
  const after=await page.evaluate(()=>({...window.__calls}));
  expect(after).toEqual(before);
 });
+
+// PR #1225 round 2. The header text never overlaps (real glyph boxes, EN with a swap-laden pressure), and a network
+// card without readings says so instead of drawing a blank graph.
+for(const locale of ['en','zh-CN'])
+test(`D413 the Resources screen header does not overlap and a pressure with swap still fits (${locale})`,async({page})=>{
+ const {push}=await open(page,{locale});
+ expect(await push([reading(T0,{pressure:'warn',swapUsed:3*GB}),reading(T0+5000,{pressure:'warn',swapUsed:3*GB})])).toBe(true);
+ await page.locator('.eng-keys .pl-key[data-plugin="resources"]').click();
+ const grid=page.locator('.mfd-screen .pl-screen[data-plugin="resources"] .pl-grid');await expect(grid).toBeVisible();
+ const boxes=await grid.evaluate(svg=>{const r=svg.getBoundingClientRect(),h=svg.querySelector('[data-head]').getBoundingClientRect(),t=[...svg.querySelectorAll('text[text-anchor="end"]')].find(e=>Math.abs(e.getBBox().y-6)<8)??svg.querySelectorAll('text[text-anchor="end"]')[0],b=t.getBoundingClientRect();return {head:[h.left,h.right],right:[b.left,b.right],area:[r.left,r.right]};});
+ expect(boxes.head[1]).toBeLessThanOrEqual(boxes.right[0]);expect(boxes.right[1]).toBeLessThanOrEqual(boxes.area[1]);
+});
+for(const locale of ['en','zh-CN'])
+test(`D413 the network card without readings shows an explicit empty state, not a blank graph (${locale})`,async({page})=>{
+ const {push}=await open(page,{locale});
+ const noNet=o=>{const s=reading(T0+o);delete s.netIn;delete s.netOut;return s;};
+ expect(await push([noNet(0),noNet(5000)])).toBe(true);
+ await page.locator('.eng-keys .pl-key[data-plugin="resources"]').click();
+ const net=page.locator('.mfd-screen .pl-grid [data-card="network"]');
+ await expect(net.locator('[data-empty]')).toHaveText(locale==='en'?'No network data yet':'暂无网络数据');
+ await expect(net.locator('[data-line]')).toHaveCount(0);
+ await expect(page.locator('.mfd-screen .pl-grid [data-card="cpu"] [data-empty]')).toHaveCount(0);
+});

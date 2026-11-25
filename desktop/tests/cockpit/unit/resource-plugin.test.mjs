@@ -299,3 +299,48 @@ test('accept: the optional network rates (bytes per second) come as a pair',()=>
   assert.equal(resourcePlugin.accept({samples:[sample(T0,bad)]},undefined),undefined,JSON.stringify(bad));
  assert.equal(formatRate(0),'0B');assert.equal(formatRate(999),'999B');assert.equal(formatRate(86_000),'86K');assert.equal(formatRate(1_234_567),'1.2M');assert.equal(formatRate(2_500_000_000),'2.5G');
 });
+
+// ---- PR #1225 round 2: the big screen's header never overlaps, and the network card never shows a blank graph.
+// PATHS (header + panels that can overflow or show blank), each pinned below:
+//  H1 head left vs pressure/load right: EN, zh, at 362 and 300 wide, with swap text in the pressure words
+//  C1 card name vs detail (CPU, memory, disk, network), both locales        C2 card big value vs 峰/均 pair
+//  N1 network card with no net readings -> explicit empty state, no line     N2 network card with readings -> no empty state
+const est=(t,size)=>[...t].reduce((n,ch)=>n+(/[⺀-￯]/.test(ch)?1:0.62),0)*size;
+const span=n=>{const size=Number(n.attrs['font-size']),w=est(text(n),size),x=Number(n.attrs.x),a=n.attrs['text-anchor'];return a==='end'?[x-w,x]:a==='middle'?[x-w/2,x+w/2]:[x,x+w];};
+const head=area=>all(area,n=>n.attrs['data-head']!==undefined)[0];
+const topRight=area=>all(area,n=>n.tag==='text'&&n.attrs['text-anchor']==='end'&&Number(n.attrs.y)===17)[0];
+for(const [locale,width,o] of [['en',362,{}],['en',362,{pressure:'warn',swapUsed:3*GB}],['en',300,{pressure:'critical',swapUsed:3*GB}],['zh-CN',362,{pressure:'warn',swapUsed:3*GB}],['zh-CN',300,{}]])
+ test(`H1 the big screen's header never overlaps its pressure and load (${locale}, ${width} px, ${JSON.stringify(o)})`,()=>{
+  const state=history(30,()=>({netIn:5000,netOut:100,...o}));
+  const area=drawInto(resourcePlugin.screen(state,context(locale)).draw,locale,width,213);
+  const [,hr]=span(head(area)),[rl,rr]=span(topRight(area));
+  assert.ok(hr+6<=rl,`head ends ${hr.toFixed(1)}, right text starts ${rl.toFixed(1)}`);
+  assert.ok(rr<=width-4,'the right text stays inside the draw area');
+  assert.match(text(topRight(area)),locale==='en'?/Normal|Elevated|High|Critical|Pressure/:/正常|偏高|严重|压力/,'the pressure value is still said');
+ });
+for(const locale of ['en','zh-CN'])
+ test(`C1/C2 no card text overlaps another in a card (${locale})`,()=>{
+  const state=history(30,i=>({cpuUser:i===12?80:15,netIn:5_400_000,netOut:1_200_000}));
+  const area=drawInto(resourcePlugin.screen(state,context(locale)).draw,locale,362,213);
+  for(const card of all(area,n=>n.attrs['data-card'])){
+   const pick=a=>all(card,n=>n.attrs[a]!==undefined)[0],name=pick('data-name'),det=pick('data-detail'),val=pick('data-value'),pv=pick('data-pv');
+   if(det)assert.ok(span(name)[1]+4<=span(det)[0],`${card.attrs['data-card']} name vs detail`);
+   if(val&&pv){const vr=Number(val.attrs.x)+est(val.textContent,16)+val.children.reduce((n,k)=>n+est(text(k),Number(k.attrs['font-size'])),0);assert.ok(vr+4<=span(pv)[0],`${card.attrs['data-card']} value vs peak/avg`);}
+  }
+ });
+test('N1 the network card with no readings says so, explicitly, instead of drawing a blank graph',()=>{
+ for(const [locale,words] of [['en','No network data yet'],['zh-CN','暂无网络数据']]){
+  const state=history(30);// the host sends no rates (first read primes the counters)
+  const area=drawInto(resourcePlugin.screen(state,context(locale)).draw,locale,362,213);
+  const net=all(area,n=>n.attrs['data-card']==='network')[0];
+  const empty=all(net,n=>n.attrs['data-empty']!==undefined);
+  assert.equal(empty.length,1,'one explicit empty state');assert.equal(text(empty[0]),words);assert.equal(empty[0].attrs['text-anchor'],'middle');
+  assert.equal(all(net,n=>n.attrs['data-line']!==undefined).length,0);
+  assert.equal(all(net,n=>n.attrs['data-sweep']!==undefined).length,0,'no still sweep over nothing');
+  const cpu=all(area,n=>n.attrs['data-card']==='cpu')[0];assert.equal(all(cpu,n=>n.attrs['data-empty']!==undefined).length,0,'the other cards have data');
+ }
+});
+test('N2 with network readings there is no empty state (the page accepts the rates only as a pair, so one direction cannot reach the card)',()=>{
+ const has=state=>all(drawInto(resourcePlugin.screen(state,context('en')).draw,'en',362,213),n=>n.attrs['data-empty']!==undefined).length;
+ assert.equal(has(history(30,()=>({netIn:5000,netOut:100}))),0);
+});

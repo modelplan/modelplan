@@ -186,7 +186,7 @@ function drawRadar(c:PluginDrawContext,state:unknown,detail:boolean):void {
   node('path',{d:`M${f(cx)},${f(cy-s*1.9)}L${f(cx+s)},${f(cy-1)}L${f(cx)},${f(cy-s*0.55)}L${f(cx-s)},${f(cy-1)}Z`,fill:'none',stroke:T.mid,'stroke-width':1.2,'stroke-linejoin':'round'},svg);
   // The rows: leader from each arc's left foot down to its name; number, side value, detail and sparkline.
   // Full-width (CJK) glyphs are about one em; Latin and digits in the LCD face about 0.62 em.
-  const width=(text:string,size:number)=>[...text].reduce((n,ch)=>n+(/[\u2e80-\uffef]/.test(ch)?1:0.62),0)*size;
+  const width=textWidth;
   const side:Record<Arc,PluginWords>={cpu:w('plugin.resourcesPeak',{n:pct(peak(samples))}),memory:w('plugin.resourcesGb',{used:gb(v.memoryUsed),total:gb(last.memTotal)}),disk:w('plugin.resourcesFree',{gb:gb(last.diskFree)})};
   const details:Record<Arc,string>={
     cpu:`${w('plugin.resourcesUserSystem').full} ${pct(last.cpuUser)}% · ${pct(last.cpuSystem)}% · ${w('plugin.resourcesLoad').full} ${Math.round(last.load*10)/10}`,
@@ -277,6 +277,8 @@ function rateParts(bps:number):[string,string] {
   if(bps>=1e3)return [String(Math.round(bps/1e3)),'KB/s'];return [String(Math.round(bps)),'B/s'];
 }
 let gridIds=0;
+/** Full-width (CJK) glyphs are about one em; Latin and digits in the LCD face about 0.62 em. */
+const textWidth=(text:string,size:number)=>[...text].reduce((n,ch)=>n+(/[\u2e80-\uffef]/.test(ch)?1:0.62),0)*size;
 /** Paints the D413 four-card grid into the screen's clipped area (drawn at its measured size; 362 × 213 in the app). */
 function drawGrid(c:PluginDrawContext,state:unknown,range:ResourceRange):void {
   const samples=statesOf(state),last=samples[samples.length-1];if(!last||c.width<=0||c.height<=0)return;
@@ -292,9 +294,15 @@ function drawGrid(c:PluginDrawContext,state:unknown,range:ResourceRange):void {
   const text=(x:number,y:number,size:number,fill:string,content:string,attrs:Record<string,string|number>={},parent:Element=svg)=>{const t=node('text',{x:f(x),y:f(y),'font-size':size,'font-family':font,fill,...attrs},parent);t.textContent=content;return t;};
   const span=(parent:Element,content:string,attrs:Record<string,string|number>)=>{node('tspan',attrs,parent).textContent=content;};
   // Top line: "资源 · 最近 10 分钟" left; memory pressure and load right (values in ink).
-  text(8,17,11,INK,w('plugin.resourcesHead',{range:rangeWord}),{'data-head':''});
-  const right=text(W-8,17,10,MUTED,`${w('plugin.resourcesPressure')} `,{'text-anchor':'end'});
-  span(right,pressureWords(c,last).full,{fill:INK});span(right,` · ${w('plugin.resourcesLoad')} `,{});span(right,String(Math.round(last.load*100)/100),{fill:INK});
+  const headEl=text(8,17,11,INK,w('plugin.resourcesHead',{range:rangeWord}),{'data-head':''});
+  // The right side gives way before it meets the title: full words and load, then without the load, then the short
+  // words, then the value alone (EN \"Mem pressure Elevated · Load 1.2\" does not fit beside \"Resources · last 10 min\" at 362 px).
+  const pw=pressureWords(c,last),headRoom=W-16-textWidth(headEl.textContent??'',11)-8;
+  const loadText=String(Math.round(last.load*100)/100),pLabel=c.words('plugin.resourcesPressure');
+  const sides:[string,string,string][]=[[`${pLabel.full} `,pw.full,` · ${w('plugin.resourcesLoad')} ${loadText}`],[`${pLabel.full} `,pw.full,''],[`${pLabel.short} `,pw.short,''],['',pw.short,'']];
+  const [sl,sv,sx]=sides.find(([a,b,x])=>textWidth(a+b+x,10)<=headRoom)??sides[sides.length-1]!;
+  const right=text(W-8,17,10,MUTED,sl,{'text-anchor':'end'});
+  span(right,sv,{fill:INK});if(sx){const k=sx.indexOf(loadText);span(right,sx.slice(0,k),{});span(right,loadText,{fill:INK});}
   const gap=7,cw=Math.floor((W-16-gap)/2),top=25.5,ch=Math.max(40,Math.floor((H-top-23.5-6)/2));
   const netName=w('plugin.resourcesNetwork'),netLast=last.netIn!==undefined&&last.netOut!==undefined;
   type Card={metric:ResourceMetric;name:string;lamp:string;big:[string,string];colour:string;detail:string;pv:[string,string]|null;percent:boolean};
@@ -325,9 +333,11 @@ function drawGrid(c:PluginDrawContext,state:unknown,range:ResourceRange):void {
     const defs=node('defs',{},g),gid=id+i;
     const grad=(name:string,x2:number,y2:number,stops:[number,number][])=>{const l=node('linearGradient',{id:gid+name,x1:0,y1:0,x2,y2},defs);for(const [o,op] of stops)node('stop',{offset:o,'stop-color':INK,'stop-opacity':op},l);};
     grad('a',0,1,[[0,0.16],[1,0.015]]);grad('s',1,0,[[0,0],[1,0.07]]);
-    node('rect',{'data-sweep':'',x:f(cx1-22),y:f(cy0-1),width:22,height:f(hgt+1),fill:`url(#${gid}s)`},g);
+    const noNet=card.metric==='netIn'&&!netLast;
+    if(!noNet)node('rect',{'data-sweep':'',x:f(cx1-22),y:f(cy0-1),width:22,height:f(hgt+1),fill:`url(#${gid}s)`},g);
     node('line',{x1:f(cx1+0.5),x2:f(cx1+0.5),y1:f(cy0-1),y2:f(cy1),stroke:INK,'stroke-opacity':0.2},g);
-    if(pts.length){
+    if(noNet){text((cx0+cx1)/2,(cy0+cy1)/2+3,9,DETAIL,w('plugin.resourcesNoNet'),{'text-anchor':'middle','data-empty':''},g);}
+    else if(pts.length){
       const line=pts.map(p=>`${f(X(p.t))},${f(Y(p.v))}`).join(' L'),area=`M${line} L${f(X(pts[pts.length-1]!.t))},${f(cy1)} L${f(X(pts[0]!.t))},${f(cy1)} Z`;
       const clip=(name:string,y:number,h:number)=>{const cp=node('clipPath',{id:gid+name},defs);node('rect',{x:f(cx0-2),y:f(y),width:f(cx1-cx0+4),height:f(Math.max(0,h))},cp);return `url(#${gid+name})`;};
       node('path',{d:area,fill:`url(#${gid}a)`},g);

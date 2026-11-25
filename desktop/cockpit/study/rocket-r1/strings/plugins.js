@@ -119,6 +119,7 @@ register('plugin', {
   resourcesDisk: ['lcd', '磁盘', 'Disk'],
   resourcesNetwork: ['lcd', '网络', 'Network'],
   resourcesNetworkShort: ['lcd', '网络', 'Net'],
+  resourcesNoNet: ['line', '暂无网络数据', 'No network data yet'],
   resourcesScreenShort: ['silk', '资源', 'Sys'],
   resourcesRange10: ['silk', '10分钟', '10 min'],
   resourcesRange60: ['silk', '1小时', '1 h'],
