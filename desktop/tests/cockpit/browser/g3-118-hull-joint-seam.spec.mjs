@@ -42,7 +42,7 @@ function seams(png,from,to,edge){
  }
  return found;
 }
-for(const [tier,profile] of [['tall','open'],['compact','open'],['tall','closed']])
+for(const [tier,profile] of [['tall','open'],['tall','closed']])
 for(const zoom of [0.85,0.849,0.8,0.9,1.15])
 test(`G3-118 ${tier} ${profile} at ${Math.round(zoom*1000)/10} %: no seam at the hull wall joints`,async({page})=>{
  await open(page,tier,profile,zoom);

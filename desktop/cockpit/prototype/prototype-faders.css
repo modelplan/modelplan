@@ -128,11 +128,6 @@ body.reduced #cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s line
 @media(prefers-reduced-motion:reduce){#cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s linear!important}}
 
 
-#cockpit[data-layout="640"] .dk-fad{--fd-lcd:73px}
-#cockpit[data-layout="640"] .dk-fad .fd-strip{padding:6px 2px 3px 3px}
-#cockpit[data-layout="640"] .dk-fad .cd-big,#cockpit[data-layout="640"] .dk-fad .cd-try{margin-top:2px}
-#cockpit[data-layout="640"] .dk-fad .cd-bar,#cockpit[data-layout="640"] .dk-fad .cd-use{margin-top:2px}
-#cockpit[data-layout="640"] .dk-fad .st-pin{top:9px}
 
 /* CKP-FAD-54 step 2: the effort page comes in over 150 ms when a card is clicked (none with reduced motion). */
 @keyframes cd-page-in{from{opacity:0}to{opacity:1}}

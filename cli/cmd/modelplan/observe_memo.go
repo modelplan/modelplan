@@ -19,6 +19,7 @@ import (
 type observeIndex struct {
 	inventory *logindex.Inventory
 	fence     consent.Fence
+	ticket    logindex.Ticket // the inventory's withdrawal count, taken before fence
 	memo      *observeMemo
 }
 
@@ -26,7 +27,7 @@ func (x observeIndex) activeLogs(claude, codex string, now time.Time) []speed.Li
 	if x.inventory == nil {
 		return speed.ActiveLogs(claude, codex, now)
 	}
-	return speed.ActiveLogsIn(x.inventory, x.fence, claude, codex, now)
+	return speed.ActiveLogsIn(x.inventory, x.fence, x.ticket, claude, codex, now)
 }
 
 // observeSettle: an observer is skipped only once its logs have been quiet this long, past

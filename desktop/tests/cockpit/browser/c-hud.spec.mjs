@@ -219,33 +219,6 @@ test('CKP-PORT-08 a different current effort is a white dot linked to its ★',a
  await open(page,{published:[model('a',40,.1)],session:{sessionRef:'0000000000000001',source:'Codex',subscriptionRef:null,model:'a',effort:'low',projectLabel:null,lastObservedAt:observed(),state:'running',rate:null}});
  await expect(page.locator('.hud-cur')).toHaveCount(1);await expect(page.locator('.hud-link')).toHaveCount(1);
 });
-test('CKP-PORT-05 the compact profile is one strip of three',async({page})=>{
- await open(page,{tier:'compact'});
- await expect(page.locator('.hud.hud-strip .hp')).toHaveCount(3);
- expect(await local(page)).toEqual([62,25,216,30]);
-});
-// G3-48: long published names overlapped their neighbours in three columns. The study's compact strip is an
-// 86x30 chart beside three stacked 10 px rows; each name stays inside its own row, before its ★ effort.
-test('G3-48 compact HUD names never overlap, however long',async({page})=>{
- const named=(id,name)=>({...model(id,50,.2),name});
- await open(page,{tier:'compact',published:[named('a','GPT-6 Astra Extended Context'),named('b','GPT-6.1 Terra'),named('c','GPT-6 Luna Preview Long Name')]});
- const svg=await page.locator('.hud-strip svg.hud-mini').boundingBox();expect([svg.width,svg.height]).toEqual([86,30]);
- const rows=await page.locator('.hud-strip .hp').evaluateAll(rows=>rows.map(r=>{const box=e=>e.getBoundingClientRect(),hud=r.closest('.hud').getBoundingClientRect(),row=box(r),name=box(r.querySelector('b')),rec=box(r.querySelector('.hp-rec'));return {top:row.top,bottom:row.bottom,nameRight:name.right,recLeft:rec.left,recRight:rec.right,hudRight:hud.right};}));
- expect(rows).toHaveLength(3);
- for(const [i,r] of rows.entries()){expect(r.nameRight).toBeLessThanOrEqual(r.recLeft);expect(r.recRight).toBeLessThanOrEqual(r.hudRight+0.5);if(i)expect(r.top).toBeGreaterThanOrEqual(rows[i-1].bottom);}
- // The boxes above can fit while the glyphs still paint past them: check the painted text against the ★.
- const painted=await page.locator('.hud-strip .hp').evaluateAll(rows=>rows.map(r=>{
-  const name=r.querySelector('b'),rec=r.querySelector('.hp-rec').getBoundingClientRect(),style=getComputedStyle(name);
-  const range=document.createRange();range.selectNodeContents(name);const text=range.getBoundingClientRect();
-  const clipped=style.overflow==='hidden'&&style.textOverflow==='ellipsis'&&style.whiteSpace==='nowrap';
-  return {overflows:name.scrollWidth>name.clientWidth,clipped,textRight:text.right,boxRight:name.getBoundingClientRect().right,recLeft:rec.left,lineHeight:style.lineHeight,rowHeight:r.getBoundingClientRect().height};
- }));
- for(const p of painted){
-  expect(p.overflows&&!p.clipped,'a name wider than its box must be clipped with an ellipsis').toBe(false);
-  expect(p.clipped?p.boxRight:p.textRight).toBeLessThanOrEqual(p.recLeft);
-  expect([p.lineHeight,p.rowHeight]).toEqual(['10px',10]);
- }
-});
 test('CKP-PORT-06 a row opens 模型 and Esc or Back returns to the page before',async({page})=>{
  await open(page);
  await page.locator('.hud .hp').first().click();await expect(page.locator('.fc')).toBeVisible();
@@ -361,7 +334,7 @@ test('CKP-PORT-50 a session on a model outside its subscription does not list th
 const backing=page=>page.locator('.hud').evaluate(h=>{const cs=getComputedStyle(h),box=h.getBoundingClientRect(),alpha=(/rgba?\(([^)]+)\)/.exec(cs.backgroundColor)?.[1].split(',').map(Number)[3])??1;
  return {image:cs.backgroundImage,alpha,inside:[...h.querySelectorAll('.hp')].every(r=>{const b=r.getBoundingClientRect();return b.left>=box.left-.5&&b.right<=box.right+.5&&b.top>=box.top-.5&&b.bottom<=box.bottom+.5;}),
   names:[...h.querySelectorAll('.hp b')].map(b=>[getComputedStyle(b).fontSize,getComputedStyle(b).color])};});
-for(const [tier,cap] of [['tall',6],['compact',3]])test(`CKP-PORT-50 ${tier}: at most ${cap} rows of owned models on no panel, names 10 px white`,async({page})=>{
+for(const [tier,cap] of [['tall',6]])test(`CKP-PORT-50 ${tier}: at most ${cap} rows of owned models on no panel, names 10 px white`,async({page})=>{
  await open(page,{tier,sessions:[running('a','m6'),running('b','m7')]});
  await expect(page.locator('.hud .hp')).toHaveCount(cap);
  const b=await backing(page);
@@ -376,10 +349,4 @@ test('CKP-PORT-51 a green dot follows the ★ effort of each model a session is 
   const [rec,mark]=await Promise.all([row.locator('.hp-rec').boundingBox(),dot.boundingBox()]);expect(mark.x).toBeGreaterThanOrEqual(rec.x+rec.width);expect(mark.width).toBeLessThanOrEqual(6);}
  await expect(page.locator('.hud .hp[data-hud-model=m5] .hp-on')).toHaveCount(0);
  await expect(page.locator('.hud .hp[data-hud-model=m7] .hp-on')).toHaveAttribute('aria-label','Running');
-});
-test('CKP-PORT-51 the compact strip keeps the dot inside its row',async({page})=>{
- await open(page,{tier:'compact',sessions:[running('a','m7')]});
- const row=page.locator('.hud.hud-strip .hp').first();await expect(row.locator('.hp-on')).toHaveCount(1);
- const [r,d,hud]=await Promise.all([row.boundingBox(),row.locator('.hp-on').boundingBox(),page.locator('.hud').boundingBox()]);
- expect(d.y).toBeGreaterThanOrEqual(r.y-.5);expect(d.y+d.height).toBeLessThanOrEqual(r.y+r.height+.5);expect(d.x+d.width).toBeLessThanOrEqual(hud.x+hud.width+.5);
 });

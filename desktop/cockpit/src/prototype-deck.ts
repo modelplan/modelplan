@@ -166,7 +166,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  function dragCard(c:Channel&{label?:string},level:string){
   const ch=channels.querySelector<HTMLElement>(`.fd-ch[data-model="${c.id}"]`),strip=ch?.querySelector<HTMLElement>('.fd-strip');if(!ch||!strip)return;
   if(level===c.base)delete previews[c.id];else previews[c.id]=level;
-  const model=faderModel(faderInput(),{bank:bankIndex,bankSize:BANK_SIZE,compact:root.dataset.layout==='640',selModel:selectedModel,previews,view:compare?{modelId:compare.modelId,trial:compare.modelId===c.id?level:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true}),next=model.all.find((x:{id:string})=>x.id===c.id);
+  const model=faderModel(faderInput(),{bank:bankIndex,bankSize:BANK_SIZE,selModel:selectedModel,previews,view:compare?{modelId:compare.modelId,trial:compare.modelId===c.id?level:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true}),next=model.all.find((x:{id:string})=>x.id===c.id);
   if(!next)return;strip.innerHTML=inertStyles(lcdView(next));strip.dataset.card=next.card.state;strip.setAttribute('aria-label',stripAria(next));ch.classList.toggle('trying',!!next.trial);
   const shareBar=strip.querySelector<HTMLElement>('.cd-bar');if(shareBar&&next.card.bar!=null){shareBar.style.setProperty('--s',(next.card.bar*100).toFixed(1)+'%');if(next.segments[0])shareBar.style.setProperty('--v',next.segments[0]);}
   for(const [j,el] of [...strip.querySelectorAll<HTMLElement>('.st-vend b')].entries())el.style.setProperty('--v',next.segments[j]);
@@ -179,7 +179,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  let faderSig='';
  const faderSignature=(d:{faders:readonly {id:string;current:string|null;currentFast:boolean}[]})=>d.faders.map(f=>`${f.id}:${f.current??''}:${f.currentFast}`).join('|');
  function paintFaders(){
-  const data=faderInput();faderSig=faderSignature(data);const input=record(details.publication),requested=selectedModel??safeText(input?.selectedModel),target=data.faders.find(f=>f.id===requested||f.sourceId===requested)?.id??null,ui={bank:bankIndex,bankSize:BANK_SIZE,compact:root.dataset.layout==='640',selModel:target,previews,view:compare?{modelId:compare.modelId,trial:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true},model=faderModel(data,ui);bankIndex=model.bank;
+  const data=faderInput();faderSig=faderSignature(data);const input=record(details.publication),requested=selectedModel??safeText(input?.selectedModel),target=data.faders.find(f=>f.id===requested||f.sourceId===requested)?.id??null,ui={bank:bankIndex,bankSize:BANK_SIZE,selModel:target,previews,view:compare?{modelId:compare.modelId,trial:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true},model=faderModel(data,ui);bankIndex=model.bank;
   const targetChannel=model.all.find((c:{id:string})=>c.id===model.target);
   // The one selected model, by published id, for the surfaces that light with it (session line, rocket ring: WP-04, WP-12).
   const selSource=compare?data.faders.find(f=>f.id===compare!.modelId)?.sourceId:null;if(selSource)root.dataset.selModel=selSource;else delete root.dataset.selModel;
@@ -205,7 +205,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  }
 
  const bar=node('div','mfd-pk'),screen=node('div','mfd-screen'),page=node('div','mfd-page pg-overview'),footer=node('div','mfd-ok');bar.setAttribute('role','toolbar');screen.dataset.mat='well';page.dataset.fill='page';screen.append(page);
- // A change of the screen's size (compact / tall) redraws the overview, whose alert budget follows it.
+ // A change of the screen's size redraws the overview, whose alert budget follows it.
  if(typeof ResizeObserver!=='undefined')new ResizeObserver(()=>{if(selected===0&&pageFill&&page.clientHeight>0&&page.clientHeight!==pageFill.h)paint(true);}).observe(page);
  // G3-171: one source for the range. The app's (the header's) range is read at every paint; the copy below is only the
  // fallback of a deck mounted without an app (tests).
@@ -388,7 +388,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   compare=refreshComparison(compare!,f);
   const fast=compareSpeedTiers(f,f.tier),{model,args:input}=comparisonInput(f,compare,fast.pool),view={models:[model],speedTiers:fast.speedTiers,sessionRanking:[],accounts:[],now:d.now};
   const args:CompareArgs=input;
-  const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=inertStyles(comparison(view,{...ui,scope:null,trialNote:true,compact:root.dataset.layout==='640',starMode:root.dataset.starMode||undefined,laneMode:root.dataset.laneMode||undefined,fill:cmpFill?{cmp:cmpFill}:{}},args));};
+  const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=inertStyles(comparison(view,{...ui,scope:null,trialNote:true,starMode:root.dataset.starMode||undefined,laneMode:root.dataset.laneMode||undefined,fill:cmpFill?{cmp:cmpFill}:{}},args));};
   bar.classList.add('dark');for(const {b} of buttons){b.classList.remove('on');b.setAttribute('aria-pressed','false');}
   // CSP (style-src 'self') drops the key block's inline geometry (the ladder and the numbers under it inherit it); apply it through CSSOM after every draw.
   const ladder=()=>{for(const e of page.querySelectorAll<HTMLElement>('.cmp-keys[data-study-style]')){const css=e.getAttribute('data-study-style')??'';e.removeAttribute('data-study-style');for(const m of css.matchAll(/(--c[lr]):(\d+(?:\.\d+)?px)/g))e.style.setProperty(m[1]!,m[2]!);}};

@@ -47,7 +47,8 @@ public struct CockpitAppearance: Equatable, Sendable {
     case en
     case zhCN = "zh-CN"
   }
-  public enum Profile: String, Sendable { case full, compact }
+  /// D444 (owner, 2026-11-25): one cockpit layout; the short (640) version is retired.
+  public enum Profile: String, Sendable { case full }
   public let theme: Theme, locale: Locale, profile: Profile
   public let reduceMotion: Bool, reduceTransparency: Bool, shutterClosed: Bool, detached: Bool
   public let redBelow: Int
@@ -96,7 +97,8 @@ public enum CockpitRange: String, CaseIterable, Equatable, Sendable {
 }
 public struct CockpitShellState: Equatable, Sendable {
   public enum Profile: String, Sendable { case open, closed }
-  public enum Tier: String, Sendable { case tall, compact }
+  /// D444: one layout, so the wire's `tier` is always `tall` (the key stays for the page's exact-key check).
+  public enum Tier: String, Sendable { case tall }
   public let profile: Profile
   public let tier: Tier
   public let scope: String
