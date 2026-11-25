@@ -5,7 +5,8 @@ Copyright (c) 2026 ModelPlan. Reserved visual material; see ../LICENSE.md.
 
 Generated with Playwright 1.55.0 / WebKit 2203 on Ubuntu 24.04 arm64, using only
 synthetic Go wire captures, public A5/c01 artwork and the published OFL font pack.
-The matrix is full (636×890) and compact (636×640), day/night, English/Chinese.
+The matrix is the full layout (636×890), day/night, English/Chinese (D444 retired
+the compact 636×640 layout and its four images on 2026-11-25).
 Motion is disabled for deterministic pixels. Their hashes belong in the public
 source-policy registry before publication.
 

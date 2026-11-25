@@ -11,6 +11,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/testenv"
@@ -176,7 +177,7 @@ func TestEstablishedZCodeKeepsUnavailableRingAcrossCacheAndDetectionChanges(t *t
 		}
 	}
 	row := func() *rows.Row {
-		for _, r := range backend.buildView(consent.Capture(), false).Projection.Rows {
+		for _, r := range backend.buildView(consent.Capture(), logindex.Ticket{}, false).Projection.Rows {
 			if r.ID == "zai" {
 				return &r
 			}

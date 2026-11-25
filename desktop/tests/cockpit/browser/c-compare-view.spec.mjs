@@ -99,8 +99,9 @@ test('CKP-FAD-18 the comparison carries one quiet trial note, only while a trial
  }
 });
 
-test('CKP-FAD-18 tall keeps the full note; compact keeps the chart and collapses the note to an info mark with the full text',async({page})=>{
- for(const tier of ['compact','tall'])for(const [locale,text] of [['en','Trial only — your tool settings stay unchanged'],['zh-CN','试算，不会改工具设置']]){
+// D444: one layout, so the full note always shows and the info mark (the retired compact form) stays hidden.
+test('CKP-FAD-18 the full note shows; the info mark keeps the full text as its name and stays hidden',async({page})=>{
+ for(const tier of ['tall'])for(const [locale,text] of [['en','Trial only — your tool settings stay unchanged'],['zh-CN','试算，不会改工具设置']]){
   await open(page,locale,false,null,tier);
   await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
   const note=page.locator('.mfd-page.pg-compare .cmp-trial-note'),mark=page.locator('.mfd-page.pg-compare .cmp-trial-i');
@@ -108,20 +109,7 @@ test('CKP-FAD-18 tall keeps the full note; compact keeps the chart and collapses
   expect(await page.locator('.mfd-page').evaluate(e=>e.scrollWidth<=e.clientWidth+.5),tier+' '+locale).toBe(true);
   const inside=await page.evaluate(()=>{const p=document.querySelector('.mfd-page').getBoundingClientRect(),ok=sel=>{const r=document.querySelector(sel).getBoundingClientRect();return r.top>=p.top-.5&&r.bottom<=p.bottom+.5&&r.left>=p.left-.5&&r.right<=p.right+.5;};return {table:ok('.cmp-bars-row'),mark:ok('.cmp-trial-i')||getComputedStyle(document.querySelector('.cmp-trial-i')).display==='none'};});
   expect(inside,tier+' '+locale).toEqual({table:true,mark:true});
-  if(tier==='tall'){await expect(note).toBeVisible();await expect(mark).toBeHidden();}
-  else{
-   await expect(note).toBeHidden();await expect(mark).toBeVisible();
-   // The chart survives, with the trial marker; the mark is keyboard-focusable and shows the full text as a tooltip.
-   const chart=page.locator('.mfd-page.pg-compare svg.cmp-chart');
-   await expect(chart).toHaveCount(1);
-   // The trial is marked by its column: the pale-blue haze with its border and the top label (Try, or Current · Try when equal).
-   await expect(chart.locator('.pc-band-trial')).toHaveCount(1);
-   const label=chart.locator('.pc-col-l[data-role="trial"], .pc-col-l[data-role="both"]');
-   await expect(label).toHaveCount(1);
-   await expect(label).toHaveText(locale==='en'?/^(Try|Current · Try)/:/^(试|当前·试)/);
-   await mark.focus();await expect(mark).toBeFocused();
-   expect(await mark.evaluate(e=>getComputedStyle(e,'::after').content)).toBe('"'+text+'"');
-  }
+  await expect(note).toBeVisible();await expect(mark).toBeHidden();
  }
 });
 
@@ -408,7 +396,7 @@ test(`CKP-MFD-33 column labels (${locale}): Current on the current column, Try o
  expect(await colLabels(page)).toEqual([{role:'both',text:words.b,effort:'High'}]);
  expect(await collisions(page)).toEqual([]);
 });
-for(const tier of ['tall','compact'])
+for(const tier of ['tall'])
 test(`CKP-MFD-33 column labels do not collide with the gridline or ▲ value labels (${tier}, fast overflow)`,async({page})=>{
  await open(page,'en',true,null,tier);
  await page.locator('[data-bank="1"]').click();
@@ -422,7 +410,7 @@ test(`CKP-MFD-33 column labels do not collide with the gridline or ▲ value lab
 
 // Owner 11-12: a labelled column that is also the recommended effort carries a gold " ★"; a recommended column that is neither current nor trial has no label and no background.
 for(const [locale,w] of [['en',{c:'Current',t:'Try',b:'Current · Try'}],['zh-CN',{c:'当前',t:'试',b:'当前·试'}]])
-for(const tier of ['tall','compact'])
+for(const tier of ['tall'])
 test(`CKP-MFD-33 column label ★ (${locale}, ${tier}): appended when the labelled column is the recommended effort`,async({page})=>{
  const sol=()=>page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
  const labels=()=>page.locator('.mfd-page svg.cmp-chart').evaluate(svg=>[...svg.querySelectorAll('.pc-col-l')].map(e=>({role:e.dataset.role,text:e.textContent,effort:e.dataset.effort,star:getComputedStyle(e.querySelector('.pc-col-star')||e).fill})));

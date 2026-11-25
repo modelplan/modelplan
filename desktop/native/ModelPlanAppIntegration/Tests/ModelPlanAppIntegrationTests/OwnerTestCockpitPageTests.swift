@@ -378,7 +378,7 @@ extension CommunityCockpitEntryTests {
               FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
             throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
         }
-        for (name, usable, tier, closedRoot) in [("short", CGRect(x: 0, y: 0, width: 1440, height: 692), CockpitShellState.Tier.compact, CGFloat(609)),
+        for (name, usable, tier, closedRoot) in [("short", CGRect(x: 0, y: 0, width: 1440, height: 692), CockpitShellState.Tier.tall, CGFloat(691)), // D444: one layout
                                                   ("full", CGRect(x: 0, y: 0, width: 1680, height: 1026), .tall, 691)] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-53-" + UUID().uuidString).resolvingSymlinksInPath()
             defer { try? FileManager.default.removeItem(at: root) }
@@ -423,7 +423,7 @@ extension CommunityCockpitEntryTests {
                         windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)))
                 }
             }
-            for (closed, expectedRoot) in [(true, closedRoot), (false, tier == .tall ? 905 : 635)] {
+            for (closed, expectedRoot) in [(true, closedRoot), (false, 905)] {
                 try click()
                 deadline = ContinuousClock.now + .seconds(10)
                 while ContinuousClock.now < deadline, (page.verificationShellState?.profile == .closed) != closed { try await Task.sleep(for: .milliseconds(50)) }

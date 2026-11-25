@@ -44,7 +44,7 @@ async function openThrottles(page,{theme='night',tier='tall',height=890,glmEffor
 const rect=l=>l.evaluate(e=>{const r=e.getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height,x:r.left+r.width/2,y:r.top+r.height/2};});
 const channels=page=>page.locator('.fd-ch:not(.empty)');
 
-for(const [tier,height] of [['tall',890],['compact',640]]){
+for(const [tier,height] of [['tall',890]]){
  test(`D405 the big screen takes about 61.8% of the deck (${tier})`,async({page})=>{
   await openThrottles(page,{tier,height});
   const deck=await rect(page.locator('.ck-deck')),mfd=await rect(page.locator('.dk-mfd')),fad=await rect(page.locator('.dk-fad'));

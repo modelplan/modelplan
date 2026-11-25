@@ -44,7 +44,7 @@ final class BridgeTests: XCTestCase {
   }
   func testLosslessUInt64AndRejectDuplicateNestedAndNoncanonical() throws {
     let state = CockpitBridgeState(context: try context(UInt64.max))
-    let load = try state.load(.init(theme: .day, locale: .zhCN, profile: .compact), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .compact))
+    let load = try state.load(.init(theme: .day, locale: .zhCN, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
     XCTAssertEqual(try object(load)["generation"] as? String, "18446744073709551615")
     var valid = try object(reply(load, "ready", 1))
     for invalid: Any in ["01", "18446744073709551616", 1, "-1"] {

@@ -126,10 +126,10 @@ import XCTest
   func testShutterToggleWhileAttachedMovesTheRackMaskLineSmoothly() async throws {
     let fixture = try make()
     defer { fixture.page.discard() }
-    // Give the layout room for an open compact cockpit even on a short CI desktop.
+    // A 720 pt room: the open cockpit, scaled down (D444: no short version), even on a short CI desktop.
     let usable = CGRect(x: fixture.usable.minX, y: fixture.usable.maxY - 720, width: fixture.usable.width, height: 720)
     fixture.page.verificationPlacement = (usable: usable, anchor: fixture.icon)
-    fixture.page.updateAppearance(.init(theme: .night, locale: .en, profile: .compact, size: .percent80))
+    fixture.page.updateAppearance(.init(theme: .night, locale: .en, profile: .full, size: .percent80))
     let window = try open(fixture)
     try await until("the attached entrance is settled") {
       window.alphaValue == 1 && fixture.page.verificationRack.ext == 1 && !fixture.page.verificationRack.moving
@@ -237,6 +237,10 @@ import XCTest
     XCTAssertTrue(fixture.usable.contains(plan.frame), "the landing is fully on screen")
     XCTAssertGreaterThanOrEqual(hypot(plan.frame.minX - home.minX, plan.frame.maxY - home.maxY), 56 - 0.01)
     XCTAssertNotEqual(plan.rule, .minimum, "a normal screen has room for a regular landing")
+    XCTAssertEqual(plan.frame.size, home.size, "D444: a detach keeps the attached size")
+    let detachedLayout = try XCTUnwrap(fixture.page.verificationLayout)
+    XCTAssertEqual(detachedLayout.profile, .full, "D444: a detached cockpit never switches layout")
+    XCTAssertEqual(fixture.page.verificationShellState?.tier, .tall)
     try await wait(300)
     XCTAssertEqual(ignition, [true], "still burning mid-move")
     XCTAssertNotEqual(window.frame, home); XCTAssertNotEqual(window.frame, plan.frame)
@@ -286,10 +290,15 @@ import XCTest
     var ignition: [Bool] = []
     fixture.page.verificationIgnition = { ignition.append($0) }
     let grab = CGPoint(x: home.minX + 120, y: home.maxY - 16)
-    let away = CGPoint(x: grab.x, y: grab.y - 200)
+    // Fix main (0b82b5e6): D444 scales the one full layout to fill a short display's height (the hosted runner's), so a
+    // straight-down drag is clamped inside the 40 pt catch zone and never arms the put back. Tear off down AND sideways
+    // toward the roomier side, so the drag leaves the zone on any display.
+    let side: CGFloat = fixture.usable.maxX - home.maxX >= home.minX - fixture.usable.minX ? 200 : -200
+    let away = CGPoint(x: grab.x + side, y: grab.y - 200)
     fixture.page.titleDrag(.began, point: grab)
     fixture.page.titleDrag(.moved, point: away)
     XCTAssertFalse(fixture.page.isAttached)
+    XCTAssertFalse(fixture.page.inCatchZone(window.frame), "the tear-off leaves the catch zone (\(window.frame) from \(home))")
     XCTAssertEqual(fixture.page.verificationRack.target, 0, "tear-off: the rack retracts into the icon")
     XCTAssertEqual(ignition, [])
     let near = CGPoint(x: grab.x + 10, y: grab.y - 20)

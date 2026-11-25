@@ -34,7 +34,7 @@ export function mountPrototypeHelp(root:HTMLElement,getLocale:()=>Locale,isActiv
   const targets=notes.flatMap(([selector,key])=>{const target=[...root.querySelectorAll(selector)].find(visible);if(!target)return [];const box=target.getBoundingClientRect(),caption=document.createElement('span');caption.className='an';caption.dataset.target=selector;caption.textContent=selector==='[data-detach]'&&!isAttached()?(ht(locale,'host.helpPutBack')):ht(locale,key);layer.append(caption);return [{target,box,caption}];}).sort((a,b)=>a.box.y-b.box.y);
   if(!targets.length){layer.hidden=true;return;}
   const crop=root.dataset.shell==='closed'?Math.max(0,parseFloat(getComputedStyle(root).marginTop)||0):0,top=34+crop; // the closed window crops the porthole band: help starts inside the visible area
-  const viewportWidth=window.innerWidth,viewportHeight=window.innerHeight,ship=root.getBoundingClientRect();const available=Math.max(180,ship.x-28),width=Math.min(400,available),gap=root.dataset.layout==='890'?12:6,edge=ship.x;
+  const viewportWidth=window.innerWidth,viewportHeight=window.innerHeight,ship=root.getBoundingClientRect();const available=Math.max(180,ship.x-28),width=Math.min(400,available),gap=12,edge=ship.x;
   Object.assign(title.style,{left:Math.max(8,edge-width-14)+'px',top:top+'px',width:width+'px'});
   for(const {caption} of targets)caption.style.width=width+'px';
   const start=top+title.offsetHeight+gap,space=viewportHeight-start-12,total=targets.reduce((n,x)=>n+x.caption.offsetHeight+gap,0),columns=total>space?2:1;

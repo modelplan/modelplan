@@ -9,7 +9,7 @@
 import {ht} from './host-text.js';
 export type StillLayer={left:number;top:number;width:number;height:number;file:string};
 export type StillModel={id:string;name?:string;nozzle:{x:number;y:number};body?:StillLayer;flame?:StillLayer;halo?:StillLayer};
-export type StillProjection={id:string;theme:'night'|'day';layout:890|640;width:number;height:number;background:string;models:StillModel[]};
+export type StillProjection={id:string;theme:'night'|'day';layout:890;width:number;height:number;background:string;models:StillModel[]};
 export type StillPack={base:string;projections:StillProjection[]};
 // A click within 28 px of a rocket's centre names that rocket (prototype hud-selection/still.js:hitStillRocket); nearest wins.
 export function stillRocketAt(field:HTMLElement,x:number,y:number,radius=28):string|null {
@@ -72,20 +72,19 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
   const host=document.createElement('div');host.className='ck-still';host.setAttribute('aria-hidden','true');field.prepend(host);
   const base=new URL(pack.base,document.baseURI).href;let painted='';
   // The ⤢ key sits inside the glass of the c01 canopy, never on its frame (owner, 11-09). Positions are measured on the
-  // canopy aperture mask (runtime/canopy-c01/aperture-<layout>-1x.png, in the port's page coordinates): at least 8 px of
-  // glass on every side at both layouts, in both themes, and clear of the HUD at the left. Measured against the final
-  // masks of the redrawn canopy (D74, #801): the clearance is 8.1 px at 890 and 8.0 px at 640. Offsets are from the port's
-  // padding box.
-  const BIG_KEY={890:{right:38,top:52},640:{right:38,top:7}} as const;
+  // canopy aperture mask (runtime/canopy-c01/aperture-890-1x.png, in the port's page coordinates): at least 8 px of
+  // glass on every side, in both themes, and clear of the HUD at the left. Measured against the final masks of the
+  // redrawn canopy (D74, #801): the clearance is 8.1 px. Offsets are from the port's padding box. D444: one layout.
+  const BIG_KEY={right:38,top:52} as const;
   const placeBig=()=>{
     if(!big||!port)return;const size=22;if(!port.clientWidth||!port.clientHeight)return;
-    const at=BIG_KEY[cockpit.dataset.layout==='640'?640:890];
+    const at=BIG_KEY;
     Object.assign(big.style,{right:at.right+'px',top:at.top+'px',width:size+'px',height:size+'px',display:'grid',placeItems:'center',zIndex:'3'});
   };
   const paint=()=>{
     placeBig();
-    const theme=document.documentElement.dataset.theme==='day'?'day':'night',layout=cockpit.dataset.layout==='640'?640:890;
-    const frame=pack.projections.find(p=>p.theme===theme&&p.layout===layout);
+    const theme=document.documentElement.dataset.theme==='day'?'day':'night';
+    const frame=pack.projections.find(p=>p.theme===theme&&p.layout===890);
     // The field may reach past the port's padding box (official edition, G3-82: the canopy art box); its
     // computed insets hold even while it is hidden, so the still is sized to the box it will fill.
     const port=field.parentElement??field,cs=getComputedStyle(field),inset=(v:string)=>parseFloat(v)||0;

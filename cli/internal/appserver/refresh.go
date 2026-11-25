@@ -14,6 +14,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 )
 
@@ -21,8 +22,11 @@ import (
 // Run must enforce its own provider lock, admission and persisted budget again;
 // a projected deadline is never permission to bypass those gates.
 type RefreshConfig struct {
-	Backend           Backend
-	Paths             func(consent.Admission) quota.Paths
+	Backend Backend
+	Paths   func(consent.Admission) quota.Paths
+	// Ticket takes the history inventory's withdrawal ticket; every caller takes it before it
+	// captures the admission its paths are built for (macrev2-1261-2). Nil: none (tests).
+	Ticket            func() logindex.Ticket
 	Run               func(context.Context, quota.Paths, string, time.Time) error
 	Offline, ReadOnly bool
 	Changed           func()
@@ -192,7 +196,7 @@ func (s *RefreshScheduler) request(ctx context.Context, p wire.RefreshRequestPar
 	if err != nil {
 		return nil, Stamp{}, err
 	}
-	admission := consent.Capture()
+	admission, ticket := s.capture()
 	stamp := stampOfFence(admission.Fence())
 	if stamp != view.Stamp {
 		return nil, Stamp{}, ProtocolError{wire.CodeConsentChanged}
@@ -216,7 +220,7 @@ func (s *RefreshScheduler) request(ctx context.Context, p wire.RefreshRequestPar
 	for _, scope := range view.Scopes {
 		allowed[scope] = true
 	}
-	paths := s.paths(admission)
+	paths := s.paths(admission, ticket)
 	now := s.now()
 	result := []wire.RefreshScheduled{}
 	enqueued := false
@@ -314,14 +318,14 @@ func (s *RefreshScheduler) advanceQueued(key string, seen refreshJob, at, now ti
 
 // replanQueued: the automatic pass asks again for a job that is waiting for its deadline, so a
 // new sign-in, which changes no consent, still moves the read up within a pass (G3-103).
-func (s *RefreshScheduler) replanQueued(admission consent.Admission, scope, key string, now time.Time) {
+func (s *RefreshScheduler) replanQueued(admission consent.Admission, ticket logindex.Ticket, scope, key string, now time.Time) {
 	s.mu.Lock()
 	job, queued := s.scheduled[key]
 	s.mu.Unlock()
 	if !queued || job.member != nil || job.scope != scope || !job.at.After(now) || job.stamp != stampOfFence(admission.Fence()) {
 		return
 	}
-	plan, err := s.plan(s.paths(admission), scope, now)
+	plan, err := s.plan(s.paths(admission, ticket), scope, now)
 	if err != nil || !plan.Admitted || !plan.BudgetKnown || plan.PolicyPending || !plan.At.Before(job.at) {
 		return
 	}
@@ -331,8 +335,28 @@ func (s *RefreshScheduler) replanQueued(admission consent.Admission, scope, key 
 }
 
 func stampOfFence(f consent.Fence) Stamp { return Stamp{Epoch: f.StoreEpoch, Generation: f.Generation} }
-func (s *RefreshScheduler) paths(admission consent.Admission) quota.Paths {
-	return s.safePaths(s.config.Paths(admission))
+func (s *RefreshScheduler) paths(admission consent.Admission, ticket logindex.Ticket) quota.Paths {
+	return s.safePaths(withTicket(s.config.Paths(admission), ticket))
+}
+
+// capture takes the withdrawal ticket, then the admission: both fall on the same side of any
+// withdrawal (macrev2-1261-2).
+func (s *RefreshScheduler) capture() (consent.Admission, logindex.Ticket) {
+	ticket := takeTicket(s.config.Ticket)
+	return consent.Capture(), ticket
+}
+
+func takeTicket(take func() logindex.Ticket) logindex.Ticket {
+	if take == nil {
+		return logindex.Ticket{}
+	}
+	return take()
+}
+
+// withTicket hands the caller's ticket to the Codex selection; it never takes a fresh one.
+func withTicket(p quota.Paths, ticket logindex.Ticket) quota.Paths {
+	p.CodexTicket = ticket
+	return p
 }
 func (s *RefreshScheduler) safePaths(p quota.Paths) quota.Paths {
 	if p.ReaderAccess != nil {
@@ -449,11 +473,11 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	if s.ctx.Err() != nil {
 		return
 	}
-	admission := consent.Capture()
+	admission, ticket := s.capture()
 	if stampOfFence(admission.Fence()) != job.stamp {
 		return
 	}
-	rawPaths := s.config.Paths(admission)
+	rawPaths := withTicket(s.config.Paths(admission), ticket)
 	original, _ := rawPaths.ReaderAccessGrant("claude")
 	credentialBound := original.Credential != nil
 	paths := s.safePaths(rawPaths)
@@ -608,14 +632,14 @@ func (s *RefreshScheduler) AcceptCredential(ctx context.Context, stamp Stamp, ne
 	if !validCredential(result) || need.Provider != "claude" || need.Scope != consent.ScopeClaudeAccountUsageSavedLogin || s.config.Run == nil {
 		return ProtocolError{wire.CodeCredentialRejected}
 	}
-	admission := consent.Capture()
+	admission, ticket := s.capture()
 	if stampOfFence(admission.Fence()) != stamp || !admission.State().AllowsScope(need.Scope, admission.Mode()) || admission.KeychainStatus("claude") != "allowed" {
 		return ProtocolError{wire.CodeCredentialRejected}
 	}
 	if s.config.Offline || s.config.ReadOnly {
 		return nil
 	}
-	paths := s.paths(admission)
+	paths := s.paths(admission, ticket)
 	plan, err := s.plan(paths, need.Scope, s.now())
 	if err != nil || !plan.Admitted || !plan.BudgetKnown || plan.PolicyPending || plan.At.After(s.now()) {
 		return nil
