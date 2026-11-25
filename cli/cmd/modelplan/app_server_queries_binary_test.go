@@ -32,12 +32,7 @@ type queryBinary struct {
 	id            int
 	notifications []json.RawMessage
 	initialize    map[string]json.RawMessage
-	// How the session was started, so a session the server ended cleanly can be replaced.
-	limit        time.Duration
-	binary       string
-	capabilities []string
-	args         []string
-	stderr       string // the session's stderr file; a clean end leaves it empty
+	stderr        string // the session's stderr file; a clean end leaves it empty
 	// dropped: an unterminated tail at end of stream, which the server never committed; it is
 	// never delivered as a frame. Written by the reader before it closes frames.
 	dropped []byte
@@ -75,7 +70,7 @@ func startQueryBinaryFor(t *testing.T, limit time.Duration, binary string, capab
 		t.Fatal(err)
 	}
 	cmd.Stderr = stderr
-	p := &queryBinary{t: t, cmd: cmd, in: in, frames: make(chan []byte, 128), done: make(chan error, 1), limit: limit, binary: binary, capabilities: capabilities, args: args, stderr: stderr.Name()}
+	p := &queryBinary{t: t, cmd: cmd, in: in, frames: make(chan []byte, 128), done: make(chan error, 1), stderr: stderr.Name()}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +114,7 @@ func (p *queryBinary) call(method string, params any) map[string]json.RawMessage
 		select {
 		case raw, ok := <-p.frames:
 			if !ok {
-				p.t.Fatal("app-server stdout closed")
+				p.t.Fatalf("app-server stdout closed (unterminated tail %d bytes)", len(p.dropped))
 			}
 			var msg map[string]json.RawMessage
 			if json.Unmarshal(raw, &msg) != nil {
@@ -643,11 +638,11 @@ func TestU3cInvalidSelectorsNeverAdmitRealBinary(t *testing.T) {
 	}
 }
 
-// A consent change that lands while a private frame is being written ends the app-server
-// session cleanly (exit 0, nothing on stderr): the frame lost its fence after its first byte and
-// is discarded with the session (internal/appserver/outbound.go). The host reconnects. Tests
-// that change consent while a session is open use the helpers below to accept only that clean
-// end, reconnect and check the new session.
+// A consent change never ends an app-server session: a private frame whose fence moved after
+// admission is dropped whole before its first byte (internal/appserver/outbound.go), so tests
+// that change consent while a session is open use call and fail if the session ends. The
+// helpers below only check the harness itself (app_server_frames_test.go): a session that ends
+// must end cleanly, and an unterminated tail is never delivered.
 
 // callUnlessEnded is call, except that a session the server ended cleanly (exit 0, nothing on
 // stderr) before answering reports false instead of failing the test.
@@ -704,13 +699,6 @@ func (p *queryBinary) endedCleanly() bool {
 		p.t.Fatal("app-server stdout closed but the process kept running")
 	}
 	return false
-}
-
-// reconnect starts a new session of the same binary with the same capabilities and arguments,
-// as the host does after the server ends a session. Call it only after endedCleanly.
-func (p *queryBinary) reconnect() *queryBinary {
-	p.t.Helper()
-	return startQueryBinaryFor(p.t, p.limit, p.binary, p.capabilities, p.args...)
 }
 
 // readFrames delivers the server's newline-terminated frames and closes frames at end of stream.

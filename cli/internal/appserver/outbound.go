@@ -35,14 +35,18 @@ type outbound struct {
 	commit       func(Stamp, func() error) error
 }
 
-// commit, when set, runs its write under the authoritative consent fence. A private
-// frame's terminating newline is written only through it, so a revoke committed by
-// another process while the frame body is being written can never let that frame
-// complete (review 11-24 #1): the session closes and the client drops the partial line.
+// commit, when set, runs its write under the authoritative consent fence. A private frame
+// is written whole (body and newline) only through it: the fence is checked and every byte
+// is written while the publication lock is held, so a frame is either written completely
+// under the fence it was admitted with, or not at all. A consent change that lands after
+// admission makes the frame stale before its first byte; it is dropped through m.stale and
+// the session continues (sampling 11-25, #1217 P2). Review 11-24 #1 still holds: a revoke
+// can never let a private frame complete.
 //
-// commitTimeout bounds the one-byte newline written under the consent lock, so a stalled
-// consumer can hold off a revoke for at most this long before the session is closed.
-const commitTimeout = 200 * time.Millisecond
+// commitTimeout bounds a private frame written under the consent lock. Consent writers wait
+// up to a second for that lock, so a stalled consumer can hold off a revoke for at most this
+// long before the session is closed (a write failure, not a consent change).
+const commitTimeout = 500 * time.Millisecond
 
 func newOutbound(ctx context.Context, stop context.CancelFunc, w io.WriteCloser, timeout time.Duration, current func(Stamp) error) *outbound {
 	return &outbound{ctx: ctx, stop: stop, writer: w, timeout: timeout, wake: make(chan struct{}, 1), current: current}
@@ -165,40 +169,50 @@ func (o *outbound) run(done chan<- struct{}) {
 				continue
 			}
 		}
-		fenced := m.private && o.commit != nil && len(m.bytes) > 0
-		body := m.bytes
-		if fenced {
-			body = body[:len(body)-1]
-		}
-		// Closing our pipe interrupts a blocked write; no goroutine per write leaks.
-		timer := time.AfterFunc(o.timeout, func() { o.stop(); _ = o.writer.Close() })
-		wrote := o.write(body)
-		timer.Stop()
-		if !wrote {
-			o.stop()
-			return
-		}
-		if fenced {
+		if m.private && o.commit != nil && len(m.bytes) > 0 {
+			started := false
 			err := o.commit(m.stamp, func() error {
-				bound := time.AfterFunc(commitTimeout, func() { o.stop(); _ = o.writer.Close() })
-				defer bound.Stop()
-				if !o.write([]byte{'\n'}) {
+				started = true
+				bound := o.timeout
+				if bound > commitTimeout {
+					bound = commitTimeout
+				}
+				if !o.bounded(bound, m.bytes) {
 					return errFrame
 				}
 				return nil
 			})
-			if err != nil {
-				// The frame lost the fence after its first byte: end the session so the
-				// incomplete line is discarded rather than completed after a revoke.
+			if err != nil && started {
+				// The frame failed after its first byte (a stalled or closed consumer):
+				// end the session so the incomplete line is discarded, never completed.
 				o.stop()
 				_ = o.writer.Close()
 				return
 			}
+			if err != nil {
+				// The fence moved (or was busy) before any byte was written: nothing of the
+				// frame reached the consumer, so drop it as stale and keep the session.
+				if m.stale != nil {
+					m.stale(err)
+				}
+				continue
+			}
+		} else if !o.bounded(o.timeout, m.bytes) {
+			o.stop()
+			return
 		}
 		if m.after != nil {
 			m.after()
 		}
 	}
+}
+
+// bounded writes b, closing the pipe if the consumer stalls past bound. Closing our pipe
+// interrupts a blocked write; no goroutine per write leaks.
+func (o *outbound) bounded(bound time.Duration, b []byte) bool {
+	timer := time.AfterFunc(bound, func() { o.stop(); _ = o.writer.Close() })
+	defer timer.Stop()
+	return o.write(b)
 }
 
 func (o *outbound) write(b []byte) bool {

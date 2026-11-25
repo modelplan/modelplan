@@ -222,8 +222,9 @@ func (s *Server) mayEmit(stamp Stamp) error {
 	return nil
 }
 
-// commitPrivate writes the end of a private frame while holding the shared publication
-// lock, after a final check of the authoritative consent fence (review 11-24 #1).
+// commitPrivate writes a whole private frame while holding the shared publication lock,
+// after a final check of the authoritative consent fence (review 11-24 #1, sampling 11-25).
+// An error before write runs means no byte of the frame was written.
 func (s *Server) commitPrivate(stamp Stamp, write func() error) error {
 	if !s.isCurrent(stamp) {
 		return ProtocolError{wire.CodeConsentChanged}
