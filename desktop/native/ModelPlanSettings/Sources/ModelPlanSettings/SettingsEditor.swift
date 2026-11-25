@@ -204,6 +204,19 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         anonymousCarryID = member
         Task { [weak self] in await self?.persistAnonymousCarry(to: member) }
     }
+    /// Whether a shown takeover of the anonymous hide is not saved yet.
+    public var hasUnsavedAnonymousHideTakeover: Bool {
+        anonymousCarryID != nil && committedSnapshot?.preferences.subscriptions.hiddenIDs.contains(Self.anonymousZCodeHideMarker) == true
+    }
+    /// Quit waits here so the hide stays bound to the account it was already shown on: an unsaved takeover
+    /// would leave the marker unbound and let a different first account claim it on the next launch.
+    /// Bounded: a save in flight releases within its own two-second observer limit.
+    public func finishAnonymousHideTakeover(timeout: Duration = .seconds(4)) async {
+        let deadline = ContinuousClock.now + timeout
+        while hasUnsavedAnonymousHideTakeover, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
     private func persistAnonymousCarry(to member: String) async {
         let marker = Self.anonymousZCodeHideMarker, fallbackID = Self.unavailableZCodeID
         for _ in 0..<Self.anonymousCarryAttempts {

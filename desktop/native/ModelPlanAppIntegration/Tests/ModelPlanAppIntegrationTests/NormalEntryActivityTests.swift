@@ -394,6 +394,64 @@ private actor ActivityJourneyEngine: EngineClient {
         await app.composition.stop()
     }
 
+    /// Invariant (macrev2-1260-2, quit): the anonymous hide binds durably to exactly the first account the app shows
+    /// hidden, even when the app quits while that takeover is still queued behind a Settings save.
+    func testAnonymousHideStaysWithTheFirstShownAccountAcrossQuitBeforeTheTakeoverSaved() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("zcode-anon-quit-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = self.first, second = self.second
+        do {
+            let app = try entry(fixture(phase: nil, sequence: 1, tool: "zai", unavailableState: "failed"), root: root)
+            await app.prepare()
+            await app.composition.start()
+            app.allowDockPresentation()
+            let settings = app.settingsCoordinatorForChecks, editor = settings.editor
+            await settings.reload()
+            try await wait("only the unavailable station") {
+                app.currentSettingsContext.subscriptions.map(\.id) == ["zai#unknown"]
+            }
+            try await editor.commit(.visible("zai#unknown", false))
+            try await waitSaved("anonymous hide marked", app) { $0 == ["zai#unknown", SettingsEditor.anonymousZCodeHideMarker] }
+            let gate = ZCodeSaveGate()
+            let commitObserver = editor.observeCommittedEdits { _ in
+                guard gate.holdNext else { return }
+                gate.holdNext = false; gate.held = true
+                await withCheckedContinuation { gate.release = $0 }
+            }
+            defer { editor.removeCommitObserver(commitObserver); gate.release?.resume(); gate.release = nil }
+            let unrelated = Task { try await settings.commit(.showPercentages(false)) }
+            try await wait("unrelated save held") { gate.held && editor.isSaving }
+            let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+            try await engine.publish(fixture(phase: nil, sequence: 2, tool: "zai"))
+            try await wait("account A shown") { app.composition.dock.interactionEnvironment().catalogue == [first] }
+            XCTAssertEqual(try dockVisible(app), [], "A is shown hidden")
+            let pending = await app.foundationStore.snapshot().preferences.subscriptions.hiddenIDs
+            XCTAssertTrue(pending.contains(SettingsEditor.anonymousZCodeHideMarker), "the takeover is not saved yet: \(pending.sorted())")
+            XCTAssertTrue(editor.hasUnsavedAnonymousHideTakeover)
+            // Quit while the save is still held (its observer is never released here; its own limit ends it).
+            await app.prepareForTermination()
+            let quit = await app.foundationStore.snapshot().preferences.subscriptions.hiddenIDs
+            XCTAssertEqual(quit, [first, "zai#unknown"], "quit saved the takeover on A and used up the marker")
+            _ = try? await unrelated.value
+        }
+        // Relaunch on the same preferences: a different account B arrives first, then A.
+        let app = try entry(fixture(phase: nil, sequence: 1, tool: "zai", ref: second), root: root)
+        await app.prepare()
+        await app.composition.start()
+        app.allowDockPresentation()
+        await app.settingsCoordinatorForChecks.reload()
+        try await wait("account B first after relaunch") { app.composition.dock.interactionEnvironment().catalogue == [second] }
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(try dockVisible(app), [second], "B never claims A's hide")
+        try await waitSaved("B never saved hidden", app) { $0 == [first, "zai#unknown"] }
+        let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+        try await engine.publish(fixture(phase: nil, sequence: 2, tool: "zai"))
+        try await wait("account A returns") { app.composition.dock.interactionEnvironment().catalogue == [first] }
+        XCTAssertEqual(try dockVisible(app), [], "A keeps its hide")
+        await app.composition.stop()
+    }
+
     func testLegacySettingsKeepTheUnavailableZCodeRingHiddenWithoutEditing() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("zcode-legacy-hidden-" + UUID().uuidString)

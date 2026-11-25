@@ -1737,12 +1737,20 @@ struct StatusNoticePresentation {
         terminating = true
         retireApplicationSurfaces()
         Task {
-            if lifecycleController != nil { await stopLifecycle(); composition.dock.close() }
-            else { await composition.stop() }
-            await dockHelp?.dispose(); dockHelp = nil
+            await prepareForTermination(surfacesRetired: true)
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+    /// Everything quit does before the process may exit (checks call it directly and then reopen the same store).
+    func prepareForTermination(surfacesRetired: Bool = false) async {
+        terminating = true
+        if !surfacesRetired { retireApplicationSurfaces() }
+        // A hidden station already shown as hidden on its first account stays bound to that account across quit.
+        await settings.editor.finishAnonymousHideTakeover()
+        if lifecycleController != nil { await stopLifecycle(); composition.dock.close() }
+        else { await composition.stop() }
+        await dockHelp?.dispose(); dockHelp = nil
     }
     #if MODELPLAN_DOCK_NATIVE_JOURNEY
     var nativeJourneyStatusVisible: Bool {
@@ -1755,6 +1763,7 @@ struct StatusNoticePresentation {
         terminating = true
         if let status { NSStatusBar.system.removeStatusItem(status); self.status = nil }
         retireApplicationSurfaces()
+        await settings.editor.finishAnonymousHideTakeover()
         await stopLifecycle()
         await composition.stop()
         await dockHelp?.dispose()
