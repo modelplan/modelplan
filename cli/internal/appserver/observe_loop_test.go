@@ -17,6 +17,8 @@ import (
 // G3-85: a refresh read that never finishes kept a job pending, and observation waited for an idle
 // scheduler, so the app's local sessions and rates were never written. Observation now has its
 // own cadence; it runs while the read is still in flight and records what it did.
+var observeSettle time.Duration = 100 * time.Millisecond
+
 func TestObservationRunsWhileARefreshJobStaysPending(t *testing.T) {
 	backend, paths, cache := refreshFixture(t, consent.ScopeCodexRuntimeUsage)
 	var running atomic.Bool
@@ -44,6 +46,7 @@ func TestObservationRunsWhileARefreshJobStaysPending(t *testing.T) {
 				case observedDuringRead <- struct{}{}:
 				default:
 				}
+				time.Sleep(observeSettle) // widens the window a loaded runner opens by chance
 			}
 			return []ObserveResult{{Source: "codex", Outcome: ObserveRan}, {Source: "claude", Outcome: ObserveSkippedConsent}}
 		},
