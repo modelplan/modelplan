@@ -167,8 +167,8 @@ test('CKP-PLG-07 week view opens from the key inside the MFD screen only; the ke
  await expect(w.locator('.wk-dh b')).toHaveText(['11','12','13','14','15','16','17']);
  await expect(w.locator('.wk-dh.we')).toHaveCount(2);await expect(w.locator('.wk-col.we')).toHaveCount(2);
  await expect(w.locator('.wk-dh.today')).toHaveCount(1);
- // D328: all-day in one row; the announced reset is a ◆ on its effective day only; capsules show the time (solid 5 h, hollow weekly).
- await expect(w.locator('.wk-adr')).toHaveText([/Claude Banked/,'◆ GLM']);
+ // D328: all-day in one row; the announced direct reset is a ↻ chip on its effective day only; capsules show the time (solid 5 h, hollow weekly).
+ await expect(w.locator('.wk-adr')).toHaveText([/Claude Banked/,'↻']);
  await expect(w.locator('.wk-adr.mark')).toHaveCount(1);
  expect(await w.locator('.wk-ad').evaluate(e=>e.getBoundingClientRect().height)).toBeLessThan(20);
  await expect(w.locator('.wk-ch')).toHaveText(['12:30','14:10','15:50','09:00','06:00']);
@@ -378,4 +378,42 @@ test('D375 6 columns: chips drop the window, keep the name',async({page})=>{
  await expect(strip(page).locator('.cal-ch')).toHaveText(['Claude 12:30','Codex 14:10','GLM 15:50']);
  expect(await strip(page).innerText()).not.toMatch(/\b(CX|CL|GL|CU)\b/);
  await shot(page,'N-6col-zh',page.locator('.ck-eng'));
+});
+
+test('D406 banked resets: an undated +1 chip on its published day, a dated one on its own day, a direct reset is ↻ not +1',async({page})=>{
+ const push={...week,spans:[{sub:1,kind:'credit',from:NOW,to:null,count:1},{sub:0,kind:'credit',from:L(3,8),to:L(3,8),count:1},{sub:2,kind:'announced',from:NOW,to:null,count:null}]};
+ const {send,receive}=await open(page,{push,locale:'zh-CN'});
+ await key(page).click();
+ const w=weekView(page);
+ await expect(w.locator('.wk-adr.chip')).toHaveText(['+1','+1','↻']);
+ const left=async n=>(await w.locator('.wk-adr.chip').nth(n).boundingBox()).x;
+ const heads=await w.locator('.wk-dh').evaluateAll(es=>es.map(e=>e.getBoundingClientRect()));
+ const day=x=>heads.findIndex(h=>x>=h.x-1&&x<h.x+h.width);
+ expect([day(await left(0)),day(await left(1)),day(await left(2))]).toEqual([0,3,0]);
+ await expect(w.locator('.wk-adr.chip.direct.pending')).toHaveAttribute('title',/预告重置/);
+ await expect(w.locator('.wk-adr.chip.credit').first()).toHaveAttribute('title',/\+1 额外重置/);
+ await expect(w.locator('.wk-adr.chip.credit')).toHaveCount(2);
+ await expect(w.locator('.wk-adr.chip.direct.pending')).toHaveText('↻');
+ await expect(w.locator('.wk-adr.chip.direct')).not.toContainText('+1');
+ await shot(page,'reset-chip',screen(page));
+});
+
+test('D406 a reset-card notice published 2 days ago is not placed on today in the week; the column line still carries it',async({page})=>{
+ const push={...week,spans:[{sub:1,kind:'credit',from:L(-2,9),to:null,count:1}]};
+ await open(page,{push});
+ await expect(strip(page).locator('.cal-adr')).toHaveText(/Codex \+1 Banked reset/);
+ await key(page).click();
+ await expect(weekView(page).locator('.wk-adr.chip')).toHaveCount(0);
+});
+
+test('D406 review: with no peak rules a current reset notice still gets the all-day line; announced is dashed, confirmed solid',async({page})=>{
+ const codexOnly={...week,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:L(0,14,10),kind:'5h'}],spans:[{sub:0,kind:'credit',from:L(-2,9),to:null,count:1}]};
+ await open(page,{push:codexOnly});
+ await expect(strip(page).locator('.cal-adr')).toHaveText(/\+1 Banked reset/);
+ const two={...codexOnly,spans:[{sub:0,kind:'credit',from:NOW,to:null,count:1},{sub:0,kind:'creditConfirmed',from:L(1,9),to:L(1,9),count:1}]};
+ await page.evaluate(()=>0);
+ const {send,receive}=await open(page,{push:two});
+ await key(page).click();
+ await expect(weekView(page).locator('.wk-adr.chip.credit.pending')).toHaveCount(1);
+ await expect(weekView(page).locator('.wk-adr.chip.credit:not(.pending)')).toHaveCount(1);
 });
