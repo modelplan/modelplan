@@ -25,6 +25,8 @@ APP_EXECUTABLE = "ModelPlan"
 APP_EXECUTABLES = (APP_EXECUTABLE, "ModelPlanCommunity")
 DISPLAY_CANDIDATES = ((1920, 1200), (1920, 1080), (1680, 1050), (1600, 1200), (1440, 900), (1280, 1024))
 PARK = (0.42, 0.62)  # A screen fraction clear of the widget's edges, the menu bar and the Dock.
+TREE_TIMEOUT = 30  # The helper budgets a tree read at 20 s itself; this only catches a hung helper.
+WINDOW_ONLY_CHECKS = {"newWindow", "noNewWindow", "windowClosed"}  # Checks that read windows, not the tree.
 MIN_COLOURS = 24  # Coarse 12-bit colours: a blank, black or single-tone render has far fewer.
 MAX_DOMINANT = 0.97
 QUIT_SECONDS = 15
@@ -159,6 +161,10 @@ def window_ids(windows):
     return {w["id"] for w in windows if w.get("onScreen")}
 
 
+class HelperTimeout(WalkthroughError):
+    """The helper did not answer within its time limit."""
+
+
 class Host:
     """The real Mac. Tests replace it."""
 
@@ -166,7 +172,11 @@ class Host:
         self.helper_path = helper
 
     def helper(self, *arguments):
-        result = subprocess.run([self.helper_path, *map(str, arguments)], capture_output=True, text=True, timeout=60)
+        limit = TREE_TIMEOUT if arguments[0] == "tree" else 60
+        try:
+            result = subprocess.run([self.helper_path, *map(str, arguments)], capture_output=True, text=True, timeout=limit)
+        except subprocess.TimeoutExpired:
+            raise HelperTimeout("helper %s timed out after %ss" % (arguments[0], limit))
         if result.returncode != 0:
             raise WalkthroughError("helper %s failed: %s" % (arguments[0], result.stderr.strip()[:200]))
         return json.loads(result.stdout)
@@ -181,6 +191,21 @@ class Host:
         """One window by its CGWindow number, without its shadow (-o). The PNG keeps the window's alpha, so a clear
         window shows as transparent and an opaque backing does not; the visual comparison lane reads this."""
         subprocess.run(["screencapture", "-x", "-o", "-l%d" % window_id, str(path)], check=True, timeout=30)
+
+    def sample(self, pid, path):
+        """`sample <pid> 3` into `path`; best effort, returns whether a file was written."""
+        try:
+            subprocess.run(["sample", str(pid), "3", "-file", str(path)], capture_output=True, timeout=30)
+        except (subprocess.SubprocessError, OSError):
+            return False
+        return Path(path).exists()
+
+    def web_content_pids(self):
+        try:
+            found = subprocess.run(["pgrep", "-f", "com.apple.WebKit.WebContent"], capture_output=True, text=True, timeout=10)
+        except (subprocess.SubprocessError, OSError):
+            return []
+        return [int(line) for line in found.stdout.split() if line.isdigit()]
 
     def run(self, command, env, stdin=None, timeout=120):
         return subprocess.run(command, env=env, input=stdin, capture_output=True, text=True, timeout=timeout)
@@ -212,9 +237,33 @@ class Walkthrough:
         self.measures = {}
         self.expected_card = None
         self.facts = None
+        self.ax_events = []  # slow-read events of the step being walked
+        self.ax_event_count = 0
+
+    def sample_slow_read(self, why):
+        """The helper timed out or returned a truncated tree: sample the app and its WebContent process(es)."""
+        self.ax_event_count += 1
+        folder = self.out / "ax-samples"
+        folder.mkdir(parents=True, exist_ok=True)
+        saved = []
+        try:
+            targets = [("app", self.pid)] + [("webcontent", p) for p in self.host.web_content_pids()]
+            for kind, pid in targets:
+                path = folder / ("%03d-%s-%s.txt" % (self.ax_event_count, kind, pid))
+                if self.host.sample(pid, path):
+                    saved.append(path.relative_to(self.out).as_posix())
+        except Exception as error:  # Evidence is best effort; it never fails the walk.
+            saved.append("sample failed: %s: %s" % (type(error).__name__, error))
+        self.ax_events.append({"event": why, "samples": saved})
 
     def tree(self):
-        tree = self.host.helper("tree", self.pid)
+        try:
+            tree = self.host.helper("tree", self.pid)
+        except HelperTimeout as error:
+            self.sample_slow_read(str(error))
+            return {"windows": [], "extras": [], "truncated": True}
+        if tree.get("truncated"):
+            self.sample_slow_read("tree truncated at the time budget")
         self.frames_mirrored = unmirror_widget(tree) or self.frames_mirrored
         return tree
 
@@ -524,7 +573,7 @@ class Walkthrough:
 
     def check(self, check, shot_dir, record):
         kind, value = next(iter(check.items()))
-        tree = self.tree()
+        tree = self.tree() if kind not in WINDOW_ONLY_CHECKS else None
         if kind == "differsFrom" and self.compare(value["step"], record) < value["min"]:
             raise WalkthroughError("too close to " + value["step"])
         if kind == "matches" and self.compare(value["step"], record) > value["max"]:
@@ -605,6 +654,7 @@ class Walkthrough:
         started = self.host.now()
         reasons, skipped = [], None
         self.measures = {}
+        self.ax_events = []
         self.window_baseline = window_ids(self.windows())
         try:
             for action in step.get("actions", []):
@@ -618,14 +668,20 @@ class Walkthrough:
         if self.measures:
             record["measures"] = dict(self.measures)
         if skipped:
+            if self.ax_events:
+                record["axEvents"] = list(self.ax_events)
             record.update(status="skipped", reason=skipped, seconds=round(self.host.now() - started, 2))
             return record
         # A failed step is photographed too: the picture shows where it stopped.
         self.host.capture(self.out / (name + ".png"))
         record["file"] = name + ".png"
-        tree = self.tree()
-        (self.out / (name + ".tree.json")).write_text(json.dumps(tree, indent=1, sort_keys=True), encoding="utf-8")
-        record["tree"] = name + ".tree.json"
+        # The full tree is read only when the shot or a check needs it: a slow read must not stall the others.
+        crop_or_window = step.get("shot", {}).get("crop") or step.get("shot", {}).get("window")
+        needs_tree = bool(crop_or_window) or any(next(iter(c)) not in WINDOW_ONLY_CHECKS for c in step.get("checks", []))
+        tree = self.tree() if needs_tree else {}
+        if needs_tree:
+            (self.out / (name + ".tree.json")).write_text(json.dumps(tree, indent=1, sort_keys=True), encoding="utf-8")
+            record["tree"] = name + ".tree.json"
         crop = step.get("shot", {}).get("crop")
         if crop:
             # "remembered" crops the frame an action remembered, such as where a collapsed widget was.
@@ -650,6 +706,8 @@ class Walkthrough:
                     reasons.append(str(error))
                 except Exception as error:
                     reasons.append("harness error in check: %s: %s" % (type(error).__name__, error))
+        if self.ax_events:
+            record["axEvents"] = list(self.ax_events)
         record.update(status="fail" if reasons else "pass", reason="; ".join(reasons) or None,
                       seconds=round(self.host.now() - started, 2))
         return record

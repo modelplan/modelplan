@@ -550,5 +550,76 @@ class CrashReportRedactionTests(unittest.TestCase):
         self.assertIsNone(w.redact_crash_report("not json /Users/alice"))
 
 
+class SlowAxReadTests(unittest.TestCase):
+    """The walkthrough never stalls on a slow AX read: a slow read yields a truncated tree plus samples."""
+    def walk(self, host, step):
+        out = Path(tempfile.mkdtemp())
+        walk = w.Walkthrough.__new__(w.Walkthrough)
+        walk.host, walk.out, walk.pid = host, out, 77
+        walk.steps, walk.seed, walk.screen, walk.app = [step], {}, (1000, 800), Path(".")
+        walk.remembered, walk.results, walk.statuses, walk.after_step = None, [], {}, {}
+        walk.frames_mirrored, walk.mirror_evidence, walk.crops, walk.measures = False, {}, {}, {}
+        walk.expected_card = walk.facts = None
+        walk.ax_events, walk.ax_event_count, walk.window_baseline = [], 0, set()
+        return walk, out
+
+    def host(self, tree_error=None, tree=None):
+        class Slow(FakeHost):
+            samples = []
+            def helper(self, *arguments):
+                if arguments[0] == "tree" and tree_error:
+                    self.calls.append(arguments)
+                    raise w.HelperTimeout("helper tree timed out after 30s")
+                if arguments[0] == "tree" and tree is not None:
+                    self.calls.append(arguments)
+                    return dict(tree)
+                return super().helper(*arguments)
+            def sample(self, pid, path):
+                self.samples.append(pid)
+                Path(path).write_text("sample")
+                return True
+            def web_content_pids(self):
+                return [901]
+        host = Slow(windows=[{"id": 5}])
+        host.samples = []
+        return host
+
+    def test_timeout_returns_a_truncated_tree_and_saves_samples(self):
+        host = self.host(tree_error=True)
+        walk, out = self.walk(host, {})
+        tree = walk.tree()
+        self.assertTrue(tree["truncated"])
+        self.assertEqual(host.samples, [77, 901])
+        self.assertEqual(len(list((out / "ax-samples").iterdir())), 2)
+        self.assertEqual(walk.ax_events[0]["event"], "helper tree timed out after 30s")
+
+    def test_truncated_tree_from_the_helper_is_sampled_too(self):
+        host = self.host(tree={"windows": [], "extras": [], "truncated": True})
+        walk, _ = self.walk(host, {})
+        walk.tree()
+        self.assertEqual(host.samples, [77, 901])
+
+    def test_step_that_needs_only_windows_skips_the_tree_and_passes(self):
+        step = {"id": "s", "title": "t", "expected": "e", "shot": {}, "checks": [{"newWindow": True}]}
+        host = self.host(tree_error=True)
+        host.windows = [{"id": 5}]
+        walk, _ = self.walk(host, step)
+        walk.window_baseline = set()
+        with mock.patch.object(w, "window_ids", side_effect=[set(), {5}]):
+            record = walk.run_step(1, step)
+        self.assertEqual(record["status"], "pass")
+        self.assertIsNone(record["tree"])
+        self.assertFalse([c for c in host.calls if c[0] == "tree"])
+
+    def test_step_that_reads_the_tree_fails_on_truncation_and_records_the_event(self):
+        step = {"id": "s", "title": "t", "expected": "e", "shot": {}, "checks": [{"opened": "id:x"}]}
+        host = self.host(tree_error=True)
+        walk, _ = self.walk(host, step)
+        with mock.patch.object(w, "window_ids", return_value=set()):
+            record = walk.run_step(1, step)
+        self.assertEqual(record["status"], "fail")
+        self.assertTrue(record["axEvents"])
+
+
 if __name__ == "__main__":
     unittest.main()
