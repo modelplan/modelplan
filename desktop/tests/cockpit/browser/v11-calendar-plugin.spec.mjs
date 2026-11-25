@@ -30,7 +30,6 @@ function dataWith(count) {
 async function open(page,{data=dataWith(4),tier='tall',locale='en',push=week,at=NOW}={}) {
  await page.clock.setFixedTime(new Date(at));
  await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
- if(tier==='compact')await page.setViewportSize({width:636,height:640});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,tier},redBelow:25}))).toBe(true);
@@ -237,17 +236,6 @@ test('D328 a day pressed in the week view swaps the column\'s bottom line to tha
  // Today restores the default line.
  await w.locator('.wk-dh').first().click();
  await expect(foot.locator('.pl-foot-l')).toHaveAttribute('data-full','下个高峰');
-});
-
-test('640 layout keeps seven narrow columns',async({page})=>{
- await open(page,{tier:'compact',locale:'zh-CN'});
- await key(page).click();
- const w=weekView(page);await expect(w).toBeVisible();
- await expect(w).toHaveClass(/narrow/);
- await expect(w.locator('.wk-dh i')).toHaveText(['三','四','五','六','日','一','二']);
- await expect(w.locator('.wk-col')).toHaveCount(7);
- await expect(column(page)).toHaveAttribute('data-draw','custom');
- await shot(page,'E3-week-640',page.locator('.ck-deck'));
 });
 
 test('calendar data is checked against the plugin shape and size bound; the display data is shaped on the page',async({page})=>{

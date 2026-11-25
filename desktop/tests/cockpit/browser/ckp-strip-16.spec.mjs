@@ -60,9 +60,9 @@ test('CKP-STRIP-17 tools use display names and an unknown model reads as dim "Un
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(model).toHaveText('未知模型');
 });
 
-test('CKP-STRIP-16 the strip text fits without clipping in both locales and tiers',async({page})=>{
+test('CKP-STRIP-16 the strip text fits without clipping in both locales',async({page})=>{
  const {send,receive}=await open(page,stripData());
- for(const tier of ['tall','compact'])for(const locale of ['en','zh-CN']){
+ for(const tier of ['tall'])for(const locale of ['en','zh-CN']){
   expect(await receive(send('shell',{...shell,tier}))).toBe(true);expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);
   for(const cell of await page.locator('.ck-tape .t-observed :is(.t-tool,.t-elapsed,.t-tok,.t-live)').all()){const size=await cell.evaluate(e=>({scroll:e.scrollWidth,client:e.clientWidth,text:e.textContent}));expect(size.scroll,`${tier} ${locale} ${size.text}`).toBeLessThanOrEqual(size.client);}
  }
@@ -91,7 +91,6 @@ test('CKP-STRIP-50 overflow reads "N more sessions", opens the where page; no se
  const more=page.locator('.ck-tape .t-overflow');await expect(more).toHaveText('4 more sessions ▸');
  await more.click();await expect(page.locator('.mfd-page.pg-where')).toBeVisible();
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(more).toHaveText('另有 4 个会话 ▸');
- expect(await receive(send('shell',{...shell,tier:'compact'}))).toBe(true);await expect(page.locator('.ck-tape .t-observed')).toHaveCount(2);await expect(more).toHaveText('另有 6 个会话 ▸');
  const none=stripData();none.details.sessions=[];
  expect(await receive(send('display',{data:none}))).toBe(true);await expect(page.locator('.ck-tape .t-observed')).toHaveCount(0);await expect(page.locator('.ck-tape .t-none')).toHaveText('现在没有会话在跑');
  expect(await receive(send('appearance',{...appearance,locale:'en'}))).toBe(true);await expect(page.locator('.ck-tape .t-none')).toHaveText('No sessions running now');

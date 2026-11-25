@@ -144,7 +144,7 @@ const geometry=page=>page.evaluate(()=>{const col=document.querySelector('.pl-co
   const parts=[...cell.querySelectorAll('.qtxt,.qnum')];
   return {tag:tag.textContent,tagHeight:t.height,lineHeight:parseFloat(getComputedStyle(tag).lineHeight),tagCut:tag.scrollHeight>tag.clientHeight+.5||tag.scrollWidth>tag.clientWidth+.5,tagInside:inside(t,c),
    parts:parts.map(p=>({w:[p.scrollWidth,p.clientWidth,Math.round(c.width)].join('/'),text:p.textContent,cut:p.scrollWidth>p.clientWidth+.5,inside:inside(p.getBoundingClientRect(),c)}))};});});
-for(const tier of ['tall','compact'])for(const locale of ['en','zh-CN'])for(const subs of [1,2])
+for(const tier of ['tall'])for(const locale of ['en','zh-CN'])for(const subs of [1,2])
 test(`B8 resource names CPU · Memory · Disk are whole and in order, values never clipped (${tier}, ${locale}, ${subs} subscription${subs>1?'s':''})`,async({page})=>{
  const {send,receive}=await open(page,{data:subscriptions(subs),locale,tier,plugins:{version:1,entries:[],settings:{}}});
  const words=locale==='en'?['CPU','Memory','Disk']:['CPU','内存','磁盘'];

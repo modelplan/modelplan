@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -26,6 +27,8 @@ type ActivityLogIndex struct {
 	// private one.
 	Inventory *logindex.Inventory
 	own       logindex.Inventory
+	mu        sync.Mutex
+	selection liveSelection
 }
 
 func (i *ActivityLogIndex) inventory() *logindex.Inventory {
@@ -35,9 +38,22 @@ func (i *ActivityLogIndex) inventory() *logindex.Inventory {
 	return &i.own
 }
 
+// Ticket takes the shared inventory's withdrawal count; take it with the admission the next Logs
+// call runs under (macrev2-1261-2).
+func (i *ActivityLogIndex) Ticket() logindex.Ticket { return i.inventory().Ticket() }
+
+// Logs selects the recent logs under fence, with a withdrawal ticket taken now.
 func (i *ActivityLogIndex) Logs(claude, codex, zcode string, fence consent.Fence, now, elapsed time.Time) []LiveLog {
+	return i.LogsWith(claude, codex, zcode, fence, now, elapsed, logindex.Ticket{})
+}
+
+// LogsWith is Logs under the withdrawal ticket taken with the admission (Ticket): after a later
+// withdrawal it reads and keeps nothing.
+func (i *ActivityLogIndex) LogsWith(claude, codex, zcode string, fence consent.Fence, now, elapsed time.Time, ticket logindex.Ticket) []LiveLog {
 	roots := activityRoots(claude, codex, zcode)
-	logs := recentLogs(i.inventory(), fence, roots, now, elapsed)
+	i.mu.Lock()
+	logs := recentLogsCached(i.inventory(), fence, roots, now, elapsed, &i.selection, ticket)
+	i.mu.Unlock()
 
 	// A remembered path doesn't authorize following a replacement ancestor.
 	// Share the directory checks across the bounded recent files in this tick.

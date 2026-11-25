@@ -67,11 +67,11 @@ test('G3-55 right-click on the cockpit raises no browser context menu',async({pa
  }
 });
 
-test('CKP-STRIP-08 record strip has five or three lines including the collapsed profile',async({page})=>{
+test('CKP-STRIP-08 record strip has five lines open and closed; the retired compact tier is refused (D444)',async({page})=>{
  const {send,receive}=await open(page);await expect(page.locator('.ck-tape .tl')).toHaveCount(5);
  expect(await receive(send('shell',{...shell,tier:'tall',profile:'closed'}))).toBe(true);await expect(page.locator('.ck-tape .tl')).toHaveCount(5);
- expect(await receive(send('shell',{...shell,tier:'compact'}))).toBe(true);await expect(page.locator('.ck-tape .tl')).toHaveCount(3);
- expect(await receive(send('shell',{...shell,tier:'compact',profile:'closed'}))).toBe(true);await expect(page.locator('.ck-tape .tl')).toHaveCount(3);
+ expect(await receive(send('shell',{...shell,tier:'compact'}))).toBe(false);await expect(page.locator('.ck-tape .tl')).toHaveCount(5);
+ await expect(page.locator('#cockpit')).toHaveAttribute('data-layout','890');await expect(page.locator('html')).toHaveAttribute('data-profile','full');
 });
 
 test('CKP-STRIP-11 v1 session lines expose text without state-square or done indicators',async({page})=>{
@@ -354,7 +354,7 @@ test('CKP-MOT-03 Reduce Motion keeps running cursors static without shifting con
 });
 
 test('CKP-MOT-06 visible text and well nesting respect the v1 budget',async({page})=>{
- const {send,receive}=await open(page);const inspect=()=>page.locator('#cockpit').evaluate(root=>{const nodes=[...root.querySelectorAll('*')];const small=nodes.filter(e=>!e.children.length&&e.textContent.trim()&&e.getClientRects().length&&!e.matches('.eng-keys .ek[data-sub] .ki')).map(e=>({text:e.textContent.trim(),size:parseFloat(getComputedStyle(e).fontSize)})).filter(x=>x.size>0&&x.size<10);const depths=nodes.filter(e=>e.getAttribute('data-mat')==='well').map(e=>{let depth=1;for(let p=e.parentElement;p&&p!==root;p=p.parentElement)if(p.getAttribute('data-mat')==='well')depth++;return depth;});return {small,depths,legends:root.querySelectorAll('legend').length};});for(const tier of ['tall','compact'])for(const locale of ['en','zh-CN']){expect(await receive(send('shell',{...shell,tier}))).toBe(true);expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);for(const scope of ['all','member']){if(scope==='member')await page.locator('.eng-keys .ek[data-sub]').first().click();else await page.locator('.ek-all').click();for(let i=0;i<4;i++){await page.locator('.mfd-pk .pk').nth(i).click();const audit=await inspect();expect(audit.small).toEqual([]);expect(Math.max(0,...audit.depths)).toBeLessThanOrEqual(2);expect(audit.legends).toBe(0);}}}
+ const {send,receive}=await open(page);const inspect=()=>page.locator('#cockpit').evaluate(root=>{const nodes=[...root.querySelectorAll('*')];const small=nodes.filter(e=>!e.children.length&&e.textContent.trim()&&e.getClientRects().length&&!e.matches('.eng-keys .ek[data-sub] .ki')).map(e=>({text:e.textContent.trim(),size:parseFloat(getComputedStyle(e).fontSize)})).filter(x=>x.size>0&&x.size<10);const depths=nodes.filter(e=>e.getAttribute('data-mat')==='well').map(e=>{let depth=1;for(let p=e.parentElement;p&&p!==root;p=p.parentElement)if(p.getAttribute('data-mat')==='well')depth++;return depth;});return {small,depths,legends:root.querySelectorAll('legend').length};});for(const tier of ['tall'])for(const locale of ['en','zh-CN']){expect(await receive(send('shell',{...shell,tier}))).toBe(true);expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);for(const scope of ['all','member']){if(scope==='member')await page.locator('.eng-keys .ek[data-sub]').first().click();else await page.locator('.ek-all').click();for(let i=0;i<4;i++){await page.locator('.mfd-pk .pk').nth(i).click();const audit=await inspect();expect(audit.small).toEqual([]);expect(Math.max(0,...audit.depths)).toBeLessThanOrEqual(2);expect(audit.legends).toBe(0);}}}
 });
 
 test('CKP-MOT-07 active key text and quota bars meet contrast thresholds in both themes',async({page})=>{
@@ -363,9 +363,9 @@ test('CKP-MOT-07 active key text and quota bars meet contrast thresholds in both
  for(const theme of ['night','day']){if(theme==='day')expect(await receive(send('appearance',{...appearance,theme}))).toBe(true);const result=await audit();expect(result.keys).toHaveLength(6);for(const n of result.keys)expect(n).toBeGreaterThanOrEqual(4.5);expect(result.bars).toHaveLength(3);for(const n of result.bars)expect(n).toBeGreaterThanOrEqual(3);}
 });
 
-test('CKP-STRIP-16 record strip right-end text fits without ellipsis in both locales and tiers',async({page})=>{
+test('CKP-STRIP-16 record strip right-end text fits without ellipsis in both locales',async({page})=>{
  const {send,receive}=await open(page);
- for(const tier of ['tall','compact']){
+ for(const tier of ['tall']){
   expect(await receive(send('shell',{...shell,tier}))).toBe(true);
   for(const locale of ['en','zh-CN']){
    expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);
