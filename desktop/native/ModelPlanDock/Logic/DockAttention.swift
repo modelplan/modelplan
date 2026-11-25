@@ -13,7 +13,7 @@ public struct DockForecastSignal: Sendable {
 }
 public struct DockResetSignal: Sendable {
     public enum Status: Sendable { case announced, confirmed }
-    /// D166: extra resets issued (a reset credit) or a direct limit reset. Same dot rules; the card words differ.
+    /// D166: banked resets issued (a reset credit) or a direct limit reset. Same dot rules; the card words differ.
     public enum Kind: Sendable { case resetCredit, directReset }
     /// D166 PR 1: a confirmation's dot stays this long after the confirmation, within the event's own expiry
     /// and never past `confirmedDotHardCap`. A presence-based lifetime replaces the wall-clock one in PR 2 by
@@ -68,6 +68,8 @@ public struct DockNotice: Equatable, Sendable {
     public let key: DockNoticeKey
     public let tone: Tone
     public let shape: Shape
+    /// D166/D428: true only for a reset_credit event; a direct reset, and a legacy event with no kind, stay false.
+    public var banked = false
     public var rank: Int {
         switch key.kind {
         case .forecast, .cardsExpiring: return 0
@@ -90,8 +92,8 @@ public enum DockNoticeProjection {
         guard !signal.id.isEmpty, now.timeIntervalSinceReferenceDate.isFinite else { return [] }
         let fresh = signal.dataState == .fresh
         var notices = [DockNotice]()
-        func append(_ kind: DockNoticeKind, _ ids: [String], _ tone: DockNotice.Tone, _ shape: DockNotice.Shape = .solid) {
-            notices.append(DockNotice(key: DockNoticeKey(subscriptionID: signal.id, kind: kind, sourceIDs: ids), tone: tone, shape: shape))
+        func append(_ kind: DockNoticeKind, _ ids: [String], _ tone: DockNotice.Tone, _ shape: DockNotice.Shape = .solid, banked: Bool = false) {
+            notices.append(DockNotice(key: DockNoticeKey(subscriptionID: signal.id, kind: kind, sourceIDs: ids), tone: tone, shape: shape, banked: banked))
         }
         if fresh, let forecast = signal.forecast, !forecast.windowID.isEmpty, forecast.validUntil > now {
             append(.forecast, [forecast.windowID], .amber)
@@ -101,7 +103,7 @@ public enum DockNoticeProjection {
             case .announced:
                 let until = reset.scheduledThrough ?? reset.announcedAt?.addingTimeInterval(48*3600)
                 let observed = reset.announcedAt.map { $0 <= now } ?? (reset.scheduledThrough != nil)
-                if observed, let until, until > now { append(.resetAnnounced, [reset.id], DockNotice.resetAnnouncedTone, .hollow) }
+                if observed, let until, until > now { append(.resetAnnounced, [reset.id], DockNotice.resetAnnouncedTone, .hollow, banked: reset.kind == .resetCredit) }
             case .confirmed:
                 if !reset.restartedReading, let at = reset.confirmedAt, at <= now, let end = reset.confirmedDotEnd, now < end {
                     append(.resetConfirmed, [reset.id], DockNotice.resetConfirmedTone)

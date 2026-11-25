@@ -2,16 +2,16 @@
 import Foundation
 
 /// D166: the words for a public Codex reset event on the Quota Widget card and in its one notification.
-/// Extra resets issued (a reset credit) and a direct limit reset are named apart; a forecast shows its
+/// Banked resets issued (a reset credit) and a direct limit reset are named apart; a forecast shows its
 /// expected window, a confirmation its time. Personal balance always comes from the local reading.
-/// "重置卡" / "reset card" is never used (LBL-2.2-11): the product word is 额外重置 / extra resets.
+/// "重置卡" / "reset card" is banned (LBL-2.2-11, D428): the product word is 额外重置次数 / banked resets; a direct reset keeps its own wording (D166).
 public struct EngineResetEventWording: Sendable {
     public let english: Bool
     public var calendar: Calendar
     public init(english: Bool, calendar: Calendar = .current) { self.english = english; self.calendar = calendar }
 
     public func label(_ event: EngineResetEvent) -> String {
-        "↺ " + (event.isResetCredit ? (english ? "Extra resets" : "额外重置") : (english ? "Limit reset" : "额度重置"))
+        "↺ " + (event.isResetCredit ? (english ? "Banked resets" : "额外重置") : (english ? "Limit reset" : "额度重置"))
     }
 
     public func title(_ event: EngineResetEvent, now: Date) -> String {
@@ -23,7 +23,7 @@ public struct EngineResetEventWording: Sendable {
             return (english ? "Confirmed · " : "已确认 · ") + time(at, now: now)
         }
         guard let from = event.scheduledFrom, let through = event.scheduledThrough else {
-            return event.isResetCredit ? (english ? "Extra resets announced" : "已公告额外重置")
+            return event.isResetCredit ? (english ? "Banked resets announced" : "已公告额外重置")
                                        : (english ? "Public reset announced" : "已公告公开重置")
         }
         if now >= through { return english ? "Awaiting confirmation" : "等待确认" }
@@ -51,7 +51,7 @@ public struct EngineResetEventWording: Sendable {
 
     /// One notification, on confirmation only.
     public func notification(_ event: EngineResetEvent, rose: Bool) -> (title: String, body: String) {
-        let title = event.isResetCredit ? (english ? "Codex extra resets confirmed" : "Codex 额外重置已确认")
+        let title = event.isResetCredit ? (english ? "Codex banked resets confirmed" : "Codex 额外重置已确认")
                                         : (english ? "Codex limit reset confirmed" : "Codex 额度重置已确认")
         if rose { return (title, english ? "Already in effect: your local reading rose." : "已生效：本机读数已回升。") }
         return (title, english ? "Your balance is the local reading." : "余量以本机读数为准。")
