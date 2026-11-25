@@ -69,6 +69,16 @@ func TestObservationRunsWhileARefreshJobStaysPending(t *testing.T) {
 	if pending == 0 {
 		t.Fatal("the read was expected to keep its job pending")
 	}
+	// The signal fires inside the pass; the decisions and the log land when it returns.
+	for deadline := time.Now().Add(5 * time.Second); len(s.ObserveDecisions()) < 2 && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		if _, err := os.Stat(ObserveLogPath(cache)); err == nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	got := map[string]ObserveOutcome{}
 	for _, d := range s.ObserveDecisions() {
 		got[d.Source] = d.Outcome
