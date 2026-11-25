@@ -76,13 +76,26 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     // This association belongs to this app session. The anonymous row and the
     // saved settings never need a copy of the account reference.
     private var lastZCodeMemberID: String?
+    /// Saved next to the anonymous station's hide only when no ZCode account was known when it was hidden.
+    /// The first sole account to arrive takes the hide over and the marker is removed in that same transaction.
+    /// A hide made while an account is known never writes it, so it never transfers to a different account.
+    public static let anonymousZCodeHideMarker = "zai#unknown#first-account"
+    /// The account taking over a marked anonymous hide. Until the takeover is saved, every presented snapshot
+    /// already shows that account hidden, so no publication (Dock, menu, Settings) shows it in between.
+    private var anonymousCarryID: String?
+    static let anonymousCarryAttempts = 200
     public var snapshot: SettingsSnapshot? {
-        guard let committedSnapshot, let lastZCodeMemberID else { return committedSnapshot }
+        guard let committedSnapshot else { return nil }
         var preferences = committedSnapshot.preferences
-        if preferences.subscriptions.hiddenIDs.contains(lastZCodeMemberID) {
-            preferences.subscriptions.hiddenIDs.insert(Self.unavailableZCodeID)
-        } else {
-            preferences.subscriptions.hiddenIDs.remove(Self.unavailableZCodeID)
+        if preferences.subscriptions.hiddenIDs.remove(Self.anonymousZCodeHideMarker) != nil, let anonymousCarryID {
+            preferences.subscriptions.hiddenIDs.insert(anonymousCarryID)
+        }
+        if let lastZCodeMemberID {
+            if preferences.subscriptions.hiddenIDs.contains(lastZCodeMemberID) {
+                preferences.subscriptions.hiddenIDs.insert(Self.unavailableZCodeID)
+            } else {
+                preferences.subscriptions.hiddenIDs.remove(Self.unavailableZCodeID)
+            }
         }
         return .init(revision: committedSnapshot.revision, preferences: preferences)
     }
@@ -135,6 +148,13 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     private func accept(_ candidate: SettingsSnapshot) {
         // A suspended reload must not replace a newer commit/reload that resumed first.
         if candidate.revision >= (committedSnapshot?.revision ?? 0) { committedSnapshot = candidate }
+        // Every newly accepted document (launch restore, reload, any commit or a rejected one's re-read) decides the
+        // takeover again: a removed marker ends it, a marker that landed after the account arrived starts it.
+        if committedSnapshot?.preferences.subscriptions.hiddenIDs.contains(Self.anonymousZCodeHideMarker) != true {
+            anonymousCarryID = nil
+        } else {
+            carryAnonymousHideIfNeeded()
+        }
     }
     public func observeChanges(_ observer: @escaping () -> Void) -> UUID {
         let id = UUID(); changeObservers[id] = observer; return id
@@ -172,10 +192,32 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         // Empty or unavailable deliveries cannot replace the last known membership.
         guard !members.isEmpty else { return }
         lastZCodeMemberID = members.count == 1 ? members.first?.id : nil
-        // A hide saved on the anonymous station while no account was known follows the account when it returns.
-        if let member = lastZCodeMemberID, let hidden = committedSnapshot?.preferences.subscriptions.hiddenIDs,
-           hidden.contains(Self.unavailableZCodeID), !hidden.contains(member) {
-            Task { [weak self] in _ = try? await self?.commit(.visible(member, false)) }
+        carryAnonymousHideIfNeeded()
+    }
+    /// Invariant: a hide made on the anonymous station while no account was known applies to the first known
+    /// account before that account's first publication, and a concurrent save never drops it. The presented
+    /// snapshot takes it over synchronously (callers forward that snapshot in the same main-actor turn); the
+    /// durable takeover is queued and retried behind any save in flight.
+    private func carryAnonymousHideIfNeeded() {
+        guard anonymousCarryID == nil, let member = lastZCodeMemberID,
+              committedSnapshot?.preferences.subscriptions.hiddenIDs.contains(Self.anonymousZCodeHideMarker) == true else { return }
+        anonymousCarryID = member
+        Task { [weak self] in await self?.persistAnonymousCarry(to: member) }
+    }
+    private func persistAnonymousCarry(to member: String) async {
+        let marker = Self.anonymousZCodeHideMarker, fallbackID = Self.unavailableZCodeID
+        for _ in 0..<Self.anonymousCarryAttempts {
+            guard anonymousCarryID == member,
+                  committedSnapshot?.preferences.subscriptions.hiddenIDs.contains(marker) == true else { break }
+            if !isSaving {
+                // Decided against the stored document: an unhide or a known-account choice that removed the
+                // marker first wins, and this write then changes nothing.
+                if (try? await transact(subscriptionID: nil, edit: { preferences in
+                    guard preferences.subscriptions.hiddenIDs.remove(marker) != nil else { return }
+                    preferences.subscriptions.hiddenIDs.formUnion([member, fallbackID])
+                })) != nil { break }
+            }
+            try? await Task.sleep(for: .milliseconds(50))
         }
     }
     /// The host's live read of the macOS login item. An explicit login choice is decided against it,
@@ -218,6 +260,10 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         // Invariant: a hide choice persists across the station's availability changes. When the account is
         // known, a station edit is saved on both keys in one transaction and the association is kept.
         let carriedID: String? = (editsUnavailableZCode && fallbackVisibility != nil) ? lastZCodeMemberID : nil
+        // Only a hide made with no account known may later pass to an account (the first one). Any other
+        // visibility choice for the ZCode station or its sole account clears that pending takeover.
+        let marksAnonymousHide = editsUnavailableZCode && fallbackVisibility == false && carriedID == nil
+        let marker = Self.anonymousZCodeHideMarker
         let committed = try await transact(subscriptionID: edit.subscriptionID, kind: kind,
                                            editsUnavailableZCodeVisibility: editsUnavailableZCode && fallbackVisibility != nil && carriedID == nil) { preferences in
             try edit.apply(to: &preferences, catalogue: ids)
@@ -227,6 +273,8 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
                     if fallbackVisibility { preferences.subscriptions.hiddenIDs.remove(carriedID) }
                     else { preferences.subscriptions.hiddenIDs.insert(carriedID) }
                 }
+                if marksAnonymousHide { preferences.subscriptions.hiddenIDs.insert(marker) }
+                else { preferences.subscriptions.hiddenIDs.remove(marker) }
             }
         }
         let intent: SettingsHostIntent?

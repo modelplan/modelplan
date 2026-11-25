@@ -437,6 +437,8 @@ struct StatusNoticePresentation {
         try await foundationStore.updateCore(value, expectedRevision: expectedRevision)
     }
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
+    /// Checks drive the app's own Settings coordinator (the one the Dock catalogue reports to).
+    var settingsCoordinatorForChecks: SettingsApplicationCoordinator { settings }
     public func presentSettings(paneID: String? = nil) async { await settingsHost.present(paneID: paneID) }
     /// G3-46: a squeezed status item has no visible icon anchor. The cockpit uses the notch edge
     /// on the status item's display for that fallback (D378).
