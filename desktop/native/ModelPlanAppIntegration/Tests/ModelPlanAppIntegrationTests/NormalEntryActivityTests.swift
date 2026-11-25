@@ -52,6 +52,9 @@ private actor ActivityJourneyEngine: EngineClient {
 @MainActor private final class ZCodeSaveGate {
     var holdNext = true, held = false, contended = false
     var release: CheckedContinuation<Void, Never>?
+    var receiptHeld = false
+    var receiptRelease: CheckedContinuation<Void, Never>?
+    var receipts: [SettingsSnapshot] = []
 }
 
 @MainActor final class NormalEntryActivityTests: XCTestCase {
@@ -449,6 +452,83 @@ private actor ActivityJourneyEngine: EngineClient {
         try await engine.publish(fixture(phase: nil, sequence: 2, tool: "zai"))
         try await wait("account A returns") { app.composition.dock.interactionEnvironment().catalogue == [first] }
         XCTAssertEqual(try dockVisible(app), [], "A keeps its hide")
+        await app.composition.stop()
+    }
+
+    /// Invariant (macrev2-1260-1, round 3): every publication (context forwards, commit receipts, committed-edit
+    /// observers, commit return values) goes through the presented projection, so an unrelated save whose store
+    /// receipt resumes after the first account arrived never shows that account before the takeover is saved.
+    func testUnrelatedSaveReceiptAfterTheFirstAccountNeverShowsItBeforeTheTakeover() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("zcode-anon-receipt-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = self.first
+        let app = try entry(fixture(phase: nil, sequence: 1, tool: "zai", unavailableState: "failed"), root: root)
+        await app.prepare()
+        await app.composition.start()
+        app.allowDockPresentation()
+        let settings = app.settingsCoordinatorForChecks, editor = settings.editor
+        await settings.reload()
+        try await wait("only the unavailable station") {
+            app.currentSettingsContext.subscriptions.map(\.id) == ["zai#unknown"]
+        }
+        try await editor.commit(.visible("zai#unknown", false))
+        try await waitSaved("anonymous hide marked", app) { $0 == ["zai#unknown", SettingsEditor.anonymousZCodeHideMarker] }
+
+        let gate = ZCodeSaveGate()
+        let commitObserver = editor.observeCommittedEdits { edit in
+            gate.receipts.append(edit.after)
+            guard gate.holdNext else { return }
+            gate.holdNext = false; gate.held = true
+            await withCheckedContinuation { gate.release = $0 }
+        }
+        defer {
+            editor.removeCommitObserver(commitObserver)
+            gate.release?.resume(); gate.release = nil
+            gate.receiptRelease?.resume(); gate.receiptRelease = nil
+        }
+        // The unrelated save is written to the store, and its receipt is held before it reaches the editor.
+        editor.storeReceiptBarrierForChecks = {
+            gate.receiptHeld = true
+            await withCheckedContinuation { gate.receiptRelease = $0 }
+        }
+        let unrelated = Task { try await settings.commit(.showPercentages(false)) }
+        try await wait("unrelated receipt held") { gate.receiptHeld && editor.isSaving }
+        let written = await app.foundationStore.snapshot().preferences.showPercentages
+        XCTAssertFalse(written, "the unrelated save is in the store")
+
+        let host = app.composition.dock
+        host.paintedSubscriptionIDsForChecks = []
+        func assertHidden(_ step: String) throws {
+            XCTAssertFalse(host.paintedSubscriptionIDsForChecks.contains { $0.contains(first) },
+                           "\(step): no Dock pass showed the account: \(host.paintedSubscriptionIDsForChecks)")
+            XCTAssertEqual(try dockVisible(app), [], step)
+            let applied = try XCTUnwrap(app.composition.latestSettings, step).snapshot.preferences.subscriptions.hiddenIDs
+            XCTAssertTrue(applied.contains(first), "\(step): applied settings hide the account")
+            XCTAssertFalse(applied.contains(SettingsEditor.anonymousZCodeHideMarker), "\(step): the marker is never published")
+        }
+        let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+        try await engine.publish(fixture(phase: nil, sequence: 2, tool: "zai"))
+        try await wait("first account catalogued") { app.composition.dock.interactionEnvironment().catalogue == [first] }
+        try assertHidden("account arrived during the held receipt")
+
+        // Release the receipt; the commit observer then holds the save open, so the takeover cannot write yet.
+        gate.receiptRelease?.resume(); gate.receiptRelease = nil
+        try await wait("receipt published, takeover held") { gate.held }
+        let stored = await app.foundationStore.snapshot().preferences.subscriptions.hiddenIDs
+        XCTAssertTrue(stored.contains(SettingsEditor.anonymousZCodeHideMarker), "the takeover is not saved yet")
+        try assertHidden("unrelated receipt published")
+        let receipt = try XCTUnwrap(gate.receipts.last).preferences.subscriptions.hiddenIDs
+        XCTAssertTrue(receipt.contains(first), "the committed-edit receipt is presented: \(receipt.sorted())")
+        XCTAssertFalse(receipt.contains(SettingsEditor.anonymousZCodeHideMarker))
+        XCTAssertFalse(app.composition.latestSettings?.effective.showPercentages ?? true, "the unrelated edit itself was applied")
+
+        gate.release?.resume(); gate.release = nil
+        let returned = try await unrelated.value
+        XCTAssertTrue(returned.preferences.subscriptions.hiddenIDs.contains(first), "commit returns the presented snapshot")
+        XCTAssertFalse(returned.preferences.subscriptions.hiddenIDs.contains(SettingsEditor.anonymousZCodeHideMarker))
+        try await waitSaved("takeover saved", app) { $0 == [first, "zai#unknown"] }
+        try assertHidden("takeover saved")
         await app.composition.stop()
     }
 

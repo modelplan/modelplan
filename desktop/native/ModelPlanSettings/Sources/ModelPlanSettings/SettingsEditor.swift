@@ -84,8 +84,12 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     /// already shows that account hidden, so no publication (Dock, menu, Settings) shows it in between.
     private var anonymousCarryID: String?
     static let anonymousCarryAttempts = 200
-    public var snapshot: SettingsSnapshot? {
-        guard let committedSnapshot else { return nil }
+    public var snapshot: SettingsSnapshot? { committedSnapshot.map(presented) }
+    /// The one projection every publication uses (`snapshot`, commit receipts to `onCommit`, committed-edit
+    /// observers and the values `commit` returns): a pending takeover of the anonymous hide is applied, the
+    /// marker is never shown, and the anonymous station follows the session's ZCode account. A raw store
+    /// document is never handed to a consumer.
+    private func presented(_ committedSnapshot: SettingsSnapshot) -> SettingsSnapshot {
         var preferences = committedSnapshot.preferences
         if preferences.subscriptions.hiddenIDs.remove(Self.anonymousZCodeHideMarker) != nil, let anonymousCarryID {
             preferences.subscriptions.hiddenIDs.insert(anonymousCarryID)
@@ -128,6 +132,10 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         if firstRunPresentation?.id == id { firstRunPresentation = nil; notifyChange() }
     }
     public private(set) var lastCommitDeliveryFailure: SettingsCommitDeliveryFailure?
+    #if DEBUG
+    /// Checks only: runs once after the next save's store write and before its receipt reaches this editor.
+    public var storeReceiptBarrierForChecks: (@MainActor () async -> Void)?
+    #endif
     private let commitObserverLimit: Duration
     private lazy var commitObservers = SettingsCommitObservers(limit: commitObserverLimit) { [weak self] failure in
         self?.lastCommitDeliveryFailure = failure
@@ -367,13 +375,14 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
                                                    hiddenIDs: preferences.subscriptions.hiddenIDs.subtracting(unstable))
                 try edit(&preferences)
             }
-        }, snapshot: { $0 })
+        }, snapshot: { $0 }, present: { self.presented($0) })
     }
     private func persist<Value: Sendable>(expectedRevision: UInt64? = nil, quotaPreviewID: String? = nil,
         kind: SettingsCommittedEdit.Kind = .preferences,
         editsUnavailableZCodeVisibility: Bool = false,
         operation: @escaping @Sendable (UInt64) async throws -> Value,
-        snapshot receipt: @escaping @Sendable (Value) -> SettingsSnapshot) async throws -> Value {
+        snapshot receipt: @escaping @Sendable (Value) -> SettingsSnapshot,
+        present: (Value) -> Value = { $0 }) async throws -> Value {
         guard !isSaving else { throw SettingsEditorError.editInProgress }
         guard let before = snapshot else { throw SettingsEditorError.notLoaded }
         if let expectedRevision, expectedRevision != before.revision {
@@ -383,18 +392,23 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         defer { isSaving = false; notifyChange() }
         do {
             let result = try await operation(expectedRevision ?? before.revision)
+            #if DEBUG
+            if let barrier = storeReceiptBarrierForChecks { storeReceiptBarrierForChecks = nil; await barrier() }
+            #endif
             let committed = receipt(result)
             if editsUnavailableZCodeVisibility && context.subscriptions.contains(where: { $0.id == Self.unavailableZCodeID }) {
                 lastZCodeMemberID = nil
             }
             accept(committed)
             if let quotaPreviewID { lastChangedSubscriptionID = quotaPreviewID }
-            onCommit?(committed, EffectiveSettings(committed.preferences, environment: environment))
-            let transaction = SettingsCommittedEdit(before: before, after: committed, kind: kind, origin: store)
+            // The receipt is published through the presented projection, never as the raw stored document.
+            let shown = presented(committed)
+            onCommit?(shown, EffectiveSettings(shown.preferences, environment: environment))
+            let transaction = SettingsCommittedEdit(before: before, after: shown, kind: kind, origin: store)
             // Keep the reset boundary until acknowledgment or terminal delivery failure. A deadline
             // never turns this already-successful store commit into a fake save failure/retry.
             await commitObservers.deliver(transaction)
-            return result
+            return present(result)
         } catch {
             // An external writer on this same actor may have advanced. Show its current truth, never retry over it.
             accept(await store.snapshot())
