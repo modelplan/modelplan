@@ -4,7 +4,7 @@ import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {renderVisualDeck,visualFixture} from '../visual-fixture.mjs';
 
-for(const [tier,height] of [['compact',640],['tall',890]]){
+for(const [tier,height] of [['tall',890]]){
  test(`faders keep detents 20 pt apart at ${height}`,async({page})=>{
   await page.setViewportSize({width:636,height});
   await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});

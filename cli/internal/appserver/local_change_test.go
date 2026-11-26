@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 )
 
@@ -35,7 +36,7 @@ func TestCodexLocalStampsIncludeOlderOwnThread(t *testing.T) {
 	}
 	b := &SharedBackend{config: SharedConfig{Paths: func(consent.Admission) quota.Paths { return quota.Paths{CodexHome: root, CodexThread: "thread"} }}}
 	admission := consent.NewAdmission(consent.Empty(), consent.Automatic)
-	before := b.codexLocalStamps(admission)
+	before := b.codexLocalStamps(admission, logindex.Ticket{})
 	found := false
 	for _, stamp := range before {
 		if stamp.path == own {
@@ -48,7 +49,7 @@ func TestCodexLocalStampsIncludeOlderOwnThread(t *testing.T) {
 	if err := os.WriteFile(own, []byte("updated own thread"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	after := b.codexLocalStamps(admission)
+	after := b.codexLocalStamps(admission, logindex.Ticket{})
 	if reflect.DeepEqual(before, after) {
 		t.Fatal("own thread update did not change stamps")
 	}
@@ -66,7 +67,7 @@ func TestCodexLocalChangeRespectsConsent(t *testing.T) {
 	calls := 0
 	b := &SharedBackend{config: SharedConfig{Paths: func(consent.Admission) quota.Paths { calls++; return quota.Paths{CodexHome: root} }}}
 	off := consent.NewAdmission(consent.Empty(), consent.Off)
-	if got := b.codexLocalStamps(off); len(got) != 0 || calls != 0 {
+	if got := b.codexLocalStamps(off, logindex.Ticket{}); len(got) != 0 || calls != 0 {
 		t.Fatal("read source paths with readers off")
 	}
 	deniedState := consent.Empty()
@@ -74,18 +75,18 @@ func TestCodexLocalChangeRespectsConsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	denied := consent.NewAdmission(deniedState, consent.Automatic)
-	if got := b.codexLocalStamps(denied); len(got) != 0 || calls != 0 {
+	if got := b.codexLocalStamps(denied, logindex.Ticket{}); len(got) != 0 || calls != 0 {
 		t.Fatal("read source paths after explicit denial")
 	}
 	allow := consent.NewAdmission(consent.Empty(), consent.Automatic)
-	before := b.codexLocalStamps(allow)
+	before := b.codexLocalStamps(allow, logindex.Ticket{})
 	if len(before) != 1 {
 		t.Fatalf("implicit permitted source missing: %v", before)
 	}
 	if err := os.WriteFile(file, []byte("two longer\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	after := b.codexLocalStamps(allow)
+	after := b.codexLocalStamps(allow, logindex.Ticket{})
 	if len(after) != 1 || before[0] == after[0] {
 		t.Fatal("local file modification was missed")
 	}

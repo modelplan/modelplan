@@ -77,9 +77,8 @@ test('CKP-FAD-50/55 cards: use large (tokens until ≈cost exists), share bar in
  await expect(page.locator('.fd-scale .sc-led')).toHaveText('Sessions');
  await expect(sol.locator('.fd-indicator')).toHaveAttribute('data-state','live');
  await expect(card(page,'GLM-5.3').locator('.fd-indicator')).toHaveAttribute('data-state','used');
- // No card line overflows its card, tall and short (CKP-FAD-57: lines tighten, never overlap).
- for(const tier of ['tall','compact']){
-  if(tier==='compact')await open(page,{tier});
+ // No card line overflows its card (CKP-FAD-57: lines tighten, never overlap; D444: one layout).
+ for(const tier of ['tall']){
   const bad=await page.locator('.fd-ch:not(.empty) .fd-strip').evaluateAll(list=>list.flatMap(s=>{const box=s.getBoundingClientRect(),kids=[...s.children].filter(e=>!e.matches('.st-vend,.st-pin')).map(e=>e.getBoundingClientRect());
    return kids.flatMap((r,i)=>[...(r.right>box.right+.5||r.bottom>box.bottom+.5?['out']:[]),...(i&&r.top<kids[i-1].bottom-.5?['overlap']:[])]);}));
   expect(bad,tier).toEqual([]);
@@ -205,21 +204,6 @@ test('CKP-FAD-54 re-dragging an open trial: the card follows the pointer, also b
  await expect(travel).toHaveAttribute('data-trial','');
 });
 
-// D337 (closes D190): on the short cockpit the card's trial readout is letters, not colour alone: "A97 C59" / "能97 费59" (shares of the top effort).
-for(const [locale,text,tryLine] of [['en','A97 C59','Try XHigh'],['zh-CN','能97 费59','试 XHigh']])
-test('D337 short cockpit: the trial card reads ability and cost with letters ('+locale+'), within 9 characters',async({page})=>{
- await open(page,{locale,tier:'compact'});
- const sol=card(page,'Sol 6.1'),strip=sol.locator('.fd-strip'),travel=sol.locator('[role=slider]');
- await strip.click();await travel.focus();await page.keyboard.press('ArrowUp');
- await expect(strip).toHaveAttribute('data-card','try');
- const got=await lines(sol);
- expect(got[1]).toBe(tryLine);expect(got[3]).toBe(text);
- for(const l of got)expect([...l].length,l).toBeLessThanOrEqual(9);
- expect(await strip.getAttribute('aria-label')).toMatch(/XHigh/); // the full accessible text stays
- await page.keyboard.press('Escape');
- await expect(strip).toHaveAttribute('data-card','normal');
-});
-
 // macrevc-1052-1: the card's use, share and cost follow the app's range (shell.range), through the normal bridge.
 test('CKP-FAD-50 / LBL-2.2-51 the card follows the app range: 7d, 30d, Today',async({page})=>{
  const send=await open(page,{});
@@ -281,18 +265,6 @@ test('CKP-FAD-14 hovering a fader shows the blue dashed what-if box at the level
  await expect(page.locator('.fd-ch.sel')).toHaveCount(0);
  await page.mouse.move(box.x+box.width/2+200,xhigh);
  await expect(peek).not.toHaveClass(/\bon\b/);
-});
-
-test('CKP-FAD-57 short cockpit: the fader lever scales to 0.825 of the tall one',async({page})=>{
- await open(page);
- const tall=await card(page,'Sol 6.1').locator('.fd-cap').boundingBox();
- await open(page,{tier:'compact'});
- const short=await card(page,'Sol 6.1').locator('.fd-cap').boundingBox();
- // The short lever keeps its 0.825 u scale (96 px travel). D405 (owner 11-24) splits the tall deck into even tiers, so the
- // tall lever is now 88.5/97 = 0.912 u (104.5 px travel) and the short one is 80/88.5 = 0.904 of it.
- const ratio=80/88.5;
- expect(Math.abs(short.width/tall.width-ratio)).toBeLessThan(.01);
- expect(Math.abs(short.height/tall.height-ratio)).toBeLessThan(.01);
 });
 
 test('G3-134 an unlisted model with a readable name gets a card: its name, "Unlisted", no lever, and clicking it opens nothing',async({page})=>{

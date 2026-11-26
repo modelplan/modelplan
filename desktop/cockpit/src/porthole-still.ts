@@ -9,7 +9,7 @@
 import {ht} from './host-text.js';
 export type StillLayer={left:number;top:number;width:number;height:number;file:string};
 export type StillModel={id:string;name?:string;nozzle:{x:number;y:number};body?:StillLayer;flame?:StillLayer;halo?:StillLayer};
-export type StillProjection={id:string;theme:'night'|'day';layout:890|640;width:number;height:number;background:string;models:StillModel[]};
+export type StillProjection={id:string;theme:'night'|'day';layout:890;width:number;height:number;background:string;models:StillModel[]};
 export type StillPack={base:string;projections:StillProjection[]};
 // A click within 28 px of a rocket's centre names that rocket (prototype hud-selection/still.js:hitStillRocket); nearest wins.
 export function stillRocketAt(field:HTMLElement,x:number,y:number,radius=28):string|null {
@@ -72,37 +72,43 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
   const host=document.createElement('div');host.className='ck-still';host.setAttribute('aria-hidden','true');field.prepend(host);
   const base=new URL(pack.base,document.baseURI).href;let painted='';
   // The ⤢ key sits inside the glass of the c01 canopy, never on its frame (owner, 11-09). Positions are measured on the
-  // canopy aperture mask (runtime/canopy-c01/aperture-<layout>-1x.png, in the port's page coordinates): at least 8 px of
-  // glass on every side at both layouts, in both themes, and clear of the HUD at the left. Measured against the final
-  // masks of the redrawn canopy (D74, #801): the clearance is 8.1 px at 890 and 8.0 px at 640. Offsets are from the port's
-  // padding box.
-  const BIG_KEY={890:{right:38,top:52},640:{right:38,top:7}} as const;
+  // canopy aperture mask (runtime/canopy-c01/aperture-890-1x.png, in the port's page coordinates): at least 8 px of
+  // glass on every side, in both themes, and clear of the HUD at the left. Measured against the final masks of the
+  // redrawn canopy (D74, #801): the clearance is 8.1 px. Offsets are from the port's padding box. D444: one layout.
+  const BIG_KEY={right:38,top:52} as const;
   const placeBig=()=>{
     if(!big||!port)return;const size=22;if(!port.clientWidth||!port.clientHeight)return;
-    const at=BIG_KEY[cockpit.dataset.layout==='640'?640:890];
+    const at=BIG_KEY;
     Object.assign(big.style,{right:at.right+'px',top:at.top+'px',width:size+'px',height:size+'px',display:'grid',placeItems:'center',zIndex:'3'});
   };
   const paint=()=>{
     placeBig();
-    const theme=document.documentElement.dataset.theme==='day'?'day':'night',layout=cockpit.dataset.layout==='640'?640:890;
-    const frame=pack.projections.find(p=>p.theme===theme&&p.layout===layout);
+    const theme=document.documentElement.dataset.theme==='day'?'day':'night';
+    const frame=pack.projections.find(p=>p.theme===theme&&p.layout===890);
     // The field may reach past the port's padding box (official edition, G3-82: the canopy art box); its
     // computed insets hold even while it is hidden, so the still is sized to the box it will fill.
     const port=field.parentElement??field,cs=getComputedStyle(field),inset=(v:string)=>parseFloat(v)||0;
     const W=port.clientWidth-inset(cs.left)-inset(cs.right),H=port.clientHeight-inset(cs.top)-inset(cs.bottom);
     if(!frame||!W||!H){field.dataset.still=frame?'sizing':'none';return;}
-    const key=`${frame.id}:${W}x${H}`;if(key===painted)return;painted=key;
+    // Owner 11-25 (porthole bottom too bright): the whole scene (earth, horizon glow, rockets, chart) sits lower in the glass,
+    // so the header's glareshield hides the glow's lower part. --ck-still-drop is that shift as a fraction of the window height;
+    // --ck-still-dim is the glow's peak-brightness cut (0..1), a dark wash over the earth that leaves the rockets alone.
+    const num=(name:string)=>Math.max(0,Math.min(.5,parseFloat(cs.getPropertyValue(name))||0));
+    const drop=num('--ck-still-drop'),dim=num('--ck-still-dim');
+    const key=`${frame.id}:${W}x${H}:${drop}:${dim}`;if(key===painted)return;painted=key;
     // Cover the field like a background: scale to the larger ratio and centre; the port clips the rest.
     const s=Math.max(W/frame.width,H/frame.height);
     const stage=document.createElement('div');stage.className='ck-still-stage';
     stage.style.width=frame.width+'px';stage.style.height=frame.height+'px';
-    stage.style.transform=`translate(${(W-frame.width*s)/2}px,${(H-frame.height*s)/2}px) scale(${s})`;
+    stage.style.transform=`translate(${(W-frame.width*s)/2}px,${(H-frame.height*s)/2+H*drop}px) scale(${s})`;
     const layer=(className:string,l:{left:number;top:number;width:number;height:number},file:string)=>{
       const e=document.createElement('i');e.className='ck-still-layer '+className;
       Object.assign(e.style,{left:l.left+'px',top:l.top+'px',width:l.width+'px',height:l.height+'px',backgroundImage:`url("${new URL(file,base).href}")`});
       stage.append(e);return e;
     };
     layer('ck-still-bg',{left:0,top:0,width:frame.width,height:frame.height},frame.background);
+    if(dim>0){const e=document.createElement('i');e.className='ck-still-layer ck-still-dim';
+      Object.assign(e.style,{left:'0px',top:'0px',width:frame.width+'px',height:frame.height+'px',opacity:String(dim)});stage.append(e);}
     for(const [index,m] of frame.models.entries())for(const kind of ['flame','halo','body'] as const){
       const l=m[kind];if(!l)continue;
       // Prototype composer.js:26: per-model period 0.43 + (i mod 4) x 0.07 s and phase -(i mod 3) x 0.13 s, scaled about the nozzle.

@@ -14,7 +14,7 @@ import {HOUR,WEEK_DAYS,addDays,dayOffset,dayPieces,dayWindow,hhmm,hourMarks,isWe
 
 // Every word the calendar draws comes from the plugin string table (strings/plugins.js, `plugin.cal*`), in the locale
 // of the draw context; nothing here picks a language's text inline.
-const WORDS=['now','allDay','peak','cont','r5','week5','weekly','weeklyLong','wk','cards','cardsFull','until','announced','confirmed','effective','empty','waiting','zoomed','tentative','announcedOn','winWeek','win5'] as const;
+const WORDS=['now','allDay','peak','cont','r5','week5','weekly','weeklyLong','wk','cards','cardsFull','credit','direct','until','announced','confirmed','effective','empty','waiting','zoomed','tentative','announcedOn','winWeek','win5'] as const;
 type Words={readonly [k in typeof WORDS[number]]:string}&{readonly days:readonly string[];readonly weekdays:readonly string[];readonly narrow:readonly string[]};
 function wordsOf(context:PluginContext):Words {
  const word=(key:string)=>context.words('plugin.'+key).full,out:Record<string,unknown>={};
@@ -47,6 +47,7 @@ function spanText(data:CalendarData,s:CalendarSpan,w:Words,zh:boolean,full=false
   const cards=full?w.cardsFull:w.cards;// the tooltip form carries the full wording
   if(s.to===null)return `${name} ${cards}${n}`;
   return zh?`${name} ${cards}${n} ${w.until}${monthDay(s.to!)}`:`${name} ${cards}${n} · ${w.until} ${monthDay(s.to!)}`;}
+ if(s.kind==='credit'||s.kind==='creditConfirmed')return `${name} +1 ${w.credit}`;
  const what=s.kind==='confirmed'?w.confirmed:w.announced;
  if(s.to===null)return `${name} ${what}`;
  return zh?`${name} ${what} · ${monthDay(s.to)} ${w.effective}`:`${name} ${what} · ${monthDay(s.to)}`;
@@ -180,7 +181,7 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
  }
  // All-day: one row. Reset-card bars across their days; an official announced reset is a ◆ on the day it takes effect only.
  const allDay=el('div','wk-ad');allDay.append(el('span','wk-adl',w.allDay));
- const end=addDays(today,WEEK_DAYS);let rowsUsed=0;
+ const end=addDays(today,WEEK_DAYS),chipsOn=new Array<number>(WEEK_DAYS).fill(0);let rowsUsed=0;
  for(const x of data.spans){
   if(x.from>=end||x.to!==null&&x.to<today)continue;
   const sub=data.subs[x.sub]!;
@@ -192,12 +193,20 @@ function paintWeek(context:PluginDrawContext,reading:CalendarData|null) {
    const a=Math.max(0,dayOffset(now,x.from)),b=Math.min(WEEK_DAYS-1,dayOffset(now,x.to)),row=el('div','wk-adr bar');row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);
    place(row,a,b-a+1);row.append(el('span','',narrow?`${nameOf(data,x.sub,zh)} ${w.cards}`:zh?`${sub.name.zh} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to)}`:`${sub.name.en} ${w.cards} ${monthDay(Math.max(x.from,today))}–${monthDay(x.to)}`));
    allDay.append(row);rowsUsed++;
-  }else if(x.to!==null&&x.to>=today&&x.to<end){
-   const row=el('div','wk-adr mark');row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);place(row,dayOffset(now,x.to));
-   row.append(el('span','',`◆ ${nameOf(data,x.sub,zh)}`));allDay.append(row);rowsUsed++;
+  }else{
+   // Reset notices are chips on their day: +1 for a banked reset, ↻ for a direct reset (dashed until the vendor reports it done).
+   // With no stated time the day is the one it was published; one from before the first column is not drawn here (the
+   // website's board does the same for a past week; its "latest resets" strip is this calendar's all-day line in the 12 h column).
+   const stamp=x.to??x.from,day=dayOffset(now,stamp);
+   if(day<0||day>=WEEK_DAYS)continue;
+   const credit=x.kind==='credit'||x.kind==='creditConfirmed',confirmed=x.kind==='creditConfirmed'||x.kind==='confirmed',row=el('div','wk-adr mark chip '+(credit?'credit':'direct')+(confirmed?'':' pending'));row.style.setProperty('--c',sub.colour);row.title=spanText(data,x,w,zh,true);place(row,day);
+   // Chips of one day stack in lanes under each other; on a narrow column the direct reset keeps only its ↻ (the title has the words).
+   const lane=chipsOn[day]!++;if(lane)row.style.top=`${2+lane*15}px`;
+   row.append(el('span','',credit?(narrow?'+1':`+1 ${w.credit}`):narrow?'↻':`↻ ${w.direct}`));allDay.append(row);rowsUsed++;
   }
  }
  if(!rowsUsed)allDay.classList.add('none');
+ else if(Math.max(...chipsOn)>1)allDay.style.height=`${5+15*Math.max(...chipsOn)}px`;
  // The hour body: the whole day fitted by default; zoomed it scrolls (scrollbar, ↑/↓ hints at the column edges).
  const scroll=el('div','wk-sc'),inner=el('div','wk-in');inner.style.height=fit?'100%':`${(24/zoom*100).toFixed(3)}%`;scroll.append(inner);
  const Y=(h:number)=>pct(h/24);
@@ -318,6 +327,7 @@ function fallbackLines(data:CalendarData|null,context:PluginContext):{label:stri
 export const calendarPlugin:CockpitPlugin=Object.freeze({
  id:'calendar',
  title:'plugin.calendarTitle',
+ screenShort:'plugin.calendarTitleShort',
  summary:'plugin.calendarSummary',
  // D328 key icon: a white line calendar sheet with two rings, on the shared 16 px frame at the vendor marks' stroke (currentColor); the underline is the grey dashed #87939e.
  icon:`<svg viewBox="0 0 16 16" aria-hidden="true">${PLUGIN_ICON_FRAME}<path d="M1 6h14M5 0.5v3M11 0.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>`,
@@ -334,8 +344,9 @@ export const calendarPlugin:CockpitPlugin=Object.freeze({
  nextDeadline:(_state:unknown,now:number)=>now?nextMinute(now):null,
  column(state:unknown,context:PluginContext){
   const data=readingOf(state);
-  // D328: no peak rules (only Codex, say): the D293 cells and "Peak: no peak rules", no strip.
-  const strip=data&&data.peaks.length?(c:PluginDrawContext)=>paintStrip(c,data):null;
+  // D328: no peak rules (only Codex, say): the D293 cells and "Peak: no peak rules", no strip, unless a public reset notice
+  // is current: its all-day line must not be lost.
+  const strip=data&&(data.peaks.length||data.spans.some(x=>x.kind!=='cards'))?(c:PluginDrawContext)=>paintStrip(c,data):null;
   return {cells:fallbackCells(data,context),foot:footOf(data,context),draw:strip};
  },
  screen(state:unknown,context:PluginContext){

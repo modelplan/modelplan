@@ -1,0 +1,1 @@
+The Resources screen header no longer overlaps in English: the pressure and load on the right give way (without load, short words, value only) before they meet the title. The network card without readings now says "No network data yet" instead of drawing a blank graph.

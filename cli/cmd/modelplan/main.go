@@ -1404,7 +1404,7 @@ func observeCodexHome(st *store.Store, home string, now time.Time, x observeInde
 	}
 	var rollouts []string
 	if x.inventory != nil {
-		rollouts = quota.RecentRolloutsIn(x.inventory, x.fence, home, 8, now)
+		rollouts = quota.RecentRolloutsIn(x.inventory, x.fence, x.ticket, home, 8, now)
 	} else {
 		rollouts = quota.RecentRollouts(home, 8)
 	}

@@ -44,6 +44,9 @@ const skip = (why) => ({ review: false, why });
 // The labels come from the REST pull request the workflow fetches itself, never from a file of the PR.
 export { GPT_FALLBACK_MARKER, GPT_LABEL } from "../merge-gates/rules.mjs";
 export const wantsGpt = gptLabelled;
+// macrev2-1254: where (ghglm) may not decide (an IMPORTANT PR, tiers 1 and 2) its answer is advisory only. It is still worth
+// obtaining when GPT is out of quota, so the head is not left unreviewed; the PR keeps waiting for a Sol/GPT verdict.
+export const glmAdvisory = (cls, tier, glmTiers = DEFAULT_GLM_TIERS) => Number(tier) !== 0 && !eligibleLanes(Number(tier), glmTiers, cls).includes(`(${GLM_LANE})`);
 // A labelled PR is never settled by a GLM verdict: only the GPT lane's own verdict (or a counting verdict from another
 // non-GLM lane) means the head is done.
 const gptOwn = (lane) => [`(${lane})`];
@@ -105,8 +108,9 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   // fallback. Tier 0 and an outside PR: GLM only (advice).
   const providers = [];
   if (tier !== 0 && !outside) providers.push("openai");
-  // On a labelled PR GLM is the quota fallback whose marked verdict counts, whatever REVIEW_GLM_TIERS says.
-  if (tier === 0 || outside || gpt || eligible.includes(`(${GLM_LANE})`)) providers.push("glm");
+  // Where GLM may not decide it is still offered as the advisory quota fallback, once per head, and only after GPT.
+  const advisoryGlm = !outside && glmAdvisory(cls, tier, glmTiers);
+  if (tier === 0 || outside || eligible.includes(`(${GLM_LANE})`) || (advisoryGlm && !atHead.some((v) => v.lane === `(${GLM_LANE})`))) providers.push("glm");
   if (!providers.length) return skip(`no provider can review tier ${tier}`);
   const earlier = all.filter((v) => v.sha !== head && GPT_LANES.has(v.lane));
   // R19: the record of the latest earlier GPT verdict comment that has one is the cumulative per-PR record. The delta
@@ -121,7 +125,7 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
     if (r) record = { sha: official[i].sha, lane: official[i].lane, text: r };
   }
   const since = record ? record.sha : official.length ? official[official.length - 1].sha : null;
-  return { review: true, head, tier, compile, since, earlier: earlier.slice(-MAX_EARLIER), record, providers, gpt, cls };
+  return { review: true, head, tier, compile, since, earlier: earlier.slice(-MAX_EARLIER), record, providers, gpt, cls, glmAdvisory: advisoryGlm && providers.includes("glm"), gptFirst: gpt || (advisoryGlm && providers.includes("glm")) };
 }
 
 // The R19 record block: the line "Record: <sha>" and the lines after it up to the first blank line (at most 15 lines),
@@ -309,9 +313,7 @@ export function renderSolComment({ answer, head, lane, mode, base, tier, meta = 
   const tokens = meta.usage ? ` · tokens in ${meta.usage.input} (cached ${meta.usage.cached}) out ${meta.usage.output}` : "";
   out.push(`<sub>workflow ${glm ? "GLM" : "Sol"} reviewer · ${meta.model ?? "?"} ${meta.effort ?? "?"} · ${meta.seconds ?? "?"} s${tokens}${meta.runUrl ? ` · [run](${meta.runUrl})` : ""}</sub>`, "");
   if (out.some((l) => MARKER.test(l))) throw new Error("rendered comment has a gate marker before the verdict line");
-  // review:gpt with GPT out of quota: the counting GLM verdict carries the fixed marker line (only the workflow writes it;
-  // the model's own lines are defused above). The gate counts (ghglm) on a labelled PR only with this line in the comment.
-  if (gptFallback && lane === GLM_LANE) out.push(GPT_FALLBACK_MARKER, "");
+  // macrev2-1254: no counting marker is ever written: a GLM fallback answer is advisory on an IMPORTANT PR (gptFallback is ignored).
   // R19: the VERDICT line is the last line; it is the only line the gate reads.
   out.push(`VERDICT: ${answer.verdict} @ ${head} (${lane})`);
   const comment = out.join("\n");
@@ -353,8 +355,10 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
     const sticky = assigned && eligible.includes(assigned) ? assigned : null;
     const pinned = stickyLanes(sticky, eligible);
     if (assigned && !sticky) return `the assigned reviewer ${assigned} cannot review tier ${tier}`;
-    if (pinned && (posted ? !pinned.includes(`(${posted})`) : !pinned.some((l) => [`(${SOL_LANE})`, `(${GLM_LANE})`].includes(l)))) return `the assigned reviewer is ${sticky}`;
-    if (posted === GLM_LANE && !gpt && !eligible.includes(`(${GLM_LANE})`)) return `(${GLM_LANE}) may not decide tier ${tier}`;
+    // An advisory GLM post (GLM may not count here: IMPORTANT and the tier not in REVIEW_GLM_TIERS) is not an assigned-reviewer matter.
+    const advisoryGlmPost = posted === GLM_LANE && glmAdvisory(cls, tier, glmTiers);
+    if (pinned && !advisoryGlmPost && (posted ? !pinned.includes(`(${posted})`) : !pinned.some((l) => [`(${SOL_LANE})`, `(${GLM_LANE})`].includes(l)))) return `the assigned reviewer is ${sticky}`;
+    // (ghglm) where it may not decide posts advisory only (macrev2-1254): admitted, once per head by the check above.
     if (!force && atHead.some((v) => (eligible.includes(v.lane) && !(gpt && !fb && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)")) return "a counting verdict already exists at this head";
   }
   // macrevb-1108-6: the review was prepared (scope, delta base, prompt) for preparedTier. A trusted tier change since

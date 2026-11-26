@@ -67,32 +67,29 @@ public enum CockpitPutBackPath {
 
 /// D187: where a key detach puts the cockpit. The first candidate that keeps the WHOLE cockpit inside the visible
 /// frame (below the menu bar, above the Dock) and at least 56 pt from home: (1) straight down, (2) sideways toward the
-/// screen centre; if neither fits, the short version is tried the same way; failing that, sideways toward the centre by
-/// the least that clears the catch zone, kept inside the visible frame. Never partly off-screen. No diagonal (D187).
+/// screen centre; failing both, sideways toward the centre by the least that clears the catch zone, kept inside the
+/// visible frame. Never partly off-screen. No diagonal (D187). D444: a detach never switches layout, so there are no
+/// short-version candidates.
 public enum CockpitDetachLanding {
-  public enum Rule: String, Equatable, Sendable { case down, towardCentre, compactDown, compactTowardCentre, minimum }
+  public enum Rule: String, Equatable, Sendable { case down, towardCentre, minimum }
   public struct Plan: Equatable, Sendable {
     public let frame: CGRect
-    public let compact: Bool
     public let rule: Rule
   }
-  public static func plan(home: CGRect, compactHome: CGRect?, visible: CGRect) -> Plan {
+  public static func plan(home: CGRect, visible: CGRect) -> Plan {
     let step = CockpitLaunchRackTiming.landingStep
     func fits(_ frame: CGRect) -> Bool {
       frame.minX >= visible.minX - 0.5 && frame.maxX <= visible.maxX + 0.5 && frame.minY >= visible.minY - 0.5 && frame.maxY <= visible.maxY + 0.5
     }
     func direction(_ frame: CGRect) -> CGFloat { frame.midX < visible.midX ? 1 : -1 }
-    for (start, compact) in [(home, false)] + (compactHome.map { [($0, true)] } ?? []) {
-      let down = start.offsetBy(dx: 0, dy: -step)
-      if fits(down) { return Plan(frame: down, compact: compact, rule: compact ? .compactDown : .down) }
-      let side = start.offsetBy(dx: direction(start) * step, dy: 0)
-      if fits(side) { return Plan(frame: side, compact: compact, rule: compact ? .compactTowardCentre : .towardCentre) }
-    }
-    let base = compactHome ?? home
-    var frame = base.offsetBy(dx: direction(base) * (CockpitLaunchRackTiming.catchZone + 1), dy: 0)
+    let down = home.offsetBy(dx: 0, dy: -step)
+    if fits(down) { return Plan(frame: down, rule: .down) }
+    let side = home.offsetBy(dx: direction(home) * step, dy: 0)
+    if fits(side) { return Plan(frame: side, rule: .towardCentre) }
+    var frame = home.offsetBy(dx: direction(home) * (CockpitLaunchRackTiming.catchZone + 1), dy: 0)
     frame.origin.x = max(visible.minX, min(frame.minX, visible.maxX - frame.width))
     frame.origin.y = max(visible.minY, min(frame.minY, visible.maxY - frame.height))
-    return Plan(frame: frame, compact: compactHome != nil, rule: .minimum)
+    return Plan(frame: frame, rule: .minimum)
   }
 }
 
