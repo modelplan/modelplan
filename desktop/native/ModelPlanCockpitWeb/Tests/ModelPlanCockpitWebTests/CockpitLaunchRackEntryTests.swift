@@ -713,5 +713,71 @@ import XCTest
     XCTAssertEqual(outside, 1, "a press on the flame strip is outside the cockpit")
     XCTAssertEqual(failures, [])
   }
+
+  /// macrev2-1269-1. Invariant: at every press the window's `ignoresMouseEvents` matches the pointer's region (flame
+  /// strip: pass through; bells and hull: take). (a) A press that ends on the other side of the strip's edge sets the
+  /// state for where it was released, so the next click without a move lands right; a press in progress is never cut.
+  /// (b) The window moving under a pointer that does not move (a programmatic move, a detach, a put back) follows it.
+  func testD454PassThroughFollowsReleasesAndMovesUnderAStillPointer() async throws {
+    let fixture = try make(reduceMotion: true)
+    defer { fixture.page.discard() }
+    let window = try open(fixture)
+    try await wait(400)
+    let page = fixture.page, layout = try XCTUnwrap(page.verificationLayout), strip = layout.passThroughHeight
+    let f = window.frame
+    let onStrip = CGPoint(x: f.midX, y: f.minY + 1), onHull = CGPoint(x: f.midX, y: f.minY + layout.hullBottomInset + 40)
+    // (a) Pressed on the hull, dragged onto the strip, released there.
+    page.passThroughEvent(.mouseMoved, at: onHull, button: -1, held: 0)
+    XCTAssertFalse(window.ignoresMouseEvents)
+    page.passThroughEvent(.leftMouseDragged, at: onStrip, button: -1, held: 1)
+    XCTAssertFalse(window.ignoresMouseEvents, "a press in progress is never cut")
+    page.passThroughEvent(.leftMouseUp, at: onStrip, button: 0, held: 1)
+    XCTAssertTrue(window.ignoresMouseEvents, "released over the strip: the next click there, without a move, passes through")
+    // The inverse: pressed on the strip (another app holds it), released over the hull.
+    page.passThroughEvent(.leftMouseDragged, at: onHull, button: -1, held: 1)
+    XCTAssertTrue(window.ignoresMouseEvents, "a press in progress is never cut")
+    page.passThroughEvent(.leftMouseUp, at: onHull, button: 0, held: 1)
+    XCTAssertFalse(window.ignoresMouseEvents, "released over the hull: the next click there is the cockpit's")
+    // Right and other buttons release the same way; a release while another button is still down keeps the state.
+    page.passThroughEvent(.rightMouseUp, at: onStrip, button: 1, held: 2)
+    XCTAssertTrue(window.ignoresMouseEvents)
+    page.passThroughEvent(.otherMouseUp, at: onHull, button: 2, held: 4)
+    XCTAssertFalse(window.ignoresMouseEvents)
+    page.passThroughEvent(.leftMouseUp, at: onStrip, button: 0, held: 0b11)
+    XCTAssertFalse(window.ignoresMouseEvents, "the right button is still down")
+    page.passThroughEvent(.scrollWheel, at: onStrip, button: -1, held: 0)
+    XCTAssertTrue(window.ignoresMouseEvents, "a scroll resyncs too")
+    // What the monitors read from an event: its screen point, and the button only for a release.
+    let up = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseUp, location: onHull, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                                              context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+    XCTAssertEqual(CockpitWindowController.screenPoint(up), onHull); XCTAssertEqual(CockpitWindowController.releasedButton(up), 0)
+    let move = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: onHull, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                                                context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+    XCTAssertEqual(CockpitWindowController.releasedButton(move), -1)
+
+    // (b) A still pointer on the strip; the window moves under it.
+    var pointer = onStrip
+    page.verificationPointer = { pointer }
+    page.syncPassThrough()
+    XCTAssertTrue(window.ignoresMouseEvents)
+    func expected() -> Bool { CockpitShellLayout.passesThrough(pointer, frame: window.frame, height: strip) }
+    window.setFrameOrigin(CGPoint(x: f.minX, y: f.minY - strip - 10)) // the bells and hull come down onto the pointer
+    XCTAssertNotEqual(window.frame.origin, f.origin)
+    try await until("the state follows a move under a still pointer") { window.ignoresMouseEvents == expected() }
+    window.setFrameOrigin(f.origin)
+    try await until("and back") { window.ignoresMouseEvents == expected() && window.ignoresMouseEvents }
+    // A detach and a put back move the window under the still pointer too.
+    page.setAttached(false)
+    XCTAssertFalse(page.isAttached)
+    try await until("after a detach") { window.frame != f && window.ignoresMouseEvents == expected() }
+    pointer = CGPoint(x: window.frame.midX, y: window.frame.minY + 1)
+    page.syncPassThrough()
+    XCTAssertTrue(window.ignoresMouseEvents, "detached, the strip under the pointer passes through")
+    page.setAttached(true)
+    XCTAssertTrue(page.isAttached, "Reduce Motion: latched at once")
+    try await until("after a put back") { window.frame == f && window.ignoresMouseEvents == expected() }
+    page.verificationPointer = nil
+    XCTAssertEqual(failures, [])
+  }
 }
 #endif
