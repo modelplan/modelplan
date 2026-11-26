@@ -14,6 +14,7 @@ const ALLOWED_ANIMATIONS=new Set([
  'cockpit-light-breathe', // CKP-ENG-19 (D294) base working light, working subscriptions only; same gates
  'cockpit-bell-flare',    // CKP-SHELL-33 (D294) landing burn thrown out of the mouth, only while the host ignites
  'cockpit-bell-burn',     // the burn's stepped flutter, same gate
+ 'cockpit-flame-flip',    // D454/D459 official blue thrust flipbook, full thrust only; same gates
 ]);
 // Selector fragment -> transitioned properties allowed on it (interaction feedback and fader glide).
 // D405 (#1229): the lever and ghost glide along the tilted slot line; their row is mirrored in --fd-kx for the x half of the glide.
