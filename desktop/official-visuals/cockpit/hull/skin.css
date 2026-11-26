@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
+/* Copyright (c) 2026 ModelPlan. Owner window pack (2026-11-26), night only. */
 /* Load after the bundled night cockpit styles. */
 :root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown {
   background-image: url("/assets/hull/cap-slab.svg");
