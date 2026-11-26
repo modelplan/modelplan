@@ -204,6 +204,9 @@ test('macrevc-844-4: missing peak data, no window and known no-rules are three s
  // Feed present, empty, only tool rows (no declared plan): no peak rules.
  const noRules=structuredClone(data);noRules.details.peaks=[];noRules.subscriptions=[];noRules.projection.rows=noRules.projection.rows.filter(r=>!r.id.startsWith('declared:'));
  assert.equal(calendarFromCockpit(noRules,NOW).peakRules,'no');
+ // A tool-read ZCode row (no declared plan) with no window in the horizon: its provider has peak rules, so not "No rules" (D328/D406).
+ const zai=structuredClone(noRules);{const row=structuredClone(zai.projection.rows[0]);row.id='zai';row.name={en:'ZCode',zh:'ZCode'};row.vendorKey='glm';zai.projection.rows.push(row);}
+ assert.equal(calendarFromCockpit(zai,NOW).peakRules,'yes');
  const column=peakRules=>calendarPlugin.column(calendarPlugin.accept({...week,peaks:[],peakRules},undefined),context).foot.value.full;
  assert.equal(column('no'),'plugin.calNoRules');
  assert.notEqual(column('yes'),'plugin.calNoRules');assert.equal(column('yes'),'plugin.calendarNone');
