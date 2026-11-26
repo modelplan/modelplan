@@ -1584,7 +1584,7 @@
     {
       "id": "j-press-strip",
       "title": "Press a fader name strip",
-      "expected": "Pressing a fader name strip opens that model's comparison on the MFD (Compare · model, Current, Try, Rec).",
+      "expected": "Pressing a fader name strip opens that model's effort page on the MFD (Effort · model: ability, cost and time per effort, with the Fast key). The ‹ back key is gone (D405, D387); the way back is covered by j-compare-back and j-esc-compare.",
       "prototype": "feature journey (D75)",
       "requires": [
         "cockpit-open"
@@ -1630,7 +1630,7 @@
           "exists": "label:ModelPlan Cockpit"
         },
         {
-          "exists": "label~:Back to"
+          "exists": "label~:ability, cost and time for the published efforts"
         }
       ],
       "requirement": "D75 feature journeys"
@@ -1638,7 +1638,7 @@
     {
       "id": "j-compare-back",
       "title": "Return from the comparison",
-      "expected": "The back key (or Back to Overview) ends the comparison and Overview lights again.",
+      "expected": "Pressing the same strip again ends the effort page (D405: the ‹ back key is gone; a page key, Esc, the same card or empty fader space returns) and Overview lights again.",
       "prototype": "feature journey (D75)",
       "requires": [
         "j-press-strip"
@@ -1650,6 +1650,7 @@
         {
           "op": "clickFirst",
           "targets": [
+            "label~:Click to open the effort page",
             "label~:Back to Overview",
             "label^:‹",
             "label^:Back"
