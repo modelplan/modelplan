@@ -390,9 +390,9 @@ test("D169/D246 reverted: the owner Macs admit the merge queue for the GUI tasks
   assert.equal(TRUSTED_MAC_ROUTE.split(extra).length, 2, "exactly one merge_group/schedule clause");
   // merge_group: only the queue clause; native-headless is hosted in the queue.
   assert.equal(TRUSTED_MAC_ROUTE.split("merge_group").length, 2);
-  assert.equal(TRUSTED_MAC_ROUTE.split("'schedule'").length, 2);
-  // It sits inside the owner identity gate, next to the push/dispatch clause.
-  const owner = "(github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request'";
+  assert.equal(TRUSTED_MAC_ROUTE.split("'schedule'").length, 3, "the schedule-on-main bypass of the actor gate and the GUI-task clause");
+  // It sits behind the owner identity gate (or the schedule-on-main bypass), next to the push/dispatch clause.
+  const owner = "|| (github.repository == 'modelplan/modelplan' && github.event_name == 'schedule' && github.ref == 'refs/heads/main')) && (((github.event_name == 'pull_request'";
   const second = TRUSTED_MAC_ROUTE.lastIndexOf(owner);
   assert.ok(second > 0 && TRUSTED_MAC_ROUTE.indexOf(extra) > second);
 });
