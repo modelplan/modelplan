@@ -10,7 +10,7 @@
 /* :is() drops a pseudo-element argument, so the pseudo-elements need their own selector (WP-10 fades the switch art on ::before/::after). */
 #cockpit:not([data-active="true"]) *::before,#cockpit:not([data-active="true"]) *::after{transition:none!important;animation:none!important}
 #cockpit.ck{transition:none;display:grid!important;position:relative!important;inset:auto!important;transform:none!important;opacity:1!important;width:620px;height:var(--body-h,890px);margin:0 auto;max-height:100vh;grid-template-rows:minmax(24px,1fr) 26px var(--eng-h,226px) var(--console-h,257px) var(--tape-h,94px);gap:9px;padding:12px 16px 22px;--pad-x:16px;isolation:isolate;overflow:visible}
-.ck-head{grid-row:2;grid-column:1;z-index:3}.ck-portrow{grid-row:1;grid-column:1;min-height:0}.ck-eng{grid-row:3;grid-column:1;overflow:auto;min-width:0;min-height:0}.ck-deck{grid-row:4;grid-column:1;min-height:0}.ck-tape{grid-row:5;grid-column:1;min-height:0;overflow:auto}.ck-brand{margin-right:auto}.ck-head .key{min-width:54px}.wordmark{white-space:nowrap}
+.ck-head{grid-row:2;grid-column:1;z-index:3}.ck-portrow{grid-row:1;grid-column:1;min-height:0}.ck-eng{grid-row:3;grid-column:1;overflow:auto;min-width:0;min-height:0}.ck-deck{grid-row:4;grid-column:1;min-height:0}.ck-tape{grid-row:5;grid-column:1;min-height:0;overflow:auto}.ck-brand{margin-right:auto}.ck-head .key{min-width:54px}.wordmark{white-space:nowrap;min-width:0}
 .ck-portrow::after{display:none}.ck-port{height:100%;background:var(--port-bg);min-height:0}.ck-field{display:none!important}.hud:not(.wide){position:absolute;left:28px;right:28px;top:auto;bottom:18px;max-width:none;width:auto;min-height:0;display:block;padding:8px 12px;background:var(--lcd-glass);box-shadow:var(--well);border-radius:5px}.u11-summary{font:11px var(--f-silk);color:var(--lcd-ink)}
 .activity{display:block;width:6px;height:6px;border-radius:50%;background:var(--gold-lcd);opacity:.35}
 .ck-deck{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:10px}.dk-fad{display:flex;flex-direction:column;min-width:0;min-height:0}.u11-fader{position:relative;width:10px;border-radius:5px;background:linear-gradient(90deg,var(--slot-1),var(--slot-2));box-shadow:var(--well);opacity:.5}.u11-fader i{position:absolute;left:-10px;right:-10px;bottom:25%;height:18px;border-radius:3px;background:linear-gradient(var(--key-1),var(--key-2));box-shadow:var(--raised)}.fd-bank{padding:8px;text-align:center}.dk-mfd{overflow:auto;padding:14px;background:var(--lcd-bg);box-shadow:var(--well);border-radius:5px;min-height:0}.dk-mfd h2{font-size:10px;color:var(--lcd-muted);margin:0 0 10px}.u11-subscription{display:grid;gap:6px;border-top:1px solid var(--slot-line);padding:9px 0;color:var(--lcd-ink);font:10px var(--f-silk)}.u11-empty,.ec-empty{font:11px var(--f-silk);color:var(--lcd-muted);padding:10px}.ck-tape{display:block;padding:3px 12px;background:var(--lcd-bg);box-shadow:var(--well)}.u11-observed{font:10px 'Share Tech Mono',monospace;color:var(--lcd-ink)}
@@ -109,7 +109,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-o2{animation-delay:-.26s!important}
 }
 /* Website links are small secondary text, at the cockpit's 10 px floor. */
-#cockpit .website-link{font:10px/10px var(--f-lcd);color:var(--lcd-muted);text-decoration:none;white-space:nowrap}
+#cockpit .website-link{font:10px/10px var(--f-lcd);color:var(--lcd-muted);text-decoration:none;white-space:nowrap;min-width:0}
 #cockpit .website-link:hover,#cockpit .website-link:focus-visible{color:var(--lcd-ink)}
 #cockpit .sp-h .website-link{margin-left:auto;flex:none}
 
@@ -150,7 +150,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 #cockpit .hud-b .hud-list{display:grid;grid-template-columns:9px minmax(0,max-content) max-content 7px;column-gap:2px;justify-content:start;grid-template-rows:repeat(6,12px);width:max-content;min-width:117px;max-width:174px;height:74px;box-sizing:border-box;padding:1px 2px 1px 4px;align-content:start}
 /* Owner badcase 11-21: the rows share the list's columns (subgrid), so every ★ effort starts at the same x; each row's own
    auto tracks used to split its free width and moved the ★ by the name's length. */
-#cockpit .hud-b .hp{display:grid;grid-column:1/-1;grid-template-columns:subgrid;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap}
+#cockpit .hud-b .hp{display:grid;grid-column:1/-1;grid-template-columns:subgrid;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap;min-width:0}
 #cockpit .hud-b .hp b{font:500 10px/12px var(--f-lcd);overflow:hidden;text-overflow:clip;min-width:0}
 #cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-rec{margin-left:0;justify-self:start}#cockpit .hud-b .hp-n{color:#aab6bf}
 .hud-axis{fill:none;stroke:#e9edf030;stroke-width:.7}.hud-axis-label{font:400 9px var(--f-silk);fill:#aab6bf}
@@ -228,7 +228,9 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
    the hull, half retracted. The glass now stays in its place and the hull's top edge comes down over it (opening, rises
    off it): the clip is the hull silhouette (inside the row, nothing above it, no side overhang) from the first frame, so no
    part of the canopy is drawn outside the hull while it moves. 0 % is the open state's own clip, so both ends are unchanged. */
-@keyframes cockpit-shutter{0%{clip-path:inset(-24px -32px 0 -32px)}2%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(100% 0 0 0)}}
+/* Build 5 (owner): a plain inset() made the canopy a rectangular box while it moved, losing the rounded outline. The clip keeps the
+   hull's rounded shoulders (round 14px 14px 0 0, the same 14px as the wall mask) at every step, so the shape stays the canopy's. */
+@keyframes cockpit-shutter{0%{clip-path:inset(-24px -32px 0 -32px round 14px 14px 0 0)}2%{clip-path:inset(0 0 0 0 round 14px 14px 0 0)}100%{clip-path:inset(100% 0 0 0 round 14px 14px 0 0)}}
 #cockpit.ck[data-shutter-motion="closing"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) both}
 #cockpit.ck[data-shutter-motion="opening"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) reverse both}
 html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{animation:none}
@@ -300,7 +302,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 #cockpit .ck-head [data-close]:focus-visible{outline:2px solid var(--gold-lcd,#f6d38a);outline-offset:2px}
 /* Owner D277 (CKP-ENG-27): one quiet line under the engine table, on the pager's row (the pager keeps the right end) */
 /* CKP-ENG-55: the footer is right-aligned under the table; the page control (when there is one) keeps the right end. */
-.mfd-page .ov-foot{margin-top:auto;display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0;padding-bottom:4px}.mfd-page .ov-foot .ov-note{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mfd-page .ov-foot{margin-top:auto;display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0;padding-bottom:4px}.mfd-page .ov-foot .ov-note{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .mfd-page .eng-upd{display:flex;align-items:baseline;gap:0;margin-left:auto;min-width:0;font:10px/12px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}.mfd-page .eng-upd-sep{font-style:normal;white-space:pre}.mfd-page .eng-upd[data-failing="true"]{color:var(--st-mid)}
 .mfd-page .eng-upd-t{overflow:hidden;text-overflow:ellipsis}
 .mfd-page .eng-upd-r{font:inherit;color:var(--silk);background:none;border:0;padding:0 2px;cursor:pointer;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 35%,transparent);text-underline-offset:2px}
@@ -351,11 +353,11 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
    6 pt bar 3 pt below, its trend a 1 px line inside the track. The subscription table owns the row height; the cell centres in it. */
 .ck-eng .pl-cell:not(.pl-cal){row-gap:3px;overflow:visible}
 .ck-eng .pl-cell:not(.pl-cal) .qline{display:flex;align-items:baseline;justify-content:flex-start;gap:4px;height:22px;min-width:0}
-.ck-eng .pl-cell:not(.pl-cal) .pl-lead{display:inline-flex;align-items:baseline;flex:none;gap:3px;white-space:nowrap}
-.ck-eng .pl-cell:not(.pl-cal) .pl-tag{display:inline;flex:none;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}
+.ck-eng .pl-cell:not(.pl-cal) .pl-lead{display:inline-flex;align-items:baseline;flex:none;gap:3px;white-space:nowrap;min-width:0}
+.ck-eng .pl-cell:not(.pl-cal) .pl-tag{display:inline;flex:none;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;min-width:0}
 .ck-eng .pl-cell:not(.pl-cal) .qnum{line-height:22px}
 .ck-eng .pl-cell:not(.pl-cal) .qtxt.pl-side{flex:1 1 0;min-width:0;overflow:hidden;white-space:nowrap;text-align:right;text-overflow:clip}
-.ck-eng .pl-cell .pl-big{display:inline-block;flex:none;font:600 20px/22px var(--f-lcd);font-variant-numeric:tabular-nums;color:var(--lcd-ink);white-space:nowrap}
+.ck-eng .pl-cell .pl-big{display:inline-block;flex:none;font:600 20px/22px var(--f-lcd);font-variant-numeric:tabular-nums;color:var(--lcd-ink);white-space:nowrap;min-width:0}
 .cls-narrow .pl-cell .pl-big{font-size:16px;line-height:19px}
 .ck-eng .pl-cell .pl-sub{display:flex;align-items:center;gap:4px;min-width:0}
 .ck-eng .pl-cell .pl-sw{flex:none;width:7px;height:7px;border-radius:1.5px}
@@ -368,7 +370,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .pl-trend{display:block;position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
 .ck-eng .pl-trend path{fill:none;stroke:var(--lcd-ink);stroke-width:1;opacity:.6;vector-effect:non-scaling-stroke}
 .ck-eng .pl-foot{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 4px;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;min-width:0}
-.ck-eng .pl-foot .pl-fit{min-width:0;overflow:hidden;text-overflow:ellipsis}.ck-eng .pl-foot .pl-foot-v{color:var(--lcd-ink)}
+.ck-eng .pl-foot .pl-fit{min-width:0;overflow:hidden;text-overflow:ellipsis}.ck-eng .pl-foot .pl-foot-v{color:var(--lcd-ink);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;white-space:normal;overflow-wrap:anywhere;line-height:14px;height:14px;margin:-2px 0}/* one line, an ellipsis at its end, the rest wrapped out of sight: the text's own box never leaves the clip */
 .ck-eng .eng-keys .ek-bay .bay-dash{font-size:0}
 .ck-eng .eng-keys .ek-bay .bay-dash::before{content:"+";font:400 13px/1 var(--f-silk);color:var(--silk-dim)}
 .ck-eng .eng-keys .ek-bay.on{box-shadow:var(--pressed);background:linear-gradient(180deg,var(--key-p1),var(--key-p2))}
@@ -393,7 +395,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .pl-menu .pm-remove{grid-template-columns:minmax(0,1fr)}
 .pl-menu .pm-mark{display:grid;place-items:center;width:16px;height:16px}
 .pl-menu .pm-mark img{width:14px;height:14px;object-fit:contain}
-.pl-menu .pm-st{font-size:9.5px;color:var(--pop-ink3);white-space:nowrap}
+.pl-menu .pm-st{font-size:9.5px;color:var(--pop-ink3);white-space:nowrap;min-width:0}
 .pl-menu .pm-st.pm-det{color:var(--st-ok)}
 .pl-menu .pm-go{font:500 10px/1 var(--f-silk);padding:3px 6px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--pop-btn-line);color:var(--pop-ink)}
 .pl-menu .pm-go.dim{color:var(--pop-ink3)}
@@ -429,7 +431,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .cal-g{position:absolute;left:var(--cal-g);right:2px;height:0;border-top:1px solid var(--cal-grid)}
 .ck-eng .cal-g i{position:absolute;right:calc(100% + 2px);top:-5px;font:400 9px/11px var(--f-lcd);font-style:normal;color:var(--silk-dim)}
 .ck-eng .cal-mid{position:absolute;left:1px;right:2px;height:0;border-top:.8px dashed var(--cal-mid);opacity:.85;z-index:2}
-.ck-eng .cal-mid b{position:absolute;right:0;top:-6px;padding:0 4px;border-radius:6px;background:#2a2e35;font:400 9px/11px var(--f-silk);color:var(--lcd-ink);white-space:nowrap}
+.ck-eng .cal-mid b{position:absolute;right:0;top:-6px;padding:0 4px;border-radius:6px;background:#2a2e35;font:400 9px/11px var(--f-silk);color:var(--lcd-ink);white-space:nowrap;min-width:0}
 .ck-eng .cal-pk{position:absolute;min-height:2px;border-radius:2px;overflow:hidden;background:color-mix(in srgb,var(--c) 24%,transparent);box-shadow:inset 2.5px 0 0 var(--c);padding:1px 2px 0 5px;color:var(--c)}
 .ck-eng .cal-pk.tent{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 24%,transparent) 0 4px,color-mix(in srgb,var(--c) 12%,transparent) 4px 8px)}
 .ck-eng .cal-pk b{display:block;font:700 9px/11px var(--f-silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -438,11 +440,12 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .cal-ch{position:absolute;right:2px;z-index:3;max-width:calc(100% - 14px);height:12px;padding:0 4px;border-radius:5.5px;background:var(--c);color:var(--cal-chip-ink);font:700 9px/12px var(--f-silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ck-eng .cal-ch.wk{background:transparent;box-shadow:inset 0 0 0 1px var(--c);color:var(--c)}
 /* G3-179 (sampling 11-22): a peak time that cannot live in its lane or its too-short block — a tag on the axis. */
-.ck-eng .cal-pkt{position:absolute;left:calc(var(--cal-g) + 1px);z-index:3;height:12px;padding:0 4px;border-radius:5.5px;background:var(--c);color:var(--cal-chip-ink);font:700 9px/12px var(--f-silk);white-space:nowrap}
-.ck-eng .cal-nt{position:absolute;left:0;top:0;width:calc(var(--cal-g) - 4px);transform:translateY(-50%);border-radius:2px;background:var(--cal-now);color:#06120f;text-align:center;font:700 9px/11px var(--f-lcd);z-index:5}
+.ck-eng .cal-pkt{position:absolute;left:calc(var(--cal-g) + 1px);z-index:3;height:12px;padding:0 4px;border-radius:5.5px;background:var(--c);color:var(--cal-chip-ink);font:700 9px/12px var(--f-silk);white-space:nowrap;min-width:0}
+.ck-eng .cal-nt{position:absolute;left:0;top:0;width:calc(var(--cal-g) - 4px);border-radius:2px;background:var(--cal-now);color:#06120f;text-align:center;font:700 9px/11px var(--f-lcd);z-index:5}
 .ck-eng .cal-nl{position:absolute;left:calc(var(--cal-g) - 2px);right:2px;height:0;border-top:1.8px solid var(--cal-now);z-index:4}
 .ck-eng .cal-nl::before{content:"";position:absolute;left:-3px;top:-3.9px;width:6px;height:6px;border-radius:50%;background:var(--cal-now)}
 .ck-eng .cal-empty{position:absolute;left:var(--cal-g);right:0;top:40%;margin:0;text-align:center;font:400 9px/11px var(--f-silk);color:var(--silk-dim)}
+.ck-eng .cal-note{position:absolute;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;left:var(--cal-g);right:0;bottom:3px;margin:0;text-align:center;font:400 9px/11px var(--f-silk);color:var(--silk-dim);opacity:.8;pointer-events:none}
 /* The week view: the calendar's big screen body (D323 custom draw inside .pl-screen-d). */
 .cal-wk{position:absolute;inset:0;display:flex;flex-direction:column;--wk-g:24px;--wk-r:5px;font:400 9px/11px var(--f-silk);color:var(--lcd-ink)}
 .cal-wk .wk-zoom{position:absolute;right:2px;top:-1px;z-index:7;font:400 9px/11px var(--f-silk);color:var(--cal-now);white-space:nowrap;pointer-events:none}.cal-wk .wk-zoom:not(.on){display:none}
@@ -491,7 +494,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-wk .wk-ch{position:absolute;z-index:3;transform:translateY(-50%);height:12px;padding:0 4px;border-radius:5px;background:var(--c);color:var(--cal-chip-ink);font:700 9px/11px var(--f-silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cal-wk.narrow .wk-ch{padding:0 2px;font-size:9px}
 /* G3-179 (sampling 11-22): a zoomed peak time that cannot live in its split lane — a tag on the day column. */
-.cal-wk .wk-pkt{position:absolute;z-index:3;transform:translateY(-50%);height:12px;padding:0 4px;border-radius:5px;background:var(--c);color:var(--cal-chip-ink);font:400 9px/12px var(--f-lcd);white-space:nowrap}
+.cal-wk .wk-pkt{position:absolute;z-index:3;transform:translateY(-50%);height:12px;padding:0 4px;border-radius:5px;background:var(--c);color:var(--cal-chip-ink);font:400 9px/12px var(--f-lcd);white-space:nowrap;min-width:0}
 .cal-wk.zoom .wk-ch{height:12px;font-size:9px;line-height:12px;border-radius:6px}
 .cal-wk .wk-past{position:absolute;background:var(--cal-past);pointer-events:none}
 .cal-wk .wk-nl{position:absolute;height:0;border-top:1.6px solid var(--cal-now);z-index:4;pointer-events:none}

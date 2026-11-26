@@ -21,7 +21,7 @@ function peaks(list){const data=visualFixture().data;data.details.peaks=list.map
 const blue=page=>page.locator('.pg-overview .mfd-alerts li.al-blue');
 for(const [name,list,en,zh] of [
  ['a coming peak with its length',[[1,3]],'●Codex peak in 1h00 for 2h00','●Codex 1h00 后进入高峰 · 持续 2h00'],
- ['a coming peak without a known end',[[0.5,null,'tentative']],'●Codex peak in 30m','●Codex 30m 后进入高峰'],
+ ['a coming peak without a known end',[[0.5,null,'tentative']],'●Codex Peak (tentative) in 30m','●Codex 30m 后进入高峰（暂定）'],
  ['a peak under way',[[-1,2]],'●Codex Peak hours · now','●Codex 高峰时段 · 进行中'],
 ])test(`D63 peak hours: ${name}, blue and list-only`,async({page})=>{
  const {send,receive}=await open(page,peaks(list));

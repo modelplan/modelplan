@@ -226,13 +226,16 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const drawn=guard(()=>plugin.column(readings.get(plugin.id),context(plugin.id)),{cells:[]});
     const cells=()=>Array.from({length:rows},(_,i)=>drawCell(drawn.cells?.[i],i));
     const key=focusKey(column);
-    for(const old of column.querySelectorAll<HTMLElement>(':scope > .pl-draw'))watch?.unobserve(old);
     // D323: a custom draw gets one clipped area over all the cell rows; the bottom line stays the framework's.
-    const area=typeof drawn.draw==='function'&&rows>0?el('div','pl-draw'):null;
+    // The same draw area is reused by a redraw: a fresh element would be a new observation at the depth the resize callback
+    // is delivering, which the browser reports as a "ResizeObserver loop" error.
+    const before=column.querySelector<HTMLElement>(':scope > .pl-draw');
+    const area=typeof drawn.draw==='function'&&rows>0?(before&&before.dataset.plugin===plugin.id?before:el('div','pl-draw')):null;
+    for(const old of column.querySelectorAll<HTMLElement>(':scope > .pl-draw'))if(old!==area)watch?.unobserve(old);
     if(area){area.style.gridRow=`1 / span ${rows}`;area.dataset.plugin=plugin.id;}
     const parts:HTMLElement[]=area?[area]:cells();
     const foot=el('div','qrow qrow-t pl-foot');
-    if(drawn.foot){foot.setAttribute('role','group');foot.setAttribute('aria-label',[drawn.foot.label.full,drawn.foot.value?.full].filter(Boolean).join(' · '));foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value)foot.append(fitted('pl-foot-v',drawn.foot.value));}
+    if(drawn.foot){foot.setAttribute('role','group');foot.setAttribute('aria-label',[drawn.foot.label.full,drawn.foot.value?.full].filter(Boolean).join(' · '));foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value){const v=fitted('pl-foot-v',drawn.foot.value);v.title=drawn.foot.value.full;foot.append(v);}}// D406: one line with an ellipsis (CSS); the tooltip holds the full text
     parts.push(foot);if(reserve)parts.push(el('div','qrow qrow-r'));
     column.replaceChildren(...parts);column.dataset.rows=String(rows);column.dataset.reserve=String(reserve);
     const ink=plugin.ink;if(ink)column.style.setProperty('--pl-ink',ink);else column.style.removeProperty('--pl-ink');
