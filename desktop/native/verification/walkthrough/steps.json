@@ -1409,8 +1409,8 @@
     },
     {
       "id": "j-page-subscription",
-      "title": "MFD page Subscription",
-      "expected": "The Subscription page key lights and the page shows its own content.",
+      "title": "MFD page Plans",
+      "expected": "The Plans page key lights (the key reads Plans, not Subscription: V1-FINAL 14) and the page shows its own content.",
       "prototype": "feature journey (D75)",
       "requires": [
         "cockpit-open"
@@ -1421,7 +1421,7 @@
         },
         {
           "op": "click",
-          "target": "label:Subscription"
+          "target": "label:Plans"
         },
         {
           "op": "wait",
@@ -1440,7 +1440,7 @@
       },
       "checks": [
         {
-          "on": "label:Subscription"
+          "on": "label:Plans"
         }
       ],
       "requirement": "D75 feature journeys"
@@ -1542,6 +1542,20 @@
           "seconds": 1
         },
         {
+          "op": "when",
+          "absent": "label^:Bars | Grid",
+          "then": [
+            {
+              "op": "click",
+              "target": "label:Overview"
+            },
+            {
+              "op": "wait",
+              "seconds": 1.5
+            }
+          ]
+        },
+        {
           "op": "click",
           "target": "label^:Bars | Grid"
         },
@@ -1589,12 +1603,12 @@
         },
         {
           "op": "awaitStable",
-          "target": "label~:Press to compare on the Main screen",
+          "target": "label~:Click to open the effort page",
           "quiet": 3
         },
         {
           "op": "click",
-          "target": "label~:Press to compare on the Main screen"
+          "target": "label~:Click to open the effort page"
         },
         {
           "op": "wait",
@@ -1723,7 +1737,7 @@
         },
         {
           "op": "click",
-          "target": "label~:Press to compare on the Main screen"
+          "target": "label~:Click to open the effort page"
         },
         {
           "op": "wait",
