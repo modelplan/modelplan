@@ -379,9 +379,9 @@ for(const [tier,height,len] of [['tall',890,.7353]])
  for(const paged of [false,true])
   test(`D433 the lever tier ${paged?'stops above the bank keys (two banks)':'runs to the column bottom (one bank)'}, slots and detents re-fit (${tier})`,async({page})=>{
    await openThrottles(page,{tier,height,paged});
-   const g=await columnGeometry(page),L=g.tierBottom-g.tierTop;
+   const g=await columnGeometry(page),L=g.tierBottom-g.tierTop-(paged?0:2);
    if(paged){const bank=await rect(page.locator('.fd-bank'));expect(bank.h,'page keys shown').toBeGreaterThan(10);expect(g.tierBottom).toBeLessThanOrEqual(bank.t);}
-   else{expect(Math.abs(g.tierBottom-(g.top+g.H)),'tier bottom at the column bottom').toBeLessThanOrEqual(.6);expect(await page.locator('.fd-bank [data-bank]').count()).toBe(0);expect(L,'taller than the paged tier').toBeGreaterThan(tier==='tall'?.46*g.H:.5*g.H);}
+   else{expect(Math.abs(g.tierBottom-(g.top+g.H)-2),'tier bottom at the column bottom plus the 2 px bleed to the big screen frame (D453)').toBeLessThanOrEqual(.6);expect(await page.locator('.fd-bank [data-bank]').count()).toBe(0);expect(L,'taller than the paged tier').toBeGreaterThan(tier==='tall'?.46*g.H:.5*g.H);}
    const trv=await rect(channels(page).nth(0).locator('.fd-travel'));
    expect(Math.abs(trv.h-Math.max(97,len*L+16)),'travel = .7353 L + 16 px, floor 97 px').toBeLessThanOrEqual(.6);
    expect(g.slot.top,'slot inside the tier at the top').toBeGreaterThanOrEqual(g.tierTop+(tier==='tall'?.0637*L-.6:.032*L-.6));
@@ -412,4 +412,14 @@ for(const [tier,height] of [['tall',890]])
   const g=await columnGeometry(page),screen=await rect(page.locator('.mfd-screen'));
   expect(g.tierBottom-screen.b,'screen bottom above the tier front edge (prototype: 10 px = 6 CSS px, within 3)').toBeGreaterThan(-1);
   expect(Math.abs(g.tierBottom-screen.b-6),'screen bottom vs tier front edge').toBeLessThanOrEqual(tier==='tall'?3.5:6);
+ });
+
+// D453 (owner 11-26): the lever console's front edge is flush with the bottom of the right big-screen panel (the frame behind the chart
+// and its toggle row), at every cockpit height.
+for(const height of [890,951])
+ test(`D453 the lever console bottom is flush with the big screen panel bottom (${height})`,async({page})=>{
+  await openThrottles(page,{tier:'tall',height});
+  const g=await columnGeometry(page);
+  const frame=await page.locator('.ck-deck').evaluate(d=>{const a=getComputedStyle(d,'::after'),r=d.getBoundingClientRect();return r.bottom-parseFloat(a.bottom);});
+  expect(Math.abs(g.tierBottom-frame),`console bottom ${g.tierBottom} vs panel bottom ${frame}`).toBeLessThanOrEqual(1);
  });
