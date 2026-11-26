@@ -101,13 +101,21 @@ if (official) {
   css+='\n'+headerCss.toString('utf8');
   // G3-47: the released base-bell rasters (owner 2026-11-08), each checked against the reserved-visuals registry.
   const bells=resolve(assets,'cockpit/bells'),bellFiles=['bell-night-2x.png','bell-night-3x.png','bell-silver-2x.png'];
+  // D454: the owner's blue engine flames ship beside the bells (their own asset folder, same output path as the CSS expects).
+  const flames=resolve(assets,'cockpit/flames'),flameFiles=['flame-ember-1x.png','flame-ember-2x.png','flame-full-strip-1x.png','flame-full-strip-2x.png','flame-short-1x.png','flame-short-2x.png'];
   await mkdir(resolve(output,'assets/bells'),{recursive:true});
   for(const name of bellFiles){
     const bytes=await readFile(resolve(bells,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/bells/assets/'+name];
     if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit bell resource: '+name);
     await writeFile(resolve(output,'assets/bells',name),bytes);
   }
+  for(const name of flameFiles){
+    const bytes=await readFile(resolve(flames,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/flames/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit flame resource: '+name);
+    await writeFile(resolve(output,'assets/bells',name),bytes);
+  }
   await cp(resolve(bells,'SOURCES.md'),resolve(output,'assets/bells/SOURCES.md'));
+  await cp(resolve(flames,'SOURCES.md'),resolve(output,'assets/bells/FLAMES-SOURCES.md'));
   css+='\n'+await readFile(resolve(bells,'bells.css'),'utf8');
   // D68: the r3 hull's plain plates (owner 2026-11-08), each checked against the reserved-visuals registry.
   const hull=resolve(assets,'cockpit/hull'),hullFiles=[];

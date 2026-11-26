@@ -32,8 +32,10 @@ test('both editions have reproducible bounded manifests; community excludes rese
       const sel='html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet';
       const breathe='@media (prefers-reduced-motion:no-preference){\n'+sel+'::before,'+sel+'::after{animation:cockpit-light-breathe 2.6s ease-in-out var(--fo,0s) infinite alternate!important}\n}';
       const burn='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"][data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .36s steps(3,end) .22s infinite}\n}';
+      // D454: the official bells' blue thrust flipbook (frames 1-2-3-2), gated the same way; bells.css rides inside the official cockpit.css.
+      const flip='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz-flame.f-full{animation:cockpit-flame-flip .44s steps(1,end) var(--fo,0s) infinite}\n}';
       if(name==='cockpit.css'){assert.equal(css.split(cursor).length-1,1,'one scoped running-cursor animation');assert.equal(css.split(flicker).length-1,1,'one gated porthole flicker');assert.equal(css.split(breathe).length-1,1,'one gated working-light breathing');assert.equal(css.split(burn).length-1,1,'one gated landing-burn flutter');}
-      assert.doesNotMatch(css.replace(cursor,'').replace(flicker,'').replace(breathe,'').replace(burn,''),/\binfinite\b/i,name);
+      assert.doesNotMatch(css.replace(cursor,'').replace(flicker,'').replace(breathe,'').replace(burn,'').replace(flip,''),/\binfinite\b/i,name);
     }
     const html=readFileSync(root+'index.html','utf8');
     for(const rule of ["connect-src 'none'","frame-src 'none'","object-src 'none'","base-uri 'none'","form-action 'none'"])assert.ok(html.includes(rule));

@@ -167,6 +167,8 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 .bz-line,.bz-glow{position:absolute;left:50%;top:3.5px;width:var(--w,22px);height:3px;transform:translateX(-50%);border-radius:1.5px}
 .bz-line{background:var(--base-metal,#9aa1a8)}
 .bz-glow{display:none}
+/* D454: the engine flame is official art only; the community edition draws no sprite. */
+.bz-flame{display:none}
 .bz.stale .bz-line,.bz-empty .bz-line{background:var(--base-stale,#6b7077)}
 .bz-empty .bz-line{opacity:.35}
 /* Working (CKP-ENG-17/18): a soft mouth light below the line in the quota-status colour; nothing when idle. */
