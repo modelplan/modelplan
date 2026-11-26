@@ -609,6 +609,7 @@ import XCTest
     }
     let panel = try XCTUnwrap(fixture.page.verificationRack.panel, "\(label): the rack is out", file: file, line: line)
     XCTAssertEqual(panel.minX, edge, accuracy: 0.5, "\(label): its left side on the notch's right edge", file: file, line: line)
+    XCTAssertEqual(panel.width, CockpitDockingBoom.edgeAnchorWidth, "\(label): the edge anchor's own width, not the widest status width", file: file, line: line)
     XCTAssertEqual(panel.maxY, fixture.usable.maxY, accuracy: 0.5, "\(label): from the menu bar's edge", file: file, line: line)
     if let layout = fixture.page.verificationLayout, home.minX > fixture.usable.minX, home.maxX < fixture.usable.maxX {
       XCTAssertEqual(layout.shoulder.x, panel.midX, accuracy: 0.5, "\(label): over the left shoulder", file: file, line: line)

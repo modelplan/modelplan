@@ -2009,6 +2009,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     verificationLanding?(plan)
     #endif
     putBackActivation.beginPutBack() // G3-129: switch intent from before this detach does not count
+    // D439 (macrev2-1207-1): the release starts at the press, before the session says detached, so no redraw in between
+    // (the appearance and presence updates below) sees a closed clamp on a cockpit that is no longer home.
+    if clampClosure > 0, !appearance.reduceMotion { clampReleasing = true }
     let wasActive = applicationIsActive, wasRegular = applicationIsRegular
     shellSession.detached = true
     onPresenceChanged?(true)
@@ -2585,7 +2588,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if clampClosure != clampTarget() { ensureRackTimer() }
     // The lug is part of the canopy frame: drawn at the attach point only while the cockpit is attached at home (or held
     // there while the clamp releases it). A prewarmed (never shown) page has no rack on screen.
-    rack.update(icon: (rackExtension > 0 || clampClosure > 0) && shown ? rackIcon() : nil, cockpit: window, hidden: hidden, line: line,
+    // D378: under a hidden status item the boom hangs from the menu-bar edge anchor at that anchor's own width, so its
+    // left side stays on the notch's right edge (the widest real status width, D447, is for a visible item).
+    let icon = (rackExtension > 0 || clampClosure > 0) && shown ? rackIcon() : nil
+    rack.update(icon: icon, width: icon != nil && anchor() == nil ? icon?.width : nil, cockpit: window, hidden: hidden, line: line,
                 slide: rackExtension, closure: clampClosure, lugShown: home)
     #if MODELPLAN_TEST_ONLY_SPI
     verificationRackDrawn?()

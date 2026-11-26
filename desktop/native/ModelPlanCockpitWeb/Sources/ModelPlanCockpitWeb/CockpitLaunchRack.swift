@@ -119,6 +119,12 @@ public enum CockpitDockingBoom {
                                       lugWidth: 0.318, lugAspect: 554.0 / 956, lugPinTip: 1.0 / 956, lugPinY: 269.5 / 554)
   /// #1207 bounds for the status-item width, and the width used before any status item was measured.
   public static let nominalWidth: CGFloat = 40
+  /// D378 with decision C: the menu-bar edge anchor of a hidden status item is as wide as a boom whose clamp alone fills
+  /// the 10 pt gap (42 pt), so that boom has one width with the shutter open or closed and its left side stays on the
+  /// notch's right edge either way.
+  public static var edgeAnchorWidth: CGFloat {
+    max(nominalWidth, clampOnlyWidth(line: CockpitShellLayout.menuBarGap).rounded(.up))
+  }
   public static let minimumWidth: CGFloat = 24
   public static let maximumWidth: CGFloat = 96
   /// The panel's height below the menu bar. The boom never reaches below the canopy line, far above this.
@@ -281,12 +287,13 @@ struct CockpitRackArt {
   }
   /// Places the boom under `icon` and below `cockpit`, hidden inside `cockpitHidden` below its shoulder line. `line` is
   /// the attached cockpit's canopy line (screen y) when known; `slide`, `closure` and `lugShown` set the pose.
-  func update(icon: CGRect?, cockpit: NSWindow?, hidden cockpitHidden: CGRect?, line canopy: (y: CGFloat, closed: CGFloat)?,
+  /// `width` overrides the widest status width (D378: the menu-bar edge anchor of a hidden item uses its own width).
+  func update(icon: CGRect?, width own: CGFloat? = nil, cockpit: NSWindow?, hidden cockpitHidden: CGRect?, line canopy: (y: CGFloat, closed: CGFloat)?,
               slide value: CGFloat, closure: CGFloat, lugShown: Bool) {
     self.icon = icon
     if let icon, let canopy, canopy.y.isFinite { line = max(0, icon.minY - canopy.y); closed = canopy.closed }
     guard let icon, let cockpit, value > 0 || closure > 0 else { panel?.orderOut(nil); orderedBelow = nil; view.pose = nil; return }
-    let widest = Self.statusWidths.widest > 0 ? Self.statusWidths.width : CockpitDockingBoom.width(for: icon.width)
+    let widest = own ?? (Self.statusWidths.widest > 0 ? Self.statusWidths.width : CockpitDockingBoom.width(for: icon.width))
     let frame = Self.frame(icon: icon, width: CockpitDockingBoom.drawnWidth(widest: widest, line: line, closed: closed).rounded(.up))
     if panel == nil {
       let made = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)

@@ -383,7 +383,14 @@ final class ShellLayoutTests: XCTestCase {
     @MainActor func testAnInvisibleStatusItemAnchorsAtTheNotchsRightEdgeOrWhereItWouldBe() throws {
         let frame = CGRect(x: 0, y: 0, width: 1512, height: 982), usable = CGRect(x: 0, y: 0, width: 1512, height: 945)
         let notch = CockpitShellLayout.menuBarEdgeAnchor(screen: CockpitScreen(frame: frame, visibleFrame: usable, notchRightEdge: 851))
-        XCTAssertEqual(notch, CGRect(x: 851, y: 945, width: CockpitDockingBoom.nominalWidth, height: 37), "right of the camera housing, the menu bar's height")
+        XCTAssertEqual(notch, CGRect(x: 851, y: 945, width: CockpitDockingBoom.edgeAnchorWidth, height: 37), "right of the camera housing, the menu bar's height")
+        // #1207 round 3: the edge anchor is as wide as the clamp-only boom, so the boom drawn there has that one width with
+        // the shutter open or closed and its left side stays on the edge.
+        XCTAssertEqual(CockpitDockingBoom.edgeAnchorWidth, 42)
+        for closed in [CGFloat(0), 0.5, 1] {
+            XCTAssertEqual(CockpitDockingBoom.drawnWidth(widest: notch.width, line: CockpitShellLayout.menuBarGap, closed: closed).rounded(.up), notch.width)
+            XCTAssertEqual(CockpitLaunchRack.frame(icon: notch, width: notch.width).minX, 851, "the boom's left side on the edge")
+        }
         let plain = CockpitShellLayout.menuBarEdgeAnchor(screen: CockpitScreen(frame: frame, visibleFrame: usable))
         XCTAssertEqual(plain.minX, 756 + 100, "no notch: the nominal notch edge right of the menu bar's centre")
         XCTAssertEqual(plain.minY, usable.maxY)
