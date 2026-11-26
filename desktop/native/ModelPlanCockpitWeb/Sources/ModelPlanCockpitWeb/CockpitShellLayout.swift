@@ -45,7 +45,16 @@ public struct CockpitSizeBasis: Equatable, Sendable {
 public struct CockpitShellLayout: Equatable, Sendable {
     /// The base reserve under the root holds the base bells and their flames (owner D51: always shown),
     /// so every fit is computed on the root plus this reserve, never on the root alone.
-    public static let baseReserve: CGFloat = 46
+    /// D454 (owner, 2026-11-26): the reserve holds the WHOLE flame, attached, detached and flying, and the fit to the
+    /// screen counts it, so the cockpit shrinks rather than cut the flame; only a cockpit the user drags to the screen's
+    /// bottom edge may hang its flame off the screen (`hullBottomInset`). 112 px: the tallest flame box is the
+    /// full-thrust sprite under the widest bell (bells.css: bell 101 px, flame 0.95 x the bell, aspect 160:176, its root
+    /// on the lower lip 4.5 px down), 4.5 + 95.95 x 1.1 = 110.1 px, plus 2 px for the sprite's faint tip.
+    /// Pinned on the page by d454-flame-reserve.spec.mjs, which reads this value.
+    public static let baseReserve: CGFloat = 112
+    /// The bell row at the top of the reserve (G3-47: the bells and their hover boxes, page px). Below it the reserve
+    /// is only flame, which the page never hit-tests, so the window passes clicks there through (`passThroughHeight`).
+    public static let bellRow: CGFloat = 46
     public static let width: CGFloat = 636
     /// D444 (owner, 2026-11-25; retires the D51 short version, CKP-SHELL-07's 0.75 switch): there is exactly one layout,
     /// the full cockpit, scaled uniformly to fit the room down to this floor. Below it the cockpit opens forced closed
@@ -115,7 +124,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let closedCanvas = Self.openRoot + Self.baseReserve - (Self.stripTop - Self.closedSlabBand)
         var scale = forcedClosed ? min(Self.minimumScale, fitting(closedCanvas, room))
                                  : fitting(Self.openRoot + Self.baseReserve, room)
-        // macrev2-1257-1: the closed window is the canvas rounded UP less the band rounded DOWN, so at room / 723 it can
+        // macrev2-1257-1: the closed window is the canvas rounded UP less the band rounded DOWN, so at room / 789 (the open canvas less the porthole band) it can
         // come out one point over the room and the cap below would cut the slab. Step the scale down until the whole
         // closed window fits (at most a few steps; the open window is exact by construction).
         if forcedClosed {
@@ -227,6 +236,15 @@ public struct CockpitShellLayout: Equatable, Sendable {
     /// kept on screen by its hull, so this strip may hang below the visible frame's bottom edge. AppKit places the
     /// panel on whole points. Round the allowed overhang down so the panel cannot round past the hull's bottom edge.
     public var hullBottomInset: CGFloat { (Self.baseReserve * scale).rounded(.down) }
+    /// D454: the window's bottom strip, in points, that is only flame (the reserve below the bell row, rounded down so
+    /// it never reaches a bell). Clicks there go to whatever is beneath the cockpit (the controller's pass-through).
+    public var passThroughHeight: CGFloat {
+        max(0, (canvasHeight - (Self.openRoot + Self.bellRow) * scale).rounded(.down))
+    }
+    /// D454: true for a screen point inside `frame`'s flame-only bottom strip, which must not take a click.
+    public static func passesThrough(_ point: CGPoint, frame: CGRect, height: CGFloat) -> Bool {
+        height > 0 && point.x >= frame.minX && point.x < frame.maxX && point.y >= frame.minY && point.y < frame.minY + min(height, frame.height)
+    }
     public func clamping(origin: CGPoint, usable: CGRect) -> CGRect {
         CockpitScreenSelection.clamp(CGRect(origin: origin, size: frame.size), into: usable,
                                      bottomOverhang: hullBottomInset)

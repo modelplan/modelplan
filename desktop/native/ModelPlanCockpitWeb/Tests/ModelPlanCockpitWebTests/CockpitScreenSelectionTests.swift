@@ -232,21 +232,24 @@ import XCTest
         return fit.scale
       }
     }
-    // A laptop and an external display: Auto is 85 % on both (before, 100 % on the external one).
-    XCTAssertEqual(try scales([air, wide]), [0.85, 0.85])
-    XCTAssertEqual(try scales([wide, air]), [0.85, 0.85], "whichever display is listed first")
+    // A laptop and an external display: Auto is 85 % on both (before, 100 % on the external one), capped on both by the
+    // Air's 839 pt under the gap now that the canvas holds the whole flame (D454: 839 / 1017, 82.5 %).
+    for order in [[air, wide], [wide, air]] {
+      for value in try scales(order) { XCTAssertEqual(value, 839 / 1017, accuracy: 1e-9, "whichever display is listed first") }
+    }
     // Two external displays: 100 % on both, capped by neither (the 1080p one has 1045 pt under the gap).
     XCTAssertEqual(try scales([wide, hd]), [1, 1])
-    // A fixed 100 % with a small display connected: capped on both by the small display's room (765 / 951).
-    for value in try scales([small, wide], .percent100) { XCTAssertEqual(value, 765 / 951, accuracy: 1e-9) }
-    for value in try scales([small, wide], .percent80) { XCTAssertEqual(value, 0.8, accuracy: 1e-9, "80 % fits the small display") }
+    // A fixed 100 % with a small display connected: capped on both by the small display's room (765 / 1017).
+    for value in try scales([small, wide], .percent100) { XCTAssertEqual(value, 765 / 1017, accuracy: 1e-9) }
+    // D454: 80 % (814 pt with the whole flame) no longer fits the small display's 765 pt either.
+    for value in try scales([small, wide], .percent80) { XCTAssertEqual(value, 765 / 1017, accuracy: 1e-9, "80 % capped by the small display") }
     // D444: a display too short for the full cockpit at 75 % scales the one layout down on every display (no short version).
     let tiny = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1280, height: 720), visibleFrame: CGRect(x: 0, y: 0, width: 1280, height: 695))
     let basis = try XCTUnwrap(CockpitSizeBasis(screens: [tiny, wide]))
     let onWide = try XCTUnwrap(CockpitShellLayout.fit(usable: wide.visibleFrame, anchor: CockpitShellLayout.hiddenIconAnchor(usable: wide.visibleFrame),
                                                       shutterClosed: false, screenWidth: wide.frame.width, basis: basis))
     XCTAssertEqual(onWide.profile, .full)
-    XCTAssertEqual(onWide.scale, (695 - 10) / 951, accuracy: 1e-9, "the tiny display's scale on the wide display too")
+    XCTAssertEqual(onWide.scale, (695 - 10) / 1017, accuracy: 1e-9, "the tiny display's scale on the wide display too")
     XCTAssertFalse(onWide.forcedClosed)
     XCTAssertNil(CockpitSizeBasis(screens: []))
 
@@ -261,13 +264,13 @@ import XCTest
     session.remember(CGPoint(x: 200, y: 200), arrangement: page.arrangement)
     let onTheAir = try XCTUnwrap(page.placement()).frame
     XCTAssertEqual(onTheWide.size, onTheAir.size, "the same size on both displays")
-    XCTAssertEqual(onTheWide.width, 541, "Auto 85 %, judged on the set")
+    XCTAssertEqual(onTheWide.width, 525, "Auto 85 %, judged on the set, capped by the Air (D454: 839 / 1017)")
     page.screens = { [wide] }
     session.remember(CGPoint(x: 2000, y: 300), arrangement: page.arrangement)
     XCTAssertEqual(try XCTUnwrap(page.placement()).frame.width, 636, "the Air unplugged: the external display alone is 100 %")
     page.screens = { [wide, small] }
     session.remember(CGPoint(x: 2000, y: 300), arrangement: page.arrangement)
-    XCTAssertEqual(try XCTUnwrap(page.placement()).frame.width, (636 * 765 / 951).rounded(.up), accuracy: 1,
+    XCTAssertEqual(try XCTUnwrap(page.placement()).frame.width, (636 * 765 / 1017).rounded(.up), accuracy: 1,
                    "a small display plugged in: Auto 85 % capped by its 775 pt")
   }
 

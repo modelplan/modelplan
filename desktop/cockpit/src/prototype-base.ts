@@ -66,6 +66,7 @@ export function baseLights(root:HTMLElement,data:WireCockpitData):{lights:BaseLi
 }
 
 function px(n:number){return n.toFixed(2)+'px';}
+function flameNode(){const flame=document.createElement('i');flame.className='bz-flame';flame.setAttribute('aria-hidden','true');return flame;}
 
 // Paints the row into its own layer under the root; returns a disposer.
 export function mountPrototypeBase(root:HTMLElement,data:()=>WireCockpitData|null,label:(light:BaseLight)=>string) {
@@ -85,13 +86,16 @@ export function mountPrototypeBase(root:HTMLElement,data:()=>WireCockpitData|nul
    const glow=document.createElement('i');glow.className='bz-glow';const line=document.createElement('i');line.className='bz-line';b.append(glow,line);
    // D85: a working bell shows the study's in-mouth glow only; no flame or plume.
    if(z.state==='work'){const sheet=document.createElement('i');sheet.className='bz-sheet';b.append(sheet);}
+   // D454/D459: every nozzle hangs the owner's blue flame (official edition; the community edition hides it). Its kind is
+   // the cockpit's thrust (#cockpit[data-thrust], view.ts), never the subscription's output, which is the sheet's glow.
+   b.append(flameNode());
    // CKP-ENG-20: hovering lights the column and shows the name (text only).
    const tip=document.createElement('span');tip.className='bz-tip';tip.setAttribute('aria-hidden','true');tip.textContent=label(z);b.append(tip);
    const column=()=>[...root.querySelectorAll<HTMLElement>('.ck-eng .ec[data-col]')].find(e=>e.dataset.col===z.col);
    b.addEventListener('pointerenter',()=>column()?.classList.add('xhl'));b.addEventListener('pointerleave',()=>column()?.classList.remove('xhl'));
    nodes.push(b);
   }
-  for(const s of sockets){const e=document.createElement('span');e.className='bz-empty';e.setAttribute('aria-hidden','true');e.style.setProperty('left',px(s.x));e.style.setProperty('--cw',px(s.cw));const line=document.createElement('i');line.className='bz-line';e.append(line);nodes.push(e);}
+  for(const s of sockets){const e=document.createElement('span');e.className='bz-empty';e.setAttribute('aria-hidden','true');e.style.setProperty('left',px(s.x));e.style.setProperty('--cw',px(s.cw));const line=document.createElement('i');line.className='bz-line';e.append(line);e.append(flameNode());nodes.push(e);}
   base.replaceChildren(...nodes);
  };
  const engine=root.querySelector<HTMLElement>('.ck-eng');

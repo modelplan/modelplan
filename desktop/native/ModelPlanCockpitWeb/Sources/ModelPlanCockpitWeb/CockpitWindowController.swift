@@ -194,6 +194,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// CKP-SHELL-50: the app's range; not private data, so a privacy clear keeps it.
   private var range: CockpitRange = .initial
   private var outsideMonitor: Any?, localMonitor: Any?, switchMonitor: Any?
+  /// D454: the pointer monitors that keep the flame-only strip under the bells passing clicks through (`syncPassThrough`).
+  private var passThroughMonitors: [Any] = []
   private var closeTask: Task<Void, Never>?
   /// Walkthrough 11-17: a user put back keeps an active app active across the regular-to-accessory flip it causes.
   private var putBackActivation = CockpitPutBackActivation()
@@ -230,6 +232,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var motion: Motion?
   /// The nozzles are lit (the page's amber bell glow).
   private var ignited = false
+  /// D459: what the motions ask for (`ignite`) and the launch burn after a detach; the nozzles burn while either holds.
+  private var ignitionRequested = false, launchBurning = false
+  private var launchBurnTask: Task<Void, Never>?
   /// The rack stays hidden inside the attached frame while the open's slide or the close runs.
   private var rackHidesInHome = false
   private let menuTarget = CockpitMenuTarget()
@@ -654,6 +659,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     /// Whether a put-back recovery is armed.
     var verificationPutBackArmed: Bool { putBackActivation.armedUntil != nil }
     public var verificationOutsidePress: ((NSEvent.EventType,Bool)->Void)?
+    /// D454: holds the pointer at a screen point for the pass-through (the real pointer cannot be held still in CI).
+    public var verificationPointer: (() -> CGPoint)?
     public var verificationCloseOrigin: ((String)->Void)?
     /// "rack", "fade" or "instant" for each first show; "rack", "fade" or "instant" for each close (CKP-SHELL-33).
     public var verificationEntrance: ((String)->Void)?
@@ -1611,7 +1618,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if content.bounds.size != size { content.setBoundsSize(size) }
     // The attached shutter's frame and the rack cutout advance together on every resize.
     if shutterMoving && motion == nil { refreshRack() }
+    // D454 (macrev2-1269-1): the flame strip moved under a pointer that may not move.
+    syncPassThrough()
   }
+  /// D454 (macrev2-1269-1): every move of the window (a drag, a key detach or put-back flight, an animated layout, the
+  /// system) can bring the flame strip under a still pointer or take it away, so the pass-through follows the frame.
+  public func windowDidMove(_ notification: Notification) { syncPassThrough() }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
   public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }
   /// Plugin columns (macrevc-844-1): the saved plugin choices (canonical JSON). Sent on ready, after every clear that
@@ -1968,6 +1980,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     dragRegion?.frame = fit.scaledTitleDragFrame
     publishAppearance()
     if self.motion == nil { refreshRack() }
+    syncPassThrough()
   }
   /// Context menu "Reset position": a dragged-out cockpit goes back under the menu bar icon.
   public func resetPosition() { setAttached(true) }
@@ -2040,6 +2053,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       releaseClampNow()
       window.setFrame(plan.frame, display: true)
       rackExtension = 0; rackTarget = 0; refreshRack()
+      syncPassThrough()
       onShellChanged?(); return
     }
     ignite(true)
@@ -2047,6 +2061,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     releaseClamp { [weak self] in
       guard let self, let window = self.window else { return }
       let start = window.frame
+      self.startLaunchBurn() // D459: the cockpit leaves the boom
       self.retractRack()
       self.runMotion(CockpitLaunchRackTiming.keyDetachBurn, step: { [weak self] t in
         let e = CockpitDockingBoom.easeInOut(t)
@@ -2121,9 +2136,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     flying = false
     shellSession.detached = false
     rackExtension = rackIcon() != nil ? 1 : 0; rackTarget = rackExtension
-    ignite(false)
+    endLaunchBurn(); ignite(false)
     if placement() != nil { applyLayout() }
     updateAppearance(appearance)
+    syncPassThrough()
     onShellChanged?()
     // Spec item 4: the Dock icon follows the detached window; a put back can drop the app to accessory, which can
     // take key from the cockpit, so it is made key again (the funnel's policy hold keeps it from closing).
@@ -2211,6 +2227,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         // cannot be held: the clamp opens at once, before this first moved frame (D439, macrev2-1207-1).
         releaseClampNow()
         updateAppearance(appearance); retractRack()
+        startLaunchBurn() // D459: tearing the cockpit off the boom is a launch
       }
       // Build 14c (G3-79): the window stays inside the display under the pointer, so it can go to any display.
       window.setFrame(dragFrame(start: start.frame, from: start.point, to: point), display: true)
@@ -2227,6 +2244,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     case .ended:
       restorePageFocus()
       guard dragStart != nil else { return }; dragStart = nil
+      defer { syncPassThrough() } // D454: the drag held the pass-through off; the pointer may now be over the strip
       guard shellSession.detached else { return }
       if inCatchZone(window.frame), let home = attachedHome() {
         // The catch zone acts on the release only: straight home along the rack, then latched.
@@ -2282,14 +2300,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private func cancelDrag() {
     dragRegion?.resetDragState()
     guard let start = dragStart else { return }; dragStart = nil
+    defer { syncPassThrough() }
     let changed = shellSession.detached != start.detached
     shellSession.detached = start.detached; window?.setFrame(start.frame, display: true)
-    dragCatching = false; ignite(false)
+    dragCatching = false; if !start.detached { endLaunchBurn() }; ignite(false)
     if start.detached { retractRack() } else if rackIcon() != nil { extendRack() }
     updateAppearance(appearance)
     if changed { onShellChanged?(); onPresenceChanged?(false) }
   }
   private func installOutsideMonitors() {
+    installPassThroughMonitors()
     let events: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
     // Event monitor handlers run on the main thread, so the switch intent is recorded before the handler returns.
     outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] event in
@@ -2312,6 +2332,66 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       }
       return event
     }
+  }
+  /// D454: the reserve under the hull holds the whole flame, a transparent strip the full width of the window. AppKit
+  /// gives a window every click in its rectangle and has no per-region pass-through, so while the pointer is over the
+  /// flame-only part (below the bell row, `CockpitShellLayout.passThroughHeight`) the window ignores the mouse and the
+  /// click reaches whatever is beneath; it takes the mouse again as soon as the pointer leaves that strip. The global
+  /// monitor sees the moves while the window ignores the mouse, the local one while it does not.
+  private func installPassThroughMonitors() {
+    removePassThroughMonitors()
+    // macrev2-1269-1: a release ends a press that held the state (it may end on the other side of the strip's edge, and
+    // the next click may come without a move), and a scroll can follow a move the window did not see.
+    let events: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseUp, .rightMouseUp, .otherMouseUp,
+                                         .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel]
+    if let global = NSEvent.addGlobalMonitorForEvents(matching: events, handler: { [weak self] event in
+      MainActor.assumeIsolated { self?.passThroughEvent(event.type, at: Self.screenPoint(event), button: Self.releasedButton(event)) }
+    }) { passThroughMonitors.append(global) }
+    if let local = NSEvent.addLocalMonitorForEvents(matching: events, handler: { [weak self] event in
+      MainActor.assumeIsolated { self?.passThroughEvent(event.type, at: Self.screenPoint(event), button: Self.releasedButton(event)) }
+      return event
+    }) { passThroughMonitors.append(local) }
+    window?.acceptsMouseMovedEvents = true
+    syncPassThrough()
+  }
+  private func removePassThroughMonitors() {
+    for monitor in passThroughMonitors { NSEvent.removeMonitor(monitor) }; passThroughMonitors.removeAll()
+    if let window, !warmPainting, window.ignoresMouseEvents { window.ignoresMouseEvents = false }
+  }
+  /// An event's screen point: in its window's coordinates when it has one; a global event of another app's window
+  /// carries that window's coordinates, so the pointer's own location stands in for it.
+  static func screenPoint(_ event: NSEvent) -> CGPoint {
+    if let window = event.window { return window.convertPoint(toScreen: event.locationInWindow) }
+    return event.windowNumber == 0 ? event.locationInWindow : NSEvent.mouseLocation
+  }
+  /// The button a release lets go of (-1 for any other event: `buttonNumber` is read only where it is defined).
+  static let releases: [NSEvent.EventType] = [.leftMouseUp, .rightMouseUp, .otherMouseUp]
+  static func releasedButton(_ event: NSEvent) -> Int { releases.contains(event.type) ? event.buttonNumber : -1 }
+  /// D454 (macrev2-1269-1): one pointer event. A release no longer counts its own button as held, so the state is set
+  /// for where the press ended; a drag keeps it (`syncPassThrough` does nothing while a button is down).
+  func passThroughEvent(_ type: NSEvent.EventType, at point: CGPoint, button: Int, held: Int = NSEvent.pressedMouseButtons) {
+    var buttons = held
+    if Self.releases.contains(type), (0..<63).contains(button) { buttons &= ~(1 << button) }
+    syncPassThrough(at: point, pressedButtons: buttons)
+  }
+  /// The pointer's screen location (a test can hold it still while the window moves under it).
+  private func pointerLocation() -> CGPoint {
+    #if MODELPLAN_TEST_ONLY_SPI
+    if let verificationPointer { return verificationPointer() }
+    #endif
+    return NSEvent.mouseLocation
+  }
+  /// D454: whether the window takes the mouse at `point` (screen coordinates; the pointer's own location by default).
+  /// A pressed button keeps the current state, so a drag or a press in progress is never cut; the warm paint keeps its
+  /// own setting. Invariant (macrev2-1269-1): at every press the flag matches the pointer's region, so this runs on
+  /// every pointer move, release and scroll, every frame change (`windowDidMove`/`windowDidResize`, each motion tick,
+  /// drag end, layout, latch) and every show and hide.
+  func syncPassThrough(at given: CGPoint? = nil, pressedButtons: Int = NSEvent.pressedMouseButtons) {
+    guard let window, !warmPainting, pressedButtons == 0 else { return }
+    let point = given ?? pointerLocation()
+    let pass = shown && !ending && dragStart == nil
+      && CockpitShellLayout.passesThrough(point, frame: window.frame, height: layout?.passThroughHeight ?? 0)
+    if window.ignoresMouseEvents != pass { window.ignoresMouseEvents = pass }
   }
   /// macrevd-1033-1: a press in another app or the Command key: a resign after this is the user's own switch.
   func userSwitchesAway() { putBackActivation.userSwitchesAway() }
@@ -2338,7 +2418,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// S15 (#1114): `contextClick` is a left press with Control held. The widget opens its context menu for it
   /// (DockInstrumentView.mouseDown), whose tracking swallows the release, so it is a right press, never a carry.
   func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType,external:Bool = false,contextClick:Bool = false) {
-    guard !shellSession.detached, let window, !window.frame.contains(point) else { return }
+    // D454: a press on the flame-only strip under the bells is a press on what is beneath, so it counts as outside.
+    guard !shellSession.detached, let window,
+          !window.frame.contains(point) || CockpitShellLayout.passesThrough(point, frame: window.frame, height: layout?.passThroughHeight ?? 0) else { return }
     // The owned tray completes one toggle on mouse-up. Its mouse-down is not
     // a competing outside dismissal, including with Reduce Motion/long holds.
     let isTray=anchor()?.contains(point) == true
@@ -2444,6 +2526,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if shellSession.detached { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     for monitor in [outsideMonitor, localMonitor, switchMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
     outsideMonitor = nil; localMonitor = nil; switchMonitor = nil
+    removePassThroughMonitors()
     window.orderOut(nil)
     web?.isHidden = true
     timing(transitionTiming.gone())
@@ -2506,6 +2589,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let t = CGFloat(min(1, (now - current.start) / current.duration))
       current.step(t)
       if t >= 1, motion?.start == current.start { motion = nil; current.done() }
+      syncPassThrough() // D454 (macrev2-1269-1): the window moved under the pointer this tick
     }
     refreshRack()
     if rackExtension == rackTarget, !rackSettledWaiters.isEmpty {
@@ -2586,7 +2670,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private func stopRack() {
     motion = nil; rackSettledWaiters = []; flying = false; clampClosure = 0; clampReleasing = false
     rackTimer?.invalidate(); rackTimer = nil
-    ignite(false)
+    endLaunchBurn(); ignite(false)
     rack.close()
   }
   /// Places and draws the rack for the current state: hidden inside the cockpit below its shoulder line (the attached
@@ -2627,7 +2711,31 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// The nozzles: the page's amber glow on every base bell (D178/D186). Not under Reduce Motion.
   private func ignite(_ on: Bool) {
-    let value = on && !appearance.reduceMotion
+    ignitionRequested = on
+    applyIgnition()
+  }
+  /// D459 (owner, 2026-11-26): the engine flames are the cockpit's own thrust. The page draws full thrust while the host
+  /// ignites, short while detached and ember while docked (view.ts). A detach, by key or by tearing the cockpit off the
+  /// boom with a drag, is a launch: full thrust for `CockpitLaunchRackTiming.launchBurn` from the moment it leaves, on
+  /// top of whatever the motion itself asks for. None under Reduce Motion (no ignition at all then).
+  private func startLaunchBurn() {
+    endLaunchBurn()
+    guard !appearance.reduceMotion else { return }
+    launchBurning = true; applyIgnition()
+    launchBurnTask = Task { @MainActor [weak self] in
+      do { try await Task.sleep(for: .milliseconds(Int(CockpitLaunchRackTiming.launchBurn * 1_000))) } catch { return }
+      guard let self else { return }
+      self.launchBurnTask = nil; self.launchBurning = false; self.applyIgnition()
+    }
+  }
+  /// The launch burn ends early once the cockpit is home again or the page goes away.
+  private func endLaunchBurn() {
+    launchBurnTask?.cancel(); launchBurnTask = nil
+    guard launchBurning else { return }
+    launchBurning = false; applyIgnition()
+  }
+  private func applyIgnition() {
+    let value = (ignitionRequested || launchBurning) && !appearance.reduceMotion
     guard value != ignited else { return }
     ignited = value
     #if MODELPLAN_TEST_ONLY_SPI
@@ -2678,6 +2786,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }; outsideMonitor = nil
     if let localMonitor { NSEvent.removeMonitor(localMonitor) }; localMonitor = nil
     if let switchMonitor { NSEvent.removeMonitor(switchMonitor) }; switchMonitor = nil
+    removePassThroughMonitors()
     dragRegion?.event = nil; dragRegion = nil
     if let raw = bridge.unload(), let web {
       web.callAsyncJavaScript(
