@@ -13,9 +13,11 @@ const official=selectBuildEdition(process.argv.slice(2))==='official';
 execFileSync(process.execPath,[resolve(here,'generate-wire.mjs'),'--check'],{stdio:'inherit'});
 // Copy only this compile's emitted files: a removed source can leave stale JS
 // and declarations in a reused compiler directory. Do not publish that cache.
-const emitted=execFileSync(resolve(here,'node_modules/.bin/tsc'),['-p',here,'--listEmittedFiles'],{encoding:'utf8'})
+// MODELPLAN_COCKPIT_COMPILED redirects the compile (a test builds in a private directory so the shared .tmp/compiled
+// that parallel unit tests import is never rewritten under them).
+const compiled=resolve(here,process.env.MODELPLAN_COCKPIT_COMPILED||'.tmp/compiled');
+const emitted=execFileSync(resolve(here,'node_modules/.bin/tsc'),['-p',here,'--outDir',compiled,'--listEmittedFiles'],{encoding:'utf8'})
   .split(/\r?\n/).filter(line=>line.startsWith('TSFILE: ')).map(line=>line.slice(8));
-const compiled=resolve(here,'.tmp/compiled');
 if(!emitted.includes(resolve(compiled,'src/main.js'))||!emitted.includes(resolve(compiled,'generated/wire.js')))throw Error('Missing emitted bundle entry');
 const output=resolve(here,'.tmp',official?'official':'community');
 await rm(output,{recursive:true,force:true});await mkdir(output,{recursive:true});
