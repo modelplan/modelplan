@@ -165,9 +165,12 @@ task (its GUI leg compiles without the test SPI) and so a new pin and runner-gro
 The scheduled GUI run on `main` goes to the GUI Macs (`modelplan-mac-gui`) like the merge queue, not to hosted
 `macos-latest`: on a hosted Mac the full suite hit the 70 minute job limit three nights running, while it takes 13 to
 33 minutes on ours. A scheduled run's actor is whoever last changed the cron (the merge-queue bot), so the owner-actor
-gate of the route cannot hold for it. The route therefore admits `schedule` on `refs/heads/main` of this repository as
-an alternative to the owner gate, and the event list still allows it only for the `native` and `native-owner-gui`
-tasks. A schedule event cannot come from a pull request or a fork. There is no hosted fallback: if no GUI Mac is
+gate of the route cannot hold for it. The route therefore admits, as an alternative to the owner gate, only a
+`schedule` event on `refs/heads/main` whose `github.workflow_ref` is
+`modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main`, whose `github.event.schedule` is the nightly
+cron `23 9 * * *`, for the `native` and `native-owner-gui` tasks. The GUI VMs' local admission check (workflow-source
+and account checks before a job starts, not in this repository) must carry the same exception, validated from the
+workflow ref and schedule field rather than the actor, before the runner group allows the pinned reference. There is no hosted fallback: if no GUI Mac is
 online, the nightly waits in the queue.
 
 ## Merge queue
