@@ -59,8 +59,12 @@ export interface PluginColumn {
 export interface PluginScreen {
   /** Label/value lines; also the fallback when `draw` fails. */
   readonly lines:readonly {readonly label:string;readonly value:string}[];
-  /** D323 custom draw: the big screen's body below the framework's title bar. If it throws, `lines` are shown. */
+  /** D323 custom draw: the big screen's whole body (D413: no title bar; the Overview key names the screen). If it throws,
+   *  `lines` are shown. */
   readonly draw?:((context:PluginDrawContext)=>void)|null;
+  /** D413: one two-way choice the screen puts on the centre bottom key (e.g. 10 min | 1 h). The host keeps the pick in
+   *  the plugin's view memory under `key` (memory only) and draws the screen again. */
+  readonly toggle?:{readonly key:string;readonly value:string;readonly options:readonly {readonly value:string;readonly label:PluginWords}[]}|null;
 }
 /** D293 colours: only these instrument inks (V1-FINAL §0 white / grey, resource silver #b9c7d6) and the D327 resource
  *  plugin's orchid #da66c2 (it replaces the silver for the resource plugin; the silver stays allowed for other plugins). */
@@ -95,6 +99,10 @@ export interface CockpitPlugin {
   /** `plugin.*` string-table keys: the key name (with a Short form) and the one-sentence summary for Settings. */
   readonly title:string;
   readonly summary:string;
+  /** D413: the `plugin.*` key of the screen's short name on the Overview | screen switch: two characters in Chinese, at
+   *  most four letters in English. Absent or too long, the switch shows the icon alone (the full name stays in the
+   *  tooltip and the accessible name). */
+  readonly screenShort?:string;
   /** Trusted, bundled SVG markup: white line art at the vendor-mark size (16 px, 1.3 px stroke, currentColor). */
   readonly icon:string;
   /** The key's dashed underline colour, declared by the plugin (one of PLUGIN_INKS). */
@@ -124,6 +132,12 @@ export interface CockpitPlugin {
    *  The page reports the earliest to the host with its own deadlines; the host's tick then redraws it. No page timers. */
   nextDeadline?(state:unknown,now:number):number|null;
 }
+/** D413: a screen's short name as the switch shows it, or null (icon only): exactly two CJK characters in Chinese, one to
+ *  four Latin letters in English. Never ellipsized. */
+export function screenShortText(text:string|null|undefined,locale:PluginLocale):string|null {
+  if(typeof text!=='string')return null;
+  return locale==='zh-CN'?(/^[\u4e00-\u9fff]{2}$/.test(text)?text:null):(/^[A-Za-z]{1,4}$/.test(text)?text:null);
+}
 export const PLUGIN_ID=/^[a-z][a-z0-9-]{0,31}$/;
 const SETTING_KEY=/^[a-zA-Z][a-zA-Z0-9]{0,31}$/;
 export class PluginRegistry {
@@ -132,7 +146,7 @@ export class PluginRegistry {
     if(plugins.length>16)throw TypeError('Too many cockpit plugins');
     for(const plugin of plugins){
       if(!PLUGIN_ID.test(plugin.id)||this.#plugins.has(plugin.id))throw TypeError('Invalid cockpit plugin id');
-      if(!/^plugin\.\w+$/.test(plugin.title)||!/^plugin\.\w+$/.test(plugin.summary)||typeof plugin.column!=='function'||typeof plugin.screen!=='function'||typeof plugin.accept!=='function'||plugin.derive!==undefined&&typeof plugin.derive!=='function'||plugin.nextDeadline!==undefined&&typeof plugin.nextDeadline!=='function')throw TypeError('Invalid cockpit plugin');
+      if(!/^plugin\.\w+$/.test(plugin.title)||plugin.screenShort!==undefined&&!/^plugin\.\w+$/.test(plugin.screenShort)||!/^plugin\.\w+$/.test(plugin.summary)||typeof plugin.column!=='function'||typeof plugin.screen!=='function'||typeof plugin.accept!=='function'||plugin.derive!==undefined&&typeof plugin.derive!=='function'||plugin.nextDeadline!==undefined&&typeof plugin.nextDeadline!=='function')throw TypeError('Invalid cockpit plugin');
       if(!PLUGIN_INKS.includes(plugin.underline)||plugin.ink!==undefined&&!PLUGIN_INKS.includes(plugin.ink))throw TypeError('Invalid cockpit plugin colour');
       const keys=new Set<string>();
       for(const s of plugin.settings){

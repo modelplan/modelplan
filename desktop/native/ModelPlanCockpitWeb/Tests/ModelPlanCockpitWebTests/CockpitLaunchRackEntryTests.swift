@@ -169,14 +169,19 @@ import XCTest
     XCTAssertEqual(window.frame, home, "held at home during the release")
     XCTAssertEqual(fixture.page.verificationRack.ext, 1, "the boom is still down during the release")
     let grab = CGPoint(x: home.minX + 120, y: home.maxY - 16)
+    // As the put-back test (f92449b6): down AND sideways toward the roomier side, so the drop is outside the catch zone
+    // on a short display too (D444 fills its height).
+    let side: CGFloat = fixture.usable.maxX - home.maxX >= home.minX - fixture.usable.minX ? 200 : -200
     fixture.page.titleDrag(.began, point: grab)
     XCTAssertEqual(fixture.page.verificationBoom.pose?.closure ?? 0, 0, "the interruption frame: the clamp is open")
     XCTAssertEqual(fixture.page.verificationBoom.clampTarget, 0)
-    fixture.page.titleDrag(.moved, point: CGPoint(x: grab.x, y: grab.y - 200))
+    fixture.page.titleDrag(.moved, point: CGPoint(x: grab.x + side / 2, y: grab.y - 100))
     XCTAssertNotEqual(window.frame.origin, home.origin, "the drag moves the cockpit")
     XCTAssertEqual(fixture.page.verificationBoom.pose?.closure ?? 0, 0, "the first moved frame: the clamp is open")
-    fixture.page.titleDrag(.moved, point: CGPoint(x: grab.x + 40, y: grab.y - 260))
-    fixture.page.titleDrag(.ended, point: CGPoint(x: grab.x + 40, y: grab.y - 260))
+    let drop = CGPoint(x: grab.x + side, y: grab.y - 200)
+    fixture.page.titleDrag(.moved, point: drop)
+    XCTAssertFalse(fixture.page.inCatchZone(window.frame), "the drop is outside the catch zone (\(window.frame) from \(home))")
+    fixture.page.titleDrag(.ended, point: drop)
     try await until("the boom is in") { fixture.page.verificationRack.panel == nil && !fixture.page.verificationRack.moving }
     assertClampOpensBeforeDeparture(ticks.samples, home: home, label: "drag during the release hold")
     XCTAssertFalse(fixture.page.isAttached)
@@ -454,10 +459,15 @@ import XCTest
     var ignition: [Bool] = []
     fixture.page.verificationIgnition = { ignition.append($0) }
     let grab = CGPoint(x: home.minX + 120, y: home.maxY - 16)
-    let away = CGPoint(x: grab.x, y: grab.y - 200)
+    // Fix main (0b82b5e6): D444 scales the one full layout to fill a short display's height (the hosted runner's), so a
+    // straight-down drag is clamped inside the 40 pt catch zone and never arms the put back. Tear off down AND sideways
+    // toward the roomier side, so the drag leaves the zone on any display.
+    let side: CGFloat = fixture.usable.maxX - home.maxX >= home.minX - fixture.usable.minX ? 200 : -200
+    let away = CGPoint(x: grab.x + side, y: grab.y - 200)
     fixture.page.titleDrag(.began, point: grab)
     fixture.page.titleDrag(.moved, point: away)
     XCTAssertFalse(fixture.page.isAttached)
+    XCTAssertFalse(fixture.page.inCatchZone(window.frame), "the tear-off leaves the catch zone (\(window.frame) from \(home))")
     XCTAssertEqual(fixture.page.verificationRack.target, 0, "tear-off: the rack retracts into the icon")
     XCTAssertEqual(ignition, [])
     let near = CGPoint(x: grab.x + 10, y: grab.y - 20)
