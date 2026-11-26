@@ -3,6 +3,7 @@
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
+import {levelK} from '../../../cockpit/study/rocket-r1/fader-view.js';
 
 const effort=(e,ability,cost,star=false)=>({effort:e,label:e,star,ability,cost,time:null});
 // Sol: ★ Med, current High; Opus: ★ Med, current XHigh; GLM: one effort, ★ Max = current Max (owner build G3-92).
@@ -33,6 +34,9 @@ export async function openThrottles(page,{theme='night',tier='tall',height=890,g
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:throttleData({glmEfforts})}))).toBe(true);
  await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(3);
+ // D405: the code-drawn slots follow the travel's size; wait until they are drawn for the current one.
+ await page.waitForFunction(()=>[...document.querySelectorAll('.fd-ch .fd-travel')].every(t=>{const s=t.querySelector('.fd-slotsvg');return s&&Math.abs(Number(s.getAttribute('height'))-t.offsetHeight)<1;}));
+ await page.waitForFunction(()=>document.querySelectorAll('.fd-cap').length&&[...document.querySelectorAll('.fd-cap')].every(c=>!c.getAnimations().length));
  return {send,receive};
 }
 const centres=page=>page.locator('.fd-ch:not(.empty)').evaluateAll(list=>list.map(ch=>{const mid=e=>{const r=e.getBoundingClientRect();return r.left+r.width/2;};
@@ -41,18 +45,26 @@ const centres=page=>page.locator('.fd-ch:not(.empty)').evaluateAll(list=>list.ma
 const row=(page,level)=>page.locator(`.sc-l[data-level="${level}"]`).first().evaluate(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;});
 const box=locator=>locator.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,top:r.top,bottom:r.bottom,width:r.width,height:r.height};});
 const channel=(page,i)=>page.locator('.fd-ch:not(.empty)').nth(i);
+// D405 (owner 11-24): the slot is code-drawn on the tilted lever face, so its centre line leans for the outer columns. The
+// centre x of a column's slot at page row y, read from the drawn slot polygon.
+const slotLine=(ch,y)=>ch.evaluate((ch,y)=>{const core=ch.querySelector('.fd-slotsvg .sl-core'),tb=ch.querySelector('.fd-travel').getBoundingClientRect();
+ const p=core.getAttribute('points').trim().split(/\s+/).map(s=>s.split(',').map(Number)),f=(y-tb.top-p[0][1])/(p[3][1]-p[0][1]);
+ return tb.left+((p[0][0]+(p[3][0]-p[0][0])*f)+(p[1][0]+(p[2][0]-p[1][0])*f))/2;},y);
+// The lever frame a level shows (Low 0 .. Max 32) on the tilted face's detent row.
+const frameFor=level=>String(Math.round((1-levelK(level))*32));
 
 for(const theme of ['night','day'])for(const [tier,height] of [['tall',890]])
  test(`G3-92 every lever sits on its slot centre in its column (${theme}, ${tier})`,async({page})=>{
   await openThrottles(page,{theme,tier,height});
   const list=await centres(page);
   expect(list.map(c=>c.name)).toEqual(['Sol 6.1','Opus 5.5','GLM-5.3']);
-  // the real lever is the baked frame of the current effort: High 16, XHigh 24, Max 32 (Low 0 .. Max 32)
-  expect(list.map(c=>c.frame)).toEqual(['16','24','32']);
-  for(const c of list){
-   expect(Math.abs(c.lever-c.slot),c.name+' lever vs slot').toBeLessThanOrEqual(.5);
-   expect(Math.abs(c.slot-c.column),c.name+' slot vs column').toBeLessThanOrEqual(.5);
-   expect(Math.abs(c.slot-c.strip),c.name+' slot vs LCD').toBeLessThanOrEqual(.5);
+  // the real lever is the baked frame of the current effort on its detent row: High, XHigh, Max (Max 32)
+  expect(list.map(c=>c.frame)).toEqual([frameFor('High'),frameFor('XHigh'),'32']);
+  for(const [i,c] of list.entries()){
+   const ch=channel(page,i),low=await row(page,'Low');
+   expect(Math.abs(c.lever-await slotLine(ch,await grip(ch))),c.name+' lever on the slot line at its row').toBeLessThanOrEqual(.5);
+   expect(Math.abs(await slotLine(ch,low)-c.column),c.name+' slot near end vs column').toBeLessThanOrEqual(.5);
+   expect(Math.abs(c.column-c.strip),c.name+' column vs LCD').toBeLessThanOrEqual(.5);
   }
  });
 
@@ -65,8 +77,8 @@ for(const theme of ['night','day'])for(const [tier,height] of [['tall',890]])
    const ch=channel(page,i),slider=ch.locator('[role=slider]');await slider.focus();await page.keyboard.press('ArrowDown');
    await expect(slider).toHaveAttribute('aria-valuetext',trial);await expect(ch.locator('.fd-ghost')).toBeVisible();
    await expect.poll(async()=>Math.abs((await box(ch.locator('.fd-ghost'))).y-await row(page,trial))).toBeLessThanOrEqual(1);
-   const [ghost,slot,lever,column]=await Promise.all(['.fd-ghost','.fd-slot','.fd-cap'].map(s=>box(ch.locator(s))).concat(box(ch)));
-   for(const [name,x] of [['ghost',ghost.x],['lever',lever.x],['column',column.x]])expect(Math.abs(x-slot.x),`column ${i} ${name} vs slot`).toBeLessThanOrEqual(.5);
+   const [ghost,lever,column]=await Promise.all(['.fd-ghost','.fd-cap'].map(s=>box(ch.locator(s))).concat(box(ch)));
+   for(const [name,x,y] of [['ghost',ghost.x,ghost.y],['lever',lever.x,await grip(ch)],['column',column.x,await row(page,'Low')]])expect(Math.abs(x-await slotLine(ch,y)),`column ${i} ${name} vs slot line`).toBeLessThanOrEqual(.5);
   }
  });
 
@@ -77,28 +89,31 @@ test('G3-92 a Max-only model shows no ghost: keys, drag and label clicks all lan
  await expect(slider).toHaveAttribute('aria-valuetext','Max');await expect(glm.locator('.fd-ghost')).toBeHidden();await expect(glm.locator('.fd-tline')).toBeHidden();
 });
 
-// D405: the tall travel is half the deck below the lamps and cards: (257 - 48) / 2 = 104.5 px.
-for(const [tier,height,u] of [['tall',890,88.5/97]])
+// D419/D433 (measured on the direction 06 prototype): this fixture has one bank, so the lever tier runs to the column bottom and the
+// travel is .7353 of the tier plus 16 px (u = (travel - 16)/97): tall tier .501 x 257 px.
+const TALL_U=.7353*.501*257/97;
+for(const [tier,height,u] of [['tall',890,TALL_U]])
  test(`CKP-FAD-24 the baked throttle is drawn per theme at the travel's scale (${tier})`,async({page})=>{
   const {send,receive}=await openThrottles(page,{tier,height});
-  const sol=channel(page,0),slot=await box(sol.locator('.fd-slot')),lever=await box(sol.locator('.fd-cap'));
-  expect(slot.width).toBeCloseTo(38*u,1);expect(slot.height).toBeCloseTo(134*u,1);expect(lever.width).toBeCloseTo(64*u,1);
-  // the art's Max and Low detents (16.5 and 113.5 u below the tile top) are the Max and Low label rows
-  expect(Math.abs(slot.top+16.5*u-await row(page,'Max'))).toBeLessThanOrEqual(1);
-  expect(Math.abs(slot.top+113.5*u-await row(page,'Low'))).toBeLessThanOrEqual(1);
+  const sol=channel(page,0),lever=await box(sol.locator('.fd-cap'));
+  expect(lever.width).toBeCloseTo(64*u,1);expect(lever.height).toBeCloseTo(134*u,1);
+  // the grip of the baked lever sits on its detent row (Max 16.5 u .. Low 113.5 u inside the frame)
+  expect(Math.abs(await grip(sol)-await row(page,'High'))).toBeLessThanOrEqual(.6);
+  // D405: the slot is code-drawn; no plate bitmap. The lever art follows the theme.
   const art=()=>sol.evaluate(ch=>['.fd-slot','.fd-cap'].map(s=>getComputedStyle(ch.querySelector(s)).backgroundImage));
-  expect((await art()).join()).toMatch(/throttle\/plate-night\.png.*throttle\/lever-night\.png/);
+  expect((await art()).join()).toMatch(/throttle\/lever-night\.png/);expect((await art()).join()).not.toMatch(/plate-/);
+  await expect(sol.locator('.fd-slotsvg .sl-core')).toHaveCount(1);
   expect(await receive(send('appearance',{...appearance,theme:'day'}))).toBe(true);
-  expect((await art()).join()).toMatch(/throttle\/plate-day\.png.*throttle\/lever-day\.png/);
+  expect((await art()).join()).toMatch(/throttle\/lever-day\.png/);expect((await art()).join()).not.toMatch(/plate-/);
  });
 
 test('CKP-FAD-24 the recommended effort is a small gold ★ tick on the slot scale',async({page})=>{
  await openThrottles(page);
  for(const [i,level] of [[0,'Med'],[1,'Med'],[2,'Max']]){
-  const ch=channel(page,i),rec=await box(ch.locator('.fd-rec')),star=await box(ch.locator('.fd-rec .g-star')),slot=await box(ch.locator('.fd-slot'));
+  const ch=channel(page,i),rec=await box(ch.locator('.fd-rec')),star=await box(ch.locator('.fd-rec .g-star')),slotX=await slotLine(ch,rec.y);
   expect(Math.abs(rec.y-await row(page,level)),'★ on the '+level+' row').toBeLessThanOrEqual(1);
-  expect(rec.x-slot.x).toBeGreaterThan(12);expect(rec.x-slot.x).toBeLessThan(16);   // D405: just right of the grip (15.5 u), clear of the gap names
-  expect(rec.width).toBeCloseTo(3,0);expect(star.width).toBeLessThanOrEqual(9);
+  expect(rec.x-slotX).toBeGreaterThan(12);expect(rec.x-slotX).toBeLessThan(16);   // D405: just right of the grip (15.5 u), clear of the gap names
+  expect(Math.abs(rec.width-3*TALL_U)).toBeLessThanOrEqual(.1);expect(star.width).toBeLessThanOrEqual(9);   // 3 u wide
   expect(await ch.locator('.fd-rec').evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(212, 185, 148)');
  }
 });
@@ -107,19 +122,21 @@ test('CKP-FAD-24/-17 a drag moves the blue ghost continuously and snaps it to th
  await openThrottles(page);
  const sol=channel(page,0),travel=sol.locator('[role=slider]'),ghost=sol.locator('.fd-ghost'),line=sol.locator('.fd-tline'),lever=sol.locator('.fd-cap');
  const t=await box(travel),high=await row(page,'High'),med=await row(page,'Med'),low=await row(page,'Low');
+ // the rod starts at the lever's pivot, the slot centre midway between the Max and Low rows (on the tilted face High sits just above it)
+ const pivot=(await row(page,'Max')+low)/2;
  await expect(ghost).toBeHidden();await expect(line).toBeHidden();
  await page.mouse.move(t.x,high);await page.mouse.down();
  // between the detents the ghost follows the pointer (no snapping while dragging)
  const between=med+(low-med)*.7;await page.mouse.move(t.x,between,{steps:4});
  await expect(ghost).toBeVisible();expect(Math.abs((await box(ghost)).y-between)).toBeLessThanOrEqual(1);
- const drawn=await box(line);expect(Math.abs(drawn.top-(high))).toBeLessThanOrEqual(1);expect(Math.abs(drawn.bottom-between)).toBeLessThanOrEqual(1);
- expect(await lever.getAttribute('data-frame')).toBe('16');
+ const drawn=await box(line);expect(Math.abs(drawn.top-pivot)).toBeLessThanOrEqual(1);expect(Math.abs(drawn.bottom-between)).toBeLessThanOrEqual(1);
+ expect(await lever.getAttribute('data-frame')).toBe(frameFor('High'));
  await page.mouse.up();
  // released 70 % of the way to Low: the trial is Low, the ghost sits on the Low row and the real lever stays on High
  await expect(travel).toHaveAttribute('aria-valuetext','Low');await expect(travel).toHaveAttribute('data-trial','Low');await expect(travel).toHaveAttribute('data-lever','High');
  await expect.poll(async()=>Math.abs((await box(ghost)).y-low)).toBeLessThanOrEqual(1);
- expect(await lever.getAttribute('data-frame')).toBe('16');await expect(sol.locator('.cd-try')).toContainText('Low');
- const spans=await box(line);expect(Math.abs(spans.top-(high))).toBeLessThanOrEqual(1);expect(Math.abs(spans.bottom-low)).toBeLessThanOrEqual(1);
+ expect(await lever.getAttribute('data-frame')).toBe(frameFor('High'));await expect(sol.locator('.cd-try')).toContainText('Low');
+ const spans=await box(line);expect(Math.abs(spans.top-pivot)).toBeLessThanOrEqual(1);expect(Math.abs(spans.bottom-low)).toBeLessThanOrEqual(1);
  // the rod is faint (a quarter of the trial blue's opacity), still visible
  expect(await line.evaluate(e=>getComputedStyle(e).backgroundColor)).toMatch(/^color\(srgb 0\.62\d* 0\.82\d* 1 \/ 0\.25\)$|^rgba\(159, 210, 255, 0\.25\)$/);
  // dropping the ghost back on the real lever cancels the trial (CKP-FAD-17)
@@ -183,16 +200,19 @@ for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height
     const ch=channel(page,i),slider=ch.locator('[role=slider]');await slider.focus();for(const k of keys)await page.keyboard.press(k);
     await expect(slider).toHaveAttribute('aria-valuetext',to);await expect(slider).toHaveAttribute('data-lever',from);
     await expect.poll(async()=>Math.abs((await box(ch.locator('.fd-ghost'))).y-rows[to]),{timeout:15000}).toBeLessThanOrEqual(.6);
-    const rod=await box(ch.locator('.fd-tline')),lever=await box(ch.locator('.fd-cap')),ghost=await box(ch.locator('.fd-ghost')),slot=await box(ch.locator('.fd-slot'));
+    const rod=await box(ch.locator('.fd-tline')),lever=await box(ch.locator('.fd-cap')),ghost=await box(ch.locator('.fd-ghost'));
     // the lever pivots about the slot centre: the rod runs from that pivot (midway between the Max and Low rows) to the ghost
     const pivot=(rows.Max+rows.Low)/2,down=rows[to]>pivot;
     expect(Math.abs((down?rod.top:rod.bottom)-pivot),'rod starts at the slot-centre pivot').toBeLessThanOrEqual(.6);
     expect(Math.abs((down?rod.bottom:rod.top)-rows[to]),'rod ends on the ghost detent').toBeLessThanOrEqual(.6);
     expect(Math.abs(await grip(ch)-rows[from]),'lever grip on its own detent row').toBeLessThanOrEqual(.6);
-    for(const [name,x] of [['ghost',ghost.x],['rod',rod.x],['slot',slot.x]])expect(Math.abs(x-lever.x),name+' axis vs lever').toBeLessThanOrEqual(.5);
+    // D405: every part sits on the (tilted-face) slot line at its own row
+    for(const [name,x,y] of [['ghost',ghost.x,ghost.y],['rod',rod.x,rod.y],['lever',lever.x,await grip(ch)]])expect(Math.abs(x-await slotLine(ch,y)),name+' on the slot line').toBeLessThanOrEqual(.5);
     // the rod is faint but visible; in the day theme it is the dark blue
     // the ghost rod is as wide as the real lever's rod (5 u)
-    expect(Math.abs(rod.width-5*(tier==='tall'?88.5/97:80/97)),'ghost rod width').toBeLessThanOrEqual(.5);
+    // the rod's own width (its box, before the skew along the tilted slot line: macrevb-1229-2)
+    const rodWidth=await ch.locator('.fd-tline').evaluate(e=>parseFloat(getComputedStyle(e).width));
+    expect(Math.abs(rodWidth-5*TALL_U),'ghost rod width').toBeLessThanOrEqual(.5);
     const bg=await ch.locator('.fd-tline').evaluate(e=>getComputedStyle(e).backgroundColor);
     if(theme==='night')expect(bg).toMatch(/0\.25\)$/);
     if(theme==='day')expect(bg).toMatch(/0\.55\)$/);
