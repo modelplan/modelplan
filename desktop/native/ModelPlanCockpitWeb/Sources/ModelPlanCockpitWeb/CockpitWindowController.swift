@@ -682,6 +682,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationManualRackClock: TimeInterval? {
       didSet {
         guard let verificationManualRackClock else { ensureRackTimer(); return }
+        // Only on entry: the last tick's time starts at the manual clock. Advancing the clock must not move it, or every
+        // manual tick would see no elapsed time (macrev2 round 4).
+        guard oldValue == nil else { return }
         rackTimer?.invalidate(); rackTimer = nil; rackClock = verificationManualRackClock
       }
     }
