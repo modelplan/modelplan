@@ -194,6 +194,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// CKP-SHELL-50: the app's range; not private data, so a privacy clear keeps it.
   private var range: CockpitRange = .initial
   private var outsideMonitor: Any?, localMonitor: Any?, switchMonitor: Any?
+  /// D454: the pointer monitors that keep the flame-only strip under the bells passing clicks through (`syncPassThrough`).
+  private var passThroughMonitors: [Any] = []
   private var closeTask: Task<Void, Never>?
   /// Walkthrough 11-17: a user put back keeps an active app active across the regular-to-accessory flip it causes.
   private var putBackActivation = CockpitPutBackActivation()
@@ -1968,6 +1970,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     dragRegion?.frame = fit.scaledTitleDragFrame
     publishAppearance()
     if self.motion == nil { refreshRack() }
+    syncPassThrough()
   }
   /// Context menu "Reset position": a dragged-out cockpit goes back under the menu bar icon.
   public func resetPosition() { setAttached(true) }
@@ -2290,6 +2293,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if changed { onShellChanged?(); onPresenceChanged?(false) }
   }
   private func installOutsideMonitors() {
+    installPassThroughMonitors()
     let events: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
     // Event monitor handlers run on the main thread, so the switch intent is recorded before the handler returns.
     outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] event in
@@ -2312,6 +2316,36 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       }
       return event
     }
+  }
+  /// D454: the reserve under the hull holds the whole flame, a transparent strip the full width of the window. AppKit
+  /// gives a window every click in its rectangle and has no per-region pass-through, so while the pointer is over the
+  /// flame-only part (below the bell row, `CockpitShellLayout.passThroughHeight`) the window ignores the mouse and the
+  /// click reaches whatever is beneath; it takes the mouse again as soon as the pointer leaves that strip. The global
+  /// monitor sees the moves while the window ignores the mouse, the local one while it does not.
+  private func installPassThroughMonitors() {
+    removePassThroughMonitors()
+    let moves: NSEvent.EventTypeMask = [.mouseMoved]
+    if let global = NSEvent.addGlobalMonitorForEvents(matching: moves, handler: { [weak self] _ in
+      MainActor.assumeIsolated { self?.syncPassThrough() }
+    }) { passThroughMonitors.append(global) }
+    if let local = NSEvent.addLocalMonitorForEvents(matching: moves, handler: { [weak self] event in
+      MainActor.assumeIsolated { self?.syncPassThrough() }
+      return event
+    }) { passThroughMonitors.append(local) }
+    window?.acceptsMouseMovedEvents = true
+    syncPassThrough()
+  }
+  private func removePassThroughMonitors() {
+    for monitor in passThroughMonitors { NSEvent.removeMonitor(monitor) }; passThroughMonitors.removeAll()
+    if let window, !warmPainting, window.ignoresMouseEvents { window.ignoresMouseEvents = false }
+  }
+  /// D454: whether the window takes the mouse at `point` (screen coordinates). A pressed button keeps the current state,
+  /// so a drag or a press in progress is never cut; the warm paint keeps its own setting.
+  func syncPassThrough(at point: CGPoint = NSEvent.mouseLocation) {
+    guard let window, !warmPainting, NSEvent.pressedMouseButtons == 0 else { return }
+    let pass = shown && !ending && dragStart == nil
+      && CockpitShellLayout.passesThrough(point, frame: window.frame, height: layout?.passThroughHeight ?? 0)
+    if window.ignoresMouseEvents != pass { window.ignoresMouseEvents = pass }
   }
   /// macrevd-1033-1: a press in another app or the Command key: a resign after this is the user's own switch.
   func userSwitchesAway() { putBackActivation.userSwitchesAway() }
@@ -2338,7 +2372,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// S15 (#1114): `contextClick` is a left press with Control held. The widget opens its context menu for it
   /// (DockInstrumentView.mouseDown), whose tracking swallows the release, so it is a right press, never a carry.
   func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType,external:Bool = false,contextClick:Bool = false) {
-    guard !shellSession.detached, let window, !window.frame.contains(point) else { return }
+    // D454: a press on the flame-only strip under the bells is a press on what is beneath, so it counts as outside.
+    guard !shellSession.detached, let window,
+          !window.frame.contains(point) || CockpitShellLayout.passesThrough(point, frame: window.frame, height: layout?.passThroughHeight ?? 0) else { return }
     // The owned tray completes one toggle on mouse-up. Its mouse-down is not
     // a competing outside dismissal, including with Reduce Motion/long holds.
     let isTray=anchor()?.contains(point) == true
@@ -2444,6 +2480,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if shellSession.detached { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     for monitor in [outsideMonitor, localMonitor, switchMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
     outsideMonitor = nil; localMonitor = nil; switchMonitor = nil
+    removePassThroughMonitors()
     window.orderOut(nil)
     web?.isHidden = true
     timing(transitionTiming.gone())
@@ -2678,6 +2715,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }; outsideMonitor = nil
     if let localMonitor { NSEvent.removeMonitor(localMonitor) }; localMonitor = nil
     if let switchMonitor { NSEvent.removeMonitor(switchMonitor) }; switchMonitor = nil
+    removePassThroughMonitors()
     dragRegion?.event = nil; dragRegion = nil
     if let raw = bridge.unload(), let web {
       web.callAsyncJavaScript(

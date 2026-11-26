@@ -666,5 +666,52 @@ import XCTest
     XCTAssertEqual(fixture.page.verificationRack.ext, 1, "\(label): the rack ends fully out", file: file, line: line)
     return (try XCTUnwrap(extAtLanding, "\(label): landed", file: file, line: line), sawPartial || (extAtLanding ?? 0) < 1)
   }
+
+  /// D454 (owner, 2026-11-26): the reserve under the hull holds the whole flame and never takes a click. Over the
+  /// flame-only strip the real window ignores the mouse (the click reaches what is beneath) and a press there counts as
+  /// outside; over the bell row and the hull it takes the mouse as before. Attached and detached alike.
+  func testD454TheFlameStripPassesClicksThrough() async throws {
+    let fixture = try make(reduceMotion: true)
+    defer { fixture.page.discard() }
+    let window = try open(fixture)
+    try await wait(400)
+    let layout = try XCTUnwrap(fixture.page.verificationLayout)
+    XCTAssertEqual(window.frame, try XCTUnwrap(fixture.home), "attached at home, the whole window (hull and flame) on screen")
+    XCTAssertTrue(fixture.usable.contains(window.frame), "attached, the whole flame is inside the visible frame")
+    let strip = layout.passThroughHeight
+    XCTAssertGreaterThanOrEqual(strip, ((CockpitShellLayout.baseReserve - CockpitShellLayout.bellRow) * layout.scale).rounded(.down) - 1)
+    func check(_ label: String) {
+      let f = window.frame
+      fixture.page.syncPassThrough(at: CGPoint(x: f.midX, y: f.minY + 1))
+      XCTAssertTrue(window.ignoresMouseEvents, "\(label): the bottom of the flame strip passes clicks through")
+      fixture.page.syncPassThrough(at: CGPoint(x: f.minX + 2, y: f.minY + strip - 1))
+      XCTAssertTrue(window.ignoresMouseEvents, "\(label): the top of the flame strip, at the window's edge, too")
+      fixture.page.syncPassThrough(at: CGPoint(x: f.midX, y: f.minY + strip + 1))
+      XCTAssertFalse(window.ignoresMouseEvents, "\(label): the bell row takes the mouse (hover names)")
+      fixture.page.syncPassThrough(at: CGPoint(x: f.midX, y: f.minY + layout.hullBottomInset + 40))
+      XCTAssertFalse(window.ignoresMouseEvents, "\(label): the hull takes the mouse")
+      fixture.page.syncPassThrough(at: CGPoint(x: f.midX, y: f.minY - 5))
+      XCTAssertFalse(window.ignoresMouseEvents, "\(label): outside the window nothing is ignored")
+    }
+    check("attached")
+    fixture.page.setAttached(false)
+    XCTAssertFalse(fixture.page.isAttached)
+    XCTAssertEqual(fixture.page.verificationLayout?.passThroughHeight, strip, "a detach keeps the layout")
+    check("detached")
+    fixture.page.setAttached(true)
+    XCTAssertTrue(fixture.page.isAttached, "Reduce Motion: latched at once")
+    XCTAssertEqual(window.frame, try XCTUnwrap(fixture.home), "put back: the hull is home, nothing moved")
+    check("put back")
+    // Last, as it may close the cockpit: a press on the flame strip is a press on what is beneath, so attached it counts
+    // as an outside press; a press on the hull does not.
+    var outside = 0
+    fixture.page.verificationOutsidePress = { _, _ in outside += 1 }
+    let home = window.frame
+    fixture.page.localPress(in: window, at: CGPoint(x: home.midX, y: home.minY + layout.hullBottomInset + 40), eventType: .rightMouseDown)
+    XCTAssertEqual(outside, 0, "a press on the hull is the cockpit's own")
+    fixture.page.localPress(in: nil, at: CGPoint(x: home.midX, y: home.minY + 1), eventType: .rightMouseDown)
+    XCTAssertEqual(outside, 1, "a press on the flame strip is outside the cockpit")
+    XCTAssertEqual(failures, [])
+  }
 }
 #endif
