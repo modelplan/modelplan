@@ -18,12 +18,7 @@ const FUEL:Readonly<Record<string,string>>={ok:'#5ad9ba',mid:'#eac17b',low:'#ef4
 const RANK:Readonly<Record<string,number>>={ok:1,mid:2,low:3};
 const COLOUR=/^#[0-9a-f]{6}$/i;
 
-export type BaseLight={key:string;col:string;x:number;w:number;cw:number;colour:string;fuel:string;state:'work'|'stale'|'idle'|'plugin';rate:number|null;len:number;flame:Flame;name?:string};
-// D454: the engine flame of a bell. work + high output -> full thrust (flipbook); work + lower output -> short; an idle subscription -> ember; stale and plugin nozzles hang none.
-export type Flame='full'|'short'|'ember'|'none';
-export function flameKind(state:'work'|'stale'|'idle'|'plugin',len:number):Flame {
- return state==='work'?(len<(FLAME_MIN+FLAME_MAX)/2?'short':'full'):state==='idle'?'ember':'none';
-}
+export type BaseLight={key:string;col:string;x:number;w:number;cw:number;colour:string;fuel:string;state:'work'|'stale'|'idle'|'plugin';rate:number|null;len:number;name?:string};
 
 // Glow sheet length: 30 t/s or less -> 12, 120 t/s or more -> 24, no rate -> the middle (study flameLen).
 export function flameLength(rate:number|null):number {
@@ -58,12 +53,12 @@ export function baseLights(root:HTMLElement,data:WireCockpitData):{lights:BaseLi
   const grey=!!column?.classList.contains('grey'),live=keys.has(member)?running(data,members,member):{working:false,rate:null};
   const state=grey?'stale':live.working?'work':'idle',cw=r.width*k;
   lights.push({key:member,col:id,x:(r.left+r.width/2-box.left)*k,w:Math.max(8,cw-2*INSET),cw,colour:COLOUR.test(vendor)?vendor:'#7d868e',
-   fuel:level?FUEL[level]:'#7d868e',state,rate:live.rate,len:state==='work'?flameLength(live.rate):0,flame:flameKind(state,state==='work'?flameLength(live.rate):0)});
+   fuel:level?FUEL[level]:'#7d868e',state,rate:live.rate,len:state==='work'?flameLength(live.rate):0});
  }
  // D377: a plugin column (Calendar, Resources) hangs the same nozzle. It is never working or stale: dark at rest, lit only by the landing burn with the whole row.
  for(const column of root.querySelectorAll<HTMLElement>('.ck-eng .eng-cols .ec.pl-col[data-plugin]')){
   const r=column.getBoundingClientRect();if(!r.width)continue;const cw=r.width*k;
-  lights.push({key:'',col:'',x:(r.left+r.width/2-box.left)*k,w:Math.max(8,cw-2*INSET),cw,colour:'#7d868e',fuel:'#7d868e',state:'plugin',rate:null,len:0,flame:'none',name:column.getAttribute('aria-label')??column.dataset.plugin??''});
+  lights.push({key:'',col:'',x:(r.left+r.width/2-box.left)*k,w:Math.max(8,cw-2*INSET),cw,colour:'#7d868e',fuel:'#7d868e',state:'plugin',rate:null,len:0,name:column.getAttribute('aria-label')??column.dataset.plugin??''});
  }
  lights.sort((a,b)=>a.x-b.x);
  const sockets=[...root.querySelectorAll<HTMLElement>('.ck-eng .eng-cols .ec-bay')].map(e=>{const r=e.getBoundingClientRect();return {x:(r.left+r.width/2-box.left)*k,cw:r.width*k};}).filter(s=>s.cw>0);
@@ -71,6 +66,7 @@ export function baseLights(root:HTMLElement,data:WireCockpitData):{lights:BaseLi
 }
 
 function px(n:number){return n.toFixed(2)+'px';}
+function flameNode(){const flame=document.createElement('i');flame.className='bz-flame';flame.setAttribute('aria-hidden','true');return flame;}
 
 // Paints the row into its own layer under the root; returns a disposer.
 export function mountPrototypeBase(root:HTMLElement,data:()=>WireCockpitData|null,label:(light:BaseLight)=>string) {
@@ -90,15 +86,16 @@ export function mountPrototypeBase(root:HTMLElement,data:()=>WireCockpitData|nul
    const glow=document.createElement('i');glow.className='bz-glow';const line=document.createElement('i');line.className='bz-line';b.append(glow,line);
    // D85: a working bell shows the study's in-mouth glow only; no flame or plume.
    if(z.state==='work'){const sheet=document.createElement('i');sheet.className='bz-sheet';b.append(sheet);}
-   // D454: the official edition draws the owner's blue flame sprites here; the community edition hides this element.
-   if(z.flame!=='none'){const flame=document.createElement('i');flame.className='bz-flame f-'+z.flame;flame.setAttribute('aria-hidden','true');b.append(flame);}
+   // D454/D459: every nozzle hangs the owner's blue flame (official edition; the community edition hides it). Its kind is
+   // the cockpit's thrust (#cockpit[data-thrust], view.ts), never the subscription's output, which is the sheet's glow.
+   b.append(flameNode());
    // CKP-ENG-20: hovering lights the column and shows the name (text only).
    const tip=document.createElement('span');tip.className='bz-tip';tip.setAttribute('aria-hidden','true');tip.textContent=label(z);b.append(tip);
    const column=()=>[...root.querySelectorAll<HTMLElement>('.ck-eng .ec[data-col]')].find(e=>e.dataset.col===z.col);
    b.addEventListener('pointerenter',()=>column()?.classList.add('xhl'));b.addEventListener('pointerleave',()=>column()?.classList.remove('xhl'));
    nodes.push(b);
   }
-  for(const s of sockets){const e=document.createElement('span');e.className='bz-empty';e.setAttribute('aria-hidden','true');e.style.setProperty('left',px(s.x));e.style.setProperty('--cw',px(s.cw));const line=document.createElement('i');line.className='bz-line';e.append(line);nodes.push(e);}
+  for(const s of sockets){const e=document.createElement('span');e.className='bz-empty';e.setAttribute('aria-hidden','true');e.style.setProperty('left',px(s.x));e.style.setProperty('--cw',px(s.cw));const line=document.createElement('i');line.className='bz-line';e.append(line);e.append(flameNode());nodes.push(e);}
   base.replaceChildren(...nodes);
  };
  const engine=root.querySelector<HTMLElement>('.ck-eng');

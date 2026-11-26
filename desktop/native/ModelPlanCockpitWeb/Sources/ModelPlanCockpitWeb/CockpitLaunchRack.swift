@@ -29,6 +29,9 @@ public enum CockpitLaunchRackTiming {
   public static let fullTravel: TimeInterval = 0.56
   /// Key detach: the short nozzle burn and the move out of the catch zone.
   public static let keyDetachBurn: TimeInterval = 0.6
+  /// D459 (owner, 2026-11-26, "about 1-2 s"): a launch (key detach or drag tear-off) burns full thrust this long from
+  /// the moment the cockpit leaves the boom; it covers the key detach's move and lands it on the short parked flame.
+  public static let launchBurn: TimeInterval = 1.2
   /// Drag put-back released inside the catch zone: straight home along the rack.
   public static let rideHome: TimeInterval = 0.3
   /// D181: the catch zone (points). It acts only on a drag release; a detached cockpit never snaps by proximity.

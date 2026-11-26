@@ -232,6 +232,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var motion: Motion?
   /// The nozzles are lit (the page's amber bell glow).
   private var ignited = false
+  /// D459: what the motions ask for (`ignite`) and the launch burn after a detach; the nozzles burn while either holds.
+  private var ignitionRequested = false, launchBurning = false
+  private var launchBurnTask: Task<Void, Never>?
   /// The rack stays hidden inside the attached frame while the open's slide or the close runs.
   private var rackHidesInHome = false
   private let menuTarget = CockpitMenuTarget()
@@ -2058,6 +2061,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     releaseClamp { [weak self] in
       guard let self, let window = self.window else { return }
       let start = window.frame
+      self.startLaunchBurn() // D459: the cockpit leaves the boom
       self.retractRack()
       self.runMotion(CockpitLaunchRackTiming.keyDetachBurn, step: { [weak self] t in
         let e = CockpitDockingBoom.easeInOut(t)
@@ -2132,7 +2136,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     flying = false
     shellSession.detached = false
     rackExtension = rackIcon() != nil ? 1 : 0; rackTarget = rackExtension
-    ignite(false)
+    endLaunchBurn(); ignite(false)
     if placement() != nil { applyLayout() }
     updateAppearance(appearance)
     syncPassThrough()
@@ -2223,6 +2227,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         // cannot be held: the clamp opens at once, before this first moved frame (D439, macrev2-1207-1).
         releaseClampNow()
         updateAppearance(appearance); retractRack()
+        startLaunchBurn() // D459: tearing the cockpit off the boom is a launch
       }
       // Build 14c (G3-79): the window stays inside the display under the pointer, so it can go to any display.
       window.setFrame(dragFrame(start: start.frame, from: start.point, to: point), display: true)
@@ -2298,7 +2303,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     defer { syncPassThrough() }
     let changed = shellSession.detached != start.detached
     shellSession.detached = start.detached; window?.setFrame(start.frame, display: true)
-    dragCatching = false; ignite(false)
+    dragCatching = false; if !start.detached { endLaunchBurn() }; ignite(false)
     if start.detached { retractRack() } else if rackIcon() != nil { extendRack() }
     updateAppearance(appearance)
     if changed { onShellChanged?(); onPresenceChanged?(false) }
@@ -2665,7 +2670,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private func stopRack() {
     motion = nil; rackSettledWaiters = []; flying = false; clampClosure = 0; clampReleasing = false
     rackTimer?.invalidate(); rackTimer = nil
-    ignite(false)
+    endLaunchBurn(); ignite(false)
     rack.close()
   }
   /// Places and draws the rack for the current state: hidden inside the cockpit below its shoulder line (the attached
@@ -2706,7 +2711,31 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// The nozzles: the page's amber glow on every base bell (D178/D186). Not under Reduce Motion.
   private func ignite(_ on: Bool) {
-    let value = on && !appearance.reduceMotion
+    ignitionRequested = on
+    applyIgnition()
+  }
+  /// D459 (owner, 2026-11-26): the engine flames are the cockpit's own thrust. The page draws full thrust while the host
+  /// ignites, short while detached and ember while docked (view.ts). A detach, by key or by tearing the cockpit off the
+  /// boom with a drag, is a launch: full thrust for `CockpitLaunchRackTiming.launchBurn` from the moment it leaves, on
+  /// top of whatever the motion itself asks for. None under Reduce Motion (no ignition at all then).
+  private func startLaunchBurn() {
+    endLaunchBurn()
+    guard !appearance.reduceMotion else { return }
+    launchBurning = true; applyIgnition()
+    launchBurnTask = Task { @MainActor [weak self] in
+      do { try await Task.sleep(for: .milliseconds(Int(CockpitLaunchRackTiming.launchBurn * 1_000))) } catch { return }
+      guard let self else { return }
+      self.launchBurnTask = nil; self.launchBurning = false; self.applyIgnition()
+    }
+  }
+  /// The launch burn ends early once the cockpit is home again or the page goes away.
+  private func endLaunchBurn() {
+    launchBurnTask?.cancel(); launchBurnTask = nil
+    guard launchBurning else { return }
+    launchBurning = false; applyIgnition()
+  }
+  private func applyIgnition() {
+    let value = (ignitionRequested || launchBurning) && !appearance.reduceMotion
     guard value != ignited else { return }
     ignited = value
     #if MODELPLAN_TEST_ONLY_SPI
