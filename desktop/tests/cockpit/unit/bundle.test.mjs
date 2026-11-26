@@ -7,14 +7,16 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { verifyRuntimeGraph } from '../runtime-graph.mjs';
 const project=fileURLToPath(new URL('../../../cockpit/',import.meta.url));
+// build.mjs compiles into a private directory: the shared .tmp/compiled is imported by parallel unit tests.
+const buildEnv={...process.env,MODELPLAN_COCKPIT_COMPILED:project+'.tmp/bundle-compiled'};
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 test('both editions have reproducible bounded manifests; community excludes reserved assets',()=>{
   for(const edition of ['community','official']) {
     // A reused compilation directory must not ship a deleted source.
-    mkdirSync(project+'.tmp/compiled/src',{recursive:true});
-    for(const suffix of ['js','d.ts'])writeFileSync(project+'.tmp/compiled/src/removed-module.'+suffix,'export const retired = true;\n');
+    mkdirSync(project+'.tmp/bundle-compiled/src',{recursive:true});
+    for(const suffix of ['js','d.ts'])writeFileSync(project+'.tmp/bundle-compiled/src/removed-module.'+suffix,'export const retired = true;\n');
     rmSync(project+'.tmp/'+edition,{recursive:true,force:true});
-    execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});
+    execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe',env:buildEnv});
     const root=project+'.tmp/'+edition+'/',manifest=JSON.parse(readFileSync(root+'bundle-manifest.json'));
     assert.equal(manifest.edition,edition);assert.equal(manifest.interfaceOnly,true);
     if(edition==='community')verifyRuntimeGraph(root,manifest);
@@ -85,7 +87,7 @@ test('both editions have reproducible bounded manifests; community excludes rese
       if(name.startsWith('runtime/')&&name!==scene&&name!=='runtime/field-scene/launch-field.css')assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
       if(name.endsWith('.webp'))assert.ok(edition==='official'&&name.startsWith('assets/art/rockets/'),`unapproved WebP: ${name}`);
     }
-    execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});
+    execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe',env:buildEnv});
     assert.deepEqual(JSON.parse(readFileSync(root+'bundle-manifest.json')),manifest);
     // Porthole still placement: null without the reserved pack; the official edition carries exactly the
     // default fleet's night/day projections at 890 (D444: one layout), and every layer they name is a bundled file.
