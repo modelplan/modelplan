@@ -64,7 +64,7 @@ test('D459 launch, parked, landing: full while the host ignites, short when park
  await host.shell({attached:false});await host.ignite(true);
  expect(await state()).toEqual({thrust:'full',flames:['full'],glow:0});
  const v=await read(page);
- expect(v.nozzles.every(n=>n.flame.anim==='cockpit-flame-flip')).toBe(true);
+ expect(v.nozzles.every(n=>n.flame.anim.startsWith('cockpit-flame-flip'))).toBe(true);
  // The burn ends: parked detached.
  await host.ignite(false);
  expect(await state()).toEqual({thrust:'short',flames:['short'],glow:0});
@@ -91,4 +91,42 @@ test('D459 a page opened detached starts on the short parked flame',async({page}
  const v=await read(page);
  expect(v.thrust).toBe('short');
  expect(v.nozzles.every(n=>kind(n.flame.image)==='short'&&!n.glow?.shown)).toBe(true);
+});
+
+const timing=page=>page.evaluate(()=>[...document.querySelectorAll('.ck-base :is(.bz,.bz-empty) .bz-flame')].map(f=>{const s=getComputedStyle(f),p=f.parentElement.style;
+ const ks=f.getAnimations().map(a=>a.effect.getKeyframes().map(k=>[k.scale,k.opacity].filter(Boolean).join('|')));
+ return {names:s.animationName,dur:s.animationDuration,delay:s.animationDelay,ks,
+  props:[...new Set(f.getAnimations().flatMap(a=>a.effect.getKeyframes().flatMap(k=>Object.keys(k))).filter(k=>!['offset','easing','composite','computedOffset'].includes(k)))].sort(),
+  fp:p.getPropertyValue('--fp'),fb:p.getPropertyValue('--fb'),fl:p.getPropertyValue('--fl')};}));
+
+test('D454 per-nozzle dynamics: full thrust gives each nozzle its own subtle timing, moving only background frame, scale and opacity',async({page})=>{
+ const host=await open(page);await host.ignite(true);
+ const t=await timing(page);
+ expect(t.length).toBeGreaterThanOrEqual(4);
+ for(const x of t)expect(x.names).toBe('cockpit-flame-flip, cockpit-flame-breathe, cockpit-flame-flicker');
+ for(const k of ['dur','delay','fp','fb','fl'])expect(new Set(t.map(x=>x[k])).size,k).toBeGreaterThan(Math.min(t.length,4)-1);
+ for(const x of t){
+  const fps=4/parseFloat(x.fp);expect(fps).toBeGreaterThan(8.3);expect(fps).toBeLessThan(9.7);
+  expect(parseFloat(x.fb)).toBeGreaterThanOrEqual(1.2);expect(parseFloat(x.fb)).toBeLessThanOrEqual(1.8);
+  expect(x.props.filter(p=>!['backgroundPositionX','scale','opacity'].includes(p))).toEqual([]);
+  // Amplitude from the keyframe definitions (not live values, which depend on the animation phase).
+  expect(x.ks.flat()).toEqual(expect.arrayContaining(['1 0.98','1 1.02','0.95','1']));
+ }
+ if(process.env.FLAME_FRAMES){const r=await page.evaluate(()=>{const b=document.querySelector('.ck-base').getBoundingClientRect();return {y:b.top};});
+  for(let i=0;i<30;i++){await page.evaluate(t=>document.getAnimations().forEach(a=>{a.pause();a.currentTime=t;}),i*100);
+   await page.screenshot({path:process.env.FLAME_FRAMES+'/f'+String(i).padStart(2,'0')+'.png',clip:{x:0,y:Math.max(0,r.y-10),width:636,height:150}});}}
+ // Deterministic: a reload gives the same per-nozzle timings.
+ const host2=await open(page);await host2.ignite(true);
+ expect(await timing(page)).toEqual(t);
+});
+
+test('D454 short flame and ember stay static; per-nozzle dynamics are off under Reduce Motion and when hidden',async({page})=>{
+ let host=await open(page);
+ expect((await timing(page)).every(x=>x.names==='none')).toBe(true);
+ await host.shell({attached:false});
+ expect((await timing(page)).every(x=>x.names==='none')).toBe(true);
+ host=await open(page,{reduceMotion:true});await host.ignite(true);
+ expect((await timing(page)).every(x=>x.names==='none')).toBe(true);
+ host=await open(page,{active:false});await host.ignite(true);
+ expect((await timing(page)).every(x=>x.names==='none')).toBe(true);
 });
