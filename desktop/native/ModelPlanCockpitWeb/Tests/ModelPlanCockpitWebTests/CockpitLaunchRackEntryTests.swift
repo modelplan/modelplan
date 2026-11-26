@@ -429,7 +429,10 @@ import XCTest
     XCTAssertNotEqual(window.frame, home); XCTAssertNotEqual(window.frame, plan.frame)
     try await wait(600)
     XCTAssertEqual(window.frame, plan.frame, "landed")
-    XCTAssertEqual(ignition, [true, false], "a short burn, out when the move ends")
+    // D459: a detach is a launch, full thrust for the launch burn from the moment it leaves the boom (longer than the
+    // 0.6 s move); then the parked cockpit burns short (the page's thrust state, without ignition).
+    XCTAssertEqual(ignition, [true], "the launch burn outlasts the move")
+    try await until("the launch burn ends") { ignition == [true, false] }
     XCTAssertEqual(fixture.page.verificationRack.ext, 0, "the rack retracted into the icon")
     XCTAssertNil(fixture.page.verificationRack.panel)
     XCTAssertFalse(fixture.page.inCatchZone(window.frame), "never ambiguous: out of the catch zone")
@@ -483,7 +486,10 @@ import XCTest
     XCTAssertFalse(fixture.page.isAttached)
     XCTAssertFalse(fixture.page.inCatchZone(window.frame), "the tear-off leaves the catch zone (\(window.frame) from \(home))")
     XCTAssertEqual(fixture.page.verificationRack.target, 0, "tear-off: the rack retracts into the icon")
-    XCTAssertEqual(ignition, [])
+    // D459: tearing the cockpit off the boom is a launch: full thrust for the launch burn, then out (parked: short).
+    XCTAssertEqual(ignition, [true], "the tear-off lights the launch burn")
+    try await until("the launch burn ends") { ignition == [true, false] }
+    ignition = []
     let near = CGPoint(x: grab.x + 10, y: grab.y - 20)
     fixture.page.titleDrag(.moved, point: near)
     XCTAssertTrue(fixture.page.inCatchZone(window.frame))

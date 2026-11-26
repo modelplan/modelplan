@@ -22,6 +22,9 @@ COMMITTED_PIN = re.compile(r'"(community|official)"\s*:\s*"[a-f0-9]{64}"')
 RESERVED_SOURCES = (
     ('runtime/', 'runtime/'),
     ('assets/bells/SOURCES.md', 'cockpit/bells/SOURCES.md'),
+    # D454: the owner's blue flame set ships beside the bells (build.mjs) but has its own reserved source folder.
+    ('assets/bells/FLAMES-SOURCES.md', 'cockpit/flames/SOURCES.md'),
+    ('assets/bells/flame-', 'cockpit/flames/assets/flame-'),
     ('assets/hull/SOURCES.md', 'cockpit/hull/SOURCES.md'),
     ('assets/bells/', 'cockpit/bells/assets/'),
     ('assets/hull/', 'cockpit/hull/assets/'),

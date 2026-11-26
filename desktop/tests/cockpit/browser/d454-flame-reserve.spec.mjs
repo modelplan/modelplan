@@ -17,7 +17,6 @@ function data(){
  const d=visualFixture().data;
  const ref=i=>d.projection.rows[i].accounts[0].subscriptionRef;
  d.details.sessions[0]={...d.details.sessions[0],subscriptionRef:ref(0),rate:120};
- d.details.sessions[1]={...d.details.sessions[1],subscriptionRef:ref(1),rate:120};
  return d;
 }
 async function open(page){
@@ -27,7 +26,9 @@ async function open(page){
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:data()}))).toBe(true);
- await page.waitForFunction(()=>document.querySelectorAll('.ck-base .bz-flame.f-full').length>0);await page.waitForTimeout(100);
+ // D459: full thrust is the cockpit's own burn while the host ignites (the tallest flame).
+ expect(await receive(send('ignition',{on:true}))).toBe(true);
+ await page.waitForFunction(()=>document.getElementById('cockpit').dataset.thrust==='full'&&document.querySelectorAll('.ck-base .bz-flame').length>0);await page.waitForTimeout(100);
 }
 const measure=page=>page.evaluate(()=>{
  const root=document.getElementById('cockpit').getBoundingClientRect();
@@ -39,12 +40,12 @@ test('D454 the reserve holds the whole flame, at the widest bell too',async({pag
  await open(page);
  let v=await measure(page);
  expect(v.rootBottom).toBeCloseTo(ROOT,0);
- expect(v.flames.some(f=>f.cls.includes('f-full'))).toBe(true);
+ expect(v.flames.length).toBeGreaterThanOrEqual(4);
  for(const f of v.flames){expect(f.bottom,f.cls).toBeLessThanOrEqual(v.rootBottom+RESERVE-1.5);expect(f.pe).toBe('none');}
  // The widest bell the CSS allows (101 px): its full-thrust flame is the tallest box the page can draw.
- await page.evaluate(()=>{for(const b of document.querySelectorAll('.ck-base .bz'))b.style.setProperty('--cw','200px');});
+ await page.evaluate(()=>{for(const b of document.querySelectorAll('.ck-base :is(.bz,.bz-empty)'))b.style.setProperty('--cw','200px');});
  v=await measure(page);
- const widest=v.flames.filter(f=>f.cls.includes('f-full'));
+ const widest=v.flames.filter(f=>f.w>=95);
  expect(widest.length).toBeGreaterThan(0);
  for(const f of widest){expect(f.w).toBeCloseTo(101*.95,0);expect(f.bottom,'the tallest flame ends inside the reserve').toBeLessThanOrEqual(v.rootBottom+RESERVE-1.5);}
 });

@@ -15,9 +15,13 @@ import {inflateSync} from 'node:zlib';
 //   painted row);
 // - below the canopy the hull only widens.
 const TOL=6.4;
+// D451/D452: the canopy art is now the owner's own (grey set). The reference is re-derived from its solid-outline-890-2x.png
+// alpha (>= 128) the same way the old table reproduces from the v10 art: the row width in CSS px (device width / 2) at
+// first-painted-row + y for each y below. (The old art's solid outline gives the previous 240.5 ... 392.5 ... 621 values
+// to within 1 px, which is how the method was checked.) Rows from 260 down are the walls, unchanged.
 const APPROVED={
- tall:[[4,240.5],[6,281.5],[8,316],[10,345.5],[14,392.5],[20,448.5],[30,516],[40,554.5],[60,586.5],[80,599],[100,605.5],[120,611],
-  [140,616],[160,621],[180,624.5],[200,621],[220,620],[240,620],[260,620.5],[300,620.5],[400,620.5],[560,636],[700,636]],
+ tall:[[4,266],[6,314],[8,351.5],[10,382.5],[14,432],[20,484.5],[30,539],[40,564],[60,584],[80,593],[100,600],[120,608],
+  [140,614],[160,618],[180,620],[200,620],[220,620],[240,620],[260,620.5],[300,620.5],[400,620.5],[560,636],[700,636]],
 };
 const shapes=[
  {tier:'tall',closed:false,canvas:951,root:905,cap:244,approved:APPROVED.tall},
