@@ -545,3 +545,5 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-head>.mp-title-edge{position:absolute;inset:0 0 auto;height:0;pointer-events:none}
 /* The owner's title edge is the header plate's 620 px top lip: it sits on the sill just above the head row (not over its controls), centred on the 636 px hull, behind the head's contents. */
 :root[data-theme="night"] #cockpit .ck-head>.mp-title-edge{inset:-9px -16px auto;height:7px;z-index:-1}
+/* Closed cap: the owner's cap slab sits 1 px higher than the bundled crown rule places it (measured against the owner's closed preview). */
+:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{top:13px}
