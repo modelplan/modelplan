@@ -429,7 +429,10 @@ import XCTest
     XCTAssertNotEqual(window.frame, home); XCTAssertNotEqual(window.frame, plan.frame)
     try await wait(600)
     XCTAssertEqual(window.frame, plan.frame, "landed")
-    XCTAssertEqual(ignition, [true, false], "a short burn, out when the move ends")
+    // D459: a detach is a launch, full thrust for the launch burn from the moment it leaves the boom (longer than the
+    // 0.6 s move); then the parked cockpit burns short (the page's thrust state, without ignition).
+    XCTAssertEqual(ignition, [true], "the launch burn outlasts the move")
+    try await until("the launch burn ends") { ignition == [true, false] }
     XCTAssertEqual(fixture.page.verificationRack.ext, 0, "the rack retracted into the icon")
     XCTAssertNil(fixture.page.verificationRack.panel)
     XCTAssertFalse(fixture.page.inCatchZone(window.frame), "never ambiguous: out of the catch zone")
@@ -483,7 +486,10 @@ import XCTest
     XCTAssertFalse(fixture.page.isAttached)
     XCTAssertFalse(fixture.page.inCatchZone(window.frame), "the tear-off leaves the catch zone (\(window.frame) from \(home))")
     XCTAssertEqual(fixture.page.verificationRack.target, 0, "tear-off: the rack retracts into the icon")
-    XCTAssertEqual(ignition, [])
+    // D459: tearing the cockpit off the boom is a launch: full thrust for the launch burn, then out (parked: short).
+    XCTAssertEqual(ignition, [true], "the tear-off lights the launch burn")
+    try await until("the launch burn ends") { ignition == [true, false] }
+    ignition = []
     let near = CGPoint(x: grab.x + 10, y: grab.y - 20)
     fixture.page.titleDrag(.moved, point: near)
     XCTAssertTrue(fixture.page.inCatchZone(window.frame))
@@ -665,6 +671,119 @@ import XCTest
     XCTAssertEqual(window.frame, home, file: file, line: line)
     XCTAssertEqual(fixture.page.verificationRack.ext, 1, "\(label): the rack ends fully out", file: file, line: line)
     return (try XCTUnwrap(extAtLanding, "\(label): landed", file: file, line: line), sawPartial || (extAtLanding ?? 0) < 1)
+  }
+
+  /// D454 (owner, 2026-11-26): the reserve under the hull holds the whole flame and never takes a click. Over the
+  /// flame-only strip the real window ignores the mouse (the click reaches what is beneath) and a press there counts as
+  /// outside; over the bell row and the hull it takes the mouse as before. Attached and detached alike.
+  func testD454TheFlameStripPassesClicksThrough() async throws {
+    let fixture = try make(reduceMotion: true)
+    defer { fixture.page.discard() }
+    let window = try open(fixture)
+    try await wait(400)
+    let layout = try XCTUnwrap(fixture.page.verificationLayout)
+    XCTAssertEqual(window.frame, try XCTUnwrap(fixture.home), "attached at home, the whole window (hull and flame) on screen")
+    XCTAssertTrue(fixture.usable.contains(window.frame), "attached, the whole flame is inside the visible frame")
+    let strip = layout.passThroughHeight
+    XCTAssertGreaterThanOrEqual(strip, ((CockpitShellLayout.baseReserve - CockpitShellLayout.bellRow) * layout.scale).rounded(.down) - 1)
+    func check(_ label: String) {
+      let f = window.frame
+      fixture.page.syncPassThrough(at: CGPoint(x: f.midX, y: f.minY + 1))
+      XCTAssertTrue(window.ignoresMouseEvents, "\(label): the bottom of the flame strip passes clicks through")
+      fixture.page.syncPassThrough(at: CGPoint(x: f.minX + 2, y: f.minY + strip - 1))
+      XCTAssertTrue(window.ignoresMouseEvents, "\(label): the top of the flame strip, at the window's edge, too")
+      fixture.page.syncPassThrough(at: CGPoint(x: f.midX, y: f.minY + strip + 1))
+      XCTAssertFalse(window.ignoresMouseEvents, "\(label): the bell row takes the mouse (hover names)")
+      fixture.page.syncPassThrough(at: CGPoint(x: f.midX, y: f.minY + layout.hullBottomInset + 40))
+      XCTAssertFalse(window.ignoresMouseEvents, "\(label): the hull takes the mouse")
+      fixture.page.syncPassThrough(at: CGPoint(x: f.midX, y: f.minY - 5))
+      XCTAssertFalse(window.ignoresMouseEvents, "\(label): outside the window nothing is ignored")
+    }
+    check("attached")
+    fixture.page.setAttached(false)
+    XCTAssertFalse(fixture.page.isAttached)
+    XCTAssertEqual(fixture.page.verificationLayout?.passThroughHeight, strip, "a detach keeps the layout")
+    check("detached")
+    fixture.page.setAttached(true)
+    XCTAssertTrue(fixture.page.isAttached, "Reduce Motion: latched at once")
+    XCTAssertEqual(window.frame, try XCTUnwrap(fixture.home), "put back: the hull is home, nothing moved")
+    check("put back")
+    // Last, as it may close the cockpit: a press on the flame strip is a press on what is beneath, so attached it counts
+    // as an outside press; a press on the hull does not.
+    var outside = 0
+    fixture.page.verificationOutsidePress = { _, _ in outside += 1 }
+    let home = window.frame
+    fixture.page.localPress(in: window, at: CGPoint(x: home.midX, y: home.minY + layout.hullBottomInset + 40), eventType: .rightMouseDown)
+    XCTAssertEqual(outside, 0, "a press on the hull is the cockpit's own")
+    fixture.page.localPress(in: nil, at: CGPoint(x: home.midX, y: home.minY + 1), eventType: .rightMouseDown)
+    XCTAssertEqual(outside, 1, "a press on the flame strip is outside the cockpit")
+    XCTAssertEqual(failures, [])
+  }
+
+  /// macrev2-1269-1. Invariant: at every press the window's `ignoresMouseEvents` matches the pointer's region (flame
+  /// strip: pass through; bells and hull: take). (a) A press that ends on the other side of the strip's edge sets the
+  /// state for where it was released, so the next click without a move lands right; a press in progress is never cut.
+  /// (b) The window moving under a pointer that does not move (a programmatic move, a detach, a put back) follows it.
+  func testD454PassThroughFollowsReleasesAndMovesUnderAStillPointer() async throws {
+    let fixture = try make(reduceMotion: true)
+    defer { fixture.page.discard() }
+    let window = try open(fixture)
+    try await wait(400)
+    let page = fixture.page, layout = try XCTUnwrap(page.verificationLayout), strip = layout.passThroughHeight
+    let f = window.frame
+    let onStrip = CGPoint(x: f.midX, y: f.minY + 1), onHull = CGPoint(x: f.midX, y: f.minY + layout.hullBottomInset + 40)
+    // (a) Pressed on the hull, dragged onto the strip, released there.
+    page.passThroughEvent(.mouseMoved, at: onHull, button: -1, held: 0)
+    XCTAssertFalse(window.ignoresMouseEvents)
+    page.passThroughEvent(.leftMouseDragged, at: onStrip, button: -1, held: 1)
+    XCTAssertFalse(window.ignoresMouseEvents, "a press in progress is never cut")
+    page.passThroughEvent(.leftMouseUp, at: onStrip, button: 0, held: 1)
+    XCTAssertTrue(window.ignoresMouseEvents, "released over the strip: the next click there, without a move, passes through")
+    // The inverse: pressed on the strip (another app holds it), released over the hull.
+    page.passThroughEvent(.leftMouseDragged, at: onHull, button: -1, held: 1)
+    XCTAssertTrue(window.ignoresMouseEvents, "a press in progress is never cut")
+    page.passThroughEvent(.leftMouseUp, at: onHull, button: 0, held: 1)
+    XCTAssertFalse(window.ignoresMouseEvents, "released over the hull: the next click there is the cockpit's")
+    // Right and other buttons release the same way; a release while another button is still down keeps the state.
+    page.passThroughEvent(.rightMouseUp, at: onStrip, button: 1, held: 2)
+    XCTAssertTrue(window.ignoresMouseEvents)
+    page.passThroughEvent(.otherMouseUp, at: onHull, button: 2, held: 4)
+    XCTAssertFalse(window.ignoresMouseEvents)
+    page.passThroughEvent(.leftMouseUp, at: onStrip, button: 0, held: 0b11)
+    XCTAssertFalse(window.ignoresMouseEvents, "the right button is still down")
+    page.passThroughEvent(.scrollWheel, at: onStrip, button: -1, held: 0)
+    XCTAssertTrue(window.ignoresMouseEvents, "a scroll resyncs too")
+    // What the monitors read from an event: its screen point, and the button only for a release.
+    let up = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseUp, location: onHull, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                                              context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+    XCTAssertEqual(CockpitWindowController.screenPoint(up), onHull); XCTAssertEqual(CockpitWindowController.releasedButton(up), 0)
+    let move = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: onHull, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                                                context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+    XCTAssertEqual(CockpitWindowController.releasedButton(move), -1)
+
+    // (b) A still pointer on the strip; the window moves under it.
+    var pointer = onStrip
+    page.verificationPointer = { pointer }
+    page.syncPassThrough()
+    XCTAssertTrue(window.ignoresMouseEvents)
+    func expected() -> Bool { CockpitShellLayout.passesThrough(pointer, frame: window.frame, height: strip) }
+    window.setFrameOrigin(CGPoint(x: f.minX, y: f.minY - strip - 10)) // the bells and hull come down onto the pointer
+    XCTAssertNotEqual(window.frame.origin, f.origin)
+    try await until("the state follows a move under a still pointer") { window.ignoresMouseEvents == expected() }
+    window.setFrameOrigin(f.origin)
+    try await until("and back") { window.ignoresMouseEvents == expected() && window.ignoresMouseEvents }
+    // A detach and a put back move the window under the still pointer too.
+    page.setAttached(false)
+    XCTAssertFalse(page.isAttached)
+    try await until("after a detach") { window.frame != f && window.ignoresMouseEvents == expected() }
+    pointer = CGPoint(x: window.frame.midX, y: window.frame.minY + 1)
+    page.syncPassThrough()
+    XCTAssertTrue(window.ignoresMouseEvents, "detached, the strip under the pointer passes through")
+    page.setAttached(true)
+    XCTAssertTrue(page.isAttached, "Reduce Motion: latched at once")
+    try await until("after a put back") { window.frame == f && window.ignoresMouseEvents == expected() }
+    page.verificationPointer = nil
+    XCTAssertEqual(failures, [])
   }
 }
 #endif
