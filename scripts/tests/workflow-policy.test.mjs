@@ -839,3 +839,16 @@ test("the merge-queue native-headless leg is hosted and a hosted merge-queue run
   assert.match(guard, /17F113/);
   assert.doesNotMatch(TRUSTED_MAC_ROUTE, /native-headless'\) && github\.event_name == 'merge_group'/);
 });
+
+test("the nightly schedule on main reaches the GUI Mac without the actor gate, and nothing else does (D169, D193)", () => {
+  // A scheduled run's actor is whoever last changed the cron (the merge-queue bot), so the owner-actor gate would
+  // send the nightly to hosted macOS, where it hits the job limit. The only bypass is schedule on main in this repository.
+  const bypass = "(github.repository == 'modelplan/modelplan' && github.event_name == 'schedule' && github.ref == 'refs/heads/main')";
+  const ownerGate = "(github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear')";
+  const gui = TRUSTED_MAC_ROUTE.split("|| (inputs.os == 'ubuntu-latest'")[0].split("&& (inputs.task != 'native-headless'")[1];
+  assert.ok(gui.includes(`(${ownerGate} || ${bypass}) && (((github.event_name == 'pull_request'`), "owner gate OR schedule-on-main, then the event list");
+  assert.equal(TRUSTED_MAC_ROUTE.split(bypass).length - 1, 1, "one bypass only");
+  // The event list still admits schedule only for the two GUI tasks on main, so the bypass cannot start any other task or event.
+  assert.ok(gui.includes("((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main')"));
+  assert.equal(gui.split("github.event_name == 'schedule'").length - 1, 2, "schedule appears in the bypass and the GUI-task clause only");
+});
