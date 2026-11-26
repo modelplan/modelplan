@@ -170,7 +170,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public static func menuBarEdgeAnchor(screen: CockpitScreen) -> CGRect {
         let usable = screen.visibleFrame
         let edge = (screen.notchRightEdge ?? screen.frame.midX + nominalNotchHalfWidth).rounded()
-        return CGRect(x: edge, y: usable.maxY, width: CockpitRackMast.width, height: max(1, screen.frame.maxY - usable.maxY))
+        return CGRect(x: edge, y: usable.maxY, width: CockpitDockingBoom.edgeAnchorWidth, height: max(1, screen.frame.maxY - usable.maxY))
     }
     /// G3-46: the top-right of a display that is not the status item's own (a detached open there), below the menu bar.
     public static func hiddenIconAnchor(usable: CGRect) -> CGRect {
