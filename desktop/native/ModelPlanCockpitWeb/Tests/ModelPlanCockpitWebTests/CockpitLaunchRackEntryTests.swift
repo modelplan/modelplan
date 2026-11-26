@@ -161,13 +161,23 @@ import XCTest
     }
     let home = window.frame
     let ticks = record(fixture, window)
+    // Coordinator ruling @ e11e00f3: no wall clock. The driver runs on the manual clock, one 60 Hz tick at a time.
+    fixture.page.verificationManualRackClock = 1_000
+    defer { fixture.page.verificationManualRackClock = nil }
     fixture.page.setAttached(false)
-    try await until("the release hold is running with the clamp part open") {
+    XCTAssertEqual(window.frame, home, "the press: still home"); XCTAssertEqual(fixture.page.verificationRack.ext, 1)
+    var partial: CGFloat?
+    for _ in 0..<30 {
+      fixture.page.verificationAdvanceRack(by: 1.0 / 60)
       let closure = fixture.page.verificationBoom.pose?.closure ?? 0
-      return closure > 0 && closure < 1
+      if closure > 0, closure < 1 { partial = closure; break }
+      XCTAssertEqual(window.frame, home, "held at home while the clamp is closed")
     }
-    XCTAssertEqual(window.frame, home, "held at home during the release")
-    XCTAssertEqual(fixture.page.verificationRack.ext, 1, "the boom is still down during the release")
+    let closure = try XCTUnwrap(partial, "a tick inside the release hold has the clamp part open")
+    XCTAssertEqual(window.frame, home, "at the partial tick (closure \(closure)) the cockpit is home")
+    XCTAssertEqual(fixture.page.verificationRack.ext, 1, "at the partial tick the boom is down")
+    XCTAssertTrue(fixture.page.verificationRack.moving, "the hold is still running")
+    // From that tick: the drag begins and makes its first move.
     let grab = CGPoint(x: home.minX + 120, y: home.maxY - 16)
     // As the put-back test (f92449b6): down AND sideways toward the roomier side, so the drop is outside the catch zone
     // on a short display too (D444 fills its height).
@@ -182,7 +192,11 @@ import XCTest
     fixture.page.titleDrag(.moved, point: drop)
     XCTAssertFalse(fixture.page.inCatchZone(window.frame), "the drop is outside the catch zone (\(window.frame) from \(home))")
     fixture.page.titleDrag(.ended, point: drop)
-    try await until("the boom is in") { fixture.page.verificationRack.panel == nil && !fixture.page.verificationRack.moving }
+    for _ in 0..<120 where fixture.page.verificationRack.panel != nil || fixture.page.verificationRack.moving {
+      fixture.page.verificationAdvanceRack(by: 1.0 / 60)
+    }
+    XCTAssertNil(fixture.page.verificationRack.panel, "the boom is in"); XCTAssertFalse(fixture.page.verificationRack.moving)
+    // Every recorded frame, the interruption frame included: closure is 0 on or before the first one that moves.
     assertClampOpensBeforeDeparture(ticks.samples, home: home, label: "drag during the release hold")
     XCTAssertFalse(fixture.page.isAttached)
     fixture.page.verificationRackDrawn = nil

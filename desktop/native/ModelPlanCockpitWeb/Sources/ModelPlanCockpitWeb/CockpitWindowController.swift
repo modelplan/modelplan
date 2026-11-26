@@ -676,6 +676,21 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationRackBehindCockpit: Bool? { window.flatMap { rack.isBehind($0) } }
     /// G3-156: called after every rack placement (each 60 Hz frame of an open, close, detach or put back).
     public var verificationRackDrawn: (() -> Void)?
+    /// macrev2-1207-1 (test-only seam): while set, the rack driver's clock in seconds. The 60 Hz timer stops and the test
+    /// advances the driver tick by tick with `verificationAdvanceRack(by:)`, so a 0.14 s clamp release is observed frame
+    /// by frame on any runner. Clearing it hands the driver back to the real timer.
+    public var verificationManualRackClock: TimeInterval? {
+      didSet {
+        guard let verificationManualRackClock else { ensureRackTimer(); return }
+        rackTimer?.invalidate(); rackTimer = nil; rackClock = verificationManualRackClock
+      }
+    }
+    /// Runs one driver tick `dt` seconds after the last one (manual clock only).
+    public func verificationAdvanceRack(by dt: TimeInterval) {
+      guard let clock = verificationManualRackClock else { return }
+      verificationManualRackClock = clock + dt
+      rackTick()
+    }
     /// The rack clipping rectangle in its flipped view coordinates.
     public var verificationRackMask: CGRect? { (rack.panel?.contentView as? CockpitRackView)?.maskedOut }
     /// D430/D439/D447: the docking boom's pose as last drawn (nil while it is not on screen) and its clamp target.
@@ -2450,8 +2465,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// One 60 Hz driver moves the rack toward its target at the full-travel pace and runs the current motion (open, close,
   /// landing, flight); it stops itself when both are done.
   private func runMotion(_ duration: TimeInterval, step: @escaping @MainActor (CGFloat) -> Void, done: @escaping @MainActor () -> Void) {
-    motion = Motion(start: CACurrentMediaTime(), duration: max(0.001, duration), step: step, done: done)
+    motion = Motion(start: rackNow(), duration: max(0.001, duration), step: step, done: done)
     step(0); startRackTimer()
+  }
+  /// The driver's clock: the media clock, or the test-only manual clock while one is set.
+  private func rackNow() -> TimeInterval {
+    #if MODELPLAN_TEST_ONLY_SPI
+    if let verificationManualRackClock { return verificationManualRackClock }
+    #endif
+    return CACurrentMediaTime()
   }
   private func startRackTimer() {
     refreshRack()
@@ -2460,13 +2482,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// The 60 Hz driver runs only while the boom slides, its clamp moves or a motion runs; nothing animates at rest.
   private func ensureRackTimer() {
     guard rackTimer == nil else { return }
+    #if MODELPLAN_TEST_ONLY_SPI
+    if verificationManualRackClock != nil { return }
+    #endif
     rackClock = CACurrentMediaTime()
     let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.rackTick() } }
     RunLoop.main.add(timer, forMode: .common)
     rackTimer = timer
   }
   private func rackTick() {
-    let now = CACurrentMediaTime(), dt = now - rackClock
+    let now = rackNow(), dt = now - rackClock
     rackClock = now
     if rackExtension != rackTarget {
       let step = CGFloat(dt / rackPace)
