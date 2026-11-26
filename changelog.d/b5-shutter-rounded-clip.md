@@ -1,1 +1,1 @@
-Cockpit shutter: keep the canopy's rounded outline during open and close instead of a plain rectangle.
+Cockpit shutter: the official canopy slides behind its own rounded outline during open and close, no longer a flat-topped box with cut-off shoulders (G3-214).
