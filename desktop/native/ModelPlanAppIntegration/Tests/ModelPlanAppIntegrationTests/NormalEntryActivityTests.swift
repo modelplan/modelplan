@@ -137,7 +137,8 @@ private actor ActivityJourneyEngine: EngineClient {
         XCTAssertEqual(app.composition.presentedContent.snapshot.inputs.first { $0.id == first }?.working?.observedOutput, false,
                        "A model wait is explicit in-flight evidence, not invented output")
         XCTAssertNil(rotations[second])
-        try await engine.publish(fixture(phase: "finished", sequence: 3))
+        // A turn that ended longer ago than the gap hold (owner item 49) is idle at once.
+        try await engine.publish(fixture(phase: "finished", sequence: 3, recordAt: Date().addingTimeInterval(-3)))
         XCTAssertTrue(rotations.isEmpty); XCTAssertTrue(host.activeWorkingEffectIDs.isEmpty)
         try await engine.publish(fixture(phase: "tool", sequence: 4, recordAt: Date().addingTimeInterval(-301)))
         XCTAssertTrue(rotations.isEmpty); XCTAssertTrue(host.activeWorkingEffectIDs.isEmpty)
@@ -615,9 +616,46 @@ private actor ActivityJourneyEngine: EngineClient {
             XCTAssertEqual(host.activeWorkingEffectIDs,[first],"Reduce Motion holds the approved frame static")
             osReduced=false;host.refreshDockContent()
             XCTAssertEqual(rotations,[first:2],tool)
-            try await engine.publish(fixture(phase:"finished",sequence:3,tool:tool))
+            try await engine.publish(fixture(phase:"finished",sequence:3,recordAt:Date().addingTimeInterval(-3),tool:tool))
             XCTAssertTrue(host.activeWorkingEffectIDs.isEmpty,tool)
             await app.composition.stop()
         }
+    }
+
+    /// Owner item 49 (Pulse keeps the Codex ring turning between turns): a turn that ended moments ago holds "working"
+    /// for the Pulse sampling window (2 s), the next turn continues the same spin (G3-91: same animation, same phase),
+    /// and with no next turn the ring stops on its own.
+    func testOwnerItem49WorkingHoldsAcrossAShortGapBetweenTurns() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("activity-gap-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try entry(fixture(phase: nil, sequence: 1), root: root)
+        try await app.foundationStore.update { $0.autoHide = false }
+        await app.prepare(); app.updateSystemAccessibility(.init())
+        await app.composition.start(); app.allowDockPresentation()
+        let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+        let host = app.composition.dock
+        var rotations: [String: Double] = [:]
+        host.workingEffectsDidConfigureForChecks = { [weak host] in rotations = host?.workingEffectRotationPeriodsForChecks ?? [:] }
+        try await engine.publish(fixture(phase: "model", sequence: 2))
+        try await wait("gapLit") { rotations == [self.first: 2] }
+        let spin = try XCTUnwrap(host.workingEffectRotationAnimationsForChecks[first])
+        let begin = try XCTUnwrap(host.workingEffectRotationBeginTimesForChecks[first])
+        XCTAssertEqual(EngineDockWorkingHold.seconds, 2, "the Pulse activity sampling interval")
+
+        try await engine.publish(fixture(phase: "finished", sequence: 3))
+        XCTAssertEqual(rotations, [first: 2], "the gap after a finished turn keeps the ring working")
+        XCTAssertTrue(host.workingEffectRotationAnimationsForChecks[first] === spin, "the delivery did not re-add the spin")
+        try await engine.publish(fixture(phase: "model", sequence: 4))
+        XCTAssertTrue(host.workingEffectRotationAnimationsForChecks[first] === spin, "the next turn continues the same spin")
+        XCTAssertEqual(host.workingEffectRotationBeginTimesForChecks[first], begin, "the phase never reset")
+
+        try await engine.publish(fixture(phase: "finished", sequence: 5))
+        XCTAssertEqual(rotations, [first: 2], "held through the gap")
+        // No next turn and no further rows: the hold ends on its own.
+        try await wait("gapHoldEnded") { host.activeWorkingEffectIDs.isEmpty }
+        XCTAssertTrue(host.workingEffectRotationAnimationsForChecks.isEmpty)
+        XCTAssertNil(app.composition.presentedContent.snapshot.inputs.first { $0.id == first }?.working)
+        await app.composition.stop()
     }
 }
