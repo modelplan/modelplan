@@ -7,8 +7,8 @@ Copyright (c) 2026 ModelPlan. The owner approved publishing the r3 hull's plain 
 | --- | --- | --- | --- |
 | assets/aft-640-1x.png | 19368 B | 636x22 | `49de9e471c3ae935924e42f56412b437ae8bdf47f1df1aa410c5d79523546798` |
 | assets/aft-640-2x.png | 74937 B | 1272x44 | `f2566898f7ed1ab174e778755b7f57f6b20cbae5ac475a3767ae65d6417dbdf5` |
-| assets/aft-890-1x.png | 18417 B | 636x22 | `d18a779742826929ce1a5e215cd65c518c82d815a0533fb44077c367ddb3218a` |
-| assets/aft-890-2x.png | 63286 B | 1272x44 | `a596a3013478fd6aaab4c091e0857f5e1d78c6e609edcfebd1a1bd06cec4cf43` |
+| assets/aft-890-1x.png | 14099 B | 636x22 | `33e25aa44904bc3adfe7de392d309f3787f6777572cccd30e4a66c73b3984eeb` |
+| assets/aft-890-2x.png | 43476 B | 1272x44 | `e797ef666115a9c902532f6d50fabe5048ef627e86fb6d8a25bb67e829fd61a6` |
 | assets/cone-640-1x.png | 2371 B | 636x20 | `c4399404a236a79b85ec8b0ceda7d1d0e9b46f8722eec9bf02ec812ace09c240` |
 | assets/cone-640-2x.png | 8114 B | 1272x40 | `c414f411509b8129bb1275b68f34f3dabca2ead3201888e93482f8f3a1dd995a` |
 | assets/cone-890-1x.png | 2848 B | 636x24 | `53240314203371f4401e9d1f60f0145f69e394a2d50278c9d1c52b1569337c37` |
@@ -42,16 +42,16 @@ Side walls (owner approval after D68): `lower-skin-890-1x.png` and `lower-skin-8
 
 | File | Size | Pixels | SHA-256 |
 | --- | --- | --- | --- |
-| assets/lower-skin-890-1x.png | 3365 B | 636x32 | `f9090de83f5635646dd78dfad51cd4e52f9a20d8880d8f665498d4ba73533d03` |
-| assets/lower-skin-890-2x.png | 12984 B | 1272x64 | `04791e51b27f5c82f6977f5b08632cc07fab31e60bbcf98e7fd21319c692dd41` |
+| assets/lower-skin-890-1x.png | 2051 B | 636x32 | `60973dec6ad1fdc20a2e250be59aa0c0cf0e64f1b3c5d37751da0b7f288f9d60` |
+| assets/lower-skin-890-2x.png | 6284 B | 1272x64 | `3c1d32075d31eb15e47bdf24dd33fd4cf90f011c7440f1484b943b89889e3d3e` |
 
 Closed state (owner D72, 2026-11-08): `aft-closed-1x.png` and `aft-closed-2x.png` are copied unchanged from the private study `design-handoffs/opus-r7/src/assets/canopy-h1/` at design commit `ae0245ec6d043a96f6d8fd7423f5cb7dc7716166`, and `cap-slab.svg` from `clients/official-visuals/study/strip-hull-unify/` at design commit `7b5fda0018f42ce3c9a12ee49469aa4e91f11eb1`. The study draws the closed shell's aft plate and its 16 px cap slab with them.
 
 | File | Size | Pixels | SHA-256 |
 | --- | --- | --- | --- |
-| assets/aft-closed-1x.png | 18277 B | 636x22 | `37dc3630e0964db538b09c7a66be3062a30200667dd2c3493b508600ff9015d1` |
-| assets/aft-closed-2x.png | 62939 B | 1272x44 | `00426f0fcec00636c9b12fb324275266ddc602fa7365f1f3d181048dd644faff` |
-| assets/cap-slab.svg | 1190 B | 620x16 (SVG) | `b42be81e9bed80298f7fdb8f7069d0640b1e860c68c4967d727eaef9118a07a8` |
+| assets/aft-closed-1x.png | 14115 B | 636x22 | `881522a576a91487944e134e48cd977bca85ee8c39e65197c8d9e7e812303730` |
+| assets/aft-closed-2x.png | 43454 B | 1272x44 | `09075388e13d1dfc5484b8fa2f621aa743bf7a8ccac82f31ab6411b826d27dde` |
+| assets/cap-slab.svg | 25859 B | vector | `22eda788cfeeb4946bb3714118c875cfadf6aed3bb7323072899508b75b6daec` |
 
 Hull shape (owner build 13, D72: publishing study art needs no separate approval): the study cuts the lower-skin wall tile with the alpha of these canopy-h1 parts, so the hull is narrow under the canopy and wide below the instruments: an upper wall 8 px inside the 636 px hull, a 31 px taper and the full-width lower wall. They are copied unchanged from the private study `design-handoffs/opus-r7/src/assets/canopy-h1/` at design commit `ae0245ec6d043a96f6d8fd7423f5cb7dc7716166`. The study's taper is byte-identical in its 890, 640 and closed copies and its closed lower stage is the 890 one, so only those names are published.
 
@@ -75,3 +75,9 @@ Hull shape (owner build 13, D72: publishing study art needs no separate approval
 | assets/lower-stage-890-2x.png | 137200 B | 1272x676 | `97b1ffa26621f48d87919ce2b21188e5cc1b2c828956da573b35570e1a193519` |
 | assets/lower-stage-640-1x.png | 26333 B | 636x262 | `ebed6d7e02fe359dd3126eab10f9d4d334681d8aed293af9b32a9ec7f59a8433` |
 | assets/lower-stage-640-2x.png | 106048 B | 1272x524 | `5c56b01c3f5425018528346940d68353e86ff29ee4a415d1e5f0e2f39d8f2c38` |
+| assets/cap-closed-1x.png | 6504 B | 620x9 | `36e3044bd3e235f835c909012406a90471200177cc478e6fa8397abd41729645` |
+| assets/cap-closed-2x.png | 19286 B | 1240x18 | `a028659a78dea48f8acacead6d9cb4a0357508ac380f67b1d269ee8776c519d4` |
+| assets/title-edge-1x.png | 4681 B | 620x7 | `1d584422fe6ec6f3291fa71b19b02497af0fc26cc90b5d38222ad60d6160bb2f` |
+| assets/title-edge-2x.png | 14701 B | 1240x14 | `0fa6beecac71321bc9220ec333c07a0563183b1bfb981a9e41da913d7bbbea97` |
+
+Owner window pack (2026-11-26, owner-made, night only): lower-skin, taper, lower-stage, aft-890, the closed-shell plates, title-edge and cap-slab were replaced or added from the owner delivery; `skin.css` loads after the night styles.

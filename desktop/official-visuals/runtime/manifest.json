@@ -328,8 +328,8 @@
     },
     {
       "file": "canopy-c01/canopy-890-1x.png",
-      "sha256": "538adca3e2602f6ac7b15fcc3a41bc449b3c3a52aa979bcece58d9c7a638bef6",
-      "bytes": 69942,
+      "sha256": "8adfdbf978ac55645a59404dd04dcebf2a87597441e57c4268e2d3dc3360a1a5",
+      "bytes": 65648,
       "size": {
         "width": 636,
         "height": 244
@@ -341,8 +341,8 @@
     },
     {
       "file": "canopy-c01/pane-890-1x.png",
-      "sha256": "fcc3458f0ae800fd1d2c751a9d36dafaaf467d7febef3e40d52fa9dff2ed0a98",
-      "bytes": 58857,
+      "sha256": "d1058a4f16b50167759987576a835d8a4a94794b4ec647ae0f0fe3bd875b93ea",
+      "bytes": 3054,
       "size": {
         "width": 636,
         "height": 244
@@ -354,8 +354,8 @@
     },
     {
       "file": "canopy-c01/window-890-1x.png",
-      "sha256": "ff4e8e0746609ef94bfd767dc61f6b70e800b5a7dc45ccd69bfa3b2b8d9f2b12",
-      "bytes": 17754,
+      "sha256": "6564eaf1444377c14166ac89e0d4c1e946deacecc516f5cda224925ecccbb210",
+      "bytes": 6007,
       "size": {
         "width": 636,
         "height": 244
@@ -367,8 +367,8 @@
     },
     {
       "file": "canopy-c01/aperture-890-1x.png",
-      "sha256": "2ac50c0b575ad7aa09ceec8b1eac722691bb9d6247ad140c2fb62ce16e6fb45c",
-      "bytes": 16558,
+      "sha256": "671dd815302bc3ff77ee342461e07834f1b72dd33445affbec9f64775420112b",
+      "bytes": 6103,
       "size": {
         "width": 636,
         "height": 244
@@ -380,8 +380,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-1x.png",
-      "sha256": "65778adf19058eb80917bb80526b0219dcee948dbff79a7c3a7a27531552d979",
-      "bytes": 18035,
+      "sha256": "872b8dacf6a9e85020b51d842ad5429193adc6fbe5477529e20ceeddf7ff1986",
+      "bytes": 6132,
       "size": {
         "width": 636,
         "height": 244
@@ -393,8 +393,8 @@
     },
     {
       "file": "canopy-c01/canopy-890-2x.png",
-      "sha256": "0e4ad5db3183ed66d561e644fb89cbdbf39f315953a5043cd0a54b1f2b876779",
-      "bytes": 224191,
+      "sha256": "c784a5920ea55cbf4eb7993c41b3d7f8968788f7e251ffa847c92e941b24fa13",
+      "bytes": 593161,
       "size": {
         "width": 1272,
         "height": 488
@@ -406,8 +406,8 @@
     },
     {
       "file": "canopy-c01/pane-890-2x.png",
-      "sha256": "25b578c0b54870739b8e430282b6f4b16ffd59dcea9a27f5e13fdd2e9857f80b",
-      "bytes": 222720,
+      "sha256": "e6bd8f2988ea6dc8389a862948b381ecf6b37b7e0c141d783a8dee9b247ec931",
+      "bytes": 6797,
       "size": {
         "width": 1272,
         "height": 488
@@ -419,8 +419,8 @@
     },
     {
       "file": "canopy-c01/window-890-2x.png",
-      "sha256": "52bd727f8beea1cb054f1e635e8b8d05a23b0382344c0ce0362dbd9cc19c524c",
-      "bytes": 47091,
+      "sha256": "af70ead4d67298e260f766330cc7c3b5771626127e58cfc66b34532b639d75c0",
+      "bytes": 7364,
       "size": {
         "width": 1272,
         "height": 488
@@ -432,8 +432,8 @@
     },
     {
       "file": "canopy-c01/aperture-890-2x.png",
-      "sha256": "925ddcc6064e6edfc708f792be7a243673f9715cad27583b2cf271ebecc1d321",
-      "bytes": 43965,
+      "sha256": "89ff290e54efe4429b1b03d6ab45f3b5800869be4a69944d2518ea86e9e3462d",
+      "bytes": 6615,
       "size": {
         "width": 1272,
         "height": 488
@@ -445,8 +445,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-2x.png",
-      "sha256": "16560adb9f4f1e118e02ce88fc95c707d6f0e24706000b62ef3d8f1c04bb1324",
-      "bytes": 49706,
+      "sha256": "025a3a7355fc8390eee374252edf5659f3c5e4dd8629330125a5a92aaac31adb",
+      "bytes": 8800,
       "size": {
         "width": 1272,
         "height": 488
