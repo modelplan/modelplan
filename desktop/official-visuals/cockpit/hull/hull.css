@@ -57,6 +57,18 @@
 @media(min-resolution:2dppx){
 #cockpit .ck-portrow::before{-webkit-mask-image:url('/runtime/canopy-c01/solid-outline-890-2x.png');mask-image:url('/runtime/canopy-c01/solid-outline-890-2x.png')}
 }
+/* Build 5 (owner G3-214): the shutter used to clip the canopy row with a rectangle, so it moved as a flat-topped box with its
+   shoulders and side frame cut off. The official canopy instead moves behind its own solid outline: the row is masked by that
+   outline (same art box as the frame, 24 px wider each side and 12 px above the row, so no-clip) and the mask slides down on
+   close (up on open) under the same animation name as the plain-clip fallback in cockpit.css (this later rule
+   replaces its keyframes, so the page's own motion logic is untouched), which keeps the rounded canopy shape at every frame and draws nothing outside it. 0 is the open state. */
+@keyframes cockpit-shutter{from{-webkit-mask-position:-24px -12px;mask-position:-24px -12px}to{-webkit-mask-position:-24px 250px;mask-position:-24px 250px}}
+@media(prefers-reduced-motion:no-preference){
+html #cockpit.ck[data-shutter-motion] .ck-portrow{-webkit-mask:url('/runtime/canopy-c01/solid-outline-890-1x.png') -24px -12px/636px 244px no-repeat;mask:url('/runtime/canopy-c01/solid-outline-890-1x.png') -24px -12px/636px 244px no-repeat;-webkit-mask-clip:no-clip;mask-clip:no-clip}
+}
+@media(min-resolution:2dppx) and (prefers-reduced-motion:no-preference){
+html #cockpit.ck[data-shutter-motion] .ck-portrow{-webkit-mask-image:url('/runtime/canopy-c01/solid-outline-890-2x.png');mask-image:url('/runtime/canopy-c01/solid-outline-890-2x.png')}
+}
 /* Strip logo (owner build 13): the study's rocket mark beside the live wordmark (study hud-selection), not the
    early all-caps wordmark raster. */
 :root[data-theme] #cockpit .ck-head .brand-mark{background:url('/assets/logo.svg') center/28px 28px no-repeat}
