@@ -43,8 +43,8 @@
 /* Night lever face (owner 11-26, after the grey hull #1265): neutral grey like the frame (R=G=B), darker than the first D405 draw
    (measured top 24 / mid 52 / bottom 66 lum, blue cast), and ONE 1 px highlight on the front lip only (--tier-rim).
    Variant A (-30 %, owner D453): top ~22, bottom ~46 lum.
-:root[data-theme="night"] .dk-fad{--fd-silk:#939393}
-/* D453: the effort names are neutral light grey (no blue cast), >= 4.0:1 against the brightest face band. */
+/* D453: the unavailable effort names (XHigh/High/Med/Low when none applies) are neutral light grey, no blue cast, >= 4.0:1 against the brightest face band. */
+:root[data-theme="night"] .dk-fad .sc-l.na{color:var(--fd-silk-na,#8e8e8e)}
 :root[data-theme="night"] .dk-fad{--tier-face-1:#242424;--tier-face-2:#2b2b2b;--tier-face-3:#303030;--tier-rim:#5c5c5c;--tier-face-lip:#141414}
 :root[data-theme="night"] .dk-fad::after{background:linear-gradient(180deg,var(--lip-cast,#000000bf),#0000 15px),
   linear-gradient(180deg,var(--tier-face-1),var(--tier-face-2) 70%,var(--tier-face-3) calc(100% - 4px),var(--tier-rim) calc(100% - 4px),var(--tier-rim) calc(100% - 3px),var(--tier-face-lip) calc(100% - 3px))}
@@ -55,7 +55,7 @@
 .dk-fad .sc-travel{grid-row:5;position:relative;min-height:0}
 .dk-fad .sc-travel[data-gap="1"]{grid-column:2}.dk-fad .sc-travel[data-gap="2"]{grid-column:4}
 .dk-fad .sc-l{position:absolute;left:50%;top:calc(var(--fd-pad) + (100% - 2 * var(--fd-pad)) * var(--k,0));transform:translate(-50%,-50%);padding:3px 1px;pointer-events:auto;
-  font:500 10px/1 var(--f-silk);letter-spacing:0;color:var(--fd-silk,var(--silk));white-space:nowrap;cursor:pointer}
+  font:500 10px/1 var(--f-silk);letter-spacing:0;color:var(--silk);white-space:nowrap;cursor:pointer}
 .dk-fad .sc-l:hover,.dk-fad .sc-l.peek{color:var(--silk-hi)}
 .dk-fad .sc-l.na{color:var(--silk-dim);cursor:default}
 .dk-fad .fd-chs{grid-column:1;grid-row:1;display:grid;grid-template-columns:repeat(3,var(--fd-ch,64px));column-gap:var(--fd-gap,12px);min-height:0}
