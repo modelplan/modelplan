@@ -368,7 +368,10 @@ public enum EngineDeadlineFacts {
             let row=member.row
             let reading = try? DockInstrumentProjection.evaluate(makeInput(member, now: context.now), now: context.now)
             let number = reading?.remainingPercent.map { " · \(Int($0.rounded()))%" } ?? ""
-            return member.name(english:english) + number + " · " + text(message(row, now: context.now).0.text)
+            // G3-218: the menu line names the cause the way the card does (ReaderCauseTable: Antigravity "not running",
+            // not the engine's generic runtime sentence), from the same causeLine. Keychain rows keep the engine text.
+            let cause = row.id == "claude" && row.state == .needsKeychain ? nil : causeLine(member, now: context.now)?.reason
+            return member.name(english:english) + number + " · " + (cause ?? text(message(row, now: context.now).0.text))
         }
         // S9 (#1099 D322-2): a row on the Settings surface only (a free $0 Grok Build balance) has accounts but no
         // Dock member; its Settings line comes from the same account projection, from the Settings surface.

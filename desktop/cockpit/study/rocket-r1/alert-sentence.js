@@ -42,7 +42,8 @@ const NOT_UNREADABLE = new Set(['ok', 'estimated', 'not_read_yet', 'reader_busy'
 // app is not running. The tool id comes from the producer row; other tools keep the shared phrase.
 const TOOL_CAUSES = {antigravity: {runtime_missing: 'causeNotRunning'}};
 export function unreadableCause(code, tool = null) {
-  const own = tool && Object.hasOwn(TOOL_CAUSES, tool) && Object.hasOwn(TOOL_CAUSES[tool], code) ? TOOL_CAUSES[tool][code] : null;
+  const id = typeof tool === 'string' ? tool.toLowerCase() : '';  // Swift lowercases the tool id the same way
+  const own = id && Object.hasOwn(TOOL_CAUSES, id) && Object.hasOwn(TOOL_CAUSES[id], code) ? TOOL_CAUSES[id][code] : null;
   return own ? both(own) : Object.hasOwn(CAUSES, code) ? both(CAUSES[code]) : null;
 }
 /** A failure that means the subscription cannot be read (grey), not one still being read or with nothing to read. */
