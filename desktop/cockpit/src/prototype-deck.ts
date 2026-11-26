@@ -35,6 +35,12 @@ import '../study/rocket-r1/strings/mfd.js';
 const inertStyles=(html:string)=>html.replace(/ style="/g,' data-study-style="');
 type Locale='en'|'zh-CN';
 const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
+/** D387 / D413: the one open screen as the Overview | screen switch and the bottom keys show it (plugin-host PluginScreenInfo). */
+type DeckScreen={readonly id:string;readonly name:string;readonly short:string|null;readonly icon:string;
+ readonly toggle:{readonly value:string;readonly options:readonly {readonly value:string;readonly text:string}[];pick(value:string):void}|null};
+// D413: the switch's back chevron and the small Overview mark the English switch shows instead of the word (three bars, as the overview's chart).
+const SEG_CHEVRON='<svg class="ch" viewBox="0 0 4 7" width="4" height="7" aria-hidden="true"><path d="M3.4 .6 .8 3.5l2.6 2.9" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const SEG_OVERVIEW='<svg class="ic" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 8.5V5.5M5 8.5V2M8 8.5V4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,key:'host.pageOverview'}),Object.freeze({module:plans,key:'host.pageSubscription'}),Object.freeze({module:tune,key:'host.pageEffort'}),Object.freeze({module:where,key:'host.pageBreakdown'})]);
 export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
 export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange,isRefreshing:()=>boolean=()=>false,onOpenCompare:()=>boolean=()=>false){
@@ -44,6 +50,10 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  let locale:Locale='en',selected=0,scope='all',data:WireCockpitData|null=null,renderedNow=0,completedEmpty=false;
  // Prototype mfd.js:39-58,75 (openMfdView/closeMfdView): the full alert list is a view over the current page, opened by the
  // ALERT lamp or the overview's "+N" line, closed by "‹ Back to <page>", Esc, a page key or a second lamp press.
+ // D387: a plugin screen (Calendar, Resources) is one view of this panel, drawn by the plugin host over the page. While it
+ // is open the page and its bottom keys are not shown, the Overview tab is the "Overview | <screen>" switch, and any other
+ // view of the panel ends it first (endScreen), so a view never shows another view's content.
+ let screenView:DeckScreen|null=null,closeScreenHook:(()=>void)|null=null;const endScreen=()=>{if(screenView)closeScreenHook?.();screenView=null;};
  let pageFill:{w:number;h:number}|null=null,alertsView:{from:'caution'|'mfd';mark?:string|null;flash?:boolean}|null=null,returnPage:number|null=null,tuneModel:string|null=null;
  // The study's comparison view (mfd.js openComparison, views.js round D1): a fader trial shows "Compare · <model>" over
  // the current page, whose key goes dark; ‹ back, Esc, a page key or the same source again returns. One trial at a time.
@@ -150,7 +160,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   for(const id of Object.keys(previews))if(id!==c.id)delete previews[id];
   compare={modelId:c.id,current:c.current??null,...(trial?{trial}:{}),...(fast!==undefined?{fast}:{}),currentFast:!!c.currentFast};
   if(trial&&trial!==c.base)previews[c.id]=trial;else delete previews[c.id];
-  selectedModel=c.id;alertsView=null;paint();
+  endScreen();selectedModel=c.id;alertsView=null;paint();
  }
  // CKP-FAD-54: closing the effort page deselects the model (the frame goes with it); the page underneath comes back.
  function closeCompare(){if(!compare)return false;delete previews[compare.modelId];compare=null;selectedModel=null;paint();return true;}
@@ -229,6 +239,37 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // fallback of a deck mounted without an app (tests).
  const rangeNow=():CockpitRange=>appRange?.()??uiRangeLocal;const pages=cockpitPageRegistry,modules=pages.map(p=>p.module);let uiWhere='proj',uiRangeLocal:CockpitRange=INITIAL_RANGE,painted:CockpitRange|null=null,uiChart='bars',uiStack=true,uiModels:'list'|'chart'='list',listPick:string|null=null,uiSubTab='now',uiCycle:string|null=null,gridFill:{w:number;h:number}|null=null;
  const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=i;paint();};bar.append(b);return {b,caption};});
+ // D387 / D413: while a plugin screen is open (Calendar, Resources; D400: a HUD click opens the Models page, which is
+ // not a screen) the Overview slot itself becomes the switch "‹ Overview │ icon + short name": the same 86 px grid cell, never wider, in the pressed key body. The left half returns
+ // (as Escape does); the right half is the current screen, lit, and does nothing. One Tab stop: the arrows move between
+ // the halves, Enter and Space press. No animation (D397).
+ const seg=node('div','pk-seg'),segBack=node('button','h back'),segCur=node('button','h cur'),sepEl=node('i','sep');
+ seg.hidden=true;seg.setAttribute('role','tablist');seg.dataset.mat='part';sepEl.setAttribute('aria-hidden','true');
+ segBack.type='button';segBack.dataset.mfd='seg:overview';segBack.setAttribute('role','tab');
+ segCur.type='button';segCur.dataset.mfd='seg:screen';segCur.setAttribute('role','tab');
+ seg.append(segBack,sepEl,segCur);bar.append(seg);
+ const toOverview=()=>{if(screenView!==null){closeScreenHook?.();screenView=null;}alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=0;paint();buttons[0]?.b.focus({preventScroll:true});};
+ segBack.onclick=e=>{if(e.isTrusted)toOverview();};
+ // Roving tab stop: the half that has focus is the switch's one Tab stop.
+ for(const [a,b] of [[segBack,segCur],[segCur,segBack]] as const)a.onfocus=()=>{a.tabIndex=0;b.tabIndex=-1;};
+ // The screen half is the current view: pressing it changes nothing.
+ segCur.onclick=e=>{if(e.isTrusted)e.preventDefault();};
+ seg.onkeydown=e=>{if(!e.isTrusted||(e.key!=='ArrowLeft'&&e.key!=='ArrowRight'))return;e.preventDefault();const to=e.key==='ArrowLeft'?segBack:segCur,other=to===segBack?segCur:segBack;to.tabIndex=0;other.tabIndex=-1;to.focus();};
+ const svg=(markup:string)=>{const tpl=document.createElement('template');tpl.innerHTML=markup;return tpl.content.firstElementChild!;};
+ function paintSwitch(){
+  const open=screenView,first=buttons[0]!.b,was=first.hidden?seg.contains(document.activeElement):first===document.activeElement;
+  first.hidden=open!==null;seg.hidden=open===null;if(open===null)return;
+  const overview=t(modules[0].title),en=locale==='en';
+  // English has no room for "Overview": the left half shows the overview mark; the word stays in the tooltip and name.
+  segBack.replaceChildren(svg(SEG_CHEVRON),en?svg(SEG_OVERVIEW):node('span','',overview));
+  segBack.title=`${overview} (Esc)`;segBack.setAttribute('aria-label',`${ht(locale,pages[0].key)} (Esc)`);segBack.setAttribute('aria-selected','false');
+  const icon=svg(open.icon);icon.setAttribute('class','ic');icon.setAttribute('width','10');icon.setAttribute('height','10');icon.setAttribute('aria-hidden','true');
+  // No short name (or one too long): the icon alone, never an ellipsis.
+  segCur.replaceChildren(icon,...(open.short?[node('span','',open.short)]:[]),node('i','led'));
+  segCur.dataset.short=open.short?'true':'false';segCur.title=open.name;segCur.setAttribute('aria-label',open.name);segCur.setAttribute('aria-selected','true');
+  if(segBack.tabIndex!==0&&segCur.tabIndex!==0)segBack.tabIndex=0;if(segBack.tabIndex===0)segCur.tabIndex=-1;
+  seg.dataset.screen=open.id;seg.setAttribute('aria-label',t('mfd.keysAria'));if(was&&!seg.contains(document.activeElement))(segBack.tabIndex===0?segBack:segCur).focus({preventScroll:true});
+ }
  mfd.replaceChildren(bar,screen,footer);
  // The study's floating LCD tooltip (mfd.css .mfd-tip) for chart cells and buckets: hover shows a [data-tip]'s lines,
  // the first as its heading. Text only; it never takes pointer events.
@@ -302,14 +343,28 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   if(now!==undefined)renderedNow=now;
   painted=rangeNow();
   hideTip();if(!keepFaders){paintScale();paintFaders();}bar.setAttribute('aria-label',t('mfd.keysAria'));
-  buttons.forEach(({b,caption},i)=>{caption.textContent=t(modules[i].title);b.setAttribute('aria-label',ht(locale,pages[i].key));b.classList.toggle('on',i===selected);b.setAttribute('aria-pressed',String(i===selected));});
+  buttons.forEach(({b,caption},i)=>{caption.textContent=t(modules[i].title);b.setAttribute('aria-label',ht(locale,pages[i].key));const lit=screenView===null&&i===selected;b.classList.toggle('on',lit);b.setAttribute('aria-pressed',String(lit));});
+  paintSwitch();
   // The page's own measured size (the screen is absolute, so it does not depend on the content): the overview's alert budget reads it (V1-FINAL §13).
  if(page.clientHeight>0)pageFill={w:page.clientWidth,h:page.clientHeight};
   const d=publicData(),selectedId=scope==='all'?null:d.ids.get(scope)??null,subId=selectedId??subjectOf(d,{scope:null})?.id??null,ui={page:modules[selected].id,view:null,days:rangeNow()==='today'?24:rangeNow()==='7d'?7:30,range:rangeNow(),stack:uiStack,chart:uiChart,where:uiWhere,models:uiModels,time:rangeNow()==='today'?'today':'7d',subTab:uiSubTab,subDays:rangeNow()==='30d'?30:7,cycle:uiCycle,older:false,scope:selectedId,selModel:listPick??tuneModel,trials:{},now:d.now,lang:locale,fill:{...(selected===0&&uiChart==='grid'&&gridFill?{ov:gridFill}:{}),...(pageFill?{page:pageFill}:{})},redAt:redBelow()};
   root.querySelector('[data-caution]')?.classList.toggle('mfd-src',alertsView?.from==='caution');
   bar.classList.remove('dark');footer.className='mfd-ok';footer.onclick=null;
+  // D387: a plugin screen is the whole view; the page underneath and its option keys are not shown.
+  page.hidden=screenView!==null;
   // G3-171: before the first reply there is nothing to show yet; say so (busy) on every view the page carries, so a restored alerts list does not keep a stale busy flag.
   if(data||completedEmpty)page.removeAttribute('aria-busy');else page.setAttribute('aria-busy','true');
+  if(screenView!==null){
+   // D413: the screen's own choice (Resources: 10 min | 1 h) on the centre key; the side keys are blank flat keycaps, so
+   // the row does not jump when the screen closes.
+   const dead=()=>{const e=node('span','ok soft off dead');e.dataset.mat='part';e.setAttribute('aria-hidden','true');return e;},toggle=screenView.toggle;
+   let centre:HTMLElement=dead();
+   if(toggle){const b=node('button','ok soft'),label=node('span','ok-l');b.type='button';b.dataset.mfd='opt:screen';b.dataset.opt='screen';b.dataset.mat='part';
+    toggle.options.forEach((x,j)=>{if(j){const sep=node('i','ok-sep');sep.setAttribute('aria-hidden','true');label.append(sep);}const c=node('b',x.value===toggle.value?'on':'',x.text);c.dataset.choice=x.value;label.append(c);});
+    b.setAttribute('aria-label',toggle.options.map(x=>x.text).join(' | ')+': '+(toggle.options.find(x=>x.value===toggle.value)?.text??''));b.append(label);
+    b.onclick=e=>{if(!e.isTrusted)return;const v=(e.target as HTMLElement).closest<HTMLElement>('[data-choice]')?.dataset.choice??toggle.options.find(x=>x.value!==toggle.value)?.value;if(v&&v!==toggle.value)toggle.pick(v);};
+    centre=b;}
+   page.replaceChildren();footer.replaceChildren(dead(),centre,dead());return;}
   if(compare&&!alertsView&&paintCompare(d,ui))return;
   if(alertsView){
    // CKP-MFD-55/56 (WP-11): the list view (mfd-pages/alerts.js). A row selects its subscription and returns to the
@@ -439,7 +494,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const level=(key.dataset.mfd??'').slice(4),c={id:compare.modelId,current:compare.current,base:compare.current??f.rec,currentFast:compare.currentFast};tryEffort(c,level);};
   return true;
  }
- function closeTune(){if(returnPage===null)return false;selected=returnPage;returnPage=null;tuneModel=null;paint();return true;}
+ function closeTune(){if(returnPage===null)return false;selected=0;returnPage=null;tuneModel=null;paint();return true;}
  function closeAlerts(){if(!alertsView)return false;const focus=mfd.contains(document.activeElement);alertsView=null;paint();if(focus)buttons[selected]?.b.focus({preventScroll:true});return true;}
  const escape=(e:KeyboardEvent)=>{if(e.isTrusted&&e.key==='Escape'&&!e.altKey&&(alertsView?closeAlerts():compare?cancelTrial()||closeCompare():closeTune()))e.preventDefault();};window.addEventListener('keydown',escape);
  // CKP-FAD-15: [ and ] page the fader banks, as the ◀ ▶ keys do.
@@ -464,7 +519,9 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  paint();return {
   /** Recovery contract: the deck's own render state, restored with the view after a refused render (glm-990-1). */
   checkpoint(){const held=new Map(heldCurrent),saved={details,publicationKey,scope,data,renderedNow,completedEmpty,compare,bankIndex,selectedModel,selected,alertsView,returnPage,tuneModel,previews:{...previews},press};return ()=>{({details,publicationKey,scope,data,renderedNow,completedEmpty,compare,bankIndex,selectedModel,selected,alertsView,returnPage,tuneModel,press}=saved);previews={...saved.previews};heldCurrent.clear();for(const [k,v] of held)heldCurrent.set(k,v);};},
-  restorePins(ids:readonly string[]){pins=[...new Set(ids)].slice(0,64);unpinned.clear();if(data)this.render(data,renderedNow);},showAllModels(value:boolean){if(showAllModels===value)return;showAllModels=value;if(data)this.render(data,renderedNow);},/** WP-22 (macrevb-1062-3): the enlarged field's selection, by public model id; a model without a fader here, or null, selects none. */selectModel(id:string|null){selectedModel=id===null?null:faderInput().faders.find(f=>f.sourceId===id)?.id??null;showSelectedBank();paint();},showTune(id:string){const tune=modules.findIndex(m=>m.id==='tune');if(tune<0)return;if(compare){delete previews[compare.modelId];compare=null;}alertsView=null;if(returnPage===null)returnPage=selected;selected=tune;tuneModel=id;listPick=null;uiModels='chart';paint();},knowsSession(ref:string){return sessionModel(ref)!==null;},highlightSession(ref:string|null){const id=ref?sessionModel(ref):null;for(const ch of channels.querySelectorAll<HTMLElement>('.fd-ch'))ch.classList.toggle('xhl',!!id&&ch.dataset.model===id);},showWhere(){const at=modules.findIndex(m=>m.id==='where');if(at<0)return;if(compare){delete previews[compare.modelId];compare=null;}selected=at;alertsView=null;paint();},sessionSelected(ref:string){const id=sessionModel(ref);return id!==null&&selectedModel===id;},clearSession(){selectedModel=null;if(compare){delete previews[compare.modelId];compare=null;}paint();},selectSession(ref:string){const id=sessionModel(ref);if(compare){delete previews[compare.modelId];compare=null;}if(id)selectedModel=id;const at=modules.findIndex(m=>m.id==='where');if(at>=0){selected=at;uiWhere='time';}alertsView=null;paint();},alertsOpen:()=>alertsView?.from==='caution',showAlerts(mark?:string|null){if(alertsView?.from==='caution'){closeAlerts();return false;}alertsView={from:'caution',mark:mark??null,flash:mark!=null};paint();return true;},refresh(now?:number){if(now!==undefined)renderedNow=now;paint(!drag&&faderSignature(faderInput())!==faderSig?false:true,now);},locale(value:Locale,now?:number){locale=value;paint(false,now);},render(value:WireCockpitData,now:number){press=null;completedEmpty=false;
+  /** D387: the plugin host's one open screen (null = none); the deck follows it and calls `close` to end it. */
+  bindScreen(close:()=>void){closeScreenHook=close;},screen(next:DeckScreen|null){if(next===null){if(screenView===null)return;screenView=null;selected=0;paint(true);return;}if(screenView?.id===next.id){const focus=footer.contains(document.activeElement);screenView=next;paint(true);if(focus)footer.querySelector<HTMLElement>('[data-opt="screen"]')?.focus({preventScroll:true});return;}if(compare){delete previews[compare.modelId];compare=null;selectedModel=null;}alertsView=null;returnPage=null;tuneModel=null;screenView=next;paint(true);},
+  restorePins(ids:readonly string[]){pins=[...new Set(ids)].slice(0,64);unpinned.clear();if(data)this.render(data,renderedNow);},showAllModels(value:boolean){if(showAllModels===value)return;showAllModels=value;if(data)this.render(data,renderedNow);},/** WP-22 (macrevb-1062-3): the enlarged field's selection, by public model id; a model without a fader here, or null, selects none. */selectModel(id:string|null){selectedModel=id===null?null:faderInput().faders.find(f=>f.sourceId===id)?.id??null;showSelectedBank();paint();},showTune(id:string){/* D400: the same page as the 模型 key, in the user's last list/chart view, with this model selected. */const tune=modules.findIndex(m=>m.id==='tune');if(tune<0)return;endScreen();if(compare){delete previews[compare.modelId];compare=null;}alertsView=null;returnPage=null;selected=tune;tuneModel=id;listPick=null;paint();},knowsSession(ref:string){return sessionModel(ref)!==null;},highlightSession(ref:string|null){const id=ref?sessionModel(ref):null;for(const ch of channels.querySelectorAll<HTMLElement>('.fd-ch'))ch.classList.toggle('xhl',!!id&&ch.dataset.model===id);},showWhere(){const at=modules.findIndex(m=>m.id==='where');if(at<0)return;if(compare){delete previews[compare.modelId];compare=null;}selected=at;alertsView=null;paint();},sessionSelected(ref:string){const id=sessionModel(ref);return id!==null&&selectedModel===id;},clearSession(){selectedModel=null;if(compare){delete previews[compare.modelId];compare=null;}paint();},selectSession(ref:string){const id=sessionModel(ref);if(compare){delete previews[compare.modelId];compare=null;}if(id)selectedModel=id;const at=modules.findIndex(m=>m.id==='where');if(at>=0){selected=at;uiWhere='time';}alertsView=null;paint();},alertsOpen:()=>alertsView?.from==='caution',showAlerts(mark?:string|null){if(alertsView?.from==='caution'){closeAlerts();return false;}alertsView={from:'caution',mark:mark??null,flash:mark!=null};paint();return true;},refresh(now?:number){if(now!==undefined)renderedNow=now;paint(!drag&&faderSignature(faderInput())!==faderSig?false:true,now);},locale(value:Locale,now?:number){locale=value;paint(false,now);},render(value:WireCockpitData,now:number){press=null;completedEmpty=false;
  // D391 (owner 11-22): a subscription unticked in Settings has no card, so its sessions add no models to any view
  // (faders, cards, All) — the D123/D135 live-use inclusion is gone. The unfiltered sessions still feed the record strip.
  const visibleMembers=cockpitMembers(value),allMembers=cockpitMembers(value,true),admitted=(x:{readonly source:string;readonly subscriptionRef:string|null})=>sessionAdmittedBy(visibleMembers,x,allMembers),binding=sessionMembers(value),bound=(value.details?.sessions??[]).filter(admitted).map(x=>({...x,confirmedSubscriptionRef:x.subscriptionRef&&value.subscriptions.some(s=>s.subscriptionRef===x.subscriptionRef)&&binding.get(x.sessionRef)===x.subscriptionRef?x.subscriptionRef:null,subscriptionRef:binding.get(x.sessionRef)??null})),recorded=(value.details?.recentSessions??[]).filter(admitted);renderedNow=now;data=value;const publication=value.details?.publication;const nextKey=publication?JSON.stringify([publication.publicationId,publication.models.map(m=>m.id)]):null,before=publishedOrder();if(!fixturePublication&&nextKey!==publicationKey){previews={};selectedModel=null;bankIndex=0;compare=null;}publicationKey=nextKey;details={...details,publication:fixturePublication?details.publication:publication==null?null:(subscriptions=>!subscriptions.length&&!showAllModels&&hasHiddenMembers(value)?{accounts:[],faders:[]}:publicationFaders(publication,bound,moreFaderModels(value,subscriptions,bound,recorded),subscriptions,{now,ownPlansOnly:!showAllModels,recorded,usage:historyUsage(value.history)}))((members=>{const palette=memberColours(members);return members.map(m=>({key:m.key,developer:toolDevelopers[m.row.id]??null,colour:palette.get(m.key)!}));})(visibleMembers)),liveSessions:value.details?bound:null,resetEvents:value.details?.resetEvents??null};carryOver(before);root.dataset.detailsAvailable=String(value.details!=null);paint();},scope(value:string){setScope(value);paint();},range(value:CockpitRange){uiRangeLocal=value;if(painted===rangeNow()&&painted===value)return;paint();},cancelPress(){press=null;suppressClick=false;},clear(complete=false){completedEmpty=complete;hideTip();listPick=null;publicationKey=null;press=null;drag=null;unpinned.clear();suppressClick=false;data=null;root.dataset.detailsAvailable='false';details=unavailablePrototypeDetailsFixture();bankIndex=0;selectedModel=null;previews={};scope='all';selected=0;alertsView=null;returnPage=null;tuneModel=null;compare=null;paint();},dispose(){publicationKey=null;press=null;drag=null;pins=[];unpinned.clear();suppressClick=false;window.removeEventListener('keydown',escape);window.removeEventListener('keydown',bankKeys);alertsView=null;compare=null;returnPage=null;tuneModel=null;data=null;root.dataset.detailsAvailable='false';details=unavailablePrototypeDetailsFixture();bankIndex=0;selectedModel=null;previews={};scope='all';selected=0;paint();for(const {b} of buttons)b.onclick=null;page.onclick=null;screen.onpointerover=null;screen.onpointerleave=null;hideTip();}};

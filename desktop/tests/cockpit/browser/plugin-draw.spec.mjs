@@ -92,16 +92,16 @@ test('D323 a custom draw cannot paint outside its area',async({page})=>{
  expect(hits.inside).toBe(true);
  expect({sub:hits.sub,key:hits.key,foot:hits.foot,corner:hits.corner}).toEqual({sub:false,key:false,foot:false,corner:false});
  expect(hits.overflow).toBe('hidden');expect(hits.contain).toMatch(/strict|paint/);
- // The big screen's body is clipped the same way: the title bar and the page keys stay uncovered.
+ // The big screen's body is clipped the same way: the page keys stay uncovered (D413: there is no title bar).
  await setMode(page,'draw','escape');await key(page).click();
  await expect(page.locator('.pl-screen .pl-screen-d .probe-escape')).toHaveCount(2);
  const screenHits=await page.evaluate(()=>{
   const at=e=>{const r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return !!hit?.closest('.pl-screen-d');};
-  return {title:at(document.querySelector('.pl-screen .pl-screen-t')),close:at(document.querySelector('.pl-screen .pl-screen-x')),pageKey:at(document.querySelector('.dk-mfd .mfd-pk .pk')),body:at(document.querySelector('.pl-screen .pl-screen-d'))};
+  return {title:document.querySelector('.pl-screen .pl-screen-t')===null,pageKey:at(document.querySelector('.dk-mfd .mfd-pk .pk[data-mfd="page:sub"]')),body:at(document.querySelector('.pl-screen .pl-screen-d'))};
  });
- expect(screenHits).toEqual({title:false,close:false,pageKey:false,body:true});
- // The screen takes its own pointer events: Close closes it with a click.
- await page.locator('.pl-screen .pl-screen-x').click();await expect(page.locator('.pl-screen')).toHaveCount(0);
+ expect(screenHits).toEqual({title:true,pageKey:false,body:true});// D413: no title row at all
+ // D387: there is no Close button; the key toggles the screen shut (this harness mounts a bare host without the deck's switch).
+ await key(page).click();await expect(page.locator('.pl-screen')).toHaveCount(0);
 });
 
 test('D323 a draw that throws falls back to the plugin\'s cells (and lines on the screen); the next good draw takes over again',async({page})=>{
