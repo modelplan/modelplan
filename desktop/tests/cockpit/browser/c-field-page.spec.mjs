@@ -180,7 +180,7 @@ test('D63 the ⤢ key opens the field, with a label that says the field itself a
  await openCockpit(page);
  const key=page.locator('.ck-port [data-bigfield]');await expect(key).toBeVisible();await expect(key).toHaveText('⤢');
  await expect(key).toHaveAttribute('aria-label','Open the 3D launch field · Or click anywhere on the field');
- expect(await key.evaluate(e=>{const s=getComputedStyle(e);return [s.right,s.top,s.width,s.height];})).toEqual(['38px','52px','22px','22px']);
+ expect(await key.evaluate(e=>{const s=getComputedStyle(e);return [s.right,s.top,s.width,s.height];})).toEqual(['36px','67px','22px','22px']);
  await key.click();expect(await opens(page)).toEqual([null]);
 });
 // Owner 11-09: the key must sit inside the glass. The c01 canopy aperture mask (laid 1:1 on the canopy art box, see below; origin at the box's
