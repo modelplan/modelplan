@@ -137,7 +137,10 @@ export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarDat
   spans.push({sub,kind:e.status==='confirmed'?'confirmed':'announced',from:Math.min(published,now),to:at!==null&&at>=Math.min(published,now)?at:null,count:null});
  }
  const clip=<T,>(xs:T[],n:number)=>xs.slice(0,n);
- const declared=members.some(m=>m.row.id.startsWith('declared:'));
- const peakRules:PeakRules=!peakFeed(data)?'unknown':declared?'yes':'no';
+ // Peak rules exist for a declared plan, and for a subscription the tool reads itself whose provider publishes plan-wide
+ // windows (ZCode, row `zai`, D328): its window may simply fall outside the 24 h horizon. The producer sends no separate
+ // fact for this, so the page names the one provider (D406).
+ const hasRules=members.some(m=>m.row.id.startsWith('declared:')||m.row.id==='zai');
+ const peakRules:PeakRules=!peakFeed(data)?'unknown':hasRules?'yes':'no';
  return {version:1,peakRules,subs,peaks:clip(peaks.sort((a,b)=>a.from-b.from),LIMITS.peaks),resets:clip(resets.sort((a,b)=>a.at-b.at),LIMITS.resets),spans:clip(spans,LIMITS.spans)};
 }
