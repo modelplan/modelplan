@@ -541,11 +541,5 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-wk .wk-adr.chip span{line-height:11px;margin:0 1px;padding:0 3px;text-align:center;border-radius:5px;border:1px solid var(--c);background:color-mix(in srgb,var(--c) 22%,transparent);color:var(--c)}
 .cal-wk .wk-adr.chip.credit span{background:color-mix(in srgb,var(--c) 90%,transparent);color:#1a0d07}
 .cal-wk .wk-adr.chip.pending span{border-style:dashed;background:transparent;color:var(--c)}
-/* Owner window pack: the title-edge decoration is out of flow (its art loads only in the official night skin). */
-.ck-head>.mp-title-edge{position:absolute;inset:0 0 auto;height:0;pointer-events:none}
-/* The owner's title edge is the header plate's 620 px top lip: it sits on the sill just above the head row (not over its controls), centred on the 636 px hull, behind the head's contents. */
-:root[data-theme="night"] #cockpit .ck-head>.mp-title-edge{inset:-9px -16px auto;height:7px;z-index:-1}
-/* Closed cap: the owner's cap art sits 1 px higher than the bundled crown rule draws it (measured against the owner's closed preview). The box stays where it was, so it still overlaps the upper walls by 1 px (G3-108/G3-118); the art's first row is transparent, so nothing is cut. */
-:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{background-position:center -1px}
-/* Closed: the header plate's top rim (the first 9 px of the strip-panel art, above the head row) is not drawn under the owner's cap; the owner's closed preview has none. */
-:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-head::before{top:0;height:35px;background-position:center -11px}
+/* Owner window pack: the title-edge decoration exists only for the official night skin (hull.css shows it); it is never a flex item here. */
+.ck-head>.mp-title-edge{display:none}

@@ -63,3 +63,11 @@
 :root[data-theme] #cockpit .ck-head .wordmark{background:none;font:600 14px/20px 'DM Sans',sans-serif;letter-spacing:-.025em;color:var(--silk-hi);width:112px;height:20px}
 :root[data-theme] #cockpit .ck-head .wordmark b{font:inherit;color:#df604c}
 :root[data-theme] #cockpit .ck-head .wordmark::before,:root[data-theme] #cockpit .ck-head .wordmark::after{content:none;background:none;transform:none}
+/* Owner window pack integration (D451/D452), official build only: the community build hides the empty layer (cockpit.css). */
+/* The owner's title edge is the header plate's 620 px top lip: it sits on the sill just above the head row (not over its controls), centred on the 636 px hull, behind the head's contents. */
+:root[data-theme="night"] #cockpit .ck-head>.mp-title-edge{display:block;position:absolute;inset:-9px -16px auto;height:7px;z-index:-1;pointer-events:none}
+:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-head>.mp-title-edge{display:none}
+/* Closed cap: the owner's cap art sits 1 px higher than the bundled crown rule draws it (measured against the owner's closed preview). The box stays where it was, so it still overlaps the upper walls by 1 px (G3-108/G3-118); the art's first row is transparent, so nothing is cut. */
+:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{background-position:center -1px}
+/* Closed: the header plate's top rim (the first 9 px of the strip-panel art, above the head row) is not drawn under the owner's cap; the owner's closed preview has none. */
+:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-head::before{top:0;height:35px;background-position:center -11px}
