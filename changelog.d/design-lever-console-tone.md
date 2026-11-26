@@ -1,1 +1,1 @@
-Night lever console face: neutral grey and darker, with one highlight on the front lip (variant A; variant B kept as a commented set).
+Night lever console: neutral darker grey face with one front-lip highlight, its front edge flush with the big screen panel, and neutral light-grey unavailable effort names.
