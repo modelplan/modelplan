@@ -96,9 +96,41 @@ func EnvNode(r io.Reader) bool {
 var resolveNode = findNode
 
 func findNode(home, script string) string {
-	return locateNode(home, script, exec.LookPath, executable)
+	return locateNode(home, script, os.Getenv("PATH"), executable)
 }
-func locateNode(home, script string, lookPath func(string) (string, error), exists func(string) bool) string {
+
+// insideAppBundle reports a runtime shipped inside another application's bundle
+// (for example the ChatGPT app's private node). Such a runtime belongs to that
+// app: it is skipped on PATH and in the fallback folders, never used for a tool.
+func insideAppBundle(p string) bool { return strings.Contains(p, ".app/Contents/") }
+
+// onPath walks pathEnv like exec.LookPath but skips other apps' bundled runtimes,
+// so a user-installed node later on PATH is still found.
+func onPath(pathEnv, name string, exists func(string) bool) string {
+	for _, d := range filepath.SplitList(pathEnv) {
+		if d == "" || !filepath.IsAbs(d) || insideAppBundle(d+"/") {
+			continue
+		}
+		if p := filepath.Join(d, name); exists(p) {
+			return p
+		}
+	}
+	return ""
+}
+
+// nodeFallbackDirs are the usual install folders. A Mac app's engine does not
+// inherit the terminal PATH (launchd gives /usr/bin:/bin:/usr/sbin:/sbin), so
+// these are what finds Homebrew, version-manager and user-local installs there.
+func nodeFallbackDirs(home string) []string {
+	dirs := []string{"/opt/homebrew/bin", "/usr/local/bin"}
+	dirs = append(dirs, nvmDirs(home)...)
+	return append(dirs, filepath.Join(home, ".volta", "bin"), filepath.Join(home, ".local", "bin"), filepath.Join(home, ".bun", "bin"),
+		filepath.Join(home, ".local", "share", "fnm", "aliases", "default", "bin"),
+		filepath.Join(home, "Library", "Application Support", "fnm", "aliases", "default", "bin"),
+		filepath.Join(home, ".fnm", "aliases", "default", "bin"),
+		filepath.Join(home, ".asdf", "shims"), filepath.Join(home, "Library", "pnpm"))
+}
+func locateNode(home, script, pathEnv string, exists func(string) bool) string {
 	dirs := []string{filepath.Dir(script)}
 	// npm bin symlinks can point into a package; inspect both adjacent locations.
 	if target, e := filepath.EvalSymlinks(script); e == nil {
@@ -110,19 +142,17 @@ func locateNode(home, script string, lookPath func(string) (string, error), exis
 			return p
 		}
 	}
-	if p, e := lookPath("node"); e == nil {
+	if p := onPath(pathEnv, "node", exists); p != "" {
 		return p
 	}
-	dirs = []string{"/opt/homebrew/bin", "/usr/local/bin"}
-	dirs = append(dirs, nvmDirs(home)...)
-	dirs = append(dirs, filepath.Join(home, ".volta", "bin"), filepath.Join(home, ".local", "bin"), filepath.Join(home, ".bun", "bin"))
+	dirs = nodeFallbackDirs(home)
 	for _, d := range dirs {
 		p := filepath.Join(d, "node")
 		if exists(p) {
 			return p
 		}
 	}
-	if p, e := lookPath("bun"); e == nil {
+	if p := onPath(pathEnv, "bun", exists); p != "" {
 		return p
 	}
 	for _, d := range append([]string{filepath.Join(home, ".bun", "bin")}, dirs...) {

@@ -63,7 +63,7 @@ func TestNodeLocationsAndNumericNVMOrdering(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	noPath := func(string) (string, error) { return "", os.ErrNotExist }
+	noPath := ""
 	for i, wantDir := range dirs {
 		have := map[string]bool{}
 		for _, d := range dirs[i:] {
@@ -80,6 +80,37 @@ func TestNodeLocationsAndNumericNVMOrdering(t *testing.T) {
 	}
 	if got := locateNode(home, script, noPath, func(string) bool { return false }); got != "" {
 		t.Fatalf("missing=%s", got)
+	}
+}
+
+// G3 owner report 2026-11-26: the ChatGPT app's private node was first on the
+// login PATH. It is skipped, and the user's own ~/.local/bin/node later on PATH wins.
+func TestNodeOnPathSkipsOtherAppsBundledRuntime(t *testing.T) {
+	home := t.TempDir()
+	bundled := "/Applications/ChatGPT.app/Contents/Resources"
+	local := filepath.Join(home, ".local", "bin")
+	script := filepath.Join(home, "tools", "codex")
+	have := map[string]bool{filepath.Join(bundled, "node"): true, filepath.Join(local, "node"): true}
+	exists := func(p string) bool { return have[p] }
+	path := strings.Join([]string{bundled, "/usr/bin", local}, string(os.PathListSeparator))
+	if got, want := locateNode(home, script, path, exists), filepath.Join(local, "node"); got != want {
+		t.Fatalf("PATH walk: got %s want %s", got, want)
+	}
+	// Only the bundled runtime on PATH: no node at all, rather than borrowing it.
+	delete(have, filepath.Join(local, "node"))
+	if got := locateNode(home, script, bundled, exists); got != "" {
+		t.Fatalf("used another app's bundled node: %s", got)
+	}
+	// Launchd PATH (Mac app engine): the user-local install is still found by the fallback folders.
+	have[filepath.Join(local, "node")] = true
+	if got, want := locateNode(home, script, "/usr/bin:/bin:/usr/sbin:/sbin", exists), filepath.Join(local, "node"); got != want {
+		t.Fatalf("fallback: got %s want %s", got, want)
+	}
+	// Version managers and pnpm are fallback folders too.
+	for _, d := range []string{filepath.Join(home, ".asdf", "shims"), filepath.Join(home, "Library", "pnpm"), filepath.Join(home, ".local", "share", "fnm", "aliases", "default", "bin")} {
+		if got := locateNode(home, script, "", func(p string) bool { return p == filepath.Join(d, "node") }); got != filepath.Join(d, "node") {
+			t.Fatalf("fallback %s: got %s", d, got)
+		}
 	}
 }
 
