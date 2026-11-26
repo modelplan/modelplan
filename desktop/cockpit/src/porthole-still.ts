@@ -75,7 +75,7 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
   // canopy aperture mask (runtime/canopy-c01/aperture-890-1x.png, in the port's page coordinates): at least 8 px of
   // glass on every side, in both themes, and clear of the HUD at the left. Measured against the final masks of the
   // redrawn canopy (D74, #801): the clearance is 8.1 px. Offsets are from the port's padding box. D444: one layout.
-  const BIG_KEY={right:36,top:67} as const;
+  const BIG_KEY={right:44,top:79} as const;
   const placeBig=()=>{
     if(!big||!port)return;const size=22;if(!port.clientWidth||!port.clientHeight)return;
     const at=BIG_KEY;

@@ -13,9 +13,11 @@ const official=selectBuildEdition(process.argv.slice(2))==='official';
 execFileSync(process.execPath,[resolve(here,'generate-wire.mjs'),'--check'],{stdio:'inherit'});
 // Copy only this compile's emitted files: a removed source can leave stale JS
 // and declarations in a reused compiler directory. Do not publish that cache.
-const emitted=execFileSync(resolve(here,'node_modules/.bin/tsc'),['-p',here,'--listEmittedFiles'],{encoding:'utf8'})
+// MODELPLAN_COCKPIT_COMPILED redirects the compile (a test builds in a private directory so the shared .tmp/compiled
+// that parallel unit tests import is never rewritten under them).
+const compiled=resolve(here,process.env.MODELPLAN_COCKPIT_COMPILED||'.tmp/compiled');
+const emitted=execFileSync(resolve(here,'node_modules/.bin/tsc'),['-p',here,'--outDir',compiled,'--listEmittedFiles'],{encoding:'utf8'})
   .split(/\r?\n/).filter(line=>line.startsWith('TSFILE: ')).map(line=>line.slice(8));
-const compiled=resolve(here,'.tmp/compiled');
 if(!emitted.includes(resolve(compiled,'src/main.js'))||!emitted.includes(resolve(compiled,'generated/wire.js')))throw Error('Missing emitted bundle entry');
 const output=resolve(here,'.tmp',official?'official':'community');
 await rm(output,{recursive:true,force:true});await mkdir(output,{recursive:true});
@@ -101,13 +103,21 @@ if (official) {
   css+='\n'+headerCss.toString('utf8');
   // G3-47: the released base-bell rasters (owner 2026-11-08), each checked against the reserved-visuals registry.
   const bells=resolve(assets,'cockpit/bells'),bellFiles=['bell-night-2x.png','bell-night-3x.png','bell-silver-2x.png'];
+  // D454: the owner's blue engine flames ship beside the bells (their own asset folder, same output path as the CSS expects).
+  const flames=resolve(assets,'cockpit/flames'),flameFiles=['flame-ember-1x.png','flame-ember-2x.png','flame-full-strip-1x.png','flame-full-strip-2x.png','flame-short-1x.png','flame-short-2x.png'];
   await mkdir(resolve(output,'assets/bells'),{recursive:true});
   for(const name of bellFiles){
     const bytes=await readFile(resolve(bells,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/bells/assets/'+name];
     if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit bell resource: '+name);
     await writeFile(resolve(output,'assets/bells',name),bytes);
   }
+  for(const name of flameFiles){
+    const bytes=await readFile(resolve(flames,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/flames/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit flame resource: '+name);
+    await writeFile(resolve(output,'assets/bells',name),bytes);
+  }
   await cp(resolve(bells,'SOURCES.md'),resolve(output,'assets/bells/SOURCES.md'));
+  await cp(resolve(flames,'SOURCES.md'),resolve(output,'assets/bells/FLAMES-SOURCES.md'));
   css+='\n'+await readFile(resolve(bells,'bells.css'),'utf8');
   // D68: the r3 hull's plain plates (owner 2026-11-08), each checked against the reserved-visuals registry.
   const hull=resolve(assets,'cockpit/hull'),hullFiles=[];
@@ -115,7 +125,7 @@ if (official) {
   for(const part of ['crown','upper','lower','cone','aft','engine-gutter','console-gutter','record-gutter'])for(const d of ['1x','2x'])hullFiles.push(`${part}-890-${d}.png`);
   hullFiles.push('crown-640-1x.png','crown-640-2x.png');
   hullFiles.push('lower-skin-890-1x.png','lower-skin-890-2x.png'); // side walls: the study's canopy-h1 lower skin
-  hullFiles.push('aft-closed-1x.png','aft-closed-2x.png','cap-slab.svg'); // closed shell (D72): aft plate and cap slab
+  hullFiles.push('aft-closed-1x.png','aft-closed-2x.png','cap-slab.svg','title-edge-1x.png','title-edge-2x.png'); // closed shell (D72): aft plate and cap slab
   // Hull shape (owner build 13): the study's alpha masks for the narrow upper wall, the taper and the wide lower wall.
   for(const v of [890,'closed'])for(const d of ['1x','2x'])hullFiles.push(`upper-walls-${v}-${d}.png`,`upper-skin-${v}-${d}.png`);
   for(const d of ['1x','2x'])hullFiles.push(`taper-890-${d}.png`,`lower-stage-890-${d}.png`);
@@ -126,7 +136,7 @@ if (official) {
     await writeFile(resolve(output,'assets/hull',name),bytes);
   }
   await cp(resolve(hull,'SOURCES.md'),resolve(output,'assets/hull/SOURCES.md'));
-  css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8');
+  css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8')+'\n'+await readFile(resolve(hull,'skin.css'),'utf8'); // owner window pack: night skin loads after the bundled styles
   // CKP-FAD-24 / CKP-FAD-17 (D115, D122, D196): the v4 top-down throttle on every fader travel, each file checked against the
   // reserved-visuals registry. The community edition keeps the MIT flat fader.
   const throttle=resolve(assets,'cockpit/throttle');

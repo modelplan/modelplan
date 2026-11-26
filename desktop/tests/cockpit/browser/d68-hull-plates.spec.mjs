@@ -24,11 +24,11 @@ test(`D68 ${tier}${closed?' closed':''}: r3 plain wall from ${wallTop} px to the
    aft:after.backgroundImage,headTop:Math.round(document.querySelector('.ck-head').getBoundingClientRect().top-ck.top),tapeGap:Math.round(ck.bottom-document.querySelector('.ck-tape').getBoundingClientRect().bottom),strip:getComputedStyle(document.querySelector('.ck-head'),'::before').clipPath,body:getComputedStyle(sh,'::before').clipPath,cap:(q=>q.backgroundImage+' '+q.backgroundColor)(getComputedStyle(document.querySelector('.s6-closed-cap'))),all:[...document.querySelectorAll('#cockpit *')].flatMap(e=>[getComputedStyle(e).backgroundImage,getComputedStyle(e,'::before').backgroundImage,getComputedStyle(e,'::after').backgroundImage]).join(' ')};});
  const plate=tier==='tall'?890:640;
  expect(v.shellBg).toBe('none');expect(v.shellShadow).toBe('none');expect(v.boosters).toEqual(['none','none']);
- // Closed (owner D72): the study's 16 px cap slab sits 14 px down, 620 wide, in the shared gunmetal tone; open, the
+ // Closed (owner D72): the study's 16 px cap slab sits 14 px down, 620 wide; D451/D452: the owner's cap art is used unfiltered (filter none) instead of the old shared gunmetal tone; open, the
  // c01 canopy is the crown and no crown plate shows.
  if(closed){
   // G3-108: the slab reaches 1 px under the walls' top, so no seam shows between them on a scaled page.
-  expect(v.crown).toMatchObject({display:'block',top:14,height:17,left:0,width:620,filter:'saturate(0.12) brightness(0.78)'});
+  expect(v.crown).toMatchObject({display:'block',top:14,height:17,left:0,width:620,filter:'none'});
   expect(v.crown.bg).toContain('/assets/hull/cap-slab.svg');
   // Nothing covers the slab: the page's closed-state section stays transparent (the study has no dark cap there).
   expect(v.cap).toBe('none rgba(0, 0, 0, 0)');
