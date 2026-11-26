@@ -205,12 +205,10 @@ func buildWindows(raw []WindowInput, account Account, now time.Time) []Window {
 		if !ok {
 			continue
 		}
-		r, label := role(v.Kind)
+		r, _ := role(v.Kind)
 		key := limitKey(v.Limit)
 		// Unknown limits never acquire a provider-supplied label, even with a familiar role.
-		if key == "other" {
-			label = Text{EN: "Other limit", ZH: "其他限额"}
-		}
+		label := windowLabel(r, key, scope)
 		mode := ResetModeUnknown
 		switch v.ResetMode {
 		case "fixed":
