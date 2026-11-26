@@ -1,0 +1,1 @@
+Give each full-thrust nozzle flame its own subtle motion: a small phase offset, a flip rate of 8.4-9.6 fps, a gentle length breath and brightness flicker that lift slightly with output speed; all of it stops when the cockpit is hidden, closed or Reduce Motion is on.

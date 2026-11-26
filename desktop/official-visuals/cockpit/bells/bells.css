@@ -37,10 +37,17 @@
 /* Full thrust: a 3-frame strip; the still frame (reduced motion, hidden cockpit, low power) is the middle one. */
 .ck-base .bz-flame.f-full{background-size:300% 100%;background-position:50% 0;background-image:url('./assets/bells/flame-full-strip-2x.png');background-image:image-set(url('./assets/bells/flame-full-strip-1x.png') 1x,url('./assets/bells/flame-full-strip-2x.png') 2x)}
 /* The landing burn owns the mouth while the host ignites. */
-#cockpit[data-ignite="true"] .ck-base .bz-flame{opacity:0}
+#cockpit[data-ignite="true"] .ck-base .bz-flame{opacity:0!important}
 /* Flipbook: frames 1-2-3-2 at 9 fps (a ping-pong, so no jump from the last frame to the first), a negative per-bell delay so
    the four nozzles never flip together. Only on an active, open page without Reduce Motion; everything else holds the still. */
 @keyframes cockpit-flame-flip{0%{background-position-x:0}25%{background-position-x:50%}50%{background-position-x:100%}75%{background-position-x:50%}}
+/* Per-nozzle dynamics (owner: subtle, never very different): same frame order everywhere; each bell gets its own flip period
+   (8.4-9.6 fps), a phase offset, a length breath (scaleY about the root, 1.2-1.8 s) and a brightness flicker (opacity 0.95-1),
+   all set deterministically per bell index by prototype-base.ts. --fi (0..1, from the output rate) lifts the length and
+   brightness slightly. Transform (scale) and opacity only. The ignite rule above uses !important so the animation cannot lift it. */
+.ck-base .bz-flame.f-full{transform-origin:50% 0}
+@keyframes cockpit-flame-breathe{0%{scale:1 calc(.98 + .005 * var(--fi,.5))}100%{scale:1 calc(1.005 + .015 * var(--fi,.5))}}
+@keyframes cockpit-flame-flicker{0%{opacity:calc(.95 + .02 * var(--fi,.5))}100%{opacity:1}}
 @media (prefers-reduced-motion:no-preference){
-html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz-flame.f-full{animation:cockpit-flame-flip .44s steps(1,end) var(--fo,0s) infinite}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz-flame.f-full{animation:cockpit-flame-flip var(--fp,.44s) steps(1,end) var(--fo,0s) infinite,cockpit-flame-breathe calc(var(--fb,1.5s) / 2) ease-in-out var(--fbo,0s) infinite alternate,cockpit-flame-flicker calc(var(--fl,1s) / 2) ease-in-out var(--flo,0s) infinite alternate}
 }
