@@ -383,7 +383,7 @@ final class ShellLayoutTests: XCTestCase {
     @MainActor func testAnInvisibleStatusItemAnchorsAtTheNotchsRightEdgeOrWhereItWouldBe() throws {
         let frame = CGRect(x: 0, y: 0, width: 1512, height: 982), usable = CGRect(x: 0, y: 0, width: 1512, height: 945)
         let notch = CockpitShellLayout.menuBarEdgeAnchor(screen: CockpitScreen(frame: frame, visibleFrame: usable, notchRightEdge: 851))
-        XCTAssertEqual(notch, CGRect(x: 851, y: 945, width: CockpitRackMast.width, height: 37), "right of the camera housing, the menu bar's height")
+        XCTAssertEqual(notch, CGRect(x: 851, y: 945, width: CockpitDockingBoom.nominalWidth, height: 37), "right of the camera housing, the menu bar's height")
         let plain = CockpitShellLayout.menuBarEdgeAnchor(screen: CockpitScreen(frame: frame, visibleFrame: usable))
         XCTAssertEqual(plain.minX, 756 + 100, "no notch: the nominal notch edge right of the menu bar's centre")
         XCTAssertEqual(plain.minY, usable.maxY)
