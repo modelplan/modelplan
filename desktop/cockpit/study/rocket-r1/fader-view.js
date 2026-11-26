@@ -10,8 +10,38 @@ import {tokShort, approxCost} from './mfd-pages/fmt.js';
 import './strings/faders.js';
 
 export const LADDER = ['Low', 'Med', 'High', 'XHigh', 'Max'];
-// Where a level sits on the travel: 0 = Max at the top … 1 = Low at the bottom (faders.css places it).
-export const levelK = label => (4 - LADDER.indexOf(label)) / 4;
+// D405 (owner 11-24): the lever tier is one tilted face seen in perspective, slightly narrower and more compressed at the far
+// (top) end. TIER_Q is the face's width at the Max row relative to the Low row; everything on the face (slots, detent dashes,
+// effort names, ★, levers) takes its position from this one geometry, so the slots converge together and the detent spacing
+// shrinks evenly towards the top (by TIER_Q² there). No CSS 3D: positions only, text stays sharp.
+export const TIER_Q = 0.955;
+// The face's horizontal scale at screen fraction y of the travel (0 = Max row, 1 = Low row); linear in y, as on a tilted plane.
+export const tierScale = y => TIER_Q + (1 - TIER_Q) * y;
+// Screen fraction of an evenly spaced detent t (0 Max .. 1 Low) on that face: the vertical scale goes as tierScale², so
+// t = ∫dy/s(y)² normalised, inverted here.
+export function tierY(t) {
+  const q = TIER_Q, a = 1 / q, inv = a - t * (a - 1);
+  return Math.min(1, Math.max(0, (1 / inv - q) / (1 - q)));
+}
+// Where a level sits on the travel: 0 = Max at the top … 1 = Low at the bottom (faders.css places it), on the tilted face.
+export const levelK = label => tierY((4 - LADDER.indexOf(label)) / 4);
+// The code-drawn slot of channel `off` (channel offset from the lever-area centre in pitches: -1, 0, 1), as SVG in the
+// channel's own pixels: a dark core --slot-w wide on the face, a 1 px shadow on its upper end and inner edge, a 1 px faint
+// highlight on its lower lip. It runs 8 u past the Max and Low rows, so it is .367 of the column
+// height long as on the direction 06 prototype (D419, measured: 161 px slot over a 439 px column) and follows the shared face geometry (it is not a bitmap).
+export function slotSvg({width, height, pad, slotW, off, pitch}) {
+  const u = (height - 2 * pad) / 97, rows = height - 2 * pad, y0 = pad - 8 * u, y1 = height - pad + 8 * u;
+  const at = y => { const f = (y - pad) / rows, s = tierScale(f); return {x: width / 2 + off * pitch * (s - 1), w: slotW * s}; };
+  const top = at(y0), bot = at(y1), r = n => +n.toFixed(2);
+  const poly = (a, b, ya, yb) => `${r(a.x - a.w / 2)},${r(ya)} ${r(a.x + a.w / 2)},${r(ya)} ${r(b.x + b.w / 2)},${r(yb)} ${r(b.x - b.w / 2)},${r(yb)}`;
+  const inner = off < 0 ? -1 : 1; // the inner edge faces the lever-area centre (right edge on the left slot); the centre slot shades its left edge
+  const edge = (a, b) => { const sx = w => (inner < 0 ? w.x + w.w / 2 - 1 : w.x - w.w / 2); return `${r(sx(a))},${r(y0)} ${r(sx(a) + 1)},${r(y0)} ${r(sx(b) + 1)},${r(y1)} ${r(sx(b))},${r(y1)}`; };
+  return `<svg class="fd-slotsvg" width="${width}" height="${r(height)}" viewBox="0 0 ${width} ${r(height)}" aria-hidden="true">`
+    + `<polygon class="sl-core" points="${poly(top, bot, y0, y1)}"/>`
+    + `<polygon class="sl-shade" points="${edge(top, bot)}"/>`
+    + `<polygon class="sl-shade" points="${poly(top, top, y0, y0 + 1)}"/>`
+    + `<polygon class="sl-lip" points="${poly(bot, bot, y1 - 1, y1)}"/></svg>`;
+}
 export const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 const dhm = m => m == null ? '--' : m < 60 ? `${Math.round(m)}m` : m < 1440 ? `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, '0')}` : `${Math.floor(m / 1440)}d${Math.floor(m % 1440 / 60)}h`;
 // Multiples on a 56 px LCD: ×2.8, ×1.5, ×2, ×0.7, ×13 (one decimal below 10, whole numbers bare).
