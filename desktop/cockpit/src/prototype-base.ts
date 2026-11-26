@@ -87,9 +87,9 @@ export function mountPrototypeBase(root:HTMLElement,data:()=>WireCockpitData|nul
    const b=document.createElement('span');b.className='bz '+z.state;b.setAttribute('role','img');b.setAttribute('aria-label',label(z));
    for(const [k,v] of [['left',px(z.x)],['--w',px(z.w)],['--cw',px(z.cw)],['--v',z.colour],['--fuel',z.fuel],['--len',z.len+'px'],
     ['--fd',(.19+(j*37%5)*.017).toFixed(3)+'s'],['--fo',(-(j*53%7)*.023).toFixed(3)+'s'],
-    // D454 per-nozzle flame dynamics, deterministic per bell index: flip period 8.4-9.6 fps, breath 1.3-1.7 s, flicker 0.9-1.3 s, output-rate intensity 0..1.
+    // D454 per-nozzle flame dynamics, deterministic per bell index: flip period 8.4-9.6 fps, breath 1.3-1.7 s, flicker 0.9-1.3 s.
     ['--fp',(.415+(j*37%5)*.015).toFixed(3)+'s'],['--fb',(1.3+(j*53%7)*.1).toFixed(2)+'s'],['--fbo',(-(j*37%5)*.31).toFixed(2)+'s'],
-    ['--fl',(.9+(j*29%5)*.1).toFixed(2)+'s'],['--flo',(-(j*53%7)*.17).toFixed(2)+'s'],['--fi',String(Math.max(0,Math.min(1,(z.len-FLAME_MIN)/(FLAME_MAX-FLAME_MIN))))]] as const)b.style.setProperty(k,v);
+    ['--fl',(.9+(j*29%5)*.1).toFixed(2)+'s'],['--flo',(-(j*53%7)*.17).toFixed(2)+'s']] as const)b.style.setProperty(k,v);
    const glow=document.createElement('i');glow.className='bz-glow';const line=document.createElement('i');line.className='bz-line';b.append(glow,line);
    // D85: a working bell shows the study's in-mouth glow only; no flame or plume.
    if(z.state==='work'){const sheet=document.createElement('i');sheet.className='bz-sheet';b.append(sheet);}
