@@ -543,3 +543,5 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-wk .wk-adr.chip.pending span{border-style:dashed;background:transparent;color:var(--c)}
 /* Owner window pack: the title-edge decoration is out of flow (its art loads only in the official night skin). */
 .ck-head>.mp-title-edge{position:absolute;inset:0 0 auto;height:0;pointer-events:none}
+/* The owner's title edge is the header plate's 620 px top lip: it sits on the sill just above the head row (not over its controls), centred on the 636 px hull, behind the head's contents. */
+:root[data-theme="night"] #cockpit .ck-head>.mp-title-edge{inset:-9px -16px auto;height:7px;z-index:-1}
