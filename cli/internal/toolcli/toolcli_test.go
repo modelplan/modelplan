@@ -142,28 +142,32 @@ func TestForeignBundledRuntimeSkippedWhateverItsSpelling(t *testing.T) {
 	file(filepath.Join(res, "bun"))
 	link(filepath.Join(res, "node"), filepath.Join(alias, "node"))
 	link(filepath.Join(res, "bun"), filepath.Join(alias, "bun"))
+	// macrev2-1272-2: discovery sees only the fixture, so a host node or bun in
+	// /usr/local/bin or /opt/homebrew/bin cannot answer; the bundle check itself
+	// still runs Clean and EvalSymlinks on the real files.
+	fixture := func(p string) bool { return strings.HasPrefix(p, root+string(filepath.Separator)) && executable(p) }
 	script := filepath.Join(root, "tools", "codex")
 	sep := string(os.PathListSeparator)
 	dotted := filepath.Join(root, "Synthetic.app") + "/./Contents/Resources"
 	for name, path := range map[string]string{"direct": res, "dotted": dotted, "symlink": alias, "all": res + sep + dotted + sep + alias} {
-		if got := locateNode(home, script, path, executable); got != "" {
+		if got := locateNode(home, script, path, fixture); got != "" {
 			t.Fatalf("%s: selected foreign runtime %s", name, got)
 		}
 	}
 	// A fallback folder holding a symlink to the foreign runtime is skipped too; the real user node wins.
 	link(filepath.Join(res, "node"), filepath.Join(home, ".bun", "bin", "node"))
 	link(filepath.Join(res, "bun"), filepath.Join(home, ".bun", "bin", "bun"))
-	if got := locateNode(home, script, alias, executable); got != "" {
+	if got := locateNode(home, script, alias, fixture); got != "" {
 		t.Fatalf("fallback symlink: selected %s", got)
 	}
 	file(filepath.Join(local, "node"))
-	if got, want := locateNode(home, script, dotted+sep+alias, executable), filepath.Join(local, "node"); got != want {
+	if got, want := locateNode(home, script, dotted+sep+alias, fixture), filepath.Join(local, "node"); got != want {
 		t.Fatalf("user node: got %s want %s", got, want)
 	}
 	// The tool's own adjacent runtime is still used, even inside an app bundle.
 	own := filepath.Join(res, "codex")
 	file(own)
-	if got, want := locateNode(home, own, alias, executable), filepath.Join(res, "node"); got != want {
+	if got, want := locateNode(home, own, alias, fixture), filepath.Join(res, "node"); got != want {
 		t.Fatalf("adjacent: got %s want %s", got, want)
 	}
 }
