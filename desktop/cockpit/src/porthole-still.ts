@@ -90,18 +90,25 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
     const port=field.parentElement??field,cs=getComputedStyle(field),inset=(v:string)=>parseFloat(v)||0;
     const W=port.clientWidth-inset(cs.left)-inset(cs.right),H=port.clientHeight-inset(cs.top)-inset(cs.bottom);
     if(!frame||!W||!H){field.dataset.still=frame?'sizing':'none';return;}
-    const key=`${frame.id}:${W}x${H}`;if(key===painted)return;painted=key;
+    // Owner 11-25 (porthole bottom too bright): the whole scene (earth, horizon glow, rockets, chart) sits lower in the glass,
+    // so the header's glareshield hides the glow's lower part. --ck-still-drop is that shift as a fraction of the window height;
+    // --ck-still-dim is the glow's peak-brightness cut (0..1), a dark wash over the earth that leaves the rockets alone.
+    const num=(name:string)=>Math.max(0,Math.min(.5,parseFloat(cs.getPropertyValue(name))||0));
+    const drop=num('--ck-still-drop'),dim=num('--ck-still-dim');
+    const key=`${frame.id}:${W}x${H}:${drop}:${dim}`;if(key===painted)return;painted=key;
     // Cover the field like a background: scale to the larger ratio and centre; the port clips the rest.
     const s=Math.max(W/frame.width,H/frame.height);
     const stage=document.createElement('div');stage.className='ck-still-stage';
     stage.style.width=frame.width+'px';stage.style.height=frame.height+'px';
-    stage.style.transform=`translate(${(W-frame.width*s)/2}px,${(H-frame.height*s)/2}px) scale(${s})`;
+    stage.style.transform=`translate(${(W-frame.width*s)/2}px,${(H-frame.height*s)/2+H*drop}px) scale(${s})`;
     const layer=(className:string,l:{left:number;top:number;width:number;height:number},file:string)=>{
       const e=document.createElement('i');e.className='ck-still-layer '+className;
       Object.assign(e.style,{left:l.left+'px',top:l.top+'px',width:l.width+'px',height:l.height+'px',backgroundImage:`url("${new URL(file,base).href}")`});
       stage.append(e);return e;
     };
     layer('ck-still-bg',{left:0,top:0,width:frame.width,height:frame.height},frame.background);
+    if(dim>0){const e=document.createElement('i');e.className='ck-still-layer ck-still-dim';
+      Object.assign(e.style,{left:'0px',top:'0px',width:frame.width+'px',height:frame.height+'px',opacity:String(dim)});stage.append(e);}
     for(const [index,m] of frame.models.entries())for(const kind of ['flame','halo','body'] as const){
       const l=m[kind];if(!l)continue;
       // Prototype composer.js:26: per-model period 0.43 + (i mod 4) x 0.07 s and phase -(i mod 3) x 0.13 s, scaled about the nozzle.
