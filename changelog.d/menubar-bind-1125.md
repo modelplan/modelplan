@@ -1,0 +1,1 @@
+The attached cockpit and its launch rack now hang from the status item the user clicked, on the display whose menu bar holds it. A status-item window that the menu bar has not laid out yet, or the item's copy on another display's menu bar, no longer places the cockpit at the display's left edge or on the other display.

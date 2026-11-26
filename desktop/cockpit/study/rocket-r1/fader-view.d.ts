@@ -10,3 +10,7 @@ export const CARD_LINE:number;
 export function effortLine(cur:string|null,rec:string):{cur:string;rec:string};
 export function card(channel:unknown,fader?:unknown):any;
 export function cardText(card:unknown):string[];
+export const TIER_Q:number;
+export function tierScale(y:number):number;
+export function tierY(t:number):number;
+export function slotSvg(geometry:{width:number;height:number;pad:number;slotW:number;off:number;pitch:number}):string;

@@ -65,7 +65,7 @@ if (official) {
   const marks=resolve(repo,'desktop/third-party/dock-resources/Resources/Marks'),brands=resolve(output,'assets/brands');await mkdir(brands,{recursive:true});
   for(const [name,source] of Object.entries({'openai-white.svg':'openai.svg','claude-rounded.svg':'claude.svg','claude.svg':'claude.svg','zhipu.svg':'zhipu.svg','x-white.svg':'x.svg','qwen.svg':'qwen.svg','alibaba.svg':'qwen.svg','deepseek.svg':'deepseek.svg','kimi-white.svg':'kimi.svg','minimax.svg':'minimax.svg','gemini.svg':'gemini.svg','xiaomi.svg':'xiaomi.svg','cursor.svg':'cursor.svg','copilot.svg':'copilot.svg','opencode.svg':'opencode.svg','zai-white.svg':'zai-white.svg','SOURCES.md':'SOURCES.md'}))await cp(resolve(marks,source),resolve(brands,name));
   // The CSP forbids fetch, so the porthole still's placement table ships as a module carrying the
-  // default public fleet's four projections (src/porthole-still.ts). Derived from the reserved pack,
+  // default public fleet's two projections (night, day; D444: 890 only) (src/porthole-still.ts). Derived from the reserved pack,
   // it carries the pack's licence; the community edition gets null below.
   const pack=JSON.parse(await readFile(resolve(assets,'runtime/porthole-stills/manifest.json'),'utf8'));
   const fleet=pack.projections.find(p=>p.id===pack.defaultProjectionId)?.models.map(m=>m.id).join();
@@ -74,7 +74,7 @@ if (official) {
   // The published display name is what joins a rocket to a published model; roster IDs differ from public IDs.
   const names=new Map(pack.sprites.map(s=>[s.modelId,s.name]));
   const stills={base:'runtime/porthole-stills/',projections:[]};
-  for(const theme of ['night','day'])for(const layout of [890,640]){
+  for(const theme of ['night','day'])for(const layout of [890]){ // D444: one layout
     const matches=pack.projections.filter(p=>p.theme===theme&&p.layout===layout&&p.models.map(m=>m.id).join()===fleet);
     if(matches.length!==1)throw Error(`Porthole default fleet needs exactly one ${theme} ${layout} projection`);
     const p=matches[0];
@@ -111,12 +111,14 @@ if (official) {
   css+='\n'+await readFile(resolve(bells,'bells.css'),'utf8');
   // D68: the r3 hull's plain plates (owner 2026-11-08), each checked against the reserved-visuals registry.
   const hull=resolve(assets,'cockpit/hull'),hullFiles=[];
-  for(const part of ['crown','upper','lower','cone','aft','engine-gutter','console-gutter','record-gutter'])for(const h of [890,640])for(const d of ['1x','2x'])hullFiles.push(`${part}-${h}-${d}.png`);
+  // D444: one layout, so only the 890 plates ship; the 640 crown stays for the closed crown (--hull-compact-crown).
+  for(const part of ['crown','upper','lower','cone','aft','engine-gutter','console-gutter','record-gutter'])for(const d of ['1x','2x'])hullFiles.push(`${part}-890-${d}.png`);
+  hullFiles.push('crown-640-1x.png','crown-640-2x.png');
   hullFiles.push('lower-skin-890-1x.png','lower-skin-890-2x.png'); // side walls: the study's canopy-h1 lower skin
   hullFiles.push('aft-closed-1x.png','aft-closed-2x.png','cap-slab.svg'); // closed shell (D72): aft plate and cap slab
   // Hull shape (owner build 13): the study's alpha masks for the narrow upper wall, the taper and the wide lower wall.
-  for(const v of [890,640,'closed'])for(const d of ['1x','2x'])hullFiles.push(`upper-walls-${v}-${d}.png`,`upper-skin-${v}-${d}.png`);
-  for(const d of ['1x','2x'])hullFiles.push(`taper-890-${d}.png`,`lower-stage-890-${d}.png`,`lower-stage-640-${d}.png`);
+  for(const v of [890,'closed'])for(const d of ['1x','2x'])hullFiles.push(`upper-walls-${v}-${d}.png`,`upper-skin-${v}-${d}.png`);
+  for(const d of ['1x','2x'])hullFiles.push(`taper-890-${d}.png`,`lower-stage-890-${d}.png`);
   await mkdir(resolve(output,'assets/hull'),{recursive:true});
   for(const name of hullFiles){
     const bytes=await readFile(resolve(hull,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/hull/assets/'+name];

@@ -6,7 +6,7 @@
 // - AMBER: a quota forecast to run out before its reset while still above T (cockpitForecastV1). An engine
 //   that does not negotiate it creates no amber condition.
 //   WP-03: a forecast whose reset time is unknown is amber too ("约40m用完" with no reset part).
-// - Public reset announcements/confirmations, lower-effort advice and extra resets expiring within 48 hours are
+// - Public reset announcements/confirmations, lower-effort advice and banked resets expiring within 48 hours are
 //   list-only (blue); they never light the lamp. Credits being drawn and non-reset official notices have no producer
 //   field yet, so they are not listed.
 // - ALR-51 (WP-11, V1-FINAL §11, §12): a subscription that cannot be read, and a retained (stale) reading, are grey:
@@ -57,7 +57,7 @@ const finite=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v);
 export function cautionItems(data:WireCockpitData,now:number,redBelow:number):CautionItem[] {
  const lamp:{item:CautionItem;remaining:number;resetAt:number}[]=[],list:CautionItem[]=[],grey:CautionItem[]=[];
  const members=cockpitMembers(data),verified=new Set(data.subscriptions.map(s=>s.subscriptionRef));
- // CKP-MFD-55: available resets (reset cards with time left), joined only through a verified reference.
+ // CKP-MFD-55: available resets (banked resets with time left), joined only through a verified reference.
  // The producer may list only part of the cards (state partial, truncated, or a count above the items), so a count of the
  // visible items is exact only for a complete list: `partial` makes the line say "resets available" without a number.
  const cardFacts=(key:string,unstable:boolean)=>{
@@ -121,13 +121,15 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
  for(const e of data.details?.resetEvents??[]){
   if(!(Date.parse(e.expiresAt)>now))continue;const m=members.find(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id)));if(!m)continue;// a plan-scoped announcement belongs to that plan's subscription only (CKP-MFD-56)
   const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['reset',e.id]),stable=id;
-  if(e.status==='confirmed'){list.push({id,stable,level:'blue',member:m.key,text:both('mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
+  // D166/D428: only reset_credit is a banked reset; a direct reset and a legacy event with no kind use the direct wording.
+  const bank=e.kind==='reset_credit';
+  if(e.status==='confirmed'){list.push({id,stable,level:'blue',member:m.key,text:both(bank?'mfd.alBankedConf':'mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
   const from=e.schedule?Date.parse(e.schedule.from):NaN,through=e.schedule?Date.parse(e.schedule.through):NaN;
   const mid=e.schedule&&e.schedule.precision!=='date'&&Number.isFinite(from)?Number.isFinite(through)?(from+through)/2:from:null;
   const at=mid===null?null:Math.round(mid/(30*60000))*30*60000;
-  list.push({id,stable,level:'blue',member:m.key,text:at===null?both('mfd.alResetSoon',lang=>({s:s(lang)})):both('mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
+  list.push({id,stable,level:'blue',member:m.key,text:at===null?both(bank?'mfd.alBankedSoon':'mfd.alResetSoon',lang=>({s:s(lang)})):both(bank?'mfd.alBankedAnn':'mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
  }
- // D63: extra resets (reset cards) that expire within 48 hours, one blue line per subscription. Personal facts are joined
+ // D63: banked resets that expire within 48 hours, one blue line per subscription. Personal facts are joined
  // only through a verified reference, as the Subscription page joins them. List-only: they never light the lamp.
  for(const m of members){
   if(m.unstable||!verified.has(m.key))continue;

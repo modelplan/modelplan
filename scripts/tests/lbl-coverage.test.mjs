@@ -137,7 +137,7 @@ test("LBL-2.2-10 one name per concept across surfaces", todo("LBL-2.2-10"), () =
   }
 });
 
-test("LBL-2.2-11 reset count wording; never 重置卡 / reset cards", todo("LBL-2.2-11"), () => {
+test("LBL-2.2-11 reset count wording (D428: 额外重置次数 / banked resets); never 重置卡 / reset cards", todo("LBL-2.2-11"), () => {
   for (const p of pairs) {
     assert.doesNotMatch(p.zh, /重置卡/, `${p.at}`);
     assert.doesNotMatch(p.en, /reset cards?/i, `${p.at}`);

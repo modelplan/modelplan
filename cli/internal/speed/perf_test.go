@@ -20,7 +20,7 @@ func utc(t *testing.T) {
 }
 
 // seedPerf creates the performance ledger as a run at since would have.
-func seedPerf(t *testing.T, cache string, since time.Time) {
+func seedPerf(t testing.TB, cache string, since time.Time) {
 	t.Helper()
 	os.MkdirAll(filepath.Join(cache, "observed"), 0o700)
 	b, _ := json.Marshal(PerfLedger{SchemaVersion: 1, Since: since.UTC(), Rows: []PerfRow{}})
@@ -401,7 +401,7 @@ func TestSessionDayCompleteTotalNeedsEveryPart(t *testing.T) {
 
 // grantLocalHistory points the consent store at a private HOME that allows the Codex and Claude
 // local-history scopes, so accounting tests do not depend on the developer's own consent file.
-func grantLocalHistory(t *testing.T) {
+func grantLocalHistory(t testing.TB) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", "")

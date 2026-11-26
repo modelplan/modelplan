@@ -94,7 +94,7 @@ test('SET-9-19 project names off: a labelled project in the ranking is named by 
  await expect(page.locator('.wd-n').first()).toHaveText('desktop-secret');
 });
 
-// H6/H7: closed cycles and their resets under the subscription, never a reset card claimed from a drop.
+// H6/H7: closed cycles and their resets under the subscription, never a banked reset claimed from a drop.
 test('D36 the Subscription history shows closed cycles and reset rows',async({page})=>{
  const {data,ref}=fixture();const at=d=>new Date(NOW-d*864e5).toISOString();
  data.history.cycles=[{subscriptionRef:ref,kind:'five_hour',attribution:'unattributed',cycles:[

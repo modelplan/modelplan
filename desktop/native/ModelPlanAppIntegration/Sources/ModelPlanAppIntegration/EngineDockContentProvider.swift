@@ -680,7 +680,12 @@ public enum EngineDeadlineFacts {
                 case .model: grace=90
                 case .tool: grace=300
                 case .fallback: grace=30
-                case .finished,.unknown: return nil
+                case .finished:
+                    // Owner item 49: a turn that ended moments ago still counts, so the gap before the next turn
+                    // (Codex writes task_complete, then task_started) does not stop the ring. Ends on its own.
+                    let held=recorded.addingTimeInterval(EngineDockWorkingHold.seconds)
+                    return now < held ? held : nil
+                case .unknown: return nil
                 }
                 guard abs(expiry.timeIntervalSince(recorded)-grace) < 0.001 else { return nil }
                 return expiry
@@ -695,4 +700,11 @@ public enum EngineDeadlineFacts {
         return input
     }
 
+}
+
+/// Owner item 49 (Pulse-style continuous working ring). Pulse samples each agent's turn state every 2 s
+/// (`AgentActivityMonitor.interval`, Pulse v1.12.4 Sources/Pulse/Usage/AgentActivity.swift:534), so a turn that ends and
+/// the next that starts within one sample never stops its ring. The same window holds "working" after a finished turn.
+enum EngineDockWorkingHold {
+    static let seconds: TimeInterval = 2
 }
