@@ -82,3 +82,18 @@ test('D207 the night still paints the r4 layers at their recorded rectangles and
   await expect(page.locator('.ck-still')).toHaveAttribute('data-projection',projections['day-tall']);
   expect(await page.evaluate(()=>window.glAsks)).toBe(0);
 });
+
+// Owner 11-25: the scene can sit lower in the glass (--ck-still-drop, fraction of the window height) and its glow can be
+// dimmed (--ck-still-dim). Owner D445: web/cockpit.css defaults to drop .15, dim 0; this test sets both explicitly.
+test('porthole scene drop and glow dim follow the port custom properties',async({page})=>{
+  await open(page,'night','tall');
+  const read=()=>page.evaluate(()=>{const s=document.querySelector('.ck-still-stage'),f=document.querySelector('.ck-field');
+    return {y:new DOMMatrixReadOnly(getComputedStyle(s).transform).f,H:f.clientHeight,dim:f.querySelectorAll('.ck-still-dim').length};});
+  await page.evaluate(()=>document.querySelector('.ck-port').style.setProperty('--ck-still-drop','0'));
+  await page.evaluate(async()=>{const r=document.documentElement;r.dataset.theme='day';await new Promise(f=>setTimeout(f,50));r.dataset.theme='night';await new Promise(f=>setTimeout(f,50));});
+  const before=await read();expect(before.dim).toBe(0);
+  await page.evaluate(()=>{const p=document.querySelector('.ck-port');p.style.setProperty('--ck-still-drop','.15');p.style.setProperty('--ck-still-dim','.25');});
+  await page.evaluate(async()=>{const r=document.documentElement;r.dataset.theme='day';await new Promise(f=>setTimeout(f,50));r.dataset.theme='night';await new Promise(f=>setTimeout(f,50));});
+  await expect.poll(async()=>(await read()).dim).toBe(1);
+  const after=await read();expect(Math.abs(after.y-before.y-after.H*.15)).toBeLessThan(1.5);
+});

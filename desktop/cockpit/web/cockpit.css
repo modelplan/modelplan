@@ -89,7 +89,9 @@ html[data-theme="night"] #cockpit .ek-all:not(.on)>span:not(.ki){color:#a1aab3}
 
 /* Porthole still (official edition; src/porthole-still.ts). The field shows only once painted. */
 .ck-port .ck-field[data-still=ready]{display:block!important;position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
-.ck-still{position:absolute;inset:0;overflow:hidden;isolation:isolate}
+.ck-still{position:absolute;inset:0;overflow:hidden;isolation:isolate;background:#03070d}
+.ck-port{--ck-still-drop:.15;--ck-still-dim:0}
+.ck-still-dim{background:radial-gradient(ellipse 70% 60% at 50% 100%,#02050a 0,#02050a 55%,rgba(2,5,10,0) 100%)}
 .ck-still-stage{position:absolute;left:0;top:0;transform-origin:0 0}
 .ck-still-layer{position:absolute;display:block;background-size:100% 100%;background-repeat:no-repeat}
 .ck-still-add{mix-blend-mode:plus-lighter;z-index:1}
