@@ -547,3 +547,5 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 :root[data-theme="night"] #cockpit .ck-head>.mp-title-edge{inset:-9px -16px auto;height:7px;z-index:-1}
 /* Closed cap: the owner's cap slab sits 1 px higher than the bundled crown rule places it (measured against the owner's closed preview). */
 :root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{top:13px}
+/* Closed: the header plate's top rim (the first 9 px of the strip-panel art, above the head row) is not drawn under the owner's cap; the owner's closed preview has none. */
+:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-head::before{top:0;height:35px;background-position:center -11px}
