@@ -392,7 +392,7 @@ test("D169/D246 reverted: the owner Macs admit the merge queue for the GUI tasks
   assert.equal(TRUSTED_MAC_ROUTE.split("merge_group").length, 2);
   assert.equal(TRUSTED_MAC_ROUTE.split("'schedule'").length, 3, "the schedule-on-main bypass of the actor gate and the GUI-task clause");
   // It sits behind the owner identity gate (or the schedule-on-main bypass), next to the push/dispatch clause.
-  const owner = "|| (github.repository == 'modelplan/modelplan' && github.event_name == 'schedule' && github.ref == 'refs/heads/main')) && (((github.event_name == 'pull_request'";
+  const owner = "|| (github.repository == 'modelplan/modelplan' && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.workflow_ref == 'modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main' && github.event.schedule == '23 9 * * *' && (inputs.task == 'native' || inputs.task == 'native-owner-gui'))) && (((github.event_name == 'pull_request'";
   const second = TRUSTED_MAC_ROUTE.lastIndexOf(owner);
   assert.ok(second > 0 && TRUSTED_MAC_ROUTE.indexOf(extra) > second);
 });
@@ -840,15 +840,24 @@ test("the merge-queue native-headless leg is hosted and a hosted merge-queue run
   assert.doesNotMatch(TRUSTED_MAC_ROUTE, /native-headless'\) && github\.event_name == 'merge_group'/);
 });
 
-test("the nightly schedule on main reaches the GUI Mac without the actor gate, and nothing else does (D169, D193)", () => {
+test("the nightly schedule reaches the GUI Mac without the actor gate only from desktop.yml on main with the nightly cron, for the GUI tasks (D169, D193)", () => {
   // A scheduled run's actor is whoever last changed the cron (the merge-queue bot), so the owner-actor gate would
-  // send the nightly to hosted macOS, where it hits the job limit. The only bypass is schedule on main in this repository.
-  const bypass = "(github.repository == 'modelplan/modelplan' && github.event_name == 'schedule' && github.ref == 'refs/heads/main')";
+  // send the nightly to hosted macOS. github.workflow_ref is the caller's identity, github.event.schedule the cron.
+  const bypass = "(github.repository == 'modelplan/modelplan' && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.workflow_ref == 'modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main' && github.event.schedule == '23 9 * * *' && (inputs.task == 'native' || inputs.task == 'native-owner-gui'))";
   const ownerGate = "(github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear')";
   const gui = TRUSTED_MAC_ROUTE.split("|| (inputs.os == 'ubuntu-latest'")[0].split("&& (inputs.task != 'native-headless'")[1];
-  assert.ok(gui.includes(`(${ownerGate} || ${bypass}) && (((github.event_name == 'pull_request'`), "owner gate OR schedule-on-main, then the event list");
+  assert.ok(gui.includes(`(${ownerGate} || ${bypass}) && (((github.event_name == 'pull_request'`), "owner gate OR the narrow nightly bypass, then the event list");
   assert.equal(TRUSTED_MAC_ROUTE.split(bypass).length - 1, 1, "one bypass only");
-  // The event list still admits schedule only for the two GUI tasks on main, so the bypass cannot start any other task or event.
   assert.ok(gui.includes("((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main')"));
   assert.equal(gui.split("github.event_name == 'schedule'").length - 1, 2, "schedule appears in the bypass and the GUI-task clause only");
+  // The cron the route names is exactly the one desktop.yml declares, and desktop.yml declares only that one.
+  const desktop = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  assert.deepEqual([...desktop.matchAll(/^\s+- cron: "([^"]+)"/gm)].map((m) => m[1]), ["23 9 * * *"]);
+  assert.equal(workflows().filter(([, t]) => /^\s+- cron:/m.test(t) && /trusted-mac\.yml@/.test(t)).length, 1, "desktop.yml is the only scheduled caller of trusted-mac.yml");
+  // Evaluate the bypass for synthetic events: only the nightly passes.
+  const base = { repo: "modelplan/modelplan", event: "schedule", ref: "refs/heads/main", wf: "modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main", cron: "23 9 * * *", task: "native" };
+  const pass = (e) => e.repo === "modelplan/modelplan" && e.event === "schedule" && e.ref === "refs/heads/main" && e.wf === "modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main" && e.cron === "23 9 * * *" && (e.task === "native" || e.task === "native-owner-gui");
+  assert.ok(pass(base) && pass({ ...base, task: "native-owner-gui" }));
+  for (const bad of [{ cron: "0 3 * * *" }, { wf: "modelplan/modelplan/.github/workflows/other.yml@refs/heads/main" }, { wf: "modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/x" }, { event: "workflow_dispatch" }, { event: "push" }, { event: "pull_request" }, { repo: "fork/modelplan" }, { ref: "refs/heads/x" }, { task: "native-headless" }, { task: "probe" }, { task: "u11-native" }]) assert.ok(!pass({ ...base, ...bad }), JSON.stringify(bad));
+  for (const part of ["github.event_name == 'schedule'", "github.workflow_ref == 'modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main'", "github.event.schedule == '23 9 * * *'", "github.ref == 'refs/heads/main'", "github.repository == 'modelplan/modelplan'", "inputs.task == 'native-owner-gui'"]) assert.ok(bypass.includes(part), part);
 });
