@@ -228,7 +228,9 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
    the hull, half retracted. The glass now stays in its place and the hull's top edge comes down over it (opening, rises
    off it): the clip is the hull silhouette (inside the row, nothing above it, no side overhang) from the first frame, so no
    part of the canopy is drawn outside the hull while it moves. 0 % is the open state's own clip, so both ends are unchanged. */
-@keyframes cockpit-shutter{0%{clip-path:inset(-24px -32px 0 -32px)}2%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(100% 0 0 0)}}
+/* Build 5 (owner): a plain inset() made the canopy a rectangular box while it moved, losing the rounded outline. The clip keeps the
+   hull's rounded shoulders (round 14px 14px 0 0, the same 14px as the wall mask) at every step, so the shape stays the canopy's. */
+@keyframes cockpit-shutter{0%{clip-path:inset(-24px -32px 0 -32px round 14px 14px 0 0)}2%{clip-path:inset(0 0 0 0 round 14px 14px 0 0)}100%{clip-path:inset(100% 0 0 0 round 14px 14px 0 0)}}
 #cockpit.ck[data-shutter-motion="closing"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) both}
 #cockpit.ck[data-shutter-motion="opening"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) reverse both}
 html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{animation:none}
