@@ -114,6 +114,60 @@ func TestNodeOnPathSkipsOtherAppsBundledRuntime(t *testing.T) {
 	}
 }
 
+// macrev2-1272-1: a dotted spelling of a bundle folder on PATH, or a symlink in an
+// ordinary bin folder (on PATH or a fallback) to another app's node or bun, is
+// still that app's runtime and is skipped; the tool's own adjacent runtime stays.
+func TestForeignBundledRuntimeSkippedWhateverItsSpelling(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	res := filepath.Join(root, "Synthetic.app", "Contents", "Resources")
+	alias := filepath.Join(root, "alias")
+	local := filepath.Join(home, ".local", "bin")
+	for _, d := range []string{res, alias, local, filepath.Join(home, ".bun", "bin")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file := func(p string) {
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := func(target, p string) {
+		if err := os.Symlink(target, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file(filepath.Join(res, "node"))
+	file(filepath.Join(res, "bun"))
+	link(filepath.Join(res, "node"), filepath.Join(alias, "node"))
+	link(filepath.Join(res, "bun"), filepath.Join(alias, "bun"))
+	script := filepath.Join(root, "tools", "codex")
+	sep := string(os.PathListSeparator)
+	dotted := filepath.Join(root, "Synthetic.app") + "/./Contents/Resources"
+	for name, path := range map[string]string{"direct": res, "dotted": dotted, "symlink": alias, "all": res + sep + dotted + sep + alias} {
+		if got := locateNode(home, script, path, executable); got != "" {
+			t.Fatalf("%s: selected foreign runtime %s", name, got)
+		}
+	}
+	// A fallback folder holding a symlink to the foreign runtime is skipped too; the real user node wins.
+	link(filepath.Join(res, "node"), filepath.Join(home, ".bun", "bin", "node"))
+	link(filepath.Join(res, "bun"), filepath.Join(home, ".bun", "bin", "bun"))
+	if got := locateNode(home, script, alias, executable); got != "" {
+		t.Fatalf("fallback symlink: selected %s", got)
+	}
+	file(filepath.Join(local, "node"))
+	if got, want := locateNode(home, script, dotted+sep+alias, executable), filepath.Join(local, "node"); got != want {
+		t.Fatalf("user node: got %s want %s", got, want)
+	}
+	// The tool's own adjacent runtime is still used, even inside an app bundle.
+	own := filepath.Join(res, "codex")
+	file(own)
+	if got, want := locateNode(home, own, alias, executable), filepath.Join(res, "node"); got != want {
+		t.Fatalf("adjacent: got %s want %s", got, want)
+	}
+}
+
 func TestFinderIncludesUserPackageBins(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
 	for _, dir := range []string{".npm-global/bin", ".volta/bin", ".bun/bin"} {

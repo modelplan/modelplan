@@ -102,16 +102,33 @@ func findNode(home, script string) string {
 // insideAppBundle reports a runtime shipped inside another application's bundle
 // (for example the ChatGPT app's private node). Such a runtime belongs to that
 // app: it is skipped on PATH and in the fallback folders, never used for a tool.
-func insideAppBundle(p string) bool { return strings.Contains(p, ".app/Contents/") }
+func insideAppBundle(p string) bool {
+	return strings.Contains(filepath.ToSlash(filepath.Clean(p))+"/", ".app/Contents/")
+}
+
+// foreignRuntime checks both the spelled path (cleaned, so "./" and ".." cannot
+// hide the bundle) and the real file a symlink points to.
+func foreignRuntime(p string) bool {
+	if insideAppBundle(p) {
+		return true
+	}
+	if real, e := filepath.EvalSymlinks(p); e == nil && insideAppBundle(real) {
+		return true
+	}
+	return false
+}
+
+// usable is a PATH or fallback candidate: present and not another app's runtime.
+func usable(p string, exists func(string) bool) bool { return exists(p) && !foreignRuntime(p) }
 
 // onPath walks pathEnv like exec.LookPath but skips other apps' bundled runtimes,
 // so a user-installed node later on PATH is still found.
 func onPath(pathEnv, name string, exists func(string) bool) string {
 	for _, d := range filepath.SplitList(pathEnv) {
-		if d == "" || !filepath.IsAbs(d) || insideAppBundle(d+"/") {
+		if d == "" || !filepath.IsAbs(d) {
 			continue
 		}
-		if p := filepath.Join(d, name); exists(p) {
+		if p := filepath.Join(d, name); usable(p, exists) {
 			return p
 		}
 	}
@@ -148,7 +165,7 @@ func locateNode(home, script, pathEnv string, exists func(string) bool) string {
 	dirs = nodeFallbackDirs(home)
 	for _, d := range dirs {
 		p := filepath.Join(d, "node")
-		if exists(p) {
+		if usable(p, exists) {
 			return p
 		}
 	}
@@ -157,7 +174,7 @@ func locateNode(home, script, pathEnv string, exists func(string) bool) string {
 	}
 	for _, d := range append([]string{filepath.Join(home, ".bun", "bin")}, dirs...) {
 		p := filepath.Join(d, "bun")
-		if exists(p) {
+		if usable(p, exists) {
 			return p
 		}
 	}
