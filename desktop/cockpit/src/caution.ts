@@ -81,7 +81,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   }
   if(account.valueState==='none'){
    const code=account.lastFailure?.code??null;
-   if(isUnreadable(code)){const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code});grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});}
+   if(isUnreadable(code)){const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code,tool:row.id});grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});}
    continue;
   }
   const extra=available(key,unstable),detail=extra?{detail:resetsAvailable(extra.partial?null:extra.n)}:{};
@@ -112,7 +112,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
    const code=account?.lastFailure?.code??row.reason.code;
    if(!isUnreadable(code))continue;
    taken.add(key);
-   const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code});
+   const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code,tool:row.id});
    grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});
   }
  }
