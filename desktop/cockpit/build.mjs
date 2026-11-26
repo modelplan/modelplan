@@ -117,7 +117,7 @@ if (official) {
   for(const part of ['crown','upper','lower','cone','aft','engine-gutter','console-gutter','record-gutter'])for(const d of ['1x','2x'])hullFiles.push(`${part}-890-${d}.png`);
   hullFiles.push('crown-640-1x.png','crown-640-2x.png');
   hullFiles.push('lower-skin-890-1x.png','lower-skin-890-2x.png'); // side walls: the study's canopy-h1 lower skin
-  hullFiles.push('aft-closed-1x.png','aft-closed-2x.png','cap-slab.svg'); // closed shell (D72): aft plate and cap slab
+  hullFiles.push('aft-closed-1x.png','aft-closed-2x.png','cap-slab.svg','title-edge-1x.png','title-edge-2x.png'); // closed shell (D72): aft plate and cap slab
   // Hull shape (owner build 13): the study's alpha masks for the narrow upper wall, the taper and the wide lower wall.
   for(const v of [890,'closed'])for(const d of ['1x','2x'])hullFiles.push(`upper-walls-${v}-${d}.png`,`upper-skin-${v}-${d}.png`);
   for(const d of ['1x','2x'])hullFiles.push(`taper-890-${d}.png`,`lower-stage-890-${d}.png`);
@@ -128,7 +128,7 @@ if (official) {
     await writeFile(resolve(output,'assets/hull',name),bytes);
   }
   await cp(resolve(hull,'SOURCES.md'),resolve(output,'assets/hull/SOURCES.md'));
-  css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8');
+  css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8')+'\n'+await readFile(resolve(hull,'skin.css'),'utf8'); // owner window pack: night skin loads after the bundled styles
   // CKP-FAD-24 / CKP-FAD-17 (D115, D122, D196): the v4 top-down throttle on every fader travel, each file checked against the
   // reserved-visuals registry. The community edition keeps the MIT flat fader.
   const throttle=resolve(assets,'cockpit/throttle');
