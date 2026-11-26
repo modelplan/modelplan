@@ -136,9 +136,9 @@ test('CKP-MFD compare: no back key on the bottom strip (D405/D387), and a HUD ro
  await page.locator('.hud-list .hp').first().click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-tune/);
  await expect(page.locator('.fd-ch.trying')).toHaveCount(0);
- // A page key closes the view the HUD opened (study closeMfdView('page')): no stale "‹ back" line on the next page.
+ // D400: the HUD opens the 模型 page as its key does; the Overview key leaves it: no stale "‹ back" line or switch on the overview.
  await page.locator('[data-mfd="page:overview"]').click();
- await expect(page.locator('.mfd-page .mfd-back')).toHaveCount(0);
+ await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);await expect(page.locator('.mfd-page .mfd-back')).toHaveCount(0);await expect(page.getByRole('tablist')).toHaveCount(0);
 });
 
 test('CKP-MFD compare: the title stays whole when the current effort is unknown',async({page})=>{

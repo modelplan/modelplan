@@ -100,7 +100,9 @@ import ModelPlanSettings
         host.pageRunning(["resources"])
         let first = try XCTUnwrap(sent.last)
         XCTAssertEqual(first.0, "resources")
-        XCTAssertEqual(Set(first.1.keys), ["samples"])
+        // The fixture's clock starts 40 s into a minute, so the 20 s reading closed that minute (D413 folds go along).
+        XCTAssertEqual(Set(first.1.keys), ["samples", "minutes"])
+        XCTAssertEqual((first.1["minutes"] as? [[String: Any]])?.count, 1)
         let samples = try XCTUnwrap(first.1["samples"] as? [[String: Any]])
         XCTAssertEqual(samples.count, 4, "the ten-minute window so far: 0, 10, 20, 30 s")
         XCTAssertEqual(Set(samples[0].keys), ["t", "cpuUser", "cpuSystem", "load", "memTotal", "memApp", "memWired", "memCompressed",
@@ -116,5 +118,26 @@ import ModelPlanSettings
         host.pageRunning([])
         timers.run(until: 100)
         XCTAssertEqual(sent.count, count, "the column stopped: nothing more is sent")
+    }
+
+    /// macrevc-1225-2 (D413): a new page (cockpit reopened, page replaced) gets the whole current hour of minute folds
+    /// with its first reading, even when no new minute closed since the previous page got them.
+    func testARestartedPageGetsTheWholeHourOfMinutesAtOnce() throws {
+        let host = host()
+        var sent: [[String: Any]] = []
+        host.sendData = { _, body in sent.append(body) }
+        host.apply(preferences())
+        host.pageRunning(["resources"])
+        timers.run(until: 3_900)  // 65 minutes at the column's 5 s cadence
+        let hour = try XCTUnwrap(sent.last(where: { $0["minutes"] != nil })?["minutes"] as? [[String: Any]])
+        XCTAssertEqual(hour.count, 60, "the first page has the hour")
+        // The page goes away (page replacement resets the running ids) and a fresh one starts in the same minute.
+        host.pageRunning([])
+        sent.removeAll()
+        host.pageRunning(["resources"])
+        let restart = try XCTUnwrap(sent.first, "the new page gets a reading at once")
+        let minutes = try XCTUnwrap(restart["minutes"] as? [[String: Any]], "the restart reading carries the minute folds")
+        XCTAssertEqual(minutes.count, 60, "the whole current hour, not only the raw ten minutes")
+        XCTAssertEqual((restart["samples"] as? [[String: Any]])?.count, 120, "and the raw ten minutes")
     }
 }

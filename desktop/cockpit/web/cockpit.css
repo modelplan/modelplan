@@ -375,10 +375,6 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 /* CKP-PLG-53: a plugin's big screen fills the big-screen well only; the page keys above and the faders beside it stay
    uncovered and live (pressing a page key closes it). */
 .mfd-screen .pl-screen{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;gap:8px;padding:10px 12px;background:var(--lcd-glass);color:var(--lcd-ink);overflow:hidden}
-.mfd-screen .pl-screen-h{display:flex;align-items:center;gap:6px;min-width:0;font:500 12px/16px var(--f-silk);color:var(--silk-hi)}
-.mfd-screen .pl-screen-h .pl-icon{display:inline-grid;flex:none;width:16px;height:16px}.mfd-screen .pl-screen-h .pl-icon svg{width:16px;height:16px}
-.mfd-screen .pl-screen-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mfd-screen .pl-screen-x{flex:none;padding:2px 8px;border:0;border-radius:4px;background:linear-gradient(180deg,var(--key-1),var(--key-2));box-shadow:var(--raised);font:500 10px/14px var(--f-silk);color:var(--silk-hi)}
 .mfd-screen .pl-screen-l{margin:0;display:grid;row-gap:6px}
 /* The screen is a <section>: take pointer events back from the prototype's `.ck:not(.open) section` rule (Close, drawn controls). */
 #cockpit .mfd-screen .pl-screen{pointer-events:auto}
@@ -521,6 +517,26 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .eng-keys[data-slots="6"] .ek .ek-identity{gap:2px;max-width:calc(100% - 4px)}
 .ck-eng .eng-keys[data-slots="6"] .ek .ek-identity .lamp{width:12px;height:12px}
 .ck-eng .eng-keys[data-slots="6"] .ek-name{font-size:10px}
+/* D387 / D413: while a screen is open the Overview slot is the switch "‹ Overview │ icon + short name": the same grid
+   cell as every page key (never wider), in the pressed key body; only the right half is lit. No animation (D397). */
+.mfd-pk .pk[hidden],.mfd-pk .pk-seg[hidden]{display:none}
+.mfd-pk .pk-seg{grid-column:1;grid-row:1;position:relative;display:flex;align-items:center;justify-content:center;min-width:0;height:var(--row-h,18px);padding:0 3px;border-radius:4px 0 0 4px;background:linear-gradient(180deg,var(--key-p1),var(--key-p2));box-shadow:var(--pressed);overflow:hidden}
+.pk-seg .h{-webkit-appearance:none;appearance:none;position:relative;display:flex;align-items:center;gap:3px;flex:none;height:14px;margin:0;padding:0 2px;border:0;border-radius:3px;background:none;font:500 10px/1 var(--f-silk);letter-spacing:.04em;white-space:nowrap;cursor:pointer}
+.pk-seg .back{color:var(--silk)}
+.pk-seg .cur{color:var(--silk-hi);cursor:default}
+.pk-seg .sep{flex:none;width:1px;height:9px;margin:0 3px;background:var(--silk-dim);opacity:.55}
+.pk-seg .led{position:absolute;left:50%;bottom:-1px;width:14px;margin-left:-7px;height:2px;border-radius:1px;background:var(--key-led-on);box-shadow:var(--key-led-glow)}
+.pk-seg .ch,.pk-seg .ic{flex:none;display:block;width:auto;height:auto}
+.pk-seg .ic{width:10px;height:10px}
+.pk-seg .back:hover{color:var(--silk-hi);background:#ffffff0f}
+.pk-seg .back:active{transform:translateY(1px);background:#0000004d;color:var(--silk-hi)}
+.pk-seg .h:focus-visible{outline:none;box-shadow:0 0 0 1px color-mix(in srgb,var(--silk-hi) 55%,transparent)}
+/* D413: the blank side keycaps of a screen's bottom row: flat, unlit, no hover. */
+.mfd-ok .ok.dead{background:linear-gradient(180deg,#232427,#1d1e20);box-shadow:inset 0 1px 0 #ffffff0d,0 0 0 1px #0b0c0e;opacity:.8;pointer-events:none}
+/* D413: a screen without a title row: its draw area is the whole well. */
+.mfd-screen .pl-screen[data-plugin="resources"]{padding:0;gap:0}
+/* The Calendar and Resources keys are pressed while their screen is open, and press like every key. */
+.ck-eng .eng-keys .pl-key:active{transform:translateY(1px);box-shadow:var(--pressed)}
 .cal-wk .wk-adr.chip{height:13px;overflow:hidden}
 .cal-wk .wk-adr.chip span{line-height:11px;margin:0 1px;padding:0 3px;text-align:center;border-radius:5px;border:1px solid var(--c);background:color-mix(in srgb,var(--c) 22%,transparent);color:var(--c)}
 .cal-wk .wk-adr.chip.credit span{background:color-mix(in srgb,var(--c) 90%,transparent);color:#1a0d07}

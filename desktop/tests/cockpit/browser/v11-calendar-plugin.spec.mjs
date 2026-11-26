@@ -162,7 +162,8 @@ test('CKP-PLG-07 week view opens from the key inside the MFD screen only; the ke
  const pk=await page.locator('.dk-mfd .mfd-pk .pk').nth(1).boundingBox();
  expect(await page.evaluate(([x,y])=>!!document.elementFromPoint(x,y)?.closest('.mfd-pk'),[pk.x+pk.width/2,pk.y+pk.height/2])).toBe(true);
  // The framework's title bar; the plugin draws the body below it.
- await expect(o.locator('.pl-screen-t')).toHaveText('Calendar');
+ // D413: no title row; the switch names the screen (short name, full name as its tooltip).
+ await expect(o.locator('.pl-screen-h')).toHaveCount(0);await expect(page.locator('.mfd-pk .pk-seg .cur')).toHaveText('Cal');await expect(page.locator('.mfd-pk .pk-seg .cur')).toHaveAttribute('title','Calendar');
  await expect(w.locator('.wk-dh b')).toHaveText(['11','12','13','14','15','16','17']);
  await expect(w.locator('.wk-dh.we')).toHaveCount(2);await expect(w.locator('.wk-col.we')).toHaveCount(2);
  await expect(w.locator('.wk-dh.today')).toHaveCount(1);
@@ -179,8 +180,8 @@ test('CKP-PLG-07 week view opens from the key inside the MFD screen only; the ke
  await shot(page,'E3-week-fit',page.locator('.ck-deck'));
  // The key again closes.
  await k.click();await expect(o).toHaveCount(0);await expect(k).toHaveAttribute('aria-expanded','false');
- // Close
- await k.click();await o.locator('.pl-screen-x').click();await expect(o).toHaveCount(0);
+ // The Overview tab of the switch (D387: no Close button)
+ await k.click();await page.getByRole('tab',{name:/Overview|总览/}).click();await expect(o).toHaveCount(0);
  // Esc (focus returns to the key)
  await k.click();await expect(o).toBeVisible();await page.keyboard.press('Escape');await expect(o).toHaveCount(0);await expect(k).toBeFocused();
  // An MFD page key closes it and shows that page.
@@ -221,7 +222,7 @@ test('D328 a day pressed in the week view swaps the column\'s bottom line to tha
  await open(page,{locale:'zh-CN'});
  const w=weekView(page),foot=column(page).locator('.pl-foot');
  await key(page).click();
- await expect(screen(page).locator('.pl-screen-t')).toHaveText('日历');
+ await expect(page.locator('.mfd-pk .pk-seg .cur')).toHaveText('日历');
  await w.locator('.wk-dh').nth(1).click();
  await expect(w.locator('.wk-dh').nth(1)).toHaveAttribute('aria-pressed','true');
  await expect(foot.locator('.pl-foot-l')).toHaveText('11/12 周四');await expect(foot.locator('.pl-foot-v')).toHaveText('Claude 高峰 05:00 · Claude 周 09:00 · GLM 高峰 22:00');
