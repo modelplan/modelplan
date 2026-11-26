@@ -114,7 +114,7 @@ for(const [tier,top] of [['tall',214]])test(`B13 ${tier} closed: the slab is the
  await open(page,shapes.find(s=>s.tier===tier&&s.closed));
  const v=await page.evaluate(()=>{const ck=document.querySelector('#cockpit').getBoundingClientRect(),c=document.querySelector('.ck-shell .hull-crown').getBoundingClientRect(),w=document.querySelector('.ck-shell .hull-upper').getBoundingClientRect();
   return {ckTop:ck.top,slab:[c.left,c.top,c.width,c.height],slabInRoot:c.top-ck.top,walls:[w.left+8,w.width-16]};});
- expect(v).toEqual({ckTop:top,slab:[8,top+13,620,17],slabInRoot:13,walls:[8,620]});
+ expect(v).toEqual({ckTop:top,slab:[8,top+14,620,17],slabInRoot:14,walls:[8,620]});
  const rows=await silhouette(page,top+60);
  expect(rows[top+10],'nothing above the slab').toEqual([-1,-1]);
  expect(rows[top+24],'slab below its 8 px cuts').toEqual([8,627]);

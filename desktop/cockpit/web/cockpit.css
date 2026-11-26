@@ -545,7 +545,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-head>.mp-title-edge{position:absolute;inset:0 0 auto;height:0;pointer-events:none}
 /* The owner's title edge is the header plate's 620 px top lip: it sits on the sill just above the head row (not over its controls), centred on the 636 px hull, behind the head's contents. */
 :root[data-theme="night"] #cockpit .ck-head>.mp-title-edge{inset:-9px -16px auto;height:7px;z-index:-1}
-/* Closed cap: the owner's cap slab sits 1 px higher than the bundled crown rule places it (measured against the owner's closed preview). */
-:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{top:13px}
+/* Closed cap: the owner's cap art sits 1 px higher than the bundled crown rule draws it (measured against the owner's closed preview). The box stays where it was, so it still overlaps the upper walls by 1 px (G3-108/G3-118); the art's first row is transparent, so nothing is cut. */
+:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{background-position:center -1px}
 /* Closed: the header plate's top rim (the first 9 px of the strip-panel art, above the head row) is not drawn under the owner's cap; the owner's closed preview has none. */
 :root[data-theme="night"] #cockpit[data-shell="closed"] .ck-head::before{top:0;height:35px;background-position:center -11px}
