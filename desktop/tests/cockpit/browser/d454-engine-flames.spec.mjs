@@ -94,7 +94,8 @@ test('D459 a page opened detached starts on the short parked flame',async({page}
 });
 
 const timing=page=>page.evaluate(()=>[...document.querySelectorAll('.ck-base :is(.bz,.bz-empty) .bz-flame')].map(f=>{const s=getComputedStyle(f),p=f.parentElement.style;
- return {names:s.animationName,dur:s.animationDuration,delay:s.animationDelay,scale:s.scale,opacity:+s.opacity,
+ const ks=f.getAnimations().map(a=>a.effect.getKeyframes().map(k=>[k.scale,k.opacity].filter(Boolean).join('|')));
+ return {names:s.animationName,dur:s.animationDuration,delay:s.animationDelay,ks,
   props:[...new Set(f.getAnimations().flatMap(a=>a.effect.getKeyframes().flatMap(k=>Object.keys(k))).filter(k=>!['offset','easing','composite','computedOffset'].includes(k)))].sort(),
   fp:p.getPropertyValue('--fp'),fb:p.getPropertyValue('--fb'),fl:p.getPropertyValue('--fl')};}));
 
@@ -108,8 +109,8 @@ test('D454 per-nozzle dynamics: full thrust gives each nozzle its own subtle tim
   const fps=4/parseFloat(x.fp);expect(fps).toBeGreaterThan(8.3);expect(fps).toBeLessThan(9.7);
   expect(parseFloat(x.fb)).toBeGreaterThanOrEqual(1.2);expect(parseFloat(x.fb)).toBeLessThanOrEqual(1.8);
   expect(x.props.filter(p=>!['backgroundPositionX','scale','opacity'].includes(p))).toEqual([]);
-  const y=parseFloat(x.scale.split(' ')[1]);expect(y).toBeGreaterThanOrEqual(.98);expect(y).toBeLessThanOrEqual(1.02);
-  expect(x.opacity).toBeGreaterThanOrEqual(.95);expect(x.opacity).toBeLessThanOrEqual(1);
+  // Amplitude from the keyframe definitions (not live values, which depend on the animation phase).
+  expect(x.ks.flat()).toEqual(expect.arrayContaining(['1 0.98','1 1.02','0.95','1']));
  }
  if(process.env.FLAME_FRAMES){const r=await page.evaluate(()=>{const b=document.querySelector('.ck-base').getBoundingClientRect();return {y:b.top};});
   for(let i=0;i<30;i++){await page.evaluate(t=>document.getAnimations().forEach(a=>{a.pause();a.currentTime=t;}),i*100);
