@@ -25,13 +25,25 @@
 // data the page rendered, through its own `accept`, unless the host pushes readings for it. A running plugin with
 // `nextDeadline` names its next redraw; the view reports the earliest to the host, whose `tick` redraws it.
 import type {WireCockpitData,WireRow} from '../generated/wire.js';
-import {PLUGIN_TOKENS,PluginRegistry,type CockpitPlugin,type PluginCell,type PluginContext,type PluginDrawContext,type PluginLocale,type PluginWords} from './plugin-registry.js';
+import {PLUGIN_TOKENS,PluginRegistry,screenShortText,type CockpitPlugin,type PluginCell,type PluginContext,type PluginDrawContext,type PluginLocale,type PluginWords} from './plugin-registry.js';
 import {builtinPlugins} from './plugin-builtins.js';
 import {pluginLayout,type LayoutPage,type PluginLayout} from './plugin-layout.js';
 import {disablePlugin,emptyPluginState,enablePlugin,enabledPlugins,parsePluginState,pluginSettings,type PluginState} from './plugin-state.js';
 import {ht} from './host-text.js';
 import '../study/rocket-r1/strings/plugins.js';
 /** Long and short forms of a `plugin.*` string-table key in one locale (`<key>Short` when it exists). */
+/** D387 / D413: what the Overview | screen switch and the bottom keys show for the one open screen. */
+export interface PluginScreenInfo {
+  readonly id:string;
+  /** The full name (tooltip and accessible name). */
+  readonly name:string;
+  /** The switch's short name, or null: the switch shows the icon alone. */
+  readonly short:string|null;
+  /** Trusted, bundled SVG markup (the plugin's own key icon). */
+  readonly icon:string;
+  /** The centre bottom key's two-way choice, when the screen has one. */
+  readonly toggle:{readonly value:string;readonly options:readonly {readonly value:string;readonly text:string}[];pick(value:string):void}|null;
+}
 export function pluginWords(locale:PluginLocale,key:string,vars?:Readonly<Record<string,string|number>>):PluginWords {
   const full=ht(locale,key,vars),shortKey=key+'Short',short=ht(locale,shortKey,vars);
   return {full,short:short===shortKey?full:short};
@@ -128,6 +140,8 @@ export interface PluginHost {
   /** CKP-PLG-53: the plugin's big screen inside the big-screen area; null closes it. The key toggles; `keep` (a host
    *  request such as the widget card's action) leaves an already open screen open. */
   openScreen(id:string|null,keep?:boolean):boolean;
+  /** D387: the deck follows the one open screen (its plugin id and shown name), or null when none is open. */
+  onScreen(listener:(screen:PluginScreenInfo|null)=>void):void;
   /** Close an open plugin screen and report whether one was covering the page. */
   dismissScreen():boolean;
   /** Plugins currently running (for tests and diagnostics). */
@@ -147,10 +161,12 @@ export interface PluginReports {
   readonly state:(state:PluginState)=>void;
   /** The plugins now running, in user order; the host samples exactly these. */
   readonly running:(ids:string[])=>void;
+  /** D376: right-click Remove asks the native host to confirm and turn the plugin off. False (no native host) = the page removes it itself. */
+  readonly close?:(id:string)=>boolean;
 }
 export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=new PluginRegistry(builtinPlugins)):PluginHost {
   let state:PluginState=emptyPluginState,negotiated=false,visible=false,interactive=false,disposed=false,locale:PluginLocale='en';
-  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement;title:HTMLElement;close:HTMLButtonElement;list:HTMLElement;area:HTMLElement;opening:boolean}|null=null;
+  let repaint:(()=>void)|null=null,menu:HTMLElement|null=null,menuAnchor:HTMLElement|null=null,reported:string|null=null,screen:{id:string;box:HTMLElement;list:HTMLElement;area:HTMLElement;opening:boolean}|null=null;
   const readings=new Map<string,unknown>(),columns=new Map<string,HTMLElement>(),running=new Set<string>(),placed=new Set<string>(),hostFed=new Set<string>();
   let shown:WireCockpitData|null=null,now=0;
   // D323 custom draw: per-plugin view memory, the size each area was last drawn at, and one observer that draws an area
@@ -210,13 +226,16 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const drawn=guard(()=>plugin.column(readings.get(plugin.id),context(plugin.id)),{cells:[]});
     const cells=()=>Array.from({length:rows},(_,i)=>drawCell(drawn.cells?.[i],i));
     const key=focusKey(column);
-    for(const old of column.querySelectorAll<HTMLElement>(':scope > .pl-draw'))watch?.unobserve(old);
     // D323: a custom draw gets one clipped area over all the cell rows; the bottom line stays the framework's.
-    const area=typeof drawn.draw==='function'&&rows>0?el('div','pl-draw'):null;
+    // The same draw area is reused by a redraw: a fresh element would be a new observation at the depth the resize callback
+    // is delivering, which the browser reports as a "ResizeObserver loop" error.
+    const before=column.querySelector<HTMLElement>(':scope > .pl-draw');
+    const area=typeof drawn.draw==='function'&&rows>0?(before&&before.dataset.plugin===plugin.id?before:el('div','pl-draw')):null;
+    for(const old of column.querySelectorAll<HTMLElement>(':scope > .pl-draw'))if(old!==area)watch?.unobserve(old);
     if(area){area.style.gridRow=`1 / span ${rows}`;area.dataset.plugin=plugin.id;}
     const parts:HTMLElement[]=area?[area]:cells();
     const foot=el('div','qrow qrow-t pl-foot');
-    if(drawn.foot){foot.setAttribute('role','group');foot.setAttribute('aria-label',[drawn.foot.label.full,drawn.foot.value?.full].filter(Boolean).join(' · '));foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value)foot.append(fitted('pl-foot-v',drawn.foot.value));}
+    if(drawn.foot){foot.setAttribute('role','group');foot.setAttribute('aria-label',[drawn.foot.label.full,drawn.foot.value?.full].filter(Boolean).join(' · '));foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value){const v=fitted('pl-foot-v',drawn.foot.value);v.title=drawn.foot.value.full;foot.append(v);}}// D406: one line with an ellipsis (CSS); the tooltip holds the full text
     parts.push(foot);if(reserve)parts.push(el('div','qrow qrow-r'));
     column.replaceChildren(...parts);column.dataset.rows=String(rows);column.dataset.reserve=String(reserve);
     const ink=plugin.ink;if(ink)column.style.setProperty('--pl-ink',ink);else column.style.removeProperty('--pl-ink');
@@ -250,12 +269,22 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   // button whether it came from a pointer, Enter or Space, so the capture listener sees every path.
   // Invariant (macrevb-835-2): the screen's frame (icon, title, Close) is built once per opening; readings, repaints,
   // locale and settings changes update its text and lines in place, so a focused control is never replaced.
+  // D387: the screen is one view of the lower panel. Any other view key (a page key, a subscription key, All) ends it.
+  // D401: a subscription or All key is handled by the engine, which asks `dismissScreen` first (pressing the remembered
+  // selection again brings it back instead of toggling it off); only a page key ends the screen here.
   const pageKeys=(e:Event)=>{if(screen&&(e.target as Element|null)?.closest?.('.mfd-pk .pk'))closeScreen();};
+  // D401: a plugin key follows the subscription-key logic. While a screen is open only its key is lit: the lit subscription
+  // (or All) key goes dark and is remembered, then lit again when the screen closes (a new table is dimmed as it is drawn).
+  const dimmed=new Set<HTMLElement>();
+  const dimSubs=()=>{for(const k of dimmed)if(!k.isConnected)dimmed.delete(k);for(const k of root.querySelectorAll<HTMLElement>('.eng-keys .ek:not(.pl-key),.ek[data-all]')){if(k.getAttribute('aria-pressed')==='true')dimmed.add(k);k.classList.remove('on');k.setAttribute('aria-pressed','false');}};
+  const lightSubs=()=>{for(const k of dimmed)if(k.isConnected){k.classList.add('on');k.setAttribute('aria-pressed','true');}dimmed.clear();};
+  // The plugin key is pressed (lit, aria-pressed) exactly while its screen is open, as a subscription key is while selected.
+  const markKey=(key:HTMLElement,open:boolean)=>{key.classList.toggle('on',open);key.setAttribute('aria-expanded',String(open));key.setAttribute('aria-pressed',String(open));};
+  let listener:((s:PluginScreenInfo|null)=>void)|null=null,told='';
+  const tell=(s:PluginScreenInfo|null)=>{const sig=s?[s.id,s.name,s.short,s.toggle?.value,s.toggle?.options.map(o=>o.value+o.text).join()].join('\0'):'';if(sig===told)return;told=sig;listener?.(s);};
   function drawScreen() {
     if(!screen)return;const plugin=registry.get(screen.id);if(!plugin){closeScreen();return;}
-    const title=pluginWords(locale,plugin.title),close=pluginWords(locale,'plugin.close');
-    screen.title.dataset.full=title.full;screen.title.dataset.short=title.short;
-    screen.close.textContent=close.full;
+    const title=pluginWords(locale,plugin.title);
     const shown=guard(()=>plugin.screen(readings.get(plugin.id),context(plugin.id)),{lines:[]});
     // D323: a custom draw paints the body under the title bar; when it throws, the lines are shown instead.
     const opening=screen.opening;screen.opening=false;
@@ -270,11 +299,16 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       const [dt,dd]=[row.children[0]!,row.children[1]!];if(dt.textContent!==line.label)dt.textContent=line.label;if(dd.textContent!==line.value)dd.textContent=line.value;});
     for(const row of rows.slice(lines.length))row.remove();
     screen.box.setAttribute('aria-label',ht(locale,'plugin.screenAria',{name:title.full}));fitIn(screen.box);
+    // D413: the switch's short name and icon, and the screen's bottom toggle (its pick lives in the view memory only).
+    const id=screen.id,toggle=shown.toggle&&Array.isArray(shown.toggle.options)&&shown.toggle.options.length===2?shown.toggle:null;
+    tell({id,name:title.full,short:plugin.screenShort?screenShortText(pluginWords(locale,plugin.screenShort).full,locale):null,icon:plugin.icon,
+      toggle:toggle?{value:toggle.value,options:toggle.options.map(o=>({value:o.value,text:o.label.full})),pick:(value:string)=>{
+        if(screen?.id!==id||!toggle.options.some(o=>o.value===value))return;memo(id)[toggle.key]=value;drawScreen();}}:null});
   }
   function closeScreen(restoreFocus=false) {
     if(!screen)return;const id=screen.id;watch?.unobserve(screen.area);screen.box.remove();screen=null;
     document.removeEventListener('click',pageKeys,true);
-    for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))key.setAttribute('aria-expanded','false');
+    for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .pl-key'))markKey(key,false);lightSubs();tell(null);
     if(restoreFocus)root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`)?.focus();
     reconcile();// S4: a plugin that ran only for its screen stops.
   }
@@ -285,19 +319,18 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     if(screen?.id===id){if(!keep)closeScreen();return true;}
     const well=root.querySelector<HTMLElement>('.dk-mfd .mfd-screen');if(!well)return false;
     closeScreen();const box=el('section','pl-screen');box.dataset.plugin=id;box.setAttribute('role','region');box.tabIndex=-1;
-    const head=el('div','pl-screen-h'),title=fitted('pl-screen-t',pluginWords(locale,plugin.title));
-    const close=el('button','pl-screen-x');close.type='button';close.dataset.mat='part';close.onclick=e=>{if(e.isTrusted)closeScreen(true);};
-    head.append(icon(plugin,'pl-icon'),title,close);const list=el('dl','pl-screen-l'),area=el('div','pl-screen-d');area.hidden=true;area.dataset.plugin=id;box.append(head,list,area);
-    well.append(box);screen={id,box,title,close,list,area,opening:true};reconcile();drawScreen();
+    // D413: no title row and no Close key; the Overview | screen switch names the screen and returns.
+    const list=el('dl','pl-screen-l'),area=el('div','pl-screen-d');area.hidden=true;area.dataset.plugin=id;box.append(list,area);
+    well.append(box);screen={id,box,list,area,opening:true};reconcile();drawScreen();
     document.addEventListener('click',pageKeys,true);
-    root.querySelector(`.eng-keys .pl-key[data-plugin="${id}"]`)?.setAttribute('aria-expanded','true');
+    const opened=root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${id}"]`);if(opened)markKey(opened,true);dimSubs();
     return true;
   }
   // ---- menus: the empty-slot "+" menu and the plugin key's right-click menu share one popup.
   function closeMenu(restoreFocus=false) {
     if(!menu)return;menu.remove();menu=null;
     document.removeEventListener('pointerdown',outside,true);
-    menuAnchor?.classList.remove('on');if(menuAnchor?.hasAttribute('data-add-subscription'))menuAnchor.setAttribute('aria-expanded','false');if(restoreFocus&&menuAnchor?.isConnected)menuAnchor.focus();menuAnchor=null;
+    if(menuAnchor&&!menuAnchor.classList.contains('pl-key'))menuAnchor.classList.remove('on');if(menuAnchor?.hasAttribute('data-add-subscription'))menuAnchor.setAttribute('aria-expanded','false');if(restoreFocus&&menuAnchor?.isConnected)menuAnchor.focus();menuAnchor=null;
   }
   const outside=(e:Event)=>{if(menu&&!menu.contains(e.target as Node)&&!menuAnchor?.contains(e.target as Node))closeMenu();};
   const escape=(e:KeyboardEvent)=>{
@@ -311,7 +344,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const m=el('div','pl-menu');m.setAttribute('role','menu');m.setAttribute('aria-label',label);m.dataset.mat='glass';return m;
   }
   function place(m:HTMLElement,anchor:HTMLElement,at?:{x:number;y:number}) {
-    root.append(m);menu=m;menuAnchor=anchor;anchor.classList.add('on');
+    root.append(m);menu=m;menuAnchor=anchor;if(!anchor.classList.contains('pl-key'))anchor.classList.add('on');
     const r=anchor.getBoundingClientRect(),x=at?.x??r.left,y=at?.y??r.bottom+6;
     m.style.left=Math.max(8,Math.min(window.innerWidth-m.offsetWidth-8,x))+'px';
     m.style.top=(y+m.offsetHeight>window.innerHeight-4?Math.max(4,(at?.y??r.top)-m.offsetHeight-6):y)+'px';
@@ -322,7 +355,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   function openKeyMenu(key:HTMLElement,id:string,at?:{x:number;y:number}) {
     const plugin=registry.get(id);if(disposed||!interactive||!plugin)return false;
     closeMenu();const name=pluginWords(locale,plugin.title).full,m=popup(key,ht(locale,'plugin.menuAria',{name}));
-    const remove=item('pm-remove',()=>{host.remove(id);});remove.dataset.pmRemove=id;remove.append(fitted('pm-n',pluginWords(locale,'plugin.remove')));m.append(remove);
+    const remove=item('pm-remove',()=>{if(report.close?.(id)!==true)host.remove(id);});remove.dataset.pmRemove=id;remove.append(fitted('pm-n',pluginWords(locale,'plugin.remove')));m.append(remove);
     place(m,key,at);return true;
   }
   const host:PluginHost={
@@ -341,7 +374,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
         // CKP-PLG-50: the subscription key's box and type, a white line-art icon in the vendor-mark box, a dashed
         // underline in the plugin's colour, no digit and no ×.
         const key=el('button','ek bd-r pl-key');key.type='button';key.dataset.plugin=id;key.dataset.mat='part';
-        key.setAttribute('aria-label',ht(locale,'plugin.keyAria',{name:title.full}));key.setAttribute('aria-expanded',String(screen?.id===id));key.title=title.full;
+        key.setAttribute('aria-label',ht(locale,'plugin.keyAria',{name:title.full}));markKey(key,screen?.id===id);key.title=title.full;
         const identity=el('span','ek-identity');identity.append(icon(plugin,'lamp pl-icon'),fitted('ek-name',title));
         const line=el('i','bl pl-dash');line.setAttribute('aria-hidden','true');line.style.setProperty('--v',plugin.underline);
         key.append(identity,line);
@@ -354,6 +387,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
         fill(col,plugin,bay.querySelectorAll('.qcell').length,bay.querySelectorAll('.qrow').length>1);
         bay.replaceWith(col);columns.set(id,col);placed.add(id);
       });
+      if(screen){dimSubs();const open=root.querySelector<HTMLElement>(`.eng-keys .pl-key[data-plugin="${screen.id}"]`);if(open)markKey(open,true);}
       reconcile();if(screen)drawScreen();
     },
     // Privacy barrier (clear, new view revision, waiting/empty; macrevc-844-2, macrev2-1104-2): readings, per-plugin draw
@@ -428,6 +462,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     },
     closeMenu:()=>closeMenu(),
     openScreen,
+    onScreen(next){listener=next;},
     dismissScreen(){if(!screen)return false;closeScreen();return true;},
     running:()=>[...running],
     dispose(){if(disposed)return;closeMenu();closeScreen();placed.clear();visible=false;reconcile();disposed=true;repaint=null;columns.clear();readings.clear();memos.clear();pending=null;hostFed.clear();shown=null;watch?.disconnect();document.removeEventListener('focusin',moved,true);document.removeEventListener('keydown',escape,true);hosts.delete(root);},

@@ -86,12 +86,20 @@ var (
 	ccAssistant = []byte(`"type":"assistant"`)
 )
 
-func (p *claudeParser) line(off, end int64, b []byte) {
+func (p *claudeParser) line(off, end int64, b []byte) { p.lineDoc(off, end, b, nil) }
+
+// lineDoc is line with the line's reduced form (claudeDoc) already made, or nil to make it here.
+func (p *claudeParser) lineDoc(off, end int64, b, doc []byte) {
 	if !bytes.Contains(b, ccUser) && !bytes.Contains(b, ccAssistant) {
 		return
 	}
+	if doc == nil {
+		if doc = claudeDoc(b); doc == nil {
+			return
+		}
+	}
 	var l ccLine
-	if json.Unmarshal(b, &l) != nil || (l.IsSidechain && !p.sidechains) {
+	if json.Unmarshal(doc, &l) != nil || (l.IsSidechain && !p.sidechains) {
 		return
 	}
 	ts, err := time.Parse(time.RFC3339Nano, l.Timestamp)

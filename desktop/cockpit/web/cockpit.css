@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: MIT */
 /* Local-window adaptation of the owner-released G/P6 prototype. */
 *{box-sizing:border-box}body.r1{margin:0;background:transparent;height:100vh;overflow:hidden;font-family:'DM Sans',system-ui,sans-serif}button{font:inherit;cursor:pointer}button:disabled{cursor:default;opacity:.5}button:focus-visible{outline:2px solid var(--gold-lcd);outline-offset:2px}
-/* Motion policy (MOT-2.3-01/02/03/04/08, CKP-MOT-03): the cockpit has no blanket animation switch; body.reduced
+/* Motion policy (MOT-2.3-01/02/03/04/08, CKP-MOT-03): body.reduced
    follows Reduce Motion (view.ts). The native window owns the shell height, so #cockpit.ck never transitions. The
    carried prototype CSS is kept free of decorative motion, and each allowed motion below declares its own
    Reduce Motion and hidden/closed gates. Transitions share one gate: an inactive (hidden, occluded or non-key) page
-   starts none and cancels any in flight. c-motion-policy.spec.mjs audits the rendered page against this list. */
-#cockpit:not([data-active="true"]) :is(*,*::before,*::after){transition:none!important}
+   starts none and cancels any motion in flight. c-motion-policy.spec.mjs audits the rendered page against this list. */
+#cockpit:not([data-active="true"]) *{transition:none!important;animation:none!important}
 /* :is() drops a pseudo-element argument, so the pseudo-elements need their own selector (WP-10 fades the switch art on ::before/::after). */
-#cockpit:not([data-active="true"]) *::before,#cockpit:not([data-active="true"]) *::after{transition:none!important}
+#cockpit:not([data-active="true"]) *::before,#cockpit:not([data-active="true"]) *::after{transition:none!important;animation:none!important}
 #cockpit.ck{transition:none;display:grid!important;position:relative!important;inset:auto!important;transform:none!important;opacity:1!important;width:620px;height:var(--body-h,890px);margin:0 auto;max-height:100vh;grid-template-rows:minmax(24px,1fr) 26px var(--eng-h,226px) var(--console-h,257px) var(--tape-h,94px);gap:9px;padding:12px 16px 22px;--pad-x:16px;isolation:isolate;overflow:visible}
-.ck-head{grid-row:2;grid-column:1;z-index:3}.ck-portrow{grid-row:1;grid-column:1;min-height:0}.ck-eng{grid-row:3;grid-column:1;overflow:auto;min-width:0;min-height:0}.ck-deck{grid-row:4;grid-column:1;min-height:0}.ck-tape{grid-row:5;grid-column:1;min-height:0;overflow:auto}.ck-brand{margin-right:auto}.ck-head .key{min-width:54px}.wordmark{white-space:nowrap}
+.ck-head{grid-row:2;grid-column:1;z-index:3}.ck-portrow{grid-row:1;grid-column:1;min-height:0}.ck-eng{grid-row:3;grid-column:1;overflow:auto;min-width:0;min-height:0}.ck-deck{grid-row:4;grid-column:1;min-height:0}.ck-tape{grid-row:5;grid-column:1;min-height:0;overflow:auto}.ck-brand{margin-right:auto}.ck-head .key{min-width:54px}.wordmark{white-space:nowrap;min-width:0}
 .ck-portrow::after{display:none}.ck-port{height:100%;background:var(--port-bg);min-height:0}.ck-field{display:none!important}.hud:not(.wide){position:absolute;left:28px;right:28px;top:auto;bottom:18px;max-width:none;width:auto;min-height:0;display:block;padding:8px 12px;background:var(--lcd-glass);box-shadow:var(--well);border-radius:5px}.u11-summary{font:11px var(--f-silk);color:var(--lcd-ink)}
 .activity{display:block;width:6px;height:6px;border-radius:50%;background:var(--gold-lcd);opacity:.35}
 .ck-deck{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:10px}.dk-fad{display:flex;flex-direction:column;min-width:0;min-height:0}.u11-fader{position:relative;width:10px;border-radius:5px;background:linear-gradient(90deg,var(--slot-1),var(--slot-2));box-shadow:var(--well);opacity:.5}.u11-fader i{position:absolute;left:-10px;right:-10px;bottom:25%;height:18px;border-radius:3px;background:linear-gradient(var(--key-1),var(--key-2));box-shadow:var(--raised)}.fd-bank{padding:8px;text-align:center}.dk-mfd{overflow:auto;padding:14px;background:var(--lcd-bg);box-shadow:var(--well);border-radius:5px;min-height:0}.dk-mfd h2{font-size:10px;color:var(--lcd-muted);margin:0 0 10px}.u11-subscription{display:grid;gap:6px;border-top:1px solid var(--slot-line);padding:9px 0;color:var(--lcd-ink);font:10px var(--f-silk)}.u11-empty,.ec-empty{font:11px var(--f-silk);color:var(--lcd-muted);padding:10px}.ck-tape{display:block;padding:3px 12px;background:var(--lcd-bg);box-shadow:var(--well)}.u11-observed{font:10px 'Share Tech Mono',monospace;color:var(--lcd-ink)}
@@ -89,8 +89,10 @@ html[data-theme="night"] #cockpit .ek-all:not(.on)>span:not(.ki){color:#a1aab3}
 
 /* Porthole still (official edition; src/porthole-still.ts). The field shows only once painted. */
 .ck-port .ck-field[data-still=ready]{display:block!important;position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
-.ck-still{position:absolute;inset:0;overflow:hidden;isolation:isolate}
-.ck-still-stage{position:absolute;left:0;top:0;transform-origin:0 0}
+.ck-still{position:absolute;inset:0;overflow:hidden;isolation:isolate;background:#03070d}
+.ck-port{--ck-still-drop:.064;--ck-still-dim:0}
+.ck-still-dim{background:radial-gradient(ellipse 70% 60% at 50% 100%,#02050a 0,#02050a 55%,rgba(2,5,10,0) 100%)}
+.ck-still-stage{position:absolute;left:0;top:0;margin-left:3px;transform-origin:0 0}
 .ck-still-layer{position:absolute;display:block;background-size:100% 100%;background-repeat:no-repeat}
 .ck-still-add{mix-blend-mode:plus-lighter;z-index:1}
 /* Flame/halo flicker (owner D39/D-H; prototype composer.js:26,34): only on an active, open page; static under the
@@ -107,7 +109,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-o2{animation-delay:-.26s!important}
 }
 /* Website links are small secondary text, at the cockpit's 10 px floor. */
-#cockpit .website-link{font:10px/10px var(--f-lcd);color:var(--lcd-muted);text-decoration:none;white-space:nowrap}
+#cockpit .website-link{font:10px/10px var(--f-lcd);color:var(--lcd-muted);text-decoration:none;white-space:nowrap;min-width:0}
 #cockpit .website-link:hover,#cockpit .website-link:focus-visible{color:var(--lcd-ink)}
 #cockpit .sp-h .website-link{margin-left:auto;flex:none}
 
@@ -118,7 +120,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 
 /* HUD B: borderless, on one scrim that fades to nothing at every edge (CKP-PORT-03, 04). The port's padding box starts at (18,14) in the window, so these are the window-local (76,24) and (58,9) less that. */
 #cockpit .hud[hidden]{display:none!important}
-#cockpit[data-layout] .hud.hud-b,#cockpit[data-layout] .hud.hud-strip{position:absolute;right:auto;bottom:auto;min-width:0;max-width:none;min-height:0;padding:0;border:0;border-radius:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:auto;cursor:default}
+#cockpit[data-layout] .hud.hud-b{position:absolute;right:auto;bottom:auto;min-width:0;max-width:none;min-height:0;padding:0;border:0;border-radius:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:auto;cursor:default}
 /* D371 B2 option A (owner 11-21, CKP-PORT-03): no panel. One scrim that fades to nothing at every edge sits behind the
    text, and every letter carries a 1 px dark outline so it reads on the bright earth limb. The HUD block itself stays at
    (76,24) 180x160, inside the safe area (10 px in from the glass's curved edge); the scrim never grows past the port. */
@@ -129,14 +131,10 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 #cockpit .hud .hud-axis-label,#cockpit .hud .hud-rank{stroke:rgba(0,0,0,.6);stroke-width:1px;-webkit-text-stroke:0}
 #cockpit .hud-b .hud-chart{width:180px;height:86px;padding:4px 9px 5px}
 #cockpit .hud-b .hud-list{width:117px;height:74px;padding:0;gap:0;overflow:hidden}
-#cockpit[data-layout] .hud.hud-strip{left:44px;top:11px;width:216px;height:30px;display:block;background:none;border-radius:0}
 #cockpit .hud .hp{display:flex;align-items:baseline;gap:3px;padding:0 2px;min-width:0;background:none;border:0;color:inherit;font-size:10px;line-height:12px;cursor:pointer}
 #cockpit .hud .hp b{overflow:visible;text-overflow:clip;font-size:10px}
 #cockpit .hud .hp-rec{white-space:nowrap;margin-left:auto}
 #cockpit .hud .hp{border-left:2px solid transparent}#cockpit .hud .hp.selected{border-left-color:#e9edf0aa}#cockpit .hud .hp.dominated{opacity:.55}
-/* G3-48: the compact strip follows the study at 640: an 86x30 chart beside three stacked 10 px rows. One block, after the
-   generic .hud rules and more specific than them, so its clipping and row height are not overridden. */
-#cockpit[data-layout] .hud.hud-strip{display:grid;grid-template-columns:86px minmax(0,1fr);column-gap:2px}#cockpit[data-layout] .hud.hud-strip .hud-chart{grid-column:1;grid-row:1;width:86px;height:30px;padding:0}#cockpit[data-layout] .hud.hud-strip .hud-list{display:grid;grid-column:2;grid-row:1;grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(3,10px);gap:0;padding:0;height:100%;min-width:0;align-self:start}#cockpit[data-layout] .hud.hud-strip .hp{height:10px;line-height:10px}#cockpit[data-layout] .hud.hud-strip .hp b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:10px}#cockpit[data-layout] .hud.hud-strip .hp-rec{flex:none;font-size:9px;line-height:10px}
 #cockpit .hud .hp b{color:#e9edf0}#cockpit .hud .hp-on{display:inline-block;flex:none;width:5px;height:5px;margin-left:2px;border-radius:50%;background:#5ad9ba;align-self:center}
 #cockpit .hud .hp b.gold{color:var(--gold)}#cockpit .hud .hp-rec.on{text-shadow:0 0 6px color-mix(in srgb,var(--gold) 53%,transparent)}
 .hud-front{fill:none;stroke:var(--gold);stroke-width:1.2;stroke-dasharray:3 2}
@@ -152,7 +150,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 #cockpit .hud-b .hud-list{display:grid;grid-template-columns:9px minmax(0,max-content) max-content 7px;column-gap:2px;justify-content:start;grid-template-rows:repeat(6,12px);width:max-content;min-width:117px;max-width:174px;height:74px;box-sizing:border-box;padding:1px 2px 1px 4px;align-content:start}
 /* Owner badcase 11-21: the rows share the list's columns (subgrid), so every ★ effort starts at the same x; each row's own
    auto tracks used to split its free width and moved the ★ by the name's length. */
-#cockpit .hud-b .hp{display:grid;grid-column:1/-1;grid-template-columns:subgrid;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap}
+#cockpit .hud-b .hp{display:grid;grid-column:1/-1;grid-template-columns:subgrid;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap;min-width:0}
 #cockpit .hud-b .hp b{font:500 10px/12px var(--f-lcd);overflow:hidden;text-overflow:clip;min-width:0}
 #cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-rec{margin-left:0;justify-self:start}#cockpit .hud-b .hp-n{color:#aab6bf}
 .hud-axis{fill:none;stroke:#e9edf030;stroke-width:.7}.hud-axis-label{font:400 9px var(--f-silk);fill:#aab6bf}
@@ -169,6 +167,8 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 .bz-line,.bz-glow{position:absolute;left:50%;top:3.5px;width:var(--w,22px);height:3px;transform:translateX(-50%);border-radius:1.5px}
 .bz-line{background:var(--base-metal,#9aa1a8)}
 .bz-glow{display:none}
+/* D454: the engine flame is official art only; the community edition draws no sprite. */
+.bz-flame{display:none}
 .bz.stale .bz-line,.bz-empty .bz-line{background:var(--base-stale,#6b7077)}
 .bz-empty .bz-line{opacity:.35}
 /* Working (CKP-ENG-17/18): a soft mouth light below the line in the quota-status colour; nothing when idle. */
@@ -198,13 +198,11 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
    a 31 px taper steps out above the instruments and the lower wall runs full width to the aft plate (22 px). Each is
    the lower-skin tile in one vertical phase (the strip's content line, cap + 9 px), cut by the study's alpha masks
    (official edition, hull.css); the community edition has neither and stays neutral. The taper tops are the study's
-   formulas at the fixed root heights 905/635 open (root - console - tape - 40; D74 made the canopy 244/56 px, 28/8 px
-   taller than the study's 216/48, and every row below it moves down by as much) and 691/609 closed
+   formulas at the fixed root height 905 open (D444: one layout) (root - console - tape - 40; D74 made the canopy 244/56 px, 28/8 px
+   taller than the study's 216/48, and every row below it moves down by as much) and 691 closed
    (84.5 + eng - 4.5 + (root + 6 - 120 - eng - console - tape) / 3 - 6). */
 #cockpit{--hull-cap-h:244px;--hull-taper-top:514px}
-#cockpit[data-layout="640"]{--hull-cap-h:56px;--hull-taper-top:320px}
 #cockpit[data-shell="closed"]{--hull-cap-h:30px;--hull-taper-top:300px}
-#cockpit[data-shell="closed"][data-layout="640"]{--hull-taper-top:294px}
 :root[data-theme="night"] #cockpit .ck-shell :is(.hull-crown,.hull-record){display:none}
 :root[data-theme="night"] #cockpit .ck-shell :is(.hull-upper,.hull-cone,.hull-lower){display:block;bottom:auto;background-image:var(--hull-wall);background-size:636px 32px;background-repeat:repeat-y;-webkit-mask-composite:source-over;mask-composite:add;mask-mode:alpha}
 /* G3-118 (owner, build 14f at the Auto 85 % zoom: a light line across both side walls): the walls are stacked layers
@@ -220,12 +218,11 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
    adjoining antialiased edges can expose the desktop through the joint. */
 :root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(var(--hull-cap-h) 14px 22px)}
 /* G3-108 (owner, build 14e): the closed root stands on the open root's floor, so the strip, the panels and the base are
-   at the same page place open or closed (strip at 253 tall, 65 compact) and the shutter never moves the body on the
+   at the same page place open or closed (strip at 253) and the shutter never moves the body on the
    page. The page canvas is always the open root's; the native window leaves out the band above the slab (closed:
    strip - 25 px), so the slab is still the window's top edge (owner build 13: no gap under the menu bar). The shell
    inside keeps the study's coordinates. */
 #cockpit.ck[data-shell="closed"]{margin-top:214px}
-#cockpit.ck[data-shell="closed"][data-layout="640"]{margin-top:26px}
 /* G3-108: the porthole closes as the glass sliding down into the hull top (and rises out of it on open), clipped at
    the hull top so it never covers the strip; 250 ms (SHUTTER_MS), none under Reduce Motion (the page then draws the
    new shell at once). */
@@ -233,7 +230,9 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
    the hull, half retracted. The glass now stays in its place and the hull's top edge comes down over it (opening, rises
    off it): the clip is the hull silhouette (inside the row, nothing above it, no side overhang) from the first frame, so no
    part of the canopy is drawn outside the hull while it moves. 0 % is the open state's own clip, so both ends are unchanged. */
-@keyframes cockpit-shutter{0%{clip-path:inset(-24px -32px 0 -32px)}2%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(100% 0 0 0)}}
+/* Build 5 (owner): a plain inset() made the canopy a rectangular box while it moved, losing the rounded outline. The clip keeps the
+   hull's rounded shoulders (round 14px 14px 0 0, the same 14px as the wall mask) at every step, so the shape stays the canopy's. */
+@keyframes cockpit-shutter{0%{clip-path:inset(-24px -32px 0 -32px round 14px 14px 0 0)}2%{clip-path:inset(0 0 0 0 round 14px 14px 0 0)}100%{clip-path:inset(100% 0 0 0 round 14px 14px 0 0)}}
 #cockpit.ck[data-shutter-motion="closing"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) both}
 #cockpit.ck[data-shutter-motion="opening"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) reverse both}
 html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{animation:none}
@@ -305,7 +304,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 #cockpit .ck-head [data-close]:focus-visible{outline:2px solid var(--gold-lcd,#f6d38a);outline-offset:2px}
 /* Owner D277 (CKP-ENG-27): one quiet line under the engine table, on the pager's row (the pager keeps the right end) */
 /* CKP-ENG-55: the footer is right-aligned under the table; the page control (when there is one) keeps the right end. */
-.mfd-page .ov-foot{margin-top:auto;display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0;padding-bottom:4px}.mfd-page .ov-foot .ov-note{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mfd-page .ov-foot{margin-top:auto;display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0;padding-bottom:4px}.mfd-page .ov-foot .ov-note{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .mfd-page .eng-upd{display:flex;align-items:baseline;gap:0;margin-left:auto;min-width:0;font:10px/12px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}.mfd-page .eng-upd-sep{font-style:normal;white-space:pre}.mfd-page .eng-upd[data-failing="true"]{color:var(--st-mid)}
 .mfd-page .eng-upd-t{overflow:hidden;text-overflow:ellipsis}
 .mfd-page .eng-upd-r{font:inherit;color:var(--silk);background:none;border:0;padding:0 2px;cursor:pointer;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 35%,transparent);text-underline-offset:2px}
@@ -356,11 +355,11 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
    6 pt bar 3 pt below, its trend a 1 px line inside the track. The subscription table owns the row height; the cell centres in it. */
 .ck-eng .pl-cell:not(.pl-cal){row-gap:3px;overflow:visible}
 .ck-eng .pl-cell:not(.pl-cal) .qline{display:flex;align-items:baseline;justify-content:flex-start;gap:4px;height:22px;min-width:0}
-.ck-eng .pl-cell:not(.pl-cal) .pl-lead{display:inline-flex;align-items:baseline;flex:none;gap:3px;white-space:nowrap}
-.ck-eng .pl-cell:not(.pl-cal) .pl-tag{display:inline;flex:none;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}
+.ck-eng .pl-cell:not(.pl-cal) .pl-lead{display:inline-flex;align-items:baseline;flex:none;gap:3px;white-space:nowrap;min-width:0}
+.ck-eng .pl-cell:not(.pl-cal) .pl-tag{display:inline;flex:none;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;min-width:0}
 .ck-eng .pl-cell:not(.pl-cal) .qnum{line-height:22px}
 .ck-eng .pl-cell:not(.pl-cal) .qtxt.pl-side{flex:1 1 0;min-width:0;overflow:hidden;white-space:nowrap;text-align:right;text-overflow:clip}
-.ck-eng .pl-cell .pl-big{display:inline-block;flex:none;font:600 20px/22px var(--f-lcd);font-variant-numeric:tabular-nums;color:var(--lcd-ink);white-space:nowrap}
+.ck-eng .pl-cell .pl-big{display:inline-block;flex:none;font:600 20px/22px var(--f-lcd);font-variant-numeric:tabular-nums;color:var(--lcd-ink);white-space:nowrap;min-width:0}
 .cls-narrow .pl-cell .pl-big{font-size:16px;line-height:19px}
 .ck-eng .pl-cell .pl-sub{display:flex;align-items:center;gap:4px;min-width:0}
 .ck-eng .pl-cell .pl-sw{flex:none;width:7px;height:7px;border-radius:1.5px}
@@ -373,17 +372,13 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .pl-trend{display:block;position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
 .ck-eng .pl-trend path{fill:none;stroke:var(--lcd-ink);stroke-width:1;opacity:.6;vector-effect:non-scaling-stroke}
 .ck-eng .pl-foot{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 4px;font:400 10px/1 var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;min-width:0}
-.ck-eng .pl-foot .pl-fit{min-width:0;overflow:hidden;text-overflow:ellipsis}.ck-eng .pl-foot .pl-foot-v{color:var(--lcd-ink)}
+.ck-eng .pl-foot .pl-fit{min-width:0;overflow:hidden;text-overflow:ellipsis}.ck-eng .pl-foot .pl-foot-v{color:var(--lcd-ink);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;white-space:normal;overflow-wrap:anywhere;line-height:14px;height:14px;margin:-2px 0}/* one line, an ellipsis at its end, the rest wrapped out of sight: the text's own box never leaves the clip */
 .ck-eng .eng-keys .ek-bay .bay-dash{font-size:0}
 .ck-eng .eng-keys .ek-bay .bay-dash::before{content:"+";font:400 13px/1 var(--f-silk);color:var(--silk-dim)}
 .ck-eng .eng-keys .ek-bay.on{box-shadow:var(--pressed);background:linear-gradient(180deg,var(--key-p1),var(--key-p2))}
 /* CKP-PLG-53: a plugin's big screen fills the big-screen well only; the page keys above and the faders beside it stay
    uncovered and live (pressing a page key closes it). */
 .mfd-screen .pl-screen{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;gap:8px;padding:10px 12px;background:var(--lcd-glass);color:var(--lcd-ink);overflow:hidden}
-.mfd-screen .pl-screen-h{display:flex;align-items:center;gap:6px;min-width:0;font:500 12px/16px var(--f-silk);color:var(--silk-hi)}
-.mfd-screen .pl-screen-h .pl-icon{display:inline-grid;flex:none;width:16px;height:16px}.mfd-screen .pl-screen-h .pl-icon svg{width:16px;height:16px}
-.mfd-screen .pl-screen-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mfd-screen .pl-screen-x{flex:none;padding:2px 8px;border:0;border-radius:4px;background:linear-gradient(180deg,var(--key-1),var(--key-2));box-shadow:var(--raised);font:500 10px/14px var(--f-silk);color:var(--silk-hi)}
 .mfd-screen .pl-screen-l{margin:0;display:grid;row-gap:6px}
 /* The screen is a <section>: take pointer events back from the prototype's `.ck:not(.open) section` rule (Close, drawn controls). */
 #cockpit .mfd-screen .pl-screen{pointer-events:auto}
@@ -402,7 +397,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .pl-menu .pm-remove{grid-template-columns:minmax(0,1fr)}
 .pl-menu .pm-mark{display:grid;place-items:center;width:16px;height:16px}
 .pl-menu .pm-mark img{width:14px;height:14px;object-fit:contain}
-.pl-menu .pm-st{font-size:9.5px;color:var(--pop-ink3);white-space:nowrap}
+.pl-menu .pm-st{font-size:9.5px;color:var(--pop-ink3);white-space:nowrap;min-width:0}
 .pl-menu .pm-st.pm-det{color:var(--st-ok)}
 .pl-menu .pm-go{font:500 10px/1 var(--f-silk);padding:3px 6px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--pop-btn-line);color:var(--pop-ink)}
 .pl-menu .pm-go.dim{color:var(--pop-ink3)}
@@ -438,7 +433,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .cal-g{position:absolute;left:var(--cal-g);right:2px;height:0;border-top:1px solid var(--cal-grid)}
 .ck-eng .cal-g i{position:absolute;right:calc(100% + 2px);top:-5px;font:400 9px/11px var(--f-lcd);font-style:normal;color:var(--silk-dim)}
 .ck-eng .cal-mid{position:absolute;left:1px;right:2px;height:0;border-top:.8px dashed var(--cal-mid);opacity:.85;z-index:2}
-.ck-eng .cal-mid b{position:absolute;right:0;top:-6px;padding:0 4px;border-radius:6px;background:#2a2e35;font:400 9px/11px var(--f-silk);color:var(--lcd-ink);white-space:nowrap}
+.ck-eng .cal-mid b{position:absolute;right:0;top:-6px;padding:0 4px;border-radius:6px;background:#2a2e35;font:400 9px/11px var(--f-silk);color:var(--lcd-ink);white-space:nowrap;min-width:0}
 .ck-eng .cal-pk{position:absolute;min-height:2px;border-radius:2px;overflow:hidden;background:color-mix(in srgb,var(--c) 24%,transparent);box-shadow:inset 2.5px 0 0 var(--c);padding:1px 2px 0 5px;color:var(--c)}
 .ck-eng .cal-pk.tent{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 24%,transparent) 0 4px,color-mix(in srgb,var(--c) 12%,transparent) 4px 8px)}
 .ck-eng .cal-pk b{display:block;font:700 9px/11px var(--f-silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -447,11 +442,12 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .cal-ch{position:absolute;right:2px;z-index:3;max-width:calc(100% - 14px);height:12px;padding:0 4px;border-radius:5.5px;background:var(--c);color:var(--cal-chip-ink);font:700 9px/12px var(--f-silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ck-eng .cal-ch.wk{background:transparent;box-shadow:inset 0 0 0 1px var(--c);color:var(--c)}
 /* G3-179 (sampling 11-22): a peak time that cannot live in its lane or its too-short block — a tag on the axis. */
-.ck-eng .cal-pkt{position:absolute;left:calc(var(--cal-g) + 1px);z-index:3;height:12px;padding:0 4px;border-radius:5.5px;background:var(--c);color:var(--cal-chip-ink);font:700 9px/12px var(--f-silk);white-space:nowrap}
-.ck-eng .cal-nt{position:absolute;left:0;top:0;width:calc(var(--cal-g) - 4px);transform:translateY(-50%);border-radius:2px;background:var(--cal-now);color:#06120f;text-align:center;font:700 9px/11px var(--f-lcd);z-index:5}
+.ck-eng .cal-pkt{position:absolute;left:calc(var(--cal-g) + 1px);z-index:3;height:12px;padding:0 4px;border-radius:5.5px;background:var(--c);color:var(--cal-chip-ink);font:700 9px/12px var(--f-silk);white-space:nowrap;min-width:0}
+.ck-eng .cal-nt{position:absolute;left:0;top:0;width:calc(var(--cal-g) - 4px);border-radius:2px;background:var(--cal-now);color:#06120f;text-align:center;font:700 9px/11px var(--f-lcd);z-index:5}
 .ck-eng .cal-nl{position:absolute;left:calc(var(--cal-g) - 2px);right:2px;height:0;border-top:1.8px solid var(--cal-now);z-index:4}
 .ck-eng .cal-nl::before{content:"";position:absolute;left:-3px;top:-3.9px;width:6px;height:6px;border-radius:50%;background:var(--cal-now)}
 .ck-eng .cal-empty{position:absolute;left:var(--cal-g);right:0;top:40%;margin:0;text-align:center;font:400 9px/11px var(--f-silk);color:var(--silk-dim)}
+.ck-eng .cal-note{position:absolute;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;left:var(--cal-g);right:0;bottom:3px;margin:0;text-align:center;font:400 9px/11px var(--f-silk);color:var(--silk-dim);opacity:.8;pointer-events:none}
 /* The week view: the calendar's big screen body (D323 custom draw inside .pl-screen-d). */
 .cal-wk{position:absolute;inset:0;display:flex;flex-direction:column;--wk-g:24px;--wk-r:5px;font:400 9px/11px var(--f-silk);color:var(--lcd-ink)}
 .cal-wk .wk-zoom{position:absolute;right:2px;top:-1px;z-index:7;font:400 9px/11px var(--f-silk);color:var(--cal-now);white-space:nowrap;pointer-events:none}.cal-wk .wk-zoom:not(.on){display:none}
@@ -500,7 +496,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-wk .wk-ch{position:absolute;z-index:3;transform:translateY(-50%);height:12px;padding:0 4px;border-radius:5px;background:var(--c);color:var(--cal-chip-ink);font:700 9px/11px var(--f-silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cal-wk.narrow .wk-ch{padding:0 2px;font-size:9px}
 /* G3-179 (sampling 11-22): a zoomed peak time that cannot live in its split lane — a tag on the day column. */
-.cal-wk .wk-pkt{position:absolute;z-index:3;transform:translateY(-50%);height:12px;padding:0 4px;border-radius:5px;background:var(--c);color:var(--cal-chip-ink);font:400 9px/12px var(--f-lcd);white-space:nowrap}
+.cal-wk .wk-pkt{position:absolute;z-index:3;transform:translateY(-50%);height:12px;padding:0 4px;border-radius:5px;background:var(--c);color:var(--cal-chip-ink);font:400 9px/12px var(--f-lcd);white-space:nowrap;min-width:0}
 .cal-wk.zoom .wk-ch{height:12px;font-size:9px;line-height:12px;border-radius:6px}
 .cal-wk .wk-past{position:absolute;background:var(--cal-past);pointer-events:none}
 .cal-wk .wk-nl{position:absolute;height:0;border-top:1.6px solid var(--cal-now);z-index:4;pointer-events:none}
@@ -526,3 +522,29 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .eng-keys[data-slots="6"] .ek .ek-identity{gap:2px;max-width:calc(100% - 4px)}
 .ck-eng .eng-keys[data-slots="6"] .ek .ek-identity .lamp{width:12px;height:12px}
 .ck-eng .eng-keys[data-slots="6"] .ek-name{font-size:10px}
+/* D387 / D413: while a screen is open the Overview slot is the switch "‹ Overview │ icon + short name": the same grid
+   cell as every page key (never wider), in the pressed key body; only the right half is lit. No animation (D397). */
+.mfd-pk .pk[hidden],.mfd-pk .pk-seg[hidden]{display:none}
+.mfd-pk .pk-seg{grid-column:1;grid-row:1;position:relative;display:flex;align-items:center;justify-content:center;min-width:0;height:var(--row-h,18px);padding:0 3px;border-radius:4px 0 0 4px;background:linear-gradient(180deg,var(--key-p1),var(--key-p2));box-shadow:var(--pressed);overflow:hidden}
+.pk-seg .h{-webkit-appearance:none;appearance:none;position:relative;display:flex;align-items:center;gap:3px;flex:none;height:14px;margin:0;padding:0 2px;border:0;border-radius:3px;background:none;font:500 10px/1 var(--f-silk);letter-spacing:.04em;white-space:nowrap;cursor:pointer}
+.pk-seg .back{color:var(--silk)}
+.pk-seg .cur{color:var(--silk-hi);cursor:default}
+.pk-seg .sep{flex:none;width:1px;height:9px;margin:0 3px;background:var(--silk-dim);opacity:.55}
+.pk-seg .led{position:absolute;left:50%;bottom:-1px;width:14px;margin-left:-7px;height:2px;border-radius:1px;background:var(--key-led-on);box-shadow:var(--key-led-glow)}
+.pk-seg .ch,.pk-seg .ic{flex:none;display:block;width:auto;height:auto}
+.pk-seg .ic{width:10px;height:10px}
+.pk-seg .back:hover{color:var(--silk-hi);background:#ffffff0f}
+.pk-seg .back:active{transform:translateY(1px);background:#0000004d;color:var(--silk-hi)}
+.pk-seg .h:focus-visible{outline:none;box-shadow:0 0 0 1px color-mix(in srgb,var(--silk-hi) 55%,transparent)}
+/* D413: the blank side keycaps of a screen's bottom row: flat, unlit, no hover. */
+.mfd-ok .ok.dead{background:linear-gradient(180deg,#232427,#1d1e20);box-shadow:inset 0 1px 0 #ffffff0d,0 0 0 1px #0b0c0e;opacity:.8;pointer-events:none}
+/* D413: a screen without a title row: its draw area is the whole well. */
+.mfd-screen .pl-screen[data-plugin="resources"]{padding:0;gap:0}
+/* The Calendar and Resources keys are pressed while their screen is open, and press like every key. */
+.ck-eng .eng-keys .pl-key:active{transform:translateY(1px);box-shadow:var(--pressed)}
+.cal-wk .wk-adr.chip{height:13px;overflow:hidden}
+.cal-wk .wk-adr.chip span{line-height:11px;margin:0 1px;padding:0 3px;text-align:center;border-radius:5px;border:1px solid var(--c);background:color-mix(in srgb,var(--c) 22%,transparent);color:var(--c)}
+.cal-wk .wk-adr.chip.credit span{background:color-mix(in srgb,var(--c) 90%,transparent);color:#1a0d07}
+.cal-wk .wk-adr.chip.pending span{border-style:dashed;background:transparent;color:var(--c)}
+/* Owner window pack: the title-edge decoration exists only for the official night skin (hull.css shows it); it is never a flex item here. */
+.ck-head>.mp-title-edge{display:none}

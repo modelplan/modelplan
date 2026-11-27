@@ -256,7 +256,7 @@ func turnActivity(phase string, at time.Time) TurnActivity {
 	return TurnActivity{phase, at, at.Add(grace)}
 }
 func readActivityTail(log LiveLog, fi os.FileInfo, now time.Time) ([]SessionActivity, error) {
-	f, err := os.Open(log.Path)
+	f, err := openLog(log.Path)
 	if err != nil {
 		return nil, err
 	}

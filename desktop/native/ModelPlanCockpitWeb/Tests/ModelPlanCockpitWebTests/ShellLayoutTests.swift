@@ -7,25 +7,121 @@ final class ShellLayoutTests: XCTestCase {
         try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 100, y: 50, width: width, height: height),
             anchor: .init(x: 800, y: height + 50, width: 20, height: 22), shutterClosed: closed))
     }
-    func testDiscreteProfilesAndExactRoots() throws {
-        XCTAssertEqual(try fit(1000).rootHeight, 905)
-        XCTAssertEqual(try fit(1000, closed: true).rootHeight, 691)
-        XCTAssertEqual(try fit(692).rootHeight, 635)
-        XCTAssertEqual(try fit(692, closed: true).rootHeight, 609)
-        XCTAssertEqual(try fit(945).profile, .full)
-        // D51: the full cockpit scales down to 75 %; below that the short version shows.
-        XCTAssertEqual(try fit(944).profile, .full)
-        XCTAssertEqual(try fit(720).profile, .full)
-        XCTAssertEqual(try fit(719).profile, .compact)
+    /// D444 (owner, 2026-11-25): one layout. Every room gets the full roots; only the scale changes.
+    func testD444OneLayoutAtEveryHeight() throws {
+        for height in [1200, 1000, 945, 944, 720, 719, 700, 692, 600, 486, 485, 400] as [CGFloat] {
+            for closed in [false, true] {
+                let value = try fit(height, closed: closed), label = "\(Int(height)) closed \(closed)"
+                XCTAssertEqual(value.profile, .full, label)
+                XCTAssertEqual(value.rootHeight, value.shutterClosed ? 691 : 905, label)
+                XCTAssertEqual(value.pageSize, CGSize(width: 636, height: 1017), label)
+                XCTAssertEqual(value.shellState(attached: true).tier, .tall, label)
+                XCTAssertEqual(value.shellState(attached: false).tier, .tall, label)
+            }
+        }
     }
-    func testNativeShellTierAndForcedClosedBoundary() throws {
-        let forced = try fit(686).shellState(attached: true)
-        XCTAssertEqual(forced.profile, .closed); XCTAssertEqual(forced.tier, .compact)
-        XCTAssertTrue(forced.forcedClosed)
-        let fitting = try fit(687).shellState(attached: true)
-        XCTAssertEqual(fitting.profile, .open); XCTAssertEqual(fitting.tier, .compact)
-        XCTAssertFalse(fitting.forcedClosed)
-        XCTAssertEqual(try fit(945).shellState(attached: false).tier, .tall)
+    /// D444: a short display (700 pt usable) keeps the full cockpit under the old 75 % switch; nothing goes compact.
+    func testD444ShortDisplayGetsTheFullLayoutBelowTheOldSwitch() throws {
+        let value = try fit(700)
+        XCTAssertEqual(value.profile, .full); XCTAssertEqual(value.rootHeight, 905)
+        XCTAssertLessThan(value.scale, 0.75); XCTAssertEqual(value.scale, 690 / 1017, accuracy: 1e-9)
+        XCTAssertGreaterThanOrEqual(value.scale, CockpitShellLayout.minimumScale)
+        XCTAssertFalse(value.forcedClosed); XCTAssertFalse(value.shutterClosed)
+        let shell = value.shellState(attached: true)
+        XCTAssertEqual(shell.profile, .open); XCTAssertEqual(shell.tier, .tall); XCTAssertFalse(shell.forcedClosed)
+        assertHoldsThePage(value, "700 pt")
+    }
+    /// D444: the open cockpit is never under the 0.5 floor. One point shorter, it opens forced closed at the floor.
+    func testD444FloorBoundaryForcesTheShutterClosed() throws {
+        let open = try fit(519) // 509 pt of room / 1017 px (D454: the canvas holds the whole flame)
+        XCTAssertFalse(open.forcedClosed); XCTAssertEqual(open.scale, 509 / 1017, accuracy: 1e-9)
+        XCTAssertGreaterThanOrEqual(open.scale, CockpitShellLayout.minimumScale)
+        let forced = try fit(518)
+        XCTAssertTrue(forced.forcedClosed); XCTAssertTrue(forced.shutterClosed)
+        XCTAssertEqual(forced.scale, CockpitShellLayout.minimumScale); XCTAssertEqual(forced.rootHeight, 691)
+        let shell = forced.shellState(attached: true)
+        XCTAssertEqual(shell.profile, .closed); XCTAssertEqual(shell.tier, .tall); XCTAssertTrue(shell.forcedClosed)
+        assertHoldsThePage(forced, "floor")
+    }
+    /// D444: a very short display opens closed at the floor scale; the closed window fits the room.
+    func testD444VeryShortDisplayOpensClosedAtTheFloor() throws {
+        let value = try fit(450)
+        XCTAssertTrue(value.forcedClosed); XCTAssertTrue(value.shutterClosed); XCTAssertEqual(value.profile, .full)
+        XCTAssertEqual(value.scale, 0.5); XCTAssertEqual(value.canvasHeight, 509)
+        XCTAssertEqual(value.frame.height, 509 - 114, "the open canvas minus the porthole band")
+        XCTAssertLessThanOrEqual(value.frame.height, 440, "inside the room under the 10 pt gap")
+        XCTAssertEqual(value.frame.maxY, 490)
+        assertHoldsThePage(value, "very short")
+        // A room too short even for the closed window at the floor: the closed cockpit shrinks rather than being cut.
+        let tiny = try fit(300)
+        XCTAssertTrue(tiny.forcedClosed); XCTAssertLessThan(tiny.scale, 0.5)
+        XCTAssertLessThanOrEqual(tiny.frame.height, 290)
+        assertNeverClipped(tiny, usable: .init(x: 100, y: 50, width: 1400, height: 300), "300 pt")
+    }
+    /// macrev2-1257-1 invariant: in any room the cockpit is never clipped. The window holds the whole open canvas, or
+    /// closed the whole canvas below the porthole band (the slab included), and fits the room in both directions;
+    /// the frame caps in `fit` never bind.
+    func assertNeverClipped(_ value: CockpitShellLayout, usable: CGRect, _ label: String, file: StaticString = #filePath, line: UInt = #line) {
+        let band = value.shutterClosed ? CockpitShellLayout.portholeBand(scale: value.scale) : 0
+        XCTAssertEqual(value.frame.height, value.canvasHeight - band, "\(label): the window is not cut (slab and body whole)", file: file, line: line)
+        XCTAssertLessThanOrEqual(value.portholeHeight, 228 * value.scale + 1e-9, "\(label): only the porthole band is left out, never the slab", file: file, line: line)
+        XCTAssertEqual(value.frame.width, CockpitShellLayout.wholePoints(636 * value.scale), "\(label): the width is not cut", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(value.frame.minX, usable.minX - 1e-9, "\(label): left edge on screen", file: file, line: line)
+        XCTAssertLessThanOrEqual(value.frame.maxX, usable.maxX + 1e-9, "\(label): right edge on screen", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(value.frame.minY, usable.minY - 1e-9, "\(label): bottom edge in the room", file: file, line: line)
+        XCTAssertLessThanOrEqual(value.frame.maxY, usable.maxY - CockpitShellLayout.menuBarGap + 1e-9, "\(label): top edge under the gap", file: file, line: line)
+        XCTAssertGreaterThan(value.scale, 0, label, file: file, line: line)
+    }
+    /// macrev2-1257-1 (failing first at e2d0930: the 300 pt room cut 0.548 pt of the closed slab): the very short room.
+    func testMacrev2_1257_1VeryShortRoomKeepsTheWholeClosedSlab() throws {
+        let usable = CGRect(x: 100, y: 50, width: 1400, height: 300)
+        let value = try fit(300)
+        XCTAssertTrue(value.forcedClosed)
+        XCTAssertLessThanOrEqual(value.frame.height, 290)
+        XCTAssertLessThanOrEqual(value.portholeHeight, 228 * value.scale)
+        XCTAssertEqual(value.frame.height, value.canvasHeight - CockpitShellLayout.portholeBand(scale: value.scale))
+        assertNeverClipped(value, usable: usable, "300 pt")
+    }
+    /// macrev2-1257-1, width-bound (failing first at e2d0930: a fractional width rounded the canvas one point past the
+    /// screen and the cap cut it): the room bounded by width, open and forced closed, attached anywhere on the display.
+    func testMacrev2_1257_1WidthBoundRoomIsNeverCut() throws {
+        for (minX, width) in [(0, 300.5), (0.5, 300), (0.25, 317.75), (0, 250), (10.5, 480.5)] as [(CGFloat, CGFloat)] {
+            for height in [1000, 600, 400] as [CGFloat] {
+                for closed in [false, true] {
+                    for anchorX in [minX, minX + width / 2, minX + width] {
+                        let usable = CGRect(x: minX, y: 0, width: width, height: height)
+                        let value = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: .init(x: anchorX, y: height, width: 20, height: 22), shutterClosed: closed))
+                        assertNeverClipped(value, usable: usable, "x \(minX) w \(width) h \(height) closed \(closed) icon \(anchorX)")
+                    }
+                }
+            }
+        }
+    }
+    /// macrev2-1257-1: every fit path (open / user-closed / forced closed at the floor / below the floor, bounded by height
+    /// or by width, whole and fractional frames, with and without a display basis) keeps the whole cockpit.
+    func testMacrev2_1257_1NoFitPathEverClips() throws {
+        var heights: [CGFloat] = Array(stride(from: CGFloat(60), through: 1200, by: 1))
+        heights += heights.map { $0 + 0.25 }
+        for height in heights {
+            for (minY, width) in [(0, 1400), (0.5, 1400), (70.5, 318.5)] as [(CGFloat, CGFloat)] {
+                for closed in [false, true] {
+                    let usable = CGRect(x: 0, y: minY, width: width, height: height)
+                    guard let value = CockpitShellLayout.fit(usable: usable, anchor: .init(x: 700, y: usable.maxY, width: 20, height: 22), shutterClosed: closed) else { continue }
+                    assertNeverClipped(value, usable: usable, "h \(height) y \(minY) w \(width) closed \(closed)")
+                    if value.forcedClosed { XCTAssertTrue(value.shutterClosed) } else { XCTAssertGreaterThanOrEqual(value.scale, CockpitShellLayout.minimumScale - 1e-9) }
+                }
+            }
+        }
+        // With a display basis (G3-132): the room is the smallest display's, possibly fractional.
+        for small in [300.5, 361.5, 485.25, 700.75] as [CGFloat] {
+            let basis = CockpitSizeBasis(visibleHeight: small, visibleWidth: 1280, screenWidth: 1280)
+            let usable = CGRect(x: 0, y: 0, width: 2560, height: 1415)
+            for closed in [false, true] {
+                let value = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: .init(x: 1300, y: 1415, width: 20, height: 22), shutterClosed: closed, basis: basis))
+                assertNeverClipped(value, usable: usable, "basis \(small) closed \(closed)")
+                XCTAssertLessThanOrEqual(value.frame.height, (small - CockpitShellLayout.menuBarGap).rounded(.down), "fits the smallest display")
+            }
+        }
     }
     func placed(width: CGFloat, height: CGFloat, bar: CGFloat, macDock: CGFloat = 0, closed: Bool = false, size: CockpitSize = .standard) throws -> CockpitShellLayout {
         try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: macDock, width: width, height: height - bar - macDock),
@@ -35,7 +131,7 @@ final class ShellLayoutTests: XCTestCase {
         let layout = try placed(width: 1440, height: 2560, bar: 24)
         XCTAssertEqual(layout.profile, .full)
         XCTAssertEqual(layout.scale, 0.85)
-        XCTAssertEqual(layout.webFrame.size, CGSize(width: 541, height: 809))
+        XCTAssertEqual(layout.webFrame.size, CGSize(width: 541, height: 865))
     }
 
     /// The window server places borderless panels on whole points: the layout frame is already whole, so the
@@ -45,7 +141,7 @@ final class ShellLayoutTests: XCTestCase {
         let frame = value.frame
         for edge in [frame.minX, frame.minY, frame.width, frame.height, value.canvasHeight] { XCTAssertEqual(edge, edge.rounded(), "\(label): whole points", file: file, line: line) }
         XCTAssertEqual(value.webFrame, CGRect(x: 0, y: 0, width: frame.width, height: value.canvasHeight), "\(label): on the bottom edge", file: file, line: line)
-        let band = value.shutterClosed ? ((value.profile == .full ? 228 : 40) * value.scale).rounded(.down) : 0
+        let band = value.shutterClosed ? (228 * value.scale).rounded(.down) : 0
         XCTAssertEqual(value.portholeHeight, band, "\(label): the closed window leaves out the porthole band", file: file, line: line)
         for (window, page) in [(frame.width, value.pageSize.width * value.scale), (value.canvasHeight, value.pageSize.height * value.scale)] {
             XCTAssertGreaterThanOrEqual(window, page - 1e-6, "\(label): the page fits", file: file, line: line)
@@ -70,13 +166,13 @@ final class ShellLayoutTests: XCTestCase {
     }
     /// G3-39: the menu bar is excluded from `usable` once, and a step is taken when its root really fits.
     func testG3_39ProfileFollowsTheRealFitOnLaptopScreens() throws {
-        // 13-inch Air without a notch at its default size: 876 pt usable, the full canvas needs 951 + 10. D51: scaled full.
+        // 13-inch Air without a notch at its default size: 876 pt usable, the full canvas needs 1017 + 10. D51: scaled full.
         XCTAssertEqual(try placed(width: 1440, height: 900, bar: 24).profile, .full)
         // The same Air at "More Space".
         XCTAssertEqual(try placed(width: 1680, height: 1050, bar: 24).profile, .full)
         // 13-inch notched Air: 919 pt usable, 909 under the 10 pt gap (CKP-SHELL-33).
         let notched = try placed(width: 1470, height: 956, bar: 37, size: .percent100)
-        XCTAssertEqual(notched.profile, .full); XCTAssertEqual(notched.scale, 909 / 951, accuracy: 1e-9)
+        XCTAssertEqual(notched.profile, .full); XCTAssertEqual(notched.scale, 909 / 1017, accuracy: 1e-9)
         XCTAssertEqual(notched.frame.height, 909, accuracy: 1e-9); XCTAssertEqual(notched.frame.minY, 0, accuracy: 1e-9)
         XCTAssertEqual(try placed(width: 1470, height: 956, bar: 37, macDock: 70).profile, .full)
     }
@@ -85,12 +181,13 @@ final class ShellLayoutTests: XCTestCase {
     /// 70 pt at its default size. Each case also states what 100 % would fit to.
     func testD51EveryAirShowsTheFullCockpitWithItsFlames() throws {
         let cases: [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = [
-            // width, height, menu bar, Dock, default scale, largest fit = (usable - 10) / (905 root + 46 flame reserve).
-            // CKP-SHELL-33's 10 pt gap leaves the 13-inch Air with the Dock 796 pt, just under 85 % (798).
-            (1440, 900, 24, 0, 0.85, 866 / 951), (1440, 900, 24, 70, 796 / 951, 796 / 951),
-            (1470, 956, 37, 0, 0.85, 909 / 951), (1470, 956, 37, 70, 0.85, 839 / 951),
+            // width, height, menu bar, Dock, default scale, largest fit = (usable - 10) / (905 root + 112 flame reserve).
+            // D454: the reserve holds the whole flame, so the 13-inch Airs with the Dock draw under 85 %
+            // (1440 x 900: 796 pt, 78.3 %; 1470 x 956: 839 pt, 82.5 %); without the Dock both keep 85 %.
+            (1440, 900, 24, 0, 0.85, 866 / 1017), (1440, 900, 24, 70, 796 / 1017, 796 / 1017),
+            (1470, 956, 37, 0, 0.85, 909 / 1017), (1470, 956, 37, 70, 839 / 1017, 839 / 1017),
             // The largest Dock (128 pt tiles, about 140 pt) on the smallest Air is still full, below 85 %.
-            (1440, 900, 24, 140, 726 / 951, 726 / 951),
+            (1440, 900, 24, 140, 726 / 1017, 726 / 1017),
         ]
         for (width, height, bar, dock, expected, largest) in cases {
             XCTAssertEqual(try placed(width: width, height: height, bar: bar, macDock: dock, size: .percent100).scale, largest, accuracy: 1e-9)
@@ -98,13 +195,70 @@ final class ShellLayoutTests: XCTestCase {
             let label = "\(Int(width))x\(Int(height)), Dock \(Int(dock))"
             XCTAssertEqual(value.profile, .full, label); XCTAssertEqual(value.rootHeight, 905, label)
             XCTAssertEqual(value.scale, expected, accuracy: 1e-9, label)
-            XCTAssertGreaterThanOrEqual(value.scale, CockpitShellLayout.minimumFullScale, label)
+            XCTAssertGreaterThanOrEqual(value.scale, CockpitShellLayout.minimumScale, label)
             // The window holds the root and the flame reserve, uniformly scaled, on whole points, 10 pt below the bar and above the Dock.
             assertHoldsThePage(value, label)
             XCTAssertEqual(value.frame.maxY, height - bar - 10, accuracy: 1e-9, label)
             XCTAssertGreaterThanOrEqual(value.frame.minY, dock - 1e-9, label)
-            XCTAssertEqual(value.pageSize, CGSize(width: 636, height: 951), label)
+            XCTAssertEqual(value.pageSize, CGSize(width: 636, height: 1017), label)
         }
+    }
+    /// D454 (owner, 2026-11-26): the reserve holds the WHOLE flame and the fit counts it. Attached on a MacBook Air at its
+    /// default scaled resolutions (and the larger-text 1280 x 832), with or without the Dock, the hull and the whole flame
+    /// are inside the visible frame, the top edge stays 10 pt under the menu bar and the left shoulder under the icon.
+    /// Expected scales (before D454 -> now): 1470x956 85 -> 85 % (Dock: 85 -> 82.5 %), 1440x900 85 -> 85 % (Dock: 83.7 ->
+    /// 78.3 %), 1280x832 82.5 -> 77.2 % (Dock: 75.2 -> 70.3 %).
+    func testD454AttachedAirsShowTheHullAndTheWholeFlame() throws {
+        // The tallest flame box under the root: the full-thrust sprite under the widest bell (bells.css).
+        let flameTip: CGFloat = 4.515 + 101 * 0.95 * 176 / 160
+        XCTAssertLessThanOrEqual(flameTip, CockpitShellLayout.baseReserve - 1.5, "the reserve holds the flame with a margin")
+        let cases: [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = [
+            // width, height, menu bar, Dock, scale.
+            (1470, 956, 37, 0, 0.85), (1470, 956, 37, 70, 839 / 1017),
+            (1440, 900, 24, 0, 0.85), (1440, 900, 24, 70, 796 / 1017),
+            (1280, 832, 37, 0, 785 / 1017), (1280, 832, 37, 70, 715 / 1017),
+        ]
+        for (width, height, bar, dock, expected) in cases {
+            for closed in [false, true] {
+                let label = "\(Int(width))x\(Int(height)) Dock \(Int(dock)) closed \(closed)"
+                let usable = CGRect(x: 0, y: dock, width: width, height: height - bar - dock)
+                let icon = CGRect(x: 500, y: height - bar, width: 28, height: bar)
+                let value = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: closed, screenWidth: width), label)
+                XCTAssertEqual(value.scale, expected, accuracy: 1e-9, label); XCTAssertFalse(value.forcedClosed, label)
+                // The window holds the root and the whole flame reserve; the window is inside the visible frame.
+                XCTAssertEqual(value.pageSize.height, 905 + CockpitShellLayout.baseReserve, label)
+                XCTAssertTrue(usable.contains(value.frame), "\(label): hull and flame inside the visible frame")
+                let rootBottom = value.frame.minY + value.canvasHeight - 905 * value.scale // the web view stands on the window's bottom edge
+                XCTAssertGreaterThanOrEqual(rootBottom - flameTip * value.scale, usable.minY - 1e-9, "\(label): the flame tip is on screen")
+                XCTAssertGreaterThanOrEqual(rootBottom - flameTip * value.scale, value.frame.minY - 1e-9, "\(label): the flame tip is in the window")
+                // The attachment rule is unchanged: top edge under the menu bar gap, left shoulder under the icon.
+                XCTAssertEqual(value.frame.maxY, height - bar - CockpitShellLayout.menuBarGap, label)
+                XCTAssertEqual(value.shoulder.x, icon.midX, accuracy: 0.5, label)
+                assertHoldsThePage(value, label)
+            }
+        }
+    }
+    /// D454: only a cockpit the user drags to the screen's bottom edge hangs its flame off the screen: the hull's bottom
+    /// reaches the visible frame's bottom, and the flame-only strip under the bell row passes clicks through.
+    func testD454DragToTheBottomHangsOnlyTheFlameOffScreen() throws {
+        let usable = CGRect(x: 0, y: 70, width: 1470, height: 849)
+        let value = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: .init(x: 1000, y: 919, width: 28, height: 37), shutterClosed: false, screenWidth: 1470))
+        let moved = value.clamping(origin: .init(x: 200, y: -500), usable: usable)
+        let rootBottom = moved.minY + value.canvasHeight - 905 * value.scale
+        XCTAssertEqual(rootBottom, usable.minY, accuracy: 1, "the hull's bottom on the visible frame's bottom edge")
+        XCTAssertGreaterThanOrEqual(rootBottom, usable.minY - 1e-9, "the hull itself never goes off screen")
+        XCTAssertLessThan(moved.minY, usable.minY, "the flame runs off the bottom")
+        XCTAssertEqual(moved.size, value.frame.size)
+        // The pass-through strip: the reserve below the 46 px bell row, on whole points, never into a bell.
+        let strip = value.passThroughHeight
+        XCTAssertEqual(strip, (value.canvasHeight - (905 + 46) * value.scale).rounded(.down))
+        XCTAssertGreaterThan(strip, 50, "about 66 px of flame-only reserve at 82.5 %")
+        let f = value.frame
+        XCTAssertTrue(CockpitShellLayout.passesThrough(.init(x: f.midX, y: f.minY), frame: f, height: strip))
+        XCTAssertTrue(CockpitShellLayout.passesThrough(.init(x: f.minX, y: f.minY + strip - 0.5), frame: f, height: strip))
+        XCTAssertFalse(CockpitShellLayout.passesThrough(.init(x: f.midX, y: f.minY + strip), frame: f, height: strip), "the bell row is not")
+        XCTAssertFalse(CockpitShellLayout.passesThrough(.init(x: f.maxX, y: f.minY + 1), frame: f, height: strip), "outside the window is not")
+        XCTAssertFalse(CockpitShellLayout.passesThrough(.init(x: f.midX, y: f.minY + 1), frame: f, height: 0))
     }
     /// D51: closing the shutter keeps the open root's scale, so the strip and canopy never jump in size.
     func testD51ShutterKeepsTheScale() throws {
@@ -135,37 +289,29 @@ final class ShellLayoutTests: XCTestCase {
                 XCTAssertEqual(open.portholeHeight, 0, label)
             }
         }
-        let compactOpen = try fit(700), compactClosed = try fit(700, closed: true)
-        XCTAssertEqual(compactOpen.profile, .compact)
-        XCTAssertEqual(compactClosed.webFrame, compactOpen.webFrame)
-        XCTAssertEqual(compactClosed.portholeHeight, (40 * compactOpen.scale).rounded(.down))
-        XCTAssertEqual(compactClosed.scaledTitleDragFrame, compactOpen.scaledTitleDragFrame)
-    }
-    /// D51: below 75 % the short version shows, at the chosen size when it fits (D60: 85 % by default).
-    func testD51ShortVersionOnlyBelowTheReadableScale() throws {
-        let floor = try fit(719)
-        XCTAssertEqual(floor.profile, .compact); XCTAssertEqual(floor.rootHeight, 635); XCTAssertEqual(floor.scale, 0.85)
-        let lowest = try fit(720)
-        // The tier is judged as before (714 / 951 >= 75 %); CKP-SHELL-33's 10 pt gap then comes out of the scale (710 / 951).
-        XCTAssertEqual(lowest.profile, .full); XCTAssertEqual(lowest.scale, 710 / 951, accuracy: 1e-9)
+        // D444: a short display (formerly the short version) keeps the same body behaviour at its smaller scale.
+        let shortOpen = try fit(700), shortClosed = try fit(700, closed: true)
+        XCTAssertEqual(shortOpen.profile, .full)
+        XCTAssertEqual(shortClosed.webFrame, shortOpen.webFrame)
+        XCTAssertEqual(shortClosed.portholeHeight, (228 * shortOpen.scale).rounded(.down))
+        XCTAssertEqual(shortClosed.scaledTitleDragFrame, shortOpen.scaledTitleDragFrame)
     }
     /// D51/D60 Settings "Cockpit size" 80 / 85 (default) / 90 / 100 %: drawn at that size when it fits, otherwise
     /// smaller to fit the screen.
     func testD60SizesFitOrShrinkToTheScreen() throws {
         XCTAssertEqual(CockpitSize.standard, .automatic)
+        // 1680 x 1050: 1016 pt under the 10 pt gap; 80-90 % fit, 100 % (Auto at this width too) needs 1017 and draws at 99.9 %.
         for size in CockpitSize.allCases {
             let value = try placed(width: 1680, height: 1050, bar: 24, size: size)
-            XCTAssertEqual(value.scale, size.scale(screenWidth: 1680)); XCTAssertFalse(value.sizeFellBack); XCTAssertEqual(value.profile, .full)
+            let wanted = size.scale(screenWidth: 1680), fits = wanted * 1017 <= 1016
+            XCTAssertEqual(value.scale, fits ? wanted : 1016 / 1017, accuracy: 1e-9); XCTAssertEqual(value.sizeFellBack, !fits); XCTAssertEqual(value.profile, .full)
             XCTAssertEqual(value.frame.maxY, 1050 - 24 - 10)
         }
-        // 1440x900 with the Dock at the bottom: 80 % fits (751 of 796 pt under the 10 pt gap); 85 %, 90 % and 100 % draw at 84.8 %.
-        for size in [CockpitSize.percent80] {
+        // 1440x900 with the Dock at the bottom: 796 pt under the 10 pt gap. D454: with the whole flame in the canvas even 80 %
+        // (814 pt) does not fit, so every size draws at 78.3 %.
+        for size in [CockpitSize.percent80, .percent85, .percent90, .percent100] {
             let value = try placed(width: 1440, height: 900, bar: 24, macDock: 70, size: size)
-            XCTAssertEqual(value.scale, size.scale(screenWidth: 1440)); XCTAssertFalse(value.sizeFellBack)
-        }
-        for size in [CockpitSize.percent85, .percent90, .percent100] {
-            let value = try placed(width: 1440, height: 900, bar: 24, macDock: 70, size: size)
-            XCTAssertTrue(value.sizeFellBack); XCTAssertEqual(value.scale, 796 / 951, accuracy: 1e-9); XCTAssertEqual(value.profile, .full)
+            XCTAssertTrue(value.sizeFellBack); XCTAssertEqual(value.scale, 796 / 1017, accuracy: 1e-9); XCTAssertEqual(value.profile, .full)
         }
     }
     /// D60 + #713 review: placement uses the final scale (the 85 % default, not only the fit-to-screen scale),
@@ -192,8 +338,9 @@ final class ShellLayoutTests: XCTestCase {
             XCTAssertEqual(value.scale, expected, "\(Int(width)) pt wide"); XCTAssertEqual(value.profile, .full)
         }
         // Real Air screens: Auto 85 %, still shrinking to fit when the Dock is at the bottom on the 13-inch.
-        XCTAssertEqual(try placed(width: 1470, height: 956, bar: 37, macDock: 70).scale, 0.85)
-        XCTAssertEqual(try placed(width: 1440, height: 900, bar: 24, macDock: 140).scale, 726 / 951, accuracy: 1e-9)
+        XCTAssertEqual(try placed(width: 1470, height: 956, bar: 37).scale, 0.85)
+        XCTAssertEqual(try placed(width: 1470, height: 956, bar: 37, macDock: 70).scale, 839 / 1017, accuracy: 1e-9)
+        XCTAssertEqual(try placed(width: 1440, height: 900, bar: 24, macDock: 140).scale, 726 / 1017, accuracy: 1e-9)
         // The screen's full width decides, not the width left by a side Dock.
         let side = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 80, y: 0, width: 1648, height: 1093), anchor: .init(x: 1200, y: 1093, width: 28, height: 24),
                                                         shutterClosed: false, screenWidth: 1728))
@@ -206,7 +353,7 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(onAir.frame.width, 541); XCTAssertEqual(onExternal.frame.width, 636)
         // Manual choices stay fixed across screens.
         XCTAssertEqual(try placed(width: 2560, height: 1440, bar: 25, size: .percent85).scale, 0.85)
-        XCTAssertEqual(try placed(width: 1470, height: 1050, bar: 37, size: .percent100).scale, 1)
+        XCTAssertEqual(try placed(width: 1470, height: 1100, bar: 37, size: .percent100).scale, 1)
     }
     /// D51: the drag region scales with the page so it stays on the strip at every size.
     func testD51DragRegionScalesWithThePage() throws {
@@ -219,7 +366,7 @@ final class ShellLayoutTests: XCTestCase {
     /// G3-43 / CKP-SHELL-04: the drag region sits on the strip, not on the canopy, in every shape.
     func testG3_43TitleDragFrameFollowsTheStrip() throws {
         // G3-108: the closed page keeps the strip at its open place on the open canvas.
-        for (height, closed, stripTop) in [(1000, false, 253), (1000, true, 253), (680, false, 65), (680, true, 65)] as [(CGFloat, Bool, CGFloat)] {
+        for (height, closed, stripTop) in [(1000, false, 253), (1000, true, 253), (680, false, 253), (680, true, 253), (400, false, 253)] as [(CGFloat, Bool, CGFloat)] {
             let value = try fit(height, closed: closed), canvas = value.pageSize.height
             XCTAssertEqual(canvas - value.titleDragFrame.maxY, stripTop - 3, "top of the strip keys")
             XCTAssertEqual(value.titleDragFrame.height, 32)
@@ -227,16 +374,18 @@ final class ShellLayoutTests: XCTestCase {
         }
     }
     func testShortAndNarrowDisplaysScaleTheWholeRootIncludingBaseReserve() throws {
-        let value = try fit(500, width: 400)
+        let value = try fit(450, width: 400)
         XCTAssertTrue(value.shutterClosed); XCTAssertTrue(value.forcedClosed)
-        XCTAssertEqual(value.rootHeight, 609)
-        XCTAssertLessThan(value.scale, 1)
-        XCTAssertEqual(value.frame.width / 636, value.canvasHeight / 681, accuracy: 0.002, "uniform, up to the whole-point rounding")
-        XCTAssertLessThanOrEqual(value.frame.height, 494, "the closed window fits the room")
+        XCTAssertEqual(value.rootHeight, 691); XCTAssertEqual(value.scale, 0.5)
+        XCTAssertEqual(value.frame.width / 636, value.canvasHeight / 1017, accuracy: 0.002, "uniform, up to the whole-point rounding")
+        XCTAssertLessThanOrEqual(value.frame.height, 440, "the closed window fits the room")
         assertHoldsThePage(value, "short and narrow")
         XCTAssertGreaterThanOrEqual(value.frame.minY, 50)
         XCTAssertLessThanOrEqual(value.frame.maxX, 500)
-        XCTAssertEqual(value.frame.maxY, 540, accuracy: 0.001)
+        XCTAssertEqual(value.frame.maxY, 490, accuracy: 0.001)
+        // Narrower than the floor's width (318 pt): the width bounds the scale, the layout stays full.
+        let narrow = try fit(900, width: 300)
+        XCTAssertEqual(narrow.profile, .full); XCTAssertTrue(narrow.forcedClosed); XCTAssertEqual(narrow.scale, 300 / 636, accuracy: 1e-9)
     }
     func testDetachedPositionClampsCompleteSilhouetteOnDisplayChange() throws {
         let value = try fit(680)
@@ -270,41 +419,48 @@ final class ShellLayoutTests: XCTestCase {
     /// CKP-SHELL-33 (D158/D178, supersedes D88's centring): the icon sits above the left canopy shoulder, the cockpit
     /// 10 pt below the menu bar, and it shifts only as far as a screen edge needs.
     func testD88OpensCentredUnderTheIcon() throws {
-        let usable = CGRect(x: 0, y: 0, width: 1440, height: 1026)
+        let usable = CGRect(x: 0, y: 0, width: 1440, height: 1100)
         func placed(_ iconX: CGFloat) throws -> CGRect {
-            try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: .init(x: iconX, y: 1026, width: 28, height: 24), shutterClosed: false, size: .percent100)).frame
+            try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: .init(x: iconX, y: 1100, width: 28, height: 24), shutterClosed: false, size: .percent100)).frame
         }
         let roomy = try placed(700)
-        XCTAssertEqual(roomy.minX + CockpitShellLayout.shoulderX(.full), 714, "the left shoulder is under the icon's centre")
-        XCTAssertEqual(roomy.maxY, 1016, "below the menu bar, 10 pt gap")
+        XCTAssertEqual(roomy.minX + CockpitShellLayout.shoulderX, 714, "the left shoulder is under the icon's centre")
+        XCTAssertEqual(roomy.maxY, 1090, "below the menu bar, 10 pt gap")
         let tight = try placed(1300)
         XCTAssertEqual(tight.maxX, 1440, "near the right edge it shifts left only to stay on screen")
         XCTAssertEqual(tight.minX, 1440 - 636)
         XCTAssertEqual(try placed(20).minX, 0, "near the left edge it shifts right only to stay on screen")
-        XCTAssertEqual(try placed(864 - 14).minX, 864 - CockpitShellLayout.shoulderX(.full), "the last icon centre that needs no shift")
+        XCTAssertEqual(try placed(864 - 14).minX, 864 - CockpitShellLayout.shoulderX, "the last icon centre that needs no shift")
         XCTAssertEqual(try placed(864 - 14).maxX, 1440)
         let hidden = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: CockpitShellLayout.hiddenIconAnchor(usable: usable), shutterClosed: false, size: .percent100)).frame
         XCTAssertEqual(hidden.maxX, 1440, "a hidden icon opens the cockpit at the top-right")
-        XCTAssertEqual(hidden.maxY, 1016, "10 pt below the menu bar")
+        XCTAssertEqual(hidden.maxY, 1090, "10 pt below the menu bar")
     }
     /// D378 (owner, 11-21): a status item that is not visible anchors the attached cockpit just below the notch's RIGHT
     /// edge, the rack's left side on that edge; without a notch, where a notch edge would be (100 pt right of centre).
     @MainActor func testAnInvisibleStatusItemAnchorsAtTheNotchsRightEdgeOrWhereItWouldBe() throws {
         let frame = CGRect(x: 0, y: 0, width: 1512, height: 982), usable = CGRect(x: 0, y: 0, width: 1512, height: 945)
         let notch = CockpitShellLayout.menuBarEdgeAnchor(screen: CockpitScreen(frame: frame, visibleFrame: usable, notchRightEdge: 851))
-        XCTAssertEqual(notch, CGRect(x: 851, y: 945, width: CockpitRackMast.width, height: 37), "right of the camera housing, the menu bar's height")
+        XCTAssertEqual(notch, CGRect(x: 851, y: 945, width: CockpitDockingBoom.edgeAnchorWidth, height: 37), "right of the camera housing, the menu bar's height")
+        // #1207 round 3: the edge anchor is as wide as the clamp-only boom, so the boom drawn there has that one width with
+        // the shutter open or closed and its left side stays on the edge.
+        XCTAssertEqual(CockpitDockingBoom.edgeAnchorWidth, 42)
+        for closed in [CGFloat(0), 0.5, 1] {
+            XCTAssertEqual(CockpitDockingBoom.drawnWidth(widest: notch.width, line: CockpitShellLayout.menuBarGap, closed: closed).rounded(.up), notch.width)
+            XCTAssertEqual(CockpitLaunchRack.frame(icon: notch, width: notch.width).minX, 851, "the boom's left side on the edge")
+        }
         let plain = CockpitShellLayout.menuBarEdgeAnchor(screen: CockpitScreen(frame: frame, visibleFrame: usable))
         XCTAssertEqual(plain.minX, 756 + 100, "no notch: the nominal notch edge right of the menu bar's centre")
         XCTAssertEqual(plain.minY, usable.maxY)
         let fit = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: notch, shutterClosed: false, size: .percent100))
         XCTAssertEqual(fit.shoulder.x, notch.midX, accuracy: 0.5, "the left shoulder sits under the rack hanging there")
-        XCTAssertGreaterThan(fit.frame.minX, 851 - CockpitShellLayout.shoulderX(.full) - 1, "not at the top-right corner (G3-46)")
+        XCTAssertGreaterThan(fit.frame.minX, 851 - CockpitShellLayout.shoulderX - 1, "not at the top-right corner (G3-46)")
         // The rack hangs from the anchor: its frame starts at the notch edge, from the menu bar's edge down.
         let rack = CockpitLaunchRack.frame(icon: notch)
         XCTAssertEqual(rack.minX, 851); XCTAssertEqual(rack.maxY, usable.maxY)
     }
     /// Owner question 11-22 (menubar-right-edge-check): a status item at the far right of a 13-inch MacBook Air menu bar
-    /// (1470 x 956 pt, 37 pt notched menu bar, 70 pt Dock, Auto = 85 %). NSPopover-style: the rack stays under the icon,
+    /// (1470 x 956 pt, 37 pt notched menu bar, 70 pt Dock, Auto = 85 % capped to 82.5 % by the whole flame, D454). NSPopover-style: the rack stays under the icon,
     /// the cockpit slides left only as far as the screen edge needs, and the icon's rack still lands on the hull (the
     /// page's 8 px transparent margin keeps the visible hull inside the screen edge). No detach.
     @MainActor func testAFarRightIconOnA1470PointScreenClampsTheCockpitAndKeepsTheRackAttached() throws {
@@ -317,11 +473,11 @@ final class ShellLayoutTests: XCTestCase {
                 let icon = CGRect(x: iconX, y: usable.maxY, width: 28, height: bar)
                 let label = "icon at \(iconX), closed \(closed)"
                 let fit = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: closed, screenWidth: width), label)
-                XCTAssertEqual(fit.profile, .full, label); XCTAssertEqual(fit.scale, 0.85, label)
-                XCTAssertEqual(fit.frame.width, 541, label)
+                XCTAssertEqual(fit.profile, .full, label); XCTAssertEqual(fit.scale, 839 / 1017, accuracy: 1e-9, label)
+                XCTAssertEqual(fit.frame.width, 525, label)
                 // Clamped: flush with the screen's right edge, never past it, 10 pt below the menu bar, still attached.
                 XCTAssertEqual(fit.frame.maxX, width, "\(label): slides left just enough to stay on screen")
-                XCTAssertEqual(fit.frame.minX, width - 541, label)
+                XCTAssertEqual(fit.frame.minX, width - 525, label)
                 XCTAssertGreaterThanOrEqual(fit.frame.minX, usable.minX, label)
                 XCTAssertEqual(fit.frame.maxY, usable.maxY - CockpitShellLayout.menuBarGap, "\(label): attached, under the menu bar")
                 XCTAssertLessThan(fit.shoulder.x, icon.midX, "\(label): the cockpit slid left of the icon (the shoulder no longer under it)")
@@ -364,16 +520,17 @@ final class ShellLayoutTests: XCTestCase {
         _ = try state.accept(raw, source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle"))
         XCTAssertTrue(state.supportsAppearance)
         let ticket = state.queryTicket
-        let update = try state.setAppearance(.init(theme: .night, locale: .zhCN, profile: .compact, reduceMotion: true, shutterClosed: true))
+        let update = try state.setAppearance(.init(theme: .night, locale: .zhCN, profile: .full, reduceMotion: true, shutterClosed: true))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(update.utf8)) as? [String: Any])
         let appearance = object
         XCTAssertEqual(object["type"] as? String, "appearance")
         XCTAssertEqual(appearance["locale"] as? String, "zh-CN")
         XCTAssertEqual(appearance["reduceMotion"] as? Bool, true)
         XCTAssertEqual(appearance["reduceTransparency"] as? Bool, false)
-        let shellRaw = try state.setShell(.init(closed: true, attached: false, forcedClosed: true, tier: .compact))
+        let shellRaw = try state.setShell(.init(closed: true, attached: false, forcedClosed: true, tier: .tall))
         let shell = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(shellRaw.utf8)) as? [String: Any])
         XCTAssertEqual(shell["profile"] as? String, "closed")
+        XCTAssertEqual(shell["tier"] as? String, "tall", "D444: the wire keeps one tier")
         XCTAssertEqual(shell["attached"] as? Bool, false)
         XCTAssertEqual(shell["forcedClosed"] as? Bool, true)
         XCTAssertEqual(ticket, state.queryTicket)

@@ -382,10 +382,15 @@ import ModelPlanWire
         // D90 / FR-9-05: first run keeps its single consent; a detected key-only tool says where a key can be added later.
         if ReaderKeyProvider(rawValue: id) != nil, tool.detected { line(Self.firstRunKeyLine, id: prefix + "keylater." + id) }
         // D87 slice 8: what the tool still needs, from the same table as the Subscriptions rows (the card replaced toolRow here).
+        // The Keychain prompt is already said by the row's own keychain line above: say it once.
+        let saidKeychain = tool.promptsKeychain && tool.detected && tool.block != .unsupportedLogin && !tool.scopes.isEmpty
+            && [.read, .readAfterDone, .signInNeeded, .unsupportedLogin, .notReadable].contains(status)
         if tool.detected, tool.block == nil {
             let pre = SubscriptionRowModel.prerequisite(tool: tool, name: Self.toolName(id).english,
                                                         facts: controller.toolRowFacts[id], keyEntryAvailable: readerKeys != nil)
-            line(pre.text, id: prefix + "prereq." + id, color: pre.needsAttention ? .systemOrange : .secondaryLabelColor)
+            if !(saidKeychain && !pre.needsAttention && pre.text.english == SubscriptionRowModel.keychainPromptLine.english) {
+                line(pre.text, id: prefix + "prereq." + id, color: pre.needsAttention ? .systemOrange : .secondaryLabelColor)
+            }
         }
         let right = NSStackView(); right.orientation = .vertical; right.alignment = .trailing; right.spacing = 2
         right.translatesAutoresizingMaskIntoConstraints = false
@@ -965,7 +970,8 @@ public struct SubscriptionRowActions {
         }
     }
     private static let appNames = ["zai": "ZCode", "opencodego": "OpenCode", "opencode": "OpenCode", "claude": "Claude", "codex": "Codex",
-                                   "cursor": "Cursor", "kimi": "Kimi", "grok": "Grok", "gemini": "Gemini"]
+                                   "cursor": "Cursor", "kimi": "Kimi", "grok": "Grok", "gemini": "Gemini",
+                                   "antigravity": "Antigravity"]
     static func openApplication(for tool: String) -> Bool {
         guard let name = appNames[tool] else { return false }
         let home = FileManager.default.homeDirectoryForCurrentUser.path

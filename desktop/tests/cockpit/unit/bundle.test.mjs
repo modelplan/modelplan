@@ -7,14 +7,16 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { verifyRuntimeGraph } from '../runtime-graph.mjs';
 const project=fileURLToPath(new URL('../../../cockpit/',import.meta.url));
+// build.mjs compiles into a private directory: the shared .tmp/compiled is imported by parallel unit tests.
+const buildEnv={...process.env,MODELPLAN_COCKPIT_COMPILED:project+'.tmp/bundle-compiled'};
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 test('both editions have reproducible bounded manifests; community excludes reserved assets',()=>{
   for(const edition of ['community','official']) {
     // A reused compilation directory must not ship a deleted source.
-    mkdirSync(project+'.tmp/compiled/src',{recursive:true});
-    for(const suffix of ['js','d.ts'])writeFileSync(project+'.tmp/compiled/src/removed-module.'+suffix,'export const retired = true;\n');
+    mkdirSync(project+'.tmp/bundle-compiled/src',{recursive:true});
+    for(const suffix of ['js','d.ts'])writeFileSync(project+'.tmp/bundle-compiled/src/removed-module.'+suffix,'export const retired = true;\n');
     rmSync(project+'.tmp/'+edition,{recursive:true,force:true});
-    execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});
+    execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe',env:buildEnv});
     const root=project+'.tmp/'+edition+'/',manifest=JSON.parse(readFileSync(root+'bundle-manifest.json'));
     assert.equal(manifest.edition,edition);assert.equal(manifest.interfaceOnly,true);
     if(edition==='community')verifyRuntimeGraph(root,manifest);
@@ -32,8 +34,10 @@ test('both editions have reproducible bounded manifests; community excludes rese
       const sel='html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet';
       const breathe='@media (prefers-reduced-motion:no-preference){\n'+sel+'::before,'+sel+'::after{animation:cockpit-light-breathe 2.6s ease-in-out var(--fo,0s) infinite alternate!important}\n}';
       const burn='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"][data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{animation:cockpit-bell-flare .22s cubic-bezier(.2,.8,.3,1) both,cockpit-bell-burn .36s steps(3,end) .22s infinite}\n}';
+      // D454/D459: the official bells' blue thrust flipbook (frames 1-2-3-2) while the cockpit burns full thrust, gated the same way; bells.css rides inside the official cockpit.css.
+      const flip='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"][data-thrust="full"] .ck-base .bz-flame{animation:cockpit-flame-flip var(--fp,.44s) steps(1,end) var(--fo,0s) infinite,cockpit-flame-breathe calc(var(--fb,1.5s) / 2) ease-in-out var(--fbo,0s) infinite alternate,cockpit-flame-flicker calc(var(--fl,1s) / 2) ease-in-out var(--flo,0s) infinite alternate}\n}';
       if(name==='cockpit.css'){assert.equal(css.split(cursor).length-1,1,'one scoped running-cursor animation');assert.equal(css.split(flicker).length-1,1,'one gated porthole flicker');assert.equal(css.split(breathe).length-1,1,'one gated working-light breathing');assert.equal(css.split(burn).length-1,1,'one gated landing-burn flutter');}
-      assert.doesNotMatch(css.replace(cursor,'').replace(flicker,'').replace(breathe,'').replace(burn,''),/\binfinite\b/i,name);
+      assert.doesNotMatch(css.replace(cursor,'').replace(flicker,'').replace(breathe,'').replace(burn,'').replace(flip,''),/\binfinite\b/i,name);
     }
     const html=readFileSync(root+'index.html','utf8');
     for(const rule of ["connect-src 'none'","frame-src 'none'","object-src 'none'","base-uri 'none'","form-action 'none'"])assert.ok(html.includes(rule));
@@ -83,16 +87,16 @@ test('both editions have reproducible bounded manifests; community excludes rese
       if(name.startsWith('runtime/')&&name!==scene&&name!=='runtime/field-scene/launch-field.css')assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
       if(name.endsWith('.webp'))assert.ok(edition==='official'&&name.startsWith('assets/art/rockets/'),`unapproved WebP: ${name}`);
     }
-    execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});
+    execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe',env:buildEnv});
     assert.deepEqual(JSON.parse(readFileSync(root+'bundle-manifest.json')),manifest);
     // Porthole still placement: null without the reserved pack; the official edition carries exactly the
-    // default fleet's night/day x 890/640 projections, and every layer they name is a bundled file.
+    // default fleet's night/day projections at 890 (D444: one layout), and every layer they name is a bundled file.
     const stills=readFileSync(root+'src/porthole-stills-data.js','utf8');
     if(edition==='community')assert.equal(stills,'// SPDX-License-Identifier: MIT\nexport default null;\n');
     else{
       assert.match(stills,/^\/\/ SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1\.0\n/);
       const pack=JSON.parse(stills.split('\n')[1].replace(/^export default /,'').replace(/;$/,''));
-      assert.deepEqual(pack.projections.map(p=>`${p.theme}-${p.layout}-${p.id}`),['night-890-4ff2bad27654','night-640-a92b7ce62cfe','day-890-52b72f54aee9','day-640-28592ba812cd']);
+      assert.deepEqual(pack.projections.map(p=>`${p.theme}-${p.layout}-${p.id}`),['night-890-4ff2bad27654','day-890-52b72f54aee9']);
       for(const p of pack.projections){
         assert.deepEqual(p.models.map(m=>m.id),['sol','glm','opus','luna','sonnet','astra','haiku']);
         for(const file of [p.background,...p.models.flatMap(m=>[m.body,m.flame,m.halo].filter(Boolean).map(l=>l.file))])
@@ -111,8 +115,7 @@ test('both editions have reproducible bounded manifests; community excludes rese
   }
 });
 
-test('ported prototype keeps the full and compact layout calculation',async()=>{
+test('ported prototype keeps the full layout calculation (D444: the only layout)',async()=>{
   const {cockpitLayout}=await import('../../../cockpit/.tmp/compiled/src/prototype-layout.js');
   assert.deepEqual(cockpitLayout(890),{h:890,console:257,tapeLines:5,tapeH:94,eng:226});
-  assert.deepEqual(cockpitLayout(640),{h:640,console:217,tapeLines:3,tapeH:58,eng:220});
 });

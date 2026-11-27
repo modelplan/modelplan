@@ -148,6 +148,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 	a := consent.Capture()
 	epoch := currentEpoch(a, source)
 	if epoch == nil {
+		forgetLiveCursors(sourceTool(source))
 		return nil
 	}
 	floor := LoadCleared(cache).floor(source)
@@ -163,13 +164,13 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Tiered && !old.Pending && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() {
 			continue
 		}
-		p := newAccountingParser(source, key)
-		_, err = readWhole(func() error {
+		// Only the bytes appended since the last observation are parsed (accounting_cursor.go).
+		p, err := readAccounting(func() error {
 			if !sameEpoch(epoch, currentEpoch(consent.Capture(), source)) {
 				return errGrantWithdrawn
 			}
 			return nil
-		}, path, p)
+		}, cache, source, path, epoch, now)
 		if err != nil {
 			continue
 		}
@@ -190,7 +191,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		}
 		// A response dated ahead of this clock is not recorded yet; the unchanged file must be read
 		// again until it is, so it is not skipped by size and time (G3-147 review). Checked
-		// before the filter below, which reuses p.records.
+		// before the filter below.
 		pending := false
 		for _, r := range p.records {
 			if r.At.After(now) {
@@ -198,7 +199,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 				break
 			}
 		}
-		records := p.records[:0]
+		records := make([]usageRecord, 0, len(p.records)) // p.records stays with the live cursor
 		for _, r := range p.records {
 			if day(r.At) >= windowFrom(now, 35) && !r.At.Before(floor) && (known[r.Key] || !r.At.Before(start)) && !r.At.After(now) {
 				records = append(records, r)
@@ -412,8 +413,11 @@ type accountingParser struct {
 func newAccountingParser(source, file string) *accountingParser {
 	return &accountingParser{source: source, file: file, model: "unknown", occurrences: map[string]int{}, pending: map[string]usageRecord{}, pendingTotals: map[string]usageBuckets{}, compacted: map[string]bool{}, emitted: map[string]bool{}}
 }
-func (p *accountingParser) finish() ([]turn, int64) { return nil, -1 }
-func (p *accountingParser) line(_, _ int64, b []byte) {
+func (p *accountingParser) finish() ([]turn, int64)       { return nil, -1 }
+func (p *accountingParser) line(off, end int64, b []byte) { p.lineDoc(off, end, b, nil) }
+
+// lineDoc is line with a Claude Code line's reduced form (claudeDoc) already made, or nil.
+func (p *accountingParser) lineDoc(_, _ int64, b, doc []byte) {
 	var e struct {
 		Type      string    `json:"type"`
 		Timestamp time.Time `json:"timestamp"`
@@ -447,7 +451,13 @@ func (p *accountingParser) line(_, _ int64, b []byte) {
 	if p.source == "codex" && !bytes.Contains(b, []byte("token_count")) && !bytes.Contains(b, []byte("token_usage_record")) && !bytes.Contains(b, []byte("turn_context")) && !bytes.Contains(b, []byte("session_meta")) && !bytes.Contains(b, []byte("compacted")) && !bytes.Contains(b, []byte("thread_settings_applied")) {
 		return
 	}
-	if json.Unmarshal(b, &e) != nil {
+	if p.source == "claude-code" {
+		if doc == nil {
+			doc = claudeDoc(b)
+		}
+		b = doc
+	}
+	if b == nil || json.Unmarshal(b, &e) != nil {
 		return
 	}
 	if e.Type == "compacted" {
@@ -623,6 +633,7 @@ func usageNumber(u map[string]int64, keys ...string) int64 {
 
 // ForgetAccountingLocked erases only this tool's snapshots. Caller holds perf.lock.
 func ForgetAccountingLocked(cache, tool string) error {
+	forgetLiveCursors(tool)
 	l, ok := loadAccounting(cache)
 	if !ok {
 		return errors.New("accounting history unreadable; retry cleanup")
@@ -647,6 +658,16 @@ type accountingTee struct {
 }
 
 func (p *accountingTee) line(start, end int64, b []byte) {
+	// A Claude Code line is validated and reduced once for both readers.
+	if c, ok := p.parser.(*claudeParser); ok && p.usage.source == "claude-code" {
+		doc := claudeDoc(b)
+		if doc == nil {
+			return // not JSON: both readers skip it
+		}
+		c.lineDoc(start, end, b, doc)
+		p.usage.lineDoc(start, end, b, doc)
+		return
+	}
 	p.parser.line(start, end, b)
 	p.usage.line(start, end, b)
 }

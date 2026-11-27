@@ -174,28 +174,7 @@ func atMost(name string, got, ceiling int64) (bool, string) {
 // idleGaps lists the open gaps. A listed check that passes fails the gate, so the fix that
 // closes a gap must delete its entry here; an unlisted check that fails is a regression, and a
 // listed one that exceeds its allowance is one too.
-var idleGaps = map[string]idleGap{
-	"entries": {
-		why: "energy plan item 2: the activity observer and the Codex rollout index walk every admitted history root each 6 s, and each 30 s observation walks them again, so enumeration grows with history",
-		// Each walk lists its own root at most once; walks themselves are budgeted separately.
-		allowance: entriesWithinWalks,
-	},
-	"views": {
-		why: "energy plan item 2: each 30 s observation signals a change even when it wrote nothing, and its observe-decisions.json rewrite moves the watched observed directory, so the server builds two views per pass",
-		// Two change-driven refreshes per observation, one view build each.
-		allowance: func(r idleWork) (bool, string) { return atMost("views", r.window.Views, 2*int64(r.observations)) },
-	},
-	"decodes": {
-		why: "energy plan item 2: each 30 s observation re-reads the unchanged ledgers and the views it triggers decode them again",
-		allowance: func(r idleWork) (bool, string) {
-			return atMost("decodes", r.window.Decodes, idleDecodesPerObservation*int64(r.observations))
-		},
-	},
-}
-
-// idleDecodesPerObservation is what one idle observation and the two refreshes it triggers
-// decode today (its ledgers, then the views' ledgers and rollouts).
-const idleDecodesPerObservation = 5
+var idleGaps = map[string]idleGap{}
 
 // idleDiscoveryDeadline is the agreed pickup time for a new Codex rollout (D397): one 6 s
 // discovery interval plus the watcher's one-second metadata cadence. It is fixed here, not read
@@ -234,8 +213,16 @@ const idleWindow = 6 * time.Minute
 // the real measured workload; the mutation adds exactly that listing's entries to it.
 func TestG3147EntriesAllowanceRejectsARepeatedDayListing(t *testing.T) {
 	run := runIdleWork(t, 1, idleWindowStart(time.Now()))
-	if run.window.CodexWalks == 0 || run.window.ClaudeWalks == 0 || run.codexFiles == 0 {
-		t.Fatalf("no per-root measurement: %+v", run.window)
+	if run.window.Walks == 0 || run.codexFiles == 0 {
+		t.Fatalf("no measurement: %+v", run.window)
+	}
+	if _, open := idleGaps["entries"]; !open {
+		// The gap is closed (energy plan item 2): idle discovery lists nothing at all, so any
+		// repeated listing shows as entries that the gate's strict checks reject.
+		if run.window.Entries != 0 {
+			t.Fatalf("the closed entries gap measured %d entries", run.window.Entries)
+		}
+		return
 	}
 	if ok, detail := entriesWithinWalks(run); !ok {
 		t.Fatalf("the unchanged workload exceeds its entries allowance: %s", detail)
@@ -261,8 +248,16 @@ func TestG3147IdleWorkIgnoresInheritedSessionHints(t *testing.T) {
 	t.Setenv("CODEX_THREAD_ID", "synthetic-review-thread")
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "synthetic-review-session")
 	run := runIdleWork(t, 1, idleWindowStart(time.Now()))
-	if run.window.CodexWalks == 0 || run.codexFiles == 0 {
-		t.Fatalf("no per-root measurement: %+v", run.window)
+	if run.window.Walks == 0 || run.codexFiles == 0 {
+		t.Fatalf("no measurement: %+v", run.window)
+	}
+	if _, open := idleGaps["entries"]; !open {
+		// The entries gap is closed: with inherited hints, idle work must still list, open and
+		// decode nothing.
+		if w := run.window; w.Entries != 0 || w.Opens != 0 || w.Decodes != 0 {
+			t.Fatalf("an inherited session hint changed the measured workload: %+v", w)
+		}
+		return
 	}
 	if ok, detail := entriesWithinWalks(run); !ok {
 		t.Fatalf("an inherited session hint changed the measured workload: %s", detail)
@@ -368,6 +363,23 @@ func runIdleWork(t *testing.T, scale int, start time.Time) idleWork {
 	t.Setenv("TZ", "UTC")
 	home := setupQueryHome(t)
 	writeStaticHistory(t, home, start, scale)
+	// ModelPlan's own account caches, which bind what the observation records (macrevb-1222-3):
+	// an unchanged pair is not opened or decoded again, and the counters must say so.
+	for name, body := range map[string]string{
+		"codex-account.json": fmt.Sprintf(`{"schemaVersion":1,"observedAt":%q,"status":"ok","subscriptionRef":"sub-codex-g3147"}`, start.Add(-time.Hour).Format(time.RFC3339Nano)),
+		"claude-code.json":   fmt.Sprintf(`{"schemaVersion":1,"source":"claude-code","observedAt":%q,"identity":{"subscriptionRef":"sub-claude-g3147"}}`, start.Add(-time.Hour).Format(time.RFC3339Nano)),
+	} {
+		path := filepath.Join(home, "cache", "observed", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, start.Add(-time.Hour), start.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	var run idleWork
 	for _, root := range []string{filepath.Join(home, ".claude"), filepath.Join(home, ".codex")} {
 		_ = filepath.WalkDir(root, func(string, fs.DirEntry, error) error { run.treeEntries++; return nil })

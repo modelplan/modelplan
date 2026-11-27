@@ -303,11 +303,25 @@ def backpressure(binary, home):
                 # durable transaction precede the health/control observation.
                 time.sleep(.4)
                 if probe:
-                    health = engine._find(lambda m: m.get('method') == 'engine/health' and m['params']['data']['code'] == 'cleanup_pending', 3)
-                    require(health['params']['consentGeneration'] > hello['consentGeneration'], 'stale-health-context')
-                    receipt = engine.response(12)
-                    require(receipt['result']['data']['committed'], 'pressure-revoke-not-committed')
-                    engine.shutdown()
+                    # Review 11-24 #1: a private frame that started before the revoke must
+                    # never complete after it. Resuming reads drains the in-flight body; the
+                    # engine then ends the session without its newline, so the client drops
+                    # the partial line. The committed receipt is replayed after restart below.
+                    resumed = time.monotonic()
+                    try:
+                        while True:
+                            engine.read(3)
+                    except EngineTimeout:
+                        raise EngineFailure('inflight-private-frame-not-cut')
+                    except EngineFailure as exc:
+                        require(str(exc) == 'unexpected-output-eof', str(exc))
+                    require(time.monotonic() - resumed < 3, 'inflight-private-frame-cut-late')
+                    require(len(engine.buffer) > 0, 'inflight-private-frame-not-started')
+                    completed = [m for m in engine.messages if m.get('id') in (10, 11) and 'result' in m]
+                    require(len(completed) < 2, 'private-frame-completed-after-revoke')
+                    require(all(m['result']['consentGeneration'] == hello['consentGeneration'] for m in completed),
+                            'private-frame-relabelled-after-revoke')
+                    require(engine.wait(5) == 0, 'pressure-session-exit-failed')
                 else:
                     require(engine.wait(13) == 0, 'pressure-process-failed')
                     elapsed = time.monotonic() - started
@@ -322,8 +336,7 @@ def backpressure(binary, home):
             projection = fresh_rows(restart)
             require(all(not row['accounts'] for row in projection['rows'] if row['id'] == 'codex'), 'revoked-values-after-restart')
             restart.shutdown(); messages.extend(restart.messages)
-    return {'outcome': 'pass', 'completedQueries': 2, 'revokeCommitted': True, 'healthChanged': True,
-            'healthControlObserved': True, 'receiptReplayed': True, 'stdoutPaused': True,
+    return {'outcome': 'pass', 'completedQueries': 2, 'revokeCommitted': True, 'inflightPrivateFrameCut': True, 'receiptReplayed': True, 'stdoutPaused': True,
             'elapsedSeconds': round(elapsed, 3), 'u2PersistenceProof': True,
             'proofScope': 'production U2 receipts and transport; recording history provider', 'wireMessages': messages, 'cleanup': 'exited'}
 
