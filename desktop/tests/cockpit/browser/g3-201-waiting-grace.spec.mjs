@@ -58,7 +58,13 @@ test('a cleared page hidden and shown again waits the same grace, a quick displa
  expect(await c.receive(c.send('display',{...gen(43),data:empty()}))).toBe(true);
  await expect(page.locator('.ec-empty-open')).toBeVisible();
  expect(await opacity(page)).toBe(1);
+ // A clear on a page that is already shown has no show race: the line is visible at once and runs no animation (CKP-MOT: nothing runs behind a gate).
  expect(await c.receive(c.send('clear',gen(44)))).toBe(true);
+ expect(await opacity(page)).toBe(1);
+ expect(await line(page).first().evaluate(e=>e.getAnimations().length)).toBe(0);
+ // Hidden and shown again, the cleared line waits the grace like the waiting line.
+ expect(await visibility(c,false,gen(44))).toBe(true);
+ expect(await visibility(c,true,gen(44))).toBe(true);
  await graceThenShown(page);
 });
 for(const how of ['app setting','system'])
