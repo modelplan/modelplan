@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -74,25 +75,55 @@ func antigravityServers(raw []byte) []AntigravityServer {
 		}
 		pid, pidErr := strconv.Atoi(f[0])
 		uid, uidErr := strconv.Atoi(f[1])
-		name := strings.ToLower(filepath.Base(f[2]))
-		if pidErr != nil || uidErr != nil || pid <= 0 || uid != os.Getuid() || !(name == "language_server" || strings.HasPrefix(name, "language_server_")) {
+		// The binary name is what identifies the server, wherever Antigravity.app lives: comm may be the
+		// bare name or a full path, and a newer build may report another comm with the binary in argv.
+		if pidErr != nil || uidErr != nil || pid <= 0 || uid != os.Getuid() || !(antigravityBinary(f[2]) || antigravityBinary(f[3])) {
+			antigravityDebug(line, "not a language_server binary of this user")
 			continue
 		}
 		app := antigravityFlag(f, "--app_data_dir")
 		if app != "antigravity" && app != "antigravity-ide" {
+			antigravityDebug(line, "app_data_dir is not antigravity")
 			continue
 		}
 		port, err := strconv.Atoi(antigravityFlag(f, "--extension_server_port"))
 		if err != nil || port < 1 || port > 65535 {
+			antigravityDebug(line, "no usable extension_server_port")
 			continue
 		}
 		token := antigravityFlag(f, "--csrf_token")
 		if !antigravityCSRF(token) {
+			antigravityDebug(line, "no usable csrf_token")
 			continue
 		}
 		out = append(out, AntigravityServer{PID: pid, Port: port, CSRF: token})
 	}
 	return out
+}
+func antigravityBinary(path string) bool {
+	name := strings.ToLower(filepath.Base(path))
+	return name == "language_server" || strings.HasPrefix(name, "language_server_")
+}
+
+// antigravityDebug logs, with MODELPLAN_DEBUG set, a process line that mentions the language server or
+// Antigravity but was not matched, so a newer build's signature can be seen. Only the pid, the binary
+// name and the flag names are written; argument values (the CSRF token, paths) never are.
+func antigravityDebug(line, why string) {
+	low := strings.ToLower(line)
+	if os.Getenv("MODELPLAN_DEBUG") == "" || !(strings.Contains(low, "language_server") || strings.Contains(low, "antigravity")) {
+		return
+	}
+	f := strings.Fields(line)
+	if len(f) < 3 {
+		return
+	}
+	var flags []string
+	for _, a := range f[2:] {
+		if strings.HasPrefix(a, "--") {
+			flags = append(flags, strings.SplitN(a, "=", 2)[0])
+		}
+	}
+	fmt.Fprintf(os.Stderr, "modelplan: antigravity: unmatched process pid=%s binary=%s flags=%v: %s\n", f[0], filepath.Base(f[2]), flags, why)
 }
 func antigravityCSRF(s string) bool {
 	if s == "" || len(s) > 256 {

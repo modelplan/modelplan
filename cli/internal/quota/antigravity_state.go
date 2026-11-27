@@ -217,6 +217,9 @@ func antigravityCachedEntry(s antigravityState, now time.Time, generation string
 // gates cover restart and rollback. Never reset this gate on consent changes.
 var antigravityAttempts sync.Map
 
+// antigravityRecheck is how soon a "not running" result is looked at again.
+const antigravityRecheck = 45 * time.Second
+
 func collectAntigravity(ctx context.Context, _ *http.Client, cache string, now time.Time) codexbarEntry {
 	access, blocked := antigravityAdmission(ctx)
 	if access.Admission == nil {
@@ -235,10 +238,18 @@ func collectAntigravity(ctx context.Context, _ *http.Client, cache string, now t
 	}
 	defer unlock()
 	s := loadAntigravityState(cache)
-	if last, ok := antigravityAttempts.Load(cache); ok && now.Sub(last.(time.Time)) < 5*time.Minute {
+	// "Not running" is a normal state for a desktop app, not a failure: re-check quickly, with no
+	// backoff, and let a changed login generation (Settings Retry) skip the gate at once.
+	floor := 5 * time.Minute
+	retry := false
+	if s.Availability == "not_detected" {
+		floor = antigravityRecheck
+		retry = s.LoginGeneration != access.LoginGeneration
+	}
+	if last, ok := antigravityAttempts.Load(cache); ok && now.Sub(last.(time.Time)) < floor && !retry {
 		return antigravityCachedEntry(s, now, access.LoginGeneration)
 	}
-	if now.Before(s.NextAt) || now.Before(s.AttemptAt.Add(5*time.Minute)) {
+	if !retry && (now.Before(s.NextAt) || now.Before(s.AttemptAt.Add(floor))) {
 		return antigravityCachedEntry(s, now, access.LoginGeneration)
 	}
 	// A supplied generation permits an authentication hold until a proven tool
@@ -269,17 +280,22 @@ func collectAntigravity(ctx context.Context, _ *http.Client, cache string, now t
 		s.NextAt = now.Add(10 * time.Minute).UTC()
 	} else {
 		s.ErrorCode = ReaderErrorCode(e.ErrorCode)
-		s.Failures = min(s.Failures+1, 4)
-		wait := time.Duration(10*(1<<(s.Failures-1))) * time.Minute
-		if s.Failures == 4 {
-			wait = time.Hour
-		}
-		s.NextAt = now.Add(wait).UTC()
 		s.Availability = "upstream_changed"
 		for _, state := range []string{"not_detected", "expired_login", "not_supported_yet"} {
 			if e.Error == antigravityNext(state) {
 				s.Availability = state
 			}
+		}
+		if s.Availability == "not_detected" {
+			s.Failures = 0
+			s.NextAt = now.Add(antigravityRecheck).UTC()
+		} else {
+			s.Failures = min(s.Failures+1, 4)
+			wait := time.Duration(10*(1<<(s.Failures-1))) * time.Minute
+			if s.Failures == 4 {
+				wait = time.Hour
+			}
+			s.NextAt = now.Add(wait).UTC()
 		}
 	}
 	if !publishReaderCache(access.Publish, func() bool { return saveAntigravityState(cache, s) }) {
