@@ -213,7 +213,7 @@ class Script(unittest.TestCase):
 
     def test_every_check_kind_is_known(self):
         known = {"differsFrom", "matches", "exists", "opened", "absent", "checked", "on", "moved", "changed", "cardNamed",
-                 "collapsed", "allOnScreen", "fits", "newWindow", "noNewWindow", "windowClosed", "nonblank"}
+                 "collapsed", "allOnScreen", "fits", "newWindow", "noNewWindow", "windowClosed", "nonblank", "noGaps"}
         for step in self.STEPS:
             for check in step.get("checks", []):
                 self.assertIn(next(iter(check)), known, step["id"])
@@ -243,6 +243,48 @@ class Steps(unittest.TestCase):
         self.assertIn(("capture_window", 9), host.calls)
         self.assertEqual(record["window"]["bounds"], [100, 100, 300, 300])
         self.assertTrue((self.out / record["window"]["file"]).exists())
+
+    def window_png(self, hairline_row=None, height=60, width=100):
+        """A window capture: opaque with a clear 6 px margin, optionally one fully clear row (the owner's hairline)."""
+        import struct
+        import zlib
+        rows = b""
+        for y in range(height):
+            clear = hairline_row == y
+            rows += b"\x00" + b"".join(b"\x00\x00\x00\x00" if clear or x < 6 or x >= width - 6 else b"\x20\x22\x24\xff" for x in range(width))
+        def chunk(kind, body):
+            return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+        return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+                + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+    def gap_step(self, png):
+        class Host(FakeHost):
+            def capture_window(self, path, window_id):
+                Path(path).write_bytes(png)
+        host = Host({"windows": [{"frame": [0, 0, 100, 60], "children": [{"id": "x", "frame": [10, 10, 20, 20]}]}]},
+                    windows=[{"id": 9, "onScreen": True, "bounds": [0, 0, 100, 60]}])
+        step = {"id": "s", "title": "t", "expected": "e", "shot": {"window": "ax:x"}, "checks": [{"noGaps": "window"}]}
+        return walker(host, self.out, [step]).walk_steps()[0]
+
+    def test_no_gaps_passes_a_solid_window_silhouette(self):
+        self.assertEqual(self.gap_step(self.window_png())["status"], "pass")
+
+    def test_no_gaps_fails_a_one_pixel_transparent_row_inside_the_silhouette(self):
+        record = self.gap_step(self.window_png(hairline_row=16))
+        self.assertEqual(record["status"], "fail")
+        self.assertIn("row(s) 16", record["reason"])
+        self.assertEqual(record["measures"]["silhouetteGapRows"], [16])
+
+    def test_no_gaps_without_a_window_capture_fails(self):
+        host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "children": []}]})
+        step = {"id": "s", "title": "t", "expected": "e", "checks": [{"noGaps": "window"}]}
+        self.assertEqual(walker(host, self.out, [step]).walk_steps()[0]["status"], "fail")
+
+    def test_the_shutter_step_sets_a_bright_desktop_and_scans_for_gaps(self):
+        steps = json.loads((ROOT / "steps.json").read_text(encoding="utf-8"))["steps"]
+        step = next(s for s in steps if s["id"] == "shutter-closed")
+        self.assertEqual(step["actions"][0]["op"], "brightDesktop")
+        self.assertIn({"noGaps": "window"}, step["checks"])
 
     def test_press_passes_the_scope_to_the_helper(self):
         host = FakeHost()

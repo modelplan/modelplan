@@ -92,6 +92,15 @@ public struct DockEffectRotation: Equatable, Sendable {
             if let animation=item.value.layer.animation(forKey:Self.rotationKey) { result[item.key]=animation }
         }
     }
+    /// The running flame (contents) animation of each ring, for identity and seam checks.
+    public var frameAnimations:[String:CAKeyframeAnimation] {
+        consumers.reduce(into:[:]) { result,item in
+            if let animation=item.value.layer.animation(forKey:Self.frameKey) as? CAKeyframeAnimation { result[item.key]=animation }
+        }
+    }
+    /// Pose indices each ring's flame animation steps through in one repeat.
+    public var framePoseOrders:[String:[Int]] {consumers.filter{$0.value.isAnimating}.mapValues(\.poseOrder)}
+    private static let frameKey="stepped-images"
     public func configure(view:DockInstrumentView,skin:DockInstrumentSkin,readings:[DockInstrumentReading],profile:RenderProfile,
                           magnification:[String:Double]=[:],compositing:DockEffectCompositing = .sourceOver,rotation:DockEffectRotation? = nil,quietIDs:Set<String> = [],sampling:DockEffectSampling = .stepped,provider:(DockInstrumentReading)->(any EffectFrameProvider)?) throws {
         guard Set(readings.map(\.subscriptionID)).count==readings.count else{stop();pool.purgeUnleased();throw DockLogicError.invalidCatalogue}
@@ -127,6 +136,10 @@ public struct DockEffectRotation: Equatable, Sendable {
             if let current=consumers[id],current.isAvailable,current.layer.superlayer === parent,installed[id] == spec {kept.insert(id);continue}
             retire(id)
             let effect=SteppedImageEffect(pool:pool);if isThrottled {effect.cycleSeconds=Self.batteryCycleSeconds}
+            // Owner build-6 item +g / owner item 49: the nine flame poses are a 1 s cut from an aperiodic Canvas, so
+            // pose 8 -> pose 0 was ~3x the in-cycle step and showed as a hitch once per loop. Forward-and-back play
+            // steps only between captured neighbours, so the loop has no seam and no repeated frame.
+            effect.playback = .reflect
             effect.configure(request:request,provider:source,working:true)
             guard effect.isAvailable else{unavailableIDs.insert(id);effect.stop();continue}
             effect.layer.frame=parent.bounds

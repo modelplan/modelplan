@@ -9,6 +9,7 @@ import (
 	"os/exec"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 )
 
 var ErrTool = errors.New("supported tools are claude-code and codex")
@@ -48,15 +49,20 @@ func Install(ctx context.Context, tool string, execute bool, stdin io.Reader, st
 		env.LookPath = exec.LookPath
 	}
 	path, err := env.LookPath(r.Commands[0][0])
-	if err != nil {
-		return r, nil // missing host: print the same commands instead
+	if err != nil || toolcli.InsideOtherApp(path) {
+		// Missing host, or one only inside another app's bundle (never run, owner build-6 #14):
+		// print the same commands instead.
+		return r, nil
 	}
 	if env.Run == nil {
 		env.Run = func(ctx context.Context, path string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-			cmd := exec.CommandContext(ctx, path, args...)
+			cmd, err := toolcli.Command(ctx, path, args...)
+			if err != nil {
+				return err
+			}
 			cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 			// Inherit the App's supplied environment, including system proxy settings.
-			return cmd.Run()
+			return toolcli.Run(cmd)
 		}
 	}
 	for _, command := range r.Commands {

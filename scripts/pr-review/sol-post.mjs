@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { client } from "../merge-gates/github.mjs";
 import { feed, isShadowLane, parseGlmTiers, pathTier, prPaths, tierOverride, TRUSTED } from "../merge-gates/rules.mjs";
 import { secretHits } from "./brief.mjs";
-import { agreement, parseAnswer, postLane, postProblem, noVerdictNoted, glmAdvisory, prClass, waitNoted, renderNoVerdictNote, renderScopeNote, renderSolComment, renderWaitNote, scopeNoted, SCOPE_CHANGED } from "./sol.mjs";
+import { postWhy, agreement, parseAnswer, postLane, postProblem, noVerdictNoted, glmAdvisory, prClass, waitNoted, renderNoVerdictNote, renderScopeNote, renderSolComment, renderWaitNote, scopeNoted, SCOPE_CHANGED } from "./sol.mjs";
 
 const env = process.env;
 const dir = join(env.RUNNER_TEMP, "pr-review-sol");
@@ -75,11 +75,8 @@ if (waiting) {
 
 let usage = null;
 try { usage = JSON.parse(read(join(dir, "usage.json"))); } catch {}
-const fellBack = read(join(dir, "why")).trim() ? `quota fallback to ${provider}` : "";
-// A labelled PR (review:gpt) answered by GLM means GPT had no quota: say so in the provider line for the coordinator.
-// macrevb-1237-2: a tier-0 head is only ever offered to GLM (advice), so GLM answering there is no GPT quota fallback.
-const labelledFallback = env.GPT_REQUESTED === "true" && provider !== "openai" && tierNow !== 0;
-const why = labelledFallback ? `review:gpt requested; GPT quota out${fellBack ? `; ${fellBack}` : ""}` : fellBack;
+// The reason line (postWhy, sol.mjs): quota fallback, a refused model and a model mismatch are stated apart.
+const why = postWhy({ quota: read(join(dir, "why")), note: read(join(dir, "note")), provider, gptRequested: env.GPT_REQUESTED === "true", tier: tierNow });
 const meta = { why, model: read(join(dir, "model")).trim() || env.MODEL, effort: provider === "openai" ? env.EFFORT : "default", seconds: read(join(dir, "seconds")).trim() || "?", usage, runUrl: env.RUN_URL };
 // Shadow runs log how the lane that counts has judged this head so far (D352: compare on three PRs before cutover).
 const agreeNow = isShadowLane(lane) ? agreement([...items, { kind: "comment", user: TRUSTED, body: `VERDICT: ${answer.verdict} @ ${head} (${lane})`, at: "~" }], head, lane, tierNow, parseGlmTiers(env.REVIEW_GLM_TIERS)) : null;

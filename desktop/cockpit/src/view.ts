@@ -85,7 +85,19 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  const pointerKeepsFocus=(e:MouseEvent)=>{pressed=null;if(!e.isTrusted||!(e.target instanceof Element))return;const c=e.target.closest(POINTER_UNFOCUSED);if(c instanceof HTMLElement&&root.contains(c)){pressed=c;if(document.activeElement===c)c.dataset.pointerFocus='';}};
  const pointerFocusStarts=(e:FocusEvent)=>{if(pressed&&e.target===pressed)pressed.dataset.pointerFocus='';};
  const pointerPressEnds=()=>{pressed=null;};
- const pointerFocusEnds=(e:FocusEvent)=>{if(e.target instanceof HTMLElement)delete e.target.dataset.pointerFocus;};
+ // G3-153: a blur because the whole window stopped being key (the page is no longer the focused document) is not the user
+ // leaving the control: macOS refocuses it on reactivation and WebKit treats that as keyboard focus, so the mark stays.
+ const pointerFocusEnds=(e:FocusEvent)=>{if(!(e.target instanceof HTMLElement))return;if(e.relatedTarget===null&&!document.hasFocus())return;delete e.target.dataset.pointerFocus;};
+ // G3-165 (owner test build 3): the gold ring on the "7d" key showed on the first and later opens although nothing was
+ // pressed: the window reactivation or open refocuses the page's tab stop programmatically and WebKit matches
+ // :focus-visible for a focus that follows no pointer press. So the ring follows input modality, not WebKit's guess:
+ // root[data-kbd-nav] is set by a trusted navigation key (Tab, arrows, Home/End, Space, Enter) and cleared by any pointer
+ // press and by window or page activation, so a programmatic focus never draws a ring. CSS draws rings only under it.
+ const NAV_KEYS=new Set(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End',' ','Enter']);
+ const kbdNavOn=(e:KeyboardEvent)=>{if(e.isTrusted&&NAV_KEYS.has(e.key)&&!e.metaKey&&!e.ctrlKey&&!e.altKey)root.setAttribute('data-kbd-nav','');};
+ const kbdNavOff=()=>root.removeAttribute('data-kbd-nav');
+ root.addEventListener('keydown',kbdNavOn,true);root.addEventListener('pointerdown',kbdNavOff,true);root.addEventListener('mousedown',kbdNavOff,true);
+ window.addEventListener('focus',kbdNavOff);window.addEventListener('blur',kbdNavOff);document.addEventListener('visibilitychange',kbdNavOff);
  root.addEventListener('mousedown',pointerKeepsFocus,true);root.addEventListener('focusin',pointerFocusStarts,true);
  window.addEventListener('mouseup',pointerPressEnds,true);root.addEventListener('focusout',pointerFocusEnds,true);
  frame.settings.classList.add('s6-strip-key');attach.classList.add('s6-strip-key');close.classList.add('s6-strip-key');
@@ -314,6 +326,6 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   plugins(raw){return plugins.applyHostState(raw);},
   pluginData(id,data){return plugins.deliver(id,data);},
   openPluginScreen(id){return plugins.openScreen(id,true);},
-  dispose(){if(disposed)return;disposed=true;shutterRun=null;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);root.removeEventListener('mousedown',pointerKeepsFocus,true);root.removeEventListener('focusin',pointerFocusStarts,true);window.removeEventListener('mouseup',pointerPressEnds,true);root.removeEventListener('focusout',pointerFocusEnds,true);pressed=null;window.removeEventListener('keydown',scopeShortcut);window.removeEventListener('keydown',rangeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;engineRange=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  dispose(){if(disposed)return;disposed=true;shutterRun=null;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);root.removeEventListener('keydown',kbdNavOn,true);root.removeEventListener('pointerdown',kbdNavOff,true);root.removeEventListener('mousedown',kbdNavOff,true);window.removeEventListener('focus',kbdNavOff);window.removeEventListener('blur',kbdNavOff);document.removeEventListener('visibilitychange',kbdNavOff);root.removeEventListener('mousedown',pointerKeepsFocus,true);root.removeEventListener('focusin',pointerFocusStarts,true);window.removeEventListener('mouseup',pointerPressEnds,true);root.removeEventListener('focusout',pointerFocusEnds,true);pressed=null;window.removeEventListener('keydown',scopeShortcut);window.removeEventListener('keydown',rangeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;engineRange=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }

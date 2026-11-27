@@ -415,6 +415,10 @@ struct DockHelpInteraction: Equatable {
     @_spi(DockResourceChecks) public var workingEffectRotationPeriodsForChecks: [String:Double] { workingDriver?.rotationPeriods ?? [:] }
     /// G3-91: the running spin animation of each ring; a refresh keeps the same object (it is never re-added).
     @_spi(DockResourceChecks) public var workingEffectRotationAnimationsForChecks: [String: CAAnimation] { workingDriver?.rotationAnimations ?? [:] }
+    /// Owner build-6 item +g: each ring's flame animation and the pose order it steps through (seamless when every
+    /// neighbouring pair, including last-to-first, is a captured neighbour).
+    @_spi(DockResourceChecks) public var workingEffectFrameAnimationsForChecks: [String: CAKeyframeAnimation] { workingDriver?.frameAnimations ?? [:] }
+    @_spi(DockResourceChecks) public var workingEffectFramePoseOrdersForChecks: [String: [Int]] { workingDriver?.framePoseOrders ?? [:] }
     @_spi(DockResourceChecks) public var workingEffectRotationBeginTimesForChecks: [String: CFTimeInterval] { workingDriver?.rotationBeginTimes ?? [:] }
     @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }
     @_spi(DockResourceChecks) public var workingEffectCycleSeconds: [String: Double] { workingDriver?.cycleSeconds ?? [:] }
@@ -1608,7 +1612,7 @@ struct DockHelpInteraction: Equatable {
                 geometry.scaleRegistration(by: dockView.appliedGeometryScale)
             }
             else {
-                try dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
+                try dockView.applyCommunity(rows, locale: passPreferences.language.rawValue, showsPercentages: passPreferences.showPercentages)
                 geometry = .init(hoverRects: [dockView.bounds])
             }
         } catch {
@@ -1618,7 +1622,7 @@ struct DockHelpInteraction: Equatable {
                 lastAppearanceError = error
                 Logger(subsystem: "ai.modelplan.dock", category: "appearance").error("Official Dock appearance failed: \(String(describing: error), privacy: .private)")
             }
-            try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
+            try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue, showsPercentages: passPreferences.showPercentages)
             geometry = .init(hoverRects: [dockView.bounds])
         }
         guard passIsCurrent(generation) else { return }
