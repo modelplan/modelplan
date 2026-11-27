@@ -198,19 +198,19 @@ type Account struct {
 	ResetCards *rows.ResetCards `json:"-"`
 	// ReportedModels (D98): model ids the tool itself lists for this account (Codex model/list), native ids as
 	// the harness names them. Internal: it reaches the cockpit wire mapped to published ids, not this JSON.
-	ReportedModels []string `json:"-"`
-	Beta       bool             `json:"beta,omitempty"` // reader has not completed real-account verification
-	Source     string           `json:"source"`         // claude-code | codex | user | codexbar:<provider>
-	Plan       string           `json:"plan,omitempty"`
-	Region     string           `json:"region,omitempty"`
-	Generation string           `json:"generation,omitempty"` // user: the plan's metering generation, as declared
-	ObservedAt time.Time        `json:"observedAt"`
-	Stale      bool             `json:"stale"`
+	ReportedModels []string  `json:"-"`
+	Beta           bool      `json:"beta,omitempty"` // reader has not completed real-account verification
+	Source         string    `json:"source"`         // claude-code | codex | user | codexbar:<provider>
+	Plan           string    `json:"plan,omitempty"`
+	Region         string    `json:"region,omitempty"`
+	Generation     string    `json:"generation,omitempty"` // user: the plan's metering generation, as declared
+	ObservedAt     time.Time `json:"observedAt"`
+	Stale          bool      `json:"stale"`
 	// retained: the newest reading is one kept after a failed refresh; stale until a refresh succeeds.
-	retained   bool
-	Harness    *Harness         `json:"harness,omitempty"`
-	Windows    []Window         `json:"windows"`
-	Cards      []Card           `json:"cards,omitempty"`
+	retained bool
+	Harness  *Harness `json:"harness,omitempty"`
+	Windows  []Window `json:"windows"`
+	Cards    []Card   `json:"cards,omitempty"`
 	// Subscription: the account the windows belong to, when a reader saw it (identity.go).
 	Subscription *Binding `json:"subscription,omitempty"`
 	// Credits: the account's usage credits (Codex: bought or granted), which the harness draws on
@@ -340,6 +340,7 @@ type Paths struct {
 	ClaudeSessionAccess         *localusage.HistoryAccess // explicit consent/profile scope for cache-only session projection
 	ReaderAccess                *ReaderAccess             // explicit shared-consent admission for saved-login readers
 	ZCodeNoProviderFile         bool                      // ZCode is present on the default route but keeps no provider file (G3-21)
+	ZCodeKeychainPending        string                    // D380: ZCode's Keychain-bound sign-in awaits the Keychain choice ("unset" | "denied")
 	ZCodeLoginConsent           bool                      // ZCode's sign-in is there but its saved-login scope is not allowed (D369)
 	eraseGuard                  consent.EraseGuard        // retry erasure fence, checked under the reader lock (macrevb-1218-5)
 }

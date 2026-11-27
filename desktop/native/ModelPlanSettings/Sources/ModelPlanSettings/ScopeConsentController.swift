@@ -19,6 +19,8 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
 public enum ScopeConsentAttempt: Sendable, Equatable { case notSent, rejected, sent }
 /// Why a detected tool cannot be read, from the engine's accepted rows (G3-38, D52).
 public enum ScopeToolBlock: Sendable, Equatable { case notSignedIn, unsupportedLogin }
+/// D369: ZCode's QR-code / OAuth sign-in scope.
+enum ZCodeSavedLogin { static let scope = "zai.account_usage.saved_login" }
 /// G3-45: one detected tool on the first-run page. Built from accepted facts only.
 public struct FirstRunTool: Sendable, Equatable {
     public let tool: String
@@ -73,6 +75,8 @@ public struct FirstRunReading: Sendable, Equatable {
     private var firstRunExplicitSelection=false
     /// G3-45: the user's own first-run changes; untouched tools follow their default.
     private var firstRunToolChoices: [String: Bool] = [:]
+    /// G3-155: the user's own ticks of a tool's separate opt-in path; absent means off.
+    private var firstRunOptInChoices: [String: Bool] = [:]
     /// HIST-IMP-03: the request ID of the first-run Done grant, until its receipt arrives.
     private var firstRunGrantRequestID: String?
     private var rowCodes: [String: RowsCode] = [:]
@@ -99,7 +103,7 @@ public struct FirstRunReading: Sendable, Equatable {
     /// Presentation policy only; no grant, persistence, inspection or assumed restore.
     public func beginFirstRunDraft() -> Bool {
         guard case .idle=phase else { return false }
-        firstRunExplicitSelection=true;selectedIDs=[];firstRunToolChoices=[:];firstRunDraftStartedAt = clock();changed();return true
+        firstRunExplicitSelection=true;selectedIDs=[];firstRunToolChoices=[:];firstRunOptInChoices=[:];firstRunDraftStartedAt = clock();changed();return true
     }
     public func endFirstRunDraft() { firstRunExplicitSelection=false }
     public var canRequestPlugin: Bool { commands.isReady && pluginToken == nil }
@@ -288,7 +292,7 @@ public struct FirstRunReading: Sendable, Equatable {
         firstRunEngineReadyAt = nil; firstRunToolRetryAt = [:]
         if facts != nil { factsClearedSinceAccepted = true }
         facts = nil; rowsSummary = nil; claudeRowState = nil; rowConsent = nil; keychainLater = false; selectedIDs = []; phase = .idle
-        firstRunToolChoices = [:]; rowCodes = [:]; rowStates = [:]; rowReadings = [:]; changed()
+        firstRunToolChoices = [:]; firstRunOptInChoices = [:]; rowCodes = [:]; rowStates = [:]; rowReadings = [:]; changed()
     }
     /// D41: Claude Code's saved-login path, when it is here and usable.
     private var claudeSavedLogin: WireConsentScope? {
@@ -307,11 +311,36 @@ public struct FirstRunReading: Sendable, Equatable {
         guard let scope = claudeSavedLogin, scope.keychain != .allow else { return false }
         return scope.keychain == .deny || claudeRowState == .needsKeychain
     }
+    /// D380: ZCode's saved-login path (its QR sign-in), when it is here and allowed. ZCode 3.19+ keeps the store's
+    /// key in the Keychain; the engine's row says needs-Keychain only for such a store, so a v1 store asks nothing.
+    private var zcodeSavedLogin: WireConsentScope? {
+        facts?.scopes.first {
+            $0.tool == "zai" && $0.route == .savedLoginApi && $0.detected && !$0.retired && $0.disabledReason == nil && !$0.cleanupPending
+        }
+    }
+    /// D380: the ZCode row needs the Keychain choice (unset, refused, or the prompt was not answered).
+    public var needsZCodeKeychainAccess: Bool {
+        guard let scope = zcodeSavedLogin, scope.state == .allowed else { return false }
+        return rowStates["zai"] == .needsKeychain
+    }
+    /// Which tool's Keychain button a press belongs to: Claude Code (D41) or ZCode (D380).
+    public func needsKeychainAccess(tool: String) -> Bool {
+        switch tool {
+        case "claude": return needsKeychainAccess
+        case "zai", "zcode", "glm": return needsZCodeKeychainAccess
+        default: return false
+        }
+    }
     public func chooseKeychainLater() { keychainLater = true; changed() }
     /// D41: the button is the consent, so no second confirmation. The engine's foreground read
     /// after this grant is what makes macOS show its dialog; nothing else may trigger it.
-    public func allowKeychain() async {
-        guard canMutate, let id = claudeSavedLogin?.scope else { return }
+    public func allowKeychain() async { await allowKeychain(tool: "claude") }
+    /// D380: the same single consent for ZCode's key. The button is the consent; the engine's foreground read
+    /// after this grant is the only thing that may make macOS show its dialog, and the user's own answer there
+    /// ("Always Allow") is what lets later background reads work. Nothing here pre-approves or bypasses it.
+    public func allowKeychain(tool: String) async {
+        let scope = ["zai", "zcode", "glm"].contains(tool) ? zcodeSavedLogin : claudeSavedLogin
+        guard canMutate, let id = scope?.scope else { return }
         let value = ScopeConsentConfirmation(id: UUID(), intent: .init(mutation: .allow(scopes: [id], keychain: [id])))
         phase = .confirmation(value)
         await confirm(value.id)
@@ -434,7 +463,10 @@ public struct FirstRunReading: Sendable, Equatable {
     /// D232 (sampling 11-21 S1): extension scopes with their own opt-in. No bulk choice (first-run Done, a tool
     /// switched on in Settings, Select all) includes them; only the path's own checkbox allows one, by itself.
     /// The engine refuses an allow that names one together with any other scope. Off still refuses them.
-    public static let separateOptInScopes: Set<String> = ["gemini.account_usage.token_refresh"]
+    /// G3-154/155: ZCode's QR-code / OAuth sign-in (D369) is a credential read with its own scope, off by default.
+    public static let separateOptInScopes: Set<String> = ["gemini.account_usage.token_refresh", ZCodeSavedLogin.scope]
+    /// D380: Keychain-capable scopes whose Keychain read depends on the tool's own store format (ZCode 3.19+ only).
+    public static let conditionalKeychainScopes: Set<String> = ["zai.account_usage.saved_login"]
     /// G3-45: each detected tool once, in the engine's order. Browser-session paths stay out:
     /// they ask on their own at first need (FR-9-05), never through this one consent.
     public var firstRunTools: [FirstRunTool] {
@@ -449,8 +481,10 @@ public struct FirstRunReading: Sendable, Equatable {
                 $0.route.isKnown && $0.route != .knownUnknown && $0.route != .browserSession && $0.disabledReason == nil && !$0.cleanupPending &&
                     !Self.separateOptInScopes.contains($0.scope)
             }
+            // D380: ZCode's saved-login scope has a Keychain choice that only a Keychain-bound store needs (its row
+            // says so), so it does not make first run promise a macOS prompt.
             return FirstRunTool(tool: tool, scopes: standard.map(\.scope), routes: standard.map(\.route), block: block(forTool: tool),
-                                promptsKeychain: standard.contains { $0.keychain != nil }, keyMissing: rowCodes[tool] == .keyMissing)
+                                promptsKeychain: standard.contains { $0.keychain != nil && !Self.conditionalKeychainScopes.contains($0.scope) }, keyMissing: rowCodes[tool] == .keyMissing)
         }
     }
     /// G3-59: Settings lists every tool first run would list (same rows, engine order), then each supported
@@ -463,10 +497,23 @@ public struct FirstRunReading: Sendable, Equatable {
         }
         return firstRunTools + absent
     }
-    /// Checked unless the user unchecked it, it cannot be read, or every path was already refused.
+    /// G3-153: row codes that say, for sure, there is nothing to read now: no plan, not signed in, a login type or
+    /// local login data that cannot be read. A timeout, a network error or a pending read is not in this set: it may
+    /// succeed on a retry, so its tool stays ticked.
+    static let definitiveNothingToRead: Set<String> = [
+        "no_plan", "not_signed_in", "login_expired", "unsupported_login", "team_unsupported", "codex_custom_provider",
+        "file_missing", "file_unreadable", "region_refused",
+    ]
+    /// True when the engine's row for this tool is a definitive "nothing to read" answer.
+    public func firstRunToolHasNothingToRead(_ tool: String) -> Bool {
+        rowCodes[tool].map { Self.definitiveNothingToRead.contains($0.rawValue) } ?? false
+    }
+    /// Checked unless the user unchecked it, it cannot be read, the engine says there is nothing to read (G3-153:
+    /// untouched only; a choice the user made always stands), or every path was already refused.
     public func isFirstRunToolChosen(_ tool: String) -> Bool {
         guard let entry = firstRunTools.first(where: { $0.tool == tool }), entry.canRead else { return false }
         if let choice = firstRunToolChoices[tool] { return choice }
+        if firstRunToolHasNothingToRead(tool) { return false }
         let states = entry.scopes.compactMap { id in facts?.scopes.first { $0.scope == id }?.state }
         return !states.allSatisfy { $0 == .denied }
     }
@@ -503,10 +550,25 @@ public struct FirstRunReading: Sendable, Equatable {
         guard canMutate, firstRunTools.contains(where: { $0.tool == tool && $0.canRead }) else { return }
         firstRunToolChoices[tool] = chosen; changed()
     }
+    /// G3-155: the tool's own opt-in path (ZCode's QR-code sign-in), when the engine found it on this Mac.
+    public func firstRunOptIn(forTool tool: String) -> WireConsentScope? {
+        facts?.scopes.first { $0.tool == tool && $0.scope == ZCodeSavedLogin.scope
+            && $0.detected && !$0.retired && $0.disabledReason == nil && !$0.cleanupPending }
+    }
+    /// Off unless the user ticked it, or it is already allowed.
+    public func isFirstRunOptInChosen(_ scope: String) -> Bool {
+        if let choice = firstRunOptInChoices[scope] { return choice }
+        return facts?.scopes.first { $0.scope == scope }?.state == .allowed
+    }
+    public func chooseFirstRunOptIn(_ scope: String, chosen: Bool) {
+        guard canMutate, let entry = facts?.scopes.first(where: { $0.scope == scope }), firstRunOptIn(forTool: entry.tool) != nil else { return }
+        firstRunOptInChoices[scope] = chosen; changed()
+    }
     /// D61 (3): when any tool can be read, at least one must be ticked before Done.
     public var firstRunChoiceSatisfied: Bool {
         guard !factsClearedSinceAccepted else { return false } // choices were reset with the facts: wait for new ones
-        let readable = firstRunTools.filter(\.canRead)
+        // A tool the engine says has nothing to read does not hold Done back when the user left it unticked.
+        let readable = firstRunTools.filter { $0.canRead && (!firstRunToolHasNothingToRead($0.tool) || firstRunToolChoices[$0.tool] != nil) }
         return readable.isEmpty || readable.contains { isFirstRunToolChosen($0.tool) }
     }
     /// The one grant Done sends: checked tools allowed, unchecked ones refused. A tool that cannot
@@ -530,6 +592,13 @@ public struct FirstRunReading: Sendable, Equatable {
                     deny.append(id)
                 }
             }
+        }
+        // G3-155: a separate opt-in path is allowed only by its own tick, never because its tool is ticked; unticked
+        // after being allowed, it is refused. Untouched and not allowed, it stays as it is.
+        for entry in firstRunTools where entry.canRead {
+            guard let optIn = firstRunOptIn(forTool: entry.tool), let choice = firstRunOptInChoices[optIn.scope] else { continue }
+            if choice, isFirstRunToolChosen(entry.tool) { if optIn.state != .allowed { allow.append(optIn.scope) } }
+            else if optIn.state != .denied { deny.append(optIn.scope) }
         }
         guard !allow.isEmpty || !deny.isEmpty else { return nil }
         return .init(mutation: .choose(allow: allow, deny: deny, keychain: keychain))
@@ -682,7 +751,8 @@ extension ScopeConsentController {
         firstRunToolRetryAt[tool] = clock(); onRetryTool?(tool); changed()
     }
     /// Test seam: put an engine row's state and readings in place without building a wire snapshot.
-    func setRowForTesting(_ tool: String, state: RowsState, readings: [FirstRunReading] = []) {
+    func setRowForTesting(_ tool: String, state: RowsState, readings: [FirstRunReading] = [], code: String? = nil) {
+        rowCodes[tool] = code.flatMap { RowsCode(rawValue: $0) }
         rowStates[tool] = state; rowReadings[tool] = readings.isEmpty ? nil : readings; changed()
     }
 }

@@ -15,10 +15,14 @@ import plistlib
 import re
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
 import time
+import zlib
+
+from silhouette_gaps import check_window
 
 APP_EXECUTABLE = "ModelPlan"
 # D57: a ref from before the rename packages "ModelPlan Community.app" with this executable; the walkthrough
@@ -27,7 +31,7 @@ APP_EXECUTABLES = (APP_EXECUTABLE, "ModelPlanCommunity")
 DISPLAY_CANDIDATES = ((1920, 1200), (1920, 1080), (1680, 1050), (1600, 1200), (1440, 900), (1280, 1024))
 PARK = (0.42, 0.62)  # A screen fraction clear of the widget's edges, the menu bar and the Dock.
 TREE_TIMEOUT = 30  # The helper budgets a tree read at 20 s itself; this only catches a hung helper.
-WINDOW_ONLY_CHECKS = {"newWindow", "noNewWindow", "windowClosed"}  # Checks that read windows, not the tree.
+WINDOW_ONLY_CHECKS = {"newWindow", "noNewWindow", "windowClosed", "noGaps"}  # Checks that read windows, not the tree.
 MIN_COLOURS = 24  # Coarse 12-bit colours: a blank, black or single-tone render has far fewer.
 MAX_DOMINANT = 0.97
 QUIT_SECONDS = 15
@@ -390,6 +394,23 @@ class Walkthrough:
     def op_wait(self, action):
         self.host.sleep(action["seconds"])
 
+    def op_brightDesktop(self, _):
+        """Best effort: a light desktop picture, so a see-through pixel in a screenshot is as visible as the owner's.
+        The black CI desktop hid the closed-shutter hairline (the noGaps check reads the window's alpha instead)."""
+        picture = self.out / "bright-desktop.png"
+        width, height = 16, 16
+        row = b"\x00" + b"\xee\xee\xe6" * width
+        def chunk(kind, body):
+            return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+        picture.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+                            + chunk(b"IDAT", zlib.compress(row * height)) + chunk(b"IEND", b""))
+        script = 'tell application "System Events" to tell every desktop to set picture to POSIX file "%s"' % picture
+        try:
+            done = subprocess.run(["osascript", "-e", script], capture_output=True, timeout=20)
+            self.measures["brightDesktop"] = done.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            self.measures["brightDesktop"] = False
+
     def op_park(self, _):
         self.host.helper("move", *self.point(PARK))
 
@@ -679,6 +700,17 @@ class Walkthrough:
             raise WalkthroughError("a new window opened")
         if kind == "windowClosed" and not self.window_baseline - window_ids(self.windows()):
             raise WalkthroughError("no window closed")
+        if kind == "noGaps":
+            # The step's window capture keeps its alpha, so a see-through hairline inside the silhouette shows even on a
+            # black desktop (owner test build 6: a 1 px line under the closed cockpit's cap).
+            window = (record.get("window") or {}).get("file")
+            if not window:
+                raise WalkthroughError("no window capture to scan for gaps")
+            gaps = check_window(shot_dir / window)
+            record.setdefault("measures", {})["silhouetteGapRows"] = [row for row, _ in gaps]
+            if gaps:
+                raise WalkthroughError("transparent hairline inside the window silhouette at row(s) %s of %s"
+                                       % (", ".join("%d (%d%% wide)" % (row, round(f * 100)) for row, f in gaps[:6]), window))
         if kind == "nonblank":
             node = resolve(tree, value)
             if node is None:

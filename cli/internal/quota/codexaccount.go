@@ -496,7 +496,10 @@ func lock(cache string, now time.Time) (func(), bool) {
 }
 
 func save(cache string, s *accountSnap) error {
-	b, _ := json.MarshalIndent(s, "", "  ")
+	b, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return codeError("parse_error", "parse_error")
+	}
 	p := accountPath(cache)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
@@ -1146,11 +1149,18 @@ func rateLimitsFromErrorBody(message string, now time.Time) *rlSnapshot {
 		}
 		minutes := *w.LimitWindowSeconds / 60
 		out := &rlWindow{UsedPercent: w.UsedPercent, WindowDurationMins: &minutes}
+		const maxJSONUnix = 253402300799 // 9999-12-31T23:59:59Z
 		switch {
 		case w.ResetAt != nil && *w.ResetAt > 0:
+			if *w.ResetAt > maxJSONUnix {
+				return nil, false
+			}
 			out.ResetsAt = w.ResetAt
 		case w.ResetAfterSeconds != nil && *w.ResetAfterSeconds >= 0:
-			at := now.Add(time.Duration(*w.ResetAfterSeconds) * time.Second).Unix()
+			if *w.ResetAfterSeconds > maxJSONUnix-now.Unix() {
+				return nil, false
+			}
+			at := now.Unix() + *w.ResetAfterSeconds
 			out.ResetsAt = &at
 		}
 		return out, true

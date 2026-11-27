@@ -109,7 +109,7 @@ func (s *Server) ReadCredential(ctx context.Context, need CredentialNeed) (wire.
 	}
 }
 func (s *Server) openCredential(parent context.Context, need CredentialNeed, explicit bool, reply chan credentialReply) (string, error) {
-	if need.Provider != "claude" || need.Interactive && !explicit {
+	if need.Provider != "claude" && need.Provider != "zai" || need.Interactive && !explicit {
 		return "", ProtocolError{wire.CodeCredentialRejected}
 	}
 	if _, ok := s.backend.(CredentialReceiver); !ok {
