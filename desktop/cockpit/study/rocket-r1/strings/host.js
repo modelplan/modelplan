@@ -101,6 +101,7 @@ register('host', {
   relNow: ['lcd', '现在', 'now'],
   relFuture: ['line', '{d}后', 'in {d}'],
   relPast: ['line', '{d}前', '{d} ago'],
+  estimateAround: ['line', '{at} 前后', 'around {at}'],
   durDay: ['lcd', '{n} 天', {one: '{n} day', other: '{n} days'}],
   durHour: ['lcd', '{n} 小时', {one: '{n} hour', other: '{n} hours'}],
   durMinute: ['lcd', '{n} 分', {one: '{n} minute', other: '{n} minutes'}],
