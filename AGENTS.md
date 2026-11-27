@@ -17,6 +17,8 @@ Public clients render published verdicts. Method explanations and source weights
 
 ## Implementation and verification
 
+Before every push, commit your work and run `node scripts/preflight.mjs` (D481). It runs, one at a time, only the cheap checks relevant to your diff against `origin/main` (source policy, changelog fragments, the cockpit language audit and related cockpit unit tests, related script tests, Go vet/test when Go is installed) and refuses to run with uncommitted changes. On success it writes `preflight/<HEAD sha>.ok` under `git rev-parse --git-common-dir`; a push guard requires that stamp, so a new commit needs a new run. Swift is not checked on Linux.
+
 Keep the community build complete without private files, credentials or a sibling private checkout. Run the applicable checks documented in CONTRIBUTING.md, plus `npm ci --prefix reader && npm test --prefix reader` for reader changes. Preserve generated plugin runtime bundles and dependency locks. Hosted runners are the default; owner-only Mac checks may use the pinned reusable workflow under [the Mac CI admission contract](docs/mac-ci.md). Public PR code never uses private publishing runners.
 
 Read the task's current issue/comments before editing and report concrete checks. Preserve existing MIT/CC grants and contributor/third-party notices when changing future licensing. Official visuals live in `desktop/official-visuals/` under their reserved license (`LicenseRef-ModelPlan-Visuals-1.0`, not MIT); put new official visual creations there and nowhere else, with the SPDX header or a listed hash. Unreleased designs (studies and prototypes) stay out of this repository until the owner releases them. Scoring, calibration and operations stay private.
