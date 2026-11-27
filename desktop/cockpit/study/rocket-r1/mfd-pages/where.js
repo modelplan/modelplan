@@ -121,21 +121,25 @@ function usageSessions(d, ui, w) {
   // macrevb-1303-7: the Auto Review row joins before the empty test, so a range with only background runs shows them.
   // D470 (recommendation 4): sorted by tokens; a running session is marked ▶, not pinned.
   const list = [...rows, ...(ui.project ? [] : extras(w, ui))].sort(byTokens);
-  // macrevb-1303-6: a project's sessions below the listed top are one continuation row with their exact remainder.
+  // macrevb-1303-6: a project's sessions below the listed top are one continuation row with their exact remainder. In a
+  // scoped view the wire has no per-subscription project total, so no remainder is computed (the project's count and
+  // tokens are all subscriptions'): a note says only this subscription's top sessions are listed, with no numbers.
   let more = null;
-  if (project && project.sessions > rows.length) {
+  const scopedCut = !!(ui.scope && project && project.sessions > rows.length);
+  if (project && !ui.scope && project.sessions > rows.length) {
     const tokens = Math.max(0, project.tokens.total - rows.reduce((s, x) => s + x.tokens.total, 0));
     more = {count: project.sessions - rows.length, tokens: {...project.tokens, total: tokens, complete: false}, share: Math.max(0, project.share - rows.reduce((s, x) => s + x.share, 0)), cost: null};
   }
-  if (!list.length && !more) return `${back}<p class="mp-empty">${t('mfd.noSessions')}</p>${cutNote(w.otherSessions.count, ui)}`;
-  const title = project ? t('mfd.wuProjSess', {p: projectName(project), n: project.sessions}) : t('mfd.whSessTitle', {r: rangeWord({range: rangeOf(ui)}), n: ui.scope ? rows.length : w.sessionCount});
+  const scopedNote = scopedCut ? `<p class="wu-cut">${esc(t('mfd.wuScopedTop'))}</p>` : '';
+  if (!list.length && !more && !scopedCut) return `${back}<p class="mp-empty">${t('mfd.noSessions')}</p>${cutNote(w.otherSessions.count, ui)}`;
+  const title = project ? t('mfd.wuProjSess', {p: projectName(project), n: ui.scope ? rows.length : project.sessions}) : t('mfd.whSessTitle', {r: rangeWord({range: rangeOf(ui)}), n: ui.scope ? rows.length : w.sessionCount});
   const moreRow = more ? `<div class="wd wu wu-other" data-tip="${esc(t('mfd.wuMoreBelow', {n: more.count}))}"><i class="chip" data-v="var(--lcd-ghost)"></i><span class="wd-n">${esc(t('mfd.wuMoreBelow', {n: more.count}))}</span>${cells(more)}</div>` : '';
   return `${back}${project ? `<div class="wd-h">${esc(title)}</div>` : header(title, w, ui)}<div class="wd-list wu-list wu-sess" tabindex="0">${list.map(x => {
     if (x.review) return reviewRow(d, x, ui);
     const a = accountOf(d, x.sub), name = x.title || t('mfd.wuUntitled'), where = sessionProject(x);
     const meta = `${x.tool} · ${where} · ${modelName(d, x.model, x.modelApprox)}${x.effort ? ' ' + x.effort : ''} · ${x.running ? '▶' : stamp(x.lastAt, ui)}`;
     return `<div class="wd wu wu-s${x.running ? ' run' : ''}" data-session="${esc(x.ref)}" data-tip="${esc(rowTip(name, x, ui, [`${x.tool} · ${where}`, modelName(d, x.model, x.modelApprox)]))}"><i class="chip" data-v="${esc(a?.colour || 'var(--lcd-muted)')}"></i><span class="wd-n">${runMark(x.running)}${esc(name)}<small class="wu-meta">${esc(meta)}</small></span>${withBar(cells(x), a?.colour ?? null)}</div>`;
-  }).join('')}${moreRow}${ui.project ? '' : otherRow(w.otherSessions, ui)}</div>${ui.project ? '' : cutNote(w.otherSessions.count, ui)}`;
+  }).join('')}${moreRow}${ui.project ? '' : otherRow(w.otherSessions, ui)}</div>${ui.project ? scopedNote : cutNote(w.otherSessions.count, ui)}`;
 }
 
 export const where = {

@@ -147,3 +147,25 @@ test('Project names off also drops live and recorded session titles',()=>{
  const s=JSON.stringify(withoutProjectNames(full));
  assert.ok(!s.includes('alpha')&&!s.includes('Fix the tape'),s);
 });
+
+// macrevb-1303-6 (round 2): in a scoped view a project's count and tokens are all subscriptions', so no remainder is
+// computed from them; a note without numbers says only this subscription's top sessions are listed.
+test('a scoped drill-down into a project shared with another subscription shows no remainder row, only the note',()=>{
+ const u=wire();
+ u.recent7d={...window(),sessionCount:3,projectCount:1,backgroundReview:null,
+  projects:[project('shared','shared','repo',1500,.15,{sessions:3,subscriptionRefs:['aaaaaaaaaaaaaaaa','bbbbbbbbbbbbbbbb']})],
+  sessions:[session('1111111111111111','mine','shared',100,.01),session('2222222222222222','theirs','shared',900,.09,{subscriptionRef:'bbbbbbbbbbbbbbbb'})],
+  otherSessions:other(1,500,.05),otherProjects:other(0,0,0)};
+ const html=where.render(data(u),ui({where:'time',project:'shared',scope:'acc-a'})),r=rows(html);
+ assert.deepEqual(r.map(x=>x.ref),['1111111111111111']);
+ assert.doesNotMatch(html,/not listed/);
+ assert.match(html,/<p class="wu-cut">Only this subscription&#39;s top-ranked sessions are listed<\/p>|<p class="wu-cut">Only this subscription's top-ranked sessions are listed<\/p>/);
+ assert.match(html,/shared · 1 session/);
+ // Unscoped, the remainder of the whole project is exact: 3 sessions, 2 listed, 500 tokens below.
+ const all=rows(where.render(data(u),ui({where:'time',project:'shared'})));
+ assert.deepEqual(all.map(x=>[x.name,x.tokens]),[['theirs','900'],['mine','100'],['1 more session not listed','500']]);
+ // A scoped project with none of its sessions listed says so by the note, never "no sessions".
+ const v={...u,recent7d:{...u.recent7d,sessions:[u.recent7d.sessions[1]]}};
+ const none=where.render(data(v),ui({where:'time',project:'shared',scope:'acc-a'}));
+ assert.doesNotMatch(none,/No sessions in this period|not listed/);assert.match(none,/top-ranked sessions are listed/);
+});

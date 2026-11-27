@@ -25,5 +25,6 @@ register('mfd', {
   wuReviewTip: ['aria', 'Codex 自动审查，合成一行，不算模型', 'Codex Auto Review, folded into one row; never a model'],
   wuCutScope: ['text', '只列出全部订阅前列的行；其余计入"其他"，不按订阅区分', 'Only the top rows of all subscriptions are listed; the rest are in "other", not split by subscription'],
   wuMoreBelow: ['line', '另有 {n} 个会话不在列表中', {one: '{n} more session not listed', other: '{n} more sessions not listed'}],
+  wuScopedTop: ['text', '仅列出本订阅排名靠前的会话', "Only this subscription's top-ranked sessions are listed"],
   wuCombined: ['aria', '全部订阅的项目合计', 'Project total across subscriptions'],
 });
