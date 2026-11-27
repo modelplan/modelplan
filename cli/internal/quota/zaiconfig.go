@@ -19,6 +19,9 @@ type ZaiConfigSource struct {
 	Tool, SettingsPath, AuthPath, OpenCodeProvider, Region string
 	// Keychain (D380) is set only on ZCode's sign-in route; in memory, never serialized.
 	Keychain *ZCodeKeychain `json:"-"`
+	// Resolved receives the account a read opened (ZCode sign-in route only) and returns the
+	// generation to file its result under, and whether it is the account the read was admitted for.
+	Resolved func(zcodeLogin) (string, bool) `json:"-"`
 }
 type zaiConfigSourceKey struct{}
 

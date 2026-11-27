@@ -128,6 +128,8 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 const (
 	cockpitHistoryDays = 182
 	cockpitOriginLive  = "live"
+	// cockpitHourlyLimit: 30 local days of 24 hours for each of the four sources, plus a repeated daylight-saving hour.
+	cockpitHourlyLimit = speed.HourlyKeepDays*24*4 + 4
 )
 
 // cockpitBuckets sums the ledgers across models. Only admitted sources count, and the days are
@@ -149,7 +151,7 @@ func cockpitBuckets(perf speed.PerfView, imported []speed.PerfRow, allowed map[s
 			days[[3]string{d.Day, d.Source, speed.OriginImport}] += d.ObservedOutputTokens
 		}
 	}
-	for _, h := range perf.Hourly() {
+	for _, h := range perf.HourlyDays(speed.HourlyKeepDays) {
 		if allowed[h.Source] {
 			hours[[3]string{h.Hour, h.Source, cockpitOriginLive}] += h.ObservedOutputTokens
 		}
@@ -180,7 +182,7 @@ func cockpitBuckets(perf speed.PerfView, imported []speed.PerfRow, allowed map[s
 	if from != nil && *from < first {
 		from = &first
 	}
-	return from, bucket(days, 728), bucket(hours, 192)
+	return from, bucket(days, 728), bucket(hours, cockpitHourlyLimit)
 }
 
 const (

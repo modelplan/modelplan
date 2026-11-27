@@ -236,19 +236,42 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 	}
 	fence := state.Fence()
 	dir := ZCodeLoginDir(home)
-	loginStamp := zcodeLoginStamp(dir)
+	cache := p.Cache
+	loginStamp, loginSeal := zcodeLoginStampSeal(cache, dir)
+	if loginStamp == "" {
+		// No installation key yet (or nothing to keep while ZCode writes its files): skip the route
+		// for this projection rather than emit a generation that is not installation-keyed.
+		return
+	}
+	prefix := fence.StoreEpoch + ":" + strconv.FormatUint(state.Revoked[scope], 10) + ":zcode-login:"
 	// Retained readings follow this scope's revocation watermark. Publishing still uses the
 	// full fence, so any concurrent consent decision cancels an in-flight read.
 	p.ReaderAccess.Grants["zai"] = ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
 		Keychain: keychain.Consent == "allowed", KeychainConsent: keychain.Consent,
-		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Revoked[scope], 10) + ":zcode-login:" + loginStamp,
+		Generation: prefix + loginStamp,
 		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
 		StillValid: func() bool {
 			current, effective := consent.Current()
-			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence &&
-				current.AllowsScope(scope, effective) && ZCodeLoginPresent(home) && zcodeLoginStamp(dir) == loginStamp
+			if effective != consent.Automatic || nativeOff() || current.Fence() != fence || !current.AllowsScope(scope, effective) || !ZCodeLoginPresent(home) {
+				return false
+			}
+			// The sealed values are those the generation was built from. A file caught mid-write
+			// keeps it: the completed write is judged by the next projection.
+			_, seal := zcodeLoginStampSeal(cache, dir)
+			return seal == loginSeal || seal == "transient"
 		},
-		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: dir, Keychain: keychain}}
+		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: dir, Keychain: keychain,
+			// The read reports the account it opened. Its result is filed under that account's
+			// generation, and only when that is the account this grant was built for (or, for a
+			// Keychain-bound store the projection could not open, exactly the sealed values it saw).
+			Resolved: func(login zcodeLogin) (string, bool) {
+				stamp, seal := zcodeRememberSeal(cache, dir, login.sel, login.format, login.store, login.material)
+				if stamp == "" {
+					return "", false
+				}
+				same := stamp == loginStamp || (loginStamp == zcodeUnresolved+loginSeal && seal == loginSeal)
+				return readerGenerationID(prefix + stamp), same
+			}}}
 }
 
 // zcodeRoots are ZCode's data folders, the same path signals detection lists for it
