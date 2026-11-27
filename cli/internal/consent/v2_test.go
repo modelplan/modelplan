@@ -251,7 +251,7 @@ func TestCleanupRetryPreservesGenerationAndOriginalReceipt(t *testing.T) {
 	if err != nil || !replay.Replayed {
 		t.Fatal("replay not marked", replay, err)
 	}
-	if err := RetryCleanup(file, func(scope string, forget bool) error {
+	if err := RetryCleanup(file, func(scope string, forget bool, _ EraseGuard) error {
 		if scope != "retired.old_path" || !forget {
 			t.Fatal("Forget semantics lost", scope, forget)
 		}

@@ -25,3 +25,11 @@ test('ALR-50 available resets: singular and plural',()=>{
  assert.deepEqual(resetsAvailable(1),{en:'1 reset available',zh:'可用重置 1 次'});
  assert.deepEqual(resetsAvailable(2),{en:'2 resets available',zh:'可用重置 2 次'});
 });
+
+test('G3-218 Antigravity runtime_missing reads not running; other tools keep not installed',()=>{
+ assert.deepEqual(unreadableCause('runtime_missing','antigravity'),{en:'not running',zh:'未运行'});
+ assert.deepEqual(unreadableCause('runtime_missing','Antigravity'),{en:'not running',zh:'未运行'});
+ assert.deepEqual(unreadableCause('runtime_missing','codex'),{en:'not installed',zh:'未安装'});
+ assert.deepEqual(unreadableCause('runtime_missing'),{en:'not installed',zh:'未安装'});
+ assert.deepEqual(unreadableCause('not_signed_in','antigravity'),{en:'not signed in',zh:'未登录'});
+});

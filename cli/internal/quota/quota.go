@@ -12,6 +12,7 @@ package quota
 import (
 	"encoding/json"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"math"
@@ -310,6 +311,8 @@ type Report struct {
 	// Refresh: what `quota --refresh-account` did, so old figures never pass for a fresh reading.
 	Refresh *AccountRefresh `json:"refresh,omitempty"`
 	Note    string          `json:"note"`
+
+	ZaiSubscriptionEstablished bool `json:"-"` // local presentation evidence, independent of quota values
 }
 
 const note = "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."
@@ -327,6 +330,7 @@ type Paths struct {
 	CLIVersion                  string             // framework admission: minCli for the verified catalogue
 	Cache, CodexHome, LocalFile string
 	CodexIndex                  *CodexRolloutIndex        // optional process-local index shared by the engine and its watcher
+	CodexTicket                 logindex.Ticket           // the index's withdrawal count, taken with Admission (zero: taken at the call)
 	CodexBarFile                string                    // ~/.config/modelplan/codexbar.json: providers read through CodexBar
 	ConnectionsFile             string                    // ~/.config/modelplan/connections.json: which backend reads each provider
 	CodexThread                 string                    // the calling Codex thread, when known (CODEX_THREAD_ID)
@@ -337,6 +341,7 @@ type Paths struct {
 	ReaderAccess                *ReaderAccess             // explicit shared-consent admission for saved-login readers
 	ZCodeNoProviderFile         bool                      // ZCode is present on the default route but keeps no provider file (G3-21)
 	ZCodeLoginConsent           bool                      // ZCode's sign-in is there but its saved-login scope is not allowed (D369)
+	eraseGuard                  consent.EraseGuard        // retry erasure fence, checked under the reader lock (macrevb-1218-5)
 }
 
 // Read gathers every available source and evaluates it at now.

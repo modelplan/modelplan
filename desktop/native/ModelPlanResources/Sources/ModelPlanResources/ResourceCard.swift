@@ -3,7 +3,7 @@ import Foundation
 
 /// The widget hover card's rows (D327): CPU · 内存 · 磁盘, each label · continuous bar · % · one side value.
 /// Variant A: the row that matches the ring readout is at full ink (label and number), the others at secondary ink.
-/// The emphasis never uses a background; a tint marks problem rows only (a row whose status tone is amber or red: D371,
+/// The emphasis never uses a background; a tint marks problem rows only (D421: no threshold tick on the bars; the tone change is the signal) (a row whose status tone is amber or red: D371,
 /// 80 % / 90 % with 3-point hysteresis, memory also by pressure). The bar and the number take the row's status tone. Maps onto ModelPlanDock DockCardRow (label, value, fill, tone).
 public struct ResourceCard: Equatable, Sendable {
     public enum RowID: String, Equatable, Sendable { case cpu, memory, disk }
@@ -13,8 +13,6 @@ public struct ResourceCard: Equatable, Sendable {
         public var id: RowID, label: String, percent: Int, side: String
         /// Bar fill (0–1); memory also has its faint cached segment after the used one.
         public var fill: Double, cachedFill: Double?
-        /// The warning notch on the bar (CPU at the amber line 80 %, disk at the red line 90 %).
-        public var notch: Double?
         public var tone: ResourceTone
         /// Label ink (variant A).
         public var ink: Ink
@@ -32,21 +30,20 @@ public struct ResourceCard: Equatable, Sendable {
         let lv = levels ?? ResourceLevels(sample: s)
         let zh = language == .chinese
         let matched: RowID = shown.key == .cpu ? .cpu : .memory
-        func row(_ id: RowID, _ label: String, _ value: Double, _ side: String, cached: Double? = nil, notch: Double?, tone: ResourceTone, problem: Bool) -> Row {
+        func row(_ id: RowID, _ label: String, _ value: Double, _ side: String, cached: Double? = nil, tone: ResourceTone, problem: Bool) -> Row {
             let ink: Ink = id == matched ? .full : .secondary
             let valueInk: ValueInk = tone != .normal ? .tone(tone) : ink == .full ? .full : .secondary
             return Row(id: id, label: label, percent: Int(value.rounded()), side: side, fill: min(1, max(0, value / 100)),
-                       cachedFill: cached, notch: notch, tone: tone, ink: ink, valueInk: valueInk, tinted: problem)
+                       cachedFill: cached, tone: tone, ink: ink, valueInk: valueInk, tinted: problem)
         }
         let peak = Int(max(cpuPeak, s.cpu).rounded())
         rows = [
-            row(.cpu, "CPU", s.cpu, zh ? "最高 \(peak)%" : "peak \(peak)%", notch: ResourceRules.amber / 100,
-                tone: lv.cpu, problem: lv.cpu != .normal),
+            row(.cpu, "CPU", s.cpu, zh ? "最高 \(peak)%" : "peak \(peak)%", tone: lv.cpu, problem: lv.cpu != .normal),
             row(.memory, zh ? "内存" : "Memory", s.memoryPercent, "\(ResourceFormat.gb(s.memoryUsed)) / \(ResourceFormat.gb(s.memTotal)) GB",
-                cached: min(1 - s.memoryPercent / 100, s.cachedPercent / 100), notch: nil,
+                cached: min(1 - s.memoryPercent / 100, s.cachedPercent / 100),
                 tone: lv.memory, problem: lv.memory != .normal),
             row(.disk, zh ? "磁盘" : "Disk", s.diskPercent, zh ? "剩 \(ResourceFormat.gb(s.diskFree)) GB" : "\(ResourceFormat.gb(s.diskFree)) GB free",
-                notch: ResourceRules.red / 100, tone: lv.disk, problem: lv.disk != .normal),
+                tone: lv.disk, problem: lv.disk != .normal),
         ]
         let pressure: String
         switch s.pressure {

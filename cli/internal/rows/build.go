@@ -301,7 +301,12 @@ func buildCandidate(in Input, c *candidate) Row {
 		f.Busy = true
 		f.Latest = AttemptResultNever
 	}
+	keepUnavailable := c.id == "zai" && in.ZaiSubscriptionEstablished && allow && !f.Outdated && !f.Retired &&
+		(f.Veto == "" || f.Veto == CodeKeyMissing)
 	outcome := classify(f)
+	if keepUnavailable && outcome.Code == CodeNotReadYet {
+		outcome = Describe(CodeNoUsageWindows)
+	}
 	applyOutcome(&row, in, c, outcome)
 	if offeredLater(c, f) {
 		// D238: a tool installed after the first run and not yet decided is offered in the menu
@@ -309,7 +314,11 @@ func buildCandidate(in Input, c *candidate) Row {
 		// exported; like every unreadable tool it has no Dock ring (G3-38, owner D76).
 		row.Surfaces = []Surface{SurfaceMenu, SurfaceSettings}
 	}
-	if row.Reason.Code == CodeNotSignedIn {
+	if keepUnavailable && unreadable(row) {
+		// A tool-level ring has no account identity or measurements to borrow.
+		row.Accounts = []Account{{Route: RouteUnknown, Plan: planValue(c.id, "", ""), ValueState: ValueStateNone, Windows: []Window{}}}
+	}
+	if row.Reason.Code == CodeNotSignedIn && !keepUnavailable {
 		// G3-38 (owner D52): a signed-out tool has no ring. Settings and the menu still say why.
 		row.Surfaces = []Surface{SurfaceMenu, SurfaceSettings}
 	}
@@ -340,7 +349,7 @@ func buildCandidate(in Input, c *candidate) Row {
 		// (both follow the Dock surface). One line in Settings says why.
 		row.Surfaces = []Surface{SurfaceSettings}
 	}
-	if row.Kind == KindTool && unreadable(row) {
+	if row.Kind == KindTool && unreadable(row) && !keepUnavailable {
 		// G3-38 (owner decision D76): a detected subscription with no reading and no way to get
 		// one from ModelPlan has no ring. Settings and the menu still list it with the reason.
 		surfaces := row.Surfaces[:0:0]
@@ -511,9 +520,8 @@ func summary(in Input, rows []Row, allowed, declared int) RowsSummary {
 	default:
 		usable := false
 		for _, row := range rows {
-			// Tool rows without a value have no Dock surface (G3-38), so only a value counts for a
-			// tool; a declared row may still carry a next step.
-			if hasSurface(row, SurfaceDock) && (hasValue(row.Accounts) || row.Kind != KindTool && row.NextStep != nil && row.NextStep.Action != ActionNone) {
+			if hasSurface(row, SurfaceDock) && (row.Kind == KindTool || hasValue(row.Accounts) ||
+				row.NextStep != nil && row.NextStep.Action != ActionNone) {
 				usable = true
 			}
 		}
@@ -546,7 +554,8 @@ func hasSurface(row Row, s Surface) bool {
 
 // summaryTool: an allowed tool that holds no value. These are the rows G3-38 keeps off the Dock.
 func summaryTool(row Row) bool {
-	return row.Kind == KindTool && permitted(row.Consent) && row.Reason.Code != CodeCleanupPending && !hasValue(row.Accounts)
+	return row.Kind == KindTool && !hasSurface(row, SurfaceDock) && permitted(row.Consent) &&
+		row.Reason.Code != CodeCleanupPending && !hasValue(row.Accounts)
 }
 
 // summaryReadingNames lists the allowed tools still waiting for their first read.

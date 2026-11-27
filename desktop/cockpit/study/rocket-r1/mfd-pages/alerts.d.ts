@@ -1,2 +1,2 @@
-export interface AlertRow {readonly level:'red'|'amber'|'blue'|'grey';readonly stable:string;readonly member?:string;readonly text:string;readonly detail?:string|null;readonly settings?:boolean}
+export interface AlertRow {readonly level:'red'|'amber'|'blue'|'grey';readonly stable:string;readonly member?:string;readonly text:string;readonly detail?:string|null;readonly tip?:string|null;readonly settings?:boolean}
 export function alertsPage(items:readonly AlertRow[],options:{readonly back:{readonly label:string;readonly aria:string};readonly mark?:string|null;readonly flash?:boolean;readonly ack?:boolean}):string;

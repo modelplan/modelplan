@@ -69,7 +69,6 @@ private func resourceSample(at t: TimeInterval = 0, cpu: Double = 22, pressure: 
         let normalInk = DockPluginStatusColour.rgb(.normal)
         XCTAssertTrue(rows.allSatisfy { $0.plugin.map { Int(($0.red * 255).rounded()) == Int((normalInk.red * 255).rounded()) } == true }, "normal rows: the normal status colour, not orchid")
         XCTAssertEqual(rows[1].plugin?.faintFill ?? 0, 12.8 / 32, accuracy: 0.001)
-        XCTAssertEqual(rows.map { $0.plugin?.notch }, [0.8, nil, 0.9])
         XCTAssertEqual(card.rows.last?.kind, .footnote)
         XCTAssertEqual(card.rows.last?.value, "内存压力 正常")
         XCTAssertEqual(card.sourceAndAge, "每 10 秒", "D371 B4e: the cadence is the header's right text")

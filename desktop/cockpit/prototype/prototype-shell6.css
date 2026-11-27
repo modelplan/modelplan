@@ -35,11 +35,3 @@ body.reduced .ck{transition:none}
   .hud:not(.wide) .mini-chart,.hud:not(.wide) .mini-chart svg{height:38px}
 }
 
-#cockpit[data-layout="640"] .hud:not(.wide){left:28px;right:28px;top:8px;bottom:auto;width:auto;max-width:none;height:30px;min-height:0;padding:2px 7px;grid-template-columns:105px minmax(0,1fr);grid-template-rows:26px;gap:4px;border-radius:14px;background:#102331c9}
-#cockpit[data-layout="640"] .hud:not(.wide) .hud-list{grid-column:2;grid-row:1;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:0;align-self:center}
-#cockpit[data-layout="640"] .hud:not(.wide) .hp{grid-template-columns:8px minmax(0,1fr) auto;gap:2px;min-width:0;padding:0 1px}
-#cockpit[data-layout="640"] .hud:not(.wide) .hp b{font-size:10px}
-#cockpit[data-layout="640"] .hud:not(.wide) .hp-rec{font-size:10px;line-height:1}
-#cockpit[data-layout="640"] .hud:not(.wide) .mini-chart{grid-column:1;grid-row:1}
-#cockpit[data-layout="640"] .hud:not(.wide) .mini-chart,#cockpit[data-layout="640"] .hud:not(.wide) .mini-chart svg{width:105px;height:26px}
-#cockpit[data-layout="640"] .ck-portrow::after{border-image-slice:48 64 24 64 fill}

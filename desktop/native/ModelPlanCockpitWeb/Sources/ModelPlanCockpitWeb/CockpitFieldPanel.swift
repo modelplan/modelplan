@@ -44,7 +44,7 @@ import WebKit
 @MainActor public final class CockpitFieldPanel: NSObject, NSWindowDelegate {
   /// D49: the field opens from the cockpit, which sits above `.floating`, so it opens above the cockpit.
   public static let level = CockpitWindowController.aboveCockpitLevel
-  public static let defaultIdleSeconds: TimeInterval = 180
+  nonisolated public static let defaultIdleSeconds: TimeInterval = 180
   /// D298: the dim outside the field, #0B0F1A (sRGB 11, 15, 26) at alpha 0.52, no blur.
   public static let dimColor = NSColor(srgbRed: 11 / 255, green: 15 / 255, blue: 26 / 255, alpha: 0.52)
   /// Why the field closed: the component's "esc" and "key", "outside" for a press on the dim, then the panel's own.

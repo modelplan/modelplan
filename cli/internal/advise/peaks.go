@@ -125,3 +125,34 @@ func peakIn(t WindowSeries, now time.Time, horizon time.Duration) (Peak, bool) {
 	peak.Status = status(points[start:end])
 	return peak, true
 }
+
+// ProviderPeak is the raised-rate window of a provider's plan-wide time rules, for a subscription the tool read
+// itself (no declared plan to match). It is always tentative: the plan and generation are not known.
+type ProviderPeak struct {
+	StartsAt time.Time
+	EndsAt   *time.Time
+}
+
+// ProviderPeaks reads the provider's published windows that name no model and no client, whatever the plan or
+// generation, and reports the current or next raised-rate window within `horizon`. Per-model windows (the legacy
+// generation) are left out: without a declared plan nothing says which model the user runs.
+func ProviderPeaks(d *digest.Digest, provider string, now time.Time, horizon time.Duration) (ProviderPeak, bool) {
+	if d == nil {
+		return ProviderPeak{}, false
+	}
+	// Like Plan.timeDigest, a rate that depends on a region, client version, quota or condition stays unknown;
+	// the generation is the one thing not asked (the tool does not say which generation the plan is on).
+	pack := *d
+	pack.Multipliers = append([]digest.MultiplierWindow(nil), d.Multipliers...)
+	for i := range pack.Multipliers {
+		w := &pack.Multipliers[i]
+		if w.Region != "" || len(w.MinClientVersions) > 0 || w.RequiresQuotaAvailable || len(w.Conditions) > 0 {
+			w.Multiplier = nil
+		}
+	}
+	match := func(w *digest.MultiplierWindow) bool {
+		return w.Provider == provider && len(w.Models) == 0 && len(w.Clients) == 0
+	}
+	peak, ok := peakIn(rateTimeline(&pack, match, now), now, horizon)
+	return ProviderPeak{StartsAt: peak.StartsAt, EndsAt: peak.EndsAt}, ok
+}

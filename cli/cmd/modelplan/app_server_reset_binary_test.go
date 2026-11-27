@@ -190,7 +190,18 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	}
 	assertChanged := func(client *queryBinary, scope, requestID string, wantLinks bool) {
 		t.Helper()
+		linksMatch := func(label, params string) {
+			t.Helper()
+			if wantLinks && (!strings.Contains(params, "https://status.openai.com/incidents/only") || !strings.Contains(params, "https://status.openai.com/incidents/pair")) {
+				t.Fatalf("%s omitted official citations: %s", label, params)
+			}
+			if strings.Contains(params, `"links"`) != wantLinks {
+				t.Fatalf("%s links mismatch: %s", label, params)
+			}
+		}
 		var facts wire.Envelope[wire.ConsentFacts]
+		// A consent change never ends the session (outbound.go drops a private frame whose
+		// fence moved before its first byte), so the Deny is answered on this session.
 		current := client.call("consent/get", map[string]any{})
 		if err := json.Unmarshal(current["result"], &facts); err != nil {
 			t.Fatal(err)
@@ -206,8 +217,12 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 				raw = client.notifications[0]
 				client.notifications = client.notifications[1:]
 			} else {
+				var ok bool
 				select {
-				case raw = <-client.frames:
+				case raw, ok = <-client.frames:
+					if !ok {
+						t.Fatalf("the session ended after a consent change; unterminated tail %d bytes", len(client.dropped))
+					}
 				case <-deadline:
 					t.Fatal("rows/changed timed out")
 				}
@@ -219,12 +234,7 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 			if !strings.Contains(string(msg["params"]), `"synthetic-announcement"`) {
 				continue
 			}
-			if wantLinks && (!strings.Contains(string(msg["params"]), "https://status.openai.com/incidents/only") || !strings.Contains(string(msg["params"]), "https://status.openai.com/incidents/pair")) {
-				t.Fatalf("changed notification omitted official citations: %s", raw)
-			}
-			if strings.Contains(string(msg["params"]), `"links"`) != wantLinks {
-				t.Fatalf("changed links mismatch: %s", raw)
-			}
+			linksMatch("changed notification", string(msg["params"]))
 			return
 		}
 	}

@@ -1,0 +1,1 @@
+Replace the cockpit's telescoping launch rack with a one-piece docking boom: it slides out of the menu bar as wide as the widest status item seen, and its clamp closes on a lug on the canopy frame (night art only for now).
