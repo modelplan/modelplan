@@ -86,8 +86,13 @@ for(const scale of [1,2])test.describe(`@${scale}x`,()=>{
    const first=rows.findIndex(Boolean),off=[];
    // The approved render is 2x; at 1x a whole-pixel row cannot follow the arch's first rows (10-50 px per row), so 1x
    // starts where the arch is gentler.
-   for(const [y,want] of s.approved.filter(([y])=>scale>1||y>=14)){const r=rows[first+Math.round(y*scale)],got=r?r.r-r.l:0;
-    if(Math.abs(got-want)>TOL)off.push(`${y}: ${got} vs approved ${want}`);}
+   for(const [y,want] of s.approved.filter(([y])=>scale>1||y>=14)){const at=first+Math.round(y*scale),width=i=>{const r=rows[i];return r?r.r-r.l:0;},got=width(at);
+    // 1x only (owner-approved 2026-11-27, D478/D479 art): the first painted row is quantised to a whole pixel, so the
+    // arch (about 9.7 px of width per CSS px at y=14) can sit one device row off the 2x render it is compared with.
+    // A 1x row also passes when the painted row one device pixel above or below is within TOL; no row is skipped and
+    // TOL is unchanged. 2x compares the exact row.
+    const near=scale===1?[at-1,at+1]:[];
+    if(Math.abs(got-want)>TOL&&!near.some(i=>Math.abs(width(i)-want)<=TOL))off.push(`${y}: ${got} vs approved ${want}`);}
    expect(off,'outline vs the approved v10 A3/A1 render (1% of 636 px)').toEqual([]);
   }
  });
