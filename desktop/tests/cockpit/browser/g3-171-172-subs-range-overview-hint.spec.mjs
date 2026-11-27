@@ -70,11 +70,30 @@ test('G3-171 opening Subscriptions before the first reply shows a loading state,
  await expect(header(page)).toHaveAttribute('data-range-key','30d');
 });
 
+test('G3-171 an empty accepted reply ends loading on Overview and Plans',async({page})=>{
+ const {send,receive}=await open(page,{display:false});
+ await expect(page.locator('.mfd-page')).toHaveAttribute('aria-busy','true');
+ await expect(page.locator('.mfd-page .mp-loading')).toHaveText('Reading');
+ const data=history();data.projection.rows=[];data.subscriptions=[];data.details=null;
+ expect(await receive(send('display',{data}))).toBe(true);
+ await expect(page.locator('.mfd-page')).not.toHaveAttribute('aria-busy','true');
+ await expect(page.locator('.mfd-page .mp-loading')).toHaveCount(0);
+ await expect(page.locator('.mfd-page .mp-empty')).toContainText('No subscriptions found');
+ await plans(page);
+ await expect(page.locator('.mfd-page')).not.toHaveAttribute('aria-busy','true');
+ await expect(page.locator('.mfd-page .mp-loading')).toHaveCount(0);
+ await expect(page.locator('.mfd-page .mp-empty')).toContainText('No subscriptions found');
+});
+
 test('G3-172 the Overview bottom keys always name the chart mode that is drawn',async({page})=>{
  await open(page);
  const chart=page.locator('[data-opt="chart"]');
  await expect(chart.locator('b.on')).toHaveText('Bars');
- // A press on the key's edge (not on a label) used to flip the chart to the heatmap while the key still said Bars.
+ // A press on the key's edge (not on a label) toggles the mode (D390); the lit label and the drawn chart always agree.
+ await chart.locator('.ok-sep').click({force:true});
+ await expect(chart.locator('b.on')).toHaveText('Grid');
+ await expect(page.locator('.ov-chart')).toHaveCount(0);
+ await expect(chart).toHaveAttribute('aria-label','Bars | Grid: Grid');
  await chart.locator('.ok-sep').click({force:true});
  await expect(chart.locator('b.on')).toHaveText('Bars');
  await expect(page.locator('.ov-heat')).toHaveCount(0);

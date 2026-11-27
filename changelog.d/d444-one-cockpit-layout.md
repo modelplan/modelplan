@@ -1,0 +1,1 @@
+The cockpit has one layout. On a short display it no longer switches to the smaller 640 version: the full cockpit scales down to fit, to half size at the least, and below that it opens with the porthole closed. Detaching the cockpit never changes its layout.

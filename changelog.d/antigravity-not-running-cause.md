@@ -1,0 +1,1 @@
+When Antigravity is not running, its row now says so and offers to open Antigravity, instead of asking for Node.js (its reader never uses Node.js). Node.js lookup for the readers that do need it skips runtimes bundled inside other apps (such as the ChatGPT app's own node) and also checks fnm, asdf and pnpm install folders.

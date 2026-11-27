@@ -8,7 +8,7 @@ import {effectiveRedBelow} from './threshold.js';
 import type {WireCockpitData,WireWindow,WireAccount} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
 import {INITIAL_RANGE,type CockpitRange} from './range.js';
-import {cockpitMembers} from './members.js';
+import {cockpitMembers,unavailableZCodeMember} from './members.js';
 import {memberColours} from './session-binding.js';
 import {NEUTRAL} from './livery.js';
 import {cautionItems,cautionLevel,lights} from './caution.js';
@@ -67,12 +67,12 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const runOut=(w:WireWindow)=>runOutMinutes(data,row.id,account,w,now,true);// CKP-ENG-26: an unknown reset does not hide a forecast run-out
   const convert=(w:WireWindow)=>({focusIdentity:validId(w)&&ids.get(w.id)===1&&meanings.get(semantics.get(w)!)===1?semantics.get(w)!:null,kind:role(w),remaining:displayWindow(account,w,now)?finite(w.remainingPercent):null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Math.max(0,(Date.parse(w.resetsAt)-now)/60000):null,resetAt:null,resetText:null,elapsed:null,...runOutFields(runOut(w)),durationMinutes:w.durationSeconds===null?null:w.durationSeconds/60});
   const windows=account.windows.filter(general).map(convert);
-  const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)}}));
+  const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),named:!!w.modelScope||w.limitKey==='mcp',name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)}}));
   const notice=data.details?.resetEvents.find(e=>e.rowId===row.id&&Date.parse(e.expiresAt)>now&&(!e.planIds?.length||e.planIds.includes(account.plan.id)));
   // G3-109: a money balance (Grok Build) has no credits/points; the reserve row shows it in its reported currency.
   const money=moneyText(account.credits,locale);
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(label),short:esc(label),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
+  return {id:esc(key),name:esc(label),short:esc(label),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account,unavailableZCodeMember(row,account)?row.state:undefined),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
@@ -101,7 +101,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,range:range(),tint:true,pctMode:showUsed()?'used':'left',redAt:redBelow(),ack:null,lang:locale,now};
   const {model,plugins:pluginPage}=pagedModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));// Unknown vendors have no mark: drop the study's neutral placeholder before parsing so nothing is requested.
   plugins?.hold();// D323: a focused drawn plugin control is taken back by its new column
-  host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now}).replaceAll('<img class="lamp" src="assets/brands/../../neutral.png" alt="">','');
+  host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now}).replace(/ style="/g,' data-study-style="').replaceAll('<img class="lamp" src="assets/brands/../../neutral.png" alt="">','');
   if(plugins&&pluginPage)plugins.decorate(host,pluginPage,locale);
   // Keep the selected source-window identity in memory, never in rendered HTML.
   for(const [index,column] of [...host.querySelectorAll<HTMLElement>('.eng-cols > .ec[data-col]')].entries()){const rendered=model.cols[index];for(const cell of column.querySelectorAll<HTMLElement>('.qcell[data-row]')){const identity=rendered?.cells?.[cell.dataset.row??'']?.focusIdentity;if(typeof identity==='string')focusIdentities.set(cell,identity);}}
@@ -136,10 +136,28 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  // CSS ellipsis is the last resort. Measured again whenever the table's width changes (not laid out yet: skipped).
  let watch:ResizeObserver|null=null;
  // The width watch starts once the table is in the page: WebKit reports nothing for a target observed while detached.
- function fit(){if(!watch&&host.isConnected&&typeof ResizeObserver!=='undefined'){watch=new ResizeObserver(fit);watch.observe(host);}for(const e of host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full],.ek-name[data-full],.qrv-c[data-full],.pl-fit[data-full]')){if(!e.isConnected||e.clientWidth<=0)continue;const forms=[e.dataset.full,e.dataset.short,e.dataset.small].filter((v):v is string=>!!v);e.textContent=forms[0]??'';for(const form of forms.slice(1)){if(e.scrollWidth<=e.clientWidth)break;e.textContent=form;}if(e.classList.contains('pl-side')&&e.scrollWidth>e.clientWidth)e.textContent='';}// D371 Q5: a plugin side value that does not fit even short is hidden, never cut
-  // CKP-ENG-53 (§14): a range row that does not fit drops its speed first, then its tokens; ≈cost always stays.
-  for(const row of host.querySelectorAll<HTMLElement>('.qrow-t')){if(!row.isConnected||row.clientWidth<=0)continue;const parts=[row.querySelector<HTMLElement>('.qaverage'),row.querySelector<HTMLElement>('.qtokens')];
-   for(const part of parts)part?.classList.remove('drop');for(const part of parts){if(row.scrollWidth<=row.clientWidth)break;part?.classList.add('drop');}}}
+ function fit(){
+  if(!watch&&host.isConnected&&typeof ResizeObserver!=='undefined'){watch=new ResizeObserver(fit);watch.observe(host);}
+  const entries=[...host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full],.ek-name[data-full],.qrv-c[data-full],.pl-fit[data-full]')]
+   .filter(e=>e.isConnected&&e.clientWidth>0).map(e=>({e,forms:[e.dataset.full,e.dataset.short,e.dataset.small].filter((v):v is string=>!!v)}));
+  // Batch writes and width reads: interleaving them forces a full layout for each label on a page switch.
+  const setText=(e:HTMLElement,text:string)=>{if(e.textContent!==text)e.textContent=text;};
+  for(const {e,forms} of entries)setText(e,forms[0]??'');
+  for(let i=1;i<=2;i++){
+   const shorten=entries.filter(({e,forms})=>i<forms.length&&e.scrollWidth>e.clientWidth);
+   for(const {e,forms} of shorten)setText(e,forms[i]);
+  }
+  const hidden=entries.filter(({e})=>e.classList.contains('pl-side')&&e.scrollWidth>e.clientWidth);
+  for(const {e} of hidden)setText(e,''); // D371 Q5: an unfit plugin side value is hidden, never cut.
+  // CKP-ENG-53 (§14): drop speed first, then tokens; ≈cost always stays.
+  const rows=[...host.querySelectorAll<HTMLElement>('.qrow-t')].filter(row=>row.isConnected&&row.clientWidth>0)
+   .map(row=>({row,parts:[row.querySelector<HTMLElement>('.qaverage'),row.querySelector<HTMLElement>('.qtokens')]}));
+  for(const {parts} of rows)for(const part of parts)part?.classList.remove('drop');
+  for(let i=0;i<2;i++){
+   const overflow=rows.filter(({row})=>row.scrollWidth>row.clientWidth);
+   for(const {parts} of overflow)parts[i]?.classList.add('drop');
+  }
+ }
 
  // Owner D76: the Reserve label's hint (and, macrevb-1020-2, a quota cell's own details: its unknown reset time), in the MFD's floating LCD tip style (study mfd.css .mfd-tip), on hover or focus.
  // Text only and never takes pointer events; the label also carries it as its accessible name.
@@ -154,8 +172,10 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  host.addEventListener('focusin',e=>showHint(e.target));host.addEventListener('focusout',hideHint);
  host.onclick=e=>{if(!e.isTrusted)return;const b=(e.target as Element).closest<HTMLButtonElement>('button');if(!b||!host.contains(b))return;
     if(b.hasAttribute('data-add-subscription')){if(plugins){plugins.openMenu(b,{data,locale,mark:vendorKey=>vendorKey&&Object.hasOwn(logos,vendorKey)?'assets/brands/'+logos[vendorKey]:null,connect:onAdd});return;}onAdd();return;}
-  if(b.hasAttribute('data-all')){if(onSelect('all')){scope='';paint();}return;}
-  if(b.hasAttribute('data-sub')){const key=b.dataset.sub??'';if(!seen.has(key))return;if(key===scope){if(onSelect('all')){scope='';paint();}return;}if(onSelect(key)){scope=key;paint();}return;}
+  // D401: a screen covering the panel hides the selection (not changes it); the first press ends the screen, and the key of the remembered selection only brings it back.
+  const covered=(b.hasAttribute('data-all')||b.hasAttribute('data-sub'))&&(plugins?.dismissScreen()??false);
+  if(b.hasAttribute('data-all')){if(covered&&scope===''){paint();return;}if(onSelect('all')){scope='';paint();}return;}
+  if(b.hasAttribute('data-sub')){const key=b.dataset.sub??'';if(!seen.has(key))return;if(key===scope){if(covered){paint();return;}if(onSelect('all')){scope='';paint();}return;}if(onSelect(key)){scope=key;paint();}return;}
   if(b.hasAttribute('data-bpage')){const step=b.dataset.bpage==='1'?1:b.dataset.bpage==='-1'?-1:0;page=Math.max(0,Math.min(pageCount()-1,page+step));paint();}
  };
  const applyScope=(next:string)=>{scope=next!=='all'&&seen.has(next)?next:'';if(scope){const index=members.findIndex(m=>m.key===scope);page=pageOf(index);}paint();};

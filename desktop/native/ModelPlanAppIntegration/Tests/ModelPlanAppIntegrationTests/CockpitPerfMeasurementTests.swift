@@ -79,11 +79,51 @@ extension CommunityCockpitEntryTests {
         try (lines.joined(separator: "\n") + "\n").write(to: directory.appendingPathComponent(name), atomically: true, encoding: .utf8)
     }
 
+    /// Take the same per-process samples used by the open budget while the
+    /// prepared cockpit is still hidden.
+    @MainActor private static func perfClosedIdle(_ probe: PerfProbe, in directory: URL) async throws {
+        let web = probe.made.last?.verificationWebView
+        let processes = web.map { BudgetProcesses.of($0) }
+        var labelled: [(pid: pid_t, label: String)] = [(pid: getpid(), label: "app")]
+        if let pid = processes?.web { labelled.append((pid: pid, label: "webcontent")) }
+        for pid in BudgetProcesses.processes(named: "modelplan") {
+            var info = proc_bsdinfo()
+            let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+            if proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size && info.pbi_ppid == UInt32(getpid()) {
+                labelled.append((pid: pid, label: "helper"))
+            }
+        }
+        XCTAssertTrue(labelled.contains { $0.label == "helper" }, "the app-server child is attributable")
+        var lines: [String] = [], totals: [Double] = []
+        var previous = labelled.map { ProcessSample.read($0.pid)?.cpuNanoseconds ?? 0 }
+        var previousAt = DispatchTime.now().uptimeNanoseconds
+        for second in 1...60 {
+            try await Task.sleep(for: .seconds(1))
+            let readings = labelled.map { ProcessSample.read($0.pid)?.cpuNanoseconds ?? 0 }
+            let now = DispatchTime.now().uptimeNanoseconds
+            var total = 0.0
+            for (index, item) in labelled.enumerated() {
+                let used = readings[index] > previous[index] ? readings[index] - previous[index] : 0
+                let percent = 100 * Double(used) / Double(now - previousAt)
+                total += percent
+                lines.append("\(second) \(item.pid) \(String(format: "%.3f", percent)) \(item.label)")
+            }
+            totals.append(total)
+            previous = readings; previousAt = now
+        }
+        try perfWrite(lines, "closed-idle-cpu.txt", in: directory)
+        let sorted = totals.sorted()
+        let median = (sorted[29] + sorted[30]) / 2
+        print("WP17-CLOSED-IDLE medianPercent=\(String(format: "%.3f", median)) seconds=60 webcontent=\(processes?.web != nil)")
+    }
+
     /// Closes a shown page the way a user close does and waits until it is gone.
     @MainActor private static func perfClose(_ page: CockpitWindowController, _ probe: PerfProbe) async throws {
         guard page.verificationWebView != nil else { return }
         page.requestClose()
-        for _ in 0..<500 where page.verificationWebView != nil { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<500 where page.verificationWebView != nil && !page.verificationFrozen {
+            try await Task.sleep(for: .milliseconds(10))
+        }
     }
 
     @MainActor func testWP17CockpitMeasurement() async throws {
@@ -153,15 +193,14 @@ extension CommunityCockpitEntryTests {
         await entry.composition.start()
         for _ in 0..<1500 where entry.composition.store.snapshot.delivery == nil { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNotNil(entry.composition.store.snapshot.delivery, "the engine session is up")
-        var closedAt = sessionStart
         // The hidden prewarmed page is ready, as it is a few seconds after a real launch.
         for _ in 0..<3000 where probe.traced("warm.ready", after: sessionStart) == nil { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<800 where probe.made.last?.verificationFrozen != true { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(probe.made.last?.verificationFrozen == true)
         try await Task.sleep(for: .seconds(3))
+        try await Self.perfClosedIdle(probe, in: out)
 
-        // After a close the engine loads the next hidden page; a cycle starts once it is ready and has painted, plus 1.5 s.
         func settle() async throws {
-            for _ in 0..<3000 where probe.traced("warm.ready", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
-            for _ in 0..<800 where probe.timed("prewarm warm-paint", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
             try await Task.sleep(for: .milliseconds(1500))
         }
         /// One open (through the console entry), a hold of 1.5 s, one user close. Returns the cycle's timing lines (after the
@@ -176,11 +215,10 @@ extension CommunityCockpitEntryTests {
             let attachmentOK = page.isAttached != detached
             try await Self.perfClose(page, probe)
             for _ in 0..<500 where probe.timed("close stage=gone", after: click) == nil { try await Task.sleep(for: .milliseconds(10)) }
-            closedAt = .now
             let bare = probe.timing.filter { $0.at > click }.map(\.line)
             // A cycle counts only with the stages the report needs.
             let complete = ["open stage=window-visible", "open stage=animation-complete", "close stage=gone"].allSatisfy { stage in bare.contains { $0.hasPrefix(stage) } }
-            return attachmentOK && complete && page.verificationWebView == nil ? bare.map { "timing " + $0 } : nil
+            return attachmentOK && complete && page.verificationFrozen ? bare.map { "timing " + $0 } : nil
         }
         func section(_ name: String, detached: Bool) async throws {
             _ = try await cycle(detached: detached) // the first open and close warms the page and does not count
@@ -222,7 +260,6 @@ extension CommunityCockpitEntryTests {
         try Self.perfWrite(idle, "idle-cpu.txt", in: out)
         XCTAssertNotNil(processes.web, "the page's WebContent process is attributable")
         try await Self.perfClose(idlePage, probe)
-        closedAt = .now
 
         // Detached: open attached, press the page's detach key, close; the next opens are detached.
         try await settle()
@@ -236,7 +273,6 @@ extension CommunityCockpitEntryTests {
         XCTAssertFalse(detachPage.isAttached, "the cockpit is detached")
         try await Task.sleep(for: .seconds(2))
         try await Self.perfClose(detachPage, probe)
-        closedAt = .now
         try await section("detached", detached: true)
         await entry.composition.stop()
     }

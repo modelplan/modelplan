@@ -1,0 +1,1 @@
+A private reply that started writing before a consent revoke can no longer finish after it, a saved-login read stops before its next request once consent is withdrawn, and the Keychain Claude login is checked for its real expiry and scope before any request.

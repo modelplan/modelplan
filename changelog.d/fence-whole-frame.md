@@ -1,0 +1,1 @@
+Changing consent in Settings while usage rows are refreshing no longer restarts the engine or shows "outcome unknown": a private frame is now written whole under the consent fence it was admitted with, and a frame whose consent moved is dropped before its first byte while the session continues.

@@ -318,10 +318,7 @@ func validateAccount(in Input, tool string, a Account, declared string, refs map
 		if !limitKeys[w.LimitKey] || !poolKeys[w.PoolKey] {
 			return fail("window key allow-lists")
 		}
-		_, expectedLabel := role(string(w.Role))
-		if w.LimitKey == "other" {
-			expectedLabel = Text{EN: "Other limit", ZH: "其他限额"}
-		}
+		expectedLabel := windowLabel(w.Role, w.LimitKey, w.ModelScope)
 		switch w.Role {
 		case RoleSession, RoleDaily, RoleWeekly, RoleMonthly, RoleOther:
 		default:

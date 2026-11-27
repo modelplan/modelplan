@@ -40,6 +40,7 @@ import ModelPlanWire
     /// the wrapped cell height (an NSButton cell does not re-derive its height from a pinned width).
     private var wrappingButtons: [NSButton] = []
     private var wrappingButtonHeights: [ObjectIdentifier: NSLayoutConstraint] = [:]
+    private var wrappingWidthUpdateScheduled = false
     private var keySection: ReaderKeySection?
     /// D87 slice 6/7: the Subscriptions rows. Nil context keeps the plain per-tool list (first run, direct drives).
     private var rowsContext: SubscriptionRowsContext?
@@ -48,6 +49,9 @@ import ModelPlanWire
     private var notInstalledExpanded = false
     private var fixNotices: [String: SettingsText] = [:]
     private var highlightedRowID: String?
+    /// The row whose ⌥↑ / ⌥↓ move is in flight: the keyboard selection returns to it after the list is redrawn.
+    private var keyboardRowID: String?
+    private var keyboardMoveAt = Date.distantPast
     /// Key-only tools whose "Add key" fix was pressed: their key entry stays open on the row.
     private var keyEntryOpen: Set<String> = []
     /// Providers whose entry is already on a row in the current render (one view can sit in one place).
@@ -108,18 +112,12 @@ import ModelPlanWire
         buttons = []
         rowsView?.retire(); rowsView = nil
         keySection?.dismiss()
+        wrappingLabels.removeAll(); wrappingButtons.removeAll(); wrappingButtonHeights.removeAll()
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
     }
     public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
-    /// Wrapping labels take the column width so long copy wraps instead of spilling (G3-25/26).
     public override func layout() {
         super.layout()
-        for label in wrappingLabels {
-            let width = label.bounds.width
-            if width > 0, abs(label.preferredMaxLayoutWidth - width) > 0.5 {
-                label.preferredMaxLayoutWidth = width; label.invalidateIntrinsicContentSize()
-            }
-        }
         // Wrapping checkbox cells settle the same way: while the pinned height disagrees with the wrapped
         // cell height at the current width, move the height constraint (equal → no further invalidation).
         for button in wrappingButtons {
@@ -131,6 +129,22 @@ import ModelPlanWire
             } else {
                 let pinned = button.heightAnchor.constraint(equalToConstant: wrapped)
                 pinned.isActive = true; wrappingButtonHeights[ObjectIdentifier(button)] = pinned
+            }
+        }
+        guard !wrappingWidthUpdateScheduled, !wrappingLabels.isEmpty else { return }
+        wrappingWidthUpdateScheduled = true
+        // Updating a label's preferred width dirties intrinsic sizing. Let AppKit finish laying out
+        // the window before using the resolved widths so the update cannot restart that layout pass.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            defer { self.wrappingWidthUpdateScheduled = false }
+            // A resize can leave the descendants dirty after the stack's own layout callback.
+            self.layoutSubtreeIfNeeded()
+            for label in self.wrappingLabels {
+                let width = floor(label.bounds.width)
+                if width > 0, label.preferredMaxLayoutWidth != width {
+                    label.preferredMaxLayoutWidth = width
+                }
             }
         }
     }
@@ -165,6 +179,41 @@ import ModelPlanWire
         addArrangedSubview(row)
     }
     private func gap() { if let last = arrangedSubviews.last { setCustomSpacing(16, after: last) } }
+    /// D371 (opus-r7): a Settings row. Name and note on the left, the button(s) on the right, a thin line below.
+    private func settingsRow(_ title: SettingsText, note: SettingsText?, buttons rowButtons: [NSView], id: String) {
+        let name = NSTextField(wrappingLabelWithString: title.value(language))
+        name.font = .systemFont(ofSize: 13, weight: .semibold)
+        wrappingLabels.append(name)
+        var copyViews: [NSView] = [name]
+        var notes: [NSTextField] = []
+        if let note {
+            let field = NSTextField(wrappingLabelWithString: note.value(language))
+            field.font = .systemFont(ofSize: 12); field.textColor = .secondaryLabelColor
+            wrappingLabels.append(field); notes.append(field); copyViews.append(field)
+        }
+        let copy = NSStackView(views: copyViews); copy.orientation = .vertical; copy.alignment = .leading; copy.spacing = 3
+        copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        copy.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        for field in [name] + notes {
+            field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            field.widthAnchor.constraint(equalTo: copy.widthAnchor).isActive = true
+        }
+        let controls = NSStackView(views: rowButtons)
+        controls.orientation = .horizontal; controls.alignment = .centerY; controls.distribution = .fill; controls.spacing = 8
+        for button in rowButtons {
+            button.setContentHuggingPriority(.required, for: .horizontal)
+        }
+        // Give the buttons their natural widths and the copy the remaining space. The
+        // labels' preferred widths then affect their height without resizing the column.
+        let row = NSStackView(views: [copy, controls])
+        row.orientation = .horizontal; row.alignment = .centerY; row.distribution = .fill; row.spacing = 16
+        row.edgeInsets = .init(top: 8, left: 0, bottom: 8, right: 0)
+        row.setAccessibilityIdentifier(id)
+        addArrangedSubview(row); row.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+        let line = SettingsGrid.divider()
+        addArrangedSubview(line); line.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+    }
     private func button(_ text: SettingsText, id: String, enabled: Bool = true,
                         action: @escaping @MainActor () async -> Void) -> ScopeConsentButton {
         let value = ScopeConsentButton(title: text.value(language), id: id, invoke: action)
@@ -351,10 +400,15 @@ import ModelPlanWire
         // D90 / FR-9-05: first run keeps its single consent; a detected key-only tool says where a key can be added later.
         if ReaderKeyProvider(rawValue: id) != nil, tool.detected { line(Self.firstRunKeyLine, id: prefix + "keylater." + id) }
         // D87 slice 8: what the tool still needs, from the same table as the Subscriptions rows (the card replaced toolRow here).
+        // The Keychain prompt is already said by the row's own keychain line above: say it once.
+        let saidKeychain = tool.promptsKeychain && tool.detected && tool.block != .unsupportedLogin && !tool.scopes.isEmpty
+            && [.read, .readAfterDone, .signInNeeded, .unsupportedLogin, .notReadable].contains(status)
         if tool.detected, tool.block == nil {
             let pre = SubscriptionRowModel.prerequisite(tool: tool, name: Self.toolName(id).english,
                                                         facts: controller.toolRowFacts[id], keyEntryAvailable: readerKeys != nil)
-            line(pre.text, id: prefix + "prereq." + id, color: pre.needsAttention ? .systemOrange : .secondaryLabelColor)
+            if !(saidKeychain && !pre.needsAttention && pre.text.english == SubscriptionRowModel.keychainPromptLine.english) {
+                line(pre.text, id: prefix + "prereq." + id, color: pre.needsAttention ? .systemOrange : .secondaryLabelColor)
+            }
         }
         // G3-155: ZCode's QR-code sign-in is its own choice, off until ticked; the tool's box never allows it.
         if let optIn = controller.firstRunOptIn(forTool: id) {
@@ -628,9 +682,14 @@ import ModelPlanWire
         if firstRun { renderFirstRunChooser(); return }
         let rowsMode = compactTools && rowsContext != nil
         if rowsMode, let context = rowsContext { renderSubscriptionRows(context); gap() }
-        label(.init("Reading permissions", "读取权限"), heading: true)
-        label(Self.activityDisclosure, secondary: true)
-        if controller.needsKeychainAccess {
+        // D371: in Settings the reading permission, the two tool plugins and the read paths are rows (name and note on the
+        // left, the button on the right, a thin line between), under one heading. The first-run page keeps its own layout.
+        if rowsMode { label(.init("Read access and tool plugins", "读取和工具插件"), heading: true) }
+        else {
+            label(.init("Reading permissions", "读取权限"), heading: true)
+            label(Self.activityDisclosure, secondary: true)
+        }
+        if controller.needsKeychainAccess && !rowsMode {
             label(.init("Keychain access needed to read Claude Code", "需要允许读取钥匙串"))
             arrangedSubviews.last?.setAccessibilityIdentifier("scope.keychain.needed")
             line([keychainAllowButton()])
@@ -647,15 +706,36 @@ import ModelPlanWire
         let inspect = button(.init("Check current permissions", "检查当前权限"), id: "scope.inspect", enabled: controller.canInspect) { [weak self] in await self?.controller.inspectConsent() }
         if firstRun { line([inspect]) }
         else {
-            line([inspect, button(.init("Request sanitized diagnostics", "获取脱敏诊断"), id: "scope.diagnostics", enabled: controller.canRequestDiagnostics) { [weak self] in await self?.controller.requestDiagnostics() }])
+            let diagnostics = button(.init("Request sanitized diagnostics", "获取脱敏诊断"), id: "scope.diagnostics", enabled: controller.canRequestDiagnostics) { [weak self] in await self?.controller.requestDiagnostics() }
+            if rowsMode {
+                settingsRow(.init("Reading permissions", "读取权限"), note: Self.activityDisclosure, buttons: [inspect, diagnostics], id: "scope.row.permissions")
+                if controller.needsKeychainAccess {
+                    label(.init("Keychain access needed to read Claude Code", "需要允许读取钥匙串"))
+                    arrangedSubviews.last?.setAccessibilityIdentifier("scope.keychain.needed")
+                    line([keychainAllowButton()])
+                }
+            } else { line([inspect, diagnostics]) }
         }
         if !firstRun, let report = controller.diagnosticsPresentation { label(report, secondary: true) }
         // SET-9-20: Copy diagnostics belongs to About, not this consent surface.
         if !firstRun {
-            gap()
-            label(.init("Tool plugins", "工具插件"), heading: true)
-            line([synchronousButton(.init("Install Codex plugin…", "安装 Codex 插件…"), id: "scope.plugin.codex", enabled: controller.canRequestPlugin) { [weak self] in self?.controller.requestPluginInstall(.codex) },
-                  synchronousButton(.init("Install Claude Code plugin…", "安装 Claude Code 插件…"), id: "scope.plugin.claude", enabled: controller.canRequestPlugin) { [weak self] in self?.controller.requestPluginInstall(.claudeCode) }])
+            let installTitle: SettingsText = SettingsText("Install…", "安装…")
+            let codexTitle: SettingsText = rowsMode ? installTitle : SettingsText("Install Codex plugin…", "安装 Codex 插件…")
+            let claudeTitle: SettingsText = rowsMode ? installTitle : SettingsText("Install Claude Code plugin…", "安装 Claude Code 插件…")
+            let installCodex = synchronousButton(codexTitle, id: "scope.plugin.codex", enabled: controller.canRequestPlugin) { [weak self] in self?.controller.requestPluginInstall(.codex) }
+            let installClaude = synchronousButton(claudeTitle, id: "scope.plugin.claude", enabled: controller.canRequestPlugin) { [weak self] in self?.controller.requestPluginInstall(.claudeCode) }
+            if rowsMode {
+                installCodex.setAccessibilityLabel(language == .english ? "Install Codex plugin" : "安装 Codex 插件")
+                installClaude.setAccessibilityLabel(language == .english ? "Install Claude Code plugin" : "安装 Claude Code 插件")
+                settingsRow(.init("Codex plugin", "Codex 插件"), note: SettingsText("See quota and the recommended tier inside Codex.", "在 Codex 里直接看额度和推荐档位。"),
+                            buttons: [installCodex], id: "scope.row.plugin.codex")
+                settingsRow(.init("Claude Code plugin", "Claude Code 插件"), note: SettingsText("See quota and the recommended tier inside Claude Code.", "在 Claude Code 里直接看额度和推荐档位。"),
+                            buttons: [installClaude], id: "scope.row.plugin.claude")
+            } else {
+                gap()
+                label(.init("Tool plugins", "工具插件"), heading: true)
+                line([installCodex, installClaude])
+            }
             switch controller.pluginPhase {
             case .idle: break
             case .confirmation(let id, let tool):
@@ -705,10 +785,18 @@ import ModelPlanWire
                 }
                 gap()
             }
-            if !facts.scopes.isEmpty { line([synchronousButton(pathDetailsExpanded ? .init("Hide reading paths", "收起读取路径") : .init("Show reading paths and saved permissions", "展开读取路径与已保存权限"),
-                                    id: "scope.details.toggle") { [weak self] in
-                guard let self else { return }; self.setPathDetailsExpanded(!self.pathDetailsExpanded)
-            }]) }
+            if !facts.scopes.isEmpty {
+                let shortTitle: SettingsText = pathDetailsExpanded ? SettingsText("Hide", "收起") : SettingsText("Show", "展开")
+                let longTitle: SettingsText = pathDetailsExpanded ? SettingsText("Hide reading paths", "收起读取路径") : SettingsText("Show reading paths and saved permissions", "展开读取路径与已保存权限")
+                let toggle = synchronousButton(rowsMode ? shortTitle : longTitle, id: "scope.details.toggle") { [weak self] in
+                    guard let self else { return }; self.setPathDetailsExpanded(!self.pathDetailsExpanded)
+                }
+                if rowsMode {
+                    toggle.setAccessibilityLabel(pathDetailsExpanded ? SettingsWords.text("Hide reading paths", "收起读取路径", language)
+                                                                     : SettingsWords.text("Show reading paths and saved permissions", "展开读取路径与已保存权限", language))
+                    settingsRow(SettingsText("Reading paths and saved permissions", "读取路径与已保存权限"), note: nil, buttons: [toggle], id: "scope.row.paths")
+                } else { line([toggle]) }
+            }
         }
         for scope in facts.scopes where !compactTools || pathDetailsExpanded {
             let id = scope.scope
@@ -818,6 +906,7 @@ import ModelPlanWire
         handlers.move = { [weak self] id, delta in self?.rowActions.move?(id, delta) }
         handlers.resetOrder = { [weak self] in self?.rowActions.resetOrder?() }
         handlers.fix = { [weak self] row in self?.performFix(row) }
+        handlers.keyboardMoved = { [weak self] id in self?.keyboardRowID = id; self?.keyboardMoveAt = Date() }
         handlers.add = { [weak self] tool in _ = self?.controller.requestToolChoice(tool, on: true) }
         handlers.toggleNotInstalled = { [weak self] in
             guard let self else { return }; self.notInstalledExpanded.toggle(); self.render()
@@ -828,10 +917,12 @@ import ModelPlanWire
             canMutate: controller.canMutate, canSave: context.canSave, canResetOrder: context.canResetOrder && rowActions.resetOrder != nil,
             fixAvailable: { [weak self] row in self?.canPerformFix(row) ?? false },
             notInstalledExpanded: notInstalledExpanded, notices: fixNotices, handlers: handlers, highlightedID: highlightedRowID,
-            keyEntry: { [weak self] row in self?.rowKeyEntry(row) }))
+            keyEntry: { [weak self] row in self?.rowKeyEntry(row) },
+            aliasField: { [weak self] row in self?.rowActions.aliasField?(row.id) }))
         rowsView = view
         addArrangedSubview(view)
         view.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+        if let keyboardRowID, Date().timeIntervalSince(keyboardMoveAt) < 3 { view.restoreKeyboardFocus(keyboardRowID) }
     }
     private func canPerformFix(_ row: SubscriptionRow) -> Bool {
         guard let fix = row.fix else { return false }
@@ -904,6 +995,8 @@ public struct SubscriptionRowActions {
     public var move: (@MainActor (String, Int) -> Void)?
     public var retry: (@MainActor (String) -> Void)?
     public var resetOrder: (@MainActor () -> Void)?
+    /// D371: the editable alias field for a verified subscription's row (the window owns the field).
+    public var aliasField: (@MainActor (String) -> NSView?)?
     public init() {}
 }
 
@@ -923,7 +1016,8 @@ public struct SubscriptionRowActions {
         }
     }
     private static let appNames = ["zai": "ZCode", "opencodego": "OpenCode", "opencode": "OpenCode", "claude": "Claude", "codex": "Codex",
-                                   "cursor": "Cursor", "kimi": "Kimi", "grok": "Grok", "gemini": "Gemini"]
+                                   "cursor": "Cursor", "kimi": "Kimi", "grok": "Grok", "gemini": "Gemini",
+                                   "antigravity": "Antigravity"]
     static func openApplication(for tool: String) -> Bool {
         guard let name = appNames[tool] else { return false }
         let home = FileManager.default.homeDirectoryForCurrentUser.path

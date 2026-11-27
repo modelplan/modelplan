@@ -26,6 +26,7 @@ register('alert', {
   causeKeychain: ['alert', '需要钥匙串权限', 'Keychain access needed'],
   causePermission: ['alert', '需要授权', 'needs permission'],
   causeInstall: ['alert', '未安装', 'not installed'],
+  causeNotRunning: ['alert', '未运行', 'not running'],
   causeUpdate: ['alert', '需要更新', 'update needed'],
   causeNetwork: ['alert', '网络问题', 'network problem'],
   openSettings: ['alert', '去设置 ›', 'Open Settings ›'],

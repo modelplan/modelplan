@@ -79,6 +79,10 @@ extension ReaderCauseTable {
             else if let name { reason = .init("Install \(name), or make sure it runs from a terminal", "安装 \(name)，或确认它在命令行里能运行") }
             else { reason = .init("Install the tool, or make sure it runs from a terminal", "安装这个工具，或确认它在命令行里能运行") }
             return .init(reason: reason, action: .init("Open install page", "打开安装页面"), target: .installTool)
+        case "runtime_missing" where (tool ?? "").lowercased() == "antigravity":
+            // The app is not open (no Node.js involved): the row's button opens Antigravity.
+            return .init(reason: .init("Antigravity is not running, or its local service was not found", "没有检测到运行中的 Antigravity"),
+                         action: .init("Open Antigravity", "打开 Antigravity"), target: .openTool)
         case "runtime_missing":
             return .init(reason: .init("Node.js is required", "需要运行环境"),
                          action: .init("Install Node.js", "安装运行环境"), target: .installNode)

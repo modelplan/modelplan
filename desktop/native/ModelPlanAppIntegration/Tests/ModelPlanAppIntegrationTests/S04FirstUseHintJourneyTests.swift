@@ -116,6 +116,47 @@ private actor S04SyntheticClient: EngineClient {
         await app.composition.stop()
     }
 
+    /// macrevb-1220-2 (D397, G3-161): an identical delivery replaces the admitted content in place and keeps the
+    /// painted face without a full pass. The clear advances the input generation, so the kept pass must still
+    /// republish the Help surface: Help stays usable at once, with no face repaint and no pointer move.
+    func testKeptReplacementKeepsTheDockHelpSurfaceCurrent() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("kept-help-" + UUID().uuidString)
+        EngineRowsEntry.nativeJourneyProfile = profile
+        defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        func rows(sequence: Int) throws -> WireRowsSnapshot {
+            var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+            var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+            var records = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+            records[0]["surfaces"] = ["dock", "menu"]; records[0]["expiresAt"] = "2027-01-01T00:00:00Z"
+            projection["rows"] = records; root["projection"] = projection; root["sequence"] = sequence
+            return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        }
+        let first = try rows(sequence: 7)
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        _ = try await store.update { preferences in preferences.onboarding.next(in: .task65) }
+        let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        // A fixed wall clock: the identical delivery evaluates the same countdowns as the pass it replaces.
+        let wall = Date()
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: true, deadlineNow: { wall },
+            makeClient: { _, engineStore in S04SyntheticClient(store: engineStore, rows: first) }, activateSettings: {})
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock
+        for _ in 0..<300 where dock.currentDockHelpSurface == nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNotNil(dock.currentDockHelpSurface, "the real widget publishes its help surface")
+        let kept = dock.keptReplacementsForChecks, paints = dock.officialFacePaintsForChecks
+        let context = EngineDeliveryContext(sessionID: "s04-synthetic", floor: .init(storeEpoch: "s04-synthetic", generation: 1), revision: 1)
+        await app.composition.store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID,
+            storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: try rows(sequence: 8)), delivery: context), invalidRowCount: 0))
+        XCTAssertEqual(dock.keptReplacementsForChecks, kept + 1, "the identical delivery is a kept replacement")
+        XCTAssertEqual(dock.officialFacePaintsForChecks, paints, "it paints nothing")
+        XCTAssertNotNil(dock.currentDockHelpSurface, "Help stays usable across the kept replacement, without a pointer move")
+        await app.composition.stop()
+    }
+
     /// Normal entry on real panels with the real display topology; only the pointer is supplied.
     private func journeyApplication(_ name: String, onboarded: Bool = false, console: (any EngineRowsConsoleSurface)? = nil,
                                     pointer: @escaping @MainActor () -> CGPoint?) async throws -> (EngineDockMenuApplication, URL) {

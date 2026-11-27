@@ -24,7 +24,7 @@ async function open(page,options=appearance) {
   await page.waitForFunction(()=>!!window.modelPlanCockpit);
   const send=commands();
   const {profile,...liveAppearance}=options;
-  expect(await receive(page,send('load',{appearance:{...appearance,...liveAppearance},shell:{...shell,tier:profile==='compact'?'compact':'tall'}}))).toBe(true);
+  expect(await receive(page,send('load',{appearance:{...appearance,...liveAppearance},shell:{...shell,tier:'tall'}}))).toBe(true);
   return {send};
 }
 function receive(page,raw,method='receive') {return page.evaluate(({raw,method})=>window.modelPlanCockpit[method](raw),{raw,method});}
@@ -165,9 +165,9 @@ test('fixed keyboard-reachable actions have current context; reduced motion has 
   await page.evaluate(()=>window.postMessage({type:'plugin/install',url:'https://example.invalid'},'*'));
   expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').length)).toBe(2);
 });
-for(const profile of ['full','compact'])for(const theme of ['day','night'])for(const locale of ['en','zh-CN']){
+for(const profile of ['full'])for(const theme of ['day','night'])for(const locale of ['en','zh-CN']){
   test(`visual ${profile} ${theme} ${locale}`,async({page})=>{
-    await page.setViewportSize({width:636,height:profile==='full'?939:669});await page.emulateMedia({reducedMotion:'reduce'});
+    await page.setViewportSize({width:636,height:951});await page.emulateMedia({reducedMotion:'reduce'});
     await page.clock.setFixedTime(new Date('2026-11-03T12:00:00Z'));
 
     const {send}=await open(page,{theme,locale,profile}),fixture=visualFixture();await display(page,send,fixture.data);await renderVisualDeck(page,fixture,locale);

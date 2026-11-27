@@ -2,6 +2,7 @@ package speed
 
 import (
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"io"
 	"os"
 	"path/filepath"
@@ -126,9 +127,11 @@ func readCapped(p string) ([]byte, bool) {
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
 		return nil, false
 	}
-	b, err := io.ReadAll(io.LimitReader(f, maxCodexProjectFile+1))
+	idlework.Open()
+	b, err := io.ReadAll(idlework.Reader(io.LimitReader(f, maxCodexProjectFile+1)))
 	if err != nil || len(b) > maxCodexProjectFile {
 		return nil, false
 	}
+	idlework.Decode()
 	return b, true
 }

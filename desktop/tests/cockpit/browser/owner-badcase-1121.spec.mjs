@@ -97,6 +97,17 @@ test('B1 keyboard users keep the date keys\' ring: an arrow moves the choice and
  await page.locator('[data-range-key="30d"]').click();await page.keyboard.press('ArrowLeft');
  await expect(page.locator('[data-range-key="7d"]')).toBeFocused();
 });
+test('pointer focus on a generic keyboard control does not acquire a ring after a key press',async({page})=>{
+ await open(page,{data:visualFixture().data,range:'today'});
+ await page.evaluate(()=>{const control=document.createElement('div');control.tabIndex=0;control.id='focus-regression';control.textContent='Control';document.querySelector('#cockpit').append(control);});
+ const control=page.locator('#focus-regression');
+ await control.click();await page.keyboard.press('Escape');
+ await expect(control).toBeFocused();
+ expect(await control.evaluate(e=>e.hasAttribute('data-pointer-focus')&&getComputedStyle(e).outlineStyle==='none')).toBe(true);
+ await page.keyboard.press('Tab');
+ await control.focus();
+ expect(await control.evaluate(e=>e.hasAttribute('data-pointer-focus'))).toBe(false);
+});
 
 // ---- B1 (c): loading is never the empty state ----
 test('B1 a reply with an unread history keeps the last local history in the same page context; range switches never show the empty state',async({page})=>{
@@ -149,17 +160,28 @@ const geometry=page=>page.evaluate(()=>{const col=document.querySelector('.pl-co
   const parts=[...cell.querySelectorAll('.qtxt,.qnum')];
   return {tag:tag.textContent,tagHeight:t.height,lineHeight:parseFloat(getComputedStyle(tag).lineHeight),tagCut:tag.scrollHeight>tag.clientHeight+.5||tag.scrollWidth>tag.clientWidth+.5,tagInside:inside(t,c),
    parts:parts.map(p=>({w:[p.scrollWidth,p.clientWidth,Math.round(c.width)].join('/'),text:p.textContent,cut:p.scrollWidth>p.clientWidth+.5,inside:inside(p.getBoundingClientRect(),c)}))};});});
-for(const tier of ['tall','compact'])for(const locale of ['en','zh-CN'])for(const subs of [1,2])
-test(`B8 resource tags CPU · Memory · Disk are whole and in order, values never clipped (${tier}, ${locale}, ${subs} subscription${subs>1?'s':''})`,async({page})=>{
+for(const tier of ['tall'])for(const locale of ['en','zh-CN'])for(const subs of [1,2])
+test(`B8 resource names CPU · Memory · Disk are whole and in order, values never clipped (${tier}, ${locale}, ${subs} subscription${subs>1?'s':''})`,async({page})=>{
  const {send,receive}=await open(page,{data:subscriptions(subs),locale,tier,plugins:{version:1,entries:[],settings:{}}});
  const words=locale==='en'?['CPU','Memory','Disk']:['CPU','内存','磁盘'];
  const check=async when=>{const cells=await geometry(page);expect(cells,when).not.toBeNull();expect(cells.map(c=>c.tag),when).toEqual(words);
   for(const c of cells){expect(c.tagHeight,`${when} ${c.tag} height`).toBeGreaterThanOrEqual(c.lineHeight-.5);expect(c.tagCut,`${when} ${c.tag} cut`).toBe(false);expect(c.tagInside,`${when} ${c.tag} inside`).toBe(true);
    for(const p of c.parts){expect(p.cut,`${when} ${c.tag} ${p.text} ${p.w}`).toBe(false);expect(p.inside,`${when} ${c.tag} ${p.text} inside`).toBe(true);}}};
  await check('before the first reading');
- expect(await receive(send('pluginData',{id:'resources',data:{samples:[reading(NOW-5000,{cpuUser:43}),reading(NOW)]}}))).toBe(true);
- await expect(page.locator('.pl-col[data-plugin="resources"] .qvalue')).toHaveCount(3);
- await check('first render with readings');
+ expect(await receive(send('pluginData',{id:'resources',data:{samples:[reading(NOW-5000,{cpuUser:43}),reading(NOW,{netIn:1_234_567,netOut:86_000})]}}))).toBe(true);
+ // D407 R1: with readings the column is the radar. Its names are whole and in order, and no text leaves the column or
+ // runs into another (the narrow one-subscription and compact cases included).
+ await expect(page.locator('.pl-col[data-plugin="resources"] .pl-radar')).toHaveCount(1);
+ const radar=await page.evaluate(()=>{const col=document.querySelector('.pl-col[data-plugin="resources"]'),area=col.querySelector('.pl-draw').getBoundingClientRect();
+  const texts=[...col.querySelectorAll('.pl-radar text')].map(t=>({t:t.textContent,r:t.getBoundingClientRect()}));
+  const overlaps=[];for(let i=0;i<texts.length;i++)for(let j=i+1;j<texts.length;j++){const a=texts[i].r,b=texts[j].r;
+   if(a.left<b.right-.5&&b.left<a.right-.5&&a.top<b.bottom-.5&&b.top<a.bottom-.5)overlaps.push(texts[i].t+' / '+texts[j].t);}
+  return {labels:[...col.querySelectorAll('.pl-radar [data-label]')].map(l=>l.textContent),overlaps,
+   outside:texts.filter(x=>x.r.left<area.left-.5||x.r.right>area.right+.5||x.r.top<area.top-.5||x.r.bottom>area.bottom+.5).map(x=>x.t)};});
+ const shortWords=locale==='en'?['CPU','Mem','Disk']:words;
+ radar.labels.forEach((l,i)=>expect([words[i],shortWords[i]],'first render with readings').toContain(l));
+ expect(radar.overlaps,'first render with readings: no text runs into another').toEqual([]);
+ expect(radar.outside,'first render with readings: every text inside the column').toEqual([]);
 });
 
 // ---- HUD: the ★ column and versioned names ----
@@ -169,7 +191,10 @@ test('HUD every ★ effort starts at the same x, whatever the name length',async
  const data=visualFixture().data;
  data.details.publishedModels=names.map((name,i)=>({id:'n'+i,name,developerId:'openai',recommended:recs[i],efforts:[effort('low',30+i,.02*(i+1),recs[i]==='low'),effort('medium',40+i,.05*(i+1),recs[i]==='medium'),effort('high',45+i,.1*(i+1),recs[i]==='high')]}));
  await open(page,{data});
- await expect(page.locator('.hud-b .hp')).toHaveCount(6);
+ // D386: the HUD lists only the ability frontier, best ability first. n5's ★ low (35, .12) is beaten by n0's ★ medium (40, .05),
+ // so it is off the frontier and five rows remain, n2, n4, n3, n1, n0.
+ await expect(page.locator('.hud-b .hp')).toHaveCount(5);
+ expect(await page.locator('.hud-b .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['n2','n4','n3','n1','n0']);
  const starts=await page.locator('.hud-b .hp-rec').evaluateAll(list=>list.map(e=>e.getBoundingClientRect().left));
  for(const x of starts)expect(Math.abs(x-starts[0])).toBeLessThanOrEqual(0.5);
  // Names never run into the ★ column.

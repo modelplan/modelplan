@@ -147,7 +147,7 @@ func TestAppObservationWritesPerfWhileARefreshJobIsPending(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if _, err := os.Stat(filepath.Join(st.Dir, "observed", appserver.ObserveLogFile)); err != nil {
+	if _, err := os.Stat(appserver.ObserveLogPath(st.Dir)); err != nil {
 		t.Fatalf("observation log: %v", err)
 	}
 }

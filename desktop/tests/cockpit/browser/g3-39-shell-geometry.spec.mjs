@@ -4,10 +4,9 @@ import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
 // G3-39 / CKP-SHELL-08, -10: the native window is root + 34 px. These tops are read from the opus-r7 study
-// at both profiles, relative to the root; the tape must hold every record line at its own height.
+// (D444: the one layout), relative to the root; the tape must hold every record line at its own height.
 const profiles=[
- {tier:'compact',canvas:669,root:635,canopy:56,head:65,eng:100,deck:329,tape:555,tapeH:58,lines:3},
- {tier:'tall',canvas:939,root:905,canopy:244,head:253,eng:288,deck:523,tape:789,tapeH:94,lines:5},
+ {tier:'tall',canvas:951,root:905,canopy:244,head:253,eng:288,deck:523,tape:789,tapeH:94,lines:5},
 ];
 for(const p of profiles)test(`G3-39 ${p.tier} page registers to the native window and the study`,async({page})=>{
  await page.setViewportSize({width:636,height:p.canvas});

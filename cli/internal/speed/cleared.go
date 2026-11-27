@@ -3,6 +3,7 @@ package speed
 import (
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -36,7 +37,10 @@ func ClearedPath(cache string) string { return filepath.Join(cache, "observed", 
 // LoadCleared never fails: a missing or unreadable file has no boundaries.
 func LoadCleared(cache string) Cleared {
 	var c Cleared
-	b, err := os.ReadFile(ClearedPath(cache))
+	b, err := idlework.ReadFile(ClearedPath(cache))
+	if err == nil && len(b) <= 64<<10 {
+		idlework.Decode()
+	}
 	if err != nil || len(b) > 64<<10 || json.Unmarshal(b, &c) != nil || c.SchemaVersion != 1 {
 		return Cleared{SchemaVersion: 1}
 	}

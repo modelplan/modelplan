@@ -21,6 +21,16 @@ const ready=page=>expect.poll(()=>page.evaluate(()=>window.posted.includes('read
 const state=page=>page.evaluate(()=>window.modelPlanField.state());
 const closes=page=>page.evaluate(()=>window.messages.filter(m=>m.type==='close').map(m=>m.reason));
 
+test('WP-22 hidden subscriptions do not make the field fall back to every published rocket',async({page})=>{
+ await open(page,{noWebGL:true});await show(page,payload(4,{mine:[],onlyMine:true}));await ready(page);
+ expect((await state(page)).shown).toEqual([]);
+});
+
+test('WP-22 the initial field uses only the visible subscription models',async({page})=>{
+ await open(page,{noWebGL:true});await show(page,payload(4,{mine:['m1'],onlyMine:true}));await ready(page);
+ expect((await state(page)).shown).toEqual(['m1']);
+});
+
 test('WP-22 the field is the launch-field window: native dims, so the component\'s dim is off, and my models fly first',async({page})=>{
  await open(page);expect(await show(page,payload())).toBe(true);await ready(page);
  const s=await state(page);
@@ -170,20 +180,20 @@ test('D63 the ⤢ key opens the field, with a label that says the field itself a
  await openCockpit(page);
  const key=page.locator('.ck-port [data-bigfield]');await expect(key).toBeVisible();await expect(key).toHaveText('⤢');
  await expect(key).toHaveAttribute('aria-label','Open the 3D launch field · Or click anywhere on the field');
- expect(await key.evaluate(e=>{const s=getComputedStyle(e);return [s.right,s.top,s.width,s.height];})).toEqual(['38px','52px','22px','22px']);
+ expect(await key.evaluate(e=>{const s=getComputedStyle(e);return [s.right,s.top,s.width,s.height];})).toEqual(['44px','79px','22px','22px']);
  await key.click();expect(await opens(page)).toEqual([null]);
 });
 // Owner 11-09: the key must sit inside the glass. The c01 canopy aperture mask (laid 1:1 on the canopy art box, see below; origin at the box's
 // top left) is the truth: every pixel of the key's rect keeps at least 8 px from any frame pixel, and it clears the HUD.
-for(const theme of ['night','day'])for(const tier of ['tall','compact'])test(`D63 the key lies inside the aperture mask with 8 px of glass (${theme} ${tier})`,async({page})=>{
- await page.setViewportSize({width:636,height:tier==='tall'?905:635});
+for(const theme of ['night','day'])for(const tier of ['tall'])test(`D63 the key lies inside the aperture mask with 8 px of glass (${theme} ${tier})`,async({page})=>{
+ await page.setViewportSize({width:636,height:905});
  await page.addInitScript(()=>{window.posted=[];window.webkit={messageHandlers:{cockpit:{postMessage(m){window.posted.push(typeof m==='string'?JSON.parse(m):m);}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  await receive(send('load',{appearance:{...appearance,theme},shell:{...shell,tier}}));
  await receive(send('visibility',{visible:true,occluded:false,key:true}));await receive(send('display',{data:visualFixture().data}));
  await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
- const layout=tier==='tall'?890:640;
+ const layout=890;
  const r=await page.evaluate(async layout=>{
   // The art box is the port row grown by 24 px each side and 12 px at the top (cockpit.css .ck-portrow::before, inset -12px -24px 0),
   // drawn 1:1 with the canopy mask. The mask pixel (px,y) therefore lies at the box's origin plus (px,y), never at the page's.
