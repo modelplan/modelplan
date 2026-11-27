@@ -325,7 +325,9 @@ struct NativeFailure:Error {let message:String}
     let flicker=jet.animation(forKey:"stepped-images") as! CAKeyframeAnimation
     try require(spin.duration==2 && spin.keyPath=="transform.rotation.z" && spin.repeatCount.isInfinite,"host-supplied period, effect-only Z rotation")
     try require(spin.timingFunction==CAMediaTimingFunction(name:.linear),"linear motion timing")
-    try require(flicker.duration==1 && flicker.calculationMode == .discrete && flicker.values?.count==9,"original nine-pose one-second bitmap clock unchanged")
+    // Owner build-6 item +g: nine poses forward and back (0...8, 7...1) at the same 1/9 s step; no seam jump.
+    try require(abs(flicker.duration-16.0/9)<1e-9 && flicker.calculationMode == .discrete && flicker.values?.count==16 && flicker.keyTimes?.count==17,"nine-pose bitmap clock plays forward and back at its one-second pass rate")
+    try require(motionDriver.framePoseOrders["work-0"]==[0,1,2,3,4,5,6,7,8,7,6,5,4,3,2,1] && motionDriver.cycleSeconds["work-0"]==1,"reflected flame order has no pose 8 to pose 0 jump")
     try require(effectsView.layer?.animationKeys()?.isEmpty ?? true,"static surface has no rotation")
     let motionRoot=effectsView.layer!,centre=jet.convert(CGPoint(x:32,y:32),to:effectsView.layer!)
     for (seconds,expected) in [(0.0,CGPoint(x:32,y:4)),(0.5,CGPoint(x:60,y:32)),(1.0,CGPoint(x:32,y:60)),(1.5,CGPoint(x:4,y:32)),(2.0,CGPoint(x:32,y:4))] {
