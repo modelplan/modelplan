@@ -81,7 +81,7 @@ const label=(v:string,fallback:string)=>v.replace(/[\u0000-\u001f\u007f]/g,'').s
 const ms=(v:string|null|undefined)=>{const t=v?Date.parse(v):NaN;return Number.isFinite(t)?t:null;};
 /** When an announced reset takes effect: the middle of its window down to the half hour (never into the next local day), a
  *  date-only schedule at that local day's start, no schedule: unknown. */
-function effectiveAt(schedule:{from:string;through:string;precision:string}|undefined):number|null {
+export function effectiveAt(schedule:{from:string;through:string;precision:string}|undefined):number|null {
  if(!schedule)return null;const from=ms(schedule.from),through=ms(schedule.through);if(from===null)return null;
  if(schedule.precision==='date'){const d=new Date(from);return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();}
  const mid=through===null?from:(from+through)/2;// Floor on the local day's own half-hour grid (a zone like Kathmandu, UTC+5:45, has no UTC-aligned half hours).

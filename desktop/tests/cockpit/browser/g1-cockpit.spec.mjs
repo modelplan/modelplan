@@ -264,16 +264,17 @@ test('CKP-ENTRY-03 opens on usage with no comparison when publication is absent'
  await page.getByRole('button',{name:'Plans',exact:true}).click();await expect(page.locator('.pg-sub')).toBeVisible();expect(await receive(send('clear',{generation:'42',viewRevision:'4'}))).toBe(true);await expect(page.locator('.mfd-compare,[data-comparison]')).toHaveCount(0);
 });
 
-test('CKP-MFD-02 four page keys select and light the current page in both languages',async({page})=>{
- const {send,receive}=await open(page);const buttons=page.locator('.mfd-pk .pk');await expect(buttons).toHaveCount(4);
- for(const labels of [['Overview','Plans','Models','Breakdown'],['总览','订阅','模型','去向']]){
-  for(const [i,label] of labels.entries()){const key=buttons.nth(i);await expect(key).toHaveAttribute('aria-label',label);await key.click();await expect(key).toHaveAttribute('aria-pressed','true');await expect(key).toHaveClass(/\bon\b/);await expect(buttons.locator('.pk-led')).toHaveCount(4);const activeColor=await key.locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor);for(let j=0;j<4;j++)if(i!==j){await expect(buttons.nth(j)).toHaveAttribute('aria-pressed','false');expect(await buttons.nth(j).locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor)).not.toBe(activeColor);}}
+// D466: 日历 is the fixed 5th page key.
+test('CKP-MFD-02 five page keys select and light the current page in both languages',async({page})=>{
+ const {send,receive}=await open(page);const buttons=page.locator('.mfd-pk .pk');await expect(buttons).toHaveCount(5);
+ for(const labels of [['Overview','Plans','Models','Breakdown','Calendar'],['总览','订阅','模型','去向','日历']]){
+  for(const [i,label] of labels.entries()){const key=buttons.nth(i);await expect(key).toHaveAttribute('aria-label',label);await key.click();await expect(key).toHaveAttribute('aria-pressed','true');await expect(key).toHaveClass(/\bon\b/);await expect(buttons.locator('.pk-led')).toHaveCount(5);const activeColor=await key.locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor);for(let j=0;j<5;j++)if(i!==j){await expect(buttons.nth(j)).toHaveAttribute('aria-pressed','false');expect(await buttons.nth(j).locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor)).not.toBe(activeColor);}}
   if(labels[0]==='Overview')expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
  }
 });
 
 test('CKP-MFD-04 the built page keys follow one read-only internal page registry',async({page})=>{
- await open(page);const inspection=await page.evaluate(async()=>{const m=await import('/src/prototype-deck.js');return {ids:m.cockpitPageIds,frozen:Object.isFrozen(m.cockpitPageIds)};});expect(inspection.frozen).toBe(true);const registry=inspection.ids;const keys=await page.locator('.mfd-pk .pk').evaluateAll(nodes=>nodes.map(n=>n.dataset.mfd));expect(keys).toEqual(registry.map(id=>'page:'+id));expect(registry).toEqual(['overview','sub','tune','where']);
+ await open(page);const inspection=await page.evaluate(async()=>{const m=await import('/src/prototype-deck.js');return {ids:m.cockpitPageIds,frozen:Object.isFrozen(m.cockpitPageIds)};});expect(inspection.frozen).toBe(true);const registry=inspection.ids;const keys=await page.locator('.mfd-pk .pk').evaluateAll(nodes=>nodes.map(n=>n.dataset.mfd));expect(keys).toEqual(registry.map(id=>'page:'+id));expect(registry).toEqual(['overview','sub','tune','where','calendar']);// D466: 日历 is the fixed 5th page
 });
 
 test('CKP-MOT-05 day appearance lightens cockpit metal while LCDs remain dark',async({page})=>{

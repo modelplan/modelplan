@@ -157,7 +157,8 @@ test('sampling 11-22: the lower corners of All select All without paging',async(
  await expect(page.locator('.eng-pgn')).toHaveText('2/2');
 });
 
-test('CKP-ENG-53 six English columns: ≈cost never drops; speed drops before tokens',async({page})=>{
+// D464 (reverses CKP-ENG-53's drop order): tokens never drop; speed drops before ≈cost.
+test('D464 six English columns: tokens never drop; speed drops before ≈cost',async({page})=>{
  const {data,sync}=fixture(6);
  for(const s of data.details.subscriptions)s.today=[{...s.today[0],observedOutputTokens:212e6,generationTps:52}];
  sync();await open(page,data);
@@ -165,7 +166,8 @@ test('CKP-ENG-53 six English columns: ≈cost never drops; speed drops before to
  const shown=async sel=>row.locator(sel).evaluate(e=>getComputedStyle(e).display!=='none').catch(()=>false);
  const fits=await row.evaluate(e=>e.scrollWidth<=e.clientWidth);
  expect(fits,'the row never overflows').toBe(true);
- if(!(await shown('.qtokens')))expect(await shown('.qaverage'),'tokens only drop after speed').toBe(false);
+ expect(await shown('.qtokens'),'tokens stay').toBe(true);
+ if(!(await shown('.qcost')))expect(await shown('.qaverage'),'≈cost only drops after speed').toBe(false);
  await expect(row.locator('.qtokens')).toHaveText('212M');
 });
 
@@ -222,13 +224,13 @@ for(const [range,label,tokens,cost] of [['today','Today','12k','≈$3'],['7d','7
   await expect(row.locator('.qaverage')).toContainText(range==='today'?'42':range==='7d'?'52':'48');
  });
 for(const range of ['today','7d','30d'])
- test(`G3-156 CKP-ENG-53 six columns, ${range}: the row never overflows and drops speed before tokens, never the cost`,async({page})=>{
+ test(`G3-156 D464 six columns, ${range}: the row never overflows and drops speed before ≈cost, never the tokens`,async({page})=>{
   const {data,sync}=fixture(6);withHistory(data);sync();await open(page,data,'en',range);
   const row=page.locator('.eng-cols > .ec[data-col]').first().locator('.qrow-t');
   const shown=async sel=>row.locator(sel).evaluate(e=>getComputedStyle(e).display!=='none').catch(()=>false);
   expect(await row.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
-  expect(await shown('.qcost'),'cost stays').toBe(true);
-  if(!(await shown('.qtokens')))expect(await shown('.qaverage'),'tokens only drop after speed').toBe(false);
+  expect(await shown('.qtokens'),'tokens stay').toBe(true);
+  if(!(await shown('.qcost')))expect(await shown('.qaverage'),'≈cost only drops after speed').toBe(false);
  });
 test('G3-156 the range row says no usage in the range, not "quota only", when history is read and nothing is recorded',async({page})=>{
  for(const [range,text] of [['today','No usage today'],['7d','No usage in 7d'],['30d','No usage in 30d']]){

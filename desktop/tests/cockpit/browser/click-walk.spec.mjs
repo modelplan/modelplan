@@ -25,7 +25,7 @@ const selectors=[
  '.cmp-lad [data-mfd^="try:"]', '[data-bank]', '.pl-screen-x',
  '.mfd-page [data-mfd^="scope:"]', '.mfd-page .pc-hit[data-mfd^="try:"]',
  '.mfd-ok button[data-mfd="fast"]', '.mfd-ok button[data-mfd="back"]',
- '.mfd-page button[data-mfd="back"]', '.pl-screen .wk-dh', '.fd-scale .sc-l:not(.na)',
+ '.mfd-page button[data-mfd="back"]', '.cal-page .w7-dh', '.cal-page button.cal-chip', '.ec-strip', '.fd-scale .sc-l:not(.na)',
 ];
 const topSelectors=new Set(['[data-range-key]','[data-caution]','.mfd-pk .pk','.eng-krow [data-all]','.eng-keys .ek[data-sub]','.eng-keys .pl-key','.eng-pg button:not([aria-disabled="true"])','.hud .hp']);
 const random=seed=>()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
@@ -34,7 +34,7 @@ async function choices(page){
  return page.evaluate(selectors=>selectors.flatMap(selector=>[...document.querySelectorAll(selector)].flatMap((el,index)=>{
   const r=el.getBoundingClientRect(),s=getComputedStyle(el),x=r.left+r.width/2,y=r.top+r.height/2,hit=document.elementFromPoint(x,y);
   if(!r.width||!r.height||s.visibility==='hidden'||s.display==='none'||!hit||!(hit===el||el.contains(hit)))return [];
-  return [{selector,index,label:el.getAttribute('aria-label')||el.getAttribute('data-choice')||el.textContent.trim(),key:el.getAttribute('data-range-key')||el.getAttribute('data-mfd')||el.getAttribute('data-plugin')||el.getAttribute('data-hud-model')||el.getAttribute('data-sub')||el.getAttribute('data-bpage')||el.getAttribute('data-focus')||el.getAttribute('data-strip'),choice:el.getAttribute('data-choice'),option:el.closest('[data-opt]')?.getAttribute('data-opt')}];
+  return [{selector,index,label:el.getAttribute('aria-label')||el.getAttribute('data-choice')||el.textContent.trim(),key:el.getAttribute('data-range-key')||el.getAttribute('data-mfd')||el.getAttribute('data-plugin')||el.getAttribute('data-hud-model')||el.getAttribute('data-sub')||el.getAttribute('data-bpage')||el.getAttribute('data-focus')||el.getAttribute('data-strip')||el.getAttribute('data-day'),choice:el.getAttribute('data-choice'),option:el.closest('[data-opt]')?.getAttribute('data-opt')}];
  })),selectors);
 }
 
@@ -109,7 +109,9 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
   if(action!=='Escape'&&action.selector==='.eng-krow [data-all]')expect(state.scope).toBe('all');
   if(action!=='Escape'&&action.selector==='.eng-keys .ek[data-sub]')expect(state.scope).toBe(prior.plugin?action.key:prior.scope===action.key?'all':action.key);
   if(action!=='Escape'&&action.selector==='.pl-screen-x')expect(state.plugin).toBeNull();
-  if(action!=='Escape'&&action.selector==='.pl-screen .wk-dh')await expect(page.locator(action.selector).nth(action.index)).toHaveAttribute('aria-pressed','true');
+  // D466: the 日历 page's day headers pick a day; a subscription strip opens the 日历 page for that subscription.
+  if(action!=='Escape'&&action.selector==='.cal-page .w7-dh')await expect(page.locator(action.selector).nth(action.index)).toHaveAttribute('aria-pressed','true');
+  if(action!=='Escape'&&action.selector==='.ec-strip'){expect(state.page).toContain('pg-calendar');expect(state.plugin).toBeNull();}
   if(action!=='Escape'&&action.selector==='[data-caution]'&&prior.plugin){expect(state.plugin).toBeNull();expect(state.page).toContain('pg-alerts');}
   if(action!=='Escape'&&action.selector==='.mfd-ok .ok [data-choice]')expect(state.choices).toContainEqual([action.option,action.choice]);
   if(action!=='Escape'&&action.selector==='.mfd-page .md-row')expect(state.picks.some(p=>p[1]===action.key)).toBe(true);
@@ -145,11 +147,11 @@ for(const scenario of walkScenarios(clock).filter(s=>!replay||s.name===replay.sc
    if(long)for(const b of seconds)if(!all.some(x=>same(x,b)))all.push({...b,setup:[...a.setup,{selector:a.selector,key:a.key,label:a.label}]});
    for(const b of sample){await prepare();const current=(await choices(page)).find(x=>same(x,b));expect(current,`reachable second control ${b.label}`).toBeTruthy();await step(current);}
   }
-  // The owner's reported transition is always included in the short run when both controls exist.
-  await boot(data);let current=await choices(page),cal=current.find(a=>a.selector==='.eng-keys .pl-key'&&a.key==='calendar');
-  if(!cal&&scenario.plugins.entries.find(e=>e.id==='calendar')?.enabled){const nextPage=current.find(a=>a.selector.startsWith('.eng-pg')&&a.key==='1');if(nextPage){await step(nextPage);current=await choices(page);cal=current.find(a=>a.selector==='.eng-keys .pl-key'&&a.key==='calendar');}expect(cal,'enabled Calendar key').toBeTruthy();}
+  // The owner's reported transition (Calendar, then a HUD model, then Calendar, then ALERT) is always included in the short
+  // run. D466: the calendar is the fixed 5th page key, no longer a plugin key.
+  await boot(data);const cal=(await choices(page)).find(a=>a.selector==='.mfd-pk .pk'&&a.key==='page:calendar');
   if(cal){await step(cal);const hud=(await choices(page)).find(a=>a.selector==='.hud .hp');if(hud){await step(hud);expect((await inspect(page)).plugin).toBeNull();}
-   const calendar=(await choices(page)).find(a=>a.selector==='.eng-keys .pl-key'&&a.key==='calendar');expect(calendar).toBeTruthy();await step(calendar);
+   const calendar=(await choices(page)).find(a=>a.selector==='.mfd-pk .pk'&&a.key==='page:calendar');expect(calendar).toBeTruthy();await step(calendar);
    const alert=(await choices(page)).find(a=>a.selector==='[data-caution]');expect(alert).toBeTruthy();await step(alert);}
   }
  }catch(e){await page.screenshot({caret:'initial',path:`${output}${scenario.name}-failure.png`});const replayFile=`${output}${scenario.name}-failure.json`;await writeFile(replayFile,JSON.stringify({scenario:scenario.name,seed:'0xc0c01123',clock,timezone:'UTC',operations},null,2));const monitor=await page.evaluate(()=>({current:window.__walk.current,results:window.__walk.results.slice(-3),rejections:window.__walk.rejections}));throw Error(`${e.message}\nScenario ${scenario.name}; replay: COCKPIT_WALK_REPLAY=${replayFile}; monitor ${JSON.stringify(monitor)}; path:\n${path.join('\n')}`);}

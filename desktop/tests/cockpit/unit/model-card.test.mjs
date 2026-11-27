@@ -15,12 +15,13 @@ const fader=(o={})=>({id:'m',name:'GPT-6.1 Sol',short:'Sol 6.1',rec:'Med',e,curr
 const channel=(f,ui={})=>faderModel({faders:[f],accounts:[{id:'a',colour:'#6aa8ff'}]},{bank:0,bankSize:3,selModel:null,previews:{},view:null,...ui}).channels[0];
 const chars=s=>[...s].length;
 
-test('CKP-FAD-50 a used model: name, ≈cost large, share bar, "212M 17%", "High ★Med"; no ability bars',()=>{
+// D464 (amends CKP-FAD-50): tokens are the large figure; ≈cost moves to the small line with the share.
+test('CKP-FAD-50 D464 a used model: name, tokens large, share bar, "≈$64 17%", "High ★Med"; no ability bars',()=>{
  setLanguage('en');
  const c=channel(fader({use:{tokens:212e6,share:.17,cost:64}}));
- assert.equal(c.card.state,'normal');assert.equal(c.card.big,'≈$64');assert.equal(c.card.bigKind,'cost');
- assert.equal(c.card.bar,.17);assert.deepEqual(c.card.use,['212M','17%']);
- assert.deepEqual(cardText(c.card),['Sol 6.1','≈$64','212M 17%','High ★Med']);
+ assert.equal(c.card.state,'normal');assert.equal(c.card.big,'212M');assert.equal(c.card.bigKind,'tokens');
+ assert.equal(c.card.bar,.17);assert.deepEqual(c.card.use,['≈$64','17%']);
+ assert.deepEqual(cardText(c.card),['Sol 6.1','212M','≈$64 17%','High ★Med']);
  assert.equal(c.bars,undefined,'the five ability bars are gone (CKP-FAD-04 superseded)');
 });
 
@@ -123,13 +124,15 @@ test('LBL-2.2-51 ≈cost and token formats on the card',()=>{
 });
 
 // Owner 11-21 (G3-144…): the cost in the card's large slot never clips, and the unknown current effort says what it is.
-test('G3-145 the card cost is a short form that fits the 52 px slot: under $0.01 "<$0.01", under $1 two decimals; the accessible text keeps the estimate',()=>{
+// D464: the cost moved to the small line; it keeps the G3-145 short form (the full estimate stays in useFull).
+test('G3-145 D464 the card cost is a short form on the small line: under $0.01 "<$0.01", under $1 two decimals; the accessible text keeps the estimate',()=>{
  setLanguage('en');
- const big=cost=>channel(fader({use:{tokens:432,share:.01,cost}})).card;
- assert.equal(big(0.004).big,'<$0.01');assert.equal(big(0.004).bigFull,'≈$0.004');
- assert.equal(big(0.012).big,'≈$0.01');assert.equal(big(0.42).big,'≈$0.42');
- assert.equal(big(9.1).big,'≈$9.1');assert.equal(big(1234).big,'≈$1.2k');
- for(const v of [0.0004,0.004,0.012,0.09,0.42,0.999,1,9.1,64,310,1234,12345])assert.ok(chars(big(v).big)<=6,`${v} -> ${big(v).big}`);
+ const card=cost=>channel(fader({use:{tokens:432,share:.01,cost}})).card;
+ assert.equal(card(0.004).use[0],'<$0.01');assert.equal(card(0.004).useFull[0],'≈$0.004');
+ assert.equal(card(0.012).use[0],'≈$0.01');assert.equal(card(0.42).use[0],'≈$0.42');
+ assert.equal(card(9.1).use[0],'≈$9.1');assert.equal(card(1234).use[0],'≈$1.2k');
+ assert.equal(card(9.1).big,'432');
+ for(const v of [0.0004,0.004,0.012,0.09,0.42,0.999,1,9.1,64,310,1234,12345])assert.ok(chars(card(v).use.join(' '))<=9,`${v} -> ${card(v).use}`);
 });
 
 // G3-146 named the unknown current effort "档位未报告" / "Effort ?" and banned the "当前未报告" look. G3-182 (owner row 35,

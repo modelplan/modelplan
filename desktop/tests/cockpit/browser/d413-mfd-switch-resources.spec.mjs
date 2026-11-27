@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// D413 (owner 11-24): the Overview | screen switch keeps the four page keys equal (86 px in the app) in every screen
-// state; a screen without a usable short name shows its icon alone; Escape and the left half return to the overview;
+// D413 (owner 11-24): the Overview | screen switch keeps the page keys equal in every screen state (D466: five keys now,
+// 日历 being the fixed 5th page, so a key is narrower than the
+// old 86 px); a screen without a usable short name shows its icon alone; Escape and the left half return to the overview;
 // the Resources screen is the four-card grid whose centre bottom key switches 10 min | 1 h; nothing runs on a timer or
 // an animation frame while the cockpit is hidden (D397). Synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
@@ -33,15 +34,15 @@ const keyWidths=page=>page.evaluate(()=>[...document.querySelectorAll('.dk-mfd .
 const seg=page=>page.locator('.dk-mfd .mfd-pk .pk-seg');
 
 for(const locale of ['zh-CN','en'])
-test(`D413 the four page keys keep one width in every screen state (${locale})`,async({page})=>{
+test(`D413 D466 the five page keys keep one width in every screen state (${locale})`,async({page})=>{
  const {push,show}=await open(page,{locale});
  expect(await push([reading(T0),reading(T0+5000)])).toBe(true);
- const none=await keyWidths(page);expect(none.length).toBe(4);expect(new Set(none).size).toBe(1);
- for(const id of ['resources','calendar','placeholder']){
+ const none=await keyWidths(page);expect(none.length).toBe(5);expect(new Set(none).size).toBe(1);
+ for(const id of ['resources','placeholder']){// D466: the calendar is a page, not a screen
   await show(id);
   await expect(page.locator(`.mfd-screen .pl-screen[data-plugin="${id}"]`)).toBeVisible();
   const widths=await keyWidths(page);
-  expect(widths,`${id}: four keys`).toHaveLength(4);
+  expect(widths,`${id}: five keys`).toHaveLength(5);
   expect(new Set(widths).size,`${id}: ${widths}`).toBe(1);expect(widths[0]).toBe(none[0]);
   // The switch's halves fit inside its own slot (never spills into the next key) and no text in them is cut.
   const fit=await page.evaluate(()=>{const s=document.querySelector('.mfd-pk .pk-seg').getBoundingClientRect();return [...document.querySelectorAll('.mfd-pk .pk-seg [role=tab]')].every(h=>{const r=h.getBoundingClientRect();return r.left>=s.left-.5&&r.right<=s.right+.5&&h.scrollWidth<=h.clientWidth+.5;});});

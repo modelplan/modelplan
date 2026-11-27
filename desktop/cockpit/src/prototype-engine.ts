@@ -16,6 +16,8 @@ import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runO
 import {engineModel,statusBySub,widthClass} from '../study/rocket-r1/engine-model.js';
 import {pluginHostOf} from './plugin-host.js';
 import {newsClock} from './news-clock.js';
+import {calendarModel,type CalModel} from './calendar-model.js';
+import {paintStrip,stripCard} from './calendar-page.js';
 import {pageOfSubscription,type LayoutPage} from './plugin-layout.js';
 import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
@@ -59,6 +61,13 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  const semantic=(w:WireWindow)=>JSON.stringify([w.role,w.durationSeconds,w.limitKey,w.poolKey,w.modelScope?.models?[...w.modelScope.models].sort():null]);
  function sourceAt(now:number){
  const colours=memberColours(members);
+ // D466 (band round 1, reverses the plan-name part of D277): a key shows the logo and the short tool name ("Codex",
+ // "ZCode" for "ZCode / GLM"); the plan tier is added only (the wire carries no user alias yet) when two shown subscriptions share
+ // that short name. The full "Codex Pro 100" stays in the key's tooltip and accessible name.
+ const shortOf=(row:typeof members[number]['row'])=>{const name=locale==='en'?row.name.en:row.name.zh;return name.split(' / ')[0]!.trim()||name;};
+ const shortCount=new Map<string,number>();for(const m of members)shortCount.set(shortOf(m.row),(shortCount.get(shortOf(m.row))??0)+1);
+ const keyNames=new Map<string,string>();
+ for(const m of members){const s=shortOf(m.row);keyNames.set(m.key,(shortCount.get(s)??0)>1?accountLabel(s,m.account,locale):s);}
  const accounts=members.map(({key,row,account})=>{
   const brand=row.vendorKey&&Object.hasOwn(logos,row.vendorKey)?{colour:colours.get(key)!,logo:logos[row.vendorKey]!}:null;
   const name=locale==='en'?row.name.en:row.name.zh,label=accountLabel(name,account,locale);
@@ -76,7 +85,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   // G3-109: a money balance (Grok Build) has no credits/points; the reserve row shows it in its reported currency.
   const money=moneyText(account.credits,locale);
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(label),short:esc(label),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account,unavailableZCodeMember(row,account)?row.state:undefined),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),news:news.some(e=>e.status==='confirmed')?'confirmed':news.length?'announced':null,plus,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
+  return {id:esc(key),name:esc(label),short:esc(keyNames.get(key)??label),alias:esc(keyNames.get(key)??name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account,unavailableZCodeMember(row,account)?row.state:undefined),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),news:news.some(e=>e.status==='confirmed')?'confirmed':news.length?'announced':null,plus,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
@@ -101,12 +110,20 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   return {model,plugins:shown};
  };
  let renderedNow=initialNow;
+ let calendar:CalModel|null=null;
  const paint=(time?:number)=>{
   if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,range:range(),tint:true,pctMode:showUsed()?'used':'left',redAt:redBelow(),ack:null,lang:locale,now};
   const {model,plugins:pluginPage}=pagedModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));// Unknown vendors have no mark: drop the study's neutral placeholder before parsing so nothing is requested.
+  hideCard();
   plugins?.hold();// D323: a focused drawn plugin control is taken back by its new column
   host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now}).replace(/ style="/g,' data-study-style="').replaceAll('<img class="lamp" src="assets/brands/../../neutral.png" alt="">','');
   if(plugins&&pluginPage)plugins.decorate(host,pluginPage,locale);
+  // D466: every subscription column carries its 24 h strip at the right edge (always, even when empty: it is the way
+  // into the calendar). A click opens the big screen's 日历 tab for that subscription.
+  calendar=calendarModel(data,now);
+  for(const column of host.querySelectorAll<HTMLElement>('.eng-cols > .ec[data-col]:not(.pl-col)')){
+   const sub=calendar.subs.findIndex(x=>esc(x.key)===column.dataset.col);if(sub>=0)paintStrip(column,calendar,sub,locale);
+  }
   // Keep the selected source-window identity in memory, never in rendered HTML.
   for(const [index,column] of [...host.querySelectorAll<HTMLElement>('.eng-cols > .ec[data-col]')].entries()){const rendered=model.cols[index];for(const cell of column.querySelectorAll<HTMLElement>('.qcell[data-row]')){const identity=rendered?.cells?.[cell.dataset.row??'']?.focusIdentity;if(typeof identity==='string')focusIdentities.set(cell,identity);}}
   // Inline style attributes from the study HTML are blocked by the host CSP.
@@ -153,9 +170,9 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   }
   const hidden=entries.filter(({e})=>e.classList.contains('pl-side')&&e.scrollWidth>e.clientWidth);
   for(const {e} of hidden)setText(e,''); // D371 Q5: an unfit plugin side value is hidden, never cut.
-  // CKP-ENG-53 (§14): drop speed first, then tokens; ≈cost always stays.
+  // D464 (§14 order reversed): drop speed first, then ≈cost; tokens always stay.
   const rows=[...host.querySelectorAll<HTMLElement>('.qrow-t')].filter(row=>row.isConnected&&row.clientWidth>0)
-   .map(row=>({row,parts:[row.querySelector<HTMLElement>('.qaverage'),row.querySelector<HTMLElement>('.qtokens')]}));
+   .map(row=>({row,parts:[row.querySelector<HTMLElement>('.qaverage'),row.querySelector<HTMLElement>('.qtokens')?row.querySelector<HTMLElement>('.qcost'):null]}));
   for(const {parts} of rows)for(const part of parts)part?.classList.remove('drop');
   for(let i=0;i<2;i++){
    const overflow=rows.filter(({row})=>row.scrollWidth>row.clientWidth);
@@ -172,6 +189,20 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   (root.querySelector('#cockpit')??document.body).append(hint);hint.hidden=false;const r=label.getBoundingClientRect(),w=hint.offsetWidth,h=hint.offsetHeight;
   // Above the label, so it never covers the reserve values beside it.
   hint.style.left=Math.max(4,Math.min(window.innerWidth-w-4,r.left))+'px';hint.style.top=Math.max(4,r.top-h-4)+'px';};
+ // D466: the strip's hover card ("接下来 24 小时") opens to the left of the strip; it stays while the pointer is on the
+ // strip or on the card (its "7 天日历 ›" link), and on keyboard focus.
+ const cockpit=()=>root.querySelector<HTMLElement>('#cockpit')??root;
+ const openCalendar=(key:string)=>{hideCard();root.dispatchEvent(new CustomEvent('cockpit-calendar',{detail:{scope:key,range:'7d'}}));};
+ let card:HTMLElement|null=null;
+ const hideCard=()=>{card?.remove();card=null;};
+ const showCard=(hit:HTMLElement)=>{const sub=Number(hit.dataset.strip),key=calendar?.subs[sub]?.key;if(!calendar||key===undefined)return;hideHint();
+  card=stripCard(cockpit(),hit,calendar,sub,locale,()=>openCalendar(key));
+  card.addEventListener('pointerleave',e=>{if(!(e.relatedTarget instanceof Element&&e.relatedTarget.closest('.ec-strip')))hideCard();});};
+ host.addEventListener('pointerover',e=>{const hit=e.target instanceof Element?e.target.closest<HTMLElement>('.ec-strip'):null;if(hit&&host.contains(hit)){if(card?.dataset.strip!==hit.dataset.strip){showCard(hit);if(card)card.dataset.strip=hit.dataset.strip??'';}}});
+ host.addEventListener('pointerout',e=>{const from=e.target instanceof Element?e.target.closest('.ec-strip'):null,to=e.relatedTarget instanceof Element?e.relatedTarget:null;if(from&&!(to&&(to.closest('.ec-next')||from.contains(to))))hideCard();});
+ host.addEventListener('focusin',e=>{const hit=e.target instanceof Element?e.target.closest<HTMLElement>('.ec-strip'):null;if(hit){showCard(hit);if(card)card.dataset.strip=hit.dataset.strip??'';}});
+ host.addEventListener('focusout',e=>{const to=e.relatedTarget instanceof Element?e.relatedTarget:null;if(!(to&&to.closest('.ec-next')))hideCard();});
+ host.addEventListener('click',e=>{if(!e.isTrusted)return;const hit=e.target instanceof Element?e.target.closest<HTMLElement>('.ec-strip'):null;const key=hit?calendar?.subs[Number(hit.dataset.strip)]?.key:undefined;if(key!==undefined)openCalendar(key);});
  host.addEventListener('pointerover',e=>showHint(e.target));host.addEventListener('pointerleave',hideHint);
  host.addEventListener('focusin',e=>showHint(e.target));host.addEventListener('focusout',hideHint);
  host.onclick=e=>{if(!e.isTrusted)return;const b=(e.target as Element).closest<HTMLButtonElement>('button');if(!b||!host.contains(b))return;

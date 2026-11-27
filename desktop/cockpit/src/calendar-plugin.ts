@@ -336,6 +336,8 @@ export const calendarPlugin:CockpitPlugin=Object.freeze({
  icon:`<svg viewBox="0 0 16 16" aria-hidden="true">${PLUGIN_ICON_FRAME}<path d="M1 6h14M5 0.5v3M11 0.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>`,
  underline:'#87939e',
  defaultEnabled:true,
+ // D466: the calendar is the big screen's fixed 日历 page (calendar-page.ts); it no longer takes a column or a key.
+ pageOnly:true,
  settings:Object.freeze([]),
  /** A host push or the page's own shaping (`derive`): bounded as JSON, then the strict parser. */
  accept(data:unknown){

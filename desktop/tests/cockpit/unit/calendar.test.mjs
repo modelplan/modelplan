@@ -329,3 +329,42 @@ test('D406 round 2: the half-hour floor is local: 00:05 in Asia/Kathmandu stays 
   assert.equal(new Date(span.to).getDate(),26);assert.equal(new Date(span.to).getHours(),0);
  }finally{process.env.TZ=keep;}
 });
+
+// D466: one item list behind the strip, its hover card and the 日历 page. Multi-day facts are one item on their day
+// (never a span); weekly resets are projected by the window's length; the subscription filter keeps one lane.
+test('D466 calendarModel: peaks, own resets (weekly projected), timed announcement, reserve expiry as one all-day item',async()=>{
+ const {calendarModel,filterModel,within}=await import('../../../cockpit/.tmp/compiled/src/calendar-model.js');
+ const {data}=display(),m=calendarModel(data,NOW);
+ assert.deepEqual(m.subs.map(s=>[s.name.en,s.rules]),[['Claude Code',false],['Codex',false],['GLM Coding',true]]);
+ const kinds=sub=>m.items.filter(x=>x.sub===sub).map(x=>x.kind);
+ assert.ok(kinds(2).includes('peak'));
+ const weeks=m.items.filter(x=>x.sub===0&&x.kind==='resetWeek');
+ assert.equal(weeks[0].at,local(2026,11,12,9));assert.equal(weeks[0].projected,false);
+ assert.ok(weeks.length>=4&&weeks.slice(1).every(x=>x.projected));
+ const reserve=m.items.filter(x=>x.kind==='reserve');
+ assert.equal(reserve.length,1,'one item, never a span');assert.equal(reserve[0].allDay,true);assert.equal(reserve[0].at,local(2026,11,13,18));
+ const official=m.items.find(x=>x.kind==='official');
+ assert.equal(official.sub,2);assert.equal(official.allDay,false);assert.equal(official.status,'announced');
+ assert.equal(m.items.some(x=>x.sub<0),false,'a row the user does not have adds nothing');
+ const only=filterModel(m,m.subs[2].key);
+ assert.equal(only.subs.length,1);assert.ok(only.items.every(x=>x.sub===0));assert.ok(only.items.some(x=>x.kind==='peak'));
+ assert.equal(filterModel(m,null),m);
+ assert.ok(within(m.items,NOW,NOW+24*HOUR).some(x=>x.kind==='peak'&&x.sub===2));
+});
+test('D466 the strip hover card: the next 24 h, else "nothing" and the next two items after it, with peak state for a rules plan',async()=>{
+ globalThis.document??={documentElement:{}};
+ const {setLanguage}=await import('../../../cockpit/study/rocket-r1/i18n.js');
+ const {calendarModel}=await import('../../../cockpit/.tmp/compiled/src/calendar-model.js');
+ const {nextLines}=await import('../../../cockpit/.tmp/compiled/src/calendar-page.js');
+ setLanguage('zh-CN');
+ const {data}=display(),m=calendarModel(data,NOW);
+ const glm=nextLines(m,2,'zh-CN');
+ assert.equal(glm.title,'GLM Coding · 接下来 24 小时');assert.equal(glm.now,'闲时');assert.equal(glm.empty,false);
+ assert.ok(glm.lines.some(l=>l.time==='22:00–02:00'&&l.text==='高峰'));
+ // Codex has no rules and (here) nothing in 24 h beyond its 5 h reset; drop that to see the "later" form.
+ const quiet={...m,items:m.items.filter(x=>!(x.sub===1&&x.at<NOW+24*HOUR))};
+ const codex=nextLines(quiet,1,'zh-CN');
+ assert.equal(codex.now,null);assert.equal(codex.empty,true);assert.ok(codex.lines.length<=2);
+ setLanguage('en');
+ assert.equal(nextLines(m,2,'en').now,'Off-peak');
+});

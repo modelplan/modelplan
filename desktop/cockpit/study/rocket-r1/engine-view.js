@@ -9,7 +9,8 @@ import './strings/review49.js';
 const TAG = {'5h':'eng.t5h', day:'eng.tDay', week:'eng.tWeek', month:'eng.tMonth'};
 const LABEL = {'5h':'eng.row5h', day:'eng.rowDay', week:'eng.rowWeek', month:'eng.rowMonth'};
 const H = 3600e3;
-export const rowsTemplate = m => [m.rows.length ? `repeat(${m.rows.length},minmax(0,1fr))` : '', '23px', m.reserve ? '32px' : ''].filter(Boolean).join(' ');
+// D464: the range row holds the big token figure (32 px); the reserve is one quiet line (26 px).
+export const rowsTemplate = m => [m.rows.length ? `repeat(${m.rows.length},minmax(0,1fr))` : '', '32px', m.reserve ? '26px' : ''].filter(Boolean).join(' ');
 const shortTime = n => n >= 1440 ? `${Math.floor(n/1440)}d` : n >= 60 ? `${Math.floor(n/60)}h` : `${Math.floor(n)}m`;
 const until = (ms, now) => {const h=Math.max(0,Math.floor((ms-now)/H));return h>48?`${Math.floor(h/24)}d${h%24}h`:`${h}h`;};
 const bar = c => `<span class="qmeter"><span class="qbar">${Array.from({length:10},(_,i)=>`<i${i<c.lit?' class="on"':''}></i>`).join('')}</span>${c.timeLit==null?'':`<span class="qtime" data-frac="${c.timeLeft}" aria-hidden="true">${Array.from({length:10},(_,i)=>`<i${i<c.timeLit?' class="on"':''}></i>`).join('')}</span>`}</span>`;
@@ -63,13 +64,13 @@ function cell(col,c,row,m,ui,fresh,lead){
   return `<div class="qcell lv-${c.level}${c.extra?' qx':''}${c.drawing?' used':''}${c.noData?' nodata':''}" data-row="${row}" data-kind="${c.extra?'extra':c.kind}" data-tag="${esc(tag)}" data-more="${c.more||0}"${paint(c)} ${tipAttr} aria-label="${esc(tip)}">
     <span class="qline"><b class="qnum${fresh?' lcd-in':''}"><span class="qvalue">${c.value==null?'--':Math.round(c.value)}</span>${c.value==null?'':'<small>%</small>'}</b><em class="qtxt${n.warn?' warn':''}${n.crit?' crit':''}${n.dim?' dim':''}" data-full="${esc(full)}" data-short="${esc(short)}" data-small="${esc(smallest)}">${esc(full)}</em></span>${bar(c)}</div>`;
 }
-// CKP-ENG-53: the range row, ≈cost first and brightest, then tokens, then speed; the host drops speed and then tokens
-// when they do not fit (never a clipped "42/s"). No usage record at all: "quota only" (CKP-ENG-50).
+// D464 (reverses CKP-ENG-53's order, D290(2)): the range row leads with tokens, the big figure, then ≈cost, then speed;
+// the host drops speed and then ≈cost when they do not fit; tokens never drop. No usage record at all: "quota only" (CKP-ENG-50).
 const cap=r=>r==='today'?'Today':r;
 function today(col,m){
  const range=m.range||'today';
  const cost=approxCost(col.cost);
- const parts=(cost?`<span class="qcost" title="${esc(t('eng.costHint'))}" aria-label="${esc(cost+' · '+t('eng.costHint'))}">${esc(cost)}</span>`:'')+(col.today==null?'':`<span class="qtokens">${tok(col.today)}</span>`)+(col.speed==null?'':`<span class="qaverage" aria-label="${esc(t('eng.averageAria',{n:col.speed}))}">${Math.round(col.speed)}<em> t/s</em></span>`);
+ const parts=(col.today==null?'':`<span class="qtokens">${tok(col.today)}</span>`)+(cost?`<span class="qcost" title="${esc(t('eng.costHint'))}" aria-label="${esc(cost+' · '+t('eng.costHint'))}">${esc(cost)}</span>`:'')+(col.speed==null?'':`<span class="qaverage" aria-label="${esc(t('eng.averageAria',{n:col.speed}))}">${Math.round(col.speed)}<em> t/s</em></span>`);
  return `<div class="qrow qrow-t" aria-label="${esc(t(range==='today'?'eng.todayBasis':'eng.rangeBasis'))}">${parts||(col.noUsage?`<span class="qq">${t('eng.noUsage',{r:t('eng.noUsageRange'+cap(range))})}</span>`:col.quotaOnly?`<span class="qq">${t('eng.quotaOnly')}</span>`:'')}</div>`;}
 function reserve(col,m,ui){
   const r=col.reserve;if(!r)return '<div class="qrow qrow-r"></div>';
