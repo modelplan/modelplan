@@ -39,5 +39,6 @@ register('cal', {
   nothingRange: ['line', '这段时间没有重置', 'No resets in this range'],
   span24: ['line', '接下来 24 小时 · {a} → {b}', 'Next 24 h · {a} → {b}'],
   legend: ['aria', '色块 = 高峰 · 白 = 重置 · 琥珀虚线 = 预计用完 · 蓝 = 官方公告', 'Block = peak · white = reset · amber dash = run-out · blue = official'],
+  until: ['line', '至 {d}', 'until {d}'],
   in: ['lcd', '{t} 后', 'in {t}'],
 });

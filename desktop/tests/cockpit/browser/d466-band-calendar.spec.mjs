@@ -39,7 +39,7 @@ async function open(page,{locale='zh-CN',data=band(),range}={}){
  await page.addInitScript(()=>{window.__posts=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__posts.push(JSON.parse(raw));}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,...(range?{range}:{})},redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,range:range??'today'},redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('plugins',{plugins:PLUGINS}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
@@ -53,7 +53,7 @@ test('D466 no 日历 key or Calendar column with the calendar plugin on; short k
  await expect(page.locator('.eng-keys .pl-key[data-plugin="resources"]')).toHaveCount(1);
  const names=page.locator('.eng-keys .ek[data-sub] .ek-name');
  await expect(names).toHaveText(['Codex','ZCode']);
- await expect(page.locator('.eng-keys .ek[data-sub]').nth(1)).toHaveAttribute('title',/ZCode \/ GLM/);
+ await expect(page.locator('.eng-keys .ek[data-sub]').nth(1)).toHaveAttribute('data-hc',/ZCode \/ GLM/);
  // Two Codex subscriptions: the tier (plan) tells them apart.
  const second=structuredClone(data.projection.rows[0]);second.accounts[0].subscriptionRef='00000000000000aa';second.accounts[0].accountLocator='00000000000000aa';second.accounts[0].plan={...second.accounts[0].plan,id:'plus',name:{en:'Plus',zh:'Plus'}};
  data.projection.rows[0].accounts.push(second.accounts[0]);data.subscriptions.push({subscriptionRef:'00000000000000aa',accounts:[{tool:'codex',account:structuredClone(second.accounts[0])}]});
@@ -71,43 +71,126 @@ test('D464 the range row: tokens are the big figure, then ≈cost, then speed',a
  expect(await row.evaluate(r=>r.scrollWidth<=r.clientWidth)).toBe(true);
 });
 
-test('D466 every subscription column draws its 24 h strip: now bar, peak block, reset tick; text stops before it',async({page})=>{
+// D474 §4.2, §6.1, C25 (the calm strip): no now bar, no track; a reset is a 2 pt notch inside the rail, a peak a maker tint;
+// nothing falls in 24 h: nothing is drawn. The hit area is the column's text margin wide (16 pt; 10 pt narrow) and spans the
+// quota rows, never over text; a faint rail shows on column hover.
+test('D466 the calm strip: no now bar, no track; a notch for a reset, a tint for a peak; the hit area is the 16 pt text margin and never over text',async({page})=>{
  await open(page);
  await expect(cols(page)).toHaveCount(2);
  for(const i of [0,1]){
   const col=cols(page).nth(i),hit=col.locator('.ec-strip');
-  await expect(hit).toHaveCount(1);await expect(hit.locator('.st-now')).toHaveCount(1);
-  const [h,bar,c]=await Promise.all([hit.boundingBox(),hit.locator('.ec-strip-bar').boundingBox(),col.boundingBox()]);
-  expect(bar.width).toBeCloseTo(6,0);expect(h.width).toBeGreaterThanOrEqual(12);
+  await expect(hit).toHaveCount(1);
+  await expect(hit.locator('.st-now,.st-h,.st-mid')).toHaveCount(0);
+  const [h,bar,c,range]=await Promise.all([hit.boundingBox(),hit.locator('.ec-strip-bar').boundingBox(),col.boundingBox(),col.locator('.qrow-t').boundingBox()]);
+  expect(h.width).toBeCloseTo(16,0);expect(bar.width).toBeCloseTo(6,0);
   expect(h.x+h.width).toBeLessThanOrEqual(c.x+c.width+.5);
+  expect(h.y+h.height).toBeLessThanOrEqual(range.y+.5);// spans the quota rows, stops at the range row
+  expect(h.height).toBeGreaterThan(60);
   // No cell text runs under the strip.
-  const right=await col.locator('.qtxt,.qtokens,.qrv-c,.qrv-p').evaluateAll(es=>Math.max(...es.filter(e=>e.getClientRects().length).map(e=>e.getBoundingClientRect().right)));
-  expect(right).toBeLessThanOrEqual(h.x);
+  const right=await col.locator('.qtxt,.qnum').evaluateAll(es=>Math.max(...es.filter(e=>e.getClientRects().length).map(e=>e.getBoundingClientRect().right)));
+  expect(right).toBeLessThanOrEqual(h.x+.5);
+  // No track: the rail is invisible until the column is hovered or focused.
+  expect(await hit.locator('.ec-strip-bar').evaluate(e=>getComputedStyle(e).backgroundColor)).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
  }
  const z=cols(page).nth(1).locator('.ec-strip');
  await expect(z.locator('.st-peak')).toHaveCount(1);await expect(z.locator('.st-reset')).toHaveCount(1);
- const [peak,bar]=await Promise.all([z.locator('.st-peak').boundingBox(),z.locator('.ec-strip-bar').boundingBox()]);
- // 22:00 is 12h20 after 09:40: just past the middle of the 24 h bar.
+ const [peak,notch,bar]=await Promise.all([z.locator('.st-peak').boundingBox(),z.locator('.st-reset').boundingBox(),z.locator('.ec-strip-bar').boundingBox()]);
+ // 22:00 is 12h20 after 09:40: just past the middle of the 24 h bar. The notch is as wide as the rail and 2 pt high, inside it.
  expect((peak.y-bar.y)/bar.height).toBeGreaterThan(.48);expect((peak.y-bar.y)/bar.height).toBeLessThan(.56);
- // Codex has no rules and nothing timed in 24 h: the strip is still there, with only the now bar.
- await expect(cols(page).nth(0).locator('.ec-strip .st-peak,.ec-strip .st-reset')).toHaveCount(0);
+ expect(notch.width).toBeCloseTo(bar.width,0);expect(notch.height).toBeCloseTo(2,0);expect(notch.x).toBeGreaterThanOrEqual(bar.x-.5);
+ expect(await z.locator('.st-peak').evaluate(e=>getComputedStyle(e).opacity)).toBe('0.38');
+ // Codex has nothing timed in 24 h: nothing is drawn at all.
+ await expect(cols(page).nth(0).locator('.ec-strip i')).toHaveCount(0);
+ // The faint rail shows on column hover (an empty strip is still findable).
+ await cols(page).nth(0).hover({position:{x:20,y:20}});
+ expect(await cols(page).nth(0).locator('.ec-strip-bar').evaluate(e=>getComputedStyle(e).backgroundColor)).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
 });
 
-test('D466 strip hover: the card opens to the left with "接下来" lines and "7 天日历 ›"',async({page})=>{
- await open(page);
- const z=cols(page).nth(1).locator('.ec-strip');
+// n synthetic subscriptions (the width spec's fixture): 6 columns in 中文 are narrow (91 pt).
+function many(n){
+ const data=visualFixture().data,seed=data.projection.rows[0],detail=data.details.subscriptions[0];
+ data.projection.rows=[];data.subscriptions=[];data.details.subscriptions=[];data.details.forecasts=[];data.details.resetEvents=[];data.details.sessions=[];
+ for(let i=0;i<n;i++){
+  const row=structuredClone(seed),ref=(i+1).toString(16).padStart(16,'0'),a=row.accounts[0];
+  row.id=`synthetic-${i+1}`;row.name={en:`Sub ${i+1}`,zh:`订阅${i+1}`};
+  Object.assign(a,{subscriptionRef:ref,accountLocator:ref,valueState:'current',observedAt:iso(NOW-3*60000),lastFailure:null});a.plan.name=null;a.windows=a.windows.slice(0,2);
+  Object.assign(a.windows[0],{current:true,validUntil:iso(NOW+600*60000),resetsAt:iso(NOW+2*H),remainingPercent:80});
+  Object.assign(a.windows[1],{current:true,validUntil:iso(NOW+600*60000),resetsAt:iso(NOW+100*H),remainingPercent:53});
+  data.projection.rows.push(row);data.subscriptions.push({subscriptionRef:ref,accounts:[{tool:row.id,account:structuredClone(a)}]});
+  data.details.subscriptions.push({...structuredClone(detail),subscriptionRef:ref,today:[{...detail.today[0],source:row.id}]});
+ }
+ data.details.peaks=[];
+ return data;
+}
+test('D466 a narrow column: a 10 pt hit area and a 3 pt rail, still left of the text; the 2 h reset is a notch inside it',async({page})=>{
+ await open(page,{data:many(6)});
+ await expect(cols(page)).toHaveCount(6);
+ await expect(page.locator('.eng-lcd')).toHaveClass(/cls-narrow/);
+ const col=cols(page).nth(2),hit=col.locator('.ec-strip');
+ const [h,bar]=await Promise.all([hit.boundingBox(),hit.locator('.ec-strip-bar').boundingBox()]);
+ expect(h.width).toBeCloseTo(10,0);expect(bar.width).toBeCloseTo(3,0);
+ const right=await col.locator('.qtxt,.qnum').evaluateAll(es=>Math.max(...es.filter(e=>e.getClientRects().length).map(e=>e.getBoundingClientRect().right)));
+ expect(right).toBeLessThanOrEqual(h.x+.5);
+ await expect(hit.locator('.st-reset')).toHaveCount(1);
+});
+
+// macrev2-1291-3: the card is reachable by ordinary pointer travel from the strip to its "7 天日历 ›" link (no gap that closes it).
+for(const locale of ['zh-CN','en'])test(`D466 strip hover: the card opens to the left, stays open while the pointer travels to its link, and the link opens the filtered week (${locale})`,async({page})=>{
+ const {send,receive}=await open(page,{locale});
+ const zh=locale==='zh-CN',z=cols(page).nth(1).locator('.ec-strip');
  await z.hover();
  const card=page.locator('.ec-next');
  await expect(card).toBeVisible();
- await expect(card.locator('.h')).toHaveText('ZCode · 接下来 24 小时');
- await expect(card.locator('.ln.now')).toContainText('闲时');
- await expect(card).toContainText('13:04');await expect(card).toContainText('5 小时额度重置');await expect(card).toContainText('22:00–02:00');
- await expect(card.locator('.ln.link')).toHaveText('7 天日历 ›');
+ await expect(card.locator('.h')).toHaveText(zh?'ZCode · 接下来 24 小时':'ZCode · next 24 hours');
+ await expect(card.locator('.ln.now')).toContainText(zh?'闲时':'Off-peak');
+ await expect(card).toContainText('13:04');await expect(card).toContainText('22:00–02:00');
  const [c,s]=await Promise.all([card.boundingBox(),z.boundingBox()]);
  expect(c.x+c.width).toBeLessThanOrEqual(s.x+.5);
+ expect(s.x-(c.x+c.width)).toBeLessThanOrEqual(0.5);// no gap between the strip and the card
+ // Stepped, trusted travel from the strip to the link: the card never closes on the way.
+ const link=card.locator('.ln.link'),l=await link.boundingBox();
+ const from={x:s.x+s.width/2,y:s.y+s.height/2},to={x:l.x+l.width/2,y:l.y+l.height/2};
+ for(let i=1;i<=24;i++){await page.mouse.move(from.x+(to.x-from.x)*i/24,from.y+(to.y-from.y)*i/24);await expect(page.locator('.ec-next')).toHaveCount(1);}
+ await link.click();
+ await expect(page.locator('.mfd-pk .pk[data-mfd="page:calendar"]')).toHaveAttribute('aria-pressed','true');
+ const asked=await page.evaluate(()=>window.__posts.filter(m=>m.type==='action'&&m.action==='rangeSelect').map(m=>m.key));
+ expect(asked.at(-1)).toBe('7d');
+ expect(await receive(send('shell',{...shell,range:'7d'}))).toBe(true);
+ await expect(page.locator('.pg-calendar .cal-chip')).toHaveText(zh?'只看 ZCode✕':'Only ZCode✕');
  // Codex: nothing in 24 h, so the card says so and lists what comes after.
+ await page.mouse.move(2,2);
+ await page.locator('.mfd-pk .pk[data-mfd="page:overview"]').click();
  await cols(page).nth(0).locator('.ec-strip').hover();
- await expect(card.locator('.ln.quiet')).toHaveText('没有重置，也没有高峰');await expect(card).toContainText('之后');await expect(card).toContainText('每周额度重置');
+ await expect(page.locator('.ec-next .ln.quiet')).toHaveText(zh?'没有重置，也没有高峰':'Nothing in the next 24 h');
+});
+// D474 §7.3 (G-d): Tab walks the band column by column: a column's cells top to bottom, its range and reserve rows, then its strip, then
+// the next column. Arrows move across rows and columns. Enter on a strip opens its filtered calendar.
+test('D466 keyboard: Tab walks the band column by column and ends each column on its strip; arrows move across; Enter opens the calendar',async({page})=>{
+ await open(page);
+ await cols(page).nth(0).locator('.qcell[tabindex="0"]').first().focus();
+ const stops=[];
+ for(let i=0;i<14;i++){
+  stops.push(await page.evaluate(()=>{const e=document.activeElement,c=e.closest('.ec[data-col]');if(!c)return null;
+   return {col:[...document.querySelectorAll('.eng-cols > .ec[data-col]')].indexOf(c),kind:e.classList.contains('ec-strip')?'strip':e.classList.contains('qcell')?'cell':e.classList.contains('qrow-t')?'range':e.classList.contains('qrow-r')?'reserve':'other'};}));
+  await page.keyboard.press('Tab');
+ }
+ const seq=stops.filter(Boolean);
+ const firstStrip=seq.findIndex(x=>x.kind==='strip');
+ expect(firstStrip).toBeGreaterThan(1);
+ expect(seq.slice(0,firstStrip+1).every(x=>x.col===0),'column 0 is walked completely before column 1').toBe(true);
+ expect(seq[firstStrip+1].col).toBe(1);
+ expect(seq.slice(0,firstStrip).every(x=>x.kind!=='strip'),'the strip comes after the cells').toBe(true);
+ // Arrows: Right moves to the same row of the next column; Down to the next item of the column.
+ const a=cols(page).nth(0).locator('.qcell[data-row="second"]');await a.focus();
+ await page.keyboard.press('ArrowRight');
+ expect(await page.evaluate(()=>{const e=document.activeElement;return [[...document.querySelectorAll('.eng-cols > .ec[data-col]')].indexOf(e.closest('.ec')),e.dataset.row];})).toEqual([1,'second']);
+ await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowDown');
+ expect(await page.evaluate(()=>[[...document.querySelectorAll('.eng-cols > .ec[data-col]')].indexOf(document.activeElement.closest('.ec')),document.activeElement.dataset.row??document.activeElement.className.split(' ')[1]])).toEqual([0,expect.anything()]);
+ // Enter on a strip: the filtered calendar.
+ await cols(page).nth(1).locator('.ec-strip').focus();
+ await expect(page.locator('.ec-next')).toBeVisible();
+ await page.keyboard.press('Enter');
+ await expect(page.locator('.mfd-pk .pk[data-mfd="page:calendar"]')).toHaveAttribute('aria-pressed','true');
 });
 
 for(const via of ['strip','link'])test(`D466 ${via}: opens the 日历 tab filtered to that subscription, "只看 X ✕" shows all again`,async({page})=>{
@@ -120,6 +203,9 @@ for(const via of ['strip','link'])test(`D466 ${via}: opens the 日历 tab filter
  await expect(page.locator('.mfd-pk .pk-seg')).toBeHidden();// a fixed page, not a plugin screen: no "‹ 总览 │ 日历" switch
  const asked=await page.evaluate(()=>window.__posts.filter(m=>m.type==='action'&&m.action==='rangeSelect').map(m=>m.key));
  expect(asked.at(-1)).toBe('7d');
+ // The filter chip is local to 日历 (audit 16): it asks for no header scope change, and the band keeps its own highlight.
+ expect(await page.evaluate(()=>window.__posts.filter(m=>m.type==='action'&&m.action==='scopeSelect').length)).toBe(0);
+ await expect(page.locator('.eng-keys .ek[aria-pressed="true"]')).toHaveCount(0);
  expect(await receive(send('shell',{...shell,range:'7d'}))).toBe(true);
  const chip=page.locator('.pg-calendar .cal-chip');
  await expect(chip).toHaveText('只看 ZCode✕');
@@ -172,7 +258,7 @@ for(const locale of ['zh-CN','en'])test(`D466 five page keys and the Resources s
  await page.locator('.eng-keys .pl-key[data-plugin="resources"]').click();
  await expect(page.locator('.dk-mfd .mfd-pk .pk-seg')).toBeVisible();
  expect(await clipped()).toEqual([]);
- const open=await widths();expect(open).toHaveLength(5);expect(new Set(open).size).toBe(1);
+ const opened=await widths();expect(opened).toHaveLength(5);expect(new Set(opened).size).toBe(1);
  const fit=await page.evaluate(()=>{const s=document.querySelector('.mfd-pk .pk-seg').getBoundingClientRect();return [...document.querySelectorAll('.mfd-pk .pk-seg [role=tab]')].every(h=>{const r=h.getBoundingClientRect();return r.left>=s.left-.5&&r.right<=s.right+.5;});});
  expect(fit).toBe(true);
 });
@@ -190,6 +276,106 @@ test('D466 the agenda news line and the key dot retire together at the look dead
  expect(await receive(send('tick',{nowUnixMs:String(NOW+30*60_000),reason:'deadline'}))).toBe(true);
  await expect(page.locator('.pg-calendar .cal-news')).toHaveCount(0);
  await expect(page.locator('.eng-keys .ek[data-sub] .ek-news')).toHaveCount(0);
- expect(await receive(send('shell',{...shell,range:'7d'}))).toBe(true);
+});
+
+// The banked reset's chip stays on its issue day after its news clock; it turns muted (the calendar is a record).
+test('D466 the banked reset chip on the week retires with its news clock and stays on its day, muted',async({page})=>{
+ const data=band(),at=local(27,0,29);
+ data.details.resetEvents=[{version:1,id:'codex-banked-1127',provider:'openai',rowId:'codex',kind:'reset_credit',status:'confirmed',publishedAt:iso(at-H),confirmedAt:iso(at),expiresAt:iso(at+28*24*H),source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];
+ const {send,receive}=await open(page,{data,range:'7d'});
+ await page.locator('.mfd-pk .pk[data-mfd="page:calendar"]').click();
+ await expect(page.locator('.pg-calendar .w7-chip.credit.news')).toHaveCount(1);
+ expect(await receive(send('tick',{nowUnixMs:String(NOW+30*60_000),reason:'deadline'}))).toBe(true);
+ await expect(page.locator('.pg-calendar .w7-chip.credit.news')).toHaveCount(0);
  await expect(page.locator('.pg-calendar .w7-chip.credit.past')).toHaveCount(1);
+});
+
+// ---- macrev2-1291-4..7: the calendar's data, through the normal bridge ------------------------------------------------------
+const event=(o)=>({version:1,provider:'openai',rowId:'codex',status:'announced',publishedAt:iso(NOW-H),expiresAt:iso(NOW+20*24*H),source:{kind:'publication',publicationId:'0123456789abcdef01234567'},...o});
+const weekChips=(page,sel)=>page.locator(`.pg-calendar ${sel}`);
+async function toWeek(page,{send,receive,locale}={}){
+ await page.locator('.mfd-pk .pk[data-mfd="page:calendar"]').click();
+ expect(await receive(send('shell',{...shell,range:'7d'}))).toBe(true);
+ await expect(page.locator('.pg-calendar .cal-wk7')).toBeVisible();
+ void locale;
+}
+
+// macrev2-1291-7: no 16-subscription transport cap on the fixed page: the last bank's last column has its strip, its own filtered
+// calendar, and its lane in Today.
+test('macrev2-1291-7 with 17 subscriptions the last column still has its strip, opens its own filtered calendar, and Today has 17 lanes',async({page})=>{
+ const {send,receive}=await open(page,{data:many(17)});
+ for(let i=0;i<2;i++)await page.locator('[data-bpage="1"]').click();
+ await expect(page.locator('.eng-pgn')).toHaveText('3/3');
+ const last=cols(page).last();
+ await expect(last.locator('.ec-strip')).toHaveCount(1);
+ await last.locator('.ec-strip').click();
+ await expect(page.locator('.mfd-pk .pk[data-mfd="page:calendar"]')).toHaveAttribute('aria-pressed','true');
+ expect(await receive(send('shell',{...shell,range:'7d'}))).toBe(true);
+ await expect(page.locator('.pg-calendar .cal-chip')).toHaveText('只看 订阅17✕');
+ await page.locator('.pg-calendar .cal-chip').click();
+ expect(await receive(send('shell',{...shell,range:'today'}))).toBe(true);
+ await expect(page.locator('.pg-calendar .cal-ag .ag-lane')).toHaveCount(17);
+});
+
+// macrev2-1291-4: a published peak is plan-wide for its row: every subscription on it has the peak in its strip and agenda.
+test('macrev2-1291-4 two ZCode accounts share one published peak: both strips and both filtered weeks carry it',async({page})=>{
+ const data=band(),zrow=data.projection.rows[1];
+ const second=structuredClone(zrow.accounts[0]);second.subscriptionRef='00000000000000bb';second.accountLocator='00000000000000bb';
+ zrow.accounts.push(second);data.subscriptions.push({subscriptionRef:'00000000000000bb',accounts:[{tool:'zai',account:structuredClone(second)}]});
+ data.details.subscriptions.push({...structuredClone(data.details.subscriptions[1]),subscriptionRef:'00000000000000bb'});
+ const {send,receive}=await open(page,{data});
+ await expect(cols(page)).toHaveCount(3);
+ const counts=await cols(page).evaluateAll(cs=>cs.map(c=>c.querySelectorAll('.ec-strip .st-peak').length));
+ expect(counts,'Codex has none; both ZCode accounts have the peak').toEqual([0,1,1]);
+ await cols(page).nth(2).locator('.ec-strip').click();
+ expect(await receive(send('shell',{...shell,range:'7d'}))).toBe(true);
+ await expect(page.locator('.pg-calendar .w7-pk').first()).toBeVisible();
+});
+
+// macrev2-1291-5: a banked reset is a reserve event: one all-day chip on its issue day, never a timed chip; an official window
+// that spans days sits on its start day with its range in the words; every known reserve expiry is its own chip.
+test('macrev2-1291-5 a scheduled banked reset is an all-day chip on its issue day, not a timed chip',async({page})=>{
+ const data=band();
+ data.details.resetEvents=[event({id:'credit-sched',kind:'reset_credit',schedule:{from:iso(local(28,13)),through:iso(local(28,15)),precision:'window'}})];
+ const ctx=await open(page,{data});await toWeek(page,ctx);
+ await expect(weekChips(page,'.w7-chip.credit')).toHaveCount(1);
+ await expect(weekChips(page,'.w7-rc.credit')).toHaveCount(0);
+ const [chip,day]=await Promise.all([weekChips(page,'.w7-chip.credit').boundingBox(),page.locator('.pg-calendar .w7-dh').nth(1).boundingBox()]);
+ expect(chip.x).toBeGreaterThanOrEqual(day.x-1);expect(chip.x+chip.width).toBeLessThanOrEqual(day.x+day.width+1);
+});
+test('macrev2-1291-5 a multi-day official window sits on its start day with its range in the words, not at its midpoint',async({page})=>{
+ const data=band();
+ data.details.resetEvents=[event({id:'official-span',kind:'direct_reset',schedule:{from:iso(local(28,10)),through:iso(local(30,10)),precision:'window'}})];
+ const ctx=await open(page,{data});await toWeek(page,ctx);
+ await page.locator('.pg-calendar .w7-dh').nth(1).click();// the start day (28th)
+ const li=page.locator('.pg-calendar .w7-li',{hasText:'官方额度重置'});
+ await expect(li).toHaveCount(1);await expect(li).toContainText('官方额度重置');await expect(li).toContainText('至 11/30');await expect(li.locator('b')).toHaveText('10:00');
+ await page.locator('.pg-calendar .w7-dh').nth(2).click();// the midpoint day (29th) has nothing
+ await expect(page.locator('.pg-calendar .w7-li',{hasText:'官方额度重置'})).toHaveCount(0);
+});
+test('macrev2-1291-5 every known reserve expiry is its own chip in the week; a partial inventory invents no later date',async({page})=>{
+ const data=band();
+ data.details.subscriptions[0].resetCards={state:'complete',count:2,truncated:false,sources:[],items:[{id:'1'.padStart(64,'0'),expiresAt:iso(NOW+50*H)},{id:'2'.padStart(64,'0'),expiresAt:iso(NOW+100*H)}]};
+ const ctx=await open(page,{data});await toWeek(page,ctx);
+ await expect(weekChips(page,'.w7-chip.reserve')).toHaveCount(2);
+ // Partial: only its own earliest expiry is known.
+ data.details.subscriptions[0].resetCards={state:'partial',count:2,truncated:true,earliestExpiresAt:iso(NOW+50*H),sources:[],items:[{id:'1'.padStart(64,'0'),expiresAt:iso(NOW+50*H)}]};
+ expect(await ctx.receive(ctx.send('display',{data}))).toBe(true);
+ await expect(weekChips(page,'.w7-chip.reserve')).toHaveCount(1);
+});
+
+// macrev2-1291-6: a dense all-day day keeps the grid and the picked day's list usable and every item reachable.
+test('macrev2-1291-6 seven all-day items on one day: two chip lines at most, a +N chip, and the day list keeps its height with every item',async({page})=>{
+ const data=band();
+ data.details.resetEvents=Array.from({length:7},(_,i)=>event({id:`dense-${i}`,kind:'direct_reset',schedule:{from:iso(local(27,0)),through:iso(local(27,0)),precision:'date'}}));
+ const ctx=await open(page,{data});await toWeek(page,ctx);
+ const ad=page.locator('.pg-calendar .w7-ad');
+ expect((await ad.boundingBox()).height).toBeLessThanOrEqual(32);
+ await expect(page.locator('.pg-calendar .w7-more')).toHaveText('+6');
+ const list=page.locator('.pg-calendar .w7-list');
+ expect((await list.boundingBox()).height).toBeGreaterThanOrEqual(40);
+ await expect(list.locator('.w7-li',{hasText:'官方额度重置'})).toHaveCount(7);
+ const grid=await page.locator('.pg-calendar .w7-body').boundingBox();expect(grid.height).toBeGreaterThan(60);
+ await page.locator('.pg-calendar .w7-more').click();
+ await expect(page.locator('.pg-calendar .w7-dh.sel')).toHaveAttribute('data-day','0');
 });

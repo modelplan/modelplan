@@ -58,8 +58,8 @@ for(const [lang,unreadable,usedUp,quotaOnly,r90,r3000] of [['en','no reading','u
 test('CKP-ENG-50 the hover of a reading with an unknown reset says so (macrevb-1020-2)',()=>{
  const html=view([account('a',[win('5h',75,null),win('week',40,3000)])]);
  const cells=[...html.matchAll(/<div class="qcell[^"]*"[^>]*>/g)].map(m=>m[0]);
- assert.match(cells[0],/data-tip="[^"]*reset \?/,'the unknown-reset cell carries a visible hover');
- assert.doesNotMatch(cells[1],/data-tip=/,'a cell with a known reset shows its time instead');
+ assert.match(cells[0],/data-hc-facts="[^"]*reset \?/,'the unknown-reset cell carries a visible hover');
+ assert.doesNotMatch(cells[1],/data-hc-facts="[^"]*reset \?/,'a cell with a known reset shows its time instead');
 });
 
 for(const [lang,tag] of [['en','MCP · mo'],['zh-CN','MCP · 月']])test(`CKP-ENG-51 the Other row's tag and +N (${lang})`,()=>{
@@ -69,7 +69,7 @@ for(const [lang,tag] of [['en','MCP · mo'],['zh-CN','MCP · 月']])test(`CKP-EN
  assert.equal(other[1],tag);assert.equal(other[2],'1');
  // C33: under the 额外 heading the cell names its window (no period in the cell; the hover says "MCP · 每月额度").
  assert.match(lines(html).at(-1).full,/^MCP .* \+1$/);
- assert.match(html,lang==='en'?/data-tip="[^"]*MCP · monthly quota/:/data-tip="[^"]*MCP · 每月额度/);
+ assert.match(html,lang==='en'?/data-hc-facts="[^"]*MCP · monthly quota/:/data-hc-facts="[^"]*MCP · 每月额度/);
 });
 
 // D474 §3.1 (amends CKP-ENG-52, C24): one quiet line; the expiry clause only within 48 h, in amber; a later expiry is not drawn.

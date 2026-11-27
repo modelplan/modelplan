@@ -9,7 +9,7 @@ process.env.TZ='America/Los_Angeles';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {costView,subscriptionCost,estCostText} from '../../../cockpit/.tmp/compiled/src/prototype-cost.js';
+import {costView,subscriptionCost,estCostText,bandUsage} from '../../../cockpit/.tmp/compiled/src/prototype-cost.js';
 import {assertAscending} from '../chart-order.mjs';
 
 const fx=JSON.parse(readFileSync(new URL('../../../../testdata/cost-fixture/independent-cost.json',import.meta.url),'utf8'));
@@ -70,4 +70,29 @@ test('a range with no priced use has no figure, not $0',()=>{
  const w=wire();w.history.cost.daily=[{at:dayKey(0),source:'codex',estimatedUsd:0,pricedTokens:0,unpricedTokens:6100}];
  const v=costView(w,now);
  assert.equal(v.total.today.cost,null);assert.equal(v.total.today.unpricedShare,1);
+});
+
+// D474 §2.5, G-a: the band's range row is TOTAL tokens (input + cache + output + reasoning), the figure 总览 reads, never the
+// output-only ranking. A source that serves exactly one subscription counts toward it; one shared by two cannot be split.
+test('the band range row: total tokens from cost.daily per exclusive source (Today, 7 and 30 days), equal to the 总览 totals',()=>{
+ const w=wire(),v=costView(w,now),e=fx.window.expected;
+ for(const [range,key,total] of [['today','today','today'],['7d','last7d','last7d'],['30d','last30d','last30d']]){
+  const b=bandUsage(w,ref,range,now);
+  assert.equal(b.tokens,e[key].tokens,`${range}: input + cached + output + reasoning, not output only`);
+  assert.equal(b.tokens,v.total[total].tokens,`${range}: the band equals the 总览 total`);
+  assert.equal(b.from,'cost');assert.equal(b.shared,null);
+ }
+});
+test('G-a: a source shared by two subscriptions is not attributed: today is shared (with the tool total), never half',()=>{
+ const w=wire(),other='fedcba9876543210';
+ w.subscriptions.push({subscriptionRef:other,accounts:[]});
+ w.history.subscriptions.push({subscriptionRef:other,sources:[{source:'codex'}]});
+ const b=bandUsage(w,ref,'today',now);
+ assert.equal(b.tokens,null);assert.equal(b.shared.subscriptions,2);assert.equal(b.shared.total,fx.window.expected.today.tokens,'the tool total, once');
+ // 7 / 30 days stay exact per subscription from history.subscriptions (none recorded here: no figure rather than a guess).
+ assert.equal(bandUsage(w,ref,'7d',now).tokens,null);
+});
+test('without prices (no cost section) the band has no cost.* figure and falls back to the caller\'s output reading',()=>{
+ const w=wire();delete w.history.cost;
+ assert.deepEqual(bandUsage(w,ref,'today',now),{tokens:null,from:null,shared:null,unpricedShare:null,kinds:null});
 });

@@ -29,7 +29,7 @@ export function itemWords(x:CalItem,locale:Locale):string {
   case 'resetMonth':return t('cal.resetMonth',{w:x.label?(locale==='en'?x.label.en:x.label.zh):t('cal.monthly')});
   case 'peak':return t(x.tentative?'cal.peakTentative':'cal.peakSpan');
   case 'runout':return t('cal.runOut');
-  case 'official':return t(x.status==='confirmed'?'cal.officialConf':'cal.officialAnn');
+  case 'official':return t(x.status==='confirmed'?'cal.officialConf':'cal.officialAnn')+(x.until!==null?` · ${t('cal.until',{d:monthDay(x.until)})}`:'');
   case 'credit':return t(x.status==='confirmed'?'cal.creditConf':'cal.creditAnn');
   case 'reserve':return t('cal.reserveLine');
  }
@@ -44,24 +44,27 @@ const marked=(e:HTMLElement,x:CalItem)=>{if(x.news&&x.mark)e.dataset.news=x.mark
 const tone=(x:CalItem)=>x.kind==='peak'?'peak':x.kind==='runout'?'warn':x.kind==='official'||x.kind==='credit'?(x.news?'news':'past'):x.kind==='reserve'?'reserve':'reset';
 
 // --- the 24 h strip ------------------------------------------------------------------------------------------------
-/** Draws the strip of subscription `sub` into `column` (replacing an earlier one). */
+/** §5.3: strip marks sit on a 10-minute grid, so the strip redraws only when a mark would move (the host's deadline scheduler). */
+export const STRIP_STEP=10*60_000;
+export const quantise=(at:number)=>Math.floor(at/STRIP_STEP)*STRIP_STEP;
+/** Draws the calm strip of subscription `sub` into `column` (replacing an earlier one): no now bar, no track. A reset is a
+ *  notch the rail's width (ink-3), a peak a maker-tint block (≈ 38 %), a run-out an amber dashed tick, a timed official reset
+ *  a blue tick. Nothing falls in 24 h: nothing is drawn (the faint rail shows on column hover or focus, so the empty strip
+ *  is still findable). The hit area is the column's text margin wide and spans the quota rows; it is never over text. */
 export function paintStrip(column:HTMLElement,model:CalModel,sub:number,locale:Locale):HTMLButtonElement {
  column.querySelector(':scope > .ec-strip')?.remove();
- const now=model.now,span={from:now,to:now+24*HOUR},Y=(at:number)=>(at-span.from)/(span.to-span.from);
+ const from=quantise(model.now),span={from,to:from+24*HOUR},Y=(at:number)=>(quantise(at)-span.from)/(span.to-span.from);
  const hit=el('button','ec-strip');hit.type='button';hit.dataset.strip=String(sub);
  hit.setAttribute('aria-label',t('cal.stripAria',{s:nameOf(model,sub,locale)}));
  const bar=el('span','ec-strip-bar');bar.setAttribute('aria-hidden','true');hit.append(bar);
  const mark=(className:string,at:number,end?:number)=>{const m=el('i',className);m.style.top=pct(Y(at));if(end!==undefined)m.style.height=pct(Y(end)-Y(at));bar.append(m);return m;};
- for(const h of hourMarks(span,6))if(h.hour!==0)mark('st-h',h.at);
- for(const m of midnights(span))mark('st-mid',m);
- const own=within(model.items,span.from,span.to).filter(x=>x.sub===sub&&!x.allDay);
+ const own=within(model.items,model.now,model.now+24*HOUR).filter(x=>x.sub===sub&&!x.allDay);
  for(const x of own){
   if(x.kind==='peak'){const p=mark('st-peak'+(x.tentative?' tent':''),Math.max(x.at,span.from),Math.min(x.end??span.to,span.to));p.style.setProperty('--c',model.subs[sub]!.colour);}
   else if(x.kind==='runout')mark('st-run',x.at);
   else if(x.kind==='official'||x.kind==='credit')marked(mark('st-off',x.at),x);
   else mark('st-reset',x.at);
  }
- mark('st-now',now);
  column.append(hit);hit.dataset.marks=String(own.length);
  return hit;
 }
@@ -87,7 +90,10 @@ export function stripCard(host:HTMLElement,anchor:HTMLElement,model:CalModel,sub
  const link=el('button','ln link',t('cal.open7'));link.type='button';link.onclick=e=>{if(e.isTrusted)open();};card.append(link);
  host.append(card);
  const box=host.getBoundingClientRect(),r=anchor.getBoundingClientRect(),w=card.offsetWidth,h=card.offsetHeight;
- card.style.left=`${Math.max(4,r.left-box.left-w-6)}px`;card.style.top=`${Math.max(4,Math.min(box.height-h-4,r.top-box.top+8))}px`;
+ // Left of the strip with no gap (a pointer travelling to the link never leaves it); where the card does not fit there (the
+ // first column, a wide 中文 card), to its right: never over its own strip.
+ const fitsLeft=r.left-box.left-w>=4;card.classList.toggle('on-right',!fitsLeft);
+ card.style.left=`${fitsLeft?r.left-box.left-w:Math.max(4,Math.min(box.width-w-4,r.right-box.left))}px`;card.style.top=`${Math.max(4,Math.min(box.height-h-4,r.top-box.top+8))}px`;
  return card;
 }
 
@@ -169,15 +175,26 @@ function week(box:HTMLElement,head:HTMLElement,model:CalModel,o:CalendarPageOpti
  }
  const inWeek=model.items.filter(x=>x.kind==='peak'?x.at<end&&(x.end??x.at+HOUR)>today:x.at>=today&&x.at<end);
  // All-day: one chip on the day that matters (banked reset on its issue day, reserve on its expiry, an untimed
- // announcement on its day); never a bar. Chips of one day stack.
- const lanes=new Array<number>(DAYS).fill(0);
- for(const x of inWeek.filter(x=>x.allDay)){
-  const i=dayOffset(now,x.at);if(i<0||i>=DAYS)continue;
-  const chip=el('span','w7-chip '+x.kind+(x.news?' news':x.kind==='official'||x.kind==='credit'?' past':''),x.kind==='reserve'?t('cal.reserveChip'):x.kind==='credit'?t('cal.creditChip'):t('cal.officialChip'));
-  marked(chip,x);chip.style.setProperty('--c',model.subs[x.sub]!.colour);place(chip,i);if(lanes[i])chip.style.top=`${1+lanes[i]!*13}px`;lanes[i]!++;
-  chip.title=`${nameOf(model,x.sub,o.locale)} ${itemWords(x,o.locale)}`;allDay.append(chip);
+ // announcement on its day); never a bar. A day shows at most two lines of chips: when more fall on it the first chip and
+ // a "+N" chip (which picks the day) stand for them, and every item stays in the picked day's word list below
+ // (macrev2-1291-6: the lane has a budget, so the day list and the time grid keep their height).
+ const byDay=new Map<number,CalItem[]>();
+ for(const x of inWeek.filter(x=>x.allDay)){const i=dayOffset(now,x.at);if(i<0||i>=DAYS)continue;byDay.set(i,[...(byDay.get(i)??[]),x]);}
+ let lanes=1;
+ for(const [i,xs] of byDay){
+  const shown=xs.length>2?xs.slice(0,1):xs;
+  shown.forEach((x,lane)=>{
+   const chip=el('span','w7-chip '+x.kind+(x.news?' news':x.kind==='official'||x.kind==='credit'?' past':''),x.kind==='reserve'?t('cal.reserveChip'):x.kind==='credit'?t('cal.creditChip'):t('cal.officialChip'));
+   marked(chip,x);chip.style.setProperty('--c',model.subs[x.sub]!.colour);place(chip,i);if(lane)chip.style.top=`${1+lane*13}px`;
+   chip.title=`${nameOf(model,x.sub,o.locale)} ${itemWords(x,o.locale)}`;allDay.append(chip);
+  });
+  if(xs.length>2){
+   const more=el('button','w7-chip w7-more',`+${xs.length-1}`);more.type='button';more.dataset.day=String(i);place(more,i);more.style.top='14px';
+   more.title=xs.slice(1).map(x=>`${nameOf(model,x.sub,o.locale)} ${itemWords(x,o.locale)}`).join('\n');more.onclick=e=>{if(e.isTrusted)o.pickDay(i);};allDay.append(more);
+  }
+  lanes=Math.max(lanes,Math.min(2,xs.length));
  }
- if(Math.max(...lanes)>1)allDay.style.height=`${3+13*Math.max(...lanes)}px`;
+ if(lanes>1)allDay.style.height=`${3+13*lanes}px`;
  // Peaks: maker-colour blocks, split at local midnights; overlapping subscriptions share the day's width.
  const peaks=inWeek.filter(x=>x.kind==='peak');
  for(const x of peaks)for(const piece of dayPieces(Math.max(x.at,today),x.end??Math.max(x.at+HOUR,now),today,DAYS)){

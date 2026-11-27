@@ -5,6 +5,7 @@
 // Uses the framework's placeholder plugin; the real plugins bring their own specs.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,sample,shell,excludePortholeFlicker} from '../fixture.mjs';
+import {usePerPage} from '../pseudo-long.mjs';
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 
 // The calendar (D121) and resource (D324) plugins are default on; these framework specs keep them off so only the
@@ -20,6 +21,7 @@ function dataWith(count,unconnected=[]) {
  return data;
 }
 async function open(page,data,plugins) {
+ await usePerPage(page,6);// these specs are about the plugin layout rules; columns per page by language have their own spec (master-band)
  await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
  await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
@@ -106,7 +108,7 @@ test('CKP-PLG-51 the plugin column has no inner frame; its cells use the Other-c
  await expect(column(page).locator('.pl-foot')).toHaveText('Framework');
  const shape=await page.evaluate(()=>{
   const sub=document.querySelector('.eng-cols .ec[data-col]'),plug=document.querySelector('.eng-cols .pl-col');
-  const tops=c=>[...c.children].map(e=>Math.round(e.getBoundingClientRect().top));
+  const tops=c=>[...c.children].filter(e=>!e.classList.contains('ec-strip')).map(e=>Math.round(e.getBoundingClientRect().top));
   const frames=[plug,...plug.querySelectorAll('*')].filter(e=>{const s=getComputedStyle(e);return s.boxShadow!=='none'||['Top','Right','Bottom','Left'].some(side=>s['border'+side+'Style']!=='none'&&parseFloat(s['border'+side+'Width'])>0&&!e.classList.contains('qrow-t'));}).map(e=>e.className);
   const sizes=(c,sel)=>{const e=c.querySelector(sel);if(!e)return null;const s=getComputedStyle(e);return {size:s.fontSize,family:s.fontFamily};};
   const bar=plug.querySelector('.pl-bar').getBoundingClientRect(),fill=plug.querySelector('.pl-bar i').getBoundingClientRect();

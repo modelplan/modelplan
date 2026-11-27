@@ -17,20 +17,22 @@ export interface LayoutPage {
   readonly slots:number;
 }
 export interface PluginLayout {readonly pages:readonly LayoutPage[];readonly hidden:readonly string[]}
-export function pluginLayout(subscriptions:number,plugins:readonly {readonly id:string;readonly pinned:boolean}[]):PluginLayout {
+/** `per` is the page capacity of the language (§3.1: zh 6, en 5, the pseudo-long test locale 4); the default is PER_PAGE. */
+export function pluginLayout(subscriptions:number,plugins:readonly {readonly id:string;readonly pinned:boolean}[],per:number=PER_PAGE):PluginLayout {
+  const PER=Math.max(MIN_COLUMNS,Math.min(PER_PAGE,Math.floor(per)||PER_PAGE));
   const subs=Math.max(0,Math.floor(subscriptions)||0);
   const pinnedIds=new Set(plugins.filter(p=>p.pinned).slice(0,MAX_PINNED_COLUMNS).map(p=>p.id));
   const unpinned=plugins.filter(p=>!pinnedIds.has(p.id));
   const inOrder=(chosen:Set<string>)=>plugins.filter(p=>chosen.has(p.id)).map(p=>p.id);
-  if(subs+pinnedIds.size<=PER_PAGE){
-    const free=PER_PAGE-subs-pinnedIds.size,chosen=new Set([...pinnedIds,...unpinned.slice(0,free).map(p=>p.id)]);
+  if(subs+pinnedIds.size<=PER){
+    const free=PER-subs-pinnedIds.size,chosen=new Set([...pinnedIds,...unpinned.slice(0,free).map(p=>p.id)]);
     const shown=inOrder(chosen);
     return {pages:[{from:0,to:subs,plugins:shown,slots:Math.max(MIN_COLUMNS,subs+shown.length)}],hidden:unpinned.slice(free).map(p=>p.id)};
   }
   // More than one page: every page keeps the six-column width, as the subscription-only table already does.
-  const first=PER_PAGE-pinnedIds.size,pages:{from:number;to:number;plugins:string[];slots:number}[]=[{from:0,to:first,plugins:inOrder(pinnedIds),slots:PER_PAGE}];
-  for(let from=first;from<subs;from+=PER_PAGE)pages.push({from,to:Math.min(subs,from+PER_PAGE),plugins:[],slots:PER_PAGE});
-  const last=pages[pages.length-1],free=PER_PAGE-(last.to-last.from);
+  const first=PER-pinnedIds.size,pages:{from:number;to:number;plugins:string[];slots:number}[]=[{from:0,to:first,plugins:inOrder(pinnedIds),slots:PER}];
+  for(let from=first;from<subs;from+=PER)pages.push({from,to:Math.min(subs,from+PER),plugins:[],slots:PER});
+  const last=pages[pages.length-1],free=PER-(last.to-last.from);
   last.plugins=inOrder(new Set(unpinned.slice(0,free).map(p=>p.id)));
   return {pages,hidden:unpinned.slice(free).map(p=>p.id)};
 }

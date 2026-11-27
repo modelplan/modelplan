@@ -88,7 +88,7 @@ test('C33: names only under the 额外 heading; the hover names the period',asyn
  await open(page,data);
  await expect(page.locator('.eng-labels .lb-other')).toHaveText('额外');
  await expect(cell(page,0,'other').locator('.ql1')).toHaveText('MCP 14d23h 后重置');
- await expect(cell(page,0,'other')).toHaveAttribute('data-tip',/MCP · 每月额度/);
+ await expect(cell(page,0,'other')).toHaveAttribute('data-hc',/MCP · 每月额度/);
 });
 
 test('decision 3: with the host seen set a never-read subscription has no column; its grey line stays',async({page})=>{

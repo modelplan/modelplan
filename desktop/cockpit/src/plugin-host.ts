@@ -118,7 +118,7 @@ export interface MenuOptions {readonly data:WireCockpitData|null;readonly locale
 export interface PluginHost {
   readonly registry:PluginRegistry;
   state():PluginState;
-  layout(subscriptions:number):PluginLayout;
+  layout(subscriptions:number,per?:number):PluginLayout;
   /** The engine's repaint; replaced by each new engine table. */
   bindEngine(repaint:(()=>void)|null):void;
   /** Turn the first empty slots of a drawn page into this page's plugin columns, then re-check the lifecycle. */
@@ -364,7 +364,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     registry,
     state:()=>state,
     // A host-sampled plugin is laid out only once the host has sent its plugin state (it is the one that samples).
-    layout:subscriptions=>pluginLayout(subscriptions,active().filter(p=>(negotiated||!registry.get(p.id)?.hostSampled)&&!registry.get(p.id)?.pageOnly)),
+    layout:(subscriptions,per)=>pluginLayout(subscriptions,active().filter(p=>(negotiated||!registry.get(p.id)?.hostSampled)&&!registry.get(p.id)?.pageOnly),per),
     bindEngine(next){repaint=next;},
     decorate(table,page,value){
       locale=value;forget();placed.clear();columns.clear();

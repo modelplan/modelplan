@@ -88,19 +88,45 @@ export function effectiveAt(schedule:{from:string;through:string;precision:strin
  const mid=through===null?from:(from+through)/2;// Floor on the local day's own half-hour grid (a zone like Kathmandu, UTC+5:45, has no UTC-aligned half hours).
  const d=new Date(mid),day0=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();return day0+Math.floor((mid-day0)/1_800_000)*1_800_000;
 }
+type Member=ReturnType<typeof cockpitMembers>[number];
+/** The banked reset cards of one member: the future expiries the producer states, and the exact count, or null when it has none.
+ *  The producer may list only part of the cards (state partial, truncated, or a count above the items): then there is no
+ *  exact count and no expiry beyond the one it states itself (macrevc-844-5/6, as the alert list does). `expiries` is every
+ *  known future expiry, earliest first (the 7- and 30-day calendar draws each one, macrev2-1291-5). */
+export function cardFacts(data:WireCockpitData,m:Member,now:number):{count:number|null;partial:boolean;expiries:number[]}|null {
+  const verified=new Set(data.subscriptions.map(s=>s.subscriptionRef));
+  if(m.unstable||!verified.has(m.key))return null;
+  const details=data.details?.subscriptions.filter(s=>s.subscriptionRef===m.key)??[],cards=details.length===1?details[0]!.resetCards:null;
+  if(!cards||cards.state==='unknown')return null;
+  const items=cards.items??[],partial=cards.truncated||cards.state!=='complete'||cards.count!==null&&cards.count>items.length;
+  const live=items.filter(c=>{const t=ms(c.expiresAt);return t===null||t>now;});
+  const known=live.flatMap(c=>{const t=ms(c.expiresAt);return t!==null?[t]:[];}).sort((a,b)=>a-b);
+  // A stated earliest expiry that has passed is not a reason to drop the cards: any listed card still live keeps the
+  // span, with no date beyond a stated future one (macrevc-844-8).
+  const stated=ms(cards.earliestExpiresAt),statedFuture=stated!==null&&stated>now;
+  if(!live.length&&!statedFuture&&(!partial||stated!==null||cards.count===0))return null;
+  const expiries=partial?(statedFuture?[stated!]:[]):known.length?known:statedFuture?[stated!]:[];
+  return {count:partial?null:live.length,partial,expiries:[...new Set(expiries)]};
+}
 /** Shape the calendar from the cockpit display data at `now`. Only the user's own subscriptions (the engine's members)
  *  appear; a peak, reset event or banked reset of a row the user does not have is left out. */
-export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarData {
- const members=cockpitMembers(data).slice(0,LIMITS.subs);
+export function calendarFromCockpit(data:WireCockpitData,now:number,bounded=true):CalendarData {
+ // `bounded` is the plugin seam's transport cap (16 subscriptions, 64 peaks, ...). The fixed 日历 page and the strips read
+ // the whole display (macrev2-1291-7), so the band's last bank still has its strip.
+ const members=bounded?cockpitMembers(data).slice(0,LIMITS.subs):cockpitMembers(data);
  const colours=memberColours(members);
  const subs:CalendarSub[]=members.map(m=>({abbr:abbreviation(m.row.id,m.row.vendorKey,m.row.name.en),colour:colours.get(m.key)??'#c6ccd4',name:{en:label(m.row.name.en,m.row.id),zh:label(m.row.name.zh,m.row.id)}}));
- const subOfRow=(rowId:string)=>{const i=members.findIndex(m=>m.row.id===rowId);return i<0?null:i;};
+ // A published peak is plan-wide for its row: every subscription on that row has it (two ZCode accounts share one window),
+ // not only the first (macrev2-1291-4).
+ const subsOfRow=(rowId:string)=>members.flatMap((m,i)=>m.row.id===rowId?[i]:[]);
  const peaks:CalendarPeak[]=[];
  for(const p of wirePeaks(data)){
-  const sub=subOfRow(p.rowId),from=ms(p.startsAt),to=ms(p.endsAt);
-  if(sub===null||from===null||to!==null&&(to<=from||to<=now))continue;
-  if(peaks.some(x=>x.sub===sub&&x.from===from))continue;
-  peaks.push({sub,from,to,tentative:p.status!=='confirmed'});
+  const from=ms(p.startsAt),to=ms(p.endsAt);
+  if(from===null||to!==null&&(to<=from||to<=now))continue;
+  for(const sub of subsOfRow(p.rowId)){
+   if(peaks.some(x=>x.sub===sub&&x.from===from))continue;
+   peaks.push({sub,from,to,tentative:p.status!=='confirmed'});
+  }
  }
  // The user's own resets: the next reset of each current 5-hour (session) and weekly window.
  const resets:CalendarReset[]=[];
@@ -111,22 +137,9 @@ export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarDat
  }});
  const spans:CalendarSpan[]=[];
  // Reset cards: personal facts, joined only through a verified subscription reference (as the alert list does).
- const verified=new Set(data.subscriptions.map(s=>s.subscriptionRef));
  members.forEach((m,sub)=>{
-  if(m.unstable||!verified.has(m.key))return;
-  const details=data.details?.subscriptions.filter(s=>s.subscriptionRef===m.key)??[],cards=details.length===1?details[0]!.resetCards:null;
-  if(!cards||cards.state==='unknown')return;
-  // The producer may list only part of the cards (state partial, truncated, or a count above the items): then there is no
-  // exact count and no expiry beyond the one it states itself (macrevc-844-5/6, as the alert list does).
-  const items=cards.items??[],partial=cards.truncated||cards.state!=='complete'||cards.count!==null&&cards.count>items.length;
-  const live=items.filter(c=>{const t=ms(c.expiresAt);return t===null||t>now;});
-  const expiries=live.flatMap(c=>{const t=ms(c.expiresAt);return t!==null?[t]:[];}).sort((a,b)=>a-b);
-  // A stated earliest expiry that has passed is not a reason to drop the cards: any listed card still live keeps the
-  // span, with no date beyond a stated future one (macrevc-844-8).
-  const stated=ms(cards.earliestExpiresAt),statedFuture=stated!==null&&stated>now;
-  const to=partial?(statedFuture?stated:null):(expiries[0]??(statedFuture?stated:null));
-  if(!live.length&&!statedFuture&&(!partial||stated!==null||cards.count===0))return;
-  spans.push({sub,kind:'cards',from:now,to,count:partial?null:live.length});
+  const facts=cardFacts(data,m,now);if(!facts)return;
+  spans.push({sub,kind:'cards',from:now,to:facts.expiries[0]??null,count:facts.count});
  });
  // Announced (or confirmed) public resets for the user's rows, still current.
  for(const e of data.details?.resetEvents??[]){
@@ -148,5 +161,6 @@ export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarDat
  // fact for this, so the page names the one provider (D406).
  const hasRules=members.some(m=>m.row.id.startsWith('declared:')||m.row.id==='zai');
  const peakRules:PeakRules=!peakFeed(data)?'unknown':hasRules?'yes':'no';
- return {version:1,peakRules,subs,peaks:clip(peaks.sort((a,b)=>a.from-b.from),LIMITS.peaks),resets:clip(resets.sort((a,b)=>a.at-b.at),LIMITS.resets),spans:clip(spans,LIMITS.spans)};
+ const cap=<T,>(xs:T[],n:number)=>bounded?clip(xs,n):xs;
+ return {version:1,peakRules,subs,peaks:cap(peaks.sort((a,b)=>a.from-b.from),LIMITS.peaks),resets:cap(resets.sort((a,b)=>a.at-b.at),LIMITS.resets),spans:cap(spans,LIMITS.spans)};
 }

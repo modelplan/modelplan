@@ -28,25 +28,35 @@ const costRowsOf=(h:History,range:CardRange):readonly CostRow[]|null=>{
  const rows=range==='today'?c.models.today:range==='7d'?c.models.recent7d:c.models.recent30d;
  return Array.isArray(rows)?rows:null;
 };
-/** Use per published model id for the range. Tokens come from the history ranking (or, for a range it does not rank yet,
- * from the ≈cost rows); ≈cost only from the producer's estimate (WP-06): a model without priced tokens has none. */
+/** Use per published model id for the range (D474 §2.5, D464): TOTAL tokens, not output only.
+ *  - With the producer's cost section: a model's tokens are `pricedTokens + unpricedTokens` from `history.cost.models` for
+ *    every range, summed across its source rows; its share is its token share of the range total (every row, including the
+ *    `unknown` row the publication cannot name); ≈cost (small) only when the producer estimated one: a model without priced
+ *    tokens has none. The bank order is the caller's and does not change.
+ *  - Without it (no publication loaded, or "Show estimated cost" off): the history ranking's output tokens and their
+ *    share of the ranking total, as before (the one page note for this case is the overview's). */
 export function cardUsage(h:History,range:CardRange):Map<string,CardUse>{
- const out=new Map<string,CardUse>(),w=windowOf(h,range),costRows=costRowsOf(h,range);
- const tokens=new Map<string,number>(),usd=new Map<string,number>();
+ const out=new Map<string,CardUse>(),costRows=costRowsOf(h,range);
+ if(costRows){
+  const tokens=new Map<string,number>(),usd=new Map<string,number>();let total=0;
+  for(const r of costRows.slice(0,500)){
+   const name=text(r.model),priced=finite(r.pricedTokens)??0,unpriced=finite(r.unpricedTokens)??0,cost=finite(r.estimatedUsd);
+   total+=priced+unpriced;
+   if(!name||name==='unknown')continue;
+   tokens.set(name,(tokens.get(name)??0)+priced+unpriced);
+   if(priced>0&&cost!==null)usd.set(name,(usd.get(name)??0)+cost);
+  }
+  for(const [name,n] of tokens){
+   if(!(n>0))continue;
+   const cost=usd.get(name),share=total>0?Math.min(1,n/total):0;
+   out.set(name,cost!==undefined?{tokens:n,share,cost}:{tokens:n,share});
+  }
+  return out;
+ }
+ const w=windowOf(h,range),tokens=new Map<string,number>();
  for(const e of (w?.top??[]).slice(0,200)){const name=text(e.name),n=finite(e.observedOutputTokens);if(name&&n!==null)tokens.set(name,(tokens.get(name)??0)+n);}
- const fromCost=!w;
- for(const r of (costRows??[]).slice(0,500)){
-  const name=text(r.model),priced=finite(r.pricedTokens)??0,unpriced=finite(r.unpricedTokens)??0,cost=finite(r.estimatedUsd);if(!name||name==='unknown')continue;
-  if(fromCost)tokens.set(name,(tokens.get(name)??0)+priced+unpriced);
-  if(priced>0&&cost!==null)usd.set(name,(usd.get(name)??0)+cost);
- }
- const total=Math.max(fromCost?0:finite(w?.totalObservedOutputTokens)??0,[...tokens.values()].reduce((n,v)=>n+v,0));
- const costTotal=[...usd.values()].reduce((n,v)=>n+v,0);
- for(const [name,n] of tokens){
-  if(!(n>0))continue;
-  const cost=usd.get(name);
-  out.set(name,cost!==undefined&&costTotal>0?{tokens:n,share:cost/costTotal,cost}:{tokens:n,share:total>0?n/total:0});
- }
+ const total=Math.max(finite(w?.totalObservedOutputTokens)??0,[...tokens.values()].reduce((n,v)=>n+v,0));
+ for(const [name,n] of tokens)if(n>0)out.set(name,{tokens:n,share:total>0?n/total:0});
  return out;
 }
 

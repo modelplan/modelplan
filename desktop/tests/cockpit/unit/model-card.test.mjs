@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import {faderModel,cardText,effortLine,stripAria,lcdView,CARD_LINE} from '../../../cockpit/study/rocket-r1/fader-view.js';
 import {approxCost,tokShort} from '../../../cockpit/study/rocket-r1/mfd-pages/fmt.js';
 import {setLanguage} from '../../../cockpit/study/rocket-r1/i18n.js';
+import {assertChartOrder} from '../chart-order.mjs';
 import {cardUsage,currentEffort,CURRENT_WINDOW_MS} from '../../../cockpit/.tmp/compiled/src/model-card.js';
 
 globalThis.document??={documentElement:{}};
@@ -99,23 +100,29 @@ test('CKP-FAD-53 current effort: most tokens in the last 15 minutes, with hyster
  assert.deepEqual(c.dots.map(d=>d.e),['XHigh']);
 });
 
-test('the range use: ≈cost only from the WP-06 estimate (shares by ≈cost), tokens and token shares otherwise; never a guess',()=>{
+test('the range use (D474 §2.5): total tokens from cost.models for every range, token share of the range total; ≈$ small; output tokens only without a publication',()=>{
  const ranking=(top,total)=>({totalObservedOutputTokens:total,top});
- const cost=rows=>({basis:'api-list-price',currency:'USD',pricesAsOf:'2026-11-18',daily:[],hourly:[],models:{today:[],recent7d:rows,recent30d:[]}});
- const row=(model,usd,priced,unpriced=0)=>({model,source:'codex',estimatedUsd:usd,pricedTokens:priced,unpricedTokens:unpriced});
+ const cost=(rows,today=[])=>({basis:'api-list-price',currency:'USD',pricesAsOf:'2026-11-18',daily:[],hourly:[],models:{today,recent7d:rows,recent30d:rows}});
+ const row=(model,usd,priced,unpriced=0,source='codex')=>({model,source,estimatedUsd:usd,pricedTokens:priced,unpricedTokens:unpriced});
  const h={coverage:'local-history',models:{recent7d:ranking([{name:'sol',observedOutputTokens:212e6},{name:'opus',observedOutputTokens:480e6},{name:'glm',observedOutputTokens:96e6}],1247e6),recent30d:ranking([],0)}};
- // Without #1050's cost section (or with "Show estimated cost" off, which drops it): tokens and token shares only.
+ // Without the cost section (no publication, or "Show estimated cost" off): the history ranking's output tokens and shares.
  assert.deepEqual(cardUsage(h,'7d').get('sol'),{tokens:212e6,share:212/1247});
- const priced={...h,cost:cost([row('sol',64,212e6),row('opus',310,480e6),row('glm',null,0,96e6)])};
- const u=cardUsage(priced,'7d');
- assert.deepEqual(u.get('sol'),{tokens:212e6,share:64/374,cost:64});
- assert.deepEqual(u.get('glm'),{tokens:96e6,share:96/1247},'no public price: tokens, token share, no ≈$');
- // An unusable section (another basis or currency) is ignored; a range the ranking lacks takes tokens from the cost rows.
- assert.equal(cardUsage({...priced,cost:{...priced.cost,currency:'EUR'}},'7d').get('sol').cost,undefined);
- const today={...h,cost:{...cost([]),models:{today:[row('sol',3.1,9e6,1e6)],recent7d:[],recent30d:[]}}};
- assert.deepEqual(cardUsage(today,'today').get('sol'),{tokens:10e6,share:1,cost:3.1});
+ // With it: the total (priced + unpriced) of every range, the share is the token share of ALL rows, the unknown row included.
+ const priced={...h,cost:cost([row('sol',64,2e9,12e6),row('opus',310,480e6),row('glm',null,0,96e6),row('unknown',null,0,10e6)])};
+ const u=cardUsage(priced,'7d'),total=2e9+12e6+480e6+96e6+10e6;
+ assert.deepEqual(u.get('sol'),{tokens:2e9+12e6,share:(2e9+12e6)/total,cost:64},'tokens are the TOTAL, not the output ranking');
+ assert.deepEqual(u.get('glm'),{tokens:96e6,share:96e6/total},'no public price: tokens and token share, no ≈$');
+ assert.equal(u.has('unknown'),false,'the unknown row has no card, but stays in the denominator');
+ // A model on two sources is one card: the rows are summed.
+ const two=cardUsage({...h,cost:cost([row('sol',10,100e6,0,'codex'),row('sol',5,50e6,0,'zcode'),row('opus',1,50e6)])},'7d');
+ assert.deepEqual(two.get('sol'),{tokens:150e6,share:.75,cost:15});
+ // Every range reads cost.models: today and 30 days too, even where the output ranking has nothing.
+ assert.deepEqual(cardUsage({...h,cost:cost([],[row('sol',3.1,9e6,1e6)])},'today').get('sol'),{tokens:10e6,share:1,cost:3.1});
+ assert.equal(cardUsage({...priced,cost:{...priced.cost,currency:'EUR'}},'7d').get('sol').cost,undefined,'an unusable section falls back to the output ranking');
  assert.equal(cardUsage(h,'30d').size,0);assert.equal(cardUsage(h,'today').size,0);
  assert.equal(cardUsage({...h,coverage:'none'},'7d').size,0);assert.equal(cardUsage(null,'7d').size,0);
+ // Chart-order: the card bank keeps the publication's order; the usage map never reorders it (the caller indexes by id).
+ const ids=['opus','sol','glm'];assertChartOrder(ids.map((id,i)=>({id,pos:i*10})),['opus','sol','glm'],'bank order');
 });
 
 test('LBL-2.2-51 ≈cost and token formats on the card',()=>{

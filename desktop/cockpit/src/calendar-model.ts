@@ -8,7 +8,7 @@
 // past chip turns muted but stays on its date. Multi-day facts are one item on the day that matters, never a span.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
-import {calendarFromCockpit,effectiveAt,LIMITS} from './calendar-data.js';
+import {calendarFromCockpit,cardFacts} from './calendar-data.js';
 import {currentWindow} from './prototype-data-adapter.js';
 import {newsClock,newsMark} from './news-clock.js';
 import {addDays,startOfDay} from './calendar-time.js';
@@ -33,15 +33,18 @@ export interface CalItem {
  readonly label:{readonly en:string;readonly zh:string}|null;
  /** A weekly reset projected past the next one (the window's fixed length), for the 7- and 30-day views. */
  readonly projected:boolean;
+ /** An announced window that spans several days: its last moment, so the words can name the range (the item sits on its first day). */
+ readonly until:number|null;
 }
 export interface CalModel {readonly now:number;readonly subs:readonly CalSub[];readonly items:readonly CalItem[]}
 
 const ms=(v:string|null|undefined)=>{const t=v?Date.parse(v):NaN;return Number.isFinite(t)?t:null;};
-const item=(x:Partial<CalItem>&Pick<CalItem,'sub'|'kind'|'at'>):CalItem=>({end:null,allDay:false,tentative:false,status:null,news:false,mark:null,label:null,projected:false,...x});
+const item=(x:Partial<CalItem>&Pick<CalItem,'sub'|'kind'|'at'>):CalItem=>({end:null,allDay:false,tentative:false,status:null,news:false,mark:null,label:null,projected:false,until:null,...x});
 
 /** Every time item of the user's own subscriptions from `now` on (and today's earlier all-day items), `horizon` days ahead. */
 export function calendarModel(data:WireCockpitData,now:number,horizon=31):CalModel {
- const members=cockpitMembers(data).slice(0,LIMITS.subs),shaped=calendarFromCockpit(data,now),end=addDays(startOfDay(now),horizon);
+ // No transport cap here: the fixed page reads every admitted subscription (macrev2-1291-7).
+ const members=cockpitMembers(data),shaped=calendarFromCockpit(data,now,false),end=addDays(startOfDay(now),horizon);
  const subs:CalSub[]=members.map((m,i)=>({key:m.key,name:shaped.subs[i]?.name??m.row.name,colour:shaped.subs[i]?.colour??'#c6ccd4',rules:m.row.id==='zai'||m.row.id.startsWith('declared:')}));
  const items:CalItem[]=[];
  for(const p of shaped.peaks)if(p.from<end)items.push(item({sub:p.sub,kind:'peak',at:p.from,end:p.to,tentative:p.tentative}));
@@ -62,18 +65,31 @@ export function calendarModel(data:WireCockpitData,now:number,horizon=31):CalMod
   const window=members[sub]!.account.windows.find(w=>w.id===f.windowId);if(!window||!currentWindow(members[sub]!.account,window,now))continue;
   if(!items.some(x=>x.sub===sub&&x.kind==='runout'&&x.at===at))items.push(item({sub,kind:'runout',at}));
  }
- // Announcements for the user's own plans: a timed one at its effect time, an untimed one as one all-day item on its
- // publication day (a banked reset on the day it was issued).
+ // Announcements for the user's own plans (macrev2-1291-5). An official limit window sits on the day it STARTS (a
+ // multi-day window names its range in the words; never its midpoint). A banked reset is a reserve event, not a clock
+ // event: one all-day item on the day it was issued (its stated day, else when it was confirmed or published).
  for(const e of data.details?.resetEvents??[]){
   const sub=members.findIndex(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id)));
   const published=ms(e.publishedAt),expires=ms(e.expiresAt);if(sub<0||published===null||expires===null||expires<=now)continue;
-  const timed=e.schedule&&e.schedule.precision!=='date'?effectiveAt(e.schedule):null;
-  const day=e.status==='confirmed'?ms(e.confirmedAt)??published:e.schedule?effectiveAt(e.schedule)??published:published;
+  const from=e.schedule?ms(e.schedule.from):null,through=e.schedule?ms(e.schedule.through):null;
+  const dated=e.schedule?.precision==='date'&&from!==null?startOfDay(from):null;
+  if(e.kind==='reset_credit'){
+   const issued=dated??(from!==null?startOfDay(from):null)??(e.status==='confirmed'?ms(e.confirmedAt)??published:published);
+   if(issued>=end)continue;
+   items.push(item({sub,kind:'credit',at:issued,allDay:true,status:e.status,news:newsClock.isNews(e,now),mark:newsMark(e)}));continue;
+  }
+  const timed=e.schedule&&e.schedule.precision!=='date'?from:null;
+  const day=dated??(e.status==='confirmed'?ms(e.confirmedAt)??published:from??published);
   const at=timed??day;if(at>=end)continue;
-  items.push(item({sub,kind:e.kind==='reset_credit'?'credit':'official',at,allDay:timed===null,status:e.status,news:newsClock.isNews(e,now),mark:newsMark(e)}));
+  const last=through!==null&&through>at&&startOfDay(through)>startOfDay(at)?through:null;
+  items.push(item({sub,kind:'official',at,allDay:timed===null,status:e.status,news:newsClock.isNews(e,now),mark:newsMark(e),until:last}));
  }
- // The reserve's expiry: one all-day item on that day (never a bar from now to it).
- for(const s of shaped.spans)if(s.kind==='cards'&&s.to!==null&&s.to<end)items.push(item({sub:s.sub,kind:'reserve',at:s.to,allDay:true}));
+ // The reserve's expiry: one all-day item per known expiry day (never a bar from now to it). A partial inventory states
+ // only its own earliest expiry, so no later date is invented.
+ members.forEach((m,sub)=>{
+  const days=new Set<number>();
+  for(const at of cardFacts(data,m,now)?.expiries??[]){const d=startOfDay(at);if(at>=end||days.has(d))continue;days.add(d);items.push(item({sub,kind:'reserve',at,allDay:true}));}
+ });
  items.sort((a,b)=>Number(b.allDay)-Number(a.allDay)||a.at-b.at||a.sub-b.sub);
  return {now,subs,items};
 }

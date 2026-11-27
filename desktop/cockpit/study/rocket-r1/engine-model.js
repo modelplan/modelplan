@@ -6,7 +6,7 @@
 import {timeLeft, litTimeDots} from './window-time.js';
 import {reserveSoon} from './reserve-expiry.js';
 
-export const PER = 6; // columns per page (spec 4); base.js pages its lights with the same number (through engine.js)
+export const PER = 6; // the widest page (zh); a language's own capacity (D474 §3.1: zh 6, en 5, the pseudo-long test locale 4) arrives as ui.per
 export const KINDS = ['5h', 'day', 'week', 'month']; // window kinds by length
 const CYCLE_MIN = {'5h': 300, day: 1440, week: 7 * 1440, month: 30 * 1440};
 const RANK = {amber: 1, red: 2};
@@ -26,7 +26,7 @@ export const levelOf = (r, redAt = 25, {runOutBefore = false, drawing = false} =
 // used-up window shows an empty bar.
 // In used mode (Settings "used", D130) the bar fills with what is used, 100 - r, by the same rule; colours stay keyed to r.
 export const litSegments = (r, used = false) => { const v = r == null ? null : used ? 100 - r : r; return v == null || v <= 0 ? 0 : clamp(Math.round(v / 10), 1, 10); };
-export const pageCount = n => Math.max(1, Math.ceil(n / PER));
+export const pageCount = (n, per = PER) => Math.max(1, Math.ceil(n / per));
 // An extra quota's period as the study's window kinds name it (the snapshot says weekly / monthly).
 const PERIODS = {'5h': '5h', day: 'day', daily: 'day', week: 'week', weekly: 'week', month: 'month', monthly: 'month'};
 const worse = (a, b) => (RANK[b] || 0) > (RANK[a] || 0) ? b : a;
@@ -99,22 +99,24 @@ function reserveOf(a, now) {
   const count = cards.some(c => c.count === null) ? null : cards.reduce((n,c) => n + (c.count ?? 1), 0);
   // CKP-ENG-52: a zero carries no information and is not shown; nothing left at all means no reserve.
   const credits = cr && cr.balance !== 0 ? cr.balance ?? null : null, money = cr?.money ?? null;
-  if (!(cards.length && count !== 0) && credits == null && money == null) return a.plus > 0 ? {cards: null, warn: false, firstExpiry: null, credits: null, money: null, drawing: false, plus: a.plus, plusMarks: a.plusMarks || ''} : null;
+  if (!(cards.length && count !== 0) && credits == null && money == null) return a.plus > 0 ? {cards: null, list: [], warn: false, firstExpiry: null, credits: null, money: null, drawing: false, plus: a.plus, plusMarks: a.plusMarks || ''} : null;
   // D474 §5.1 / C7: the reserve is one quiet line; an item expiring within 48 h (the shared reserveSoon helper, the same
   // rule as the widget and the menu) adds the amber clause. `expiring` counts those items ("1 次 40h 后到期"). `plus` is
   // the "+1" of a banked reset confirmed during its news clock (the only place a banked reset shows outside the calendar).
   const soon = cards.filter(c => reserveSoon(c.expiresAt, now));
-  return {cards: cards.length && count !== 0 ? count : null, warn: soon.length > 0, firstExpiry: first, expiring: soon.reduce((n, c) => n + (c.count ?? 1), 0),
+  return {cards: cards.length && count !== 0 ? count : null, list: cards.map(c => ({count: c.count ?? 1, expiresAt: Number.isFinite(c.expiresAt) ? c.expiresAt : null})), warn: soon.length > 0, firstExpiry: first, expiring: soon.reduce((n, c) => n + (c.count ?? 1), 0),
     credits, money, drawing: !!cr?.drawing, plus: a.plus > 0 ? a.plus : 0, plusMarks: a.plusMarks || ''};
 }
 // CKP-ENG-50/54: a stale reading is drawn like a current one; only failed readings are grey. Neither washes its column.
 function columnOf(a, i, ui, status, now) {
   const quiet = GREY.has(a.state), grey = quiet && a.state !== 'stale', st = quiet ? null : status.get(a.id) || null;
   // D466: `news` is the key's one blue dot (hollow = announced, solid = confirmed) while a reset announcement is news.
-  return {id: a.id, name: a.name, short: a.short, alias:a.alias, colour: a.colour, logo: a.logo, key: i + 1, news: a.news || null, newsMarks: a.newsMarks || '',
+  return {id: a.id, name: a.name, short: a.short, alias:a.alias, plan: a.plan || '', updated: a.updated || '', colour: a.colour, logo: a.logo, key: i + 1, news: a.news || null, newsMarks: a.newsMarks || '',
     on: ui.scope === a.id, off: !!ui.scope && ui.scope !== a.id,
     state: a.state, grey, ageMin: a.ageMin ?? null, status: st, tint: ui.tint && st ? st : null,
     quotaOnly: a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), noUsage: !!a.noUsage && a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), today: a.todayTokens ?? null,
+    // G-a: a source shared with another subscription cannot be split: the range cell is "—" and says why on hover.
+    shared: a.state === 'ok' || a.state === 'stale' ? a.shared ?? null : null, tool: a.tool || '', unpricedShare: a.unpricedShare ?? null, kinds: a.kinds ?? null,
     cost: a.state === 'ok' || a.state === 'stale' ? a.rangeCost ?? null : null,
     // Never substitute the current/recent-seven-day rate for today's subscription average.
     speed: a.state === 'ok' && a.support !== 'quota-only' ? a.todayAverageGenerationTps ?? null : null,
@@ -127,16 +129,17 @@ function columnOf(a, i, ui, status, now) {
 // then the combined today row, then reserve when a column on the page has banked resets
 // or credits (spec 4). Columns keep the user's order (never by activity); 6 to a page.
 export function engineModel(d, ui) {
-  const list = d.accounts || [], pages = pageCount(list.length), page = clamp(ui.page | 0, 0, pages - 1);
-  const shown = list.slice(page * PER, page * PER + PER), status = statusBySub(d.alerts);
+  const per = Number.isInteger(ui.per) && ui.per >= 3 && ui.per <= PER ? ui.per : PER;
+  const list = d.accounts || [], pages = pageCount(list.length, per), page = clamp(ui.page | 0, 0, pages - 1);
+  const shown = list.slice(page * per, page * per + per), status = statusBySub(d.alerts);
   const cols = shown.map((a, i) => columnOf(a, i, ui, status, d.now));
   // Task 35 prototype: compare six fixed bays with richer columns only for 1–3 total subscriptions.
   const rich = ui.few === 'b' && list.length > 0 && list.length <= 3;
-  const slots = rich ? cols.length : ['c', 'c3', 'c4'].includes(ui.few) && list.length <= PER ? Math.max(list.length, ui.few === 'c3' ? 3 : 4) : PER;
+  const slots = rich ? cols.length : ['c', 'c3', 'c4'].includes(ui.few) && list.length <= per ? Math.max(list.length, ui.few === 'c3' ? 3 : 4) : per;
   const rows = cols.length ? [...ROWS] : [];
   // A page LED lights in the colour of the worst subscription on its page; the current page's LED is the long one.
-  const leds = Array.from({length: pages}, (_, p) => ({page: p, current: p === page, accounts:list.slice(p*PER,p*PER+PER).map(a=>({name:a.name,status:GREY.has(a.state)?null:status.get(a.id)||null})),
-    level: list.slice(p * PER, p * PER + PER).reduce((l, a) => GREY.has(a.state) ? l : worse(l, status.get(a.id) || null), null)}));
+  const leds = Array.from({length: pages}, (_, p) => ({page: p, current: p === page, accounts:list.slice(p*per,p*per+per).map(a=>({name:a.name,status:GREY.has(a.state)?null:status.get(a.id)||null})),
+    level: list.slice(p * per, p * per + per).reduce((l, a) => GREY.has(a.state) ? l : worse(l, status.get(a.id) || null), null)}));
   const c = d.caution || {level: null, key: ''};
   return {empty: !list.length, pages, page, slots, rich, cls: widthClass(slots, ui.colWidth), rows, reserve: cols.some(x => x.reserve),
     rowPeriods: {first:'5h', second:'week', other:null}, cols, leds, caution: {level: c.level || null, flash: !!c.level && ui.ack !== c.key}, used: ui.pctMode === 'used', scoped: !!ui.scope, range: ui.range || 'today'};

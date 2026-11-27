@@ -22,8 +22,21 @@ export async function usePseudoLong(page) {
   await page.route('**/study/rocket-r1/i18n.js', async route => {
     const response = await route.fetch();
     const source = await response.text();
-    const patched = source.replace('tables.en[key] = en;', 'tables.en[key] = window.__pseudoLong ? window.__pseudoLong(en) : en;');
+    // eng.perPage is a number (columns per page), not copy: the pseudo-long locale holds four (D474 §3.1).
+    const patched = source.replace('tables.en[key] = en;', "tables.en[key] = key === 'eng.perPage' ? '4' : window.__pseudoLong ? window.__pseudoLong(en) : en;");
     if (patched === source) throw new Error('pseudo-long: the register() line in i18n.js changed');
+    await route.fulfill({response, body: patched});
+  });
+}
+
+// Columns per page are a per-language datum (D474 §3.1: zh 6, en 5). Specs about the plugin layout rules (which plugin takes
+// which slot, pinning, paging) are not about the language: they hold the page at `n` columns whatever the language says.
+export async function usePerPage(page, n) {
+  await page.route('**/study/rocket-r1/i18n.js', async route => {
+    const response = await route.fetch();
+    const source = await response.text();
+    const patched = source.replace('tables.en[key] = en;', `tables.en[key] = key === 'eng.perPage' ? '${n}' : en;`).replace('tables[\'zh-CN\'][key] = zh;', `tables['zh-CN'][key] = key === 'eng.perPage' ? '${n}' : zh;`);
+    if (patched === source) throw new Error('usePerPage: the register() lines in i18n.js changed');
     await route.fulfill({response, body: patched});
   });
 }

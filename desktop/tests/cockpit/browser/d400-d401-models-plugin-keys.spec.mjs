@@ -100,7 +100,7 @@ test('D401 with All selected a plugin leaves nothing but the plugin key lit, and
 test('D401 a plugin key context menu leaves the key lit exactly while its screen is open',async({page})=>{
  const {send,receive}=await open(page);
  // Two plugin keys: Resources and the framework placeholder (D466: the calendar has no key).
- expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'calendar',enabled:true,pinned:false},{id:'resources',enabled:true,pinned:false},{id:'placeholder',enabled:true,pinned:false}],settings:{}}}))).toBe(true);
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'calendar',enabled:true,pinned:false},{id:'resources',enabled:true,pinned:true},{id:'placeholder',enabled:true,pinned:true}],settings:{}}}))).toBe(true);
  const state=async id=>({lit:await key(page,id).evaluate(k=>k.classList.contains('on')),pressed:await key(page,id).getAttribute('aria-pressed'),screen:await page.locator(`.pl-screen[data-plugin="${id}"]`).count()});
  // Active key: the screen is open; the menu opens and Escape dismisses only the menu.
  await key(page,'resources').click();expect(await state('resources')).toEqual({lit:true,pressed:'true',screen:1});

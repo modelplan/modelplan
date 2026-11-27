@@ -82,7 +82,7 @@ test('C33: a cell names its extra window only under the 额外 heading; narrow m
  const est=[mcp('a',{trend:-1,runOutMin:600}),...mixed.slice(1),...['c','d','e'].map(id=>account(id,[win('5h',90,60)]))];
  const withEst=cellsOf(view(est,'zh-CN')).filter(c=>c.row==='other')[0];
  assert.deepEqual([withEst.l1,withEst.l2],['15d后','10h00完'],'narrow with an estimate: the name moves into the hover');
- assert.match(withEst.html,/data-tip="[^"]*MCP · 每月额度/);
+ assert.match(withEst.html,/data-hc="[^"]*MCP · 每月额度/);
 });
 
 for(const [lang,line,narrow] of [['zh-CN',['重置 3 次','1 次 40h 后到期'],['3次','40h到期']],['en',['3 resets','1 expires in 40h'],['3 resets','1 exp. 40h']]])
@@ -90,8 +90,8 @@ for(const [lang,line,narrow] of [['zh-CN',['重置 3 次','1 次 40h 后到期']
   const a=account('z',[win('5h',90,60)],{cards:[{count:1,expiresAt:NOW+40*3600e3},{count:2,expiresAt:null}],credits:{balance:1865},plus:1});
   const row=html=>html.match(/<div class="qrow qrow-r[^"]*"[^]*?<\/div>/)[0];
   const w=row(view([a],lang)),n=row(fiveCols(a,lang));
-  assert.match(w,new RegExp(`class="qrv-c" data-full="${line[0]}"`));assert.match(w,new RegExp(`class="qrv-x warn" data-full="${line[1]}"`));
+  assert.match(w,new RegExp(`class="qrv-c"(?: data-drop="")? data-full="${line[0]}"`));assert.match(w,new RegExp(`class="qrv-x warn" data-full="${line[1]}"`));
   assert.match(w,/class="qrv-p"/);assert.match(w,/<b class="qrv-plus"[^>]*>\+1<\/b>/);
-  assert.match(n,new RegExp(`class="qrv-c" data-full="${narrow[0]}"`));assert.match(n,new RegExp(`class="qrv-x warn" data-full="${narrow[1]}"`));
+  assert.match(n,new RegExp(`class="qrv-c"(?: data-drop="")? data-full="${narrow[0]}"`));assert.match(n,new RegExp(`class="qrv-x warn" data-full="${narrow[1]}"`));
   assert.doesNotMatch(n,/class="qrv-p"/,'narrow: the points drop first');
  });

@@ -3,8 +3,10 @@
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
+import {usePerPage} from '../pseudo-long.mjs';
 
 async function open(page,data=visualFixture().data,range=null) {
+ await usePerPage(page,6);// these journeys predate the per-language page capacity (D474 §3.1: en 5); master-band.spec covers it
  await page.addInitScript(()=>{window.__g1Messages=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__g1Messages.push(JSON.parse(raw));}}}};});
  await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
@@ -121,7 +123,7 @@ test('CKP-ENG-12 quota bars have ten segments and only known remaining time has 
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);const window=data.projection.rows[0].accounts[0].windows[0];window.resetsAt='2026-11-04T12:00:01Z';
  const {send,receive}=await open(page,data);const cell=page.locator('.eng-cols .ec[data-col]').first().locator('.qcell[data-row="first"]');
  await expect(cell.locator('.qbar i')).toHaveCount(10);await expect(cell.locator('.qtime i')).toHaveCount(10);expect(await cell.locator('.qtime i.on').count()).toBeGreaterThanOrEqual(1);
- expect((await cell.locator('.qbar').boundingBox()).width).toBeGreaterThan((await cell.boundingBox()).width-10);
+ expect((await cell.locator('.qbar').boundingBox()).width).toBeGreaterThan((await cell.boundingBox()).width-10-16);// the strip's 16 pt text margin is the cell's right edge (D474 §6.1)
  window.resetsAt=null;expect(await receive(send('display',{data}))).toBe(true);await expect(cell.locator('.qtime')).toHaveCount(0);
  window.resetsAt='2026-11-04T13:00:00Z';window.role='other';window.durationSeconds=null;window.id='other:unknown:main:main';expect(await receive(send('display',{data}))).toBe(true);
  await expect(page.locator('.eng-cols .ec[data-col]').first().locator('.qcell[data-row="other"] .qtime')).toHaveCount(0);
@@ -295,13 +297,13 @@ test('CKP-ENG-01 five and six subscription columns show names in user order',asy
 test('CKP-ENG-05 shortcuts appear in tooltip, accessible name and Option help and visible subscription digits',async({page})=>{
  const {send,receive}=await open(page);const all=page.locator('.ek-all'),keys=page.locator('.eng-keys .ek[data-sub]');
  for(const [key,n] of [[all,0],...[...(await keys.all())].map((e,i)=>[e,i+1])]){
-  if(n){await expect(key.locator('.ki')).toHaveText(String(n));await expect(key.locator('.ki')).toBeVisible();}else await expect(key.locator('.ki')).toHaveCount(0);await expect(key).toHaveAttribute('title',new RegExp(`\\b${n}\\b`));await expect(key).toHaveAccessibleName(new RegExp(`\\b${n}\\b`));if(n)await expect(key.locator('.ek-name')).toHaveAttribute('title',new RegExp(`\\b${n}\\b`));
+  if(n){await expect(key.locator('.ki')).toHaveText(String(n));await expect(key.locator('.ki')).toBeVisible();}else await expect(key.locator('.ki')).toHaveCount(0);await expect(key).toHaveAttribute(n?'data-hc-facts':'title',new RegExp(`\\b${n}\\b`));await expect(key).toHaveAccessibleName(new RegExp(`\\b${n}\\b`));if(n)await expect(key.locator('.ek-name')).not.toHaveAttribute('title',/.+/);
   await key.focus();await expect(key).toBeFocused();
  }
  await page.keyboard.press('1');await expect(keys.first()).toHaveAttribute('aria-pressed','true');await page.keyboard.press('0');await expect(all).toHaveAttribute('aria-pressed','true');
  expect(await receive(send('visibility',{visible:true,occluded:false,key:false}))).toBe(true);const before=await page.evaluate(()=>window.__g1Messages.length);await page.keyboard.press('1');expect(await page.evaluate(()=>window.__g1Messages.length)).toBe(before);await expect(all).toHaveAttribute('aria-pressed','true');expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  await page.keyboard.down('Alt');await expect(page.locator('#help-map')).toContainText('0');await expect(page.locator('#help-map')).toContainText('1–6');await page.keyboard.up('Alt');
- expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);for(const [key,n] of [[all,0],...[...(await keys.all())].map((e,i)=>[e,i+1])]){await expect(key).toHaveAccessibleName(new RegExp(`快捷键 ${n}`));await expect(key).toHaveAttribute('title',new RegExp(`快捷键 ${n}`));if(n){await expect(key.locator('.ki')).toHaveText(String(n));await expect(key.locator('.ki')).toBeVisible();}else await expect(key.locator('.ki')).toHaveCount(0);}
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);for(const [key,n] of [[all,0],...[...(await keys.all())].map((e,i)=>[e,i+1])]){await expect(key).toHaveAccessibleName(new RegExp(`快捷键 ${n}`));await expect(key).toHaveAttribute(n?'data-hc-facts':'title',new RegExp(`快捷键 ${n}`));if(n){await expect(key.locator('.ki')).toHaveText(String(n));await expect(key.locator('.ki')).toBeVisible();}else await expect(key.locator('.ki')).toHaveCount(0);}
 });
 
 test('CKP-MFD-06 Overview shows delivered today total and puts threshold notices first',async({page})=>{
@@ -363,7 +365,7 @@ test('CKP-MOT-06 visible text and well nesting respect the v1 budget',async({pag
 test('CKP-MOT-07 active key text and quota bars meet contrast thresholds in both themes',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,3);for(const [i,row] of data.projection.rows.entries())row.accounts[0].windows[0].remainingPercent=[75,35,20][i];const {send,receive}=await open(page,data);await page.locator('.eng-keys .ek[data-sub]').first().click();
  const audit=()=>page.evaluate(()=>{const rgb=s=>[...s.matchAll(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/g)].map(m=>m.slice(1).map(Number)),lum=c=>c.map(x=>x/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4).reduce((s,x,i)=>s+x*[.2126,.7152,.0722][i],0),ratio=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)},color=e=>rgb(getComputedStyle(e).color)[0],stops=e=>rgb(getComputedStyle(e).backgroundImage),lcd=stops(document.querySelector('.eng-lcd'));const keys=[...document.querySelectorAll('.mfd-pk .pk'),document.querySelector('.ek-all'),document.querySelector('.eng-keys .ek[data-sub].on')].map(k=>({fg:color(k.querySelector('.ek-name')??k.querySelector('span')),bg:stops(k)}));const bars=[...document.querySelectorAll('.eng-cols .ec[data-col] .qcell[data-row="first"] .qbar i.on:first-child')].map(e=>rgb(getComputedStyle(e).backgroundColor)[0]);return {keys:keys.map(k=>k.bg.length?Math.min(...k.bg.map(bg=>ratio(k.fg,bg))):0),bars:bars.map(c=>Math.min(...lcd.map(bg=>ratio(c,bg))))};});
- for(const theme of ['night','day']){if(theme==='day')expect(await receive(send('appearance',{...appearance,theme}))).toBe(true);const result=await audit();expect(result.keys).toHaveLength(6);for(const n of result.keys)expect(n).toBeGreaterThanOrEqual(4.5);expect(result.bars).toHaveLength(3);for(const n of result.bars)expect(n).toBeGreaterThanOrEqual(3);}
+ for(const theme of ['night','day']){if(theme==='day')expect(await receive(send('appearance',{...appearance,theme}))).toBe(true);const result=await audit();expect(result.keys).toHaveLength(7);for(const n of result.keys)expect(n).toBeGreaterThanOrEqual(4.5);expect(result.bars).toHaveLength(3);for(const n of result.bars)expect(n).toBeGreaterThanOrEqual(3);}
 });
 
 test('CKP-STRIP-16 record strip right-end text fits without ellipsis in both locales',async({page})=>{

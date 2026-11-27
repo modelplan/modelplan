@@ -571,21 +571,31 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .qrow-r .qrv-plus{flex:none;margin-left:3px;padding:0;border:0;background:none;color:var(--trial);font-weight:600}
 .ck-eng .cls-narrow .qrow-t .qtokens{font-size:15px}
 .ck-eng .cls-narrow .qrow-t .qtokens::after{content:none}
-/* D466: the 24 h strip at the right edge of a subscription column (now at the top, +24 h at the bottom). The bar is 6 pt;
-   the button around it is 12 pt so it is easy to hit. The column's text stops 22 pt from the edge. */
-.ck-eng .ec:has(> .ec-strip) > :is(.qcell,.qrow){padding-right:22px}
-.ck-eng .ec-strip{position:absolute;right:3px;top:4px;bottom:4px;width:12px;margin:0;padding:0;border:0;border-radius:3px;background:none;cursor:pointer;z-index:2}
-.ck-eng .ec-strip:focus-visible{outline:1px solid color-mix(in srgb,var(--silk-hi) 55%,transparent);outline-offset:1px}
-.ck-eng .ec-strip-bar{position:absolute;left:3px;top:0;bottom:0;width:6px;border-radius:2px;background:#161b23}
+/* D474 §4.2, §6.1, C25: the calm 24 h strip at the right edge of a subscription column. No now bar and no track: a reset is a
+   2 pt notch the rail's width (ink-3), a peak a maker-tint block (≈ 38 %), a run-out an amber dashed tick, a timed official
+   reset a blue tick; nothing falls in 24 h, nothing is drawn. The hit area is the text margin (16 pt wide, 10 pt narrow)
+   spanning the quota rows, so it is never over text; a faint rail shows on column hover or focus. */
+.ck-eng .eng-lcd{--ec-low:32px;--ec-margin:16px;--ec-rail:6px}
+.ck-eng .eng-lcd.has-res{--ec-low:58px}
+.ck-eng .eng-lcd.cls-narrow{--ec-margin:10px;--ec-rail:3px}
+.ck-eng .ec:has(> .ec-strip) > .qcell{padding-right:var(--ec-margin)}
+.ck-eng .ec-strip{position:absolute;right:0;top:0;bottom:var(--ec-low);width:var(--ec-margin);margin:0;padding:0;border:0;border-radius:0;background:none;cursor:pointer;z-index:2}
+.ck-eng .ec-strip:focus-visible{outline:1px solid color-mix(in srgb,var(--silk-hi) 55%,transparent);outline-offset:-1px}
+.ck-eng .ec-strip-bar{position:absolute;left:calc(50% - var(--ec-rail) / 2);top:3px;bottom:3px;width:var(--ec-rail);border-radius:1px;background:none}
+.ck-eng .ec:is(:hover,:focus-within) .ec-strip-bar,.ck-eng .ec-strip:focus-visible .ec-strip-bar{background:color-mix(in srgb,var(--lcd-ink) 12%,transparent)}
 .ck-eng .ec-strip-bar i,.cal-page .ag-lane i{position:absolute;left:0;right:0;display:block;font-style:normal}
-.ck-eng .ec-strip-bar .st-h{height:1px;background:#262d37}
-.ck-eng .ec-strip-bar .st-mid{height:1px;background:#39414c}
-:is(.ck-eng .ec-strip-bar,.cal-page .ag-lane) .st-peak{background:var(--c);border-radius:1.5px;min-height:2px}
-:is(.ck-eng .ec-strip-bar,.cal-page .ag-lane) .st-peak.tent{opacity:.55}
-:is(.ck-eng .ec-strip-bar,.cal-page .ag-lane) .st-reset{left:-2px;right:-2px;height:1.6px;margin-top:-.8px;background:#e9edf0}
-:is(.ck-eng .ec-strip-bar,.cal-page .ag-lane) .st-run{left:-2px;right:-2px;height:1.6px;margin-top:-.8px;background:var(--st-mid)}
-:is(.ck-eng .ec-strip-bar,.cal-page .ag-lane) .st-off{left:.2px;right:auto;width:5.6px;height:5.6px;margin-top:-2.8px;border-radius:50%;background:var(--trial)}
-:is(.ck-eng .ec-strip-bar,.cal-page .ag-lane) .st-now{left:-3px;right:-3px;height:2.2px;background:var(--st-ok)}
+.ck-eng .ec-strip-bar .st-peak{background:var(--c);opacity:.38;border-radius:1px;min-height:2px}
+.ck-eng .ec-strip-bar .st-reset{left:0;right:0;height:2px;margin-top:-1px;background:var(--lcd-muted)}
+.ck-eng .ec-strip-bar .st-run{left:0;right:0;height:0;margin-top:-.5px;border-top:1.5px dashed var(--st-mid);background:none}
+.ck-eng .ec-strip-bar .st-off{left:0;right:0;height:2px;margin-top:-1px;border-radius:0;background:var(--trial)}
+.cal-page .ag-lane .st-h{height:1px;background:#262d37}
+.cal-page .ag-lane .st-mid{height:1px;background:#39414c}
+:is(.cal-page .ag-lane) .st-peak{background:var(--c);border-radius:1.5px;min-height:2px}
+:is(.cal-page .ag-lane) .st-peak.tent{opacity:.55}
+:is(.cal-page .ag-lane) .st-reset{left:-2px;right:-2px;height:1.6px;margin-top:-.8px;background:#e9edf0}
+:is(.cal-page .ag-lane) .st-run{left:-2px;right:-2px;height:1.6px;margin-top:-.8px;background:var(--st-mid)}
+:is(.cal-page .ag-lane) .st-off{left:.2px;right:auto;width:5.6px;height:5.6px;margin-top:-2.8px;border-radius:50%;background:var(--trial)}
+:is(.cal-page .ag-lane) .st-now{left:-3px;right:-3px;height:2.2px;background:var(--st-ok)}
 /* The strip's hover card, left of the strip; it takes the pointer so its "7 天日历 ›" link can be pressed. */
 #cockpit .ec-next{pointer-events:auto;z-index:40;min-width:150px;gap:2px}
 #cockpit .ec-next .ln{display:grid;grid-template-columns:72px auto;gap:6px;font:10.5px/1.5 var(--f-lcd);color:var(--lcd-ink)}
@@ -633,7 +643,8 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-page .w7-dh.sel{background:#ffffff12}
 .cal-page .w7-ad{height:15px;border-bottom:1px solid var(--lcd-rule)}
 .cal-page .w7-adl{position:absolute;left:0;top:2px;font:8px/11px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}
-.cal-page .w7-chip{position:absolute;top:1px;height:12px;box-sizing:border-box;margin:0 2px;padding:0 4px 0 5px;border-radius:6px;border-left:2px solid var(--c);background:#1b2029;font:8.5px/12px var(--f-lcd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc((100% - var(--w7-g)) / 7 - 4px)}
+.cal-page .w7-chip{position:absolute;top:1px;height:12px;box-sizing:border-box;margin:0 2px;padding:0 3px 0 4px;border-radius:6px;border-left:2px solid var(--c);background:#1b2029;font:10px/12px var(--f-lcd);white-space:nowrap;overflow:hidden;text-overflow:clip;max-width:calc((100% - var(--w7-g)) / 7 - 4px)}
+.cal-page button.w7-more{border-top:0;border-right:0;border-bottom:0;color:var(--lcd-ink);cursor:pointer}
 .cal-page .w7-chip.news{color:var(--trial)}.cal-page .w7-chip.past{color:var(--lcd-muted)}.cal-page .w7-chip.reserve{color:var(--st-mid)}
 .cal-page .w7-body .w7-g{position:absolute;left:var(--w7-g);right:0;height:1px;background:var(--lcd-rule)}
 .cal-page .w7-g.g0{top:0}.cal-page .w7-g.g6{top:25%}.cal-page .w7-g.g12{top:50%}.cal-page .w7-g.g18{top:75%}
@@ -642,11 +653,11 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-page .w7-col.sel{background:#ffffff08}
 .cal-page .w7-pk{position:absolute;display:block;border-radius:2px;background:var(--c);opacity:.85;min-height:2px}
 .cal-page .w7-pk.tent{opacity:.45}
-.cal-page .w7-rc{position:absolute;display:block;height:11px;margin-top:-5.5px;padding:0 4px 0 4px;box-sizing:border-box;border:1px solid #c6ced7;border-left:2px solid var(--c);border-radius:6px;background:#0d1015;font:8px/9px var(--f-lcd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:1}
+.cal-page .w7-rc{position:absolute;display:block;height:12px;margin-top:-6px;padding:0 3px 0 4px;box-sizing:border-box;border:1px solid #c6ced7;border-left:2px solid var(--c);border-radius:6px;background:#0d1015;font:10px/10px var(--f-lcd);white-space:nowrap;overflow:hidden;text-overflow:clip;z-index:1}
 .cal-page .w7-rc.news{border-color:var(--trial);color:var(--trial)}.cal-page .w7-rc.past{color:var(--lcd-muted);border-color:var(--lcd-rule)}
 .cal-page .w7-run{position:absolute;display:block;height:0;border-top:1px dashed var(--st-mid)}
 .cal-page .w7-now{position:absolute;display:block;height:1.5px;background:var(--st-ok)}
-.cal-page .w7-list,.cal-page .cal-30{flex:1 1 0;min-height:0;overflow-y:auto}
+.cal-page .w7-list,.cal-page .cal-30{flex:1 1 0;min-height:40px;overflow-y:auto}
 .cal-page :is(.w7-lh,.c30-d){margin:2px 0 1px;font:600 10px/13px var(--f-lcd);color:var(--lcd-ink)}
 .cal-page :is(.w7-li,.c30-li){display:grid;grid-template-columns:6px 78px minmax(0,1fr);align-items:center;gap:5px;margin:0;font:10px/13px var(--f-lcd);white-space:nowrap}
 .cal-page :is(.w7-li,.c30-li) span{overflow:hidden;text-overflow:ellipsis}
@@ -690,3 +701,21 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 #cockpit .mfd-alerts .al-who.over{-webkit-mask-image:linear-gradient(to left,transparent 0,#000 12px);mask-image:linear-gradient(to left,transparent 0,#000 12px)}
 #cockpit .mfd-alerts .al-rest{flex:none;white-space:nowrap}
 .ck-eng .qrow-r .drop{display:none}
+
+/* #1291 (D474 §6.1): the label column is 42 pt in 中文 and 50 pt in English (one threshold: the column count follows, §3.1: zh 6,
+   en 5, so 91 pt and 107.6 pt columns). 全部 and the pager sit over it. */
+#cockpit .ck-eng{--eng-lab:42px}
+:root:lang(en) #cockpit .ck-eng{--eng-lab:50px}
+
+/* #1291 (D474 §7.1): the shared hover card: title, facts, basis in ink-3. ≤ 260 wide, ≤ 6 lines; text only. */
+#cockpit .mfd-tip.hc-card{z-index:41;max-width:260px;white-space:normal;pointer-events:none;visibility:hidden}
+#cockpit .mfd-tip.hc-card.on{visibility:visible;transition:visibility 0s linear var(--hc-delay,400ms)}
+#cockpit .mfd-tip.hc-card .basis{color:var(--lcd-muted)}
+
+/* #1291 (5 page keys, D466): the "总览 │ 资源" switch lives in the first key slot, now 1/5 of the screen (≈ 71 pt). Tighter
+   padding and gaps so both tabs fit it in 中文 and English without clipping. */
+#cockpit .mfd-pk .pk-seg{padding:0 2px}
+#cockpit .pk-seg .h{gap:2px;padding:0 1px;letter-spacing:.02em}
+#cockpit .pk-seg .sep{margin:0 2px}
+#cockpit .pk-seg .cur[data-short="false"]{padding:0 2px}
+.ck-eng .qrow-t{padding-top:3px}/* the 19 px tokens figure keeps its whole font box inside the row (walk: clipped text) */
