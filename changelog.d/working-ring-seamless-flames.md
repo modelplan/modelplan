@@ -1,0 +1,1 @@
+The widget's working ring no longer hitches once per loop: its flames now play forward and back through their nine frames, so the loop never jumps from the last frame to the first, and the ring keeps turning at one steady turn every 2 seconds.
