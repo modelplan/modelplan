@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"math"
 	"net/http"
@@ -169,12 +170,14 @@ func CodexBarBin(cache, home string) string {
 	if p := filepath.Join(codexbarPinnedDir(cache), "CodexBarCLI"); executable(p) {
 		return p
 	}
+	// A copy that resolves inside CodexBar.app (a Homebrew cask link) is skipped: ModelPlan never
+	// runs a program inside another app's bundle (owner build-6 #14); the pinned copy serves.
 	for _, name := range []string{"codexbar", "CodexBarCLI"} {
-		if p, err := exec.LookPath(name); err == nil {
+		if p, err := exec.LookPath(name); err == nil && !toolcli.InsideOtherApp(p) {
 			return p
 		}
 		for _, d := range []string{"/opt/homebrew/bin", "/usr/local/bin", filepath.Join(home, ".local", "bin")} {
-			if p := filepath.Join(d, name); executable(p) {
+			if p := filepath.Join(d, name); executable(p) && !toolcli.InsideOtherApp(p) {
 				return p
 			}
 		}
@@ -373,6 +376,11 @@ func untar(archive []byte, dir string) error {
 // ---- The cached reading.
 
 type codexbarEntry struct {
+	// In memory only (ZCode sign-in route): the generation of the account the read opened, and
+	// whether that was another account than the read was admitted for (macrev2-1284-5).
+	zcodeGeneration string
+	zcodeMismatch   bool
+
 	Admission   *consent.CaptureStamp `json:"admission,omitempty"`
 	ErrorCode   string                `json:"errorCode,omitempty"`
 	CursorState string                `json:"cursorState,omitempty"`
@@ -570,13 +578,16 @@ func runCodexBarGeneration(ctx context.Context, bin, provider, class string, fen
 	if !consent.CurrentFence(fence) {
 		return nil, errors.New("consent changed; helper usage not started")
 	}
-	cmd := exec.CommandContext(ctx, bin, "--provider", provider, "--format", "json", "--json-only")
+	cmd, err := toolcli.Command(ctx, bin, "--provider", provider, "--format", "json", "--json-only")
+	if err != nil {
+		return nil, err
+	}
 	cmd.Env = codexBarConfigEnvironment(class, config)
 	cmd.Stdin = nil
 	cmd.Stderr = io.Discard
 	var out bytes.Buffer
 	cmd.Stdout = &limited{w: &out, n: codexbarMaxOut}
-	err = cmd.Run()
+	err = toolcli.Run(cmd)
 	if ctx.Err() != nil {
 		return out.Bytes(), errors.New("timed out")
 	}

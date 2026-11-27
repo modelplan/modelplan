@@ -12,11 +12,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -312,12 +312,15 @@ func unchanged(target string, before os.FileInfo) bool {
 func targetVersion(ctx context.Context, target string) (string, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(probeCtx, target, "version")
+	cmd, err := toolcli.Command(probeCtx, target, "version")
+	if err != nil {
+		return "", ErrTargetVersion
+	}
 	var out versionOutput
 	cmd.Stdout = &out
 	cmd.Stderr = io.Discard
 	cmd.WaitDelay = 100 * time.Millisecond
-	if err := cmd.Run(); err != nil {
+	if err := toolcli.Run(cmd); err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
