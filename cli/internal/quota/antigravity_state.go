@@ -68,7 +68,32 @@ func loadAntigravityState(cache string) antigravityState {
 	if status != "" || json.Unmarshal(b, &s) != nil || s.SchemaVersion != 1 {
 		return antigravityState{SchemaVersion: 1}
 	}
+	return clampAntigravityNotRunning(s)
+}
+
+// clampAntigravityNotRunning: "not running" is not a failure. A deadline from a build that backed it off
+// (up to an hour) counts as expired once antigravityRecheck has passed since the last check.
+func clampAntigravityNotRunning(s antigravityState) antigravityState {
+	if s.Availability == "not_detected" && !s.AttemptAt.IsZero() {
+		if c := s.AttemptAt.Add(antigravityRecheck); s.NextAt.After(c) {
+			s.NextAt = c
+		}
+		s.Failures = 0
+	}
 	return s
+}
+
+// antigravityClamp applies the same rule to the outer native reservation read for the provider.
+func antigravityClamp(cache, provider string, next time.Time) time.Time {
+	if provider != "antigravity" || next.IsZero() {
+		return next
+	}
+	if s := loadAntigravityState(cache); s.Availability == "not_detected" && !s.AttemptAt.IsZero() {
+		if c := s.AttemptAt.Add(antigravityRecheck); c.Before(next) {
+			return c
+		}
+	}
+	return next
 }
 func saveAntigravityState(cache string, s antigravityState) bool {
 	path := antigravityStatePath(cache)

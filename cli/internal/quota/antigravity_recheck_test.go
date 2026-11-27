@@ -394,3 +394,41 @@ func TestAntigravityHubDescriptorReplacementIsNotAdmitted(t *testing.T) {
 		_ = path
 	}
 }
+
+// macrevb-1282-4 (round 3): a missing-app state and reservation written by the old build, with a 1 h
+// deadline, do not make the owner wait it out after upgrading.
+func TestAntigravityLegacyNotRunningDeadlineIsClamped(t *testing.T) {
+	isolateHome(t)
+	p := nativePaths(t)
+	_ = SetConnection(p.ConnectionsFile, QuotaSource{Provider: "antigravity", Backend: BackendNative, Enabled: true})
+	if !saveAntigravityState(p.Cache, antigravityState{SchemaVersion: 1, AttemptAt: now, NextAt: now.Add(time.Hour), Failures: 4, Availability: "not_detected", ErrorCode: "runtime_missing"}) {
+		t.Fatal("seed")
+	}
+	if err := reserveReaderAttempt(p.Cache, "antigravity", now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	// Other providers keep their request limits.
+	if err := reserveReaderAttempt(p.Cache, "kimi", now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := loadReaderAttempt(p.Cache, "kimi"); !got.Equal(now.Add(time.Hour)) {
+		t.Fatalf("another provider's reservation changed: %v", got)
+	}
+	old := antigravityCommand
+	t.Cleanup(func() { antigravityCommand = old })
+	calls := 0
+	antigravityCommand = func(context.Context, string, ...string) ([]byte, error) { calls++; return nil, nil }
+	at := now.Add(46 * time.Second)
+	if next, ok := readerGatesNext(p.Cache, "antigravity", time.Time{}, true); !ok || next.After(at) {
+		t.Fatalf("planner gate still waits: %v", next)
+	}
+	if !NativeDue(p, at) {
+		t.Fatal("the due check must be true 46 s after the last look")
+	}
+	if err := RefreshNative(context.Background(), p, at); err != nil || calls != 1 {
+		t.Fatalf("scoped refresh probes once: %d %v", calls, err)
+	}
+	if NativeDue(p, now.Add(10*time.Second)) {
+		t.Fatal("inside 45 s nothing is due")
+	}
+}
