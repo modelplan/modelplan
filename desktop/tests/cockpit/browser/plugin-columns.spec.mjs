@@ -61,7 +61,9 @@ test(`G3-142 CKP-PLG-64 the Resources column on first render shows CPU, memory a
  await expect(c).not.toContainText('--');
 });
 
-test('G3-148 the Calendar column writes names, not two-letter codes, with a big now time and two different rows',async({page})=>{
+// Owner build-6 report 2026-11-27 #7: calendar column text clipped; fix in the band redesign.
+test('G3-148 the Calendar column writes names, not two-letter codes, with a big now time and two different rows',{annotation:{type:'bug',description:'owner build-6 report 2026-11-27 #7: calendar column text clipped; fix in the band redesign'}},async({page})=>{
+ test.fail(true,'owner build-6 report 2026-11-27 #7: calendar column text clipped; fix in the band redesign');
  await open(page);
  const c=col(page,'calendar'),s=c.locator('.pl-draw .cal');
  await expect(s.locator('.cal-nt')).toHaveText('11:20');

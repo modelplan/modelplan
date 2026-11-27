@@ -55,10 +55,10 @@ test('CKP-SHELL-36 the saved widget order is the cockpit order; unnamed members 
  // The number keys follow the shown order, not the emitted one.
  await page.keyboard.press('1');await expect.poll(()=>lit(page)).toEqual([reversed[0]]);
  // Naming only the last emitted member moves it first; the others keep their emitted order after it.
- expect(await receive(send('appearance',{...appearance,memberOrder:[emitted[2],'not-a-member']}))).toBe(true);
+ expect(await receive(send('appearance',{...appearance,memberOrder:[emitted[2],'ffffffffffffffff']}))).toBe(true);
  await expect.poll(()=>memberKeys(page)).toEqual([emitted[2],emitted[0],emitted[1]]);
- // No saved order: back to the emitted order.
- expect(await receive(send('appearance',{...appearance,memberOrder:[]}))).toBe(true);
+ // No saved order (the wire omits an empty list): back to the emitted order.
+ expect(await receive(send('appearance',{...appearance}))).toBe(true);
  await expect.poll(()=>memberKeys(page)).toEqual(emitted);
 });
 
@@ -73,7 +73,7 @@ test('CKP-SHELL-36 a member hidden in Settings loses its key and column, the num
  expect(await receive(send('appearance',{...appearance,hiddenMembers:[emitted[0],emitted[1]]}))).toBe(true);
  await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','all');
  await expect.poll(()=>memberKeys(page)).toEqual([emitted[2]]);
- expect(await receive(send('appearance',{...appearance,hiddenMembers:[]}))).toBe(true);
+ expect(await receive(send('appearance',{...appearance}))).toBe(true);
  await expect.poll(()=>memberKeys(page)).toEqual(emitted);
 });
 
@@ -83,9 +83,9 @@ test('CKP-SHELL-37 with no widget member the record strip and the faders are sti
  await open(page,data);
  await expect(keys(page)).toHaveCount(0);
  await expect(page.locator('.ck-eng .ec-empty')).toHaveCount(1);
- for(const sel of ['.ck-tape','.dk-mfd .fd-chs','.hud','.ck-head [data-settings]'])await expect(page.locator(sel),sel).toBeVisible();
+ for(const sel of ['.ck-tape','.dk-fad .fd-chs','.hud','.ck-head [data-settings]'])await expect(page.locator(sel),sel).toBeVisible();
  // The faders keep their channels (empty bays), never collapse.
- expect(await page.locator('.dk-mfd .fd-ch').count()).toBeGreaterThan(0);
+ expect(await page.locator('.dk-fad .fd-ch').count()).toBeGreaterThan(0);
 });
 
 test('CKP-SHELL-37 G3-63 G3-64 every member hidden in Settings leaves the strip and the faders; a member showing again fills them',async({page})=>{
@@ -93,9 +93,9 @@ test('CKP-SHELL-37 G3-63 G3-64 every member hidden in Settings leaves the strip 
  const emitted=await memberKeys(page);
  expect(await receive(send('appearance',{...appearance,hiddenMembers:emitted}))).toBe(true);
  await expect(keys(page)).toHaveCount(0);
- for(const sel of ['.ck-tape','.dk-mfd .fd-chs'])await expect(page.locator(sel),sel).toBeVisible();
- await expect(page.locator('.dk-mfd .fd-ch:not(.empty)'),'a hidden member brings no model fader').toHaveCount(0);
+ for(const sel of ['.ck-tape','.dk-fad .fd-chs'])await expect(page.locator(sel),sel).toBeVisible();
+ await expect(page.locator('.dk-fad .fd-ch:not(.empty)'),'a hidden member brings no model fader').toHaveCount(0);
  expect(await receive(send('appearance',{...appearance,hiddenMembers:[emitted[1]]}))).toBe(true);
  await expect(keys(page)).toHaveCount(1);
- expect(await page.locator('.dk-mfd .fd-ch:not(.empty)').count()).toBeGreaterThan(0);
+ expect(await page.locator('.dk-fad .fd-ch:not(.empty)').count()).toBeGreaterThan(0);
 });
