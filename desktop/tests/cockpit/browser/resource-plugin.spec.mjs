@@ -206,3 +206,16 @@ test('sample S4 (#1104 PLG-A2): the host-opened screen runs and draws its grid w
  expect((await running(page)).at(-1)).toEqual([]);
  expect(await push([reading(T0+60000)])).toBe(false);
 });
+
+// D465 (macrevc-1287-1): the radar replaced the named footer group, so the pressure name, severity and swap must stay in the
+// accessibility tree: one labelled row each, whatever the row's drawn text had to drop.
+for(const [pressure,word] of [['warn','Elevated'],['critical','Critical']])
+test(`D465 a11y: ${pressure} pressure with swap is exposed as its own labelled row (name, severity, swap)`,async({page})=>{
+ const {push}=await open(page,{plugins:{version:1,entries:[CAL_OFF],settings:{}}});
+ expect(await push([reading(T0,{pressure,swapUsed:2.1*GB,netIn:1_200_000,netOut:86_000}),reading(T0+5000,{pressure,swapUsed:2.1*GB,netIn:1_200_000,netOut:86_000})])).toBe(true);
+ await expect(column(page).locator('.pl-radar')).toHaveCount(1);
+ const row=column(page).getByRole('img',{name:new RegExp(`Mem pressure.*${word}.*swap 2\\.1 GB`)});
+ await expect(row).toHaveCount(1);
+ await expect(column(page).getByRole('img',{name:/^Network ↓1\.2M ↑86K/})).toHaveCount(1);
+ await expect(column(page).getByRole('group',{name:new RegExp(`Mem pressure.*${word}.*swap 2\\.1 GB`)})).toHaveCount(1);
+});

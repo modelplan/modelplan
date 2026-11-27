@@ -154,8 +154,8 @@ function drawRadar(c:PluginDrawContext,state:unknown):void {
   const tone=(l:ResourceLevel)=>l==='low'?T.low:l==='mid'?T.mid:T.ok;
   const tags:Record<Arc,PluginWords>={cpu:w('plugin.resourcesCpu'),memory:w('plugin.resourcesMemory'),disk:w('plugin.resourcesDisk')};
   const netSample=[...samples].reverse().find(x=>x.netIn!==undefined&&x.netOut!==undefined),net=netSample?networkWords(netSample):null,netName=w('plugin.resourcesNetwork').full;// the svg's label always has the full words
-  const svg=node('svg',{class:'pl-draw-chart pl-radar',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'img',
-    'aria-label':[...ARCS.map(a=>`${tags[a].full} ${pct(value[a])}%`),...(net?[`${netName} ${net}`]:[])].join(' · ')});
+  const svg=node('svg',{class:'pl-draw-chart pl-radar',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'group',
+    'aria-label':[...ARCS.map(a=>`${tags[a].full} ${pct(value[a])}%`),...(net?[`${netName} ${net}`]:[]),`${w('plugin.resourcesPressure').full} ${pressureWords(c,last).full}`].join(' · ')});
   const {cx,cy,scale,r,bw,fs,vfs,pad}=L,f=(n:number)=>n.toFixed(2);
   // Range rings and bearing spokes inside the innermost arc, faint.
   const inner=r[2]-bw/2-2;
@@ -191,7 +191,7 @@ function drawRadar(c:PluginDrawContext,state:unknown):void {
   ARCS.forEach((a,i)=>{
     const foot=cx-r[i]!,base=baseOf(i),ink=tone(lv[a]),label=tags[a];
     node('line',{'data-leader':a,x1:f(foot),x2:f(foot),y1:f(cy+bw/2),y2:f(base+1),stroke:ink,'stroke-opacity':0.75,'stroke-width':1},svg);
-    const row=node('g',{'data-row':a},svg),name=width(label.full,fs)<=foot-3-1?label.full:label.short;
+    const row=node('g',{'data-row':a,role:'img','aria-label':`${label.full} ${pct(value[a])}% · ${side[a].full}`},svg),name=width(label.full,fs)<=foot-3-1?label.full:label.short;
     node('text',{'data-label':'',x:f(foot-3),y:f(base),'text-anchor':'end','font-size':fs,'font-family':T.silkFont,fill:T.ink},row).textContent=name;
     const num=node('text',{'data-num':'',x:f(xv),y:f(base),'font-size':f(vfs),'font-family':T.lcdFont,fill:ink},row);num.textContent=String(pct(value[a]));
     node('tspan',{'font-size':f(vfs*0.6)},num).textContent='%';
@@ -208,8 +208,8 @@ function drawRadar(c:PluginDrawContext,state:unknown):void {
   });
   // Network and memory pressure: a name at the left, the value at the right. The value gives way to a shorter form before the
   // name is cut; the name takes its short form last.
-  const left=pad+4,textRow=(kind:string,name:PluginWords,values:readonly string[],i:number,ink:string,mark:string)=>{
-    const g=node('g',{'data-row':kind},svg),y=baseOf(i)-0.5,vsz=fs+1,room=right-left;
+  const left=pad+4,textRow=(kind:string,name:PluginWords,values:readonly string[],i:number,ink:string,mark:string,full:string)=>{
+    const g=node('g',{'data-row':kind,role:'img','aria-label':full},svg),y=baseOf(i)-0.5,vsz=fs+1,room=right-left;
     // Value forms first, longest to none, with the full name; then the same with the short name.
     const tries=[name.full,name.short].flatMap(n=>[...values,''].map(v=>[n,v] as const));
     const [nm,val]=tries.find(([n,v])=>width(n,fs)+(v?8+width(v,vsz):0)<=room)??[name.short,''];
@@ -217,9 +217,9 @@ function drawRadar(c:PluginDrawContext,state:unknown):void {
     if(val)node('text',{[mark]:'',x:f(right),y:f(y),'text-anchor':'end','font-size':vsz,'font-family':T.lcdFont,fill:ink},g).textContent=val;
   };
   node('line',{x1:pad,x2:W-pad,y1:f(L.rows[3]!),y2:f(L.rows[3]!),stroke:T.muted,'stroke-opacity':0.3,'stroke-width':0.6},svg);
-  textRow('network',w('plugin.resourcesNetwork'),net?[net,`↓${formatRate(netSample!.netIn!)}`]:[],3,T.ink,'data-net');
+  textRow('network',w('plugin.resourcesNetwork'),net?[net,`↓${formatRate(netSample!.netIn!)}`]:[],3,T.ink,'data-net',net?`${netName} ${net}`:netName);
   const pw=pressureWords(c,last),pn=w('plugin.resourcesPressure'),pink=last.pressure==='critical'?T.low:last.pressure==='warn'?T.mid:T.ink;
-  textRow('pressure',pn,[pw.full,pw.short],4,pink,'data-pressure');
+  textRow('pressure',pn,[pw.full,pw.short],4,pink,'data-pressure',`${pn.full} ${pw.full}`);
   c.area.replaceChildren(svg);
 }
 // ---- D413 (owner 11-24, option B): the big screen is a four-card grid, CPU · memory · disk · network. Each card: a status

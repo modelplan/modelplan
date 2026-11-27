@@ -206,6 +206,14 @@ test('D465 the radar radius follows the column width, rows share the height, fiv
  const short=radarLayout(146,150);assert.ok(short.rowH>=14);assert.ok(short.scale<radarLayout(146,260).scale);
 });
 
+test('D465 a11y: the pressure name, severity and swap are in the svg name and in their own labelled row',()=>{
+ const state=resourcePlugin.accept({samples:[sample(T0,{pressure:'critical',swapUsed:2.1*GB})]},undefined);
+ const area=drawInto(resourcePlugin.column(state,context('en')).draw,'en',146,220);
+ const svg=all(area,n=>n.tag==='svg')[0];assert.equal(svg.attrs.role,'group');assert.match(svg.attrs['aria-label'],/Mem pressure Critical · swap 2\.1 GB/);
+ const p=all(area,n=>n.attrs['data-row']==='pressure')[0];assert.equal(p.attrs.role,'img');assert.match(p.attrs['aria-label'],/Mem pressure Critical · swap 2\.1 GB/);
+ for(const id of ['cpu','memory','disk','network'])assert.equal(all(area,n=>n.attrs['data-row']===id)[0].attrs.role,'img');
+});
+
 test('D465 the column draws its own bottom line (drawFoot) and the pressure row keeps its whole name',()=>{
  const state=resourcePlugin.accept({samples:[sample(T0,{pressure:'warn',swapUsed:0.8*GB})]},undefined);
  const col=resourcePlugin.column(state,context('zh-CN'));assert.equal(col.drawFoot,true);
