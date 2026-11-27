@@ -154,6 +154,8 @@ public enum EngineDeadlineFacts {
     public var newsClock = DockNewsClockStore()
     /// Whether the Mac is awake and unlocked now; presence is counted only while true.
     public var isPresent: () -> Bool = { true }
+    /// Called after every refresh ticked the clock; the cockpit's news bridge re-answers the page from it.
+    public var onNewsTick: (() -> Void)?
     /// The one question every surface asks (the cockpit's alert list and key dot ask it too): is this event still news?
     public func isNews(eventID: String, status: String, anchor: Date, at now: Date) -> Bool {
         newsClock.isLive(DockNewsClock.key(eventID: eventID, status: status), anchor: anchor, at: now)
@@ -453,6 +455,7 @@ public enum EngineDeadlineFacts {
         let content = DockContent(snapshot: .init(inputs: inputs, subscriptions: subscriptions + accountless,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
         newsClock.tick(shown:passNewsKeys,present:isPresent(),at:context.now)
+        onNewsTick?()
         verifiedWindows = passWindows; retainedWindows = passRetained; recomputeDeadline = passDeadline
         memberInstability = passInstability; signals = passSignals
         return .init(content: content, deadline: passDeadline, verifiedWindows: passWindows, retainedWindows: passRetained)

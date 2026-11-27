@@ -51,11 +51,12 @@ public enum CockpitPluginCatalogue {
                                 symbol: "dot.square", defaultEnabled: false, settings: [
             CockpitPluginSettingSpec(key: "intervalSeconds", minimum: 3, maximum: 30, defaultValue: 10, title: .init("Update interval", "更新间隔")),
         ], frameworkOnly: true),
-        /// v1.1 calendar (D137/D138/D140/D141/D145, CKP-PLG-06/07): default on; no settings. The page shapes its data from
+        /// v1.1 calendar (D137/D138/D140/D141/D145, CKP-PLG-06/07): default on; no settings. D466: the 日历 is a fixed MFD tab, so it
+        /// is not listed in Settings (kept in the catalogue so a saved state and the card's `pluginScreen` for it stay valid). The page shapes its data from
         /// the display data the app already sends, so the app samples nothing for it.
         CockpitPluginDefinition(id: "calendar", title: .init("Calendar", "日历"),
                                 summary: .init("Peaks and resets for the next 12 hours; open for 7 days.", "未来 12 小时的高峰和重置，点开看 7 天。"),
-                                symbol: "calendar", defaultEnabled: true, settings: []),
+                                symbol: "calendar", defaultEnabled: true, settings: [], frameworkOnly: true),
         // D324: the resource plugin, default on. The column samples every 2, 5 or 10 s while it is shown
         // (ModelPlanResources ResourceCadence snaps other saved values to these); the widget and the hidden case
         // have fixed cadences (10 s / 60 s) and are not settings.

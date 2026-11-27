@@ -166,6 +166,7 @@ struct StatusNoticePresentation {
     /// D324: the resource plugin's sampler host and the plugin choices it follows (kept for the app's lifetime).
     var resourcePlugin: ResourcePluginHost?
     var cockpitPluginModel: CockpitPluginSettingsModel?
+    var cockpitNews: CockpitNewsBridge?
     private var prewarmReleased = false
     private var setupScanObserver: UUID?
     /// Done with nothing read yet: the widget appears when the first tool is read, then Find Quota Widget runs once.

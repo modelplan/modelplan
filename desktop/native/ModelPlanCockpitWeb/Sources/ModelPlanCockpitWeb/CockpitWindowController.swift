@@ -1072,6 +1072,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     receiptWatchdog.cancel()
     // The render wait keeps running across replacements (macrevb-981-1).
     if !bridge.hasPendingDisplay { renderWatchdog.cancel() }
+    // D466: the shared news clock is current with every display (a page that did not negotiate ignores nothing: the
+    // message is only sent to a host-side bridge that is ready).
+    publishNews(force: true)
     do {
       let raw = try bridge.display(data, ticket: ticket)
       let dropped = bridge.lastNonFinitePaths
@@ -1645,7 +1648,22 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     pluginsWanted = canonical; publishPluginState()
   }
   /// The plugin state, then any held screen request (which needs that state on the page first).
-  private func publishPluginState(force: Bool = false) { publishPlugins(force: force); publishPluginScreen() }
+  private func publishPluginState(force: Bool = false) { publishPlugins(force: force); publishPluginScreen(); publishNews(force: force) }
+  /// D466: the host's shared news clock answers. Sent on load, with each display and whenever an answer changes.
+  private var newsWanted: [CockpitNewsItem] = []
+  private var newsSentValue: [CockpitNewsItem]?
+  public func setNews(_ items: [CockpitNewsItem]) {
+    newsWanted = Array(items.prefix(64)); publishNews()
+  }
+  private func publishNews(force: Bool = false) {
+    guard (web == nil || web?.superview != nil), bridge.ready, !bridge.blocked, !ending,
+      force || newsWanted != newsSentValue,
+      let raw = try? bridge.news(newsWanted) else { return }
+    let value = newsWanted
+    newsSentValue = value
+    send(raw, coalesce: "news", onRejected: { [weak self] in self?.newsSentValue = nil; return true },
+         onFailed: { [weak self] in self?.newsSentValue = nil }, dropped: { [weak self] in self?.newsSentValue = nil })
+  }
   private func publishPlugins(force: Bool = false) {
     guard (web == nil || web?.superview != nil), let wanted = pluginsWanted, bridge.ready, !bridge.blocked, !ending,
       force || (wanted != pluginsAccepted && wanted != pluginsInFlight),
@@ -1673,6 +1691,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// that was on its way is held again (macrevb-1104-8; opening with `keep` is idempotent).
   private func forgetPluginDelivery() {
     if pluginsInFlight != nil { pluginsInFlight = nil; pluginsAccepted = nil }
+    newsSentValue = nil
     if let id = pluginScreenInFlight { pluginScreenInFlight = nil; if pluginScreenWanted == nil { pluginScreenWanted = id } }
   }
   /// D124 (macrevb-1104-4, macrev2-1104-6): the host stops sampling the moment the page stops being shown (hidden,

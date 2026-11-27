@@ -108,6 +108,13 @@ import ModelPlanResources
             },activateSettings:activateSettings)
         // CKP-SHELL-50 / MENU-52: the page reads and requests the same app-owned range as the menu bar, before its load.
         owner.coordinator?.rangeState = application.cockpitRange
+        // D466: the cockpit page follows the app's shared news clock (and its first looks go back into it).
+        if let coordinator = owner.coordinator {
+            let composition = application.composition
+            application.cockpitNews = CockpitNewsBridge(coordinator: coordinator, provider: composition.contentProvider,
+                events: { if case .available(let events) = composition.rowEvents { return events } else { return [] } },
+                now: { composition.currentDate() })
+        }
         owner.systemSignals = { [weak application] in application?.cockpitSystemSignals }
         owner.presence = application.dockPresence
         application.currentCockpitPage = { [weak owner] in owner?.currentPage }
@@ -626,7 +633,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit,.pluginClose:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit,.pluginClose,.newsLook:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()

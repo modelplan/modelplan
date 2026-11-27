@@ -3,6 +3,9 @@ import Foundation
 import XCTest
 import ModelPlanDock
 import ModelPlanWire
+import ModelPlanCockpitWeb
+import ModelPlanEngineStore
+import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
 /// D466 (calendar and time system, section 1, 2 and 5): one dot meaning on the widget, one news clock for every native
@@ -221,5 +224,67 @@ final class D466CalendarWidgetTests: XCTestCase {
         let values = row.cardNextRows(at: now, english: false, calendar: utc).map(\.value)
         XCTAssertEqual(values, ["接下来 · 现在闲时", "21:04 5 小时额度重置", "22:00–02:00 高峰", "23:30 预计用完"])
         XCTAssertTrue(row.cardNextRows(at: now, english: false, calendar: utc).allSatisfy { $0.kind == .event })
+    }
+
+    // MARK: cockpit news bridge (host -> page answers, page -> host looks)
+
+    private func event(_ id: String, _ status: String, published: Date, confirmed: Date? = nil) -> EngineResetEvent {
+        EngineResetEvent(id: id, rowID: "codex", provider: "openai", status: status, publishedAt: published,
+                         expiresAt: published.addingTimeInterval(5 * 86400), planIDs: nil, confirms: status == "confirmed" ? id : nil,
+                         kind: "reset_credit", confirmedAt: confirmed)
+    }
+
+    func testNewsItemsAreBuiltFromTheSharedClock() {
+        let published = at("2026-11-26T08:00:00Z"), confirmed = at("2026-11-26T08:29:00Z"), now = at("2026-11-26T09:00:00Z")
+        let store = DockNewsClockStore()
+        let confirmedKey = DockNewsClock.key(eventID: "banked-1", status: "confirmed")
+        let announcedKey = DockNewsClock.key(eventID: "limit-2", status: "announced")
+        store.tick(shown: [confirmedKey, announcedKey], present: true, at: now)
+        let events = [event("banked-1", "confirmed", published: published, confirmed: confirmed),
+                      event("limit-2", "announced", published: published.addingTimeInterval(-60))]
+        var items = CockpitNewsBridge.items(events: events, clock: store, now: now)
+        XCTAssertEqual(items.map(\.id), ["banked-1", "limit-2"], "newest first")
+        XCTAssertEqual(items[0].status, .confirmed)
+        XCTAssertEqual(items[0].until, confirmed.addingTimeInterval(24 * 3600), "24 h after the confirmation")
+        XCTAssertEqual(items[1].until, published.addingTimeInterval(-60 + 24 * 3600), "24 h after the publication of an announcement")
+        store.look([confirmedKey], at: now)
+        items = CockpitNewsBridge.items(events: events, clock: store, now: now)
+        XCTAssertEqual(items[0].until, now.addingTimeInterval(30 * 60), "30 min after the first look")
+        items = CockpitNewsBridge.items(events: events, clock: store, now: now.addingTimeInterval(30 * 60))
+        XCTAssertNil(items[0].until, "retired: no longer news"); XCTAssertNotNil(items[1].until)
+    }
+
+    func testNewsItemsAreCappedAtSixtyFour() {
+        let published = at("2026-11-26T08:00:00Z")
+        let events = (0..<80).map { event("e\($0)", "announced", published: published.addingTimeInterval(Double($0))) }
+        let items = CockpitNewsBridge.items(events: events, clock: DockNewsClockStore(), now: published.addingTimeInterval(100))
+        XCTAssertEqual(items.count, 64)
+        XCTAssertEqual(items.first?.id, "e79")
+    }
+
+    @MainActor func testBridgeAnswersTheCoordinatorAndRecordsLooks() {
+        let published = at("2026-11-26T08:00:00Z"), now = at("2026-11-26T09:00:00Z")
+        let provider = EngineDockContentProvider(source: EngineDockMenuProvider(store: EngineStore()))
+        let key = DockNewsClock.key(eventID: "banked-1", status: "confirmed")
+        provider.newsClock.tick(shown: [key], present: true, at: now)
+        let coordinator = EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+        let bridge = CockpitNewsBridge(coordinator: coordinator, provider: provider,
+                                       events: { [self] in [event("banked-1", "confirmed", published: published, confirmed: published)] }, now: { now })
+        XCTAssertEqual(coordinator.newsItems.map(\.id), ["banked-1"], "answered on creation")
+        XCTAssertFalse(provider.newsClock.clock.hasBeenLooked(key))
+        coordinator.onNewsLook?([CockpitNewsLookEvent(id: "banked-1", status: .confirmed)])
+        XCTAssertTrue(provider.newsClock.clock.hasBeenLooked(key), "the page's first look lands in the shared clock")
+        XCTAssertEqual(coordinator.newsItems.first?.until, now.addingTimeInterval(30 * 60), "and the answer changes")
+        // A refresh of the content (the clock ticking) re-answers the page.
+        provider.onNewsTick?()
+        withExtendedLifetime(bridge) {}
+    }
+
+    // MARK: Calendar is a fixed tab, not a plugin
+
+    func testCalendarIsNotListedAsAPluginButStaysCatalogued() {
+        XCTAssertFalse(CockpitPluginCatalogue.listed().contains { $0.id == "calendar" })
+        XCTAssertTrue(CockpitPluginCatalogue.builtIn.contains { $0.id == "calendar" }, "the card's pluginScreen for it stays valid")
+        XCTAssertTrue(CockpitPluginWire.validID("calendar"))
     }
 }

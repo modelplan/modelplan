@@ -157,7 +157,8 @@ import ModelPlanWire
         plugins.apply(language: .chinese, paneID: "plugins", query: "")
         let view = try page()
         XCTAssertFalse(all(view).contains { $0 === plugins }, "D376: the Subscriptions surface no longer holds the plugins")
-        XCTAssertNil(find(view, "settings.cockpitPlugins.calendar.enabled", NSView.self))
+        XCTAssertNil(find(view, "settings.cockpitPlugins.resources.enabled", NSView.self))
+        XCTAssertNil(find(plugins, "settings.cockpitPlugins.calendar.enabled", NSView.self), "D466: the 日历 is a fixed tab, not a plugin row")
         // The window's content column: both views take its full width.
         let column = NSStackView(views: [view, plugins])
         column.orientation = .vertical; column.alignment = .leading; column.spacing = 0
@@ -168,15 +169,15 @@ import ModelPlanWire
         let readIndex = try XCTUnwrap(order.firstIndex { $0.accessibilityIdentifier() == "scope.row.permissions" })
         // Same grid: a plugin's switch, grip and arrows are on the subscription rows' x lines.
         for (plugin, subscription) in [("enabled", "visible"), ("up", "up"), ("down", "down")] {
-            let p = rect(try XCTUnwrap(find(plugins, "settings.cockpitPlugins.calendar.\(plugin)", NSView.self)), in: column).minX
+            let p = rect(try XCTUnwrap(find(plugins, "settings.cockpitPlugins.resources.\(plugin)", NSView.self)), in: column).minX
             let s = rect(try XCTUnwrap(find(view, "subscriptions.\(subscription).a", NSView.self)), in: column).minX
             XCTAssertEqual(p, s, accuracy: 1, "plugin \(plugin) shares the subscription \(subscription) column")
         }
         // The pin switch sits in the sub-row, off by default, in the same switch column.
-        let pin = try XCTUnwrap(find(plugins, "settings.cockpitPlugins.calendar.pinned", NSButton.self))
+        let pin = try XCTUnwrap(find(plugins, "settings.cockpitPlugins.resources.pinned", NSButton.self))
         XCTAssertEqual(pin.state, .off, "pinning is off by default")
         XCTAssertEqual(pin.title, "固定到驾驶舱第 1 页")
-        XCTAssertEqual(rect(pin, in: column).minX, rect(try XCTUnwrap(find(plugins, "settings.cockpitPlugins.calendar.enabled", NSView.self)), in: column).minX, accuracy: 1)
+        XCTAssertEqual(rect(pin, in: column).minX, rect(try XCTUnwrap(find(plugins, "settings.cockpitPlugins.resources.enabled", NSView.self)), in: column).minX, accuracy: 1)
         // D376: the resource sampling note starts at the sub-row's 38 pt indent, under the options line.
         let sampling = try XCTUnwrap(find(plugins, "settings.cockpitPlugins.resources.samplingNote", NSTextField.self))
         let row = try XCTUnwrap(find(plugins, "settings.cockpitPlugins.resources", NSStackView.self))

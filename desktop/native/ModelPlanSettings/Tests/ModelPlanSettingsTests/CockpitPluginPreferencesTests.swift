@@ -188,7 +188,7 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         XCTAssertTrue(view.isHidden, "no longer a separate section on the Cockpit pane")
         view.apply(language: .english, paneID: "general", query: "")
         XCTAssertTrue(view.isHidden)
-        for query in ["插件", "plugin", "资源", "日历", "Resources", "calendar"] {
+        for query in ["插件", "plugin", "资源", "Resources"] {
             view.apply(language: .chinese, paneID: "general", query: query)
             XCTAssertFalse(view.isHidden, "search \(query) finds the plugins")
         }
@@ -278,24 +278,19 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         while let next = queue.first { queue.removeFirst(); ids.append(next.accessibilityIdentifier()); queue += next.subviews }
         XCTAssertFalse(ids.contains { $0.hasPrefix("settings.cockpitPlugins.placeholder") }, "no placeholder row: \(ids.filter { $0.hasPrefix("settings.cockpitPlugins.") })")
         let rows = ids.filter { $0.hasPrefix("settings.cockpitPlugins.") && $0.hasSuffix(".enabled") }
-        XCTAssertEqual(rows, ["settings.cockpitPlugins.calendar.enabled", "settings.cockpitPlugins.resources.enabled"])
-        XCTAssertEqual(CockpitPluginCatalogue.listed().map(\.id), ["calendar", "resources"])
+        XCTAssertEqual(rows, ["settings.cockpitPlugins.resources.enabled"], "D466: no 日历 row, it is a fixed MFD tab")
+        XCTAssertEqual(CockpitPluginCatalogue.listed().map(\.id), ["resources"])
+        XCTAssertTrue(CockpitPluginCatalogue.builtIn.contains { $0.id == "calendar" && $0.frameworkOnly }, "still catalogued so its saved state and the card's pluginScreen stay valid")
         XCTAssertTrue(CockpitPluginCatalogue.builtIn.contains { $0.id == "placeholder" && $0.frameworkOnly }, "still there for tests and fixtures")
         controller.close()
     }
 
-    /// Owner 11-21: a listed plugin's arrows step over the unlisted placeholder, so one press is one visible move.
-    func testMovingStepsOverTheUnlistedPlaceholder() {
+    /// Owner 11-21: a listed plugin's arrows step over unlisted entries. D466: the placeholder and the calendar are both
+    /// unlisted, so the one listed plugin has no listed neighbour and cannot move.
+    func testMovingStepsOverTheUnlistedEntries() {
         var p = CockpitPluginPreferences()
-        // Materialized order: placeholder, calendar, resources. Calendar has no listed plugin before it.
-        XCTAssertFalse(p.apply(.move("calendar", -1)), "the first listed plugin cannot move earlier")
-        XCTAssertTrue(p.apply(.move("resources", -1)))
-        XCTAssertEqual(p.entries.map(\.id), ["placeholder", "resources", "calendar"])
-        var q = CockpitPluginPreferences()
-        q.entries = [.init(id: "calendar", enabled: true, pinned: false), .init(id: "placeholder", enabled: false, pinned: false),
-                     .init(id: "resources", enabled: true, pinned: false)]
-        XCTAssertTrue(q.apply(.move("calendar", 1)))
-        XCTAssertEqual(q.entries.map(\.id), ["placeholder", "resources", "calendar"], "one press passes the hidden entry and the next listed one")
+        XCTAssertFalse(p.apply(.move("resources", -1)), "no listed plugin before it")
+        XCTAssertEqual(p.entries.map(\.id), CockpitPluginPreferences().entries.map(\.id))
     }
 
     /// Owner 11-21: no plugin is pinned to page 1 by default; a new or re-enabled plugin is unpinned, and a pin the user
@@ -306,11 +301,11 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         XCTAssertTrue(p.apply(.setEnabled("resources", false)))
         XCTAssertTrue(p.apply(.setEnabled("resources", true)))
         XCTAssertEqual(p.entries.first { $0.id == "resources" }?.pinned, false, "re-enabled: unpinned")
-        XCTAssertTrue(p.apply(.setPinned("calendar", true)))
+        XCTAssertTrue(p.apply(.setPinned("resources", true)))
         let saved = p.materialized()
-        XCTAssertEqual(saved.entries.first { $0.id == "calendar" }?.pinned, true, "a user pin survives materializing")
-        XCTAssertTrue(p.apply(.setEnabled("resources", true)))
-        XCTAssertEqual(p.entries.first { $0.id == "calendar" }?.pinned, true)
+        XCTAssertEqual(saved.entries.first { $0.id == "resources" }?.pinned, true, "a user pin survives materializing")
+        XCTAssertTrue(p.apply(.setEnabled("calendar", true)))
+        XCTAssertEqual(p.entries.first { $0.id == "resources" }?.pinned, true)
     }
 
     /// D376: the window shows the section on the Plugins pane only, under the pane title "插件", with no "No matching

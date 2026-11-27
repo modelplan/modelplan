@@ -25,6 +25,8 @@ public struct EngineMenuRefreshResult {
     public let provider: EngineDockMenuProvider
     public let dock: StaticDockPreviewHost
     private let adapter: EngineDockContentProvider
+    /// D466: the content provider that owns the shared news clock (the cockpit's news bridge asks it).
+    var contentProvider: EngineDockContentProvider { adapter }
     private let admittedCache = HostPairedContentCache()
     private var deadlineLifecycleSuspended = false
     private var pendingProjectionReplacement = false

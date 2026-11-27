@@ -71,6 +71,15 @@ public struct DockNewsClock: Codable, Equatable, Sendable {
         return entry.presentSeconds < Self.presentCap
     }
 
+    /// The latest moment the item can still be news (24 h after its anchor, or 30 min after the first look); nil when it
+    /// is not news now. The present-hours cap cannot be predicted, so a surface re-asks on every refresh.
+    public func liveUntil(_ key: String, anchor: Date, at now: Date) -> Date? {
+        guard isLive(key, anchor: anchor, at: now) else { return nil }
+        var end = anchor.addingTimeInterval(Self.hardCap)
+        if let looked = entries[key]?.firstLooked { end = min(end, looked.addingTimeInterval(Self.lookGrace)) }
+        return end
+    }
+
     /// Whether the user has looked at the item (the pointer surfaces, menu-bar and sliver, drop their dot at once).
     public func hasBeenLooked(_ key: String) -> Bool { entries[key]?.firstLooked != nil }
 }
@@ -99,6 +108,7 @@ public final class DockNewsClockStore: @unchecked Sendable {
         if clock != before { save(at: now) }
     }
     public func isLive(_ key: String, anchor: Date, at now: Date) -> Bool { clock.isLive(key, anchor: anchor, at: now) }
+    public func liveUntil(_ key: String, anchor: Date, at now: Date) -> Date? { clock.liveUntil(key, anchor: anchor, at: now) }
     private func save(at now: Date) {
         lastSave = now
         guard let url, let data = try? JSONEncoder().encode(clock) else { return }

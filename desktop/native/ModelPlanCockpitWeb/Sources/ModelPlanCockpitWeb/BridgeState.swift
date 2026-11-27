@@ -148,6 +148,19 @@ public enum CockpitIntent: Equatable, Sendable {
   case pluginsEdit(Data)
   /// D376: the page's right-click Remove on a plugin key; the app confirms and turns that plugin off.
   case pluginClose(String)
+  /// D466: announcements the open cockpit drew for the first time; the host records them in the shared news clock.
+  case newsLook([CockpitNewsLookEvent])
+}
+/// D466: one announcement's answer from the host's shared news clock (`DockNewsClock`, key `id#status`).
+/// `until` is when it stops being news at the latest; nil means it is no longer news.
+public struct CockpitNewsItem: Equatable, Sendable {
+  public enum Status: String, Sendable { case announced, confirmed }
+  public let id: String, status: Status, until: Date?
+  public init(id: String, status: Status, until: Date?) { self.id = id; self.status = status; self.until = until }
+}
+public struct CockpitNewsLookEvent: Equatable, Sendable {
+  public let id: String, status: CockpitNewsItem.Status
+  public init(id: String, status: CockpitNewsItem.Status) { self.id = id; self.status = status }
 }
 /// A typed public page, never a URL from the page: native builds the address from these fields.
 public struct CockpitWebsiteLink: Equatable, Sendable {
@@ -367,6 +380,8 @@ public final class CockpitBridgeState {
   /// Plugin columns: the host sent its plugin state (`plugins`); only then may it push readings or accept the page's
   /// plugin actions. The page keeps its negotiation across a clear, so this does too.
   public private(set) var pluginsSent = false
+  /// D466: true once the host sent a `news` message; the page then posts `newsLook` actions.
+  public private(set) var newsSent = false
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
   private var retiredSessions = Set<UUID>(), retiredEpochs = Set<String>(),
@@ -581,6 +596,22 @@ public final class CockpitBridgeState {
     pluginsSent = true
     return raw
   }
+  /// D466: the shared news clock's answers (at most 64). `untilUnixMs` is a decimal string, null = no longer news.
+  /// No receipt: the page only reads it.
+  public func news(_ items: [CockpitNewsItem]) throws -> String {
+    guard ready, !blocked else { throw CockpitBridgeError.unavailable }
+    guard items.count <= 64, items.allSatisfy({ Self.isPublicModelID($0.id) }) else { throw CockpitBridgeError.invalidMessage }
+    let body: [[String: Any]] = items.map { item in
+      let until: Any = item.until.flatMap { date -> String? in
+        let ms = (date.timeIntervalSince1970 * 1000).rounded(.down)
+        return ms.isFinite && ms >= 0 && ms <= 8_640_000_000_000_000 ? String(Int64(ms)) : nil
+      }.map { $0 as Any } ?? NSNull()
+      return ["id": item.id, "status": item.status.rawValue, "untilUnixMs": until]
+    }
+    let raw = try envelope("news", extra: ["items": body])
+    newsSent = true
+    return raw
+  }
   /// Plugin columns: one reading for a running plugin. Only after `plugins`, and only to a visible, unoccluded page.
   public func pluginData(id: String, data: [String: Any]) throws -> String {
     guard ready, !blocked, pluginsSent, visibility.visible, !visibility.occluded else { throw CockpitBridgeError.unavailable }
@@ -705,12 +736,12 @@ public final class CockpitBridgeState {
       let action = m["action"] as? String
       let history = action == "openHistory", scope = action == "scopeSelect" || action == "rangeSelect" || action == "refreshMember", website = action == "openWebsite", ack = action == "cautionAck" || action == "pinnedModels"
       let focusedField = action == "openField" && m["key"] != nil
-      let running = action == "pluginsRunning", pluginEdit = action == "pluginsEdit", pluginClose = action == "pluginClose"
-      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack || running ? ["action","ids"] : pluginEdit ? ["action","plugins"] : pluginClose ? ["action","id"] : ["action"]
+      let running = action == "pluginsRunning", pluginEdit = action == "pluginsEdit", pluginClose = action == "pluginClose", newsLook = action == "newsLook"
+      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack || running ? ["action","ids"] : pluginEdit ? ["action","plugins"] : pluginClose ? ["action","id"] : newsLook ? ["action","events"] : ["action"]
       // Plugin actions exist only for a host that sent `plugins`. A page stops its plugins when it hides, so
       // `pluginsRunning` is accepted without focus; every other action needs the active page.
       guard Set(m.keys) == base.union(extra), ready, !blocked,
-        running ? pluginsSent : visibility.active, !pluginEdit || pluginsSent, !pluginClose || pluginsSent
+        running ? pluginsSent : visibility.active, !pluginEdit || pluginsSent, !pluginClose || pluginsSent, !newsLook || newsSent
       else { throw CockpitBridgeError.invalidMessage }
       let intent: CockpitIntent
       switch action {
@@ -747,6 +778,15 @@ public final class CockpitBridgeState {
       case "pluginsEdit":
         guard let body = m["plugins"], let canonical = CockpitPluginWire.canonical(body) else { throw CockpitBridgeError.invalidMessage }
         intent = .pluginsEdit(canonical)
+      case "newsLook":
+        guard let raw = m["events"] as? [[String: Any]], (1...64).contains(raw.count) else { throw CockpitBridgeError.invalidMessage }
+        var events = [CockpitNewsLookEvent]()
+        for entry in raw {
+          guard Set(entry.keys) == ["id", "status"], let id = entry["id"] as? String, Self.isPublicModelID(id),
+            let status = (entry["status"] as? String).flatMap(CockpitNewsItem.Status.init(rawValue:)) else { throw CockpitBridgeError.invalidMessage }
+          events.append(CockpitNewsLookEvent(id: id, status: status))
+        }
+        intent = .newsLook(events)
       case "pluginClose":
         guard let id = m["id"] as? String, CockpitPluginWire.validID(id) else { throw CockpitBridgeError.invalidMessage }
         intent = .pluginClose(id)
