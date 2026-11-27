@@ -13,6 +13,8 @@ export interface HoverCards {
  /** Redraw the open card from the (re-rendered) target with the same key; closes when that target is gone. */
  refresh():void;
  close():void;
+ /** Stop listening but leave the open card for the next instance to adopt (a rebuilt table). */
+ detach():void;
  /** The open card's key (tests, and the owner of the cells). */
  open():string|null;
  dispose():void;
@@ -95,6 +97,7 @@ export function mountHoverCards(root:HTMLElement,options:HoverCardOptions):Hover
    fill(next);place(next);
   },
   close,
+  detach:()=>{document.removeEventListener('pointermove',track,true);document.removeEventListener('pointerdown',track,true);root.removeEventListener('pointerover',over);root.removeEventListener('pointerout',out);root.removeEventListener('focusin',over);root.removeEventListener('focusout',out);window.removeEventListener('keydown',esc,true);},
   open:()=>card?key:null,
   dispose,
  };

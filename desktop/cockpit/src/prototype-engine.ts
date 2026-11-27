@@ -66,7 +66,7 @@ function cellState(account:WireAccount,rowState?:Parameters<typeof accountState>
  return failed!==null&&(!Number.isFinite(observed)||failed>observed)?'error-lastgood':state;
 }
 const updatedText=(at:number,now:number,locale:Appearance['locale'])=>{const c=updatedCopy(at,now);return ht(locale,c.key,{n:c.n});};
-export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,onSelect:(key:string)=>boolean,onAdd:()=>boolean,priorPage=0,initialNow=0,redBelow:()=>number=()=>effectiveRedBelow(undefined),showUsed:()=>boolean=()=>false,onRefresh:(key:string)=>boolean=()=>false,range:()=>CockpitRange=()=>INITIAL_RANGE):{table:HTMLElement;applyScope:(scope:string)=>void;pageBy:(step:number)=>boolean;setRange:()=>void;refresh:(now?:number)=>void;setLocale:(value:Appearance['locale'],now:number)=>void;focusIdentity:(element:HTMLElement)=>string|null;fit:()=>void}|null {
+export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,onSelect:(key:string)=>boolean,onAdd:()=>boolean,priorPage=0,initialNow=0,redBelow:()=>number=()=>effectiveRedBelow(undefined),showUsed:()=>boolean=()=>false,onRefresh:(key:string)=>boolean=()=>false,range:()=>CockpitRange=()=>INITIAL_RANGE):{table:HTMLElement;applyScope:(scope:string)=>void;pageBy:(step:number)=>boolean;detachHover:()=>void;setRange:()=>void;refresh:(now?:number)=>void;setLocale:(value:Appearance['locale'],now:number)=>void;focusIdentity:(element:HTMLElement)=>string|null;fit:()=>void}|null {
  const members=cockpitMembers(data);if(!members.length)return null;
  const seen=new Map(members.map(x=>[x.key,x]));// D474 §3.1: a page holds as many columns as the language's labels allow (zh 6, en 5; the pseudo-long test locale 4), a
  // string-table number so a language owns its own capacity.
@@ -276,6 +276,6 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  };
  const applyScope=(next:string)=>{scope=next!=='all'&&seen.has(next)?next:'';if(scope){const index=members.findIndex(m=>m.key===scope);page=pageOf(index);}paint();};
  plugins?.bindEngine(()=>paint());paint();const pageBy=(step:number)=>{const next=Math.max(0,Math.min(pageCount()-1,page+step));if(next===page)return false;page=next;paint();return true;};
- return {table:host,applyScope,pageBy,setRange(){paint();},refresh:paint,setLocale(value,now){const before=perPage(),first=firstShown();locale=value;// A language switch that changes the page capacity keeps the scoped subscription on screen (when it was), else the first column on screen; one that does not leaves the page alone.
+ return {table:host,applyScope,pageBy,detachHover:hover.detach,setRange(){paint();},refresh:paint,setLocale(value,now){const before=perPage(),first=firstShown();locale=value;// A language switch that changes the page capacity keeps the scoped subscription on screen (when it was), else the first column on screen; one that does not leaves the page alone.
   if(perPage()!==before){const at=scope?members.findIndex(m=>m.key===scope):-1,shown=at>=first&&at<first+before;page=pageOf(Math.max(0,shown?at:first));}paint(now);},focusIdentity(element){return focusIdentities.get(element)??null;},fit};
 }
