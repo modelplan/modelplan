@@ -48,9 +48,17 @@ const costHours = 48 * time.Hour
 // are aggregate counts per hour, source and model, added as each request is counted; nothing is rescanned for them.
 const HourlyKeepDays = 30
 
+// Size bounds. perf.json as a whole must stay under maxFile (2 MiB) or the whole ledger is refused on load.
+//   - Rows from before yesterday are compacted to one row per hour, source and consent epoch (compactHourly; it also drops the
+//     token kinds, only output counts are read from those hours): 28 older days hold at most 28*24*4 sources = 2688 rows per
+//     epoch, about 190 bytes each, so about 510 KiB for four sources active in every hour of every day.
+//   - Yesterday, today and the rolling 48 hours keep one row per model, up to hourlyRecentBytes; beyond that they lose their model
+//     names too (a pathological number of models inside two days).
+//   - The whole is capped at hourlyMaxBytes. Over it, the oldest whole local day goes, never part of a day and never yesterday,
+//     today or the cost window.
 const (
-	hourlyPerKey = HourlyKeepDays*24 + 48 // one source and model: every hour of the window plus a repeated DST hour
-	hourlyTotal  = 8192
+	hourlyMaxBytes    = 1 << 20
+	hourlyRecentBytes = 512 << 10
 )
 
 // hourlyRows is the hourly view: today and yesterday by local date.
@@ -64,12 +72,80 @@ func hourlyDays(rows []Hourly, now time.Time, days int) []Hourly {
 }
 
 // hourlyKept is what the ledger retains: the last HourlyKeepDays local days, and every hour still inside
-// the rolling 48 hours of the ≈cost.
+// the rolling 48 hours of the ≈cost. Days before yesterday are compacted (per-model detail goes, the per hour and source
+// totals and the consent epoch stay), then whole oldest days go while the stored bytes exceed hourlyMaxBytes.
 func hourlyKept(rows []Hourly, now time.Time) []Hourly {
 	from, to := windowFrom(now, HourlyKeepDays), day(now)
-	return hourlyWhere(rows, now, func(t time.Time) bool {
+	recent := windowFrom(now, 2)
+	kept := hourlyWhere(rows, now, func(t time.Time) bool {
 		return (day(t) >= from && day(t) <= to) || t.After(now.Add(-costHours))
 	})
+	kept = compactHourly(kept, recent, now)
+	protected := func(r Hourly) bool { return hourDay(r) >= recent || parsedAfter(r, now.Add(-costHours)) }
+	size := func(rs []Hourly) int { b, _ := json.Marshal(rs); return len(b) }
+	if n := sort.Search(len(kept), func(i int) bool { return protected(kept[i]) }); size(kept[n:]) > hourlyRecentBytes {
+		kept = compactHourly(kept, "9999", now.Add(1000*costHours)) // every row, model names included
+	}
+	for len(kept) > 0 && size(kept) > hourlyMaxBytes && !protected(kept[0]) {
+		oldest, i, whole := hourDay(kept[0]), 0, true
+		for i < len(kept) && hourDay(kept[i]) == oldest {
+			whole = whole && !protected(kept[i])
+			i++
+		}
+		if !whole { // the day reaches into the cost window: it stays, whole
+			break
+		}
+		kept = kept[i:]
+	}
+	// Still over (an absurd number of consent epochs or sources inside two days): whole oldest hours go, never part of an hour.
+	for len(kept) > 1 && size(kept) > hourlyMaxBytes {
+		i := 1
+		for i < len(kept) && kept[i].Hour == kept[0].Hour {
+			i++
+		}
+		kept = kept[i:]
+	}
+	return kept
+}
+
+func hourDay(r Hourly) string {
+	t, _ := time.Parse(time.RFC3339, r.Hour)
+	return day(t)
+}
+
+func parsedAfter(r Hourly, at time.Time) bool {
+	t, err := time.Parse(time.RFC3339, r.Hour)
+	return err == nil && t.After(at)
+}
+
+// compactHourly merges the rows of days before keepFrom (a local date) into one row per hour, source and consent epoch,
+// summing request and output counts. The model name and token kinds are dropped from those rows: nothing reads a model from an hour older than
+// yesterday, and the cockpit sums models anyway. The input is sorted oldest first; so is the result.
+func compactHourly(rows []Hourly, keepFrom string, now time.Time) []Hourly {
+	out := make([]Hourly, 0, len(rows))
+	at := map[[2]string][]int{}
+	for _, r := range rows {
+		if hourDay(r) >= keepFrom || parsedAfter(r, now.Add(-costHours)) {
+			out = append(out, r)
+			continue
+		}
+		k := [2]string{r.Hour, r.Source}
+		merged := false
+		for _, i := range at[k] {
+			if sameEpoch(out[i].GrantEpoch, r.GrantEpoch) {
+				out[i].ObservedRequests += r.ObservedRequests
+				out[i].ObservedOutputTokens += r.ObservedOutputTokens
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			r.Model, r.TokenKinds = "", TokenKinds{}
+			at[k] = append(at[k], len(out))
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // costHourly is the hourly ≈cost window: hours starting after now−48h and not after now.
@@ -100,26 +176,7 @@ func hourlyWhere(rows []Hourly, now time.Time, keep func(time.Time) bool) []Hour
 		}
 		return out[i].Model < out[j].Model
 	})
-	counts := map[[2]string]int{}
-	kept := out[:0]
-	for _, r := range out {
-		k := [2]string{r.Source, r.Model}
-		if counts[k] >= hourlyPerKey {
-			continue
-		}
-		counts[k]++
-		kept = append(kept, r)
-	}
-	if len(kept) > hourlyTotal {
-		kept = kept[:hourlyTotal]
-	}
-	for len(kept) > 0 {
-		b, _ := json.Marshal(kept)
-		if len(b) <= 512<<10 {
-			break
-		}
-		kept = kept[:len(kept)*9/10]
-	}
+	kept := out
 	sort.Slice(kept, func(i, j int) bool {
 		if kept[i].Hour != kept[j].Hour {
 			return kept[i].Hour < kept[j].Hour
@@ -176,3 +233,6 @@ func (v PerfView) TodayTotals() []TodayTotal {
 	sort.Slice(out, func(i, j int) bool { return out[i].Source < out[j].Source })
 	return out
 }
+
+// Encode prunes the ledger as it is when saved and returns the perf.json content.
+func (l *PerfLedger) Encode(now time.Time) []byte { return l.prune(now) }

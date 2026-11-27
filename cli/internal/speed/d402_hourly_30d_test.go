@@ -64,3 +64,103 @@ func TestD402ThirtyDaysOfHourlyCountsSurviveARestartWithoutRescans(t *testing.T)
 		}
 	}
 }
+
+// macrev2-1213-1. Invariant: under ordinary multi-model use every one of the 30 days is retained whole and correct: pruning never
+// drops part of a day, and the cursor never outlives rows it vouches for. Dense fixture: four sources, six models, a consent
+// epoch change, every hour of 30 days.
+func TestD402DenseMultiModelThirtyDaysKeepEveryDayAfterAReload(t *testing.T) {
+	utc(t)
+	now := time.Date(2026, 11, 24, 12, 30, 0, 0, time.UTC)
+	l := PerfLedger{SchemaVersion: 1, Since: now.AddDate(0, 0, -60), Files: map[string]Cursor{"session.jsonl": {Offset: 4096, Seen: "2026-11-24", Source: "codex"}}}
+	sources := []string{"codex", "claude-code", "zcode", "opencode"}
+	want := map[[2]string]int64{} // hour, source -> output tokens
+	for at := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC); at.Before(now); at = at.Add(time.Hour) {
+		for si, s := range sources {
+			for m := 0; m < 6; m++ {
+				out := int64(si*100 + m + at.Hour() + 1)
+				l.Hourly = append(l.Hourly, Hourly{GrantEpoch: &GrantEpoch{StoreEpoch: "e1", RevokedGeneration: uint64(at.Day() % 2)}, Hour: at.Format(time.RFC3339), Source: s, Model: "model-" + string(rune('a'+m)),
+					ObservedOutputTokens: out, ObservedRequests: 2})
+				want[[2]string{at.Format(time.RFC3339), s}] += out
+			}
+		}
+	}
+	raw := l.prune(now)
+	if len(raw) >= maxFile {
+		t.Fatalf("perf.json is %d bytes, the loader refuses %d and above", len(raw), maxFile)
+	}
+	cache := t.TempDir()
+	if err := os.MkdirAll(filepath.Dir(PerfPath(cache)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(PerfPath(cache), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, ok := loadPerf(cache)
+	if !ok {
+		t.Fatal("perf.json refused after the restart")
+	}
+	got := map[[2]string]int64{}
+	days := map[string]bool{}
+	for _, h := range (PerfView{OK: true, Ledger: reloaded, Now: now}).HourlyDays(HourlyKeepDays) {
+		got[[2]string{h.Hour, h.Source}] += h.ObservedOutputTokens
+		days[h.Hour[:10]] = true
+	}
+	if len(days) != 30 {
+		t.Fatalf("%d of 30 days survived", len(days))
+	}
+	if len(got) != len(want) {
+		t.Fatalf("%d hour/source totals, want %d", len(got), len(want))
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("%v: %d, want %d", k, got[k], v)
+		}
+	}
+	// Both consent epochs survive compaction, so a revoked source can still be filtered out hour by hour.
+	epochs := map[uint64]bool{}
+	for _, r := range reloaded.Hourly {
+		if r.GrantEpoch != nil {
+			epochs[r.GrantEpoch.RevokedGeneration] = true
+		}
+	}
+	if len(epochs) != 2 {
+		t.Fatalf("epochs after compaction: %v", epochs)
+	}
+	// Yesterday and today keep their per-model rows.
+	if n := len((PerfView{OK: true, Ledger: reloaded, Now: now}).Hourly()); n != 37*4*6 {
+		t.Fatalf("recent per-model rows: %d", n)
+	}
+	t.Logf("perf.json %d bytes, %d hourly rows", len(raw), len(reloaded.Hourly))
+}
+
+// Over the byte cap the oldest whole days go, never part of a day; yesterday and today always stay whole.
+func TestD402OverTheByteCapOnlyWholeOldestDaysGo(t *testing.T) {
+	utc(t)
+	now := time.Date(2026, 11, 24, 12, 30, 0, 0, time.UTC)
+	var rows []Hourly
+	for at := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC); at.Before(now); at = at.Add(time.Hour) {
+		epochs := 400 // far more consent epochs than real use on the older days, to force the cap
+		if at.Format("2006-01-02") >= "2026-11-22" {
+			epochs = 4
+		}
+		for s := 0; s < epochs; s++ {
+			rows = append(rows, Hourly{GrantEpoch: &GrantEpoch{StoreEpoch: "e", RevokedGeneration: uint64(s)}, Hour: at.Format(time.RFC3339), Source: "codex", Model: "m", ObservedOutputTokens: 1, ObservedRequests: 1})
+		}
+	}
+	kept := hourlyKept(rows, now)
+	perDay := map[string]int{}
+	for _, r := range kept {
+		perDay[r.Hour[:10]]++
+	}
+	if perDay["2026-11-23"] != 24*4 || perDay["2026-11-22"] == 0 || perDay["2026-11-24"] != 13*4 {
+		t.Fatalf("recent days not whole: %v", perDay)
+	}
+	for d, n := range perDay {
+		if d < "2026-11-22" && n != 24*400 {
+			t.Fatalf("%s is a partial day: %d rows", d, n)
+		}
+	}
+	if len(perDay) >= 30 {
+		t.Fatal("nothing was pruned")
+	}
+}
