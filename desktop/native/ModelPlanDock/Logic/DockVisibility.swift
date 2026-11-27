@@ -9,11 +9,12 @@ public struct DockVisibilityPolicy: Equatable, Sendable {
     public var staleLockRecovery: TimeInterval = 2.000
     public var arrivalGuard: TimeInterval = 0.300
     public var sampleInterval: TimeInterval = 0.150
+    public var idleSampleInterval: TimeInterval = 1
     public var insideSlack: CGFloat = 12
     public var wakeDepth: CGFloat = 20
     public init() {}
     fileprivate var valid: Bool {
-        [revealDwell, leaveGrace, staleLockRecovery, arrivalGuard, sampleInterval].allSatisfy { $0.isFinite && $0 >= 0 }
+        [revealDwell, leaveGrace, staleLockRecovery, arrivalGuard, sampleInterval, idleSampleInterval].allSatisfy { $0.isFinite && $0 >= 0 }
             && staleLockRecovery >= leaveGrace && insideSlack.isFinite && insideSlack >= 0 && wakeDepth.isFinite && wakeDepth >= 0
     }
 }

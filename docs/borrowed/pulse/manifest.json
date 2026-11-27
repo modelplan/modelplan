@@ -11,19 +11,20 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/ActiveDisplayFollower.swift",
-      "sha256": "09e9a810bcba092b76c80ade9671ab29a8b8d643ba1c157c7c5f108f8f851fc4",
+      "sha256": "b086fe8f7bd0159dbbdef427e451f28af2fee64885ed6407c3950d4b88da6e6f",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "implementationModified": true,
       "upstreamSHA256": "6b399f89672e40179ef04f55951b31ae9869e503291d29320fb5d42ca87446d2",
       "adaptations": [
         "inject current-display source for non-GUI tests",
         "stop/restart generation check prevents callback latching stale identifier",
-        "public composition seam consumed by normal host; refuses display switching while a panel press is held"
+        "public composition seam consumed by normal host; refuses display switching while a panel press is held",
+        "Share the production Dock placement clock; give the standalone sampler timer tolerance."
       ]
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelPointerWatcher.swift",
-      "sha256": "de4c7ad30bf2f8818c073aaf63a59ec4bb6940ebdf80af92c69761a33f386885",
+      "sha256": "af89184942dfbabd62fea9ea6d0be3219bbf613fea4ed1c4ed87b0d10336f2ff",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "implementationModified": true,
       "upstreamSHA256": "eebbbe8e325b3bee35213e1fe4ba5102f0f8563cf8f297e81eb032122862ba64",
@@ -33,7 +34,8 @@
         "transparent AppKit surface composes sampler and entry reporter; explicit visibility lifecycle gates sampling",
         "remove unused SwiftUI representable wrapper; normal AppKit host consumes the tracking/sampling implementation",
         "production composition owns PointerProbe and uses its current/reportAgain paths for entry and reparenting",
-        "compile-time test-only entry arrival callback for scoped real-input evidence; omitted from release"
+        "compile-time test-only entry arrival callback for scoped real-input evidence; omitted from release",
+        "Share the production Dock placement clock; give the standalone sampler timer tolerance."
       ]
     },
     {

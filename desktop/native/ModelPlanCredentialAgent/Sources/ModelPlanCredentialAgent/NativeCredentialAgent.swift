@@ -33,8 +33,44 @@ public final class NativeCredentialAgent: CredentialAgent, @unchecked Sendable {
     private let queue = DispatchQueue(label: "ModelPlan.U7.fixed-item")
     private let lock = NSLock()
     private var busy = false
-    public init(reader: any FixedItemReading, isCurrent: @escaping @Sendable (EngineDeliveryContext) -> Bool) {
-        self.reader = reader; self.isCurrent = isCurrent
+    private let home: String
+    public init(reader: any FixedItemReading, isCurrent: @escaping @Sendable (EngineDeliveryContext) -> Bool,
+                home: String = FileManager.default.homeDirectoryForCurrentUser.path) {
+        self.reader = reader; self.isCurrent = isCurrent; self.home = home
+    }
+    /// The fixed item a request may name, by provider and scope together; nil for anything else.
+    static func query(for request: WireCredentialRequest, home: String) -> FixedItemQuery? {
+        switch (request.provider, request.scope) {
+        case ("claude", "claude.account_usage.saved_login"): return .init(interactive: request.interactive)
+        case ("zai", "zai.account_usage.saved_login"): return .init(interactive: request.interactive, zcodeHome: home)
+        default: return nil
+        }
+    }
+    /// D380: ZCode's item holds a 32-byte key in unpadded base64url (43 characters); nothing else passes.
+    static func zcodeKey(_ data: Data) -> String? {
+        guard data.count == 43, let text = String(data: data, encoding: .utf8),
+              text.unicodeScalars.allSatisfy({ CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_").contains($0) })
+        else { return nil }
+        return text
+    }
+    /// Review 11-24 #8: the Keychain item's own expiry and scopes decide, as on the credentials-file route. A login
+    /// that is expired, lacks `user:profile`, or misses either field is a closed failure, so no provider request is
+    /// made for it. Only the access token and its real expiry leave this read; the refresh token is never read out.
+    static func claudeLogin(_ data: Data, now: Date = Date()) -> (token: String, expiresAt: WireTimestamp)? {
+        guard data.count <= 64 * 1024,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let oauth = object["claudeAiOauth"] as? [String: Any],
+              let token = oauth["accessToken"] as? String, !token.isEmpty,
+              let number = oauth["expiresAt"] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let scopes = oauth["scopes"] as? [String], scopes.contains("user:profile") else { return nil }
+        let millis = number.doubleValue
+        guard millis.isFinite, millis > 0 else { return nil }
+        let expires = Date(timeIntervalSince1970: millis / 1000)
+        guard expires > now else { return nil }
+        let format = ISO8601DateFormatter()
+        format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let stamp = try? WireTimestamp(format.string(from: expires)) else { return nil }
+        return (token, stamp)
     }
     private func acquire() -> Bool { lock.lock(); defer { lock.unlock() }; guard !busy else { return false }; busy = true; return true }
     private func release() { lock.lock(); busy = false; lock.unlock() }
@@ -42,8 +78,7 @@ public final class NativeCredentialAgent: CredentialAgent, @unchecked Sendable {
         let id = operation.request.operationId
         // Generated request validation already admitted this operationId.
         @Sendable func outcome(_ kind: WireCredentialOutcome) -> WireCredentialResult { try! .init(operationId: id, outcome: kind) }
-        guard operation.request.provider == "claude", operation.request.scope == "claude.account_usage.saved_login",
-              isCurrent(operation.delivery) else { return outcome(.error) }
+        guard let query = Self.query(for: operation.request, home: home), isCurrent(operation.delivery) else { return outcome(.error) }
         guard !operation.request.interactive || operation.userAction != nil else { return outcome(.denied) }
         guard !Task.isCancelled else { return outcome(.canceled) }
         guard ContinuousClock.now < operation.deadline else { return outcome(.timeout) }
@@ -69,17 +104,22 @@ public final class NativeCredentialAgent: CredentialAgent, @unchecked Sendable {
                 queue.async { [self] in
                     defer { release() }
                     if let stopped = checkpoint() { completion.finish(outcome(stopped.outcome)); return }
-                    let result = reader.read(.init(interactive: operation.request.interactive), authorize: checkpoint)
+                    let result = reader.read(query, authorize: checkpoint)
                     if let stopped = checkpoint() { completion.finish(outcome(stopped.outcome)); return }
                     if let stopped = result.termination { completion.finish(outcome(stopped.outcome)); return }
                     guard let status = result.status else { completion.finish(outcome(.error)); return }
                     let kind = SecurityOutcome.map(status)
                     guard kind == .ok else { completion.finish(outcome(kind)); return }
-                    guard let data = result.data, data.count <= 64 * 1024,
-                          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let oauth = object["claudeAiOauth"] as? [String: Any],
-                          let token = oauth["accessToken"] as? String,
-                          let wire = try? WireCredentialResult(operationId: id, outcome: .ok, accessToken: token) else {
+                    if query.item == .zcode {
+                        guard let data = result.data, let key = Self.zcodeKey(data),
+                              let wire = try? WireCredentialResult(operationId: id, outcome: .ok, accessToken: key) else {
+                            completion.finish(outcome(.error)); return
+                        }
+                        completion.finish(wire); return
+                    }
+                    guard let data = result.data, let login = NativeCredentialAgent.claudeLogin(data),
+                          let wire = try? WireCredentialResult(operationId: id, outcome: .ok, accessToken: login.token,
+                                                               expiresAt: login.expiresAt) else {
                         completion.finish(outcome(.error)); return
                     }
                     completion.finish(wire)

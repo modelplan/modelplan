@@ -61,7 +61,40 @@ func (b *CredentialBroker) Paths(a consent.Admission) quota.Paths {
 		grants[provider] = g
 	}
 	p.ReaderAccess = &quota.ReaderAccess{Grants: grants}
-	return p
+	// D380: ZCode's Keychain-bound sign-in gets the same background operation. The app answers
+	// it without UI (a prior "Always Allow" lets it read); nothing is held after the read.
+	return quota.WithZCodeKeychain(p, func(ctx context.Context) ([]byte, string) {
+		if b.Request == nil || b.Offline || b.ReadOnly || !zcodeCredentialAdmission(a) {
+			return nil, "app_required"
+		}
+		result, err := b.Request(ctx, CredentialNeed{Provider: "zai", Scope: consent.ScopeZaiAccountUsageSavedLogin})
+		defer func() { result.AccessToken = nil }()
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, "timeout"
+			}
+			return nil, "unavailable"
+		}
+		if !validCredential(result) || !zcodeCredentialCurrent(a) {
+			return nil, "unavailable"
+		}
+		return zcodeCredentialValue(result)
+	})
+}
+
+// zcodeCredentialValue turns one app result into the Keychain value or a closed status.
+func zcodeCredentialValue(result wire.CredentialResult) ([]byte, string) {
+	if result.Outcome == wire.OutcomeOK && result.AccessToken != nil {
+		return []byte(*result.AccessToken), ""
+	}
+	return nil, string(result.Outcome)
+}
+func zcodeCredentialAdmission(a consent.Admission) bool {
+	return a.ScopeKeychainStatus(consent.ScopeZaiAccountUsageSavedLogin) == "allowed"
+}
+func zcodeCredentialCurrent(a consent.Admission) bool {
+	current := consent.Capture()
+	return current.Fence() == a.Fence() && zcodeCredentialAdmission(current)
 }
 
 // AcceptCredential consumes the explicit grant's operation. The result itself
@@ -74,6 +107,9 @@ func (b *CredentialBroker) AcceptCredential(ctx context.Context, stamp Stamp, ne
 			b.Changed()
 		}
 	}()
+	if need.Provider == "zai" {
+		return b.acceptZCode(ctx, stamp, need, result)
+	}
 	if !validCredential(result) || need.Provider != "claude" || need.Scope != consent.ScopeClaudeAccountUsageSavedLogin || !need.Interactive || b.PathsFor == nil {
 		return ProtocolError{wire.CodeCredentialRejected}
 	}
@@ -102,4 +138,28 @@ func credentialAdmission(a consent.Admission) bool {
 func credentialCurrent(a consent.Admission) bool {
 	current := consent.Capture()
 	return current.Fence() == a.Fence() && credentialAdmission(current)
+}
+
+// acceptZCode: the foreground read right after the user's Keychain Allow for ZCode (D380). The
+// operation's value is used for this one read only; the shared budget still applies.
+func (b *CredentialBroker) acceptZCode(ctx context.Context, stamp Stamp, need CredentialNeed, result wire.CredentialResult) error {
+	if !validCredential(result) || need.Scope != consent.ScopeZaiAccountUsageSavedLogin || !need.Interactive || b.PathsFor == nil {
+		return ProtocolError{wire.CodeCredentialRejected}
+	}
+	a := consent.Capture()
+	if credentialStamp(a) != stamp || !zcodeCredentialAdmission(a) {
+		return ProtocolError{wire.CodeCredentialRejected}
+	}
+	if b.Offline || b.ReadOnly {
+		return nil
+	}
+	used := false
+	p := quota.WithZCodeKeychain(b.PathsFor(a), func(context.Context) ([]byte, string) {
+		if used {
+			return nil, "unavailable"
+		}
+		used = true
+		return zcodeCredentialValue(result)
+	})
+	return quota.ExecuteScopeRefresh(ctx, p, need.Scope, time.Now())
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// The porthole HUD from public published data: on the tall profile a mini frontier above the first six chart models,
-// on the compact profile one strip: a small frontier beside three stacked rows. It reads no scores of its own and shows nothing personal except which
+// The porthole HUD from public published data: a mini frontier above the first six chart models (D444: the one
+// layout; the 640 strip is retired). It reads no scores of its own and shows nothing personal except which
 // effort a running session last reported. Prototype: rocket-r1/porthole.js:49-76 for behaviour; the code is written here.
 import {hudAxisPath} from './hud-axis.js';
 import {ht} from './host-text.js';
@@ -10,7 +10,7 @@ import {chartFleetOf,frontierFleetOf,fleetOf,type HudModel,type HudOptions} from
 import {shortLabel} from '../study/rocket-r1/short-label.js';
 
 export type {HudModel,HudOptions};
-const SVG='http://www.w3.org/2000/svg',TALL_ROWS=6,COMPACT_ROWS=3;
+const SVG='http://www.w3.org/2000/svg',ROWS=6;
 const svg=<K extends keyof SVGElementTagNameMap>(tag:K,attributes:Record<string,string|number>)=>{const e=document.createElementNS(SVG,tag);for(const [k,v] of Object.entries(attributes))e.setAttribute(k,String(v));return e;};
 
 /** The scope's models in the order the enlarged chart takes them (frontier first, then dim points). */
@@ -55,15 +55,14 @@ export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,r
  }
  return root;
 }
-export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,compact:boolean,locale:string,options:HudOptions={}) {
- const fleet=hudFleet(data,options.scope,options.now),rows=fleet.slice(0,compact?COMPACT_ROWS:TALL_ROWS);
- host.replaceChildren();host.hidden=!!options.closed||!rows.length;host.classList.toggle('hud-b',!compact);host.classList.toggle('hud-strip',compact);if(host.hidden)return;
+export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,locale:string,options:HudOptions={}) {
+ const fleet=hudFleet(data,options.scope,options.now),rows=fleet.slice(0,ROWS);
+ host.replaceChildren();host.hidden=!!options.closed||!rows.length;host.classList.add('hud-b');if(host.hidden)return;
  host.setAttribute('role','group');host.setAttribute('aria-label',ht(locale,'host.hudAria'));
- // G3-48: the compact strip follows the study at 640 (86x30 chart, then three 10 px rows), not three columns.
- const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),compact?86:162,compact?30:77,ht(locale,'host.hudChartLabel')));host.append(chart);
+ const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),162,77,ht(locale,'host.hudChartLabel')));host.append(chart);
  const list=document.createElement('div');list.className='hud-list';
  for(const [i,m] of rows.entries()){
-  const row=document.createElement('button');row.type='button';row.className='hp'+(m.id===options.selected?' selected':'')+(!compact&&m.dominated?' dominated':'');row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;
+  const row=document.createElement('button');row.type='button';row.className='hp'+(m.id===options.selected?' selected':'')+(m.dominated?' dominated':'');row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;
   const n=document.createElement('span');n.className='hp-n';n.textContent=String(i+1);
   // A running session at ★ glows the star; at any other effort the name turns gold (porthole.js:56-63).
   const atStar=m.latestEffort!==undefined&&m.latestEffort?.toLowerCase()===m.rec.toLowerCase(),elsewhere=m.latestEffort!==undefined&&!atStar;
@@ -74,7 +73,7 @@ export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,co
   if(m.running){const on=document.createElement('i');on.className='hp-on';on.setAttribute('role','img');on.setAttribute('aria-label',ht(locale,'host.running'));row.append(on);}
   list.append(row);
  }
- host.append(list);if(!compact)fitRows(host,list);
+ host.append(list);fitRows(host,list);
 }
 /** D371 B2 (CKP-PORT-04): when six rows do not fit above the safe-area line (10 px in from the port's bottom edge), show fewer
  *  whole rows; never a cut row, never an ellipsis. */

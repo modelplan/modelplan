@@ -41,7 +41,7 @@ test('G3-131 every bell has one dark finish; only the working bell lights its mo
  await page.mouse.move(5,5);
  const mouth=async b=>firstPixel(await page.screenshot({clip:{x:Math.round(b.x),y:Math.round(b.top+b.h*0.62),width:1,height:1},omitBackground:true}));
  const lit=await mouth(bells[0]);
- expect(lum(lit),`working mouth ${JSON.stringify(lit)}`).toBeGreaterThan(60);expect(lit[2]).toBeGreaterThan(lit[0]+20);
+ expect(lum(lit),`working mouth ${JSON.stringify(lit)}`).toBeGreaterThan(60);expect(lit[2]).toBeGreaterThan(150); // D454: the blue flame root is white-hot at the lip
  for(const b of bells.slice(1)){const dark=await mouth(b);expect(lum(dark),`idle mouth ${JSON.stringify(dark)}`).toBeLessThan(60);}
 });
 

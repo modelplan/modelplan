@@ -18,6 +18,11 @@ import (
 func pendingCredentialRequests(t *testing.T, p *queryBinary) []wire.CredentialRequest {
 	t.Helper()
 	p.call("diagnostics/get", map[string]any{}) // a round trip collects what arrived before it
+	return credentialRequestsIn(p)
+}
+
+// credentialRequestsIn lists the credential requests among the notifications collected so far.
+func credentialRequestsIn(p *queryBinary) []wire.CredentialRequest {
 	var out []wire.CredentialRequest
 	for _, raw := range p.notifications {
 		var m struct {
@@ -61,6 +66,9 @@ func testGrantCredentialRead(t *testing.T, binary string) {
 }
 
 // startGrantCredentialRead gives a fresh home the Keychain grant and returns its interactive request.
+// The grant moves the consent fence while the subscribed session may be writing a private frame;
+// that frame is dropped whole and the session stays open (a consent change never ends a session),
+// so the grant is answered and its interactive read arrives on the same session.
 func startGrantCredentialRead(t *testing.T, binary string) (*queryBinary, wire.CredentialRequest) {
 	t.Helper()
 	home := t.TempDir()

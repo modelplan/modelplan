@@ -4,7 +4,7 @@ import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {renderVisualDeck,visualFixture} from '../visual-fixture.mjs';
 
-for(const [tier,height] of [['compact',640],['tall',890]]){
+for(const [tier,height] of [['tall',890]]){
  test(`faders keep detents 20 pt apart at ${height}`,async({page})=>{
   await page.setViewportSize({width:636,height});
   await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
@@ -20,7 +20,7 @@ for(const [tier,height] of [['compact',640],['tall',890]]){
    return {gaps:tops.slice(1).map((top,i)=>top-tops[i]),clipped:strip.scrollHeight>strip.clientHeight+1,lcd:strip.getBoundingClientRect().height};
   });
   expect(measured.gaps.length).toBeGreaterThan(0);
-  const levels=await page.evaluate(()=>document.querySelectorAll('.sc-l').length);
+  const levels=await page.evaluate(()=>document.querySelectorAll('.sc-travel[data-gap="1"] .sc-l').length);
   const travel=await page.evaluate(()=>{const t=document.querySelector('.fd-ch:not(.empty) .fd-travel').getBoundingClientRect().height;return t-16;});
   expect(travel/(levels-1)).toBeGreaterThanOrEqual(20);
   expect(Math.min(...measured.gaps)).toBeGreaterThanOrEqual(19.5);
