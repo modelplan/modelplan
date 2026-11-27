@@ -128,9 +128,11 @@ test('D468 the burn ends under Reduce Motion, then motion returns: the flame sta
  await host.appearance({reduceMotion:true});
  await host.ignite(false);
  expect(await gone(page)).toBe(true);
- await host.appearance({reduceMotion:false});await page.waitForTimeout(600);
+ await host.appearance({reduceMotion:false});
+ // Sampled at once: a relit flame would be running cockpit-flame-out here.
+ expect((await page.evaluate(()=>[...document.querySelectorAll('.ck-base .bz-flame')].map(f=>getComputedStyle(f).animationName+f.getAnimations().length))).every(x=>x==='none0')).toBe(true);
+ await page.waitForTimeout(600);
  expect(await gone(page)).toBe(true);
- expect(await page.evaluate(()=>getComputedStyle(document.querySelector('.ck-base .bz-flame')).animationName)).toBe('none');
 });
 test('D468 the burn ends under OS reduced motion, then it returns: the flame stays out',async({page})=>{
  const host=await open(page);
@@ -138,7 +140,9 @@ test('D468 the burn ends under OS reduced motion, then it returns: the flame sta
  await page.emulateMedia({reducedMotion:'reduce'});
  await host.ignite(false);
  expect(await gone(page)).toBe(true);
- await page.emulateMedia({reducedMotion:'no-preference'});await page.waitForTimeout(600);
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ expect((await page.evaluate(()=>[...document.querySelectorAll('.ck-base .bz-flame')].map(f=>getComputedStyle(f).animationName+f.getAnimations().length))).every(x=>x==='none0')).toBe(true);
+ await page.waitForTimeout(600);
  expect(await gone(page)).toBe(true);
 });
 test('D468 after the fade, a shell re-sync keeps the flame out',async({page})=>{
