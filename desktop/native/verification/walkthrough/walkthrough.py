@@ -15,9 +15,14 @@ import plistlib
 import re
 import shutil
 import socket
+import struct
 import subprocess
 import sys
+import tempfile
 import time
+import zlib
+
+from silhouette_gaps import check_window
 
 APP_EXECUTABLE = "ModelPlan"
 # D57: a ref from before the rename packages "ModelPlan Community.app" with this executable; the walkthrough
@@ -25,6 +30,8 @@ APP_EXECUTABLE = "ModelPlan"
 APP_EXECUTABLES = (APP_EXECUTABLE, "ModelPlanCommunity")
 DISPLAY_CANDIDATES = ((1920, 1200), (1920, 1080), (1680, 1050), (1600, 1200), (1440, 900), (1280, 1024))
 PARK = (0.42, 0.62)  # A screen fraction clear of the widget's edges, the menu bar and the Dock.
+TREE_TIMEOUT = 30  # The helper budgets a tree read at 20 s itself; this only catches a hung helper.
+WINDOW_ONLY_CHECKS = {"newWindow", "noNewWindow", "windowClosed", "noGaps"}  # Checks that read windows, not the tree.
 MIN_COLOURS = 24  # Coarse 12-bit colours: a blank, black or single-tone render has far fewer.
 MAX_DOMINANT = 0.97
 QUIT_SECONDS = 15
@@ -159,6 +166,25 @@ def window_ids(windows):
     return {w["id"] for w in windows if w.get("onScreen")}
 
 
+def redact_sample(text, binary, limit=15):
+    """Top frames of our own binary from `sample` output: symbol and image only, no paths, offsets or headers."""
+    frames = []
+    for line in text.splitlines():
+        found = re.search(r"([^\s(][^(]*?)\s+\(in ([^)]+)\)", line)
+        if not found:
+            continue
+        symbol, image = re.sub(r"^[\s+!:|]*(\d+\s+)?", "", found.group(1)).strip(), os.path.basename(found.group(2))
+        if image.lower() == binary.lower() and symbol not in frames:
+            frames.append(symbol[:120])
+        if len(frames) >= limit:
+            break
+    return frames
+
+
+class HelperTimeout(WalkthroughError):
+    """The helper did not answer within its time limit."""
+
+
 class Host:
     """The real Mac. Tests replace it."""
 
@@ -166,7 +192,11 @@ class Host:
         self.helper_path = helper
 
     def helper(self, *arguments):
-        result = subprocess.run([self.helper_path, *map(str, arguments)], capture_output=True, text=True, timeout=60)
+        limit = TREE_TIMEOUT if arguments[0] == "tree" else 60
+        try:
+            result = subprocess.run([self.helper_path, *map(str, arguments)], capture_output=True, text=True, timeout=limit)
+        except subprocess.TimeoutExpired:
+            raise HelperTimeout("helper %s timed out after %ss" % (arguments[0], limit))
         if result.returncode != 0:
             raise WalkthroughError("helper %s failed: %s" % (arguments[0], result.stderr.strip()[:200]))
         return json.loads(result.stdout)
@@ -181,6 +211,28 @@ class Host:
         """One window by its CGWindow number, without its shadow (-o). The PNG keeps the window's alpha, so a clear
         window shows as transparent and an opaque backing does not; the visual comparison lane reads this."""
         subprocess.run(["screencapture", "-x", "-o", "-l%d" % window_id, str(path)], check=True, timeout=30)
+
+    def sample(self, pid, path):
+        """`sample <pid> 3` into `path`; best effort, returns whether a file was written."""
+        try:
+            subprocess.run(["sample", str(pid), "3", "-file", str(path)], capture_output=True, timeout=30)
+        except (subprocess.SubprocessError, OSError):
+            return False
+        return Path(path).exists()
+
+    def web_content_pids(self, parent):
+        """WebContent processes that are children of `parent` (the app under test). Nothing else is ever sampled:
+        a process that cannot be attributed to the app by parent PID is left out."""
+        try:
+            found = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,comm="], capture_output=True, text=True, timeout=10)
+        except (subprocess.SubprocessError, OSError):
+            return []
+        pids = []
+        for line in found.stdout.splitlines():
+            fields = line.split(None, 2)
+            if len(fields) == 3 and fields[0].isdigit() and fields[1] == str(parent) and "WebContent" in fields[2]:
+                pids.append(int(fields[0]))
+        return pids
 
     def run(self, command, env, stdin=None, timeout=120):
         return subprocess.run(command, env=env, input=stdin, capture_output=True, text=True, timeout=timeout)
@@ -212,14 +264,66 @@ class Walkthrough:
         self.measures = {}
         self.expected_card = None
         self.facts = None
+        self.ax_events = []  # slow-read events of the step being walked
+        self.ax_event_count = 0
+
+    def sample_slow_read(self, why):
+        """The helper timed out or returned a truncated tree: sample the app and its WebContent process(es).
+        Raw samples hold host paths and headers, so they stay in a local temp dir outside the uploaded output folder
+        and are deleted here; the result gets only a redacted summary of the app's own top frames."""
+        self.ax_event_count += 1
+        event = {"event": why, "sampled": 0, "topFrames": []}
+        folder = None
+        try:
+            folder = Path(tempfile.mkdtemp(prefix="ax-sample-"))
+            if folder.resolve().is_relative_to(self.out.resolve()):
+                raise RuntimeError("sample dir would be uploaded")
+            targets = [("app", self.pid)] + [("webcontent", p) for p in self.host.web_content_pids(self.pid)]
+            for kind, pid in targets:
+                path = folder / ("%s-%s.txt" % (kind, pid))
+                if self.host.sample(pid, path):
+                    event["sampled"] += 1
+                    if kind == "app":
+                        event["topFrames"] = redact_sample(path.read_text(errors="replace"), self.app.stem)
+        except Exception as error:  # Evidence is best effort; it never fails the walk.
+            event["error"] = type(error).__name__
+        finally:
+            if folder is not None:
+                shutil.rmtree(folder, ignore_errors=True)
+        self.ax_events.append(event)
+
+    def full_tree(self):
+        """A tree that proves things: absence, collapse and visibility are never concluded from an incomplete one."""
+        tree = self.tree()
+        if tree.get("truncated"):
+            raise WalkthroughError("incomplete tree proves nothing")
+        return tree
 
     def tree(self):
-        tree = self.host.helper("tree", self.pid)
+        try:
+            tree = self.host.helper("tree", self.pid)
+        except HelperTimeout as error:
+            self.sample_slow_read(str(error))
+            return {"windows": [], "extras": [], "truncated": True}
+        if tree.get("truncated"):
+            self.sample_slow_read("tree truncated at the time budget")
         self.frames_mirrored = unmirror_widget(tree) or self.frames_mirrored
         return tree
 
     def windows(self):
         return self.host.helper("windows", self.pid)
+
+    def is_absent(self, target, tree=None):
+        """True only when a complete tree lacks the target. A truncated or timed-out tree never proves absence."""
+        tree = self.tree() if tree is None else tree
+        return not tree.get("truncated") and resolve(tree, target) is None
+
+    def prove_absent(self, target, tree=None):
+        tree = self.tree() if tree is None else tree
+        if tree.get("truncated"):
+            raise WalkthroughError("cannot prove absent on an incomplete tree: " + target)
+        if resolve(tree, target) is not None:
+            raise WalkthroughError("still on screen: " + target)
 
     def need(self, target):
         node = resolve(self.tree(), target)
@@ -250,7 +354,7 @@ class Walkthrough:
     def op_awaitAbsent(self, action):
         """Wait until a target has left the screen, such as the first-run page still looking for tools."""
         deadline = self.host.now() + action.get("timeout", 15)
-        while resolve(self.tree(), action["target"]) is not None:
+        while not self.is_absent(action["target"]):
             if self.host.now() >= deadline:
                 raise WalkthroughError("still on screen after %ss: %s" % (action.get("timeout", 15), action["target"]))
             self.host.sleep(0.5)
@@ -277,17 +381,35 @@ class Walkthrough:
         ("equals": {"target", "value"}), so one walk fits a build with the flow and a build without it (the
         first-run chooser, a widget that starts collapsed)."""
         if "equals" in action:
-            node = resolve(self.tree(), action["equals"]["target"])
+            node = resolve(self.full_tree(), action["equals"]["target"])
             hit = node is not None and str(node.get("value")) == action["equals"]["value"]
         else:
             target = action.get("present") or action.get("absent")
-            hit = (resolve(self.tree(), target) is not None) == ("present" in action)
+            tree = self.full_tree()
+            hit = (resolve(tree, target) is not None) == ("present" in action)
         if hit:
             for nested in action["then"]:
                 getattr(self, "op_" + nested["op"])(nested)
 
     def op_wait(self, action):
         self.host.sleep(action["seconds"])
+
+    def op_brightDesktop(self, _):
+        """Best effort: a light desktop picture, so a see-through pixel in a screenshot is as visible as the owner's.
+        The black CI desktop hid the closed-shutter hairline (the noGaps check reads the window's alpha instead)."""
+        picture = self.out / "bright-desktop.png"
+        width, height = 16, 16
+        row = b"\x00" + b"\xee\xee\xe6" * width
+        def chunk(kind, body):
+            return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+        picture.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+                            + chunk(b"IDAT", zlib.compress(row * height)) + chunk(b"IEND", b""))
+        script = 'tell application "System Events" to tell every desktop to set picture to POSIX file "%s"' % picture
+        try:
+            done = subprocess.run(["osascript", "-e", script], capture_output=True, timeout=20)
+            self.measures["brightDesktop"] = done.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            self.measures["brightDesktop"] = False
 
     def op_park(self, _):
         self.host.helper("move", *self.point(PARK))
@@ -381,10 +503,10 @@ class Walkthrough:
         # cockpit is closed, and a page caught mid-prewarm once passed for an open cockpit, so the Air 1470x956 step
         # never clicked the icon and found nothing to measure (build 6a084a0e). "Open" must also hold a moment later.
         target = "window-of:label:ModelPlan Cockpit"
-        shown = resolve(self.tree(), target) is not None
+        shown = resolve(self.full_tree(), target) is not None
         if shown and action["want"] == "open":
             self.host.sleep(1.5)
-            shown = resolve(self.tree(), target) is not None
+            shown = resolve(self.full_tree(), target) is not None
         if shown == (action["want"] == "open"):
             return
         self.host.helper("click", *centre(self.need("status-item")["frame"]))
@@ -400,9 +522,9 @@ class Walkthrough:
                     break
                 self.host.helper("click", *centre(button["frame"]))
             deadline = self.host.now() + action.get("timeout", 5)
-            while resolve(self.tree(), target) is not None and self.host.now() < deadline:
+            while not self.is_absent(target) and self.host.now() < deadline:
                 self.host.sleep(0.25)
-            if resolve(self.tree(), target) is None:
+            if self.is_absent(target):
                 return
         raise WalkthroughError("cockpit still open")
 
@@ -426,8 +548,7 @@ class Walkthrough:
             self.host.sleep(0.25)
 
     def op_assertAbsent(self, action):
-        if resolve(self.tree(), action["target"]) is not None:
-            raise WalkthroughError("still on screen: " + action["target"])
+        self.prove_absent(action["target"])
 
     def card_at(self, point):
         self.host.helper("move", *point, 0.4)
@@ -524,7 +645,11 @@ class Walkthrough:
 
     def check(self, check, shot_dir, record):
         kind, value = next(iter(check.items()))
-        tree = self.tree()
+        tree = self.tree() if kind not in WINDOW_ONLY_CHECKS else None
+        if tree is not None and tree.get("truncated"):
+            # exists, opened, absent, checked, on, moved, changed, cardNamed, collapsed, allOnScreen, fits, nonblank,
+            # differsFrom and matches all read the tree: an incomplete one proves none of them.
+            raise WalkthroughError("incomplete tree proves nothing for check " + kind)
         if kind == "differsFrom" and self.compare(value["step"], record) < value["min"]:
             raise WalkthroughError("too close to " + value["step"])
         if kind == "matches" and self.compare(value["step"], record) > value["max"]:
@@ -533,8 +658,8 @@ class Walkthrough:
             raise WalkthroughError("missing " + value)
         if kind == "opened" and resolve(tree, value) is None:
             raise WalkthroughError("not on screen: " + value)
-        if kind == "absent" and resolve(tree, value) is not None:
-            raise WalkthroughError("still on screen: " + value)
+        if kind == "absent":
+            self.prove_absent(value, tree)
         if kind == "checked" and str((resolve(tree, value) or {}).get("value")) != "0":
             raise WalkthroughError("not open: " + value)
         if kind == "on" and str((resolve(tree, value) or {}).get("value")) != "1":
@@ -575,6 +700,17 @@ class Walkthrough:
             raise WalkthroughError("a new window opened")
         if kind == "windowClosed" and not self.window_baseline - window_ids(self.windows()):
             raise WalkthroughError("no window closed")
+        if kind == "noGaps":
+            # The step's window capture keeps its alpha, so a see-through hairline inside the silhouette shows even on a
+            # black desktop (owner test build 6: a 1 px line under the closed cockpit's cap).
+            window = (record.get("window") or {}).get("file")
+            if not window:
+                raise WalkthroughError("no window capture to scan for gaps")
+            gaps = check_window(shot_dir / window)
+            record.setdefault("measures", {})["silhouetteGapRows"] = [row for row, _ in gaps]
+            if gaps:
+                raise WalkthroughError("transparent hairline inside the window silhouette at row(s) %s of %s"
+                                       % (", ".join("%d (%d%% wide)" % (row, round(f * 100)) for row, f in gaps[:6]), window))
         if kind == "nonblank":
             node = resolve(tree, value)
             if node is None:
@@ -605,6 +741,7 @@ class Walkthrough:
         started = self.host.now()
         reasons, skipped = [], None
         self.measures = {}
+        self.ax_events = []
         self.window_baseline = window_ids(self.windows())
         try:
             for action in step.get("actions", []):
@@ -618,14 +755,20 @@ class Walkthrough:
         if self.measures:
             record["measures"] = dict(self.measures)
         if skipped:
+            if self.ax_events:
+                record["axEvents"] = list(self.ax_events)
             record.update(status="skipped", reason=skipped, seconds=round(self.host.now() - started, 2))
             return record
         # A failed step is photographed too: the picture shows where it stopped.
         self.host.capture(self.out / (name + ".png"))
         record["file"] = name + ".png"
-        tree = self.tree()
-        (self.out / (name + ".tree.json")).write_text(json.dumps(tree, indent=1, sort_keys=True), encoding="utf-8")
-        record["tree"] = name + ".tree.json"
+        # The full tree is read only when the shot or a check needs it: a slow read must not stall the others.
+        crop_or_window = step.get("shot", {}).get("crop") or step.get("shot", {}).get("window")
+        needs_tree = bool(crop_or_window) or any(next(iter(c)) not in WINDOW_ONLY_CHECKS for c in step.get("checks", []))
+        tree = self.tree() if needs_tree else {}
+        if needs_tree:
+            (self.out / (name + ".tree.json")).write_text(json.dumps(tree, indent=1, sort_keys=True), encoding="utf-8")
+            record["tree"] = name + ".tree.json"
         crop = step.get("shot", {}).get("crop")
         if crop:
             # "remembered" crops the frame an action remembered, such as where a collapsed widget was.
@@ -650,6 +793,8 @@ class Walkthrough:
                     reasons.append(str(error))
                 except Exception as error:
                     reasons.append("harness error in check: %s: %s" % (type(error).__name__, error))
+        if self.ax_events:
+            record["axEvents"] = list(self.ax_events)
         record.update(status="fail" if reasons else "pass", reason="; ".join(reasons) or None,
                       seconds=round(self.host.now() - started, 2))
         return record

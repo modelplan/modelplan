@@ -230,6 +230,9 @@ func Transaction(file string, change, finalize func(*State) error) error {
 }
 
 func transaction(file string, change, finalize func(*State) error, wait bool) error {
+	if err := writable(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return err
 	}
@@ -294,6 +297,9 @@ func transaction(file string, change, finalize func(*State) error, wait bool) er
 }
 
 func save(file string, s State) error {
+	if err := writable(); err != nil {
+		return err
+	}
 	if err := storeReceipts(&s); err != nil {
 		return err
 	}
@@ -418,6 +424,9 @@ func lockConsent(file string) (func(), error) {
 // revoked provider is reselected only after this lock, never from a stale list.
 func ReaderLock() (func(), error) {
 	file := Path() + ".readers.lock"
+	if err := writable(); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return nil, err
 	}
@@ -461,6 +470,15 @@ func ReaderLockContext(ctx context.Context) (func(), error) {
 }
 
 func LocalWrite(tool string, write func() error) error {
+	return LocalWriteUnder(tool, Fence{}, write)
+}
+
+// LocalWriteUnder is LocalWrite for a pass that discovered its input under expect: a commit
+// under any other fence returns ErrChanged without calling write, so nothing found or bound
+// under an earlier admission is published under a later one; the caller's next pass starts
+// over. write runs inside Publish, so the fence cannot move while it binds and commits. A zero
+// expect checks only the current admission (LocalWrite).
+func LocalWriteUnder(tool string, expect Fence, write func() error) error {
 	unlock, err := ReaderLock()
 	if err != nil {
 		return err
@@ -469,6 +487,9 @@ func LocalWrite(tool string, write func() error) error {
 	s, mode := Current()
 	if !s.Allows(tool, Local, mode) {
 		return errors.New("local reader not permitted")
+	}
+	if expect != (Fence{}) && s.Fence() != expect {
+		return ErrChanged
 	}
 	return Publish(s.Fence(), write)
 }
@@ -495,8 +516,10 @@ func PublishContext(ctx context.Context, f Fence, write func() error) error {
 
 func publish(ctx context.Context, f Fence, write func() error, wait bool) error {
 	file := Path() + ".lock"
-	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
-		return err
+	if !readOnlyProcess.Load() {
+		if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+			return err
+		}
 	}
 	var timer *time.Timer
 	if wait {
@@ -509,7 +532,7 @@ func publish(ctx context.Context, f Fence, write func() error, wait bool) error 
 			return err
 		}
 		var err error
-		unlock, err = lockFile(file)
+		unlock, err = lockPublication(file)
 		if err == nil {
 			break
 		}

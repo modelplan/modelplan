@@ -92,12 +92,20 @@ test('WP-12 CKP-MFD-61 the first read shows a placeholder block, no totals',asyn
  await expect(page.locator('.pg-overview .ov-skel')).toHaveCount(1);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);
 });
 
-test('WP-12 CKP-MFD-62 the Grid key is not lit and pressing it changes nothing',async({page})=>{
- await open(page,recorded(60));
- const grid=page.locator('[data-opt="chart"] b',{hasText:/^Grid$/});
- await expect(grid).not.toHaveClass(/\bon\b/);await grid.click();
- await expect(page.locator('[data-opt="chart"] b.on')).toHaveText('Bars');
- await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(0);
+test('WP-12 CKP-MFD-62 the Grid key switches to the day-by-hour heatmap and back to the bars, and the hint follows',async({page})=>{
+ const data=recorded(60);data.history.hourly=[{at:new Date(2026,10,4,9).toISOString(),source:'codex',origin:'live',observedOutputTokens:500}];
+ await open(page,data);
+ const chart=page.locator('[data-opt="chart"]');
+ await expect(chart.locator('b.on')).toHaveText('Bars');
+ await page.locator('[data-opt="chart"] b',{hasText:/^Grid$/}).click();
+ await expect(chart.locator('b.on')).toHaveText('Grid');
+ await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(1);await expect(page.locator('.pg-overview svg.ov-chart')).toHaveCount(0);
+ await expect(chart).toHaveAttribute('data-tip',/hour/i);
+ // The range key applies; the stack key belongs to the bars only.
+ await expect(page.locator('[data-opt="range"]')).toHaveCount(1);await expect(page.locator('[data-opt="stack"]')).toHaveCount(0);
+ await page.locator('[data-opt="chart"] b',{hasText:/^Bars$/}).click();
+ await expect(chart.locator('b.on')).toHaveText('Bars');await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(0);
+ await expect(chart).toHaveAttribute('data-tip',/bar/i);await expect(page.locator('[data-opt="stack"]')).toHaveCount(1);
 });
 
 // CKP-MFD-60 through the wire's real cost section (WP-06, history.cost): bars, the ≈cost total and the unpriced note.
@@ -115,19 +123,6 @@ test('WP-12 CKP-MFD-60 wire cost draws one bar per day, the ≈cost total and th
  await expect(page.locator('.pg-overview .ov-note')).toContainText('has no public price');
 });
 
-test('sampling 11-22: compact overview keeps both chart axis labels above its footer',async({page})=>{
- const data=priced();data.details.resetEvents=resets(1).details.resetEvents;
- await open(page,data,'en','compact');
- const fill=page.locator('.pg-overview .mfd-fill'),labels=page.locator('.pg-overview .ov-chart .ov-ax');
- await expect(labels).toHaveCount(2);
- const bounds=await fill.boundingBox(),footer=await page.locator('.pg-overview .ov-foot').boundingBox();
- const boxes=await labels.evaluateAll(list=>list.map(e=>e.getBoundingClientRect().toJSON()));
- for(const box of boxes){
-  expect(box.top,'axis top').toBeGreaterThanOrEqual(bounds.y-0.5);
-  expect(box.bottom,'axis bottom').toBeLessThanOrEqual(Math.min(bounds.y+bounds.height,footer.y)+0.5);
- }
-});
-
 test('sampling 11-22: a full-height overview keeps the chart at its original height',async({page})=>{
  await open(page,priced(),'en','tall');
  const chart=page.locator('.pg-overview .ov-chart');
@@ -136,12 +131,7 @@ test('sampling 11-22: a full-height overview keeps the chart at its original hei
  expect(h).toBeCloseTo(110,0);
 });
 
-// macrevc-1057-2: the alert budget follows the measured screen, tall and compact, and a change of size.
-test('macrevc-1057-2 the compact screen shows one alert plus "+N ▸"; the tall one four lines; a size change redraws',async({page})=>{
- const {send,receive}=await open(page,resets(5),'en','compact');
- await expect(rows(page)).toHaveCount(2);await expect(rows(page).last()).toHaveClass(/\bal-more\b/);await expect(rows(page).last()).toHaveText('+4 ▸');
- await expect(rows(page)).toHaveCount(2);
-});
+// macrevc-1057-2: the alert budget follows the measured screen and a change of size (D444: one layout).
 test('macrevc-1057-2 a change of the screen size redraws the alert budget',async({page})=>{
  await open(page,resets(5));
  await expect(rows(page)).toHaveCount(4);

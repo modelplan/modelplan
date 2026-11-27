@@ -14,7 +14,9 @@ import ModelPlanCore
     public init(clock:@escaping ()->TimeInterval){self.clock=clock}
     public func arm(at deadline:TimeInterval,_ action:@escaping @MainActor ()->Void){
         cancel();guard deadline.isFinite else{return}
-        let value=Timer(timeInterval:max(0.001,deadline-clock()),repeats:false){_ in MainActor.assumeIsolated{action()}}
+        let delay = max(0.001, deadline - clock())
+        let value = Timer(timeInterval: delay, repeats: false) { _ in MainActor.assumeIsolated { action() } }
+        value.tolerance = min(0.1, delay * 0.1)
         timer=value;RunLoop.main.add(value,forMode:.common)
     }
     public func cancel(){timer?.invalidate();timer=nil}
@@ -78,6 +80,8 @@ public struct DockEdgePresentation:Equatable,Sendable {
     public var onDragCancelled: (() -> Void)?
     /// The press is over, after the release refresh.
     public var onPressEnded: (() -> Void)?
+    /// Auxiliary pointer effects share the scheduled placement sample.
+    public var onScheduledSample: (() -> Void)?
     /// One fixed-wording line per drag start, end or cancel and per edge change.
     public var onDiagnostic: ((String) -> Void)?
     public var isBackgroundMoving: Bool { presentation?.moving == true }
@@ -137,10 +141,16 @@ public struct DockEdgePresentation:Equatable,Sendable {
             if drag != nil, allowsDrag(input) {
                 return
             }
-            let changed=geometry != env.displays || layouts != env.layouts || primaryID != env.primaryDisplayID
+            // WP-17: the other edges' faces, and so their layouts, exist only while a press is held and are dropped
+            // by the next full rebuild. Their coming and going is not a geometry change: only the displays and the
+            // layout of the edge the widget is placed on re-arm the arrival guard (and collapse an auto-hide widget).
+            let placedEdge = preference.edge
+            let changed = geometry != env.displays || primaryID != env.primaryDisplayID
+                || layouts.filter { $0.edge == placedEdge } != env.layouts.filter { $0.edge == placedEdge }
             let extraClear: DockRecordedLocks = drag == nil ? [] : .drag
             if drag != nil { clearMove() }
-            if changed { geometry=env.displays;layouts=env.layouts;primaryID=env.primaryDisplayID }
+            layouts = env.layouts
+            if changed { geometry=env.displays;primaryID=env.primaryDisplayID }
             let place=try resolve(preference:preference,environment:env,pointer:env.pointer)
             input.outerEdge=place != nil
             if let p=place,let d=env.displays.first(where:{$0.id==p.displayID}),let pointer=env.pointer{
@@ -158,14 +168,22 @@ public struct DockEdgePresentation:Equatable,Sendable {
             if result.didReveal || reset?.didReveal == true{onReveal?()}
             guard running,timerGeneration==token else{return}
             guard input.lifecycleActive, input.enabled else{return}
-            let due=min(result.nextDeadline ?? .infinity,now+visibility.policy.sampleInterval)
+            // The painted sliver's tracking area covers only part of the wake
+            // strip. Sample the whole strip promptly until the widget expands.
+            let activeInterval = visibility.policy.sampleInterval
+            let idleInterval = result.state == .sliver ? activeInterval : visibility.policy.idleSampleInterval
+            let due = result.nextDeadline.map { min($0, now + activeInterval) } ?? now + idleInterval
             guard due.isFinite,due>now else{throw DockLogicError.invalidTime}
-            scheduler.arm(at:due){[weak self] in guard let self,self.running,self.timerGeneration==token else{return};self.refresh()}
+            scheduler.arm(at: due) { [weak self] in
+                guard let self, self.running, self.timerGeneration == token else { return }
+                self.refresh()
+                self.onScheduledSample?()
+            }
         }catch{
             clearMove();visibility = .init(policy:visibility.policy)
             publish(.init(state:.suppressed(.lifecycle),placement:nil,carriedFrame:nil,moving:false))
             onFailure?(error)
-            let retry = now + visibility.policy.sampleInterval
+            let retry = now + visibility.policy.idleSampleInterval
             guard running, timerGeneration == token, env.presence.lifecycleActive, env.presence.enabled,
                   retry.isFinite, retry > now else { return }
             scheduler.arm(at: retry) { [weak self] in

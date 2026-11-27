@@ -81,7 +81,7 @@ func TestAccountTodaySubscriptionWithdrawsExpiredEvidence(t *testing.T) {
 			<-resumeWatch
 		}
 		return paths(a)
-	}, Cleanup: func(string, bool) error { return nil }})
+	}, Cleanup: func(string, bool, consent.EraseGuard) error { return nil }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestAccountTodaySubscriptionWithdrawsExpiredBinding(t *testing.T) {
 		return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "codex", ReaderID: "native:codex", Preferred: "native"}, Detected: true}}}
 	}, Paths: func(a consent.Admission) quota.Paths {
 		return quota.Paths{Cache: cache, CodexHome: codexHome, Admission: &a}
-	}, Cleanup: func(string, bool) error { return nil }})
+	}, Cleanup: func(string, bool, consent.EraseGuard) error { return nil }})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -38,14 +38,21 @@ const CAUSES = {
   network: 'causeNetwork', timeout: 'causeNetwork', http_5xx: 'causeNetwork', http_429: 'causeNetwork', http_403: 'causeNetwork',
 };
 const NOT_UNREADABLE = new Set(['ok', 'estimated', 'not_read_yet', 'reader_busy', 'usage_not_reported', 'no_usage_windows', 'stale_reading', 'catalogue_off', 'readers_off', 'no_dock_rows', 'not_admitted', 'cleanup_pending']);
-export function unreadableCause(code) { return Object.hasOwn(CAUSES, code) ? both(CAUSES[code]) : null; }
+// G3-218: Antigravity's reader reads the running app (no install step, no Node.js), so its runtime_missing means the
+// app is not running. The tool id comes from the producer row; other tools keep the shared phrase.
+const TOOL_CAUSES = {antigravity: {runtime_missing: 'causeNotRunning'}};
+export function unreadableCause(code, tool = null) {
+  const id = typeof tool === 'string' ? tool.toLowerCase() : '';  // Swift lowercases the tool id the same way
+  const own = id && Object.hasOwn(TOOL_CAUSES, id) && Object.hasOwn(TOOL_CAUSES[id], code) ? TOOL_CAUSES[id][code] : null;
+  return own ? both(own) : Object.hasOwn(CAUSES, code) ? both(CAUSES[code]) : null;
+}
 /** A failure that means the subscription cannot be read (grey), not one still being read or with nothing to read. */
 export const isUnreadable = code => !!code && !NOT_UNREADABLE.has(code);
 
 export function alertSentence(input) {
   if (input.kind === 'unreadableMany') { const s = both('unreadMany', () => ({n: String(input.count)})); return {text: s, short: s}; }
   if (input.kind === 'unreadable') {
-    const head = both('unread', lang => ({s: name(input.subscription, lang)})), cause = input.cause === null ? null : unreadableCause(input.cause);
+    const head = both('unread', lang => ({s: name(input.subscription, lang)})), cause = input.cause === null ? null : unreadableCause(input.cause, input.tool ?? null);
     return {text: join(head, cause), short: head};
   }
   const usedUp = input.remaining <= 0, who = lang => ({s: name(input.subscription, lang), w: name(input.window, lang), r: String(Math.round(input.remaining))});

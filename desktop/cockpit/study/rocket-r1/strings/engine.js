@@ -13,7 +13,7 @@ register('eng', {
   speed: ['silk', '速度', 'Speed'],
   reserve: ['silk', '储备', 'Reserve'],
   // Owner D76: what the Reserve row holds, as a hover hint on its label (not drawn otherwise).
-  reserveHint: ['aria', '储备：还能用的额外重置次数和剩余点数', 'Reserve: extra resets you can still use and remaining credits'],
+  reserveHint: ['aria', '储备：还能用的额外重置次数和剩余点数', 'Reserve: banked resets you can still use and remaining credits'],
   row5h: ['lcd', '5小时', '5h'],
   rowDay: ['lcd', '每日', 'Daily'],
   rowWeek: ['lcd', '每周', 'Weekly'],
@@ -33,7 +33,8 @@ register('eng', {
   resetsCompact: ['lcd', '重置{n}次', {"one": "{n} reset", "other": "{n} resets"}],
   balance: ['lcd', '余额 {v}', 'Balance {v}'], // G3-109: a money balance in the reserve row
   creditWords: ['lcd', '{n} 点', {"one": "{n} credit", "other": "{n} credits"}],
-  other: ['silk', '其他', 'Other'], // all nonmatching general windows and scoped quotas
+  other: ['silk', '其他', 'Other'], // a window of unknown kind
+  extra: ['silk', '额外', 'Extra'], // D417: heading of the third row when its columns name different windows (each cell names its own)
   // round D2: each quota cell's period tag (the extras use extra.name: Fable·周)
   t5h: ['lcd', '5小时', '5h'],
   tDay: ['lcd', '日', 'day'],
@@ -78,7 +79,7 @@ register('eng', {
   tps: ['lcd', 't/s', 't/s'],
   // 专项: extra quotas (a model's or a feature's own limit); +1 = one more extra in the column
   xMore: ['lcd', '+{n}', '+{n}'],
-  // 储备: reset cards and credits
+  // 储备: banked resets and credits
   cards: ['lcd', '↺{n}', '↺{n}'],
   credits: ['lcd', '{n}点', '{n} cr'],
   expires: ['lcd', '{t} 后到期', 'expires in {t}'], // CKP-ENG-52: what the reserve's time means

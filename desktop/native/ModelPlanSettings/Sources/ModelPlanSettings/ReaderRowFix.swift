@@ -64,6 +64,15 @@ extension ReaderCauseTable {
                                               : .init("No OpenCode Go key found", "没有找到 OpenCode Go 的密钥"),
                          action: .init("Add key", "添加密钥"), target: .addKey)
         }
+        if rowIsGLM(tool), canon == "unsupported_login" || canon == "unknown_store_format" {
+            // Owner 11-22: the action opens the D90 key field on this row directly; without key entry it opens Settings.
+            return .init(reason: zcodeUnreadable.reason, action: .init("Paste key…", "粘贴 key…"), target: keyEntryAvailable ? .addKey : .openSettings)
+        }
+        if rowIsGLM(tool), ["keychain_unset", "keychain_unavailable", "keychain_denied"].contains(canon) {
+            // D380: one button, the same Keychain consent as Claude Code's; macOS then asks (Always Allow).
+            return .init(reason: .init("ZCode may keep its sign-in key in the Keychain", "ZCode 的登录密钥可能保存在钥匙串中"),
+                         action: .init("Allow reading", "允许读取"), target: .allowKeychain)
+        }
         if canon == "region_refused", keyEntryAvailable, rowIsKeyProvider(tool) {
             // SET-9-41: a third-party relay address cannot be read, but the user can still enter a key of their own, which goes
             // only to the official host; the row says why and offers the same Add key entry.
@@ -79,6 +88,10 @@ extension ReaderCauseTable {
             else if let name { reason = .init("Install \(name), or make sure it runs from a terminal", "安装 \(name)，或确认它在命令行里能运行") }
             else { reason = .init("Install the tool, or make sure it runs from a terminal", "安装这个工具，或确认它在命令行里能运行") }
             return .init(reason: reason, action: .init("Open install page", "打开安装页面"), target: .installTool)
+        case "runtime_missing" where (tool ?? "").lowercased() == "antigravity":
+            // The app is not open (no Node.js involved): the row's button opens Antigravity.
+            return .init(reason: .init("Antigravity is not running, or its local service was not found", "没有检测到运行中的 Antigravity"),
+                         action: .init("Open Antigravity", "打开 Antigravity"), target: .openTool)
         case "runtime_missing":
             return .init(reason: .init("Node.js is required", "需要运行环境"),
                          action: .init("Install Node.js", "安装运行环境"), target: .installNode)

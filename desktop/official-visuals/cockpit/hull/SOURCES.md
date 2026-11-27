@@ -7,8 +7,8 @@ Copyright (c) 2026 ModelPlan. The owner approved publishing the r3 hull's plain 
 | --- | --- | --- | --- |
 | assets/aft-640-1x.png | 19368 B | 636x22 | `49de9e471c3ae935924e42f56412b437ae8bdf47f1df1aa410c5d79523546798` |
 | assets/aft-640-2x.png | 74937 B | 1272x44 | `f2566898f7ed1ab174e778755b7f57f6b20cbae5ac475a3767ae65d6417dbdf5` |
-| assets/aft-890-1x.png | 24052 B | 636x22 | `f74f44eb74cc1bd6178e8d308bfaa9928d698643858ffbc8b572449d22b4effa` |
-| assets/aft-890-2x.png | 83603 B | 1272x44 | `cde0a4fc30f56086531b4e61a65a771168d79cad50f597075e706cfff84d9a7d` |
+| assets/aft-890-1x.png | 18637 B | 636x22 | `3809bda086211185c6cfd160f9f11b684af67b4186bcbb6eb95ada4f1c7e09fd` |
+| assets/aft-890-2x.png | 61733 B | 1272x44 | `faf13c486b5133bc357fa49b87df33ff171bcda530049709c820c31ed7a21b78` |
 | assets/cone-640-1x.png | 2371 B | 636x20 | `c4399404a236a79b85ec8b0ceda7d1d0e9b46f8722eec9bf02ec812ace09c240` |
 | assets/cone-640-2x.png | 8114 B | 1272x40 | `c414f411509b8129bb1275b68f34f3dabca2ead3201888e93482f8f3a1dd995a` |
 | assets/cone-890-1x.png | 2848 B | 636x24 | `53240314203371f4401e9d1f60f0145f69e394a2d50278c9d1c52b1569337c37` |
@@ -42,38 +42,42 @@ Side walls (owner approval after D68): `lower-skin-890-1x.png` and `lower-skin-8
 
 | File | Size | Pixels | SHA-256 |
 | --- | --- | --- | --- |
-| assets/lower-skin-890-1x.png | 4249 B | 636x32 | `a5e2155c50c767aec22a91a1045d4d70a4e2386af79af8323df39bf56a3a257e` |
-| assets/lower-skin-890-2x.png | 16486 B | 1272x64 | `f55d3d65007a86b66f7fd4b7d9f0cf3583efe13c57b63c38daf12d6f90fce521` |
+| assets/lower-skin-890-1x.png | 4264 B | 636x32 | `8342f3b46866bb39042f28c4e5f86d357b172cbe64eebd6feca2ae0fa0b1ba44` |
+| assets/lower-skin-890-2x.png | 16381 B | 1272x64 | `b9792d5da3bc3395480187b751ae127acfbe70007b2d2edb2ed37f9fafee5872` |
 
 Closed state (owner D72, 2026-11-08): `aft-closed-1x.png` and `aft-closed-2x.png` are copied unchanged from the private study `design-handoffs/opus-r7/src/assets/canopy-h1/` at design commit `ae0245ec6d043a96f6d8fd7423f5cb7dc7716166`, and `cap-slab.svg` from `clients/official-visuals/study/strip-hull-unify/` at design commit `7b5fda0018f42ce3c9a12ee49469aa4e91f11eb1`. The study draws the closed shell's aft plate and its 16 px cap slab with them.
 
 | File | Size | Pixels | SHA-256 |
 | --- | --- | --- | --- |
-| assets/aft-closed-1x.png | 23635 B | 636x22 | `2d4409612838ed3fb87a5e9f6b535b73460a6bbbaf5365d2bea444d9cb8f9ae1` |
-| assets/aft-closed-2x.png | 83001 B | 1272x44 | `81d7d4733cd2e047d8dc995350ce43a7f5eb6291fafab612718d3e7252505d7e` |
-| assets/cap-slab.svg | 1190 B | 620x16 (SVG) | `b42be81e9bed80298f7fdb8f7069d0640b1e860c68c4967d727eaef9118a07a8` |
+| assets/aft-closed-1x.png | 18636 B | 636x22 | `9794ab650b9494482a32e0c9bb3534c2810e43e7b3654273c8a62388d34d675f` |
+| assets/aft-closed-2x.png | 61717 B | 1272x44 | `6bac562c187b1b8e3a720fd4ad9865c361c3ed7d607bf490e2472115a8934d07` |
+| assets/cap-slab.svg | 27899 B | vector | `6d9e0f017c58088d2ecc9ff90dfcc068cfb7b9b117518ddebb37deeeba012bd5` |
 
 Hull shape (owner build 13, D72: publishing study art needs no separate approval): the study cuts the lower-skin wall tile with the alpha of these canopy-h1 parts, so the hull is narrow under the canopy and wide below the instruments: an upper wall 8 px inside the 636 px hull, a 31 px taper and the full-width lower wall. They are copied unchanged from the private study `design-handoffs/opus-r7/src/assets/canopy-h1/` at design commit `ae0245ec6d043a96f6d8fd7423f5cb7dc7716166`. The study's taper is byte-identical in its 890, 640 and closed copies and its closed lower stage is the 890 one, so only those names are published.
 
 | File | Size | Pixels | SHA-256 |
 | --- | --- | --- | --- |
-| assets/upper-walls-890-1x.png | 27486 B | 636x283 | `e4d876240600d00a89152eef2e4a85876d14ac8a5373f8d951fa813275a281ee` |
-| assets/upper-walls-890-2x.png | 99487 B | 1272x566 | `6b220bce9f62606ca1dddc20720a1760717fa38414859c0b7dfcd772a1a7a3ae` |
-| assets/upper-walls-640-1x.png | 27173 B | 636x277 | `301f4c0008cfdcdac598099e699d25fd764df777866b96ab234f37d1c79238c7` |
-| assets/upper-walls-640-2x.png | 98988 B | 1272x554 | `d2122f4366f21686b6fcb6dae3c5f3442d2c5b11b7c34c062ec2d6414891b6a9` |
-| assets/upper-walls-closed-1x.png | 29951 B | 636x283 | `d84a9e660c9455cf5cad25131e9ebba1dc558ef3894d2855d0ca1a75a5123a05` |
-| assets/upper-walls-closed-2x.png | 107765 B | 1272x566 | `bf1ef774ffb0d0dcf2513ee364c521d7b53303bf98bb47a8001ec4681b926d90` |
-| assets/upper-skin-890-1x.png | 2927 B | 636x32 | `8ef4bd0a30df20a1a8c5552d678fd8a32f7be4883598804a4c98229c0ddb925d` |
-| assets/upper-skin-890-2x.png | 10600 B | 1272x64 | `701c4b83c898acd85ff7b86a2f3a98b8f2f6cc9a8cbf1915525a540a4f40b2e7` |
-| assets/upper-skin-640-1x.png | 2934 B | 636x32 | `e7f5d6fbd254ec3cce275f1bfa5820688d905ec15c4fc9336641cf20decde65a` |
-| assets/upper-skin-640-2x.png | 10708 B | 1272x64 | `a6b1f459965920fba983e57b0db5b072acf0a2a854142d05cba4e200ce46f327` |
-| assets/upper-skin-closed-1x.png | 3276 B | 636x32 | `593e78cbacc02e57997ca50d09ea2955feb16b4b7d3af045531b16097b150c43` |
-| assets/upper-skin-closed-2x.png | 11758 B | 1272x64 | `18a4592aa1822b9148bce5568dbc057224b42390ea509dac011953e8b170b0c6` |
+| assets/upper-walls-890-1x.png | 20658 B | 636x283 | `595431f278ce7b880443d55dc65c251b152905457198244e0bdbe132b5454163` |
+| assets/upper-walls-890-2x.png | 70402 B | 1272x566 | `9b5b8d4e32708a93398fffa329ef2084c569eb7019247eb15d7087a40eb7e0f1` |
+| assets/upper-walls-640-1x.png | 20740 B | 636x277 | `1d5ab25a1d4068c0a3b4bbc1a5f0aeede15a1795c0b661848b21538d488a4222` |
+| assets/upper-walls-640-2x.png | 71534 B | 1272x554 | `de98a15f258cffe1f2b990f5b9b045187c1b649a3fac57958d8d1dd1ce57d3b4` |
+| assets/upper-walls-closed-1x.png | 21713 B | 636x283 | `bbf258da8af9775832aa8d22c8d05b7004c96b2a587bae0f10cfcbb09564aca2` |
+| assets/upper-walls-closed-2x.png | 73554 B | 1272x566 | `4ef5c1121b74c7cbc9b634d7dbf67c1100c27e32d2c1288dad6ce74a20e1ddf8` |
+| assets/upper-skin-890-1x.png | 2318 B | 636x32 | `1c13f3daf110a262024c792360ef6c2822865a92bf1868baff271d11798db0a0` |
+| assets/upper-skin-890-2x.png | 7771 B | 1272x64 | `438d313ce7512b415540925dd2572877792ccdf936da9415ad4247104ccd38a3` |
+| assets/upper-skin-640-1x.png | 2304 B | 636x32 | `d8d03b2b251e0a1bf0ad302cf856c370862aac6d0aefbbbd357e01e2d573f3ec` |
+| assets/upper-skin-640-2x.png | 7872 B | 1272x64 | `3bdc5be27fe35ba3b865fa6cf14a74931ddf6ffc6e086b84e6d8ad6c710af015` |
+| assets/upper-skin-closed-1x.png | 2388 B | 636x32 | `b741dc0754f440b62544318fd104b802ab1280b727cc7f87197610df4d6034bd` |
+| assets/upper-skin-closed-2x.png | 7939 B | 1272x64 | `301f66042be31e24049b502378fde19cc565e9c0997d7e13b3ef866674635bd7` |
 | assets/taper-890-1x.png | 3472 B | 636x31 | `7b47121f68363411a95be9f89a2b4a1df4b4d4dd6ee0845ea35e63e5cb2b7169` |
 | assets/taper-890-2x.png | 12216 B | 1272x62 | `062979102cf58b01f6a464759938221be960a9684b857e08348440aa505c4d90` |
 | assets/lower-stage-890-1x.png | 33608 B | 636x338 | `7e2dbf2d0a6f9132b8d02b2d19d4c03e25ecfaf2f722938f36dfd234fecb1eea` |
 | assets/lower-stage-890-2x.png | 137200 B | 1272x676 | `97b1ffa26621f48d87919ce2b21188e5cc1b2c828956da573b35570e1a193519` |
 | assets/lower-stage-640-1x.png | 26333 B | 636x262 | `ebed6d7e02fe359dd3126eab10f9d4d334681d8aed293af9b32a9ec7f59a8433` |
 | assets/lower-stage-640-2x.png | 106048 B | 1272x524 | `5c56b01c3f5425018528346940d68353e86ff29ee4a415d1e5f0e2f39d8f2c38` |
+| assets/cap-closed-1x.png | 6549 B | 620x9 | `5805ee2fbbfa5bb93b713c4bf09e4f5ddaf32e4efcc6f22548b9bb6b109bad75` |
+| assets/cap-closed-2x.png | 20816 B | 1240x18 | `b6d413bb1487585745132a2779bb880044d8eb081c218e831127d52f459a1a03` |
+| assets/title-edge-1x.png | 5123 B | 620x7 | `42b949b55e7bb1f4d3c413e11cd545581a83c054a024be95e0f26a3affd7b5a8` |
+| assets/title-edge-2x.png | 16875 B | 1240x14 | `3d8c008b1f178d719fc03a5e51bddfb11884fa360783f0f070b8ee8f76eaa5f9` |
 
-Retouch (owner D411, 2026-11-24, cockpit nitpick list 13): the rows above that changed hash after their first publication were edited by pixel, with no new artwork. `lower-skin-890-1x/2x.png`: the 2x2 bright speck (36-37, 25-26 at 2x; 18, 12-13 at 1x) that repeated every 32 px on the left wall is replaced by a vertical interpolation of its neighbours. `aft-890-*`, `aft-closed-*`: a brightness step in the brushed highlight band at x=498 (1x) / 996 (2x) is smoothed by a linear brightness correction that fades out over 24 px (2x) / 12 px (1x) on each side of the seam, rows 8-17 (2x) / 4-9 (1x) only; the pixels that actually change span columns 975-1017 (43 columns, 2x) and 488-508 (21 columns, 1x). Alpha is untouched and `aft-640-*` is unchanged. `upper-walls-*` and `upper-skin-*`: the right outer edge columns' alpha is mirrored from the left so the two wall edges match.
+Owner window pack (2026-11-26, owner-made, night only): lower-skin, taper, lower-stage, aft-890, the closed-shell plates, title-edge and cap-slab were replaced or added from the owner delivery; `skin.css` loads after the night styles.
