@@ -14,7 +14,7 @@
 // Every red, amber and unreadable line is the one shared sentence (study/rocket-r1/alert-sentence.js, ALR-50).
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
-import {newsClock} from './news-clock.js';
+import {newsClock,newsMark} from './news-clock.js';
 import {currentWindow,runOutMinutes} from './prototype-data-adapter.js';
 import {alertSentence,isUnreadable,openSettingsAction,resetsAvailable,type Both} from '../study/rocket-r1/alert-sentence.js';
 import {tables} from '../study/rocket-r1/i18n.js';
@@ -39,6 +39,8 @@ export interface CautionItem {
  /** D466: the one blue dot of reset news (hollow = announced, solid = confirmed, or banked resets about to expire). Rows
   *  without it carry no bullet: colour and words say the rest. */
  readonly dot?:'hollow'|'solid';
+ /** D466: the news mark of the announcement this row draws (the clock records a look only for rendered marks). */
+ readonly news?:string;
  /** CKP-MFD-56: a grey row opens Settings › Subscriptions instead of selecting the subscription. */
  readonly settings?:true;
  /** A grey row is either a retained (stale) reading or one that cannot be read at all (WP-12: only the latter merge). */
@@ -128,11 +130,11 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['reset',e.id]),stable=id;
   // D166/D428: only reset_credit is a banked reset; a direct reset and a legacy event with no kind use the direct wording.
   const bank=e.kind==='reset_credit';
-  if(e.status==='confirmed'){list.push({id,stable,level:'blue',dot:'solid',member:m.key,text:both(bank?'mfd.alBankedConf':'mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
+  if(e.status==='confirmed'){list.push({id,stable,level:'blue',dot:'solid',news:newsMark(e),member:m.key,text:both(bank?'mfd.alBankedConf':'mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
   const from=e.schedule?Date.parse(e.schedule.from):NaN,through=e.schedule?Date.parse(e.schedule.through):NaN;
   const mid=e.schedule&&e.schedule.precision!=='date'&&Number.isFinite(from)?Number.isFinite(through)?(from+through)/2:from:null;
   const at=mid===null?null:Math.round(mid/(30*60000))*30*60000;
-  list.push({id,stable,level:'blue',dot:'hollow',member:m.key,text:at===null?both(bank?'mfd.alBankedSoon':'mfd.alResetSoon',lang=>({s:s(lang)})):both(bank?'mfd.alBankedAnn':'mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
+  list.push({id,stable,level:'blue',dot:'hollow',news:newsMark(e),member:m.key,text:at===null?both(bank?'mfd.alBankedSoon':'mfd.alResetSoon',lang=>({s:s(lang)})):both(bank?'mfd.alBankedAnn':'mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
  }
  // D63: banked resets that expire within 48 hours, one blue line per subscription. Personal facts are joined
  // only through a verified reference, as the Subscription page joins them. List-only: they never light the lamp.

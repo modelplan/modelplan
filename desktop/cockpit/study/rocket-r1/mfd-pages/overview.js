@@ -22,7 +22,7 @@ export function alertList(d, {max = 4} = {}) {
   if (grey.length >= 3) a = [...a.filter(x => !grey.includes(x)), {level: 'grey', kind: 'unreadable', text: t('mfd.ovUnreadN', {n: grey.length})}];
   if (!a.length) return '';
   const shown = a.length > max ? a.slice(0, max - 1) : a;
-  return `<ul class="mfd-alerts">${shown.map(x => statusRow(x)||`<li class="al-${x.level}" data-tip="${esc(x.text)}">${bullet(x)}<span>${esc(x.text)}</span></li>`).join('')}${
+  return `<ul class="mfd-alerts">${shown.map(x => statusRow(x)||`<li class="al-${x.level}"${x.news ? ` data-news="${esc(x.news)}"` : ''} data-tip="${esc(x.text)}">${bullet(x)}<span>${esc(x.text)}</span></li>`).join('')}${
     a.length > shown.length ? `<li class="al-more"><button data-mfd="alerts">${t('mfd.moreAlerts', {n: a.length - shown.length})}</button></li>` : ''}</ul>`;
 }
 

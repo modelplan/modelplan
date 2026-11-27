@@ -18,6 +18,7 @@ if(pageId&&origin&&root&&window.top===window) {
   newsClock.onLook(events=>{bridge.newsLook(events);});
   const source:BridgeSource=Object.freeze({origin,isMainFrame:true});
   const listeners=new AbortController();
+  root.addEventListener('cockpit-deadline',()=>bridge.deadlineChanged(),{signal:listeners.signal});
   const dispose=()=>{listeners.abort();newsClock.onLook(null);still?.dispose();bridge.unload();delete window.modelPlanCockpit;};
   window.modelPlanCockpit=Object.freeze({
     receive(raw:string){try{return bridge.receive(raw,source);}finally{if(bridge.disposed)dispose();}},

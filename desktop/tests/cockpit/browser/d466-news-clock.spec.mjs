@@ -113,3 +113,32 @@ test('macrevb-1290-2 the calendar line, key dot, +1 and alert row retire at the 
  await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toHaveCount(0);
  await expect(col(page).locator('.qrow-r .qrv-c')).toHaveText('重置 1 次');
 });
+// macrevb-1290-1 round 2: a look is recorded only for news whose mark is rendered in this paint. News of the seventh
+// subscription (page two) whose alert line falls outside the overview's four-line budget is drawn nowhere on opening:
+// no look, no newsLook. Paging to it, or opening the alert list, records the look at that moment.
+function seventh(){
+ const data=banked(),rows=data.projection.rows,seed=rows[0];
+ for(let i=5;i<=7;i++){const row=structuredClone(seed),ref=String(i).padStart(16,'0');row.id='synthetic-'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.order=i;
+  row.accounts[0].subscriptionRef=ref;row.accounts[0].accountLocator=ref;rows.push(row);
+  data.subscriptions.push({subscriptionRef:ref,accounts:[{tool:row.id,account:structuredClone(row.accounts[0])}]});
+  data.details.subscriptions.push({...structuredClone(data.details.subscriptions[0]),subscriptionRef:ref,resetCounts:[]});}
+ // The announcement belongs to the seventh subscription only; the first six are red, so its line is past the budget.
+ data.details.resetEvents[0].rowId='synthetic-7';
+ rows.slice(0,6).forEach(r=>{for(const w of r.accounts[0].windows)w.remainingPercent=10;});
+ data.details.subscriptions[0].resetCounts=[];
+ return data;
+}
+const looks=page=>page.evaluate(()=>window.__posts.filter(m=>m.type==='action'&&m.action==='newsLook').map(m=>m.events));
+for(const via of ['page','alerts'])test(`macrevb-1290-1 news off the shown page and outside the alert budget gets no look until it is drawn (${via})`,async({page})=>{
+ await open(page,seventh(),'zh-CN',{news:[]});
+ await expect(page.locator('.eng-pgn')).toHaveText('1/2');
+ await expect(page.locator('.ek-news,.qrv-plus,[data-news]')).toHaveCount(0);
+ await expect(page.locator('.pg-overview .mfd-alerts li.al-more')).toHaveCount(1);
+ expect(await looks(page)).toEqual([]);
+ const at=NOW+7*MIN;await page.clock.setFixedTime(new Date(at));
+ if(via==='page'){await page.locator('.eng-pk[data-bpage="1"]').click();await expect(page.locator('.eng-keys .ek-news.solid')).toHaveCount(1);}
+ else{await page.locator('[data-caution]').click();await expect(page.locator('.pg-alerts li.al-blue[data-news]')).toHaveCount(1);}
+ await expect.poll(()=>looks(page)).toEqual([[{id:'codex-banked-1127',status:'confirmed'}]]);
+ const last=await page.evaluate(()=>window.__posts.filter(m=>m.type==='nextDeadline').at(-1)?.deadlineUnixMs);
+ expect(last).toBe(String(at+30*MIN));
+});

@@ -86,17 +86,17 @@ function reserveOf(a, now) {
   const count = cards.some(c => c.count === null) ? null : cards.reduce((n,c) => n + (c.count ?? 1), 0);
   // CKP-ENG-52: a zero carries no information and is not shown; nothing left at all means no reserve.
   const credits = cr && cr.balance !== 0 ? cr.balance ?? null : null, money = cr?.money ?? null;
-  if (!(cards.length && count !== 0) && credits == null && money == null) return a.plus > 0 ? {cards: null, warn: false, firstExpiry: null, credits: null, money: null, drawing: false, plus: a.plus} : null;
+  if (!(cards.length && count !== 0) && credits == null && money == null) return a.plus > 0 ? {cards: null, warn: false, firstExpiry: null, credits: null, money: null, drawing: false, plus: a.plus, plusMarks: a.plusMarks || ''} : null;
   // D466: the reserve is one quiet line; its expiry is shown only within 72 h, in amber. `plus` is the "+1" of a banked
   // reset confirmed during its news clock (the only place a banked reset shows outside the calendar).
   return {cards: cards.length && count !== 0 ? count : null, warn: first != null && (first - now) / H <= 72, firstExpiry: first,
-    credits, money, drawing: !!cr?.drawing, plus: a.plus > 0 ? a.plus : 0};
+    credits, money, drawing: !!cr?.drawing, plus: a.plus > 0 ? a.plus : 0, plusMarks: a.plusMarks || ''};
 }
 // CKP-ENG-50/54: a stale reading is drawn like a current one; only failed readings are grey. Neither washes its column.
 function columnOf(a, i, ui, status, now) {
   const quiet = GREY.has(a.state), grey = quiet && a.state !== 'stale', st = quiet ? null : status.get(a.id) || null;
   // D466: `news` is the key's one blue dot (hollow = announced, solid = confirmed) while a reset announcement is news.
-  return {id: a.id, name: a.name, short: a.short, alias:a.alias, colour: a.colour, logo: a.logo, key: i + 1, news: a.news || null,
+  return {id: a.id, name: a.name, short: a.short, alias:a.alias, colour: a.colour, logo: a.logo, key: i + 1, news: a.news || null, newsMarks: a.newsMarks || '',
     on: ui.scope === a.id, off: !!ui.scope && ui.scope !== a.id,
     state: a.state, grey, ageMin: a.ageMin ?? null, status: st, tint: ui.tint && st ? st : null,
     quotaOnly: a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), noUsage: !!a.noUsage && a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), today: a.todayTokens ?? null,
