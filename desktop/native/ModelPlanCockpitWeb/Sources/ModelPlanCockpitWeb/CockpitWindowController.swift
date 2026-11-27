@@ -2754,7 +2754,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     applyIgnition()
   }
   /// D459 (owner, 2026-11-26): the engine flames are the cockpit's own thrust. The page draws full thrust while the host
-  /// ignites, short while detached and ember while docked (view.ts). A detach, by key or by tearing the cockpit off the
+  /// ignites, out while detached and parked (D468: it fades away after the burn; thrust.ts) and ember while docked (view.ts). A detach, by key or by tearing the cockpit off the
   /// boom with a drag, is a launch: full thrust for `CockpitLaunchRackTiming.launchBurn` from the moment it leaves, on
   /// top of whatever the motion itself asks for. None under Reduce Motion (no ignition at all then).
   private func startLaunchBurn() {
