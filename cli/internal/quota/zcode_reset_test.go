@@ -113,12 +113,17 @@ func zcodeResetSetup(t *testing.T, kind string, withMaas bool) (cache string, di
 }
 
 func readZCodeReset(t *testing.T, cache string) (Report, *Account) {
+	return readZCodeResetAt(t, cache, zcodeResetClock)
+}
+
+// readZCodeResetAt reads at the fixed clock, then reports at a later instant.
+func readZCodeResetAt(t *testing.T, cache string, at time.Time) (Report, *Account) {
 	t.Helper()
 	p := ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture())
 	if err := ExecuteScopeRefresh(context.Background(), p, consent.ScopeZaiAccountUsageSavedLogin, zcodeResetClock); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
-	r := ReadPermitted(p, zcodeResetClock)
+	r := ReadPermitted(p, at)
 	return r, zcodeAccount(r)
 }
 
@@ -260,5 +265,50 @@ func TestParseZCodeResetsShape(t *testing.T) {
 	r.Code = &bad
 	if _, ok := parseZCodeResets(r, zcodeResetClock); ok {
 		t.Fatal("a non-zero envelope code was accepted")
+	}
+}
+
+// macrev2-1286-1: across the first expiry both surfaces keep the later opportunity and drop the expired one.
+func TestZCodeReservePartialExpiry(t *testing.T) {
+	cache, _, _ := zcodeResetSetup(t, "individual-coding-plan", true)
+	first, later := zcodeResetClock.Add(30*time.Minute), zcodeResetClock.Add(30*time.Hour)
+	newZCodeRouteServer(t, zcodeQuotaBody, "", zcodeResetBody(0, []time.Time{first}, []time.Time{later}), 200)
+	_, a := readZCodeResetAt(t, cache, zcodeResetClock.Add(50*time.Minute))
+	if a == nil || len(a.Cards) != 1 || a.Cards[0].Kind != "weekly" || !a.Cards[0].ExpiresAt.Equal(later) {
+		t.Fatalf("cards: %+v", a)
+	}
+	f := a.ResetCards
+	if f == nil || f.State != rows.ResetCardComplete || *f.Count != 1 || len(f.Items) != 1 || !f.Items[0].ExpiresAt.Equal(later) || !f.EarliestExpiresAt.Equal(later) {
+		t.Fatalf("rows facts: %+v", f)
+	}
+}
+
+// macrev2-1286-2: a team Coding Plan keeps its quota and makes no reserve call (the team headers are not read).
+func TestZCodeTeamPlanSkipsReserve(t *testing.T) {
+	cache, _, _ := zcodeResetSetup(t, "team-coding-plan", true)
+	z := newZCodeRouteServer(t, zcodeQuotaBody, "", zcodeResetBody(0, []time.Time{zcodeResetClock.Add(time.Hour)}, nil), 200)
+	_, a := readZCodeReset(t, cache)
+	if n := len(z.requests()); n != 1 {
+		t.Fatalf("%d requests, want the quota only", n)
+	}
+	if a == nil || len(a.Windows) == 0 || len(a.Cards) != 0 || a.ResetCards != nil {
+		t.Fatalf("account: %+v", a)
+	}
+}
+
+// macrev2-1286-5: an expiry beyond the JSON time range is no reserve and never costs the quota.
+func TestZCodeReserveExpiryOutOfRange(t *testing.T) {
+	cache, _, _ := zcodeResetSetup(t, "individual-coding-plan", true)
+	body := `{"code":0,"data":{"available_five_hour_resets":[],"available_week_resets":[{"expire_at":9223372036854775807}]}}`
+	newZCodeRouteServer(t, zcodeQuotaBody, "", body, 200)
+	r, a := readZCodeReset(t, cache)
+	if a == nil || len(a.Windows) == 0 || *a.Windows[0].UsedPercent != 40 || len(a.Cards) != 0 || a.ResetCards != nil {
+		t.Fatalf("account: %+v", a)
+	}
+	if _, err := json.Marshal(r); err != nil {
+		t.Fatal(err)
+	}
+	if st := loadZaiConfigState(cache); st.Good == nil {
+		t.Fatal("the good quota was not published")
 	}
 }

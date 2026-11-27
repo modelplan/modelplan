@@ -37,6 +37,12 @@ test('a subscription with no cockpit detail shows its own reset cards as the res
  // a partial list keeps the unlisted rest, with no expiry
  account.resetCards={...account.resetCards,state:'partial',count:5};
  assert.deepEqual(prototypeEngineSupplement(account).resetCards.at(-1),{kind:'reset',count:2,expiresAt:null});
+ // another source's facts never stand in, even with no reference
+ account.resetCards={...account.resetCards,sources:[{source:'codex-account',observedAt:'2026-11-21T12:00:00Z'}]};
+ assert.equal(prototypeEngineSupplement(account).resetCards,null);
+ account.resetCards={...account.resetCards,sources:[]};
+ assert.equal(prototypeEngineSupplement(account).resetCards,null);
+ account.resetCards={...account.resetCards,sources:[{source:'zcode-account',observedAt:'2026-11-21T12:00:00Z'}]};
  // unknown, none left and an unreadable count say nothing
  for(const facts of [{state:'unknown',count:null,sources:[],truncated:false},{state:'complete',count:0,items:[],sources:[],truncated:false},{state:'partial',count:null,sources:[],truncated:false}]){
   account.resetCards=facts;

@@ -506,7 +506,7 @@ func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, no
 	if format == "os" && keychain.StillValid != nil && !keychain.StillValid() {
 		return zcodeLogin{}, "consent_required"
 	}
-	login.reset = zcodeResetCredentials(store, open, family, dir, now)
+	login.reset = zcodeResetCredentials(store, open, family, kind, dir, now)
 	login.credential = strings.TrimSpace(login.credential)
 	if len(login.credential) > 8192 || strings.ContainsAny(login.credential, "\r\n\x00") {
 		return zcodeLogin{}, "unsupported_login"

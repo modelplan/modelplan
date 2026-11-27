@@ -13,7 +13,8 @@ type ResetCounts=NonNullable<PrototypeEngineSupplement['resetCards']>;
 // count or none left says nothing, exactly like the detail path.
 export function accountResetCounts(account:WireAccount):ResetCounts|null {
  const f=account.resetCards;
- if(!f||(f.state!=='complete'&&f.state!=='partial')||f.count===null||!(f.count>0))return null;
+ // Only facts the account's own ZCode reset reading produced: another source's facts (Codex, CodexBar) never stand in here.
+ if(!f||!f.sources.length||!f.sources.every(x=>x.source==='zcode-account')||(f.state!=='complete'&&f.state!=='partial')||f.count===null||!(f.count>0))return null;
  const byExpiry=new Map<string|null,number>();
  for(const item of f.items??[])byExpiry.set(item.expiresAt,(byExpiry.get(item.expiresAt)??0)+1);
  const listed=[...byExpiry.values()].reduce((n,v)=>n+v,0);

@@ -45,8 +45,11 @@ func (a zcodeResetAuth) ready() bool { return a.jwt != "" && a.maas != "" && a.d
 // zcodeResetCredentials opens the two tokens from the (already decrypted-on-demand) store. Only the
 // z.ai family: zcode.z.ai is an international host. A token that is expired, oversized or carries
 // a control character is dropped, never sent.
-func zcodeResetCredentials(store map[string]any, open func(string) string, family, dir string, now time.Time) zcodeResetAuth {
-	if family != "zai" || store == nil {
+func zcodeResetCredentials(store map[string]any, open func(string) string, family, kind, dir string, now time.Time) zcodeResetAuth {
+	// A team Coding Plan is looked up with the organization and project headers
+	// (bigmodelUsageQuotaProvider.ts createCodingPlanResetHeaders, resolveTeamPlanContext), which are not read
+	// here: the team keeps its quota and shows no reserve rather than a personal one.
+	if family != "zai" || kind == "team-coding-plan" || store == nil {
 		return zcodeResetAuth{}
 	}
 	token := func(name string) string {
@@ -67,6 +70,10 @@ func zcodeResetCredentials(store map[string]any, open func(string) string, famil
 	}
 	return zcodeResetAuth{jwt: jwt, maas: maas, deviceMid: zcodeDeviceMid(dir)}
 }
+
+// zcodeMaxExpiryMs bounds an expiry to the JSON time range (year 9999); a larger value would pass
+// time.UnixMilli and then fail to marshal, losing the whole reading.
+const zcodeMaxExpiryMs = 253402300799000
 
 // zcodeResetResponse is the status envelope: code 0 is success, expire_at is Unix milliseconds.
 type zcodeResetResponse struct {
@@ -94,7 +101,7 @@ func parseZCodeResets(r zcodeResetResponse, now time.Time) (cards []Card, ok boo
 		byTime := map[time.Time]int{}
 		for _, item := range group.items {
 			ms, err := strconv.ParseInt(strings.Trim(strings.TrimSpace(string(item.ExpireAt)), `"`), 10, 64)
-			if err != nil || ms <= 0 {
+			if err != nil || ms <= 0 || ms > zcodeMaxExpiryMs {
 				return nil, false // an opportunity without a usable expiry is a changed shape
 			}
 			at := time.UnixMilli(ms).UTC()
@@ -151,8 +158,8 @@ func liveCards(cards []Card, now time.Time) []Card {
 // zcodeResetFacts: the rows view of the same cards (widget "Reserve ↺N"). Items carry an id
 // derived from kind, expiry and position, so two resets with one expiry stay two items. Nil when
 // there is nothing to say; "partial" never applies because the endpoint lists every opportunity.
-func zcodeResetFacts(cards []Card, observed time.Time) *rows.ResetCards {
-	cards = liveCards(cards, observed)
+func zcodeResetFacts(cards []Card, observed, now time.Time) *rows.ResetCards {
+	cards = liveCards(cards, now) // the same instant as Account.Cards, so both surfaces drop the same expired card
 	if len(cards) == 0 || observed.IsZero() {
 		return nil
 	}

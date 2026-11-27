@@ -706,7 +706,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 				basis = "cursor-auth"
 			}
 			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: windows, Via: "native", Subscription: e.binding(basis), ReportedModels: e.ReportedModels,
-				Cards: liveCards(e.Cards, now), ResetCards: zcodeResetFacts(e.Cards, e.ObservedAt)})
+				Cards: liveCards(e.Cards, now), ResetCards: zcodeResetFacts(e.Cards, e.ObservedAt, now)})
 		}
 		r.Sources = append(r.Sources, st)
 	}
