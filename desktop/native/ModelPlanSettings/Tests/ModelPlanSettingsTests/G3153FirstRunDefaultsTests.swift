@@ -144,6 +144,15 @@ import ModelPlanWire
     private func mark(_ step: String) { FileHandle.standardError.write(Data(("G3155DIAG " + step + "\n").utf8)) }
     func testTheFirstRunRowOffersTheOptInAndNeverSaysUnsupported() async throws {
         mark("start")
+        signal(SIGABRT) { _ in
+            var frames = [UnsafeMutableRawPointer?](repeating: nil, count: 128)
+            let count = backtrace(&frames, 128)
+            let header = "G3155DIAG SIGABRT backtrace\n"
+            _ = header.withCString { write(2, $0, strlen($0)) }
+            backtrace_symbols_fd(&frames, count, 2)
+            _ = "G3155DIAG end of backtrace\n".withCString { write(2, $0, strlen($0)) }
+            signal(SIGABRT, SIG_DFL); raise(SIGABRT)
+        }
         let entry = entry()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("g3155-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -154,7 +163,9 @@ import ModelPlanWire
         mark("before prepare")
         await page.prepare()
         mark("after prepare")
-        entry.controller.receiveAcceptedFacts(try tools(zcode: true))
+        let zcodeFacts = try tools(zcode: true)
+        mark("after tools")
+        entry.controller.receiveAcceptedFacts(zcodeFacts)
         mark("after facts")
         entry.controller.setRowForTesting("zai", state: .needsConsent, code: "consent_required")
         mark("after row")
