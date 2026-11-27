@@ -216,7 +216,9 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 :root[data-theme="night"] #cockpit .ck-shell .hull-lower{top:calc(var(--hull-taper-top) + 30px);bottom:21px;height:auto;background-position:50% calc(var(--hull-cap-h) - 21px - var(--hull-taper-top));-webkit-mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);-webkit-mask-size:636px var(--hull-lower-h),636px 32px;mask-size:636px var(--hull-lower-h),636px 32px;-webkit-mask-repeat:no-repeat,repeat-y;mask-repeat:no-repeat,repeat-y;-webkit-mask-position:50% calc(100% - 1px),50% 0;mask-position:50% calc(100% - 1px),50% 0}
 /* Overlap the inner edges of the wall masks. At fractional page zoom, two
    adjoining antialiased edges can expose the desktop through the joint. */
-:root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(var(--hull-cap-h) 14px 22px)}
+/* Owner build 6 (+j): the body also butted the canopy row (top) and the aft plate (bottom) on one edge, so at some fractional zooms
+   the desktop showed through a 1 px band at both joints. It now reaches 1 px under each; the canopy and the aft plate paint over it. */
+:root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(calc(var(--hull-cap-h) - 1px) 14px 21px)}
 /* G3-108 (owner, build 14e): the closed root stands on the open root's floor, so the strip, the panels and the base are
    at the same page place open or closed (strip at 253) and the shutter never moves the body on the
    page. The page canvas is always the open root's; the native window leaves out the band above the slab (closed:
