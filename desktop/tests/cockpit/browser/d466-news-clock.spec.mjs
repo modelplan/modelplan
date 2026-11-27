@@ -105,14 +105,12 @@ test('macrevb-1290-1 hidden subscription: no look and no newsLook; shown again, 
 });
 // macrevb-1290-2: one clock lookup per event on every surface. At the look deadline the calendar's all-day line, the key
 // dot, the reserve +1 and the alert row all go together; the reserve count stays.
-test('macrevb-1290-2 the calendar line, key dot, +1 and alert row retire at the same tick',async({page})=>{
+test('macrevb-1290-2 the key dot, +1 and alert row retire at the same tick (the 日历 page line: d466-band-calendar)',async({page})=>{
  const {send,receive}=await open(page,banked(),'zh-CN',{plugins:{version:1,entries:[{id:'calendar',enabled:true,pinned:false}],settings:{}}});
- const line=page.locator('.pl-col[data-plugin="calendar"] .cal-adr');
- await expect(line).toHaveCount(1);await expect(line).toContainText('+1');
+ // D466: the calendar is a fixed page, not a plugin column; its news line retires with the same clock in d466-band-calendar.spec.
  await expect(key(page).locator('.ek-news')).toHaveCount(1);await expect(col(page).locator('.qrv-plus')).toHaveCount(1);
  await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toHaveCount(1);
  expect(await receive(send('tick',{nowUnixMs:String(NOW+30*MIN),reason:'deadline'}))).toBe(true);
- await expect(line).toHaveCount(0);
  await expect(key(page).locator('.ek-news')).toHaveCount(0);await expect(col(page).locator('.qrv-plus')).toHaveCount(0);
  await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toHaveCount(0);
  await expect(col(page).locator('.qrow-r .qrv-c')).toHaveText('1次');// D474 §3.1: the narrow reserve form (4 columns are narrow)
