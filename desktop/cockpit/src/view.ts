@@ -185,9 +185,11 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  // and set again, after a style flush, on every show and every new waiting/cleared line.
  let pageShown=false;
  const stopWait=()=>{delete root.dataset.waitShown;};
- // Every show and every new waiting/cleared line (a clear included, visible or not) restarts the grace, so a clear followed quickly by a display paints no line.
- const armWait=()=>{stopWait();if(pageShown&&root.dataset.engineWait){void root.offsetWidth;root.dataset.waitShown='true';}};
- const setEmpty=(key:'waiting'|'cleared'|'empty',keepDeck=false)=>{dropEngineTips();root.dataset.engineEmpty=String(key==='empty');root.dataset.engineWait=key==='empty'?'':key;armWait();headerRange.dim(key==='empty');plugins.bindEngine(null);plugins.clearPlacement();plugins.display(null,lastRenderedAt);base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;markPorthole(null);caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;engineRange=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
+ // The grace restarts on every show and every new waiting/cleared line while no display has been painted since the last show or clear
+ // (so a clear then a quick display paints no line); a clear on a page that already shows a display ('now') goes straight to the line, no animation.
+ let painted=false;
+ const armWait=(now=false)=>{stopWait();if(pageShown&&root.dataset.engineWait){void root.offsetWidth;root.dataset.waitShown=now?'now':'true';}};
+ const setEmpty=(key:'waiting'|'cleared'|'empty',keepDeck=false)=>{dropEngineTips();root.dataset.engineEmpty=String(key==='empty');root.dataset.engineWait=key==='empty'?'':key;const now=key==='cleared'&&painted;painted=key==='empty';armWait(now);headerRange.dim(key==='empty');plugins.bindEngine(null);plugins.clearPlacement();plugins.display(null,lastRenderedAt);base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;markPorthole(null);caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;engineRange=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
   // CKP-SHELL-39: with no subscription read yet the screen says so in one line and offers one way in, Settings > Subscriptions.
   if(key==='empty'){const open=element('button',ht(locale,'host.emptyOpen'),'ec-empty-open');bilingual(open,ht('en','host.emptyOpen'),ht('zh-CN','host.emptyOpen'));open.type='button';open.setAttribute('aria-label',ht(locale,'host.emptyOpen'));open.onclick=e=>{if(e.isTrusted)action('openSettingsSubscriptions');};const box=element('div',undefined,'ec-empty-box');box.append(line,open);frame.engine.replaceChildren(box);}
   else frame.engine.replaceChildren(line);frame.hud.replaceChildren();if(!keepDeck){deck.clear(key==='empty');tape.clear();}};
@@ -307,7 +309,7 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
     // A routine refresh must not reset an open alert list: when the deck still has something to show (details, or list-only
     // alerts) it is kept and repainted from the new data; only a projection with nothing left clears it.
     const keep=!!data.details||cautionItems(data,now,redBelow()).length>0;
-    setEmpty('empty',keep);if(keep){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}root.dataset.engineEmpty='false';root.dataset.engineWait='';stopWait();headerRange.dim(false);frame.engine.append(engine.table);engine.fit();plugins.display(data,now);applyScope=engine.applyScope;engineRange=engine.setRange;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,locale,hudOptions());syncCaution(data,now);help.refresh();
+    setEmpty('empty',keep);if(keep){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}root.dataset.engineEmpty='false';root.dataset.engineWait='';painted=true;stopWait();headerRange.dim(false);frame.engine.append(engine.table);engine.fit();plugins.display(data,now);applyScope=engine.applyScope;engineRange=engine.setRange;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,locale,hudOptions());syncCaution(data,now);help.refresh();
    if(before!==displayedState())pulse();
   },true);
  }
@@ -329,7 +331,7 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   tick(now){refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;heldHistory=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
   active(value,now){const was=active;active=value;plugins.setInteractive(value);root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}else if(!was&&lastData){if(now!==undefined)lastRenderedAt=now;syncCaution(lastData,lastRenderedAt);}},
-  visible(value){plugins.setVisible(value);if(value!==pageShown){pageShown=value;armWait();}},
+  visible(value){plugins.setVisible(value);if(value!==pageShown){pageShown=value;painted=false;armWait();}},
   plugins(raw){return plugins.applyHostState(raw);},
   pluginData(id,data){return plugins.deliver(id,data);},
   openPluginScreen(id){return plugins.openScreen(id,true);},

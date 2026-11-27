@@ -524,6 +524,7 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 /* G3-201: the waiting and cleared lines stay transparent for a 0.7 s grace counted from the show (view.ts sets data-wait-shown then, which restarts the animation; the page owns no timers); a display that lands sooner replaces them unseen. Reduce Motion (app setting or system) keeps the grace and drops the fade. */
 [data-engine-wait]:not([data-engine-wait=""]) .ck-eng .ec-empty{opacity:0}
 [data-wait-shown="true"] .ck-eng .ec-empty{animation:ec-wait-in .15s .7s forwards}
+[data-wait-shown="now"][data-engine-wait]:not([data-engine-wait=""]) .ck-eng .ec-empty{opacity:1}
 html[data-reduce-motion="true"] [data-wait-shown="true"] .ck-eng .ec-empty{animation-duration:1ms}
 @media(prefers-reduced-motion:reduce){[data-wait-shown="true"] .ck-eng .ec-empty{animation-duration:1ms}}
 @keyframes ec-wait-in{from{opacity:0}to{opacity:1}}
