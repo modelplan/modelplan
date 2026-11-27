@@ -508,3 +508,16 @@ test('D466 the shared news clock: strict news message, newsLook only to a host t
   assert.deepEqual(f.events.at(-1).events,[{id:'e1',status:'confirmed'}]);assert.equal(f.events.at(-1).action,'newsLook');
   assert.equal(f.bridge.newsLook([{id:'e1',status:'later'}]),false);
 });
+test('macrevb-1290-1 late negotiation: looks before the first news message are replayed once, with their time, if still live',()=>{
+  const f=fixture(),looks=()=>f.events.filter(e=>e.type==='action'&&e.action==='newsLook');
+  const at=Date.now()-60_000;
+  assert.equal(f.bridge.newsLook([{id:'live',status:'confirmed'},{id:'gone',status:'announced'}],at),false);
+  assert.equal(f.bridge.newsLook([{id:'live',status:'confirmed'}],at+5000),false,'a second look at the same news keeps the first time');
+  assert.equal(looks().length,0);
+  const until=String(Date.now()+3_600_000);
+  assert.equal(f.bridge.receive(f.send('news',{items:[{id:'live',status:'confirmed',untilUnixMs:until},{id:'gone',status:'announced',untilUnixMs:null}]}),source),true);
+  assert.deepEqual(looks().map(e=>e.events),[[{id:'live',status:'confirmed',atUnixMs:String(at)}]]);
+  // Replayed once only: a later news message posts nothing more.
+  assert.equal(f.bridge.receive(f.send('news',{items:[{id:'live',status:'confirmed',untilUnixMs:until}]}),source),true);
+  assert.equal(looks().length,1);
+});
