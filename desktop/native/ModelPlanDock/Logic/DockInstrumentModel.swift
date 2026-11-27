@@ -65,6 +65,13 @@ public struct DockInstrumentInput: Sendable {
     }
 }
 public enum DockQuotaStatus: String, Codable, Hashable, Sendable {case unknown, normal, warning, critical}
+/// D399: the inner (5-hour) ring flags urgency by colour and brightness. Warning and critical arcs draw at full strength.
+public enum DockRingBrightness {
+    public static let urgentOpacity = 1.0
+    public static func arcOpacity(base: Double, status: DockQuotaStatus, isInner: Bool) -> Double {
+        isInner && (status == .warning || status == .critical) ? max(base, urgentOpacity) : base
+    }
+}
 public struct DockQuotaArc: Equatable, Sendable {
     /// `fraction` is the drawn arc length (D130: remaining in remaining mode, used in used mode).
     /// `remainingFraction` is always the remaining truth (used-up detection, never reversed); `status` is keyed to it too.
@@ -169,8 +176,11 @@ public enum DockInstrumentProjection {
             let a=left.element.period.orderHint,b=right.element.period.orderHint
             return a == b ? left.offset < right.offset : a < b
         }.map(\.element)
-        let outer=sorted.first, rest=Array(sorted.dropFirst())
-        let inner=rest.first { $0.period == .week } ?? rest.last
+        // D399 (DOCK-3.2-02): the longer window (weekly, else the longest) is the OUTER ring and the shortest (5 h) the INNER
+        // one. A single window is the outer ring alone. Urgency shows as colour and brightness on the inner ring, never as position.
+        let shortest=sorted.first, rest=Array(sorted.dropFirst())
+        let longer=rest.first { $0.period == .week } ?? rest.last
+        let outer=longer ?? shortest, inner=longer == nil ? nil : shortest
         let selected=input.selectedWindowID.flatMap{id in general.first{$0.id==id}}
             ?? general.filter{value($0) != nil}.min{value($0)!<value($1)!} ?? general.first
         let remaining=selected.flatMap(value), selectedStatus=status(remaining, selected)
