@@ -122,6 +122,25 @@ test('D468 after the fade, Reduce Motion on then off keeps the flame out',async(
  await page.emulateMedia({reducedMotion:'reduce'});await page.emulateMedia({reducedMotion:'no-preference'});await page.waitForTimeout(600);
  expect(await gone(page)).toBe(true);
 });
+test('D468 the burn ends under Reduce Motion, then motion returns: the flame stays out (no relight)',async({page})=>{
+ const host=await open(page);
+ await host.shell({attached:false});await host.ignite(true);
+ await host.appearance({reduceMotion:true});
+ await host.ignite(false);
+ expect(await gone(page)).toBe(true);
+ await host.appearance({reduceMotion:false});await page.waitForTimeout(600);
+ expect(await gone(page)).toBe(true);
+ expect(await page.evaluate(()=>getComputedStyle(document.querySelector('.ck-base .bz-flame')).animationName)).toBe('none');
+});
+test('D468 the burn ends under OS reduced motion, then it returns: the flame stays out',async({page})=>{
+ const host=await open(page);
+ await host.shell({attached:false});await host.ignite(true);
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await host.ignite(false);
+ expect(await gone(page)).toBe(true);
+ await page.emulateMedia({reducedMotion:'no-preference'});await page.waitForTimeout(600);
+ expect(await gone(page)).toBe(true);
+});
 test('D468 after the fade, a shell re-sync keeps the flame out',async({page})=>{
  const host=await parkedAfterFade(page);
  await host.shell({attached:false});await host.shell({attached:false,scope:'all'});await page.waitForTimeout(600);
