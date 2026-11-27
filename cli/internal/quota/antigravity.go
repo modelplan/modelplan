@@ -100,6 +100,27 @@ func antigravityServers(raw []byte) []AntigravityServer {
 	}
 	return out
 }
+// antigravityHub: Antigravity 2.34's hub mode runs this user's language_server with --app_data_dir
+// antigravity but no --csrf_token or --extension_server_port (the token arrives on stdin, the HTTPS port
+// is 0). The app is running, but its token cannot be read without touching another process's stdin, so
+// the honest state is "not supported yet", never "not running".
+func antigravityHub(raw []byte) bool {
+	for _, line := range strings.Split(string(raw), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			continue
+		}
+		pid, pidErr := strconv.Atoi(f[0])
+		uid, uidErr := strconv.Atoi(f[1])
+		if pidErr != nil || uidErr != nil || pid <= 0 || uid != os.Getuid() || !(antigravityBinary(f[2]) || antigravityBinary(f[3])) {
+			continue
+		}
+		if app := antigravityFlag(f, "--app_data_dir"); app == "antigravity" || app == "antigravity-ide" {
+			return true
+		}
+	}
+	return false
+}
 func antigravityBinary(path string) bool {
 	name := strings.ToLower(filepath.Base(path))
 	return name == "language_server" || strings.HasPrefix(name, "language_server_")
@@ -147,6 +168,11 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 			return e
 		}
 		servers := antigravityServers(raw)
+		if len(servers) == 0 && antigravityHub(raw) {
+			e.Error = antigravityNext("not_supported_yet")
+			e.ErrorCode = "unsupported_login"
+			return e
+		}
 		if len(servers) == 0 {
 			e.Error = antigravityNext("not_detected")
 			e.ErrorCode = "runtime_missing"

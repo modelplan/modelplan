@@ -82,3 +82,28 @@ func TestAntigravityServersTolerateAppPathAndLogUnmatched(t *testing.T) {
 		t.Fatalf("debug lists the unmatched candidate without argument values: %q", out)
 	}
 }
+
+// Real ps line from Antigravity 2.34 (hub mode): no --csrf_token, no --extension_server_port.
+const antigravityHubPS = "/Applications/Antigravity.app/Contents/Resources/bin/language_server --standalone --override_ide_name antigravity --subclient_type hub --override_ide_version 2.34.0 --override_user_agent_name antigravity --https_server_port 0 --app_data_dir antigravity --api_server_url https://generativelanguage.googleapis.com --cloud_code_endpoint https://daily-cloudcode-pa.googleapis.com --enable_sidecars --host_bridge_url=http://127.0.0.1:54028 --read_host_bridge_token_from_stdin"
+
+func TestAntigravityHubModeIsUnsupportedNotMissing(t *testing.T) {
+	isolateHome(t)
+	old := antigravityCommand
+	t.Cleanup(func() { antigravityCommand = old })
+	line := fmt.Sprintf("4242 %d /Applications/Antigravity.app/Contents/Resources/bin/language_server %s\n", os.Getuid(), antigravityHubPS)
+	var execs []string
+	antigravityCommand = func(_ context.Context, bin string, args ...string) ([]byte, error) {
+		execs = append(execs, bin)
+		return []byte(line), nil
+	}
+	if len(antigravityServers([]byte(line))) != 0 || !antigravityHub([]byte(line)) {
+		t.Fatal("hub line is recognised but has no readable token")
+	}
+	e := fetchAntigravity(context.Background(), nil, "", "", now)
+	if e.Status != "error" || e.ErrorCode != "unsupported_login" || e.Error != antigravityNext("not_supported_yet") || e.Error == antigravityNext("not_detected") {
+		t.Fatalf("%+v", e)
+	}
+	if len(execs) != 1 || execs[0] != "/bin/ps" {
+		t.Fatalf("only ps may run: %v", execs)
+	}
+}

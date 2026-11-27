@@ -89,7 +89,7 @@ func antigravityNext(state string) string {
 	case "expired_login":
 		return "Open Antigravity to refresh its sign-in"
 	case "not_supported_yet":
-		return "Report the Antigravity runtime version for reader support"
+		return "This Antigravity version (2.34 hub mode) cannot be read yet; report the runtime version if it is newer"
 	case "consent_required", "privacy_blocked", "off":
 		return "Review Antigravity consent and privacy settings"
 	case "stale", "rate_limited":
