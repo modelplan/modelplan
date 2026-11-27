@@ -11,7 +11,7 @@ const css=read('../../../cockpit/web/cockpit.css'),view=read('../../../cockpit/s
 
 test('the grace starts when the page is shown, and the stylesheet never runs its own clock',()=>{
  assert.match(view,/root\.dataset\.engineWait=key==='empty'\?'':key;const now=key==='cleared'&&painted;painted=key==='empty';armWait\(now\)/);
- assert.match(view,/visible\(value\)\{plugins\.setVisible\(value\);if\(value!==pageShown\)\{pageShown=value;painted=false;armWait\(\);\}\}/);
+ assert.match(view,/visible\(value\)\{plugins\.setVisible\(value\);if\(value!==pageShown\)\{pageShown=value;painted=false;armWait\(\);\}/);
  assert.doesNotMatch(view,/set(?:Timeout|Interval)\(|requestAnimationFrame\(/);
  assert.match(view,/const stopWait=\(\)=>\{delete root\.dataset\.waitShown;\};/);
  assert.match(view,/pageShown&&root\.dataset\.engineWait\)\{void root\.offsetWidth;root\.dataset\.waitShown=now\?'now':'true';\}/);
