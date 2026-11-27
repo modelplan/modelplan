@@ -387,7 +387,7 @@ public enum EngineDeadlineFacts {
             // Master spec §3.4 (D474): an unreadable card says its rung of the one reading ladder ("读不到 · 需要登录") and the
             // one step ("打开 Codex"). A step the card's own button already is ("重新读取", D41 "允许读取") is not repeated.
             let ladderCodes = needsKeychain ? ["keychain_unset"] : [message.0.code.rawValue] + (account.lastFailure.map { [$0.code.rawValue] } ?? [])
-            if cardState == .error, let rung = ladderCodes.lazy.compactMap({ ReadingLadder.entry(code: $0, tool: row.id, toolName: member.name(english: english)) }).first {
+            if cardState == .error, let rung = ladderCodes.lazy.compactMap({ ReadingLadder.entry(code: $0, tool: row.id, toolName: member.name(english: self.english)) }).first {
                 let language: SettingsLanguage = english ? .english : .chinese
                 reasonText = rung.title.value(language)
                 switch rung.kind {
