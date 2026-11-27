@@ -328,8 +328,8 @@
     },
     {
       "file": "canopy-c01/canopy-890-1x.png",
-      "sha256": "42eaf178c0a48eadf411836ea22ade1837bfc7aa5d0b67763f1fefcb4a6cb69a",
-      "bytes": 44406,
+      "sha256": "076903d4ebd3b862c97ef5a66cfe5436760de2ceb69c3d628a187b52c1a0f7c7",
+      "bytes": 44833,
       "size": {
         "width": 636,
         "height": 244
@@ -341,8 +341,8 @@
     },
     {
       "file": "canopy-c01/pane-890-1x.png",
-      "sha256": "85e94ec31ce66956ef9acd8587e02674b70c2ce31b6723d04ba92aed6856da90",
-      "bytes": 9208,
+      "sha256": "9d5b84a3d4e1df500d87380ee9bdbdd209f504fbef32be24592bd0e98ba8d1c2",
+      "bytes": 9655,
       "size": {
         "width": 636,
         "height": 244
@@ -380,8 +380,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-1x.png",
-      "sha256": "487df83c1e794ea169df986aa69bb2d80e50b4177614e4d487fbc284eb2cc109",
-      "bytes": 4145,
+      "sha256": "6302b42b027c907e21876338721c721e4b9c7193ce7212195abfd90c48d98fcc",
+      "bytes": 4439,
       "size": {
         "width": 636,
         "height": 244
@@ -393,8 +393,8 @@
     },
     {
       "file": "canopy-c01/canopy-890-2x.png",
-      "sha256": "c916a715c587dab6b90f645ede9491375fecdf48966fcf43bb4b9062665323c2",
-      "bytes": 132170,
+      "sha256": "a327ac7349795e4b6f19781cb3358898d6c7e6884604fa162c9f1869f055df16",
+      "bytes": 134354,
       "size": {
         "width": 1272,
         "height": 488
@@ -406,8 +406,8 @@
     },
     {
       "file": "canopy-c01/pane-890-2x.png",
-      "sha256": "7c45bb039d071b965b99bedb8a1689fef7e418566fc328d6ed266f56ad12dd31",
-      "bytes": 32483,
+      "sha256": "04808d2c78bd4fb86ac3068ac97281e11e0822ecb82e38f1f4506527a4534ae4",
+      "bytes": 27899,
       "size": {
         "width": 1272,
         "height": 488
@@ -445,8 +445,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-2x.png",
-      "sha256": "d030842608519517b09c662395a56bcee8f462aeef0ef27484c6c6e23307348f",
-      "bytes": 9333,
+      "sha256": "685f0726b93c8cc6cdf7cdfa0addc8b7b428f2020aff681d42df2951907327ce",
+      "bytes": 10067,
       "size": {
         "width": 1272,
         "height": 488
