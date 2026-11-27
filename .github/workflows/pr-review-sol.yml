@@ -158,7 +158,7 @@ jobs:
         run: node scripts/pr-review/sol-call.mjs
 
       - name: Post the verdict (comment token only here)
-        if: steps.prep.outputs.review == 'true'
+        if: steps.prep.outputs.review == 'true' || steps.prep.outputs.oversize == 'true'
         env:
           GH_TOKEN: ${{ secrets.PR_REVIEW_COMMENT_TOKEN }}
           HEAD_SHA: ${{ steps.prep.outputs.head }}

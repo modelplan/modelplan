@@ -1046,3 +1046,58 @@ test("macrevb-1237-2: a tier-0 PR labelled review:gpt gets one advisory GLM resu
   assert.ok(marked.includes(R.GPT_FALLBACK_MARKER));
   assert.doesNotMatch(gate(marked).why, /VERDICT block/);
 });
+
+// D428: the own delta, binary and generated files out of the budget, and an oversize head is routed, never silently skipped.
+const sec = (path, body = "+x\n") => `diff --git a/${path} b/${path}\nindex 1..2 100644\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n${body}`;
+test("D428 omitGeneratedDiffs: binary baselines, wire.ts, Generated.swift and capture files are left out and reported; source stays", () => {
+  const big = "+" + "x".repeat(5000) + "\n";
+  const paths = ["desktop/tests/baselines/a.png", "desktop/cockpit/generated/wire.ts", "clients/swift/ModelPlanWire/Sources/ModelPlanWire/Generated.swift",
+    "desktop/native/X/CommunityConsentCLIIdentity.generated.swift", "schema/app-cli/captures/RowsAccount.json", "desktop/official-visuals/dock/RegressionBaselines/fixtures.json"];
+  const keep = sec("cli/main.go");
+  const report = [];
+  const out = S.omitGeneratedDiffs(paths.map((p) => sec(p, big)).join("") + keep, undefined, { report });
+  assert.ok(out.endsWith(keep), "the source section is untouched");
+  assert.ok(out.length < keep.length + 6 * 200, "the omitted sections shrink to one line each");
+  assert.equal(report.length, 6);
+  assert.match(out, /a\.png: binary file, 1 lines changed, omitted from review/);
+  assert.match(out, /wire\.ts: generated or capture file/);
+  for (const p of ["cli/wire_test.go", "src/wired.ts", "cli/internal/swiftwire/captures.go", "docs/Generated.swift.md"]) assert.equal(S.diffOmitReason(p), null, p);
+});
+
+test("D428 omitGeneratedDiffs: paths already identical on main are no part of the PR's own delta", () => {
+  const d = sec("a.go") + sec("b.go");
+  const report = [];
+  const out = S.omitGeneratedDiffs(d, undefined, { same: new Set(["b.go"]), report });
+  assert.ok(out.startsWith(sec("a.go")));
+  assert.match(out, /b\.go: already identical on main, 1 lines changed, omitted from review/);
+  assert.deepEqual(report, ["b.go (already identical on main)"]);
+});
+
+test("D428 oversize note: first line is the coordinator event, once per head, says what was already left out, forges no marker", () => {
+  const note = S.renderOversizeNote({ head: H, lane: "ghsol", chars: 950000, budget: 700000, omitted: ["a.png (binary file)"], runUrl: "https://x/run/1" });
+  const first = note.split("\n")[0];
+  assert.equal(first, `review oversize, interactive lane needed @ ${H} (ghsol)`);
+  assert.match(first, S.OVERSIZE_RE);
+  assert.match(note, /950000 characters, over the 700000 budget/);
+  assert.match(note, /interactive Codex review lane/);
+  assert.match(note, /a\.png \(binary file\)/);
+  assert.ok(!note.split("\n").some((l) => /^\s*VERDICT/i.test(l)), "no verdict line");
+  assert.equal(S.oversizeNoted([{ body: note }], H), true);
+  assert.equal(S.oversizeNoted([{ body: note }], OLD), false);
+  assert.equal(S.oversizeNoted([{ body: "oversize" }], H), false);
+});
+
+test("D428 review comment names the files left out of the size budget", () => {
+  const answer = { ok: true, verdict: "merge", body: `fine\nRecord: ${H}\nx -> ok` };
+  const c = S.renderSolComment({ answer, head: H, lane: "ghsol", mode: "full", base: BASE, tier: 1, meta: { omittedDiffs: ["a.png (binary file)"] } });
+  assert.match(c, /Not reviewed as diff \(excluded from the size budget\): a\.png \(binary file\)/);
+  assert.ok(c.trimEnd().endsWith(`VERDICT: merge @ ${H} (ghsol)`));
+});
+
+test("D428 sol-prepare and the workflow: an oversize head writes the oversize marker and the post step runs for it", () => {
+  const prep = readFileSync(join(root, "scripts/pr-review/sol-prepare.mjs"), "utf8");
+  assert.match(prep, /writeFileSync\(join\(dir, "provider"\), "oversize"\)/);
+  assert.ok(!/stop\(n, `the patches alone/.test(prep), "no silent skip for an oversize head");
+  assert.match(prep, /output\("oversize", "true"\)/);
+  assert.match(readFileSync(join(root, ".github/workflows/pr-review-sol.yml"), "utf8"), /steps\.prep\.outputs\.oversize == 'true'/);
+});

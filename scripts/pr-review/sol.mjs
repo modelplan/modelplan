@@ -163,22 +163,53 @@ const MAX_EARLIER_CHARS = 6000;
 // Generated, reproducible files whose diff is left out of the review request (the request budget is characters and a
 // bundle diff alone can be larger than all of it). Each entry names the CI check that proves the committed file matches
 // its sources: ci.yml job `codex`, steps "The Node 22/24 bundle and its notices are committed as built"
-// (`npm run build` in codex/, then `git diff --exit-code`). Keep this list explicit; never match by pattern.
+// (`npm run build` in codex/, then `git diff --exit-code`). Keep this list explicit; the pattern rules below it (D428) are
+// the only other way a file is left out.
 export const GENERATED_DIFF_OMITTED = Object.freeze({
   "codex/server.bundle.mjs": "`npm run build` in codex/ and checked by the ci.yml `codex` job (committed-as-built steps)",
 });
 
-// Replaces the per-file section of each listed generated file in a `git diff` text with a one-line note. Every other
-// section is kept byte for byte.
-export function omitGeneratedDiffs(diff, listed = GENERATED_DIFF_OMITTED) {
+// Paths whose diff is left out of the budget by rule (D428): binary baselines, generated wire code and capture files.
+// The review reads the source they are built from; the diff of a regenerated file only costs characters. Explicit, tested
+// patterns (never a user-supplied list): a change in this list is a change to what the reviewer sees.
+export const BINARY_DIFF_RE = /\.(png|jpe?g|gif|webp|ico|icns|pdf|zip|gz|tgz|woff2?|ttf|otf|mp4|mov|wasm)$/i;
+export const GENERATED_DIFF_RE = /(^|\/)(wire\.ts|Generated\.swift|[A-Za-z0-9_]+\.generated\.swift)$|^schema\/app-cli\/captures\/|(^|\/)(RegressionBaselines|cockpit-baselines|__snapshots__)\//;
+export const diffOmitReason = (path, listed = GENERATED_DIFF_OMITTED) =>
+  Object.hasOwn(listed, path) ? `generated file; reproducible with ${listed[path]}`
+    : BINARY_DIFF_RE.test(path) ? "binary file"
+    : GENERATED_DIFF_RE.test(path) ? "generated or capture file"
+    : null;
+
+// Replaces the per-file section of each omitted file in a `git diff` text with a one-line note. Omitted: the explicit
+// generated list, binary and generated paths (diffOmitReason), and `same` paths (the PR's change to them is already what
+// main has, so they are no part of this PR's own delta). Every other section is kept byte for byte. With `report`, the
+// omitted paths are pushed there as "path (reason)".
+export function omitGeneratedDiffs(diff, listed = GENERATED_DIFF_OMITTED, { same = new Set(), report = null } = {}) {
   if (!diff) return diff;
   const parts = String(diff).split(/^(?=diff --git )/m);
   return parts.map((part) => {
     const m = /^diff --git a\/(\S+) b\/(\S+)/.exec(part);
-    if (!m || m[1] !== m[2] || !Object.hasOwn(listed, m[2])) return part;
+    if (!m || m[1] !== m[2]) return part;
+    const why = same.has(m[2]) ? "already identical on main" : diffOmitReason(m[2], listed);
+    if (!why) return part;
     const lines = part.split("\n").filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---) /.test(l)).length;
-    return `${m[2]}: generated file, ${lines} lines changed, omitted from review; reproducible with ${listed[m[2]]}\n`;
+    report?.push(`${m[2]} (${why})`);
+    return Object.hasOwn(listed, m[2]) ? `${m[2]}: generated file, ${lines} lines changed, omitted from review; reproducible with ${listed[m[2]]}\n` : `${m[2]}: ${why}, ${lines} lines changed, omitted from review\n`;
   }).join("");
+}
+
+// Oversize (D428): even the PR's own delta, without the omitted files, is over the request budget. The run posts this
+// advisory note once per head (no VERDICT) and the coordinator hands the head to an interactive Codex lane: its first line
+// is the event, always exactly "review oversize, interactive lane needed @ <sha> (<lane>)".
+export const OVERSIZE_EVENT = "review oversize, interactive lane needed";
+export const OVERSIZE_RE = /^review oversize, interactive lane needed @ ([0-9a-f]{40}) \(gh[a-z]+\)$/;
+export const oversizeNoted = (items, head) => items.some((x) => OVERSIZE_RE.exec(String(x.body).split("\n")[0].replace(/\r$/, ""))?.[1] === head);
+export function renderOversizeNote({ head, lane, chars, budget, omitted = [], runUrl = "" }) {
+  const body = [`${OVERSIZE_EVENT} @ ${head} (${lane})`, "",
+    `_Advisory, no verdict. The patches of this PR's own delta are ${chars} characters, over the ${budget} budget of the workflow reviewer, so this head is routed to an interactive Codex review lane._`,
+    ...(omitted.length ? ["", `<sub>Already left out of that size, not reviewed as diff: ${omitted.slice(0, 12).join(", ")}${omitted.length > 12 ? `, and ${omitted.length - 12} more` : ""}.${runUrl ? ` [run](${runUrl})` : ""}</sub>`] : runUrl ? ["", `<sub>[run](${runUrl})</sub>`] : [])].map(tidy).join("\n");
+  if (body.split("\n").some((l) => MARKER.test(l))) throw new Error("oversize note has a gate marker");
+  return body;
 }
 
 
@@ -310,6 +341,7 @@ export function renderSolComment({ answer, head, lane, mode, base, tier, meta = 
   out.push(clipKeepingRecord(tidy(answer.body)), "");
   if (agree) out.push(`<sub>${tidy(agree)}</sub>`, "");
   const tokens = meta.usage ? ` · tokens in ${meta.usage.input} (cached ${meta.usage.cached}) out ${meta.usage.output}` : "";
+  if (meta.omittedDiffs?.length) out.push(`<sub>Not reviewed as diff (excluded from the size budget): ${meta.omittedDiffs.slice(0, 12).join(", ")}${meta.omittedDiffs.length > 12 ? `, and ${meta.omittedDiffs.length - 12} more` : ""}.</sub>`, "");
   out.push(`<sub>workflow ${glm ? "GLM" : "Sol"} reviewer · ${meta.model ?? "?"} ${meta.effort ?? "?"} · ${meta.seconds ?? "?"} s${tokens}${meta.runUrl ? ` · [run](${meta.runUrl})` : ""}</sub>`, "");
   if (out.some((l) => MARKER.test(l))) throw new Error("rendered comment has a gate marker before the verdict line");
   // review:gpt with GPT out of quota: the counting GLM verdict carries the fixed marker line (only the workflow writes it;
