@@ -236,7 +236,8 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 	}
 	fence := state.Fence()
 	dir := ZCodeLoginDir(home)
-	loginStamp := zcodeLoginStamp(dir)
+	cache := p.Cache
+	loginStamp := zcodeLoginStamp(cache, dir)
 	// Retained readings follow this scope's revocation watermark. Publishing still uses the
 	// full fence, so any concurrent consent decision cancels an in-flight read.
 	p.ReaderAccess.Grants["zai"] = ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
@@ -246,7 +247,7 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 		StillValid: func() bool {
 			current, effective := consent.Current()
 			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence &&
-				current.AllowsScope(scope, effective) && ZCodeLoginPresent(home) && zcodeLoginStamp(dir) == loginStamp
+				current.AllowsScope(scope, effective) && ZCodeLoginPresent(home) && zcodeLoginStamp(cache, dir) == loginStamp
 		},
 		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: dir, Keychain: keychain}}
 }

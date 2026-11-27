@@ -1,14 +1,15 @@
+// SPDX-License-Identifier: MIT
 //go:build darwin || linux
 
-package quota
+package toolcli
 
 import (
 	"os/exec"
 	"syscall"
 )
 
-// ownProcessGroup starts the runtime in its own process group so a timeout can stop every
-// descendant that inherited its pipes, not only the launcher.
+// ownProcessGroup starts the child in its own process group so a stop reaches every descendant
+// that stayed in it, not only the launcher.
 func ownProcessGroup(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -21,6 +22,8 @@ func killProcessGroup(cmd *exec.Cmd) {
 	if cmd.Process == nil {
 		return
 	}
-	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if pid := cmd.Process.Pid; pid > 0 {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+	}
 	_ = cmd.Process.Kill()
 }

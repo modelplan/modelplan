@@ -54,22 +54,113 @@ func ZCodeLoginDir(home string) string { return filepath.Join(home, ".zcode", "v
 // ZCodeLoginPresent: ZCode's sign-in layout is there (detect.ZCodeLoginPresent; metadata only).
 func ZCodeLoginPresent(home string) bool { return detect.ZCodeLoginPresent(home) }
 
-// zcodeLoginStamp follows the files that determine the selected login. It uses
-// metadata only, so checking it during discovery or projection opens no credentials.
-func zcodeLoginStamp(dir string) string {
-	var stamp strings.Builder
-	for _, name := range []string{"setting.json", "config.json", "credentials.json", "telemetry-state.json"} {
-		fi, err := os.Lstat(filepath.Join(dir, name))
-		if err == nil {
-			stamp.WriteString(strconv.FormatInt(fi.Size(), 10))
-			stamp.WriteByte('.')
-			stamp.WriteString(strconv.FormatInt(fi.ModTime().UnixNano(), 10))
-			stamp.WriteByte('.')
-			stamp.WriteString(strconv.FormatUint(uint64(fi.Mode()), 10))
-		}
-		stamp.WriteByte(':')
+// zcodeLoginStamp names the selected sign-in, so a retained reading is dropped only when the
+// account actually changes (owner build-6 #1). It is built from content that decides the account,
+// never from modification times, and never from telemetry-state.json, which ZCode rewrites all the
+// time while it runs (each rewrite used to discard the last good reading):
+//   - setting.json: only the family and the selection (domain, kind-based and legacy selections);
+//   - config.json: only the provider registry entries readZCodeLogin consults;
+//   - credentials.json: the store's entry names (account entries carry the account in their name)
+//     and the sealed profile entries; other values, a refreshed token above all, are ignored.
+//
+// Nothing is decrypted, and the material is kept only as a keyed hash under the installation key
+// (readerHash), so the generation never carries a credential. It is computed only once the scope
+// and its Keychain choice allow the read (production.go), like the read itself (D380).
+func zcodeLoginStamp(cache, dir string) string {
+	// The stamp is recomputed only when one of the three files' metadata moves; a move with the
+	// same account content (a rewrite, a touch) yields the same stamp.
+	meta := zcodeLoginMeta(dir)
+	key := cache + "\x00" + dir
+	if m, ok := zcodeStampMemo.Load(key); ok && m.(zcodeStampMemoEntry).meta == meta {
+		return m.(zcodeStampMemoEntry).stamp
 	}
-	return stamp.String()
+	stamp := zcodeLoginContentStamp(cache, dir)
+	zcodeStampMemo.Store(key, zcodeStampMemoEntry{meta: meta, stamp: stamp})
+	return stamp
+}
+
+type zcodeStampMemoEntry struct{ meta, stamp string }
+
+var zcodeStampMemo sync.Map
+
+// zcodeLoginMeta: size, modification time and mode of the files the stamp reads; only a cache key.
+func zcodeLoginMeta(dir string) string {
+	var meta strings.Builder
+	for _, name := range zcodeStampFiles {
+		if fi, err := os.Lstat(filepath.Join(dir, name)); err == nil {
+			meta.WriteString(strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10) + "." + strconv.FormatUint(uint64(fi.Mode()), 10))
+		}
+		meta.WriteByte(':')
+	}
+	meta.WriteString(strconv.FormatBool(detect.ZCodeKeychainMarkerPresent(dir)))
+	return meta.String()
+}
+
+// zcodeStampFiles decide the selected account. telemetry-state.json is deliberately absent.
+var zcodeStampFiles = []string{"setting.json", "config.json", "credentials.json"}
+
+func zcodeLoginContentStamp(cache, dir string) string {
+	var material strings.Builder
+	part := func(name string, v any) {
+		b, _ := json.Marshal(v) // map keys sort, so equal content gives equal bytes
+		material.WriteString(name)
+		material.WriteByte('=')
+		material.Write(b)
+		material.WriteByte('\n')
+	}
+	read := func(name string) ([]byte, bool) {
+		b, err := zcodeLoginRead(filepath.Join(dir, name))
+		if err != nil {
+			part(name, "unreadable:"+errorCode(err))
+			return nil, false
+		}
+		return b, true
+	}
+	if b, ok := read("setting.json"); ok {
+		var settings zcodeSettings
+		if json.Unmarshal(b, &settings) != nil {
+			part("setting.json", "unparsable:"+string(b))
+		} else {
+			kinds := map[string]string{}
+			for family, sel := range settings.Selections {
+				kinds[family] = strings.TrimSpace(sel.Kind)
+			}
+			part("setting.json", map[string]any{"domain": strings.TrimSpace(settings.Domain), "kinds": kinds, "legacy": settings.Legacy})
+		}
+	}
+	if b, ok := read("config.json"); ok {
+		var registry struct {
+			Provider map[string]zcodeProvider `json:"provider"`
+		}
+		if json.Unmarshal(b, &registry) != nil {
+			part("config.json", "unparsable:"+string(b))
+		} else {
+			part("config.json", registry.Provider)
+		}
+	}
+	if b, ok := read("credentials.json"); ok {
+		var store map[string]any
+		if json.Unmarshal(b, &store) != nil {
+			part("credentials.json", "unparsable:"+string(b))
+		} else {
+			names := make([]string, 0, len(store))
+			profiles := map[string]any{}
+			for name, v := range store {
+				names = append(names, name)
+				if strings.HasPrefix(name, "oauth:") && strings.HasSuffix(name, ":user_info") {
+					profiles[name] = v
+				}
+			}
+			sort.Strings(names)
+			part("credentials.json", map[string]any{"names": names, "profiles": profiles})
+		}
+	}
+	part("keychain-marker", detect.ZCodeKeychainMarkerPresent(dir))
+	if h := readerHash(cache, "zcode-login-stamp", material.String()); h != "" {
+		return h
+	}
+	sum := sha256.Sum256([]byte("zcode-login-stamp\x00" + material.String()))
+	return hex.EncodeToString(sum[:])
 }
 
 // zcodeLogin is one resolved read. credential is in memory only.

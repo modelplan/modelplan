@@ -5,12 +5,12 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 )
 
 // The standard restriction is injected only into that child. Advanced children
@@ -66,12 +66,15 @@ func ClearBrowserCookies(ctx context.Context, p Paths, provider string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "cache", "clear", "--cookies", "--provider", provider, "--format", "json")
+	cmd, err := toolcli.Command(ctx, bin, "cache", "clear", "--cookies", "--provider", provider, "--format", "json")
+	if err != nil {
+		return errors.New("CodexBar cookie cleanup unavailable; retain cleanup marker and retry")
+	}
 	cmd.Env = codexBarEnvironment("browser-session")
 	cmd.Stdin = nil
 	cmd.Stdout = &limited{w: io.Discard, n: 64 << 10}
 	cmd.Stderr = io.Discard
-	if err := cmd.Run(); err != nil {
+	if err := toolcli.Run(cmd); err != nil {
 		return errors.New("provider cookie-cache cleanup failed; retry Forget readings")
 	}
 	return nil

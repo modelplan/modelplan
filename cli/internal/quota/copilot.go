@@ -92,7 +92,7 @@ func askCopilotModels(ctx context.Context, bin string) (json.RawMessage, []strin
 	if cmd.Start() != nil {
 		return nil, nil, &copilotRPCError{"not_detected"}
 	}
-	defer func() { _ = in.Close(); _ = out.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	defer func() { _ = in.Close(); _ = out.Close(); toolcli.KillGroup(cmd); _ = cmd.Wait() }()
 	raw, models, err := copilotRPC(out, in, true)
 	if err == nil && len(raw) > 0 {
 		// The quota answered: a deadline that expires during the optional models.list stage only costs the

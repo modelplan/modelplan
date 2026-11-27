@@ -60,22 +60,51 @@ func executable(path string) bool {
 	s, e := os.Stat(path)
 	return e == nil && s.Mode().IsRegular() && s.Mode()&0111 != 0
 }
-func Find(home, name string, extra ...string) string {
-	if p, e := exec.LookPath(name); e == nil {
-		return p
+
+// Lookup finds a tool CLI: PATH, then the usual install folders, then the caller's extra paths.
+// A candidate inside another app's bundle is skipped (ModelPlan never runs it, #14); when only
+// such candidates exist the result is "" with ErrInsideAppBundle, so the reader can say the
+// standalone CLI is needed rather than "not installed".
+func Lookup(home, name string, extra ...string) (string, error) {
+	refused := false
+	try := func(p string) bool {
+		if !executable(p) {
+			return false
+		}
+		if InsideOtherApp(p) {
+			refused = true
+			return false
+		}
+		return true
+	}
+	for _, d := range filepath.SplitList(os.Getenv("PATH")) {
+		if d == "" || !filepath.IsAbs(d) {
+			continue
+		}
+		if p := filepath.Join(d, name); try(p) {
+			return p, nil
+		}
 	}
 	for _, d := range SearchDirs(home) {
-		p := filepath.Join(d, name)
-		if executable(p) {
-			return p
+		if p := filepath.Join(d, name); try(p) {
+			return p, nil
 		}
 	}
 	for _, p := range extra {
-		if executable(p) {
-			return p
+		if try(p) {
+			return p, nil
 		}
 	}
-	return ""
+	if refused {
+		return "", ErrInsideAppBundle
+	}
+	return "", nil
+}
+
+// Find is Lookup without the reason: "" when no runnable CLI is installed.
+func Find(home, name string, extra ...string) string {
+	p, _ := Lookup(home, name, extra...)
+	return p
 }
 
 // EnvNode recognizes only a direct env-node shebang, including env -S node.
@@ -102,9 +131,7 @@ func findNode(home, script string) string {
 // insideAppBundle reports a runtime shipped inside another application's bundle
 // (for example the ChatGPT app's private node). Such a runtime belongs to that
 // app: it is skipped on PATH and in the fallback folders, never used for a tool.
-func insideAppBundle(p string) bool {
-	return strings.Contains(filepath.ToSlash(filepath.Clean(p))+"/", ".app/Contents/")
-}
+func insideAppBundle(p string) bool { return bundleRoot(p) != "" }
 
 // foreignRuntime checks both the spelled path (cleaned, so "./" and ".." cannot
 // hide the bundle) and the real file a symlink points to.
@@ -184,6 +211,9 @@ func locateNode(home, script, pathEnv string, exists func(string) bool) string {
 // NodeCommandContext also supports a verified artifact descriptor: script is the
 // exact artifact to execute, nearby is the installed path used only to find node.
 func NodeCommandContext(ctx context.Context, script, nearby string, args ...string) (*exec.Cmd, error) {
+	if InsideOtherApp(script) || InsideOtherApp(nearby) {
+		return nil, ErrInsideAppBundle
+	}
 	home, _ := os.UserHomeDir()
 	node := resolveNode(home, nearby)
 	if node == "" {
@@ -194,12 +224,18 @@ func NodeCommandContext(ctx context.Context, script, nearby string, args ...stri
 	if strings.HasPrefix(script, "/proc/self/fd/") && filepath.Base(node) != "bun" {
 		argv = append([]string{"--preserve-symlinks-main"}, argv...)
 	}
-	return exec.CommandContext(ctx, node, append(argv, args...)...), nil
+	return Command(ctx, node, append(argv, args...)...)
 }
+
+// CommandContext runs a tool CLI through Command, through its Node runtime when the file is an
+// env-node script.
 func CommandContext(ctx context.Context, bin string, args ...string) (*exec.Cmd, error) {
+	if InsideOtherApp(bin) {
+		return nil, ErrInsideAppBundle
+	}
 	info, e := os.Stat(bin)
 	if e != nil || !info.Mode().IsRegular() {
-		return exec.CommandContext(ctx, bin, args...), nil
+		return Command(ctx, bin, args...)
 	}
 	f, e := os.Open(bin)
 	if e == nil {
@@ -210,5 +246,5 @@ func CommandContext(ctx context.Context, bin string, args ...string) (*exec.Cmd,
 			return NodeCommandContext(ctx, bin, bin, args...)
 		}
 	}
-	return exec.CommandContext(ctx, bin, args...), nil
+	return Command(ctx, bin, args...)
 }
