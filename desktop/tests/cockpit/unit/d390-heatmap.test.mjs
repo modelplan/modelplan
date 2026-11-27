@@ -39,7 +39,7 @@ test('D390 heatCells: one column per day of the range, four-hour bands as rows, 
  assert.equal(cell(3,3).total,0);     // 12-16h: a recorded zero
  assert.equal(cell(3,3).step,0);
  assert.equal(g.cells.filter(c=>c.recorded).length,3);
- assert.equal(g.cells.filter(c=>c.recorded).every(c=>c.col>=5),true,'older days have no hourly record and draw nothing');
+ assert.equal(g.cells.filter(c=>c.recorded).every(c=>c.col>=5),true,'days the series has no hours for draw nothing');
 });
 test('D390 heatCells: Today is one row of hours; no hourly series is no record, not invented',()=>{
  const g=heatCells(data([[4,9,500]]),ui(24));
@@ -54,4 +54,26 @@ test('D390 grid render draws the heatmap svg with tips',()=>{
  setLanguage('en');
  const html=overview.render(data([[4,9,500],[3,22,1000]]),ui(7));
  assert.match(html,/<svg class="ov-heat/);assert.equal((html.match(/<rect class="hm /g)||[]).length,2);assert.match(html,/data-tip="[^"]*Nov 4/);
+});
+
+// D402: the wire keeps 30 days of hourly rows, so the 7天 and 30天 grids fill (no "only two days" note).
+function fullMonth(){
+ const n=30*24,long=Array.from({length:n},(_,i)=>top-(n-1-i)*HOUR);
+ return {now,accounts:[A],alerts:[],daily:[{accountId:A.id,values:Array(182).fill(null),imported:[],coverageStart:0}],hourly:[],hourlyLong:[{accountId:A.id,instants:long,values:long.map(()=>10)}]};
+}
+test('D402 7天 and 30天 grids fill every day and band up to the current hour',()=>{
+ for(const days of [7,30]){
+  const g=heatCells(fullMonth(),ui(days));
+  assert.equal(g.cols,days);assert.equal(g.rows,6);
+  // Today has only hours up to 12:00 (bands 0-3); every other cell of every day is recorded.
+  assert.equal(g.cells.filter(c=>c.recorded).length,days*6-2,`${days}天`);
+  assert.equal(g.cells.filter(c=>!c.recorded).every(c=>c.col===days-1&&c.row>=4),true);
+  assert.equal(g.cells.find(c=>c.col===0&&c.row===0).total,40,'the oldest day of the range has its hours');
+ }
+});
+test('D402 the grid drops the two-day note and fills the 30-day render',()=>{
+ setLanguage('en');
+ const html=overview.render(fullMonth(),ui(30));
+ assert.doesNotMatch(html,/today and yesterday|hm-since/i);
+ assert.equal((html.match(/<rect class="hm /g)||[]).length,30*6-2);
 });
