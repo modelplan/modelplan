@@ -161,6 +161,12 @@ import ModelPlanResources
             let bridge = await CockpitPluginBridge.load(directory: directory, coordinator: owner?.coordinator)
             bridge.showCockpit = { [weak application] in application?.showConsole() }
             guard let application else { return }
+            // D376: the cockpit key's right-click Remove asks through the same closer (same NSAlert) as the widget ring, for every
+            // plugin and whether or not resource sampling is installed. The widget ring's "Turn Off <plugin>…" below uses it too.
+            let closer = CockpitPluginCloser(model: bridge.model, language: { [weak application] in
+                application?.composition.latestSettings?.snapshot.preferences.language ?? .fallback
+            })
+            bridge.closer = closer
             application.cockpitPlugins = bridge
             // D371 B4e: a subscription card's footer row ("在驾驶舱查看 <name> ›") opens the cockpit on that subscription:
             // select its scope, then show the cockpit (an already open one only switches).
@@ -191,11 +197,6 @@ import ModelPlanResources
                     guard let id = ResourceDockBridge.pluginID(dockID: dockID) else { application?.showConsole(); return }
                     bridge?.openScreen(id)
                 }
-                // D376: a plugin ring's (and its card's) right-click "Turn Off <plugin>…" asks first, then applies the same
-                // setEnabled(id, false) edit as the Settings switch; the bridge publishes it to the page and the sampler.
-                let closer = CockpitPluginCloser(model: bridge.model, language: { [weak application] in
-                    application?.composition.latestSettings?.snapshot.preferences.language ?? .fallback
-                })
                 dock.pluginCloseTitle = { dockID in ResourceDockBridge.pluginID(dockID: dockID).flatMap { closer.prompt($0)?.menuTitle } }
                 dock.pluginCloseRequested = { dockID in
                     guard let id = ResourceDockBridge.pluginID(dockID: dockID) else { return }
@@ -625,7 +626,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit,.pluginClose:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()

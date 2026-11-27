@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -114,5 +115,56 @@ func TestCockpitCyclesPickTheMainLimitThenTheCurrentPlan(t *testing.T) {
 	denied := cockpitCycles(view.GroupsShowing(cockpitCycleScan), map[string]string{"codex": ref}, map[string]bool{}, map[string][]wire.CockpitAccount{ref: {}}, nil)
 	if len(unbound) != 0 || len(denied) != 0 {
 		t.Fatalf("unbound %+v denied %+v", unbound, denied)
+	}
+}
+
+// D402. Invariant: the wire carries the hourly buckets of the whole 30-day window, not only today and yesterday.
+func TestCockpitBucketsCarryThirtyDaysOfHours(t *testing.T) {
+	old := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = old })
+	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+	var rows []speed.Hourly
+	for at := now.AddDate(0, 0, -29).Truncate(24 * time.Hour); !at.After(now); at = at.Add(time.Hour) {
+		rows = append(rows, speed.Hourly{Hour: at.Format(time.RFC3339), Source: "codex", Model: "a", ObservedOutputTokens: 1})
+	}
+	perf := speed.PerfView{OK: true, LongOK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Since: now.AddDate(0, 0, -300), Hourly: rows}}
+	_, _, hours := cockpitBuckets(perf, nil, map[string]bool{"codex": true}, now)
+	if len(hours) != len(rows) || hours[0].At != "2026-10-26T00:00:00Z" {
+		t.Fatalf("hours = %d (first %v), want %d", len(hours), hours[0], len(rows))
+	}
+}
+
+// macrev2-1213-1: the dense multi-model ledger, written and reloaded as perf.json, projects every one of the 30 days
+// through the cockpit query with the right per-hour totals.
+func TestCockpitBucketsKeepThirtyDenseDaysAfterAReload(t *testing.T) {
+	old := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = old })
+	now := time.Date(2026, 11, 24, 12, 30, 0, 0, time.UTC)
+	l := speed.PerfLedger{SchemaVersion: 1, Since: now.AddDate(0, 0, -60)}
+	want := map[string]int64{}
+	for at := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC); at.Before(now); at = at.Add(time.Hour) {
+		for _, s := range []string{"codex", "claude-code", "zcode", "opencode"} {
+			for m := 0; m < 6; m++ {
+				l.Hourly = append(l.Hourly, speed.Hourly{GrantEpoch: &speed.GrantEpoch{StoreEpoch: "e1"}, Hour: at.Format(time.RFC3339), Source: s, Model: string(rune('a' + m)), ObservedOutputTokens: int64(m + 1), ObservedRequests: 1})
+			}
+			want[at.Format(time.RFC3339)+s] = 21
+		}
+	}
+	var reloaded speed.PerfLedger
+	if err := json.Unmarshal(l.Encode(now), &reloaded); err != nil {
+		t.Fatal(err)
+	}
+	_, _, hours := cockpitBuckets(speed.PerfView{OK: true, LongOK: true, Recording: true, Now: now, Ledger: reloaded}, nil, map[string]bool{"codex": true, "claude-code": true, "zcode": true, "opencode": true}, now)
+	days := map[string]bool{}
+	for _, h := range hours {
+		days[h.At[:10]] = true
+		if want[h.At+h.Source] != h.ObservedOutputTokens {
+			t.Fatalf("%s %s: %d, want %d", h.At, h.Source, h.ObservedOutputTokens, want[h.At+h.Source])
+		}
+	}
+	if len(days) != 30 || len(hours) != len(want) {
+		t.Fatalf("%d days, %d buckets, want 30 and %d", len(days), len(hours), len(want))
 	}
 }

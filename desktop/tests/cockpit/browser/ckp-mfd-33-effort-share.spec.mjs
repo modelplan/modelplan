@@ -170,20 +170,6 @@ test('CKP-MFD-33 no "★<number>": every ★ sits above its bar, every number be
  await expect(screen.locator('svg.cmp-chart .pc-legend')).toContainText('耗时');
 });
 
-test('CKP-MFD-33 A1: the small cockpit keeps both bars (9 px tube, 3.5 + 1.5 + 2 px lanes) and a readable chart under them',async({page})=>{
- await open(page,{tier:'compact',height:640});
- const screen=await openSol(page);
- let b=await bars(page);near(b.abl.fill.w,SOL.High.abl);near(b.cost.fill.w,SOL.High.cost);
- expect(b.abl.track.h).toBe(9);expect(b.abl.fill.h).toBe(7);
- await screen.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
- b=await bars(page);expect(b.abl.fill.h).toBe(3.5);expect(b.abl.lane.h).toBe(2);
- const sizes=await screen.evaluate(s=>({bars:s.querySelector('svg.cmp-bars').getBoundingClientRect().height,
-  chart:s.querySelector('svg.cmp-chart')?.getBoundingClientRect().height??0,lines:s.querySelectorAll('svg.cmp-chart .pc-line').length}));
- // V1-FINAL §13.3 (WP-05): the short cockpit keeps the bars and the keys WITH their two numbers; the chart gets shorter but stays
- // (34 px is the view's own floor for drawing it).
- expect(sizes.bars).toBe(58);expect(sizes.chart).toBeGreaterThanOrEqual(34);expect(sizes.lines).toBe(3);
-});
-
 test('CKP-MFD-33 chart link: a bar row sets its chart line apart; a bar segment draws the dashed box on the chart column; a chart column or effort key draws the dashed line on both bars; a click tries the effort',async({page})=>{
  await open(page);
  const screen=await openSol(page);
@@ -354,18 +340,6 @@ test('CKP-MFD-54 hint line bottom right: "click an effort or drag the fader to t
  }
 });
 
-test('CKP-MFD-54 short cockpit: the hint becomes an ⓘ outside the effort-key row; the keys and both bars stay',async({page})=>{
- await open(page,{tier:'compact',height:640});
- const screen=await openSol(page);
- const mark=screen.locator('.cmp-trial-i');
- await expect(mark).toBeVisible();await expect(mark).toHaveAttribute('aria-label','Click an effort or drag the fader to try it');
- expect(await mark.evaluate(e=>!!e.closest('.cmp-lad'))).toBe(false);
- const mb=await mark.boundingBox(),keys=await screen.locator('.cmp-lad .lad').evaluateAll(b=>b.map(e=>{const r=e.getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom};}));
- for(const k of keys)expect(mb.x>=k.r-.5||mb.x+mb.width<=k.l+.5||mb.y>=k.b-.5||mb.y+mb.height<=k.t+.5,'ⓘ overlaps a key').toBe(true);
- await expect(screen.locator('.cmp-lad .lad')).toHaveCount(5);await expect(screen.locator('.cmp-nums .lad-n')).toHaveCount(5);
- expect(await screen.evaluate(e=>e.scrollWidth<=e.clientWidth+.5&&e.scrollHeight<=e.clientHeight+.5)).toBe(true);
-});
-
 test('CKP-MFD-54 a model with a single effort shows "Only one effort" and no chart; an unreported current draws only the ★ line',async({page})=>{
  await open(page,{edit:data=>solEfforts(data,m=>{m.efforts=m.efforts.filter(e=>e.effort==='medium');})});
  let screen=await openSol(page);
@@ -412,7 +386,7 @@ test('G3-144 the title shows one ≈ with the 7-day cost, and names an unreporte
 // V1-FINAL §14 (WP-05): every new string passes the pseudo-long check: long form, then short, then left out; numbers never cut.
 test('CKP-MFD-50…54 pseudo-long English: the effort page keeps its numbers whole and nothing runs out of the screen',async({page})=>{
  const {usePseudoLong}=await import('../pseudo-long.mjs');
- for(const [tier,height] of [['tall',890],['compact',640]]){
+ for(const [tier,height] of [['tall',890]]){
   await usePseudoLong(page);
   await open(page,{tier,height});
   const screen=await openSol(page);

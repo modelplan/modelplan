@@ -203,6 +203,11 @@
         "no_plan",
         "login_expired",
         "consent_required",
+        "keychain_unset",
+        "keychain_denied",
+        "keychain_canceled",
+        "keychain_confirmation_needed",
+        "keychain_unavailable",
         "other"
       ]
     },

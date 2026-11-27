@@ -334,8 +334,9 @@ extension CommunityCockpitEntryTests {
         let composition = EngineDockMenuComposition(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:]), createsNativePanels: false, makeClient: { _, _ in client })
         let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
         // An Air-width screen: Auto would draw 85 %, so 90 % and 100 % can only come from the setting. Tall enough
-        // for the full 951 pt canvas (905 canopy + 46) at 100 %, so only the setting, never the height fit, sets the scale.
-        let air = CGRect(x: 0, y: 0, width: 1470, height: 1026)
+        // for the full 1017 pt canvas (905 canopy + 112 flame reserve, D454) at 100 %, so only the setting, never the height
+        // fit, sets the scale.
+        let air = CGRect(x: 0, y: 0, width: 1470, height: 1100)
         var page: CockpitWindowController?
         let coordinator = EngineCockpitCoordinator { context in
             let made = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
@@ -378,7 +379,7 @@ extension CommunityCockpitEntryTests {
               FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
             throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
         }
-        for (name, usable, tier, closedRoot) in [("short", CGRect(x: 0, y: 0, width: 1440, height: 692), CockpitShellState.Tier.compact, CGFloat(609)),
+        for (name, usable, tier, closedRoot) in [("short", CGRect(x: 0, y: 0, width: 1440, height: 692), CockpitShellState.Tier.tall, CGFloat(691)), // D444: one layout
                                                   ("full", CGRect(x: 0, y: 0, width: 1680, height: 1026), .tall, 691)] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-53-" + UUID().uuidString).resolvingSymlinksInPath()
             defer { try? FileManager.default.removeItem(at: root) }
@@ -423,7 +424,7 @@ extension CommunityCockpitEntryTests {
                         windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)))
                 }
             }
-            for (closed, expectedRoot) in [(true, closedRoot), (false, tier == .tall ? 905 : 635)] {
+            for (closed, expectedRoot) in [(true, closedRoot), (false, 905)] {
                 try click()
                 deadline = ContinuousClock.now + .seconds(10)
                 while ContinuousClock.now < deadline, (page.verificationShellState?.profile == .closed) != closed { try await Task.sleep(for: .milliseconds(50)) }
@@ -512,7 +513,7 @@ extension CommunityCockpitEntryTests {
 
     /// CKP-SHELL-07 / owner D51, C-02, C-03 on the real page and panel: an Air shows the full cockpit with its flame
     /// reserve, scaled as one page (WebKit page zoom, not a bitmap), with the strip and shutter still hit where drawn.
-    /// Covers 1470x956 with the Dock at the bottom, the lowest full scale (75 %) and a live switch to 80 %.
+    /// Covers 1470x956 with the Dock at the bottom, the lowest full scale (about 70 % with the whole flame, D454) and a live switch to 80 %.
     @MainActor func testD51ScaledFullCockpitKeepsCrispTextAndHitTargets() async throws {
         let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
@@ -521,8 +522,9 @@ extension CommunityCockpitEntryTests {
             throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
         }
         let cases: [(String, CGRect, CockpitSize?, CGFloat)] = [
-            ("1470x956, Dock at the bottom (default 85 %)", CGRect(x: 0, y: 70, width: 1470, height: 849), nil, 0.85),
-            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 720), nil, (720 - CockpitShellLayout.menuBarGap) / 951),
+            // D454: the canvas holds the whole flame, so the Air with the Dock draws at 839 / 1017 (82.5 %), under Auto's 85 %.
+            ("1470x956, Dock at the bottom (Auto 85 %, capped by the room)", CGRect(x: 0, y: 70, width: 1470, height: 849), nil, 839 / 1017),
+            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 720), nil, (720 - CockpitShellLayout.menuBarGap) / 1017),
             ("80 % chosen live", CGRect(x: 0, y: 0, width: 1680, height: 1026), .percent80, 0.8),
         ]
         for (name, usable, live, expected) in cases {
@@ -555,14 +557,14 @@ extension CommunityCockpitEntryTests {
             XCTAssertEqual(painted["root"]!, 905, accuracy: 0.5, "\(name): the full root")
             // The whole canvas, root plus the flame reserve, is laid out at 636 CSS px and fits the window.
             XCTAssertEqual(painted["width"]!, 636, accuracy: 1, name)
-            XCTAssertEqual(painted["height"]!, 951, accuracy: 1, name)
+            XCTAssertEqual(painted["height"]!, 1017, accuracy: 1, name)
             // Whole-point window frames (fit rounds up) leave under 1 pt of transparent slack below the page: up to 1/scale CSS px.
             let reserve = painted["height"]! - painted["rootBottom"]!
-            XCTAssertGreaterThanOrEqual(reserve, 45, "\(name): the flame reserve is inside the window")
-            XCTAssertLessThanOrEqual(reserve, 46 + 1 / Double(scale) + 0.01, "\(name): the flame reserve plus at most 1 pt of rounding slack")
+            XCTAssertGreaterThanOrEqual(reserve, 111, "\(name): the whole flame reserve is inside the window")
+            XCTAssertLessThanOrEqual(reserve, 112 + 1 / Double(scale) + 0.01, "\(name): the flame reserve plus at most 1 pt of rounding slack")
             // The window server places borderless panels on whole points.
             XCTAssertEqual(window.frame.width, 636 * scale, accuracy: 1, name)
-            XCTAssertEqual(window.frame.height, 951 * scale, accuracy: 1, name)
+            XCTAssertEqual(window.frame.height, 1017 * scale, accuracy: 1, name)
             // Placement on the requested screen (the hosted runner's real display is smaller, so the window
             // server may move the panel; its size is what the test can hold it to).
             XCTAssertEqual(layout.frame.maxY, usable.maxY - CockpitShellLayout.menuBarGap, accuracy: 1e-6, name)

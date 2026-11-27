@@ -3,15 +3,19 @@
 // and resolves to { text, usage: { input, cached, output } } or throws a ProviderError. kind "quota" means the account
 // cannot pay for the call (insufficient_quota, billing hard limit, or 429 that outlasted every retry); only that kind
 // moves on to the other provider. OpenAI: the Responses API called directly (the owner's API credit covers direct
-// Responses calls, not the codex CLI). GLM: Zhipu GLM-5.3 through its OpenAI-compatible chat endpoint. Which goes
+// Responses calls, not the codex CLI). GLM: Zhipu GLM-5.4 through its OpenAI-compatible chat endpoint. Which goes
 // first is vars.REVIEW_PROVIDER_MODE (providerOrder).
 export class ProviderError extends Error {
   constructor(kind, message) { super(message); this.kind = kind; }
 }
 // OpenAI: insufficient_quota and the billing limits. Zhipu (string codes): 1113 balance or resource package exhausted,
 // 1304 daily call limit, 1308 usage limit reached, 1310 weekly/monthly limit.
-const QUOTA_CODES = new Set(["insufficient_quota", "billing_hard_limit_reached", "billing_hard_limit", "billing_not_active", "1113", "1304", "1308", "1310"]);
+const QUOTA_CODES = new Set(["insufficient_quota", "billing_hard_limit_reached", "billing_hard_limit", "billing_not_active", "credit_balance_exhausted", "credit_balance_too_low", "insufficient_credits", "insufficient_balance", "quota_exceeded", "1113", "1304", "1308", "1310"]);
 export const isQuotaCode = (code) => QUOTA_CODES.has(String(code ?? ""));
+// A credit, billing or quota failure by any signal: a known code, HTTP 402 (payment required), or a message that names
+// the credit balance or quota (an unlisted code must not leave a PR unreviewed while the other provider can answer).
+const QUOTA_MESSAGE = /credit balance|insufficient (credit|fund|balance|quota)|exceeded your current quota|billing (hard )?limit|out of credits?|balance (is )?(too low|exhausted)/i;
+export const isQuotaFailure = ({ status, code, message } = {}) => isQuotaCode(code) || Number(status) === 402 || QUOTA_MESSAGE.test(String(message ?? ""));
 
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
@@ -25,10 +29,12 @@ async function requestJson(fetchImpl, url, init, { retries = 5, waitMs = 8000, l
     const j = await r.json().catch(() => null);
     const code = j?.error?.code ?? j?.error?.type ?? "";
     if (r.ok) return j;
-    if (isQuotaCode(code)) throw new ProviderError("quota", `${label}: HTTP ${r.status} ${code}`);
+    if (isQuotaFailure({ status: r.status, code, message: j?.error?.message })) throw new ProviderError("quota", `${label}: HTTP ${r.status} ${code}`);
     if ((r.status === 429 || r.status >= 500) && attempt < retries) { await sleep(waitMs * (attempt + 1)); continue; }
     // Only the status and the error code are reported; error bodies never echo the key, but nothing else is needed.
-    throw new ProviderError(r.status === 429 ? "quota" : "other", `${label}: HTTP ${r.status} ${code}${r.status === 429 ? " (sustained)" : ""}`);
+    const err = new ProviderError(r.status === 429 ? "quota" : "other", `${label}: HTTP ${r.status} ${code}${r.status === 429 ? " (sustained)" : ""}`);
+    err.status = r.status;
+    throw err;
   }
 }
 
@@ -53,7 +59,7 @@ export function openaiProvider({ key, model, effort, url = "https://api.openai.c
       }
       if (res?.status !== "completed") {
         const code = res?.error?.code ?? "";
-        throw new ProviderError(isQuotaCode(code) ? "quota" : "other", `openai: response ${res?.status ?? "missing"} ${code || res?.incomplete_details?.reason || ""}`.trim());
+        throw new ProviderError(isQuotaFailure({ code, message: res?.error?.message }) ? "quota" : "other", `openai: response ${res?.status ?? "missing"} ${code || res?.incomplete_details?.reason || ""}`.trim());
       }
       const text = (res.output ?? []).filter((o) => o.type === "message").flatMap((o) => o.content ?? []).filter((c) => c.type === "output_text").map((c) => c.text).join("");
       const u = res.usage ?? {};
@@ -62,22 +68,53 @@ export function openaiProvider({ key, model, effort, url = "https://api.openai.c
   };
 }
 
-// GLM-5.3, the full model (not a flash variant), through the OpenAI-compatible chat completions endpoint.
-export const GLM_MODEL = "glm-5.3";
-export function glmProvider({ key, baseUrl, model = GLM_MODEL, fetchImpl = fetch, waitMs }) {
+// GLM-5.4, the full model (not a flash variant), through the OpenAI-compatible chat completions endpoint. Spelled as
+// ZCode spells it in its requests to the same coding plans: the server answers a 5.3 request with "glm-5.3" whatever
+// case was sent, and a 5.4 request with the case as sent, so this is the only spelling seen accepted for 5.4. The
+// comments the review posts name this model through glmName() (sol.mjs); nothing else states the version.
+export const GLM_MODEL = "GLM-5.4";
+// The model GLM falls back to when the endpoint refuses GLM_MODEL (unsupported or unauthorized: a non-quota error that
+// would otherwise end the run before the GPT fallback). The verdict says so and names glm-5.3, never GLM-5.4.
+export const GLM_FALLBACK_MODEL = "glm-5.3";
+const REFUSED_STATUS = new Set([400, 401, 403, 404]);
+// What the verdict may call the model: the model the response reports, only when it is a plain model id (letters,
+// digits, dot, dash, underscore, at most 40 characters). Anything else (a non-string, empty or free-text value) is
+// never echoed: it becomes the controlled label "unknown (requested X)". The reported id is the requested one only when
+// it equals it (case aside); a different id, a suffixed variant such as glm-5.4-flash included, is recorded as reported.
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
+export function attributeModel(requested, reported) {
+  const rep = typeof reported === "string" ? reported.trim() : "";
+  if (!MODEL_ID.test(rep)) return { model: `unknown (requested ${requested})`, note: `${requested} requested, the response model is ${rep ? "invalid" : "missing"}` };
+  if (rep.toLowerCase() === String(requested).toLowerCase()) return { model: rep };
+  return { model: rep, note: `${requested} requested, answered by ${rep}` };
+}
+export function glmProvider({ key, baseUrl, model = GLM_MODEL, fallbackModel = GLM_FALLBACK_MODEL, fetchImpl = fetch, waitMs }) {
   if (!key || !baseUrl) throw new ProviderError("config", "GLM_API_KEY or GLM_BASE_URL is not set");
   if (/flash/i.test(model)) throw new ProviderError("config", "the GLM fallback uses the full model, not flash");
   const url = `${String(baseUrl).replace(/\/+$/, "")}/chat/completions`;
+  const call = (m, input) => requestJson(fetchImpl, url, {
+    method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({ model: m, messages: [{ role: "user", content: input }], stream: false, max_tokens: 32000 }),
+  }, { label: "glm", ...(waitMs !== undefined ? { waitMs } : {}) });
   return {
     name: "glm",
     model,
     async review(input) {
-      const j = await requestJson(fetchImpl, url, {
-        method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-        body: JSON.stringify({ model, messages: [{ role: "user", content: input }], stream: false, max_tokens: 32000 }),
-      }, { label: "glm", ...(waitMs !== undefined ? { waitMs } : {}) });
+      let asked = model, j, refused = "";
+      try { j = await call(model, input); }
+      catch (e) {
+        if (!(e instanceof ProviderError) || e.kind !== "other" || !REFUSED_STATUS.has(e.status) || !fallbackModel || fallbackModel.toLowerCase() === model.toLowerCase()) throw e;
+        refused = `${model} refused (HTTP ${Number(e.status) || "?"}), fell back to ${fallbackModel}`;
+        asked = fallbackModel;
+        j = await call(fallbackModel, input);
+      }
       const u = j?.usage ?? {};
-      return { text: j?.choices?.[0]?.message?.content ?? "", usage: { input: u.prompt_tokens ?? 0, cached: u.prompt_tokens_details?.cached_tokens ?? 0, output: u.completion_tokens ?? 0 } };
+      const { model: answered, note } = attributeModel(asked, j?.model);
+      return {
+        text: j?.choices?.[0]?.message?.content ?? "", model: answered,
+        ...(refused || note ? { note: [refused, note].filter(Boolean).join("; ") } : {}),
+        usage: { input: u.prompt_tokens ?? 0, cached: u.prompt_tokens_details?.cached_tokens ?? 0, output: u.completion_tokens ?? 0 },
+      };
     },
   };
 }
@@ -107,7 +144,9 @@ export async function reviewInOrder({ input, order, build }) {
   for (const name of order) {
     try {
       const p = build(name);
-      return { provider: p.name, model: p.model, ...(out.length ? { why: out.join("; ") } : {}), ...(await p.review(input)) };
+      const { note, ...r } = await p.review(input);   // r.model, when the provider reports one, replaces the requested p.model
+      // why: the quota errors that moved the run on; note: a refusal or a model mismatch, kept apart so the post says which.
+      return { provider: p.name, model: p.model, ...(out.length ? { why: out.join("; ") } : {}), ...(note ? { note } : {}), ...r };
     } catch (e) {
       if (!(e instanceof ProviderError) || e.kind !== "quota") throw e;
       out.push(e.message);

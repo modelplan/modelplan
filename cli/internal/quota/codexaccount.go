@@ -315,7 +315,8 @@ func off() bool {
 }
 
 // CodexBin finds the codex executable: $MODELPLAN_CODEX, PATH, then the usual install places
-// (hooks run with a short PATH). Empty when there is none.
+// (hooks run with a short PATH). Empty when there is none. The Codex app's bundled copy is never
+// used: ModelPlan does not run programs inside another app's bundle (owner build-6 #14).
 func CodexBin(home string) string {
 	if p := os.Getenv("MODELPLAN_CODEX"); p != "" {
 		return p
@@ -324,7 +325,7 @@ func CodexBin(home string) string {
 	if runtime.GOOS == "windows" {
 		exe = "codex.exe"
 	}
-	return toolcli.Find(home, exe, "/Applications/Codex.app/Contents/Resources/"+exe)
+	return toolcli.Find(home, exe)
 }
 
 // AccountRefresh is the outcome of an explicit refresh. It covers Codex only: no other source
@@ -496,7 +497,10 @@ func lock(cache string, now time.Time) (func(), bool) {
 }
 
 func save(cache string, s *accountSnap) error {
-	b, _ := json.MarshalIndent(s, "", "  ")
+	b, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return codeError("parse_error", "parse_error")
+	}
 	p := accountPath(cache)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
@@ -545,8 +549,6 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 		return nil, err
 	}
 	cmd.Stderr = io.Discard
-	ownProcessGroup(cmd)
-	cmd.WaitDelay = time.Second
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -555,13 +557,13 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := cmd.Start(); err != nil {
+	if err := toolcli.Start(cmd); err != nil {
 		return nil, err
 	}
 	// A descendant that inherited stdout can keep the pipe open after the launcher dies: on the
 	// deadline, stop the whole group and close the read end so the scan below returns.
 	fired := make(chan struct{})
-	stop := context.AfterFunc(ctx, func() { defer close(fired); killProcessGroup(cmd); _ = out.Close() })
+	stop := context.AfterFunc(ctx, func() { defer close(fired); toolcli.KillGroup(cmd); _ = out.Close() })
 	defer func() {
 		// The deadline kill finishes before Wait reaps the launcher, so it never signals a
 		// recycled process group.
@@ -569,8 +571,7 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 			<-fired
 		}
 		_ = in.Close()
-		killProcessGroup(cmd)
-		_ = cmd.Wait()
+		_ = toolcli.Finish(cmd)
 	}()
 	send := func(v any) error { b, _ := json.Marshal(v); _, err := in.Write(append(b, '\n')); return err }
 	sc := bufio.NewScanner(out)
@@ -1146,11 +1147,18 @@ func rateLimitsFromErrorBody(message string, now time.Time) *rlSnapshot {
 		}
 		minutes := *w.LimitWindowSeconds / 60
 		out := &rlWindow{UsedPercent: w.UsedPercent, WindowDurationMins: &minutes}
+		const maxJSONUnix = 253402300799 // 9999-12-31T23:59:59Z
 		switch {
 		case w.ResetAt != nil && *w.ResetAt > 0:
+			if *w.ResetAt > maxJSONUnix {
+				return nil, false
+			}
 			out.ResetsAt = w.ResetAt
 		case w.ResetAfterSeconds != nil && *w.ResetAfterSeconds >= 0:
-			at := now.Add(time.Duration(*w.ResetAfterSeconds) * time.Second).Unix()
+			if *w.ResetAfterSeconds > maxJSONUnix-now.Unix() {
+				return nil, false
+			}
+			at := now.Unix() + *w.ResetAfterSeconds
 			out.ResetsAt = &at
 		}
 		return out, true

@@ -432,7 +432,7 @@ enum DockGripInk {
     public var onNeedsFreshPresentation:(()->Void)?
     private var windowObservers=[NSObjectProtocol]()
     private var workspaceObserver:NSObjectProtocol?
-    private var scale=1,locale="en",community=true,failed=false
+    private var scale=1,locale="en",community=true,failed=false,communityShowsPercentages=true
     public override var isFlipped:Bool{true}
     public override var acceptsFirstResponder:Bool{keyboardNavigationEnabled}
     public override func becomeFirstResponder() -> Bool {
@@ -452,9 +452,9 @@ enum DockGripInk {
     public override init(frame:NSRect){super.init(frame:frame);wantsLayer=true;layer?.isGeometryFlipped=true;setAccessibilityElement(false);setAccessibilityRole(.group)}
     deinit {for token in windowObservers{NotificationCenter.default.removeObserver(token)};if let workspaceObserver{NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)}}
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
-    public func applyCommunity(_ rows:[DockInstrumentReading],locale:String="en") throws {
+    public func applyCommunity(_ rows:[DockInstrumentReading],locale:String="en",showsPercentages:Bool=true) throws {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
-        clearFocusedHelpExplanation();resetVisuals();registerGripRects([]);restingInstrumentImage=nil;hoverViewport=nil;imageUsesHoverViewport=false;officialRenderer=nil;self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
+        clearFocusedHelpExplanation();resetVisuals();registerGripRects([]);restingInstrumentImage=nil;hoverViewport=nil;imageUsesHoverViewport=false;officialRenderer=nil;self.locale=locale;community=true;communityShowsPercentages=showsPercentages;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
         orderedIDs=rows.map(\.subscriptionID);readings=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)})
         communityRowHeight = requestedNozzleDiameter ?? 44
         guard communityRowHeight.isFinite, (8...256).contains(communityRowHeight) else { throw DockArtworkError.invalidManifest }
@@ -491,15 +491,17 @@ enum DockGripInk {
             let matchingMaterial = reusesPreparedMaterial && officialRenderer === renderer &&
                 self.scale == renderScale && appliedGeometryScale == factor && self.hoverViewport == viewport
             // Skip only when everything this face renders is unchanged and the view is at rest: no hover, glow,
-            // nozzle pose, notice pulse, working effect or carried (hover-viewport) image, and its resting frame.
+            // nozzle pose, notice pulse or carried (hover-viewport) image, and its resting frame. A running working
+            // effect lives in its own layers above the face (G3-91), so it neither blocks the skip nor is touched by it.
             if matchingMaterial, !failed, let resting = restingInstrumentImage, image === resting, !imageUsesHoverViewport,
                self.locale == locale, readings == values, self.notices == notices, orderedIDs == rows.map(\.subscriptionID),
                readoutHolds.isEmpty, refreshSweepRing == nil, hotGlow == nil, hoveredGripIndex == nil,
                nozzlePosesForChecks.isEmpty, noticePulseLayers.isEmpty,
-               workingLayerParents.values.allSatisfy({ $0.sublayers?.isEmpty ?? true }),
                frame.size == (viewport?.size ?? skin.bounds.size) { return }
             let backing = matchingMaterial ? backgroundImage : nil
-            resetVisuals()
+            // G3-91 / D171: a repaint keeps the working rings' layers and their running spin; the effects driver
+            // decides per ring whether its effect still applies. Hiding, occlusion and retirement still reset them.
+            resetVisuals(keepingWorkingEffects: true)
             self.hoverViewport = viewport
             imageUsesHoverViewport = false
             appliedGeometryScale = factor
@@ -573,7 +575,9 @@ enum DockGripInk {
         needsDisplay = true
     }
     public func dispose(){ringPress=nil;readoutHolds=[:];refreshSweepRing=nil;onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onEmptyHover=nil;emptyHovered=false;onVisualReset=nil}
-    private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+    private func resetVisuals(keepingWorkingEffects:Bool=false){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[]
+        guard !keepingWorkingEffects else{return}
+        onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
     /// The host turns this off under Reduce Motion. Prototype: design-handoffs/opus-r7/src/rocket-r1/dock.css:38
@@ -749,7 +753,7 @@ enum DockGripInk {
     private func invalidatePresentation(){resetVisuals();onNeedsFreshPresentation?()}
     public func communityRowText(_ id:String) -> String? {
         guard community,let r=readings[id] else { return nil }
-        let heading=[r.alias ?? r.name,r.readout].joined(separator:"  ")
+        let heading=communityShowsPercentages ? [r.alias ?? r.name,r.readout].joined(separator:"  ") : (r.alias ?? r.name)
         // A plugin ring has no quota percentage and is never "unavailable" (macrevb-1096-5).
         guard r.remainingPercent == nil,r.pluginRing == nil else { return heading }
         let reason=r.unavailableReason?.trimmingCharacters(in:.whitespacesAndNewlines)
@@ -783,7 +787,7 @@ enum DockGripInk {
             NSColor.secondaryLabelColor.setStroke(); ring.stroke()
         }
         for (index,id) in orderedIDs.enumerated(){guard let r=readings[id] else{continue}
-            let value=communityRowText(id) ?? [r.alias ?? r.name,r.readout].joined(separator:"  ")
+            let value=communityRowText(id) ?? (communityShowsPercentages ? [r.alias ?? r.name,r.readout].joined(separator:"  ") : (r.alias ?? r.name))
             let context = NSGraphicsContext.current?.cgContext
             context?.saveGState()
             if let control = stationRect(id) { context?.clip(to: control) }
@@ -828,7 +832,7 @@ enum DockGripInk {
         let font=NSFont.monospacedSystemFont(ofSize:12*scale,weight:.regular)
         let parts=DockPluginRing.readoutParts(r.readout)
         let text=NSMutableAttributedString(string:(r.alias ?? r.name)+"  "+parts.label,attributes:[.font:font,.foregroundColor:NSColor.labelColor,.paragraphStyle:paragraph])
-        text.append(NSAttributedString(string:parts.number,attributes:[.font:font,.foregroundColor:Self.communityNumberColor(ring.readoutTone),.paragraphStyle:paragraph]))
+        if communityShowsPercentages{text.append(NSAttributedString(string:parts.number,attributes:[.font:font,.foregroundColor:Self.communityNumberColor(ring.readoutTone),.paragraphStyle:paragraph]))}
         text.draw(in:g.text)
     }
     private func stationRect(_ id:String)->CGRect? {
@@ -908,13 +912,15 @@ enum DockGripInk {
             let stale = reading.dataState == .stale ? (reading.unavailableReason ?? (locale.hasPrefix("zh") ? "部分读数已过期" : "Some readings are stale")) : nil
             // B4f: a plugin ring draws its number alone; VoiceOver still reads what it measures ("内存 77%").
             let spoken=reading.pluginRing?.accessibilityReadout ?? reading.readout
-            append("subscription."+id,reading.alias ?? reading.name,spoken,[reading.selectedWindowLabel,spoken,stale].compactMap{$0}.joined(separator:" · "),rect,.subscription(id))
+            // The neutral edition has no separate spoken channel: with percentages hidden no number is exposed at all.
+            let shownSpoken:String?=community && !communityShowsPercentages ? nil : spoken
+            append("subscription."+id,reading.alias ?? reading.name,shownSpoken,[reading.selectedWindowLabel,shownSpoken,stale].compactMap{$0}.joined(separator:" · "),rect,.subscription(id))
             if !community,let notice=notices[id],let station=skin?.stations.first(where:{$0.subscriptionID==id}) {
                 let origin = layoutOrigin
                 let zh=locale.hasPrefix("zh"),label:String
                 switch notice.key.kind {
                 case .forecast:label=zh ? "可能提前耗尽":"May run out before reset"
-                case .resetAnnounced:label=zh ? "已公告额外重置":"Extra reset announced"
+                case .resetAnnounced:label=notice.banked ? (zh ? "已公告额外重置":"Banked reset announced") : (zh ? "已公告额度重置":"Limit reset announced")
                 case .resetConfirmed:label=zh ? "公开重置已确认，余量以本机读数为准":"Public reset confirmed; your balance is the local reading"
                 case .cardsExpiring:label=zh ? "额外重置即将过期":"Resets expiring"
                 case .credits:label=zh ? "正在使用点数":"Using credits"

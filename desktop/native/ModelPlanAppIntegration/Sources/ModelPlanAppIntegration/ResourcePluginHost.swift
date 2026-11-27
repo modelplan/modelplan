@@ -49,7 +49,10 @@ import ModelPlanSettings
         if let widget { widget.setVisibility(v) } else { sampler.setVisibility(v) }
     }
     private func pushFeed() {
-        guard let samples = feed.next(sampler.history, running: visibility.columnShown) else { return }
-        sendData?(Self.pluginID, ResourcePagePayload.data(samples))
+        let running = visibility.columnShown
+        guard let samples = feed.next(sampler.history, running: running) else { return }
+        // D413: the hour of one-minute folds goes with a reading when it changed (on start, then once a minute).
+        let minutes = feed.minutes(sampler.history, running: running) ?? []
+        sendData?(Self.pluginID, ResourcePagePayload.data(samples, minutes: minutes))
     }
 }

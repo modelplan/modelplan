@@ -6,7 +6,7 @@
 // - AMBER: a quota forecast to run out before its reset while still above T (cockpitForecastV1). An engine
 //   that does not negotiate it creates no amber condition.
 //   WP-03: a forecast whose reset time is unknown is amber too ("约40m用完" with no reset part).
-// - Public reset announcements/confirmations, lower-effort advice and extra resets expiring within 48 hours are
+// - Public reset announcements/confirmations, lower-effort advice and banked resets expiring within 48 hours are
 //   list-only (blue); they never light the lamp. Credits being drawn and non-reset official notices have no producer
 //   field yet, so they are not listed.
 // - ALR-51 (WP-11, V1-FINAL §11, §12): a subscription that cannot be read, and a retained (stale) reading, are grey:
@@ -33,6 +33,8 @@ export interface CautionItem {
  readonly text:Both; readonly short?:Both;
  /** CKP-MFD-55: the alert list's second line (available resets, or the Settings action of a grey row). */
  readonly detail?:Both;
+ /** The row's tooltip, for an entry whose uncertainty the sentence cannot carry (a tentative published peak). */
+ readonly tip?:Both;
  /** CKP-MFD-56: a grey row opens Settings › Subscriptions instead of selecting the subscription. */
  readonly settings?:true;
  /** A grey row is either a retained (stale) reading or one that cannot be read at all (WP-12: only the latter merge). */
@@ -55,7 +57,7 @@ const finite=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v);
 export function cautionItems(data:WireCockpitData,now:number,redBelow:number):CautionItem[] {
  const lamp:{item:CautionItem;remaining:number;resetAt:number}[]=[],list:CautionItem[]=[],grey:CautionItem[]=[];
  const members=cockpitMembers(data),verified=new Set(data.subscriptions.map(s=>s.subscriptionRef));
- // CKP-MFD-55: available resets (reset cards with time left), joined only through a verified reference.
+ // CKP-MFD-55: available resets (banked resets with time left), joined only through a verified reference.
  // The producer may list only part of the cards (state partial, truncated, or a count above the items), so a count of the
  // visible items is exact only for a complete list: `partial` makes the line say "resets available" without a number.
  const cardFacts=(key:string,unstable:boolean)=>{
@@ -79,7 +81,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   }
   if(account.valueState==='none'){
    const code=account.lastFailure?.code??null;
-   if(isUnreadable(code)){const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code});grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});}
+   if(isUnreadable(code)){const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code,tool:row.id});grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});}
    continue;
   }
   const extra=available(key,unstable),detail=extra?{detail:resetsAvailable(extra.partial?null:extra.n)}:{};
@@ -110,7 +112,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
    const code=account?.lastFailure?.code??row.reason.code;
    if(!isUnreadable(code))continue;
    taken.add(key);
-   const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code});
+   const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code,tool:row.id});
    grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});
   }
  }
@@ -119,13 +121,15 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
  for(const e of data.details?.resetEvents??[]){
   if(!(Date.parse(e.expiresAt)>now))continue;const m=members.find(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id)));if(!m)continue;// a plan-scoped announcement belongs to that plan's subscription only (CKP-MFD-56)
   const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['reset',e.id]),stable=id;
-  if(e.status==='confirmed'){list.push({id,stable,level:'blue',member:m.key,text:both('mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
+  // D166/D428: only reset_credit is a banked reset; a direct reset and a legacy event with no kind use the direct wording.
+  const bank=e.kind==='reset_credit';
+  if(e.status==='confirmed'){list.push({id,stable,level:'blue',member:m.key,text:both(bank?'mfd.alBankedConf':'mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
   const from=e.schedule?Date.parse(e.schedule.from):NaN,through=e.schedule?Date.parse(e.schedule.through):NaN;
   const mid=e.schedule&&e.schedule.precision!=='date'&&Number.isFinite(from)?Number.isFinite(through)?(from+through)/2:from:null;
   const at=mid===null?null:Math.round(mid/(30*60000))*30*60000;
-  list.push({id,stable,level:'blue',member:m.key,text:at===null?both('mfd.alResetSoon',lang=>({s:s(lang)})):both('mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
+  list.push({id,stable,level:'blue',member:m.key,text:at===null?both(bank?'mfd.alBankedSoon':'mfd.alResetSoon',lang=>({s:s(lang)})):both(bank?'mfd.alBankedAnn':'mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
  }
- // D63: extra resets (reset cards) that expire within 48 hours, one blue line per subscription. Personal facts are joined
+ // D63: banked resets that expire within 48 hours, one blue line per subscription. Personal facts are joined
  // only through a verified reference, as the Subscription page joins them. List-only: they never light the lamp.
  for(const m of members){
   if(m.unstable||!verified.has(m.key))continue;
@@ -141,10 +145,12 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   const m=members.find(x=>x.row.id===peak.rowId),start=Date.parse(peak.startsAt),end=peak.endsAt?Date.parse(peak.endsAt):NaN;
   if(!m||!Number.isFinite(start)||(Number.isFinite(end)&&end<=now))continue;
   const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['peak',peak.rowId,peak.startsAt]),stable=JSON.stringify(['peak',peak.rowId]);
-  if(start<=now){list.push({id,stable,level:'blue',member:m.key,text:{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
+  // A peak the producer did not confirm (a tool-read ZCode subscription, or a tentative window) says so, in the sentence and the tooltip.
+  const tentative=peak.status!=='confirmed',tip=tentative?both('host.alPeakTip',()=>({})):undefined;
+  if(start<=now){list.push({id,stable,level:'blue',member:m.key,tip,text:tentative?both('host.alPeakNowT',lang=>({s:s(lang)})):{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
   const wait=(start-now)/60000;
-  if(Number.isFinite(end))list.push({id,stable,level:'blue',member:m.key,text:both('alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)}))});
-  else list.push({id,stable,level:'blue',member:m.key,text:both('host.alPeakOpen',lang=>({s:s(lang),in:dhm(wait)}))});
+  if(Number.isFinite(end))list.push({id,stable,level:'blue',member:m.key,tip,text:both(tentative?'host.alPeakT':'alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)}))});
+  else list.push({id,stable,level:'blue',member:m.key,tip,text:both(tentative?'host.alPeakOpenT':'host.alPeakOpen',lang=>({s:s(lang),in:dhm(wait)}))});
  }
  // CKP-MFD-55: tightest first within a colour: the lowest remaining, then the soonest reset.
  lamp.sort((a,b)=>rank[a.item.level]-rank[b.item.level]||a.remaining-b.remaining||a.resetAt-b.resetAt);

@@ -1,0 +1,1 @@
+Make the cockpit's engine flames its own thrust: an ember while docked, full thrust on launch and on the way home, a short flame while parked; a subscription with output shows a soft glow in its colour at the nozzle while docked.

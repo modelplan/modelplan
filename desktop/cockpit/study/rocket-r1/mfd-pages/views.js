@@ -84,14 +84,14 @@ const pctNum = (x, y, v, role, pre) => { const n = String(Math.round(v * 100)), 
 
 // rows: [{k, vb (current or null), vt (trial or null), vr (★), eff: [{l, v}] (every effort at the shown speed)}]
 function barsSvg(m, s, cols, W, ui) {
-  const {L, E} = edges(ui, W), cmp = !!ui.compact, TH = cmp ? 9 : 11, inset = 1, rT = 3, ix0 = L + inset, ix1 = E - inset;
+  const {L, E} = edges(ui, W), TH = 11, inset = 1, rT = 3, ix0 = L + inset, ix1 = E - inset;
   const X = v => ix0 + (ix1 - ix0) * clamp01(v), id = 'eb' + (++barUid), rowH = BAR_H / 2;
   const cur = s.cur ? shareOfTop(m, cols.C) : null, trial = s.trying ? shareOfTop(m, cols.T) : null, rec = shareOfTop(m, cols.R);
   const starMode = ui.starMode || STAR_MODE, laneMode = ui.laneMode || LANE_MODE, speedFast = s.trying ? s.trialFast : s.curFast;
   const at = l => shareOfTop(m, colOf(m, s.tier, l, speedFast));
   let defs = '', g = '', hit = '';
   [['abl', 'mfd.pctAbility'], ['cost', 'mfd.pctCost']].forEach(([k, name], i) => {
-    const top = i * rowH, cy = top + (cmp ? 13 : 13.5), y0 = cy - TH / 2, iy = y0 + inset, ih = TH - 2 * inset;
+    const top = i * rowH, cy = top + 13.5, y0 = cy - TH / 2, iy = y0 + inset, ih = TH - 2 * inset;
     const vb = cur?.[k] ?? null, vt = trial?.[k] ?? null, vr = rec[k], tr = vt != null;
     const up = tr && vb != null && Math.round(vt * 100) > Math.round(vb * 100), down = tr && vb != null && Math.round(vt * 100) < Math.round(vb * 100), eq = tr && vb != null && !up && !down;
     const xc = vb != null ? X(vb) : ix0, xt = tr ? X(vt) : xc, over = Math.max(vb ?? 0, vt ?? 0) > 1;
@@ -107,7 +107,7 @@ function barsSvg(m, s, cols, W, ui) {
     let f = '', glow = '';
     const gl = (a, z, y, h, cls) => `<g class="pc-glow ${cls}" filter="url(#${id}g)">${BAR_RECT(a, y, z - a, h, '')}</g>`;
     if (tr) {
-      const gap = laneMode === '3' ? 1.5 : 1, lr = laneMode === '3' ? (cmp ? 3.5 : 4.5) : cmp ? 4 : 5, lt = ih - lr - gap;
+      const gap = laneMode === '3' ? 1.5 : 1, lr = laneMode === '3' ? 4.5 : 5, lt = ih - lr - gap;
       if (vb != null) { glow += gl(ix0, xc, iy, lr, 'real'); f += BAR_RECT(ix0, iy, xc - ix0, lr, 'pc-fill', ` fill="url(#${id}${k})" data-v="${vb}"`) + BAR_RECT(ix0, iy, xc - ix0, 1, 'pc-hi') + BAR_RECT(xc - 1, iy, 1, lr, 'pc-cap'); }
       glow += gl(ix0, xt, iy + lr + gap, lt, 'trial');
       f += BAR_RECT(ix0, iy + lr + gap, xt - ix0, lt, 'pc-lane-trial', ` fill="url(#${id}t)" data-v="${vt}"`) + BAR_RECT(xt - 1, iy + lr + gap, 1, lt, 'pc-cap-trial')
@@ -117,7 +117,7 @@ function barsSvg(m, s, cols, W, ui) {
       f += BAR_RECT(ix0, iy, xc - ix0, ih, 'pc-fill', ` fill="url(#${id}${k})" data-v="${vb}"`) + BAR_RECT(ix0, iy, xc - ix0, 1, 'pc-hi');
     }
     // notches every 10 % (50 % at full height): cut into the tube, glass where the fill is, tinted where it is not
-    const fillEnd = Math.max(vb != null ? xc : 0, tr ? xt : 0), nh = cmp ? 1.5 : 2;
+    const fillEnd = Math.max(vb != null ? xc : 0, tr ? xt : 0), nh = 2;
     for (let p = 1; p < 10; p++) { const x = X(p / 10), on = x < fillEnd - .5, c = `pc-notch${on ? ' on' : ''}${p === 5 ? ' mid' : ''}`;
       f += p === 5 ? box(x - .5, iy, 1, ih, c, ` data-p="${p * 10}"`) : box(x - .5, iy, 1, nh, c, ` data-p="${p * 10}"`) + box(x - .5, iy + ih - nh, 1, nh, c, ` data-p="${p * 10}"`); }
     b += glow + `<g clip-path="url(#${clip})">${f}</g>`;
@@ -127,7 +127,7 @@ function barsSvg(m, s, cols, W, ui) {
     const xr = vr != null ? X(vr) : null;
     // "100%" above the ability bar's end; when the best-scoring effort is not the top one it is named: "100% = XHigh"
     const best = i === 0 ? bestRow(m) : null, named = best && best[0] !== topRow(m)?.[0];
-    if (i === 0 && (named || xr == null || (E - xr > 30 && !over))) b += label(E, top + (cmp ? 5.5 : 6), named ? t('mfd.pctMaxAt', {e: best[0]}) : t('mfd.pctMax'), 'pc-max', 'end');
+    if (i === 0 && (named || xr == null || (E - xr > 30 && !over))) b += label(E, top + 6, named ? t('mfd.pctMaxAt', {e: best[0]}) : t('mfd.pctMax'), 'pc-max', 'end');
     if (xr != null) {
       // ★ placement is switchable (ui.starMode): a = above the tube on the tick, b = tick through the tube and ★ below it, c = ★ centred on the tube at the tick
       const sy0 = starMode === 'a' ? top + 6.5 : y0 - 2, tick = (a, z) => box(xr - 1.5, a, 3, z - a, 'pc-halo') + box(xr - .5, a, 1, z - a - .5, 'pc-rec', ` data-role="rec" data-v="${vr}"`);
@@ -142,7 +142,7 @@ function barsSvg(m, s, cols, W, ui) {
     const labs = []; if (vb != null) labs.push({x: xc, v: vb, role: 'current', pre: eq}); if (tr && !eq) labs.push({x: xt, v: vt, role: 'trial'});
     if (labs.length === 2) { const [p, q] = labs, d = q.x - p.x, need = 27; if (Math.abs(d) < need) { const sh = (need - Math.abs(d)) / 2, sg = d >= 0 ? 1 : -1; q.x += sg * sh; p.x -= sg * sh; }
       const lo = L + 10, hi = E - 12; if (q.x > hi) { p.x -= q.x - hi; q.x = hi; } if (p.x > hi) { q.x -= p.x - hi; p.x = hi; } if (p.x < lo) { q.x += lo - p.x; p.x = lo; } if (q.x < lo) { p.x += lo - q.x; q.x = lo; } }
-    for (const o of labs) b += pctNum(Math.max(L + 10 + (o.pre ? 3 : 0), Math.min(E - 12, o.x)), n1(top + (cmp ? 26.5 : 27.5)), o.v, o.role, o.pre);
+    for (const o of labs) b += pctNum(Math.max(L + 10 + (o.pre ? 3 : 0), Math.min(E - 12, o.x)), n1(top + 27.5), o.v, o.role, o.pre);
     g += `<g class="pc-bar pc-${k}" data-series="${k}">${b}</g>`;
     // the bar is a control: each effort's segment (from the effort below it to this one) tries that effort
     const eff = m.e.map(r => ({l: r[0], x: X(at(r[0])[k] ?? 0)})).sort((p, q) => p.x - q.x); eff.forEach((e, j) => { e.x0 = j ? eff[j - 1].x : L; });
@@ -178,7 +178,7 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
   // hover preview: a dashed blue box on the column of the effort under the pointer (any other effort than the trial)
   g += efforts.map((l, i) => l === s.trial ? '' : band(i, 'pc-band pc-band-hover')).join('');
   // Gridlines at every step; a tick label only where it keeps 10 px from the labels already placed (0 first, then 100 %,
-  // then the fast top, then 50 %), so a short chart (the compact shell, V1-FINAL §13.3) never stacks them.
+  // then the fast top, then 50 %), so a short chart never stacks them.
   const tickYs = [], tickY = v => Math.max(8, Math.min(H - 1, Y(v) + 3));
   for (const v of [0, 1, ...(span > 1 ? [span] : []), .5]) if (tickYs.every(y => Math.abs(y - tickY(v)) >= 10)) tickYs.push(tickY(v));
   for (const v of span > 1 ? [span, 1, .5, 0] : [1, .5, 0]) { const y = Y(v); g += `<line class="pc-grid${v === 1 ? ' unit' : ''}" x1="${L}" x2="${n1(E)}" y1="${n1(y)}" y2="${n1(y)}"/>` + (tickYs.includes(tickY(v)) ? label(L - 5, tickY(v), v ? pctText(v) : '0', 'pc-tick-l', 'end') : ''); }
@@ -241,18 +241,17 @@ export function comparison(d, ui, args) {
   // cost exists. The website links moved to the hint row at the bottom right (at least one is always kept).
   const use = useText(m.u7);
   const {L, E} = edges(ui, size.w), levels = m.e.map(r => r[0]);
-  // CKP-FAD-18 / CKP-MFD-54: one quiet hint, bottom right: how to try while idle, "trial only" while trying. The compact
-  // shell has no height for it, so it collapses to an info mark outside the key row (CSS picks one by the profile); the
-  // full text is its accessible name.
+  // CKP-FAD-18 / CKP-MFD-54: one quiet hint, bottom right: how to try while idle, "trial only" while trying. The info
+  // mark (hidden by CSS since D444 retired the compact shell) carries the full text as its accessible name.
   // §14: the long form first, then the short one, then none (the bare ↗ link stays); the ⓘ always names the long form.
   const hintText = s.trying ? (ui.trialNote !== false ? t('mfd.cmpTrialNote') : '') : t('mfd.cmpHintIdle');
   const hintShown = !hintText ? '' : [hintText, t(s.trying ? 'mfd.cmpTrialNoteShort' : 'mfd.cmpHintIdleShort')].find(x => textW(x) * 1.05 + 26 <= size.w) ?? '';
   const hint = hintShown ? `<p class="cmp-hint${s.trying ? ' cmp-trial-note' : ''}"${hintShown !== hintText ? ` title="${esc(hintText)}"` : ''}>${esc(hintShown)}</p>` : '';
   const hintMark = hintText ? `<button type="button" class="cmp-trial-i" aria-label="${esc(hintText)}">ⓘ</button>` : '';
   // The website link sits left of the hint (§14: one link is always kept). When the full words do not fit beside the hint
-  // (English, compact) the link is a bare ↗ named by its tooltip; "how it's worked out" joins only when everything fits.
+  // (English, narrow) the link is a bare ↗ named by its tooltip; "how it's worked out" joins only when everything fits.
   const href = modelUrl(m.publishedId ?? m.id), room = size.w - textW(hintShown) * 1.05 - 12;
-  const full = !ui.compact && textW(words.compare + ' ↗') <= room, how = full && textW(words.compare + ' ↗') + textW(words.how + ' ↗') + 8 <= room;
+  const full = textW(words.compare + ' ↗') <= room, how = full && textW(words.compare + ' ↗') + textW(words.how + ' ↗') + 8 <= room;
   const links = `<span class="cmp-links">${full ? secondaryLink(href, words.compare) + (how ? secondaryLink(methodologyUrl('cost-basis'), words.how) : '')
     : `<a class="website-link cmp-link-i" href="${href}" target="_blank" rel="noopener noreferrer" title="${esc(words.compare)}" aria-label="${esc(words.compare)}">↗</a>`}</span>`;
   const keyCls = l => `${l === base && cur ? 'cur' : ''} ${l === trial && s.trying ? 'try' : ''}`.trim();

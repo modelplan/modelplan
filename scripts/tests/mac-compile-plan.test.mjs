@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import assert from "node:assert/strict";
 import test from "node:test";
-import { seedPlan, APP_INTEGRATION_MAX_CLASSES, FILTER_MAX, NEVER_RUN, ownerPackage, plan, testClasses, toTsv } from "../mac-compile/plan.mjs";
+import { SPI_FLAG, withTestTargets, seedPlan, APP_INTEGRATION_MAX_CLASSES, FILTER_MAX, NEVER_RUN, ownerPackage, plan, testClasses, toTsv } from "../mac-compile/plan.mjs";
 
 const files = {
   "desktop/native/Package.swift": "",
@@ -56,7 +56,7 @@ test("a long class list runs the whole package minus the never-run classes", () 
   const rows = plan(["desktop/native/Sub/Sources/S.swift"], all, (f) => (f === "desktop/native/Sub/Tests/SubTests.swift" ? many : read(f)));
   assert.ok(many.length > FILTER_MAX);
   assert.deepEqual([rows[0].mode, rows[0].filter], ["skip", ""]);
-  assert.equal(toTsv(rows), `desktop/native/Sub\tdesktop_native_Sub\tskip\t-\t${NEVER_RUN.join("|")}`);
+  assert.equal(toTsv(rows), `desktop/native/Sub\tdesktop_native_Sub\tskip\t-\t${NEVER_RUN.join("|")}\t-`);
 });
 
 const AI = "desktop/native/ModelPlanAppIntegration";
@@ -103,7 +103,68 @@ test("seed plan: every standalone-buildable package, tests built only, one scrat
     "desktop/native/verification/U.swift": "",
   };
   const rows = seedPlan(Object.keys(f), (p) => f[p]);
-  assert.deepEqual(rows.map((r) => r.dir), ["desktop/native", "desktop/native/Dep", "desktop/native/Free"]);
+  assert.deepEqual(rows.map((r) => r.dir), ["desktop/native", "desktop/native/Dep", "desktop/native/Free", "desktop/native/verification"]);
+  assert.equal(rows[3].flags, SPI_FLAG); // the host is no longer left out: it builds with the SPI flag, as a PR row does
   assert.ok(rows.every((r) => r.mode === "build-tests" && r.filter === ""));
   assert.equal(new Set(rows.map((r) => r.scratch)).size, rows.length);
+});
+
+// A miniature of desktop/native: the root embeds Selection's sources as its own targets, Settings and AppIntegration
+// depend on the root, verification depends on Settings and AppIntegration, Wire lives outside desktop/native.
+const N = "desktop/native";
+const g = {
+  [`${N}/Package.swift`]: '.target(name: "ModelPlanSelection", path: "ModelPlanSelection/Sources/ModelPlanSelection"), .testTarget(name: "RootTests", path: "RootTests")',
+  [`${N}/ModelPlanSelection/Package.swift`]: "",
+  [`${N}/ModelPlanSelection/Sources/ModelPlanSelection/S.swift`]: "",
+  [`${N}/RootTests/RootTests.swift`]: "final class RootTests: XCTestCase {}",
+  [`${N}/ModelPlanSettings/Package.swift`]: '.package(name: "ModelPlanNative", path: ".."), .package(path: "../../../clients/swift/ModelPlanWire")',
+  [`${N}/ModelPlanSettings/Sources/A.swift`]: "",
+  [`${N}/ModelPlanAppIntegration/Package.swift`]: '.package(name: "ModelPlanNative", path: ".."),\n.package(name: "ModelPlanSettings", path: "../ModelPlanSettings")',
+  [`${N}/ModelPlanAppIntegration/Sources/X.swift`]: "",
+  [`${N}/verification/Package.swift`]: '.package(path: "../ModelPlanAppIntegration"), .package(path: "../ModelPlanSettings")',
+  [`${N}/verification/U11WiredAdapter.swift`]: "",
+  [`${N}/ModelPlanCredentialAgent/Package.swift`]: "",
+  [`${N}/ModelPlanCredentialAgent/Sources/C.swift`]: "",
+  "clients/swift/ModelPlanWire/Package.swift": "",
+  "clients/swift/ModelPlanWire/Sources/W.swift": "",
+};
+const gAll = Object.keys(g);
+const gRead = (f) => g[f];
+const dirs = (changed) => withTestTargets(plan(changed, gAll, gRead), gAll, changed, gRead).map((r) => `${r.dir.replace(`${N}/`, "").replace(N, "root")}${r.flags ? "+SPI" : ""}`);
+
+test("invariant: a PR whose test targets do not compile fails mac-compile (every dependent is built)", () => {
+  assert.deepEqual(withTestTargets([], [], [], () => ""), []);
+  // Selection-only change: the root (which embeds it) and everything on the root, tests built.
+  const sel = dirs([`${N}/ModelPlanSelection/Sources/ModelPlanSelection/S.swift`]);
+  for (const want of ["root", "ModelPlanSettings", "ModelPlanAppIntegration", "ModelPlanAppIntegration+SPI", "verification+SPI"]) assert.ok(sel.includes(want), `${want} in ${sel}`);
+  assert.ok(!sel.includes("ModelPlanCredentialAgent"));
+});
+
+test("a Settings-only change builds the wired verification host with the SPI flag, never standalone", () => {
+  const rows = withTestTargets(plan([`${N}/ModelPlanSettings/Sources/A.swift`], gAll, gRead), gAll, [`${N}/ModelPlanSettings/Sources/A.swift`], gRead);
+  const v = rows.filter((r) => r.dir === `${N}/verification`);
+  assert.deepEqual(v.map((r) => r.flags), [SPI_FLAG]);
+  assert.ok(rows.some((r) => r.dir === `${N}/ModelPlanAppIntegration` && r.flags === SPI_FLAG));
+  assert.ok(!rows.some((r) => r.dir === N), "root does not depend on Settings");
+});
+
+test("a change outside desktop/native reaches its dependents inside it; an unrelated package builds only itself", () => {
+  assert.deepEqual(dirs(["clients/swift/ModelPlanWire/Sources/W.swift"]).sort(), ["ModelPlanAppIntegration", "ModelPlanAppIntegration+SPI", "ModelPlanSettings", "verification+SPI"].sort());
+  assert.deepEqual(dirs([`${N}/ModelPlanCredentialAgent/Sources/C.swift`]), ["ModelPlanCredentialAgent"]);
+});
+
+test("the seed builds every standalone package plus the SPI rows", () => {
+  const rows = seedPlan(gAll, gRead);
+  assert.ok(rows.every((r) => r.mode === "build-tests"));
+  assert.deepEqual(rows.filter((r) => r.dir === `${N}/verification`).map((r) => [r.scratch, r.flags]), [["desktop_native_verification_spi", SPI_FLAG]]);
+  assert.ok(rows.some((r) => r.flags === SPI_FLAG && r.scratch.endsWith("_spi")));
+});
+
+test("invariant: every row a PR can schedule has its products built by the seed in the same configuration", () => {
+  const key = (r) => [r.dir, r.scratch, r.flags ?? ""].join("|");
+  const seeded = new Set(seedPlan(gAll, gRead).map(key));
+  const swift = gAll.filter((f) => f.endsWith(".swift"));
+  for (const f of swift) {
+    for (const r of withTestTargets(plan([f], gAll, gRead), gAll, [f], gRead)) assert.ok(seeded.has(key(r)), `${f}: ${key(r)} is not seeded`);
+  }
 });

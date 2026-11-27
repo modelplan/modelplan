@@ -1506,28 +1506,23 @@ test("review:gpt: GLM is advisory and a REVIEWER: ghglm assignment pins nothing 
   assert.equal(R.reviewerLane(R.feed([comment("REVIEWER: ghsol")]), true), "(ghsol)");
 });
 
-// owner 2026-11-21: on a review:gpt PR whose GPT is out of quota, the workflow's marked GLM verdict counts.
-test("review:gpt: the GLM fallback verdict counts only with the workflow's marker line at the exact head", () => {
+// macrev2-1254 (supersedes owner 2026-11-21): a GLM fallback verdict NEVER counts on an IMPORTANT PR; a review:gpt label makes a
+// PR IMPORTANT. The workflow no longer writes the marker and the gate ignores it, marked or not, labelled or not.
+test("review:gpt / IMPORTANT: a GLM fallback verdict (marked or not) is advisory; only an exact-head Sol merge lands the PR", () => {
   const labelled = pr({ labels: [{ name: "review:gpt" }] });
   const files = [file("cli/internal/quota/x.go")];
   const ev = (p, comments) => R.evaluatePr({ pr: p, items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf });   // REVIEW_GLM_TIERS empty
   const M = R.GPT_FALLBACK_MARKER;
-  assert.equal(M, "REVIEW-GPT-FALLBACK: GPT quota out; GLM verdict counts; mandatory nightly sampling");
+  assert.equal(R.gptFallbackVerdict(R.feed([comment(`x\n${M}\nVERDICT: merge @ ${H} (ghglm)`)]), H), null);
   const marked = (verdict, sha = H) => comment(`GLM review\n\n${M}\n\nVERDICT: ${verdict} @ ${sha} (ghglm)`);
-  assert.equal(ev(labelled, [marked("merge")]).state, R.SUCCESS, "marked merge counts");
-  assert.equal(ev(labelled, [marked("block")]).state, R.FAILURE, "marked block blocks");
-  assert.equal(ev(labelled, [comment(v("merge", H, "ghglm"))]).state, R.PENDING, "no marker: advisory");
-  assert.equal(ev(labelled, [comment(v("block", H, "ghglm"))]).state, R.PENDING);
-  // the marker must be in the same comment as the verdict, exact, and at the exact head
-  assert.equal(ev(labelled, [comment(M), comment(v("merge", H, "ghglm"))]).state, R.PENDING, "marker in another comment");
-  assert.equal(ev(labelled, [comment(`${M} extra\n\nVERDICT: merge @ ${H} (ghglm)`)]).state, R.PENDING, "inexact marker line");
-  assert.equal(ev(labelled, [marked("merge", OLD)]).state, R.PENDING, "other head");
-  assert.equal(ev(labelled, [{ ...marked("merge"), user: { login: "x", id: 2 } }]).state, R.PENDING, "untrusted author");
-  // unlabelled: the marker changes nothing (GLM counts only on REVIEW_GLM_TIERS)
-  assert.equal(ev(pr(), [marked("merge")]).state, R.PENDING);
-  assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers: [2] }).state, R.SUCCESS, "unlabelled unchanged");
-  // GPT still decides when it answered: GPT merge beats nothing, a GPT block beats a marked GLM merge
-  assert.equal(ev(labelled, [marked("merge"), comment(v("block", H, "ghsol"))]).state, R.FAILURE);
+  for (const p of [labelled, pr()]) {
+    assert.equal(ev(p, [marked("merge")]).state, R.PENDING, "marked GLM merge does not count");
+    assert.equal(ev(p, [comment(v("merge", H, "ghglm"))]).state, R.PENDING, "unmarked GLM merge does not count");
+    assert.equal(ev(p, [marked("block")]).state, R.PENDING, "an advisory GLM block does not veto");
+    assert.equal(ev(p, [marked("merge"), comment(v("merge", H, "ghsol"))]).state, R.SUCCESS, "an exact-head Sol merge satisfies it");
+    assert.equal(ev(p, [marked("merge"), comment(v("block", H, "ghsol"))]).state, R.FAILURE, "a Sol block still blocks");
+  }
+  assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers: [2] }).state, R.SUCCESS, "D366 REVIEW_GLM_TIERS fallback unchanged");
 });
 
 test("D374: a native head cannot merge without a mac-compile success status at its head", () => {
