@@ -1,4 +1,4 @@
-// 总览 (V1-FINAL §8.1, r5-1 option A): three layers from top to bottom. 1 the alert rows (tightest first, four lines at
+// 总览 (V1-FINAL §8.1, r5-1 option A): three layers from top to bottom. 1 the alert rows (tightest first, two or three lines at
 // most, "+N ▸" for the rest); 2 the totals row (the range's ≈cost large, its tokens beside it, ≈cost per day on the right,
 // "since MM-DD" instead of the range when the record is shorter); 3 one bar per day (per hour for Today), stacked in the
 // subscription colours, its height the day's ≈cost from zero. No price data means no bars: there is no token fallback.
@@ -13,7 +13,13 @@ import {statusItems,statusRow} from './public-helpers.js';
 // steps would date a bucket a day off (audit F 6). The series are indexed by local calendar day (prototype-history.ts).
 const daysBefore = (ms, back) => { const x = new Date(ms); return new Date(x.getFullYear(), x.getMonth(), x.getDate() - back, x.getHours(), x.getMinutes(), x.getSeconds(), x.getMilliseconds()).getTime(); };
 
-export function alertList(d, {max = 4} = {}) {
+// D-b6-2 (owner build 6): the chart is the page's purpose, so it keeps at least CHART_MIN_SHARE of the page body; the alert
+// lines get what is left after the totals row and note (OVERHEAD px), one line costs LINE px. The budget counts the "+N ▸" line,
+// so 2 means one alert and "+N ▸" (two alerts that fit are both shown), and it is never above 3 however tall the screen is.
+export const CHART_MIN_SHARE = 0.55, ALERT_OVERHEAD = 56, ALERT_LINE = 17, ALERT_LINES = [2, 3];
+export const alertBudget = pageH => Math.max(ALERT_LINES[0], Math.min(ALERT_LINES[1], Math.floor((pageH - Math.round(pageH * CHART_MIN_SHARE) - ALERT_OVERHEAD - 3) / ALERT_LINE)));
+
+export function alertList(d, {max = 3} = {}) {
   let a = statusItems(d.alerts);
   // Three or more subscriptions that cannot be read merge into one grey line (V1-FINAL §8.1). A retained (stale) reading is
   // not unreadable: it keeps its own line with the reading's age.
@@ -168,9 +174,9 @@ export const overview = {
     ui.chart === 'grid' ? null : {id:'stack',a:{value:'stack', text:t('mfd.oStack'),on:ui.stack},b:{value:'split', text:t('mfd.oSplit'),on:!ui.stack}},
     null],
   render(d, ui) {
-    // The taller screen shows four alert lines, the short one only the tightest plus "+N ▸" (V1-FINAL §13); the chart
-    // takes the rest of the height (data-fill), so the page always fills the screen.
-    const h = fill(ui, 'page', {w: 330, h: 190}).h - 12, max = h >= 165 ? 4 : 2;
+    // The alert budget follows the measured page body (V1-FINAL §13) but keeps the chart at 55% of it: two or three lines
+    // at most, the rest behind "+N ▸" (alertBudget). The chart takes the rest of the height (data-fill).
+    const max = alertBudget(fill(ui, 'page', {w: 330, h: 190}).h);
     const alerts = alertList(d, {max}), accounts = accountsIn(d, ui);
     const list = series(d, ui), costs = costSeries(d, ui);
     const todays = accounts.map(a => a.todayTokens), todayKnown = todays.length > 0 && todays.every(Number.isFinite);

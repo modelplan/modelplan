@@ -279,7 +279,10 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const lines=(source.getAttribute('data-tip')??'').split('\n').filter(Boolean);if(!lines.length){hideTip();return;}
   tip.replaceChildren(...lines.map((line,i)=>node('span',i?'':'h',line)));tip.hidden=false;
   const box=screen.getBoundingClientRect(),r=source.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;
-  const left=r.right-box.left+6+w<=box.width?r.right-box.left+6:Math.max(0,r.left-box.left-6-w),top=Math.min(Math.max(0,r.top-box.top),Math.max(0,box.height-h));
+  let left=r.right-box.left+6+w<=box.width?r.right-box.left+6:Math.max(0,r.left-box.left-6-w),top=Math.min(Math.max(0,r.top-box.top),Math.max(0,box.height-h));
+  // A row-wide source (the totals row's "On this Mac") has no room beside it, and beside it would cover its own headline:
+  // the tip goes just below it (above it when nothing fits below), at the pointer's side.
+  if(r.width>box.width*.6){left=Math.min(Math.max(0,e.clientX-box.left),Math.max(0,box.width-w));top=r.bottom-box.top+4+h<=box.height?r.bottom-box.top+4:Math.max(0,r.top-box.top-4-h);}
   tip.style.left=left+'px';tip.style.top=top+'px';};
  screen.onpointerleave=hideTip;
  // Public projection only: v1.1 charts, rankings and full session lists are
