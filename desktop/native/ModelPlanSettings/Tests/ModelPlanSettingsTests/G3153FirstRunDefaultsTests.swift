@@ -141,34 +141,15 @@ import ModelPlanWire
         controller.receiveAcceptedFacts(try tools(zcode: false))
         XCTAssertNil(controller.firstRunOptIn(forTool: "zai"))
     }
-    /// Temporary (PR #1153 crash hunt): on an abort, print the top frames so they fit in the CI log tail.
-    private static func printTopFramesOnAbort() {
-        signal(SIGABRT) { _ in
-            var frames = [UnsafeMutableRawPointer?](repeating: nil, count: 26)
-            let count = backtrace(&frames, 26)
-            _ = "G3155DIAG SIGABRT top frames\n".withCString { write(2, $0, strlen($0)) }
-            backtrace_symbols_fd(&frames, count, 2)
-            signal(SIGABRT, SIG_DFL); raise(SIGABRT)
-        }
-    }
-    /// A first-run page on a Mac where only ZCode is present, built synchronously.
-    private func zcodeFirstRunPage() throws -> (ScopeConsentEntry, SettingsFirstRunController) {
+    func testTheFirstRunRowOffersTheOptInAndNeverSaysUnsupported() async throws {
         let entry = entry()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("g3155-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        defer { try? FileManager.default.removeItem(at: directory) }
         let editor = SettingsEditor(store: try SettingsStore(url: directory.appendingPathComponent("preferences.json")))
         let page = SettingsFirstRunController(editor: editor, scopeConsentEntry: entry)
         page.presence = FirstRunPresenceDetector(home: "/h", searchDirectories: []) { $0 == "/h/.zcode" }
-        return (entry, page)
-    }
-    func testTheFirstRunRowOffersTheOptInAndNeverSaysUnsupported() async throws {
-        Self.printTopFramesOnAbort()
-        let (entry, page) = try zcodeFirstRunPage()
         await page.prepare()
-        try checkTheZCodeOptInRow(entry, page)
-    }
-    private func checkTheZCodeOptInRow(_ entry: ScopeConsentEntry, _ page: SettingsFirstRunController) throws {
         entry.controller.receiveAcceptedFacts(try tools(zcode: true))
         entry.controller.setRowForTesting("zai", state: .needsConsent, code: "consent_required")
         let root = try XCTUnwrap(page.window?.contentView)

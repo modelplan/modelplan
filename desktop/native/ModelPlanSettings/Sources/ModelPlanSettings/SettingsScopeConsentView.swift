@@ -423,9 +423,11 @@ import ModelPlanWire
             optInBox.font = .systemFont(ofSize: 12); optInBox.lineBreakMode = .byWordWrapping
             optInBox.cell?.truncatesLastVisibleLine = false; optInBox.cell?.wraps = true
             optInBox.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            optInBox.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
             optInBox.setAccessibilityLabel(Self.zcodeOptInTitle.value(language))
+            // Add the box to the column before pinning it to the column: activating a constraint between views that
+            // share no ancestor raises an NSException (PR #1153 abort in G3153FirstRunDefaultsTests).
             column.addArrangedSubview(optInBox); wrappingButtons.append(optInBox)
+            optInBox.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
         let right = NSStackView(); right.orientation = .vertical; right.alignment = .trailing; right.spacing = 2
         right.translatesAutoresizingMaskIntoConstraints = false
