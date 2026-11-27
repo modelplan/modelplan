@@ -141,7 +141,9 @@ import ModelPlanWire
         controller.receiveAcceptedFacts(try tools(zcode: false))
         XCTAssertNil(controller.firstRunOptIn(forTool: "zai"))
     }
+    private func mark(_ step: String) { FileHandle.standardError.write(Data(("G3155DIAG " + step + "\n").utf8)) }
     func testTheFirstRunRowOffersTheOptInAndNeverSaysUnsupported() async throws {
+        mark("start")
         let entry = entry()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("g3155-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -149,23 +151,33 @@ import ModelPlanWire
         let editor = SettingsEditor(store: try SettingsStore(url: directory.appendingPathComponent("preferences.json")))
         let page = SettingsFirstRunController(editor: editor, scopeConsentEntry: entry)
         page.presence = FirstRunPresenceDetector(home: "/h", searchDirectories: []) { $0 == "/h/.zcode" }
+        mark("before prepare")
         await page.prepare()
+        mark("after prepare")
         entry.controller.receiveAcceptedFacts(try tools(zcode: true))
+        mark("after facts")
         entry.controller.setRowForTesting("zai", state: .needsConsent, code: "consent_required")
-        let root = try XCTUnwrap(page.window?.contentView)
-        let optIn = try XCTUnwrap(findButton(root, "scope.firstRun.optin.zai"))
+        mark("after row")
+        guard let root = page.window?.contentView else { mark("no contentView"); XCTFail("no content view"); return }
+        mark("ids: " + identifiers(root).filter { $0.hasPrefix("scope.firstRun.") }.joined(separator: ","))
+        guard let optIn = findButton(root, "scope.firstRun.optin.zai") else { mark("no optin"); XCTFail("no opt-in box"); return }
+        mark("found optin state=\(optIn.state.rawValue) title=\(optIn.title)")
         XCTAssertEqual(optIn.state, .off)
         XCTAssertTrue([SettingsScopeConsentView.zcodeOptInTitle.english, SettingsScopeConsentView.zcodeOptInTitle.chinese].contains(optIn.title))
         XCTAssertTrue(SettingsScopeConsentView.zcodeOptInTitle.chinese.contains("检测到扫码登录 · 勾选后读取本机登录信息查询额度（只读，不上传）"))
         entry.controller.chooseFirstRunOptIn(zcodeLogin, chosen: true)
-        let ticked = try XCTUnwrap(findButton(try XCTUnwrap(page.window?.contentView), "scope.firstRun.optin.zai"))
+        mark("after choose")
+        guard let ticked = page.window?.contentView.flatMap({ findButton($0, "scope.firstRun.optin.zai") }) else { mark("no ticked"); XCTFail("no ticked box"); return }
+        mark("ticked state=\(ticked.state.rawValue)")
         XCTAssertEqual(ticked.state, .on, "the box shows the user's tick")
         for text in texts(root) { XCTAssertFalse(text.contains("暂不支持") || text.lowercased().contains("unsupported"), text) }
+        mark("after texts")
         // A layout the reader found nothing readable in says so plainly, not "unsupported".
         for block in [ScopeToolBlock.unsupportedLogin] {
             let line = SettingsScopeConsentView.blockLine(block, tool: "zai")
             XCTAssertFalse(line.chinese.contains("暂不支持"))
             XCTAssertFalse(line.english.lowercased().contains("unsupported"))
         }
+        mark("end")
     }
 }
