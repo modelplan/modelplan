@@ -1,0 +1,23 @@
+/* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
+/* Copyright (c) 2026 ModelPlan. Owner window pack (2026-11-26), night only. */
+/* Load after the bundled night cockpit styles. */
+:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown {
+  background-image: url("/assets/hull/cap-slab.svg");
+  filter: none;
+}
+:root[data-theme="night"] #cockpit .mp-title-edge {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 7px;
+  pointer-events: none;
+  background: image-set(url("/assets/hull/title-edge-1x.png") 1x, url("/assets/hull/title-edge-2x.png") 2x) center / 100% 100% no-repeat;
+}
+
+:root[data-theme="night"] #cockpit[data-shell="closed"] .mp-title-edge { display: none; }
+
+/* Closed cap, hairline under the rim (owner test build 6): moving the art up 1 px (hull.css) left its last painted row on the
+   walls' top edge (30 px), so at a fractional page zoom (the native Auto fit) both edges were half covered and the desktop
+   showed through as a light line between the cap and the title bar. The cap box (17 px) already reaches 1 px under the
+   walls; a second layer paints that last box row in the art's own bottom colour so the cap overlaps the joint again. The
+   walls are painted over it, so nothing new is visible at whole scales. */
+:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{background-image:url("/assets/hull/cap-slab.svg"),linear-gradient(#1b1b1a,#1b1b1a);background-size:620px 17px,620px 1px;background-position:center -1px,center 16px;background-repeat:no-repeat}

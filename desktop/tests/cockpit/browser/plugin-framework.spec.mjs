@@ -31,6 +31,7 @@ async function open(page,data,plugins) {
  return {send,receive};
 }
 const pluginEdits=page=>page.evaluate(()=>window.__events.filter(e=>e.type==='action'&&e.action==='pluginsEdit').map(e=>e.plugins));
+const closeRequests=page=>page.evaluate(()=>window.__events.filter(e=>e.type==='action'&&e.action==='pluginClose').map(e=>e.id));
 const running=page=>page.evaluate(()=>window.__events.filter(e=>e.type==='action'&&e.action==='pluginsRunning').map(e=>e.ids));
 const column=page=>page.locator('.eng-cols .pl-col[data-plugin="placeholder"]');
 const key=page=>page.locator('.eng-keys .pl-key[data-plugin="placeholder"]');
@@ -87,8 +88,10 @@ test('CKP-PLG-50 the plugin key is a subscription key: same box and white name, 
  await page.keyboard.press('Escape');await expect(menu).toHaveCount(0);
  await key(page).focus();await page.keyboard.press('Shift+F10');await expect(menu).toBeVisible();
  await menu.getByRole('menuitem').click();
- await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
- expect(await pluginEdits(page)).toEqual([{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff,RES_OFF],settings:{placeholder:{}}}]);
+ // D376: the keyboard Remove asks the host too; the page keeps the column until the host sends the new state.
+ expect(await closeRequests(page)).toEqual(['placeholder']);
+ await expect(page.locator('.eng-cols .pl-col')).toHaveCount(1);
+ expect(await pluginEdits(page)).toEqual([]);
 });
 
 test('CKP-PLG-51 the plugin column has no inner frame; its cells use the Other-cell grammar and align with subscription rows',async({page})=>{
@@ -123,15 +126,14 @@ test('CKP-PLG-52 pin keeps the plugin on page 1 with many subscriptions; unpinne
  expect(await receive(send('plugins',{plugins:on(true)}))).toBe(true);
  await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(5);
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(1);
- await page.getByRole('button',{name:'Page 2'}).click();
+ await page.getByRole('button',{name:'Next subscriptions'}).click();
  await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(1);
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
  // Seven subscriptions, unpinned: the plugin takes a free slot on the last page.
  expect(await receive(send('plugins',{plugins:on(false)}))).toBe(true);
  expect(await receive(send('display',{data:dataWith(7)}))).toBe(true);
- await page.getByRole('button',{name:'Page 1'}).click();
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
- await page.getByRole('button',{name:'Page 2'}).click();
+ await page.getByRole('button',{name:'Next subscriptions'}).click();
  await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(1);
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(1);
  // A shortcut digit still selects subscriptions only.
@@ -150,7 +152,8 @@ test('CKP-PLG-53 clicking the plugin key opens its big screen inside the big-scr
   const r=e=>e.getBoundingClientRect(),s=r(document.querySelector('.pl-screen')),well=r(document.querySelector('.mfd-screen'));
   const overlaps=b=>!(b.right<=s.left||b.left>=s.right||b.bottom<=s.top||b.top>=s.bottom);
   const blockers=[...document.querySelectorAll('.dk-fad,.mfd-pk,.mfd-pk .pk')].filter(e=>overlaps(r(e))).map(e=>e.className);
-  const keys=[...document.querySelectorAll('.mfd-pk .pk')].map(k=>{const b=r(k);return document.elementFromPoint(b.left+b.width/2,b.top+b.height/2)?.closest('.pk')===k;});
+  // D387: the Overview key is the switch while a screen is open (its tabs stand in for it); the other page keys must stay uncovered.
+  const keys=[...document.querySelectorAll('.mfd-pk .pk:not([hidden]),.mfd-pk .pk-seg:not([hidden]) [role=tab]')].map(k=>{const b=r(k);return document.elementFromPoint(b.left+b.width/2,b.top+b.height/2)===k||k.contains(document.elementFromPoint(b.left+b.width/2,b.top+b.height/2));});
   const fader=document.querySelector('.dk-fad'),fb=r(fader),hit=document.elementFromPoint(fb.left+fb.width/2,fb.top+fb.height/2);
   return {inside:s.left>=well.left-0.5&&s.right<=well.right+0.5&&s.top>=well.top-0.5&&s.bottom<=well.bottom+0.5,blockers,keys,fader:!!hit&&fader.contains(hit)};
  });
@@ -181,16 +184,16 @@ test('CKP-PLG-53 a page key activated from the keyboard (Enter or Space) also cl
  }
 });
 
-test('CKP-PLG-53 a reading updates the open plugin screen in place: the focused Close button stays mounted and focused',async({page})=>{
+test('CKP-PLG-53 a reading updates the open plugin screen in place: the focused screen tab stays mounted and focused',async({page})=>{
  const {send,receive}=await open(page,dataWith(2),on());
  expect(await receive(send('pluginData',{id:'placeholder',data:{value:10}}))).toBe(true);
  await key(page).click();
- const close=page.locator('.pl-screen .pl-screen-x');await close.focus();await expect(close).toBeFocused();
- await page.evaluate(()=>{window.__close=document.querySelector('.pl-screen .pl-screen-x');});
+ const close=page.locator('.mfd-pk .pk-seg [role=tab][aria-selected=true]');await close.focus();await expect(close).toBeFocused();
+ await page.evaluate(()=>{window.__close=document.querySelector('.mfd-pk .pk-seg [role=tab][aria-selected=true]');});
  expect(await receive(send('pluginData',{id:'placeholder',data:{value:11}}))).toBe(true);
  await expect(page.locator('.pl-screen dd').first()).toHaveText('11%');
  await expect(close).toBeFocused();
- expect(await page.evaluate(()=>window.__close===document.querySelector('.pl-screen .pl-screen-x')&&window.__close.isConnected)).toBe(true);
+ expect(await page.evaluate(()=>window.__close===document.querySelector('.mfd-pk .pk-seg [role=tab][aria-selected=true]')&&window.__close.isConnected)).toBe(true);
  // A repaint (new display) and a host settings change redraw the screen in place too.
  expect(await receive(send('display',{data:dataWith(2)}))).toBe(true);
  expect(await receive(send('plugins',{plugins:on(false,{intervalSeconds:4})}))).toBe(true);
@@ -207,7 +210,7 @@ test('lifecycle: the plugin runs only while the cockpit is open and its column i
  // Page 1 has no room: not shown, never started, and host readings are refused.
  await expect(column(page)).toHaveCount(0);
  expect(await receive(reading(1))).toBe(false);
- await page.getByRole('button',{name:'Page 2'}).click();
+ await page.getByRole('button',{name:'Next subscriptions'}).click();
  await expect(column(page)).toHaveAttribute('data-running','true');
  expect(await receive(reading(7))).toBe(true);
  await expect(column(page).locator('.qvalue')).toHaveText('7');
@@ -225,19 +228,22 @@ test('lifecycle: the plugin runs only while the cockpit is open and its column i
  await expect(column(page).locator('.qvalue')).toHaveText('7');
  await expect(column(page)).toHaveAttribute('data-running','true');
  // Page away: stopped.
- await page.getByRole('button',{name:'Page 1'}).click();
+ await page.getByRole('button',{name:'Previous subscriptions'}).click();
  await expect(page.locator('.pl-col')).toHaveCount(0);
  expect(await receive(reading(9))).toBe(false);
- await page.getByRole('button',{name:'Page 2'}).click();
+ await page.getByRole('button',{name:'Next subscriptions'}).click();
  await expect(column(page).locator('.qvalue')).toHaveText('7');
  // A settings change from the host redraws the column.
  expect(await receive(send('plugins',{plugins:on(false,{intervalSeconds:3})}))).toBe(true);
  await expect(column(page).locator('.qtxt')).toHaveText('every 3 s');
- // Removed from the right-click menu: stopped, the column turns back into a "+" slot and the host gets the edit.
+ // Removed from the right-click menu (D376): the page asks the host (which confirms), then the host's new state stops it
+ // and turns the column back into a "+" slot. The page itself removes nothing and sends no edit.
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  await key(page).click({button:'right'});await page.getByRole('menuitem',{name:'Remove from the cockpit'}).click();
+ expect(await closeRequests(page)).toEqual(['placeholder']);
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff,RES_OFF],settings:{placeholder:{intervalSeconds:3}}}}))).toBe(true);
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
- expect(await pluginEdits(page)).toEqual([{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff,RES_OFF],settings:{placeholder:{intervalSeconds:3}}}]);
+ expect(await pluginEdits(page)).toEqual([]);
  // Cleared readings stop everything.
  expect(await receive(send('plugins',{plugins:on(false)}))).toBe(true);
  await expect(column(page)).toHaveAttribute('data-running','true');
@@ -325,4 +331,14 @@ test('host plugin state is validated: a bad message is refused and changes nothi
   expect(await receive(send('plugins',{plugins}))).toBe(false);
  expect(await receive(send('plugins',{plugins:on(),extra:1}))).toBe(false);
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(1);
+});
+
+test('CKP-PLG-54 D376 right-click Remove on the plugin key asks the host to confirm; the page removes nothing itself',async({page})=>{
+ await open(page,dataWith(1),on(true));
+ await expect(column(page)).toHaveCount(1);
+ await key(page).click({button:'right'});await page.getByRole('menuitem',{name:'Remove from the cockpit'}).click();
+ expect(await closeRequests(page)).toEqual(['placeholder']);
+ await expect(column(page),'still there until the host confirms and sends the new state').toHaveCount(1);
+ await expect(key(page)).toHaveCount(1);
+ expect(await pluginEdits(page)).toEqual([]);
 });

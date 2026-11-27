@@ -5,6 +5,7 @@ import ModelPlanCore
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanShell
+import ModelPlanWire
 
 /// Adapts the existing multi-reason lifecycle gate to the app-server client.
 @MainActor private final class EngineLifecycleWorker: LifecycleStore, EngineStoreEventSink {
@@ -68,7 +69,11 @@ import ModelPlanShell
                 }
                 guard self.desired, self.generation == token, !Task.isCancelled else { return }
                 self.expected = context
-                _ = try await self.composition.client.subscribeRows(timeout: nil)
+                do { _ = try await self.composition.client.subscribeRows(timeout: nil) }
+                catch EngineClientError.rpc(let code, _) where code == WireErrorCode.busy {
+                    // The client's bootstrap recovery will deliver the first rows. Keep this
+                    // session and let publishIfFresh wait for its accepted rows and consent.
+                }
                 guard self.desired, self.generation == token, !Task.isCancelled else { return }
                 do { _ = try await self.composition.client.consent(timeout: nil) }
                 catch EngineClientError.unsupportedCapability { /* Older engines may not expose consent. */ }
@@ -143,14 +148,15 @@ import ModelPlanShell
     private let events: SystemEvents
     init(composition: EngineDockMenuComposition, workspace: NotificationCenter, local: NotificationCenter,
          lockEvents: NotificationCenter, displayIDs: @escaping @MainActor () -> Set<UInt32>, onConsole: @escaping @MainActor () -> Bool?,
-         displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool,
+         displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool, screenLocked: (@MainActor () -> Bool?)? = nil,
+         carried: Set<LifecycleCoordinator.PauseReason> = [],
          onPause: @escaping @MainActor () -> Void, onReady: @escaping @MainActor () -> Void,
          onGateOpen: @escaping @MainActor () -> Void, onStartFailed: (@MainActor () -> Void)? = nil) {
         let worker = EngineLifecycleWorker(composition: composition, onPause: onPause, onReady: onReady, onStartFailed: onStartFailed)
         let gate = LifecycleCoordinator(store: worker)
         self.worker = worker; self.gate = gate
         self.events = SystemEvents(gate: gate, workspace: workspace, local: local, distributed: lockEvents, displayIDs: displayIDs,
-                                   onConsole: onConsole, displaysAsleep: displaysAsleep)
+                                   onConsole: onConsole, displaysAsleep: displaysAsleep, screenLocked: screenLocked, carried: carried)
         gate.onPresentationChange = { allowed in
             DiagnosticsLog.shared.info("lifecycle", "presentation allowed=\(allowed)")
             if allowed { onGateOpen() } else { onPause() }

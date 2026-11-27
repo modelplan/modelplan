@@ -39,8 +39,8 @@ import XCTest
 }
 
 @MainActor final class StatusItemLaunchTests: XCTestCase {
-    private func click(_ type: NSEvent.EventType, on button: NSButton, flags: NSEvent.ModifierFlags = []) throws -> NSEvent {
-        try XCTUnwrap(NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: flags, timestamp: 0,
+    private func click(_ type: NSEvent.EventType, on button: NSButton, flags: NSEvent.ModifierFlags = [], at location: NSPoint = .zero) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: flags, timestamp: 0,
             windowNumber: button.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     }
 
@@ -83,7 +83,10 @@ import XCTest
         defer { app.removeStatusItem(); app.composition.dock.close() }
         app.installStatusItem(); app.renderMenu()
         let button = try XCTUnwrap(app.statusButtonForTesting), window = try XCTUnwrap(button.window)
-        XCTAssertEqual(app.cockpitAnchor, window.convertToScreen(button.convert(button.bounds, to: nil)), "the anchor is the icon itself")
+        // Build 5: the icon itself once the menu bar has placed it (a parking frame is never an anchor).
+        let icon = window.convertToScreen(button.convert(button.bounds, to: nil))
+        XCTAssertEqual(app.cockpitAnchor, StatusItemAnchor.resolve(window: icon, click: nil, itemWidth: button.bounds.width,
+            displays: StatusItemAnchor.Display.system(), menuHeight: NSStatusBar.system.thickness), "the anchor is the icon itself")
         XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
         try await Task.sleep(for: .milliseconds(700)) // longer than a hold would need: there is no hold in v1
         XCTAssertEqual(console.shows, 0, "holding does nothing")
@@ -180,9 +183,9 @@ import XCTest
         }
     }
 
-    /// D88: only the icon's own click grows the cockpit out of the icon; Open Cockpit, the shortcut and the
-    /// widget ignition reach the same console as a plain entrance.
-    func testD88OnlyTheIconClickAsksForTheGrowEntrance() async throws {
+    /// The status icon and attached red ignition request the rack. The widget's Open Cockpit action
+    /// and the other plain open commands still use the regular entrance.
+    func testStatusIconAndRedIgnitionRequestTheRackWhilePlainOpensFade() async throws {
         let console = AttachableStatusConsole()
         let app = try await application(cockpitEntryEnabled: true, console: console)
         defer { app.removeStatusItem(); app.composition.dock.close() }
@@ -192,11 +195,16 @@ import XCTest
         XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
         XCTAssertEqual(console.entries, [true], "the icon click grows from the icon")
         console.pageClosed()
-        app.composition.dock.showConsole?()
-        XCTAssertEqual(console.entries, [true, false], "the widget ignition keeps its own entrance")
+        let ignite = try XCTUnwrap(app.composition.dock.pressIgnition)
+        ignite(CGPoint(x: 100, y: 100))
+        XCTAssertEqual(console.entries, [true, true], "the attached red ignition also opens from the rack")
+        console.pageClosed()
+        let openCockpit = try XCTUnwrap(app.composition.dock.showConsole)
+        openCockpit()
+        XCTAssertEqual(console.entries, [true, true, false], "the widget’s Open Cockpit action fades")
         console.pageClosed()
         app.showConsole()
-        XCTAssertEqual(console.entries, [true, false, false])
+        XCTAssertEqual(console.entries, [true, true, false, false], "the regular open command fades")
     }
 
     /// D88: the icon shows its native pressed highlight while the attached cockpit is open; a detached cockpit
@@ -232,6 +240,71 @@ import XCTest
         return app
     }
 
+    /// Build 5 (owner 11-25, menu-bar binding): the click on the status item names the copy the user pressed. The
+    /// button's window says the item is elsewhere (here: whatever the runner's menu bar reports, and a second synthetic
+    /// display holds the click), so the cockpit binds to the click; a shortcut open and a close forget it.
+    func testBuild5StatusClickBindsTheCockpitToTheClickedCopy() async throws {
+        let console = TogglingStatusConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        let real = StatusItemAnchor.Display.system()
+        let right = (real.map(\.frame.maxX).max() ?? 0) + 100
+        let other = StatusItemAnchor.Display(frame: CGRect(x: right, y: 0, width: 1512, height: 982),
+                                             visibleFrame: CGRect(x: right, y: 0, width: 1512, height: 945))
+        app.statusDisplays = { real + [other] }
+        // macrev2-1251-2 round 2: the press is on the item's copy on the other display while AppKit's button window
+        // reports this display's geometry. AppKit delivers the event to that window with `locationInWindow` measured
+        // from its reported frame, so the production conversion runs unreplaced. bc4e03f0 / 6bb2d9cd subtracted that
+        // offset and rebuilt the reported window's rect on this display.
+        let window = try XCTUnwrap(button.window)
+        let pressed = CGPoint(x: right + 1200, y: 970)
+        let centre = NSPoint(x: pressed.x - window.frame.minX, y: pressed.y - window.frame.minY)
+        func press() throws {
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button, at: centre)))
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button, at: centre)))
+        }
+        try press()
+        XCTAssertEqual(console.shows, 1)
+        let anchor = try XCTUnwrap(app.cockpitAnchor, "the clicked copy anchors the cockpit")
+        XCTAssertEqual(anchor.midX, pressed.x, accuracy: 0.5, "the rack (centred on the anchor) hangs at the press")
+        XCTAssertTrue(anchor.minX <= right + 1200 && right + 1200 <= anchor.maxX, "the anchor holds the click")
+        XCTAssertEqual(anchor.width, button.bounds.width, accuracy: 0.5)
+        XCTAssertEqual(app.cockpitStatusScreen, other.frame, "the clicked copy's display")
+        console.pageClosed()
+        XCTAssertNil(app.statusClickAnchor, "a closed cockpit forgets the click")
+        try press()
+        XCTAssertEqual(console.shows, 2); XCTAssertNotNil(app.statusClickAnchor)
+        app.showConsole()
+        XCTAssertNil(app.statusClickAnchor, "another entry reads the item again")
+        // An aborted press (released off the item) never becomes the anchor.
+        console.pageClosed()
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button, at: centre)))
+        XCTAssertNotNil(app.statusPress)
+        let away = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseUp, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        XCTAssertTrue(app.handleStatusClick(away))
+        XCTAssertNil(app.statusPress); XCTAssertNil(app.statusClickAnchor, "an aborted press leaves no anchor")
+    }
+
+    /// macrev2-1251-2: the press point is the mouse-down's own location through the window it was delivered to, not
+    /// the live cursor (which may have moved before the monitor ran). On bc4e03f0 it was `NSEvent.mouseLocation`.
+    func testStatusPressUsesTheMouseDownsOwnLocation() async throws {
+        let app = try await application(cockpitEntryEnabled: true, console: TogglingStatusConsole())
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting), window = try XCTUnwrap(button.window)
+        let location = button.convert(NSPoint(x: button.bounds.minX + 3, y: button.bounds.midY), to: nil)
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button, at: location)))
+        let press = try XCTUnwrap(app.statusPress, "the press is recorded from the event")
+        let expected = window.convertPoint(toScreen: location)
+        XCTAssertEqual(press.point.x, expected.x, accuracy: 0.01); XCTAssertEqual(press.point.y, expected.y, accuracy: 0.01)
+        // The rect pairs that point with the same event's offset in the button: it is the button's rect in that window.
+        let icon = window.convertToScreen(button.convert(button.bounds, to: nil))
+        XCTAssertEqual(press.rect.minX, icon.minX, accuracy: 0.5); XCTAssertEqual(press.rect.minY, icon.minY, accuracy: 0.5)
+    }
+
     /// G3-46: when macOS hides the icon behind a full menu bar, the cockpit has no anchor to open under and
     /// uses the top-right fallback; once the icon shows again it anchors on the icon.
     func testG3_46HiddenIconGivesNoCockpitAnchor() async throws {
@@ -244,7 +317,11 @@ import XCTest
         XCTAssertNil(app.cockpitAnchor, "a hidden icon is not an anchor")
         visible = true
         app.checkStatusItemVisibility()
-        if app.statusButtonForTesting?.window?.isVisible == true { XCTAssertNotNil(app.cockpitAnchor, "a visible icon anchors again") }
+        if let button = app.statusButtonForTesting, let window = button.window, window.isVisible,
+           StatusItemAnchor.menuBarDisplay(of: window.convertToScreen(button.convert(button.bounds, to: nil)),
+                                           displays: StatusItemAnchor.Display.system(), menuHeight: NSStatusBar.system.thickness) != nil {
+            XCTAssertNotNil(app.cockpitAnchor, "a visible, placed icon anchors again")
+        }
     }
 
     func testLaunchedStatusButtonShowsTheTemplateImageOrAVisibleTitle() async throws {

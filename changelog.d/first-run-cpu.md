@@ -1,0 +1,1 @@
+History reading uses much less CPU. The first-run import decodes only the fields it needs from each Claude Code transcript line (about 60% less CPU), and the live usage reader parses only what a session appended since the last refresh, instead of the whole transcript each time (about 85% less steady CPU on a 30 MB session). Recorded numbers are unchanged.

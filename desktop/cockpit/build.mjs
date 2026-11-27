@@ -13,9 +13,11 @@ const official=selectBuildEdition(process.argv.slice(2))==='official';
 execFileSync(process.execPath,[resolve(here,'generate-wire.mjs'),'--check'],{stdio:'inherit'});
 // Copy only this compile's emitted files: a removed source can leave stale JS
 // and declarations in a reused compiler directory. Do not publish that cache.
-const emitted=execFileSync(resolve(here,'node_modules/.bin/tsc'),['-p',here,'--listEmittedFiles'],{encoding:'utf8'})
+// MODELPLAN_COCKPIT_COMPILED redirects the compile (a test builds in a private directory so the shared .tmp/compiled
+// that parallel unit tests import is never rewritten under them).
+const compiled=resolve(here,process.env.MODELPLAN_COCKPIT_COMPILED||'.tmp/compiled');
+const emitted=execFileSync(resolve(here,'node_modules/.bin/tsc'),['-p',here,'--outDir',compiled,'--listEmittedFiles'],{encoding:'utf8'})
   .split(/\r?\n/).filter(line=>line.startsWith('TSFILE: ')).map(line=>line.slice(8));
-const compiled=resolve(here,'.tmp/compiled');
 if(!emitted.includes(resolve(compiled,'src/main.js'))||!emitted.includes(resolve(compiled,'generated/wire.js')))throw Error('Missing emitted bundle entry');
 const output=resolve(here,'.tmp',official?'official':'community');
 await rm(output,{recursive:true,force:true});await mkdir(output,{recursive:true});
@@ -65,7 +67,7 @@ if (official) {
   const marks=resolve(repo,'desktop/third-party/dock-resources/Resources/Marks'),brands=resolve(output,'assets/brands');await mkdir(brands,{recursive:true});
   for(const [name,source] of Object.entries({'openai-white.svg':'openai.svg','claude-rounded.svg':'claude.svg','claude.svg':'claude.svg','zhipu.svg':'zhipu.svg','x-white.svg':'x.svg','qwen.svg':'qwen.svg','alibaba.svg':'qwen.svg','deepseek.svg':'deepseek.svg','kimi-white.svg':'kimi.svg','minimax.svg':'minimax.svg','gemini.svg':'gemini.svg','xiaomi.svg':'xiaomi.svg','cursor.svg':'cursor.svg','copilot.svg':'copilot.svg','opencode.svg':'opencode.svg','zai-white.svg':'zai-white.svg','SOURCES.md':'SOURCES.md'}))await cp(resolve(marks,source),resolve(brands,name));
   // The CSP forbids fetch, so the porthole still's placement table ships as a module carrying the
-  // default public fleet's four projections (src/porthole-still.ts). Derived from the reserved pack,
+  // default public fleet's two projections (night, day; D444: 890 only) (src/porthole-still.ts). Derived from the reserved pack,
   // it carries the pack's licence; the community edition gets null below.
   const pack=JSON.parse(await readFile(resolve(assets,'runtime/porthole-stills/manifest.json'),'utf8'));
   const fleet=pack.projections.find(p=>p.id===pack.defaultProjectionId)?.models.map(m=>m.id).join();
@@ -74,7 +76,7 @@ if (official) {
   // The published display name is what joins a rocket to a published model; roster IDs differ from public IDs.
   const names=new Map(pack.sprites.map(s=>[s.modelId,s.name]));
   const stills={base:'runtime/porthole-stills/',projections:[]};
-  for(const theme of ['night','day'])for(const layout of [890,640]){
+  for(const theme of ['night','day'])for(const layout of [890]){ // D444: one layout
     const matches=pack.projections.filter(p=>p.theme===theme&&p.layout===layout&&p.models.map(m=>m.id).join()===fleet);
     if(matches.length!==1)throw Error(`Porthole default fleet needs exactly one ${theme} ${layout} projection`);
     const p=matches[0];
@@ -84,7 +86,7 @@ if (official) {
   await writeFile(resolve(output,'src/porthole-stills-data.js'),'// SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0\nexport default '+JSON.stringify(stills)+';\n');
   css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
   const strip=resolve(assets,'cockpit/strip'),stripCss=await readFile(resolve(strip,'strip.css'));
-  if(createHash('sha256').update(stripCss).digest('hex')!=='812160e61c6ae795a6ddb15fa65106ccfb35422ee94ed4e2207e321e834d2deb')throw Error('Unapproved cockpit strip stylesheet');
+  if(createHash('sha256').update(stripCss).digest('hex')!=='b369d93fa369a81470688c91583868a308a62f3762cdfead2694377a1f5e3b02')throw Error('Unapproved cockpit strip stylesheet');
   const stripFiles=['close-hover@3x.png','close-normal@3x.png','close-pressed@3x.png','detach-hover@3x.png','detach-normal@3x.png','detach-pressed@3x.png','detach.svg','gear-hover@3x.png','gear-normal@3x.png','gear-pressed@3x.png','lamp-amber-body@3x.png','lamp-amber-glow@3x.png','lamp-amber-pressed-body@3x.png','lamp-amber-pressed-glow@3x.png','lamp-off-body@3x.png','lamp-off-glow@3x.png','lamp-off-pressed-body@3x.png','lamp-off-pressed-glow@3x.png','lamp-red-body@3x.png','lamp-red-glow@3x.png','lamp-red-pressed-body@3x.png','lamp-red-pressed-glow@3x.png','put-back.svg','shutter-material@3x.png','slider-track@3x.png','strip-panel@3x.png','thumb-closed@3x.png','thumb-open@3x.png','wordmark@3x.png','porthole-switch-open@3x.png','porthole-switch-closed@3x.png','date-key-normal@3x.png','date-key-selected@3x.png'];
   const policy=JSON.parse(await readFile(resolve(repo,'source-policy.json'),'utf8'));
   await mkdir(resolve(output,'assets'),{recursive:true});
@@ -101,22 +103,32 @@ if (official) {
   css+='\n'+headerCss.toString('utf8');
   // G3-47: the released base-bell rasters (owner 2026-11-08), each checked against the reserved-visuals registry.
   const bells=resolve(assets,'cockpit/bells'),bellFiles=['bell-night-2x.png','bell-night-3x.png','bell-silver-2x.png'];
+  // D454: the owner's blue engine flames ship beside the bells (their own asset folder, same output path as the CSS expects).
+  const flames=resolve(assets,'cockpit/flames'),flameFiles=['flame-ember-1x.png','flame-ember-2x.png','flame-full-strip-1x.png','flame-full-strip-2x.png','flame-short-1x.png','flame-short-2x.png'];
   await mkdir(resolve(output,'assets/bells'),{recursive:true});
   for(const name of bellFiles){
     const bytes=await readFile(resolve(bells,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/bells/assets/'+name];
     if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit bell resource: '+name);
     await writeFile(resolve(output,'assets/bells',name),bytes);
   }
+  for(const name of flameFiles){
+    const bytes=await readFile(resolve(flames,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/flames/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit flame resource: '+name);
+    await writeFile(resolve(output,'assets/bells',name),bytes);
+  }
   await cp(resolve(bells,'SOURCES.md'),resolve(output,'assets/bells/SOURCES.md'));
+  await cp(resolve(flames,'SOURCES.md'),resolve(output,'assets/bells/FLAMES-SOURCES.md'));
   css+='\n'+await readFile(resolve(bells,'bells.css'),'utf8');
   // D68: the r3 hull's plain plates (owner 2026-11-08), each checked against the reserved-visuals registry.
   const hull=resolve(assets,'cockpit/hull'),hullFiles=[];
-  for(const part of ['crown','upper','lower','cone','aft','engine-gutter','console-gutter','record-gutter'])for(const h of [890,640])for(const d of ['1x','2x'])hullFiles.push(`${part}-${h}-${d}.png`);
+  // D444: one layout, so only the 890 plates ship; the 640 crown stays for the closed crown (--hull-compact-crown).
+  for(const part of ['crown','upper','lower','cone','aft','engine-gutter','console-gutter','record-gutter'])for(const d of ['1x','2x'])hullFiles.push(`${part}-890-${d}.png`);
+  hullFiles.push('crown-640-1x.png','crown-640-2x.png');
   hullFiles.push('lower-skin-890-1x.png','lower-skin-890-2x.png'); // side walls: the study's canopy-h1 lower skin
-  hullFiles.push('aft-closed-1x.png','aft-closed-2x.png','cap-slab.svg'); // closed shell (D72): aft plate and cap slab
+  hullFiles.push('aft-closed-1x.png','aft-closed-2x.png','cap-slab.svg','title-edge-1x.png','title-edge-2x.png'); // closed shell (D72): aft plate and cap slab
   // Hull shape (owner build 13): the study's alpha masks for the narrow upper wall, the taper and the wide lower wall.
-  for(const v of [890,640,'closed'])for(const d of ['1x','2x'])hullFiles.push(`upper-walls-${v}-${d}.png`,`upper-skin-${v}-${d}.png`);
-  for(const d of ['1x','2x'])hullFiles.push(`taper-890-${d}.png`,`lower-stage-890-${d}.png`,`lower-stage-640-${d}.png`);
+  for(const v of [890,'closed'])for(const d of ['1x','2x'])hullFiles.push(`upper-walls-${v}-${d}.png`,`upper-skin-${v}-${d}.png`);
+  for(const d of ['1x','2x'])hullFiles.push(`taper-890-${d}.png`,`lower-stage-890-${d}.png`);
   await mkdir(resolve(output,'assets/hull'),{recursive:true});
   for(const name of hullFiles){
     const bytes=await readFile(resolve(hull,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/hull/assets/'+name];
@@ -124,7 +136,7 @@ if (official) {
     await writeFile(resolve(output,'assets/hull',name),bytes);
   }
   await cp(resolve(hull,'SOURCES.md'),resolve(output,'assets/hull/SOURCES.md'));
-  css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8');
+  css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8')+'\n'+await readFile(resolve(hull,'skin.css'),'utf8'); // owner window pack: night skin loads after the bundled styles
   // CKP-FAD-24 / CKP-FAD-17 (D115, D122, D196): the v4 top-down throttle on every fader travel, each file checked against the
   // reserved-visuals registry. The community edition keeps the MIT flat fader.
   const throttle=resolve(assets,'cockpit/throttle');
@@ -136,11 +148,11 @@ if (official) {
   }
   await cp(resolve(throttle,'SOURCES.md'),resolve(output,'assets/throttle/SOURCES.md'));
   css+='\n'+await readFile(resolve(throttle,'throttle.css'),'utf8');
-  // CKP-SHELL-33 (owner D160/D172/D187): the menu-bar launch rack art. The page never draws it; the native rack panel reads
+  // CKP-SHELL-33 (owner D430/D447): the docking boom art (open and closed poses, the canopy lug). The page never draws it; the native rack panel reads
   // it from the verified bundle, each file checked against the reserved-visuals registry.
   const rack=resolve(assets,'cockpit/rack');
   await mkdir(resolve(output,'assets/rack'),{recursive:true});
-  for(const name of ['mast-day.png','mast-night.png']){
+  for(const name of ['boom-open.png','boom-closed.png','lug.png']){
     const bytes=await readFile(resolve(rack,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/rack/assets/'+name];
     if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved launch rack resource: '+name);
     await writeFile(resolve(output,'assets/rack',name),bytes);

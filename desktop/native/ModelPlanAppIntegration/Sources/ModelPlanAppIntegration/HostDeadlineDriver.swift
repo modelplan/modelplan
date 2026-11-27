@@ -25,6 +25,11 @@ import ModelPlanDock
     private let installValidatedUnknown: Bool
     private let presentationInterval: TimeInterval?
     private let refreshPresentation: @MainActor (Date) -> Void
+    /// Called once each outermost driver step (a public call or a timer) has finished, after any install.
+    private let settled: @MainActor () -> Void
+    private var depth = 0
+    /// True inside `clear` when a recompute follows it in the same step (a replacement, not a withdrawal).
+    private(set) var clearReinstalls = false
     private var fence = HostDeadlineFence()
     private var scheduledSourceToken: UInt64?
     private var crossingBoundary = false
@@ -35,26 +40,33 @@ import ModelPlanDock
          recompute: @escaping @MainActor (Date) -> Candidate?,
          install: @escaping @MainActor (Value) -> Void,
          sourceIsCurrent: @escaping @MainActor (UInt64) -> Bool, installValidatedUnknown: Bool = false,
-         presentationInterval: TimeInterval? = nil, refreshPresentation: @escaping @MainActor (Date) -> Void = { _ in },
+         presentationInterval: TimeInterval? = nil, settled: @escaping @MainActor () -> Void = {},
+         refreshPresentation: @escaping @MainActor (Date) -> Void = { _ in },
          report: @escaping @MainActor (Status) -> Void = { _ in }) {
         self.wallNow = wallNow; self.elapsed = elapsed; self.scheduler = scheduler
         self.clear = clear; self.recompute = recompute; self.install = install
         self.sourceIsCurrent = sourceIsCurrent; self.report = report; self.installValidatedUnknown = installValidatedUnknown
         self.presentationInterval = presentationInterval.flatMap { $0.isFinite && $0 > 0 ? $0:nil }
         self.refreshPresentation = refreshPresentation
+        self.settled = settled
+    }
+    private func step(_ body: () -> Void) {
+        depth += 1; body(); depth -= 1
+        if depth == 0 { settled() }
     }
     /// Accepted replacement or significant clock change; never starts a reader.
-    func invalidate() { handle(fence.invalidateAndRecompute()) }
-    func replace() { if fence.isSuspended { resume() } else { invalidate() } }
-    func suspend() { handle(fence.withdraw()); if fence.isSuspended { setStatus(.suspended) } }
-    func resume() { handle(fence.resume()) }
-    func close() { handle(fence.close()); if fence.isClosed { setStatus(.closed) } }
+    func invalidate() { step { handle(fence.invalidateAndRecompute()) } }
+    func replace() { step { if fence.isSuspended { resume() } else { invalidate() } } }
+    func suspend() { step { handle(fence.withdraw()); if fence.isSuspended { setStatus(.suspended) } } }
+    func resume() { step { handle(fence.resume()) } }
+    func close() { step { handle(fence.close()); if fence.isClosed { setStatus(.closed) } } }
     private func setStatus(_ value: Status) { status = value; report(value) }
 
     private func handle(_ directive: HostDeadlineFence.Directive, candidate: Candidate? = nil, missing: Bool = false) {
         switch directive {
         case .clear(let ticket):
-            scheduledSourceToken = nil; scheduler.cancel(); clear()
+            scheduledSourceToken = nil; scheduler.cancel()
+            clearReinstalls = fence.clearRecomputes; clear(); clearReinstalls = false
             handle(fence.didClear(ticket))
         case .recompute(let ticket):
             let now = wallNow(), result = recompute(now)
@@ -94,21 +106,8 @@ import ModelPlanDock
             }
             let wakeDelay = presentationInterval.map { min(delay,$0) } ?? delay
             scheduler.arm(at: clock + max(0, wakeDelay)) { [weak self] in
-                guard let self, self.fence.isCurrent(ticket) else { return }
-                guard self.sourceIsCurrent(source) else {
-                    self.handle(self.fence.withdraw()); if self.fence.isSuspended { self.setStatus(.staleSource) }; return
-                }
-                let now = self.wallNow()
-                guard now.timeIntervalSinceReferenceDate.isFinite else {
-                    self.handle(self.fence.withdraw()); if self.fence.isSuspended { self.setStatus(.invalidClock) }; return
-                }
-                if now < date, self.presentationInterval != nil {
-                    // This is not a new source admission or a deadline extension.
-                    self.refreshPresentation(now)
-                    guard self.fence.isCurrent(ticket) else { return }
-                    guard self.sourceIsCurrent(source) else { self.handle(self.fence.withdraw()); return }
-                    self.handle(.schedule(ticket,date,hasUnknownDeadline:unknown))
-                } else { self.handle(self.fence.timerFired(ticket, now: now)) }
+                guard let self else { return }
+                self.step { self.fired(ticket, source: source, date: date, unknown: unknown) }
             }
             // Unknown/mixed policy is intentionally unresolved: never reinstall here.
             if (!unknown || installValidatedUnknown), let candidate, fence.isCurrent(ticket) {
@@ -130,5 +129,23 @@ import ModelPlanDock
         case .none:
             break
         }
+    }
+    /// A scheduled wake for `ticket` (one driver step).
+    private func fired(_ ticket: HostDeadlineFence.Ticket, source: UInt64, date: Date, unknown: Bool) {
+        guard fence.isCurrent(ticket) else { return }
+        guard self.sourceIsCurrent(source) else {
+            self.handle(self.fence.withdraw()); if self.fence.isSuspended { self.setStatus(.staleSource) }; return
+        }
+        let now = self.wallNow()
+        guard now.timeIntervalSinceReferenceDate.isFinite else {
+            self.handle(self.fence.withdraw()); if self.fence.isSuspended { self.setStatus(.invalidClock) }; return
+        }
+        if now < date, self.presentationInterval != nil {
+            // This is not a new source admission or a deadline extension.
+            self.refreshPresentation(now)
+            guard self.fence.isCurrent(ticket) else { return }
+            guard self.sourceIsCurrent(source) else { self.handle(self.fence.withdraw()); return }
+            self.handle(.schedule(ticket,date,hasUnknownDeadline:unknown))
+        } else { self.handle(self.fence.timerFired(ticket, now: now)) }
     }
 }

@@ -22,6 +22,12 @@ PLAYWRIGHT_BROWSERS_PATH=/path/to/ms-playwright npm run test:webkit --prefix des
 
 Builds are in `desktop/cockpit/.tmp/{community,official}/`, with a SHA-256 file
 inventory, edition, MIT notice and (for official) reserved-visual/OFL notices.
+
+The click walk runs its short version in the WebKit suite. Set `COCKPIT_WALK_LONG=1`
+for 200 seeded steps per fixture and the complete reachable top-level control-pair walk.
+To replay a failure, set `COCKPIT_WALK_REPLAY` to its JSON file under
+`desktop/tests/cockpit/.tmp/walk/` and run `click-walk.spec.mjs` with the cockpit
+Playwright config. That directory also holds state and failure screenshots; it is not committed.
 The default community build never reads reserved artwork. The explicit official
 build uses the already-public c01 canopy and local OFL fonts. The public A5
 pack remains available in the official runtime directory. It loads no remote content. No third-party UI/animation
@@ -91,7 +97,7 @@ UTF-16 units. These bridge limits do not change the Go transport's 8 MiB cap.
 | --- | --- |
 | `load` | Version 2; exact `appearance: {theme, locale, reduceMotion, reduceTransparency}` and `shell: {profile, attached, forcedClosed, tier, scope}`. Optional top-level `redBelow` is 10, 15, 20, 25, 30 or 40; absent or invalid values use 25 with a fixed warning. Once per page; clears first and applies both before `ready`. |
 | `appearance` | Flat `theme`, `locale`, `reduceMotion`, `reduceTransparency` and optional top-level `redBelow`, applied without clearing data. Both day and night are supported by the web renderer. |
-| `shell` | `profile` is `open` or `closed`, `attached` and `forcedClosed` are booleans, `tier` is `tall` or `compact`, and `scope` is `all` or a member key. Native chooses tier; forced closure disables user shutter actions. |
+| `shell` | `profile` is `open` or `closed`, `attached` and `forcedClosed` are booleans, `tier` is always `tall` (D444: one layout; `compact` is refused), and `scope` is `all` or a member key. Native scales the one layout to fit and forces the shutter closed below the 0.5 floor; forced closure disables user shutter actions. |
 | `tick` | `nowUnixMs` is a bounded canonical decimal timestamp; `reason` is `deadline`, `show`, `wake`, `unlock` or `clockChange`. Only a visible page with a current display accepts it. |
 | `display` | `data: WireCockpitData`. Context must match exactly; no context is adopted from data. Render is synchronous; the current displayed data supports deadline refresh and is removed on clear or unload. |
 | `visibility` | `visible`, `occluded`, `key`: booleans. Defaults are inactive. Active requires DOM readiness, visible, unoccluded, key and `!document.hidden`. |
@@ -141,13 +147,14 @@ page. The page has no timers; the host samples. Messages, all with the common he
 - host → page `{"type":"pluginData","id":…,"data":…}`: a reading for a running plugin; refused otherwise.
 - host → page `{"type":"pluginScreen","id":…}`: open that enabled plugin's big screen (a native action such as the
   widget card's); an open one stays open. Refused before `plugins` or for a plugin that is off.
-- page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's right-click Remove or the "+" menu.
+- page → host action `pluginClose` with `id`: right-click Remove on a key. The host asks for confirmation (the widget's NSAlert) and turns the plugin off; the page keeps it until the host sends the new state.
+- page → host action `pluginsEdit` with `plugins` (same shape): an edit made with the "+" menu.
 - page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
 
 Native host (macrevc-844-1): `CockpitPluginWire.canonical` applies `parsePluginState`'s rules in both directions;
 `plugins` is the one nested reply value (at most 4 levels, 64 unique keys per object, 32 items per array, 64 KiB).
 The window sends `plugins` on ready, after every clear and on change (never a state the page confirmed twice; a failed or lost call is sent again, and a change made while another state is in flight is sent once that one is answered); a `pluginScreen` request waits until the page confirmed a plugin state;
-`pluginsRunning` is accepted without focus, `pluginsEdit` only from the active page. The running set drops to `[]`
+`pluginsRunning` is accepted without focus, `pluginsEdit` and `pluginClose` only from the active page. The running set drops to `[]`
 when the page goes or is cleared. `CockpitPluginBridge` (ModelPlanAppIntegration) keeps the durable copy in
 `cockpit-plugins.json` and drives `CockpitPluginSampler`, which reads registered plugins at their interval.
 
@@ -166,10 +173,10 @@ Framework additions for the calendar (v1.1, all generic):
 
 Calendar (`src/calendar-plugin.ts`, `src/calendar-data.ts`, `src/calendar-time.ts`; CKP-PLG-06/07; D323): default on, no
 settings. The day strip (column) and the 7-day week grid (its big screen, opened from the key) are custom draws; the
-bottom line shows the time now, and a failed draw falls back to next reset / next peak / reset cards cells and plain
+bottom line shows the time now, and a failed draw falls back to next reset / next peak / banked resets cells and plain
 lines. Its accept refuses data over 16 KiB as JSON, then runs the strict parser. Its data (`version`, optional `peakRules` `yes`/`no`/`unknown` (missing is unknown), `subs` ≤16, `peaks` ≤64, `resets` ≤64, `spans` ≤16, epoch-ms times, ≤16 KiB) is shaped
 from `display`: published peak windows (`details.peaks`, cockpitPeaksV1), the user's own 5 h (`session`) and weekly
-window resets, reset cards (verified subscriptions only) and announced/confirmed reset events, for the user's own rows
+window resets, banked resets (verified subscriptions only) and announced/confirmed reset events, for the user's own rows
 only. A reset-card list the producer marks partial or truncated has no exact count and no expiry beyond the one it states; "No rules" is shown only when the peak feed is present and the user has no declared plan. The privacy barrier (clear) drops the plugin readings and the host takeover. All times are local; day boundaries are local midnights (DST days have 23/25 hours).
 
 A plugin marked `hostSampled` (the resource plugin) is laid out only after the host has sent its plugin state, so a
@@ -206,7 +213,7 @@ visible-again, cleared and unloaded states. `document.hidden` is controlled in
 headless tests, not presented as real OS window occlusion. The WebKit report
 attaches per-state counts; visual comparisons also enforce finite iteration counts.
 
-Visual comparisons cover full 636×890 and compact 636×640, both themes and both
+Visual comparisons cover the full 636×890 layout (the only one since D444), both themes and both
 languages, using synthetic Go captures. Ubuntu 24.04 arm64/WebKit 2203 is the
 pinned baseline profile. Reference images stay under the reserved visual license;
 regeneration requires review. They are implementation references, **not**

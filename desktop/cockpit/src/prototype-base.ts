@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 ModelPlan.
-// G3-47: the cockpit base row in the 34 px reserve below the root, one bell per visible subscription, directly
+// G3-47: the cockpit base row in the 46 px reserve below the root, one bell per visible subscription, directly
 // under its engine column, plus a dimmed socket under each empty bay. Port of the study's rocket-r1/base.js
 // (spec 3.9, entrance C) and base-bells notes: a subscription with a running session bound to it burns (a status-
 // coloured sheet below the bell, 12-24 px by output rate); a stale or failed reading is grey; otherwise idle.
@@ -21,6 +21,11 @@ const COLOUR=/^#[0-9a-f]{6}$/i;
 export type BaseLight={key:string;col:string;x:number;w:number;cw:number;colour:string;fuel:string;state:'work'|'stale'|'idle'|'plugin';rate:number|null;len:number;name?:string};
 
 // Glow sheet length: 30 t/s or less -> 12, 120 t/s or more -> 24, no rate -> the middle (study flameLen).
+// D454 per-nozzle flame dynamics, deterministic per nozzle index (bells then empty sockets): flip period 8.4-9.6 fps, breath 1.3-1.7 s for every index, flicker 0.9-1.3 s.
+export function flameDynamics(j:number):[string,string][] {
+ return [['--fp',(.415+(j*37%5)*.015).toFixed(3)+'s'],['--fb',(1.3+(j*13%40)/100).toFixed(2)+'s'],['--fbo',(-(j*37%5)*.31).toFixed(2)+'s'],
+  ['--fl',(.9+(j*29%5)*.1).toFixed(2)+'s'],['--flo',(-(j*53%7)*.17).toFixed(2)+'s'],['--fo',(-(j*53%7)*.023).toFixed(3)+'s']];
+}
 export function flameLength(rate:number|null):number {
  if(rate===null)return (FLAME_MIN+FLAME_MAX)/2;
  return Math.round(FLAME_MIN+(FLAME_MAX-FLAME_MIN)*Math.max(0,Math.min(1,(rate-30)/90)));
@@ -66,6 +71,7 @@ export function baseLights(root:HTMLElement,data:WireCockpitData):{lights:BaseLi
 }
 
 function px(n:number){return n.toFixed(2)+'px';}
+function flameNode(){const flame=document.createElement('i');flame.className='bz-flame';flame.setAttribute('aria-hidden','true');return flame;}
 
 // Paints the row into its own layer under the root; returns a disposer.
 export function mountPrototypeBase(root:HTMLElement,data:()=>WireCockpitData|null,label:(light:BaseLight)=>string) {
@@ -81,17 +87,21 @@ export function mountPrototypeBase(root:HTMLElement,data:()=>WireCockpitData|nul
   for(const [j,z] of lights.entries()){
    const b=document.createElement('span');b.className='bz '+z.state;b.setAttribute('role','img');b.setAttribute('aria-label',label(z));
    for(const [k,v] of [['left',px(z.x)],['--w',px(z.w)],['--cw',px(z.cw)],['--v',z.colour],['--fuel',z.fuel],['--len',z.len+'px'],
-    ['--fd',(.19+(j*37%5)*.017).toFixed(3)+'s'],['--fo',(-(j*53%7)*.023).toFixed(3)+'s']] as const)b.style.setProperty(k,v);
+    ['--fd',(.19+(j*37%5)*.017).toFixed(3)+'s'],
+    ...flameDynamics(j)] as const)b.style.setProperty(k,v);
    const glow=document.createElement('i');glow.className='bz-glow';const line=document.createElement('i');line.className='bz-line';b.append(glow,line);
    // D85: a working bell shows the study's in-mouth glow only; no flame or plume.
    if(z.state==='work'){const sheet=document.createElement('i');sheet.className='bz-sheet';b.append(sheet);}
+   // D454/D459: every nozzle hangs the owner's blue flame (official edition; the community edition hides it). Its kind is
+   // the cockpit's thrust (#cockpit[data-thrust], view.ts), never the subscription's output, which is the sheet's glow.
+   b.append(flameNode());
    // CKP-ENG-20: hovering lights the column and shows the name (text only).
    const tip=document.createElement('span');tip.className='bz-tip';tip.setAttribute('aria-hidden','true');tip.textContent=label(z);b.append(tip);
    const column=()=>[...root.querySelectorAll<HTMLElement>('.ck-eng .ec[data-col]')].find(e=>e.dataset.col===z.col);
    b.addEventListener('pointerenter',()=>column()?.classList.add('xhl'));b.addEventListener('pointerleave',()=>column()?.classList.remove('xhl'));
    nodes.push(b);
   }
-  for(const s of sockets){const e=document.createElement('span');e.className='bz-empty';e.setAttribute('aria-hidden','true');e.style.setProperty('left',px(s.x));e.style.setProperty('--cw',px(s.cw));const line=document.createElement('i');line.className='bz-line';e.append(line);nodes.push(e);}
+  for(const [k,s] of sockets.entries()){const e=document.createElement('span');e.className='bz-empty';for(const [n,v] of flameDynamics(lights.length+k))e.style.setProperty(n,v);e.setAttribute('aria-hidden','true');e.style.setProperty('left',px(s.x));e.style.setProperty('--cw',px(s.cw));const line=document.createElement('i');line.className='bz-line';e.append(line);e.append(flameNode());nodes.push(e);}
   base.replaceChildren(...nodes);
  };
  const engine=root.querySelector<HTMLElement>('.ck-eng');

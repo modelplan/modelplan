@@ -258,6 +258,44 @@ func CodexRuntimeAvailable(cache string, admission consent.Admission, now time.T
 	return false
 }
 
+// runtimeWindowCurrent: a runtime window carries a usable value whose cycle has not ended.
+func runtimeWindowCurrent(windows []Window, now time.Time) bool {
+	for _, window := range windows {
+		if window.ObservedAt.IsZero() || window.ObservedAt.After(now) || finite(window.UsedPercent, 0, 1000) == nil {
+			continue
+		}
+		if window.ResetsAt == nil || now.Before(*window.ResetsAt) {
+			return true
+		}
+	}
+	return false
+}
+
+// A newer account stamp can come from a different window. If logs include a still-current
+// runtime window, its own observation must be at least as new; a missing window stays missing.
+func logsCoverRuntimeWindows(logs Account, windows []Window, now time.Time) bool {
+	for _, runtime := range windows {
+		if runtime.ObservedAt.IsZero() || runtime.ObservedAt.After(now) || finite(runtime.UsedPercent, 0, 1000) == nil || (runtime.ResetsAt != nil && !now.Before(*runtime.ResetsAt)) {
+			continue
+		}
+		found, covered := false, false
+		for _, local := range logs.Windows {
+			if local.Kind != runtime.Kind {
+				continue
+			}
+			found = true
+			if (local.Limit == "" || runtime.Limit == "" || local.Limit == runtime.Limit) && (local.WindowMinutes == 0 || runtime.WindowMinutes == 0 || local.WindowMinutes == runtime.WindowMinutes) && finite(local.UsedPercent, 0, 1000) != nil && !local.ObservedAt.Before(runtime.ObservedAt) && !local.ObservedAt.After(now) {
+				covered = true
+				break
+			}
+		}
+		if found && !covered {
+			return false
+		}
+	}
+	return true
+}
+
 // AccountDue: the cached reading is old enough to ask Codex again.
 func AccountDue(cache string, now time.Time) bool {
 	if off() || cache == "" {
@@ -458,7 +496,10 @@ func lock(cache string, now time.Time) (func(), bool) {
 }
 
 func save(cache string, s *accountSnap) error {
-	b, _ := json.MarshalIndent(s, "", "  ")
+	b, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return codeError("parse_error", "parse_error")
+	}
 	p := accountPath(cache)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
@@ -537,6 +578,9 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 	send := func(v any) error { b, _ := json.Marshal(v); _, err := in.Write(append(b, '\n')); return err }
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
+	// rpcMessage: the text of the last JSON-RPC error, held in memory only to recover a rate-limit
+	// body from it (rateLimitsFromErrorBody); it is never returned, logged or stored.
+	rpcMessage := ""
 	wait := func(id int) (json.RawMessage, error) {
 		for sc.Scan() {
 			var m struct {
@@ -550,6 +594,7 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 				continue
 			}
 			if m.Error != nil {
+				rpcMessage = m.Error.Message
 				return nil, codeError("rpc_error", "rpc_error")
 			}
 			return m.Result, nil
@@ -572,12 +617,19 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 	if err := send(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": map[string]any{}}); err != nil {
 		return nil, codeError("closed", "closed")
 	}
+	rpcMessage = ""
 	raw, err := wait(2)
-	if err != nil {
-		return nil, err
-	}
 	var r rlResponse
-	if err := json.Unmarshal(raw, &r); err != nil {
+	if err != nil {
+		// G3-158: Codex fails the read when its own client cannot decode the usage response (a
+		// plan or field it does not know yet), yet quotes the response body in the error.
+		snap := rateLimitsFromErrorBody(rpcMessage, time.Now())
+		rpcMessage = ""
+		if snap == nil {
+			return nil, err
+		}
+		r.RateLimitsByLimitID = map[string]*rlSnapshot{"codex": snap}
+	} else if err := json.Unmarshal(raw, &r); err != nil {
 		return nil, err
 	}
 	if IdentityOff() {
@@ -857,10 +909,16 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 	// accountKeep, and at least one window not yet reset. Otherwise the session logs remain the
 	// Codex reading, as before; the unusable runtime snapshot is only shown when there are no
 	// logs at all.
+	// G3-158: only session logs at least as new as the runtime reading stand in for it. A runtime
+	// reading that is merely retained (its refresh failed) or past the freshness hour is still the
+	// newest thing known; logs from days before it must not replace it (they showed 34% left for
+	// a used-up week and dropped the plan name).
 	live := CodexRuntimeAvailable(cache, admission, now)
 	if !live {
+		// Turned off, or no window of the runtime reading still in its cycle: the logs stand.
+		newer := !off() && runtimeWindowCurrent(s.Windows, now)
 		for _, candidate := range r.Accounts {
-			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil {
+			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil && (!newer || (!candidate.ObservedAt.Before(s.ObservedAt) && logsCoverRuntimeWindows(candidate, s.Windows, now))) {
 				failureSource(false) // the session-log reading wins; the retained windows are not merged
 				return
 			}
@@ -1049,4 +1107,117 @@ func codexRefreshNext(cache string) (time.Time, error) {
 		return next, errors.New("reader budget unavailable")
 	}
 	return next, nil
+}
+
+// rateLimitsFromErrorBody reads the usage response that Codex quotes after "body=" in a failed
+// account/rateLimits/read (ChatGPT's wham/usage shape: plan_type, rate_limit.primary_window and
+// secondary_window, credits). MATCH of CodexBar a26ca57b5 (MIT), UsageFetcher.swift
+// recoverUsageFromRPCError and extractJSONObject: a malformed 5h window, or no window at all,
+// gives no reading. Only plan, windows and credits are taken; e-mail and ids are not decoded.
+func rateLimitsFromErrorBody(message string, now time.Time) *rlSnapshot {
+	body := jsonObjectAfter(message, "body=")
+	if body == "" {
+		return nil
+	}
+	var b struct {
+		PlanType  *string `json:"plan_type"`
+		RateLimit *struct {
+			Primary   json.RawMessage `json:"primary_window"`
+			Secondary json.RawMessage `json:"secondary_window"`
+		} `json:"rate_limit"`
+		Credits *struct {
+			HasCredits bool            `json:"has_credits"`
+			Unlimited  bool            `json:"unlimited"`
+			Balance    json.RawMessage `json:"balance"`
+		} `json:"credits"`
+	}
+	if json.Unmarshal([]byte(body), &b) != nil || b.RateLimit == nil {
+		return nil
+	}
+	window := func(raw json.RawMessage) (*rlWindow, bool) {
+		if len(raw) == 0 || string(raw) == "null" {
+			return nil, true
+		}
+		var w struct {
+			UsedPercent        *float64 `json:"used_percent"`
+			LimitWindowSeconds *int     `json:"limit_window_seconds"`
+			ResetAt            *int64   `json:"reset_at"`
+			ResetAfterSeconds  *int64   `json:"reset_after_seconds"`
+		}
+		if json.Unmarshal(raw, &w) != nil || w.UsedPercent == nil || finite(w.UsedPercent, 0, 100) == nil || w.LimitWindowSeconds == nil || *w.LimitWindowSeconds < 60 {
+			return nil, false
+		}
+		minutes := *w.LimitWindowSeconds / 60
+		out := &rlWindow{UsedPercent: w.UsedPercent, WindowDurationMins: &minutes}
+		const maxJSONUnix = 253402300799 // 9999-12-31T23:59:59Z
+		switch {
+		case w.ResetAt != nil && *w.ResetAt > 0:
+			if *w.ResetAt > maxJSONUnix {
+				return nil, false
+			}
+			out.ResetsAt = w.ResetAt
+		case w.ResetAfterSeconds != nil && *w.ResetAfterSeconds >= 0:
+			if *w.ResetAfterSeconds > maxJSONUnix-now.Unix() {
+				return nil, false
+			}
+			at := now.Unix() + *w.ResetAfterSeconds
+			out.ResetsAt = &at
+		}
+		return out, true
+	}
+	primary, primaryOK := window(b.RateLimit.Primary)
+	secondary, _ := window(b.RateLimit.Secondary) // a malformed weekly window is dropped; the 5h window stands
+	if !primaryOK || (primary == nil && secondary == nil) {
+		return nil
+	}
+	limit := "codex"
+	snap := &rlSnapshot{LimitID: &limit, Primary: primary, Secondary: secondary, PlanType: b.PlanType}
+	if c := b.Credits; c != nil {
+		snap.Credits = &struct {
+			HasCredits bool            `json:"hasCredits"`
+			Unlimited  bool            `json:"unlimited"`
+			Balance    json.RawMessage `json:"balance"`
+		}{c.HasCredits, c.Unlimited, c.Balance}
+	}
+	return snap
+}
+
+// jsonObjectAfter returns the first balanced JSON object after marker in text, or "".
+func jsonObjectAfter(text, marker string) string {
+	i := strings.Index(text, marker)
+	if i < 0 {
+		return ""
+	}
+	rest := text[i+len(marker):]
+	start := strings.IndexByte(rest, '{')
+	if start < 0 {
+		return ""
+	}
+	depth, inString, escaped := 0, false, false
+	for j := start; j < len(rest); j++ {
+		c := rest[j]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return rest[start : j+1]
+			}
+		}
+	}
+	return ""
 }

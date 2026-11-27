@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 // Subscriptions are known by random local references. When a reader sees which account a meter
@@ -212,31 +214,41 @@ func claudeIdentity(cache string, prev *ccSnapshot, now time.Time) *ccIdentity {
 
 // CodexSubscription: the reference of the account in the recent Codex account reading, "" when
 // unknown. ClaudeSubscription: the one the status line recorded for Claude Code.
+// Both read their cache file only when its metadata moved (cache_memo.go).
 func CodexSubscription(cache string, now time.Time) string {
-	s := loadAccount(cache)
-	if s == nil || s.Status != "ok" || now.Sub(s.ObservedAt) > accountKeep || IdentityOff() {
+	s, ok := codexAccountBinding(cache)
+	if !ok || s.status != "ok" || now.Sub(s.observed) > accountKeep || IdentityOff() {
 		return ""
 	}
-	return s.SubscriptionRef
+	return s.ref
 }
 
-// ZCodeSubscription: the account of the Coding Plan key ZCode is configured with, as the last
-// successful reading recorded it. Cache only; "" when ZCode has no such reading.
-func ZCodeSubscription(cache string) string {
+// ZCodeSubscription returns the recorded reference only while the same provider
+// file and consent scope are current. It reads metadata and sanitized cache only.
+func ZCodeSubscription(cache string, admission consent.Admission, now time.Time) string {
+	if IdentityOff() {
+		return ""
+	}
+	home, _ := os.UserHomeDir()
+	g, ok := defaultZCodeGrant(home, admission.State(), admission.Mode(), false)
+	if !ok || !g.StillValid() {
+		return ""
+	}
 	s := loadZaiConfigState(cache)
-	if s.Good == nil || IdentityOff() {
+	generation := readerGenerationID(g.Generation)
+	if s.Good == nil || s.LoginGeneration != generation || s.GoodGeneration != generation ||
+		!g.CaptureAllowed(s.Good.Admission) || now.Sub(s.Good.ObservedAt) > nativeKeep ||
+		(s.Availability != "ok" && !zaiTransientFailure(s.ErrorCode)) {
 		return ""
 	}
 	return s.Good.SubscriptionRef
 }
 
 func ClaudeSubscription(cache string) string {
-	b, status := readBounded(snapshotPath(cache), 64<<10)
-	var s ccSnapshot
-	if status != "" || json.Unmarshal(b, &s) != nil || s.Identity == nil || IdentityOff() {
+	if IdentityOff() {
 		return ""
 	}
-	return s.Identity.Ref
+	return claudeSnapshotRef(cache)
 }
 
 // ---- Claude Code: the account metadata Claude Code keeps beside its settings. Only

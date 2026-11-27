@@ -79,11 +79,14 @@ public struct SettingsApplication: Sendable {
         while let next = pending {
             pending = nil
             guard next.snapshot.revision >= max(editor.snapshot?.revision ?? 0, latest?.snapshot.revision ?? 0) else { continue }
-            let effective = EffectiveSettings(next.snapshot.preferences, environment: editor.environment)
+            // The editor also resolves legacy display choices using the locally
+            // observed catalogue. Forward the same preference view to both surfaces.
+            let presentation = editor.snapshot ?? next.snapshot
+            let effective = EffectiveSettings(presentation.preferences, environment: editor.environment)
             if !next.contextChanged, let latest, latest.snapshot.revision == next.snapshot.revision,
                latest.effective == effective { continue }
             let reason: SettingsApplicationReason = next.contextChanged && next.reason != .commit ? .context : next.reason
-            let application = SettingsApplication(snapshot: next.snapshot, effective: effective,
+            let application = SettingsApplication(snapshot: presentation, effective: effective,
                                                   context: editor.context, reason: reason)
             latest = application
             apply(application)

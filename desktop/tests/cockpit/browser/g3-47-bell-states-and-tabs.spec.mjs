@@ -14,7 +14,7 @@ function data(){
  return d;
 }
 async function open(page){
- await page.setViewportSize({width:636,height:939});
+ await page.setViewportSize({width:636,height:951});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell}))).toBe(true);
@@ -41,13 +41,13 @@ test('G3-131 every bell has one dark finish; only the working bell lights its mo
  await page.mouse.move(5,5);
  const mouth=async b=>firstPixel(await page.screenshot({clip:{x:Math.round(b.x),y:Math.round(b.top+b.h*0.62),width:1,height:1},omitBackground:true}));
  const lit=await mouth(bells[0]);
- expect(lum(lit),`working mouth ${JSON.stringify(lit)}`).toBeGreaterThan(60);expect(lit[2]).toBeGreaterThan(lit[0]+20);
+ expect(lum(lit),`working mouth ${JSON.stringify(lit)}`).toBeGreaterThan(60);expect(lit[2]).toBeGreaterThan(150); // D454: the blue flame root is white-hot at the lip
  for(const b of bells.slice(1)){const dark=await mouth(b);expect(lum(dark),`idle mouth ${JSON.stringify(dark)}`).toBeLessThan(60);}
 });
 
 // D294: an empty slot has the same finish (the silver raster, no night bell) and no light.
 test('G3-131 an empty slot shows the same dark finish and no light',async({page})=>{
- await page.setViewportSize({width:636,height:939});
+ await page.setViewportSize({width:636,height:951});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const d=data();d.projection.rows=d.projection.rows.slice(0,2);d.subscriptions=d.subscriptions.slice(0,2);if(d.details)d.details.subscriptions=d.details.subscriptions.slice(0,2);

@@ -47,6 +47,9 @@ final class StructureTests: XCTestCase {
         XCTAssertThrowsError(try SettingsStructure(panes: [pane("a", [.init(id: "one", keys: all)]), pane("a", [.init(id: "two", keys: [.theme])])]))
         XCTAssertThrowsError(try SettingsStructure(panes: [pane("a", [.init(id: "one", keys: [.theme]), .init(id: "one", keys: Array(all.dropFirst()))])]))
         XCTAssertThrowsError(try SettingsStructure(panes: [pane("", [.init(id: "one", keys: all)])]))
+        // D376: a pane that draws only its own content (Plugins) has no groups; its keys are still all placed elsewhere.
+        XCTAssertNoThrow(try SettingsStructure(panes: [pane("a", [.init(id: "one", keys: all)]), pane("own", [])]))
+        XCTAssertThrowsError(try SettingsStructure(panes: [pane("own", [])]), "every key still needs a home")
     }
     func testOneStepFlowDerivesStartEndCompletionAndReplayFromItsDefinition() throws {
         let flow = try oneStep(); var state = OnboardingState(definition: flow)

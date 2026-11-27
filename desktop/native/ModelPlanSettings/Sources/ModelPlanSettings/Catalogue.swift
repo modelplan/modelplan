@@ -173,7 +173,7 @@ public struct SettingsPageContext: Sendable {
             else if v1NormalEntry { unavailableControls[key] = dock }
         }
     }
-    /// SET-9-18: "Quota reset" and "Official extra reset" are delivered by the app once its
+    /// SET-9-18: "Quota reset" and "Official reset" are delivered by the app once its
     /// notification delivery is wired; then their rows are usable. Saved kinds are unchanged.
     public mutating func observeNotificationDelivery(_ available: Bool) {
         let notices = SettingsText("Unavailable until notifications can be delivered.", "通知可以送达前不可用。")
@@ -264,7 +264,7 @@ public enum SettingsCatalogue {
         .init(.order,"Subscription order","订阅顺序","One shared order for the Quota Widget and cockpit; hidden entries remain editable.","额度挂件与驾驶舱共用顺序；隐藏项仍可编辑。"),
         .init(.login,LoginSetting.title.english,LoginSetting.title.chinese,"Start ModelPlan after signing in to your Mac.","登录 Mac 后自动启动 ModelPlan。"),
         .init(.automaticUpdates,"Check for updates automatically","自动检查更新","Show available versions quietly in Overview and the menu.","有可用版本时，在总览和菜单中轻声提醒。"),
-        .init(.menuDisplay,"Menu-bar display","菜单栏显示","Icon, tightest percentage or two windows.","图标、最紧的百分比或并列两个窗口。"),
+        .init(.menuDisplay,"Menu-bar display","菜单栏显示","Automatic: the icon, a number only when the quota runs low. Or choose icon only, the tightest percentage or two windows.","自动：平时只显示图标，额度偏低时才显示数字；也可选仅图标、最紧的百分比或并列两个窗口。"),
         .init(.openShortcut,"Open cockpit shortcut","打开驾驶舱快捷键","Global registration can fail; local matching remains available.","全局注册可能失败；应用内匹配仍可用。"),
         .init(.dockShortcut,"Find Quota Widget shortcut","找到额度挂件快捷键","Shows where the Quota Widget is. Text editing and composition do not trigger shortcuts.","显示额度挂件的位置；文本编辑与输入法组合期间不触发。"),
         .init(.language,"Language","语言","Follow the system language, or choose Chinese or English.","跟随系统语言，或选择中文或英文。"),
@@ -275,7 +275,7 @@ public enum SettingsCatalogue {
         .init(.notificationConsent,"Enable notifications","开启通知","Ask for permission only after explicit opt-in.","仅在主动开启后请求通知权限。"),
         .init(.forecast,"May not last to reset","可能撑不到重置","Notify for a new forecast episode.","新出现的耗尽风险可通知。"),
         .init(.reset,"Quota reset","额度重置","Notify when a reset is read.","读取到重置时通知。"),
-        .init(.official,"Official extra reset","官方额外重置","Notify once per official event.","每个官方事件仅通知一次。"),
+        .init(.official,"Official reset","官方重置","Notify once per official event.","每个官方事件仅通知一次。"),
         .init(.expiring,"Resets expiring","额外重置即将过期","Expired resets are never revived after wake.","已过期的重置不再重新显示。"),
         .init(.stale,"Data stopped arriving","数据停止更新","Notify once per stale-data episode.","每次数据停滞仅通知一次。"),
         .init(.visible,"Subscription visibility","订阅可见性","Apply to both Quota Widget and cockpit.","同时用于额度挂件与驾驶舱。"),
@@ -329,7 +329,7 @@ public enum SettingsCatalogue {
                     if c.v1NormalEntry && key == .loginSystemSettings && !c.systemSettingsFallbacks.contains(.loginItems) { return nil }
                     if c.v1NormalEntry && key == .notificationSystemSettings && !c.systemSettingsFallbacks.contains(.notifications) { return nil }
                     // ALR-52 (WP-11; supersedes SET-9-18/SET-9-29): v1 offers only the kinds it sends,
-                    // "Quota reset" and "Official extra reset"; the forecast shows on the ALERT lamp instead.
+                    // "Quota reset" and "Official reset"; the forecast shows on the ALERT lamp instead.
                     if c.v1NormalEntry, let kind = NotificationKind(rawValue: key.rawValue), !NotificationKind.delivered.contains(kind) { return nil }
                     if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) && (!c.capabilities.updateServiceAvailable || c.unavailableControls[key] != nil) { return nil }
                     // No dead control: the export row appears once the app can write the file.

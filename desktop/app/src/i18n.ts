@@ -32,7 +32,7 @@ const zh = {
   cliMissing: '找不到 modelplan CLI。', cliFailed: '读取失败：%s',
   notify: {
     title: '通知', tight: '额度偏紧、用完', switchBack: '重置后换回', better: '有更合适的模型', surplus: '重置前用不完（升档、开 Fast）',
-    other: '高峰时段、重置卡、公开重置', test: '发一条测试通知', testBody: '通知可以正常显示。', denied: '系统没有允许通知。',
+    other: '高峰时段、额外重置次数、公开重置', test: '发一条测试通知', testBody: '通知可以正常显示。', denied: '系统没有允许通知。',
   },
   lang: '语言', menuBar: '菜单栏显示', auto: '自动（最近用的）',
 };
@@ -70,7 +70,7 @@ const en: Words = {
   cliMissing: 'The modelplan CLI was not found.', cliFailed: 'Could not read: %s',
   notify: {
     title: 'Notifications', tight: 'Tight or exhausted quota', switchBack: 'Switch back after a reset', better: 'A better model is available',
-    surplus: 'Unused before a reset (step up, Fast on)', other: 'Peak hours, reset cards, public resets', test: 'Send a test notification',
+    surplus: 'Unused before a reset (step up, Fast on)', other: 'Peak hours, banked resets, public resets', test: 'Send a test notification',
     testBody: 'Notifications work.', denied: 'Notifications are not allowed by the system.',
   },
   lang: 'Language', menuBar: 'Menu bar shows', auto: 'Auto (most recent)',

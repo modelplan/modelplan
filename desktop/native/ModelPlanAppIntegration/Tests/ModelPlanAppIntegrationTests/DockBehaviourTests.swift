@@ -576,17 +576,14 @@ import ModelPlanSettings
                                                  expectedOrder: ["synthetic-local", "synthetic-second"]))
         XCTAssertEqual(f.rows().map { $0.accessibilityIdentifier() },
                        ["dock.subscription.synthetic-second", "dock.subscription.synthetic-local"])
-        // Existing Community behaviour: the host forwards this choice, but its native row still draws a percentage.
-        // Strict expected failure is restricted to this assertion; do not repair behaviour in this test PR.
+        // Community rows honour the hidden-percentages choice in both the drawn text and the accessibility value.
         let community = try BehaviourFixture(url: temporaryURL(), neutralAppearance: false)
         defer { community.host.close() }
         await community.start(); render(community, try feed())
         try await community.coordinator.editor.commit(.autoHide(false))
         try await community.coordinator.editor.commit(.showPercentages(false))
-        let value = try XCTUnwrap(community.rows().first?.accessibilityValue() as? String)
-        XCTExpectFailure("dock-item 8: Community row ignores Quota Widget percentages=false; beta07 bug") {
-            XCTAssertFalse(value.contains("%"), "hidden percentages still expose the native readout: \(value)")
-        }
-        report(8, "Dock-keys=\(covered.count) reveal=300ms size=L/52 display/follow/edge/position=applied capture=unavailable supplier-options=forwarded expected-failures=1(show-percentages)")
+        let value = (community.rows().first?.accessibilityValue() as? String) ?? ""
+        XCTAssertFalse(value.contains("%"), "hidden percentages still expose the native readout: \(value)")
+        report(8, "Dock-keys=\(covered.count) reveal=300ms size=L/52 display/follow/edge/position=applied capture=unavailable supplier-options=forwarded expected-failures=0")
     }
 }

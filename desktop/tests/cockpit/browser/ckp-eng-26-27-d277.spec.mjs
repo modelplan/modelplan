@@ -56,14 +56,16 @@ for(const [locale,label,updated,refresh] of [['en','Synthetic Pro 200','Updated 
   await open(page,data,locale);
   const name=page.locator('.eng-keys .ek[data-sub] .ek-name').first();
   await expect(name).toHaveAttribute('data-full',label);await expect(name).toHaveText(label);
-  const line=page.locator('.ck-eng .eng-upd');
+  // D376: the update line lives on the BOTTOM line of the 总览 screen, not under the engine table.
+  const line=page.locator('.mfd-page.pg-overview .ov-foot .eng-upd');
   await expect(line).toHaveCount(1);await expect(line.locator('.eng-upd-t')).toHaveText(updated);
   await expect(line.locator('button.eng-upd-r')).toHaveText(refresh);
+  await expect(page.locator('.ck-eng .eng-upd,.ck-eng .eng-foot'),'no strip under the table').toHaveCount(0);
   // Quiet: no stale mark or badge anywhere on the table.
   await expect(page.locator('.ck-eng .grey, .ck-eng [data-state="stale"]')).toHaveCount(0);
-  const [table,lcd,box]=await Promise.all([page.locator('.u11-engine-table').boundingBox(),page.locator('.eng-lcd').boundingBox(),line.boundingBox()]);
-  expect(box.y,'under the table').toBeGreaterThanOrEqual(lcd.y+lcd.height-1);
-  expect(box.y+box.height,'inside the engine panel').toBeLessThanOrEqual(table.y+table.height+1);
+  const [screen,box]=await Promise.all([page.locator('.mfd-screen').boundingBox(),line.boundingBox()]);
+  expect(box.y+box.height,'inside the overview screen').toBeLessThanOrEqual(screen.y+screen.height+1);
+  expect(box.y,'on its bottom line').toBeGreaterThan(screen.y+screen.height*0.6);
  });
 
 test('CKP-ENG-27 a plan the reader does not know leaves the name alone',async({page})=>{
@@ -75,13 +77,13 @@ test('CKP-ENG-27 a plan the reader does not know leaves the name alone',async({p
 test('CKP-ENG-27 Refresh asks native for all, or for the selected subscription; a scripted click asks for nothing',async({page})=>{
  const {data,account}=fixture();
  await open(page,data);
- const button=page.locator('.ck-eng button.eng-upd-r');
+ const button=page.locator('.pg-overview button.eng-upd-r');
  await button.evaluate(b=>b.click());
  expect((await actions(page)).filter(a=>a.action!=='cautionAck'),'a scripted click asks for nothing (the lamp acknowledgement is the host\'s own report, not a request)').toEqual([]);
  await button.click();
  expect((await actions(page)).at(-1)).toEqual({action:'refreshMember',key:'all'});
  await page.keyboard.press('1');
- await expect(page.locator('.ck-eng button.eng-upd-r')).toHaveAccessibleName(/again/);
- await page.locator('.ck-eng button.eng-upd-r').click();
+ await expect(page.locator('.pg-overview button.eng-upd-r')).toHaveAccessibleName(/again/);
+ await page.locator('.pg-overview button.eng-upd-r').click();
  expect((await actions(page)).at(-1)).toEqual({action:'refreshMember',key:account.subscriptionRef});
 });

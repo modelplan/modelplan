@@ -13,8 +13,9 @@
 
 #cockpit{--pad-x:16px;--gutter:9px;--key-gap:4px;--row-h:18px;--bz:2px;--bz-r:6px;
   --bezel:0 1px 0 0 var(--bz-lip-b),0 0 0 1px var(--bz-lip),var(--bz-in);
-  --fd-ch:calc(60px + 2 * var(--bz));--fd-lane:4px;--fd-scale:34px;
-  --fad-w:calc(3 * var(--fd-ch) + 2 * var(--gutter) + var(--fd-lane) + var(--fd-scale))}
+  --fd-ch:calc(60px + 2 * var(--bz));--fd-gap:12px;
+  /* D405: three channels and the two gaps that carry the effort names; the big screen takes the rest (about 0.618). */
+  --fad-w:calc(3 * var(--fd-ch) + 2 * var(--fd-gap))}
 
 .ck{grid-template-rows:26px minmax(48px,1fr) auto auto auto;padding:12px var(--pad-x) 22px;gap:var(--gutter)}
 .ck.shut{grid-template-rows:26px 24px auto auto auto}
@@ -110,7 +111,7 @@ body.reduced .ck-head .caution.flash{}
 .fc-star{fill:var(--gold)}.fc-star.dim{fill:color-mix(in srgb,var(--gold) 33%,transparent)}
 .fc-cur{fill:#e9edf0;stroke:#0b0f13;stroke-width:1}
 .fc-ghost{fill:none;stroke:var(--blue);stroke-width:1.2;stroke-dasharray:3 3}.fc-pre{fill:none;stroke:var(--blue);stroke-width:1.3}
-.fc-l{font:10px var(--f-silk);fill:#e9edf0}.fc-l.dim{fill:#87939e}
+.fc-l{font:10px var(--f-silk);fill:#e9edf0}.fc-l.dim{fill:#87939e}.fc-lead{stroke:#87939e;stroke-width:.6;fill:none}
 .hud:not(.wide){width:260px;max-width:260px;min-width:0;min-height:82px;display:grid;grid-template-columns:minmax(0,1fr) 90px;gap:6px;align-items:center;padding:7px 8px;cursor:pointer}
 .hud[role=button]:focus-visible{outline:2px solid var(--gold-lcd);outline-offset:2px}
 .hud:not(.wide) .hud-list{padding-right:0;min-width:0}

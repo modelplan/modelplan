@@ -12,7 +12,7 @@ final class AlertSentenceTableTests: XCTestCase {
         let kind: String
         let subscription: Both?, window: Both?
         let remaining: Double?, runOutMinutes: Double?, resetMinutes: Double?
-        let cause: String?, count: Int?
+        let cause: String?, count: Int?, tool: String?
     }
     private struct Case: Decodable { let name: String; let input: Input; let en: Pair; let zh: Pair }
     private struct Fixture: Decodable { let cases: [Case]; let causes: [String: Both]; let notUnreadable: [String] }
@@ -34,7 +34,7 @@ final class AlertSentenceTableTests: XCTestCase {
                 s = AlertSentence.quota(subscription: text(try XCTUnwrap(c.input.subscription)), window: text(try XCTUnwrap(c.input.window)),
                                         remaining: try XCTUnwrap(c.input.remaining), runOutMinutes: c.input.runOutMinutes, resetMinutes: c.input.resetMinutes)
             case "unreadable":
-                s = AlertSentence.unreadable(subscription: text(try XCTUnwrap(c.input.subscription)), cause: c.input.cause)
+                s = AlertSentence.unreadable(subscription: text(try XCTUnwrap(c.input.subscription)), cause: c.input.cause, tool: c.input.tool)
             case "unreadableMany":
                 s = AlertSentence.unreadableMany(try XCTUnwrap(c.input.count))
             default:
@@ -52,5 +52,13 @@ final class AlertSentenceTableTests: XCTestCase {
         XCTAssertEqual(AlertSentence.notUnreadable, Set(f.notUnreadable))
         XCTAssertFalse(AlertSentence.isUnreadable(nil)); XCTAssertFalse(AlertSentence.isUnreadable("not_read_yet"))
         XCTAssertTrue(AlertSentence.isUnreadable("not_signed_in")); XCTAssertTrue(AlertSentence.isUnreadable("other"))
+    }
+
+    /// G3-218: Antigravity installed but not running says "not running", matching its card; other tools keep "not installed".
+    func testAntigravityRuntimeMissingIsNotRunningNotNotInstalled() {
+        XCTAssertEqual(AlertSentence.cause("runtime_missing", tool: "antigravity"), SettingsText("not running", "未运行"))
+        XCTAssertEqual(AlertSentence.cause("runtime_missing", tool: "codex"), SettingsText("not installed", "未安装"))
+        XCTAssertEqual(AlertSentence.cause("runtime_missing"), SettingsText("not installed", "未安装"))
+        XCTAssertEqual(AlertSentence.cause("not_signed_in", tool: "antigravity"), SettingsText("not signed in", "未登录"))
     }
 }

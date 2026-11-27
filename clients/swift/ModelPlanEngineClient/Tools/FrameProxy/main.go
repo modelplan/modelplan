@@ -28,6 +28,7 @@ type proxy struct {
 	methods       map[string]string
 	session       string
 	triggered     bool
+	rowsBusyCount int
 	probeDropped  bool
 	probeID       string
 	paused        bool
@@ -292,10 +293,27 @@ func main() {
 				continue
 			}
 		}
-		if p.plan.Mode == "rows-busy-once" && method == "rows/subscribe" && m["result"] != nil && !p.triggered {
-			p.triggered = true
+		busyLimit := 0
+		switch p.plan.Mode {
+		case "rows-busy-once", "rows-busy-held":
+			busyLimit = 1
+		case "rows-busy-twice-held":
+			busyLimit = 2
+		}
+		if method == "rows/subscribe" && m["result"] != nil && p.rowsBusyCount < busyLimit {
+			p.rowsBusyCount++
 			env := object(m["result"])
 			m = map[string]any{"jsonrpc": "2.0", "id": m["id"], "error": map[string]any{"code": -32013, "message": "busy", "data": map[string]any{"sessionId": env["sessionId"], "storeEpoch": env["storeEpoch"], "consentGeneration": env["consentGeneration"]}}}
+			if p.plan.Mode != "rows-busy-once" {
+				suffix := ""
+				if busyLimit == 2 {
+					suffix = fmt.Sprintf("-%d", p.rowsBusyCount)
+				}
+				_ = os.WriteFile(filepath.Join(os.Getenv("HOME"), "rows-busy-held"+suffix), []byte("ready"), 0600)
+				p.mu.Unlock()
+				p.release("rows-busy-release"+suffix, m)
+				continue
+			}
 		}
 		if p.plan.Mode == "wrong-session-sequence" && method == "rows/subscribe" && m["result"] != nil && !p.triggered {
 			p.triggered = true

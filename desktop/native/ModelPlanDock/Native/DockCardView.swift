@@ -69,8 +69,8 @@ import CryptoKit
 }
 @MainActor private final class DockCardBar:NSView {
     var fraction:Double?,on:NSColor,track:NSColor
-    /// Plugin rows (D327): a faint segment after the fill and a warning notch.
-    var faint:Double?,notch:Double?
+    /// Plugin rows (D327): a faint segment after the fill (D421: no threshold notch).
+    var faint:Double?
     var size=CGSize(width:96,height:10){didSet{invalidateIntrinsicContentSize();needsDisplay=true}}
     var gap:CGFloat=2{didSet{needsDisplay=true}}
     init(row:DockCardRow,on:NSColor,track:NSColor){self.fraction=row.fillFraction;self.on=on;self.track=track;super.init(frame:CGRect(x:0,y:0,width:96,height:10));setAccessibilityElement(true);setAccessibilityRole(.levelIndicator);setAccessibilityValue(row.fillFraction.map{NSNumber(value:$0*100)});setAccessibilityMinValue(0);setAccessibilityMaxValue(100);setAccessibilityLabel(row.label);setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));setAccessibilityIdentifier("dock.card.quota."+row.id)}
@@ -78,7 +78,7 @@ import CryptoKit
     override var intrinsicContentSize:NSSize{size}
     func apply(row:DockCardRow,on:NSColor,track:NSColor){
         let changed=fraction != row.fillFraction
-        fraction=row.fillFraction;self.on=on;self.track=track;faint=row.plugin?.faintFill;notch=row.plugin?.notch
+        fraction=row.fillFraction;self.on=on;self.track=track;faint=row.plugin?.faintFill
         setAccessibilityLabel(row.label);setAccessibilityValue(fraction.map{NSNumber(value:$0*100)})
         setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));needsDisplay=true
         if changed{NSAccessibility.post(element:self,notification:.valueChanged)}
@@ -94,11 +94,6 @@ import CryptoKit
         for i in 0..<10{
             let r=CGRect(x:CGFloat(i)*(w+gap),y:0,width:w,height:bounds.height)
             (i<lit ? on:i<faintEnd ? on.withAlphaComponent(0.35):track).setFill();NSBezierPath(roundedRect:r,xRadius:1,yRadius:1).fill()
-        }
-        if let notch,notch.isFinite,notch>0,notch<1{
-            // The notch sits in the gap before the segment it marks (CPU 70 %: between the 7th and 8th).
-            let x=CGFloat((notch*10).rounded())*(w+gap)-gap/2
-            on.withAlphaComponent(0.7).setFill();CGRect(x:x-0.5,y:-1,width:1,height:bounds.height+2).fill()
         }
     }
 }
@@ -281,7 +276,9 @@ import CryptoKit
             let plan=label("plan",value.plan,font:small,color:style.muted);place(plan,in:self)
             let h=ceil(natural(plan).height);plan.frame=CGRect(x:x,y:y+nameHeight,width:nameWidth,height:h);leftHeight+=h
         }
-        headerHeight=max(headerHeight,leftHeight,style.headerMinimumHeight)
+        // D388: the reserved minimum is the approved two-line header, kept only while the title block really
+        // fills two lines (the plan line under the name); a title that fits on one line shrinks the header to it.
+        headerHeight=max(headerHeight,leftHeight,leftHeight>nameHeight+0.5 ? style.headerMinimumHeight:0)
         var headerX=style.width-style.padding-rightWidth
         for cell in right{
             place(cell.field,in:self);let h=ceil(natural(cell.field).height)
@@ -300,6 +297,19 @@ import CryptoKit
         let readings=value.rows.filter{$0.kind != .notice && $0.kind != .event && $0.kind != .footnote && $0.kind != .alert},notices=value.rows.filter{$0.kind == .notice}
         let events=value.rows.filter{$0.kind == .event},footnotes=value.rows.filter{$0.kind == .footnote},alerts=value.rows.filter{$0.kind == .alert}
         let noticeTextWidth=inner-style.noticePadding.left-style.noticePadding.right
+        // D388: the label and value columns size to this card's own content — the widest label and the widest
+        // percent value across the rows, capped at the approved fixed widths — so short rows leave no reserved
+        // gap; the bar column keeps the approved ten-segment width and the time column keeps the remainder.
+        var labelContent:CGFloat=0,valueContent:CGFloat=0
+        for row in readings{
+            labelContent=max(labelContent,ceil(natural(label("row."+row.id+".label",row.label,font:readoutSmall,color:style.muted)).width))
+            if row.kind == .quota || row.kind == .extraQuota{
+                valueContent=max(valueContent,ceil(natural(label("row."+row.id+".value",row.value,font:readout,color:style.ink)).width))
+            }
+        }
+        // A percent is never ellipsized (owner, build 5: "99.…"): the value column grows past the approved 34 pt to
+        // the widest value, and only the time column gives way (its detail wraps below the bar when it no longer fits).
+        let c0=min(labelContent,c[0]),c2=max(0,min(valueContent,rowWidth-c0-c[1]-3*g))
         for (index,row) in readings.enumerated(){
             if index>0{rowY+=style.rowGap}
             let rowID="row."+row.id
@@ -325,8 +335,8 @@ import CryptoKit
                 bars[row.id]=bar;bar.apply(row:row,on:toneColor,track:style.track)
                 bar.size=style.barSize;bar.gap=style.barGap;place(bar,in:rowView)
                 let v=label(rowID+".value",row.value,font:readout,color:valueColor,alignment:.right);place(v,in:rowView)
-                let timeX=c[0]+c[1]+c[2]+3*g,timeWidth=max(0,rowWidth-timeX)
-                cells=[(view:l as NSView,x:CGFloat(0),width:c[0]),(view:bar as NSView,x:c[0]+g,width:c[1]),(view:v as NSView,x:c[0]+c[1]+2*g,width:c[2])]
+                let timeX=c0+c[1]+c2+3*g,timeWidth=max(0,rowWidth-timeX)
+                cells=[(view:l as NSView,x:CGFloat(0),width:c0),(view:bar as NSView,x:c0+g,width:c[1]),(view:v as NSView,x:c0+c[1]+2*g,width:c2)]
                 if !row.detail.isEmpty{
                     let d=label(rowID+".detail",row.detail,font:readoutSmall,color:style.muted,alignment:.right);place(d,in:rowView)
                     // The time column holds the detail when it fits on one line; a longer detail keeps
@@ -335,7 +345,7 @@ import CryptoKit
                     else{setWraps(d,true);d.alignment = .left;detailBelow=d}
                 }
             }else{
-                let restX=c[0]+g,restWidth=max(0,rowWidth-restX)
+                let restX=c0+g,restWidth=max(0,rowWidth-restX)
                 let v=label(rowID+".value",row.value,font:readout,color:valueColor,wraps:true);place(v,in:rowView)
                 var valueWidth=restWidth
                 if !row.detail.isEmpty{
@@ -344,7 +354,7 @@ import CryptoKit
                     if vw+g+dw<=restWidth{valueWidth=restWidth-dw-g;cells.append((view:d as NSView,x:restX+valueWidth+g,width:dw))}
                     else{setWraps(d,true);d.alignment = .left;detailBelow=d}
                 }
-                cells.insert((view:v as NSView,x:restX,width:valueWidth),at:0);cells.insert((view:l as NSView,x:CGFloat(0),width:c[0]),at:0)
+                cells.insert((view:v as NSView,x:restX,width:valueWidth),at:0);cells.insert((view:l as NSView,x:CGFloat(0),width:c0),at:0)
             }
             var rowHeight=style.rowMinimumHeight
             for cell in cells{if let field=cell.view as? NSTextField{rowHeight=max(rowHeight,height(field,width:cell.width))}}
@@ -362,7 +372,7 @@ import CryptoKit
                 cell.view.frame=CGRect(x:cell.x-inset,y:max(0,top)+nudge,width:cell.width+2*inset,height:h)
             }
             if let detailBelow{
-                let dx=c[0]+g,dw=max(0,rowWidth-dx),dh=wrapped(detailBelow,width:dw)
+                let dx=c0+g,dw=max(0,rowWidth-dx),dh=wrapped(detailBelow,width:dw)
                 detailBelow.frame=CGRect(x:dx,y:rowHeight,width:dw,height:dh);rowHeight+=dh
             }
             let kept=Set(cells.map{ObjectIdentifier($0.view)}+(detailBelow.map{[ObjectIdentifier($0)]} ?? []))
