@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { client } from "../merge-gates/github.mjs";
 import { feed, parseGlmTiers } from "../merge-gates/rules.mjs";
-import { buildSolPrompt, compileRunProblem, compileStatus, decideSol, omitGeneratedDiffs } from "./sol.mjs";
+import { OVERSIZE_EVENT, buildSolPrompt, compileRunProblem, compileStatus, decideSol, diffOmitReason, omitGeneratedDiffs, prDelta } from "./sol.mjs";
 
 const env = process.env;
 const output = (k, v) => appendFileSync(env.GITHUB_OUTPUT, `${k}=${v}\n`);
@@ -62,10 +62,16 @@ if (d.since) {
   if (have && tryGit("merge-base", "--is-ancestor", d.since, d.head)) { mode = "delta"; base = d.since; }
 }
 d = { ...d, mode, base };
-const diff = omitGeneratedDiffs(git("diff", "--no-color", "--no-ext-diff", mergeBase, d.head));
-const delta = mode === "delta" ? omitGeneratedDiffs(git("diff", "--no-color", "--no-ext-diff", d.since, d.head)) : "";
+// The PR's own delta (D428): the diff from the merge base, so a main merged into the branch is not in it. Files whose head
+// content is already what main has (a merged or reverted main change, a regenerated file that landed meanwhile) are no part
+// of it either, and binary, generated and capture files (omitGeneratedDiffs) are left out of the size budget and said so.
+const differsFromMain = new Set(git("diff", "--name-only", "--no-renames", "-z", "refs/remotes/origin/main", d.head).split("\0").filter(Boolean));
+const same = new Set(git("diff", "--name-only", "--no-renames", "-z", mergeBase, d.head).split("\0").filter((p) => p && !differsFromMain.has(p)));
+const omittedDiffs = [];
+const diff = omitGeneratedDiffs(git("diff", "--no-color", "--no-ext-diff", mergeBase, d.head), undefined, { same, report: omittedDiffs });
+const delta = mode === "delta" ? omitGeneratedDiffs(prDelta(git, { since: d.since, head: d.head, main: "refs/remotes/origin/main" }), undefined, { same }) : "";
 const stat = git("diff", "--stat=160", "--no-color", mergeBase, d.head);
-const changed = git("diff", "--name-only", "--no-renames", "--diff-filter=AMRT", "-z", mergeBase, d.head).split("\0").filter(Boolean);
+const changed = git("diff", "--name-only", "--no-renames", "--diff-filter=AMRT", "-z", mergeBase, d.head).split("\0").filter((p) => p && !same.has(p) && !diffOmitReason(p));   // the omitted files stay out of the file texts too
 const deleted = git("diff", "--name-only", "--no-renames", "--diff-filter=D", "-z", mergeBase, d.head).split("\0").filter(Boolean);
 
 const lane = env.LANE;
@@ -78,7 +84,17 @@ try {
 } catch (e) { ciLines.push(`CI results could not be read (${e.message.slice(0, 80)})`); }
 ciLines.sort();
 const fixed = buildSolPrompt({ pr, d, lane, stat, diff, delta, checks: ciLines }).length;
-if (fixed > MAX_PROMPT_CHARS) stop(n, `the patches alone are ${fixed} characters, over the ${MAX_PROMPT_CHARS} budget; an interactive Sol lane reviews this head`);
+if (fixed > MAX_PROMPT_CHARS) {
+  // Not a silent skip (D428): the post step leaves one advisory "oversize" note for the head, and the coordinator routes the head
+  // to an interactive Codex lane (its review-order row, land-loop.sh glm_grace_sweep).
+  writeFileSync(join(dir, "provider"), "oversize");
+  writeFileSync(join(dir, "oversize.json"), JSON.stringify({ chars: fixed, budget: MAX_PROMPT_CHARS, omitted: omittedDiffs }));
+  console.log(`pr-review-sol: oversize #${n}: the patches of the own delta are ${fixed} characters, over the ${MAX_PROMPT_CHARS} budget (${omittedDiffs.length} files already left out); ${OVERSIZE_EVENT}`);
+  summary(`Oversize #${n} @ \`${d.head}\`: ${fixed} characters over the ${MAX_PROMPT_CHARS} budget; an advisory note routes it to an interactive lane`);
+  output("review", "false"); output("oversize", "true"); output("head", d.head); output("tier", String(d.tier)); output("mode", mode); output("base", base); output("gpt", String(d.gpt));
+  process.exit(0);
+}
+writeFileSync(join(dir, "diff-omitted"), omittedDiffs.join("\n"));
 const blobs = [];
 for (const path of changed) {
   const buf = gitBuf("show", `${d.head}:${path}`);
