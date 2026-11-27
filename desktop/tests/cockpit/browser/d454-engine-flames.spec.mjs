@@ -31,6 +31,8 @@ async function open(page,{reduceMotion=false,active=true,attached=true}={}){
  return {
   shell:async value=>expect(await receive(send('shell',{...shell,...value}))).toBe(true),
   ignite:async on=>expect(await receive(send('ignition',{on}))).toBe(true),
+  visibility:async on=>expect(await receive(send('visibility',{visible:on,occluded:!on,key:on}))).toBe(true),
+  appearance:async value=>expect(await receive(send('appearance',{...appearance,...value}))).toBe(true),
  };
 }
 // Every nozzle (subscribed bells and empty sockets): its flame image, animation and the subscription glow.
@@ -97,6 +99,34 @@ test('D450 the flipbook stops under Reduce Motion and on a hidden cockpit, holdi
  await host.ignite(true);
  v=await read(page);
  expect(v.nozzles.every(n=>kind(n.flame.image)==='full'&&n.flame.anim==='none')).toBe(true);
+});
+
+// macrev2-1292-3: the fade runs once per full->out transition. After it has finished, nothing may bring the flame back.
+async function parkedAfterFade(page){
+ const host=await open(page);
+ await host.shell({attached:false});await host.ignite(true);await host.ignite(false);
+ await expect.poll(()=>gone(page),{timeout:5000}).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>document.getElementById('cockpit').dataset.fade)).toBe('false');
+ return host;
+}
+test('D468 after the fade, hiding then showing the window keeps the flame out',async({page})=>{
+ const host=await parkedAfterFade(page);
+ await host.visibility(false);await host.visibility(true);await page.waitForTimeout(600);
+ expect(await gone(page)).toBe(true);
+ expect(await page.evaluate(()=>[...document.querySelectorAll('.ck-base .bz-flame')].map(f=>getComputedStyle(f).animationName))).toEqual(expect.not.arrayContaining(['cockpit-flame-out']));
+});
+test('D468 after the fade, Reduce Motion on then off keeps the flame out',async({page})=>{
+ const host=await parkedAfterFade(page);
+ await host.appearance({reduceMotion:true});await host.appearance({reduceMotion:false});await page.waitForTimeout(600);
+ expect(await gone(page)).toBe(true);
+ await page.emulateMedia({reducedMotion:'reduce'});await page.emulateMedia({reducedMotion:'no-preference'});await page.waitForTimeout(600);
+ expect(await gone(page)).toBe(true);
+});
+test('D468 after the fade, a shell re-sync keeps the flame out',async({page})=>{
+ const host=await parkedAfterFade(page);
+ await host.shell({attached:false});await host.shell({attached:false,scope:'all'});await page.waitForTimeout(600);
+ expect(await gone(page)).toBe(true);
+ expect(await page.evaluate(()=>getComputedStyle(document.querySelector('.ck-base .bz-flame')).animationName)).toBe('none');
 });
 
 test('D468 under Reduce Motion the flame is out at once after the burn: no fade, no animation',async({page})=>{
