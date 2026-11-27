@@ -93,6 +93,8 @@ func zaiConfigNext(state string) string {
 		return "Review ZaiConfig consent and privacy settings"
 	case "stale", "rate_limited":
 		return "Wait until the next eligible ZaiConfig read"
+	case "keychain":
+		return "Allow Keychain for ZCode in Settings"
 	default:
 		return "Check ZaiConfig connectivity and wait until the next eligible read"
 	}

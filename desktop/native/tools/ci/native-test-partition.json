@@ -58,6 +58,7 @@
         "ConsentContractTests",
         "ConsentCoreQ2Tests",
         "ConsentHostDisplayTests",
+        "D380ZCodeKeychainJourneyTests",
         "DockCodexRuntimeRealServerTests",
         "DockFaceIdleBudgetTests",
         "DockHoverExplanationTests",
