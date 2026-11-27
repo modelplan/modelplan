@@ -118,20 +118,7 @@ import ModelPlanWire
     public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
     public override func layout() {
         super.layout()
-        // Wrapping checkbox cells settle the same way: while the pinned height disagrees with the wrapped
-        // cell height at the current width, move the height constraint (equal → no further invalidation).
-        for button in wrappingButtons {
-            let width = button.bounds.width
-            guard width > 0, let cell = button.cell else { continue }
-            let wrapped = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)).height
-            if let pinned = wrappingButtonHeights[ObjectIdentifier(button)] {
-                if abs(pinned.constant - wrapped) > 0.5 { pinned.constant = wrapped }
-            } else {
-                let pinned = button.heightAnchor.constraint(equalToConstant: wrapped)
-                pinned.isActive = true; wrappingButtonHeights[ObjectIdentifier(button)] = pinned
-            }
-        }
-        guard !wrappingWidthUpdateScheduled, !wrappingLabels.isEmpty else { return }
+        guard !wrappingWidthUpdateScheduled, !(wrappingLabels.isEmpty && wrappingButtons.isEmpty) else { return }
         wrappingWidthUpdateScheduled = true
         // Updating a label's preferred width dirties intrinsic sizing. Let AppKit finish laying out
         // the window before using the resolved widths so the update cannot restart that layout pass.
@@ -144,6 +131,19 @@ import ModelPlanWire
                 let width = floor(label.bounds.width)
                 if width > 0, label.preferredMaxLayoutWidth != width {
                     label.preferredMaxLayoutWidth = width
+                }
+            }
+            // Wrapping checkbox cells settle the same way, in this deferred pass: while the pinned height disagrees with the wrapped
+            // cell height at the current width, move the height constraint (equal → no further invalidation).
+            for button in self.wrappingButtons {
+                let width = button.bounds.width
+                guard width > 0, let cell = button.cell else { continue }
+                let wrapped = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)).height
+                if let pinned = self.wrappingButtonHeights[ObjectIdentifier(button)] {
+                    if abs(pinned.constant - wrapped) > 0.5 { pinned.constant = wrapped }
+                } else {
+                    let pinned = button.heightAnchor.constraint(equalToConstant: wrapped)
+                    pinned.isActive = true; wrappingButtonHeights[ObjectIdentifier(button)] = pinned
                 }
             }
         }
