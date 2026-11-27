@@ -16,7 +16,8 @@ import type {CautionItem,ReadWindow} from './caution.js';
 
 // ALR-51: only red and amber are lit; blue and grey are list-only, so they never blink and are never acknowledged.
 // (The same rule as caution.ts `lights`, kept here so this module loads without the page's string tables.)
-const lights=(x:CautionItem)=>x.level==='red'||x.level==='amber';
+// D474 §4.1: only quota conditions light (a reserve item expiring soon is amber but list-only).
+const lights=(x:CautionItem)=>(x.level==='red'||x.level==='amber')&&(x.topic===undefined||x.topic==='quota');
 
 const MAX=64;
 /** The host bounds an identity in UTF-8 bytes (BridgeState.swift), so the page counts bytes too. */

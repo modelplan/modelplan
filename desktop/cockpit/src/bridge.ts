@@ -35,7 +35,9 @@ export type HostMessage = Header & (
   /** Plugin columns: open this plugin's big screen (a native action such as the widget card's "Cockpit screen ›"). */
   {readonly type:'pluginScreen'; readonly id:string} |
   /** D466 (#1289): the app's shared news clock, `newsUntil` per announcement (null = no longer news). */
-  {readonly type:'news'; readonly items:readonly NewsItem[]});
+  {readonly type:'news'; readonly items:readonly NewsItem[]} |
+  /** D474 decision 3 (#1289): the subscription keys that have had a good reading on this Mac (seen-subscriptions.json). */
+  {readonly type:'seen'; readonly ids:readonly string[]});
 /** D466: one announcement's news clock as the host keeps it (`DockNewsClock`, key eventID#status). */
 export interface NewsItem {readonly id:string;readonly status:'announced'|'confirmed';readonly untilUnixMs:string|null}
 export interface CockpitView {
@@ -66,6 +68,8 @@ export interface CockpitView {
   pluginData?(id:string,data:unknown):boolean;
   /** D466: the host's shared news clock answers. */
   news?(items:readonly {readonly id:string;readonly status:'announced'|'confirmed';readonly until:number|null}[]):void;
+  /** D474 decision 3: the host's seen subscriptions; columns appear only for these or a good reading now. */
+  seen?(ids:readonly string[]):void;
   /** Opens an enabled plugin's big screen (CKP-PLG-53); false when it is not enabled or the page cannot show it. */
   openPluginScreen?(id:string):boolean;
   dispose():void;
@@ -129,6 +133,8 @@ function message(raw:string,quarantined?:(data:unknown)=>boolean,refused?:(data:
     case 'pluginData': if(!keys(['id','data'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return no('pluginData.fields'); break;
     case 'pluginScreen': if(!keys(['id'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return no('pluginScreen.fields'); break;
     case 'news': if(!keys(['items'])||!Array.isArray(m.items)||m.items.length>64||!m.items.every(x=>exact(x,['id','status','untilUnixMs'])&&identity(x.id)&&(x.status==='announced'||x.status==='confirmed')&&(x.untilUnixMs===null||timestamp(x.untilUnixMs)))) return no('news.fields'); break;
+    // D474 decision 3: at most 64 member keys, no repeats (tests/shared/seen-subscriptions.json pins the contract).
+    case 'seen': if(!keys(['ids'])||!Array.isArray(m.ids)||m.ids.length>64||!m.ids.every(k=>k!=='all'&&validScope(k))||new Set(m.ids).size!==m.ids.length) return no('seen.fields'); break;
     default:return no('msg.type');
   }
   return m as unknown as HostMessage;
@@ -304,6 +310,8 @@ export class CockpitBridge {
           this.deadlineChanged();}
         this.pendingLooks=[];}
         this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
+      case 'seen':
+        this.view.seen?.(m.ids);this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       default:return this.no('recv.type');
     }
   }

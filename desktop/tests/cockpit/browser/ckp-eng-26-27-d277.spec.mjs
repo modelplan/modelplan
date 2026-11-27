@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Owner decision D277 (2026-11-16) on the built page through its normal bridge, synthetic data only.
-// CKP-ENG-26: no repeated "reset ?" on the engine table; the cell that will run out says "out ~40m" in its alert
+// CKP-ENG-26: no repeated "reset ?" on the engine table; the cell that will run out says "est. out in 40m" (D474: line 2) in its alert
 // colour even when its reset time is unknown. CKP-ENG-27: the key carries the plan the reader knows, and one quiet line
 // says when the readings were taken with a Refresh that posts one typed bridge action.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
@@ -31,12 +31,12 @@ function fixture({remaining=60,plan={en:'Pro 200',zh:'Pro 200'}}={}) {
  return {data,row,account};
 }
 
-for(const [locale,unknown,out] of [['en','reset ?','out ~40m'],['zh-CN','重置未知','约40m用完']])
+for(const [locale,unknown,out] of [['en','reset ?',/^(est\. out in|out) 40m$/],['zh-CN','重置未知',/^(预估 40m 用完|40m完)$/]])
  test(`CKP-ENG-26 no repeated unknown reset; the cell that runs out says so (${locale})`,async({page})=>{
   await open(page,fixture().data,locale);
   const lines=page.locator('.ck-eng .qtxt');
   await expect(lines.filter({hasText:unknown})).toHaveCount(0);
-  const warn=page.locator('.ck-eng .qcell .qtxt.warn');
+  const warn=page.locator('.ck-eng .qcell .qtxt.ql2.warn');
   await expect(warn).toHaveCount(1);await expect(warn).toHaveText(out);await expect(warn).toBeVisible();
   // The hover still says the reset time is unknown.
   await expect(page.locator('.ck-eng .qcell').nth(1)).toHaveAccessibleName(new RegExp(unknown.replace('?','\\?')));
@@ -44,8 +44,8 @@ for(const [locale,unknown,out] of [['en','reset ?','out ~40m'],['zh-CN','重置�
 
 test('CKP-ENG-26 at or below the red line the run-out text is red',async({page})=>{
  await open(page,fixture({remaining:20}).data);
- const crit=page.locator('.ck-eng .qcell .qtxt.crit');
- await expect(crit).toHaveText('out ~40m');
+ const crit=page.locator('.ck-eng .qcell .qtxt.ql2.crit');
+ await expect(crit).toHaveText(/^(est\. out in|out) 40m$/);
  const [ink,low]=await page.evaluate(()=>{const e=document.querySelector('.ck-eng .qtxt.crit'),probe=document.createElement('i');probe.style.color='var(--st-low)';e.parentElement.append(probe);const r=[getComputedStyle(e).color,getComputedStyle(probe).color];probe.remove();return r;});
  expect(ink).toBe(low);
 });

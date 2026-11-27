@@ -18,6 +18,10 @@ const near=(a,b,tolerance)=>a.slice(0,3).every((v,i)=>Math.abs(v-b[i])<=toleranc
 function reading(remaining=[75,40,20]) {
  const fx=visualFixture(),rows=fx.data.projection.rows;
  rows.forEach((row,index)=>{row.vendorKey=['openai','claude','cursor','glm'][index];row.accounts[0].windows[0].remainingPercent=remaining[index%remaining.length];row.accounts[0].windows[1].remainingPercent=remaining[index%remaining.length];});
+ // D474 decision 2 (C9): amber means the estimate runs out before the reset, so the 40 % reading gets a run-out forecast.
+ const at=Date.parse('2026-11-04T12:00:00Z'),iso=m=>new Date(at+m*60000).toISOString(),tight=rows[1]?.accounts[0];
+ if(tight){Object.assign(tight.windows[0],{current:true,validUntil:iso(60),resetsAt:iso(300)});
+  fx.data.details.forecasts=[{source:rows[1].id,subscriptionRef:tight.subscriptionRef,windowId:tight.windows[0].id,runsOutAt:iso(40),pace:'tight',basis:'recent-rate',observedAt:iso(-2)}];}
  for(const [index,group] of fx.data.subscriptions.entries())group.accounts[0].account.windows=structuredClone(rows[index].accounts[0].windows);
  return fx;
 }

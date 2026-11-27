@@ -36,7 +36,8 @@ test('CKP-ENG-14 shared threshold includes the exact 51, 50, 26, 25 and zero bou
  for(const [i,row] of data.projection.rows.entries())for(const window of row.accounts[0].windows)window.remainingPercent=[51,50,26,25,0][i];
  await open(page,data);
  const cells=page.locator('.eng-cols .ec[data-col] .qcell[data-row="first"]');await expect(cells).toHaveCount(5);
- for(const [i,kind] of ['ok','mid','mid','low','low'].entries())await expect(cells.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
+ // D474 decision 2 (C9): in the band, amber means the estimate runs out first; this fixture has none, so 50 and 26 are ok.
+ for(const [i,kind] of ['ok','ok','ok','low','low'].entries())await expect(cells.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
  await page.getByRole('button',{name:'Plans',exact:true}).click();const values=page.locator('.sa-list .sa .v');
  for(const [i,kind] of ['ok','mid','mid','low','low'].entries())await expect(values.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
 });
@@ -109,9 +110,9 @@ test('CKP-ENG-06 named general windows and the tightest Other quota stay separat
  await expect(col.locator('.qcell[data-row="second"] .qvalue')).toHaveText('65');
  await expect(col.locator('.qcell[data-row="other"] .qvalue')).toHaveText('20');
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-more','1');
- const other=col.locator('.qcell[data-row="other"]'),label=other.locator('.qtxt');
- await expect(label).toBeVisible();await expect(label).toHaveText('5h · mo +1');// CKP-ENG-51: "MCP · 月"
- await expect(other).toHaveAccessibleName(/5h · 5h · 30% left[\s\S]*5h · mo · 20% left/);
+ const other=col.locator('.qcell[data-row="other"]'),label=other.locator('.qtxt.ql1');
+ await expect(label).toBeVisible();await expect(label).toHaveText('5h +1');// C33 (D474): the cell names the window; the hover adds the period
+ await expect(other).toHaveAccessibleName(/5h · 5h quota · 30% left[\s\S]*5h · monthly quota · 20% left/);
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-kind','extra');
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-tag',/mo/i);
 });
@@ -229,7 +230,8 @@ test('CKP-ENG-10 quota numerals and bars use the LCD font and status inks',async
  const cells=page.locator('.eng-cols .ec[data-col] .qcell[data-row="first"]');await expect(cells).toHaveCount(3);const ink=[];
  for(const cell of await cells.all())ink.push(await cell.evaluate(e=>({font:getComputedStyle(e.querySelector('.qnum')).fontFamily,number:getComputedStyle(e.querySelector('.qnum')).color,bar:getComputedStyle(e.querySelector('.qbar i.on')).backgroundColor})));
  for(const x of ink)expect(x.font).toContain('JetBrains Mono');const rgb=ink[0].number.match(/\d+/g).slice(0,3).map(Number);expect(Math.max(...rgb)-Math.min(...rgb)).toBeLessThan(30);
- expect(ink[1].number).toBe(ink[1].bar);expect(ink[2].number).toBe(ink[2].bar);expect(ink[0].bar).not.toBe(ink[1].bar);expect(ink[1].bar).not.toBe(ink[2].bar);
+ // D474 decision 2: 40 % with no estimate is ok (white number, ok bar); 20 % is red in number and bar.
+ expect(ink[1].number).toBe(ink[0].number);expect(ink[1].bar).toBe(ink[0].bar);expect(ink[2].number).toBe(ink[2].bar);expect(ink[0].bar).not.toBe(ink[2].bar);
 });
 
 test('CKP-STRIP-05 alert lamp selects the clear, amber and red art through bridge updates',async({page})=>{

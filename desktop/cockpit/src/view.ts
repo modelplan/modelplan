@@ -12,9 +12,9 @@ import { renderPrototypeEngine } from './prototype-engine.js';
 import { mountPrototypeDeck } from './prototype-deck.js';
 import { paintHud,wireHud } from './prototype-hud.js';
 import { mountPrototypeTape } from './prototype-tape.js';
-import { cockpitMembers,setMemberOrder,setHiddenMembers } from './members.js';
+import { cockpitMembers,setMemberOrder,setHiddenMembers,setSeenSubscriptions } from './members.js';
 import { mountPrototypeBase } from './prototype-base.js';
-import { cautionItems,lights,readWindows } from './caution.js';
+import { cautionItems,counted,lights,readWindows,type CautionItem } from './caution.js';
 import { createCautionMemory } from './caution-ack.js';
 import {currentWindow,withoutProjectNames} from './prototype-data-adapter.js';
 import {INITIAL_RANGE,nextCockpitRange,type CockpitRange} from './range.js';
@@ -57,7 +57,11 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  const rangeShortcut=(event:KeyboardEvent)=>{if(!event.isTrusted||!active||disposed||!nativeShell||event.altKey||event.ctrlKey||event.metaKey||event.repeat||event.key.toLowerCase()!=='t')return;const target=event.target;if(target instanceof Element&&(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')))return;const next=nextCockpitRange(nativeShell.range??INITIAL_RANGE);event.preventDefault();if(requestRange(next)){deck.range(next);headerRange.set(next);}};
  window.addEventListener('keydown',rangeShortcut);
  const caution=root.querySelector<HTMLButtonElement>('[data-caution]')!;const cautions=createCautionMemory(reportAcked);const motionQuery=matchMedia('(prefers-reduced-motion: reduce)');const finishCaution=(e:AnimationEvent)=>{if(e.animationName==='cockpit-caution-blink')caution.classList.remove('flash');};const syncReduced=()=>document.body.classList.toggle('reduced',reduceMotion||motionQuery.matches);/* body.reduced is the carried prototype CSS's Reduce Motion switch: app setting or OS preference. */const motionChanged=()=>{syncReduced();if(motionQuery.matches){caution.classList.remove('flash');stop();}};caution.addEventListener('animationend',finishCaution);motionQuery.addEventListener('change',motionChanged);
- function syncCaution(data:WireCockpitData,now:number){const items=cautionItems(data,now,redBelow()),fresh=cautions.update(items,readWindows(data,now),active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches);if(!items.some(lights))caution.classList.remove('flash');else if(fresh&&active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches){caution.classList.remove('flash');void caution.offsetWidth;caution.classList.add('flash');}}
+ function syncCaution(data:WireCockpitData,now:number){const items=cautionItems(data,now,redBelow());lampTip(items);const fresh=cautions.update(items,readWindows(data,now),active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches);if(!items.some(lights))caution.classList.remove('flash');else if(fresh&&active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches){caution.classList.remove('flash');void caution.offsetWidth;caution.classList.add('flash');}}
+ // D474 §7.1: the lamp's tooltip is the worst quota condition's long sentence, then how to open the list and its count
+ // (amber and red, the reserve included); no count in the first line. Unlit: no tooltip.
+ function lampTip(items:readonly CautionItem[]){const worst=items.find(lights),n=items.filter(counted).length;
+  if(!worst){caution.removeAttribute('title');return;}caution.title=`${locale==='en'?worst.text.en:worst.text.zh}\n${ht(locale,'host.lampHint',{n})}`;}
  caution.onclick=e=>{if(!e.isTrusted||!active)return;caution.classList.remove('flash');const uncovered=plugins.dismissScreen();if(uncovered&&deck.alertsOpen())return;deck.showAlerts(deck.alertsOpen()?undefined:cautions.acknowledge());};
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
  const shutter=root.querySelector<HTMLButtonElement>('[data-shutter]')!;
@@ -86,7 +90,9 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  const pointerKeepsFocus=(e:MouseEvent)=>{pressed=null;if(!e.isTrusted||!(e.target instanceof Element))return;const c=e.target.closest(POINTER_UNFOCUSED);if(c instanceof HTMLElement&&root.contains(c)){pressed=c;if(document.activeElement===c)c.dataset.pointerFocus='';}};
  const pointerFocusStarts=(e:FocusEvent)=>{if(pressed&&e.target===pressed)pressed.dataset.pointerFocus='';};
  const pointerPressEnds=()=>{pressed=null;};
- const pointerFocusEnds=(e:FocusEvent)=>{if(e.target instanceof HTMLElement)delete e.target.dataset.pointerFocus;};
+ // G3-153: a blur because the whole window stopped being key (the page is no longer the focused document) is not the user
+ // leaving the control: macOS refocuses it on reactivation and WebKit treats that as keyboard focus, so the mark stays.
+ const pointerFocusEnds=(e:FocusEvent)=>{if(!(e.target instanceof HTMLElement))return;if(e.relatedTarget===null&&!document.hasFocus())return;delete e.target.dataset.pointerFocus;};
  root.addEventListener('mousedown',pointerKeepsFocus,true);root.addEventListener('focusin',pointerFocusStarts,true);
  window.addEventListener('mouseup',pointerPressEnds,true);root.addEventListener('focusout',pointerFocusEnds,true);
  frame.settings.classList.add('s6-strip-key');attach.classList.add('s6-strip-key');close.classList.add('s6-strip-key');
@@ -231,7 +237,7 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  // every render and tick, and after the user's own clicks and keys (paging, the alert list), which repaint in place.
  function noteNews(now:number):boolean{
   if(!lastData||disposed)return false;const marks=renderedMarks(root);
-  return newsClock.observe(drawnNews(lastData).filter(e=>marks.has(newsMark(e))),now,present);
+  return newsClock.observe(drawnNews(lastData,now).filter(e=>marks.has(newsMark(e))),now,present);
  }
  const noteAfterInput=()=>{if(noteNews(Math.max(lastRenderedAt,Date.now())))root.dispatchEvent(new CustomEvent('cockpit-deadline'));};
  root.addEventListener('click',noteAfterInput);window.addEventListener('keyup',noteAfterInput);
@@ -320,11 +326,12 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   fieldClosed(){root.dispatchEvent(new CustomEvent('field-closed'));},
   selectModel(id){hudSelected=id;markPorthole(id);deck.selectModel(id);if(lastData)preserveFocus(()=>paintHud(frame.hud,lastData!,locale,hudOptions()));},
   render:renderData,
-  nextDeadline(){if(!lastData)return null;const own=minDeadline(nextDeadline(lastData,lastRenderedAt),newsClock.nextChange(drawnNews(lastData),lastRenderedAt)),plugin=plugins.nextDeadline();return own===null?plugin:plugin===null?own:Math.min(own,plugin);},
+  nextDeadline(){if(!lastData)return null;const own=minDeadline(nextDeadline(lastData,lastRenderedAt),newsClock.nextChange(drawnNews(lastData,lastRenderedAt),lastRenderedAt)),plugin=plugins.nextDeadline();return own===null?plugin:plugin===null?own:Math.min(own,plugin);},
   tick(now){refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;heldHistory=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
   active(value,now){const was=active;active=value;plugins.setInteractive(value);root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}else if(!was&&lastData){if(now!==undefined)lastRenderedAt=now;syncCaution(lastData,lastRenderedAt);}},
   news(items){newsClock.host(items);if(lastData)refreshDeadlines(lastRenderedAt);},
+  seen(ids){if(setSeenSubscriptions(ids)&&lastData)renderData(lastData,lastRenderedAt);},
   visible(value){if(present!==value)newsClock.present(value,lastRenderedAt);present=value;plugins.setVisible(value);},
   plugins(raw){return plugins.applyHostState(raw);},
   pluginData(id,data){return plugins.deliver(id,data);},

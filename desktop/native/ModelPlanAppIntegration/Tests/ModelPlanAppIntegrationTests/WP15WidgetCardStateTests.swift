@@ -256,7 +256,7 @@ actor WP15Engine: EngineClient {
             let expected = AlertSentence.quota(subscription: .init("Tight", "Tight"), window: en ? .init("5h", "5h") : .init("5小时", "5小时"),
                                                remaining: 9, runOutMinutes: 40, resetMinutes: 120).text.value(language)
             XCTAssertEqual(footer.value, expected, "the footer is WP-11's one sentence")
-            XCTAssertEqual(footer.value, en ? "Tight 5h 9% · out ~40m · resets in 2h00" : "Tight 5小时 9% · 约40m用完 · 2h00 后重置")
+            XCTAssertEqual(footer.value, en ? "Tight 5h 9% · est. out in 40m · resets in 2h00" : "Tight 5小时 9% · 预估 40m 用完 · 2h00 后重置")
             XCTAssertEqual(content.actionLabel, "")
             XCTAssertNoThrow(try content.validate())
         }

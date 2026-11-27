@@ -4,7 +4,8 @@
 // - ALR-50: every red, amber and unreadable row is the shared sentence (tests/shared/alert-sentences.json), the same
 //   words on the overview line and in the list.
 // - ALR-51: red and amber light the lamp; blue and grey are list-only. A stale reading is grey, never blue.
-// - CKP-MFD-55: title "提醒 · N"; two lines per row; red, amber, blue, grey, tightest first; "没有提醒" when empty.
+// - CKP-MFD-55 (D474 §3.3): title "提醒 · N" counts amber and red only; two lines per row; red, amber, then the uncounted
+//   新消息 / 时段 / 读取 rows, tightest first; "没有提醒" when empty.
 // - CKP-MFD-56: a row selects its subscription and returns; a grey row opens Settings › Subscriptions; Esc, the back
 //   key or a second lamp press return to the page the list came from.
 // - CKP-MFD-57: opening the list acknowledges: no blink, the lamp stays lit.
@@ -53,12 +54,12 @@ test('CKP-MFD-55 / ALR-50 / ALR-51 the list: title, order, two lines, the shared
  // ALR-50: the overview line is the same sentence as the list row.
  await expect(page.locator('.pg-overview .mfd-alerts li').first()).toContainText('Claude Code 5h 10% · resets in 1h00');
  await lamp(page).click();
- await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 5');
+ await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 3');// D474: the news and grey rows are not counted
  await expect(rows(page)).toHaveCount(5);
  expect(await rows(page).evaluateAll(li=>li.map(x=>x.className.split(' ')[0]))).toEqual(['al-red','al-red','al-amber','al-blue','al-grey']);
  await expect(rows(page).nth(0).locator('.al-l1')).toHaveText('Claude Code 5h 10% · resets in 1h00');
  await expect(rows(page).nth(1).locator('.al-l1')).toHaveText('Codex 5h 20% · resets in 3h30');
- await expect(rows(page).nth(2).locator('.al-l1')).toHaveText('Gemini CLI 5h 60% · out ~40m · resets in 5h00');
+ await expect(rows(page).nth(2).locator('.al-l1')).toHaveText('Gemini CLI 5h 60% · est. out in 40m · resets in 5h00');
  await expect(rows(page).nth(4).locator('.al-l1')).toHaveText('Cursor no reading · not signed in');
  await expect(rows(page).nth(4).locator('.al-l2')).toHaveText('Open Settings ›');
 });
@@ -66,9 +67,9 @@ test('CKP-MFD-55 / ALR-50 / ALR-51 the list: title, order, two lines, the shared
 test('CKP-MFD-55 the Chinese list uses the same words as the shared table',async({page})=>{
  await open(page,busy(),'zh-CN');
  await lamp(page).click();
- await expect(page.locator('.pg-alerts .al-head')).toHaveText('提醒 · 5');
+ await expect(page.locator('.pg-alerts .al-head')).toHaveText('提醒 · 3');
  await expect(rows(page).nth(0).locator('.al-l1')).toHaveText('Claude Code 5小时 10% · 1h00 后重置');
- await expect(rows(page).nth(2).locator('.al-l1')).toHaveText('Gemini CLI 5小时 60% · 约40m用完 · 5h00 后重置');
+ await expect(rows(page).nth(2).locator('.al-l1')).toHaveText('Gemini CLI 5小时 60% · 预估 40m 用完 · 5h00 后重置');
  await expect(rows(page).nth(4).locator('.al-l1')).toHaveText('Cursor 读不到 · 未登录');
  await expect(rows(page).nth(4).locator('.al-l2')).toHaveText('去设置 ›');
 });
@@ -146,7 +147,7 @@ test('ALR-51 / CKP-MFD-56 a signed-out row the producer kept off the Dock still 
  await open(page,data);
  await expect(page.locator('.ec[data-col]')).toHaveCount(2);
  await lamp(page).click();
- await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 1');
+ await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 0');// D474: a grey row is listed, not counted
  await expect(rows(page).nth(0).locator('.al-l1')).toHaveText('Cursor no reading · not signed in');
  await expect(rows(page).nth(0).locator('.al-l2')).toHaveText('Open Settings ›');
  await rows(page).nth(0).click();
@@ -182,12 +183,13 @@ test('ALR-51 a one-row signed-out projection without details still lists its gre
  const row=data.projection.rows[0];row.surfaces=['menu','settings'];row.state='needs_action';row.reason={...row.reason,code:'not_signed_in'};
  const c=row.accounts[0];c.valueState='none';c.windows=[];c.lastFailure={at:iso(-1),code:'not_signed_in'};
  const {send,receive}=await open(page,data);await lamp(page).click();
- await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 1');
+ await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 0');// D474: grey rows are not counted
+ await expect(rows(page)).toHaveCount(1);
  await expect(rows(page).nth(0).locator('.al-l1')).toHaveText('Cursor no reading · not signed in');
  // A routine refresh with the same account keeps the list open and the focus on the same row (never closes a live alert).
  await rows(page).nth(0).locator('button').focus();
  for(let i=0;i<2;i++){expect(await receive(send('display',{data}))).toBe(true);}
- await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 1');
+ await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 0');await expect(rows(page)).toHaveCount(1);
  expect(await page.evaluate(()=>document.activeElement?.closest('li')?.textContent??'')).toContain('Cursor');
 });
 

@@ -31,30 +31,31 @@ test('D38 a forecast run-out lights the amber lamp and the shared run-out senten
  await open(page,data);
  await expect(lamp(page)).toHaveClass(/\bamber\b/);await expect(lamp(page)).not.toHaveClass(/\bred\b/);
  await lamp(page).click();
- await expect(page.getByText(`${row.name.en} ${w.label.en} 60% · out ~40m · resets in 5h00`)).toBeVisible();
+ await expect(page.getByText(`${row.name.en} ${w.label.en} 60% · est. out in 40m · resets in 5h00`)).toBeVisible();
 });
 
-test('D38 the Chinese row reads 约40m用完 and uses the same rule (ALR-50)',async({page})=>{
+test('D38 the Chinese row reads 预估 40m 用完 (D474 §3.2) and uses the same rule (ALR-50)',async({page})=>{
  const {data,row,w}=fixture();
  await open(page,data,'zh-CN');
  await expect(lamp(page)).toHaveClass(/\bamber\b/);
  await lamp(page).click();
- await expect(page.getByText(`${row.name.zh} ${w.label.zh} 60% · 约40m用完 · 5h00 后重置`)).toBeVisible();
+ await expect(page.getByText(`${row.name.zh} ${w.label.zh} 60% · 预估 40m 用完 · 5h00 后重置`)).toBeVisible();
 });
 
 test('D38 the engine cell and the Subscription page name the run-out',async({page})=>{
  await open(page,fixture().data);
- await expect(page.locator('.qcell').filter({hasText:'out ~40m'}).first()).toBeVisible();
+ // D474: line 2 of the cell carries the estimate (wide "est. out in 40m", narrow "out 40m").
+ await expect(page.locator('.qcell .ql2').filter({hasText:/^(est\. out in|out) 40m$/}).first()).toBeVisible();
  await page.keyboard.press('1');
  await page.getByRole('button',{name:'Plans',exact:true}).click();
- await expect(page.locator('.sp-w em.amber').first()).toHaveText('out ~40m');
+ await expect(page.locator('.sp-w em.amber').first()).toHaveText('est. out in 40m');
 });
 
 for(const [name,forecast] of [['no run-out in the forecast',{runsOutAt:null,basis:'none',pace:'on_track'}],['a run-out already passed',{runsOutAt:iso(-1)}],['a run-out after the reset',{runsOutAt:iso(301)}]])
  test(`D38 ${name} creates no amber`,async({page})=>{
   await open(page,fixture(forecast).data);
   await expect(lamp(page)).not.toHaveClass(/\bamber\b/);
-  await expect(page.locator('.qcell').filter({hasText:'out ~'})).toHaveCount(0);
+  await expect(page.locator('.qcell .ql2.warn, .qcell .ql2.crit')).toHaveCount(0);
  });
 
 test('D38 an older engine without forecasts creates no amber',async({page})=>{
@@ -86,6 +87,6 @@ test('D38 the page asks for a tick at the run-out, and the amber clears there wi
  await page.clock.setFixedTime(new Date(NOW+20*60000));
  expect(await receive(send('tick',{nowUnixMs:String(NOW+20*60000),reason:'deadline'}))).toBe(true);
  await expect(lamp(page)).not.toHaveClass(/\bamber\b/);
- await expect(page.locator('.qcell').filter({hasText:'out ~'})).toHaveCount(0);
+ await expect(page.locator('.qcell .ql2.warn, .qcell .ql2.crit')).toHaveCount(0);
  expect(Number(await lastDeadline(page))).toBeGreaterThan(NOW+20*60000);
 });
