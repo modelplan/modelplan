@@ -108,7 +108,7 @@ final class NotchStatusItemPlacementTests: XCTestCase {
 
     /// statusItemHidden: a drawn window behind the notch is not visible; another display without a window of its own
     /// shows the item through its projected copy.
-    func testCopyVisibilitiesTreatTheNotchAsHidden() {
+    @MainActor func testCopyVisibilitiesTreatTheNotchAsHidden() {
         func states(_ windows: [(CGRect, Bool)], _ arrangement: [Display]) -> [Bool] {
             StatusItemAnchor.copyVisibilities(windows: windows.map { (frame: $0.0, drawn: $0.1) }, itemWidth: width,
                                               displays: arrangement, menuHeight: menuHeight)
