@@ -1,0 +1,1 @@
+The cockpit Resources column now sizes its radar by the column width instead of its height, so the radar fills the column, and its five rows (CPU, memory, disk, network, memory pressure) share the remaining height without cutting any name or value; side values drop first.

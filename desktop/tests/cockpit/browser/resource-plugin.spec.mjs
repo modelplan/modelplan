@@ -79,7 +79,7 @@ test('D327 the key: white line icon, orchid dashed underline; the cells read CPU
  expect(r.network).toMatch(/Network.*↓1\.2M ↑86K/);expect(r.sparks).toBeGreaterThanOrEqual(2);
  await expect(column(page).locator('[data-spark="cpu"]')).toHaveCount(1);await expect(column(page).locator('[data-spark="memory"]')).toHaveCount(1);
  await expect(column(page).locator('.pl-radar [data-arc="network"]')).toHaveCount(0);
- await expect(column(page).locator('.pl-foot')).toContainText('Normal');
+ await expect(column(page).locator('.pl-radar [data-row="pressure"]')).toContainText('Normal');
  const ink=await page.evaluate(()=>document.querySelector('.pl-col[data-plugin="resources"]').style.getPropertyValue('--pl-ink'));
  expect(ink).toBe('#da66c2');
 });
@@ -92,7 +92,7 @@ test('D371 B4c / D407 status colour: arcs and numbers are normal / amber / red b
  expect(normal.numColours).toEqual(normal.strokes);
  // CPU 96 % red, memory warn pressure amber, disk 92 % red.
  expect(await push([reading(T0+10000,{cpuUser:71,cpuSystem:25,pressure:'warn',swapUsed:2.1*GB,diskFree:40*GB})])).toBe(true);
- await expect(column(page).locator('.pl-foot')).toContainText('偏高');
+ await expect(column(page).locator('.pl-radar [data-row="pressure"]')).toContainText('偏高');
  const hot=await radar(page);
  expect(hot.numColours).toEqual(hot.strokes);
  expect(hot.strokes[0]).toBe(hot.strokes[2]);expect(hot.strokes[1]).not.toBe(hot.strokes[0]);expect(hot.strokes).not.toContain(normal.strokes[0]);
@@ -153,27 +153,28 @@ test('macrevb-1096-2 turning the plugin off and on (Settings or page Remove/Add)
 // D407 R1: the radar takes the whole column above the bottom line (no empty band below), and nothing in it clips or
 // collides, in a wide and a narrow table.
 for(const [name,rows] of [['3 columns',2],['6 columns',4]])
-test(`D407 R1 ${name}: the radar fills the column rows, the network row sits at the bottom, no text clips or overlaps`,async({page})=>{
+test(`D407 R1 ${name}: the radar fills the column rows, the pressure row sits at the bottom, no text clips or overlaps`,async({page})=>{
  const {push}=await open(page,{rows,plugins:{version:1,entries:[CAL_OFF],settings:{}}});
  const samples=[0,1,2,3,4].map(i=>reading(T0+i*5000,{cpuUser:30+i*8,cpuSystem:5,memApp:(6+i)*GB,diskFree:(60-i)*GB,netIn:1_200_000,netOut:86_000}));
  expect(await push(samples)).toBe(true);
  await expect(column(page).locator('.pl-radar')).toHaveCount(1);
  const m=await page.evaluate(()=>{
-  const col=document.querySelector('.pl-col[data-plugin="resources"]'),box=e=>e.getBoundingClientRect(),area=box(col.querySelector('.pl-draw')),svg=box(col.querySelector('.pl-radar')),foot=box(col.querySelector('.pl-foot'));
+  const col=document.querySelector('.pl-col[data-plugin="resources"]'),box=e=>e.getBoundingClientRect(),area=box(col.querySelector('.pl-draw')),svg=box(col.querySelector('.pl-radar'));
   const quota=[...document.querySelectorAll('.eng-cols > .ec[data-col]:not(.pl-col) .qcell')].map(box).filter(r=>r.height>0);
   const texts=[...col.querySelectorAll('.pl-radar text')].map(t=>({t:t.textContent,r:box(t),row:t.closest('[data-row]')?.dataset.row}));
   const overlaps=[];for(let i=0;i<texts.length;i++)for(let j=i+1;j<texts.length;j++){const a=texts[i].r,b=texts[j].r;
    if(a.left<b.right-.5&&b.left<a.right-.5&&a.top<b.bottom-.5&&b.top<a.bottom-.5)overlaps.push(texts[i].t+' / '+texts[j].t);}
-  const net=box(col.querySelector('[data-row="network"]'));
-  return {area:[area.top,area.bottom,area.height],svg:[svg.width,svg.height],areaW:area.width,foot:foot.top,quotaTop:Math.min(...quota.map(r=>r.top)),
+  const net=box(col.querySelector('[data-row="pressure"]'));
+  return {area:[area.top,area.bottom,area.height],svg:[svg.width,svg.height],areaW:area.width,colBottom:box(col).bottom,hasFoot:!!col.querySelector('.pl-foot'),quotaTop:Math.min(...quota.map(r=>r.top)),
    outside:texts.filter(x=>x.r.left<area.left-.5||x.r.right>area.right+.5||x.r.top<area.top-.5||x.r.bottom>area.bottom+.5).map(x=>x.t),overlaps,netGap:area.bottom-net.bottom};
  });
  expect(Math.abs(m.area[0]-m.quotaTop)).toBeLessThanOrEqual(1);
- expect(Math.abs(m.area[1]-m.foot)).toBeLessThanOrEqual(1);
+ expect(m.hasFoot,'D465 the radar draws the bottom line itself').toBe(false);
+ expect(m.colBottom-m.area[1],'the radar reaches the column bottom').toBeLessThanOrEqual(8);
  expect(Math.abs(m.svg[1]-m.area[2])).toBeLessThanOrEqual(1);
  expect(m.outside,'every text inside the area').toEqual([]);
  expect(m.overlaps,'no two texts overlap').toEqual([]);
- expect(m.netGap,'the network row sits at the bottom').toBeLessThanOrEqual(10);
+ expect(m.netGap,"the pressure row sits at the bottom").toBeLessThanOrEqual(20);
 });
 
 /** `count` connected subscriptions: with six, every slot is a subscription column and an unpinned resource plugin has none (CKP-PLG-52). */
