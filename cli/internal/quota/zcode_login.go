@@ -562,10 +562,24 @@ func fetchZCodeLogin(ctx context.Context, c *http.Client, source ZaiConfigSource
 		e.ErrorCode, e.Error = code, code
 		return e
 	}
-	if source.Remember != nil {
-		source.Remember(login)
+	generation := ""
+	if source.Resolved != nil {
+		var same bool
+		if generation, same = source.Resolved(login); !same || generation == "" {
+			e.zcodeMismatch = true
+			e.ErrorCode, e.Error = "consent_required", "consent_required"
+			return e
+		}
 	}
 	login.store, login.material = nil, ""
+	e = fetchZCodeLoginAs(ctx, c, source, login, now)
+	e.zcodeGeneration = generation
+	return e
+}
+
+// fetchZCodeLoginAs sends the one request of a resolved sign-in.
+func fetchZCodeLoginAs(ctx context.Context, c *http.Client, source ZaiConfigSource, login zcodeLogin, now time.Time) codexbarEntry {
+	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
 	if _, blocked := zaiConfigAdmission(ctx); blocked != "" {
 		e.ErrorCode, e.Error = "consent_required", "consent_required"
 		return e

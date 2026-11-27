@@ -26,10 +26,11 @@ type ZaiConfigAccess struct {
 	// An opaque keyed generation changed after login changes or Settings Retry.
 	// Never pass a token, account ID or path.
 	LoginGeneration string
-	// Regenerate returns the generation ID after a read: a ZCode Keychain-bound sign-in is resolved
-	// only inside the read, so the reading is filed under the account that read found.
-	Regenerate func() string
 }
+
+// zaiConfigAfterAdmission is a test seam: it runs right after a read's final admission check.
+var zaiConfigAfterAdmission func()
+
 type zaiConfigAccessKey struct{}
 
 func WithZaiConfigAccess(ctx context.Context, access ZaiConfigAccess) context.Context {
@@ -278,11 +279,18 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 	if _, blocked := zaiConfigAdmission(ctx); ctx.Err() != nil || blocked != "" {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext("consent_required")}
 	}
-	if access.Regenerate != nil {
-		if g := access.Regenerate(); g != "" {
-			access.LoginGeneration = g
-			s.LoginGeneration = g
-		}
+	if zaiConfigAfterAdmission != nil {
+		zaiConfigAfterAdmission()
+	}
+	// ZCode's sign-in route (macrev2-1284-5): the result is filed under the account the read itself
+	// opened, never under whatever the files say by now. A read that opened another account than
+	// the one this attempt was admitted for publishes nothing.
+	if e.zcodeMismatch {
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext("consent_required")}
+	}
+	if e.zcodeGeneration != "" {
+		access.LoginGeneration = e.zcodeGeneration
+		s.LoginGeneration = e.zcodeGeneration
 	}
 	if e.Status == "ok" {
 		e.Admission = access.Admission

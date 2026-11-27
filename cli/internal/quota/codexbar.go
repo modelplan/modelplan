@@ -376,6 +376,11 @@ func untar(archive []byte, dir string) error {
 // ---- The cached reading.
 
 type codexbarEntry struct {
+	// In memory only (ZCode sign-in route): the generation of the account the read opened, and
+	// whether that was another account than the read was admitted for (macrev2-1284-5).
+	zcodeGeneration string
+	zcodeMismatch   bool
+
 	Admission   *consent.CaptureStamp `json:"admission,omitempty"`
 	ErrorCode   string                `json:"errorCode,omitempty"`
 	CursorState string                `json:"cursorState,omitempty"`

@@ -22,7 +22,10 @@ func killProcessGroup(cmd *exec.Cmd) {
 		return
 	}
 	if pid := cmd.Process.Pid; pid > 0 {
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		signalGroup(pid)
 	}
 	_ = cmd.Process.Kill()
 }
+
+// signalGroup kills process group pgid; a variable so tests can see when the group is signalled.
+var signalGroup = func(pgid int) { _ = syscall.Kill(-pgid, syscall.SIGKILL) }

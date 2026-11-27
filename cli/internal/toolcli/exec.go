@@ -83,8 +83,18 @@ func InsideOtherApp(p string) bool {
 // can still find and stop them (review macrev2-1284-3).
 const runTag = "MODELPLAN_TOOL_RUN"
 
-// runTags: the tag of each command Command made, until Finish or Run cleans it up.
-var runTags sync.Map
+// runState is one tool run: its tag, and whether its child may be reaped. The process group is
+// signalled only while reaping is false, under mu, and Run/Finish set reaping under mu before
+// Wait reaps the child. An unreaped child (running or a zombie) keeps its process-group id
+// reserved, so a group signal can never reach a recycled group (macrev2-1284-6).
+type runState struct {
+	tag     string
+	mu      sync.Mutex
+	reaping bool
+}
+
+// runs: the state of each command Command made, until Run or Finish cleans it up.
+var runs sync.Map
 
 // Command is the one way ModelPlan starts a tool program. It refuses a program inside another
 // app's bundle (ErrInsideAppBundle). The child runs in its own process group and carries a
@@ -107,66 +117,109 @@ func Command(ctx context.Context, bin string, args ...string) (*exec.Cmd, error)
 		return nil, err
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
-	runTags.Store(cmd, hex.EncodeToString(tag))
+	runs.Store(cmd, &runState{tag: hex.EncodeToString(tag)})
 	ownProcessGroup(cmd)
 	cmd.Cancel = func() error { KillGroup(cmd); return nil }
 	cmd.WaitDelay = childWaitDelay
 	return cmd, nil
 }
 
-func tagOf(cmd *exec.Cmd) string {
-	if v, ok := runTags.Load(cmd); ok {
-		return v.(string)
+func stateOf(cmd *exec.Cmd) *runState {
+	if v, ok := runs.Load(cmd); ok {
+		return v.(*runState)
 	}
-	return ""
+	return nil
 }
 
 // Start starts a command from Command with its run tag added to the environment the caller set.
 func Start(cmd *exec.Cmd) error {
-	if tag := tagOf(cmd); tag != "" {
+	if st := stateOf(cmd); st != nil {
 		env := cmd.Env
 		if env == nil {
 			env = os.Environ()
 		}
-		cmd.Env = append(append([]string(nil), env...), runTag+"="+tag)
+		cmd.Env = append(append([]string(nil), env...), runTag+"="+st.tag)
 	}
 	return cmd.Start()
 }
 
-// KillGroup stops whatever is left of the child's process group, the child itself, and every
-// process carrying the run's tag (descendants that left the group). It is safe to call more than
-// once. After Wait the group is no longer signalled (its id may have been recycled); the tag
-// still finds every descendant, in the group or not.
+// KillGroup stops the child, its process group while the child is not reaped, and every process
+// carrying the run's tag (descendants that left the group). It is safe to call more than once and
+// at any time: once the child may be reaped the group is not signalled again.
 func KillGroup(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
-	if cmd.ProcessState == nil {
+	st := stateOf(cmd)
+	if st == nil {
+		_ = cmd.Process.Kill() // not a Command run, or already cleaned up: no group to trust
+		return
+	}
+	st.mu.Lock()
+	if !st.reaping {
+		killProcessGroup(cmd)
+	} else {
+		_ = cmd.Process.Kill() // os.Process never signals a reaped child
+	}
+	st.mu.Unlock()
+	killTagged(runTag + "=" + st.tag)
+}
+
+// beforeReap stops the group one last time and marks the child reapable, atomically with respect to
+// KillGroup.
+func beforeReap(cmd *exec.Cmd) *runState {
+	st := stateOf(cmd)
+	if st == nil {
+		return nil
+	}
+	st.mu.Lock()
+	if !st.reaping && cmd.Process != nil {
 		killProcessGroup(cmd)
 	}
-	if tag := tagOf(cmd); tag != "" {
-		killTagged(runTag + "=" + tag)
+	st.reaping = true
+	st.mu.Unlock()
+	return st
+}
+
+func afterReap(cmd *exec.Cmd, st *runState) {
+	if st != nil && st.tag != "" {
+		killTagged(runTag + "=" + st.tag)
 	}
+	runs.Delete(cmd)
 }
 
 // Finish ends a command started with Start: it stops everything the run started, waits for the
-// child and sweeps once more for a descendant started meanwhile.
+// child and sweeps once more for a tagged descendant started meanwhile.
 func Finish(cmd *exec.Cmd) error {
-	KillGroup(cmd)
+	st := beforeReap(cmd)
 	err := cmd.Wait()
-	KillGroup(cmd)
-	runTags.Delete(cmd)
+	afterReap(cmd, st)
 	return err
 }
 
-// Run runs the command and then stops anything it left behind.
+// Run runs the command and then stops anything it left behind, in its process group or tagged.
+// It waits for the child to exit without reaping it (waitExited), stops the group while the
+// exited child still holds the group id, and only then reaps it.
 func Run(cmd *exec.Cmd) error {
 	if err := Start(cmd); err != nil {
-		runTags.Delete(cmd)
+		runs.Delete(cmd)
 		return err
 	}
+	if waitExited(cmd.Process.Pid) != nil {
+		// No way to wait without reaping on this platform: the group cannot be signalled safely
+		// after Wait, so only the tag sweep runs.
+		st := stateOf(cmd)
+		if st != nil {
+			st.mu.Lock()
+			st.reaping = true
+			st.mu.Unlock()
+		}
+		err := cmd.Wait()
+		afterReap(cmd, st)
+		return err
+	}
+	st := beforeReap(cmd)
 	err := cmd.Wait()
-	KillGroup(cmd)
-	runTags.Delete(cmd)
+	afterReap(cmd, st)
 	return err
 }

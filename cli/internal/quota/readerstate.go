@@ -25,11 +25,9 @@ import (
 // This is a Go interface, not another command, consent file or publication feed.
 type ReaderAccess struct{ Grants map[string]ReaderGrant }
 type ReaderGrant struct {
-	Admission      *consent.CaptureStamp
-	CaptureAllowed func(*consent.CaptureStamp) bool
-	Generation     string
-	// Regenerate, when set, returns the generation ID again after a read (ZCode sign-in route).
-	Regenerate         func() string
+	Admission          *consent.CaptureStamp
+	CaptureAllowed     func(*consent.CaptureStamp) bool
+	Generation         string
 	SavedLogin         bool
 	TokenRefresh       bool   // D232: the opt-in Gemini token-refresh scope is also allowed
 	TokenGeneration    string // S2: keys refreshed in-memory tokens to the full consent fence

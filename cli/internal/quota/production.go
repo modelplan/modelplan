@@ -249,14 +249,7 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 	p.ReaderAccess.Grants["zai"] = ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
 		Keychain: keychain.Consent == "allowed", KeychainConsent: keychain.Consent,
 		Generation: prefix + loginStamp,
-		// A read that resolved a Keychain-bound store settles the generation it publishes under.
-		Regenerate: func() string {
-			if stamp := zcodeLoginStamp(cache, dir); stamp != "" {
-				return readerGenerationID(prefix + stamp)
-			}
-			return ""
-		},
-		Publish: func(write func() error) error { return consent.Publish(fence, write) },
+		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
 		StillValid: func() bool {
 			current, effective := consent.Current()
 			if effective != consent.Automatic || nativeOff() || current.Fence() != fence || !current.AllowsScope(scope, effective) || !ZCodeLoginPresent(home) {
@@ -268,8 +261,16 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 			return seal == loginSeal || seal == "transient"
 		},
 		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: dir, Keychain: keychain,
-			Remember: func(login zcodeLogin) {
-				zcodeRememberSeal(cache, dir, login.sel, login.format, login.store, login.material)
+			// The read reports the account it opened. Its result is filed under that account's
+			// generation, and only when that is the account this grant was built for (or, for a
+			// Keychain-bound store the projection could not open, exactly the sealed values it saw).
+			Resolved: func(login zcodeLogin) (string, bool) {
+				stamp, seal := zcodeRememberSeal(cache, dir, login.sel, login.format, login.store, login.material)
+				if stamp == "" {
+					return "", false
+				}
+				same := stamp == loginStamp || (loginStamp == zcodeUnresolved+loginSeal && seal == loginSeal)
+				return readerGenerationID(prefix + stamp), same
 			}}}
 }
 
@@ -384,7 +385,7 @@ func productionReaderContext(ctx context.Context, p Paths, provider string) cont
 	case "antigravity":
 		return WithAntigravityAccess(ctx, AntigravityAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
 	case "zai":
-		ctx = WithZaiConfigAccess(ctx, ZaiConfigAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, Regenerate: g.Regenerate, StillValid: g.StillValid, Publish: g.Publish})
+		ctx = WithZaiConfigAccess(ctx, ZaiConfigAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
 		if g.ConfigSource != nil {
 			ctx = context.WithValue(ctx, zaiConfigSourceKey{}, *g.ConfigSource)
 		}

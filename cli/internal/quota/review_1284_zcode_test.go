@@ -225,3 +225,77 @@ func TestReview1284NoUnkeyedGeneration(t *testing.T) {
 		t.Fatalf("keyed generations %q %q", a, b)
 	}
 }
+
+// review1284SwitchAccount rewrites ZCode's store as a different signed-in account (profile and its
+// own account key), the way a sign-in as someone else leaves it.
+func review1284SwitchAccount(t *testing.T, dir, id string) {
+	t.Helper()
+	profile, _ := json.Marshal(map[string]any{"user_id": id})
+	store := map[string]any{
+		"oauth:zai:user_info": zcodeTestEncrypt(t, string(profile), zcodeTestSecret),
+		"account-provider:coding-plan:account:zai-individual-coding-plan:account:" + id + ":api-key": zcodeTestEncrypt(t, "key-of-"+id, zcodeTestSecret),
+	}
+	b, _ := json.Marshal(store)
+	if err := os.WriteFile(filepath.Join(dir, "credentials.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// macrev2-1284-5: the user switches from A to B after the read's final admission check. A's
+// result is filed under A's generation, so B's projection shows no A reading.
+func TestReview1284SwitchAfterFinalCheckFilesUnderReadAccount(t *testing.T) {
+	isolateHome(t)
+	t.Setenv("Z_AI_API_KEY", "")
+	home, _ := os.UserHomeDir()
+	dir := writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
+	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
+	grantZCodeKeychain(t, "allow")
+	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	cache := t.TempDir()
+	switched := false
+	zaiConfigAfterAdmission = func() {
+		if !switched {
+			switched = true
+			review1284SwitchAccount(t, dir, "account-b")
+		}
+	}
+	t.Cleanup(func() { zaiConfigAfterAdmission = nil })
+	if err := ExecuteScopeRefresh(context.Background(), ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()), consent.ScopeZaiAccountUsageSavedLogin, now); err != nil {
+		t.Fatal(err)
+	}
+	if !switched || z.calls.Load() != 1 {
+		t.Fatalf("the read did not run through the seam (switched=%t calls=%d)", switched, z.calls.Load())
+	}
+	if review1284Shown(t, cache, now.Add(time.Minute)) {
+		t.Fatal("account B's projection shows account A's reading")
+	}
+	assertNoZCodeSecret(t, cache)
+}
+
+// A read that opens another account than the grant was built for publishes nothing.
+func TestReview1284ReadOfAnotherAccountIsRejected(t *testing.T) {
+	isolateHome(t)
+	t.Setenv("Z_AI_API_KEY", "")
+	home, _ := os.UserHomeDir()
+	dir := writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
+	grantZCodeKeychain(t, "allow")
+	cache := t.TempDir()
+	g, ok := ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()).ReaderAccessGrant("zai")
+	if !ok || g.ConfigSource == nil || g.ConfigSource.Resolved == nil {
+		t.Fatal("no sign-in route")
+	}
+	review1284SwitchAccount(t, dir, "account-b")
+	keychain := &ZCodeKeychain{Consent: "allowed"}
+	login, code := readZCodeLogin(context.Background(), dir, keychain, time.Now())
+	if code != "" {
+		t.Fatalf("read: %s", code)
+	}
+	if gen, same := g.ConfigSource.Resolved(login); same || gen == "" {
+		t.Fatalf("a read of account B was accepted for a grant built for A (gen %q)", gen)
+	}
+	writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
+	login, _ = readZCodeLogin(context.Background(), dir, keychain, time.Now())
+	if _, same := g.ConfigSource.Resolved(login); !same {
+		t.Fatal("a read of the admitted account was rejected")
+	}
+}

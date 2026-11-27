@@ -3,7 +3,10 @@
 
 package toolcli
 
-import "os/exec"
+import (
+	"errors"
+	"os/exec"
+)
 
 func ownProcessGroup(*exec.Cmd) {}
 
@@ -14,3 +17,5 @@ func killProcessGroup(cmd *exec.Cmd) {
 		_ = cmd.Process.Kill()
 	}
 }
+
+func waitExited(int) error { return errors.New("wait without reaping unsupported") }

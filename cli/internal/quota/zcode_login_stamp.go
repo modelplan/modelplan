@@ -300,9 +300,10 @@ func zcodeSaveLastStamp(cache, stamp string) {
 
 // zcodeRememberSeal records, after a read opened the store, which account its sealed values name.
 // The projection then resolves the same sealed values to the same stamp without opening anything.
-func zcodeRememberSeal(cache, dir string, sel zcodeSelected, format string, store map[string]any, material string) {
+// It returns the keyed stamp and seal of what the read opened ("" without the installation key).
+func zcodeRememberSeal(cache, dir string, sel zcodeSelected, format string, store map[string]any, material string) (string, string) {
 	if cache == "" {
-		return
+		return "", ""
 	}
 	in := zcodeStampInput{sel: sel, format: format}
 	in.sealed[0], _ = store["oauth:"+sel.family+":user_info"].(string)
@@ -310,7 +311,7 @@ func zcodeRememberSeal(cache, dir string, sel zcodeSelected, format string, stor
 	seal := zcodeKeyed(cache, "zcode-login-seal", in.sealKey())
 	stamp := zcodeKeyed(cache, "zcode-login-stamp", material)
 	if seal == "" || stamp == "" {
-		return
+		return "", ""
 	}
 	zcodeStampFileMu.Lock()
 	f := loadZCodeStampFile(cache)
@@ -328,4 +329,5 @@ func zcodeRememberSeal(cache, dir string, sel zcodeSelected, format string, stor
 	saveZCodeStampFile(cache, f)
 	zcodeStampFileMu.Unlock()
 	zcodeStampMemo.Delete(cache + "\x00" + dir)
+	return stamp, seal
 }
