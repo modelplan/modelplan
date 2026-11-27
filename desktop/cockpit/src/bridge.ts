@@ -33,7 +33,11 @@ export type HostMessage = Header & (
   /** Plugin columns: a reading the host sampled for a running plugin. */
   {readonly type:'pluginData'; readonly id:string; readonly data:unknown} |
   /** Plugin columns: open this plugin's big screen (a native action such as the widget card's "Cockpit screen ›"). */
-  {readonly type:'pluginScreen'; readonly id:string});
+  {readonly type:'pluginScreen'; readonly id:string} |
+  /** D466 (#1289): the app's shared news clock, `newsUntil` per announcement (null = no longer news). */
+  {readonly type:'news'; readonly items:readonly NewsItem[]});
+/** D466: one announcement's news clock as the host keeps it (`DockNewsClock`, key eventID#status). */
+export interface NewsItem {readonly id:string;readonly status:'announced'|'confirmed';readonly untilUnixMs:string|null}
 export interface CockpitView {
   /** G3-56: caution identities the host remembered as acknowledged; sent before `configure`. */
   restoreAcked?(ids:string[]):void;
@@ -60,6 +64,8 @@ export interface CockpitView {
   /** Host plugin state; false when it does not fit this page's registry rules. */
   plugins?(state:PluginState):boolean;
   pluginData?(id:string,data:unknown):boolean;
+  /** D466: the host's shared news clock answers. */
+  news?(items:readonly {readonly id:string;readonly status:'announced'|'confirmed';readonly until:number|null}[]):void;
   /** Opens an enabled plugin's big screen (CKP-PLG-53); false when it is not enabled or the page cannot show it. */
   openPluginScreen?(id:string):boolean;
   dispose():void;
@@ -122,6 +128,7 @@ function message(raw:string,quarantined?:(data:unknown)=>boolean,refused?:(data:
     case 'plugins': if(!keys(['plugins'])||!parsePluginState(m.plugins)) return no('plugins.fields'); break;
     case 'pluginData': if(!keys(['id','data'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return no('pluginData.fields'); break;
     case 'pluginScreen': if(!keys(['id'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return no('pluginScreen.fields'); break;
+    case 'news': if(!keys(['items'])||!Array.isArray(m.items)||m.items.length>64||!m.items.every(x=>exact(x,['id','status','untilUnixMs'])&&identity(x.id)&&(x.status==='announced'||x.status==='confirmed')&&(x.untilUnixMs===null||timestamp(x.untilUnixMs)))) return no('news.fields'); break;
     default:return no('msg.type');
   }
   return m as unknown as HostMessage;
@@ -287,6 +294,10 @@ export class CockpitBridge {
         // Only for a host that negotiated plugins; presentation only, so a screen the page cannot open is refused, never an unload.
         if(!this.pluginsNegotiated||!this.view.openPluginScreen?.(m.id))return this.no('pluginScreen.refused');
         this.sequence=BigInt(m.sequence);return true;
+      case 'news':
+        // D466: a host that sends the shared news clock also takes the page's first looks (newsLook).
+        this.newsNegotiated=true;this.view.news?.(m.items.map(x=>({id:x.id,status:x.status,until:x.untilUnixMs===null?null:Number(x.untilUnixMs)})));
+        this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       default:return this.no('recv.type');
     }
   }
@@ -344,6 +355,13 @@ export class CockpitBridge {
     }
     if(action==='openHistory'?(!tool||!this.historyTools.has(tool)):tool!==undefined) return false;
     this.emit('action',this.requestId(),{action,...(tool?{tool}:{})});return true;
+  }
+  private newsNegotiated=false;
+  /** D466: announcements first looked at in the cockpit (open with them drawn); the host records them in its shared news
+   *  clock (`recordNewsLook`). Posted only to a host that sent a `news` message. */
+  newsLook(events:readonly {readonly id:string;readonly status:'announced'|'confirmed'}[]):boolean {
+    if(!this.newsNegotiated||!this.isVisible()||!this.context||events.length===0||events.length>64||!events.every(e=>identity(e.id)&&(e.status==='announced'||e.status==='confirmed')))return false;
+    this.emit('action',this.requestId(),{action:'newsLook',events:events.map(e=>({id:e.id,status:e.status}))});return true;
   }
   private pluginsNegotiated=false;
   /** Plugin columns: a plugin edit made on the page (right-click Remove or the + menu). Posted only to a host that sent its plugin state. */

@@ -64,3 +64,14 @@ test('the alert list reads the page clock: a confirmed banked reset leaves the l
  assert.equal(blue(T0+2*H+30*MIN).length,0);
  newsClock.reset();
 });
+test('a host with the shared clock (#1289) decides: its newsUntil wins, and first looks are reported to it',()=>{
+ const c=createNewsClock(),looks=[];c.onLook(e=>looks.push(...e));
+ c.observe([confirmed],T0+MIN,true);
+ assert.deepEqual(looks,[{id:'codex-credit',status:'confirmed'}]);
+ c.observe([confirmed],T0+2*MIN,true);assert.equal(looks.length,1,'a look is reported once');
+ c.host([{id:'codex-credit',status:'confirmed',until:T0+10*MIN}]);// the widget was looked at earlier
+ assert.equal(c.isNews(confirmed,T0+9*MIN),true);assert.equal(c.isNews(confirmed,T0+10*MIN),false);
+ assert.equal(c.nextChange([confirmed],T0+5*MIN),T0+10*MIN);
+ c.host([{id:'codex-credit',status:'confirmed',until:null}]);assert.equal(c.isNews(confirmed,T0+5*MIN),false);
+ assert.equal(c.isNews(announced,T0+5*MIN),true,'an event the host did not answer keeps the page rule');
+});

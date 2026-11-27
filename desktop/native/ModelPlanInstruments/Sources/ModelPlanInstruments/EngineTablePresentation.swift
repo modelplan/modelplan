@@ -126,13 +126,11 @@ public struct EngineTablePresentation: Equatable, Sendable {
                         specialBrief = "−" + shortAge
                     }
                 }
-                if valid, let event = value.publicReset {
+                // D466: a confirmed reset is never shown in a cell (a banked reset is not a window reset; a limit reset shows
+                // as the reading itself), so only an announcement takes the note here.
+                if valid, case .announced(let at)? = value.publicReset {
                     noteTone = .publicReset
-                    switch event {
-                    case .confirmedAwaitingReading:
-                        note = chinese ? "已重置 · 等读数" : "Reset · awaiting reading"
-                        specialBrief = chinese ? "已重置" : "Reset"
-                    case .announced(let at):
+                    do {
                         if let at {
                             let t = format.future(at, now: now, compact: true)
                             let relative = abs(at.timeIntervalSince(now)) < 30 ? (chinese ? "现在" : "now")
@@ -160,15 +158,13 @@ public struct EngineTablePresentation: Equatable, Sendable {
                         + " · " + format.reset(valid ? cell.resetsAt : nil, now: now)
                 }
                 var facts = row == 2 ? column.quotas.other.map(quotaFact) : [quotaFact(value)]
-                if value.publicReset != nil || value.runsOutAt != nil { facts[0] += " · " + note }
+                if noteTone == .publicReset || value.runsOutAt != nil { facts[0] += " · " + note }
                 if row == 2, valid {
                     for index in column.quotas.other.indices.dropFirst() {
                         let extra = column.quotas.other[index]
-                        if let reset = extra.publicReset {
+                        if case .announced(let date)? = extra.publicReset {
                             let detail: String
-                            switch reset {
-                            case .confirmedAwaitingReading: detail = chinese ? "已重置 · 等读数" : "Reset · awaiting reading"
-                            case .announced(let date):
+                            do {
                                 if let date {
                                     let time = format.future(date, now: now, compact: true)
                                     let relative = abs(date.timeIntervalSince(now)) < 30 ? (chinese ? "现在" : "now")
@@ -189,7 +185,7 @@ public struct EngineTablePresentation: Equatable, Sendable {
                 return EngineQuotaDisplay(amount: amount, suffix: remaining == nil ? "" : "%", accessibilityLabel: label, notes: [full, brief, small],
                                           level: valid ? value.level : .unknown, litSegments: valid ? value.litSegments : nil,
                                           timeDots: valid ? value.timeDots : nil, noteTone: noteTone,
-                                          help: help.explanation(valid && value.publicReset != nil ? .publicReset : .quota, context: .init(fact: fact)))
+                                          help: help.explanation(valid && noteTone == .publicReset ? .publicReset : .quota, context: .init(fact: fact)))
             }
             let attributed = valid && column.todayAttribution == .verifiedSubscription
             let tokens = attributed ? column.todayTokens.map(compactTokens) : nil

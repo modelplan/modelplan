@@ -9,9 +9,14 @@
 // deadline so the host's existing tick redraws the page then.
 //
 // Every cockpit surface reads this one clock (the key dot, the reserve "+1", the alert list, the calendar's news line);
-// none reads `expiresAt` for visibility any more. The engine has no seen-state on the wire yet, so the clock lives in the
-// page's memory. The native app keeps its own (DockAttention `confirmedDotUntil`); until the engine or the host carries a
-// shared one (`newsUntil` per event), a reopened page starts a fresh look and the 24 h cap still bounds it.
+// none reads `expiresAt` for visibility any more.
+//
+// Shared with the native app (#1289): the app owns the persisted clock (`DockNewsClock`, news-clock.json, per
+// eventID#status). A host that has it sends a `news` message with `newsUntil` per announcement
+// (`EngineDockContentProvider.isNews`); its answer then decides for those events, and the page reports each first look
+// back (`newsLook` action → `recordNewsLook`), so a look in the cockpit also retires the widget dot. Without such a host
+// (an older app, tests) the page keeps the same rule in its own memory: a reopened page then starts a fresh look, and the
+// 24 h cap still bounds it.
 import type {WireResetEvent} from '../generated/wire.js';
 
 export const NEWS_LOOK_MS=30*60_000;
@@ -44,26 +49,31 @@ export interface NewsClock {
  isNews(e:NewsEvent,now:number):boolean;
  /** The next moment one of `events` stops being news (for the host's deadline), or null. */
  nextChange(events:readonly NewsEvent[],now:number):number|null;
+ /** D466 shared clock: the host's answer per event and status (`until` null = not news). Replaces earlier answers. */
+ host(items:readonly {readonly id:string;readonly status:NewsEvent['status'];readonly until:number|null}[]):void;
+ /** Called with the events first looked at in this page (the host records them in the shared clock). */
+ onLook(report:((events:{id:string;status:NewsEvent['status']}[])=>void)|null):void;
  /** Forget everything (a cleared view or a new store). */
  reset():void;
 }
 
 export function createNewsClock():NewsClock {
- const entries=new Map<string,Entry>();let shown=false;
+ const entries=new Map<string,Entry>(),answers=new Map<string,number|null>();let shown=false,reporter:((events:{id:string;status:NewsEvent['status']}[])=>void)|null=null;
+ const hostUntil=(e:NewsEvent):number|null|undefined=>answers.has(newsKey(e))?answers.get(newsKey(e)):undefined;
  const capped=(e:NewsEvent,now:number)=>{const start=newsStart(e),cap=newsCap(e);return start!==null&&cap!==null&&now<cap?cap:null;};
  const endOf=(x:Entry,cap:number,now:number,present:boolean)=>Math.min(cap,x.firstLooked===null?Infinity:x.firstLooked+NEWS_LOOK_MS,present?now+Math.max(0,NEWS_PRESENT_MS-x.present):Infinity);
  const clock:NewsClock={
   observe(events,now,present,looked=present){
    if(!Number.isFinite(now)||now<=0)return;
    shown=present;
-   const live=new Set<string>();
+   const live=new Set<string>(),looks:{id:string;status:NewsEvent['status']}[]=[];
    for(const e of events){
     const cap=capped(e,now),key=newsKey(e);if(cap===null)continue;live.add(key);
     let x=entries.get(key);
     // The clock starts when the item is first drawn while the user is present; until then only the 24 h cap applies.
     if(!x){if(!present)continue;x={firstLooked:null,present:0,last:null,end:cap};entries.set(key,x);}
     if(present){
-     if(looked&&x.firstLooked===null)x.firstLooked=now;// the cockpit open with the item drawn is a look
+     if(looked&&x.firstLooked===null){x.firstLooked=now;looks.push({id:e.id,status:e.status});}// the cockpit open with the item drawn is a look
      if(x.last!==null&&now>x.last)x.present+=Math.min(now-x.last,NEWS_STEP_MAX_MS);
      x.last=now;
     }else x.last=null;
@@ -72,6 +82,7 @@ export function createNewsClock():NewsClock {
    // Bounded memory: drop entries whose cap has passed; keep the rest even when an event is briefly missing from a reply.
    for(const [key,x] of entries)if(!live.has(key)&&x.end<=now)entries.delete(key);
    while(entries.size>MAX_ENTRIES){const first=entries.keys().next().value;if(first===undefined)break;entries.delete(first);}
+   if(looks.length&&reporter){try{reporter(looks);}catch{/* reporting never breaks a render */}}
   },
   present(value,now){
    for(const x of entries.values()){
@@ -82,6 +93,7 @@ export function createNewsClock():NewsClock {
   },
   isNews(e,now){
    const cap=capped(e,now);if(cap===null)return false;
+   const until=hostUntil(e);if(until!==undefined)return until!==null&&now<until;
    const x=entries.get(newsKey(e));if(!x)return true;
    if(x.firstLooked!==null&&now>=x.firstLooked+NEWS_LOOK_MS)return false;
    const running=shown&&x.last!==null&&now>x.last?Math.min(now-x.last,NEWS_STEP_MAX_MS):0;
@@ -91,12 +103,14 @@ export function createNewsClock():NewsClock {
    let next=Infinity;
    for(const e of events){
     if(!clock.isNews(e,now))continue;
-    const cap=capped(e,now)!,x=entries.get(newsKey(e));
-    next=Math.min(next,x?endOf(x,cap,now,shown):cap);
+    const cap=capped(e,now)!,x=entries.get(newsKey(e)),until=hostUntil(e);
+    next=Math.min(next,until!==undefined?until??cap:x?endOf(x,cap,now,shown):cap);
    }
    return Number.isFinite(next)&&next>now?next:null;
   },
-  reset(){entries.clear();},
+  host(items){answers.clear();for(const x of items.slice(0,MAX_ENTRIES))answers.set(newsKey({id:x.id,status:x.status,publishedAt:'',expiresAt:''}),x.until);},
+  onLook(report){reporter=report;},
+  reset(){entries.clear();answers.clear();},
  };
  return clock;
 }
