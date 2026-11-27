@@ -186,6 +186,8 @@ public enum CockpitReceipt: Equatable {
   case ready, rendered, cleared
   case nextDeadline(UInt64?)
   case deadlinePending(UUID)
+  /// D466: a deadline the page sent on its own (a news look from the user's input, outside any host message).
+  case unsolicitedDeadline(UInt64?)
   case action(CockpitIntent)
 }
 public struct CockpitMessageSource {
@@ -722,6 +724,14 @@ public final class CockpitBridgeState {
       if deadlineReportRequest == id {
         deadlineReportRequest = nil; pageSequence = sequence
         return .nextDeadline(deadline)
+      }
+      // D466: a host that sends `news` also takes the page's unsolicited deadline: the page recorded a news look from the
+      // user's own input (paging, the alert list, a strip hover) and its next deadline moved. It has a fresh request id
+      // (no pending reply of ours) and must not collide with a display receipt or an early deadline in flight.
+      if newsSent, pending[id] == nil, id != latestDisplayRequest, appearanceAwaitingAck != id,
+         earlyDeadline == nil, bufferedDeadline == nil {
+        pageSequence = sequence
+        return .unsolicitedDeadline(deadline)
       }
       let isCurrentDisplayReceipt = id == latestDisplayRequest && pending[id]?.kind == "rendered" && pending[id]?.sequence == deadlineBasisSequence
       guard earlyDeadline == nil, (isCurrentDisplayReceipt || appearanceAwaitingAck == id),

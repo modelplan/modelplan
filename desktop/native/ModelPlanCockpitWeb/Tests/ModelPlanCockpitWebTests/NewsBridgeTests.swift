@@ -58,4 +58,35 @@ extension BridgeTests {
     let sixtyFive = (0..<65).map { ["id": "e\($0)", "status": "announced"] }
     XCTAssertThrowsError(try state.accept(reply(load, "action", 4, extra: ["action": "newsLook", "events": sixtyFive]), source: source))
   }
+
+  /// D466 (#1290): the page sends `nextDeadline` with a fresh request id when the user's own input records a news look.
+  /// A host that sent `news` takes it (and moves its timing); any other host still refuses an uncorrelated report.
+  func testUnsolicitedDeadlineFromANewsLookIsAccepted() throws {
+    let state = CockpitBridgeState(context: try context())
+    let load = try ready(state)
+    _ = try state.setVisibility(.init(visible: true, occluded: false, key: true))
+    func fresh(_ sequence: Int, _ deadline: Any) throws -> String {
+      try reply(load, "nextDeadline", sequence, extra: ["requestId": UUID().uuidString, "deadlineUnixMs": deadline])
+    }
+    XCTAssertThrowsError(try state.accept(fresh(2, "5000"), source: source), "an older host never sees an unsolicited report")
+    _ = try state.news([])
+    XCTAssertEqual(try state.accept(fresh(3, "5000"), source: source), .unsolicitedDeadline(5000))
+    XCTAssertEqual(try state.accept(fresh(4, NSNull()), source: source), .unsolicitedDeadline(nil), "null: nothing pending")
+    XCTAssertThrowsError(try state.accept(fresh(4, "6000"), source: source), "a replayed sequence is refused")
+    XCTAssertThrowsError(try state.accept(fresh(5, "-1"), source: source), "a malformed deadline is refused")
+    XCTAssertThrowsError(try state.accept(fresh(5, "99999999999999999999"), source: source))
+    _ = try state.setVisibility(.init(visible: true, occluded: true, key: false))
+    XCTAssertThrowsError(try state.accept(fresh(5, "7000"), source: source), "a hidden page reports nothing")
+  }
+
+  /// A display receipt's own deadline still goes through the receipt path, not the unsolicited one.
+  func testDisplayReceiptDeadlineIsNotTakenAsUnsolicited() throws {
+    let state = CockpitBridgeState(context: try context())
+    _ = try ready(state)
+    _ = try state.setVisibility(.init(visible: true, occluded: false, key: false))
+    _ = try state.news([])
+    let display = try state.display(fixture(), ticket: XCTUnwrap(state.queryTicket))
+    let early = try reply(display, "nextDeadline", 3, extra: ["deadlineUnixMs": "600"])
+    guard case .deadlinePending = try state.accept(early, source: source) else { return XCTFail("expected the early-report path") }
+  }
 }

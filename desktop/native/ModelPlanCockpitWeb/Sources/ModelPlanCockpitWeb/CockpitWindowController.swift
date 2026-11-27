@@ -1333,6 +1333,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         onRenderVerified?()
       case .deadlinePending(let id):
         if receiptWatchdog.currentID != id { receiptWatchdog.wait(for: id) }
+      case .unsolicitedDeadline(let value):
+        // D466: re-arm the refresh timing from it and re-answer the page's news (a look changes the clock's answers).
+        // A display receipt wait in progress is left alone.
+        freshnessDriver.accept(deadline: value)
+        publishNews(force: true)
       case .nextDeadline(let value):
         if !bridge.hasPendingDisplay { setReadingDelayed(false, cause: "deadline") }
         receiptWatchdog.cancel(); freshnessDriver.accept(deadline: value)
