@@ -160,7 +160,9 @@ public struct CockpitNewsItem: Equatable, Sendable {
 }
 public struct CockpitNewsLookEvent: Equatable, Sendable {
   public let id: String, status: CockpitNewsItem.Status
-  public init(id: String, status: CockpitNewsItem.Status) { self.id = id; self.status = status }
+  /// A look the page made before the host negotiated news and replays now: when it was made. nil = just now.
+  public let at: Date?
+  public init(id: String, status: CockpitNewsItem.Status, at: Date? = nil) { self.id = id; self.status = status; self.at = at }
 }
 /// A typed public page, never a URL from the page: native builds the address from these fields.
 public struct CockpitWebsiteLink: Equatable, Sendable {
@@ -384,6 +386,9 @@ public final class CockpitBridgeState {
   public private(set) var pluginsSent = false
   /// D466: true once the host sent a `news` message; the page then posts `newsLook` actions.
   public private(set) var newsSent = false
+  /// The clock a replayed look's `atUnixMs` is checked against (a test seam).
+  var newsNow: () -> Date = { Date() }
+  static let newsLookSkew: TimeInterval = 60, newsLookMaxAge: TimeInterval = 24 * 3600
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
   private var retiredSessions = Set<UUID>(), retiredEpochs = Set<String>(),
@@ -792,9 +797,22 @@ public final class CockpitBridgeState {
         guard let raw = m["events"] as? [[String: Any]], (1...64).contains(raw.count) else { throw CockpitBridgeError.invalidMessage }
         var events = [CockpitNewsLookEvent]()
         for entry in raw {
-          guard Set(entry.keys) == ["id", "status"], let id = entry["id"] as? String, Self.isPublicModelID(id),
+          let keys = Set(entry.keys)
+          guard keys == ["id", "status"] || keys == ["id", "status", "atUnixMs"], let id = entry["id"] as? String, Self.isPublicModelID(id),
             let status = (entry["status"] as? String).flatMap(CockpitNewsItem.Status.init(rawValue:)) else { throw CockpitBridgeError.invalidMessage }
-          events.append(CockpitNewsLookEvent(id: id, status: status))
+          var at: Date?
+          if keys.contains("atUnixMs") {
+            // A look replayed from before negotiation: a decimal string of milliseconds, not in the future beyond a small
+            // skew and not older than 24 h.
+            guard let text = entry["atUnixMs"] as? String, !text.isEmpty, text.utf8.count <= 16,
+              text.utf8.allSatisfy({ (48...57).contains($0) }), text == "0" || text.first != "0",
+              let ms = UInt64(text) else { throw CockpitBridgeError.invalidMessage }
+            let date = Date(timeIntervalSince1970: Double(ms) / 1000), now = newsNow()
+            guard date.timeIntervalSince(now) <= Self.newsLookSkew, now.timeIntervalSince(date) <= Self.newsLookMaxAge
+            else { throw CockpitBridgeError.invalidMessage }
+            at = min(date, now)
+          }
+          events.append(CockpitNewsLookEvent(id: id, status: status, at: at))
         }
         intent = .newsLook(events)
       case "pluginClose":

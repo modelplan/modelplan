@@ -275,6 +275,11 @@ final class D466CalendarWidgetTests: XCTestCase {
         coordinator.onNewsLook?([CockpitNewsLookEvent(id: "banked-1", status: .confirmed)])
         XCTAssertTrue(provider.newsClock.clock.hasBeenLooked(key), "the page's first look lands in the shared clock")
         XCTAssertEqual(coordinator.newsItems.first?.until, now.addingTimeInterval(30 * 60), "and the answer changes")
+        // A look replayed from before negotiation keeps its original time.
+        let other = DockNewsClock.key(eventID: "limit-2", status: "announced")
+        provider.newsClock.tick(shown: [other], present: true, at: now)
+        coordinator.onNewsLook?([CockpitNewsLookEvent(id: "limit-2", status: .announced, at: now.addingTimeInterval(-3600))])
+        XCTAssertEqual(provider.newsClock.clock.entries[other]?.firstLooked, now.addingTimeInterval(-3600))
         // A refresh of the content (the clock ticking) re-answers the page.
         provider.onNewsTick?()
         withExtendedLifetime(bridge) {}

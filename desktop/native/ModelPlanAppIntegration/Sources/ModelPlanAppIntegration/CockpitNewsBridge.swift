@@ -37,7 +37,7 @@ import ModelPlanCockpitWeb
     }
     private func record(_ looks: [CockpitNewsLookEvent]) {
         let at = now()
-        for look in looks { provider.recordNewsLook(eventID: look.id, status: look.status.rawValue, at: at) }
+        for look in looks { provider.recordNewsLook(eventID: look.id, status: look.status.rawValue, at: look.at ?? at) }
         refresh()
     }
 }

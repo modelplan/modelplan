@@ -89,4 +89,33 @@ extension BridgeTests {
     let early = try reply(display, "nextDeadline", 3, extra: ["deadlineUnixMs": "600"])
     guard case .deadlinePending = try state.accept(early, source: source) else { return XCTFail("expected the early-report path") }
   }
+
+  /// #1290: a look made before negotiation is replayed with its original time, `atUnixMs`.
+  func testReplayedLookCarriesItsOriginalTime() throws {
+    let state = CockpitBridgeState(context: try context())
+    let load = try ready(state)
+    _ = try state.setVisibility(.init(visible: true, occluded: false, key: true))
+    _ = try state.news([])
+    let now = Date(timeIntervalSince1970: 1_795_000_000)
+    state.newsNow = { now }
+    func look(_ at: Any?, _ sequence: Int) throws -> String {
+      var event: [String: Any] = ["id": "banked-1", "status": "confirmed"]
+      if let at { event["atUnixMs"] = at }
+      return try reply(load, "action", sequence, extra: ["action": "newsLook", "events": [event]])
+    }
+    let earlier = now.addingTimeInterval(-3600)
+    XCTAssertEqual(try state.accept(look("1794996400000", 2), source: source),
+                   .action(.newsLook([CockpitNewsLookEvent(id: "banked-1", status: .confirmed, at: earlier)])))
+    XCTAssertEqual(try state.accept(look(nil, 3), source: source),
+                   .action(.newsLook([CockpitNewsLookEvent(id: "banked-1", status: .confirmed)])), "the plain form still works")
+    // A small future skew is clamped to now; beyond it, older than 24 h, or not a decimal string: refused.
+    XCTAssertEqual(try state.accept(look("1795000030000", 4), source: source),
+                   .action(.newsLook([CockpitNewsLookEvent(id: "banked-1", status: .confirmed, at: now)])))
+    for bad: Any in ["1795000061000", "1794913599000", 1794996400000, "1794996400.5", "-5", "", "0123", "x"] {
+      XCTAssertThrowsError(try state.accept(look(bad, 5), source: source), "\(bad)")
+    }
+    XCTAssertEqual(try state.accept(look("1794913601000", 5), source: source),
+                   .action(.newsLook([CockpitNewsLookEvent(id: "banked-1", status: .confirmed, at: now.addingTimeInterval(-86399))])),
+                   "just inside 24 h")
+  }
 }
