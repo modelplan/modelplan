@@ -34,7 +34,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  // parked = out (the flame fades away after the burn and stays out; thrust.ts), replacing D459's short flame.
  // The host owns every timing (the page runs no timers); under Reduce Motion it never ignites.
  let ignited=false;
- function syncThrust(){root.dataset.thrust=thrustState(ignited,nativeShell?.attached??true);}
+ // data-fade marks an `out` that follows full thrust (the page was showing the burn): only that one fades; a page that opens detached is out at once.
+function syncThrust(){const prev=root.dataset.thrust,next=thrustState(ignited,nativeShell?.attached??true);root.dataset.fade=String(next==='out'&&(prev==='full'||root.dataset.fade==='true'));root.dataset.thrust=next;}
  syncThrust();
  // CKP-SHELL-50 / MENU-52: the range is the app's. A key or T asks for it and mirrors it at once, as a scope key does; the
  // host's shell echo is the same value, so nothing repaints twice.

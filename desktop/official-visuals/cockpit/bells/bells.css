@@ -45,8 +45,13 @@
 #cockpit[data-thrust="full"] .ck-base .bz-flame{background-size:300% 100%;background-position:50% 0;background-image:url('./assets/bells/flame-full-strip-2x.png');background-image:image-set(url('./assets/bells/flame-full-strip-1x.png') 1x,url('./assets/bells/flame-full-strip-2x.png') 2x)}
 /* D468: out keeps the full strip's middle frame (no jump from the burn) and fades it; the end state is hidden, no ember. */
 #cockpit[data-thrust="out"] .ck-base .bz-flame{background-size:300% 100%;background-position:50% 0;background-image:url('./assets/bells/flame-full-strip-2x.png');background-image:image-set(url('./assets/bells/flame-full-strip-1x.png') 1x,url('./assets/bells/flame-full-strip-2x.png') 2x);
-  opacity:0;visibility:hidden;transition:opacity .4s linear,visibility 0s linear .4s}
-html[data-reduce-motion="true"] #cockpit[data-thrust="out"] .ck-base .bz-flame{transition:none}
+  opacity:0;visibility:hidden}
+/* The fade is its own keyframe animation, not a transition: a transition on this element is cancelled by WebKit when the full-thrust
+   animation (which owns opacity) is removed, so the flame would cut to 0. No fill: when it ends the rule above (hidden) applies. */
+@keyframes cockpit-flame-out{from{opacity:1;visibility:visible}to{opacity:0;visibility:visible}}
+@media (prefers-reduced-motion:no-preference){
+html:not([data-reduce-motion="true"]) #cockpit[data-thrust="out"][data-fade="true"] .ck-base .bz-flame{animation:cockpit-flame-out .4s linear}
+}
 /* Flipbook: frames 1-2-3-2 at 9 fps (a ping-pong, so no jump from the last frame to the first), a negative per-bell delay so
    the nozzles never flip together. Only on an active, open page without Reduce Motion (D450); everything else holds the still. */
 @keyframes cockpit-flame-flip{0%{background-position-x:0}25%{background-position-x:50%}50%{background-position-x:100%}75%{background-position-x:50%}}

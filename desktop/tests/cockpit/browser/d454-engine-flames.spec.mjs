@@ -57,7 +57,7 @@ test('D459 docked: ember on every nozzle, the working subscriptions glow in thei
  expect(bells[0].flame.z).toBeGreaterThan(bells[0].glow.z);
 });
 
-const gone=page=>page.evaluate(()=>[...document.querySelectorAll('.ck-base :is(.bz,.bz-empty) .bz-flame')].every(f=>{const s=getComputedStyle(f);return s.visibility==='hidden'&&s.opacity==='0'&&s.animationName==='none'&&f.getAnimations().length===0;}));
+const gone=page=>page.evaluate(()=>[...document.querySelectorAll('.ck-base :is(.bz,.bz-empty) .bz-flame')].every(f=>{const s=getComputedStyle(f);return s.visibility==='hidden'&&s.opacity==='0'&&f.getAnimations().length===0;}));
 
 test('D459 launch, parked, landing: full while the host ignites, out when parked (D468), ember once docked; the glow only docked',async({page})=>{
  const host=await open(page);
@@ -70,6 +70,12 @@ test('D459 launch, parked, landing: full while the host ignites, out when parked
  // The burn ends: parked detached.
  await host.ignite(false);
  expect((await state()).thrust).toBe('out');
+ // D468: the fade is visible on the built page: opacity strictly between 0 and 1, decreasing, while the full-thrust flicker is gone.
+ const fade=await page.evaluate(()=>{const f=[...document.querySelectorAll('.ck-base :is(.bz,.bz-empty) .bz-flame')];
+  const at=t=>f.map(n=>{n.getAnimations().forEach(a=>{a.pause();a.currentTime=t;});return Number(getComputedStyle(n).opacity);});
+  const r={names:f.map(n=>getComputedStyle(n).animationName),a:at(100),b:at(300)};f.forEach(n=>n.getAnimations().forEach(a=>a.finish()));return r;});
+ expect(fade.names.every(n=>n==='cockpit-flame-out')).toBe(true);
+ fade.a.forEach((v,i)=>{expect(v).toBeGreaterThan(0.1);expect(v).toBeLessThan(1);expect(fade.b[i]).toBeGreaterThan(0);expect(fade.b[i]).toBeLessThan(v);});
  // D468: the flame fades (0.4 s) and stays out: hidden, no ember, no glow, nothing animating, however long it stays parked.
  await expect.poll(()=>gone(page),{timeout:5000}).toBe(true);
  await page.waitForTimeout(2000);
@@ -93,11 +99,19 @@ test('D450 the flipbook stops under Reduce Motion and on a hidden cockpit, holdi
  expect(v.nozzles.every(n=>kind(n.flame.image)==='full'&&n.flame.anim==='none')).toBe(true);
 });
 
+test('D468 under Reduce Motion the flame is out at once after the burn: no fade, no animation',async({page})=>{
+ const host=await open(page,{reduceMotion:true});
+ await host.shell({attached:false});await host.ignite(true);await host.ignite(false);
+ expect((await read(page)).thrust).toBe('out');
+ expect((await timing(page)).every(x=>x.names==='none')).toBe(true);
+ expect(await gone(page)).toBe(true);
+});
+
 test('D468 a page opened detached has its flame out: no short flame, no ember, no glow',async({page})=>{
  await open(page,{attached:false});
  const v=await read(page);
  expect(v.thrust).toBe('out');
- expect(v.nozzles.every(n=>!n.glow?.shown)).toBe(true);
+ expect(v.nozzles.every(n=>!n.glow?.shown&&n.flame.anim==='none')).toBe(true);
  expect(await gone(page)).toBe(true);
 });
 
