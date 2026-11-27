@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // D467 (master spec §6.1 tape, C10 help map): the record strip with nothing running reads the header "Nothing running · recent"
-// over the last-seen sessions in ink-3; the Option help map names the lamp. Both languages, both layouts, built page.
+// over the last-seen sessions in ink-3; the Option help map names the lamp. Both languages, the 636x890 layout, built page.
 // Owner decision D277 (2026-11-16): CKP-STRIP-09 / CKP-STRIP-16 / CKP-STRIP-17 on the built page through its normal
 // bridge, with synthetic data only. A strip line reads chip · tool · project · model + effort · elapsed · tokens · right
 // end; the right end is "● 58 t/s" with the cursor while running, "6m ago" when idle. The strip is "now".
@@ -29,8 +29,9 @@ function stripData(){
  return data;
 }
 
-for(const [locale,head,caption] of [['en','Nothing running · recent','Lamp = a session is running'],['zh-CN','现在没有会话在跑 · 最近','灯 = 有会话在跑']])
+for(const [locale,head] of [['en','Nothing running · recent'],['zh-CN','现在没有会话在跑 · 最近']])
 test(`D467 tape: idle header over last-seen sessions in ink-3, running sessions first (${locale})`,async({page})=>{
+ await page.setViewportSize({width:636,height:890});
  const data=stripData();data.details.sessions.forEach(s=>{s.state='idle';});
  const {send,receive}=await open(page,data);
  expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);
