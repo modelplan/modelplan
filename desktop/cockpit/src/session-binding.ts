@@ -5,7 +5,7 @@
 // there is exactly one; with two or more of the same tool it stays unbound, because nothing says which account ran it.
 import {brandColour,resolveColours,NEUTRAL} from './livery.js';
 import type {WireCockpitData} from '../generated/wire.js';
-import {cockpitMembers} from './members.js';
+import {cockpitMembers,unavailableZCodeMember} from './members.js';
 
 type Session=NonNullable<WireCockpitData['details']>['sessions'][number];
 type Member=ReturnType<typeof cockpitMembers>[number];
@@ -26,7 +26,8 @@ export function sessionMember(members:readonly Member[],session:Pick<Session,'so
  if(session.subscriptionRef)return members.find(m=>m.key===session.subscriptionRef)??null;
  const tool=sessionTool(session.source);if(!tool)return null;
  const same=members.filter(m=>m.row.id===tool);
- return same.length===1?same[0]!:null;
+ const only=same.length===1?same[0]!:null;
+ return only&&!unavailableZCodeMember(only.row,only.account)?only:null;
 }
 /** D391 (owner 2026-11-22): a subscription unticked in Settings has no subscription card, so its sessions never add
  * models to any cockpit model view (fader banks, model cards, the All scope) — this replaces the D123/D135 live-use

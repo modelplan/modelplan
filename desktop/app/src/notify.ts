@@ -55,12 +55,12 @@ const heads: Record<Lang, Record<string, string>> = {
   zh: {
     window_exhausted: '额度用完', window_tight: '额度偏紧', reset_passed_switch_back: '已重置，可以换回', better_model_available: '有更合适的模型',
     reset_soon_with_surplus: '重置前用不完', announced_reset_with_surplus: '公告重置前用不完', peak_starts_soon: '高峰时段快到了',
-    offpeak_starts_soon: '低峰时段快到了', cards_expiring: '重置卡快过期', public_reset_announced: '公开重置公告',
+    offpeak_starts_soon: '低峰时段快到了', cards_expiring: '额外重置次数快过期', public_reset_announced: '公开重置公告',
   },
   en: {
     window_exhausted: 'Quota used up', window_tight: 'Quota is tight', reset_passed_switch_back: 'Reset: switch back', better_model_available: 'A better model',
     reset_soon_with_surplus: 'Unused before the reset', announced_reset_with_surplus: 'Unused before an announced reset', peak_starts_soon: 'Peak hours soon',
-    offpeak_starts_soon: 'Off-peak soon', cards_expiring: 'Reset cards expiring', public_reset_announced: 'Public reset announced',
+    offpeak_starts_soon: 'Off-peak soon', cards_expiring: 'Banked resets expiring', public_reset_announced: 'Public reset announced',
   },
 };
 

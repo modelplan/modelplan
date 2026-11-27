@@ -19,7 +19,7 @@ final class V2BridgeContractTests: XCTestCase {
     }
     func testFrozenLoadIncludesInitialClosedShellAndNativeTier() throws {
         let value = try state()
-        let raw = try value.load(.init(theme: .night, locale: .en, profile: .compact, reduceMotion: true, reduceTransparency: true, shutterClosed: true, detached: true), shell: .init(closed: true, attached: false, forcedClosed: true, tier: .compact))
+        let raw = try value.load(.init(theme: .night, locale: .en, profile: .full, reduceMotion: true, reduceTransparency: true, shutterClosed: true, detached: true), shell: .init(closed: true, attached: false, forcedClosed: true, tier: .tall))
         let load = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
         XCTAssertEqual(load["version"] as? Int, 2)
         let appearance = try XCTUnwrap(load["appearance"] as? [String: Any])
@@ -28,7 +28,7 @@ final class V2BridgeContractTests: XCTestCase {
         XCTAssertEqual(Set(shell.keys), ["profile", "attached", "forcedClosed", "tier", "scope", "range", "refreshing"])
         XCTAssertEqual(shell["range"] as? String, "7d", "CKP-SHELL-50: the load carries the app's range (a fresh profile is at 7d)")
         XCTAssertEqual(shell["profile"] as? String, "closed")
-        XCTAssertEqual(shell["tier"] as? String, "compact")
+        XCTAssertEqual(shell["tier"] as? String, "tall", "D444: one layout")
         XCTAssertEqual(shell["forcedClosed"] as? Bool, true)
         XCTAssertEqual(shell["attached"] as? Bool, false)
     }
@@ -120,17 +120,17 @@ final class V2BridgeContractTests: XCTestCase {
         XCTAssertEqual(value.readyCapabilities, Set(capabilities))
         let ticket = value.queryTicket
         let header: Set<String> = ["version","pageId","requestId","sessionId","storeEpoch","generation","viewRevision","sequence","type"]
-        let appearanceRaw = try value.setAppearance(.init(theme: .night, locale: .zhCN, profile: .compact, reduceMotion: true, reduceTransparency: true, showProjectNames: false))
+        let appearanceRaw = try value.setAppearance(.init(theme: .night, locale: .zhCN, profile: .full, reduceMotion: true, reduceTransparency: true, showProjectNames: false))
         let appearance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(appearanceRaw.utf8)) as? [String: Any])
         XCTAssertEqual(Set(appearance.keys), header.union(["theme","locale","reduceMotion","reduceTransparency","showProjectNames","redBelow","showUsedPercent","showAllModels"]))
         XCTAssertEqual(appearance["type"] as? String, "appearance")
         XCTAssertEqual(appearance["reduceTransparency"] as? Bool, true)
         XCTAssertEqual(appearance["showProjectNames"] as? Bool, false)
-        let shellRaw = try value.setShell(.init(closed: false, attached: true, forcedClosed: true, tier: .compact))
+        let shellRaw = try value.setShell(.init(closed: false, attached: true, forcedClosed: true, tier: .tall))
         let shell = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(shellRaw.utf8)) as? [String: Any])
         XCTAssertEqual(Set(shell.keys), header.union(["profile","attached","forcedClosed","tier","scope","range","refreshing"]))
         XCTAssertEqual(shell["profile"] as? String, "closed")
-        XCTAssertEqual(shell["tier"] as? String, "compact")
+        XCTAssertEqual(shell["tier"] as? String, "tall", "D444: one layout")
         XCTAssertEqual(shell["version"] as? Int, 2)
         XCTAssertEqual(ticket, value.queryTicket)
         _ = try value.clear()

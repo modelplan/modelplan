@@ -34,7 +34,7 @@ func (s *RefreshScheduler) automatic() {
 	var previous Stamp
 	for s.ctx.Err() == nil {
 		now := s.now()
-		admission := consent.Capture()
+		admission, ticket := s.capture()
 		stamp := stampOfFence(admission.Fence())
 		if stamp != previous {
 			s.mu.Lock()
@@ -64,7 +64,7 @@ func (s *RefreshScheduler) automatic() {
 			}
 		}
 		if !s.config.Offline && !s.config.ReadOnly && state.AllowsScope(consent.ScopeCodexLocalHistory, mode) &&
-			(!runtimeGranted || !quota.CodexRuntimeAvailable(s.paths(admission).Cache, admission, now)) {
+			(!runtimeGranted || !quota.CodexRuntimeAvailable(s.paths(admission, ticket).Cache, admission, now)) {
 			scopes = append(scopes, consent.ScopeCodexLocalHistory)
 		}
 		next := now.Add(time.Minute)
@@ -89,7 +89,7 @@ func (s *RefreshScheduler) automatic() {
 				_, pending := s.pending[key]
 				s.mu.Unlock()
 				if pending {
-					s.replanQueued(admission, scope, key, now)
+					s.replanQueued(admission, ticket, scope, key, now)
 					continue
 				}
 				if until.After(now) {

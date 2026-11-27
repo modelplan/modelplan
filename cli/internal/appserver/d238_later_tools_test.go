@@ -29,7 +29,7 @@ func TestD238ToolInstalledAfterLaunchIsOfferedOnTheNextView(t *testing.T) {
 			}}
 		},
 		LaterInstalled: ledger.Observe,
-		Paths:          func(a consent.Admission) quota.Paths { return quota.Paths{Admission: &a} }, Cleanup: func(string, bool) error { return nil },
+		Paths:          func(a consent.Admission) quota.Paths { return quota.Paths{Admission: &a} }, Cleanup: func(string, bool, consent.EraseGuard) error { return nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestD240LaterInstalledLocalLogsAreReadWithoutAPrompt(t *testing.T) {
 			}}
 		},
 		LaterInstalled: ledger.Observe,
-		Paths:          func(a consent.Admission) quota.Paths { return quota.Paths{Admission: &a} }, Cleanup: func(string, bool) error { return nil },
+		Paths:          func(a consent.Admission) quota.Paths { return quota.Paths{Admission: &a} }, Cleanup: func(string, bool, consent.EraseGuard) error { return nil },
 	})
 	if err != nil {
 		t.Fatal(err)

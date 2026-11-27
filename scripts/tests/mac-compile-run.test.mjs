@@ -145,6 +145,7 @@ test("seed publish is per package: a failing package does not block another, and
   const r = run(d, { SEED_ROOT: seedDir(d), SEED_WRITE: "1" });
   assert.notEqual(r.status, 0);
   assert.match(fs.readFileSync(path.join(d, "sum"), "utf8"), /Bad`: build fail[\s\S]*Good`: build ok/);
+  assert.match(fs.readFileSync(path.join(d, "sum"), "utf8"), /Good`: build ok \d+s; test .*; row \d+s/);
   assert.ok(!fs.existsSync(path.join(seedDir(d), "desktop_native_Bad")));
   const [key] = fs.readdirSync(path.join(seedDir(d), "desktop_native_Good")).filter((n) => !n.includes("."));
   const product = fs.readFileSync(path.join(seedDir(d), "desktop_native_Good", key, "product"), "utf8");

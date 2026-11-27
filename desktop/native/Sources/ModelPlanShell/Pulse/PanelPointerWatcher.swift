@@ -42,6 +42,7 @@ enum PanelPointerWatcher {
         private static let interval: TimeInterval = 0.15
 
         private var timer: Timer?
+        var externallySampled = false
         var samplingEnabled = true {
             didSet {
                 if samplingEnabled, window != nil || pointSource != nil { start() }
@@ -62,12 +63,13 @@ enum PanelPointerWatcher {
         }
 
         func start() {
-            guard samplingEnabled, timer == nil else { return }
+            guard samplingEnabled, !externallySampled, timer == nil else { return }
 
             let timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.sample() }
             }
             // Keep sampling while menus or other modal run loops are up.
+            timer.tolerance = Self.interval * 0.1
             RunLoop.main.add(timer, forMode: .common)
             self.timer = timer
         }
@@ -87,7 +89,7 @@ enum PanelPointerWatcher {
         }
 
         func sample(read: (() -> CGPoint?)? = nil) {
-            guard samplingEnabled, timer != nil, pointSource != nil || window != nil else { return }
+            guard samplingEnabled, (externallySampled || timer != nil), pointSource != nil || window != nil else { return }
             let point: CGPoint?
             if let read { point = read() } else { point = currentPoint() }
 
@@ -145,8 +147,9 @@ final class PointerProbe {
     private let probe = PointerProbe()
     public private(set) var isActive = false
     public override var isFlipped: Bool { true }
-    public init(pointSource: (() -> CGPoint?)? = nil) {
+    public init(pointSource: (() -> CGPoint?)? = nil, externallySampled: Bool = false) {
         watcher = PanelPointerWatcher.WatcherView(pointSource: pointSource)
+        watcher.externallySampled = externallySampled
         entry = PointerEntryReporter.TrackingView()
         super.init(frame: .zero)
         probe.view = watcher

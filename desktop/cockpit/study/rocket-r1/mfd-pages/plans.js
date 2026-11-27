@@ -2,8 +2,8 @@ import {websiteWords,planUrl} from './public-helpers.js';
 import {secondaryLink} from './public-helpers.js';
 // 订阅 (spec 6.2, CodexBar-style reserve). Under 全部: one line per subscription (pressing one scopes to it, like
 // its engine key). In a subscription scope, two halves on the 概况 | 记录 key:
-//   概况: header; windows (bar, %, absolute reset time, countdown); 重置卡; 点数; 高峰时段.
-//   记录: header; 重置记录 with sources (自然到期 / 官方 / 重置卡 / 修正); 周期历史 (10 cycles, stacked by model / effort / fast).
+//   概况: header; windows (bar, %, absolute reset time, countdown); 额外重置; 点数; 高峰时段.
+//   记录: header; 重置记录 with sources (自然到期 / 官方 / 额外重置 / 修正); 周期历史 (10 cycles, stacked by model / effort / fast).
 // Pure view (spec 2.6).
 import {t,formatCredits} from '../i18n.js';
 import {esc, tok, dhm, hm, when, stamp, until, md, bar10, level, chip, clockIcon, tip, fill, relativeMoment, resetMoment} from './fmt.js';
@@ -85,7 +85,7 @@ function resets(a, ui, kind) {
     <b class="rs-src">${r.source === 'card' ? '↺ ' : ''}${t(SRC[r.source])}</b><em>${r.pending ? t('mfd.srcPending') : r.waiting ? t('mfd.srcWaiting') : ''}</em></div>`).join('')}</div>`;
 }
 // The last 10 cycles of a window: bars of the points used, stacked by model / effort / fast (vendor colour in
-// steps; fast is hatched); a cycle with a meter drop (a reset card) carries ↺. Hover lists the breakdown.
+// steps; fast is hatched); a cycle with a meter drop (a banked reset) carries ↺. Hover lists the breakdown.
 export function cycles(d, a, ui, kind) {
   const list = d.paceHistory[a.id]?.[kind] || [];
   if (!list.length) return '';

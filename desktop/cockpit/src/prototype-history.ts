@@ -7,8 +7,18 @@ import {costView} from './prototype-cost.js';
 import type {WireCockpitData} from '../generated/wire.js';
 import {overviewCost,type OverviewCost} from './overview-cost.js';
 
-const HOUR=36e5,DAYS=182,LONG_HOURS=30*24;
+const HOUR=36e5,DAYS=182,LONG_DAYS=30;
 const dayKey=(at:number)=>{const d=new Date(at);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+/** Hour series keyed by the producer's own bucket instants. The nominal grid steps in whole absolute hours from a local anchor,
+ * which is not where a bucket falls after a fractional-offset change (Lord Howe's 30-minute fall-back), so a recorded instant
+ * is never floored into a grid slot: it is added as its own slot and keeps its wall-clock hour. */
+function hourSeries(grid:number[],rows:ReadonlyArray<{at:string;source:string;observedOutputTokens:number}>,sources:ReadonlySet<string>,to:number){
+ const from=grid[0]!,at=new Set(grid);
+ for(const b of rows){const ms=Date.parse(b.at);if(sources.has(b.source)&&ms>=from&&ms<=to)at.add(ms);}
+ const instants=[...at].sort((a,b)=>a-b),index=new Map(instants.map((ms,i)=>[ms,i] as const)),values:(number|null)[]=instants.map(()=>null);
+ for(const b of rows){const i=index.get(Date.parse(b.at));if(sources.has(b.source)&&i!==undefined)values[i]=(values[i]??0)+b.observedOutputTokens;}
+ return {instants,values};
+}
 const startOfDay=(key:string)=>{const [y,m,d]=key.split('-').map(Number);return new Date(y!,m!-1,d!).getTime();};
 
 export interface HistoryView {
@@ -37,7 +47,9 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
  const clock=new Date(now),top=now-clock.getMinutes()*6e4-clock.getSeconds()*1e3-clock.getMilliseconds();
  const instants=Array.from({length:24},(_,i)=>top-(23-i)*HOUR);
  // The study pages read a series from its end, so index 181 is today and the days before the record began stay null.
- const longInstants=Array.from({length:LONG_HOURS},(_,i)=>top-(LONG_HOURS-1-i)*HOUR);
+ // D390 (macrevb-1212-1) + D402: from local midnight 29 days ago (30 local days, today included) to the current hour, in absolute
+ // steps, so a 25-hour fall-back day keeps every hour the producer records (a fixed 720 hours would drop its first one).
+ const firstDay=new Date(clock.getFullYear(),clock.getMonth(),clock.getDate()-(LONG_DAYS-1)).getTime(),longInstants=Array.from({length:Math.max(1,Math.floor((top-firstDay)/HOUR)+1)},(_,i)=>firstDay+i*HOUR);
  const end=new Date(now),days=Array.from({length:DAYS},(_,i)=>dayKey(new Date(end.getFullYear(),end.getMonth(),end.getDate()-(DAYS-1-i)).getTime()));
  for(const sub of h.subscriptions){
   const accountId=ids.get(sub.subscriptionRef);if(!accountId)continue;
@@ -49,12 +61,8 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
    for(const b of h.daily)if(sources.has(b.source)){byDay.set(b.at,(byDay.get(b.at)??0)+b.observedOutputTokens);if(b.origin==='import')importedByDay.set(b.at,(importedByDay.get(b.at)??0)+b.observedOutputTokens);}
    daily.push({accountId,values:days.map(day=>byDay.get(day)??null),imported:days.map(day=>importedByDay.get(day)??null),coverageStart:first});
   }
-  const values:(number|null)[]=instants.map(()=>null);
-  for(const b of h.hourly){const index=Math.floor((Date.parse(b.at)-instants[0]!)/HOUR);if(sources.has(b.source)&&index>=0&&index<values.length)values[index]=(values[index]??0)+b.observedOutputTokens;}
-  hourly.push({accountId,instants,values});
-  const longValues:(number|null)[]=longInstants.map(()=>null);
-  for(const b of h.hourly){const index=Math.floor((Date.parse(b.at)-longInstants[0]!)/HOUR);if(sources.has(b.source)&&index>=0&&index<longValues.length)longValues[index]=(longValues[index]??0)+b.observedOutputTokens;}
-  hourlyLong.push({accountId,instants:longInstants,values:longValues});
+  hourly.push({accountId,...hourSeries(instants,h.hourly,sources,top)});
+  hourlyLong.push({accountId,...hourSeries(longInstants,h.hourly,sources,top)});
  }
  const projects=(rows:typeof h.projects.recent7d)=>rows.map((p,i)=>({project:p.label??ht(locale,'host.projectN',{n:i+1}),tokens:p.observedOutputTokens,tokenScope:'combined',share:p.share,configs:[{model:p.model??'',effort:p.effort,recommendedEffort:null}]}));
  const paceHistory:Record<string,Record<string,unknown[]>>={};
@@ -82,7 +90,7 @@ export function usageStats(data:WireCockpitData|null|undefined,ref:string|null|u
 }
 
 /** Reset history for one subscription, newest first: each closed cycle's reset, and public confirmed resets. A drop
- * inside a cycle is shown as a correction, because the readings cannot prove a reset card was used. */
+ * inside a cycle is shown as a correction, because the readings cannot prove a banked reset was used. */
 export function resetHistory(data:WireCockpitData|null|undefined,ref:string|null|undefined,rowId:string,now:number) {
  const rows:{kind:string;at:number;source:string}[]=[];
  for(const group of data?.history?.cycles??[]){

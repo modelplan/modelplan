@@ -42,3 +42,23 @@ func TestCockpitPeaksCarryTheDeclaredPlansRaisedRateWindow(t *testing.T) {
 		t.Fatalf("no publication: %+v", got)
 	}
 }
+
+// D328/D145: a ZCode subscription read by the tool (QR sign-in or key; never declared with `declare`) has the
+// "zai" tool row, not a declared row. The provider's published plan-wide time windows still reach it, as tentative.
+func TestCockpitPeaksReachAZCodeToolRowWithoutADeclaredPlan(t *testing.T) {
+	at := time.Date(2026, 11, 24, 6, 0, 0, 0, time.UTC)
+	rate := func(v float64) *float64 { return &v }
+	window := func(rule string, v float64, prio int, from, to time.Duration) digest.MultiplierWindow {
+		return digest.MultiplierWindow{RuleID: rule, Provider: "zai", PlanIDs: []string{"zhipu-cn-max"}, Generations: []string{"credits-2026"}, Multiplier: rate(v), Priority: prio,
+			StartsAt: at.Add(from).Format(time.RFC3339), EndsAt: at.Add(to).Format(time.RFC3339), Status: "CONFIRMED"}
+	}
+	published := &digest.Digest{Source: digest.ComponentClient,
+		MultiplierHorizon: &digest.MultiplierHorizon{From: at.Add(-time.Hour).Format(time.RFC3339), To: at.Add(48 * time.Hour).Format(time.RFC3339), Selection: "highest-priority-no-stacking"},
+		Multipliers:       []digest.MultiplierWindow{window("glm-credits-base", 0.5, 0, -time.Hour, 48*time.Hour), window("glm-credits-peak", 1, 10, 6*time.Hour, 10*time.Hour)}}
+	view := appserver.View{Projection: rows.Projection{Rows: []rows.Row{{ID: "zai"}, {ID: "codex"}}},
+		QuotaReport: quota.Report{Accounts: []quota.Account{{Source: "native:zcode", Plan: "Max"}, {Source: "codex", Plan: "pro"}}}}
+	got := cockpitPeaks(published, view, at)
+	if len(got) != 1 || got[0].RowID != "zai" || !got[0].StartsAt.Equal(at.Add(6*time.Hour)) || got[0].EndsAt == nil || got[0].Status != "tentative" {
+		t.Fatalf("zai row peak: %+v", got)
+	}
+}

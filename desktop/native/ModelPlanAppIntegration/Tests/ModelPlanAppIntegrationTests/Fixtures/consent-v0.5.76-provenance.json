@@ -1,0 +1,26 @@
+{
+  "command": [
+    "consent",
+    "--json"
+  ],
+  "syntheticHomeOnly": true,
+  "ownerHomeDenied": true,
+  "networkDenied": true,
+  "allReadersOff": true,
+  "capturePlatform": "linux_arm64",
+  "sourceRelease": "https://github.com/modelplan/modelplan/releases/tag/v0.5.76",
+  "sourceCommit": "af010f524a5245d9da635993af6bea917123c31e",
+  "sourceArchiveSHA256": "a61888a9219139e2f9c42e76db3a2a08136ecdd906c09a7fccc3a811ae23ee22",
+  "rawSourceHelperSHA256": "465eea8e2f678635e879e815e72bc974faec286e4993229d61d8102077a55058",
+  "outputSHA256": "0544eda3132bb8c863a813542df94a524659d6f6cadcb6949db1ed0405fee18c",
+  "bytes": 3328,
+  "exit": 0,
+  "isolation": {
+    "filesystem": "bubblewrap --unshare-all with a synthetic HOME holding empty Claude and Codex presence directories; owner home not mounted; cleared environment, empty PATH; MODELPLAN_READERS, MODELPLAN_HISTORY and MODELPLAN_CODEXBAR off",
+    "network": "private network namespace (no interfaces up); closed local base URL http://127.0.0.1:9; an outbound connect probe in the same sandbox failed with ENETUNREACH",
+    "outsideDirectoryReadDenied": true,
+    "networkSocketDenied": true
+  },
+  "purpose": "complete real released-CLI contract fixture; synthetic metadata only, not an owner observation",
+  "cliVersion": "0.5.76"
+}

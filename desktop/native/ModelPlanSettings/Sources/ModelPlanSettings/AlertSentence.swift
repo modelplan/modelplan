@@ -37,9 +37,10 @@ public enum AlertSentence {
     }
 
     /// A subscription that cannot be read (grey, list-only). `cause` is the reader failure code.
-    public static func unreadable(subscription: SettingsText, cause: String?) -> AlertSentenceText {
+    /// `tool`: the producer row's tool id, for a cause that reads differently per tool (G3-218).
+    public static func unreadable(subscription: SettingsText, cause: String?, tool: String? = nil) -> AlertSentenceText {
         let head = SettingsText("\(subscription.english) no reading", "\(subscription.chinese) 读不到")
-        return .init(text: join([head, cause.flatMap(Self.cause)]), short: head)
+        return .init(text: join([head, cause.flatMap { Self.cause($0, tool: tool) }]), short: head)
     }
 
     /// Three or more unreadable subscriptions merge into one line (the overview, the menu).
@@ -49,7 +50,9 @@ public enum AlertSentence {
     }
 
     /// The short cause after "no reading"; nil for any other failure code.
-    public static func cause(_ code: String) -> SettingsText? {
+    public static func cause(_ code: String, tool: String? = nil) -> SettingsText? {
+        // G3-218: Antigravity's reader reads the running app (no install step, no Node.js): runtime_missing = not running.
+        if code == "runtime_missing", (tool ?? "").lowercased() == "antigravity" { return .init("not running", "未运行") }
         switch code {
         case "not_signed_in", "login_expired", "http_401", "unsupported_login": return .init("not signed in", "未登录")
         case "key_missing": return .init("key missing", "缺少密钥")

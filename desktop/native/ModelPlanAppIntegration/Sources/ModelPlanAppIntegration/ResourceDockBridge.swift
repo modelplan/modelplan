@@ -35,7 +35,7 @@ public enum ResourceDockBridge {
         var row = DockCardRow(id: "resource:" + r.id.rawValue, kind: .quota, label: r.label, value: "\(r.percent)%", detail: r.side,
                               remainingFraction: nil, fillFraction: .some(r.fill), tone: tone(r.tone), emphasised: r.ink == .full)
         let colour = DockPluginStatusColour.rgb(row.tone)
-        row.plugin = DockCardPluginStyle(red: colour.red, green: colour.green, blue: colour.blue, faintFill: r.cachedFill, notch: r.notch, tinted: r.tinted)
+        row.plugin = DockCardPluginStyle(red: colour.red, green: colour.green, blue: colour.blue, faintFill: r.cachedFill, tinted: r.tinted)
         return row
     }
 
