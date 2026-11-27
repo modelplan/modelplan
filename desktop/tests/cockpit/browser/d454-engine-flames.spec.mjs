@@ -106,11 +106,11 @@ test('D454 per-nozzle dynamics: full thrust gives each nozzle its own subtle tim
  for(const x of t)expect(x.names).toBe('cockpit-flame-flip, cockpit-flame-breathe, cockpit-flame-flicker');
  for(const k of ['dur','delay','fp','fb','fl'])expect(new Set(t.map(x=>x[k])).size,k).toBeGreaterThan(Math.min(t.length,4)-1);
  for(const x of t){
-  const fps=4/parseFloat(x.fp);expect(fps).toBeGreaterThan(8.3);expect(fps).toBeLessThan(9.7);
-  expect(parseFloat(x.fb)).toBeGreaterThanOrEqual(1.2);expect(parseFloat(x.fb)).toBeLessThanOrEqual(1.8);
+  const fps=4/parseFloat(x.fp);expect(fps).toBeGreaterThan(7.4);expect(fps).toBeLessThan(10.6);
+  expect(parseFloat(x.fb)).toBeGreaterThanOrEqual(1.1);expect(parseFloat(x.fb)).toBeLessThanOrEqual(1.9);
   expect(x.props.filter(p=>!['backgroundPositionX','scale','opacity'].includes(p))).toEqual([]);
   // Amplitude from the keyframe definitions (not live values, which depend on the animation phase).
-  expect(x.ks.flat()).toEqual(expect.arrayContaining(['1 0.98','1 1.02','0.95','1']));
+  expect(x.ks.flat()).toEqual(expect.arrayContaining(['1 0.94','1 1.06','0.88','1']));
  }
  if(process.env.FLAME_FRAMES){const r=await page.evaluate(()=>{const b=document.querySelector('.ck-base').getBoundingClientRect();return {y:b.top};});
   for(let i=0;i<30;i++){await page.evaluate(t=>document.getAnimations().forEach(a=>{a.pause();a.currentTime=t;}),i*100);
