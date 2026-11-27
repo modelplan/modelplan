@@ -22,13 +22,13 @@ export type BaseLight={key:string;col:string;x:number;w:number;cw:number;colour:
 
 // Glow sheet length: 30 t/s or less -> 12, 120 t/s or more -> 24, no rate -> the middle (study flameLen).
 // D454/D468 per-nozzle flame dynamics, deterministic per nozzle index (bells then empty sockets), spread wide enough to read at a glance:
-// flip 7.5-10.5 fps (4-step loop), each nozzle starting at its own point of the loop (0, 1/3, 2/3, 1/2 for the first four), length breath +-6% over 1.1-1.9 s
-// (the +-6% and the 88-100% brightness live in bells.css), flicker 0.9-1.3 s.
+// flip 7-11 fps (4-step loop), each nozzle starting at its own point of the loop (0, 1/3, 2/3, 1/2 for the first four), length breath +-10% over 1.1-1.9 s
+// (the +-10% lives in bells.css), brightness floor 80-95% per nozzle (--fmin, up to 100%), flicker 0.9-1.3 s.
 const FLAME_PHASE=[0,1/3,2/3,1/2];
 export function flameDynamics(j:number):[string,string][] {
- const fp=4/(7.5+(j*7%11)*.3),phase=(FLAME_PHASE[j%4]+Math.floor(j/4)*.07)%1;
+ const fp=4/(7+(j*7%11)*.4),phase=(FLAME_PHASE[j%4]+Math.floor(j/4)*.07)%1;
  return [['--fp',fp.toFixed(3)+'s'],['--fb',(1.1+(j*13%9)*.1).toFixed(2)+'s'],['--fbo',(-(j*37%5)*.31).toFixed(2)+'s'],
-  ['--fl',(.9+(j*29%5)*.1).toFixed(2)+'s'],['--flo',(-(j*53%7)*.17).toFixed(2)+'s'],['--fo',(-phase*fp).toFixed(3)+'s']];
+  ['--fl',(.9+(j*29%5)*.1).toFixed(2)+'s'],['--flo',(-(j*53%7)*.17).toFixed(2)+'s'],['--fo',(-phase*fp).toFixed(3)+'s'],['--fmin',(.8+(j*3%4)*.05).toFixed(2)]];
 }
 export function flameLength(rate:number|null):number {
  if(rate===null)return (FLAME_MIN+FLAME_MAX)/2;

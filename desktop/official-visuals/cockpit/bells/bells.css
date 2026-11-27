@@ -49,8 +49,8 @@
    flip period (8.4-9.6 fps), a phase offset, a length breath (scaleY about the root, 1.2-1.8 s) and a brightness flicker
    (opacity 0.95-1), set deterministically per bell index by prototype-base.ts. Transform (scale) and opacity only. */
 #cockpit[data-thrust="full"] .ck-base .bz-flame{transform-origin:50% 0}
-@keyframes cockpit-flame-breathe{0%{scale:1 .94}100%{scale:1 1.06}}
-@keyframes cockpit-flame-flicker{0%{opacity:.88}100%{opacity:1}}
+@keyframes cockpit-flame-breathe{0%{scale:1 .9}100%{scale:1 1.1}}
+@keyframes cockpit-flame-flicker{0%{opacity:var(--fmin,.88)}100%{opacity:1}}
 @media (prefers-reduced-motion:no-preference){
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"][data-thrust="full"] .ck-base .bz-flame{animation:cockpit-flame-flip var(--fp,.44s) steps(1,end) var(--fo,0s) infinite,cockpit-flame-breathe calc(var(--fb,1.5s) / 2) ease-in-out var(--fbo,0s) infinite alternate,cockpit-flame-flicker calc(var(--fl,1s) / 2) ease-in-out var(--flo,0s) infinite alternate}
 }
