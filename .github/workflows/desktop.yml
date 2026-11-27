@@ -492,7 +492,7 @@ jobs:
       matrix:
         os:
         - macos-latest
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@2f418f633a29ba31202d0516ae646346a2a5b14f
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@f8b0dbc4795720ef51dcb86638c6156305ebbaa9
     with:
       task: native
       os: ${{ matrix.os }}
@@ -510,7 +510,7 @@ jobs:
       matrix:
         os:
         - macos-15
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@2f418f633a29ba31202d0516ae646346a2a5b14f
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@f8b0dbc4795720ef51dcb86638c6156305ebbaa9
     with:
       task: native-hosted-gui
       os: ${{ matrix.os }}
@@ -522,7 +522,7 @@ jobs:
     # paired with native-hosted above: together they are exactly the GUI leg.
     needs: gui-scope
     if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@2f418f633a29ba31202d0516ae646346a2a5b14f
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@f8b0dbc4795720ef51dcb86638c6156305ebbaa9
     with:
       task: native-owner-gui
       os: macos-latest
@@ -532,14 +532,14 @@ jobs:
     name: native-headless (macos-latest)
     needs: [queue-scope, pr-scope]
     if: ${{ !cancelled() && !inputs.mac_ci_probe && !inputs.perf && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@2f418f633a29ba31202d0516ae646346a2a5b14f
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@f8b0dbc4795720ef51dcb86638c6156305ebbaa9
     with:
       task: native-headless
       os: macos-latest
 
   runner-probe:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.mac_ci_probe && github.actor_id == '11829005' }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@2f418f633a29ba31202d0516ae646346a2a5b14f
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@f8b0dbc4795720ef51dcb86638c6156305ebbaa9
     with:
       task: ${{ inputs.mac_ci_probe_mode == 'gui' && 'gui-probe' || 'probe' }}
       os: macos-latest
