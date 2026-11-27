@@ -31,6 +31,8 @@ type AntigravityServer struct {
 	Port int
 	CSRF string
 	TLS  bool
+	// Hub: Antigravity 2.34 hub mode; Port and CSRF come from its descriptor file, not argv.
+	Hub bool
 }
 type antigravityServerKey struct{}
 
@@ -86,6 +88,10 @@ func antigravityServers(raw []byte) []AntigravityServer {
 			antigravityDebug(line, "app_data_dir is not antigravity")
 			continue
 		}
+		if antigravityFlag(f, "--csrf_token") == "" && strings.Contains(line, "--read_host_bridge_token_from_stdin") {
+			out = append(out, AntigravityServer{PID: pid, Hub: true})
+			continue
+		}
 		port, err := strconv.Atoi(antigravityFlag(f, "--extension_server_port"))
 		if err != nil || port < 1 || port > 65535 {
 			antigravityDebug(line, "no usable extension_server_port")
@@ -100,26 +106,11 @@ func antigravityServers(raw []byte) []AntigravityServer {
 	}
 	return out
 }
-// antigravityHub: Antigravity 2.34's hub mode runs this user's language_server with --app_data_dir
-// antigravity but no --csrf_token or --extension_server_port (the token arrives on stdin, the HTTPS port
-// is 0). The app is running, but its token cannot be read without touching another process's stdin, so
-// the honest state is "not supported yet", never "not running".
-func antigravityHub(raw []byte) bool {
-	for _, line := range strings.Split(string(raw), "\n") {
-		f := strings.Fields(line)
-		if len(f) < 4 {
-			continue
-		}
-		pid, pidErr := strconv.Atoi(f[0])
-		uid, uidErr := strconv.Atoi(f[1])
-		if pidErr != nil || uidErr != nil || pid <= 0 || uid != os.Getuid() || !(antigravityBinary(f[2]) || antigravityBinary(f[3])) {
-			continue
-		}
-		if app := antigravityFlag(f, "--app_data_dir"); app == "antigravity" || app == "antigravity-ide" {
-			return true
-		}
+func antigravityLsof() string {
+	if runtime.GOOS == "darwin" {
+		return "/usr/sbin/lsof"
 	}
-	return false
+	return "/usr/bin/lsof"
 }
 func antigravityBinary(path string) bool {
 	name := strings.ToLower(filepath.Base(path))
@@ -168,11 +159,6 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 			return e
 		}
 		servers := antigravityServers(raw)
-		if len(servers) == 0 && antigravityHub(raw) {
-			e.Error = antigravityNext("not_supported_yet")
-			e.ErrorCode = "unsupported_login"
-			return e
-		}
 		if len(servers) == 0 {
 			e.Error = antigravityNext("not_detected")
 			e.ErrorCode = "runtime_missing"
@@ -184,6 +170,16 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 			return e
 		}
 		s = servers[0]
+	}
+	if s.Hub && s.Port == 0 {
+		// Missing or invalid descriptor: the app is running but its token cannot be read.
+		port, token, found := readAntigravityHubDescriptor(s.PID)
+		if !found {
+			e.Error = antigravityNext("not_supported_yet")
+			e.ErrorCode = "unsupported_login"
+			return e
+		}
+		s.Port, s.CSRF = port, token
 	}
 	if s.PID <= 0 || s.Port < 1 || s.Port > 65535 || !antigravityCSRF(s.CSRF) {
 		e.Error = antigravityNext("not_supported_yet")
@@ -239,6 +235,10 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 		if err := antigravityVerify(dialCtx, s); err != nil {
 			conn.Close()
 			return nil, err
+		}
+		if la, ok := conn.LocalAddr().(*net.TCPAddr); s.Hub && (!ok || !antigravitySocketOwned(dialCtx, s, la.Port)) {
+			conn.Close() // send no bytes, hence no token, to a socket the pid does not own
+			return nil, errors.New("Antigravity socket owner unverified")
 		}
 		return conn, nil
 	}
@@ -337,13 +337,17 @@ func verifyAntigravityServer(ctx context.Context, s AntigravityServer) error {
 		return errors.New("Antigravity process unavailable")
 	}
 	candidates := antigravityServers(raw)
-	if len(candidates) != 1 || candidates[0].PID != s.PID || candidates[0].Port != s.Port || candidates[0].CSRF != s.CSRF {
+	if len(candidates) != 1 || candidates[0].PID != s.PID {
 		return errors.New("Antigravity process changed")
 	}
-	bin := "/usr/bin/lsof"
-	if runtime.GOOS == "darwin" {
-		bin = "/usr/sbin/lsof"
+	if s.Hub {
+		if port, token, ok := readAntigravityHubDescriptor(s.PID); !candidates[0].Hub || !ok || port != s.Port || token != s.CSRF {
+			return errors.New("Antigravity process changed")
+		}
+	} else if candidates[0].Hub || candidates[0].Port != s.Port || candidates[0].CSRF != s.CSRF {
+		return errors.New("Antigravity process changed")
 	}
+	bin := antigravityLsof()
 	raw, err = antigravityCommand(ctx, bin, "-nP", "-iTCP:"+strconv.Itoa(s.Port), "-sTCP:LISTEN", "-Fpcun")
 	if err != nil {
 		return errors.New("Antigravity listener unavailable")
