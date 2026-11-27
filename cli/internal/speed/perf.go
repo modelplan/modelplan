@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -33,22 +34,26 @@ const (
 
 // PerfLedger is perf.json's content.
 type PerfLedger struct {
-	UsageRows     []PerfRow         `json:"-"` // response accounting, loaded independently of timing samples
-	SchemaVersion int               `json:"schemaVersion"`
-	Since         time.Time         `json:"since"` // UTC, when the file was created
-	Hourly        []Hourly          `json:"hourly,omitempty"`
-	Live          []LiveRecord      `json:"live,omitempty"`
-	Rows          []PerfRow         `json:"rows"`
-	Sessions      []PerfSession     `json:"sessions,omitempty"`
-	Files         map[string]Cursor `json:"files,omitempty"`
-	Counted       []CountedRequest  `json:"counted,omitempty"` // Claude requests already counted (speed.go)
+	UsageRows []PerfRow `json:"-"` // response accounting, loaded independently of timing samples
+	// UsageSessions: the same responses by the log they came from (PerfSession.Key), each counted once.
+	UsageSessions map[string][]SessionResponse `json:"-"`
+	SchemaVersion int                          `json:"schemaVersion"`
+	Since         time.Time                    `json:"since"` // UTC, when the file was created
+	Hourly        []Hourly                     `json:"hourly,omitempty"`
+	Live          []LiveRecord                 `json:"live,omitempty"`
+	Rows          []PerfRow                    `json:"rows"`
+	Sessions      []PerfSession                `json:"sessions,omitempty"`
+	Files         map[string]Cursor            `json:"files,omitempty"`
+	Counted       []CountedRequest             `json:"counted,omitempty"` // Claude requests already counted (speed.go)
 	// Stores: how far each agent database was read (sqlite.go).
 	Stores map[string]DBCursor `json:"stores,omitempty"`
 
 	admission    consent.Admission
-	project      func(source, cwd string, np nativeProject) (ref, label string) // while observing: names a session's project
-	subscription string                                                         // while observing: the harness account's reference
-	cleared      Cleared                                                        // while observing: the clear boundaries (cleared.go)
+	project      func(source, cwd string, np nativeProject) projectInfo // while observing: names a session's project
+	codexNames   map[string]string                                      // while observing: Codex thread names read this run
+	titles       bool                                                   // while observing: project labels are on, so session titles are kept
+	subscription string                                                 // while observing: the harness account's reference
+	cleared      Cleared                                                // while observing: the clear boundaries (cleared.go)
 }
 
 // Ingest: what the caller knows while the ledger reads new turns. Labels: project labels are on
@@ -73,8 +78,13 @@ type PerfSession struct {
 	ProjectRef   string `json:"projectRef,omitempty"`
 	ProjectLabel string `json:"projectLabel,omitempty"`
 	// ProjectRule: the project rule that set ProjectRef (0 = the old git-root grouping, 1 = each tool's own
-	// definition, G3-100). An older session is re-attributed once on its next observation.
+	// definition, G3-100, 2 = the repository root with worktrees merged, then a workspace, then a bucket, D470). An older session is re-attributed once on its next observation.
 	ProjectRule int `json:"projectRule,omitempty"`
+	// ProjectKind: repo | workspace | independent | home | none (projectid.go); "" for a session recorded before it.
+	ProjectKind string `json:"projectKind,omitempty"`
+	// Title: the tool's own generated or user-set session title, only while project labels are on (D470 3).
+	// Never the first message. Local only, like the label.
+	Title string `json:"title,omitempty"`
 	// SubscriptionRef: the account the harness was signed in to when the session's first turn
 	// with a known one was read; "" when unknown.
 	SubscriptionRef string       `json:"subscriptionRef,omitempty"`
@@ -189,13 +199,13 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 	if l.Files == nil {
 		l.Files = map[string]Cursor{}
 	}
-	l.project, l.subscription = projector(cache, labels), in.Subscription
+	l.project, l.subscription, l.titles = projectorInfo(cache, labels), in.Subscription, labels
 	l.admission = consent.Capture()
 	l.cleared = LoadCleared(cache)
 	changed := false
 	for i := range l.Sessions {
-		if !labels && l.Sessions[i].ProjectLabel != "" {
-			l.Sessions[i].ProjectLabel, changed = "", true
+		if !labels && (l.Sessions[i].ProjectLabel != "" || l.Sessions[i].Title != "") {
+			l.Sessions[i].ProjectLabel, l.Sessions[i].Title, changed = "", "", true
 		}
 	}
 	for i := range l.Live {
@@ -216,8 +226,15 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 
 func (l *PerfLedger) scan(path, source, parser string, p parser, now time.Time) bool {
 	done, changed := scanLog(l.Files, path, source, p, now)
+	thread := ""
+	if source == "codex" {
+		thread = codexThreadOfPath(path)
+	}
 	for _, t := range done {
 		l.add(source, parser, t)
+		if thread != "" {
+			t.np.Thread = thread
+		}
 		l.addSession(fileKey(path), source, t)
 	}
 	return changed
@@ -255,10 +272,11 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	if s.SubscriptionRef == "" {
 		s.SubscriptionRef = l.subscription
 	}
-	if (t.cwd != "" || t.np.ID != "") && l.project != nil && (s.ProjectRule < projectRule || s.ProjectRef == "" || s.ProjectLabel == "") {
+	if (t.cwd != "" || t.np.ID != "" || t.np.Thread != "") && l.project != nil && (s.ProjectRule < projectRule || s.ProjectRef == "" || s.ProjectLabel == "" || s.ProjectKind == "") {
 		// The first working directory names the project; a label comes once labels are on. A session recorded
-		// under the old grouping is recomputed once under the tool's own definition, dropping a guessed project.
-		ref, label := l.project(source, t.cwd, t.np)
+		// under an older rule is recomputed once under the current one, dropping a guessed project.
+		p := l.project(source, t.cwd, t.np)
+		ref, label := p.Ref, p.Label
 		if s.ProjectRule < projectRule {
 			// macrevb-909-1: the live record of the same session carries the old guess too; it follows the
 			// recomputed project at once instead of waiting for (or outliving) its next live observation.
@@ -267,11 +285,20 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 					l.Live[i].ProjectRef, l.Live[i].ProjectLabel = ref, label
 				}
 			}
-			s.ProjectRef, s.ProjectLabel, s.ProjectRule = ref, label, projectRule
+			s.ProjectRef, s.ProjectLabel, s.ProjectKind, s.ProjectRule = ref, label, p.Kind, projectRule
 		} else if s.ProjectRef == "" {
-			s.ProjectRef, s.ProjectLabel = ref, label
+			s.ProjectRef, s.ProjectLabel, s.ProjectKind = ref, label, p.Kind
 		} else if ref == s.ProjectRef {
-			s.ProjectLabel = label
+			s.ProjectLabel, s.ProjectKind = label, p.Kind
+		}
+	}
+	if l.titles {
+		title := t.np.Title
+		if title == "" && source == "codex" && t.np.Thread != "" && s.Title == "" {
+			title = l.codexTitle(t.np.Thread)
+		}
+		if title = cleanTitle(title); title != "" {
+			s.Title = title
 		}
 	}
 	d := day(t.at)
@@ -474,7 +501,7 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 }
 
 // projectRule is the current project attribution rule (see PerfSession.ProjectRule).
-const projectRule = 1
+const projectRule = 2
 
 // CompleteTotal is the day's total: input, cache reads, cache writes and output, each counted once (the ccusage
 // definition; reasoning is part of output). It is unknown unless every part is, and never falls back to output alone.
@@ -497,4 +524,17 @@ func (d SessionDay) CompleteTotal() (int64, bool) {
 		total += *part
 	}
 	return total, true
+}
+
+// maxTitle: the longest session title kept, in characters.
+const maxTitle = 96
+
+// cleanTitle: a tool's session title on one line, bounded. It is the tool's own generated or user-set title,
+// never conversation content.
+func cleanTitle(t string) string {
+	t = strings.Join(strings.Fields(t), " ")
+	if r := []rune(t); len(r) > maxTitle {
+		t = string(r[:maxTitle-1]) + "…"
+	}
+	return t
 }

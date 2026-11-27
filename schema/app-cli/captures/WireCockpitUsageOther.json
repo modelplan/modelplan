@@ -1,0 +1,14 @@
+{
+  "count": 1,
+  "tokens": {
+    "total": 1,
+    "input": 1,
+    "output": 1,
+    "cacheRead": 1,
+    "cacheWrite": 1,
+    "complete": false
+  },
+  "share": 42.5,
+  "costUsd": 42.5,
+  "costState": "priced"
+}

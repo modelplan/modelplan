@@ -675,6 +675,36 @@
       ]
     },
     {
+      "file": "WireCockpitBackgroundReview.json",
+      "type": "WireCockpitBackgroundReview",
+      "optional": [
+        {
+          "field": "costUsd",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "model",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "runs",
+        "tokens",
+        "share",
+        "costState",
+        "modelApprox",
+        "lastObservedAt"
+      ]
+    },
+    {
       "file": "WireCockpitCost.json",
       "type": "WireCockpitCost",
       "optional": [
@@ -946,6 +976,14 @@
         },
         {
           "field": "cost",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "usage",
           "omission": true,
           "null": false,
           "wrongType": false,
@@ -1297,6 +1335,46 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "forbidden"
+        },
+        {
+          "field": "projectKind",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "title",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "totalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "costUsd",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "modelApprox",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1385,6 +1463,22 @@
         },
         {
           "field": "startedAt",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "title",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "projectKind",
           "omission": true,
           "null": false,
           "wrongType": false,
@@ -1596,6 +1690,208 @@
         "source",
         "observedOutputTokens",
         "bindingBasis"
+      ]
+    },
+    {
+      "file": "WireCockpitUsage.json",
+      "type": "WireCockpitUsage",
+      "optional": [],
+      "required": [
+        "measure",
+        "today",
+        "recent7d",
+        "recent30d"
+      ]
+    },
+    {
+      "file": "WireCockpitUsageOther.json",
+      "type": "WireCockpitUsageOther",
+      "optional": [
+        {
+          "field": "costUsd",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "count",
+        "tokens",
+        "share",
+        "costState"
+      ]
+    },
+    {
+      "file": "WireCockpitUsageProject.json",
+      "type": "WireCockpitUsageProject",
+      "optional": [
+        {
+          "field": "label",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "costUsd",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "model",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "effort",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "ref",
+        "kind",
+        "sessions",
+        "sources",
+        "subscriptionRefs",
+        "lastObservedAt",
+        "running",
+        "tokens",
+        "share",
+        "costState",
+        "modelApprox"
+      ]
+    },
+    {
+      "file": "WireCockpitUsageSession.json",
+      "type": "WireCockpitUsageSession",
+      "optional": [
+        {
+          "field": "subscriptionRef",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectRef",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectLabel",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "title",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "costUsd",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "model",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "effort",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "sessionRef",
+        "source",
+        "projectKind",
+        "projectState",
+        "firstObservedAt",
+        "lastObservedAt",
+        "running",
+        "tokens",
+        "share",
+        "costState",
+        "modelApprox"
+      ]
+    },
+    {
+      "file": "WireCockpitUsageTokens.json",
+      "type": "WireCockpitUsageTokens",
+      "optional": [],
+      "required": [
+        "total",
+        "input",
+        "output",
+        "cacheRead",
+        "cacheWrite",
+        "complete"
+      ]
+    },
+    {
+      "file": "WireCockpitUsageWindow.json",
+      "type": "WireCockpitUsageWindow",
+      "optional": [
+        {
+          "field": "costUsd",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "backgroundReview",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "tokens",
+        "costState",
+        "sessionCount",
+        "projectCount",
+        "projects",
+        "sessions",
+        "otherProjects",
+        "otherSessions"
       ]
     },
     {

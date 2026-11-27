@@ -89,6 +89,8 @@
         "rate": 42.5,
         "fast": false,
         "startedAt": "2026-10-29T12:00:00.123456789Z",
+        "title": "synthetic",
+        "projectKind": "repo",
         "observedTotalTokens": 1,
         "modelDisplay": "synthetic"
       }
@@ -214,7 +216,11 @@
         "effort": "synthetic",
         "projectLabel": "synthetic",
         "projectState": "named",
-        "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
+        "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
+        "projectKind": "repo",
+        "title": "synthetic",
+        "totalTokens": 1,
+        "costUsd": 42.5
       }
     ],
     "peaks": [
@@ -436,6 +442,363 @@
             "unpricedTokens": 1
           }
         ]
+      }
+    },
+    "usage": {
+      "measure": "synthetic",
+      "today": {
+        "tokens": {
+          "total": 1,
+          "input": 1,
+          "output": 1,
+          "cacheRead": 1,
+          "cacheWrite": 1,
+          "complete": false
+        },
+        "costUsd": 42.5,
+        "costState": "priced",
+        "sessionCount": 1,
+        "projectCount": 1,
+        "projects": [
+          {
+            "ref": "synthetic",
+            "kind": "repo",
+            "label": "synthetic",
+            "sessions": 1,
+            "sources": [
+              "synthetic"
+            ],
+            "subscriptionRefs": [
+              "synthetic"
+            ],
+            "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
+            "running": false,
+            "tokens": {
+              "total": 1,
+              "input": 1,
+              "output": 1,
+              "cacheRead": 1,
+              "cacheWrite": 1,
+              "complete": false
+            },
+            "share": 42.5,
+            "costUsd": 42.5,
+            "costState": "priced",
+            "model": "synthetic",
+            "modelApprox": false,
+            "effort": "synthetic"
+          }
+        ],
+        "sessions": [
+          {
+            "sessionRef": "0123456789abcdef",
+            "source": "synthetic",
+            "subscriptionRef": "0123456789abcdef",
+            "projectRef": "synthetic",
+            "projectKind": "repo",
+            "projectLabel": "synthetic",
+            "projectState": "named",
+            "title": "synthetic",
+            "firstObservedAt": "2026-10-29T12:00:00.123456789Z",
+            "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
+            "running": false,
+            "tokens": {
+              "total": 1,
+              "input": 1,
+              "output": 1,
+              "cacheRead": 1,
+              "cacheWrite": 1,
+              "complete": false
+            },
+            "share": 42.5,
+            "costUsd": 42.5,
+            "costState": "priced",
+            "model": "synthetic",
+            "modelApprox": false,
+            "effort": "synthetic"
+          }
+        ],
+        "otherProjects": {
+          "count": 1,
+          "tokens": {
+            "total": 1,
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "complete": false
+          },
+          "share": 42.5,
+          "costUsd": 42.5,
+          "costState": "priced"
+        },
+        "otherSessions": {
+          "count": 1,
+          "tokens": {
+            "total": 1,
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "complete": false
+          },
+          "share": 42.5,
+          "costUsd": 42.5,
+          "costState": "priced"
+        },
+        "backgroundReview": {
+          "runs": 1,
+          "tokens": {
+            "total": 1,
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "complete": false
+          },
+          "share": 42.5,
+          "costUsd": 42.5,
+          "costState": "priced",
+          "model": "synthetic",
+          "modelApprox": false,
+          "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
+        }
+      },
+      "recent7d": {
+        "tokens": {
+          "total": 1,
+          "input": 1,
+          "output": 1,
+          "cacheRead": 1,
+          "cacheWrite": 1,
+          "complete": false
+        },
+        "costUsd": 42.5,
+        "costState": "priced",
+        "sessionCount": 1,
+        "projectCount": 1,
+        "projects": [
+          {
+            "ref": "synthetic",
+            "kind": "repo",
+            "label": "synthetic",
+            "sessions": 1,
+            "sources": [
+              "synthetic"
+            ],
+            "subscriptionRefs": [
+              "synthetic"
+            ],
+            "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
+            "running": false,
+            "tokens": {
+              "total": 1,
+              "input": 1,
+              "output": 1,
+              "cacheRead": 1,
+              "cacheWrite": 1,
+              "complete": false
+            },
+            "share": 42.5,
+            "costUsd": 42.5,
+            "costState": "priced",
+            "model": "synthetic",
+            "modelApprox": false,
+            "effort": "synthetic"
+          }
+        ],
+        "sessions": [
+          {
+            "sessionRef": "0123456789abcdef",
+            "source": "synthetic",
+            "subscriptionRef": "0123456789abcdef",
+            "projectRef": "synthetic",
+            "projectKind": "repo",
+            "projectLabel": "synthetic",
+            "projectState": "named",
+            "title": "synthetic",
+            "firstObservedAt": "2026-10-29T12:00:00.123456789Z",
+            "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
+            "running": false,
+            "tokens": {
+              "total": 1,
+              "input": 1,
+              "output": 1,
+              "cacheRead": 1,
+              "cacheWrite": 1,
+              "complete": false
+            },
+            "share": 42.5,
+            "costUsd": 42.5,
+            "costState": "priced",
+            "model": "synthetic",
+            "modelApprox": false,
+            "effort": "synthetic"
+          }
+        ],
+        "otherProjects": {
+          "count": 1,
+          "tokens": {
+            "total": 1,
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "complete": false
+          },
+          "share": 42.5,
+          "costUsd": 42.5,
+          "costState": "priced"
+        },
+        "otherSessions": {
+          "count": 1,
+          "tokens": {
+            "total": 1,
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "complete": false
+          },
+          "share": 42.5,
+          "costUsd": 42.5,
+          "costState": "priced"
+        },
+        "backgroundReview": {
+          "runs": 1,
+          "tokens": {
+            "total": 1,
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "complete": false
+          },
+          "share": 42.5,
+          "costUsd": 42.5,
+          "costState": "priced",
+          "model": "synthetic",
+          "modelApprox": false,
+          "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
+        }
+      },
+      "recent30d": {
+        "tokens": {
+          "total": 1,
+          "input": 1,
+          "output": 1,
+          "cacheRead": 1,
+          "cacheWrite": 1,
+          "complete": false
+        },
+        "costUsd": 42.5,
+        "costState": "priced",
+        "sessionCount": 1,
+        "projectCount": 1,
+        "projects": [
+          {
+            "ref": "synthetic",
+            "kind": "repo",
+            "label": "synthetic",
+            "sessions": 1,
+            "sources": [
+              "synthetic"
+            ],
+            "subscriptionRefs": [
+              "synthetic"
+            ],
+            "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
+            "running": false,
+            "tokens": {
+              "total": 1,
+              "input": 1,
+              "output": 1,
+              "cacheRead": 1,
+              "cacheWrite": 1,
+              "complete": false
+            },
+            "share": 42.5,
+            "costUsd": 42.5,
+            "costState": "priced",
+            "model": "synthetic",
+            "modelApprox": false,
+            "effort": "synthetic"
+          }
+        ],
+        "sessions": [
+          {
+            "sessionRef": "0123456789abcdef",
+            "source": "synthetic",
+            "subscriptionRef": "0123456789abcdef",
+            "projectRef": "synthetic",
+            "projectKind": "repo",
+            "projectLabel": "synthetic",
+            "projectState": "named",
+            "title": "synthetic",
+            "firstObservedAt": "2026-10-29T12:00:00.123456789Z",
+            "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
+            "running": false,
+            "tokens": {
+              "total": 1,
+              "input": 1,
+              "output": 1,
+              "cacheRead": 1,
+              "cacheWrite": 1,
+              "complete": false
+            },
+            "share": 42.5,
+            "costUsd": 42.5,
+            "costState": "priced",
+            "model": "synthetic",
+            "modelApprox": false,
+            "effort": "synthetic"
+          }
+        ],
+        "otherProjects": {
+          "count": 1,
+          "tokens": {
+            "total": 1,
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "complete": false
+          },
+          "share": 42.5,
+          "costUsd": 42.5,
+          "costState": "priced"
+        },
+        "otherSessions": {
+          "count": 1,
+          "tokens": {
+            "total": 1,
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "complete": false
+          },
+          "share": 42.5,
+          "costUsd": 42.5,
+          "costState": "priced"
+        },
+        "backgroundReview": {
+          "runs": 1,
+          "tokens": {
+            "total": 1,
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "complete": false
+          },
+          "share": 42.5,
+          "costUsd": 42.5,
+          "costState": "priced",
+          "model": "synthetic",
+          "modelApprox": false,
+          "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
+        }
       }
     }
   },

@@ -275,6 +275,28 @@ const (
 	ImportSourceOff       HistoryImportSourceStatus = "off"
 )
 
+// CockpitProjectKind is where a session's work lives (owner decision D470): a git repository (worktrees merged into
+// it), a workspace the tool names, an independent Codex chat, the home folder, or no project. The last three are
+// buckets with no label; the page words them.
+type CockpitProjectKind string
+
+const (
+	ProjectKindRepo        CockpitProjectKind = "repo"
+	ProjectKindWorkspace   CockpitProjectKind = "workspace"
+	ProjectKindIndependent CockpitProjectKind = "independent"
+	ProjectKindHome        CockpitProjectKind = "home"
+	ProjectKindNone        CockpitProjectKind = "none"
+)
+
+// CockpitCostState says whether a row's ≈cost covers all, some or none of its tokens (never $0 for none).
+type CockpitCostState string
+
+const (
+	CostStatePriced   CockpitCostState = "priced"
+	CostStatePartial  CockpitCostState = "partial"
+	CostStateUnpriced CockpitCostState = "unpriced"
+)
+
 // CockpitProjectState says whether a cockpit session has a project, apart from whether its name is shown:
 // named (projectLabel is the name), unnamed (a project the tool stores no name for), hidden (a project
 // whose name `project-labels off` withholds) or none (no project at all).

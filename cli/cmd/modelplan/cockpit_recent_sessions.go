@@ -19,7 +19,8 @@ const (
 // capped. The sessions are already admitted against the current grant epochs; a source whose consent scope is
 // not admitted is skipped. A session keeps only what the 7-day time view shows: when it was last seen, its
 // model and effort on its last recorded day, its project label while labels are on, and a subscription only
-// under a binding the cockpit already verified. It has no end time, title or token count.
+// under a binding the cockpit already verified. It has no end time. Its title (the tool's own, while labels are on), total tokens and
+// ≈cost are added by enrichRecentSessions when known (D470).
 func cockpitRecentSessions(sessions []speed.PerfSession, allowed map[string]bool, sourceScope map[string]string, verified map[string]*wire.CockpitSubscriptionDetails, labels bool, models []digest.Model, now time.Time) []wire.CockpitRecentSession {
 	from := now.Add(-cockpitRecentSessionDays * 24 * time.Hour)
 	recent := make([]speed.PerfSession, 0, len(sessions))
@@ -58,16 +59,18 @@ func cockpitRecentSessions(sessions []speed.PerfSession, allowed map[string]bool
 				}
 			}
 		}
-		entry.ProjectState = wire.ProjectNone
-		switch {
-		case session.ProjectRef == "":
-		case !labels:
-			entry.ProjectState = wire.ProjectHidden
-		case safeCockpitLabel(session.ProjectLabel):
-			v := session.ProjectLabel
-			entry.ProjectLabel, entry.ProjectState = &v, wire.ProjectNamed
-		default:
-			entry.ProjectLabel, entry.ProjectState = unnamedProjectLabel(session.ProjectRef), wire.ProjectUnnamed
+		entry.ProjectKind = usageKind(session.ProjectKind)
+		var ref, label *string
+		if session.ProjectRef != "" {
+			ref = &session.ProjectRef
+		}
+		if safeCockpitLabel(session.ProjectLabel) {
+			label = &session.ProjectLabel
+		}
+		entry.ProjectState, entry.ProjectLabel = cockpitProjectState(ref, label, entry.ProjectKind, labels)
+		if labels && session.Title != "" && safeCockpitTitle(session.Title) {
+			v := session.Title
+			entry.Title = &v
 		}
 		if session.SubscriptionRef != "" && verified[session.SubscriptionRef] != nil {
 			v := session.SubscriptionRef
@@ -76,4 +79,18 @@ func cockpitRecentSessions(sessions []speed.PerfSession, allowed map[string]bool
 		out = append(out, entry)
 	}
 	return out
+}
+
+// enrichRecentSessions adds each session's total tokens and ≈cost so far (the tape's tokens slot, D470). Absent
+// while unknown, never zero.
+func enrichRecentSessions(sessions []wire.CockpitRecentSession, perf speed.PerfView, pricer speed.Pricer) {
+	totals := perf.SessionTotals(pricer)
+	for i := range sessions {
+		t, ok := totals[sessions[i].SessionRef]
+		if !ok {
+			continue
+		}
+		sessions[i].TotalTokens = t.Tokens
+		sessions[i].CostUsd, _ = usageCost(t.Cost)
+	}
 }

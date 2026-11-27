@@ -32,6 +32,7 @@ type cxTurn struct {
 type codexParser struct {
 	cur      *cxTurn
 	cwd      string // the session's, from its session_meta
+	thread   string // its thread id, from its session_meta
 	done     []turn
 	total    *cxUsage
 	record   *cxUsage // the last usage record whose token_count notice has not been seen yet (G3-101)
@@ -63,10 +64,14 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		var c struct {
 			Payload struct {
 				Cwd string `json:"cwd"`
+				ID  string `json:"id"`
 			} `json:"payload"`
 		}
 		if json.Unmarshal(b, &c) == nil {
 			p.cwd = c.Payload.Cwd
+			if p.thread == "" && len(c.Payload.ID) <= 64 {
+				p.thread = c.Payload.ID
+			}
 		}
 	case t == nil:
 		return
@@ -197,7 +202,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 			r.cfg = t.cfg
 			all[i] = r
 		}
-		p.done = append(p.done, turn{cfg: t.cfg, at: t.at, dur: dur, out: t.out, reqs: t.reqs, all: all, cwd: t.cwd})
+		p.done = append(p.done, turn{cfg: t.cfg, at: t.at, dur: dur, out: t.out, reqs: t.reqs, all: all, cwd: t.cwd, np: nativeProject{Thread: p.thread}})
 	case event == "turn_aborted":
 		p.cur = nil
 	}

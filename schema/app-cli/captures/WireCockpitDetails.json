@@ -88,6 +88,8 @@
       "rate": 42.5,
       "fast": false,
       "startedAt": "2026-10-29T12:00:00.123456789Z",
+      "title": "synthetic",
+      "projectKind": "repo",
       "observedTotalTokens": 1,
       "modelDisplay": "synthetic"
     }
@@ -213,7 +215,11 @@
       "effort": "synthetic",
       "projectLabel": "synthetic",
       "projectState": "named",
-      "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
+      "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
+      "projectKind": "repo",
+      "title": "synthetic",
+      "totalTokens": 1,
+      "costUsd": 42.5
     }
   ],
   "peaks": [

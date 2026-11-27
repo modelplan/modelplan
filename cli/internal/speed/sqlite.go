@@ -23,7 +23,7 @@ import (
 // last time. Only finished requests count, each once (by a hash of its own id), and only those
 // that started after the ledger did. A row that starts long before the newest one counted is a
 // copy of history (OpenCode copies messages into a forked session) and is not counted again.
-// Prompts, replies, titles and ids are never read into the ledger; the session id only becomes a
+// Prompts and replies are never read into the ledger; a session title is read only while project labels are on (D470); the session id only becomes a
 // hashed key, the working directory a project reference.
 
 // DBCursor is how far one database was read.

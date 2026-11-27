@@ -100,6 +100,7 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 		if perf != nil {
 			out.DailyFrom, out.Daily, out.Hourly = cockpitBuckets(*live, imported, allowed, now)
 			out.Projects = cockpitProjects(perf.Projects(), projectLabels(), view.PublicModels)
+			out.Usage = cockpitUsage(*perf, allowed, projectLabels(), view.PublicModels, view.PublicSpeedTiers)
 			out.Cost = cockpitCost(*perf, allowed, view.PublicModels, view.PublicSpeedTiers, now)
 			if ledger, ok := history.LoadPace(s.cache); ok {
 				pace := history.PaceView{Ledger: ledger, OK: true, Recording: !history.Off(), Now: now}

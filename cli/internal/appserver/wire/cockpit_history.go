@@ -29,6 +29,9 @@ type CockpitHistory struct {
 	// Cost is ≈cost at public API list prices (WP-06), present only when the verified
 	// publication carries prices (client-v1.6). See CockpitCost.
 	Cost *CockpitCost `json:"cost,omitempty" null:"forbidden"`
+	// Usage ranks every project and session by total tokens over today, 7 and 30 days (owner decision D470).
+	// Present whenever local history is. Titles and labels cross only while project labels are on.
+	Usage *CockpitUsage `json:"usage,omitempty" null:"forbidden"`
 }
 
 // CockpitCycleGroup is one window kind of one subscription.
@@ -168,4 +171,107 @@ type CockpitModelCost struct {
 	PricedTokens   int64    `json:"pricedTokens" schema:"minimum=0"`
 	UnpricedTokens int64    `json:"unpricedTokens" schema:"minimum=0"`
 	Approximate    bool     `json:"approximate,omitempty" null:"forbidden"`
+}
+
+// CockpitUsage: sessions and projects ranked by one measure, total tokens (input + output + cache, each once).
+type CockpitUsage struct {
+	Measure   string             `json:"measure"` // total-tokens
+	Today     CockpitUsageWindow `json:"today"`
+	Recent7d  CockpitUsageWindow `json:"recent7d"`
+	Recent30d CockpitUsageWindow `json:"recent30d"`
+}
+
+// CockpitUsageWindow: one window. Tokens and CostUsd are the window's total, background reviews included; every
+// share is a part of Tokens.Total, so the listed rows, Other and BackgroundReview add up to 1. Rows are the
+// largest first, at most 200 each; the rest are summed in Other.
+type CockpitUsageWindow struct {
+	Tokens           CockpitUsageTokens       `json:"tokens"`
+	CostUsd          *float64                 `json:"costUsd" null:"coalesced"`
+	CostState        CockpitCostState         `json:"costState"`
+	SessionCount     int                      `json:"sessionCount"`
+	ProjectCount     int                      `json:"projectCount"`
+	Projects         []CockpitUsageProject    `json:"projects" schema:"maxItems=200"`
+	Sessions         []CockpitUsageSession    `json:"sessions" schema:"maxItems=200"`
+	OtherProjects    CockpitUsageOther        `json:"otherProjects"`
+	OtherSessions    CockpitUsageOther        `json:"otherSessions"`
+	BackgroundReview *CockpitBackgroundReview `json:"backgroundReview" null:"coalesced"`
+}
+
+// CockpitUsageTokens: Total is the sum of the days whose parts are all known; Complete is false when some day was
+// recorded before its input and cache sums were kept, which then adds nothing to Total (never its output alone).
+type CockpitUsageTokens struct {
+	Total      int64 `json:"total" schema:"minimum=0"`
+	Input      int64 `json:"input" schema:"minimum=0"`
+	Output     int64 `json:"output" schema:"minimum=0"`
+	CacheRead  int64 `json:"cacheRead" schema:"minimum=0"`
+	CacheWrite int64 `json:"cacheWrite" schema:"minimum=0"`
+	Complete   bool  `json:"complete"`
+}
+
+// CockpitUsageProject: the sessions under one project reference, summed. Label is present only while project
+// labels are on and only for a repo or workspace; a bucket kind has none.
+type CockpitUsageProject struct {
+	Ref              string             `json:"ref" schema:"maxLength=64"`
+	Kind             CockpitProjectKind `json:"kind"`
+	Label            *string            `json:"label" null:"coalesced"`
+	Sessions         int                `json:"sessions"`
+	Sources          []string           `json:"sources" schema:"maxItems=16"`
+	SubscriptionRefs []string           `json:"subscriptionRefs" schema:"maxItems=16"`
+	LastObservedAt   time.Time          `json:"lastObservedAt"`
+	Running          bool               `json:"running"`
+	Tokens           CockpitUsageTokens `json:"tokens"`
+	Share            float64            `json:"share" schema:"minimum=0,maximum=1"`
+	CostUsd          *float64           `json:"costUsd" null:"coalesced"`
+	CostState        CockpitCostState   `json:"costState"`
+	Model            *string            `json:"model" null:"coalesced"`
+	ModelApprox      bool               `json:"modelApprox"`
+	Effort           *string            `json:"effort" null:"coalesced"`
+}
+
+// CockpitUsageSession: one tool thread. Title is the tool's own generated or user-set title, never the first
+// message, and present only while project labels are on. A folded background review is CockpitBackgroundReview,
+// never a session row.
+type CockpitUsageSession struct {
+	SessionRef      string              `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	Source          string              `json:"source"`
+	SubscriptionRef *string             `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
+	ProjectRef      *string             `json:"projectRef" schema:"maxLength=64" null:"coalesced"`
+	ProjectKind     CockpitProjectKind  `json:"projectKind"`
+	ProjectLabel    *string             `json:"projectLabel" null:"coalesced"`
+	ProjectState    CockpitProjectState `json:"projectState"`
+	Title           *string             `json:"title" null:"coalesced"`
+	FirstObservedAt time.Time           `json:"firstObservedAt"`
+	LastObservedAt  time.Time           `json:"lastObservedAt"`
+	Running         bool                `json:"running"`
+	Tokens          CockpitUsageTokens  `json:"tokens"`
+	Share           float64             `json:"share" schema:"minimum=0,maximum=1"`
+	CostUsd         *float64            `json:"costUsd" null:"coalesced"`
+	CostState       CockpitCostState    `json:"costState"`
+	Model           *string             `json:"model" null:"coalesced"`
+	// ModelApprox: the model is the dated fallback for a row that has none, to be shown with "≈".
+	ModelApprox bool    `json:"modelApprox"`
+	Effort      *string `json:"effort" null:"coalesced"`
+}
+
+// CockpitUsageOther: the rows past the 200 listed, summed.
+type CockpitUsageOther struct {
+	Count     int                `json:"count"`
+	Tokens    CockpitUsageTokens `json:"tokens"`
+	Share     float64            `json:"share" schema:"minimum=0,maximum=1"`
+	CostUsd   *float64           `json:"costUsd" null:"coalesced"`
+	CostState CockpitCostState   `json:"costState"`
+}
+
+// CockpitBackgroundReview folds the Codex background review runs (Auto Review) of a window into one row. It is a
+// kind of session, never a model: its tokens count toward the window total and its model is the dated fallback,
+// to be shown with "≈". Null when the window had none.
+type CockpitBackgroundReview struct {
+	Runs           int                `json:"runs"`
+	Tokens         CockpitUsageTokens `json:"tokens"`
+	Share          float64            `json:"share" schema:"minimum=0,maximum=1"`
+	CostUsd        *float64           `json:"costUsd" null:"coalesced"`
+	CostState      CockpitCostState   `json:"costState"`
+	Model          *string            `json:"model" null:"coalesced"`
+	ModelApprox    bool               `json:"modelApprox"`
+	LastObservedAt time.Time          `json:"lastObservedAt"`
 }

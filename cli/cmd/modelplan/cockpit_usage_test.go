@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: MIT
+package main
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
+	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/speed"
+)
+
+func usageFixture(now time.Time) speed.PerfView {
+	total := int64(1500)
+	in, read, write := int64(300), int64(1000), int64(100)
+	d := speed.SessionDay{Day: now.Local().Format("2006-01-02"), Model: "synthetic-alias", EffortStatus: "reported", Effort: "high", ObservedRequests: 1, ObservedOutputTokens: 100,
+		Kinds: &speed.TokenKinds{TotalTokens: &total, InputTokens: &in, CacheReadTokens: &read, CacheWriteTokens: &write}}
+	return speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Sessions: []speed.PerfSession{
+		{Ref: "1111111111111111", Key: "k1", Source: "codex", ProjectRef: "r1", ProjectLabel: "modelplans.ai", ProjectKind: speed.KindRepo, Title: "Fix the tape", LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
+		{Ref: "2222222222222222", Key: "k2", Source: "codex", ProjectRef: "r2", ProjectKind: speed.KindIndependent, Title: "A chat", LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
+		{Ref: "3333333333333333", Key: "k3", Source: "claude-code", ProjectRef: "r3", ProjectKind: speed.KindHome, LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
+		{Ref: "4444444444444444", Key: "k4", Source: "gemini", ProjectRef: "r4", ProjectLabel: "hidden-source", ProjectKind: speed.KindRepo, LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
+	}}}
+}
+
+func TestCockpitUsageWireShapeAndLabelSwitch(t *testing.T) {
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	models := []digest.Model{{ID: "public-model", HarnessIDs: map[string][]string{"codex": {"synthetic-alias"}, "claude-code": {"synthetic-alias"}}}}
+	allowed := map[string]bool{"codex": true, "claude-code": true}
+	on := cockpitUsage(usageFixture(now), allowed, true, models, nil)
+	w := on.Today
+	if on.Measure != "total-tokens" || w.SessionCount != 3 || w.Tokens.Total != 4500 || len(w.Sessions) != 3 || len(w.Projects) != 3 {
+		t.Fatalf("%+v", w)
+	}
+	byRef := map[string]wire.CockpitUsageSession{}
+	for _, s := range w.Sessions {
+		byRef[s.SessionRef] = s
+	}
+	repo, indep, home := byRef["1111111111111111"], byRef["2222222222222222"], byRef["3333333333333333"]
+	if repo.ProjectState != wire.ProjectNamed || repo.ProjectLabel == nil || *repo.ProjectLabel != "modelplans.ai" || repo.Title == nil || *repo.Title != "Fix the tape" || repo.Model == nil || *repo.Model != "public-model" {
+		t.Fatalf("%+v", repo)
+	}
+	// Buckets are "no project" with their kind and no label; a cost nobody can price is null, never zero.
+	if indep.ProjectState != wire.ProjectNone || indep.ProjectLabel != nil || indep.ProjectKind != wire.ProjectKindIndependent || home.ProjectKind != wire.ProjectKindHome || home.ProjectLabel != nil {
+		t.Fatalf("%+v %+v", indep, home)
+	}
+	if repo.CostUsd != nil || repo.CostState != wire.CostStateUnpriced || repo.Share < 0.33 || repo.Share > 0.34 {
+		t.Fatalf("%+v", repo)
+	}
+	if w.BackgroundReview != nil {
+		t.Fatal("no review runs")
+	}
+	// Labels off: no label and no title cross; kinds and references stay.
+	off := cockpitUsage(usageFixture(now), allowed, false, models, nil)
+	b, _ := json.Marshal(off)
+	for _, leak := range []string{"modelplans.ai", "Fix the tape", "A chat", "hidden-source"} {
+		if strings.Contains(string(b), leak) {
+			t.Fatalf("%q with labels off: %s", leak, b)
+		}
+	}
+	if s := off.Today.Sessions[0]; s.ProjectState != wire.ProjectHidden && s.ProjectState != wire.ProjectNone {
+		t.Fatalf("%+v", s)
+	}
+}
+
+func TestCockpitProjectStateByKind(t *testing.T) {
+	ref, label := "r", "modelplans.ai"
+	for _, c := range []struct {
+		kind   wire.CockpitProjectKind
+		labels bool
+		want   wire.CockpitProjectState
+	}{
+		{wire.ProjectKindRepo, true, wire.ProjectNamed}, {wire.ProjectKindRepo, false, wire.ProjectHidden}, {wire.ProjectKindWorkspace, true, wire.ProjectNamed},
+		{wire.ProjectKindHome, true, wire.ProjectNone}, {wire.ProjectKindIndependent, true, wire.ProjectNone}, {wire.ProjectKindNone, false, wire.ProjectNone}, {"", true, wire.ProjectNamed},
+	} {
+		if got, _ := cockpitProjectState(&ref, &label, c.kind, c.labels); got != c.want {
+			t.Errorf("%q labels=%v: %q, want %q", c.kind, c.labels, got, c.want)
+		}
+	}
+	if got, _ := cockpitProjectState(nil, nil, wire.ProjectKindRepo, true); got != wire.ProjectNone {
+		t.Error("no reference is no project")
+	}
+}
+
+func TestEnrichRecentSessionsAddsTotalsAndNeverZero(t *testing.T) {
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	v := usageFixture(now)
+	v.Ledger.Sessions[0].Days = append(v.Ledger.Sessions[0].Days, speed.SessionDay{Day: "2026-11-20", Model: "m", ObservedOutputTokens: 5}) // before token kinds
+	out := []wire.CockpitRecentSession{{SessionRef: "1111111111111111"}, {SessionRef: "2222222222222222"}, {SessionRef: "9999999999999999"}}
+	enrichRecentSessions(out, v, nil)
+	if out[0].TotalTokens != nil || out[1].TotalTokens == nil || *out[1].TotalTokens != 1500 || out[2].TotalTokens != nil || out[1].CostUsd != nil {
+		t.Fatalf("%+v", out)
+	}
+}

@@ -42,7 +42,7 @@ func (m *PerfReadMemo) Read(cache string, admission consent.Admission, now time.
 		// The engine's Today projection only needs these aggregates and rows.
 		// Keep no ledger cursors, project maps or file enumeration state.
 		ledger = PerfLedger{SchemaVersion: ledger.SchemaVersion, Since: ledger.Since,
-			Rows: ledger.Rows, UsageRows: ledger.UsageRows, Live: ledger.Live, Sessions: ledger.Sessions}
+			Rows: ledger.Rows, UsageRows: ledger.UsageRows, UsageSessions: ledger.UsageSessions, Live: ledger.Live, Sessions: ledger.Sessions}
 		if after, complete := perfFileInfo(paths); ok && cacheable && complete && samePerfFiles(files, after) {
 			m.cache, m.fence, m.mode = cache, admission.Fence(), admission.Mode()
 			m.files, m.ledger, m.valid = files, ledger, true

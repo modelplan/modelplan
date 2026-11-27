@@ -48,8 +48,8 @@ func codexHome(t *testing.T, projects ...string) {
 	t.Setenv("CODEX_HOME", home)
 }
 
-// Codex's project is the folder Codex lists that holds the session; a session outside every
-// listed folder, or without a working directory, has no project (it is not guessed).
+// D470: a session's project is its repository root (a worktree merged into it); one outside every repository
+// and listed folder is in a bucket, and one without a working directory has none.
 func TestProjectRanking(t *testing.T) {
 	utc(t)
 	cache, logs, root := t.TempDir(), t.TempDir(), t.TempDir()
@@ -60,8 +60,8 @@ func TestProjectRanking(t *testing.T) {
 	files := map[string][]string{
 		"a": cxSession(filepath.Join(repo, "src"), 0, 3000),
 		"b": cxSession(worktree, 2, 1000), // a worktree of the listed repository
-		"c": cxSession(gone, 4, 500),      // in no listed folder
-		"d": append([]string{cx(6, "session_meta", `{"id":"d","source":"cli"}`)}, cxTurnLines(7, high, 30, req{500, 20, 1})...),
+		"c": cxSession(gone, 4, 600),      // in no repository and no listed folder: a bucket
+		"d": append([]string{cx(6, "session_meta", `{"id":"d","source":"cli"}`)}, cxTurnLines(7, high, 30, req{400, 20, 1})...),
 	}
 	var rollouts []string
 	for _, k := range []string{"a", "b", "c", "d"} {
@@ -76,7 +76,7 @@ func TestProjectRanking(t *testing.T) {
 	}
 	v := view(t, cache, now)
 	w := v.Projects().Recent7d
-	if w.Projects != 1 || w.TotalObservedOutputTokens != 5000 || w.UnattributedOutputTokens != 1000 {
+	if w.Projects != 2 || w.TotalObservedOutputTokens != 5000 || w.UnattributedOutputTokens != 400 {
 		t.Fatalf("projects = %+v", w)
 	}
 	top := w.Top[0]
@@ -89,7 +89,7 @@ func TestProjectRanking(t *testing.T) {
 	for _, r := range rs {
 		refs[r.ObservedOutputTokens] = r.ProjectRef
 	}
-	if refs[3000] == nil || *refs[3000] != top.Ref || refs[1000] == nil || *refs[1000] != top.Ref || refs[500] != nil {
+	if refs[3000] == nil || *refs[3000] != top.Ref || refs[1000] == nil || *refs[1000] != top.Ref || refs[400] != nil || refs[600] == nil || *refs[600] == top.Ref {
 		t.Fatalf("session refs = %+v", refs)
 	}
 
@@ -139,37 +139,40 @@ func TestProjectRanking(t *testing.T) {
 	}
 }
 
-// Codex with no listed project folders (or no config at all) gives no project; the deepest listed
-// folder wins; the desktop app's saved workspace roots count too.
+// D470: a repository root is the project whether or not Codex lists it; a listed folder that is no repository is a
+// workspace; a folder in neither is a bucket. The deepest listed folder wins.
 func TestCodexProjectDefinition(t *testing.T) {
 	cache, root := t.TempDir(), t.TempDir()
 	repo, _ := gitRepo(t, root)
 	sub := filepath.Join(repo, "src")
+	ws := filepath.Join(root, "notes")
+	os.MkdirAll(filepath.Join(ws, "deep"), 0o700)
 	t.Setenv("CODEX_HOME", t.TempDir()) // no config.toml
-	if r, _ := projector(cache, true)("codex", sub, nativeProject{}); r != "" {
-		t.Fatal("no Codex project: no project, not the git root")
+	pr := projectorInfo(cache, true)
+	if i := pr("codex", sub, nativeProject{}); i.Label != "acme" || i.Kind != KindRepo {
+		t.Fatalf("the repository root, listed or not: %+v", i)
 	}
-	codexHome(t, root, repo)
-	_, label := projector(cache, true)("codex", sub, nativeProject{})
-	if label != "acme" {
-		t.Fatalf("the deepest listed folder wins: %q", label)
+	if i := pr("codex", ws, nativeProject{}); i.Kind != KindNone || i.Label != "" || i.Ref == "" {
+		t.Fatalf("a folder in no repository and no listed folder is a bucket: %+v", i)
 	}
-	if r, _ := projector(cache, true)("codex", t.TempDir(), nativeProject{}); r != "" {
-		t.Fatal("a folder outside every project has none")
+	codexHome(t, root, ws)
+	pr = projectorInfo(cache, true)
+	if i := pr("codex", filepath.Join(ws, "deep"), nativeProject{}); i.Label != "notes" || i.Kind != KindWorkspace {
+		t.Fatalf("the deepest listed folder wins: %+v", i)
 	}
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)
-	os.WriteFile(filepath.Join(home, ".codex-global-state.json"), []byte(fmt.Sprintf(`{"electron-saved-workspace-roots":[%q]}`, repo)), 0o600)
-	if _, label := projector(cache, true)("codex", sub, nativeProject{}); label != "acme" {
-		t.Fatalf("saved workspace root: %q", label)
+	os.WriteFile(filepath.Join(home, ".codex-global-state.json"), []byte(fmt.Sprintf(`{"electron-saved-workspace-roots":[%q]}`, ws)), 0o600)
+	if i := projectorInfo(cache, true)("codex", filepath.Join(ws, "deep"), nativeProject{}); i.Label != "notes" || i.Kind != KindWorkspace {
+		t.Fatalf("saved workspace root: %+v", i)
 	}
 }
 
-// Claude Code's project is the session's working directory: worktrees and subfolders are their own.
+// D470: Claude Code's project is the repository root; a subfolder and a worktree are the same project.
 func TestClaudeSessionProject(t *testing.T) {
 	utc(t)
 	cache, dir, root := t.TempDir(), t.TempDir(), t.TempDir()
-	repo, _ := gitRepo(t, root)
+	repo, worktree := gitRepo(t, root)
 	seedPerf(t, cache, t0.Add(-time.Minute))
 	p := filepath.Join(dir, "s.jsonl")
 	prompt := strings.Replace(ccPrompt(0), `"type":"user"`, fmt.Sprintf(`"cwd":%q,"type":"user"`, filepath.Join(repo, "src")), 1)
@@ -182,14 +185,17 @@ func TestClaudeSessionProject(t *testing.T) {
 		t.Fatalf("projects = %+v", w)
 	}
 	pr := projector(cache, true)
-	if r, label := pr("claude-code", filepath.Join(repo, "src"), nativeProject{}); r != w.Top[0].Ref || label != "src" {
-		t.Fatalf("the session's directory is its project: %q", label)
+	if r, label := pr("claude-code", filepath.Join(repo, "src"), nativeProject{}); r != w.Top[0].Ref || label != "acme" {
+		t.Fatalf("the repository root is the project: %q", label)
 	}
-	if r, _ := pr("claude-code", repo, nativeProject{}); r == w.Top[0].Ref {
-		t.Fatal("a repository's root is another project than its subfolder")
+	if r, _ := pr("claude-code", repo, nativeProject{}); r != w.Top[0].Ref {
+		t.Fatal("a repository's root is the project of its subfolder")
 	}
-	if r, _ := pr("gemini", repo, nativeProject{}); r != "" {
-		t.Fatal("a tool without a project notion has none")
+	if r, _ := pr("claude-code", worktree, nativeProject{}); r != w.Top[0].Ref {
+		t.Fatal("a worktree is merged into its repository")
+	}
+	if r, _ := pr("gemini", repo, nativeProject{}); r != w.Top[0].Ref {
+		t.Fatal("the repository rule holds for every tool")
 	}
 }
 
@@ -321,7 +327,7 @@ func TestOldGuessedProjectIsReplacedOnNextObservation(t *testing.T) {
 	}
 	l, _ = LoadPerf(cache)
 	s := l.Sessions[0]
-	if s.ProjectRef == "oldref" || s.ProjectLabel != "src" || s.ProjectRule != projectRule {
+	if s.ProjectRef == "oldref" || s.ProjectLabel != "acme" || s.ProjectRule != projectRule || s.ProjectKind != KindRepo {
 		t.Fatalf("old guess remains: %+v", s)
 	}
 }
@@ -359,10 +365,10 @@ func TestUpgradeClearsTheOldLiveProject(t *testing.T) {
 	now = t0.Add(2 * time.Minute)
 	observe()
 	l, _ = LoadPerf(cache)
-	if l.Sessions[0].ProjectRule != projectRule || l.Sessions[0].ProjectRef != "" {
+	if l.Sessions[0].ProjectRule != projectRule || l.Sessions[0].ProjectRef == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" || l.Sessions[0].ProjectKind != KindNone {
 		t.Fatalf("precondition: session not migrated: %+v", l.Sessions[0])
 	}
-	if l.Live[0].ProjectRef != "" || l.Live[0].ProjectLabel != "" {
+	if l.Live[0].ProjectRef != l.Sessions[0].ProjectRef || l.Live[0].ProjectLabel != "" {
 		t.Fatalf("old live project survived the new observation: %q %q", l.Live[0].ProjectRef, l.Live[0].ProjectLabel)
 	}
 }
