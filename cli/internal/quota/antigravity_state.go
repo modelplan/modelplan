@@ -303,3 +303,17 @@ func collectAntigravity(ctx context.Context, _ *http.Client, cache string, now t
 	}
 	return antigravityCachedEntry(s, now, access.LoginGeneration)
 }
+
+// antigravityRetryDue: the app was not running at the last look and the login generation has since
+// changed (Settings Retry or a new sign-in), so the next read must not wait for the re-check interval.
+func antigravityRetryDue(p Paths) bool {
+	if p.ReaderAccess == nil || p.Cache == "" {
+		return false
+	}
+	g, ok := p.ReaderAccess.Grants["antigravity"]
+	if !ok {
+		return false
+	}
+	s := loadAntigravityState(p.Cache)
+	return s.Availability == "not_detected" && s.LoginGeneration != readerGenerationID(g.Generation)
+}

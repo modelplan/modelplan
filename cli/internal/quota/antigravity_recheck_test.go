@@ -293,3 +293,104 @@ func TestAntigravityHubPrefersQuotaSummary(t *testing.T) {
 		t.Fatalf("%+v %v", e, h2.methods)
 	}
 }
+
+// macrevb-1282-4: the outer native failure reservation must not hold the 45 s re-check or Settings Retry.
+func TestAntigravityNotRunningOuterGatesAllowRecheckAndRetry(t *testing.T) {
+	isolateHome(t)
+	p := nativePaths(t)
+	_ = SetConnection(p.ConnectionsFile, QuotaSource{Provider: "antigravity", Backend: BackendNative, Enabled: true})
+	old := antigravityCommand
+	t.Cleanup(func() { antigravityCommand = old })
+	calls := 0
+	antigravityCommand = func(context.Context, string, ...string) ([]byte, error) { calls++; return nil, nil }
+	ctx := context.Background()
+	if err := RefreshNative(ctx, p, now); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatal(calls)
+	}
+	if err := RefreshNative(ctx, p, now.Add(10*time.Second)); err != nil || calls != 1 {
+		t.Fatalf("inside the re-check interval nothing is probed: %d %v", calls, err)
+	}
+	if !NativeDue(p, now.Add(antigravityRecheck+time.Second)) {
+		t.Fatal("the planner must see the re-check due after 45 s, not after the 30-minute failure wait")
+	}
+	if err := RefreshNative(ctx, p, now.Add(antigravityRecheck+time.Second)); err != nil || calls != 2 {
+		t.Fatalf("re-check after 45 s: %d %v", calls, err)
+	}
+	// Settings Retry: a changed login generation is due at once.
+	p.ReaderAccess = &ReaderAccess{Grants: map[string]ReaderGrant{"antigravity": {Generation: "g2"}}}
+	at := now.Add(antigravityRecheck + 2*time.Second)
+	if !antigravityRetryDue(p) || !NativeDue(p, at) {
+		t.Fatal("Retry is due immediately")
+	}
+	// Other providers and other outcomes keep their request limits.
+	if nativeRetryAfter != 30*time.Minute || NativeEvery != 10*time.Minute {
+		t.Fatal("provider request limits changed")
+	}
+}
+
+// macrevb-1282-5: the diagnostic never prints an opaque argument value.
+func TestAntigravityDebugPrintsNoOpaqueValues(t *testing.T) {
+	t.Setenv("MODELPLAN_DEBUG", "1")
+	line := fmt.Sprintf("77 %d /opt/x/language_server /opt/x/language_server --csrf_token=OPAQUE-SECRET-1 --weird-flag-OPAQUE-NAME --app_data_dir OPAQUE-DIR /Users/OPAQUE-PATH/x", os.Getuid())
+	r, w, _ := os.Pipe()
+	oldErr := os.Stderr
+	os.Stderr = w
+	antigravityServers([]byte(line))
+	w.Close()
+	os.Stderr = oldErr
+	b := make([]byte, 4096)
+	n, _ := r.Read(b)
+	out := string(b[:n])
+	if !strings.Contains(out, "pid=77") || strings.Contains(out, "OPAQUE") || strings.Contains(out, "/Users") {
+		t.Fatalf("%q", out)
+	}
+}
+
+// macrevb-1282-6: an unknown vendor group name is stored and shown as a fixed label only.
+func TestAntigravityUnknownGroupNameIsNotStored(t *testing.T) {
+	isolateHome(t)
+	h := newHubFixture(t, true)
+	h.summary = `{"response":{"groups":[{"displayName":"ZZ-UNKNOWN-GROUP-CANARY","buckets":[{"bucketId":"x-5h","displayName":"Five Hour Limit","remainingFraction":0.5,"resetTime":"2026-10-14T12:52:10Z"}]}]}}`
+	cache := t.TempDir()
+	ctx := WithAntigravityAccess(context.Background(), AntigravityAccess{Allowed: true})
+	e := collectAntigravity(ctx, nil, cache, now)
+	if e.Status != "ok" || len(e.Windows) != 1 || e.Windows[0].Limit != "Other models" {
+		t.Fatalf("%+v", e)
+	}
+	b, _ := os.ReadFile(antigravityStatePath(cache))
+	proj, _ := json.Marshal(ReadAntigravityCache(ctx, cache, now.Add(time.Second)))
+	if strings.Contains(string(b), "CANARY") || strings.Contains(string(proj), "CANARY") {
+		t.Fatal("unknown vendor group name reached the cache or the projection")
+	}
+}
+
+// macrevb-1282-7: a descriptor replaced between listing and opening is never admitted.
+func TestAntigravityHubDescriptorReplacementIsNotAdmitted(t *testing.T) {
+	good := map[string]any{"pid": 4242, "httpPort": 5555, "csrfToken": hubToken}
+	for _, swap := range []string{"symlink", "group-writable"} {
+		hubHome(t, "hub_5555.json", good, 0600)
+		dir := filepath.Join(antigravityHome(), ".gemini", "antigravity", "daemon")
+		path := filepath.Join(dir, "hub_5555.json")
+		other := filepath.Join(t.TempDir(), "other.json")
+		b, _ := json.Marshal(good)
+		_ = os.WriteFile(other, b, 0600)
+		antigravityBeforeOpen = func(p string) {
+			switch swap {
+			case "symlink":
+				_ = os.Remove(p)
+				_ = os.Symlink(other, p)
+			default:
+				_ = os.Chmod(p, 0666)
+			}
+		}
+		_, _, ok := readAntigravityHubDescriptor(4242)
+		antigravityBeforeOpen = nil
+		if ok {
+			t.Errorf("%s replacement admitted a credential", swap)
+		}
+		_ = path
+	}
+}

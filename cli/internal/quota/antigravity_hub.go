@@ -21,6 +21,9 @@ import (
 // antigravityHome is where the descriptor lives; tests replace it.
 var antigravityHome = func() string { h, _ := os.UserHomeDir(); return h }
 
+// antigravityBeforeOpen is a test seam: it runs between listing a descriptor and opening it.
+var antigravityBeforeOpen func(path string)
+
 var antigravityHubToken = regexp.MustCompile(`^[a-fA-F0-9-]{32,}$`)
 var antigravityHubName = regexp.MustCompile(`^hub_([0-9]{1,5})\.json$`)
 
@@ -39,12 +42,18 @@ func readAntigravityHubDescriptor(pid int) (port int, token string, ok bool) {
 			continue
 		}
 		path := filepath.Join(dir, de.Name())
-		fi, err := os.Lstat(path)
-		if err != nil || !fi.Mode().IsRegular() || fi.Size() > 4096 || !antigravityOwnedByUser(fi) || fi.Mode().Perm()&0o022 != 0 {
+		if antigravityBeforeOpen != nil {
+			antigravityBeforeOpen(path)
+		}
+		// Open without following a link, then validate the file we actually hold (fstat), so a
+		// replacement between listing and reading cannot admit another file's credential.
+		f, err := antigravityOpenNoFollow(path)
+		if err != nil {
 			continue
 		}
-		f, err := os.Open(path)
-		if err != nil {
+		fi, err := f.Stat()
+		if err != nil || !fi.Mode().IsRegular() || fi.Size() > 4096 || !antigravityOwnedByUser(fi) || fi.Mode().Perm()&0o022 != 0 {
+			f.Close()
 			continue
 		}
 		b, err := io.ReadAll(io.LimitReader(f, 4097))

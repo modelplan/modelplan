@@ -119,25 +119,47 @@ func antigravityBinary(path string) bool {
 	return name == "language_server" || strings.HasPrefix(name, "language_server_")
 }
 
+// antigravityDebugFlags are the only argument names a diagnostic may print. Values are never printed.
+var antigravityDebugFlags = map[string]bool{
+	"--app_data_dir": true, "--extension_server_port": true, "--csrf_token": true, "--standalone": true,
+	"--subclient_type": true, "--https_server_port": true, "--read_host_bridge_token_from_stdin": true,
+	"--enable_sidecars": true, "--host_bridge_url": true,
+}
+
 // antigravityDebug logs, with MODELPLAN_DEBUG set, a process line that mentions the language server or
-// Antigravity but was not matched, so a newer build's signature can be seen. Only the pid, the binary
-// name and the flag names are written; argument values (the CSRF token, paths) never are.
+// Antigravity but was not matched, so a newer build's signature can be seen. Only a numeric pid, a fixed
+// binary label, allowlisted flag names and a count of other arguments are written; no argument value
+// (the CSRF token, paths, other flag names) ever is.
 func antigravityDebug(line, why string) {
 	low := strings.ToLower(line)
 	if os.Getenv("MODELPLAN_DEBUG") == "" || !(strings.Contains(low, "language_server") || strings.Contains(low, "antigravity")) {
 		return
 	}
 	f := strings.Fields(line)
-	if len(f) < 3 {
+	if len(f) < 4 {
 		return
 	}
+	pid, err := strconv.Atoi(f[0])
+	if err != nil {
+		return
+	}
+	binary := "other"
+	if antigravityBinary(f[2]) || antigravityBinary(f[3]) {
+		binary = "language_server"
+	}
 	var flags []string
+	other := 0
 	for _, a := range f[2:] {
-		if strings.HasPrefix(a, "--") {
-			flags = append(flags, strings.SplitN(a, "=", 2)[0])
+		if !strings.HasPrefix(a, "--") {
+			continue
+		}
+		if name := strings.SplitN(a, "=", 2)[0]; antigravityDebugFlags[name] {
+			flags = append(flags, name)
+		} else {
+			other++
 		}
 	}
-	fmt.Fprintf(os.Stderr, "modelplan: antigravity: unmatched process pid=%s binary=%s flags=%v: %s\n", f[0], filepath.Base(f[2]), flags, why)
+	fmt.Fprintf(os.Stderr, "modelplan: antigravity: unmatched process pid=%d binary=%s flags=%v otherFlags=%d: %s\n", pid, binary, flags, other, why)
 }
 func antigravityCSRF(s string) bool {
 	if s == "" || len(s) > 256 {
@@ -392,27 +414,22 @@ func parseAntigravitySummary(b []byte, now time.Time) codexbarEntry {
 	return e
 }
 
-var antigravityGroupClean = regexp.MustCompile(`[^a-zA-Z0-9 +._/-]`)
-
+// antigravityGroupName maps a vendor group display name to a reviewed label. An unrecognised name is
+// vendor text and is never stored or shown: it becomes a fixed label.
 func antigravityGroupName(display string) string {
-	name := strings.Join(strings.Fields(display), " ")
-	lower := strings.ToLower(name)
+	lower := strings.ToLower(strings.Join(strings.Fields(display), " "))
 	switch {
 	case lower == "gemini" || lower == "gemini models":
 		return "Gemini"
 	case lower == "gemini 4 argon":
 		return "Gemini 4 Argon"
-	case regexp.MustCompile(`^claude\s*(and|&|/)\s*gpt( models)?$`).MatchString(lower):
+	case antigravityClaudeGPT.MatchString(lower):
 		return "Claude/GPT"
-	case name == "":
-		return "Quota"
 	}
-	name = strings.TrimSpace(antigravityGroupClean.ReplaceAllString(name, ""))
-	if name == "" {
-		return "Quota"
-	}
-	return clip(name)
+	return "Other models"
 }
+
+var antigravityClaudeGPT = regexp.MustCompile(`^claude\s*(and|&|/)\s*gpt( models)?$`)
 
 func antigravityBucketKind(values ...string) string {
 	for _, v := range values {

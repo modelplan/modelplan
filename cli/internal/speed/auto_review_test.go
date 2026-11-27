@@ -1,7 +1,9 @@
 package speed
 
 import (
+	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -49,5 +51,51 @@ func TestAutoReviewTokensHaveNoModel(t *testing.T) {
 	}
 	if unreviewed("codex-auto-review") != "" || unreviewed("gpt") != "gpt" {
 		t.Fatal("records stored before the rule are renamed on read")
+	}
+}
+
+// macrevb-1282-2: a live record cached before the auto-review rule is neither published nor kept.
+func TestPreUpgradeAutoReviewLiveRecordIsOmitted(t *testing.T) {
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	rec := LiveRecord{Ref: "1111111111111111", Source: "codex", Model: autoReviewModel, Running: true, LastAt: now.Add(-time.Minute)}
+	real := LiveRecord{Ref: "2222222222222222", Source: "codex", Model: "real", LastAt: now.Add(-2 * time.Minute)}
+	rows := []PerfRow{{Day: now.Format("2006-01-02"), Source: "codex", Model: ""}}
+	v := PerfView{OK: true, Recording: true, Now: now, Ledger: PerfLedger{Live: []LiveRecord{rec, real}, Rows: rows}}
+	got := v.LiveSessions()
+	if len(got) != 1 || got[0].Model != "real" {
+		t.Fatalf("%+v", got)
+	}
+	l := PerfLedger{Live: []LiveRecord{rec, real}, Rows: rows}
+	l.pruneLive(now)
+	if len(l.Live) != 1 || len(l.Rows) != 1 {
+		t.Fatalf("the record is dropped, the Codex row (its total) is kept: %+v", l)
+	}
+}
+
+// macrevb-1282-3: only the newest LiveIdleMax idle rows show, however recently they finished.
+func TestIdleCapAppliesInsideTheLiveWindow(t *testing.T) {
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	var recs []LiveRecord
+	for i := 0; i < 7; i++ {
+		recs = append(recs, LiveRecord{Ref: fmt.Sprintf("%016d", i), Source: "codex", Model: "m", LastAt: now.Add(-time.Duration(i+1) * time.Second)})
+	}
+	recs = append(recs, LiveRecord{Ref: "8888888888888888", Source: "codex", Model: "m", Running: true, LastAt: now.Add(-9 * time.Second)})
+	for _, shift := range []time.Duration{0, 10 * time.Minute} { // recent, then aged past the live window
+		aged := slices.Clone(recs)
+		for i := range aged {
+			aged[i].LastAt = aged[i].LastAt.Add(-shift)
+		}
+		got := PerfView{OK: true, Recording: true, Now: now, Ledger: PerfLedger{Live: aged}}.LiveSessions()
+		idle, running := 0, 0
+		for _, s := range got {
+			if s.Status == "running" {
+				running++
+			} else {
+				idle++
+			}
+		}
+		if idle != LiveIdleMax || (shift == 0 && running != 1) {
+			t.Fatalf("shift %v: idle %d running %d", shift, idle, running)
+		}
 	}
 }

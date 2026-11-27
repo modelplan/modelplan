@@ -382,6 +382,9 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 func (l *PerfLedger) pruneLive(now time.Time) {
 	kept := l.Live[:0]
 	for _, r := range l.Live {
+		if autoReview(r.Model) {
+			continue // a record cached before the auto-review rule
+		}
 		if r.LastAt.After(now.Add(-LiveIdleKeep)) && !r.LastAt.After(now) {
 			if !r.LastAt.After(now.Add(-LiveWithin)) {
 				r.Running, r.Activity = false, nil // a kept idle session never reads as running
@@ -407,20 +410,15 @@ func (v PerfView) LiveSessions() []LiveSession {
 	if !v.OK || !v.Recording {
 		return out
 	}
-	idle := 0
 	recs := slices.Clone(v.Ledger.Live)
 	sort.SliceStable(recs, func(i, j int) bool { return recs[i].LastAt.After(recs[j].LastAt) })
 	for _, r := range recs {
-		if r.LastAt.After(v.Now) || !r.LastAt.After(v.Now.Add(-LiveIdleKeep)) {
+		// A record cached before the auto-review rule is never published (the model is not a session).
+		if autoReview(r.Model) || r.LastAt.After(v.Now) || !r.LastAt.After(v.Now.Add(-LiveIdleKeep)) {
 			continue
 		}
 		if !r.LastAt.After(v.Now.Add(-LiveWithin)) {
-			// Past the live window: idle by definition. Keep only the newest LiveIdleMax.
-			if idle == LiveIdleMax {
-				continue
-			}
-			idle++
-			r.Running, r.Activity = false, nil
+			r.Running, r.Activity = false, nil // past the live window: idle by definition
 		}
 		x := LiveSession{Ref: r.Ref, Source: r.Source, Model: r.Model, Effort: r.Effort, EffortStatus: "unreported", Speed: r.Speed, StartedAt: r.StartedAt, LastAt: r.LastAt, Status: "idle", ProjectRef: refOrNil(r.ProjectRef), ProjectLabel: r.ProjectLabel, SubscriptionRef: refOrNil(r.SubscriptionRef), InProgress: r.turnOpen(v.Now)}
 		if r.Effort != "" {
@@ -481,5 +479,17 @@ func (v PerfView) LiveSessions() []LiveSession {
 		}
 		return out[i].LastAt.After(out[j].LastAt)
 	})
-	return out
+	// Running rows are never cut; only the newest LiveIdleMax idle rows stay, however recently they finished.
+	idle := 0
+	kept := out[:0]
+	for _, x := range out {
+		if x.Status != "running" {
+			if idle == LiveIdleMax {
+				continue
+			}
+			idle++
+		}
+		kept = append(kept, x)
+	}
+	return kept
 }
