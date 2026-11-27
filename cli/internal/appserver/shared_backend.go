@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,6 +18,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/resetevents"
 	"github.com/modelplan/modelplan/cli/internal/rows"
@@ -31,7 +33,7 @@ type SharedConfig struct {
 	// quota history is kept without a second read.
 	Reported func(quota.Report, time.Time)
 	// Activity is an admitted, cache-only observer, independent of quota refresh/rate.
-	Activity         func(context.Context, consent.Admission, time.Time) []rows.ActivityInput
+	Activity         func(context.Context, consent.Admission, logindex.Ticket, time.Time) []rows.ActivityInput
 	ResetPublication func() (*digest.Digest, error)
 	Detect           func() detect.Report
 	// LaterInstalled records each detection report and returns the tools detected now that
@@ -39,6 +41,10 @@ type SharedConfig struct {
 	LaterInstalled func(detect.Report) map[string]bool
 	Paths          func(consent.Admission) quota.Paths
 	WatchPaths     func(consent.Admission) quota.Paths // metadata-only watcher paths, if supplied
+	// Ticket takes the history inventory's withdrawal ticket. Every caller takes exactly one
+	// before it captures an admission and hands it to the paths, the Codex stamps and the
+	// activity observer built for that admission (macrev2-1261-2). Nil: none (tests).
+	Ticket func() logindex.Ticket
 	// Cleanup is the fenced erasure hook: retries pass a guard (macrevb-1218-5); a foreground
 	// commit calls it with a nil guard under the consent lock.
 	Cleanup consent.Eraser
@@ -181,7 +187,8 @@ func (b *SharedBackend) Get(ctx context.Context) (View, error) {
 		return View{}, err
 	}
 	b.allowLaterLocalLogs(ctx)
-	result := consent.BuildStable(func(admission consent.Admission) View { return b.buildView(admission, false) }, func(admission consent.Admission) View { return b.buildView(admission, true) })
+	ticket := takeTicket(b.config.Ticket) // before BuildStable captures the admission
+	result := consent.BuildStable(func(admission consent.Admission) View { return b.buildView(admission, ticket, false) }, func(admission consent.Admission) View { return b.buildView(admission, ticket, true) })
 	if ctx.Err() != nil {
 		return View{}, ctx.Err()
 	}
@@ -234,8 +241,9 @@ func (b *SharedBackend) allowLaterLocalLogs(ctx context.Context) {
 		ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: scopes, Deny: deny})
 }
 
-func (b *SharedBackend) buildView(admission consent.Admission, changed bool) View {
-	p := b.paths(admission)
+func (b *SharedBackend) buildView(admission consent.Admission, ticket logindex.Ticket, changed bool) View {
+	idlework.View()
+	p := withTicket(b.paths(admission), ticket)
 	detection := b.config.Detect()
 	detected := map[string]bool{}
 	later := map[string]bool{}
@@ -259,15 +267,6 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		exists := native || id == "codex" || tool.Preferred == "codexbar" && tool.HelperStatus() == ""
 		in.Catalogue = append(in.Catalogue, rows.CatalogueEntry{ToolID: id, ReaderID: tool.ReaderID, Backend: tool.Preferred, Detected: tool.Detected, ReaderExists: exists, Status: tool.Status, InstalledLater: later[tool.ProviderID]})
 	}
-	// Implicit local permission becomes a candidate only when a real tool/source
-	// establishes it. A blank home must not acquire phantom Claude/Codex cards.
-	consents := in.Consents[:0]
-	for _, record := range in.Consents {
-		if record.State != rows.ConsentImplicit || detected[record.ToolID] {
-			consents = append(consents, record)
-		}
-	}
-	in.Consents = consents
 	if changed {
 		in = admission.ChangedRowsInput(in.Now)
 		in.ReadOnly = b.config.ReadOnly
@@ -278,6 +277,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if !changed && admission.Mode() != consent.Off {
 		quota.AppendManagedRows(&in, p)
 		report = quota.ReadPermitted(p, in.Now)
+		in.ZaiSubscriptionEstablished = report.ZaiSubscriptionEstablished
 		b.reported(report, in.Now)
 		projectionReport := report
 		if admission.Allows("codex", consent.Local) {
@@ -329,6 +329,15 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 			}
 		}
 	}
+	// Implicit local permission becomes a candidate only when a real tool/source
+	// establishes it. A blank home must not acquire phantom Claude/Codex cards.
+	consents := in.Consents[:0]
+	for _, record := range in.Consents {
+		if record.State != rows.ConsentImplicit || detected[record.ToolID] || (record.ToolID == "zai" && in.ZaiSubscriptionEstablished) {
+			consents = append(consents, record)
+		}
+	}
+	in.Consents = consents
 	projection := rows.Build(in)
 	var resetEvents *[]rows.ResetEvent
 	var publicModels []digest.Model
@@ -509,6 +518,9 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 	if !b.config.Offline && receipt.Committed && !receipt.Replayed && keychain[consent.ScopeClaudeAccountUsageSavedLogin] == "allow" {
 		result.Credentials = []CredentialNeed{{Provider: "claude", Scope: consent.ScopeClaudeAccountUsageSavedLogin, Interactive: true}}
 	}
+	if !b.config.Offline && receipt.Committed && !receipt.Replayed && keychain[consent.ScopeZaiAccountUsageSavedLogin] == "allow" {
+		result.Credentials = append(result.Credentials, CredentialNeed{Provider: "zai", Scope: consent.ScopeZaiAccountUsageSavedLogin, Interactive: true})
+	}
 	if receipt.Committed && !receipt.Replayed && b.config.Granted != nil {
 		b.config.Granted()
 	}
@@ -561,21 +573,28 @@ type localFileStamp struct {
 	fileStamp
 }
 
-func (b *SharedBackend) watchPaths(admission consent.Admission) quota.Paths {
+func (b *SharedBackend) watchPaths(admission consent.Admission, ticket logindex.Ticket) quota.Paths {
 	if b.config.WatchPaths != nil {
-		return b.config.WatchPaths(admission)
+		return withTicket(b.config.WatchPaths(admission), ticket)
 	}
-	return b.paths(admission)
+	return withTicket(b.paths(admission), ticket)
+}
+
+// capture takes the withdrawal ticket, then the admission (macrev2-1261-2).
+func (b *SharedBackend) capture() (consent.Admission, logindex.Ticket) {
+	ticket := takeTicket(b.config.Ticket)
+	return consent.Capture(), ticket
 }
 
 // codexLocalStamps observes metadata only for the same permitted local source
 // that buildView reads. It never opens rollout contents or exposes file paths.
-func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFileStamp {
+// codexLocalStamps reuses the caller's ticket, taken before its admission; it never takes one.
+func (b *SharedBackend) codexLocalStamps(admission consent.Admission, ticket logindex.Ticket) []localFileStamp {
 	tool, decided := admission.State().Tools["codex"]
 	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") || (decided && (!tool.Allowed || tool.ConsentTextVersion != consent.TextVersion)) {
 		return nil
 	}
-	paths := b.watchPaths(admission)
+	paths := b.watchPaths(admission, ticket)
 	if paths.CodexHome == "" {
 		return nil
 	}
@@ -627,9 +646,9 @@ type viewToken struct {
 
 func (b *SharedBackend) captureViewToken() viewToken {
 	t := viewToken{seq: b.changeSeq.Load(), at: time.Now()}
-	admission := consent.Capture()
+	admission, ticket := b.capture()
 	t.stamp = stampOf(admission.Fence())
-	t.inputs = watchedStamps(b.watchPaths(admission), b.codexLocalStamps(admission))
+	t.inputs = watchedStamps(b.watchPaths(admission, ticket), b.codexLocalStamps(admission, ticket))
 	t.detection = b.config.Detect()
 	return t
 }
@@ -736,37 +755,13 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 		go func() {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
-			var last []fileStamp
-			var codexStamps []localFileStamp
-			var nextCodexCheck time.Time
+			var w watchState
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					admission := consent.Capture()
-					paths := b.watchPaths(admission)
-					now := b.now()
-					b.retryPendingCleanup(admission, now)
-					tool, decided := admission.State().Tools["codex"]
-					localAllowed := admission.Allows("codex", consent.Local) && !admission.CleanupPending("codex") && (!decided || tool.Allowed && tool.ConsentTextVersion == consent.TextVersion)
-					if !localAllowed || paths.CodexHome == "" {
-						codexStamps = nil
-						nextCodexCheck = time.Time{}
-					} else if !now.Before(nextCodexCheck) {
-						// Match the local reader's recent files and its active thread;
-						// inspect metadata only, under the same admission fence.
-						codexStamps = b.codexLocalStamps(admission)
-						nextCodexCheck = now.Add(time.Second)
-					}
-					current := watchedStamps(paths, codexStamps)
-					deadline := b.todayDeadline.Load()
-					due := deadline != nil && !now.Before(*deadline) &&
-						b.todayDeadline.CompareAndSwap(deadline, nil)
-					if due || !reflect.DeepEqual(last, current) {
-						last = current
-						b.notify()
-					}
+					b.pollWatch(&w, b.now())
 				}
 			}
 		}()
@@ -774,10 +769,80 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 	return b.changes
 }
 
+// watchState is what one change watcher keeps between its 200 ms polls.
+type watchState struct {
+	last           []fileStamp
+	codexStamps    []localFileStamp
+	nextCodexCheck time.Time
+}
+
+// pollWatch is one poll of the change watcher: metadata of the watched inputs, the permitted
+// Codex rollouts at most once a second, and the subscriber's Today deadline.
+func (b *SharedBackend) pollWatch(w *watchState, now time.Time) {
+	admission, ticket := b.capture()
+	paths := b.watchPaths(admission, ticket)
+	b.retryPendingCleanup(admission, now)
+	tool, decided := admission.State().Tools["codex"]
+	localAllowed := admission.Allows("codex", consent.Local) && !admission.CleanupPending("codex") && (!decided || tool.Allowed && tool.ConsentTextVersion == consent.TextVersion)
+	if !localAllowed || paths.CodexHome == "" {
+		w.codexStamps = nil
+		w.nextCodexCheck = time.Time{}
+	} else if !now.Before(w.nextCodexCheck) {
+		// Match the local reader's recent files and its active thread;
+		// inspect metadata only, under the same admission fence.
+		w.codexStamps = b.codexLocalStamps(admission, ticket)
+		w.nextCodexCheck = now.Add(time.Second)
+	}
+	current := watchedStamps(paths, w.codexStamps)
+	deadline := b.todayDeadline.Load()
+	due := deadline != nil && !now.Before(*deadline) &&
+		b.todayDeadline.CompareAndSwap(deadline, nil)
+	if due || !reflect.DeepEqual(w.last, current) {
+		w.last = current
+		b.notify()
+	}
+}
+
+// IdleSteps drives the production change watcher and activity observer under a caller's clock,
+// one step at a time, without their tickers. The idle-work gates (D397) use it to count what
+// unchanged inputs cost over many polls; the app-server's own loops call the same steps.
+type IdleSteps struct {
+	b        *SharedBackend
+	watch    watchState
+	consumed uint64
+}
+
+func (b *SharedBackend) IdleSteps() *IdleSteps { return &IdleSteps{b: b, consumed: b.changeSeq.Load()} }
+
+// Watch runs one change-watcher poll at now.
+func (s *IdleSteps) Watch(now time.Time) { s.b.pollWatch(&s.watch, now) }
+
+// Activity runs one activity observation at now.
+func (s *IdleSteps) Activity(ctx context.Context, now time.Time) { s.b.observeActivity(ctx, now) }
+
+// Watching reports whether the watcher's last Codex metadata check included path.
+func (s *IdleSteps) Watching(path string) bool {
+	for _, stamp := range s.watch.codexStamps {
+		if stamp.path == path {
+			return true
+		}
+	}
+	return false
+}
+
+// Pending reports whether a change was signalled since the last call; the server would build
+// a view for it.
+func (s *IdleSteps) Pending() bool {
+	seq := s.b.changeSeq.Load()
+	pending := seq != s.consumed
+	s.consumed = seq
+	return pending
+}
+
 func (b *SharedBackend) observeActivity(ctx context.Context, now time.Time) {
-	admission := consent.Capture()
+	admission, ticket := b.capture()
 	stamp := stampOf(admission.Fence())
-	values := b.config.Activity(ctx, admission, now)
+	values := b.config.Activity(ctx, admission, ticket, now)
 	if ctx.Err() != nil {
 		return
 	}

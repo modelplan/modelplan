@@ -178,7 +178,8 @@ private actor G345Engine: EngineClient {
         await app.restoreFirstRunIfNeeded()
         let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
         addTeardownBlock { @MainActor in window.close() }
-        window.contentView?.layoutSubtreeIfNeeded()
+        // The consent view re-measures wrapping labels in layout() and invalidates them, so a second pass settles the heights.
+        window.contentView?.layoutSubtreeIfNeeded(); window.contentView?.layoutSubtreeIfNeeded()
         return window
     }
     private func find<T: NSView>(_ id: String, in window: NSWindow, as type: T.Type) throws -> T {
@@ -233,7 +234,7 @@ private actor G345Engine: EngineClient {
         }
         let box = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.codex" } as? NSButton)
         XCTAssertEqual(box.state, .on, "a default-on tool the engine reads shows on")
-        XCTAssertTrue(try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.status.zai" } as? NSTextField).stringValue.contains("nothing is read"))
+        XCTAssertTrue(try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.status.zai" } as? NSTextField).stringValue.contains("Paste a Zhipu / Z.ai API key"), "owner 11-22: ZCode offers the pasted key")
         // G3-59: a supported tool that is not installed is listed with the reason and cannot be switched on.
         let gemini = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.gemini" } as? NSButton)
         XCTAssertEqual(gemini.state, .off); XCTAssertFalse(gemini.isEnabled)
@@ -428,7 +429,7 @@ private actor G345Engine: EngineClient {
         XCTAssertTrue(try text("scope.firstRun.reads.claude", in: window).contains("Keychain"), "Claude Code says macOS may ask for the Keychain")
         XCTAssertEqual(try text("scope.firstRun.reads.codex", in: window), FirstRunCopy.detected.english)
         XCTAssertEqual(try text("scope.firstRun.status.claude", in: window), "Not signed in to Claude Code. ModelPlan reads it after you sign in.", "G3-38: signed-out Claude Code says so, in the one shared sentence")
-        XCTAssertTrue(try text("scope.firstRun.status.zai", in: window).contains("nothing is read"), "D52: ZCode with an account login is listed, not read")
+        XCTAssertTrue(try text("scope.firstRun.status.zai", in: window).contains("Paste a Zhipu / Z.ai API key"), "D52: listed, not read; owner 11-22: the pasted key is offered")
         let byTool = Dictionary(uniqueKeysWithValues: boxes.map { ($0.accessibilityIdentifier().replacingOccurrences(of: "scope.firstRun.tool.", with: ""), $0) })
         XCTAssertEqual(byTool["codex"]?.state, .on); XCTAssertEqual(byTool["cursor"]?.state, .on)
         XCTAssertEqual(byTool["claude"]?.state, .off); XCTAssertEqual(byTool["zai"]?.state, .off)

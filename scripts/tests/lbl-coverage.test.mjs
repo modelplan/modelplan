@@ -102,7 +102,9 @@ const englishTokensAllowed = ["ALERT", "MCP", "Codex", "GLM", "ZCode", "Z.ai", "
   "Go", "Node.js", "api.z.ai", "z.ai", "open.bigmodel.cn", "bigmodel.cn", "opencode.ai"];
 const englishPhrasesAllowed = ["Claude Code", "ModelPlan", "Model Plan", "Intel",
   // environment variable names the user must type exactly (never translated)
-  "OPENCODE_API_KEY"];
+  "OPENCODE_API_KEY",
+  // owner 11-22 (D380 follow-up): the GLM pasted-key copy keeps "key" as written
+  "API key", "粘贴 key", "获取 key"];
 test("LBL-2.2-07 no English inside the Chinese UI except ALERT, model names and units", todo("LBL-2.2-07"), () => {
   const bad = [];
   for (const p of pairs) {
@@ -137,7 +139,7 @@ test("LBL-2.2-10 one name per concept across surfaces", todo("LBL-2.2-10"), () =
   }
 });
 
-test("LBL-2.2-11 reset count wording; never 重置卡 / reset cards", todo("LBL-2.2-11"), () => {
+test("LBL-2.2-11 reset count wording (D428: 额外重置次数 / banked resets); never 重置卡 / reset cards", todo("LBL-2.2-11"), () => {
   for (const p of pairs) {
     assert.doesNotMatch(p.zh, /重置卡/, `${p.at}`);
     assert.doesNotMatch(p.en, /reset cards?/i, `${p.at}`);

@@ -1,0 +1,1 @@
+The widget's working ring now turns smoothly at one turn every 2 seconds: a quota refresh no longer rebuilds the spinning ring, and a ring stays working through the short pause between two agent turns.

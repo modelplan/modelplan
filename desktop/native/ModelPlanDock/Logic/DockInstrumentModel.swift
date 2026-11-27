@@ -83,7 +83,7 @@ public struct DockQuotaArc: Equatable, Sendable {
         self.init(windowID: windowID, fraction: fraction, status: status, remainingFraction: fraction)
     }
 }
-public struct DockInstrumentReading: Sendable {
+public struct DockInstrumentReading: Equatable, Sendable {
     public let subscriptionID: String, name: String, alias: String?, vendorResourceKey: String?
     public let duplicateAccountTag:Int?
     public let outer: DockQuotaArc?, inner: DockQuotaArc?

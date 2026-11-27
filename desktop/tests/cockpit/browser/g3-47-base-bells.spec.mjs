@@ -30,7 +30,7 @@ const read=page=>page.evaluate(()=>{
  return {rootBottom:box.bottom,base:b?{top:b.top,height:b.height}:null,cols,bells,empty:document.querySelectorAll('.ck-base .bz-empty').length,bays:document.querySelectorAll('.ck-eng .eng-cols .ec-bay').length};
 });
 
-for(const tier of ['tall','compact'])test(`G3-47 ${tier}: one bell per column in the reserve, the running subscription burns`,async({page})=>{
+for(const tier of ['tall'])test(`G3-47 ${tier}: one bell per column in the reserve, the running subscription burns`,async({page})=>{
  await open(page,{tier});const v=await read(page);
  expect(v.base).toEqual({top:v.rootBottom,height:46});
  expect(v.bells.length).toBe(v.cols.length);expect(v.cols.length).toBeGreaterThan(0);

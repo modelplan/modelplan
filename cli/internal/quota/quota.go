@@ -12,6 +12,7 @@ package quota
 import (
 	"encoding/json"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"math"
@@ -197,19 +198,19 @@ type Account struct {
 	ResetCards *rows.ResetCards `json:"-"`
 	// ReportedModels (D98): model ids the tool itself lists for this account (Codex model/list), native ids as
 	// the harness names them. Internal: it reaches the cockpit wire mapped to published ids, not this JSON.
-	ReportedModels []string `json:"-"`
-	Beta       bool             `json:"beta,omitempty"` // reader has not completed real-account verification
-	Source     string           `json:"source"`         // claude-code | codex | user | codexbar:<provider>
-	Plan       string           `json:"plan,omitempty"`
-	Region     string           `json:"region,omitempty"`
-	Generation string           `json:"generation,omitempty"` // user: the plan's metering generation, as declared
-	ObservedAt time.Time        `json:"observedAt"`
-	Stale      bool             `json:"stale"`
+	ReportedModels []string  `json:"-"`
+	Beta           bool      `json:"beta,omitempty"` // reader has not completed real-account verification
+	Source         string    `json:"source"`         // claude-code | codex | user | codexbar:<provider>
+	Plan           string    `json:"plan,omitempty"`
+	Region         string    `json:"region,omitempty"`
+	Generation     string    `json:"generation,omitempty"` // user: the plan's metering generation, as declared
+	ObservedAt     time.Time `json:"observedAt"`
+	Stale          bool      `json:"stale"`
 	// retained: the newest reading is one kept after a failed refresh; stale until a refresh succeeds.
-	retained   bool
-	Harness    *Harness         `json:"harness,omitempty"`
-	Windows    []Window         `json:"windows"`
-	Cards      []Card           `json:"cards,omitempty"`
+	retained bool
+	Harness  *Harness `json:"harness,omitempty"`
+	Windows  []Window `json:"windows"`
+	Cards    []Card   `json:"cards,omitempty"`
 	// Subscription: the account the windows belong to, when a reader saw it (identity.go).
 	Subscription *Binding `json:"subscription,omitempty"`
 	// Credits: the account's usage credits (Codex: bought or granted), which the harness draws on
@@ -310,6 +311,8 @@ type Report struct {
 	// Refresh: what `quota --refresh-account` did, so old figures never pass for a fresh reading.
 	Refresh *AccountRefresh `json:"refresh,omitempty"`
 	Note    string          `json:"note"`
+
+	ZaiSubscriptionEstablished bool `json:"-"` // local presentation evidence, independent of quota values
 }
 
 const note = "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."
@@ -327,6 +330,7 @@ type Paths struct {
 	CLIVersion                  string             // framework admission: minCli for the verified catalogue
 	Cache, CodexHome, LocalFile string
 	CodexIndex                  *CodexRolloutIndex        // optional process-local index shared by the engine and its watcher
+	CodexTicket                 logindex.Ticket           // the index's withdrawal count, taken with Admission (zero: taken at the call)
 	CodexBarFile                string                    // ~/.config/modelplan/codexbar.json: providers read through CodexBar
 	ConnectionsFile             string                    // ~/.config/modelplan/connections.json: which backend reads each provider
 	CodexThread                 string                    // the calling Codex thread, when known (CODEX_THREAD_ID)
@@ -336,6 +340,7 @@ type Paths struct {
 	ClaudeSessionAccess         *localusage.HistoryAccess // explicit consent/profile scope for cache-only session projection
 	ReaderAccess                *ReaderAccess             // explicit shared-consent admission for saved-login readers
 	ZCodeNoProviderFile         bool                      // ZCode is present on the default route but keeps no provider file (G3-21)
+	ZCodeKeychainPending        string                    // D380: ZCode's Keychain-bound sign-in awaits the Keychain choice ("unset" | "denied")
 	ZCodeLoginConsent           bool                      // ZCode's sign-in is there but its saved-login scope is not allowed (D369)
 	eraseGuard                  consent.EraseGuard        // retry erasure fence, checked under the reader lock (macrevb-1218-5)
 }

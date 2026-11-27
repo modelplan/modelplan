@@ -121,4 +121,47 @@ func TestG3158RateLimitErrorWithoutAUsableBodyStaysAnError(t *testing.T) {
 	}
 }
 
+func TestG3158UnrepresentableResetKeepsLastGoodAndAllowsLaterRefresh(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	ctx := context.Background()
+	read := func(body string, at time.Time) error {
+		return RefreshCodexAccount(ctx, cache, rpcErrorCodex(t, g3158DecodeErrorMessage(body)), at)
+	}
+	body := func(percent, reset string) string {
+		return `{"rate_limit":{"primary_window":{"used_percent":` + percent +
+			`,"limit_window_seconds":18000,` + reset + `}}}`
+	}
+	if err := read(body("30", `"reset_after_seconds":3600`), acctNow); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	now := acctNow.Add(AccountEvery)
+	if err := read(body("99", `"reset_at":253402300800`), now); errorCode(err) != "rpc_error" {
+		t.Fatalf("malformed reset error = %q", errorCode(err))
+	}
+	failed := loadAccount(cache)
+	if failed == nil || failed.ErrorCode != "rpc_error" || failed.Good == nil ||
+		len(failed.Good.Windows) < 1 || failed.Good.Windows[0].UsedPercent == nil ||
+		*failed.Good.Windows[0].UsedPercent != 30 {
+		t.Fatal("malformed reset did not preserve the last good reading")
+	}
+	if err := save(cache, &accountSnap{ObservedAt: time.Unix(253402300800, 0).UTC()}); errorCode(err) != "parse_error" {
+		t.Fatalf("unserializable snapshot error = %q", errorCode(err))
+	}
+	if kept := loadAccount(cache); kept == nil || kept.Good == nil || !kept.Good.ObservedAt.Equal(acctNow) {
+		t.Fatal("serialization failure replaced the readable snapshot")
+	}
+	next, err := codexRefreshNext(cache)
+	if err != nil || !next.After(now) {
+		t.Fatalf("ordinary retry budget unavailable: %v", err)
+	}
+	if err := read(body("50", `"reset_after_seconds":3600`), next); err != nil {
+		t.Fatalf("later refresh: %v", err)
+	}
+	if got := loadAccount(cache); got == nil || got.Status != "ok" ||
+		len(got.Windows) < 1 || got.Windows[0].UsedPercent == nil || *got.Windows[0].UsedPercent != 50 {
+		t.Fatal("valid retry did not replace the retained reading")
+	}
+}
+
 func g3158Int(v int64) string { b, _ := json.Marshal(v); return string(b) }

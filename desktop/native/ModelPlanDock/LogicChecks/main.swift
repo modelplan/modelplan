@@ -197,6 +197,15 @@ do {
         s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.tone == .white,"credits are white")
         s.creditsKnown=false;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"unknown credits not fabricated")
     }
+    try test("D428 only a reset credit is banked: direct and legacy no-kind announcements are not") {
+        var s=fresh("a",.critical)
+        var credit=reset();credit.kind = .resetCredit
+        s.reset=credit;try expect(DockNoticeProjection.selected(for:s,at:now)?.banked == true,"announced reset credit is banked")
+        var direct=reset();direct.kind = .directReset
+        s.reset=direct;try expect(DockNoticeProjection.selected(for:s,at:now)?.banked == false,"announced direct reset is not banked")
+        s.reset=reset();try expect(DockNoticeProjection.selected(for:s,at:now)?.banked == false,"legacy no-kind announcement defaults to direct, not banked")
+        s.reset=reset(confirmed:true);try expect(DockNoticeProjection.selected(for:s,at:now)?.banked == false,"a confirmed direct reset is not banked")
+    }
     try test("notice UTC expiry boundaries and unknown/future readings") {
         var s=fresh("a");s.reset=reset()
         try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(48*3600-100))==nil,"announcement expires at deadline")

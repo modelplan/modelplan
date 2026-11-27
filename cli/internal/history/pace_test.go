@@ -34,7 +34,7 @@ func TestPaceSegmentsGapsAndRate(t *testing.T) {
 		{"high", 18, 20 * time.Minute},           // +8 High
 		{"low", 22, 40 * time.Minute},            // +4 Low
 		{"low", 30, 3 * time.Hour},               // after a 140-minute silence: +8 of unknown configuration
-		{"low", 5, 3*time.Hour + 5*time.Minute},  // a reset card: a drop, a new segment
+		{"low", 5, 3*time.Hour + 5*time.Minute},  // a banked reset: a drop, a new segment
 		{"low", 9, 3*time.Hour + 30*time.Minute}, // +4 Low from the new value
 	}
 	for _, s := range steps {

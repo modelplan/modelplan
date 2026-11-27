@@ -64,7 +64,7 @@ final class SubscriptionRowModelTests: XCTestCase {
     func testWP16RowReasonEqualsCardReasonForEveryCause() throws {
         let codes = ["not_found", "runtime_missing", "timeout", "rpc_error", "closed", "not_signed_in", "login_expired",
                      "keychain_unset", "keychain_denied", "key_missing", "region_refused", "no_plan", "usage_not_reported", "consent_required"]
-        for tool in ["claude", "codex", "zai", "opencodego", "kiro"] {
+        for tool in ["claude", "codex", "zai", "opencodego", "kiro", "antigravity"] {
             for keys in [false, true] {
                 for code in codes {
                     let card = try XCTUnwrap(ReaderCauseTable.entry(code: code, tool: tool, toolName: tool.capitalized), code)
@@ -191,6 +191,21 @@ final class SubscriptionRowModelTests: XCTestCase {
         }
         XCTAssertEqual(ReaderCauseTable.rowEntry(code: "not_found", tool: "kiro", toolName: "Kiro")?.action.english, "Install kiro-cli")
         // Other tools keep the Node.js cause.
+        XCTAssertEqual(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex")?.reason.english, "Node.js is required")
+    }
+
+    /// G3 owner report 2026-11-26: Antigravity reads the running app's language server, never Node.js, so its
+    /// runtime_missing says the app is not open, and the row's button opens Antigravity (row and card).
+    func testAntigravityRuntimeMissingSaysTheAppIsNotRunningNotNodeJS() {
+        let row = ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "antigravity", toolName: "Antigravity")
+        let card = ReaderCauseTable.entry(code: "runtime_missing", tool: "antigravity", toolName: "Antigravity")
+        XCTAssertEqual(row?.reason, SettingsText("Antigravity is not running, or its local service was not found", "没有检测到运行中的 Antigravity"))
+        XCTAssertEqual(card?.reason, row?.reason)
+        XCTAssertEqual(row?.target, .openTool)
+        XCTAssertEqual(card?.action, SettingsText("Open or restart Antigravity, then refresh", "打开或重启 Antigravity 后刷新"))
+        for text in [row?.reason, row?.action, card?.reason, card?.action].compactMap({ $0 }) {
+            XCTAssertFalse(text.english.contains("Node") || text.chinese.contains("Node") || text.chinese.contains("运行环境"))
+        }
         XCTAssertEqual(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex")?.reason.english, "Node.js is required")
     }
 

@@ -330,9 +330,12 @@ import ModelPlanWire
   }
 
   /// macrev2-1104-6: a privacy clear stops sampling when it starts; afterwards the state is sent to the cleared page.
+  /// D397: only a shown page is answered at the clear receipt; see the frozen-page test below.
   func testClearStopsSamplingAtItsStartAndResendsTheState() async throws {
     let (page, box) = try readyPage()
     var done = box.sent.count
+    // An opened (shown) page, as `open()` marks it.
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: true))
     page.setPlugins(stateA); completeAll(box, from: &done)
     _ = done
     let next = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 2)
@@ -352,6 +355,39 @@ import ModelPlanWire
     let resent = box.sent[(clearIndex + 1)...].filter { type($0.0) == "plugins" }
     XCTAssertEqual(resent.count, 1, "the cleared page gets the plugin state again, once")
     XCTAssertEqual(resent.first.flatMap { pluginsBody($0.0) }, CockpitPluginWire.canonical(json: stateA))
+    page.discard()
+  }
+
+  /// D397: a clear on a hidden page (the frozen page after a user close, or the prewarmed page) stops sampling at its
+  /// start and does not wake that page, but the page is empty afterwards: its next show sends the plugin state again,
+  /// once, after the visibility that shows it, with no plugin screen request ahead of it.
+  func testClearOnAHiddenPageResendsTheStateWhenItIsShownAgain() async throws {
+    let (page, box) = try readyPage()
+    var done = box.sent.count
+    page.setPlugins(stateA); completeAll(box, from: &done)
+    XCTAssertTrue(page.pluginsConfirmedOnPage)
+    let next = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 2)
+    let clearing = Task { @MainActor in await page.clearPrivateViews(adopting: next) }
+    for _ in 0..<200 where !box.sent.contains(where: { type($0.0) == "clear" }) { await Task.yield() }
+    XCTAssertEqual(box.intents.last, .pluginsRunning([]), "sampling stops before the clear is answered")
+    let clear = try XCTUnwrap(box.sent.last(where: { type($0.0) == "clear" }))
+    clear.1(.accepted)
+    page.verificationReceive(try pageMessage(clear.0, "cleared"), source: source)
+    await clearing.value
+    let clearIndex = try XCTUnwrap(box.sent.firstIndex(where: { type($0.0) == "clear" }))
+    XCTAssertFalse(box.sent[(clearIndex + 1)...].contains { ["plugins", "visibility"].contains(self.type($0.0)) },
+      "a hidden page is not woken by the clear receipt")
+    XCTAssertFalse(page.pluginsConfirmedOnPage, "the cleared page no longer holds the plugin state")
+    // Shown again: the visibility goes first, and its receipt sends the state.
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: false))
+    var queueIndex = clearIndex + 1
+    while queueIndex < box.sent.count, type(box.sent[queueIndex].0) != "plugins" {
+      let i = queueIndex; queueIndex += 1; box.sent[i].1(.accepted)
+    }
+    let resent = box.sent[(clearIndex + 1)...].filter { type($0.0) == "plugins" }
+    XCTAssertEqual(resent.count, 1, "the shown page gets the plugin state again, once")
+    XCTAssertEqual(resent.first.flatMap { pluginsBody($0.0) }, CockpitPluginWire.canonical(json: stateA))
+    XCTAssertTrue(box.sent[(clearIndex + 1)...].contains { type($0.0) == "visibility" }, "the state follows the show")
     page.discard()
   }
 }

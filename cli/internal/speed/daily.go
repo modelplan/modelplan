@@ -3,6 +3,7 @@ package speed
 import (
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"github.com/modelplan/modelplan/cli/internal/localday"
 	"os"
 	"path/filepath"
@@ -43,13 +44,14 @@ func LongPath(cache string) string { return filepath.Join(cache, "observed", "da
 // the file is there but cannot be used (unreadable, too large, another schema or no Since); it is
 // then left as it is.
 func LoadLong(cache string) (l LongLedger, ok bool) {
-	b, err := os.ReadFile(LongPath(cache))
+	b, err := idlework.ReadFile(LongPath(cache))
 	if errors.Is(err, os.ErrNotExist) {
 		return LongLedger{SchemaVersion: 1}, true
 	}
 	if err != nil || len(b) > maxLongFile {
 		return LongLedger{}, false
 	}
+	idlework.Decode()
 	if json.Unmarshal(b, &l) != nil || l.SchemaVersion != 1 || l.Since.IsZero() {
 		return LongLedger{}, false
 	}

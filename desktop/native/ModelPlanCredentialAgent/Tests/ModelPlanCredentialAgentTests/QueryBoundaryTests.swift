@@ -20,7 +20,7 @@ private final class BoundaryMatcher: ItemMatching, @unchecked Sendable {
             return .init(status: errSecSuccess, value: [[kSecAttrService as String: "Claude Code-credentials", kSecValuePersistentRef as String: Data([1])]])
         }
         XCTAssertEqual(attributes[kSecReturnData as String] as? Bool, true)
-        return .init(status: errSecSuccess, value: Data(#"{"claudeAiOauth":{"accessToken":"BOUNDARY_FAKE_CANARY"}}"#.utf8))
+        return .init(status: errSecSuccess, value: Data(#"{"claudeAiOauth":{"accessToken":"BOUNDARY_FAKE_CANARY","expiresAt":4102444800000,"scopes":["user:profile"]}}"#.utf8))
     }
 }
 private final class BoundaryReader: FixedItemReading, @unchecked Sendable {
