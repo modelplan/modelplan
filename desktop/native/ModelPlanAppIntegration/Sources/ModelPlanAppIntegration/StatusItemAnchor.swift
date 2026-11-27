@@ -109,21 +109,31 @@ struct StatusItemAnchor: Equatable {
         return rect.midX < edge
     }
 
-    /// One copy of the item per display: the real rect where a known rect is placed on that display's menu bar, else
-    /// the rect projected from a placed one (status items are right-aligned, so every copy keeps the same distance from
-    /// its display's right edge, at the item's current width). `visible` is false for a copy behind the notch.
+    /// A status-item rect AppKit reports, with whether its window is drawn (`isVisible` and a visible occlusion state).
+    /// A click's rect counts as drawn: the user saw and pressed it.
+    struct Known: Equatable {
+        let rect: CGRect, drawn: Bool
+        init(_ rect: CGRect, drawn: Bool = true) { self.rect = rect; self.drawn = drawn }
+    }
+
+    /// One copy of the item per display: the first known rect placed on that display's menu bar (visible only when it is
+    /// drawn and not behind the notch), else, on a display with no known rect at all, the rect projected from a source
+    /// (status items are right-aligned, so every copy keeps the same distance from its display's right edge, at the
+    /// item's current width). A source is a placed rect that is drawn or hidden only by the notch; an undrawn copy that
+    /// is not behind the notch (occluded, full screen) is evidence of nothing, so with no source nothing is projected.
     struct Copy: Equatable { let display: Display; let rect: CGRect; let visible: Bool; let real: Bool }
-    static func copies(known: [CGRect], itemWidth: CGFloat?, displays: [Display], menuHeight: CGFloat) -> [Copy] {
-        let placed = known.compactMap { rect in menuBarDisplay(of: rect, displays: displays, menuHeight: menuHeight).map { ($0, rect) } }
-        // Project from a copy the menu bar shows when there is one; a notch-covered copy keeps its slot's offset too.
-        guard let source = placed.first(where: { !underNotch($0.1, on: $0.0) }) ?? placed.first else { return [] }
-        let offset = source.0.frame.maxX - source.1.maxX
-        let width = itemWidth.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? source.1.width
+    static func copies(known: [Known], itemWidth: CGFloat?, displays: [Display], menuHeight: CGFloat) -> [Copy] {
+        let placed = known.compactMap { item in menuBarDisplay(of: item.rect, displays: displays, menuHeight: menuHeight).map { ($0, item) } }
+        let sources = placed.filter { $0.1.drawn || underNotch($0.1.rect, on: $0.0) }
+        let source = sources.first(where: { !underNotch($0.1.rect, on: $0.0) }) ?? sources.first
+        let width = itemWidth.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? source?.1.rect.width ?? 0
         return displays.compactMap { display in
             if let real = placed.first(where: { $0.0 == display }) {
-                return Copy(display: display, rect: real.1, visible: !underNotch(real.1, on: display), real: true)
+                return Copy(display: display, rect: real.1.rect, visible: real.1.drawn && !underNotch(real.1.rect, on: display), real: true)
             }
-            let band = bandHeight(display, menuHeight: menuHeight), height = min(source.1.height, band)
+            guard let source, width > 0 else { return nil }
+            let offset = source.0.frame.maxX - source.1.rect.maxX
+            let band = bandHeight(display, menuHeight: menuHeight), height = min(source.1.rect.height, band)
             let rect = CGRect(x: display.frame.maxX - offset - width, y: display.frame.maxY - band / 2 - height / 2, width: width, height: height)
             guard menuBarDisplay(of: rect, displays: [display], menuHeight: menuHeight) != nil else { return nil }
             return Copy(display: display, rect: rect, visible: !underNotch(rect, on: display), real: false)
@@ -131,51 +141,61 @@ struct StatusItemAnchor: Equatable {
     }
 
     /// Whether the item can be seen at all, one entry per status-item window plus one per display that has no window
-    /// of its own (its copy projected). A window counts when it is drawn (`isVisible` and occlusion) on some display and
-    /// not behind the notch. A drawn copy, or one hidden only by the notch, also stands for the copies on the other
-    /// displays, which show it unless they have a notch that covers it too.
+    /// of its own (its copy projected, see `copies`). A window counts when it is drawn on some display and not behind
+    /// the notch.
     static func copyVisibilities(windows: [(frame: CGRect, drawn: Bool)], itemWidth: CGFloat?, displays: [Display],
                                  menuHeight: CGFloat) -> [Bool] {
         var states = [Bool]()
-        var sources = [CGRect]()
         for window in windows {
             let onScreen = displays.contains { $0.frame.intersects(window.frame) }
             let placed = menuBarDisplay(of: window.frame, displays: displays, menuHeight: menuHeight)
             let notched = placed.map { underNotch(window.frame, on: $0) } ?? false
             states.append(window.drawn && onScreen && !notched)
-            if placed != nil, window.drawn || notched { sources.append(window.frame) }
         }
-        guard displays.count > 1, !sources.isEmpty else { return states }
-        for copy in copies(known: sources, itemWidth: itemWidth, displays: displays, menuHeight: menuHeight) where !copy.real {
+        let known = windows.map { Known($0.frame, drawn: $0.drawn) }
+        for copy in copies(known: known, itemWidth: itemWidth, displays: displays, menuHeight: menuHeight) where !copy.real {
             states.append(copy.visible)
         }
         return states
     }
 
     /// Where the attached cockpit opens: the display and the icon rect it hangs from (nil anchor: D378's fallback on
-    /// `display`). Invariant (owner 11-27): the cockpit opens on the display the user acted on.
-    /// - A current status-item click: the clicked display, anchored by `resolve`.
+    /// `display`). Invariant (owner 11-27): the cockpit opens on the display the user acted on, and never hangs from a
+    /// copy that is behind the notch or not drawn.
+    /// - A current status-item click: the clicked display, anchored by `resolve`; when the item's current copy there is
+    ///   undrawn or behind the notch, or the resolved rect is (a width change moved it), no anchor on that display.
     /// - An open from a point (`actedAt`: the widget's red button or its Open Cockpit action): that display's copy when
     ///   the menu bar shows it there.
-    /// - Otherwise, or when that copy is behind the notch: the display of the last status-item click (same arrangement),
-    ///   then a display without a notch (primary first), then any display that shows the copy.
+    /// - Otherwise, or when that copy is hidden: the display of the last status-item click (same arrangement), then a
+    ///   display without a notch (primary first), then any display that shows the copy.
     /// - No visible copy anywhere: no anchor, on the acted-on display, else the window's.
     struct Placement: Equatable { let display: Display?; let anchor: CGRect? }
-    static func placement(window: CGRect?, copies others: [CGRect] = [], click: StatusItemAnchor?, actedAt: CGPoint?,
+    static func placement(window: Known?, copies others: [Known] = [], click: StatusItemAnchor?, actedAt: CGPoint?,
                           lastClick: StatusItemAnchor?, itemWidth: CGFloat?, displays: [Display], menuHeight: CGFloat) -> Placement {
+        let reported = (window.map { [$0] } ?? []) + others
         if let click, let clicked = clickedDisplay(click, displays: displays, menuHeight: menuHeight) {
-            return Placement(display: clicked, anchor: resolve(window: window, click: click, itemWidth: itemWidth, displays: displays, menuHeight: menuHeight))
+            let hiddenHere = Placement(display: clicked, anchor: nil)
+            // The item's current copy on the clicked display, as AppKit reports it now.
+            if let current = reported.first(where: { menuBarDisplay(of: $0.rect, displays: displays, menuHeight: menuHeight) == clicked }),
+               !current.drawn || underNotch(current.rect, on: clicked) { return hiddenHere }
+            guard let rect = resolve(window: window?.rect, click: click, itemWidth: itemWidth, displays: displays, menuHeight: menuHeight),
+                  menuBarDisplay(of: rect, displays: displays, menuHeight: menuHeight) == clicked, !underNotch(rect, on: clicked),
+                  !(window.map { $0.rect == rect && !$0.drawn } ?? false) else { return hiddenHere }
+            return Placement(display: clicked, anchor: rect)
         }
         let lastDisplay = clickedDisplay(lastClick, displays: displays, menuHeight: menuHeight)
         let width = itemWidth.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
-        // The last click's rect, at the item's current width about its right edge.
-        var lastRect: CGRect?
-        if lastDisplay != nil, let last = lastClick {
-            let w = width ?? last.rect.width
-            lastRect = CGRect(x: last.rect.maxX - w, y: last.rect.minY, width: w, height: last.rect.height)
+        // The last click's rect, at the item's current width about its right edge, while some reported copy is drawn or
+        // hidden only by the notch (with every copy occluded the click proves nothing about now).
+        let evidence = reported.contains { item in
+            menuBarDisplay(of: item.rect, displays: displays, menuHeight: menuHeight).map { item.drawn || underNotch(item.rect, on: $0) } ?? false
         }
-        let known = (window.map { [$0] } ?? []) + others + (lastRect.map { [$0] } ?? [])
-        let all = copies(known: known, itemWidth: width, displays: displays, menuHeight: menuHeight)
+        var lastRect: Known?
+        if evidence, lastDisplay != nil, let last = lastClick {
+            let w = width ?? last.rect.width
+            lastRect = Known(CGRect(x: last.rect.maxX - w, y: last.rect.minY, width: w, height: last.rect.height))
+        }
+        let all = copies(known: reported + (lastRect.map { [$0] } ?? []), itemWidth: width, displays: displays, menuHeight: menuHeight)
         func shown(_ display: Display?) -> Placement? {
             guard let display, let copy = all.first(where: { $0.display == display && $0.visible }) else { return nil }
             return Placement(display: display, anchor: copy.rect)
@@ -188,7 +208,7 @@ struct StatusItemAnchor: Equatable {
         if let found = shown(lastDisplay) { return found }
         for display in displays where display.notchRightEdge == nil { if let found = shown(display) { return found } }
         for display in displays { if let found = shown(display) { return found } }
-        return Placement(display: acted ?? window.flatMap { menuBarDisplay(of: $0, displays: displays, menuHeight: menuHeight) }, anchor: nil)
+        return Placement(display: acted ?? window.flatMap { menuBarDisplay(of: $0.rect, displays: displays, menuHeight: menuHeight) }, anchor: nil)
     }
 
     /// The display the click was made on, while the display arrangement is the one it was made in. macrev2-1251-1:

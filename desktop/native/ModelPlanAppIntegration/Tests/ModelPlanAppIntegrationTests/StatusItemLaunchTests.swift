@@ -85,8 +85,13 @@ import XCTest
         let button = try XCTUnwrap(app.statusButtonForTesting), window = try XCTUnwrap(button.window)
         // Build 5: the icon itself once the menu bar has placed it (a parking frame is never an anchor).
         let icon = window.convertToScreen(button.convert(button.bounds, to: nil))
-        XCTAssertEqual(app.cockpitAnchor, StatusItemAnchor.resolve(window: icon, click: nil, itemWidth: button.bounds.width,
-            displays: StatusItemAnchor.Display.system(), menuHeight: NSStatusBar.system.thickness), "the anchor is the icon itself")
+        // macrevc-1283-1: only a drawn window anchors; an occluded one leaves no anchor (D378).
+        if window.isVisible, window.occlusionState.contains(.visible) {
+            XCTAssertEqual(app.cockpitAnchor, StatusItemAnchor.resolve(window: icon, click: nil, itemWidth: button.bounds.width,
+                displays: StatusItemAnchor.Display.system(), menuHeight: NSStatusBar.system.thickness), "the anchor is the icon itself")
+        } else {
+            XCTAssertNil(app.cockpitAnchor, "an undrawn icon is no anchor")
+        }
         XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
         try await Task.sleep(for: .milliseconds(700)) // longer than a hold would need: there is no hold in v1
         XCTAssertEqual(console.shows, 0, "holding does nothing")
@@ -332,7 +337,7 @@ import XCTest
         // The external display shows the item (an occlusion notification must not re-read the runner's real windows).
         app.statusItemVisibility = { true }; app.checkStatusItemVisibility()
         let hidden = CGRect(x: left + 769, y: 945, width: width, height: 37)
-        var copies = [hidden]
+        var copies = [StatusItemAnchor.Known(hidden)]
         app.statusCopyFrames = { copies }
         let onLaptop = CGPoint(x: left + 400, y: 500), onExternal = CGPoint(x: left + 2500, y: 700)
         func assertExternal(_ entry: String, file: StaticString = #filePath, line: UInt = #line) throws {
@@ -367,7 +372,7 @@ import XCTest
         // The laptop's copy comes out from behind the notch: a red button there opens under it; with no point the
         // last click (on the external) still decides.
         let shown = CGRect(x: left + 1300, y: 945, width: width, height: 37)
-        copies = [shown]
+        copies = [StatusItemAnchor.Known(shown)]
         app.pressIgnition(at: onLaptop)
         XCTAssertEqual(app.cockpitStatusScreen, laptop.frame); XCTAssertEqual(app.cockpitAnchor, shown)
         console.pageClosed()
@@ -387,7 +392,7 @@ import XCTest
         XCTAssertNil(app.cockpitAnchor, "a hidden icon is not an anchor")
         visible = true
         app.checkStatusItemVisibility()
-        if let button = app.statusButtonForTesting, let window = button.window, window.isVisible,
+        if let button = app.statusButtonForTesting, let window = button.window, window.isVisible, window.occlusionState.contains(.visible),
            StatusItemAnchor.menuBarDisplay(of: window.convertToScreen(button.convert(button.bounds, to: nil)),
                                            displays: StatusItemAnchor.Display.system(), menuHeight: NSStatusBar.system.thickness) != nil {
             XCTAssertNotNil(app.cockpitAnchor, "a visible, placed icon anchors again")

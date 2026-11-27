@@ -458,19 +458,22 @@ struct StatusNoticePresentation {
     }
     private var cockpitPlacement: StatusItemAnchor.Placement? {
         guard let button = status?.button else { return nil }
-        let window = button.window.flatMap { window in
-            window.isVisible ? window.convertToScreen(button.convert(button.bounds, to: nil)) : nil
+        // macrevc-1283-1: every reported copy carries whether it is drawn, so an occluded one never anchors.
+        let window = button.window.map { window in
+            StatusItemAnchor.Known(window.convertToScreen(button.convert(button.bounds, to: nil)), drawn: Self.drawn(window))
         }
         return StatusItemAnchor.placement(window: window, copies: statusCopyFrames?() ?? otherStatusWindowFrames(button: button),
                                           click: statusClickAnchor, actedAt: cockpitOpenPoint, lastClick: lastStatusClick,
                                           itemWidth: button.bounds.width, displays: statusDisplays(), menuHeight: NSStatusBar.system.thickness)
     }
     /// The frames of the item's other status-bar windows (one per menu bar with separate Spaces), when AppKit lists them.
-    private func otherStatusWindowFrames(button: NSStatusBarButton) -> [CGRect] {
-        statusItemWindows().filter { $0 !== button.window && $0.isVisible && abs($0.frame.width - button.bounds.width) < 1 }.map(\.frame)
+    private func otherStatusWindowFrames(button: NSStatusBarButton) -> [StatusItemAnchor.Known] {
+        statusItemWindows().filter { $0 !== button.window && abs($0.frame.width - button.bounds.width) < 1 }
+            .map { StatusItemAnchor.Known($0.frame, drawn: Self.drawn($0)) }
     }
-    /// Test seam: the other copies' frames (nil reads the real status-bar windows).
-    var statusCopyFrames: (@MainActor () -> [CGRect])?
+    private static func drawn(_ window: NSWindow) -> Bool { window.isVisible && window.occlusionState.contains(.visible) }
+    /// Test seam: the other copies' frames and drawn state (nil reads the real status-bar windows).
+    var statusCopyFrames: (@MainActor () -> [StatusItemAnchor.Known])?
     /// Build 6: the last completed status-item click, kept after the cockpit closes; opens without a click (shortcut,
     /// menu, reopen, a red button whose display hides the item) go to its display while the arrangement is the same.
     private(set) var lastStatusClick: StatusItemAnchor?
@@ -1133,7 +1136,7 @@ struct StatusNoticePresentation {
     /// without a window of its own counts through its projected copy (`StatusItemAnchor.copyVisibilities`).
     private func realStatusWindowVisibilities() -> [Bool] {
         StatusItemAnchor.copyVisibilities(windows: statusItemWindows().map { window in
-            (frame: window.frame, drawn: window.isVisible && window.occlusionState.contains(.visible))
+            (frame: window.frame, drawn: Self.drawn(window))
         }, itemWidth: status?.button?.bounds.width, displays: statusDisplays(), menuHeight: NSStatusBar.system.thickness)
     }
     private var statusOcclusionObserver: NSObjectProtocol?

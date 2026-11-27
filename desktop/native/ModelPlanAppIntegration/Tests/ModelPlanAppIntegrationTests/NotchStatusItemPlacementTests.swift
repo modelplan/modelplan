@@ -29,10 +29,14 @@ final class NotchStatusItemPlacementTests: XCTestCase {
         try XCTUnwrap(StatusItemAnchor.click(pointer: CGPoint(x: rect.midX, y: rect.midY), local: CGPoint(x: width / 2, y: 12),
                                              buttonBounds: CGRect(x: 0, y: 0, width: width, height: 24), flipped: false, displays: displays))
     }
-    private func place(window: CGRect?, copies: [CGRect] = [], click: StatusItemAnchor? = nil, at point: CGPoint? = nil,
-                       last: StatusItemAnchor? = nil, on arrangement: [Display]? = nil) -> StatusItemAnchor.Placement {
-        StatusItemAnchor.placement(window: window, copies: copies, click: click, actedAt: point, lastClick: last,
-                                   itemWidth: width, displays: arrangement ?? displays, menuHeight: menuHeight)
+    /// `drawn` is the button window's; `undrawn` lists other copies AppKit reports as not drawn (occluded).
+    private func place(window: CGRect?, drawn: Bool = true, copies: [CGRect] = [], undrawn: [CGRect] = [],
+                       click: StatusItemAnchor? = nil, at point: CGPoint? = nil, last: StatusItemAnchor? = nil,
+                       itemWidth: CGFloat? = nil, on arrangement: [Display]? = nil) -> StatusItemAnchor.Placement {
+        let reported: [StatusItemAnchor.Known] = copies.map { StatusItemAnchor.Known($0) } + undrawn.map { StatusItemAnchor.Known($0, drawn: false) }
+        return StatusItemAnchor.placement(window: window.map { StatusItemAnchor.Known($0, drawn: drawn) }, copies: reported,
+                                   click: click, actedAt: point, lastClick: last,
+                                   itemWidth: itemWidth ?? width, displays: arrangement ?? displays, menuHeight: menuHeight)
     }
 
     func testACopyInTheNotchHousingOrLeftOfItIsNotVisible() {
@@ -122,6 +126,45 @@ final class NotchStatusItemPlacementTests: XCTestCase {
         XCTAssertEqual(states([(externalCopy, false)], displays), [false], "an occluded copy elsewhere says nothing about the others")
         XCTAssertNil(EngineDockMenuApplication.anyWindowVisible([]))
         XCTAssertEqual(EngineDockMenuApplication.anyWindowVisible(states([(hiddenCopy, true)], [laptop])), false)
+    }
+
+    /// macrevc-1283-1: AppKit reports both copies undrawn (the built-in one behind the notch, the external one occluded).
+    /// No copy is visible, so there is no anchor and D378 runs on the display acted on; the external display's own
+    /// window is never replaced by a projection, and a last click proves nothing about now.
+    func testEveryCopyUndrawnFallsBackToD378OnTheActedOnDisplay() throws {
+        for drawn in [false, true] {
+            XCTAssertEqual(place(window: hiddenCopy, drawn: drawn, undrawn: [externalCopy], at: onLaptop), .init(display: laptop, anchor: nil), "drawn \(drawn)")
+            XCTAssertEqual(place(window: hiddenCopy, drawn: drawn, undrawn: [externalCopy], at: onLaptop, last: try click(externalCopy)),
+                           .init(display: laptop, anchor: nil))
+            XCTAssertEqual(place(window: hiddenCopy, drawn: drawn, undrawn: [externalCopy], at: onExternal), .init(display: external, anchor: nil))
+            XCTAssertEqual(place(window: hiddenCopy, drawn: drawn, undrawn: [externalCopy]).anchor, nil, "shortcut")
+        }
+        // The button window itself occluded on the external display, nothing else known: no anchor.
+        XCTAssertEqual(place(window: externalCopy, drawn: false, at: onExternal), .init(display: external, anchor: nil))
+        XCTAssertEqual(place(window: externalCopy, drawn: false, at: onLaptop), .init(display: laptop, anchor: nil))
+        XCTAssertEqual(place(window: externalCopy, drawn: false, last: try click(externalCopy)).anchor, nil)
+        // statusItemHidden sees the same: no visible copy.
+        let states = StatusItemAnchor.copyVisibilities(windows: [(frame: hiddenCopy, drawn: true), (frame: externalCopy, drawn: false)],
+                                                       itemWidth: width, displays: displays, menuHeight: menuHeight)
+        XCTAssertFalse(states.contains(true))
+    }
+
+    /// macrevc-1283-2: the press was on the visible laptop copy, then a width change moved that copy behind the notch
+    /// before the cockpit was placed, while the external display still shows the item. The clicked display is kept,
+    /// with no anchor (D378), never the moved rect.
+    func testAClickedCopyThatMovedBehindTheNotchIsNotAnAnchor() throws {
+        let press = try click(laptopCopy)
+        let wider = CGRect(x: hiddenCopy.minX - 40, y: 945, width: width + 40, height: 37)
+        XCTAssertEqual(place(window: wider, copies: [externalCopy], click: press, itemWidth: width + 40), .init(display: laptop, anchor: nil))
+        XCTAssertEqual(place(window: externalCopy, copies: [wider], click: press, itemWidth: width + 40), .init(display: laptop, anchor: nil),
+                       "the moved copy is one of the other windows")
+        XCTAssertEqual(place(window: hiddenCopy, copies: [externalCopy], click: press), .init(display: laptop, anchor: nil), "same width, moved")
+        // The clicked copy's window occluded at the press position.
+        XCTAssertEqual(place(window: laptopCopy, drawn: false, copies: [externalCopy], click: press), .init(display: laptop, anchor: nil))
+        // Still visible after the width change: anchored as before.
+        let grown = CGRect(x: laptopCopy.maxX - width - 40, y: 945, width: width + 40, height: 37)
+        XCTAssertEqual(place(window: grown, copies: [externalCopy], click: press, itemWidth: width + 40), .init(display: laptop, anchor: grown))
+        XCTAssertEqual(place(window: laptopCopy, copies: [externalCopy], click: press), .init(display: laptop, anchor: laptopCopy))
     }
 
     /// The press point comes from the window server (the event's own record, else the cursor at the click), never
