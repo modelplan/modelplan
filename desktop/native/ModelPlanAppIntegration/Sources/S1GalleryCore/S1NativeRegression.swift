@@ -102,7 +102,7 @@ import ModelPlanOfficialDock
         _ = NSApplication.shared
         let root = URL(fileURLWithPath: baselinePath, isDirectory: true)
         let fixtureBytes = try Data(contentsOf: root.appendingPathComponent("fixtures.json"))
-        guard hash(fixtureBytes) == "dfec458e8aa01562253104deba80347450086eb7d19d3fc364bb0a410e7d7cde" else { throw Failure.fixture("manifest hash") }
+        guard hash(fixtureBytes) == "54f3e674e7507b1536aa59eb1d4e7aaa6765f01e52549c26897a2c24f422ead1" else { throw Failure.fixture("manifest hash") }
         let fixture = try JSONDecoder().decode(Fixture.self, from: fixtureBytes)
         guard fixture.schemaVersion == 1, fixture.sourceCommit == "fc87088f2c3e67d9ab0aefc2f9f90d6c315b6657",
               fixture.prototypeSourceCommit == "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
