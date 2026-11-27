@@ -92,6 +92,6 @@ for(const [lang,line,narrow] of [['zh-CN',['重置 3 次','1 次 40h 后到期']
   const w=row(view([a],lang)),n=row(fiveCols(a,lang));
   assert.match(w,new RegExp(`class="qrv-c" data-full="${line[0]}"`));assert.match(w,new RegExp(`class="qrv-x warn" data-full="${line[1]}"`));
   assert.match(w,/class="qrv-p"/);assert.match(w,/<b class="qrv-plus"[^>]*>\+1<\/b>/);
-  assert.match(n,new RegExp(`class="qrv-c" data-full="${narrow[0]}"`));assert.match(n,new RegExp(`class="qrv-x warn" data-full="${narrow[1]}"`));
+  assert.match(n,new RegExp(`class="qrv-c" data-drop="" data-full="${narrow[0]}"`),"narrow with an expiry: the count may drop, the clause never");assert.match(n,new RegExp(`class="qrv-x warn" data-full="${narrow[1]}"`));
   assert.doesNotMatch(n,/class="qrv-p"/,'narrow: the points drop first');
  });

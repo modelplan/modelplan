@@ -41,6 +41,10 @@ export function setSeenSubscriptions(ids:readonly string[]|null):boolean{
  const changed=next===null||prev===null?next!==prev:next.size!==prev.size||[...next].some(id=>!prev.has(id));
  seenSubscriptions=next;return changed;
 }
+/** macrevb-1290-6: a privacy clear drops the host's seen set (and everything derived from it: the columns and the grey
+ *  lines are recomputed from it on the next paint). A page whose host negotiated `seen` keeps the never-read rule with an
+ *  empty set until fresh seen state arrives; a page that never got one keeps today's rule. */
+export function forgetSeenSubscriptions():boolean{return seenSubscriptions!==null&&seenSubscriptions.size>0?setSeenSubscriptions([]):false;}
 const goodReading=(account:WireAccount)=>account.valueState==='current'||account.valueState==='retained';
 /** Whether decision 3 lets this member have a column (and a ring); always true without a host seen set. */
 export const seenMember=(member:{key:string;account:WireAccount}):boolean=>seenSubscriptions===null||seenSubscriptions.has(member.key)||goodReading(member.account);
