@@ -255,12 +255,13 @@ import XCTest
                                              visibleFrame: CGRect(x: right, y: 0, width: 1512, height: 945))
         app.statusDisplays = { real + [other] }
         // macrev2-1251-2 round 2: the press is on the item's copy on the other display while AppKit's button window
-        // reports this display's geometry. AppKit delivers the event to that window with `locationInWindow` measured
-        // from its reported frame, so the production conversion runs unreplaced. bc4e03f0 / 6bb2d9cd subtracted that
-        // offset and rebuilt the reported window's rect on this display.
+        // reports this display's geometry. bc4e03f0 / 6bb2d9cd subtracted the event's offset and rebuilt the reported
+        // window's rect on this display. Build 6: the press point is the window server's (here its seam), and the
+        // offset in the button, converted through the stale window, lies far outside it and is discarded.
         let window = try XCTUnwrap(button.window)
         let pressed = CGPoint(x: right + 1200, y: 970)
         let centre = NSPoint(x: pressed.x - window.frame.minX, y: pressed.y - window.frame.minY)
+        app.statusPressLocation = { _ in pressed }
         func press() throws {
             XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button, at: centre)))
             XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button, at: centre)))
@@ -288,21 +289,90 @@ import XCTest
         XCTAssertNil(app.statusPress); XCTAssertNil(app.statusClickAnchor, "an aborted press leaves no anchor")
     }
 
-    /// macrev2-1251-2: the press point is the mouse-down's own location through the window it was delivered to, not
-    /// the live cursor (which may have moved before the monitor ran). On bc4e03f0 it was `NSEvent.mouseLocation`.
-    func testStatusPressUsesTheMouseDownsOwnLocation() async throws {
+    /// Build 6 (owner 11-27, supersedes macrev2-1251-2's window conversion): the press point is the window server's
+    /// record of the mouse-down, read once in the monitor, never a conversion through the event's window (which can be
+    /// another display's copy, the one behind the notch). The offset inside the button still comes from the same event.
+    func testStatusPressUsesTheWindowServersPoint() async throws {
         let app = try await application(cockpitEntryEnabled: true, console: TogglingStatusConsole())
         defer { app.removeStatusItem(); app.composition.dock.close() }
         app.installStatusItem(); app.renderMenu()
         let button = try XCTUnwrap(app.statusButtonForTesting), window = try XCTUnwrap(button.window)
         let location = button.convert(NSPoint(x: button.bounds.minX + 3, y: button.bounds.midY), to: nil)
+        // The window server puts the press 5000 pt right of where the event's window would convert it.
+        let converted = window.convertPoint(toScreen: location)
+        let server = CGPoint(x: converted.x + 5000, y: converted.y)
+        var reads = 0
+        app.statusPressLocation = { _ in reads += 1; return server }
         XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button, at: location)))
+        XCTAssertEqual(reads, 1, "read once, at the mouse-down")
         let press = try XCTUnwrap(app.statusPress, "the press is recorded from the event")
-        let expected = window.convertPoint(toScreen: location)
-        XCTAssertEqual(press.point.x, expected.x, accuracy: 0.01); XCTAssertEqual(press.point.y, expected.y, accuracy: 0.01)
-        // The rect pairs that point with the same event's offset in the button: it is the button's rect in that window.
-        let icon = window.convertToScreen(button.convert(button.bounds, to: nil))
-        XCTAssertEqual(press.rect.minX, icon.minX, accuracy: 0.5); XCTAssertEqual(press.rect.minY, icon.minY, accuracy: 0.5)
+        XCTAssertEqual(press.point, server)
+        // The rect pairs that point with the same event's offset in the button (3 pt from its left edge).
+        XCTAssertEqual(press.rect.minX, server.x - 3, accuracy: 0.5)
+        XCTAssertEqual(press.rect.width, button.bounds.width, accuracy: 0.5)
+    }
+
+    /// Build 6 (owner 11-27): every open entry with a synthetic notch display (the item's copy there is behind the
+    /// notch) and an external display. Invariant: the cockpit opens on the display the user acted on, and never under
+    /// the notch-covered copy. On main each of these anchored to that copy, on the built-in display.
+    func testBuild6EveryOpenEntryAvoidsTheCopyBehindTheNotch() async throws {
+        let console = TogglingStatusConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting), window = try XCTUnwrap(button.window)
+        let width = button.bounds.width
+        // Synthetic displays right of every real one, so the runner's own button window is placed on neither.
+        let left = (StatusItemAnchor.Display.system().map(\.frame.maxX).max() ?? 0) + 100
+        let laptop = StatusItemAnchor.Display(frame: CGRect(x: left, y: 0, width: 1512, height: 982),
+                                              visibleFrame: CGRect(x: left, y: 70, width: 1512, height: 875), notchRightEdge: left + 856)
+        let external = StatusItemAnchor.Display(frame: CGRect(x: left + 1512, y: 0, width: 2560, height: 1440),
+                                                visibleFrame: CGRect(x: left + 1512, y: 0, width: 2560, height: 1415))
+        app.statusDisplays = { [laptop, external] }
+        // The external display shows the item (an occlusion notification must not re-read the runner's real windows).
+        app.statusItemVisibility = { true }; app.checkStatusItemVisibility()
+        let hidden = CGRect(x: left + 769, y: 945, width: width, height: 37)
+        var copies = [hidden]
+        app.statusCopyFrames = { copies }
+        let onLaptop = CGPoint(x: left + 400, y: 500), onExternal = CGPoint(x: left + 2500, y: 700)
+        func assertExternal(_ entry: String, file: StaticString = #filePath, line: UInt = #line) throws {
+            XCTAssertEqual(app.cockpitStatusScreen, external.frame, entry, file: file, line: line)
+            let anchor = try XCTUnwrap(app.cockpitAnchor, entry, file: file, line: line)
+            XCTAssertEqual(StatusItemAnchor.menuBarDisplay(of: anchor, displays: [laptop, external], menuHeight: 24), external, entry, file: file, line: line)
+            XCTAssertFalse(anchor.intersects(hidden), entry, file: file, line: line)
+        }
+        // Red button on the notch display.
+        app.pressIgnition(at: onLaptop); XCTAssertEqual(console.shows, 1)
+        try assertExternal("red button, notch display")
+        console.pageClosed()
+        // Red button on the external display.
+        app.pressIgnition(at: onExternal); try assertExternal("red button, external display")
+        console.pageClosed()
+        // Shortcut, status menu item / app menu, and reopening the app (restore).
+        app.performShortcut(.openCockpit); try assertExternal("shortcut")
+        console.pageClosed()
+        app.showConsole(); try assertExternal("menu item")
+        console.pageClosed()
+        _ = app.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: false); try assertExternal("reopen")
+        console.pageClosed()
+        // Status-item click on the external copy: the press's display, even though AppKit's window is elsewhere.
+        let pressed = CGPoint(x: left + 3860, y: 1427)
+        app.statusPressLocation = { _ in pressed }
+        let local = NSPoint(x: pressed.x - window.frame.minX, y: pressed.y - window.frame.minY)
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button, at: local)))
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button, at: local)))
+        try assertExternal("status item click")
+        XCTAssertEqual(app.cockpitAnchor?.midX ?? 0, pressed.x, accuracy: 0.5)
+        console.pageClosed()
+        // The laptop's copy comes out from behind the notch: a red button there opens under it; with no point the
+        // last click (on the external) still decides.
+        let shown = CGRect(x: left + 1300, y: 945, width: width, height: 37)
+        copies = [shown]
+        app.pressIgnition(at: onLaptop)
+        XCTAssertEqual(app.cockpitStatusScreen, laptop.frame); XCTAssertEqual(app.cockpitAnchor, shown)
+        console.pageClosed()
+        app.performShortcut(.openCockpit); try assertExternal("shortcut after an external click")
+        console.pageClosed()
     }
 
     /// G3-46: when macOS hides the icon behind a full menu bar, the cockpit has no anchor to open under and
