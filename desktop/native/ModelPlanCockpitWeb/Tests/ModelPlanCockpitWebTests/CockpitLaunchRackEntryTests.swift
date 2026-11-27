@@ -430,7 +430,7 @@ import XCTest
     try await wait(600)
     XCTAssertEqual(window.frame, plan.frame, "landed")
     // D459: a detach is a launch, full thrust for the launch burn from the moment it leaves the boom (longer than the
-    // 0.6 s move); then the parked cockpit burns short (the page's thrust state, without ignition).
+    // 0.6 s move); then the parked cockpit's flame is out (D468: the page fades it away, no ignition).
     XCTAssertEqual(ignition, [true], "the launch burn outlasts the move")
     try await until("the launch burn ends") { ignition == [true, false] }
     XCTAssertEqual(fixture.page.verificationRack.ext, 0, "the rack retracted into the icon")
@@ -486,7 +486,7 @@ import XCTest
     XCTAssertFalse(fixture.page.isAttached)
     XCTAssertFalse(fixture.page.inCatchZone(window.frame), "the tear-off leaves the catch zone (\(window.frame) from \(home))")
     XCTAssertEqual(fixture.page.verificationRack.target, 0, "tear-off: the rack retracts into the icon")
-    // D459: tearing the cockpit off the boom is a launch: full thrust for the launch burn, then out (parked: short).
+    // D459: tearing the cockpit off the boom is a launch: full thrust for the launch burn, then out (parked: flame out, D468).
     XCTAssertEqual(ignition, [true], "the tear-off lights the launch burn")
     try await until("the launch burn ends") { ignition == [true, false] }
     ignition = []
