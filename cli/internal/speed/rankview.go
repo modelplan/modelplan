@@ -208,7 +208,12 @@ func reviewResponse(r SessionResponse, interactive bool) bool {
 }
 
 // Usage ranks every session and project over today, 7 and 30 days. p prices (nil: every cost is unpriced).
-func (v PerfView) Usage(p Pricer) UsageRankings {
+func (v PerfView) Usage(p Pricer) UsageRankings { return v.UsageCapped(p, RankCap) }
+
+// UsageCapped is Usage listing at most limit rows per list (1..RankCap); the rest are summed into Other, so the
+// totals and shares stay exact whatever the limit (the producer lowers it to keep its response bounded).
+func (v PerfView) UsageCapped(p Pricer, limit int) UsageRankings {
+	limit = min(max(limit, 1), RankCap)
 	out := UsageRankings{Measure: "total-tokens"}
 	if !v.OK {
 		return out
@@ -219,13 +224,13 @@ func (v PerfView) Usage(p Pricer) UsageRankings {
 			running[s.Ref] = true
 		}
 	}
-	out.Today = v.usageWindow(windowFrom(v.Now, 1), p, running)
-	out.Recent7d = v.usageWindow(windowFrom(v.Now, 7), p, running)
-	out.Recent30d = v.usageWindow(windowFrom(v.Now, 30), p, running)
+	out.Today = v.usageWindow(windowFrom(v.Now, 1), p, running, limit)
+	out.Recent7d = v.usageWindow(windowFrom(v.Now, 7), p, running, limit)
+	out.Recent30d = v.usageWindow(windowFrom(v.Now, 30), p, running, limit)
 	return out
 }
 
-func (v PerfView) usageWindow(from string, p Pricer, running map[string]bool) UsageWindow {
+func (v PerfView) usageWindow(from string, p Pricer, running map[string]bool, limit int) UsageWindow {
 	w := UsageWindow{SessionRows: []UsageRow{}, ProjectRows: []UsageRow{}}
 	w.Total.Complete = true
 	sessions := []UsageRow{}
@@ -289,8 +294,8 @@ func (v PerfView) usageWindow(from string, p Pricer, running map[string]bool) Us
 	}
 	w.Projects, w.ProjectRows = projectRows(sessions, share)
 	sortRows(sessions)
-	w.SessionRows, w.OtherSessions = capRows(sessions, share)
-	w.ProjectRows, w.OtherProjects = capRows(w.ProjectRows, share)
+	w.SessionRows, w.OtherSessions = capRows(sessions, share, limit)
+	w.ProjectRows, w.OtherProjects = capRows(w.ProjectRows, share, limit)
 	return w
 }
 
@@ -360,21 +365,21 @@ func sortRows(rows []UsageRow) {
 	})
 }
 
-func capRows(rows []UsageRow, share func(int64) float64) ([]UsageRow, UsageOther) {
+func capRows(rows []UsageRow, share func(int64) float64, limit int) ([]UsageRow, UsageOther) {
 	sortRows(rows)
 	o := UsageOther{}
 	o.Tokens.Complete = true
-	if len(rows) <= RankCap {
+	if len(rows) <= limit {
 		return rows, o
 	}
-	for _, r := range rows[RankCap:] {
+	for _, r := range rows[limit:] {
 		o.Count++
 		o.Tokens.merge(r.Tokens)
 		o.Cost.merge(r.Cost)
 	}
 	o.Share = share(o.Tokens.Total)
 	o.Cost.settle()
-	return rows[:RankCap], o
+	return rows[:limit], o
 }
 
 // unattributedRef is the project reference of sessions whose log records no working directory: the 无项目 bucket.

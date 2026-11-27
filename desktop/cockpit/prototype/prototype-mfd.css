@@ -359,7 +359,9 @@ dl.ss{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 6px;margin:2
 button.wd.wu{cursor:pointer}
 button.wd.wu:hover,.wd.wu:hover{background-color:var(--lcd-ghost)}
 .wu-t{font:400 12px/1 var(--f-lcd);color:var(--text);text-align:right}
-.wu-bar{position:absolute;left:0;bottom:0;height:2px;width:var(--p,0%);background:color-mix(in srgb,var(--lcd-ink) 60%,transparent);pointer-events:none}
+.wu-bar{position:absolute;left:0;bottom:0;height:2px;width:var(--p,0%);background:var(--v,color-mix(in srgb,var(--lcd-ink) 60%,transparent));pointer-events:none}
+.wu-bucket .wd-n{color:var(--muted)}
+.wu-cut{flex:none;margin:2px 0 0;font:9.5px/13px var(--f-lcd);color:var(--muted)}
 .wu-run{font-weight:400;color:var(--teal,var(--lcd-ink));margin-right:3px}
 .wd.wu-s{min-height:30px}
 .wu-s .wd-n{display:flex;flex-direction:column;line-height:13px}

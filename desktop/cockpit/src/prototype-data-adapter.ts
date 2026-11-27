@@ -20,14 +20,22 @@ export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitD
   reserveCredits:wireCredits?{balance:wireCredits.balance,unit:'credits'}:detail?null:account.credits};
 }
 export const cockpitDetails=(data:WireCockpitData)=>data.details;
-// Settings "Project names" off: labels are dropped before any surface or accessibility text sees them.
+// Settings "Project names" off: labels and session titles are dropped before any surface or accessibility text sees
+// them (macrevb-1303-3: with project names off, no project or session name reaches the DOM). References, kinds,
+// counts and tokens stay, so the rows still group and rank.
 export function withoutProjectNames(data:WireCockpitData):WireCockpitData {
  // A project whose name the page hides is still a project: its state becomes hidden, a session with none stays none.
- const unname=<T extends {projectLabel:string|null;projectState?:'named'|'unnamed'|'hidden'|'none'}>(s:T):T=>s.projectLabel===null?s:{...s,projectLabel:null,...(s.projectState&&s.projectState!=='none'?{projectState:'hidden' as const}:{})};
+ const unname=<T extends {projectLabel:string|null;projectState?:'named'|'unnamed'|'hidden'|'none';title?:string|null}>(s:T):T=>{
+  const {title:_title,...rest}=s;const out={...rest,projectLabel:null,...(s.projectLabel!==null&&s.projectState&&s.projectState!=='none'?{projectState:'hidden' as const}:{})} as T;
+  return 'title' in s&&s.title===null?{...out,title:null}:out;};
  const details=data.details?{...data.details,sessions:data.details.sessions.map(unname),
   ...(data.details.recentSessions?{recentSessions:data.details.recentSessions.map(unname)}:{})}:data.details;
  const hide=<T extends {label:string|null}>(rows:readonly T[])=>rows.map(p=>p.label===null?p:{...p,label:null});
- const history=data.history?{...data.history,projects:{recent7d:hide(data.history.projects.recent7d),recent30d:hide(data.history.projects.recent30d)}}:data.history;
+ const usageWindow=(w:NonNullable<NonNullable<WireCockpitData['history']>['usage']>['today'])=>({...w,projects:hide(w.projects),
+  sessions:w.sessions.map(x=>({...x,title:null,projectLabel:null,projectState:x.projectState==='none'?x.projectState:'hidden' as const}))});
+ // namesHidden tells the page a missing project name is withheld, not unknown (it reads 项目名已隐藏, not 未命名项目).
+ const usage=data.history?.usage?{...data.history.usage,namesHidden:true,today:usageWindow(data.history.usage.today),recent7d:usageWindow(data.history.usage.recent7d),recent30d:usageWindow(data.history.usage.recent30d)}:undefined;
+ const history=data.history?{...data.history,projects:{recent7d:hide(data.history.projects.recent7d),recent30d:hide(data.history.projects.recent30d)},...(usage?{usage}:{})}:data.history;
  return {...data,details,history};
 }
 

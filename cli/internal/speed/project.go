@@ -182,6 +182,9 @@ func gitRoot(cwd string) string {
 		dir = real
 	}
 	for d, i := dir, 0; i < 64; i++ {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil && gitCommonDir(d) == "" {
+			return "" // a broken checkout (macrevb-1303-5): never a parent repository instead
+		}
 		if common := gitCommonDir(d); common != "" {
 			if filepath.Base(common) == ".git" {
 				return filepath.Dir(common)

@@ -366,7 +366,19 @@ func (r *projectResolver) byRepo(dir string, np nativeProject) (info projectInfo
 		return info, ok, false
 	}
 	top, root := gitCheckout(real)
-	if root == "" || root == r.home {
+	if root == "" {
+		// No usable checkout: a worktree whose main checkout or common git metadata is gone (its .git file names a
+		// folder that no longer exists) keeps the repository it was remembered under (macrevb-1303-5); gitCheckout
+		// stops at that .git, so an unrelated parent repository is never taken instead.
+		if info, ok := r.recall(dir); ok {
+			return info, true, true
+		}
+		if info, ok := r.recall(real); ok {
+			return info, true, true
+		}
+		return projectInfo{}, false, true
+	}
+	if root == r.home {
 		return projectInfo{}, false, true
 	}
 	info, _ = r.repo(root, np)
@@ -384,9 +396,13 @@ func (r *projectResolver) byRepo(dir string, np nativeProject) (info projectInfo
 }
 
 // gitCheckout: the top folder of the checkout a folder is in and its repository root (gitRoot); the two differ
-// for a linked worktree. "" when the folder is in no checkout.
+// for a linked worktree. "" when the folder is in no checkout. A .git that is there but unusable (a worktree whose
+// common directory is gone) ends the walk with no root: the folder is in that broken checkout, not in a parent.
 func gitCheckout(dir string) (top, root string) {
 	for d, i := dir, 0; i < 64; i++ {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil && gitCommonDir(d) == "" {
+			return d, ""
+		}
 		if common := gitCommonDir(d); common != "" {
 			if filepath.Base(common) == ".git" {
 				return d, filepath.Dir(common)

@@ -301,3 +301,29 @@ func sameDays(a, b []SessionDay) bool {
 	y, _ := json.Marshal(b)
 	return string(x) == string(y)
 }
+
+// macrevb-1303-5: a linked worktree whose main checkout and common git metadata are deleted, while the worktree
+// itself remains, keeps the repository it was remembered under, and is never taken for a parent repository.
+func TestD470ReviewWorktreeWithItsMainCheckoutDeleted(t *testing.T) {
+	d470Home(t)
+	outer := d470Repo(t, t.TempDir(), "") // an unrelated repository above both
+	repo := d470Repo(t, filepath.Join(outer, "sample-repo"), "")
+	wt := filepath.Join(outer, "sample-worktree")
+	linkWorktree(t, repo, wt)
+	child := filepath.Join(wt, "pkg")
+	os.MkdirAll(child, 0o700)
+	cache := t.TempDir()
+	want := projectorInfo(cache, true)("claude-code", child, nativeProject{})
+	if want.Kind != KindRepo || want.Label != "sample-repo" {
+		t.Fatalf("live: %+v", want)
+	}
+	os.RemoveAll(repo)
+	if got := projectorInfo(cache, true)("claude-code", child, nativeProject{}); got != want {
+		t.Fatalf("main checkout deleted: %+v, want %+v", got, want)
+	}
+	// Never remembered: the broken worktree is not the outer repository.
+	outerInfo := projectorInfo(t.TempDir(), true)("claude-code", outer, nativeProject{})
+	if got := projectorInfo(t.TempDir(), true)("claude-code", child, nativeProject{}); got.Ref == outerInfo.Ref {
+		t.Fatalf("a broken worktree was taken for the parent repository: %+v", got)
+	}
+}

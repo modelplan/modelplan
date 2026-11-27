@@ -10,6 +10,7 @@ import {assertChartOrder} from '../chart-order.mjs';
 import {where} from '../../../cockpit/study/rocket-r1/mfd-pages/where.js';
 import {setLanguage} from '../../../cockpit/study/rocket-r1/i18n.js';
 import '../../../cockpit/study/rocket-r1/strings/mfd.js';
+import '../../../cockpit/study/rocket-r1/strings/where-usage.js';
 
 globalThis.document??={documentElement:{}};
 setLanguage('en');
@@ -17,6 +18,7 @@ setLanguage('en');
 const compiled=new URL('../../../cockpit/.tmp/compiled/',import.meta.url);
 if(!existsSync(new URL('study',compiled)))symlinkSync('../../study',new URL('study',compiled).pathname);
 const {usageView}=await import('../../../cockpit/.tmp/compiled/src/prototype-history.js');
+const {withoutProjectNames}=await import('../../../cockpit/.tmp/compiled/src/prototype-data-adapter.js');
 
 const now=Date.parse('2026-11-26T20:00:00Z');
 const tokens=(total,extra={})=>({total,input:total/2,output:total/4,cacheRead:total/8,cacheWrite:total/8,complete:true,...extra});
@@ -32,7 +34,7 @@ const wire=()=>({measure:'total-tokens',today:window(),recent7d:window(),recent3
 const ids=new Map([['aaaaaaaaaaaaaaaa','acc-a'],['bbbbbbbbbbbbbbbb','acc-b']]);
 const data=(u=wire())=>({now,usage:usageView(u,ids),accounts:[{id:'acc-a',colour:'#111'},{id:'acc-b',colour:'#222'}],models:[{id:'gpt-x',short:'GPT X'}],sessionRanking:[],projectRanking:{recent7d:[],recent30d:[]}});
 const ui=(more={})=>({range:'7d',where:'proj',project:null,scope:null,now,lang:'en',...more});
-const rows=html=>[...html.matchAll(/<(?:button|div) class="wd wu[^"]*"([^>]*)>.*?<span class="wd-n">(.*?)<\/span><span class="wu-t">([^<]*)<\/span><span class="wd-m">([^<]*)<\/span><span class="wd-s">([^<]*)<\/span><i class="wu-bar" data-p="(\d+)"/g)]
+const rows=html=>[...html.matchAll(/<(?:button|div) class="wd wu[^"]*"([^>]*)>.*?<span class="wd-n">(.*?)<\/span><span class="wu-t">([^<]*)<\/span><span class="wd-m">([^<]*)<\/span><span class="wd-s">([^<]*)<\/span><i class="wu-bar"[^>]*?data-p="(\d+)"/g)]
  .map(m=>({ref:/data-(?:mfd="proj:|session=")([^"]+)"/.exec(m[1])?.[1]??null,name:m[2].replace(/<small.*?<\/small>/g,'').replace(/<[^>]+>/g,''),tokens:m[3],cost:m[4],share:m[5],bar:m[6]}));
 
 test('CKP-MFD-67 D470: projects rank by total tokens with the Auto Review row folded in and "other" last',()=>{
@@ -52,9 +54,10 @@ test('§7.1 the project hover names it fully with the token split, last and firs
  for(const part of ['alpha','6k tokens: input 3k · output 2k · cache read 750 · cache write 750','60% of the tokens','Estimated cost ≈$9.5','Last active','First active'])assert.ok(tip.includes(part),`${part} in ${tip}`);
 });
 
-test('§7.2 a project row opens its sessions; running sessions come first, then by tokens',()=>{
- const all=rows(where.render(data(),ui({where:'time'})));
- assert.deepEqual(all.map(x=>x.ref??x.name),['3333333333333333','1111111111111111','Auto Review 2 runs','2222222222222222','Other 4']);
+test('§7.2 a project row opens its sessions; sessions rank by tokens, a running one is marked, not pinned (D470 rec. 4)',()=>{
+ const html0=where.render(data(),ui({where:'time'})),all=rows(html0);
+ assert.deepEqual(all.map(x=>x.ref??x.name),['1111111111111111','Auto Review 2 runs','2222222222222222','3333333333333333','Other 4']);
+ assert.match(html0,/data-session="3333333333333333"[^>]*>.*?<b class="wu-run"/);
  const html=where.render(data(),ui({where:'time',project:'p1'})),one=rows(html);
  assert.deepEqual(one.map(x=>x.ref),['1111111111111111']);
  assert.match(html,/data-mfd="where:all"/);assert.match(html,/alpha · 1 session/);
@@ -90,4 +93,57 @@ test('the real Go capture maps through the adapter: every window, bounded shares
   for(const s of w.sessions)assert.ok(s.share>=0&&s.share<=1);
  }
  assert.ok(rows(where.render({...data(),usage:v},ui())).length>0);
+});
+
+test('the range header carries the measured total and ≈$ (board ①); a scope shows the count only',()=>{
+ assert.match(where.render(data(),ui()),/<div class="wd-h">7d · 3 projects · 10k · ≈\$12<\/div>/);
+ assert.match(where.render(data(),ui({scope:'acc-b'})),/<div class="wd-h">7d · 1 project<\/div>/);
+});
+
+// macrevb-1303-7
+test('All → Sessions with only Auto Review runs shows the review row; a scope hides it',()=>{
+ const u=wire();u.recent7d={...window(),sessions:[],sessionCount:0,otherSessions:other(0,0,0),projects:[],projectCount:0,otherProjects:other(0,0,0)};
+ const r=rows(where.render(data(u),ui({where:'time'})));
+ assert.deepEqual(r.map(x=>[x.name,x.tokens,x.share]),[['Auto Review 2 runs','2k','20%']]);
+ assert.deepEqual(rows(where.render(data(u),ui({where:'proj'}))).map(x=>x.name),['Auto Review 2 runs']);
+ assert.match(where.render(data(u),ui({where:'time',scope:'acc-a'})),/No sessions in this period/);
+});
+
+// macrevb-1303-6
+test('a project whose sessions rank below the listed top shows them as one continuation row with the exact remainder',()=>{
+ const u=wire();
+ u.recent7d={...window(),sessionCount:201,projectCount:2,
+  projects:[project('big','big','repo',9000,.9,{sessions:200}),project('small','small','repo',100,.01,{sessions:2})],
+  sessions:Array.from({length:200},(_,i)=>session(String(i).padStart(16,'0'),'t'+i,'big',45,.0045)),otherSessions:other(2,100,.01),backgroundReview:null};
+ const html=where.render(data(u),ui({where:'time',project:'small'})),r=rows(html);
+ assert.match(html,/small · 2 sessions/);
+ assert.deepEqual(r.map(x=>[x.name,x.tokens,x.share]),[['2 more sessions not listed','100','1%']]);
+ assert.doesNotMatch(html,/No sessions in this period/);
+ // A scope over the listed top says the lists are cut, never "no sessions" alone.
+ const scoped=where.render(data(u),ui({where:'time',scope:'acc-b'}));
+ assert.match(scoped,/Only the top rows of all subscriptions are listed/);
+});
+
+// macrevb-1303-3: with project names off, no project or session name reaches the page, the hover or its labels.
+test('Project names off: project labels and session titles leave the usage ranking; refs, kinds and tokens stay',()=>{
+ const names=['alpha','gamma','Fix the tape','Docs'];
+ const full={history:{coverage:'local-history',projects:{recent7d:[],recent30d:[]},usage:wire()},details:null};
+ const shown=withoutProjectNames(full);
+ for(const range of ['today','7d','30d'])for(const where_ of ['proj','time'])for(const project of [null,'p1']){
+  const html=where.render(data(shown.history.usage),ui({range,where:where_,project}));
+  for(const n of names)assert.ok(!html.includes(n),`${n} in ${range}/${where_}/${project}`);
+ }
+ const w=shown.history.usage.recent7d;
+ assert.deepEqual(w.projects.map(p=>[p.ref,p.kind,p.tokens.total]),[['p1','repo',6000],['p2','independent',1000],['p3','workspace',500]]);
+ assert.deepEqual(w.sessions.map(s=>[s.projectRef,s.projectState,s.title]),[['p1','hidden',null],[null,'none',null],['p3','hidden',null]]);
+ // The page names a hidden project as hidden, never "no project".
+ assert.deepEqual(rows(where.render(data(shown.history.usage),ui())).map(x=>x.name).slice(0,1),['▶Project name hidden']);
+ assert.match(where.render(data(shown.history.usage),ui({where:'time'})),/Project name hidden/);
+ assert.equal(full.history.usage.recent7d.projects[0].label,'alpha','the producer data is not changed in place');
+});
+
+test('Project names off also drops live and recorded session titles',()=>{
+ const full={history:null,details:{sessions:[{sessionRef:'1111111111111111',projectLabel:'alpha',projectState:'named',title:'Fix the tape'}],recentSessions:[{sessionRef:'1111111111111111',projectLabel:'alpha',projectState:'named',title:'Fix the tape'}]}};
+ const s=JSON.stringify(withoutProjectNames(full));
+ assert.ok(!s.includes('alpha')&&!s.includes('Fix the tape'),s);
 });

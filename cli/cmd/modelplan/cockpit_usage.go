@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"math"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
@@ -32,7 +33,6 @@ func cockpitUsage(perf speed.PerfView, allowed map[string]bool, labels bool, mod
 			}
 		}
 	}
-	u := view.Usage(pricer)
 	conv := func(w speed.UsageWindow) wire.CockpitUsageWindow {
 		out := wire.CockpitUsageWindow{Tokens: usageTokens(w.Total), SessionCount: w.Sessions, ProjectCount: w.Projects,
 			Projects: []wire.CockpitUsageProject{}, Sessions: []wire.CockpitUsageSession{},
@@ -53,8 +53,30 @@ func cockpitUsage(perf speed.PerfView, allowed map[string]bool, labels bool, mod
 		}
 		return out
 	}
-	return &wire.CockpitUsage{Measure: u.Measure, Today: conv(u.Today), Recent7d: conv(u.Recent7d), Recent30d: conv(u.Recent30d)}
+	// macrevb-1303-4: the cockpit update is one message under the page's and the native host's 1 MiB limit, and a
+	// refused message drops every other figure with it. The ranking therefore stays within cockpitUsageBudget: when
+	// 200 rows per list (with long Unicode names) would not fit, fewer rows are listed and the rest are summed into
+	// "other", so totals and shares stay exact and the cut is explicit (other.count).
+	var out *wire.CockpitUsage
+	for limit := speed.RankCap; ; limit /= 2 {
+		u := view.UsageCapped(pricer, limit)
+		out = &wire.CockpitUsage{Measure: u.Measure, Today: conv(u.Today), Recent7d: conv(u.Recent7d), Recent30d: conv(u.Recent30d)}
+		if limit <= cockpitUsageMinRows {
+			return out
+		}
+		if b, err := json.Marshal(out); err == nil && len(b) <= cockpitUsageBudget {
+			return out
+		}
+	}
 }
+
+// cockpitUsageBudget: the encoded size the usage ranking may take in a cockpit update (a quarter of the 1 MiB
+// message limit, beside the rest of the cockpit). cockpitUsageMinRows: the fewest rows a list is cut to; at the
+// bounded name and title lengths that many rows always fit.
+const (
+	cockpitUsageBudget  = 256 << 10
+	cockpitUsageMinRows = 12
+)
 
 func usageTokens(t speed.TokenSums) wire.CockpitUsageTokens {
 	return wire.CockpitUsageTokens{Total: t.Total, Input: t.Input, Output: t.Output, CacheRead: t.CacheRead, CacheWrite: t.CacheWrite, Complete: t.Complete}

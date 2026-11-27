@@ -53,7 +53,7 @@ const pctOf = v => Math.round(v * 100);
 const kindWord = kind => ({independent: 'mfd.wuIndependent', home: 'mfd.wuHome', none: 'mfd.wuNone'})[kind];
 export function projectName(p) {
   if (kindWord(p.kind)) return t(kindWord(p.kind));
-  return p.label || t('mfd.wuUnnamed');
+  return p.label || t(p.hidden ? 'mfd.wuHidden' : 'mfd.wuUnnamed');
 }
 export function sessionProject(x) {
   if (kindWord(x.projectKind) || x.projectState === 'none') return t(kindWord(x.projectKind) || 'mfd.wuNone');
@@ -88,33 +88,54 @@ function otherRow(o, ui) {
   return `<div class="wd wu wu-other" data-tip="${esc(rowTip(name, o, ui))}"><i class="chip" data-v="var(--lcd-ghost)"></i><span class="wd-n">${esc(name)}</span>${cells(o)}</div>`;
 }
 const byTokens = (a, b) => b.tokens.total - a.tokens.total;
+// The range header with its measured total (board ①): "7d · 12 projects · 1.2B · ≈$310"; scoped, the count only, since
+// the window total is all subscriptions'.
+function header(text, w, ui) {
+  const cost = approxCost(w.cost), total = ui.scope ? '' : ` · ${tok(w.tokens.total)}${cost ? ` · ${cost}` : ''}`;
+  return `<div class="wd-h">${esc(text + total)}</div>`;
+}
+// macrevb-1303-6: the lists are the producer's top rows of all subscriptions; a scope or a project filter can only
+// show what is listed, so a cut is said, never shown as "no sessions".
+const cutNote = (count, ui) => ui.scope && count > 0 ? `<p class="wu-cut">${esc(t('mfd.wuCutScope'))}</p>` : '';
+// The share bar is the subscription's colour when one subscription holds the row; several (or none) stay neutral, as
+// the wire has no per-subscription split yet. Buckets are grey (board ①).
+const barColour = (d, subs, bucket) => !bucket && subs.length === 1 ? accountOf(d, subs[0])?.colour ?? null : null;
+const withBar = (html, colour) => colour ? html.replace('<i class="wu-bar"', `<i class="wu-bar" data-v="${esc(colour)}"`) : html;
 function usageProjects(d, ui, w) {
-  const accounts = accountsIn(d, ui);
   const rows = w.projects.filter(p => !ui.scope || p.subs.includes(ui.scope));
-  if (!rows.length && !(extras(w, ui).length)) return `<p class="mp-empty">${t('mfd.noSessions')}</p>`;
   const list = [...rows, ...extras(w, ui)].sort(byTokens);
+  if (!list.length) return `<p class="mp-empty">${t('mfd.noSessions')}</p>${cutNote(w.otherProjects.count, ui)}`;
   const n = ui.scope ? rows.length : w.projectCount;
-  return `<div class="wd-h">${esc(t('mfd.whProjTitle', {r: rangeWord({range: rangeOf(ui)}), n}))}</div><div class="wd-list wu-list" tabindex="0">${list.map(p => {
+  return `${header(t('mfd.whProjTitle', {r: rangeWord({range: rangeOf(ui)}), n}), w, ui)}<div class="wd-list wu-list" tabindex="0">${list.map(p => {
     if (p.review) return reviewRow(d, p, ui);
-    const name = projectName(p), colour = accounts.find(a => p.subs.includes(a.id))?.colour || 'var(--lcd-muted)';
+    const bucket = !!kindWord(p.kind), name = projectName(p), colour = bucket ? 'var(--lcd-muted)' : accountOf(d, p.subs[0])?.colour || 'var(--lcd-muted)';
     const meta = [t('mfd.wuSessions', {n: p.sessions}), modelName(d, p.model, p.modelApprox) + (p.effort ? ' ' + p.effort : ''), ui.scope ? t('mfd.wuCombined') : ''].filter(Boolean);
-    return `<button class="wd wu" type="button" data-mfd="proj:${esc(p.ref)}" data-tip="${esc(rowTip(name, p, ui, meta))}"><i class="chip" data-v="${esc(colour)}"></i><span class="wd-n">${runMark(p.running)}${esc(name)}</span>${cells(p)}</button>`;
-  }).join('')}${otherRow(w.otherProjects, ui)}</div>`;
+    return `<button class="wd wu${bucket ? ' wu-bucket' : ''}" type="button" data-mfd="proj:${esc(p.ref)}" data-tip="${esc(rowTip(name, p, ui, meta))}"><i class="chip" data-v="${esc(colour)}"></i><span class="wd-n">${runMark(p.running)}${esc(name)}</span>${withBar(cells(p), barColour(d, p.subs, bucket))}</button>`;
+  }).join('')}${otherRow(w.otherProjects, ui)}</div>${cutNote(w.otherProjects.count, ui)}`;
 }
 function usageSessions(d, ui, w) {
   let rows = w.sessions.filter(x => !ui.scope || x.sub === ui.scope);
   const project = ui.project ? w.projects.find(p => p.ref === ui.project) : null;
   if (ui.project) rows = rows.filter(x => (x.projectRef ?? 'unattributed') === ui.project);
   const back = ui.project ? `<button class="wu-back" type="button" data-mfd="where:all">${esc(t('mfd.wuAllSessions'))}</button>` : '';
-  if (!rows.length) return `${back}<p class="mp-empty">${t('mfd.noSessions')}</p>`;
-  const list = [...rows, ...(ui.project ? [] : extras(w, ui))].sort((a, b) => (!!b.running - !!a.running) || byTokens(a, b));
-  const title = project ? t('mfd.wuProjSess', {p: projectName(project), n: rows.length}) : t('mfd.whSessTitle', {r: rangeWord({range: rangeOf(ui)}), n: ui.scope ? rows.length : w.sessionCount});
-  return `${back}<div class="wd-h">${esc(title)}</div><div class="wd-list wu-list wu-sess" tabindex="0">${list.map(x => {
+  // macrevb-1303-7: the Auto Review row joins before the empty test, so a range with only background runs shows them.
+  // D470 (recommendation 4): sorted by tokens; a running session is marked ▶, not pinned.
+  const list = [...rows, ...(ui.project ? [] : extras(w, ui))].sort(byTokens);
+  // macrevb-1303-6: a project's sessions below the listed top are one continuation row with their exact remainder.
+  let more = null;
+  if (project && project.sessions > rows.length) {
+    const tokens = Math.max(0, project.tokens.total - rows.reduce((s, x) => s + x.tokens.total, 0));
+    more = {count: project.sessions - rows.length, tokens: {...project.tokens, total: tokens, complete: false}, share: Math.max(0, project.share - rows.reduce((s, x) => s + x.share, 0)), cost: null};
+  }
+  if (!list.length && !more) return `${back}<p class="mp-empty">${t('mfd.noSessions')}</p>${cutNote(w.otherSessions.count, ui)}`;
+  const title = project ? t('mfd.wuProjSess', {p: projectName(project), n: project.sessions}) : t('mfd.whSessTitle', {r: rangeWord({range: rangeOf(ui)}), n: ui.scope ? rows.length : w.sessionCount});
+  const moreRow = more ? `<div class="wd wu wu-other" data-tip="${esc(t('mfd.wuMoreBelow', {n: more.count}))}"><i class="chip" data-v="var(--lcd-ghost)"></i><span class="wd-n">${esc(t('mfd.wuMoreBelow', {n: more.count}))}</span>${cells(more)}</div>` : '';
+  return `${back}${project ? `<div class="wd-h">${esc(title)}</div>` : header(title, w, ui)}<div class="wd-list wu-list wu-sess" tabindex="0">${list.map(x => {
     if (x.review) return reviewRow(d, x, ui);
     const a = accountOf(d, x.sub), name = x.title || t('mfd.wuUntitled'), where = sessionProject(x);
     const meta = `${x.tool} · ${where} · ${modelName(d, x.model, x.modelApprox)}${x.effort ? ' ' + x.effort : ''} · ${x.running ? '▶' : stamp(x.lastAt, ui)}`;
-    return `<div class="wd wu wu-s${x.running ? ' run' : ''}" data-session="${esc(x.ref)}" data-tip="${esc(rowTip(name, x, ui, [`${x.tool} · ${where}`, modelName(d, x.model, x.modelApprox)]))}"><i class="chip" data-v="${esc(a?.colour || 'var(--lcd-muted)')}"></i><span class="wd-n">${runMark(x.running)}${esc(name)}<small class="wu-meta">${esc(meta)}</small></span>${cells(x)}</div>`;
-  }).join('')}${ui.project ? '' : otherRow(w.otherSessions, ui)}</div>`;
+    return `<div class="wd wu wu-s${x.running ? ' run' : ''}" data-session="${esc(x.ref)}" data-tip="${esc(rowTip(name, x, ui, [`${x.tool} · ${where}`, modelName(d, x.model, x.modelApprox)]))}"><i class="chip" data-v="${esc(a?.colour || 'var(--lcd-muted)')}"></i><span class="wd-n">${runMark(x.running)}${esc(name)}<small class="wu-meta">${esc(meta)}</small></span>${withBar(cells(x), a?.colour ?? null)}</div>`;
+  }).join('')}${moreRow}${ui.project ? '' : otherRow(w.otherSessions, ui)}</div>${ui.project ? '' : cutNote(w.otherSessions.count, ui)}`;
 }
 
 export const where = {

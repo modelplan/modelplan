@@ -23,5 +23,7 @@ register('mfd', {
   wuCost: ['aria', '估算费用 {c}（按 API 价目估算）', 'Estimated cost {c} (API list prices)'],
   wuApprox: ['aria', '{m}（按日期推定的模型）', '{m} (model assumed by date)'],
   wuReviewTip: ['aria', 'Codex 自动审查，合成一行，不算模型', 'Codex Auto Review, folded into one row; never a model'],
+  wuCutScope: ['text', '只列出全部订阅前列的行；其余计入"其他"，不按订阅区分', 'Only the top rows of all subscriptions are listed; the rest are in "other", not split by subscription'],
+  wuMoreBelow: ['line', '另有 {n} 个会话不在列表中', {one: '{n} more session not listed', other: '{n} more sessions not listed'}],
   wuCombined: ['aria', '全部订阅的项目合计', 'Project total across subscriptions'],
 });

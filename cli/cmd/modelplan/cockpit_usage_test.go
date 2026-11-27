@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -108,5 +109,53 @@ func TestCockpitUsageProjectFirstObservedAt(t *testing.T) {
 	u := cockpitUsage(v, map[string]bool{"codex": true}, true, nil, nil)
 	if len(u.Today.Projects) != 1 || !u.Today.Projects[0].FirstObservedAt.Equal(early) || !u.Today.Projects[0].LastObservedAt.Equal(now) {
 		t.Fatalf("%+v", u.Today.Projects)
+	}
+}
+
+// macrevb-1303-4: at the full cap (200 projects and 200 sessions in every range) with long Unicode names and titles,
+// the usage ranking stays within its share of the 1 MiB cockpit message; fewer rows are listed, the rest are summed
+// into "other", and the totals stay exact.
+func TestCockpitUsageStaysWithinItsMessageBudget(t *testing.T) {
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	label := strings.Repeat("项目名", 22)  // 198 bytes, the label bound
+	title := strings.Repeat("会话标题", 24) // 96 runes, the title bound
+	var sessions []speed.PerfSession
+	for i := 0; i < 2*speed.RankCap; i++ {
+		total, in := int64(1000+i), int64(500)
+		d := speed.SessionDay{Day: "2026-11-26", Model: "synthetic-alias", EffortStatus: "reported", Effort: "high", ObservedRequests: 1, ObservedOutputTokens: 10,
+			Kinds: &speed.TokenKinds{TotalTokens: &total, InputTokens: &in}}
+		sessions = append(sessions, speed.PerfSession{Ref: fmt.Sprintf("%016x", i+1), Key: fmt.Sprint(i), Source: "codex", ProjectRef: fmt.Sprintf("%032x", i),
+			ProjectLabel: fmt.Sprintf("%s%d", label[:len(label)-3], i), ProjectKind: speed.KindRepo, ProjectRule: speed.CurrentProjectRule, Title: title,
+			SubscriptionRef: "aaaaaaaaaaaaaaaa", FirstAt: now.Add(-time.Hour), LastAt: now, Days: []speed.SessionDay{d}})
+	}
+	v := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Sessions: sessions}}
+	models := []digest.Model{{ID: "public-model", HarnessIDs: map[string][]string{"codex": {"synthetic-alias"}}}}
+	u := cockpitUsage(v, map[string]bool{"codex": true}, true, models, nil)
+	b, err := json.Marshal(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) > cockpitUsageBudget {
+		t.Fatalf("usage takes %d bytes, budget %d", len(b), cockpitUsageBudget)
+	}
+	for _, w := range []wire.CockpitUsageWindow{u.Today, u.Recent7d, u.Recent30d} {
+		if w.SessionCount != 2*speed.RankCap || w.OtherSessions.Count == 0 || len(w.Sessions)+w.OtherSessions.Count != w.SessionCount {
+			t.Fatalf("sessions %d listed + %d other, of %d", len(w.Sessions), w.OtherSessions.Count, w.SessionCount)
+		}
+		if len(w.Projects)+w.OtherProjects.Count != w.ProjectCount {
+			t.Fatalf("projects %d listed + %d other, of %d", len(w.Projects), w.OtherProjects.Count, w.ProjectCount)
+		}
+		sum := w.OtherSessions.Tokens.Total
+		for _, s := range w.Sessions {
+			sum += s.Tokens.Total
+		}
+		if sum != w.Tokens.Total {
+			t.Fatalf("listed + other = %d, total %d", sum, w.Tokens.Total)
+		}
+	}
+	// A small ledger keeps every row.
+	small := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Sessions: sessions[:20]}}
+	if w := cockpitUsage(small, map[string]bool{"codex": true}, true, models, nil).Today; len(w.Sessions) != 20 || w.OtherSessions.Count != 0 {
+		t.Fatalf("a small ledger was cut: %d listed, %d other", len(w.Sessions), w.OtherSessions.Count)
 	}
 }
