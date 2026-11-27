@@ -17,11 +17,11 @@ type CockpitHistory struct {
 	Models         CockpitEntityRanking         `json:"models"`
 	Tools          CockpitEntityRanking         `json:"tools"`
 	// Daily holds local days with observed output, per source, for the last 182 days from
-	// DailyFrom on (the earliest day of live or imported data); Hourly the same for the last 48 local hours. A day or hour that is not
+	// DailyFrom on (the earliest day of live or imported data); Hourly the same for the last 30 local days (D402). A day or hour that is not
 	// listed has no observation, which is not the same as a known zero.
 	DailyFrom *string               `json:"dailyFrom" null:"coalesced"`
 	Daily     []CockpitSourceBucket `json:"daily" schema:"maxItems=728"`
-	Hourly    []CockpitSourceBucket `json:"hourly" schema:"maxItems=192"`
+	Hourly    []CockpitSourceBucket `json:"hourly" schema:"maxItems=2884"`
 	Projects  CockpitProjectRanking `json:"projects"`
 	// Cycles holds up to ten newest closed cycles per window, oldest first, under a subscription only through the
 	// source's one current binding. Points are observed on this device and unattributed.

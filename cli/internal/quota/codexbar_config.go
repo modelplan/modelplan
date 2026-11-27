@@ -7,11 +7,11 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 )
 
 type codexBarProviderConfig struct {
@@ -120,13 +120,16 @@ func codexBarUsageConfig(ctx context.Context, bin, provider, access string) (fil
 func codexBarConfigMetadata(ctx context.Context, bin, file, command string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "config", command, "--json")
+	cmd, err := toolcli.Command(ctx, bin, "config", command, "--json")
+	if err != nil {
+		return nil, errors.New("CodexBar config metadata unavailable; usage not started")
+	}
 	cmd.Env = codexBarConfigEnvironment("standard", file)
 	cmd.Stdin = nil
 	cmd.Stderr = io.Discard
 	var out bytes.Buffer
 	cmd.Stdout = &limited{w: &out, n: codexbarMaxOut}
-	if err := cmd.Run(); err != nil {
+	if err := toolcli.Run(cmd); err != nil {
 		return nil, errors.New("CodexBar config metadata unavailable; usage not started")
 	}
 	return out.Bytes(), nil

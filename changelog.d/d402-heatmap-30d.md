@@ -1,0 +1,1 @@
+The Overview heatmap now fills for the 7-day and 30-day ranges: the engine keeps and sends hourly output buckets for 30 days (they were two), derived from the hourly counts it already records as requests are counted, with no extra file scanning, and the "only today and yesterday" note is gone. Needs a CLI release and pin.

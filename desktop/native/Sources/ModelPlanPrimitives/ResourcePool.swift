@@ -183,6 +183,20 @@ public struct EffectFrameRequest: Hashable, Sendable {
     public let layer = CALayer()
     /// Seconds for one pass of the frames: 1 is the normal ~9 fps. Set before `configure`.
     public var cycleSeconds: Double = 1
+    /// The order the poses play in; set before `configure`. `.loop` goes from the last pose straight back to the first.
+    /// `.reflect` plays them forward and back (0…8, 7…1) at the same step rate, so frames cut from a source that does
+    /// not repeat (the working flames come from an aperiodic Canvas) have no jump where the loop closes.
+    public enum Playback: Sendable { case loop, reflect }
+    public var playback: Playback = .loop
+    /// Pose indices in play order for one full repeat; consecutive entries, and the last with the first, are the
+    /// pairs the animation steps between.
+    public static func poseOrder(count: Int, playback: Playback) -> [Int] {
+        guard count > 0 else { return [] }
+        let forward = Array(0..<count)
+        guard playback == .reflect, count > 2 else { return forward }
+        return forward + forward.dropFirst().dropLast().reversed()
+    }
+    public private(set) var poseOrder: [Int] = []
     private let pool: EffectResourcePool
     private var key: EffectResourcePool.Key?
     private var entry: EffectResourcePool.Entry?
@@ -201,21 +215,35 @@ public struct EffectFrameRequest: Hashable, Sendable {
         layer.bounds.size = CGSize(width: request.points, height: request.points)
         layer.contentsScale = CGFloat(request.profile.scale) * request.magnification
         layer.contentsGravity = .resize; layer.contents = atlas.images[0]; layer.isHidden = false
+        poseOrder = Self.poseOrder(count: atlas.images.count, playback: playback)
         if !request.profile.reduceMotion {
             let animation = CAKeyframeAnimation(keyPath: "contents")
-            animation.values = atlas.images
-            animation.keyTimes = (0...EffectResourcePool.poses).map { NSNumber(value: Double($0) / Double(EffectResourcePool.poses)) }
-            animation.calculationMode = .discrete; animation.duration = cycleSeconds; animation.repeatCount = .infinity
+            let steps = poseOrder.count
+            animation.values = poseOrder.map { atlas.images[$0] }
+            // Discrete timing: one boundary per step plus the final endpoint, which is never shown as a frame.
+            animation.keyTimes = (0...steps).map { NSNumber(value: Double($0) / Double(steps)) }
+            // `cycleSeconds` stays the time for one pass through the poses, so a reflected repeat keeps the step rate.
+            animation.calculationMode = .discrete; animation.duration = cycleSeconds * Double(steps) / Double(atlas.images.count)
+            animation.repeatCount = .infinity
             layer.add(animation, forKey: "stepped-images"); isAnimating = true
         }
         CATransaction.commit()
     }
     public func seekForCapture(_ phase: Double) {
         guard phase.isFinite, let entry else { return }
-        let value = max(0, phase.truncatingRemainder(dividingBy: cycleSeconds) / cycleSeconds)
+        let pose: Int
+        if playback == .reflect, poseOrder.count > entry.images.count {
+            // The same step clock as the animation: one step per cycleSeconds / poses, through the reflected order.
+            let stepSeconds = cycleSeconds / Double(entry.images.count)
+            let local = max(0, phase.truncatingRemainder(dividingBy: stepSeconds * Double(poseOrder.count)))
+            pose = poseOrder[min(poseOrder.count - 1, Int(local / stepSeconds))]
+        } else {
+            let value = max(0, phase.truncatingRemainder(dividingBy: cycleSeconds) / cycleSeconds)
+            pose = min(EffectResourcePool.poses - 1, Int(value * Double(EffectResourcePool.poses)))
+        }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.removeAnimation(forKey: "stepped-images"); isAnimating = false
-        layer.contents = entry.images[min(EffectResourcePool.poses - 1, Int(value * Double(EffectResourcePool.poses)))]
+        layer.contents = entry.images[pose]
         CATransaction.commit()
     }
     public func stop() {

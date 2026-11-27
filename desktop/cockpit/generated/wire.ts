@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 01f8d8aea5a38b929d8adad315483e02f4779dca36743ec492223aae675b5326
+// Schema SHA-256: a48e5a7c5c167112fc1cad305e292e7c77425c3b75ef37dbbe6220f5aa8ce401
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -1468,7 +1468,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "items": {
           "$ref": "#/$defs/CockpitSourceBucket"
         },
-        "maxItems": 192,
+        "maxItems": 2884,
         "type": "array"
       },
       "models": {
