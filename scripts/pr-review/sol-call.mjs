@@ -50,6 +50,8 @@ for (const k of [env.OPENAI_API_KEY, env.GLM_API_KEY]) if (k && r.text.includes(
 writeFileSync(join(dir, "answer.md"), r.text);
 if (finalWhy) writeFileSync(join(dir, "noverdict"), finalWhy ?? firstWhy);
 writeFileSync(join(dir, "model"), r.model ?? "");
+writeFileSync(join(dir, "note"), r.note ?? "");
+if (r.note) console.log(`pr-review-sol: ${r.provider}: ${r.note}`);
 writeFileSync(join(dir, "usage.json"), JSON.stringify(r.usage));
 if (r.why) console.log(`pr-review-sol: quota out (${r.why}); answered by ${r.provider}`);
 console.log(`pr-review-sol: answer from ${r.provider} (order ${order.join(" > ")}) after ${Math.round((Date.now() - start) / 1000)} s; tokens in ${r.usage.input} out ${r.usage.output}`);

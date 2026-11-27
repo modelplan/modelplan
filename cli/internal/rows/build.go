@@ -434,9 +434,24 @@ func toolStepText(tool string, code Code) (Text, bool) {
 		return Text{EN: "ZCode sign-in found. Allow reading it in Settings to show its quota.", ZH: "已找到 ZCode 登录。在设置中允许读取后显示额度。"}, true
 	case CodeLoginExpired:
 		return Text{EN: "Sign in to ZCode again. ModelPlan reads it after you do.", ZH: "请重新登录 ZCode。登录后会自动读取。"}, true
+	case CodeKeychainUnset, CodeKeychainDenied, CodeKeychainCanceled, CodeKeychainConfirmationNeeded, CodeKeychainUnavailable:
+		// D380: ZCode 3.19+ keeps its sign-in key in the macOS Keychain.
+		return ZCodeKeychainText, true
+	case CodeUnsupportedLogin:
+		// Owner 11-22: a store ModelPlan cannot read automatically offers the pasted-key route.
+		return ZCodeUnreadableText, true
 	}
 	return Text{}, false
 }
+
+// ZCodeKeychainText (D380) and ZCodeUnreadableText (owner 11-22) are ZCode's own next steps. The
+// Swift copies in Settings, first run and the Dock card use the same words; a test pins them.
+var (
+	ZCodeKeychainText = Text{EN: "ZCode may keep its sign-in key in the Keychain. Allow ModelPlan to read it in Settings; when macOS asks, choose Always Allow.",
+		ZH: "ZCode 的登录密钥可能保存在钥匙串中。请在设置中允许 ModelPlan 读取；macOS 询问时请选择“始终允许”。"}
+	ZCodeUnreadableText = Text{EN: "Can't read the ZCode sign-in automatically · Paste a Zhipu / Z.ai API key to read the quota",
+		ZH: "无法自动读取 ZCode 登录 · 可粘贴智谱 / Z.ai 的 API key 读取额度"}
+)
 
 // NotSignedInText is the single not-signed-in sentence. The Swift copies in Settings and
 // first run (SettingsScopeConsentView.blockLine) use the same words; a test pins them.

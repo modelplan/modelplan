@@ -1608,7 +1608,7 @@ struct DockHelpInteraction: Equatable {
                 geometry.scaleRegistration(by: dockView.appliedGeometryScale)
             }
             else {
-                try dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
+                try dockView.applyCommunity(rows, locale: passPreferences.language.rawValue, showsPercentages: passPreferences.showPercentages)
                 geometry = .init(hoverRects: [dockView.bounds])
             }
         } catch {
@@ -1618,7 +1618,7 @@ struct DockHelpInteraction: Equatable {
                 lastAppearanceError = error
                 Logger(subsystem: "ai.modelplan.dock", category: "appearance").error("Official Dock appearance failed: \(String(describing: error), privacy: .private)")
             }
-            try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
+            try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue, showsPercentages: passPreferences.showPercentages)
             geometry = .init(hoverRects: [dockView.bounds])
         }
         guard passIsCurrent(generation) else { return }
